@@ -17,34 +17,54 @@ func NewToolRegistry() *ToolRegistry {
 	}
 }
 
-func (r *ToolRegistry) Register(tool Tool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.tools[tool.Name()] = tool
+func (tr *ToolRegistry) Register(tool Tool) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.tools[tool.Name()] = tool
 }
 
-func (r *ToolRegistry) Get(name string) (Tool, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	tool, ok := r.tools[name]
+func (tr *ToolRegistry) Get(name string) (Tool, bool) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	tool, ok := tr.tools[name]
 	return tool, ok
 }
 
-func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (string, error) {
-	tool, ok := r.Get(name)
+func (tr *ToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (string, error) {
+	tool, ok := tr.Get(name)
 	if !ok {
-		return "", fmt.Errorf("tool '%s' not found", name)
+		return "", fmt.Errorf("tool not found: %s", name)
 	}
+
 	return tool.Execute(ctx, args)
 }
 
-func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+func (tr *ToolRegistry) GetDefinitions() []map[string]interface{} {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
 
-	definitions := make([]map[string]interface{}, 0, len(r.tools))
-	for _, tool := range r.tools {
-		definitions = append(definitions, ToolToSchema(tool))
+	var definitions []map[string]interface{}
+	for _, tool := range tr.tools {
+		definitions = append(definitions, map[string]interface{}{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        tool.Name(),
+				"description": tool.Description(),
+				"parameters":  tool.Parameters(),
+			},
+		})
 	}
 	return definitions
+}
+
+// Clone creates a shallow copy of the registry
+func (tr *ToolRegistry) Clone() *ToolRegistry {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+
+	newReg := NewToolRegistry()
+	for name, tool := range tr.tools {
+		newReg.tools[name] = tool
+	}
+	return newReg
 }

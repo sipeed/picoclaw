@@ -7,14 +7,16 @@ import (
 	"sync"
 
 	"github.com/caarlos0/env/v11"
+	swarmCfg "github.com/sipeed/picoclaw/pkg/swarm/config"
 )
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers"`
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
+	Agents    AgentsConfig         `json:"agents"`
+	Channels  ChannelsConfig       `json:"channels"`
+	Providers ProvidersConfig      `json:"providers"`
+	Gateway   GatewayConfig        `json:"gateway"`
+	Tools     ToolsConfig          `json:"tools"`
+	Swarm     swarmCfg.SwarmConfig `json:"swarm"`
 	mu        sync.RWMutex
 }
 
@@ -168,6 +170,7 @@ func DefaultConfig() *Config {
 				},
 			},
 		},
+		Swarm: swarmCfg.DefaultSwarmConfig(),
 	}
 }
 

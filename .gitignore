@@ -12,4 +12,6 @@ coverage.txt
 coverage.html
 .DS_Store
 build
+swarms.db
+picoclaw_memory/
 

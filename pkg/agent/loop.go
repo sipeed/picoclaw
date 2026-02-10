@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
+	"github.com/sipeed/picoclaw/pkg/swarm"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -32,6 +33,7 @@ type AgentLoop struct {
 	sessions       *session.SessionManager
 	contextBuilder *ContextBuilder
 	tools          *tools.ToolRegistry
+	swarm          *swarm.Service // Swarm Service
 	running        bool
 	summarizing    sync.Map
 }
@@ -50,6 +52,12 @@ func NewAgentLoop(cfg *config.Config, bus *bus.MessageBus, provider providers.LL
 	toolsRegistry.Register(tools.NewWebSearchTool(braveAPIKey, cfg.Tools.Web.Search.MaxResults))
 	toolsRegistry.Register(tools.NewWebFetchTool(50000))
 
+	// Initialize Swarm Service
+	swarmSvc, err := swarm.NewService(filepath.Join(workspace, "swarms.db"), provider, toolsRegistry, cfg.Swarm, cfg.Agents.Defaults.Model)
+	if err != nil {
+		fmt.Printf("Warning: Failed to init swarm service: %v\n", err)
+	}
+
 	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "sessions"))
 
 	return &AgentLoop{
@@ -62,6 +70,7 @@ func NewAgentLoop(cfg *config.Config, bus *bus.MessageBus, provider providers.LL
 		sessions:       sessionsManager,
 		contextBuilder: NewContextBuilder(workspace),
 		tools:          toolsRegistry,
+		swarm:          swarmSvc,
 		running:        false,
 		summarizing:    sync.Map{},
 	}
@@ -70,6 +79,19 @@ func NewAgentLoop(cfg *config.Config, bus *bus.MessageBus, provider providers.LL
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running = true
 
+	// Relay Swarm Messages to Bus
+	if al.swarm != nil {
+		go func() {
+			for msg := range al.swarm.Outbound {
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: "cli", // Default to CLI for now, ideally dynamic
+					ChatID:  "direct",
+					Content: msg,
+				})
+			}
+		}()
+	}
+
 	for al.running {
 		select {
 		case <-ctx.Done():
@@ -77,6 +99,17 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		default:
 			msg, ok := al.bus.ConsumeInbound(ctx)
 			if !ok {
+				continue
+			}
+
+			// Intercept /swarm commands
+			if al.swarm != nil && len(msg.Content) > 6 && msg.Content[:7] == "/swarm " {
+				response := al.swarm.HandleCommand(ctx, msg.Content)
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: msg.Channel,
+					ChatID:  msg.ChatID,
+					Content: response,
+				})
 				continue
 			}
 
@@ -103,6 +136,11 @@ func (al *AgentLoop) Stop() {
 }
 
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
+	// Intercept /swarm commands
+	if al.swarm != nil && len(content) > 6 && content[:7] == "/swarm " {
+		return al.swarm.HandleCommand(ctx, content), nil
+	}
+
 	msg := bus.InboundMessage{
 		Channel:    "cli",
 		SenderID:   "user",
