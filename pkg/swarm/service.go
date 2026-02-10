@@ -57,31 +57,39 @@ func (s *Service) listen() {
 		msg := ""
 		switch e.Type {
 		case core.EventNodeThinking: 
-			// Cek apakah ini Manager atau Worker
+			// Cek apakah ini Manager atau Worker secara aman
 			node, err := s.Store.GetNode(context.Background(), e.NodeID)
 			content, _ := e.Payload["content"].(string)
 			
-			if err == nil && node.ParentID != "" {
+			isWorker := false
+			roleName := "Worker"
+			if err == nil && node != nil {
+				isWorker = node.ParentID != ""
+				roleName = node.Role.Name
+			}
+
+			if isWorker {
 				// Ini WORKER! Jangan kirim teks panjangnya, cukup status saja.
-				// Tapi kalau teksnya pendek (notifikasi internal), baru kirim.
 				if len(content) > 100 {
-					msg = fmt.Sprintf("🤖 [%s] %s is processing data...", e.NodeID[:4], node.Role.Name)
+					msg = fmt.Sprintf("🤖 [%s] %s is processing data...", e.NodeID[:4], roleName)
 				} else {
 					msg = fmt.Sprintf("🤖 [%s]: %s", e.NodeID[:4], content)
 				}
 			} else {
-				// Ini MANAGER! Kirim lengkap biar user tau progres summary-nya.
+				// Ini MANAGER (atau fallback)! Kirim lengkap.
 				msg = fmt.Sprintf("🧠 [Manager]: %s", content)
 			}
 		case core.EventNodeCompleted: 
-			// Cek apakah ini Manager (Root Node)
+			// Cek apakah ini Manager (Root Node) secara aman
 			node, err := s.Store.GetNode(context.Background(), e.NodeID)
-			if err == nil && node.ParentID == "" {
+			if err == nil && node != nil && node.ParentID == "" {
 				// Ini Manager! Kirim hasil akhirnya.
 				msg = fmt.Sprintf("🏁 **FINAL SYNTHESIZED RESULT** 🏁\n\n%s", e.Payload["output"])
 			} else {
-				// Worker selesai, cukup kasih tau status done.
-				msg = fmt.Sprintf("✅ [%s] %s finished its task.", e.NodeID[:4], node.Role.Name)
+				// Worker selesai
+				name := "Worker"
+				if node != nil { name = node.Role.Name }
+				msg = fmt.Sprintf("✅ [%s] %s finished its task.", e.NodeID[:4], name)
 			}
 		case core.EventNodeFailed: 
 			msg = fmt.Sprintf("❌ [%s] Failed: %v", e.NodeID[:4], e.Payload["error"])

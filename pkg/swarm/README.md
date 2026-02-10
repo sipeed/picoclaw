@@ -33,6 +33,9 @@ The Swarm Engine is integrated into the PicoClaw CLI.
 
 # Stop a running swarm
 /swarm stop <swarm_id>
+
+# Stop all active swarms
+/swarm stopall
 ```
 
 ### Configuration
