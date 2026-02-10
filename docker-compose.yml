@@ -1,0 +1,25 @@
+services:
+
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Agent (one-shot query)
+  #   docker compose run --rm picoclaw-agent -m "Hello"
+  # ─────────────────────────────────────────────
+  picoclaw-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: picoclaw-agent
+    profiles:
+      - agent
+    env_file:
+      - .env
+    volumes:
+      - ./config/config.json:/root/.picoclaw/config.json:ro
+      - picoclaw-workspace:/root/.picoclaw/workspace
+    entrypoint: ["picoclaw", "agent"]
+    stdin_open: true
+    tty: true
+
+volumes:
+  picoclaw-workspace:

@@ -12,6 +12,8 @@
 <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
+[日本語](README.ja.md) | **English**
+
 </div>
 
 
@@ -113,6 +115,49 @@ make build-all
 
 # Build And Install
 make install
+```
+
+## 🐳 Docker Compose
+
+You can also run PicoClaw using Docker Compose without installing anything locally.
+
+### Quick Start (Discord Bot)
+
+```bash
+# 1. Clone this repo
+git clone https://github.com/Sunwood-AI-OSS-Hub/picoclaw.git
+cd picoclaw
+
+# 2. Set your API keys
+cp .env.example .env
+vim .env                    # Set DISCORD_BOT_TOKEN, OPENROUTER_API_KEY, etc.
+vim config/config.json      # Set provider API keys
+
+# 3. Build & Start
+docker compose -f docker-compose.discord.yml up -d
+
+# 4. Check logs
+docker compose -f docker-compose.discord.yml logs -f picoclaw
+
+# 5. Stop
+docker compose -f docker-compose.discord.yml down
+```
+
+### Agent Mode (One-shot)
+
+```bash
+# Ask a question
+docker compose run --rm picoclaw-agent -m "What is 2+2?"
+
+# Interactive mode
+docker compose run --rm picoclaw-agent
+```
+
+### Rebuild
+
+```bash
+docker compose -f docker-compose.discord.yml build --no-cache
+docker compose -f docker-compose.discord.yml up -d
 ```
 
 ### 🚀 Quick Start
@@ -256,7 +301,7 @@ picoclaw gateway
 **6. Run**
 
 ```bash
-nanobot gateway
+picoclaw gateway
 ```
 
 </details>

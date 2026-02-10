@@ -1,0 +1,24 @@
+services:
+  # ─────────────────────────────────────────────
+  # PicoClaw Discord Bot
+  # ─────────────────────────────────────────────
+  picoclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: picoclaw-discord
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PICOCLAW_CHANNELS_DISCORD_ENABLED=true
+      - PICOCLAW_CHANNELS_DISCORD_TOKEN=${DISCORD_BOT_TOKEN}
+    volumes:
+      # Configuration file
+      - ./config/config.json:/root/.picoclaw/config.json:ro
+      # Persistent workspace (sessions, memory, logs)
+      - picoclaw-workspace:/root/.picoclaw/workspace
+    command: ["gateway"]
+
+volumes:
+  picoclaw-workspace:

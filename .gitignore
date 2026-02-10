@@ -1,15 +1,24 @@
+# Go build artifacts
 bin/
+build/
 *.exe
 *.dll
 *.so
 *.dylib
 *.test
 *.out
+
+# PicoClaw
 .picoclaw/
-config.json
 sessions/
+
+# Secrets & Config (keep templates, ignore actual secrets)
+.env
+config/config.json
+
+# Test
 coverage.txt
 coverage.html
-.DS_Store
-build
 
+# OS
+.DS_Store
