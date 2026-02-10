@@ -42,17 +42,6 @@ func NewService(dbPath string, provider providers.LLMProvider, registry *tools.T
 
 func (s *Service) listen() {
 	if _, err := s.Bus.Subscribe("node.events", func(e core.Event) {
-		// --- Terminal Log (Lokal Only) ---
-		color := "\033[36m" // Cyan
-		if e.Type == "node.failed" { color = "\033[31m" } // Red
-		if e.Type == "node.completed" { color = "\033[32m" } // Green
-		
-		content := e.Payload["content"]
-		if content == nil { content = e.Payload["output"] }
-		if content == nil { content = e.Payload["error"] }
-
-		fmt.Printf("\n%s[SWARM LOG]\033[0m Node: %s | Type: %s | Content: %v\n", color, e.NodeID[:4], e.Type, content)
-		// ---------------------------------
 
 		msg := ""
 		switch e.Type {
