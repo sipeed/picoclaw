@@ -31,13 +31,21 @@ func (t *DelegateTool) Description() string {
 }
 
 func (t *DelegateTool) Parameters() map[string]interface{} {
+	roles := make([]string, 0)
+	for roleName := range t.orchestrator.config.Roles {
+		roles = append(roles, roleName)
+	}
+	if len(roles) == 0 {
+		roles = []string{"Researcher", "Analyst", "Writer", "Critic"} // Fallback
+	}
+
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"role": map[string]interface{}{
 				"type":        "string",
-				"description": "The role of the worker (Researcher, Analyst, Writer, Critic)",
-				"enum":        []string{"Researcher", "Analyst", "Writer", "Critic"},
+				"description": "The role of the worker to spawn",
+				"enum":        roles,
 			},
 			"task": map[string]interface{}{
 				"type":        "string",

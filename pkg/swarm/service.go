@@ -58,7 +58,7 @@ func (s *Service) listen() {
 
 func (s *Service) HandleCommand(ctx context.Context, input string) string {
 	args := strings.Fields(input)
-	if len(args) < 2 { return "Usage: /swarm <spawn|list|stop> [goal]" }
+	if len(args) < 2 { return "Usage: /swarm <spawn|list|stop|status|viz> [goal/id]" }
 
 	switch args[1] {
 	case "spawn":
@@ -80,6 +80,34 @@ func (s *Service) HandleCommand(ctx context.Context, input string) string {
 		if len(args) < 3 { return "ID required" }
 		s.Orchestrator.StopSwarm(core.SwarmID(args[2]))
 		return "Stopped."
+	case "status":
+		if len(args) < 3 { return "ID required" }
+		sid := core.SwarmID(args[2])
+		sw, err := s.Store.GetSwarm(ctx, sid)
+		if err != nil { return "Swarm not found" }
+		nodes, _ := s.Store.GetSwarmNodes(ctx, sid)
+		
+		out := fmt.Sprintf("📊 Swarm Status: %s\nGoal: %s\nNodes (%d):\n", sw.Status, sw.Goal, len(nodes))
+		for _, n := range nodes {
+			out += fmt.Sprintf("- [%s] %s: %s (%s)\n", n.ID[:4], n.Role.Name, n.Status, n.Task)
+		}
+		return out
+	case "viz":
+		if len(args) < 3 { return "ID required" }
+		sid := core.SwarmID(args[2])
+		nodes, _ := s.Store.GetSwarmNodes(ctx, sid)
+		if len(nodes) == 0 { return "No nodes found" }
+
+		out := "```mermaid\ngraph TD\n"
+		for _, n := range nodes {
+			nodeLabel := fmt.Sprintf("%s[%s: %s]", n.ID[:8], n.Role.Name, n.Status)
+			out += fmt.Sprintf("  %s\n", nodeLabel)
+			if n.ParentID != "" {
+				out += fmt.Sprintf("  %s --> %s\n", n.ParentID[:8], n.ID[:8])
+			}
+		}
+		out += "```"
+		return out
 	}
 	return "Unknown command"
 }
