@@ -101,6 +101,9 @@ func (s *Service) HandleCommand(ctx context.Context, channel, chatID, input stri
 		if len(args) < 3 { return "ID required" }
 		s.Orchestrator.StopSwarm(core.SwarmID(args[2]))
 		return "Stopped."
+	case "stopall":
+		s.Orchestrator.StopAll()
+		return "Stopping all active swarms..."
 	case "status":
 		if len(args) < 3 { return "ID required" }
 		sid := core.SwarmID(args[2])
