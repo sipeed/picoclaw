@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"time"
 
 	"github.com/philippgille/chromem-go"
 	"github.com/sipeed/picoclaw/pkg/swarm/core"
@@ -42,7 +43,7 @@ func (s *ChromemStore) SaveFact(ctx context.Context, fact core.Fact) error {
 	meta["source"] = fact.Source
 
 	doc := chromem.Document{
-		ID:       fmt.Sprintf("%s_%d", fact.SwarmID, fact.Confidence),
+		ID:       fmt.Sprintf("%s_%f_%d", fact.SwarmID, fact.Confidence, time.Now().UnixNano()),
 		Content:  fact.Content,
 		Metadata: meta,
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/sipeed/picoclaw/pkg/swarm/config"
 	"github.com/sipeed/picoclaw/pkg/swarm/core"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -17,11 +18,12 @@ type NodeActor struct {
 	LLM    core.LLMClient
 	Tools  *tools.ToolRegistry
 	Policy *core.PolicyChecker
+	Config config.SwarmConfig
 
 	peerInsights []string // Buffer for thoughts heard from peers
 }
 
-func NewNodeActor(data *core.Node, bus core.EventBus, store core.SwarmStore, llm core.LLMClient, toolRegistry *tools.ToolRegistry, policy *core.PolicyChecker) *NodeActor {
+func NewNodeActor(data *core.Node, bus core.EventBus, store core.SwarmStore, llm core.LLMClient, toolRegistry *tools.ToolRegistry, policy *core.PolicyChecker, cfg config.SwarmConfig) *NodeActor {
 	return &NodeActor{
 		Data:         data,
 		Bus:          bus,
@@ -29,13 +31,16 @@ func NewNodeActor(data *core.Node, bus core.EventBus, store core.SwarmStore, llm
 		LLM:          llm,
 		Tools:        toolRegistry,
 		Policy:       policy,
+		Config:       cfg,
 		peerInsights: make([]string, 0),
 	}
 }
 
 func (n *NodeActor) Start(ctx context.Context) {
 	n.Data.Status = core.NodeStatusRunning
-	n.Store.UpdateNode(ctx, n.Data)
+	if err := n.Store.UpdateNode(ctx, n.Data); err != nil {
+		slog.Error("Failed to update node status to running", "node", n.Data.ID, "error", err)
+	}
 
 	// Subscribe to peer events
 	sub, _ := n.Bus.Subscribe("node.events", func(e core.Event) {
@@ -69,35 +74,52 @@ func (n *NodeActor) run(ctx context.Context) {
 	allowedTools := n.getToolsForRole()
 	model := n.Data.Role.Model
 
-	for i := 0; i < 10; i++ { // Max 10 iterations
-		// Progressive Summarization: If history > 20 messages, compress the middle part
-		if len(messages) > 20 {
+	maxIterations := n.Config.Limits.MaxIterations
+	if maxIterations <= 0 {
+		maxIterations = 10
+	}
+
+	summarizeThreshold := n.Config.Limits.SummarizeThreshold
+	if summarizeThreshold <= 0 {
+		summarizeThreshold = 20
+	}
+
+	for i := 0; i < maxIterations; i++ {
+		// Progressive Summarization: If history > threshold messages, compress the middle part
+		if len(messages) > summarizeThreshold {
 			slog.Info("Context threshold reached, performing progressive summarization", "node", n.Data.ID)
 
 			// 1. Identify context to summarize
 			// Header: System (0) + User Goal (1)
-			// Tail: Last 6 messages
-			toSummarize := messages[2 : len(messages)-6]
+			// Tail: Last N messages
+			keepCount := n.Config.Limits.PruningMsgKeep
+			if keepCount <= 0 {
+				keepCount = 6
+			}
 
-			summaryPrompt := "Briefly summarize the key findings, data points, and progress from the conversation above. Focus on facts discovered so far. Be very concise."
-			summaryMessages := append(toSummarize, core.Message{Role: "user", Content: summaryPrompt})
+			if len(messages) > keepCount+2 {
+				toSummarize := messages[2 : len(messages)-keepCount]
 
-			summaryResp, err := n.LLM.Chat(ctx, summaryMessages, nil, model)
-			if err == nil {
-				// 2. Reconstruct history: [Header] + [Summary] + [Tail]
-				tail := messages[len(messages)-6:]
-				newHistory := make([]core.Message, 0, 10)
-				newHistory = append(newHistory, messages[0:2]...) // Keep System + Goal
-				newHistory = append(newHistory, core.Message{
-					Role:    "system",
-					Content: fmt.Sprintf("Previous context summary: %s", summaryResp.Content),
-				})
-				messages = append(newHistory, tail...)
+				summaryPrompt := "Briefly summarize the key findings, data points, and progress from the conversation above. Focus on facts discovered so far. Be very concise."
+				summaryMessages := append(toSummarize, core.Message{Role: "user", Content: summaryPrompt})
 
-				n.Bus.Publish("node.events", core.Event{
-					Type: core.EventNodeThinking, SwarmID: n.Data.SwarmID, NodeID: n.Data.ID,
-					Payload: map[string]any{"content": "🧠 I've summarized my previous findings to keep my memory sharp."},
-				})
+				summaryResp, err := n.LLM.Chat(ctx, summaryMessages, nil, model)
+				if err == nil {
+					// 2. Reconstruct history: [Header] + [Summary] + [Tail]
+					tail := messages[len(messages)-keepCount:]
+					newHistory := make([]core.Message, 0, keepCount+3)
+					newHistory = append(newHistory, messages[0:2]...) // Keep System + Goal
+					newHistory = append(newHistory, core.Message{
+						Role:    "system",
+						Content: fmt.Sprintf("Previous context summary: %s", summaryResp.Content),
+					})
+					messages = append(newHistory, tail...)
+
+					n.Bus.Publish("node.events", core.Event{
+						Type: core.EventNodeThinking, SwarmID: n.Data.SwarmID, NodeID: n.Data.ID,
+						Payload: map[string]any{"content": "🧠 I've summarized my previous findings to keep my memory sharp."},
+					})
+				}
 			}
 		}
 
@@ -177,7 +199,9 @@ func (n *NodeActor) getToolsForRole() []core.ToolDef {
 func (n *NodeActor) complete(ctx context.Context, out string) {
 	n.Data.Output = out
 	n.Data.Status = core.NodeStatusCompleted
-	n.Store.UpdateNode(ctx, n.Data)
+	if err := n.Store.UpdateNode(ctx, n.Data); err != nil {
+		slog.Error("Failed to update node status to completed", "node", n.Data.ID, "error", err)
+	}
 	n.Bus.Publish("node.events", core.Event{
 		Type: core.EventNodeCompleted, SwarmID: n.Data.SwarmID, NodeID: n.Data.ID,
 		Payload: map[string]any{"output": out},
@@ -186,7 +210,9 @@ func (n *NodeActor) complete(ctx context.Context, out string) {
 
 func (n *NodeActor) fail(ctx context.Context, err error) {
 	n.Data.Status = core.NodeStatusFailed
-	n.Store.UpdateNode(ctx, n.Data)
+	if errUpdate := n.Store.UpdateNode(ctx, n.Data); errUpdate != nil {
+		slog.Error("Failed to update node status to failed", "node", n.Data.ID, "error", errUpdate)
+	}
 	n.Bus.Publish("node.events", core.Event{
 		Type: core.EventNodeFailed, SwarmID: n.Data.SwarmID, NodeID: n.Data.ID,
 		Payload: map[string]any{"error": err.Error()},

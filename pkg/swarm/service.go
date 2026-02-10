@@ -41,7 +41,7 @@ func NewService(dbPath string, provider providers.LLMProvider, registry *tools.T
 }
 
 func (s *Service) listen() {
-	s.Bus.Subscribe("node.events", func(e core.Event) {
+	if _, err := s.Bus.Subscribe("node.events", func(e core.Event) {
 		msg := ""
 		switch e.Type {
 		case core.EventNodeThinking: msg = fmt.Sprintf("🤖 [%s]: %s", e.NodeID[:4], e.Payload["content"])
@@ -51,7 +51,9 @@ func (s *Service) listen() {
 		if msg != "" {
 			select { case s.Outbound <- msg: default: }
 		}
-	})
+	}); err != nil {
+		fmt.Printf("Warning: Swarm event subscription failed: %v\n", err)
+	}
 }
 
 func (s *Service) HandleCommand(ctx context.Context, input string) string {
@@ -61,10 +63,16 @@ func (s *Service) HandleCommand(ctx context.Context, input string) string {
 	switch args[1] {
 	case "spawn":
 		goal := strings.Join(args[2:], " ")
-		id, _ := s.Orchestrator.SpawnSwarm(ctx, goal)
+		id, err := s.Orchestrator.SpawnSwarm(ctx, goal)
+		if err != nil {
+			return fmt.Sprintf("❌ Failed to spawn swarm: %v", err)
+		}
 		return fmt.Sprintf("🚀 Swarm ID: %s", id)
 	case "list":
-		swarms, _ := s.Store.ListSwarms(ctx, core.SwarmStatusActive)
+		swarms, err := s.Store.ListSwarms(ctx, core.SwarmStatusActive)
+		if err != nil {
+			return fmt.Sprintf("❌ Failed to list swarms: %v", err)
+		}
 		out := "Active Swarms:\n"
 		for _, sw := range swarms { out += fmt.Sprintf("- %s: %s\n", sw.ID, sw.Goal) }
 		return out
@@ -74,4 +82,10 @@ func (s *Service) HandleCommand(ctx context.Context, input string) string {
 		return "Stopped."
 	}
 	return "Unknown command"
+}
+
+func (s *Service) Stop() {
+	if s.Orchestrator != nil {
+		s.Orchestrator.StopAll()
+	}
 }

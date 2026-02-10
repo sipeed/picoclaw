@@ -41,14 +41,19 @@ func (o *Orchestrator) SetSharedMemory(m core.SharedMemory) { o.memory = m }
 
 func (o *Orchestrator) SpawnSwarm(ctx context.Context, goal string) (core.SwarmID, error) {
 	id := core.SwarmID(uuid.New().String())
-	o.store.CreateSwarm(ctx, &core.Swarm{ID: id, Goal: goal, Status: core.SwarmStatusActive, CreatedAt: time.Now()})
+	if err := o.store.CreateSwarm(ctx, &core.Swarm{ID: id, Goal: goal, Status: core.SwarmStatusActive, CreatedAt: time.Now()}); err != nil {
+		return "", fmt.Errorf("failed to create swarm in store: %w", err)
+	}
 
 	o.mu.Lock()
-	sCtx, cancel := context.WithCancel(context.Background())
+	sCtx, cancel := context.WithCancel(ctx)
 	o.activeSwarms[id] = cancel
 	o.mu.Unlock()
 
-	go o.RunSubTask(sCtx, id, "", "Manager", goal)
+	go func() {
+		defer o.StopSwarm(id)
+		o.RunSubTask(sCtx, id, "", "Manager", goal)
+	}()
 	return id, nil
 }
 
@@ -64,7 +69,9 @@ func (o *Orchestrator) RunSubTask(ctx context.Context, sid core.SwarmID, pid cor
 		Role: core.Role{Name: roleName, SystemPrompt: rc.SystemPrompt, Model: model},
 		Task: task, Status: core.NodeStatusPending,
 	}
-	o.store.CreateNode(ctx, node)
+	if err := o.store.CreateNode(ctx, node); err != nil {
+		return "", fmt.Errorf("failed to create node in store: %w", err)
+	}
 
 	nt := o.tools.Clone()
 	if roleName == "Manager" { nt.Register(NewDelegateTool(o, sid, node.ID)) }
@@ -77,19 +84,27 @@ func (o *Orchestrator) RunSubTask(ctx context.Context, sid core.SwarmID, pid cor
 	fail := make(chan error, 1)
 	sub, _ := o.bus.Subscribe("node.events", func(e core.Event) {
 		if e.NodeID == node.ID {
-			if e.Type == core.EventNodeCompleted { done <- e.Payload["output"].(string) }
+			if e.Type == core.EventNodeCompleted { 
+				output, _ := e.Payload["output"].(string)
+				done <- output 
+			}
 			if e.Type == core.EventNodeFailed { fail <- fmt.Errorf("%v", e.Payload["error"]) }
 		}
 	})
 	defer sub.Unsubscribe()
 
-	NewNodeActor(node, o.bus, o.store, o.llm, nt, o.policyChecker).Start(ctx)
+	NewNodeActor(node, o.bus, o.store, o.llm, nt, o.policyChecker, o.config).Start(ctx)
+
+	timeout := o.config.Limits.GlobalTimeout
+	if timeout <= 0 {
+		timeout = 15 * time.Minute
+	}
 
 	select {
 	case out := <-done: return out, nil
 	case err := <-fail: return "", err
 	case <-ctx.Done(): return "", ctx.Err()
-	case <-time.After(15 * time.Minute): return "", core.ErrTaskTimeout
+	case <-time.After(timeout): return "", core.ErrTaskTimeout
 	}
 }
 
@@ -98,6 +113,15 @@ func (o *Orchestrator) StopSwarm(id core.SwarmID) {
 	defer o.mu.Unlock()
 	if c, ok := o.activeSwarms[id]; ok {
 		c()
+		delete(o.activeSwarms, id)
+	}
+}
+
+func (o *Orchestrator) StopAll() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for id, cancel := range o.activeSwarms {
+		cancel()
 		delete(o.activeSwarms, id)
 	}
 }

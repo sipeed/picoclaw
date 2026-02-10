@@ -15,12 +15,13 @@ type MemoryConfig struct {
 }
 
 type LimitsConfig struct {
-	MaxDepth       int           `json:"max_depth" env:"PICOCLAW_SWARM_MAX_DEPTH"`
-	MaxNodes       int           `json:"max_nodes" env:"PICOCLAW_SWARM_MAX_NODES"`
-	GlobalTimeout  time.Duration `json:"global_timeout" env:"PICOCLAW_SWARM_GLOBAL_TIMEOUT"`
-	MaxRetries     int           `json:"max_retries" env:"PICOCLAW_SWARM_MAX_RETRIES"`
-	MaxIterations  int           `json:"max_iterations" env:"PICOCLAW_SWARM_MAX_ITERATIONS"`
-	PruningMsgKeep int           `json:"pruning_msg_keep" env:"PICOCLAW_SWARM_PRUNING_MSG_KEEP"`
+	MaxDepth           int           `json:"max_depth" env:"PICOCLAW_SWARM_MAX_DEPTH"`
+	MaxNodes           int           `json:"max_nodes" env:"PICOCLAW_SWARM_MAX_NODES"`
+	GlobalTimeout      time.Duration `json:"global_timeout" env:"PICOCLAW_SWARM_GLOBAL_TIMEOUT"`
+	MaxRetries         int           `json:"max_retries" env:"PICOCLAW_SWARM_MAX_RETRIES"`
+	MaxIterations      int           `json:"max_iterations" env:"PICOCLAW_SWARM_MAX_ITERATIONS"`
+	PruningMsgKeep     int           `json:"pruning_msg_keep" env:"PICOCLAW_SWARM_PRUNING_MSG_KEEP"`
+	SummarizeThreshold int           `json:"summarize_threshold" env:"PICOCLAW_SWARM_SUMMARIZE_THRESHOLD"`
 }
 
 type ResilienceConfig struct {
@@ -44,12 +45,13 @@ type Policy struct {
 func DefaultSwarmConfig() SwarmConfig {
 	return SwarmConfig{
 		Limits: LimitsConfig{
-			MaxDepth:       3,
-			MaxNodes:       10,
-			GlobalTimeout:  10 * time.Minute,
-			MaxRetries:     3,
-			MaxIterations:  10,
-			PruningMsgKeep: 6, // Keep last 6 messages when pruning
+			MaxDepth:           3,
+			MaxNodes:           10,
+			GlobalTimeout:      10 * time.Minute,
+			MaxRetries:         3,
+			MaxIterations:      10,
+			PruningMsgKeep:     6,  // Keep last 6 messages when pruning
+			SummarizeThreshold: 20, // Summarize after 20 messages
 		},
 		Resilience: ResilienceConfig{
 			RetryBackoff: 2 * time.Second,

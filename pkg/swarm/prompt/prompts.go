@@ -13,7 +13,7 @@ SWARM CONTEXT:
 - Your Role: %s
 
 INSTRUCTIONS:
-1. FOCUS: Stick strictly to your assigned role. Do not halllucinate capabilities you don't have.
+1. FOCUS: Stick strictly to your assigned role. Do not hallucinate capabilities you don't have.
 2. COLLABORATION: If you need information you can't get, ask for it clearly.
 3. OUTPUT: Provide clear, structured reasoning.
 4. TOOLS: Use available tools to gather facts. Do not guess.

@@ -17,14 +17,23 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil { return nil, err }
 	s := &SQLiteStore{db: db}
-	s.init()
+	if err := s.init(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
-func (s *SQLiteStore) init() {
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS swarms (id TEXT PRIMARY KEY, goal TEXT, status TEXT, created_at DATETIME);`)
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, swarm_id TEXT, parent_id TEXT, role JSON, task TEXT, status TEXT, output TEXT, stats JSON);`)
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS facts (swarm_id TEXT, content TEXT, confidence REAL, source TEXT, metadata JSON);`)
+func (s *SQLiteStore) init() error {
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS swarms (id TEXT PRIMARY KEY, goal TEXT, status TEXT, created_at DATETIME);`); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, swarm_id TEXT, parent_id TEXT, role JSON, task TEXT, status TEXT, output TEXT, stats JSON);`); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS facts (swarm_id TEXT, content TEXT, confidence REAL, source TEXT, metadata JSON);`); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *SQLiteStore) CreateSwarm(ctx context.Context, sw *core.Swarm) error {
@@ -35,8 +44,10 @@ func (s *SQLiteStore) CreateSwarm(ctx context.Context, sw *core.Swarm) error {
 func (s *SQLiteStore) GetSwarm(ctx context.Context, id core.SwarmID) (*core.Swarm, error) {
 	row := s.db.QueryRowContext(ctx, "SELECT id, goal, status, created_at FROM swarms WHERE id=?", id)
 	var sw core.Swarm
-	err := row.Scan(&sw.ID, &sw.Goal, &sw.Status, &sw.CreatedAt)
-	return &sw, err
+	if err := row.Scan(&sw.ID, &sw.Goal, &sw.Status, &sw.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &sw, nil
 }
 
 func (s *SQLiteStore) UpdateSwarm(ctx context.Context, sw *core.Swarm) error {
@@ -45,21 +56,32 @@ func (s *SQLiteStore) UpdateSwarm(ctx context.Context, sw *core.Swarm) error {
 }
 
 func (s *SQLiteStore) ListSwarms(ctx context.Context, status core.SwarmStatus) ([]*core.Swarm, error) {
-	rows, _ := s.db.QueryContext(ctx, "SELECT id, goal, status, created_at FROM swarms WHERE status=?", status)
+	rows, err := s.db.QueryContext(ctx, "SELECT id, goal, status, created_at FROM swarms WHERE status=?", status)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	var list []*core.Swarm
 	for rows.Next() {
 		var sw core.Swarm
-		rows.Scan(&sw.ID, &sw.Goal, &sw.Status, &sw.CreatedAt)
+		if err := rows.Scan(&sw.ID, &sw.Goal, &sw.Status, &sw.CreatedAt); err != nil {
+			return nil, err
+		}
 		list = append(list, &sw)
 	}
 	return list, nil
 }
 
 func (s *SQLiteStore) CreateNode(ctx context.Context, n *core.Node) error {
-	role, _ := json.Marshal(n.Role)
-	stats, _ := json.Marshal(n.Stats)
-	_, err := s.db.ExecContext(ctx, "INSERT INTO nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", n.ID, n.SwarmID, n.ParentID, role, n.Task, n.Status, n.Output, stats)
+	role, err := json.Marshal(n.Role)
+	if err != nil {
+		return err
+	}
+	stats, err := json.Marshal(n.Stats)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, "INSERT INTO nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", n.ID, n.SwarmID, n.ParentID, role, n.Task, n.Status, n.Output, stats)
 	return err
 }
 
@@ -67,36 +89,57 @@ func (s *SQLiteStore) GetNode(ctx context.Context, id core.NodeID) (*core.Node, 
 	row := s.db.QueryRowContext(ctx, "SELECT * FROM nodes WHERE id=?", id)
 	var n core.Node
 	var role, stats []byte
-	row.Scan(&n.ID, &n.SwarmID, &n.ParentID, &role, &n.Task, &n.Status, &n.Output, &stats)
-	json.Unmarshal(role, &n.Role)
-	json.Unmarshal(stats, &n.Stats)
+	if err := row.Scan(&n.ID, &n.SwarmID, &n.ParentID, &role, &n.Task, &n.Status, &n.Output, &stats); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(role, &n.Role); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(stats, &n.Stats); err != nil {
+		return nil, err
+	}
 	return &n, nil
 }
 
 func (s *SQLiteStore) UpdateNode(ctx context.Context, n *core.Node) error {
-	stats, _ := json.Marshal(n.Stats)
-	_, err := s.db.ExecContext(ctx, "UPDATE nodes SET status=?, output=?, stats=? WHERE id=?", n.Status, n.Output, stats, n.ID)
+	stats, err := json.Marshal(n.Stats)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, "UPDATE nodes SET status=?, output=?, stats=? WHERE id=?", n.Status, n.Output, stats, n.ID)
 	return err
 }
 
 func (s *SQLiteStore) GetSwarmNodes(ctx context.Context, id core.SwarmID) ([]*core.Node, error) {
-	rows, _ := s.db.QueryContext(ctx, "SELECT * FROM nodes WHERE swarm_id=?", id)
+	rows, err := s.db.QueryContext(ctx, "SELECT * FROM nodes WHERE swarm_id=?", id)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	var list []*core.Node
 	for rows.Next() {
 		var n core.Node
 		var role, stats []byte
-		rows.Scan(&n.ID, &n.SwarmID, &n.ParentID, &role, &n.Task, &n.Status, &n.Output, &stats)
-		json.Unmarshal(role, &n.Role)
-		json.Unmarshal(stats, &n.Stats)
+		if err := rows.Scan(&n.ID, &n.SwarmID, &n.ParentID, &role, &n.Task, &n.Status, &n.Output, &stats); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(role, &n.Role); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(stats, &n.Stats); err != nil {
+			return nil, err
+		}
 		list = append(list, &n)
 	}
 	return list, nil
 }
 
 func (s *SQLiteStore) SaveFact(ctx context.Context, f core.Fact) error {
-	meta, _ := json.Marshal(f.Metadata)
-	_, err := s.db.ExecContext(ctx, "INSERT INTO facts VALUES (?, ?, ?, ?, ?)", f.SwarmID, f.Content, f.Confidence, f.Source, meta)
+	meta, err := json.Marshal(f.Metadata)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, "INSERT INTO facts VALUES (?, ?, ?, ?, ?)", f.SwarmID, f.Content, f.Confidence, f.Source, meta)
 	return err
 }
 
@@ -109,12 +152,17 @@ func (s *SQLiteStore) SearchFacts(ctx context.Context, id core.SwarmID, q string
 		args = []any{"%" + q + "%", limit}
 	}
 
-	rows, _ := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	var res []core.FactResult
 	for rows.Next() {
 		var content string
-		rows.Scan(&content)
+		if err := rows.Scan(&content); err != nil {
+			return nil, err
+		}
 		res = append(res, core.FactResult{Content: content, Score: 1.0})
 	}
 	return res, nil
