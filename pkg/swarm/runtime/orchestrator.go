@@ -56,6 +56,13 @@ func (o *Orchestrator) SpawnSwarm(ctx context.Context, goal, channel, chatID str
 	go func() {
 		defer o.StopSwarm(id)
 		o.RunSubTask(sCtx, id, "", "Manager", goal)
+		
+		// Update swarm status to completed
+		sw, err := o.store.GetSwarm(context.Background(), id)
+		if err == nil {
+			sw.Status = core.SwarmStatusCompleted
+			o.store.UpdateSwarm(context.Background(), sw)
+		}
 	}()
 	return id, nil
 }

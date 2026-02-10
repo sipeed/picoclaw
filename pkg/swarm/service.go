@@ -42,11 +42,33 @@ func NewService(dbPath string, provider providers.LLMProvider, registry *tools.T
 
 func (s *Service) listen() {
 	if _, err := s.Bus.Subscribe("node.events", func(e core.Event) {
+		// --- Terminal Log (Lokal Only) ---
+		color := "\033[36m" // Cyan
+		if e.Type == "node.failed" { color = "\033[31m" } // Red
+		if e.Type == "node.completed" { color = "\033[32m" } // Green
+		
+		content := e.Payload["content"]
+		if content == nil { content = e.Payload["output"] }
+		if content == nil { content = e.Payload["error"] }
+
+		fmt.Printf("\n%s[SWARM LOG]\033[0m Node: %s | Type: %s | Content: %v\n", color, e.NodeID[:4], e.Type, content)
+		// ---------------------------------
+
 		msg := ""
 		switch e.Type {
-		case core.EventNodeThinking: msg = fmt.Sprintf("🤖 [%s]: %s", e.NodeID[:4], e.Payload["content"])
-		case core.EventNodeCompleted: msg = fmt.Sprintf("✅ [%s] Done.", e.NodeID[:4])
-		case core.EventNodeFailed: msg = fmt.Sprintf("❌ [%s] Failed: %v", e.NodeID[:4], e.Payload["error"])
+		case core.EventNodeThinking: 
+			msg = fmt.Sprintf("🤖 [%s]: %s", e.NodeID[:4], e.Payload["content"])
+		case core.EventNodeCompleted: 
+			// Cek apakah ini Manager (Root Node)
+			node, err := s.Store.GetNode(context.Background(), e.NodeID)
+			if err == nil && node.ParentID == "" {
+				// Ini Manager! Kirim hasil akhirnya.
+				msg = fmt.Sprintf("🏁 **FINAL RESULT FROM SWARM** 🏁\n\n%s", e.Payload["output"])
+			} else {
+				msg = fmt.Sprintf("✅ [%s] Done.", e.NodeID[:4])
+			}
+		case core.EventNodeFailed: 
+			msg = fmt.Sprintf("❌ [%s] Failed: %v", e.NodeID[:4], e.Payload["error"])
 		}
 		if msg != "" {
 			// Get swarm origin
