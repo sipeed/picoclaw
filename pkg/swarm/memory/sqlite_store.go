@@ -37,7 +37,7 @@ func (s *SQLiteStore) init() error {
 }
 
 func (s *SQLiteStore) CreateSwarm(ctx context.Context, sw *core.Swarm) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO swarms VALUES (?, ?, ?, ?)", sw.ID, sw.Goal, sw.Status, sw.CreatedAt)
+	_, err := s.db.ExecContext(ctx, "INSERT INTO swarms (id, goal, status, created_at) VALUES (?, ?, ?, ?)", sw.ID, sw.Goal, sw.Status, sw.CreatedAt)
 	return err
 }
 
@@ -81,12 +81,12 @@ func (s *SQLiteStore) CreateNode(ctx context.Context, n *core.Node) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, "INSERT INTO nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", n.ID, n.SwarmID, n.ParentID, role, n.Task, n.Status, n.Output, stats)
+	_, err = s.db.ExecContext(ctx, "INSERT INTO nodes (id, swarm_id, parent_id, role, task, status, output, stats) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", n.ID, n.SwarmID, n.ParentID, role, n.Task, n.Status, n.Output, stats)
 	return err
 }
 
 func (s *SQLiteStore) GetNode(ctx context.Context, id core.NodeID) (*core.Node, error) {
-	row := s.db.QueryRowContext(ctx, "SELECT * FROM nodes WHERE id=?", id)
+	row := s.db.QueryRowContext(ctx, "SELECT id, swarm_id, parent_id, role, task, status, output, stats FROM nodes WHERE id=?", id)
 	var n core.Node
 	var role, stats []byte
 	if err := row.Scan(&n.ID, &n.SwarmID, &n.ParentID, &role, &n.Task, &n.Status, &n.Output, &stats); err != nil {
@@ -111,7 +111,7 @@ func (s *SQLiteStore) UpdateNode(ctx context.Context, n *core.Node) error {
 }
 
 func (s *SQLiteStore) GetSwarmNodes(ctx context.Context, id core.SwarmID) ([]*core.Node, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT * FROM nodes WHERE swarm_id=?", id)
+	rows, err := s.db.QueryContext(ctx, "SELECT id, swarm_id, parent_id, role, task, status, output, stats FROM nodes WHERE swarm_id=?", id)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (s *SQLiteStore) SaveFact(ctx context.Context, f core.Fact) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, "INSERT INTO facts VALUES (?, ?, ?, ?, ?)", f.SwarmID, f.Content, f.Confidence, f.Source, meta)
+	_, err = s.db.ExecContext(ctx, "INSERT INTO facts (swarm_id, content, confidence, source, metadata) VALUES (?, ?, ?, ?, ?)", f.SwarmID, f.Content, f.Confidence, f.Source, meta)
 	return err
 }
 
