@@ -67,6 +67,9 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	}
 	log.Printf("Telegram bot @%s connected", botInfo.UserName)
 
+	// Start stream event handler
+	go c.handleStreamEvents(ctx)
+
 	go func() {
 		for {
 			select {
@@ -245,37 +248,6 @@ func (c *TelegramChannel) handleMessage(update tgbotapi.Update) {
 
 	log.Printf("Telegram message from %s: %s...", senderID, truncateString(content, 50))
 
-	// Thinking indicator
-	c.bot.Send(tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping))
-
-	stopChan := make(chan struct{})
-	c.stopThinking.Store(fmt.Sprintf("%d", chatID), stopChan)
-
-	pMsg, err := c.bot.Send(tgbotapi.NewMessage(chatID, "Thinking... 💭"))
-	if err == nil {
-		pID := pMsg.MessageID
-		c.placeholders.Store(fmt.Sprintf("%d", chatID), pID)
-
-		go func(cid int64, mid int, stop <-chan struct{}) {
-			dots := []string{".", "..", "..."}
-			emotes := []string{"💭", "🤔", "☁️"}
-			i := 0
-			ticker := time.NewTicker(2000 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-stop:
-					return
-				case <-ticker.C:
-					i++
-					text := fmt.Sprintf("Thinking%s %s", dots[i%len(dots)], emotes[i%len(emotes)])
-					edit := tgbotapi.NewEditMessageText(cid, mid, text)
-					c.bot.Send(edit)
-				}
-			}
-		}(chatID, pID, stopChan)
-	}
-
 	metadata := map[string]string{
 		"message_id": fmt.Sprintf("%d", message.MessageID),
 		"user_id":    fmt.Sprintf("%d", user.ID),
@@ -284,7 +256,21 @@ func (c *TelegramChannel) handleMessage(update tgbotapi.Update) {
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
 
-	c.HandleMessage(senderID, fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+	// Create session key
+	sessionKey := fmt.Sprintf("telegram:%d", chatID)
+
+	// Send inbound message with session key
+	msg := bus.InboundMessage{
+		Channel:    c.Name(),
+		SenderID:   senderID,
+		ChatID:     fmt.Sprintf("%d", chatID),
+		Content:    content,
+		Media:      mediaPaths,
+		Metadata:   metadata,
+		SessionKey: sessionKey,
+	}
+
+	c.BaseChannel.bus.PublishInbound(msg)
 }
 
 func (c *TelegramChannel) downloadPhoto(fileID string) string {
@@ -445,4 +431,102 @@ func escapeHTML(text string) string {
 	text = strings.ReplaceAll(text, "<", "&lt;")
 	text = strings.ReplaceAll(text, ">", "&gt;")
 	return text
+}
+
+// handleStreamEvents listens for streaming events and updates messages in real-time
+func (c *TelegramChannel) handleStreamEvents(ctx context.Context) {
+	// Track current status message for each chat
+	statusMessages := sync.Map{} // chatID -> messageID
+	lastUpdate := sync.Map{}     // chatID -> time.Time
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		event, ok := c.BaseChannel.bus.ConsumeStreamEvent(ctx)
+		if !ok {
+			continue
+		}
+
+		// Only handle events for telegram channel
+		if event.Channel != "telegram" {
+			continue
+		}
+
+		chatID, err := parseChatID(event.ChatID)
+		if err != nil {
+			continue
+		}
+
+		// Rate limiting: update at most once per second
+		if lastTime, ok := lastUpdate.Load(event.ChatID); ok {
+			if time.Since(lastTime.(time.Time)) < time.Second {
+				continue
+			}
+		}
+		lastUpdate.Store(event.ChatID, time.Now())
+
+		var statusText string
+		var shouldDelete bool
+
+		switch event.Type {
+		case bus.StreamEventThinking:
+			statusText = "💭 " + event.Content
+		case bus.StreamEventProgress:
+			statusText = "⏳ " + event.Content
+		case bus.StreamEventToolCall:
+			if toolName, ok := event.Metadata["tool_name"].(string); ok {
+				statusText = fmt.Sprintf("🔧 Executing tool: %s", toolName)
+			} else {
+				statusText = "🔧 " + event.Content
+			}
+		case bus.StreamEventToolResult:
+			if toolName, ok := event.Metadata["tool_name"].(string); ok {
+				statusText = fmt.Sprintf("✓ Tool %s completed", toolName)
+			} else {
+				statusText = "✓ " + event.Content
+			}
+		case bus.StreamEventComplete, bus.StreamEventContent:
+			// Delete status message on completion
+			shouldDelete = true
+		case bus.StreamEventError:
+			statusText = "❌ " + event.Content
+		}
+
+		if shouldDelete {
+			// Delete the status message
+			if msgID, ok := statusMessages.LoadAndDelete(event.ChatID); ok {
+				deleteMsg := tgbotapi.NewDeleteMessage(chatID, msgID.(int))
+				c.bot.Send(deleteMsg)
+			}
+			continue
+		}
+
+		if statusText == "" {
+			continue
+		}
+
+		// Update or create status message
+		if msgID, ok := statusMessages.Load(event.ChatID); ok {
+			// Update existing message
+			editMsg := tgbotapi.NewEditMessageText(chatID, msgID.(int), statusText)
+			if _, err := c.bot.Send(editMsg); err != nil {
+				// If edit fails, delete and create new
+				deleteMsg := tgbotapi.NewDeleteMessage(chatID, msgID.(int))
+				c.bot.Send(deleteMsg)
+				statusMessages.Delete(event.ChatID)
+			}
+		}
+
+		// Create new status message if none exists
+		if _, ok := statusMessages.Load(event.ChatID); !ok {
+			newMsg, err := c.bot.Send(tgbotapi.NewMessage(chatID, statusText))
+			if err == nil {
+				statusMessages.Store(event.ChatID, newMsg.MessageID)
+			}
+		}
+	}
 }

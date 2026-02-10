@@ -37,6 +37,7 @@ type Message struct {
 
 type LLMProvider interface {
 	Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error)
+	ChatStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}, callback func(chunk string)) (*LLMResponse, error)
 	GetDefaultModel() string
 }
 

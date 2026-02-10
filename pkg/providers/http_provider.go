@@ -7,6 +7,7 @@
 package providers
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -162,7 +163,173 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 }
 
 func (p *HTTPProvider) GetDefaultModel() string {
-	return ""
+	return "gpt-3.5-turbo"
+}
+
+// ChatStream performs a streaming chat request with real-time token generation
+func (p *HTTPProvider) ChatStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}, callback func(chunk string)) (*LLMResponse, error) {
+	if p.apiBase == "" {
+		return nil, fmt.Errorf("API base not configured")
+	}
+
+	requestBody := map[string]interface{}{
+		"model":    model,
+		"messages": messages,
+		"stream":   true, // Enable streaming
+	}
+
+	if len(tools) > 0 {
+		requestBody["tools"] = tools
+		requestBody["tool_choice"] = "auto"
+	}
+
+	if maxTokens, ok := options["max_tokens"].(int); ok {
+		requestBody["max_tokens"] = maxTokens
+	}
+
+	if temperature, ok := options["temperature"].(float64); ok {
+		requestBody["temperature"] = temperature
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" {
+		authHeader := "Bearer " + p.apiKey
+		req.Header.Set("Authorization", authHeader)
+	}
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error: %s", string(body))
+	}
+
+	// Parse streaming response
+	return p.parseStreamingResponse(resp.Body, callback)
+}
+
+func (p *HTTPProvider) parseStreamingResponse(body io.Reader, callback func(chunk string)) (*LLMResponse, error) {
+	scanner := bufio.NewScanner(body)
+	response := &LLMResponse{
+		Content:   "",
+		ToolCalls: []ToolCall{},
+	}
+
+	var contentBuilder strings.Builder
+	toolCallsMap := make(map[int]*ToolCall)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Skip empty lines
+		if line == "" {
+			continue
+		}
+
+		// SSE format: "data: {json}"
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+
+		// Check for stream end
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+		}
+
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+
+		choice := chunk.Choices[0]
+
+		// Handle content streaming
+		if choice.Delta.Content != "" {
+			contentBuilder.WriteString(choice.Delta.Content)
+			if callback != nil {
+				callback(choice.Delta.Content)
+			}
+		}
+
+		// Handle tool calls
+		for _, tc := range choice.Delta.ToolCalls {
+			if _, exists := toolCallsMap[tc.Index]; !exists {
+				toolCallsMap[tc.Index] = &ToolCall{
+					ID:        tc.ID,
+					Type:      tc.Type,
+					Name:      tc.Function.Name,
+					Arguments: make(map[string]interface{}),
+				}
+			}
+
+			// Accumulate function arguments
+			if tc.Function.Arguments != "" {
+				existing := toolCallsMap[tc.Index]
+				// Parse and merge arguments incrementally
+				var args map[string]interface{}
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err == nil {
+					for k, v := range args {
+						existing.Arguments[k] = v
+					}
+				}
+			}
+		}
+
+		// Set finish reason
+		if choice.FinishReason != "" {
+			response.FinishReason = choice.FinishReason
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading stream: %w", err)
+	}
+
+	response.Content = contentBuilder.String()
+
+	// Convert tool calls map to slice
+	for _, tc := range toolCallsMap {
+		response.ToolCalls = append(response.ToolCalls, *tc)
+	}
+
+	return response, nil
 }
 
 func CreateProvider(cfg *config.Config) (LLMProvider, error) {

@@ -142,7 +142,8 @@ func main() {
 
 func printHelp() {
 	fmt.Printf("%s picoclaw - Personal AI Assistant v%s\n\n", logo, version)
-	fmt.Println("Usage: picoclaw <command>\n")
+	fmt.Println("Usage: picoclaw <command>")
+	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
 	fmt.Println("  agent       Interact with the agent directly")
@@ -450,12 +451,41 @@ func agentCmd() {
 		os.Exit(1)
 	}
 
-	bus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, bus, provider)
+	msgBus := bus.NewMessageBus()
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
 	if message != "" {
 		ctx := context.Background()
-		response, err := agentLoop.ProcessDirect(ctx, message, sessionKey)
+		var response string
+		var err error
+
+		if agentLoop.IsStreamingEnabled() {
+			// Streaming mode - show live updates
+			response, err = agentLoop.ProcessDirectStreaming(ctx, message, sessionKey, func(event bus.StreamEvent) {
+				// Display streaming events for -m flag
+				switch event.Type {
+				case bus.StreamEventThinking:
+					fmt.Printf("\r%s 💭 %s", logo, event.Content)
+				case bus.StreamEventProgress:
+					fmt.Printf("\r%s ⏳ %s", logo, event.Content)
+				case bus.StreamEventToolCall:
+					fmt.Printf("\r%s 🔧 %s\n", logo, event.Content)
+				case bus.StreamEventToolResult:
+					fmt.Printf("%s ✓ %s\n", logo, event.Content)
+				case bus.StreamEventContent:
+					// Check if this is partial content (streaming)
+					if partial, ok := event.Metadata["partial"].(bool); ok && partial {
+						fmt.Print(event.Content)
+					}
+				case bus.StreamEventError:
+					fmt.Printf("\r%s ❌ %s\n", logo, event.Content)
+				}
+			})
+		} else {
+			// Non-streaming mode
+			response, err = agentLoop.ProcessDirect(ctx, message, sessionKey)
+		}
+
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
@@ -507,14 +537,90 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			return
 		}
 
-		ctx := context.Background()
-		response, err := agentLoop.ProcessDirect(ctx, input, sessionKey)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		// Create cancellable context for interrupt support
+		ctx, cancel := context.WithCancel(context.Background())
+
+		// Handle Ctrl+C during processing
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt)
+
+		done := make(chan bool)
+		var response string
+		var processErr error
+
+		if agentLoop.IsStreamingEnabled() {
+			// Streaming mode with live updates
+			var contentStarted bool
+			go func() {
+				response, processErr = agentLoop.ProcessDirectStreaming(ctx, input, sessionKey, func(event bus.StreamEvent) {
+					// Display streaming events
+					switch event.Type {
+					case bus.StreamEventThinking:
+						fmt.Printf("\r%s 💭 %s", logo, event.Content)
+					case bus.StreamEventProgress:
+						fmt.Printf("\r%s ⏳ %s", logo, event.Content)
+					case bus.StreamEventToolCall:
+						fmt.Printf("\r%s 🔧 %s\n", logo, event.Content)
+					case bus.StreamEventToolResult:
+						fmt.Printf("%s ✓ %s\n", logo, event.Content)
+					case bus.StreamEventContent:
+						// Check if this is partial content (streaming)
+						if partial, ok := event.Metadata["partial"].(bool); ok && partial {
+							if !contentStarted {
+								// Clear progress line and show logo
+								fmt.Print("\r\033[K")
+								fmt.Printf("%s ", logo)
+								contentStarted = true
+							}
+							// Print each chunk as it arrives (like typing)
+							fmt.Print(event.Content)
+						}
+					case bus.StreamEventError:
+						fmt.Printf("\r%s ❌ %s\n", logo, event.Content)
+					case bus.StreamEventComplete:
+						if contentStarted {
+							fmt.Println() // New line after streaming content
+							contentStarted = false
+						}
+					}
+				})
+				done <- true
+			}()
+		} else {
+			// Non-streaming mode - simple wait
+			go func() {
+				response, processErr = agentLoop.ProcessDirect(ctx, input, sessionKey)
+				done <- true
+			}()
+		}
+
+		// Wait for completion or interrupt
+		interrupted := false
+		select {
+		case <-done:
+			// Processing completed normally
+		case <-sigChan:
+			// User pressed Ctrl+C
+			interrupted = true
+			cancel()
+			fmt.Printf("\n%s Interrupting...\n", logo)
+			<-done // Wait for goroutine to finish
+		}
+
+		signal.Stop(sigChan)
+		close(sigChan)
+
+		if interrupted {
+			fmt.Printf("%s Interrupted\n\n", logo)
 			continue
 		}
 
-		fmt.Printf("\n%s %s\n\n", logo, response)
+		if processErr != nil {
+			fmt.Printf("Error: %v\n", processErr)
+			continue
+		}
+
+		fmt.Printf("%s %s\n\n", logo, response)
 	}
 }
 
@@ -542,10 +648,64 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			return
 		}
 
-		ctx := context.Background()
-		response, err := agentLoop.ProcessDirect(ctx, input, sessionKey)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		// Create cancellable context
+		ctx, cancel := context.WithCancel(context.Background())
+
+		done := make(chan bool)
+		var response string
+		var processErr error
+
+		if agentLoop.IsStreamingEnabled() {
+			// Streaming mode with live updates
+			var contentStarted bool
+			go func() {
+				response, processErr = agentLoop.ProcessDirectStreaming(ctx, input, sessionKey, func(event bus.StreamEvent) {
+					// Display streaming events
+					switch event.Type {
+					case bus.StreamEventThinking:
+						fmt.Printf("\r%s 💭 %s", logo, event.Content)
+					case bus.StreamEventProgress:
+						fmt.Printf("\r%s ⏳ %s", logo, event.Content)
+					case bus.StreamEventToolCall:
+						fmt.Printf("\r%s 🔧 %s\n", logo, event.Content)
+					case bus.StreamEventToolResult:
+						fmt.Printf("%s ✓ %s\n", logo, event.Content)
+					case bus.StreamEventContent:
+						// Check if this is partial content (streaming)
+						if partial, ok := event.Metadata["partial"].(bool); ok && partial {
+							if !contentStarted {
+								// Clear progress line and show logo
+								fmt.Print("\r\033[K")
+								fmt.Printf("%s ", logo)
+								contentStarted = true
+							}
+							// Print each chunk as it arrives (like typing)
+							fmt.Print(event.Content)
+						}
+					case bus.StreamEventError:
+						fmt.Printf("\r%s ❌ %s\n", logo, event.Content)
+					case bus.StreamEventComplete:
+						if contentStarted {
+							fmt.Println() // New line after streaming content
+							contentStarted = false
+						}
+					}
+				})
+				done <- true
+			}()
+		} else {
+			// Non-streaming mode - simple wait
+			go func() {
+				response, processErr = agentLoop.ProcessDirect(ctx, input, sessionKey)
+				done <- true
+			}()
+		}
+
+		<-done
+		cancel()
+
+		if processErr != nil {
+			fmt.Printf("Error: %v\n", processErr)
 			continue
 		}
 
