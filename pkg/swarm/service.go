@@ -42,11 +42,22 @@ func NewService(dbPath string, provider providers.LLMProvider, registry *tools.T
 
 func (s *Service) listen() {
 	if _, err := s.Bus.Subscribe("node.events", func(e core.Event) {
+		// --- Terminal Log (Local Only) ---
+		color := "\033[36m" // Cyan
+		if e.Type == "node.failed" { color = "\033[31m" } // Red
+		if e.Type == "node.completed" { color = "\033[32m" } // Green
+		
+		content := e.Payload["content"]
+		if content == nil { content = e.Payload["output"] }
+		if content == nil { content = e.Payload["error"] }
+
+		fmt.Printf("\n%s[SWARM LOG]\033[0m Node: %s | Type: %s | Content: %v\n", color, e.NodeID[:4], e.Type, content)
+		// ---------------------------------
 
 		msg := ""
 		switch e.Type {
 		case core.EventNodeThinking: 
-			// Cek apakah ini Manager atau Worker secara aman
+			// Safely check if this is a Manager or Worker node
 			node, err := s.Store.GetNode(context.Background(), e.NodeID)
 			content, _ := e.Payload["content"].(string)
 			
@@ -58,24 +69,24 @@ func (s *Service) listen() {
 			}
 
 			if isWorker {
-				// Ini WORKER! Jangan kirim teks panjangnya, cukup status saja.
+				// It's a WORKER! Don't send long raw text, just a status update.
 				if len(content) > 100 {
 					msg = fmt.Sprintf("🤖 [%s] %s is processing data...", e.NodeID[:4], roleName)
 				} else {
 					msg = fmt.Sprintf("🤖 [%s]: %s", e.NodeID[:4], content)
 				}
 			} else {
-				// Ini MANAGER (atau fallback)! Kirim lengkap.
+				// It's a MANAGER (or fallback)! Send full content.
 				msg = fmt.Sprintf("🧠 [Manager]: %s", content)
 			}
 		case core.EventNodeCompleted: 
-			// Cek apakah ini Manager (Root Node) secara aman
+			// Safely check if this is the Manager (Root Node)
 			node, err := s.Store.GetNode(context.Background(), e.NodeID)
 			if err == nil && node != nil && node.ParentID == "" {
-				// Ini Manager! Kirim hasil akhirnya.
+				// It's the Manager! Send the final synthesized result.
 				msg = fmt.Sprintf("🏁 **FINAL SYNTHESIZED RESULT** 🏁\n\n%s", e.Payload["output"])
 			} else {
-				// Worker selesai
+				// Worker completed its task
 				name := "Worker"
 				if node != nil { name = node.Role.Name }
 				msg = fmt.Sprintf("✅ [%s] %s finished its task.", e.NodeID[:4], name)
