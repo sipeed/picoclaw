@@ -57,15 +57,31 @@ func (s *Service) listen() {
 		msg := ""
 		switch e.Type {
 		case core.EventNodeThinking: 
-			msg = fmt.Sprintf("🤖 [%s]: %s", e.NodeID[:4], e.Payload["content"])
+			// Cek apakah ini Manager atau Worker
+			node, err := s.Store.GetNode(context.Background(), e.NodeID)
+			content, _ := e.Payload["content"].(string)
+			
+			if err == nil && node.ParentID != "" {
+				// Ini WORKER! Jangan kirim teks panjangnya, cukup status saja.
+				// Tapi kalau teksnya pendek (notifikasi internal), baru kirim.
+				if len(content) > 100 {
+					msg = fmt.Sprintf("🤖 [%s] %s is processing data...", e.NodeID[:4], node.Role.Name)
+				} else {
+					msg = fmt.Sprintf("🤖 [%s]: %s", e.NodeID[:4], content)
+				}
+			} else {
+				// Ini MANAGER! Kirim lengkap biar user tau progres summary-nya.
+				msg = fmt.Sprintf("🧠 [Manager]: %s", content)
+			}
 		case core.EventNodeCompleted: 
 			// Cek apakah ini Manager (Root Node)
 			node, err := s.Store.GetNode(context.Background(), e.NodeID)
 			if err == nil && node.ParentID == "" {
 				// Ini Manager! Kirim hasil akhirnya.
-				msg = fmt.Sprintf("🏁 **FINAL RESULT FROM SWARM** 🏁\n\n%s", e.Payload["output"])
+				msg = fmt.Sprintf("🏁 **FINAL SYNTHESIZED RESULT** 🏁\n\n%s", e.Payload["output"])
 			} else {
-				msg = fmt.Sprintf("✅ [%s] Done.", e.NodeID[:4])
+				// Worker selesai, cukup kasih tau status done.
+				msg = fmt.Sprintf("✅ [%s] %s finished its task.", e.NodeID[:4], node.Role.Name)
 			}
 		case core.EventNodeFailed: 
 			msg = fmt.Sprintf("❌ [%s] Failed: %v", e.NodeID[:4], e.Payload["error"])
