@@ -119,33 +119,82 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		c.stopThinking.Delete(msg.ChatID)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
+	// Split message if too long
+	chunks := splitText(msg.Content, 3800)
 
-	// Try to edit placeholder
-	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		c.placeholders.Delete(msg.ChatID)
-		editMsg := tgbotapi.NewEditMessageText(chatID, pID.(int), htmlContent)
-		editMsg.ParseMode = tgbotapi.ModeHTML
+	for i, chunk := range chunks {
+		htmlContent := markdownToTelegramHTML(chunk)
 
-		if _, err := c.bot.Send(editMsg); err == nil {
-			return nil
+		// Try to edit placeholder for the FIRST chunk only
+		if i == 0 {
+			if pID, ok := c.placeholders.Load(msg.ChatID); ok {
+				c.placeholders.Delete(msg.ChatID)
+				editMsg := tgbotapi.NewEditMessageText(chatID, pID.(int), htmlContent)
+				editMsg.ParseMode = tgbotapi.ModeHTML
+
+				if _, err := c.bot.Send(editMsg); err == nil {
+					continue
+				}
+				// Fallback to new message if edit fails
+			}
 		}
-		// Fallback to new message if edit fails
-	}
 
-	tgMsg := tgbotapi.NewMessage(chatID, htmlContent)
-	tgMsg.ParseMode = tgbotapi.ModeHTML
+		tgMsg := tgbotapi.NewMessage(chatID, htmlContent)
+		tgMsg.ParseMode = tgbotapi.ModeHTML
 
-	if _, err := c.bot.Send(tgMsg); err != nil {
-		log.Printf("HTML parse failed, falling back to plain text: %v", err)
-		tgMsg = tgbotapi.NewMessage(chatID, msg.Content)
-		tgMsg.ParseMode = ""
-		_, err = c.bot.Send(tgMsg)
-		return err
+		if _, err := c.bot.Send(tgMsg); err != nil {
+			log.Printf("HTML parse failed or chunk too long, falling back to plain text: %v", err)
+			tgMsg = tgbotapi.NewMessage(chatID, chunk)
+			tgMsg.ParseMode = ""
+			if _, err = c.bot.Send(tgMsg); err != nil {
+				return err
+			}
+		}
+		
+		// Small delay between chunks to preserve order and avoid rate limits
+		if i < len(chunks)-1 {
+			time.Sleep(200 * time.Millisecond)
+		}
 	}
 
 	return nil
 }
+
+func splitText(text string, limit int) []string {
+	if len(text) <= limit {
+		return []string{text}
+	}
+
+	var chunks []string
+	remaining := text
+	for len(remaining) > limit {
+		// Try to find a good place to split: double newline first
+		splitIdx := strings.LastIndex(remaining[:limit], "\n\n")
+		if splitIdx == -1 {
+			// Then single newline
+			splitIdx = strings.LastIndex(remaining[:limit], "\n")
+		}
+		if splitIdx == -1 {
+			// Then space
+			splitIdx = strings.LastIndex(remaining[:limit], " ")
+		}
+		if splitIdx == -1 {
+			// Force split at limit
+			splitIdx = limit
+		}
+
+		chunks = append(chunks, remaining[:splitIdx])
+		remaining = remaining[splitIdx:]
+		remaining = strings.TrimSpace(remaining)
+	}
+
+	if len(remaining) > 0 {
+		chunks = append(chunks, remaining)
+	}
+
+	return chunks
+}
+
 
 func (c *TelegramChannel) handleMessage(update tgbotapi.Update) {
 	message := update.Message
