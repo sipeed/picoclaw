@@ -19,7 +19,7 @@ type Service struct {
 	Orchestrator *runtime.Orchestrator
 	Store        core.SwarmStore
 	Bus          core.EventBus
-	Outbound     chan string
+	Outbound     chan core.RelayMessage
 }
 
 func NewService(dbPath string, provider providers.LLMProvider, registry *tools.ToolRegistry, cfg config.SwarmConfig, model string) (*Service, error) {
@@ -35,7 +35,7 @@ func NewService(dbPath string, provider providers.LLMProvider, registry *tools.T
 	orch := runtime.NewOrchestrator(store, eventBus, adapter, registry, cfg, model)
 	orch.SetSharedMemory(sharedMem)
 
-	s := &Service{Orchestrator: orch, Store: store, Bus: eventBus, Outbound: make(chan string, 100)}
+	s := &Service{Orchestrator: orch, Store: store, Bus: eventBus, Outbound: make(chan core.RelayMessage, 100)}
 	s.listen()
 	return s, nil
 }
@@ -49,21 +49,42 @@ func (s *Service) listen() {
 		case core.EventNodeFailed: msg = fmt.Sprintf("❌ [%s] Failed: %v", e.NodeID[:4], e.Payload["error"])
 		}
 		if msg != "" {
-			select { case s.Outbound <- msg: default: }
+			// Get swarm origin
+			sw, err := s.Store.GetSwarm(context.Background(), e.SwarmID)
+			if err == nil && sw.OriginChannel != "" {
+				select {
+				case s.Outbound <- core.RelayMessage{
+					Channel: sw.OriginChannel,
+					ChatID:  sw.OriginChatID,
+					Content: msg,
+				}:
+				default:
+				}
+			} else {
+				// Fallback to CLI
+				select {
+				case s.Outbound <- core.RelayMessage{
+					Channel: "cli",
+					ChatID:  "direct",
+					Content: msg,
+				}:
+				default:
+				}
+			}
 		}
 	}); err != nil {
 		fmt.Printf("Warning: Swarm event subscription failed: %v\n", err)
 	}
 }
 
-func (s *Service) HandleCommand(ctx context.Context, input string) string {
+func (s *Service) HandleCommand(ctx context.Context, channel, chatID, input string) string {
 	args := strings.Fields(input)
 	if len(args) < 2 { return "Usage: /swarm <spawn|list|stop|status|viz> [goal/id]" }
 
 	switch args[1] {
 	case "spawn":
 		goal := strings.Join(args[2:], " ")
-		id, err := s.Orchestrator.SpawnSwarm(ctx, goal)
+		id, err := s.Orchestrator.SpawnSwarm(ctx, goal, channel, chatID)
 		if err != nil {
 			return fmt.Sprintf("❌ Failed to spawn swarm: %v", err)
 		}

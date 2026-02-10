@@ -84,9 +84,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		go func() {
 			for msg := range al.swarm.Outbound {
 				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel: "cli", // Default to CLI for now, ideally dynamic
-					ChatID:  "direct",
-					Content: msg,
+					Channel: msg.Channel,
+					ChatID:  msg.ChatID,
+					Content: msg.Content,
 				})
 			}
 		}()
@@ -104,7 +104,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 			// Intercept /swarm commands
 			if al.swarm != nil && len(msg.Content) > 6 && msg.Content[:7] == "/swarm " {
-				response := al.swarm.HandleCommand(ctx, msg.Content)
+				response := al.swarm.HandleCommand(ctx, msg.Channel, msg.ChatID, msg.Content)
 				al.bus.PublishOutbound(bus.OutboundMessage{
 					Channel: msg.Channel,
 					ChatID:  msg.ChatID,
@@ -141,7 +141,7 @@ func (al *AgentLoop) Stop() {
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
 	// Intercept /swarm commands
 	if al.swarm != nil && len(content) > 6 && content[:7] == "/swarm " {
-		return al.swarm.HandleCommand(ctx, content), nil
+		return al.swarm.HandleCommand(ctx, "cli", "direct", content), nil
 	}
 
 	msg := bus.InboundMessage{

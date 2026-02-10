@@ -39,9 +39,12 @@ func NewOrchestrator(store core.SwarmStore, bus core.EventBus, llm core.LLMClien
 
 func (o *Orchestrator) SetSharedMemory(m core.SharedMemory) { o.memory = m }
 
-func (o *Orchestrator) SpawnSwarm(ctx context.Context, goal string) (core.SwarmID, error) {
+func (o *Orchestrator) SpawnSwarm(ctx context.Context, goal, channel, chatID string) (core.SwarmID, error) {
 	id := core.SwarmID(uuid.New().String())
-	if err := o.store.CreateSwarm(ctx, &core.Swarm{ID: id, Goal: goal, Status: core.SwarmStatusActive, CreatedAt: time.Now()}); err != nil {
+	if err := o.store.CreateSwarm(ctx, &core.Swarm{
+		ID: id, Goal: goal, Status: core.SwarmStatusActive, CreatedAt: time.Now(),
+		OriginChannel: channel, OriginChatID: chatID,
+	}); err != nil {
 		return "", fmt.Errorf("failed to create swarm in store: %w", err)
 	}
 

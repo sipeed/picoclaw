@@ -36,10 +36,12 @@ const (
 
 // --- Core Structs ---
 type Swarm struct {
-	ID         SwarmID   `json:"id"`
-	Goal       string    `json:"goal"`
-	Status     SwarmStatus `json:"status"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID            SwarmID   `json:"id"`
+	Goal          string    `json:"goal"`
+	Status        SwarmStatus `json:"status"`
+	CreatedAt     time.Time `json:"created_at"`
+	OriginChannel string    `json:"origin_channel"`
+	OriginChatID  string    `json:"origin_chat_id"`
 }
 
 type Node struct {
@@ -125,4 +127,11 @@ type Fact struct {
 type FactResult struct {
 	Content string  `json:"content"`
 	Score   float32 `json:"score"`
+}
+
+// --- Relay Types ---
+type RelayMessage struct {
+	Channel string
+	ChatID  string
+	Content string
 }

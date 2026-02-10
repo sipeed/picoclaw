@@ -24,7 +24,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 }
 
 func (s *SQLiteStore) init() error {
-	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS swarms (id TEXT PRIMARY KEY, goal TEXT, status TEXT, created_at DATETIME);`); err != nil {
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS swarms (id TEXT PRIMARY KEY, goal TEXT, status TEXT, created_at DATETIME, origin_channel TEXT, origin_chat_id TEXT);`); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, swarm_id TEXT, parent_id TEXT, role JSON, task TEXT, status TEXT, output TEXT, stats JSON);`); err != nil {
@@ -37,14 +37,14 @@ func (s *SQLiteStore) init() error {
 }
 
 func (s *SQLiteStore) CreateSwarm(ctx context.Context, sw *core.Swarm) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO swarms (id, goal, status, created_at) VALUES (?, ?, ?, ?)", sw.ID, sw.Goal, sw.Status, sw.CreatedAt)
+	_, err := s.db.ExecContext(ctx, "INSERT INTO swarms (id, goal, status, created_at, origin_channel, origin_chat_id) VALUES (?, ?, ?, ?, ?, ?)", sw.ID, sw.Goal, sw.Status, sw.CreatedAt, sw.OriginChannel, sw.OriginChatID)
 	return err
 }
 
 func (s *SQLiteStore) GetSwarm(ctx context.Context, id core.SwarmID) (*core.Swarm, error) {
-	row := s.db.QueryRowContext(ctx, "SELECT id, goal, status, created_at FROM swarms WHERE id=?", id)
+	row := s.db.QueryRowContext(ctx, "SELECT id, goal, status, created_at, origin_channel, origin_chat_id FROM swarms WHERE id=?", id)
 	var sw core.Swarm
-	if err := row.Scan(&sw.ID, &sw.Goal, &sw.Status, &sw.CreatedAt); err != nil {
+	if err := row.Scan(&sw.ID, &sw.Goal, &sw.Status, &sw.CreatedAt, &sw.OriginChannel, &sw.OriginChatID); err != nil {
 		return nil, err
 	}
 	return &sw, nil
@@ -56,7 +56,7 @@ func (s *SQLiteStore) UpdateSwarm(ctx context.Context, sw *core.Swarm) error {
 }
 
 func (s *SQLiteStore) ListSwarms(ctx context.Context, status core.SwarmStatus) ([]*core.Swarm, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, goal, status, created_at FROM swarms WHERE status=?", status)
+	rows, err := s.db.QueryContext(ctx, "SELECT id, goal, status, created_at, origin_channel, origin_chat_id FROM swarms WHERE status=?", status)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (s *SQLiteStore) ListSwarms(ctx context.Context, status core.SwarmStatus) (
 	var list []*core.Swarm
 	for rows.Next() {
 		var sw core.Swarm
-		if err := rows.Scan(&sw.ID, &sw.Goal, &sw.Status, &sw.CreatedAt); err != nil {
+		if err := rows.Scan(&sw.ID, &sw.Goal, &sw.Status, &sw.CreatedAt, &sw.OriginChannel, &sw.OriginChatID); err != nil {
 			return nil, err
 		}
 		list = append(list, &sw)
