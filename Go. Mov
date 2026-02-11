@@ -1,0 +1,124 @@
+<?php
+require_once 'config.php';
+
+class VideoTracker {
+        private $pdo;
+            
+                public function __construct($pdo) {
+                            $this->pdo = $pdo;
+                }
+                    
+                        // 🎯 تتبع شامل للزائر
+                            public function trackVisitor() {
+                                        $ip = $this->getRealIP();
+                                                $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+                                                        $referrer = $_SERVER['HTTP_REFERER'] ?? '';
+                                                                $session_id = session_id();
+                                                                        
+                                                                                // بيانات الجهاز
+                                                                                        $device = $this->parseUserAgent($user_agent);
+                                                                                                
+                                                                                                        // GeoIP
+                                                                                                                $geo = $this->getGeoIP($ip);
+                                                                                                                        
+                                                                                                                                // تسجيل في قاعدة البيانات
+                                                                                                                                        $stmt = $this->pdo->prepare("
+                                                                                                                                                    INSERT INTO video_trackers (session_id, ip, encrypted_ip, user_agent, 
+                                                                                                                                                                    os, browser, device_type, country, city, referrer, visit_time)
+                                                                                                                                                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                                                                                                                                                                                        ");
+                                                                                                                                                                                                
+                                                                                                                                                                                                        $stmt->execute([
+                                                                                                                                                                                                                        $session_id,
+                                                                                                                                                                                                                                    $ip,
+                                                                                                                                                                                                                                                $this->encryptIP($ip),
+                                                                                                                                                                                                                                                            $user_agent,
+                                                                                                                                                                                                                                                                        $device['os'],
+                                                                                                                                                                                                                                                                                    $device['browser'],
+                                                                                                                                                                                                                                                                                                $device['type'],
+                                                                                                                                                                                                                                                                                                            $geo['country'] ?? 'غير معروف',
+                                                                                                                                                                                                                                                                                                                        $geo['city'] ?? 'غير معروف',
+                                                                                                                                                                                                                                                                                                                                    $referrer
+                                                                                                                                                                                                        ]);
+                                                                                                                                                                                                                
+                                                                                                                                                                                                                        $_SESSION['tracked'] = true;
+                                                                                                                                                                                                                                $_SESSION['first_visit'] = time();
+                            }
+                                
+                                    // 🌍 الحصول على IP الحقيقي
+                                        private function getRealIP() {
+                                                    $headers = ['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 
+                                                                       'HTTP_X_FORWARDED', 'HTTP_X_CLUSTER_CLIENT_IP', 
+                                                                                          'HTTP_FORWARDED_FOR', 'HTTP_FORWARDED', 'REMOTE_ADDR'];
+                                                                                                  
+                                                                                                          foreach ($headers as $header) {
+                                                                                                                        if (isset($_SERVER[$header])) {
+                                                                                                                                            $ips = explode(',', $_SERVER[$header]);
+                                                                                                                                                            $ip = trim($ips[0]);
+                                                                                                                                                                            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                                                                                                                                                                                                    return $ip;
+                                                                                                                                                                            }
+                                                                                                                        }
+                                                                                                          }
+                                                                                                                  return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+                                        }
+                                            
+                                                // 🔒 تشفير IP
+                                                    private function encryptIP($ip) {
+                                                                $key = 'SIDI_VIDEO_TRACKER_2026';
+                                                                        return base64_encode(openssl_encrypt($ip, 'AES-256-CBC', $key, 0, 
+                                                                                           substr(hash('sha256', $key), 0, 16)));
+                                                    }
+                                                        
+                                                            // 📱 تحليل User Agent
+                                                                private function parseUserAgent($ua) {
+                                                                            $os = 'Unknown';
+                                                                                    $browser = 'Unknown';
+                                                                                            $type = 'Desktop';
+                                                                                                    
+                                                                                                            if (stripos($ua, 'Windows') !== false) $os = 'Windows';
+                                                                                                                    elseif (stripos($ua, 'Mac') !== false) $os = 'macOS';
+                                                                                                                            elseif (stripos($ua, 'Android') !== false) { $os = 'Android'; $type = 'Mobile'; }
+                                                                                                                                    elseif (stripos($ua, 'iPhone') !== false) { $os = 'iOS'; $type = 'Mobile'; }
+                                                                                                                                            elseif (stripos($ua, 'iPad') !== false) { $os = 'iOS'; $type = 'Tablet'; }
+                                                                                                                                                    
+                                                                                                                                                            if (stripos($ua, 'Chrome') !== false) $browser = 'Chrome';
+                                                                                                                                                                    elseif (stripos($ua, 'Firefox') !== false) $browser = 'Firefox';
+                                                                                                                                                                            elseif (stripos($ua, 'Safari') !== false) $browser = 'Safari';
+                                                                                                                                                                                    elseif (stripos($ua, 'Edge') !== false) $browser = 'Edge';
+                                                                                                                                                                                            
+                                                                                                                                                                                                    return compact('os', 'browser', 'type');
+                                                                }
+                                                                    
+                                                                        // 🗺️ GeoIP مجاني
+                                                                            private function getGeoIP($ip) {
+                                                                                        $url = "http://ip-api.com/json/{$ip}?fields=status,country,city,regionName,isp";
+                                                                                                $response = @file_get_contents($url);
+                                                                                                        return $response ? json_decode($response, true) : [];
+                                                                            }
+}
+
+// track.php -  Pixel Tracker
+if (basename($_SERVER['PHP_SELF']) === 'track.php') {
+        header('Content-Type: image/gif');
+            echo base64_decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+                $tracker = new VideoTracker($pdo);
+                    $tracker->trackVisitor();
+                        exit;
+}
+?><?php
+session_start();
+require_once 'config.php';<?php
+// Cloudflare-like WAF
+}
+                                                                            }
+                                                                }
+                                                    }
+                                                                                                                                                                            }
+                                                                                                                        }
+                                                                                                          }
+                                        }
+                                                                                                                                                                                                        ])
+                            }
+                }
+}
