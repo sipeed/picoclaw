@@ -50,7 +50,12 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	}
 
 	if maxTokens, ok := options["max_tokens"].(int); ok {
-		requestBody["max_tokens"] = maxTokens
+		lowerModel := strings.ToLower(model)
+		if strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "o1") {
+			requestBody["max_completion_tokens"] = maxTokens
+		} else {
+			requestBody["max_tokens"] = maxTokens
+		}
 	}
 
 	if temperature, ok := options["temperature"].(float64); ok {
@@ -128,7 +133,6 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 		arguments := make(map[string]interface{})
 		name := ""
 
-		// Handle OpenAI format with nested function object
 		if tc.Type == "function" && tc.Function != nil {
 			name = tc.Function.Name
 			if tc.Function.Arguments != "" {
@@ -137,7 +141,6 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 				}
 			}
 		} else if tc.Function != nil {
-			// Legacy format without type field
 			name = tc.Function.Name
 			if tc.Function.Arguments != "" {
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
@@ -181,35 +184,35 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			apiBase = "https://openrouter.ai/api/v1"
 		}
 
-	case strings.Contains(lowerModel, "claude") || strings.HasPrefix(model, "anthropic/"):
+	case (strings.Contains(lowerModel, "claude") || strings.HasPrefix(model, "anthropic/")) && cfg.Providers.Anthropic.APIKey != "":
 		apiKey = cfg.Providers.Anthropic.APIKey
 		apiBase = cfg.Providers.Anthropic.APIBase
 		if apiBase == "" {
 			apiBase = "https://api.anthropic.com/v1"
 		}
 
-	case strings.Contains(lowerModel, "gpt") || strings.HasPrefix(model, "openai/"):
+	case (strings.Contains(lowerModel, "gpt") || strings.HasPrefix(model, "openai/")) && cfg.Providers.OpenAI.APIKey != "":
 		apiKey = cfg.Providers.OpenAI.APIKey
 		apiBase = cfg.Providers.OpenAI.APIBase
 		if apiBase == "" {
 			apiBase = "https://api.openai.com/v1"
 		}
 
-	case strings.Contains(lowerModel, "gemini") || strings.HasPrefix(model, "google/"):
+	case (strings.Contains(lowerModel, "gemini") || strings.HasPrefix(model, "google/")) && cfg.Providers.Gemini.APIKey != "":
 		apiKey = cfg.Providers.Gemini.APIKey
 		apiBase = cfg.Providers.Gemini.APIBase
 		if apiBase == "" {
 			apiBase = "https://generativelanguage.googleapis.com/v1beta"
 		}
 
-	case strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zhipu") || strings.Contains(lowerModel, "zai"):
+	case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zhipu") || strings.Contains(lowerModel, "zai")) && cfg.Providers.Zhipu.APIKey != "":
 		apiKey = cfg.Providers.Zhipu.APIKey
 		apiBase = cfg.Providers.Zhipu.APIBase
 		if apiBase == "" {
 			apiBase = "https://open.bigmodel.cn/api/paas/v4"
 		}
 
-	case strings.Contains(lowerModel, "groq") || strings.HasPrefix(model, "groq/"):
+	case (strings.Contains(lowerModel, "groq") || strings.HasPrefix(model, "groq/")) && cfg.Providers.Groq.APIKey != "":
 		apiKey = cfg.Providers.Groq.APIKey
 		apiBase = cfg.Providers.Groq.APIBase
 		if apiBase == "" {
