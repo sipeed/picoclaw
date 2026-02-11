@@ -83,7 +83,7 @@
 ### 🐜 Innovative Low-Footprint Deploy
 PicoClaw can be deployed on almost any Linux device!
 
-- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html)  E(Ethernet) or W(WiFi6) version, for Minimal Home Assitant
+- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html)  E(Ethernet) or W(WiFi6) version, for Minimal Home Assistant
 - $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), or $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) for Automated Server Maintenance
 - $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) or $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) for Smart Monitoring
 
@@ -144,7 +144,7 @@ picoclaw onboard
   "providers": {
     "openrouter": {
       "api_key": "xxx",
-      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+      "api_base": "https://openrouter.ai/api/v1"
     }
   },
   "tools": {
@@ -165,7 +165,7 @@ picoclaw onboard
 
 > **Note**: See `config.example.json` for a complete configuration template.
 
-**3. Chat**
+**4. Chat**
 
 ```bash
 picoclaw agent -m "What is 2+2?"
@@ -177,14 +177,13 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, or DingTalk
+Talk to your picoclaw through Telegram
 
 | Channel | Setup |
 |---------|-------|
 | **Telegram** | Easy (just a token) |
 | **Discord** | Easy (bot token + intents) |
 | **QQ** | Easy (AppID + AppSecret) |
-| **DingTalk** | Medium (app credentials) |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -296,39 +295,6 @@ picoclaw gateway
 ```
 </details>
 
-<details>
-<summary><b>DingTalk</b></summary>
-
-**1. Create a bot**
-
-- Go to [Open Platform](https://open.dingtalk.com/)
-- Create an internal app
-- Copy Client ID and Client Secret
-
-**2. Configure**
-
-```json
-{
-  "channels": {
-    "dingtalk": {
-      "enabled": true,
-      "client_id": "YOUR_CLIENT_ID",
-      "client_secret": "YOUR_CLIENT_SECRET",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> Set `allow_from` to empty to allow all users, or specify QQ numbers to restrict access.
-
-**3. Run**
-
-```bash
-picoclaw gateway
-```
-</details>
-
 ## ⚙️ Configuration
 
 Config file: `~/.picoclaw/config.json`
@@ -396,17 +362,17 @@ picoclaw agent -m "Hello"
   },
   "providers": {
     "openrouter": {
-      "apiKey": "sk-or-v1-xxx"
+      "api_key": "sk-or-v1-xxx"
     },
     "groq": {
-      "apiKey": "gsk_xxx"
+      "api_key": "gsk_xxx"
     }
   },
   "channels": {
     "telegram": {
       "enabled": true,
       "token": "123456:ABC...",
-      "allowFrom": ["123456789"]
+      "allow_from": ["123456789"]
     },
     "discord": {
       "enabled": true,
@@ -418,11 +384,11 @@ picoclaw agent -m "Hello"
     },
     "feishu": {
       "enabled": false,
-      "appId": "cli_xxx",
-      "appSecret": "xxx",
-      "encryptKey": "",
-      "verificationToken": "",
-      "allowFrom": []
+      "app_id": "cli_xxx",
+      "app_secret": "xxx",
+      "encrypt_key": "",
+      "verification_token": "",
+      "allow_from": []
     },
     "qq": {
       "enabled": false,
@@ -434,7 +400,7 @@ picoclaw agent -m "Hello"
   "tools": {
     "web": {
       "search": {
-        "apiKey": "BSA..."
+        "api_key": "BSA..."
       }
     }
   }
