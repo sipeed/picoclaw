@@ -1,0 +1,30 @@
+name: Build Fixed PicoClaw
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: # Allows you to trigger it manually
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21' # PicoClaw usually needs 1.21+
+
+      - name: Build Windows Binary
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o picoclaw-fixed.exe ./cmd/picoclaw
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: picoclaw-windows-binary
+          path: picoclaw-fixed.exe
