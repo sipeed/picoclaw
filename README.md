@@ -96,6 +96,14 @@ PicoClaw can be deployed on almost any Linux device!
 
 ## 📦 Install
 
+Choose your preferred installation method:
+
+| Method | Best For | Setup Time | Updates |
+|--------|----------|------------|---------|
+| 🐳 **Docker** | Quick start, isolated environment | 2 min | `docker-compose pull` |
+| 📦 **Binary** | Production, minimal dependencies | 1 min | Download new release |
+| 🔨 **Source** | Development, latest features | 5 min | `git pull && make build` |
+
 ### Install with precompiled binary
 
 Download the firmware for your platform from the [release](https://github.com/sipeed/picoclaw/releases) page.
@@ -118,7 +126,76 @@ make build-all
 make install
 ```
 
-### 🚀 Quick Start
+### � Run with Docker (Easiest, One Command!)
+
+**Prerequisites**: Docker and Docker Compose installed on your system.
+**Quick Start (Automated)**
+
+```bash
+# Linux/macOS
+./docker-quickstart.sh
+
+# Windows
+docker-quickstart.bat
+```
+
+**Manual Setup**
+**1. Clone and configure**
+
+```bash
+git clone https://github.com/sipeed/picoclaw.git
+cd picoclaw
+
+# Create config from example
+cp config.example.json config.json
+```
+
+**2. Edit config.json with your API keys**
+
+```bash
+# Edit config.json with your favorite editor
+# Add your API keys for providers (OpenRouter, Zhipu, etc.)
+nano config.json  # or vim, code, etc.
+```
+
+**3. Start with one command**
+
+```bash
+docker-compose up -d
+
+# Or using Make
+make docker-up
+```
+
+**4. Interact with PicoClaw**
+
+```bash
+# Interactive mode
+docker-compose exec picoclaw picoclaw agent
+
+# Run a single command
+docker-compose exec picoclaw picoclaw agent -m "What is 2+2?"
+
+# Check logs
+docker-compose logs -f picoclaw
+# Or: make docker-logs
+
+# Stop the container
+docker-compose down
+# Or: make docker-down
+```
+
+**Docker Features:**
+- ✅ **One command start**: `docker-compose up -d`
+- ✅ **Persistent storage**: Workspace data preserved in Docker volumes
+- ✅ **Easy updates**: `docker-compose pull && docker-compose up -d`
+- ✅ **Resource control**: Configurable CPU/memory limits
+- ✅ **Multi-platform**: Works on x86_64, ARM64
+
+> [!NOTE]
+> The Docker setup mounts `config.json` from your host, so you can easily update configuration without rebuilding the image.
+
+### �🚀 Quick Start
 
 > [!TIP]
 > Set your API key in `~/.picoclaw/config.json`.

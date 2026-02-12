@@ -22,5 +22,8 @@ coverage.html
 # OS
 .DS_Store
 
+# Docker
+.env
+
 # Ralph workspace
 ralph/

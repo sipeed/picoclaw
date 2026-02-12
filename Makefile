@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test
+.PHONY: all build install uninstall clean help test docker-build docker-up docker-down docker-restart docker-logs docker-shell docker-clean
 
 # Build variables
 BINARY_NAME=picoclaw
@@ -151,6 +151,50 @@ deps:
 run: build
 	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
 
+## docker-build: Build Docker image
+docker-build:
+	@echo "Building Docker image..."
+	@docker build --build-arg VERSION=$(VERSION) -t picoclaw:latest .
+	@echo "Docker image built successfully"
+
+## docker-up: Start picoclaw with docker-compose
+docker-up:
+	@echo "Starting picoclaw with docker-compose..."
+	@if [ ! -f config.json ]; then \
+		echo "Warning: config.json not found. Creating from config.example.json..."; \
+		cp config.example.json config.json; \
+		echo "Please edit config.json with your API keys before using picoclaw."; \
+	fi
+	@docker-compose up -d
+	@echo "picoclaw is running. Use 'make docker-logs' to view logs"
+
+## docker-down: Stop picoclaw docker-compose services
+docker-down:
+	@echo "Stopping picoclaw services..."
+	@docker-compose down
+	@echo "Services stopped"
+
+## docker-restart: Restart picoclaw docker-compose services
+docker-restart:
+	@echo "Restarting picoclaw services..."
+	@docker-compose restart
+	@echo "Services restarted"
+
+## docker-logs: View picoclaw docker logs
+docker-logs:
+	@docker-compose logs -f picoclaw
+
+## docker-shell: Open shell in picoclaw container
+docker-shell:
+	@docker-compose exec picoclaw sh
+
+## docker-clean: Remove docker containers, volumes, and images
+docker-clean:
+	@echo "Removing docker containers, volumes, and images..."
+	@docker-compose down -v
+	@docker rmi picoclaw:latest 2>/dev/null || true
+	@echo "Docker cleanup complete"
+
 ## help: Show this help message
 help:
 	@echo "picoclaw Makefile"
@@ -166,6 +210,8 @@ help:
 	@echo "  make install            # Install to ~/.local/bin"
 	@echo "  make uninstall          # Remove from /usr/local/bin"
 	@echo "  make install-skills     # Install skills to workspace"
+	@echo "  make docker-up          # Start with Docker"
+	@echo "  make docker-logs        # View Docker logs"
 	@echo ""
 	@echo "Environment Variables:"
 	@echo "  INSTALL_PREFIX          # Installation prefix (default: ~/.local)"

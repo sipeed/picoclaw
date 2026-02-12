@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  picoclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-docker}
+    image: picoclaw:latest
+    container_name: picoclaw
+    restart: unless-stopped
+    
+    # Environment variables (optional, can also be set in config.json)
+    environment:
+      - TZ=UTC
+      # Uncomment to override config values via environment
+      # - PICOCLAW_MODEL=glm-4.7
+      # - PICOCLAW_OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      # - PICOCLAW_BRAVE_API_KEY=${BRAVE_API_KEY}
+    
+    # Volumes for persistence
+    volumes:
+      # Config file - create from config.example.json
+      - ./config.json:/root/.picoclaw/config.json:ro
+      # Workspace for agent operations
+      - picoclaw-workspace:/root/.picoclaw/workspace
+      # Optional: Mount custom skills
+      # - ./custom-skills:/app/custom-skills:ro
+    
+    # Ports (uncomment if using network channels)
+    ports:
+      # MaixCAM channel
+      - "18790:18790"
+      # Add other ports as needed for your channels
+    
+    # Network mode (uncomment if needed)
+    # network_mode: host
+    
+    # Interactive mode for CLI usage
+    stdin_open: true
+    tty: true
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "picoclaw", "version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Resource limits (adjust based on your needs)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 128M
+
+volumes:
+  picoclaw-workspace:
+    driver: local
