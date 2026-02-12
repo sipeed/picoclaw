@@ -1,10 +1,6 @@
 services:
   - type: web
     name: picoclaw
-    env: go
+    env: docker
     plan: free
-    buildCommand: go build -tags netgo -ldflags "-s -w" -o app
-    startCommand: ./app
-    envVars:
-      - key: GO_VERSION
-        value: 1.25.7
+    dockerfilePath: ./Dockerfile
