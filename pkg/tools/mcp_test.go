@@ -169,36 +169,28 @@ func TestLoadMCPTools_InvalidServerAggregatesError(t *testing.T) {
 }
 
 func TestBuildTransport_CommandTerminateDefaults(t *testing.T) {
-	client := newMCPClient(config.MCPServerConfig{
+	assertCommandTransportTerminateDuration(t, config.MCPServerConfig{
 		Name:      "default-terminate",
 		Enabled:   true,
 		Transport: "command",
 		Command:   "test-command",
-	}, "")
-
-	tr, err := client.buildTransport()
-	if err != nil {
-		t.Fatalf("buildTransport() error: %v", err)
-	}
-
-	cmdTr, ok := tr.(*mcp.CommandTransport)
-	if !ok {
-		t.Fatalf("buildTransport() returned %T, want *mcp.CommandTransport", tr)
-	}
-	if cmdTr.TerminateDuration != defaultMCPTerminateWait {
-		t.Fatalf("TerminateDuration = %v, want %v", cmdTr.TerminateDuration, defaultMCPTerminateWait)
-	}
+	}, defaultMCPTerminateWait)
 }
 
 func TestBuildTransport_CommandTerminateOverride(t *testing.T) {
-	client := newMCPClient(config.MCPServerConfig{
+	assertCommandTransportTerminateDuration(t, config.MCPServerConfig{
 		Name:               "override-terminate",
 		Enabled:            true,
 		Transport:          "command",
 		Command:            "test-command",
 		TerminateTimeoutMS: 2500,
-	}, "")
+	}, 2500*time.Millisecond)
+}
 
+func assertCommandTransportTerminateDuration(t *testing.T, cfg config.MCPServerConfig, want time.Duration) {
+	t.Helper()
+
+	client := newMCPClient(cfg, "")
 	tr, err := client.buildTransport()
 	if err != nil {
 		t.Fatalf("buildTransport() error: %v", err)
@@ -208,8 +200,8 @@ func TestBuildTransport_CommandTerminateOverride(t *testing.T) {
 	if !ok {
 		t.Fatalf("buildTransport() returned %T, want *mcp.CommandTransport", tr)
 	}
-	if cmdTr.TerminateDuration != 2500*time.Millisecond {
-		t.Fatalf("TerminateDuration = %v, want %v", cmdTr.TerminateDuration, 2500*time.Millisecond)
+	if cmdTr.TerminateDuration != want {
+		t.Fatalf("TerminateDuration = %v, want %v", cmdTr.TerminateDuration, want)
 	}
 }
 

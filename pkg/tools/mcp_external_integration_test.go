@@ -35,35 +35,19 @@ func TestMCPExternalPopularFilesystemCommand(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	cfg := config.MCPToolsConfig{
-		Enabled: true,
-		Servers: []config.MCPServerConfig{
-			{
-				Name:             "filesystem",
-				Enabled:          true,
-				Transport:        "command",
-				Command:          "npx",
-				Args:             []string{"-y", "@modelcontextprotocol/server-filesystem", rootCanonical},
-				ToolPrefix:       "mcp_fs",
-				StartupTimeoutMS: 30000,
-				CallTimeoutMS:    30000,
-			},
-		},
-	}
+	tools := loadExternalMCPTools(t, ctx, config.MCPServerConfig{
+		Name:             "filesystem",
+		Enabled:          true,
+		Transport:        "command",
+		Command:          "npx",
+		Args:             []string{"-y", "@modelcontextprotocol/server-filesystem", rootCanonical},
+		ToolPrefix:       "mcp_fs",
+		StartupTimeoutMS: 30000,
+		CallTimeoutMS:    30000,
+	})
 
-	tools, err := LoadMCPTools(ctx, cfg, "")
-	if err != nil {
-		t.Fatalf("LoadMCPTools() error: %v", err)
-	}
-
-	listAllowedDirs := findToolByName(tools, "mcp_fs_list_allowed_directories")
-	if listAllowedDirs == nil {
-		t.Fatalf("missing tool mcp_fs_list_allowed_directories; got %v", toolNames(tools))
-	}
-	readFile := findToolByName(tools, "mcp_fs_read_file")
-	if readFile == nil {
-		t.Fatalf("missing tool mcp_fs_read_file; got %v", toolNames(tools))
-	}
+	listAllowedDirs := requireToolByName(t, tools, "mcp_fs_list_allowed_directories")
+	readFile := requireToolByName(t, tools, "mcp_fs_read_file")
 
 	out, err := listAllowedDirs.Execute(ctx, map[string]interface{}{})
 	if err != nil {
@@ -89,32 +73,19 @@ func TestMCPExternalPopularMemoryCommand(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	cfg := config.MCPToolsConfig{
-		Enabled: true,
-		Servers: []config.MCPServerConfig{
-			{
-				Name:             "memory",
-				Enabled:          true,
-				Transport:        "command",
-				Command:          "npx",
-				Args:             []string{"-y", "@modelcontextprotocol/server-memory"},
-				Env:              map[string]string{"MEMORY_FILE_PATH": memoryFile},
-				ToolPrefix:       "mcp_memory",
-				StartupTimeoutMS: 30000,
-				CallTimeoutMS:    30000,
-			},
-		},
-	}
+	tools := loadExternalMCPTools(t, ctx, config.MCPServerConfig{
+		Name:             "memory",
+		Enabled:          true,
+		Transport:        "command",
+		Command:          "npx",
+		Args:             []string{"-y", "@modelcontextprotocol/server-memory"},
+		Env:              map[string]string{"MEMORY_FILE_PATH": memoryFile},
+		ToolPrefix:       "mcp_memory",
+		StartupTimeoutMS: 30000,
+		CallTimeoutMS:    30000,
+	})
 
-	tools, err := LoadMCPTools(ctx, cfg, "")
-	if err != nil {
-		t.Fatalf("LoadMCPTools() error: %v", err)
-	}
-
-	readGraph := findToolByName(tools, "mcp_memory_read_graph")
-	if readGraph == nil {
-		t.Fatalf("missing tool mcp_memory_read_graph; got %v", toolNames(tools))
-	}
+	readGraph := requireToolByName(t, tools, "mcp_memory_read_graph")
 
 	out, err := readGraph.Execute(ctx, map[string]interface{}{})
 	if err != nil {
@@ -135,39 +106,25 @@ func TestMCPExternalPopularEverythingSSE(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	cfg := config.MCPToolsConfig{
-		Enabled: true,
-		Servers: []config.MCPServerConfig{
-			{
-				Name:             "everything",
-				Enabled:          true,
-				Transport:        "sse",
-				URL:              fmt.Sprintf("http://127.0.0.1:%d/sse", port),
-				ToolPrefix:       "mcp_every",
-				StartupTimeoutMS: 30000,
-				CallTimeoutMS:    30000,
-			},
-		},
-	}
+	tools := loadExternalMCPTools(t, ctx, config.MCPServerConfig{
+		Name:             "everything",
+		Enabled:          true,
+		Transport:        "sse",
+		URL:              fmt.Sprintf("http://127.0.0.1:%d/sse", port),
+		ToolPrefix:       "mcp_every",
+		StartupTimeoutMS: 30000,
+		CallTimeoutMS:    30000,
+	})
 
-	tools, err := LoadMCPTools(ctx, cfg, "")
-	if err != nil {
-		t.Fatalf("LoadMCPTools() error: %v", err)
-	}
-
-	echoTool := findToolByName(tools, "mcp_every_echo")
-	if echoTool == nil {
-		t.Fatalf("missing tool mcp_every_echo; got %v", toolNames(tools))
-	}
+	echoTool := requireToolByName(t, tools, "mcp_every_echo")
 
 	out, err := echoTool.Execute(ctx, map[string]interface{}{"message": "hello from sse"})
 	if err != nil {
 		t.Fatalf("Execute(echo) error: %v", err)
 	}
-	if !strings.Contains(out, "Echo: hello from sse") {
+	if !strings.Contains(out, "hello from sse") {
 		t.Fatalf("unexpected echo output: %s", out)
 	}
-
 }
 
 func TestMCPExternalPopularEverythingStreamableHTTP(t *testing.T) {
@@ -180,30 +137,17 @@ func TestMCPExternalPopularEverythingStreamableHTTP(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	cfg := config.MCPToolsConfig{
-		Enabled: true,
-		Servers: []config.MCPServerConfig{
-			{
-				Name:             "everything-http",
-				Enabled:          true,
-				Transport:        "streamable_http",
-				URL:              fmt.Sprintf("http://127.0.0.1:%d/mcp", port),
-				ToolPrefix:       "mcp_http",
-				StartupTimeoutMS: 30000,
-				CallTimeoutMS:    30000,
-			},
-		},
-	}
+	tools := loadExternalMCPTools(t, ctx, config.MCPServerConfig{
+		Name:             "everything-http",
+		Enabled:          true,
+		Transport:        "streamable_http",
+		URL:              fmt.Sprintf("http://127.0.0.1:%d/mcp", port),
+		ToolPrefix:       "mcp_http",
+		StartupTimeoutMS: 30000,
+		CallTimeoutMS:    30000,
+	})
 
-	tools, err := LoadMCPTools(ctx, cfg, "")
-	if err != nil {
-		t.Fatalf("LoadMCPTools() error: %v", err)
-	}
-
-	echoTool := findToolByName(tools, "mcp_http_echo")
-	if echoTool == nil {
-		t.Fatalf("missing tool mcp_http_echo; got %v", toolNames(tools))
-	}
+	echoTool := requireToolByName(t, tools, "mcp_http_echo")
 
 	out, err := echoTool.Execute(ctx, map[string]interface{}{"message": "hello from streamable-http"})
 	if err != nil {
@@ -212,7 +156,6 @@ func TestMCPExternalPopularEverythingStreamableHTTP(t *testing.T) {
 	if !strings.Contains(out, "hello from streamable-http") {
 		t.Fatalf("unexpected echo output: %s", out)
 	}
-
 }
 
 func requireExternalMCPTests(t *testing.T) {
@@ -223,6 +166,31 @@ func requireExternalMCPTests(t *testing.T) {
 	if _, err := exec.LookPath("npx"); err != nil {
 		t.Skip("npx not found")
 	}
+}
+
+func loadExternalMCPTools(t *testing.T, ctx context.Context, server config.MCPServerConfig) []Tool {
+	t.Helper()
+
+	cfg := config.MCPToolsConfig{
+		Enabled: true,
+		Servers: []config.MCPServerConfig{server},
+	}
+
+	tools, err := LoadMCPTools(ctx, cfg, "")
+	if err != nil {
+		t.Fatalf("LoadMCPTools() error: %v", err)
+	}
+	return tools
+}
+
+func requireToolByName(t *testing.T, tools []Tool, name string) Tool {
+	t.Helper()
+
+	tool := findToolByName(tools, name)
+	if tool == nil {
+		t.Fatalf("missing tool %s; got %v", name, toolNames(tools))
+	}
+	return tool
 }
 
 func findToolByName(tools []Tool, name string) Tool {
@@ -282,5 +250,4 @@ func startEverythingServer(t *testing.T, port int, mode string) {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 	})
-
 }

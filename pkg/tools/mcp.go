@@ -38,42 +38,50 @@ func LoadMCPTools(ctx context.Context, cfg config.MCPToolsConfig, workspace stri
 	errs := make([]error, 0)
 
 	for _, serverCfg := range cfg.Servers {
-		if !serverCfg.Enabled {
-			continue
-		}
-
-		client := newMCPClient(serverCfg, workspace)
-		startupTimeout := durationFromMS(serverCfg.StartupTimeoutMS, defaultMCPStartupTimeout)
-
-		connectCtx, cancel := context.WithTimeout(ctx, startupTimeout)
-		remoteTools, err := client.ListTools(connectCtx)
-		cancel()
+		serverTools, err := loadMCPServerTools(ctx, serverCfg, workspace, usedNames)
+		loaded = append(loaded, serverTools...)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("mcp server %q discovery failed: %w", serverCfg.Name, err))
-			continue
-		}
-
-		for _, rt := range remoteTools {
-			if rt == nil || strings.TrimSpace(rt.Name) == "" {
-				continue
-			}
-
-			localName := buildLocalToolName(serverCfg, rt.Name, usedNames)
-			description := buildMCPToolDescription(serverCfg.Name, rt.Name, rt.Description)
-			parameters := normalizeMCPInputSchema(rt.InputSchema)
-
-			loaded = append(loaded, &MCPTool{
-				localName:   localName,
-				remoteName:  rt.Name,
-				description: description,
-				parameters:  parameters,
-				callTimeout: durationFromMS(serverCfg.CallTimeoutMS, defaultMCPCallTimeout),
-				client:      client,
-			})
+			errs = append(errs, err)
 		}
 	}
 
 	return loaded, errors.Join(errs...)
+}
+
+func loadMCPServerTools(ctx context.Context, serverCfg config.MCPServerConfig, workspace string, usedNames map[string]int) ([]Tool, error) {
+	if !serverCfg.Enabled {
+		return nil, nil
+	}
+
+	client := newMCPClient(serverCfg, workspace)
+	startupTimeout := durationFromMS(serverCfg.StartupTimeoutMS, defaultMCPStartupTimeout)
+
+	connectCtx, cancel := context.WithTimeout(ctx, startupTimeout)
+	defer cancel()
+
+	remoteTools, err := client.ListTools(connectCtx)
+	if err != nil {
+		return nil, fmt.Errorf("mcp server %q discovery failed: %w", serverCfg.Name, err)
+	}
+
+	callTimeout := durationFromMS(serverCfg.CallTimeoutMS, defaultMCPCallTimeout)
+	loaded := make([]Tool, 0, len(remoteTools))
+	for _, rt := range remoteTools {
+		if rt == nil || strings.TrimSpace(rt.Name) == "" {
+			continue
+		}
+
+		loaded = append(loaded, &MCPTool{
+			localName:   buildLocalToolName(serverCfg, rt.Name, usedNames),
+			remoteName:  rt.Name,
+			description: buildMCPToolDescription(serverCfg.Name, rt.Name, rt.Description),
+			parameters:  normalizeMCPInputSchema(rt.InputSchema),
+			callTimeout: callTimeout,
+			client:      client,
+		})
+	}
+
+	return loaded, nil
 }
 
 type MCPTool struct {
@@ -193,43 +201,56 @@ func (c *mcpClient) buildTransport() (mcp.Transport, error) {
 
 	switch transport {
 	case "command":
-		command := strings.TrimSpace(c.cfg.Command)
-		if command == "" {
-			return nil, fmt.Errorf("mcp server %q: command is required for command transport", c.cfg.Name)
-		}
-		cmd := exec.Command(command, c.cfg.Args...)
-
-		if wd := resolvePath(c.cfg.WorkingDir, c.workspace); wd != "" {
-			cmd.Dir = wd
-		}
-
-		if len(c.cfg.Env) > 0 {
-			cmd.Env = mergeEnv(os.Environ(), c.cfg.Env)
-		}
-		cmd.Stderr = os.Stderr
-
-		tr := &mcp.CommandTransport{
-			Command: cmd,
-		}
-		tr.TerminateDuration = durationFromMS(c.cfg.TerminateTimeoutMS, defaultMCPTerminateWait)
-		return tr, nil
+		return c.buildCommandTransport()
 	case "streamable_http":
-		if strings.TrimSpace(c.cfg.URL) == "" {
-			return nil, fmt.Errorf("mcp server %q: url is required for streamable_http transport", c.cfg.Name)
+		endpoint, err := c.requiredServerURL("streamable_http")
+		if err != nil {
+			return nil, err
 		}
 		return &mcp.StreamableClientTransport{
-			Endpoint: c.cfg.URL,
+			Endpoint: endpoint,
 		}, nil
 	case "sse":
-		if strings.TrimSpace(c.cfg.URL) == "" {
-			return nil, fmt.Errorf("mcp server %q: url is required for sse transport", c.cfg.Name)
+		endpoint, err := c.requiredServerURL("sse")
+		if err != nil {
+			return nil, err
 		}
 		return &mcp.SSEClientTransport{
-			Endpoint: c.cfg.URL,
+			Endpoint: endpoint,
 		}, nil
 	default:
 		return nil, fmt.Errorf("mcp server %q: unsupported transport %q", c.cfg.Name, c.cfg.Transport)
 	}
+}
+
+func (c *mcpClient) buildCommandTransport() (mcp.Transport, error) {
+	command := strings.TrimSpace(c.cfg.Command)
+	if command == "" {
+		return nil, fmt.Errorf("mcp server %q: command is required for command transport", c.cfg.Name)
+	}
+
+	cmd := exec.Command(command, c.cfg.Args...)
+	if wd := resolvePath(c.cfg.WorkingDir, c.workspace); wd != "" {
+		cmd.Dir = wd
+	}
+	if len(c.cfg.Env) > 0 {
+		cmd.Env = mergeEnv(os.Environ(), c.cfg.Env)
+	}
+	cmd.Stderr = os.Stderr
+
+	tr := &mcp.CommandTransport{
+		Command: cmd,
+	}
+	tr.TerminateDuration = durationFromMS(c.cfg.TerminateTimeoutMS, defaultMCPTerminateWait)
+	return tr, nil
+}
+
+func (c *mcpClient) requiredServerURL(transport string) (string, error) {
+	endpoint := strings.TrimSpace(c.cfg.URL)
+	if endpoint == "" {
+		return "", fmt.Errorf("mcp server %q: url is required for %s transport", c.cfg.Name, transport)
+	}
+	return endpoint, nil
 }
 
 func formatMCPCallToolResult(result *mcp.CallToolResult) (string, error) {
