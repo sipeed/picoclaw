@@ -4,3 +4,4 @@ services:
     env: docker
     plan: free
     dockerfilePath: ./Dockerfile
+startCommand: ./app gateway
