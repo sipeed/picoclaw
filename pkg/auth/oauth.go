@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -137,21 +138,22 @@ func LoginDeviceCode(cfg OAuthProviderConfig) (*AuthCredential, error) {
 	var deviceResp struct {
 		DeviceAuthID string `json:"device_auth_id"`
 		UserCode     string `json:"user_code"`
-		Interval     int    `json:"interval"`
+		Interval     string `json:"interval"`
 	}
 	if err := json.Unmarshal(body, &deviceResp); err != nil {
 		return nil, fmt.Errorf("parsing device code response: %w", err)
 	}
+	interval, _ := strconv.Atoi(deviceResp.Interval)
 
-	if deviceResp.Interval < 1 {
-		deviceResp.Interval = 5
+	if interval < 1 {
+		interval = 5
 	}
 
 	fmt.Printf("\nTo authenticate, open this URL in your browser:\n\n  %s/codex/device\n\nThen enter this code: %s\n\nWaiting for authentication...\n",
 		cfg.Issuer, deviceResp.UserCode)
 
 	deadline := time.After(15 * time.Minute)
-	ticker := time.NewTicker(time.Duration(deviceResp.Interval) * time.Second)
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 
 	for {
