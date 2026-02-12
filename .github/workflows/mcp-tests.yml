@@ -1,0 +1,55 @@
+name: MCP Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "pkg/tools/mcp*.go"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/mcp-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "pkg/tools/mcp*.go"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/mcp-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  mcp-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@v6.2.0
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v6.2.0
+        with:
+          node-version: lts/*
+
+      - name: Show toolchain versions
+        run: |
+          go version
+          node -v
+          npm -v
+          npx --version
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run MCP unit tests
+        run: go test ./pkg/tools -run MCP -v
+
+      - name: Run MCP external integration tests
+        env:
+          PICOCLAW_RUN_EXTERNAL_MCP_TESTS: "1"
+        run: go test ./pkg/tools -run MCPExternal -v
