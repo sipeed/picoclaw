@@ -16,7 +16,6 @@
 
 </div>
 
-
 ---
 
 🦐 PicoClaw は [nanobot](https://github.com/HKUDS/nanobot) にインスパイアされた超軽量パーソナル AI アシスタントです。Go でゼロからリファクタリングされ、AI エージェント自身がアーキテクチャの移行とコード最適化を推進するセルフブートストラッピングプロセスで構築されました。
@@ -39,6 +38,7 @@
 </table>
 
 ## 📢 ニュース
+
 2026-02-09 🎉 PicoClaw リリース！$10 ハードウェアで 10MB 未満の RAM で動く AI エージェントを 1 日で構築。🦐 皮皮虾，我们走！
 
 ## ✨ 特徴
@@ -59,11 +59,13 @@
 | **RAM** | >1GB |>100MB| **< 10MB** |
 | **起動時間**</br>(0.8GHz コア) | >500秒 | >30秒 |  **<1秒** |
 | **コスト** | Mac Mini 599$ | 大半の Linux SBC </br>~50$ |**あらゆる Linux ボード**</br>**最安 10$** |
+
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
-
 ## 🦾 デモンストレーション
+
 ### 🛠️ スタンダードアシスタントワークフロー
+
 <table align="center">
   <tr align="center">
     <th><p align="center">🧩 フルスタックエンジニア</p></th>
@@ -83,13 +85,14 @@
 </table>
 
 ### 🐜 革新的な省フットプリントデプロイ
+
 PicoClaw はほぼすべての Linux デバイスにデプロイできます！
 
 - $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) または W(WiFi6) バージョン、最小ホームアシスタントに
 - $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html) または $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) サーバー自動メンテナンスに
 - $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) または $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) スマート監視に
 
-https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4
+<https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4>
 
 🌟 もっと多くのデプロイ事例が待っています！
 
@@ -256,22 +259,25 @@ Telegram で PicoClaw と会話できます
 ```bash
 picoclaw gateway
 ```
-</details>
 
+</details>
 
 <details>
 <summary><b>Discord</b></summary>
 
 **1. Bot を作成**
-- https://discord.com/developers/applications にアクセス
+
+- <https://discord.com/developers/applications> にアクセス
 - アプリケーションを作成 → Bot → Add Bot
 - Bot トークンをコピー
 
 **2. Intents を有効化**
+
 - Bot の設定画面で **MESSAGE CONTENT INTENT** を有効化
 - （任意）**SERVER MEMBERS INTENT** も有効化
 
 **3. ユーザー ID を取得**
+
 - Discord 設定 → 詳細設定 → **開発者モード** を有効化
 - 自分のアバターを右クリック → **ユーザーIDをコピー**
 
@@ -290,6 +296,7 @@ picoclaw gateway
 ```
 
 **5. Bot を招待**
+
 - OAuth2 → URL Generator
 - Scopes: `bot`
 - Bot Permissions: `Send Messages`, `Read Message History`
@@ -307,7 +314,7 @@ picoclaw gateway
 
 PicoClaw は設定に `config.json` を使用します。
 
-1.  **設定ファイルの作成:**
+1. **設定ファイルの作成:**
 
     サンプル設定ファイルをコピーします:
 
@@ -315,7 +322,7 @@ PicoClaw は設定に `config.json` を使用します。
     cp config.example.json config/config.json
     ```
 
-2.  **設定の編集:**
+2. **設定の編集:**
 
     `config/config.json` を開き、APIキーや設定を記述します。
 
@@ -340,6 +347,7 @@ PicoClaw は設定に `config.json` を使用します。
 ```bash
 picoclaw agent -m "Hello"
 ```
+
 </details>
 
 <details>
@@ -409,10 +417,9 @@ picoclaw agent -m "Hello"
 
 PR 歓迎！コードベースは意図的に小さく読みやすくしています。🤗
 
-Discord: https://discord.gg/V4sAZ9XWpN
+Discord: <https://discord.gg/V4sAZ9XWpN>
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
-
 
 ## 🐛 トラブルシューティング
 
@@ -421,8 +428,10 @@ Discord: https://discord.gg/V4sAZ9XWpN
 検索 API キーをまだ設定していない場合、これは正常です。PicoClaw は手動検索用の便利なリンクを提供します。
 
 Web 検索を有効にするには：
+
 1. [https://brave.com/search/api](https://brave.com/search/api) で無料の API キーを取得（月 2000 クエリ無料）
 2. `~/.picoclaw/config.json` に追加：
+
    ```json
    {
      "tools": {
