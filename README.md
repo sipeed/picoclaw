@@ -198,6 +198,19 @@ picoclaw onboard
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       }
+    },
+    "mcp": {
+      "enabled": true,
+      "servers": [
+        {
+          "name": "filesystem",
+          "enabled": true,
+          "transport": "command",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+          "tool_prefix": "mcp_fs"
+        }
+      ]
     }
   }
 }
@@ -217,6 +230,38 @@ picoclaw agent -m "What is 2+2?"
 ```
 
 That's it! You have a working AI assistant in 2 minutes.
+
+### 🔌 MCP Servers (Official Go SDK)
+
+PicoClaw supports MCP clients via the official SDK (`github.com/modelcontextprotocol/go-sdk`).
+
+- `transport: "command"` for stdio subprocess MCP servers
+- `transport: "streamable_http"` for streamable HTTP servers
+- `transport: "sse"` for legacy SSE servers
+
+Example:
+
+```json
+{
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": [
+        {
+          "name": "filesystem",
+          "enabled": true,
+          "transport": "command",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+          "tool_prefix": "mcp_fs",
+          "startup_timeout_ms": 8000,
+          "call_timeout_ms": 30000
+        }
+      ]
+    }
+  }
+}
+```
 
 ---
 
@@ -512,6 +557,19 @@ picoclaw agent -m "Hello"
       "search": {
         "api_key": "BSA..."
       }
+    },
+    "mcp": {
+      "enabled": true,
+      "servers": [
+        {
+          "name": "filesystem",
+          "enabled": true,
+          "transport": "command",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+          "tool_prefix": "mcp_fs"
+        }
+      ]
     }
   }
 }

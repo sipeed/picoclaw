@@ -31,13 +31,13 @@ type AgentLoop struct {
 	provider       providers.LLMProvider
 	workspace      string
 	model          string
-	contextWindow  int           // Maximum context window size in tokens
+	contextWindow  int // Maximum context window size in tokens
 	maxIterations  int
 	sessions       *session.SessionManager
 	contextBuilder *ContextBuilder
 	tools          *tools.ToolRegistry
 	running        atomic.Bool
-	summarizing    sync.Map      // Tracks which sessions are currently being summarized
+	summarizing    sync.Map // Tracks which sessions are currently being summarized
 }
 
 // processOptions configures how a message is processed
@@ -88,6 +88,18 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	editFileTool := tools.NewEditFileTool(workspace, restrict)
 	toolsRegistry.Register(editFileTool)
 	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
+
+	// Register MCP-discovered tools (best effort; continue on per-server failures)
+	mcpTools, mcpErr := tools.LoadMCPTools(context.Background(), cfg.Tools.MCP, workspace)
+	if mcpErr != nil {
+		logger.WarnCF("agent", "Some MCP servers failed to load",
+			map[string]interface{}{
+				"error": mcpErr.Error(),
+			})
+	}
+	for _, tool := range mcpTools {
+		toolsRegistry.Register(tool)
+	}
 
 	sessionsManager := session.NewSessionManager(filepath.Join(workspace, "sessions"))
 

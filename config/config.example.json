@@ -98,6 +98,21 @@
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       }
+    },
+    "mcp": {
+      "enabled": false,
+      "servers": [
+        {
+          "name": "filesystem",
+          "enabled": false,
+          "transport": "command",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+          "tool_prefix": "mcp_fs",
+          "startup_timeout_ms": 8000,
+          "call_timeout_ms": 30000
+        }
+      ]
     }
   },
   "gateway": {

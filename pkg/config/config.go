@@ -57,13 +57,13 @@ type AgentsConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace         string  `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool  `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider          string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model             string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
-	MaxTokens         int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature       float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace           string  `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool    `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Provider            string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	Model               string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	MaxTokens           int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature         float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
 type ChannelsConfig struct {
@@ -166,21 +166,42 @@ type WebToolsConfig struct {
 	Search WebSearchConfig `json:"search"`
 }
 
+type MCPServerConfig struct {
+	Name               string            `json:"name"`
+	Enabled            bool              `json:"enabled"`
+	Transport          string            `json:"transport"` // command|streamable_http|sse
+	Command            string            `json:"command,omitempty"`
+	Args               []string          `json:"args,omitempty"`
+	Env                map[string]string `json:"env,omitempty"`
+	WorkingDir         string            `json:"working_dir,omitempty"`
+	URL                string            `json:"url,omitempty"`
+	ToolPrefix         string            `json:"tool_prefix,omitempty"`
+	StartupTimeoutMS   int               `json:"startup_timeout_ms,omitempty"`
+	CallTimeoutMS      int               `json:"call_timeout_ms,omitempty"`
+	TerminateTimeoutMS int               `json:"terminate_timeout_ms,omitempty"`
+}
+
+type MCPToolsConfig struct {
+	Enabled bool              `json:"enabled"`
+	Servers []MCPServerConfig `json:"servers"`
+}
+
 type ToolsConfig struct {
 	Web WebToolsConfig `json:"web"`
+	MCP MCPToolsConfig `json:"mcp"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:         "~/.picoclaw/workspace",
+				Workspace:           "~/.picoclaw/workspace",
 				RestrictToWorkspace: true,
-				Provider:          "",
-				Model:             "glm-4.7",
-				MaxTokens:         8192,
-				Temperature:       0.7,
-				MaxToolIterations: 20,
+				Provider:            "",
+				Model:               "glm-4.7",
+				MaxTokens:           8192,
+				Temperature:         0.7,
+				MaxToolIterations:   20,
 			},
 		},
 		Channels: ChannelsConfig{
@@ -253,6 +274,10 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+			},
+			MCP: MCPToolsConfig{
+				Enabled: false,
+				Servers: []MCPServerConfig{},
 			},
 		},
 	}
