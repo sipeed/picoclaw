@@ -3,6 +3,8 @@ package channels
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -40,7 +42,21 @@ func (c *thinkingCancel) Cancel() {
 }
 
 func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*TelegramChannel, error) {
-	bot, err := telego.NewBot(cfg.Token)
+	var opts []telego.BotOption
+
+	if cfg.Proxy != "" {
+		proxyURL, parseErr := url.Parse(cfg.Proxy)
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid proxy URL %q: %w", cfg.Proxy, parseErr)
+		}
+		opts = append(opts, telego.WithHTTPClient(&http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			},
+		}))
+	}
+
+	bot, err := telego.NewBot(cfg.Token, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}

@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 )
@@ -47,8 +48,18 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 		return true
 	}
 
+	// Extract parts from compound senderID like "123456|username"
+	idPart := senderID
+	userPart := ""
+	if idx := strings.Index(senderID, "|"); idx > 0 {
+		idPart = senderID[:idx]
+		userPart = senderID[idx+1:]
+	}
+
 	for _, allowed := range c.allowList {
-		if senderID == allowed {
+		// Strip leading "@" from allowed value for username matching
+		trimmed := strings.TrimPrefix(allowed, "@")
+		if senderID == allowed || idPart == allowed || senderID == trimmed || idPart == trimmed || (userPart != "" && (userPart == allowed || userPart == trimmed)) {
 			return true
 		}
 	}

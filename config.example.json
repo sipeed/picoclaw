@@ -12,6 +12,7 @@
     "telegram": {
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "proxy": "",
       "allow_from": ["YOUR_USER_ID"]
     },
     "discord": {
