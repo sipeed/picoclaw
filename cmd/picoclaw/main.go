@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -179,7 +181,7 @@ func printHelp() {
 	fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
 	fmt.Println("  agent       Interact with the agent directly")
 	fmt.Println("  auth        Manage authentication (login, logout, status)")
-	fmt.Println("  gateway     Start picoclaw gateway")
+	fmt.Println("  gateway     Start gateway or install gateway service")
 	fmt.Println("  status      Show picoclaw status")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
@@ -606,8 +608,19 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 }
 
 func gatewayCmd() {
-	// Check for --debug flag
 	args := os.Args[2:]
+	if len(args) > 0 {
+		switch args[0] {
+		case "install":
+			gatewayInstallCmd()
+			return
+		case "--help", "-h", "help":
+			gatewayHelp()
+			return
+		}
+	}
+
+	// Check for --debug flag
 	for _, arg := range args {
 		if arg == "--debug" || arg == "-d" {
 			logger.SetLevel(logger.DEBUG)
@@ -732,6 +745,109 @@ func gatewayCmd() {
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
+}
+
+func gatewayHelp() {
+	fmt.Println("\nGateway commands:")
+	fmt.Println("  picoclaw gateway                Start gateway")
+	fmt.Println("  picoclaw gateway install        Install and start systemd service")
+	fmt.Println("  picoclaw gateway --debug        Start gateway with debug logging")
+	fmt.Println()
+}
+
+func gatewayInstallCmd() {
+	if runtime.GOOS != "linux" {
+		fmt.Println("Error: gateway install is only supported on Linux with systemd")
+		os.Exit(1)
+	}
+
+	if os.Geteuid() != 0 {
+		fmt.Println("Error: gateway install requires root privileges")
+		fmt.Println("Run: sudo picoclaw gateway install")
+		os.Exit(1)
+	}
+
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		fmt.Println("Error: systemctl not found")
+		os.Exit(1)
+	}
+
+	serviceUser, serviceHome, err := resolveGatewayServiceUser()
+	if err != nil {
+		fmt.Printf("Error resolving service user: %v\n", err)
+		os.Exit(1)
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Error resolving executable path: %v\n", err)
+		os.Exit(1)
+	}
+	if resolved, err := filepath.EvalSymlinks(execPath); err == nil {
+		execPath = resolved
+	}
+
+	unitContent := buildGatewayServiceUnit(serviceUser, serviceHome, execPath)
+	servicePath := "/etc/systemd/system/picoclaw.service"
+	if err := os.WriteFile(servicePath, []byte(unitContent), 0644); err != nil {
+		fmt.Printf("Error writing service file: %v\n", err)
+		os.Exit(1)
+	}
+
+	if out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {
+		fmt.Printf("Error running systemctl daemon-reload: %v\n%s\n", err, strings.TrimSpace(string(out)))
+		os.Exit(1)
+	}
+	if out, err := exec.Command("systemctl", "enable", "--now", "picoclaw").CombinedOutput(); err != nil {
+		fmt.Printf("Error enabling/starting service: %v\n%s\n", err, strings.TrimSpace(string(out)))
+		os.Exit(1)
+	}
+
+	fmt.Println("✓ Installed systemd service: /etc/systemd/system/picoclaw.service")
+	fmt.Println("✓ Enabled and started: picoclaw")
+	fmt.Println("Check status: systemctl status picoclaw --no-pager")
+	fmt.Println("View logs: journalctl -u picoclaw -f")
+}
+
+func resolveGatewayServiceUser() (string, string, error) {
+	if sudoUser := strings.TrimSpace(os.Getenv("SUDO_USER")); sudoUser != "" {
+		u, err := user.Lookup(sudoUser)
+		if err != nil {
+			return "", "", err
+		}
+		return u.Username, u.HomeDir, nil
+	}
+
+	u, err := user.Current()
+	if err != nil {
+		return "", "", err
+	}
+	return u.Username, u.HomeDir, nil
+}
+
+func buildGatewayServiceUnit(serviceUser, serviceHome, execPath string) string {
+	return fmt.Sprintf(`[Unit]
+Description=PicoClaw Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%s
+WorkingDirectory=%s
+ExecStart=%s gateway
+Restart=always
+RestartSec=5
+Environment=HOME=%s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+ReadWritePaths=%s/.picoclaw
+
+[Install]
+WantedBy=multi-user.target
+`, serviceUser, serviceHome, execPath, serviceHome, serviceHome)
 }
 
 func statusCmd() {

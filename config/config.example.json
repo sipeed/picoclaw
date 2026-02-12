@@ -90,6 +90,10 @@
     "moonshot": {
       "api_key": "sk-xxx",
       "api_base": ""
+    },
+    "zen": {
+      "api_key": "YOUR_OPENCODE_API_KEY",
+      "api_base": "https://opencode.ai/zen/v1"
     }
   },
   "tools": {

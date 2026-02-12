@@ -143,6 +143,7 @@ type ProvidersConfig struct {
 	Gemini     ProviderConfig `json:"gemini"`
 	Nvidia     ProviderConfig `json:"nvidia"`
 	Moonshot   ProviderConfig `json:"moonshot"`
+	Zen        ProviderConfig `json:"zen"`
 }
 
 type ProviderConfig struct {
@@ -242,6 +243,7 @@ func DefaultConfig() *Config {
 			Gemini:     ProviderConfig{},
 			Nvidia:     ProviderConfig{},
 			Moonshot:   ProviderConfig{},
+			Zen:        ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
