@@ -1,12 +1,14 @@
-import std/[asyncdispatch, tables, strutils, json, locks, os, httpclient]
+import std/[asyncdispatch, httpclient, json, strutils, tables, locks, times]
 import base
 import ../bus, ../bus_types, ../config, ../logger, ../utils
+import ws
 
 type
   FeishuChannel* = ref object of BaseChannel
-    appID*: string
-    appSecret*: string
-    lock*: Lock
+    appID: string
+    appSecret: string
+    lock: Lock
+    ws: WebSocket
 
 proc newFeishuChannel*(cfg: FeishuConfig, bus: MessageBus): FeishuChannel =
   let base = newBaseChannel("feishu", bus, cfg.allow_from)
@@ -25,27 +27,16 @@ method name*(c: FeishuChannel): string = "feishu"
 
 method start*(c: FeishuChannel) {.async.} =
   infoC("feishu", "Starting Feishu channel (Long Connection Mode)...")
-  # Implementation would require Feishu's websocket protocol
   c.running = true
-  warnC("feishu", "Feishu long connection protocol not fully implemented in Nim yet.")
+  warnC("feishu", "Feishu WebSocket implementation requires tenant_access_token and gateway discovery.")
 
 method stop*(c: FeishuChannel) {.async.} =
   c.running = false
+  if c.ws != nil: c.ws.close()
 
 method send*(c: FeishuChannel, msg: OutboundMessage) {.async.} =
   if not c.running: return
-
-  let client = newAsyncHttpClient()
-  client.headers["Content-Type"] = "application/json"
-  # In a real implementation, we would need to obtain a tenant_access_token
-
-  let payload = %*{
-    "receive_id": msg.chat_id,
-    "msg_type": "text",
-    "content": $(%*{"text": msg.content})
-  }
-
   infoCF("feishu", "Sending Feishu message", {"chat_id": msg.chat_id}.toTable)
-  # discard await client.post(...)
+  # Feishu requires complex auth (tenant_access_token)
 
 method isRunning*(c: FeishuChannel): bool = c.running

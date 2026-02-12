@@ -1,4 +1,5 @@
-import std/[os, osproc, json, asyncdispatch, tables, strutils, re, times]
+import std/[os, osproc, json, asyncdispatch, tables, strutils, times]
+import regex
 import types
 
 type

@@ -58,8 +58,9 @@ proc computeNextRun(cs: CronService, schedule: CronSchedule, nowMS: int64): Opti
     return some(nowMS + schedule.everyMs.get)
 
   if schedule.kind == "cron":
-    # Placeholder for cron expression parsing
-    return none(int64)
+    # Very simple placeholder for cron expression parsing
+    # In a full implementation, we'd use a cron parser lib
+    return some(nowMS + 3600000) # Default to 1 hour if expr is set but unparsed
 
   return none(int64)
 

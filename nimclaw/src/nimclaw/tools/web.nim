@@ -1,4 +1,5 @@
-import std/[os, json, asyncdispatch, httpclient, tables, strutils, uri, re, times]
+import std/[os, json, asyncdispatch, httpclient, tables, strutils, uri, times]
+import regex
 import types
 
 const userAgent = "Mozilla/5.0 (compatible; nimclaw/1.0)"
