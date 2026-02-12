@@ -71,18 +71,6 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
-	if m.config.Channels.Feishu.Enabled {
-		logger.DebugC("channels", "Attempting to initialize Feishu channel")
-		feishu, err := NewFeishuChannel(m.config.Channels.Feishu, m.bus)
-		if err != nil {
-			logger.ErrorCF("channels", "Failed to initialize Feishu channel", map[string]interface{}{
-				"error": err.Error(),
-			})
-		} else {
-			m.channels["feishu"] = feishu
-			logger.InfoC("channels", "Feishu channel enabled successfully")
-		}
-	}
 
 	if m.config.Channels.Discord.Enabled && m.config.Channels.Discord.Token != "" {
 		logger.DebugC("channels", "Attempting to initialize Discord channel")

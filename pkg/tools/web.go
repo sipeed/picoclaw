@@ -1,12 +1,12 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -15,6 +15,240 @@ import (
 const (
 	userAgent = "Mozilla/5.0 (compatible; picoclaw/1.0)"
 )
+
+// --- Ollama Search Tool ---
+
+type OllamaSearchTool struct {
+	apiKey     string
+	maxResults int
+}
+
+func NewOllamaSearchTool(apiKey string, maxResults int) *OllamaSearchTool {
+	if maxResults <= 0 || maxResults > 10 {
+		maxResults = 5
+	}
+	return &OllamaSearchTool{
+		apiKey:     apiKey,
+		maxResults: maxResults,
+	}
+}
+
+func (t *OllamaSearchTool) Name() string {
+	return "web_search"
+}
+
+func (t *OllamaSearchTool) Description() string {
+	return "Search the web for current information using Ollama. Returns titles, URLs, and snippets."
+}
+
+func (t *OllamaSearchTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"query": map[string]interface{}{
+				"type":        "string",
+				"description": "Search query",
+			},
+			"count": map[string]interface{}{
+				"type":        "integer",
+				"description": "Number of results (1-10)",
+				"minimum":     1.0,
+				"maximum":     10.0,
+			},
+		},
+		"required": []string{"query"},
+	}
+}
+
+func (t *OllamaSearchTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	query, ok := args["query"].(string)
+	if !ok {
+		return "", fmt.Errorf("query is required")
+	}
+
+	count := t.maxResults
+	if c, ok := args["count"].(float64); ok {
+		if int(c) > 0 && int(c) <= 10 {
+			count = int(c)
+		}
+	}
+
+	requestBody := map[string]interface{}{
+		"query":       query,
+		"max_results": count,
+	}
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://ollama.com/api/web_search", bytes.NewReader(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if t.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+t.apiKey)
+	} else {
+		return "Error: OLLAMA_API_KEY not configured", nil
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Sprintf("Error: Ollama API returned %d: %s", resp.StatusCode, string(body)), nil
+	}
+
+	var searchResp struct {
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"results"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(searchResp.Results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Results for: %s", query))
+	for i, item := range searchResp.Results {
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+		if item.Content != "" {
+			lines = append(lines, fmt.Sprintf("   %s", item.Content))
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
+// --- Ollama Fetch Tool ---
+
+type OllamaFetchTool struct {
+	apiKey   string
+	maxChars int
+}
+
+func NewOllamaFetchTool(apiKey string, maxChars int) *OllamaFetchTool {
+	if maxChars <= 0 {
+		maxChars = 50000
+	}
+	return &OllamaFetchTool{
+		apiKey:   apiKey,
+		maxChars: maxChars,
+	}
+}
+
+func (t *OllamaFetchTool) Name() string {
+	return "web_fetch"
+}
+
+func (t *OllamaFetchTool) Description() string {
+	return "Fetch a URL and extract readable content using Ollama's Web Fetch API."
+}
+
+func (t *OllamaFetchTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"url": map[string]interface{}{
+				"type":        "string",
+				"description": "URL to fetch",
+			},
+		},
+		"required": []string{"url"},
+	}
+}
+
+func (t *OllamaFetchTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	urlStr, ok := args["url"].(string)
+	if !ok {
+		return "", fmt.Errorf("url is required")
+	}
+
+	requestBody := map[string]interface{}{
+		"url": urlStr,
+	}
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://ollama.com/api/web_fetch", bytes.NewReader(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if t.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+t.apiKey)
+	} else {
+		return "Error: OLLAMA_API_KEY not configured", nil
+	}
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Sprintf("Error: Ollama API returned %d: %s", resp.StatusCode, string(body)), nil
+	}
+
+	var fetchResp struct {
+		Title   string   `json:"title"`
+		Content string   `json:"content"`
+		Links   []string `json:"links"`
+	}
+
+	if err := json.Unmarshal(body, &fetchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	text := fetchResp.Content
+	if len(text) > t.maxChars {
+		text = text[:t.maxChars]
+	}
+
+	result := map[string]interface{}{
+		"url":       urlStr,
+		"title":     fetchResp.Title,
+		"status":    resp.StatusCode,
+		"extractor": "ollama",
+		"truncated": len(fetchResp.Content) > t.maxChars,
+		"length":    len(text),
+		"text":      text,
+		"links":     fetchResp.Links,
+	}
+
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	return string(resultJSON), nil
+}
+
+// --- Original Brave Search Tool ---
 
 type WebSearchTool struct {
 	apiKey     string
@@ -32,11 +266,11 @@ func NewWebSearchTool(apiKey string, maxResults int) *WebSearchTool {
 }
 
 func (t *WebSearchTool) Name() string {
-	return "web_search"
+	return "web_search_brave"
 }
 
 func (t *WebSearchTool) Description() string {
-	return "Search the web for current information. Returns titles, URLs, and snippets from search results."
+	return "Search the web for current information using Brave Search. Returns titles, URLs, and snippets."
 }
 
 func (t *WebSearchTool) Parameters() map[string]interface{} {
@@ -132,6 +366,8 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 	return strings.Join(lines, "\n"), nil
 }
 
+// --- Original Web Fetch Tool ---
+
 type WebFetchTool struct {
 	maxChars int
 }
@@ -146,11 +382,11 @@ func NewWebFetchTool(maxChars int) *WebFetchTool {
 }
 
 func (t *WebFetchTool) Name() string {
-	return "web_fetch"
+	return "web_fetch_raw"
 }
 
 func (t *WebFetchTool) Description() string {
-	return "Fetch a URL and extract readable content (HTML to text). Use this to get weather info, news, articles, or any web content."
+	return "Fetch a URL and extract readable content (HTML to text) directly. Use if Ollama fetch fails."
 }
 
 func (t *WebFetchTool) Parameters() map[string]interface{} {

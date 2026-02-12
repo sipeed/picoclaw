@@ -13,7 +13,9 @@
     "telegram": {
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": [
+        "YOUR_USER_ID"
+      ]
     },
     "discord": {
       "enabled": false,
@@ -77,6 +79,10 @@
       "api_key": "",
       "api_base": ""
     },
+    "nvidia": {
+      "api_key": "nvapi-xxx",
+      "api_base": ""
+    },
     "vllm": {
       "api_key": "",
       "api_base": ""
@@ -86,6 +92,10 @@
     "web": {
       "search": {
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "ollama": {
+        "api_key": "YOUR_OLLAMA_API_KEY",
         "max_results": 5
       }
     }

@@ -8,7 +8,7 @@ bin/
 *.out
 /picoclaw
 /picoclaw-test
-
+/docs
 # Picoclaw specific
 .picoclaw/
 config.json

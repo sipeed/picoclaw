@@ -63,6 +63,14 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		requestBody["temperature"] = temperature
 	}
 
+	// Add additional options (like chat_template_kwargs for Nvidia)
+	for k, v := range options {
+		if k == "max_tokens" || k == "temperature" || k == "model" || k == "messages" {
+			continue
+		}
+		requestBody[k] = v
+	}
+
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -263,6 +271,14 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiKey = cfg.Providers.VLLM.APIKey
 				apiBase = cfg.Providers.VLLM.APIBase
 			}
+		case "nvidia":
+			if cfg.Providers.Nvidia.APIKey != "" {
+				apiKey = cfg.Providers.Nvidia.APIKey
+				apiBase = cfg.Providers.Nvidia.APIBase
+				if apiBase == "" {
+					apiBase = "https://integrate.api.nvidia.com/v1"
+				}
+			}
 		}
 	}
 
@@ -320,6 +336,13 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	case cfg.Providers.VLLM.APIBase != "":
 		apiKey = cfg.Providers.VLLM.APIKey
 		apiBase = cfg.Providers.VLLM.APIBase
+
+	case cfg.Providers.Nvidia.APIKey != "":
+		apiKey = cfg.Providers.Nvidia.APIKey
+		apiBase = cfg.Providers.Nvidia.APIBase
+		if apiBase == "" {
+			apiBase = "https://integrate.api.nvidia.com/v1"
+		}
 
 	default:
 		if cfg.Providers.OpenRouter.APIKey != "" {
