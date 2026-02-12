@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -128,7 +129,7 @@ func TestMCPExternalPopularEverythingSSE(t *testing.T) {
 	requireExternalMCPTests(t)
 
 	port := pickFreePort(t)
-	cmd := startEverythingServer(t, port, "sse")
+	startEverythingServer(t, port, "sse")
 	waitForTCPPort(t, fmt.Sprintf("127.0.0.1:%d", port), 15*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -167,14 +168,13 @@ func TestMCPExternalPopularEverythingSSE(t *testing.T) {
 		t.Fatalf("unexpected echo output: %s", out)
 	}
 
-	_ = cmd
 }
 
 func TestMCPExternalPopularEverythingStreamableHTTP(t *testing.T) {
 	requireExternalMCPTests(t)
 
 	port := pickFreePort(t)
-	cmd := startEverythingServer(t, port, "streamableHttp")
+	startEverythingServer(t, port, "streamableHttp")
 	waitForTCPPort(t, fmt.Sprintf("127.0.0.1:%d", port), 15*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -213,7 +213,6 @@ func TestMCPExternalPopularEverythingStreamableHTTP(t *testing.T) {
 		t.Fatalf("unexpected echo output: %s", out)
 	}
 
-	_ = cmd
 }
 
 func requireExternalMCPTests(t *testing.T) {
@@ -264,13 +263,13 @@ func waitForTCPPort(t *testing.T, addr string, timeout time.Duration) {
 	t.Fatalf("port %s did not become ready within %v", addr, timeout)
 }
 
-func startEverythingServer(t *testing.T, port int, mode string) *exec.Cmd {
+func startEverythingServer(t *testing.T, port int, mode string) {
 	t.Helper()
 
 	cmd := exec.Command("npx", "-y", "@modelcontextprotocol/server-everything", mode)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
 
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start everything %s server: %v", mode, err)
@@ -284,5 +283,4 @@ func startEverythingServer(t *testing.T, port int, mode string) *exec.Cmd {
 		_, _ = cmd.Process.Wait()
 	})
 
-	return cmd
 }

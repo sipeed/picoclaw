@@ -173,8 +173,7 @@ func TestBuildTransport_CommandTerminateDefaults(t *testing.T) {
 		Name:      "default-terminate",
 		Enabled:   true,
 		Transport: "command",
-		Command:   "sleep",
-		Args:      []string{"1"},
+		Command:   "test-command",
 	}, "")
 
 	tr, err := client.buildTransport()
@@ -196,8 +195,7 @@ func TestBuildTransport_CommandTerminateOverride(t *testing.T) {
 		Name:               "override-terminate",
 		Enabled:            true,
 		Transport:          "command",
-		Command:            "sleep",
-		Args:               []string{"1"},
+		Command:            "test-command",
 		TerminateTimeoutMS: 2500,
 	}, "")
 
