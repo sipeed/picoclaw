@@ -36,6 +36,7 @@ type AgentLoop struct {
 	sessions       *session.SessionManager
 	contextBuilder *ContextBuilder
 	tools          *tools.ToolRegistry
+	hooks          *Hooks
 	running        atomic.Bool
 	summarizing    sync.Map      // Tracks which sessions are currently being summarized
 }
@@ -148,6 +149,16 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	al.tools.Register(tool)
 }
 
+// SetHooks sets lifecycle hooks on the agent loop.
+func (al *AgentLoop) SetHooks(h *Hooks) {
+	al.hooks = h
+}
+
+// Workspace returns the agent's workspace path (for wiring hooks).
+func (al *AgentLoop) Workspace() string {
+	return al.workspace
+}
+
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
 	return al.ProcessDirectWithChannel(ctx, content, sessionKey, "cli", "direct")
 }
@@ -236,7 +247,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	// 1. Update tool contexts
 	al.updateToolContexts(opts.Channel, opts.ChatID)
 
-	// 2. Build messages
+	// 2. Build messages (with optional enriched context from hooks)
+	var enrichedCtx string
+	if al.hooks != nil && al.hooks.OnContextBuild != nil {
+		if extra, err := al.hooks.OnContextBuild(ctx, opts.UserMessage); err == nil && extra != "" {
+			enrichedCtx = extra
+		}
+	}
+
 	history := al.sessions.GetHistory(opts.SessionKey)
 	summary := al.sessions.GetSummary(opts.SessionKey)
 	messages := al.contextBuilder.BuildMessages(
@@ -246,6 +264,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		nil,
 		opts.Channel,
 		opts.ChatID,
+		enrichedCtx,
 	)
 
 	// 3. Save user message to session
@@ -265,6 +284,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	// 6. Save final assistant message to session
 	al.sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 	al.sessions.Save(al.sessions.GetOrCreate(opts.SessionKey))
+
+	// 6b. OnPostMessage hook
+	if al.hooks != nil && al.hooks.OnPostMessage != nil {
+		al.hooks.OnPostMessage(ctx, opts.SessionKey, opts.UserMessage, finalContent)
+	}
 
 	// 7. Optional: summarization
 	if opts.EnableSummary {
@@ -411,9 +435,24 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 					"iteration": iteration,
 				})
 
+			// OnPreTool hook
+			if al.hooks != nil && al.hooks.OnPreTool != nil {
+				if err := al.hooks.OnPreTool(ctx, tc.Name, tc.Arguments); err != nil {
+					logger.DebugCF("agent", "OnPreTool hook error",
+						map[string]interface{}{"tool": tc.Name, "error": err.Error()})
+				}
+			}
+
+			toolStart := time.Now()
 			result, err := al.tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
+			}
+			toolDur := time.Since(toolStart)
+
+			// OnPostTool hook
+			if al.hooks != nil && al.hooks.OnPostTool != nil {
+				al.hooks.OnPostTool(ctx, tc.Name, result, toolDur)
 			}
 
 			toolResultMsg := providers.Message{

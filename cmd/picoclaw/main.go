@@ -31,6 +31,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/vecstore"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
@@ -496,6 +497,10 @@ func agentCmd() {
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
+	// Setup vector search hooks (no-op when disabled)
+	hooks := setupVectorSearch(cfg, agentLoop)
+	agentLoop.SetHooks(hooks)
+
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
 	logger.InfoCF("agent", "Agent initialized",
@@ -630,6 +635,10 @@ func gatewayCmd() {
 
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+
+	// Setup vector search hooks (no-op when disabled)
+	hooks := setupVectorSearch(cfg, agentLoop)
+	agentLoop.SetHooks(hooks)
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
@@ -1048,6 +1057,193 @@ func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace
 
 func loadConfig() (*config.Config, error) {
 	return config.LoadConfig(getConfigPath())
+}
+
+// setupVectorSearch initializes vector search hooks and tools when enabled.
+// Returns the Hooks struct (always non-nil) and a save function to call on shutdown.
+func setupVectorSearch(cfg *config.Config, agentLoop *agent.AgentLoop) *agent.Hooks {
+	hooks := &agent.Hooks{}
+
+	vsCfg := cfg.Memory.VectorSearch
+	if !vsCfg.Enabled {
+		return hooks
+	}
+
+	// Resolve API key and base URL, falling back to OpenAI provider config
+	apiKey := vsCfg.APIKey
+	if apiKey == "" {
+		apiKey = cfg.Providers.OpenAI.APIKey
+	}
+	apiBase := vsCfg.APIBase
+	if apiBase == "" {
+		apiBase = cfg.Providers.OpenAI.APIBase
+	}
+	if apiBase == "" {
+		apiBase = "https://api.openai.com/v1"
+	}
+
+	model := vsCfg.Model
+	if model == "" {
+		model = "text-embedding-3-small"
+	}
+
+	maxResults := vsCfg.MaxResults
+	if maxResults <= 0 {
+		maxResults = 5
+	}
+
+	chunkSize := vsCfg.ChunkSize
+	if chunkSize <= 0 {
+		chunkSize = 800
+	}
+
+	workspace := agentLoop.Workspace()
+	storePath := filepath.Join(workspace, "memory", ".vecstore.gob")
+
+	embedder := vecstore.NewHTTPEmbedder(apiBase, apiKey, model)
+	store := vecstore.NewVectorStore(storePath)
+
+	// Load existing store
+	if err := store.Load(); err != nil {
+		logger.ErrorCF("vecstore", "Failed to load vector store",
+			map[string]interface{}{"error": err.Error()})
+	}
+
+	// Initial indexing if store is empty
+	if store.Len() == 0 {
+		go indexMemoryFiles(context.Background(), workspace, embedder, store, chunkSize)
+	}
+
+	// OnContextBuild: embed query and return top-K relevant chunks
+	hooks.OnContextBuild = func(ctx context.Context, query string) (string, error) {
+		embeddings, err := embedder.Embed(ctx, []string{query})
+		if err != nil || len(embeddings) == 0 || len(embeddings[0]) == 0 {
+			return "", err
+		}
+
+		results := store.Search(embeddings[0], maxResults)
+		if len(results) == 0 {
+			return "", nil
+		}
+
+		var sb strings.Builder
+		for _, r := range results {
+			snippet := r.Text
+			if len(snippet) > 700 {
+				snippet = snippet[:700] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("[%s | score: %.2f]\n%s\n\n", r.Source, r.Score, snippet))
+		}
+		return sb.String(), nil
+	}
+
+	// Track which files were touched by tool calls in this message
+	var touchedFiles []string
+	hooks.OnPostTool = func(_ context.Context, name string, result string, _ time.Duration) {
+		if name == "write_file" || name == "append_file" || name == "edit_file" {
+			// Check if the result mentions a memory/ path
+			if strings.Contains(result, "memory/") || strings.Contains(result, "memory\\") {
+				touchedFiles = append(touchedFiles, result)
+			}
+		}
+	}
+
+	// OnPostMessage: re-index memory files that were modified
+	hooks.OnPostMessage = func(ctx context.Context, _, _, _ string) {
+		if len(touchedFiles) > 0 {
+			go indexMemoryFiles(ctx, workspace, embedder, store, chunkSize)
+			touchedFiles = nil
+		}
+	}
+
+	// Register memory_search tool
+	agentLoop.RegisterTool(tools.NewMemorySearchTool(embedder, store, maxResults))
+
+	logger.InfoCF("vecstore", "Vector search enabled",
+		map[string]interface{}{
+			"model":       model,
+			"max_results": maxResults,
+			"chunk_size":  chunkSize,
+			"store_path":  storePath,
+		})
+
+	return hooks
+}
+
+// indexMemoryFiles chunks and embeds all markdown files in the memory directory.
+func indexMemoryFiles(ctx context.Context, workspace string, embedder vecstore.Embedder, store *vecstore.VectorStore, chunkSize int) {
+	memoryDir := filepath.Join(workspace, "memory")
+
+	var allChunks []vecstore.Chunk
+	filepath.Walk(memoryDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		// Skip non-markdown and the store file itself
+		if !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(workspace, path)
+		chunks := vecstore.ChunkMarkdown(relPath, string(data), chunkSize)
+		allChunks = append(allChunks, chunks...)
+		return nil
+	})
+
+	if len(allChunks) == 0 {
+		return
+	}
+
+	// Collect texts that need embedding (skip chunks already in store with same ID)
+	texts := make([]string, len(allChunks))
+	for i, c := range allChunks {
+		texts[i] = c.Text
+	}
+
+	// Embed in batches of 100
+	const batchSize = 100
+	for i := 0; i < len(texts); i += batchSize {
+		end := i + batchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+
+		embeddings, err := embedder.Embed(ctx, texts[i:end])
+		if err != nil {
+			logger.ErrorCF("vecstore", "Embedding batch failed",
+				map[string]interface{}{"error": err.Error(), "batch": i / batchSize})
+			continue
+		}
+
+		for j, emb := range embeddings {
+			allChunks[i+j].Embedding = emb
+		}
+	}
+
+	// Filter out chunks that failed to embed
+	var valid []vecstore.Chunk
+	for _, c := range allChunks {
+		if len(c.Embedding) > 0 {
+			valid = append(valid, c)
+		}
+	}
+
+	store.Upsert(valid)
+	if err := store.Save(); err != nil {
+		logger.ErrorCF("vecstore", "Failed to save vector store",
+			map[string]interface{}{"error": err.Error()})
+	}
+
+	logger.InfoCF("vecstore", "Memory indexed",
+		map[string]interface{}{
+			"chunks_total":    len(allChunks),
+			"chunks_embedded": len(valid),
+		})
 }
 
 func cronCmd() {

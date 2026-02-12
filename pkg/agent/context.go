@@ -157,10 +157,15 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	return result
 }
 
-func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID string) []providers.Message {
+func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID string, enrichedContext ...string) []providers.Message {
 	messages := []providers.Message{}
 
 	systemPrompt := cb.BuildSystemPrompt()
+
+	// Inject enriched context (e.g. vector search results) before session info
+	if len(enrichedContext) > 0 && enrichedContext[0] != "" {
+		systemPrompt += "\n\n## Relevant Memory Context\n\n" + enrichedContext[0]
+	}
 
 	// Add Current Session info if provided
 	if channel != "" && chatID != "" {

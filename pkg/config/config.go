@@ -49,7 +49,22 @@ type Config struct {
 	Providers ProvidersConfig `json:"providers"`
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
+	Memory    MemoryConfig    `json:"memory"`
 	mu        sync.RWMutex
+}
+
+type MemoryConfig struct {
+	VectorSearch VectorSearchConfig `json:"vector_search"`
+}
+
+type VectorSearchConfig struct {
+	Enabled    bool   `json:"enabled"`
+	Provider   string `json:"provider"`     // default "openai"
+	Model      string `json:"model"`        // default "text-embedding-3-small"
+	APIKey     string `json:"api_key"`      // falls back to providers config
+	APIBase    string `json:"api_base"`     // falls back to providers config
+	MaxResults int    `json:"max_results"`  // default 5
+	ChunkSize  int    `json:"chunk_size"`   // default 800
 }
 
 type AgentsConfig struct {
@@ -253,6 +268,15 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+			},
+		},
+		Memory: MemoryConfig{
+			VectorSearch: VectorSearchConfig{
+				Enabled:    false,
+				Provider:   "openai",
+				Model:      "text-embedding-3-small",
+				MaxResults: 5,
+				ChunkSize:  800,
 			},
 		},
 	}
