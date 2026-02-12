@@ -172,22 +172,3 @@ func TestSlackChannelIsAllowed(t *testing.T) {
 		}
 	})
 }
-
-func TestTruncateStringSlack(t *testing.T) {
-	tests := []struct {
-		input  string
-		maxLen int
-		want   string
-	}{
-		{"hello", 10, "hello"},
-		{"hello world", 5, "hello"},
-		{"", 5, ""},
-	}
-
-	for _, tt := range tests {
-		got := truncateStringSlack(tt.input, tt.maxLen)
-		if got != tt.want {
-			t.Errorf("truncateStringSlack(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
-		}
-	}
-}

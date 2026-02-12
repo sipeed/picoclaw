@@ -3,10 +3,7 @@ package channels
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
@@ -186,10 +184,6 @@ func (c *SlackChannel) handleEventsAPI(event socketmode.Event) {
 		c.handleMessageEvent(ev)
 	case *slackevents.AppMentionEvent:
 		c.handleAppMention(ev)
-	case *slackevents.ReactionAddedEvent:
-		c.handleReactionAdded(ev)
-	case *slackevents.ReactionRemovedEvent:
-		c.handleReactionRemoved(ev)
 	}
 }
 
@@ -201,6 +195,14 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 	if ev.SubType != "" && ev.SubType != "file_share" {
+		return
+	}
+
+	// 检查白名单，避免为被拒绝的用户下载附件
+	if !c.IsAllowed(ev.User) {
+		logger.DebugCF("slack", "Message rejected by allowlist", map[string]interface{}{
+			"user_id": ev.User,
+		})
 		return
 	}
 
@@ -228,6 +230,19 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	content = c.stripBotMention(content)
 
 	var mediaPaths []string
+	localFiles := []string{} // 跟踪需要清理的本地文件
+
+	// 确保临时文件在函数返回时被清理
+	defer func() {
+		for _, file := range localFiles {
+			if err := os.Remove(file); err != nil {
+				logger.DebugCF("slack", "Failed to cleanup temp file", map[string]interface{}{
+					"file":  file,
+					"error": err.Error(),
+				})
+			}
+		}
+	}()
 
 	if ev.Message != nil && len(ev.Message.Files) > 0 {
 		for _, file := range ev.Message.Files {
@@ -235,12 +250,13 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 			if localPath == "" {
 				continue
 			}
+			localFiles = append(localFiles, localPath)
 			mediaPaths = append(mediaPaths, localPath)
 
-			if isAudioFile(file.Name, file.Mimetype) && c.transcriber != nil && c.transcriber.IsAvailable() {
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if utils.IsAudioFile(file.Name, file.Mimetype) && c.transcriber != nil && c.transcriber.IsAvailable() {
+				ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
+				defer cancel()
 				result, err := c.transcriber.Transcribe(ctx, localPath)
-				cancel()
 
 				if err != nil {
 					logger.ErrorCF("slack", "Voice transcription failed", map[string]interface{}{"error": err.Error()})
@@ -266,9 +282,9 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	}
 
 	logger.DebugCF("slack", "Received message", map[string]interface{}{
-		"sender_id":  senderID,
-		"chat_id":    chatID,
-		"preview":    truncateStringSlack(content, 50),
+		"sender_id": senderID,
+		"chat_id":   chatID,
+		"preview":   utils.Truncate(content, 50),
 		"has_thread": threadTS != "",
 	})
 
@@ -348,35 +364,13 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 	logger.DebugCF("slack", "Slash command received", map[string]interface{}{
 		"sender_id": senderID,
 		"command":   cmd.Command,
-		"text":      truncateStringSlack(content, 50),
+		"text":      utils.Truncate(content, 50),
 	})
 
 	c.HandleMessage(senderID, chatID, content, nil, metadata)
 }
 
-func (c *SlackChannel) handleReactionAdded(ev *slackevents.ReactionAddedEvent) {
-	logger.DebugCF("slack", "Reaction added", map[string]interface{}{
-		"reaction": ev.Reaction,
-		"user":     ev.User,
-		"item_ts":  ev.Item.Timestamp,
-	})
-}
-
-func (c *SlackChannel) handleReactionRemoved(ev *slackevents.ReactionRemovedEvent) {
-	logger.DebugCF("slack", "Reaction removed", map[string]interface{}{
-		"reaction": ev.Reaction,
-		"user":     ev.User,
-		"item_ts":  ev.Item.Timestamp,
-	})
-}
-
 func (c *SlackChannel) downloadSlackFile(file slack.File) string {
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
-	if err := os.MkdirAll(mediaDir, 0755); err != nil {
-		logger.ErrorCF("slack", "Failed to create media directory", map[string]interface{}{"error": err.Error()})
-		return ""
-	}
-
 	downloadURL := file.URLPrivateDownload
 	if downloadURL == "" {
 		downloadURL = file.URLPrivate
@@ -386,41 +380,12 @@ func (c *SlackChannel) downloadSlackFile(file slack.File) string {
 		return ""
 	}
 
-	localPath := filepath.Join(mediaDir, file.Name)
-
-	req, err := http.NewRequest("GET", downloadURL, nil)
-	if err != nil {
-		logger.ErrorCF("slack", "Failed to create download request", map[string]interface{}{"error": err.Error()})
-		return ""
-	}
-	req.Header.Set("Authorization", "Bearer "+c.config.BotToken)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		logger.ErrorCF("slack", "Failed to download file", map[string]interface{}{"error": err.Error()})
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		logger.ErrorCF("slack", "File download returned non-200 status", map[string]interface{}{"status": resp.StatusCode})
-		return ""
-	}
-
-	out, err := os.Create(localPath)
-	if err != nil {
-		logger.ErrorCF("slack", "Failed to create local file", map[string]interface{}{"error": err.Error()})
-		return ""
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, resp.Body); err != nil {
-		logger.ErrorCF("slack", "Failed to write file", map[string]interface{}{"error": err.Error()})
-		return ""
-	}
-
-	logger.DebugCF("slack", "File downloaded", map[string]interface{}{"path": localPath, "name": file.Name})
-	return localPath
+	return utils.DownloadFile(downloadURL, file.Name, utils.DownloadOptions{
+		LoggerPrefix: "slack",
+		ExtraHeaders: map[string]string{
+			"Authorization": "Bearer " + c.config.BotToken,
+		},
+	})
 }
 
 func (c *SlackChannel) stripBotMention(text string) string {
@@ -436,11 +401,4 @@ func parseSlackChatID(chatID string) (channelID, threadTS string) {
 		threadTS = parts[1]
 	}
 	return
-}
-
-func truncateStringSlack(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen]
 }

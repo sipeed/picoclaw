@@ -3,12 +3,7 @@ package channels
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
-	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -19,11 +14,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
+const (
+	transcriptionTimeout = 30 * time.Second
+	sendTimeout          = 10 * time.Second
+)
+
 type DiscordChannel struct {
 	*BaseChannel
 	session     *discordgo.Session
 	config      config.DiscordConfig
 	transcriber *voice.GroqTranscriber
+	ctx         context.Context
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -39,6 +40,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		session:     session,
 		config:      cfg,
 		transcriber: nil,
+		ctx:         context.Background(),
 	}, nil
 }
 
@@ -46,9 +48,17 @@ func (c *DiscordChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 	c.transcriber = transcriber
 }
 
+func (c *DiscordChannel) getContext() context.Context {
+	if c.ctx == nil {
+		return context.Background()
+	}
+	return c.ctx
+}
+
 func (c *DiscordChannel) Start(ctx context.Context) error {
 	logger.InfoC("discord", "Starting Discord bot")
 
+	c.ctx = ctx
 	c.session.AddHandler(c.handleMessage)
 
 	if err := c.session.Open(); err != nil {
@@ -61,7 +71,7 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get bot user: %w", err)
 	}
-	logger.InfoCF("discord", "Discord bot connected", map[string]interface{}{
+	logger.InfoCF("discord", "Discord bot connected", map[string]any{
 		"username": botUser.Username,
 		"user_id":  botUser.ID,
 	})
@@ -92,11 +102,33 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	message := msg.Content
 
-	if _, err := c.session.ChannelMessageSend(channelID, message); err != nil {
-		return fmt.Errorf("failed to send discord message: %w", err)
-	}
+	// 使用传入的 ctx 进行超时控制
+	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
 
-	return nil
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.session.ChannelMessageSend(channelID, message)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("failed to send discord message: %w", err)
+		}
+		return nil
+	case <-sendCtx.Done():
+		return fmt.Errorf("send message timeout: %w", sendCtx.Err())
+	}
+}
+
+// appendContent 安全地追加内容到现有文本
+func appendContent(content, suffix string) string {
+	if content == "" {
+		return suffix
+	}
+	return content + "\n" + suffix
 }
 
 func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -108,6 +140,14 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
+	// 检查白名单，避免为被拒绝的用户下载附件和转录
+	if !c.IsAllowed(m.Author.ID) {
+		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
+			"user_id": m.Author.ID,
+		})
+		return
+	}
+
 	senderID := m.Author.ID
 	senderName := m.Author.Username
 	if m.Author.Discriminator != "" && m.Author.Discriminator != "0" {
@@ -115,50 +155,62 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	content := m.Content
-	mediaPaths := []string{}
+	mediaPaths := make([]string, 0, len(m.Attachments))
+	localFiles := make([]string, 0, len(m.Attachments))
+
+	// 确保临时文件在函数返回时被清理
+	defer func() {
+		for _, file := range localFiles {
+			if err := os.Remove(file); err != nil {
+				logger.DebugCF("discord", "Failed to cleanup temp file", map[string]any{
+					"file":  file,
+					"error": err.Error(),
+				})
+			}
+		}
+	}()
 
 	for _, attachment := range m.Attachments {
-		isAudio := isAudioFile(attachment.Filename, attachment.ContentType)
+		isAudio := utils.IsAudioFile(attachment.Filename, attachment.ContentType)
 
 		if isAudio {
 			localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
 			if localPath != "" {
-				mediaPaths = append(mediaPaths, localPath)
+				localFiles = append(localFiles, localPath)
 
 				transcribedText := ""
 				if c.transcriber != nil && c.transcriber.IsAvailable() {
-					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-					defer cancel()
-
+					ctx, cancel := context.WithTimeout(c.getContext(), transcriptionTimeout)
 					result, err := c.transcriber.Transcribe(ctx, localPath)
+					cancel() // 立即释放context资源，避免在for循环中泄漏
+
 					if err != nil {
-						log.Printf("Voice transcription failed: %v", err)
-						transcribedText = fmt.Sprintf("[audio: %s (transcription failed)]", localPath)
+						logger.ErrorCF("discord", "Voice transcription failed", map[string]any{
+							"error": err.Error(),
+						})
+						transcribedText = fmt.Sprintf("[audio: %s (transcription failed)]", attachment.Filename)
 					} else {
 						transcribedText = fmt.Sprintf("[audio transcription: %s]", result.Text)
-						log.Printf("Audio transcribed successfully: %s", result.Text)
+						logger.DebugCF("discord", "Audio transcribed successfully", map[string]any{
+							"text": result.Text,
+						})
 					}
 				} else {
-					transcribedText = fmt.Sprintf("[audio: %s]", localPath)
+					transcribedText = fmt.Sprintf("[audio: %s]", attachment.Filename)
 				}
 
-				if content != "" {
-					content += "\n"
-				}
-				content += transcribedText
+				content = appendContent(content, transcribedText)
 			} else {
+				logger.WarnCF("discord", "Failed to download audio attachment", map[string]any{
+					"url":      attachment.URL,
+					"filename": attachment.Filename,
+				})
 				mediaPaths = append(mediaPaths, attachment.URL)
-				if content != "" {
-					content += "\n"
-				}
-				content += fmt.Sprintf("[attachment: %s]", attachment.URL)
+				content = appendContent(content, fmt.Sprintf("[attachment: %s]", attachment.URL))
 			}
 		} else {
 			mediaPaths = append(mediaPaths, attachment.URL)
-			if content != "" {
-				content += "\n"
-			}
-			content += fmt.Sprintf("[attachment: %s]", attachment.URL)
+			content = appendContent(content, fmt.Sprintf("[attachment: %s]", attachment.URL))
 		}
 	}
 
@@ -170,7 +222,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		content = "[media only]"
 	}
 
-	logger.DebugCF("discord", "Received message", map[string]interface{}{
+	logger.DebugCF("discord", "Received message", map[string]any{
 		"sender_name": senderName,
 		"sender_id":   senderID,
 		"preview":     utils.Truncate(content, 50),
@@ -189,59 +241,8 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	c.HandleMessage(senderID, m.ChannelID, content, mediaPaths, metadata)
 }
 
-func isAudioFile(filename, contentType string) bool {
-	audioExtensions := []string{".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
-	audioTypes := []string{"audio/", "application/ogg", "application/x-ogg"}
-
-	for _, ext := range audioExtensions {
-		if strings.HasSuffix(strings.ToLower(filename), ext) {
-			return true
-		}
-	}
-
-	for _, audioType := range audioTypes {
-		if strings.HasPrefix(strings.ToLower(contentType), audioType) {
-			return true
-		}
-	}
-
-	return false
-}
-
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
-	if err := os.MkdirAll(mediaDir, 0755); err != nil {
-		log.Printf("Failed to create media directory: %v", err)
-		return ""
-	}
-
-	localPath := filepath.Join(mediaDir, filename)
-
-	resp, err := http.Get(url)
-	if err != nil {
-		log.Printf("Failed to download attachment: %v", err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Failed to download attachment, status: %d", resp.StatusCode)
-		return ""
-	}
-
-	out, err := os.Create(localPath)
-	if err != nil {
-		log.Printf("Failed to create file: %v", err)
-		return ""
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		log.Printf("Failed to write file: %v", err)
-		return ""
-	}
-
-	log.Printf("Attachment downloaded successfully to: %s", localPath)
-	return localPath
+	return utils.DownloadFile(url, filename, utils.DownloadOptions{
+		LoggerPrefix: "discord",
+	})
 }
