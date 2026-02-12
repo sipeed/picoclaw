@@ -20,6 +20,7 @@ import (
 const (
 	defaultMCPStartupTimeout = 8 * time.Second
 	defaultMCPCallTimeout    = 30 * time.Second
+	defaultMCPTerminateWait  = 1 * time.Second
 	maxToolNameLength        = 64
 )
 
@@ -210,9 +211,7 @@ func (c *mcpClient) buildTransport() (mcp.Transport, error) {
 		tr := &mcp.CommandTransport{
 			Command: cmd,
 		}
-		if c.cfg.TerminateTimeoutMS > 0 {
-			tr.TerminateDuration = time.Duration(c.cfg.TerminateTimeoutMS) * time.Millisecond
-		}
+		tr.TerminateDuration = durationFromMS(c.cfg.TerminateTimeoutMS, defaultMCPTerminateWait)
 		return tr, nil
 	case "streamable_http":
 		if strings.TrimSpace(c.cfg.URL) == "" {

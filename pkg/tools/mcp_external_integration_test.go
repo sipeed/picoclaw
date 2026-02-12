@@ -22,6 +22,15 @@ func TestMCPExternalPopularFilesystemCommand(t *testing.T) {
 	requireExternalMCPTests(t)
 
 	root := t.TempDir()
+	rootCanonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(root) error: %v", err)
+	}
+	testFile := filepath.Join(rootCanonical, "hello.txt")
+	if err := os.WriteFile(testFile, []byte("hello from filesystem mcp"), 0644); err != nil {
+		t.Fatalf("WriteFile(testFile) error: %v", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -33,7 +42,7 @@ func TestMCPExternalPopularFilesystemCommand(t *testing.T) {
 				Enabled:          true,
 				Transport:        "command",
 				Command:          "npx",
-				Args:             []string{"-y", "@modelcontextprotocol/server-filesystem", root},
+				Args:             []string{"-y", "@modelcontextprotocol/server-filesystem", rootCanonical},
 				ToolPrefix:       "mcp_fs",
 				StartupTimeoutMS: 30000,
 				CallTimeoutMS:    30000,
@@ -46,17 +55,29 @@ func TestMCPExternalPopularFilesystemCommand(t *testing.T) {
 		t.Fatalf("LoadMCPTools() error: %v", err)
 	}
 
-	tool := findToolByName(tools, "mcp_fs_list_allowed_directories")
-	if tool == nil {
+	listAllowedDirs := findToolByName(tools, "mcp_fs_list_allowed_directories")
+	if listAllowedDirs == nil {
 		t.Fatalf("missing tool mcp_fs_list_allowed_directories; got %v", toolNames(tools))
 	}
+	readFile := findToolByName(tools, "mcp_fs_read_file")
+	if readFile == nil {
+		t.Fatalf("missing tool mcp_fs_read_file; got %v", toolNames(tools))
+	}
 
-	out, err := tool.Execute(ctx, map[string]interface{}{})
+	out, err := listAllowedDirs.Execute(ctx, map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("Execute(list_allowed_directories) error: %v", err)
 	}
-	if !strings.Contains(out, root) {
-		t.Fatalf("expected allowed directory %q in output: %s", root, out)
+	if !strings.Contains(out, rootCanonical) {
+		t.Fatalf("expected allowed directory %q in output: %s", rootCanonical, out)
+	}
+
+	readOut, err := readFile.Execute(ctx, map[string]interface{}{"path": testFile})
+	if err != nil {
+		t.Fatalf("Execute(read_file) error: %v", err)
+	}
+	if !strings.Contains(readOut, "hello from filesystem mcp") {
+		t.Fatalf("expected file content in output, got: %s", readOut)
 	}
 }
 
@@ -107,7 +128,7 @@ func TestMCPExternalPopularEverythingSSE(t *testing.T) {
 	requireExternalMCPTests(t)
 
 	port := pickFreePort(t)
-	cmd := startEverythingSSEServer(t, port)
+	cmd := startEverythingServer(t, port, "sse")
 	waitForTCPPort(t, fmt.Sprintf("127.0.0.1:%d", port), 15*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -143,6 +164,52 @@ func TestMCPExternalPopularEverythingSSE(t *testing.T) {
 		t.Fatalf("Execute(echo) error: %v", err)
 	}
 	if !strings.Contains(out, "Echo: hello from sse") {
+		t.Fatalf("unexpected echo output: %s", out)
+	}
+
+	_ = cmd
+}
+
+func TestMCPExternalPopularEverythingStreamableHTTP(t *testing.T) {
+	requireExternalMCPTests(t)
+
+	port := pickFreePort(t)
+	cmd := startEverythingServer(t, port, "streamableHttp")
+	waitForTCPPort(t, fmt.Sprintf("127.0.0.1:%d", port), 15*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cfg := config.MCPToolsConfig{
+		Enabled: true,
+		Servers: []config.MCPServerConfig{
+			{
+				Name:             "everything-http",
+				Enabled:          true,
+				Transport:        "streamable_http",
+				URL:              fmt.Sprintf("http://127.0.0.1:%d/mcp", port),
+				ToolPrefix:       "mcp_http",
+				StartupTimeoutMS: 30000,
+				CallTimeoutMS:    30000,
+			},
+		},
+	}
+
+	tools, err := LoadMCPTools(ctx, cfg, "")
+	if err != nil {
+		t.Fatalf("LoadMCPTools() error: %v", err)
+	}
+
+	echoTool := findToolByName(tools, "mcp_http_echo")
+	if echoTool == nil {
+		t.Fatalf("missing tool mcp_http_echo; got %v", toolNames(tools))
+	}
+
+	out, err := echoTool.Execute(ctx, map[string]interface{}{"message": "hello from streamable-http"})
+	if err != nil {
+		t.Fatalf("Execute(echo) error: %v", err)
+	}
+	if !strings.Contains(out, "hello from streamable-http") {
 		t.Fatalf("unexpected echo output: %s", out)
 	}
 
@@ -197,16 +264,16 @@ func waitForTCPPort(t *testing.T, addr string, timeout time.Duration) {
 	t.Fatalf("port %s did not become ready within %v", addr, timeout)
 }
 
-func startEverythingSSEServer(t *testing.T, port int) *exec.Cmd {
+func startEverythingServer(t *testing.T, port int, mode string) *exec.Cmd {
 	t.Helper()
 
-	cmd := exec.Command("npx", "-y", "@modelcontextprotocol/server-everything", "sse")
+	cmd := exec.Command("npx", "-y", "@modelcontextprotocol/server-everything", mode)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("start everything sse server: %v", err)
+		t.Fatalf("start everything %s server: %v", mode, err)
 	}
 
 	t.Cleanup(func() {

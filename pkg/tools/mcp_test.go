@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -164,6 +165,53 @@ func TestLoadMCPTools_InvalidServerAggregatesError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "discovery failed") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildTransport_CommandTerminateDefaults(t *testing.T) {
+	client := newMCPClient(config.MCPServerConfig{
+		Name:      "default-terminate",
+		Enabled:   true,
+		Transport: "command",
+		Command:   "sleep",
+		Args:      []string{"1"},
+	}, "")
+
+	tr, err := client.buildTransport()
+	if err != nil {
+		t.Fatalf("buildTransport() error: %v", err)
+	}
+
+	cmdTr, ok := tr.(*mcp.CommandTransport)
+	if !ok {
+		t.Fatalf("buildTransport() returned %T, want *mcp.CommandTransport", tr)
+	}
+	if cmdTr.TerminateDuration != defaultMCPTerminateWait {
+		t.Fatalf("TerminateDuration = %v, want %v", cmdTr.TerminateDuration, defaultMCPTerminateWait)
+	}
+}
+
+func TestBuildTransport_CommandTerminateOverride(t *testing.T) {
+	client := newMCPClient(config.MCPServerConfig{
+		Name:               "override-terminate",
+		Enabled:            true,
+		Transport:          "command",
+		Command:            "sleep",
+		Args:               []string{"1"},
+		TerminateTimeoutMS: 2500,
+	}, "")
+
+	tr, err := client.buildTransport()
+	if err != nil {
+		t.Fatalf("buildTransport() error: %v", err)
+	}
+
+	cmdTr, ok := tr.(*mcp.CommandTransport)
+	if !ok {
+		t.Fatalf("buildTransport() returned %T, want *mcp.CommandTransport", tr)
+	}
+	if cmdTr.TerminateDuration != 2500*time.Millisecond {
+		t.Fatalf("TerminateDuration = %v, want %v", cmdTr.TerminateDuration, 2500*time.Millisecond)
 	}
 }
 
