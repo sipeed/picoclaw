@@ -30,6 +30,48 @@ func TestCreateProvider_ZenExplicit(t *testing.T) {
 	}
 }
 
+func TestCreateProvider_ZAIExplicit(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "zai"
+	cfg.Agents.Defaults.Model = "glm-4.6"
+	cfg.Providers.ZAI.APIKey = "zai-key"
+
+	provider, err := CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider(zai) error = %v", err)
+	}
+
+	httpProvider, ok := provider.(*HTTPProvider)
+	if !ok {
+		t.Fatalf("CreateProvider(zai) returned %T, want *HTTPProvider", provider)
+	}
+	if httpProvider.apiBase != "https://api.z.ai/api/paas/v4" {
+		t.Errorf("apiBase = %q, want %q", httpProvider.apiBase, "https://api.z.ai/api/paas/v4")
+	}
+	if httpProvider.apiKey != "zai-key" {
+		t.Errorf("apiKey = %q, want %q", httpProvider.apiKey, "zai-key")
+	}
+}
+
+func TestCreateProvider_ZAIByModelPrefix(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Model = "zai/glm-4.6"
+	cfg.Providers.ZAI.APIKey = "zai-key"
+
+	provider, err := CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider(zai/*) error = %v", err)
+	}
+
+	httpProvider, ok := provider.(*HTTPProvider)
+	if !ok {
+		t.Fatalf("CreateProvider(zai/*) returned %T, want *HTTPProvider", provider)
+	}
+	if httpProvider.apiBase != "https://api.z.ai/api/paas/v4" {
+		t.Errorf("apiBase = %q, want %q", httpProvider.apiBase, "https://api.z.ai/api/paas/v4")
+	}
+}
+
 func TestCreateProvider_ZenByModelPrefix(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Model = "zen/kimi-k2.5-free"

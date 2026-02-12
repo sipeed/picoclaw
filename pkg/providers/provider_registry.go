@@ -153,6 +153,10 @@ func zhipuCreator(cfg *config.Config, _ string) (LLMProvider, bool, error) {
 	return createHTTPProviderFromConfig(cfg.Providers.Zhipu, "https://open.bigmodel.cn/api/paas/v4", true, false)
 }
 
+func zaiCreator(cfg *config.Config, _ string) (LLMProvider, bool, error) {
+	return createHTTPProviderFromConfig(cfg.Providers.ZAI, "https://api.z.ai/api/paas/v4", true, false)
+}
+
 func geminiCreator(cfg *config.Config, _ string) (LLMProvider, bool, error) {
 	return createHTTPProviderFromConfig(cfg.Providers.Gemini, "https://generativelanguage.googleapis.com/v1beta", true, false)
 }

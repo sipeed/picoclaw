@@ -42,6 +42,13 @@ func init() {
 	})
 
 	RegisterProvider(providerRegistration{
+		Name:          "zai",
+		Aliases:       []string{"z.ai"},
+		ModelPrefixes: []string{"zai/"},
+		Creator:       zaiCreator,
+	})
+
+	RegisterProvider(providerRegistration{
 		Name:          "groq",
 		ModelPrefixes: []string{"groq/"},
 		Creator:       groqCreator,
