@@ -348,6 +348,13 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "https://generativelanguage.googleapis.com/v1beta"
 			}
 
+		// GLM/Zai via OpenAI-compatible endpoint (ex: Chutes.ai)
+		case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zai")) && cfg.Providers.OpenAI.APIKey != "" &&
+			cfg.Providers.OpenAI.APIBase != "" && cfg.Providers.OpenAI.APIBase != "https://api.openai.com/v1":
+			apiKey = cfg.Providers.OpenAI.APIKey
+			apiBase = cfg.Providers.OpenAI.APIBase
+			proxy = cfg.Providers.OpenAI.Proxy
+
 		case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zhipu") || strings.Contains(lowerModel, "zai")) && cfg.Providers.Zhipu.APIKey != "":
 			apiKey = cfg.Providers.Zhipu.APIKey
 			apiBase = cfg.Providers.Zhipu.APIBase
