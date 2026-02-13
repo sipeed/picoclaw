@@ -145,10 +145,12 @@ type ProvidersConfig struct {
 	OpenRouter ProviderConfig `json:"openrouter"`
 	Groq       ProviderConfig `json:"groq"`
 	Zhipu      ProviderConfig `json:"zhipu"`
+	ZAI        ProviderConfig `json:"zai"`
 	VLLM       ProviderConfig `json:"vllm"`
 	Gemini     ProviderConfig `json:"gemini"`
 	Nvidia     ProviderConfig `json:"nvidia"`
 	Moonshot   ProviderConfig `json:"moonshot"`
+	Zen        ProviderConfig `json:"zen"`
 }
 
 type ProviderConfig struct {
@@ -244,10 +246,12 @@ func DefaultConfig() *Config {
 			OpenRouter: ProviderConfig{},
 			Groq:       ProviderConfig{},
 			Zhipu:      ProviderConfig{},
+			ZAI:        ProviderConfig{},
 			VLLM:       ProviderConfig{},
 			Gemini:     ProviderConfig{},
 			Nvidia:     ProviderConfig{},
 			Moonshot:   ProviderConfig{},
+			Zen:        ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
