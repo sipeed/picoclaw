@@ -240,24 +240,34 @@ func TestDiscovery_StaleNodeCleanup(t *testing.T) {
 		lastSeen   int64 // milliseconds ago
 		initStatus NodeStatus
 		wantStatus NodeStatus
+		wantExists bool  // whether node should still exist after cleanup
 	}{
 		{
 			name:       "stale node marked offline",
-			lastSeen:   5000, // 5s ago, timeout is 200ms
+			lastSeen:   300, // 300ms ago, > timeout (200ms) but < GC threshold (2s)
 			initStatus: StatusOnline,
 			wantStatus: StatusOffline,
+			wantExists: true,
 		},
 		{
 			name:       "fresh node untouched",
 			lastSeen:   10, // 10ms ago, well within timeout
 			initStatus: StatusOnline,
 			wantStatus: StatusOnline,
+			wantExists: true,
 		},
 		{
 			name:       "already offline node unchanged",
-			lastSeen:   5000,
+			lastSeen:   300, // 300ms ago, > timeout but < GC threshold
 			initStatus: StatusOffline,
 			wantStatus: StatusOffline,
+			wantExists: true,
+		},
+		{
+			name:       "long dead node GC'd",
+			lastSeen:   5000, // 5s ago, > GC threshold (2s)
+			initStatus: StatusOffline,
+			wantExists: false, // should be removed
 		},
 	}
 
@@ -282,11 +292,17 @@ func TestDiscovery_StaleNodeCleanup(t *testing.T) {
 			d.cleanupStaleNodes()
 
 			got, ok := d.GetNode("cleanup-node")
-			if !ok {
-				t.Fatal("GetNode() returned false")
-			}
-			if got.Status != tt.wantStatus {
-				t.Errorf("Status = %q, want %q", got.Status, tt.wantStatus)
+			if tt.wantExists {
+				if !ok {
+					t.Fatal("GetNode() returned false, expected node to exist")
+				}
+				if got.Status != tt.wantStatus {
+					t.Errorf("Status = %q, want %q", got.Status, tt.wantStatus)
+				}
+			} else {
+				if ok {
+					t.Errorf("GetNode() returned true, expected node to be GC'd")
+				}
 			}
 		})
 	}

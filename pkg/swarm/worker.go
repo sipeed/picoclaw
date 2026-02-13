@@ -19,15 +19,16 @@ import (
 
 // Worker executes tasks received from the swarm
 type Worker struct {
-	bridge      *NATSBridge
-	temporal    *TemporalClient
-	agentLoop   *agent.AgentLoop
-	provider    providers.LLMProvider
-	nodeInfo    *NodeInfo
-	cfg         *config.SwarmConfig
-	taskQueue   chan *SwarmTask
-	activeTasks sync.Map
-	running     atomic.Bool
+	bridge       *NATSBridge
+	temporal     *TemporalClient
+	agentLoop    *agent.AgentLoop
+	provider     providers.LLMProvider
+	nodeInfo     *NodeInfo
+	cfg          *config.SwarmConfig
+	taskQueue    chan *SwarmTask
+	activeTasks  sync.Map
+	running      atomic.Bool
+	tasksRunning atomic.Int32 // atomic counter for thread-safe tracking
 }
 
 // NewWorker creates a new worker
@@ -105,14 +106,16 @@ func (w *Worker) executeTask(ctx context.Context, task *SwarmTask) {
 		"capability": task.Capability,
 	})
 
-	// Track active task
+	// Track active task using atomic operations for thread safety
 	w.activeTasks.Store(task.ID, task)
-	w.nodeInfo.TasksRunning++
+	current := w.tasksRunning.Add(1)
+	w.nodeInfo.TasksRunning = int(current)
 	w.updateLoad()
 
 	defer func() {
 		w.activeTasks.Delete(task.ID)
-		w.nodeInfo.TasksRunning--
+		current := w.tasksRunning.Add(-1)
+		w.nodeInfo.TasksRunning = int(current)
 		w.updateLoad()
 	}()
 
@@ -191,14 +194,16 @@ func (w *Worker) sendProgressUpdates(ctx context.Context, task *SwarmTask, done 
 }
 
 func (w *Worker) updateLoad() {
+	tasksRunning := int(w.tasksRunning.Load())
 	if w.cfg.MaxConcurrent > 0 {
-		w.nodeInfo.Load = float64(w.nodeInfo.TasksRunning) / float64(w.cfg.MaxConcurrent)
+		w.nodeInfo.Load = float64(tasksRunning) / float64(w.cfg.MaxConcurrent)
 	}
-	if w.nodeInfo.TasksRunning >= w.cfg.MaxConcurrent {
+	if tasksRunning >= w.cfg.MaxConcurrent {
 		w.nodeInfo.Status = StatusBusy
 	} else {
 		w.nodeInfo.Status = StatusOnline
 	}
+	w.nodeInfo.TasksRunning = tasksRunning
 }
 
 // ActiveTaskCount returns the number of currently executing tasks

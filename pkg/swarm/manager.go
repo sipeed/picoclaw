@@ -36,6 +36,12 @@ type Manager struct {
 func NewManager(cfg *config.Config, agentLoop *agent.AgentLoop, provider providers.LLMProvider, localBus *bus.MessageBus) *Manager {
 	swarmCfg := &cfg.Swarm
 
+	// Validate configuration
+	if err := swarmCfg.Validate(); err != nil {
+		logger.ErrorCF("swarm", "Invalid configuration", map[string]interface{}{"error": err.Error()})
+		return nil
+	}
+
 	// Generate node ID if not set
 	nodeID := swarmCfg.NodeID
 	if nodeID == "" {

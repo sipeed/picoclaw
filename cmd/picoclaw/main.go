@@ -1628,6 +1628,10 @@ func swarmStartCmd() {
 
 	// Create and start swarm manager
 	manager := swarm.NewManager(cfg, agentLoop, provider, msgBus)
+	if manager == nil {
+		fmt.Println("Error: failed to create swarm manager (invalid configuration)")
+		os.Exit(1)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

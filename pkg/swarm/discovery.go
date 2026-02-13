@@ -218,6 +218,8 @@ func (d *Discovery) cleanupStaleNodes() {
 	timeout := d.cfg.GetNodeTimeout()
 	now := time.Now().UnixMilli()
 	staleThreshold := now - int64(timeout.Milliseconds())
+	// GC threshold: 10x timeout to remove long-dead nodes and prevent memory leak
+	gcThreshold := now - int64(timeout.Milliseconds()*10)
 
 	for id, node := range d.registry {
 		if node.LastSeen < staleThreshold && node.Status != StatusOffline {
@@ -225,6 +227,13 @@ func (d *Discovery) cleanupStaleNodes() {
 			logger.WarnCF("swarm", "Node marked offline (heartbeat timeout)", map[string]interface{}{
 				"node_id":   id,
 				"last_seen": time.UnixMilli(node.LastSeen).Format(time.RFC3339),
+			})
+		}
+		// GC long-dead nodes to prevent memory leak
+		if node.LastSeen < gcThreshold {
+			delete(d.registry, id)
+			logger.InfoCF("swarm", "Node removed from registry (GC)", map[string]interface{}{
+				"node_id": id,
 			})
 		}
 	}
@@ -253,13 +262,30 @@ func (d *Discovery) queryNodes() {
 }
 
 func (d *Discovery) handleNodeJoin(node *NodeInfo) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// Don't register ourselves
-	if node.ID == d.nodeInfo.ID {
+	if node == nil {
+		logger.WarnC("swarm", "Attempted to register nil node")
 		return
 	}
+	if node.ID == "" {
+		logger.WarnC("swarm", "Attempted to register node with empty ID")
+		return
+	}
+	if node.ID == d.nodeInfo.ID {
+		return // Skip self
+	}
+
+	// Validate role
+	validRoles := map[NodeRole]bool{RoleCoordinator: true, RoleWorker: true, RoleSpecialist: true}
+	if !validRoles[node.Role] {
+		logger.WarnCF("swarm", "Invalid node role", map[string]interface{}{
+			"node_id": node.ID,
+			"role":    string(node.Role),
+		})
+		return
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	node.LastSeen = time.Now().UnixMilli()
 	d.registry[node.ID] = node

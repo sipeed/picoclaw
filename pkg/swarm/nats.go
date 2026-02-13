@@ -405,7 +405,7 @@ func (nb *NATSBridge) handleDiscoveryQuery(msg *nats.Msg) {
 		return
 	}
 	if err := msg.Respond(response); err != nil {
-		logger.DebugCF("swarm", "Failed to respond to discovery query", map[string]interface{}{
+		logger.WarnCF("swarm", "Failed to respond to discovery query", map[string]interface{}{
 			"error": err.Error(),
 		})
 	}

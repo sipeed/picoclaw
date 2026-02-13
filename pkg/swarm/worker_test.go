@@ -214,7 +214,6 @@ func TestWorker_UpdateLoad(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodeInfo := newTestNodeInfo("update-load", RoleWorker, []string{"code"}, tt.maxConc)
-			nodeInfo.TasksRunning = tt.tasksRunning
 
 			swarmCfg := newTestSwarmConfig(0)
 			swarmCfg.MaxConcurrent = tt.maxConc
@@ -223,6 +222,8 @@ func TestWorker_UpdateLoad(t *testing.T) {
 				nodeInfo: nodeInfo,
 				cfg:      swarmCfg,
 			}
+			// Set atomic counter for thread-safe load tracking
+			w.tasksRunning.Store(int32(tt.tasksRunning))
 
 			w.updateLoad()
 

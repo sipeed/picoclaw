@@ -244,6 +244,40 @@ func (c *SwarmConfig) GetActivityTimeout() time.Duration {
 	return d
 }
 
+// Validate validates the SwarmConfig
+func (c *SwarmConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+
+	if c.MaxConcurrent <= 0 {
+		return fmt.Errorf("swarm: max_concurrent must be > 0, got %d", c.MaxConcurrent)
+	}
+
+	if len(c.NATS.URLs) == 0 && !c.NATS.Embedded {
+		return fmt.Errorf("swarm: NATS.URLs required when embedded=false")
+	}
+
+	if c.NATS.HeartbeatInterval != "" {
+		if _, err := time.ParseDuration(c.NATS.HeartbeatInterval); err != nil {
+			return fmt.Errorf("swarm: invalid heartbeat_interval: %w", err)
+		}
+	}
+
+	if c.NATS.NodeTimeout != "" {
+		if _, err := time.ParseDuration(c.NATS.NodeTimeout); err != nil {
+			return fmt.Errorf("swarm: invalid node_timeout: %w", err)
+		}
+	}
+
+	validRoles := map[string]bool{"coordinator": true, "worker": true, "specialist": true}
+	if !validRoles[c.Role] {
+		return fmt.Errorf("swarm: invalid role %q, must be coordinator/worker/specialist", c.Role)
+	}
+
+	return nil
+}
+
 func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
