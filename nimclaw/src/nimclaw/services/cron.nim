@@ -22,7 +22,7 @@ type
     lastStatus*: string
     lastError*: string
 
-  CronJob* = object
+  CronJob* = ref object
     id*: string
     name*: string
     enabled*: bool

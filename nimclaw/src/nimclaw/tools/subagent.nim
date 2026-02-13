@@ -1,4 +1,4 @@
-import std/[asyncdispatch, tables, locks, times, json]
+import std/[asyncdispatch, tables, locks, times, json, strutils]
 import types
 import ../providers/types as providers_types
 import ../bus
@@ -56,7 +56,7 @@ proc runTask*(sm: SubagentManager, task: SubagentTask) {.async.} =
     release(sm.lock)
 
   if sm.bus != nil:
-    let announceContent = "Task '$1' completed.\n\nResult:\n$2".format(task.label, task.result)
+    let announceContent = strutils.format("Task '$1' completed.\n\nResult:\n$2", task.label, task.result)
     sm.bus.publishInbound(InboundMessage(
       channel: "system",
       sender_id: "subagent:" & task.id,

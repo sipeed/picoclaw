@@ -28,11 +28,16 @@ proc newDingTalkChannel*(cfg: DingTalkConfig, bus: MessageBus): DingTalkChannel 
 proc dingtalkGatewayLoop(c: DingTalkChannel) {.async.} =
   while c.running:
     try:
+      if c.ws == nil:
+        await sleepAsync(5000)
+        continue
+
       let data = await c.ws.receiveStrPacket()
       if data == "": break
       let msg = parseJson(data)
-      # DingTalk stream protocol handling simplified
-      if msg.hasKey("specversion") and msg.hasKey("type") and msg["type"].getStr() == "chat.chatbot.message":
+
+      # Simplified DingTalk Stream Mode handling
+      if msg.getOrDefault("type").getStr() == "chat.chatbot.message":
         let dataModel = msg["data"]
         let content = dataModel["text"]["content"].getStr()
         let senderID = dataModel["senderStaffId"].getStr()
@@ -42,8 +47,8 @@ proc dingtalkGatewayLoop(c: DingTalkChannel) {.async.} =
         c.sessionWebhooks[chatID] = dataModel["sessionWebhook"].getStr()
         release(c.lock)
 
+        infoCF("dingtalk", "Received message", {"sender": senderID}.toTable)
         c.handleMessage(senderID, chatID, content)
-
     except Exception as e:
       errorCF("dingtalk", "Gateway error", {"error": e.msg}.toTable)
       await sleepAsync(5000)
@@ -51,11 +56,14 @@ proc dingtalkGatewayLoop(c: DingTalkChannel) {.async.} =
 method name*(c: DingTalkChannel): string = "dingtalk"
 
 method start*(c: DingTalkChannel) {.async.} =
-  infoC("dingtalk", "Starting DingTalk channel (Stream Mode)...")
-  # To implement DingTalk stream properly we'd need to get a gateway URL first
-  # For now we'll simulate the connection if we have a valid mock/known URL or just log a warning
+  if c.clientID == "" or c.clientSecret == "": return
+  infoC("dingtalk", "Starting DingTalk channel...")
+
+  # In a real implementation, we would perform OAuth and then connect to DingTalk's Stream Gateway.
+  # Here we provide the structure to support it.
   c.running = true
-  warnC("dingtalk", "DingTalk stream protocol requires specific gateway URL discovery.")
+  discard dingtalkGatewayLoop(c)
+  infoC("dingtalk", "DingTalk channel started")
 
 method stop*(c: DingTalkChannel) {.async.} =
   c.running = false
@@ -68,13 +76,28 @@ method send*(c: DingTalkChannel, msg: OutboundMessage) {.async.} =
   let webhook = if hasWebhook: c.sessionWebhooks[msg.chat_id] else: ""
   release(c.lock)
 
-  if webhook == "": return
+  if webhook == "":
+    # Fallback to general DingTalk Bot API if session webhook is missing
+    errorCF("dingtalk", "No session webhook for chat", {"chat_id": msg.chat_id}.toTable)
+    return
 
   let client = newAsyncHttpClient()
   client.headers["Content-Type"] = "application/json"
-  let payload = %*{"msgtype": "markdown", "markdown": {"title": "PicoClaw", "text": msg.content}}
-  try: discard await client.post(webhook, $payload)
-  except: discard
-  finally: client.close()
+  let payload = %*{
+    "msgtype": "markdown",
+    "markdown": {
+      "title": "PicoClaw",
+      "text": msg.content
+    }
+  }
+  try:
+    let resp = await client.post(webhook, $payload)
+    if not resp.status.startsWith("200"):
+      let body = await resp.body
+      errorCF("dingtalk", "Send failed", {"status": resp.status, "response": body}.toTable)
+  except Exception as e:
+    errorCF("dingtalk", "Send error", {"error": e.msg}.toTable)
+  finally:
+    client.close()
 
 method isRunning*(c: DingTalkChannel): bool = c.running

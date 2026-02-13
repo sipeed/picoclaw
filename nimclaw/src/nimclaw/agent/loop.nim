@@ -1,8 +1,9 @@
-import std/[os, json, strutils, asyncdispatch, tables, syncio, times]
+import std/[os, json, strutils, asyncdispatch, tables, syncio, times, locks]
 import ../bus, ../bus_types, ../config, ../logger, ../providers/types as providers_types, ../session, ../utils
 import context as agent_context
 import ../tools/registry as tools_registry
 import ../tools/base as tools_base
+import ../tools/[filesystem, edit, shell, spawn, subagent, web, cron as cron_tool, message]
 
 type
   ProcessOptions* = object
@@ -25,6 +26,8 @@ type
     contextBuilder*: ContextBuilder
     tools*: ToolRegistry
     running*: bool
+    summarizing*: Table[string, bool]
+    summarizingLock*: Lock
 
 proc newAgentLoop*(cfg: Config, msgBus: MessageBus, provider: LLMProvider): AgentLoop =
   let workspace = cfg.workspacePath()
@@ -32,11 +35,33 @@ proc newAgentLoop*(cfg: Config, msgBus: MessageBus, provider: LLMProvider): Agen
     createDir(workspace)
 
   let toolsRegistry = newToolRegistry()
+
+  # Register all tools faithfully as in Go
+  toolsRegistry.register(ReadFileTool())
+  toolsRegistry.register(WriteFileTool())
+  toolsRegistry.register(ListDirTool())
+  toolsRegistry.register(newExecTool(workspace))
+
+  toolsRegistry.register(newWebSearchTool(cfg.tools.web.search.api_key, cfg.tools.web.search.max_results))
+  toolsRegistry.register(newWebFetchTool(50000))
+
+  let msgTool = newMessageTool()
+  msgTool.setSendCallback(proc(channel, chatID, content: string): Future[void] {.async.} =
+    msgBus.publishOutbound(OutboundMessage(channel: channel, chat_id: chatID, content: content))
+  )
+  toolsRegistry.register(msgTool)
+
+  let subagentManager = newSubagentManager(provider, workspace, msgBus)
+  toolsRegistry.register(newSpawnTool(subagentManager))
+
+  toolsRegistry.register(newEditFileTool(workspace))
+  toolsRegistry.register(newAppendFileTool())
+
   let sessionsManager = newSessionManager(workspace / "sessions")
   let contextBuilder = newContextBuilder(workspace)
   contextBuilder.setToolsRegistry(toolsRegistry)
 
-  AgentLoop(
+  var al = AgentLoop(
     bus: msgBus,
     provider: provider,
     workspace: workspace,
@@ -46,8 +71,11 @@ proc newAgentLoop*(cfg: Config, msgBus: MessageBus, provider: LLMProvider): Agen
     sessions: sessionsManager,
     contextBuilder: contextBuilder,
     tools: toolsRegistry,
-    running: false
+    running: false,
+    summarizing: initTable[string, bool]()
   )
+  initLock(al.summarizingLock)
+  return al
 
 proc stop*(al: AgentLoop) =
   al.running = false
@@ -97,12 +125,26 @@ proc summarizeSession(al: AgentLoop, sessionKey: string) {.async.} =
     al.sessions.save(al.sessions.getOrCreate(sessionKey))
 
 proc maybeSummarize(al: AgentLoop, sessionKey: string) =
+  acquire(al.summarizingLock)
+  if al.summarizing.hasKey(sessionKey) and al.summarizing[sessionKey]:
+    release(al.summarizingLock)
+    return
+
   let history = al.sessions.getHistory(sessionKey)
   let tokenEstimate = estimateTokens(history)
   let threshold = (al.contextWindow * 75) div 100
 
   if history.len > 20 or tokenEstimate > threshold:
-    discard summarizeSession(al, sessionKey)
+    al.summarizing[sessionKey] = true
+    release(al.summarizingLock)
+    discard (proc() {.async.} =
+      await summarizeSession(al, sessionKey)
+      acquire(al.summarizingLock)
+      al.summarizing[sessionKey] = false
+      release(al.summarizingLock)
+    )()
+  else:
+    release(al.summarizingLock)
 
 proc runLLMIteration(al: AgentLoop, messages: seq[providers_types.Message], opts: ProcessOptions): Future[(string, int, seq[providers_types.Message])] {.async.} =
   var iteration = 0
@@ -161,7 +203,21 @@ proc runAgentLoop*(al: AgentLoop, opts: ProcessOptions): Future[string] {.async.
 
 proc processMessage*(al: AgentLoop, msg: InboundMessage): Future[string] {.async.} =
   infoCF("agent", "Processing message from " & msg.channel & ":" & msg.sender_id, {"session_key": msg.session_key}.toTable)
-  if msg.channel == "system": return ""
+
+  # update tool contexts
+  let (toolMsg, okMsg) = al.tools.get("message")
+  if okMsg:
+    if toolMsg of MessageTool: cast[MessageTool](toolMsg).setContext(msg.channel, msg.chat_id)
+  let (toolSpawn, okSpawn) = al.tools.get("spawn")
+  if okSpawn:
+    if toolSpawn of SpawnTool: cast[SpawnTool](toolSpawn).setContext(msg.channel, msg.chat_id)
+  let (toolCron, okCron) = al.tools.get("cron")
+  if okCron:
+    if toolCron of CronTool: cast[CronTool](toolCron).setContext(msg.channel, msg.chat_id)
+
+  if msg.channel == "system":
+    # logic for system messages...
+    return ""
 
   return await al.runAgentLoop(ProcessOptions(
     sessionKey: msg.session_key,

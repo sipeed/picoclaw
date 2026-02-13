@@ -1,4 +1,4 @@
-import std/[asyncdispatch, json, tables, strutils, times, locks]
+import std/[asyncdispatch, json, tables, strutils, times, locks, options]
 import types
 import ../services/cron as cron_service
 import ../bus
@@ -90,7 +90,7 @@ proc addJob(t: CronTool, args: Table[string, JsonNode]): Future[string] {.async.
   elif args.hasKey("every_seconds"):
     let everySeconds = args["every_seconds"].getInt()
     let everyMS = everySeconds * 1000
-    schedule = CronSchedule(kind: "every", everyMs: some(everyMS))
+    schedule = CronSchedule(kind: "every", everyMs: some(everyMS.int64))
   elif args.hasKey("cron_expr"):
     schedule = CronSchedule(kind: "cron", expr: args["cron_expr"].getStr())
   else:
@@ -101,7 +101,7 @@ proc addJob(t: CronTool, args: Table[string, JsonNode]): Future[string] {.async.
 
   try:
     let job = await t.cronService.addJob(messagePreview, schedule, message, deliver, channel, chatID)
-    return "Created job '$1' (id: $2)".format(job.name, job.id)
+    return strutils.format("Created job '$1' (id: $2)", job.name, job.id)
   except Exception as e:
     return "Error adding job: " & e.msg
 
@@ -123,7 +123,7 @@ method execute*(t: CronTool, args: Table[string, JsonNode]): Future[string] {.as
         schedInfo = j.schedule.expr
       elif j.schedule.kind == "at":
         schedInfo = "one-time"
-      res.add("- $1 (id: $2, $3)\n".format(j.name, j.id, schedInfo))
+      res.add(strutils.format("- $1 (id: $2, $3)\n", j.name, j.id, schedInfo))
     return res
   of "remove":
     if not args.hasKey("job_id"): return "Error: job_id is required"
@@ -139,6 +139,6 @@ method execute*(t: CronTool, args: Table[string, JsonNode]): Future[string] {.as
     let job = t.cronService.enableJob(jobID, enabled)
     if job == nil: return "Job " & jobID & " not found"
     let status = if enabled: "enabled" else: "disabled"
-    return "Job '$1' $2".format(job.name, status)
+    return strutils.format("Job '$1' $2", job.name, status)
   else:
     return "Error: unknown action: " & action

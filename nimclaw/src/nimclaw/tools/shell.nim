@@ -1,4 +1,4 @@
-import std/[os, osproc, json, asyncdispatch, tables, strutils, times]
+import std/[os, osproc, json, asyncdispatch, tables, strutils, times, streams]
 import regex
 import types
 
@@ -27,7 +27,7 @@ proc newExecTool*(workingDir: string): ExecTool =
 
   ExecTool(
     workingDir: workingDir,
-    timeout: 60.seconds,
+    timeout: initDuration(seconds = 60),
     denyPatterns: denyPatterns,
     allowPatterns: @[],
     restrictToWorkspace: false
@@ -94,7 +94,7 @@ method execute*(t: ExecTool, args: Table[string, JsonNode]): Future[string] {.as
 
   # Actually, std/osproc has startProcess and we can poll it.
 
-  var p = startProcess("sh", workingDir = cwd, args = ["-c", command], options = {poShell, poStdErrToStdOut})
+  var p = startProcess("sh", workingDir = cwd, args = ["-c", command], options = {poStdErrToStdOut})
   let startTime = now()
   var output = ""
 
