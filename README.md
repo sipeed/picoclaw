@@ -179,8 +179,8 @@ docker compose --profile gateway up -d
 
 > [!TIP]
 > Set your API key in `~/.picoclaw/config.json`.
-> Get API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web search is **optional** - get free [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
+> Get API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Z.AI](https://z.ai/manage-apikey/apikey-list) (LLM)
+> Web search is **optional** - get free [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or automatically fallback to DuckDuckGo.
 
 **1. Initialize**
 
@@ -225,8 +225,9 @@ picoclaw onboard
 
 **3. Get API Keys**
 
-- **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-- **Web Search** (optional): [Brave Search](https://brave.com/search/api) - Free tier available (2000 requests/month)
+- **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Z.AI](https://z.ai/manage-apikey/apikey-list) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+
+- **Web Search** (optional): [Brave Search API](https://brave.com/search/api) - Free tier available (2000 requests/month) or automatically fallback to DuckDuckGo.
 
 > **Note**: See `config.example.json` for a complete configuration template.
 
