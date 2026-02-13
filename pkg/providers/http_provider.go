@@ -208,7 +208,7 @@ func createClaudeAuthProvider() (LLMProvider, error) {
 	return NewClaudeProviderWithTokenSource(cred.AccessToken, createClaudeTokenSource()), nil
 }
 
-func createCodexAuthProvider() (LLMProvider, error) {
+func createCodexAuthProvider(enableWebSearch bool) (LLMProvider, error) {
 	cred, err := auth.GetCredential("openai")
 	if err != nil {
 		return nil, fmt.Errorf("loading auth credentials: %w", err)
@@ -216,7 +216,9 @@ func createCodexAuthProvider() (LLMProvider, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("no credentials for openai. Run: picoclaw auth login --provider openai")
 	}
-	return NewCodexProviderWithTokenSource(cred.AccessToken, cred.AccountID, createCodexTokenSource()), nil
+	p := NewCodexProviderWithTokenSource(cred.AccessToken, cred.AccountID, createCodexTokenSource())
+	p.enableWebSearch = enableWebSearch
+	return p, nil
 }
 
 func CreateProvider(cfg *config.Config) (LLMProvider, error) {
@@ -244,7 +246,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 					return NewCodexProviderWithTokenSource("", "", CreateCodexCliTokenSource()), nil
 				}
 				if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
-					return createCodexAuthProvider()
+					return createCodexAuthProvider(cfg.Providers.OpenAI.CodexWebSearch)
 				}
 				apiKey = cfg.Providers.OpenAI.APIKey
 				apiBase = cfg.Providers.OpenAI.APIBase
@@ -369,7 +371,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 
 		case (strings.Contains(lowerModel, "gpt") || strings.HasPrefix(model, "openai/")) && (cfg.Providers.OpenAI.APIKey != "" || cfg.Providers.OpenAI.AuthMethod != ""):
 			if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
-				return createCodexAuthProvider()
+				return createCodexAuthProvider(cfg.Providers.OpenAI.CodexWebSearch)
 			}
 			apiKey = cfg.Providers.OpenAI.APIKey
 			apiBase = cfg.Providers.OpenAI.APIBase
