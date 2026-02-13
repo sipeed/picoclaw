@@ -14,7 +14,9 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": [
+        "YOUR_USER_ID"
+      ]
     },
     "discord": {
       "enabled": false,
@@ -99,13 +101,9 @@
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       },
-      "duckduckgo": {
-        "enabled": true,
-        "max_results": 5
-      },
       "perplexity": {
         "enabled": false,
-        "api_key": "pplx-xxx",
+        "api_key": "PERPLEXITY_API_KEY",
         "max_results": 5
       }
     }
