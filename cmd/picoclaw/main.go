@@ -35,7 +35,7 @@ import (
 )
 
 var (
-	version   = "0.1.0"
+	version   = "dev"
 	buildTime string
 	goVersion string
 )
@@ -43,7 +43,7 @@ var (
 const logo = "🦞"
 
 func printVersion() {
-	fmt.Printf("%s picoclaw v%s\n", logo, version)
+	fmt.Printf("%s picoclaw %s\n", logo, version)
 	if buildTime != "" {
 		fmt.Printf("  Build: %s\n", buildTime)
 	}
