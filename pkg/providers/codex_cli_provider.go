@@ -50,10 +50,22 @@ func (p *CodexCliProvider) Chat(ctx context.Context, messages []Message, tools [
 	cmd := exec.CommandContext(ctx, p.command, args...)
 	cmd.Stdin = bytes.NewReader([]byte(prompt))
 
-	var stderr bytes.Buffer
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	stdout, err := cmd.Output()
+	err := cmd.Run()
+
+	// Parse JSONL from stdout even if exit code is non-zero,
+	// because codex writes diagnostic noise to stderr (e.g. rollout errors)
+	// but still produces valid JSONL output.
+	if stdoutStr := stdout.String(); stdoutStr != "" {
+		resp, parseErr := p.parseJSONLEvents(stdoutStr)
+		if parseErr == nil && resp != nil && (resp.Content != "" || len(resp.ToolCalls) > 0) {
+			return resp, nil
+		}
+	}
+
 	if err != nil {
 		if ctx.Err() == context.Canceled {
 			return nil, ctx.Err()
@@ -64,7 +76,7 @@ func (p *CodexCliProvider) Chat(ctx context.Context, messages []Message, tools [
 		return nil, fmt.Errorf("codex cli error: %w", err)
 	}
 
-	return p.parseJSONLEvents(string(stdout))
+	return p.parseJSONLEvents(stdout.String())
 }
 
 // GetDefaultModel returns the default model identifier.
