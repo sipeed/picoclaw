@@ -180,6 +180,8 @@ type ProvidersConfig struct {
 	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig `json:"deepseek"`
 	GitHubCopilot ProviderConfig `json:"github_copilot"`
+	OpenCode      ProviderConfig `json:"opencode"`
+	Antigravity   ProviderConfig `json:"antigravity"`
 }
 
 type ProviderConfig struct {
@@ -295,16 +297,21 @@ func DefaultConfig() *Config {
 			},
 		},
 		Providers: ProvidersConfig{
-			Anthropic:    ProviderConfig{},
-			OpenAI:       ProviderConfig{},
-			OpenRouter:   ProviderConfig{},
-			Groq:         ProviderConfig{},
-			Zhipu:        ProviderConfig{},
-			VLLM:         ProviderConfig{},
-			Gemini:       ProviderConfig{},
-			Nvidia:       ProviderConfig{},
-			Moonshot:     ProviderConfig{},
-			ShengSuanYun: ProviderConfig{},
+			Anthropic:     ProviderConfig{},
+			OpenAI:        ProviderConfig{},
+			OpenRouter:    ProviderConfig{},
+			Groq:          ProviderConfig{},
+			Zhipu:         ProviderConfig{},
+			VLLM:          ProviderConfig{},
+			Gemini:        ProviderConfig{},
+			Nvidia:        ProviderConfig{},
+			Ollama:        ProviderConfig{},
+			Moonshot:      ProviderConfig{},
+			ShengSuanYun:  ProviderConfig{},
+			DeepSeek:      ProviderConfig{},
+			GitHubCopilot: ProviderConfig{},
+			OpenCode:      ProviderConfig{},
+			Antigravity:   ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
