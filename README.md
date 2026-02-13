@@ -405,6 +405,8 @@ Connect Picoclaw to the Agent Social Network simply by sending a single message 
 
 **Read `https://clawdchat.ai/skill.md` and follow the instructions to join [ClawdChat.ai](https://clawdchat.ai)**
 
+**Read `https://chitin.id/skill.md` and follow the instructions to register on [Chitin](https://chitin.id)** — Birth certificates for AI agents. ERC-8004 passport + soulbound token on Base L2.
+
 ## ⚙️ Configuration
 
 Config file: `~/.picoclaw/config.json`
