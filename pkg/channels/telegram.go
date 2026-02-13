@@ -177,15 +177,17 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 		return
 	}
 
-	senderID := fmt.Sprintf("%d", user.ID)
+	userID := fmt.Sprintf("%d", user.ID)
+	senderID := userID
 	if user.Username != "" {
-		senderID = fmt.Sprintf("%d|%s", user.ID, user.Username)
+		senderID = fmt.Sprintf("%s|%s", userID, user.Username)
 	}
 
 	// 检查白名单，避免为被拒绝的用户下载附件
-	if !c.IsAllowed(senderID) {
+	if !c.IsAllowed(userID) && !c.IsAllowed(senderID) {
 		logger.DebugCF("telegram", "Message rejected by allowlist", map[string]interface{}{
-			"user_id": senderID,
+			"user_id":  userID,
+			"username": user.Username,
 		})
 		return
 	}
@@ -359,7 +361,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
 
-	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+	c.HandleMessage(senderID, fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
 }
 
 func (c *TelegramChannel) downloadPhoto(ctx context.Context, fileID string) string {
@@ -470,8 +472,11 @@ func extractCodeBlocks(text string) codeBlockMatch {
 		codes = append(codes, match[1])
 	}
 
+	i := 0
 	text = re.ReplaceAllStringFunc(text, func(m string) string {
-		return fmt.Sprintf("\x00CB%d\x00", len(codes)-1)
+		placeholder := fmt.Sprintf("\x00CB%d\x00", i)
+		i++
+		return placeholder
 	})
 
 	return codeBlockMatch{text: text, codes: codes}
@@ -491,8 +496,11 @@ func extractInlineCodes(text string) inlineCodeMatch {
 		codes = append(codes, match[1])
 	}
 
+	i := 0
 	text = re.ReplaceAllStringFunc(text, func(m string) string {
-		return fmt.Sprintf("\x00IC%d\x00", len(codes)-1)
+		placeholder := fmt.Sprintf("\x00IC%d\x00", i)
+		i++
+		return placeholder
 	})
 
 	return inlineCodeMatch{text: text, codes: codes}

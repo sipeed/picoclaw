@@ -166,13 +166,20 @@ type GatewayConfig struct {
 	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
 }
 
-type WebSearchConfig struct {
-	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_SEARCH_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_SEARCH_MAX_RESULTS"`
+type BraveConfig struct {
+	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
+	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
+}
+
+type DuckDuckGoConfig struct {
+	Enabled    bool `json:"enabled" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
+	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
 type WebToolsConfig struct {
-	Search WebSearchConfig `json:"search"`
+	Brave      BraveConfig      `json:"brave"`
+	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 }
 
 type ToolsConfig struct {
@@ -261,8 +268,13 @@ func DefaultConfig() *Config {
 		},
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{
-				Search: WebSearchConfig{
+				Brave: BraveConfig{
+					Enabled:    false,
 					APIKey:     "",
+					MaxResults: 5,
+				},
+				DuckDuckGo: DuckDuckGoConfig{
+					Enabled:    true,
 					MaxResults: 5,
 				},
 			},

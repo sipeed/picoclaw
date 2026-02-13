@@ -42,7 +42,7 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 
 	return &HTTPProvider{
 		apiKey:     apiKey,
-		apiBase:    apiBase,
+		apiBase:    strings.TrimRight(apiBase, "/"),
 		httpClient: client,
 	}
 }
@@ -116,7 +116,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error: %s", string(body))
+		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
 
 	return p.parseResponse(body)

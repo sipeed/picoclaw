@@ -1,26 +1,29 @@
 <div align="center">
-<img src="assets/logo.jpg" alt="PicoClaw" width="512">
+  <img src="assets/logo.jpg" alt="PicoClaw" width="512">
 
-<h1>PicoClaw: Ultra-Efficient AI Assistant in Go</h1>
+  <h1>PicoClaw: Ultra-Efficient AI Assistant in Go</h1>
 
-<h3>$10 Hardware · 10MB RAM · 1s Boot · 皮皮虾，我们走！</h3>
-<h3></h3>
+  <h3>$10 Hardware · 10MB RAM · 1s Boot · 皮皮虾，我们走！</h3>
 
-<p>
-<img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-<img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20RISC--V-blue" alt="Hardware">
-<img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-</p>
+  <p>
+    <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
+    <img src="https://img.shields.io/badge/Arch-x86__64%2C%20ARM64%2C%20RISC--V-blue" alt="Hardware">
+    <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+    <br>
+    <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
+    <a href="https://x.com/SipeedIO"><img src="https://img.shields.io/badge/X_(Twitter)-SipeedIO-black?style=flat&logo=x&logoColor=white" alt="Twitter"></a>
+  </p>
 
-[日本語](README.ja.md) | **English**
-
+ [中文](README.zh.md) | [日本語](README.ja.md) | **English**
 </div>
+
 
 ---
 
 🦐 PicoClaw is an ultra-lightweight personal AI Assistant inspired by [nanobot](https://github.com/HKUDS/nanobot), refactored from the ground up in Go through a self-bootstrapping process, where the AI agent itself drove the entire architectural migration and code optimization.
 
 ⚡️ Runs on $10 hardware with <10MB RAM: That's 99% less memory than OpenClaw and 98% cheaper than a Mac mini!
+
 
 <table align="center">
   <tr align="center">
@@ -37,7 +40,19 @@
   </tr>
 </table>
 
+
+> [!CAUTION]
+> **🚨 SECURITY & OFFICIAL CHANNELS / 安全声明**
+>
+> * **NO CRYPTO:** PicoClaw has **NO** official token/coin. All claims on `pump.fun` or other trading platforms are **SCAMS**.
+> * **OFFICIAL DOMAIN:** The **ONLY** official website is **[picoclaw.io](https://picoclaw.io)**, and company website is **[sipeed.com](https://sipeed.com)**
+> * **Warning:** Many `.ai/.org/.com/.net/...` domains are registered by third parties. 
+>
+
 ## 📢 News
+2026-02-13 🎉 PicoClaw hit 5000 stars in 4days! Thank you for the community! There are so many PRs&issues come in (during Chinese New Year holidays), we are finalizing the Project Roadmap and setting up the Developer Group to accelerate PicoClaw's development.  
+🚀 Call to Action: Please submit your feature requests in GitHub Discussions. We will review and prioritize them during our upcoming weekly meeting.
+
 
 2026-02-09 🎉 PicoClaw Launched! Built in 1 day to bring AI Agents to $10 hardware with <10MB RAM. 🦐 PicoClaw，Let's Go！
 
@@ -53,12 +68,12 @@
 
 🤖 **AI-Bootstrapped**: Autonomous Go-native implementation — 95% Agent-generated core with human-in-the-loop refinement.
 
-|  | OpenClaw  | NanoBot | **PicoClaw** |
-| --- | --- | --- |--- |
-| **Language** | TypeScript | Python | **Go** |
-| **RAM** | >1GB |>100MB| **< 10MB** |
-| **Startup**</br>(0.8GHz core) | >500s | >30s |  **<1s** |
-| **Cost** | Mac Mini 599$ | Most Linux SBC </br>~50$ |**Any Linux Board**</br>**As low as 10$** |
+|                               | OpenClaw      | NanoBot                  | **PicoClaw**                              |
+| ----------------------------- | ------------- | ------------------------ | ----------------------------------------- |
+| **Language**                  | TypeScript    | Python                   | **Go**                                    |
+| **RAM**                       | >1GB          | >100MB                   | **< 10MB**                                |
+| **Startup**</br>(0.8GHz core) | >500s         | >30s                     | **<1s**                                   |
+| **Cost**                      | Mac Mini 599$ | Most Linux SBC </br>~50$ | **Any Linux Board**</br>**As low as 10$** |
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
@@ -88,7 +103,7 @@
 
 PicoClaw can be deployed on almost any Linux device!
 
-- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html)  E(Ethernet) or W(WiFi6) version, for Minimal Home Assistant
+- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) or W(WiFi6) version, for Minimal Home Assistant
 - $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), or $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) for Automated Server Maintenance
 - $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) or $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) for Smart Monitoring
 
@@ -165,7 +180,7 @@ docker compose --profile gateway up -d
 > [!TIP]
 > Set your API key in `~/.picoclaw/config.json`.
 > Get API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web search is **optional** - get free [Brave Search API](https://brave.com/search/api) (2000 free queries/month)
+> Web search is **optional** - get free [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
 
 **1. Initialize**
 
@@ -194,8 +209,13 @@ picoclaw onboard
   },
   "tools": {
     "web": {
-      "search": {
+      "brave": {
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
         "max_results": 5
       }
     }
@@ -224,12 +244,12 @@ That's it! You have a working AI assistant in 2 minutes.
 
 Talk to your picoclaw through Telegram, Discord, or DingTalk
 
-| Channel | Setup |
-|---------|-------|
-| **Telegram** | Easy (just a token) |
-| **Discord** | Easy (bot token + intents) |
-| **QQ** | Easy (AppID + AppSecret) |
-| **DingTalk** | Medium (app credentials) |
+| Channel      | Setup                      |
+| ------------ | -------------------------- |
+| **Telegram** | Easy (just a token)        |
+| **Discord**  | Easy (bot token + intents) |
+| **QQ**       | Easy (AppID + AppSecret)   |
+| **DingTalk** | Medium (app credentials)   |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -385,8 +405,6 @@ Connect Picoclaw to the Agent Social Network simply by sending a single message 
 
 **Read `https://clawdchat.ai/skill.md` and follow the instructions to join [ClawdChat.ai](https://clawdchat.ai)**
 
-
-
 ## ⚙️ Configuration
 
 Config file: `~/.picoclaw/config.json`
@@ -409,6 +427,98 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 ├── TOOLS.md          # Tool descriptions
 └── USER.md           # User preferences
 ```
+
+### 🔒 Security Sandbox
+
+PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.
+
+#### Default Configuration
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.picoclaw/workspace",
+      "restrict_to_workspace": true
+    }
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `workspace` | `~/.picoclaw/workspace` | Working directory for the agent |
+| `restrict_to_workspace` | `true` | Restrict file/command access to workspace |
+
+#### Protected Tools
+
+When `restrict_to_workspace: true`, the following tools are sandboxed:
+
+| Tool | Function | Restriction |
+|------|----------|-------------|
+| `read_file` | Read files | Only files within workspace |
+| `write_file` | Write files | Only files within workspace |
+| `list_dir` | List directories | Only directories within workspace |
+| `edit_file` | Edit files | Only files within workspace |
+| `append_file` | Append to files | Only files within workspace |
+| `exec` | Execute commands | Command paths must be within workspace |
+
+#### Additional Exec Protection
+
+Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous commands:
+
+- `rm -rf`, `del /f`, `rmdir /s` — Bulk deletion
+- `format`, `mkfs`, `diskpart` — Disk formatting
+- `dd if=` — Disk imaging
+- Writing to `/dev/sd[a-z]` — Direct disk writes
+- `shutdown`, `reboot`, `poweroff` — System shutdown
+- Fork bomb `:(){ :|:& };:`
+
+#### Error Examples
+
+```
+[ERROR] tool: Tool execution failed
+{tool=exec, error=Command blocked by safety guard (path outside working dir)}
+```
+
+```
+[ERROR] tool: Tool execution failed
+{tool=exec, error=Command blocked by safety guard (dangerous pattern detected)}
+```
+
+#### Disabling Restrictions (Security Risk)
+
+If you need the agent to access paths outside the workspace:
+
+**Method 1: Config file**
+```json
+{
+  "agents": {
+    "defaults": {
+      "restrict_to_workspace": false
+    }
+  }
+}
+```
+
+**Method 2: Environment variable**
+```bash
+export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
+```
+
+> ⚠️ **Warning**: Disabling this restriction allows the agent to access any path on your system. Use with caution in controlled environments only.
+
+#### Security Boundary Consistency
+
+The `restrict_to_workspace` setting applies consistently across all execution paths:
+
+| Execution Path | Security Boundary |
+|----------------|-------------------|
+| Main Agent | `restrict_to_workspace` ✅ |
+| Subagent / Spawn | Inherits same restriction ✅ |
+| Heartbeat tasks | Inherits same restriction ✅ |
+
+All paths share the same workspace restriction — there's no way to bypass the security boundary through subagents or scheduled tasks.
 
 ### Heartbeat (Periodic Tasks)
 
@@ -491,15 +601,15 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 > [!NOTE]
 > Groq provides free voice transcription via Whisper. If configured, Telegram voice messages will be automatically transcribed.
 
-| Provider | Purpose | Get API Key |
-|----------|---------|-------------|
-| `gemini` | LLM (Gemini direct) | [aistudio.google.com](https://aistudio.google.com) |
-| `zhipu` | LLM (Zhipu direct) | [bigmodel.cn](bigmodel.cn) |
-| `openrouter(To be tested)` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai) |
-| `anthropic(To be tested)` | LLM (Claude direct) | [console.anthropic.com](https://console.anthropic.com) |
-| `openai(To be tested)` | LLM (GPT direct) | [platform.openai.com](https://platform.openai.com) |
-| `deepseek(To be tested)` | LLM (DeepSeek direct) | [platform.deepseek.com](https://platform.deepseek.com) |
-| `groq` | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com) |
+| Provider                   | Purpose                                 | Get API Key                                            |
+| -------------------------- | --------------------------------------- | ------------------------------------------------------ |
+| `gemini`                   | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)     |
+| `zhipu`                    | LLM (Zhipu direct)                      | [bigmodel.cn](bigmodel.cn)                             |
+| `openrouter(To be tested)` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                 |
+| `anthropic(To be tested)`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com) |
+| `openai(To be tested)`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)     |
+| `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com) |
+| `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)           |
 
 <details>
 <summary><b>Zhipu</b></summary>
@@ -525,8 +635,8 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
     "zhipu": {
       "api_key": "Your API Key",
       "api_base": "https://open.bigmodel.cn/api/paas/v4"
-    },
-  },
+    }
+  }
 }
 ```
 
@@ -587,8 +697,14 @@ picoclaw agent -m "Hello"
   },
   "tools": {
     "web": {
-      "search": {
-        "api_key": "BSA..."
+      "brave": {
+        "enabled": false,
+        "api_key": "BSA...",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
       }
     }
   },
@@ -603,15 +719,15 @@ picoclaw agent -m "Hello"
 
 ## CLI Reference
 
-| Command | Description |
-|---------|-------------|
-| `picoclaw onboard` | Initialize config & workspace |
-| `picoclaw agent -m "..."` | Chat with the agent |
-| `picoclaw agent` | Interactive chat mode |
-| `picoclaw gateway` | Start the gateway |
-| `picoclaw status` | Show status |
-| `picoclaw cron list` | List all scheduled jobs |
-| `picoclaw cron add ...` | Add a scheduled job |
+| Command                   | Description                   |
+| ------------------------- | ----------------------------- |
+| `picoclaw onboard`        | Initialize config & workspace |
+| `picoclaw agent -m "..."` | Chat with the agent           |
+| `picoclaw agent`          | Interactive chat mode         |
+| `picoclaw gateway`        | Start the gateway             |
+| `picoclaw status`         | Show status                   |
+| `picoclaw cron list`      | List all scheduled jobs       |
+| `picoclaw cron add ...`   | Add a scheduled job           |
 
 ### Scheduled Tasks / Reminders
 
@@ -627,6 +743,12 @@ Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
 
 PRs welcome! The codebase is intentionally small and readable. 🤗
 
+Roadmap coming soon...
+
+Developer group building, Entry Requirement: At least 1 Merged PR.
+
+User Groups:
+
 discord:  <https://discord.gg/V4sAZ9XWpN>
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
@@ -639,21 +761,28 @@ This is normal if you haven't configured a search API key yet. PicoClaw will pro
 
 To enable web search:
 
-1. Get a free API key at [https://brave.com/search/api](https://brave.com/search/api) (2000 free queries/month)
-2. Add to `~/.picoclaw/config.json`:
+1. **Option 1 (Recommended)**: Get a free API key at [https://brave.com/search/api](https://brave.com/search/api) (2000 free queries/month) for the best results.
+2. **Option 2 (No Credit Card)**: If you don't have a key, we automatically fall back to **DuckDuckGo** (no key required).
 
-   ```json
-   {
-     "tools": {
-       "web": {
-         "search": {
-           "api_key": "YOUR_BRAVE_API_KEY",
-           "max_results": 5
-         }
-       }
-     }
-   }
-   ```
+Add the key to `~/.picoclaw/config.json` if using Brave:
+
+```json
+{
+  "tools": {
+    "web": {
+      "brave": {
+        "enabled": false,
+        "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
+      }
+    }
+  }
+}
+```
 
 ### Getting content filtering errors
 
@@ -667,9 +796,9 @@ This happens when another instance of the bot is running. Make sure only one `pi
 
 ## 📝 API Key Comparison
 
-| Service | Free Tier | Use Case |
-|---------|-----------|-----------|
-| **OpenRouter** | 200K tokens/month | Multiple models (Claude, GPT-4, etc.) |
-| **Zhipu** | 200K tokens/month | Best for Chinese users |
-| **Brave Search** | 2000 queries/month | Web search functionality |
-| **Groq** | Free tier available | Fast inference (Llama, Mixtral) |
+| Service          | Free Tier           | Use Case                              |
+| ---------------- | ------------------- | ------------------------------------- |
+| **OpenRouter**   | 200K tokens/month   | Multiple models (Claude, GPT-4, etc.) |
+| **Zhipu**        | 200K tokens/month   | Best for Chinese users                |
+| **Brave Search** | 2000 queries/month  | Web search functionality              |
+| **Groq**         | Free tier available | Fast inference (Llama, Mixtral)       |

@@ -40,7 +40,6 @@ type HeartbeatService struct {
 	interval  time.Duration
 	enabled   bool
 	mu        sync.RWMutex
-	started   bool
 	stopChan  chan struct{}
 }
 
@@ -60,7 +59,6 @@ func NewHeartbeatService(workspace string, intervalMinutes int, enabled bool) *H
 		interval:  time.Duration(intervalMinutes) * time.Minute,
 		enabled:   enabled,
 		state:     state.NewManager(workspace),
-		stopChan:  make(chan struct{}),
 	}
 }
 
@@ -83,7 +81,7 @@ func (hs *HeartbeatService) Start() error {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 
-	if hs.started {
+	if hs.stopChan != nil {
 		logger.InfoC("heartbeat", "Heartbeat service already running")
 		return nil
 	}
@@ -93,10 +91,8 @@ func (hs *HeartbeatService) Start() error {
 		return nil
 	}
 
-	hs.started = true
 	hs.stopChan = make(chan struct{})
-
-	go hs.runLoop()
+	go hs.runLoop(hs.stopChan)
 
 	logger.InfoCF("heartbeat", "Heartbeat service started", map[string]any{
 		"interval_minutes": hs.interval.Minutes(),
@@ -110,24 +106,24 @@ func (hs *HeartbeatService) Stop() {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 
-	if !hs.started {
+	if hs.stopChan == nil {
 		return
 	}
 
 	logger.InfoC("heartbeat", "Stopping heartbeat service")
 	close(hs.stopChan)
-	hs.started = false
+	hs.stopChan = nil
 }
 
 // IsRunning returns whether the service is running
 func (hs *HeartbeatService) IsRunning() bool {
 	hs.mu.RLock()
 	defer hs.mu.RUnlock()
-	return hs.started
+	return hs.stopChan != nil
 }
 
 // runLoop runs the heartbeat ticker
-func (hs *HeartbeatService) runLoop() {
+func (hs *HeartbeatService) runLoop(stopChan chan struct{}) {
 	ticker := time.NewTicker(hs.interval)
 	defer ticker.Stop()
 
@@ -138,7 +134,7 @@ func (hs *HeartbeatService) runLoop() {
 
 	for {
 		select {
-		case <-hs.stopChan:
+		case <-stopChan:
 			return
 		case <-ticker.C:
 			hs.executeHeartbeat()
@@ -149,8 +145,12 @@ func (hs *HeartbeatService) runLoop() {
 // executeHeartbeat performs a single heartbeat check
 func (hs *HeartbeatService) executeHeartbeat() {
 	hs.mu.RLock()
-	enabled := hs.enabled && hs.started
+	enabled := hs.enabled
 	handler := hs.handler
+	if !hs.enabled || hs.stopChan == nil {
+		hs.mu.RUnlock()
+		return
+	}
 	hs.mu.RUnlock()
 
 	if !enabled {

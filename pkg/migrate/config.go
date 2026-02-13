@@ -212,12 +212,17 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 
 	if tools, ok := getMap(data, "tools"); ok {
 		if web, ok := getMap(tools, "web"); ok {
+			// Migrate old "search" config to "brave" if api_key is present
 			if search, ok := getMap(web, "search"); ok {
 				if v, ok := getString(search, "api_key"); ok {
-					cfg.Tools.Web.Search.APIKey = v
+					cfg.Tools.Web.Brave.APIKey = v
+					if v != "" {
+						cfg.Tools.Web.Brave.Enabled = true
+					}
 				}
 				if v, ok := getFloat(search, "max_results"); ok {
-					cfg.Tools.Web.Search.MaxResults = int(v)
+					cfg.Tools.Web.Brave.MaxResults = int(v)
+					cfg.Tools.Web.DuckDuckGo.MaxResults = int(v)
 				}
 			}
 		}
@@ -271,8 +276,8 @@ func MergeConfig(existing, incoming *config.Config) *config.Config {
 		existing.Channels.MaixCam = incoming.Channels.MaixCam
 	}
 
-	if existing.Tools.Web.Search.APIKey == "" {
-		existing.Tools.Web.Search = incoming.Tools.Web.Search
+	if existing.Tools.Web.Brave.APIKey == "" {
+		existing.Tools.Web.Brave = incoming.Tools.Web.Brave
 	}
 
 	return existing
