@@ -38,6 +38,9 @@ type AgentLoop struct {
 	tools          *tools.ToolRegistry
 	running        atomic.Bool
 	summarizing    sync.Map      // Tracks which sessions are currently being summarized
+	fallback       *providers.FallbackChain
+	candidates     []providers.FallbackCandidate
+	providerFactory func(provider, model string) (providers.LLMProvider, error)
 }
 
 // processOptions configures how a message is processed
@@ -95,17 +98,31 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	contextBuilder := NewContextBuilder(workspace)
 	contextBuilder.SetToolsRegistry(toolsRegistry)
 
+	// Set up fallback chain
+	cooldown := providers.NewCooldownTracker()
+	fallbackChain := providers.NewFallbackChain(cooldown)
+
+	// Resolve model candidates from config
+	modelCfg := providers.ModelConfig{
+		Primary:   cfg.Agents.Defaults.Model,
+		Fallbacks: cfg.Agents.Defaults.ModelFallbacks,
+	}
+	defaultProvider := cfg.Agents.Defaults.Provider
+	candidates := providers.ResolveCandidates(modelCfg, defaultProvider)
+
 	return &AgentLoop{
 		bus:            msgBus,
 		provider:       provider,
 		workspace:      workspace,
 		model:          cfg.Agents.Defaults.Model,
-		contextWindow:  cfg.Agents.Defaults.MaxTokens, // Restore context window for summarization
+		contextWindow:  cfg.Agents.Defaults.MaxTokens,
 		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
 		sessions:       sessionsManager,
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
+		fallback:       fallbackChain,
+		candidates:     candidates,
 	}
 }
 
@@ -341,11 +358,35 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		// Call LLM
-		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
-			"max_tokens":  8192,
-			"temperature": 0.7,
-		})
+		// Call LLM with fallback chain if candidates are configured.
+		var response *providers.LLMResponse
+		var err error
+
+		if len(al.candidates) > 1 && al.fallback != nil {
+			fbResult, fbErr := al.fallback.Execute(ctx, al.candidates,
+				func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
+					return al.provider.Chat(ctx, messages, providerToolDefs, model, map[string]interface{}{
+						"max_tokens":  8192,
+						"temperature": 0.7,
+					})
+				},
+			)
+			if fbErr != nil {
+				err = fbErr
+			} else {
+				response = fbResult.Response
+				if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
+					logger.InfoCF("agent", fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
+						fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
+						map[string]interface{}{"iteration": iteration})
+				}
+			}
+		} else {
+			response, err = al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
+				"max_tokens":  8192,
+				"temperature": 0.7,
+			})
+		}
 
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed",
