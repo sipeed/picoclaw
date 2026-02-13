@@ -359,7 +359,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
 
-	c.HandleMessage(senderID, fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
 }
 
 func (c *TelegramChannel) downloadPhoto(ctx context.Context, fileID string) string {
@@ -470,11 +470,8 @@ func extractCodeBlocks(text string) codeBlockMatch {
 		codes = append(codes, match[1])
 	}
 
-	idx := 0
 	text = re.ReplaceAllStringFunc(text, func(m string) string {
-		s := fmt.Sprintf("\x00CB%d\x00", idx)
-		idx++
-		return s
+		return fmt.Sprintf("\x00CB%d\x00", len(codes)-1)
 	})
 
 	return codeBlockMatch{text: text, codes: codes}
@@ -494,11 +491,8 @@ func extractInlineCodes(text string) inlineCodeMatch {
 		codes = append(codes, match[1])
 	}
 
-	idx := 0
 	text = re.ReplaceAllStringFunc(text, func(m string) string {
-		s := fmt.Sprintf("\x00IC%d\x00", idx)
-		idx++
-		return s
+		return fmt.Sprintf("\x00IC%d\x00", len(codes)-1)
 	})
 
 	return inlineCodeMatch{text: text, codes: codes}
