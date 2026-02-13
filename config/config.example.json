@@ -2,9 +2,8 @@
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "restrict_to_workspace": true,
-      "model": "glm-4.7",
-      "max_tokens": 8192,
+      "model": "glm-5:cloud",
+      "max_tokens": 198000,
       "temperature": 0.7,
       "max_tool_iterations": 20
     }
@@ -12,9 +11,10 @@
   "channels": {
     "telegram": {
       "enabled": false,
-      "token": "YOUR_TELEGRAM_BOT_TOKEN",
-      "proxy": "",
-      "allow_from": ["YOUR_USER_ID"]
+      "token": "7902424029:AAFXa7EDs13wetH2v24RvsiGDfdH7QCH4ZY",
+      "allow_from": [
+        "5352726595"
+      ]
     },
     "discord": {
       "enabled": false,
@@ -78,34 +78,44 @@
       "api_key": "",
       "api_base": ""
     },
-    "vllm": {
-      "api_key": "",
-      "api_base": ""
-    },
     "nvidia": {
       "api_key": "nvapi-xxx",
-      "api_base": "",
-      "proxy": "http://127.0.0.1:7890"
+      "api_base": ""
     },
-    "moonshot": {
-      "api_key": "sk-xxx",
+    "ollama": {
+      "api_key": "",
+      "api_base": "http://localhost:11434"
+    },
+    "vllm": {
+      "api_key": "",
       "api_base": ""
     }
   },
   "tools": {
     "web": {
       "search": {
-        "api_key": "YOUR_BRAVE_API_KEY",
+        "api_key": "BSA0KawT1keaYZ4qPQBv-jib1kzo1JP",
         "max_results": 5
+      },
+
+      "brave": {
+        "api_key": "BSA0KawT1keaYZ4qPQBv-jib1kzo1JP",
+        "max_results": 5,
+        "enabled": false
+      },
+      "duckduckgo": {
+        "api_key": "",
+        "max_results": 5,
+        "enabled": false
       }
     }
-  },
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
   },
   "gateway": {
     "host": "0.0.0.0",
     "port": 18790
+  },
+  "heartbeat": {
+    "interval": 300,
+    "enabled": true
   }
 }
