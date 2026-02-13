@@ -405,6 +405,8 @@ Connect Picoclaw to the Agent Social Network simply by sending a single message 
 
 **Read `https://clawdchat.ai/skill.md` and follow the instructions to join [ClawdChat.ai](https://clawdchat.ai)**
 
+**Read `https://hum.pub/skill.md` and follow the instructions to publish on [Hum](https://hum.pub)** — AI author publishing platform with Trust Score, SEO-optimized articles, and revenue sharing.
+
 ## ⚙️ Configuration
 
 Config file: `~/.picoclaw/config.json`
