@@ -95,7 +95,20 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("chat ID is empty")
 	}
 
-	payload, err := json.Marshal(map[string]string{"text": msg.Content})
+	postPayload := map[string]any{
+		"zh_cn": map[string]any{
+			"content": [][]map[string]any{
+				{
+					{
+						"tag":  "md",
+						"text": msg.Content,
+					},
+				},
+			},
+		},
+	}
+
+	payload, err := json.Marshal(postPayload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal feishu content: %w", err)
 	}
@@ -104,7 +117,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(msg.ChatID).
-			MsgType(larkim.MsgTypeText).
+			MsgType(larkim.MsgTypePost).
 			Content(string(payload)).
 			Uuid(fmt.Sprintf("picoclaw-%d", time.Now().UnixNano())).
 			Build()).
