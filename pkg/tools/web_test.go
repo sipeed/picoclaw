@@ -173,30 +173,23 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}
 }
 
-// TestWebTool_WebSearch_NoApiKey verifies error handling when API key is missing
+// TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
-	tool := NewWebSearchTool("", 5)
-	ctx := context.Background()
-	args := map[string]interface{}{
-		"query": "test",
+	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: ""})
+	if tool != nil {
+		t.Errorf("Expected nil tool when Brave API key is empty")
 	}
 
-	result := tool.Execute(ctx, args)
-
-	// Should return error result
-	if !result.IsError {
-		t.Errorf("Expected error when API key is missing")
-	}
-
-	// Should mention missing API key
-	if !strings.Contains(result.ForLLM, "BRAVE_API_KEY") && !strings.Contains(result.ForUser, "BRAVE_API_KEY") {
-		t.Errorf("Expected API key error message, got ForLLM: %s", result.ForLLM)
+	// Also nil when nothing is enabled
+	tool = NewWebSearchTool(WebSearchToolOptions{})
+	if tool != nil {
+		t.Errorf("Expected nil tool when no provider is enabled")
 	}
 }
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool := NewWebSearchTool("test-key", 5)
+	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
 	ctx := context.Background()
 	args := map[string]interface{}{}
 
