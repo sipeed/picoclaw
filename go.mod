@@ -10,6 +10,7 @@ require (
 	github.com/chzyer/readline v1.5.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/kardianos/service v1.2.4
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 	github.com/mymmrac/telego v1.6.0
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1

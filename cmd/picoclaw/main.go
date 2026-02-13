@@ -12,13 +12,14 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/chzyer/readline"
+	"github.com/kardianos/service"
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -180,6 +181,11 @@ func printHelp() {
 	fmt.Println("  agent       Interact with the agent directly")
 	fmt.Println("  auth        Manage authentication (login, logout, status)")
 	fmt.Println("  gateway     Start picoclaw gateway")
+	fmt.Println("              --install-daemon    Install as system service")
+	fmt.Println("              --uninstall-daemon  Uninstall system service")
+	fmt.Println("              --start-daemon      Start the installed service")
+	fmt.Println("              --stop-daemon       Stop the installed service")
+	fmt.Println("              --daemon-status     Show service status")
 	fmt.Println("  status      Show picoclaw status")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
@@ -605,35 +611,68 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	}
 }
 
-func gatewayCmd() {
-	// Check for --debug flag
-	args := os.Args[2:]
-	for _, arg := range args {
-		if arg == "--debug" || arg == "-d" {
-			logger.SetLevel(logger.DEBUG)
-			fmt.Println("🔍 Debug mode enabled")
-			break
-		}
+// gatewayProgram implements service.Interface for running picoclaw as a system daemon.
+type gatewayProgram struct {
+	debug            bool
+	ctx              context.Context
+	cancel           context.CancelFunc
+	cronService      *cron.CronService
+	heartbeatService *heartbeat.HeartbeatService
+	agentLoop        *agent.AgentLoop
+	channelManager   *channels.Manager
+}
+
+func (p *gatewayProgram) Start(s service.Service) error {
+	p.ctx, p.cancel = context.WithCancel(context.Background())
+	go p.run()
+	return nil
+}
+
+func (p *gatewayProgram) Stop(s service.Service) error {
+	fmt.Println("\nShutting down...")
+	p.cancel()
+	if p.heartbeatService != nil {
+		p.heartbeatService.Stop()
+	}
+	if p.cronService != nil {
+		p.cronService.Stop()
+	}
+	if p.agentLoop != nil {
+		p.agentLoop.Stop()
+	}
+	if p.channelManager != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		p.channelManager.StopAll(shutdownCtx)
+	}
+	fmt.Println("✓ Gateway stopped")
+	return nil
+}
+
+func (p *gatewayProgram) run() {
+	if p.debug {
+		logger.SetLevel(logger.DEBUG)
+		fmt.Println("🔍 Debug mode enabled")
 	}
 
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	provider, err := providers.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	p.agentLoop = agent.NewAgentLoop(cfg, msgBus, provider)
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
-	startupInfo := agentLoop.GetStartupInfo()
+	startupInfo := p.agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]interface{})
 	skillsInfo := startupInfo["skills"].(map[string]interface{})
 	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
@@ -650,19 +689,20 @@ func gatewayCmd() {
 		})
 
 	// Setup cron tool and service
-	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath())
+	p.cronService = setupCronTool(p.agentLoop, msgBus, cfg.WorkspacePath())
 
-	heartbeatService := heartbeat.NewHeartbeatService(
+	p.heartbeatService = heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
 		nil,
 		30*60,
 		true,
 	)
 
-	channelManager, err := channels.NewManager(cfg, msgBus)
-	if err != nil {
-		fmt.Printf("Error creating channel manager: %v\n", err)
-		os.Exit(1)
+	var channelErr error
+	p.channelManager, channelErr = channels.NewManager(cfg, msgBus)
+	if channelErr != nil {
+		fmt.Printf("Error creating channel manager: %v\n", channelErr)
+		return
 	}
 
 	var transcriber *voice.GroqTranscriber
@@ -672,19 +712,19 @@ func gatewayCmd() {
 	}
 
 	if transcriber != nil {
-		if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
+		if telegramChannel, ok := p.channelManager.GetChannel("telegram"); ok {
 			if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
 				tc.SetTranscriber(transcriber)
 				logger.InfoC("voice", "Groq transcription attached to Telegram channel")
 			}
 		}
-		if discordChannel, ok := channelManager.GetChannel("discord"); ok {
+		if discordChannel, ok := p.channelManager.GetChannel("discord"); ok {
 			if dc, ok := discordChannel.(*channels.DiscordChannel); ok {
 				dc.SetTranscriber(transcriber)
 				logger.InfoC("voice", "Groq transcription attached to Discord channel")
 			}
 		}
-		if slackChannel, ok := channelManager.GetChannel("slack"); ok {
+		if slackChannel, ok := p.channelManager.GetChannel("slack"); ok {
 			if sc, ok := slackChannel.(*channels.SlackChannel); ok {
 				sc.SetTranscriber(transcriber)
 				logger.InfoC("voice", "Groq transcription attached to Slack channel")
@@ -692,7 +732,7 @@ func gatewayCmd() {
 		}
 	}
 
-	enabledChannels := channelManager.GetEnabledChannels()
+	enabledChannels := p.channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
 		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
 	} else {
@@ -700,38 +740,113 @@ func gatewayCmd() {
 	}
 
 	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
-	fmt.Println("Press Ctrl+C to stop")
+	if service.Interactive() {
+		fmt.Println("Press Ctrl+C to stop")
+	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := cronService.Start(); err != nil {
+	if err := p.cronService.Start(); err != nil {
 		fmt.Printf("Error starting cron service: %v\n", err)
 	}
 	fmt.Println("✓ Cron service started")
 
-	if err := heartbeatService.Start(); err != nil {
+	if err := p.heartbeatService.Start(); err != nil {
 		fmt.Printf("Error starting heartbeat service: %v\n", err)
 	}
 	fmt.Println("✓ Heartbeat service started")
 
-	if err := channelManager.StartAll(ctx); err != nil {
+	if err := p.channelManager.StartAll(p.ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
-	go agentLoop.Run(ctx)
+	// Run agent loop - blocks until ctx is cancelled
+	p.agentLoop.Run(p.ctx)
+}
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt)
-	<-sigChan
+func gatewayCmd() {
+	args := os.Args[2:]
 
-	fmt.Println("\nShutting down...")
-	cancel()
-	heartbeatService.Stop()
-	cronService.Stop()
-	agentLoop.Stop()
-	channelManager.StopAll(ctx)
-	fmt.Println("✓ Gateway stopped")
+	var debug bool
+	var daemonAction string
+
+	for _, arg := range args {
+		switch arg {
+		case "--debug", "-d":
+			debug = true
+		case "--install-daemon":
+			daemonAction = "install"
+		case "--uninstall-daemon":
+			daemonAction = "uninstall"
+		case "--start-daemon":
+			daemonAction = "start"
+		case "--stop-daemon":
+			daemonAction = "stop"
+		case "--daemon-status":
+			daemonAction = "status"
+		}
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Error finding executable path: %v\n", err)
+		os.Exit(1)
+	}
+
+	serviceArgs := []string{"gateway"}
+	if debug {
+		serviceArgs = append(serviceArgs, "--debug")
+	}
+
+	svcConfig := &service.Config{
+		Name:        "picoclaw",
+		DisplayName: "PicoClaw Gateway",
+		Description: "PicoClaw personal AI assistant gateway service",
+		Executable:  execPath,
+		Arguments:   serviceArgs,
+	}
+
+	// Run as the current user so the service can access ~/.picoclaw
+	if u, err := user.Current(); err == nil {
+		svcConfig.UserName = u.Username
+	}
+
+	prg := &gatewayProgram{debug: debug}
+	s, err := service.New(prg, svcConfig)
+	if err != nil {
+		fmt.Printf("Error creating service: %v\n", err)
+		os.Exit(1)
+	}
+
+	if daemonAction != "" {
+		if daemonAction == "status" {
+			status, err := s.Status()
+			if err != nil {
+				fmt.Printf("Error getting service status: %v\n", err)
+				os.Exit(1)
+			}
+			switch status {
+			case service.StatusRunning:
+				fmt.Println("Service is running")
+			case service.StatusStopped:
+				fmt.Println("Service is stopped")
+			default:
+				fmt.Printf("Service status: unknown (%v)\n", status)
+			}
+			return
+		}
+		err := service.Control(s, daemonAction)
+		if err != nil {
+			fmt.Printf("Error: failed to %s service: %v\n", daemonAction, err)
+			os.Exit(1)
+		}
+		fmt.Printf("Service %sed successfully\n", daemonAction)
+		return
+	}
+
+	// Run the service (works both interactively and as a system daemon)
+	if err := s.Run(); err != nil {
+		fmt.Printf("Error running service: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func statusCmd() {

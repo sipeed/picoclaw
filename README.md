@@ -527,6 +527,11 @@ picoclaw agent -m "Hello"
 | `picoclaw agent -m "..."` | Chat with the agent |
 | `picoclaw agent` | Interactive chat mode |
 | `picoclaw gateway` | Start the gateway |
+| `picoclaw gateway --install-daemon` | Install as system service |
+| `picoclaw gateway --uninstall-daemon` | Uninstall system service |
+| `picoclaw gateway --start-daemon` | Start the installed service |
+| `picoclaw gateway --stop-daemon` | Stop the installed service |
+| `picoclaw gateway --daemon-status` | Show service status |
 | `picoclaw status` | Show status |
 | `picoclaw cron list` | List all scheduled jobs |
 | `picoclaw cron add ...` | Add a scheduled job |
@@ -540,6 +545,31 @@ PicoClaw supports scheduled reminders and recurring tasks through the `cron` too
 - **Cron expressions**: "Remind me at 9am daily" → uses cron expression
 
 Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
+
+### Run as System Service (Daemon)
+
+PicoClaw can be installed as a system service using [kardianos/service](https://github.com/kardianos/service), which supports **Linux (systemd)**, **macOS (launchd)**, and **Windows (SCM)**.
+
+```bash
+# Install as a system service (requires root/sudo on Linux)
+sudo picoclaw gateway --install-daemon
+
+# Start the service
+sudo picoclaw gateway --start-daemon
+
+# Check service status
+picoclaw gateway --daemon-status
+
+# Stop the service
+sudo picoclaw gateway --stop-daemon
+
+# Uninstall the service
+sudo picoclaw gateway --uninstall-daemon
+```
+
+> [!NOTE]
+> The service runs as the user who installed it, so it can access `~/.picoclaw/config.json`.
+> To install with debug logging enabled, use `sudo picoclaw gateway --install-daemon --debug`.
 
 ## 🤝 Contribute & Roadmap
 

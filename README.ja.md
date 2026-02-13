@@ -403,7 +403,33 @@ picoclaw agent -m "Hello"
 | `picoclaw agent -m "..."` | エージェントとチャット |
 | `picoclaw agent` | インタラクティブチャットモード |
 | `picoclaw gateway` | ゲートウェイを起動 |
+| `picoclaw gateway --install-daemon` | システムサービスとしてインストール |
+| `picoclaw gateway --uninstall-daemon` | システムサービスをアンインストール |
+| `picoclaw gateway --start-daemon` | インストール済みサービスを起動 |
+| `picoclaw gateway --stop-daemon` | インストール済みサービスを停止 |
+| `picoclaw gateway --daemon-status` | サービスの状態を表示 |
 | `picoclaw status` | ステータスを表示 |
+
+### システムサービス（デーモン）として実行
+
+PicoClaw は [kardianos/service](https://github.com/kardianos/service) を使用してシステムサービスとしてインストールできます。**Linux (systemd)**、**macOS (launchd)**、**Windows (SCM)** に対応しています。
+
+```bash
+# システムサービスとしてインストール（Linux では root/sudo が必要）
+sudo picoclaw gateway --install-daemon
+
+# サービスを起動
+sudo picoclaw gateway --start-daemon
+
+# サービスの状態を確認
+picoclaw gateway --daemon-status
+
+# サービスを停止
+sudo picoclaw gateway --stop-daemon
+
+# サービスをアンインストール
+sudo picoclaw gateway --uninstall-daemon
+```
 
 ## 🤝 コントリビュート＆ロードマップ
 
