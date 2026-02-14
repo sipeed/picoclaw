@@ -36,3 +36,7 @@ coverage.html
 ralph/
 .ralph/
 tasks/
+
+# Editors
+.vscode/
+.idea/
