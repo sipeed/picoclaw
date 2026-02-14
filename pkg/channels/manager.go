@@ -48,7 +48,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token != "" {
 		logger.DebugC("channels", "Attempting to initialize Telegram channel")
-		telegram, err := NewTelegramChannel(m.config.Channels.Telegram, m.bus)
+		telegram, err := NewTelegramChannel(m.config, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize Telegram channel", map[string]interface{}{
 				"error": err.Error(),
