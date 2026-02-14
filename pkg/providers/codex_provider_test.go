@@ -21,6 +21,12 @@ func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	if params.Model != "gpt-4o" {
 		t.Errorf("Model = %q, want %q", params.Model, "gpt-4o")
 	}
+	if !params.Instructions.Valid() {
+		t.Fatal("Instructions should be set")
+	}
+	if params.Instructions.Or("") != defaultCodexInstructions {
+		t.Errorf("Instructions = %q, want %q", params.Instructions.Or(""), defaultCodexInstructions)
+	}
 }
 
 func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
