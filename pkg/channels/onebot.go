@@ -45,12 +45,27 @@ type oneBotRawEvent struct {
 	MetaEventType string          `json:"meta_event_type"`
 	Echo          string          `json:"echo"`
 	RetCode       json.RawMessage `json:"retcode"`
-	Status        BotStatus       `json:"status"`
+	Status        json.RawMessage `json:"status"`
 }
 
 type BotStatus struct {
 	Online bool `json:"online"`
 	Good   bool `json:"good"`
+}
+
+func isAPIResponse(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s == "ok" || s == "failed"
+	}
+	var bs BotStatus
+	if json.Unmarshal(raw, &bs) == nil {
+		return bs.Online || bs.Good
+	}
+	return false
 }
 
 type oneBotSender struct {
@@ -334,10 +349,10 @@ func (c *OneBotChannel) listen() {
 				continue
 			}
 
-			if raw.Echo != "" || raw.Status.Online || raw.Status.Good {
+			if raw.Echo != "" || isAPIResponse(raw.Status) {
 				logger.DebugCF("onebot", "Received API response, skipping", map[string]interface{}{
 					"echo":   raw.Echo,
-					"status": raw.Status,
+					"status": string(raw.Status),
 				})
 				continue
 			}
