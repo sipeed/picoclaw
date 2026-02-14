@@ -14,7 +14,9 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": [
+        "YOUR_USER_ID"
+      ]
     },
     "discord": {
       "enabled": false,
@@ -70,7 +72,7 @@
       "api_key": "gsk_xxx",
       "api_base": ""
     },
-    "zhipu": {
+    "zhipu/z.ai": {
       "api_key": "YOUR_ZHIPU_API_KEY",
       "api_base": ""
     },

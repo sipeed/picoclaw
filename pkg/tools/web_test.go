@@ -175,7 +175,10 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 
 // TestWebTool_WebSearch_NoApiKey verifies error handling when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
-	tool := NewWebSearchTool("", 5)
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		BraveAPIKey:     "", // no api key test
+		BraveMaxResults: 5,
+	})
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"query": "test",
@@ -196,7 +199,10 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool := NewWebSearchTool("test-key", 5)
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		BraveAPIKey:     "test-key", // no api key test
+		BraveMaxResults: 5,
+	})
 	ctx := context.Background()
 	args := map[string]interface{}{}
 
