@@ -113,6 +113,10 @@
     "enabled": true,
     "interval": 30
   },
+  "devices": {
+    "enabled": false,
+    "monitor_usb": true
+  },
   "gateway": {
     "host": "0.0.0.0",
     "port": 18790

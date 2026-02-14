@@ -342,7 +342,7 @@ picoclaw gateway
 
 **1. 创建机器人**
 
-* 前往 [QQ 开放平台](https://connect.qq.com/)
+* 前往 [QQ 开放平台](https://q.qq.com/#)
 * 创建应用 → 获取 **AppID** 和 **AppSecret**
 
 **2. 配置**

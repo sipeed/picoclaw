@@ -171,13 +171,6 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 	return strings.Join(lines, "\n"), nil
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func stripTags(content string) string {
 	re := regexp.MustCompile(`<[^>]+>`)
 	return re.ReplaceAllString(content, "")

@@ -326,6 +326,17 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				workspace = "."
 			}
 			return NewClaudeCliProvider(workspace), nil
+		case "deepseek":
+			if cfg.Providers.DeepSeek.APIKey != "" {
+				apiKey = cfg.Providers.DeepSeek.APIKey
+				apiBase = cfg.Providers.DeepSeek.APIBase
+				if apiBase == "" {
+					apiBase = "https://api.deepseek.com/v1"
+				}
+				if model != "deepseek-chat" && model != "deepseek-reasoner" {
+					model = "deepseek-chat"
+				}
+			}
 		}
 	}
 
