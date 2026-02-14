@@ -50,4 +50,3 @@ func TestBaseChannelIsAllowed(t *testing.T) {
 		})
 	}
 }
-
