@@ -23,6 +23,6 @@ func TestMiniMaxProvider_Chat(t *testing.T) {
 	if resp.Content == "" {
 		t.Errorf("Expected non-empty content")
 	}
-	
+
 	t.Logf("Response: %s", resp.Content)
 }

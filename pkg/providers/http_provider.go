@@ -143,7 +143,7 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
-		Usage *UsageInfo `json:"usage"`
+		Usage    *UsageInfo `json:"usage"`
 		BaseResp *struct {
 			StatusCode int    `json:"status_code"`
 			StatusMsg  string `json:"status_msg"`
