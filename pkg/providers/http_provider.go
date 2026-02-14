@@ -62,7 +62,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 
 	requestBody := map[string]interface{}{
 		"model":    model,
-		"messages": messages,
+		"messages": buildOpenAICompatMessages(messages),
 	}
 
 	if len(tools) > 0 {
@@ -126,7 +126,7 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
-				Content   string `json:"content"`
+				Content   json.RawMessage `json:"content"`
 				ToolCalls []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
@@ -153,6 +153,7 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 	}
 
 	choice := apiResponse.Choices[0]
+	content := parseOpenAIContent(choice.Message.Content)
 
 	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
 	for _, tc := range choice.Message.ToolCalls {
@@ -185,11 +186,116 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 	}
 
 	return &LLMResponse{
-		Content:      choice.Message.Content,
+		Content:      content,
 		ToolCalls:    toolCalls,
 		FinishReason: choice.FinishReason,
 		Usage:        apiResponse.Usage,
 	}, nil
+}
+
+func buildOpenAICompatMessages(messages []Message) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(messages))
+	for _, msg := range messages {
+		out = append(out, buildOpenAICompatMessage(msg))
+	}
+	return out
+}
+
+func buildOpenAICompatMessage(msg Message) map[string]interface{} {
+	result := map[string]interface{}{
+		"role": msg.Role,
+	}
+
+	switch msg.Role {
+	case "user":
+		contentParts := make([]map[string]interface{}, 0, 1+len(msg.Media))
+		if strings.TrimSpace(msg.Content) != "" {
+			contentParts = append(contentParts, map[string]interface{}{
+				"type": "text",
+				"text": msg.Content,
+			})
+		}
+		for _, media := range msg.Media {
+			if media.Type != "image_url" || media.URL == "" {
+				continue
+			}
+			contentParts = append(contentParts, map[string]interface{}{
+				"type": "image_url",
+				"image_url": map[string]interface{}{
+					"url": media.URL,
+				},
+			})
+		}
+		if len(contentParts) == 0 {
+			result["content"] = msg.Content
+		} else {
+			result["content"] = contentParts
+		}
+	case "assistant":
+		result["content"] = msg.Content
+		if len(msg.ToolCalls) > 0 {
+			toolCalls := make([]map[string]interface{}, 0, len(msg.ToolCalls))
+			for _, tc := range msg.ToolCalls {
+				name := tc.Name
+				args := ""
+				if tc.Function != nil {
+					if name == "" {
+						name = tc.Function.Name
+					}
+					args = tc.Function.Arguments
+				}
+				if args == "" && len(tc.Arguments) > 0 {
+					argsJSON, _ := json.Marshal(tc.Arguments)
+					args = string(argsJSON)
+				}
+				toolCalls = append(toolCalls, map[string]interface{}{
+					"id":   tc.ID,
+					"type": "function",
+					"function": map[string]interface{}{
+						"name":      name,
+						"arguments": args,
+					},
+				})
+			}
+			result["tool_calls"] = toolCalls
+		}
+	case "tool":
+		result["content"] = msg.Content
+		if msg.ToolCallID != "" {
+			result["tool_call_id"] = msg.ToolCallID
+		}
+	default:
+		result["content"] = msg.Content
+	}
+
+	return result
+}
+
+func parseOpenAIContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text
+	}
+
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return ""
+	}
+
+	lines := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p.Type == "text" && p.Text != "" {
+			lines = append(lines, p.Text)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (p *HTTPProvider) GetDefaultModel() string {

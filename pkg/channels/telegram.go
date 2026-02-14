@@ -1,11 +1,16 @@
 package channels
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -24,6 +29,7 @@ import (
 type TelegramChannel struct {
 	*BaseChannel
 	bot          *telego.Bot
+	httpClient   *http.Client
 	config       config.TelegramConfig
 	chatIDs      map[string]int64
 	transcriber  *voice.GroqTranscriber
@@ -43,17 +49,19 @@ func (c *thinkingCancel) Cancel() {
 
 func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*TelegramChannel, error) {
 	var opts []telego.BotOption
+	httpClient := &http.Client{}
 
 	if cfg.Proxy != "" {
 		proxyURL, parseErr := url.Parse(cfg.Proxy)
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", cfg.Proxy, parseErr)
 		}
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
+		httpClient = &http.Client{
 			Transport: &http.Transport{
 				Proxy: http.ProxyURL(proxyURL),
 			},
-		}))
+		}
+		opts = append(opts, telego.WithHTTPClient(httpClient))
 	}
 
 	bot, err := telego.NewBot(cfg.Token, opts...)
@@ -66,6 +74,7 @@ func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*Telegr
 	return &TelegramChannel{
 		BaseChannel:  base,
 		bot:          bot,
+		httpClient:   httpClient,
 		config:       cfg,
 		chatIDs:      make(map[string]int64),
 		transcriber:  nil,
@@ -136,25 +145,43 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		}
 		c.stopThinking.Delete(msg.ChatID)
 	}
+	placeholderEdited := false
+	if len(msg.Attachments) > 0 {
+		placeholderEdited = c.editPlaceholder(ctx, msg.ChatID, chatID, "Attachment sent.")
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
-
-	// Try to edit placeholder
-	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
-		editMsg.ParseMode = telego.ModeHTML
-
-		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
-			return nil
+		caption, truncated := truncateTelegramCaption(strings.TrimSpace(msg.Content))
+		for i, attachment := range msg.Attachments {
+			cap := ""
+			if i == 0 {
+				cap = caption
+			}
+			if err := c.sendAttachment(ctx, chatID, attachment, cap); err != nil {
+				return err
+			}
 		}
-		// Fallback to new message if edit fails
+
+		if truncated {
+			if err := c.sendTextMessage(ctx, msg.ChatID, chatID, msg.Content, placeholderEdited); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return c.sendTextMessage(ctx, msg.ChatID, chatID, msg.Content, false)
+}
+
+func (c *TelegramChannel) sendTextMessage(ctx context.Context, chatIDKey string, chatID int64, content string, skipPlaceholder bool) error {
+	htmlContent := markdownToTelegramHTML(content)
+
+	if !skipPlaceholder && c.editPlaceholder(ctx, chatIDKey, chatID, htmlContent) {
+		return nil
 	}
 
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 
-	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
 		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]interface{}{
 			"error": err.Error(),
 		})
@@ -164,6 +191,129 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 
 	return nil
+}
+
+func (c *TelegramChannel) editPlaceholder(ctx context.Context, chatIDKey string, chatID int64, htmlContent string) bool {
+	if pID, ok := c.placeholders.Load(chatIDKey); ok {
+		c.placeholders.Delete(chatIDKey)
+		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
+		editMsg.ParseMode = telego.ModeHTML
+
+		if _, err := c.bot.EditMessageText(ctx, editMsg); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func truncateTelegramCaption(content string) (string, bool) {
+	if content == "" {
+		return "", false
+	}
+	const maxCaptionLen = 1024
+	if len(content) <= maxCaptionLen {
+		return content, false
+	}
+	return content[:maxCaptionLen], true
+}
+
+func (c *TelegramChannel) sendAttachment(ctx context.Context, chatID int64, attachment bus.Attachment, caption string) error {
+	path := strings.TrimSpace(attachment.Path)
+	if path == "" {
+		return fmt.Errorf("telegram attachment requires local file path")
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open attachment %q: %w", path, err)
+	}
+	defer file.Close()
+
+	var endpoint string
+	var formField string
+	if isTelegramPhoto(attachment, path) {
+		endpoint = "sendPhoto"
+		formField = "photo"
+	} else {
+		endpoint = "sendDocument"
+		formField = "document"
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	if err := writer.WriteField("chat_id", fmt.Sprintf("%d", chatID)); err != nil {
+		return fmt.Errorf("write chat_id field: %w", err)
+	}
+	if caption != "" {
+		if err := writer.WriteField("caption", caption); err != nil {
+			return fmt.Errorf("write caption field: %w", err)
+		}
+	}
+
+	filename := attachment.FileName
+	if filename == "" {
+		filename = filepath.Base(path)
+	}
+
+	part, err := writer.CreateFormFile(formField, filename)
+	if err != nil {
+		return fmt.Errorf("create multipart form file: %w", err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return fmt.Errorf("copy file content: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("close multipart body: %w", err)
+	}
+
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/%s", c.config.Token, endpoint)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, body)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send telegram attachment: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("telegram attachment API failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var apiResp struct {
+		OK          bool            `json:"ok"`
+		Description string          `json:"description"`
+		Result      json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return fmt.Errorf("parse telegram attachment response: %w", err)
+	}
+	if !apiResp.OK {
+		return fmt.Errorf("telegram attachment API error: %s", apiResp.Description)
+	}
+
+	return nil
+}
+
+func isTelegramPhoto(attachment bus.Attachment, path string) bool {
+	if strings.EqualFold(attachment.Type, "image") {
+		return true
+	}
+	if strings.HasPrefix(strings.ToLower(attachment.MIMEType), "image/") {
+		return true
+	}
+
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Update) {
@@ -197,19 +347,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 
 	content := ""
 	mediaPaths := []string{}
-	localFiles := []string{} // 跟踪需要清理的本地文件
-
-	// 确保临时文件在函数返回时被清理
-	defer func() {
-		for _, file := range localFiles {
-			if err := os.Remove(file); err != nil {
-				logger.DebugCF("telegram", "Failed to cleanup temp file", map[string]interface{}{
-					"file":  file,
-					"error": err.Error(),
-				})
-			}
-		}
-	}()
+	localFiles := []string{}
 
 	if message.Text != "" {
 		content += message.Text
@@ -362,6 +500,11 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 	}
 
 	c.HandleMessage(senderID, fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+
+	for _, file := range localFiles {
+		// Delay cleanup so downstream processing (vision, file tools) can access the file.
+		utils.ScheduleFileCleanup(file, 15*time.Minute, "telegram")
+	}
 }
 
 func (c *TelegramChannel) downloadPhoto(ctx context.Context, fileID string) string {

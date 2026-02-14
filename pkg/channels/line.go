@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -309,17 +308,6 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	var mediaPaths []string
 	localFiles := []string{}
 
-	defer func() {
-		for _, file := range localFiles {
-			if err := os.Remove(file); err != nil {
-				logger.DebugCF("line", "Failed to cleanup temp file", map[string]interface{}{
-					"file":  file,
-					"error": err.Error(),
-				})
-			}
-		}
-	}()
-
 	switch msg.Type {
 	case "text":
 		content = msg.Text
@@ -378,6 +366,9 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	c.sendLoading(senderID)
 
 	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
+	for _, file := range localFiles {
+		utils.ScheduleFileCleanup(file, 15*time.Minute, "line")
+	}
 }
 
 // isBotMentioned checks if the bot is mentioned in the message.

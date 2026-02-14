@@ -103,10 +103,20 @@
   },
   "tools": {
     "web": {
-      "search": {
+      "brave": {
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
       }
+    },
+    "media": {
+      "max_inbound_image_bytes": 5242880,
+      "max_inbound_images": 3,
+      "max_outbound_file_bytes": 10485760
     }
   },
   "heartbeat": {
