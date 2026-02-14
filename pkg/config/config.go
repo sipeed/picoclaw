@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -50,6 +51,7 @@ type Config struct {
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
+	Swarm     SwarmConfig     `json:"swarm"`
 	mu        sync.RWMutex
 }
 
@@ -195,6 +197,106 @@ type ToolsConfig struct {
 	Web WebToolsConfig `json:"web"`
 }
 
+// SwarmConfig configures the swarm mode for multi-instance collaboration
+type SwarmConfig struct {
+	Enabled       bool           `json:"enabled" env:"PICOCLAW_SWARM_ENABLED"`
+	NodeID        string         `json:"node_id" env:"PICOCLAW_SWARM_NODE_ID"`
+	Role          string         `json:"role" env:"PICOCLAW_SWARM_ROLE"` // coordinator/worker/specialist
+	Capabilities  []string       `json:"capabilities" env:"PICOCLAW_SWARM_CAPABILITIES"`
+	MaxConcurrent int            `json:"max_concurrent_tasks" env:"PICOCLAW_SWARM_MAX_CONCURRENT"`
+	NATS          NATSConfig     `json:"nats"`
+	Temporal      TemporalConfig `json:"temporal"`
+}
+
+// NATSConfig configures NATS connection
+type NATSConfig struct {
+	URLs              []string `json:"urls" env:"PICOCLAW_SWARM_NATS_URLS"`
+	Credentials       string   `json:"credentials" env:"PICOCLAW_SWARM_NATS_CREDENTIALS"`
+	HeartbeatInterval string   `json:"heartbeat_interval" env:"PICOCLAW_SWARM_NATS_HEARTBEAT_INTERVAL"`
+	NodeTimeout       string   `json:"node_timeout" env:"PICOCLAW_SWARM_NATS_NODE_TIMEOUT"`
+	Embedded          bool     `json:"embedded" env:"PICOCLAW_SWARM_NATS_EMBEDDED"` // Use embedded server
+	EmbeddedPort      int      `json:"embedded_port" env:"PICOCLAW_SWARM_NATS_EMBEDDED_PORT"`
+}
+
+// TemporalConfig configures Temporal connection
+type TemporalConfig struct {
+	Host            string `json:"host" env:"PICOCLAW_SWARM_TEMPORAL_HOST"`
+	Namespace       string `json:"namespace" env:"PICOCLAW_SWARM_TEMPORAL_NAMESPACE"`
+	TaskQueue       string `json:"task_queue" env:"PICOCLAW_SWARM_TEMPORAL_TASK_QUEUE"`
+	WorkflowTimeout string `json:"workflow_timeout" env:"PICOCLAW_SWARM_TEMPORAL_WORKFLOW_TIMEOUT"`
+	ActivityTimeout string `json:"activity_timeout" env:"PICOCLAW_SWARM_TEMPORAL_ACTIVITY_TIMEOUT"`
+}
+
+// GetHeartbeatInterval returns the heartbeat interval as a duration
+func (c *SwarmConfig) GetHeartbeatInterval() time.Duration {
+	d, err := time.ParseDuration(c.NATS.HeartbeatInterval)
+	if err != nil {
+		return 10 * time.Second
+	}
+	return d
+}
+
+// GetNodeTimeout returns the node timeout as a duration
+func (c *SwarmConfig) GetNodeTimeout() time.Duration {
+	d, err := time.ParseDuration(c.NATS.NodeTimeout)
+	if err != nil {
+		return 30 * time.Second
+	}
+	return d
+}
+
+// GetWorkflowTimeout returns the workflow timeout as a duration
+func (c *SwarmConfig) GetWorkflowTimeout() time.Duration {
+	d, err := time.ParseDuration(c.Temporal.WorkflowTimeout)
+	if err != nil {
+		return 30 * time.Minute
+	}
+	return d
+}
+
+// GetActivityTimeout returns the activity timeout as a duration
+func (c *SwarmConfig) GetActivityTimeout() time.Duration {
+	d, err := time.ParseDuration(c.Temporal.ActivityTimeout)
+	if err != nil {
+		return 10 * time.Minute
+	}
+	return d
+}
+
+// Validate validates the SwarmConfig
+func (c *SwarmConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+
+	if c.MaxConcurrent <= 0 {
+		return fmt.Errorf("swarm: max_concurrent must be > 0, got %d", c.MaxConcurrent)
+	}
+
+	if len(c.NATS.URLs) == 0 && !c.NATS.Embedded {
+		return fmt.Errorf("swarm: NATS.URLs required when embedded=false")
+	}
+
+	if c.NATS.HeartbeatInterval != "" {
+		if _, err := time.ParseDuration(c.NATS.HeartbeatInterval); err != nil {
+			return fmt.Errorf("swarm: invalid heartbeat_interval: %w", err)
+		}
+	}
+
+	if c.NATS.NodeTimeout != "" {
+		if _, err := time.ParseDuration(c.NATS.NodeTimeout); err != nil {
+			return fmt.Errorf("swarm: invalid node_timeout: %w", err)
+		}
+	}
+
+	validRoles := map[string]bool{"coordinator": true, "worker": true, "specialist": true}
+	if !validRoles[c.Role] {
+		return fmt.Errorf("swarm: invalid role %q, must be coordinator/worker/specialist", c.Role)
+	}
+
+	return nil
+}
+
 func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
@@ -298,6 +400,28 @@ func DefaultConfig() *Config {
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
 			Interval: 30, // default 30 minutes
+		},
+		Swarm: SwarmConfig{
+			Enabled:       false, // Disabled by default for backward compatibility
+			NodeID:        "",    // Auto-generate if empty
+			Role:          "worker",
+			Capabilities:  []string{},
+			MaxConcurrent: 5,
+			NATS: NATSConfig{
+				URLs:              []string{"nats://localhost:4222"},
+				Credentials:       "",
+				HeartbeatInterval: "10s",
+				NodeTimeout:       "30s",
+				Embedded:          false,
+				EmbeddedPort:      4222,
+			},
+			Temporal: TemporalConfig{
+				Host:            "localhost:7233",
+				Namespace:       "picoclaw-swarm",
+				TaskQueue:       "picoclaw-tasks",
+				WorkflowTimeout: "30m",
+				ActivityTimeout: "10m",
+			},
 		},
 	}
 }
