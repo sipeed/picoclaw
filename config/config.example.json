@@ -60,6 +60,14 @@
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
+    },
+    "onebot": {
+      "enabled": false,
+      "ws_url": "ws://127.0.0.1:3001",
+      "access_token": "",
+      "reconnect_interval": 5,
+      "group_trigger_prefix": [],
+      "allow_from": []
     }
   },
   "providers": {
