@@ -161,6 +161,8 @@ type ProvidersConfig struct {
 	Nvidia       ProviderConfig `json:"nvidia"`
 	Moonshot     ProviderConfig `json:"moonshot"`
 	ShengSuanYun ProviderConfig `json:"shengsuanyun"`
+	OpenCode     ProviderConfig `json:"opencode"`
+	Antigravity  ProviderConfig `json:"antigravity"`
 }
 
 type ProviderConfig struct {
@@ -277,6 +279,8 @@ func DefaultConfig() *Config {
 			Nvidia:       ProviderConfig{},
 			Moonshot:     ProviderConfig{},
 			ShengSuanYun: ProviderConfig{},
+			OpenCode:     ProviderConfig{},
+			Antigravity:  ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",

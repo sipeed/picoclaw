@@ -303,6 +303,18 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				workspace = "."
 			}
 			return NewClaudeCliProvider(workspace), nil
+		case "opencode", "open-code":
+			workspace := cfg.Agents.Defaults.Workspace
+			if workspace == "" {
+				workspace = "."
+			}
+			return NewOpenCodeProvider(workspace), nil
+		case "antigravity", "gemini-cli":
+			workspace := cfg.Agents.Defaults.Workspace
+			if workspace == "" {
+				workspace = "."
+			}
+			return NewAntigravityProvider(workspace), nil
 		}
 	}
 
