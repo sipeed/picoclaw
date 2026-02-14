@@ -167,6 +167,7 @@ type ProvidersConfig struct {
 	Nvidia       ProviderConfig `json:"nvidia"`
 	Moonshot     ProviderConfig `json:"moonshot"`
 	ShengSuanYun ProviderConfig `json:"shengsuanyun"`
+	MiniMax      ProviderConfig `json:"minimax"`
 	DeepSeek     ProviderConfig `json:"deepseek"`
 }
 
@@ -384,6 +385,9 @@ func (c *Config) GetAPIKey() string {
 	}
 	if c.Providers.ShengSuanYun.APIKey != "" {
 		return c.Providers.ShengSuanYun.APIKey
+	}
+	if c.Providers.MiniMax.APIKey != "" {
+		return c.Providers.MiniMax.APIKey
 	}
 	return ""
 }

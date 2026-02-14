@@ -21,9 +21,10 @@ import (
 )
 
 type HTTPProvider struct {
-	apiKey     string
-	apiBase    string
-	httpClient *http.Client
+	apiKey        string
+	apiBase       string
+	httpClient    *http.Client
+	RequestSuffix string // Optional: override default "/chat/completions"
 }
 
 func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
@@ -94,7 +95,12 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+	suffix := "/chat/completions"
+	if p.RequestSuffix != "" {
+		suffix = p.RequestSuffix
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+suffix, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -118,7 +124,6 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
-
 	return p.parseResponse(body)
 }
 
@@ -138,11 +143,19 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
-		Usage *UsageInfo `json:"usage"`
+		Usage    *UsageInfo `json:"usage"`
+		BaseResp *struct {
+			StatusCode int    `json:"status_code"`
+			StatusMsg  string `json:"status_msg"`
+		} `json:"base_resp"`
 	}
 
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if apiResponse.BaseResp != nil && apiResponse.BaseResp.StatusCode != 0 {
+		return nil, fmt.Errorf("provider error: [%d] %s", apiResponse.BaseResp.StatusCode, apiResponse.BaseResp.StatusMsg)
 	}
 
 	if len(apiResponse.Choices) == 0 {
@@ -297,6 +310,16 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 					apiBase = "https://router.shengsuanyun.com/api/v1"
 				}
 			}
+		case "minimax":
+			if cfg.Providers.MiniMax.APIKey != "" {
+				apiKey = cfg.Providers.MiniMax.APIKey
+				apiBase = cfg.Providers.MiniMax.APIBase
+				if apiBase == "" {
+					apiBase = "https://api.minimax.io/v1"
+				}
+				// MiniMax requires special provider creation
+				return MiniMaxProvider(apiKey, apiBase), nil
+			}
 		case "claude-cli", "claudecode", "claude-code":
 			workspace := cfg.Agents.Defaults.Workspace
 			if workspace == "" {
@@ -390,6 +413,14 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			if apiBase == "" {
 				apiBase = "https://integrate.api.nvidia.com/v1"
 			}
+
+		case (strings.Contains(lowerModel, "minimax") || strings.HasPrefix(model, "minimax/")) && cfg.Providers.MiniMax.APIKey != "":
+			apiKey = cfg.Providers.MiniMax.APIKey
+			apiBase = cfg.Providers.MiniMax.APIBase
+			if apiBase == "" {
+				apiBase = "https://api.minimax.io/v1"
+			}
+			return MiniMaxProvider(apiKey, apiBase), nil
 
 		case cfg.Providers.VLLM.APIBase != "":
 			apiKey = cfg.Providers.VLLM.APIKey
