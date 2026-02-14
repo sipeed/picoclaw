@@ -5,9 +5,11 @@ version: 2
 before:
   hooks:
     - go mod tidy
+    - go generate ./cmd/picoclaw
 
 builds:
-  - env:
+  - id: picoclaw
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
@@ -25,6 +27,22 @@ builds:
     ignore:
       - goos: windows
         goarch: arm
+
+dockers_v2:
+  - id: picoclaw
+    dockerfile: Dockerfile.goreleaser
+    ids:
+      - picoclaw
+    images:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
+      - "docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}"
+    tags:
+      - "{{ .Tag }}"
+      - "latest"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+      - linux/riscv64
 
 archives:
   - formats: [tar.gz]
