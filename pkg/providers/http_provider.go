@@ -42,7 +42,7 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 
 	return &HTTPProvider{
 		apiKey:     apiKey,
-		apiBase:    apiBase,
+		apiBase:    strings.TrimRight(apiBase, "/"),
 		httpClient: client,
 	}
 }
@@ -116,7 +116,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error: %s", string(body))
+		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
 
 	return p.parseResponse(body)
@@ -312,6 +312,17 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				workspace = "."
 			}
 			return NewCodexCliProvider(workspace), nil
+		case "deepseek":
+			if cfg.Providers.DeepSeek.APIKey != "" {
+				apiKey = cfg.Providers.DeepSeek.APIKey
+				apiBase = cfg.Providers.DeepSeek.APIBase
+				if apiBase == "" {
+					apiBase = "https://api.deepseek.com/v1"
+				}
+				if model != "deepseek-chat" && model != "deepseek-reasoner" {
+					model = "deepseek-chat"
+				}
+			}
 		}
 	}
 

@@ -51,6 +51,15 @@
       "bot_token": "xoxb-YOUR-BOT-TOKEN",
       "app_token": "xapp-YOUR-APP-TOKEN",
       "allow_from": []
+    },
+    "line": {
+      "enabled": false,
+      "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
+      "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
+      "webhook_path": "/webhook/line",
+      "allow_from": []
     }
   },
   "providers": {
@@ -103,6 +112,10 @@
   "heartbeat": {
     "enabled": true,
     "interval": 30
+  },
+  "devices": {
+    "enabled": false,
+    "monitor_usb": true
   },
   "gateway": {
     "host": "0.0.0.0",

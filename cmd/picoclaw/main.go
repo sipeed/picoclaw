@@ -25,11 +25,13 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
+	"github.com/sipeed/picoclaw/pkg/devices"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/migrate"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
@@ -751,6 +753,18 @@ func gatewayCmd() {
 	}
 	fmt.Println("✓ Heartbeat service started")
 
+	stateManager := state.NewManager(cfg.WorkspacePath())
+	deviceService := devices.NewService(devices.Config{
+		Enabled:    cfg.Devices.Enabled,
+		MonitorUSB: cfg.Devices.MonitorUSB,
+	}, stateManager)
+	deviceService.SetBus(msgBus)
+	if err := deviceService.Start(ctx); err != nil {
+		fmt.Printf("Error starting device service: %v\n", err)
+	} else if cfg.Devices.Enabled {
+		fmt.Println("✓ Device event service started")
+	}
+
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
@@ -763,6 +777,7 @@ func gatewayCmd() {
 
 	fmt.Println("\nShutting down...")
 	cancel()
+	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
 	agentLoop.Stop()
