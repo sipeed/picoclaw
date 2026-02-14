@@ -50,6 +50,7 @@ type Config struct {
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
+	Devices   DevicesConfig   `json:"devices"`
 	mu        sync.RWMutex
 }
 
@@ -148,6 +149,11 @@ type LINEConfig struct {
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled" env:"PICOCLAW_HEARTBEAT_ENABLED"`
 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
+}
+
+type DevicesConfig struct {
+	Enabled     bool `json:"enabled" env:"PICOCLAW_DEVICES_ENABLED"`
+	MonitorUSB  bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
 }
 
 type ProvidersConfig struct {
@@ -298,6 +304,10 @@ func DefaultConfig() *Config {
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
 			Interval: 30, // default 30 minutes
+		},
+		Devices: DevicesConfig{
+			Enabled:    false,
+			MonitorUSB: true,
 		},
 	}
 }
