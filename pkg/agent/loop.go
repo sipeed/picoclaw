@@ -49,6 +49,7 @@ type processOptions struct {
 	Channel         string // Target channel for tool execution
 	ChatID          string // Target chat ID for tool execution
 	UserMessage     string // User message content (may include prefix)
+	Media           []string
 	DefaultResponse string // Response when LLM returns empty
 	EnableSummary   bool   // Whether to trigger summarization
 	SendResponse    bool   // Whether to send response via bus
@@ -59,6 +60,10 @@ type processOptions struct {
 // This is shared between main agent and subagents.
 func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msgBus *bus.MessageBus) *tools.ToolRegistry {
 	registry := tools.NewToolRegistry()
+	maxOutboundFileBytes := cfg.Tools.Media.MaxOutboundFileBytes
+	if maxOutboundFileBytes <= 0 {
+		maxOutboundFileBytes = 10 * 1024 * 1024
+	}
 
 	// File system tools
 	registry.Register(tools.NewReadFileTool(workspace, restrict))
@@ -94,6 +99,20 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	})
 	registry.Register(messageTool)
 
+	sendFileTool := tools.NewSendFileTool(workspace, restrict, maxOutboundFileBytes)
+	sendFileTool.SetSendCallback(func(msg bus.OutboundMessage) error {
+		msgBus.PublishOutbound(msg)
+		return nil
+	})
+	registry.Register(sendFileTool)
+
+	screenshotTool := tools.NewScreenshotTool(workspace, restrict, maxOutboundFileBytes)
+	screenshotTool.SetSendCallback(func(msg bus.OutboundMessage) error {
+		msgBus.PublishOutbound(msg)
+		return nil
+	})
+	registry.Register(screenshotTool)
+
 	return registry
 }
 
@@ -128,6 +147,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	// Create context builder and set tools registry
 	contextBuilder := NewContextBuilder(workspace)
 	contextBuilder.SetToolsRegistry(toolsRegistry)
+	contextBuilder.SetMediaLimits(cfg.Tools.Media.MaxInboundImages, cfg.Tools.Media.MaxInboundImageBytes)
 
 	return &AgentLoop{
 		bus:            msgBus,
@@ -264,6 +284,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
+		Media:           msg.Media,
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   true,
 		SendResponse:    false,
@@ -350,7 +371,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		history,
 		summary,
 		opts.UserMessage,
-		nil,
+		opts.Media,
 		opts.Channel,
 		opts.ChatID,
 	)
@@ -577,6 +598,16 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string) {
 		}
 	}
 	if tool, ok := al.tools.Get("subagent"); ok {
+		if st, ok := tool.(tools.ContextualTool); ok {
+			st.SetContext(channel, chatID)
+		}
+	}
+	if tool, ok := al.tools.Get("send_file"); ok {
+		if ft, ok := tool.(tools.ContextualTool); ok {
+			ft.SetContext(channel, chatID)
+		}
+	}
+	if tool, ok := al.tools.Get("screenshot"); ok {
 		if st, ok := tool.(tools.ContextualTool); ok {
 			st.SetContext(channel, chatID)
 		}

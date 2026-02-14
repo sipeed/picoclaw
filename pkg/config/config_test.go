@@ -145,6 +145,16 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	if cfg.Tools.Web.DuckDuckGo.MaxResults != 5 {
 		t.Error("Expected DuckDuckGo MaxResults 5, got ", cfg.Tools.Web.DuckDuckGo.MaxResults)
 	}
+
+	if cfg.Tools.Media.MaxInboundImageBytes <= 0 {
+		t.Error("Expected positive MaxInboundImageBytes")
+	}
+	if cfg.Tools.Media.MaxInboundImages <= 0 {
+		t.Error("Expected positive MaxInboundImages")
+	}
+	if cfg.Tools.Media.MaxOutboundFileBytes <= 0 {
+		t.Error("Expected positive MaxOutboundFileBytes")
+	}
 }
 
 // TestConfig_Complete verifies all config fields are set
