@@ -223,7 +223,7 @@ picoclaw agent -m "What is 2+2?"
 
 ## 💬 チャットアプリ
 
-Telegram、Discord、QQ、DingTalk で PicoClaw と会話できます
+Telegram、Discord、QQ、DingTalk、LINE で PicoClaw と会話できます
 
 | チャネル | セットアップ |
 |---------|------------|
@@ -231,6 +231,7 @@ Telegram、Discord、QQ、DingTalk で PicoClaw と会話できます
 | **Discord** | 簡単（Bot トークン + Intents） |
 | **QQ** | 簡単（AppID + AppSecret） |
 | **DingTalk** | 普通（アプリ認証情報） |
+| **LINE** | 普通（認証情報 + Webhook URL） |
 
 <details>
 <summary><b>Telegram</b>（推奨）</summary>
@@ -373,6 +374,56 @@ picoclaw gateway
 ```bash
 picoclaw gateway
 ```
+
+</details>
+
+<details>
+<summary><b>LINE</b></summary>
+
+**1. LINE 公式アカウントを作成**
+
+- [LINE Developers Console](https://developers.line.biz/) にアクセス
+- プロバイダーを作成 → Messaging API チャネルを作成
+- **チャネルシークレット** と **チャネルアクセストークン** をコピー
+
+**2. 設定**
+
+```json
+{
+  "channels": {
+    "line": {
+      "enabled": true,
+      "channel_secret": "YOUR_CHANNEL_SECRET",
+      "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
+      "webhook_path": "/webhook/line",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Webhook URL を設定**
+
+LINE の Webhook には HTTPS が必要です。リバースプロキシまたはトンネルを使用してください:
+
+```bash
+# ngrok の例
+ngrok http 18791
+```
+
+LINE Developers Console で Webhook URL を `https://あなたのドメイン/webhook/line` に設定し、**Webhook の利用** を有効にしてください。
+
+**4. 起動**
+
+```bash
+picoclaw gateway
+```
+
+> グループチャットでは @メンション時のみ応答します。返信は元メッセージを引用する形式です。
+
+> **Docker Compose**: `picoclaw-gateway` サービスに `ports: ["18791:18791"]` を追加して Webhook ポートを公開してください。
 
 </details>
 

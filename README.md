@@ -242,14 +242,15 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, or DingTalk
+Talk to your picoclaw through Telegram, Discord, DingTalk, or LINE
 
-| Channel      | Setup                      |
-| ------------ | -------------------------- |
-| **Telegram** | Easy (just a token)        |
-| **Discord**  | Easy (bot token + intents) |
-| **QQ**       | Easy (AppID + AppSecret)   |
-| **DingTalk** | Medium (app credentials)   |
+| Channel      | Setup                              |
+| ------------ | ---------------------------------- |
+| **Telegram** | Easy (just a token)                |
+| **Discord**  | Easy (bot token + intents)         |
+| **QQ**       | Easy (AppID + AppSecret)           |
+| **DingTalk** | Medium (app credentials)           |
+| **LINE**     | Medium (credentials + webhook URL) |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -396,6 +397,56 @@ picoclaw gateway
 ```bash
 picoclaw gateway
 ```
+
+</details>
+
+<details>
+<summary><b>LINE</b></summary>
+
+**1. Create a LINE Official Account**
+
+- Go to [LINE Developers Console](https://developers.line.biz/)
+- Create a provider → Create a Messaging API channel
+- Copy **Channel Secret** and **Channel Access Token**
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "line": {
+      "enabled": true,
+      "channel_secret": "YOUR_CHANNEL_SECRET",
+      "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
+      "webhook_path": "/webhook/line",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Set up Webhook URL**
+
+LINE requires HTTPS for webhooks. Use a reverse proxy or tunnel:
+
+```bash
+# Example with ngrok
+ngrok http 18791
+```
+
+Then set the Webhook URL in LINE Developers Console to `https://your-domain/webhook/line` and enable **Use webhook**.
+
+**4. Run**
+
+```bash
+picoclaw gateway
+```
+
+> In group chats, the bot responds only when @mentioned. Replies quote the original message.
+
+> **Docker Compose**: Add `ports: ["18791:18791"]` to the `picoclaw-gateway` service to expose the webhook port.
 
 </details>
 
