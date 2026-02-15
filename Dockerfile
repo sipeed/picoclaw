@@ -29,6 +29,9 @@ COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 # Copy built Web UI assets
 COPY --from=builder /src/ui/dist /usr/local/share/picoclaw/ui/dist
 
+# Copy config schema for /admin/schema
+COPY --from=builder /src/config/config.schema.json /usr/local/share/picoclaw/config/config.schema.json
+
 # Create picoclaw home directory
 RUN /usr/local/bin/picoclaw onboard
 

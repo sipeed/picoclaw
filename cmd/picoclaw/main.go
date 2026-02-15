@@ -735,6 +735,9 @@ func gatewayCmd() {
 			wc.SetConfigUpdate(func(raw []byte) error {
 				return saveConfigRawAtomic(configPath, raw)
 			})
+			wc.SetConfigRead(func() ([]byte, error) {
+				return os.ReadFile(configPath)
+			})
 			wc.SetDrainExit(func(timeout time.Duration) error {
 				shutdown(timeout)
 				os.Exit(0)

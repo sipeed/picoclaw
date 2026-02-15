@@ -30,6 +30,7 @@ type WebUIChannel struct {
 	acceptingWS atomic.Bool
 	drainExitFn func(timeout time.Duration) error
 	configUpdateFn func(raw []byte) error
+	configReadFn func() ([]byte, error)
 }
 
 type webUIClient struct {
@@ -70,6 +71,10 @@ func (c *WebUIChannel) SetConfigUpdate(fn func(raw []byte) error) {
 	c.configUpdateFn = fn
 }
 
+func (c *WebUIChannel) SetConfigRead(fn func() ([]byte, error)) {
+	c.configReadFn = fn
+}
+
 func (c *WebUIChannel) Start(ctx context.Context) error {
 	addr, err := c.cfg.ResolvedAddr()
 	if err != nil {
@@ -79,6 +84,7 @@ func (c *WebUIChannel) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", c.handleWS)
 	mux.HandleFunc("/admin/config", c.handleAdminConfig)
+	mux.HandleFunc("/admin/schema", c.handleAdminSchema)
 	mux.HandleFunc("/admin/drain-exit", c.handleAdminDrainExit)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -291,8 +297,8 @@ func (c *WebUIChannel) isAdminAuthorized(r *http.Request) bool {
 }
 
 func (c *WebUIChannel) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		w.Header().Set("Allow", http.MethodPut)
+	if r.Method != http.MethodGet && r.Method != http.MethodPut {
+		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -300,6 +306,23 @@ func (c *WebUIChannel) handleAdminConfig(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	if r.Method == http.MethodGet {
+		if c.configReadFn == nil {
+			http.Error(w, "Config read not available", http.StatusNotImplemented)
+			return
+		}
+		raw, err := c.configReadFn()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(raw)
+		return
+	}
+
 	if c.configUpdateFn == nil {
 		http.Error(w, "Config update not available", http.StatusNotImplemented)
 		return
@@ -325,6 +348,28 @@ func (c *WebUIChannel) handleAdminConfig(w http.ResponseWriter, r *http.Request)
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("ok"))
+}
+
+func (c *WebUIChannel) handleAdminSchema(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !c.isAdminAuthorized(r) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	path := c.findConfigSchemaPath()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		http.Error(w, "Schema not available", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/schema+json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(raw)
 }
 
 type drainExitRequest struct {
@@ -410,4 +455,18 @@ func (c *WebUIChannel) findUIRoot() string {
 		}
 	}
 	return "ui"
+}
+
+func (c *WebUIChannel) findConfigSchemaPath() string {
+	candidates := []string{
+		filepath.Join(string(os.PathSeparator), "usr", "local", "share", "picoclaw", "config", "config.schema.json"),
+		filepath.Join(string(os.PathSeparator), "usr", "share", "picoclaw", "config", "config.schema.json"),
+		filepath.Join("config", "config.schema.json"),
+	}
+	for _, p := range candidates {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p
+		}
+	}
+	return filepath.Join("config", "config.schema.json")
 }

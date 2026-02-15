@@ -1,0 +1,444 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://github.com/sipeed/picoclaw/blob/main/config/config.schema.json",
+	"title": "PicoClaw Config",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"agents",
+		"channels",
+		"providers",
+		"gateway",
+		"tools",
+		"heartbeat",
+		"devices"
+	],
+	"properties": {
+		"agents": { "$ref": "#/$defs/AgentsConfig" },
+		"channels": { "$ref": "#/$defs/ChannelsConfig" },
+		"providers": { "$ref": "#/$defs/ProvidersConfig" },
+		"gateway": { "$ref": "#/$defs/GatewayConfig" },
+		"tools": { "$ref": "#/$defs/ToolsConfig" },
+		"heartbeat": { "$ref": "#/$defs/HeartbeatConfig" },
+		"devices": { "$ref": "#/$defs/DevicesConfig" }
+	},
+	"$defs": {
+		"FlexibleStringSlice": {
+			"type": "array",
+			"items": {
+				"anyOf": [{ "type": "string" }, { "type": "number" }]
+			},
+			"description": "List of allowed sender identifiers for a channel. Each entry may be a string or a numeric ID (some chat platforms use numeric IDs).",
+			"examples": [["alice", "bob", 123456789]],
+			"default": []
+		},
+		"AgentsConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["defaults"],
+			"properties": {
+				"defaults": { "$ref": "#/$defs/AgentDefaults" }
+			}
+		},
+		"AgentDefaults": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"workspace",
+				"restrict_to_workspace",
+				"provider",
+				"model",
+				"max_tokens",
+				"temperature",
+				"max_tool_iterations"
+			],
+			"properties": {
+				"workspace": { "type": "string", "default": "~/.picoclaw/workspace" },
+				"restrict_to_workspace": { "type": "boolean", "default": true },
+				"provider": {
+					"type": "string",
+					"default": "",
+					"description": "Provider key to use by default for agent requests. Must match a key under the top-level 'providers' section. Empty means provider-specific default behavior.",
+					"enum": [
+						"",
+						"openrouter",
+						"zhipu",
+						"anthropic",
+						"openai",
+						"gemini",
+						"groq",
+						"vllm",
+						"ollama",
+						"together",
+						"deepinfra",
+						"mistral",
+						"qwen",
+						"moonshot",
+						"shengsuanyun",
+						"deepseek",
+						"github_copilot"
+					],
+					"examples": ["openrouter"]
+				},
+				"model": { "type": "string", "default": "glm-4.7" },
+				"max_tokens": { "type": "integer", "minimum": 1, "default": 8192 },
+				"temperature": { "type": "number", "minimum": 0, "default": 0.7 },
+				"max_tool_iterations": {
+					"type": "integer",
+					"minimum": 1,
+					"default": 20
+				}
+			}
+		},
+		"ChannelsConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"whatsapp",
+				"telegram",
+				"feishu",
+				"discord",
+				"maixcam",
+				"qq",
+				"dingtalk",
+				"slack",
+				"line",
+				"onebot",
+				"webui"
+			],
+			"properties": {
+				"whatsapp": { "$ref": "#/$defs/WhatsAppConfig" },
+				"telegram": { "$ref": "#/$defs/TelegramConfig" },
+				"feishu": { "$ref": "#/$defs/FeishuConfig" },
+				"discord": { "$ref": "#/$defs/DiscordConfig" },
+				"maixcam": { "$ref": "#/$defs/MaixCamConfig" },
+				"qq": { "$ref": "#/$defs/QQConfig" },
+				"dingtalk": { "$ref": "#/$defs/DingTalkConfig" },
+				"slack": { "$ref": "#/$defs/SlackConfig" },
+				"line": { "$ref": "#/$defs/LINEConfig" },
+				"onebot": { "$ref": "#/$defs/OneBotConfig" },
+				"webui": { "$ref": "#/$defs/WebUIConfig" }
+			}
+		},
+		"WhatsAppConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "bridge_url", "allow_from"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"bridge_url": { "type": "string", "default": "ws://localhost:3001" },
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"TelegramConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "token", "proxy", "allow_from"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"token": { "type": "string", "default": "" },
+				"proxy": { "type": "string", "default": "" },
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"FeishuConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"enabled",
+				"app_id",
+				"app_secret",
+				"encrypt_key",
+				"verification_token",
+				"allow_from"
+			],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"app_id": { "type": "string", "default": "" },
+				"app_secret": { "type": "string", "default": "" },
+				"encrypt_key": { "type": "string", "default": "" },
+				"verification_token": { "type": "string", "default": "" },
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"DiscordConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "token", "allow_from"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"token": { "type": "string", "default": "" },
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"MaixCamConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "host", "port", "allow_from"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"host": { "type": "string", "default": "0.0.0.0" },
+				"port": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 65535,
+					"default": 18790
+				},
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"QQConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "app_id", "app_secret", "allow_from"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"app_id": { "type": "string", "default": "" },
+				"app_secret": { "type": "string", "default": "" },
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"DingTalkConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "client_id", "client_secret", "allow_from"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"client_id": { "type": "string", "default": "" },
+				"client_secret": { "type": "string", "default": "" },
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"SlackConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "bot_token", "app_token", "allow_from"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"bot_token": { "type": "string", "default": "" },
+				"app_token": { "type": "string", "default": "" },
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"LINEConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"enabled",
+				"channel_secret",
+				"channel_access_token",
+				"webhook_host",
+				"webhook_port",
+				"webhook_path",
+				"allow_from"
+			],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"channel_secret": { "type": "string", "default": "" },
+				"channel_access_token": { "type": "string", "default": "" },
+				"webhook_host": { "type": "string", "default": "0.0.0.0" },
+				"webhook_port": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 65535,
+					"default": 18791
+				},
+				"webhook_path": { "type": "string", "default": "/webhook/line" },
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"OneBotConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"enabled",
+				"ws_url",
+				"access_token",
+				"reconnect_interval",
+				"group_trigger_prefix",
+				"allow_from"
+			],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"ws_url": { "type": "string", "default": "ws://127.0.0.1:3001" },
+				"access_token": { "type": "string", "default": "" },
+				"reconnect_interval": { "type": "integer", "minimum": 0, "default": 5 },
+				"group_trigger_prefix": {
+					"type": "array",
+					"items": { "type": "string" },
+					"default": []
+				},
+				"allow_from": { "$ref": "#/$defs/FlexibleStringSlice" }
+			}
+		},
+		"WebUIConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": true }
+			}
+		},
+		"ProvidersConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"anthropic",
+				"openai",
+				"openrouter",
+				"groq",
+				"zhipu",
+				"vllm",
+				"gemini",
+				"nvidia",
+				"moonshot",
+				"shengsuanyun",
+				"deepseek",
+				"github_copilot"
+			],
+			"properties": {
+				"anthropic": { "$ref": "#/$defs/ProviderConfig" },
+				"openai": { "$ref": "#/$defs/ProviderConfig" },
+				"openrouter": { "$ref": "#/$defs/ProviderConfig" },
+				"groq": { "$ref": "#/$defs/ProviderConfig" },
+				"zhipu": { "$ref": "#/$defs/ProviderConfig" },
+				"vllm": { "$ref": "#/$defs/ProviderConfig" },
+				"gemini": { "$ref": "#/$defs/ProviderConfig" },
+				"nvidia": { "$ref": "#/$defs/ProviderConfig" },
+				"moonshot": { "$ref": "#/$defs/ProviderConfig" },
+				"shengsuanyun": { "$ref": "#/$defs/ProviderConfig" },
+				"deepseek": { "$ref": "#/$defs/ProviderConfig" },
+				"github_copilot": { "$ref": "#/$defs/ProviderConfig" }
+			}
+		},
+		"ProviderConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["api_key", "api_base"],
+			"properties": {
+				"api_key": {
+					"type": "string",
+					"default": "",
+					"description": "Provider API key / token.",
+					"examples": ["sk-...", "Bearer ..."]
+				},
+				"api_base": {
+					"type": "string",
+					"default": "",
+					"description": "Optional API base URL override (useful for self-hosted / proxy / compatible endpoints).",
+					"examples": ["https://api.openai.com/v1", "http://localhost:8000/v1"]
+				},
+				"proxy": {
+					"type": "string",
+					"default": "",
+					"description": "Optional HTTP(S) proxy URL for provider requests.",
+					"examples": ["http://127.0.0.1:7890"]
+				},
+				"auth_method": {
+					"type": "string",
+					"default": "",
+					"description": "Optional provider-specific auth method override (if supported by the provider integration)."
+				},
+				"connect_mode": {
+					"type": "string",
+					"default": "",
+					"description": "Optional provider-specific connection mode (if supported by the provider integration)."
+				}
+			}
+		},
+		"GatewayConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["host", "bind", "port", "token", "admin_token"],
+			"properties": {
+				"host": {
+					"type": "string",
+					"default": "0.0.0.0",
+					"description": "Gateway host used for display/logging. The actual listen address is controlled by gateway.bind.",
+					"examples": ["0.0.0.0", "127.0.0.1"]
+				},
+				"bind": {
+					"type": "string",
+					"enum": ["local", "tailnet", "all"],
+					"default": "all",
+					"description": "Controls the IP address the gateway binds to. local=127.0.0.1, all=0.0.0.0, tailnet=your Tailscale IP.",
+					"examples": ["local", "tailnet", "all"]
+				},
+				"port": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 65535,
+					"default": 18790,
+					"description": "TCP port for the gateway HTTP server.",
+					"examples": [18790]
+				},
+				"token": {
+					"type": "string",
+					"default": "",
+					"description": "Optional shared-secret token required for Web UI websocket connections. If set, the browser must connect with ?token=<secret>.",
+					"examples": ["change-me"]
+				},
+				"admin_token": {
+					"type": "string",
+					"default": "",
+					"description": "Bearer token required for /admin/* management endpoints and the /admin web UI. If empty, /admin/* returns 401.",
+					"examples": ["admin-change-me"]
+				}
+			}
+		},
+		"ToolsConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["web"],
+			"properties": {
+				"web": { "$ref": "#/$defs/WebToolsConfig" }
+			}
+		},
+		"WebToolsConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["brave", "duckduckgo"],
+			"properties": {
+				"brave": { "$ref": "#/$defs/BraveConfig" },
+				"duckduckgo": { "$ref": "#/$defs/DuckDuckGoConfig" }
+			}
+		},
+		"BraveConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "api_key", "max_results"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"api_key": { "type": "string", "default": "" },
+				"max_results": { "type": "integer", "minimum": 1, "default": 5 }
+			}
+		},
+		"DuckDuckGoConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "max_results"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": true },
+				"max_results": { "type": "integer", "minimum": 1, "default": 5 }
+			}
+		},
+		"HeartbeatConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "interval"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": true },
+				"interval": { "type": "integer", "minimum": 1, "default": 30 }
+			}
+		},
+		"DevicesConfig": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "monitor_usb"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"monitor_usb": { "type": "boolean", "default": true }
+			}
+		}
+	}
+}
