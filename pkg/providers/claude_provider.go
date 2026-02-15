@@ -13,18 +13,36 @@ import (
 type ClaudeProvider struct {
 	client      *anthropic.Client
 	tokenSource func() (string, error)
+	useAPIKey   bool
 }
 
 func NewClaudeProvider(token string) *ClaudeProvider {
 	client := anthropic.NewClient(
-		option.WithAuthToken(token),
+		option.WithAPIKey(token),
 		option.WithBaseURL("https://api.anthropic.com"),
 	)
-	return &ClaudeProvider{client: &client}
+	return &ClaudeProvider{client: &client, useAPIKey: true}
+}
+
+func NewClaudeProviderWithBearerToken(token string) *ClaudeProvider {
+	client := anthropic.NewClient(
+		option.WithAuthToken(token),
+		option.WithBaseURL("https://api.anthropic.com"),
+		option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20"),
+		option.WithHeader("user-agent", "claude-cli/2.1.2 (external, cli)"),
+		option.WithHeader("x-app", "cli"),
+	)
+	return &ClaudeProvider{client: &client, useAPIKey: false}
 }
 
 func NewClaudeProviderWithTokenSource(token string, tokenSource func() (string, error)) *ClaudeProvider {
 	p := NewClaudeProvider(token)
+	p.tokenSource = tokenSource
+	return p
+}
+
+func NewClaudeProviderWithTokenSourceBearer(token string, tokenSource func() (string, error)) *ClaudeProvider {
+	p := NewClaudeProviderWithBearerToken(token)
 	p.tokenSource = tokenSource
 	return p
 }
@@ -36,7 +54,11 @@ func (p *ClaudeProvider) Chat(ctx context.Context, messages []Message, tools []T
 		if err != nil {
 			return nil, fmt.Errorf("refreshing token: %w", err)
 		}
-		opts = append(opts, option.WithAuthToken(tok))
+		if p.useAPIKey {
+			opts = append(opts, option.WithAPIKey(tok))
+		} else {
+			opts = append(opts, option.WithAuthToken(tok))
+		}
 	}
 
 	params, err := buildClaudeParams(messages, tools, model, options)

@@ -205,6 +205,9 @@ func createClaudeAuthProvider() (LLMProvider, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("no credentials for anthropic. Run: picoclaw auth login --provider anthropic")
 	}
+	if cred.AuthMethod == "oauth" || cred.AuthMethod == "setup-token" {
+		return NewClaudeProviderWithTokenSourceBearer(cred.AccessToken, createClaudeTokenSource()), nil
+	}
 	return NewClaudeProviderWithTokenSource(cred.AccessToken, createClaudeTokenSource()), nil
 }
 
@@ -251,7 +254,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			}
 		case "anthropic", "claude":
 			if cfg.Providers.Anthropic.APIKey != "" || cfg.Providers.Anthropic.AuthMethod != "" {
-				if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" {
+				if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" || cfg.Providers.Anthropic.AuthMethod == "setup-token" {
 					return createClaudeAuthProvider()
 				}
 				apiKey = cfg.Providers.Anthropic.APIKey
@@ -348,7 +351,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			}
 
 		case (strings.Contains(lowerModel, "claude") || strings.HasPrefix(model, "anthropic/")) && (cfg.Providers.Anthropic.APIKey != "" || cfg.Providers.Anthropic.AuthMethod != ""):
-			if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" {
+			if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" || cfg.Providers.Anthropic.AuthMethod == "setup-token" {
 				return createClaudeAuthProvider()
 			}
 			apiKey = cfg.Providers.Anthropic.APIKey
