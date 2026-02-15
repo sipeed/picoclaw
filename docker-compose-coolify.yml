@@ -1,0 +1,164 @@
+# ============================================================
+# PicoClaw — Coolify-Optimized Docker Compose
+# ============================================================
+#
+# DEPLOYMENT STEPS (Coolify):
+#   1. Create a new service → Docker Compose
+#   2. Point source to this repository
+#   3. Set "Docker Compose file" path to: picoclaw/docker-compose-coolify.yml
+#   4. Add environment variables in Coolify's UI (see below)
+#   5. Deploy!
+#
+# REQUIRED ENVIRONMENT VARIABLES (set in Coolify UI):
+#   GEMINI_API_KEY          — Your Gemini API key
+#
+# OPTIONAL ENVIRONMENT VARIABLES:
+#   LLM_PROVIDER            — LLM provider (default: gemini)
+#   LLM_MODEL               — Model name (default: gemini-2.5-flash-lite)
+#   TELEGRAM_BOT_TOKEN      — Telegram bot token
+#   DISCORD_BOT_TOKEN       — Discord bot token
+#   OPENROUTER_API_KEY      — OpenRouter API key
+#   OPENAI_API_KEY          — OpenAI API key
+#   ANTHROPIC_API_KEY       — Anthropic API key
+#   GROQ_API_KEY            — Groq API key (also enables voice transcription)
+#   BRAVE_SEARCH_API_KEY    — Brave Search API key
+#   LINE_CHANNEL_SECRET     — LINE channel secret
+#   LINE_CHANNEL_ACCESS_TOKEN — LINE channel access token
+#   TZ                      — Timezone (default: UTC)
+#
+# ============================================================
+
+services:
+  # ─────────────────────────────────────────────
+  # PicoClaw Gateway (Long-running Bot)
+  #   This is the main service that Coolify will auto-start
+  # ─────────────────────────────────────────────
+  picoclaw-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.coolify
+    container_name: picoclaw-gateway
+    restart: unless-stopped
+
+    # ── Environment Variables ────────────────────
+    # If PICOCLAW_CONFIG_JSON is set, it takes full priority.
+    # Individual vars below are only used as fallback (Method 3).
+    environment:
+      # -- Full JSON config (Method 1 — overrides everything below) --
+      - PICOCLAW_CONFIG_JSON=${PICOCLAW_CONFIG_JSON:-}
+
+      # -- Core LLM Config (only used if PICOCLAW_CONFIG_JSON is empty) --
+      - LLM_PROVIDER=${LLM_PROVIDER:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+
+      # -- Provider API Keys --
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+
+      # -- Chat Channel Tokens --
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET:-}
+      - LINE_CHANNEL_ACCESS_TOKEN=${LINE_CHANNEL_ACCESS_TOKEN:-}
+
+      # -- Web Search --
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
+      - BRAVE_SEARCH_ENABLED=${BRAVE_SEARCH_ENABLED:-}
+      - DUCKDUCKGO_ENABLED=${DUCKDUCKGO_ENABLED:-}
+
+      # -- Heartbeat --
+      - HEARTBEAT_ENABLED=${HEARTBEAT_ENABLED:-}
+      - HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-}
+
+      # -- Timezone --
+      - TZ=${TZ:-UTC}
+
+    # ── Volumes ──────────────────────────────────
+    volumes:
+      # Persistent workspace — sessions, memory, logs survive redeploys
+      # Note: config.json is created by 'picoclaw onboard' during Docker build
+      #       and all settings are overridden via environment variables above
+      - picoclaw-workspace:/root/.picoclaw/workspace
+
+    # ── Ports ────────────────────────────────────
+    # Expose ports if using LINE webhook or MaixCAM channel
+    # Coolify will auto-detect and configure these
+    ports:
+      - "18790:18790"   # MaixCAM / Gateway
+      - "18791:18791"   # LINE Webhook
+
+    # ── Health Check ─────────────────────────────
+    # Coolify uses this to determine if the container is healthy
+    healthcheck:
+      test: ["CMD", "picoclaw", "status"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # ── Command ──────────────────────────────────
+    command: ["gateway"]
+
+    # ── Logging ──────────────────────────────────
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Agent (One-shot / Interactive)
+  #   Not auto-started by Coolify (has profile).
+  #   Run manually via SSH:
+  #     docker compose -f docker-compose-coolify.yml run --rm picoclaw-agent -m "Hello"
+  #     docker compose -f docker-compose-coolify.yml run --rm picoclaw-agent
+  # ─────────────────────────────────────────────
+  picoclaw-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: picoclaw-agent
+    profiles:
+      - agent
+    environment:
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${LLM_PROVIDER:-gemini}
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${LLM_MODEL:-gemini-2.5-flash-lite}
+      - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - PICOCLAW_PROVIDERS_OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - PICOCLAW_PROVIDERS_OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PICOCLAW_PROVIDERS_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - picoclaw-workspace:/root/.picoclaw/workspace
+    entrypoint: ["picoclaw", "agent"]
+    stdin_open: true
+    tty: true
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Doctor (Diagnostic Tool)
+  #   Not auto-started by Coolify (has profile).
+  #   Run manually via SSH:
+  #     docker compose -f docker-compose-coolify.yml run --rm picoclaw-doctor
+  # ─────────────────────────────────────────────
+  picoclaw-doctor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: picoclaw-doctor
+    profiles:
+      - doctor
+    environment:
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${LLM_PROVIDER:-gemini}
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${LLM_MODEL:-gemini-2.5-flash-lite}
+      - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - picoclaw-workspace:/root/.picoclaw/workspace
+    entrypoint: ["picoclaw", "doctor"]
+
+volumes:
+  picoclaw-workspace:
+    driver: local

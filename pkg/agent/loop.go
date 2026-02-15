@@ -33,6 +33,7 @@ import (
 type AgentLoop struct {
 	bus            *bus.MessageBus
 	provider       providers.LLMProvider
+	cfg            *config.Config
 	workspace      string
 	model          string
 	contextWindow  int // Maximum context window size in tokens
@@ -142,9 +143,10 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	return &AgentLoop{
 		bus:            msgBus,
 		provider:       provider,
+		cfg:            cfg,
 		workspace:      workspace,
 		model:          cfg.Agents.Defaults.Model,
-		contextWindow:  cfg.Agents.Defaults.MaxTokens, // Restore context window for summarization
+		contextWindow:  cfg.Agents.Defaults.MaxTokens,
 		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
 		sessions:       sessionsManager,
 		state:          stateManager,
@@ -198,6 +200,86 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+}
+
+func (al *AgentLoop) GetModel() string {
+	return al.model
+}
+
+func (al *AgentLoop) SetModel(model string) {
+	al.model = model
+}
+
+// listModelsResponse builds a dynamic /models response from the current config.
+func (al *AgentLoop) listModelsResponse() string {
+	var sb strings.Builder
+	sb.WriteString("📋 **Model Info**\n\n")
+	sb.WriteString(fmt.Sprintf("**Active model:** `%s`\n", al.model))
+	sb.WriteString(fmt.Sprintf("**Active provider:** `%s`\n\n", al.cfg.Agents.Defaults.Provider))
+
+	// List all configured providers
+	type providerEntry struct {
+		Name    string
+		APIBase string
+	}
+	providersList := []providerEntry{
+		{"gemini", al.cfg.Providers.Gemini.APIBase},
+		{"openrouter", al.cfg.Providers.OpenRouter.APIBase},
+		{"openai", al.cfg.Providers.OpenAI.APIBase},
+		{"anthropic", al.cfg.Providers.Anthropic.APIBase},
+		{"vllm", al.cfg.Providers.VLLM.APIBase},
+		{"groq", al.cfg.Providers.Groq.APIBase},
+		{"deepseek", al.cfg.Providers.DeepSeek.APIBase},
+		{"nvidia", al.cfg.Providers.Nvidia.APIBase},
+		{"moonshot", al.cfg.Providers.Moonshot.APIBase},
+		{"zhipu", al.cfg.Providers.Zhipu.APIBase},
+	}
+
+	hasConfigured := false
+	for _, p := range providersList {
+		// Show providers that have either an API key or API base configured
+		hasKey := false
+		switch p.Name {
+		case "gemini":
+			hasKey = al.cfg.Providers.Gemini.APIKey != ""
+		case "openrouter":
+			hasKey = al.cfg.Providers.OpenRouter.APIKey != ""
+		case "openai":
+			hasKey = al.cfg.Providers.OpenAI.APIKey != ""
+		case "anthropic":
+			hasKey = al.cfg.Providers.Anthropic.APIKey != ""
+		case "vllm":
+			hasKey = al.cfg.Providers.VLLM.APIKey != "" || al.cfg.Providers.VLLM.APIBase != ""
+		case "groq":
+			hasKey = al.cfg.Providers.Groq.APIKey != ""
+		case "deepseek":
+			hasKey = al.cfg.Providers.DeepSeek.APIKey != ""
+		case "nvidia":
+			hasKey = al.cfg.Providers.Nvidia.APIKey != ""
+		case "moonshot":
+			hasKey = al.cfg.Providers.Moonshot.APIKey != ""
+		case "zhipu":
+			hasKey = al.cfg.Providers.Zhipu.APIKey != ""
+		}
+		if hasKey {
+			if !hasConfigured {
+				sb.WriteString("**Configured providers:**\n")
+				hasConfigured = true
+			}
+			active := ""
+			if p.Name == al.cfg.Agents.Defaults.Provider {
+				active = " ✅"
+			}
+			if p.APIBase != "" {
+				sb.WriteString(fmt.Sprintf("- `%s` → %s%s\n", p.Name, p.APIBase, active))
+			} else {
+				sb.WriteString(fmt.Sprintf("- `%s`%s\n", p.Name, active))
+			}
+		}
+	}
+
+	sb.WriteString("\n_Usage: `/model <name>` or `/model <provider>/<model>`_")
+	return sb.String()
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
