@@ -107,6 +107,10 @@
     "moonshot": {
       "api_key": "sk-xxx",
       "api_base": ""
+    },
+    "mistral": {
+      "api_key": "",
+      "api_base": ""
     }
   },
   "tools": {
