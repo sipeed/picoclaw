@@ -41,3 +41,6 @@ tasks/
 # Editors
 .vscode/
 .idea/
+
+# Added by goreleaser init:
+dist/

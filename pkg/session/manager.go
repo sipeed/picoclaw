@@ -145,13 +145,27 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	session.Updated = time.Now()
 }
 
+// sanitizeFilename converts a session key into a cross-platform safe filename.
+// Session keys use "channel:chatID" (e.g. "telegram:123456") but ':' is the
+// volume separator on Windows, so filepath.Base would misinterpret the key.
+// We replace it with '_'. The original key is preserved inside the JSON file,
+// so loadSessions still maps back to the right in-memory key.
+func sanitizeFilename(key string) string {
+	return strings.ReplaceAll(key, ":", "_")
+}
+
 func (sm *SessionManager) Save(key string) error {
 	if sm.storage == "" {
 		return nil
 	}
 
-	// Validate key to avoid invalid filenames and path traversal.
-	if key == "" || key == "." || key == ".." || key != filepath.Base(key) || strings.Contains(key, "/") || strings.Contains(key, "\\") {
+	filename := sanitizeFilename(key)
+
+	// filepath.IsLocal rejects empty names, "..", absolute paths, and
+	// OS-reserved device names (NUL, COM1 … on Windows).
+	// The extra checks reject "." and any directory separators so that
+	// the session file is always written directly inside sm.storage.
+	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
 		return os.ErrInvalid
 	}
 
@@ -182,7 +196,7 @@ func (sm *SessionManager) Save(key string) error {
 		return err
 	}
 
-	sessionPath := filepath.Join(sm.storage, key+".json")
+	sessionPath := filepath.Join(sm.storage, filename+".json")
 	tmpFile, err := os.CreateTemp(sm.storage, "session-*.tmp")
 	if err != nil {
 		return err

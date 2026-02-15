@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -28,7 +29,7 @@ type HTTPProvider struct {
 
 func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 	client := &http.Client{
-		Timeout: 0,
+		Timeout: 120 * time.Second,
 	}
 
 	if proxy != "" {

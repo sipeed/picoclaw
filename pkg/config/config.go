@@ -131,10 +131,10 @@ type DingTalkConfig struct {
 }
 
 type SlackConfig struct {
-	Enabled   bool     `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
-	BotToken  string   `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken  string   `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
-	AllowFrom []string `json:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
+	BotToken  string              `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
+	AppToken  string              `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
 }
 
 type LINEConfig struct {
@@ -273,7 +273,7 @@ func DefaultConfig() *Config {
 				Enabled:   false,
 				BotToken:  "",
 				AppToken:  "",
-				AllowFrom: []string{},
+				AllowFrom: FlexibleStringSlice{},
 			},
 			LINE: LINEConfig{
 				Enabled:            false,
