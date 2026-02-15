@@ -33,6 +33,10 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}
 
+	// Request gateway intents so we receive message events and message content.
+	// Needed for MessageCreate events and reading message text (mentions, replies).
+	session.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
+
 	base := NewBaseChannel("discord", cfg, bus, cfg.AllowFrom)
 
 	return &DiscordChannel{
@@ -142,7 +146,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 
 	// 检查白名单，避免为被拒绝的用户下载附件和转录
 	if !c.IsAllowed(m.Author.ID) {
-		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
+		logger.InfoCF("discord", "Message rejected by allowlist", map[string]any{
 			"user_id": m.Author.ID,
 		})
 		return
@@ -153,6 +157,15 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	if m.Author.Discriminator != "" && m.Author.Discriminator != "0" {
 		senderName += "#" + m.Author.Discriminator
 	}
+
+	// Log raw incoming message at INFO so mentions are visible in normal logs
+	logger.InfoCF("discord", "Raw message event", map[string]any{
+		"sender_id": senderID,
+		"username":  m.Author.Username,
+		"channel_id": m.ChannelID,
+		"guild_id": m.GuildID,
+		"preview":    utils.Truncate(m.Content, 80),
+	})
 
 	content := m.Content
 	mediaPaths := make([]string, 0, len(m.Attachments))
@@ -222,10 +235,12 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		content = "[media only]"
 	}
 
-	logger.DebugCF("discord", "Received message", map[string]any{
+	logger.InfoCF("discord", "Received message", map[string]any{
 		"sender_name": senderName,
 		"sender_id":   senderID,
 		"preview":     utils.Truncate(content, 50),
+		"channel_id":  m.ChannelID,
+		"guild_id":    m.GuildID,
 	})
 
 	metadata := map[string]string{
