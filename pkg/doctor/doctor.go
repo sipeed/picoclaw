@@ -252,7 +252,7 @@ func (d *Doctor) testProviderConnectivity() {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGET, url, nil)
 		resp, err := client.Do(req)
 		cancel()
 
