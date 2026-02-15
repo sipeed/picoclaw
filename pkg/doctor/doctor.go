@@ -403,7 +403,7 @@ func (d *Doctor) printSummary() {
 		fmt.Println("❌ Please fix the errors above before using picoclaw")
 		os.Exit(1)
 	} else if warningCount > 0 {
-		fmt.Println("⚠️  PicoClaw should work, but consider addressing the warnings")
+		fmt.Println("⚠️ PicoClaw should work, but consider addressing the warnings")
 	} else {
 		fmt.Println("✅ All checks passed! PicoClaw is ready to use")
 	}
