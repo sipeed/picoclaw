@@ -30,7 +30,7 @@ RUN /usr/local/bin/picoclaw onboard
 
 # Set environment variables for testing
 ENV PICOCLAW_AGENTS_DEFAULTS_PROVIDER="gemini"
-ENV PICOCLAW_AGENTS_DEFAULTS_MODEL="gemini-1.5-flash"
+ENV PICOCLAW_AGENTS_DEFAULTS_MODEL="gemini-2.5-flash-lite"
 ENV PICOCLAW_PROVIDERS_GEMINI_API_KEY=""
 
 ENTRYPOINT ["picoclaw"]

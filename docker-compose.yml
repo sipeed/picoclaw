@@ -12,7 +12,7 @@ services:
       - doctor
     environment:
       - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=gemini
-      - PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-1.5-flash
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-2.5-flash-lite
       - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - picoclaw-workspace:/root/.picoclaw/workspace
@@ -31,7 +31,7 @@ services:
       - agent
     environment:
       - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=gemini
-      - PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-1.5-flash
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-2.5-flash-lite
       - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - ./config/config.json:/root/.picoclaw/config.json:ro
@@ -54,7 +54,7 @@ services:
       - gateway
     environment:
       - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=gemini
-      - PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-1.5-flash
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-2.5-flash-lite
       - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       # Configuration file
