@@ -213,8 +213,8 @@ type WebToolsConfig struct {
 type BrowserConfig struct {
 	Enabled       bool   `json:"enabled" env:"PICOCLAW_TOOLS_BROWSER_ENABLED"`
 	Protocol      string `json:"protocol" env:"PICOCLAW_TOOLS_BROWSER_PROTOCOL"`
-	CdpURL        string `json:"cdp_url" env:"PICOCLAW_TOOLS_BROWSER_CDP_URL"`
-	WsURL         string `json:"ws_url" env:"PICOCLAW_TOOLS_BROWSER_WS_URL"`
+	CdpURL        string `json:"cdp_url" env:"PICOCLAW_TOOLS_BROWSER_CDP_URL"`   // WebSocket URL for CDP protocol (Chromium/Browserless)
+	WsURL         string `json:"ws_url" env:"PICOCLAW_TOOLS_BROWSER_WS_URL"`     // WebSocket URL for Playwright wire protocol (Firefox/Camoufox); takes precedence over CdpURL if set
 	Token         string `json:"token" env:"PICOCLAW_TOOLS_BROWSER_TOKEN"`
 	Stealth       bool   `json:"stealth" env:"PICOCLAW_TOOLS_BROWSER_STEALTH"`
 	LaunchTimeout int    `json:"launch_timeout" env:"PICOCLAW_TOOLS_BROWSER_LAUNCH_TIMEOUT"`

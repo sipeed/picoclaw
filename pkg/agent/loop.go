@@ -122,7 +122,10 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	workspace := cfg.WorkspacePath()
-	os.MkdirAll(workspace, 0755)
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		logger.ErrorCF("agent", "Failed to create workspace directory",
+			map[string]interface{}{"path": workspace, "error": err.Error()})
+	}
 
 	restrict := cfg.Agents.Defaults.RestrictToWorkspace
 

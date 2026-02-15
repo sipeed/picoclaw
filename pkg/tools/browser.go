@@ -240,8 +240,12 @@ func (t *BrowserTool) ensureConnected() error {
 	// Reuse existing page from browser context if available (common for CDP)
 	var page playwright.Page
 	contexts := browser.Contexts()
-	if len(contexts) > 0 && len(contexts[0].Pages()) > 0 {
-		page = contexts[0].Pages()[0]
+	var pages []playwright.Page
+	if len(contexts) > 0 {
+		pages = contexts[0].Pages()
+	}
+	if len(pages) > 0 {
+		page = pages[0]
 	} else {
 		page, err = browser.NewPage()
 		if err != nil {
@@ -623,7 +627,9 @@ func (t *BrowserTool) doCookies(args map[string]interface{}) *ToolResult {
 		}
 
 		if len(toReAdd) > 0 {
-			browserCtx.AddCookies(toReAdd)
+			if err := browserCtx.AddCookies(toReAdd); err != nil {
+				return &ToolResult{ForLLM: fmt.Sprintf("Error re-adding cookies after delete: %v", err)}
+			}
 		}
 
 		return &ToolResult{ForLLM: fmt.Sprintf("Cookie %q deleted", name)}
