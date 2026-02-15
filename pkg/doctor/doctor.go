@@ -22,25 +22,19 @@ type Check struct {
 }
 
 // Status represents the status of a check
-type Status int
+type Status string
 
 const (
-	StatusOK Status = iota
-	StatusWarning
-	StatusError
+	StatusOK      Status = "✅"
+	StatusWarning Status = "⚠️"
+	StatusError   Status = "❌"
 )
 
 func (s Status) String() string {
-	switch s {
-	case StatusOK:
-		return "✅"
-	case StatusWarning:
-		return "⚠️"
-	case StatusError:
-		return "❌"
-	default:
+	if s == "" {
 		return "❓"
 	}
+	return string(s)
 }
 
 // Doctor runs all diagnostic checks
