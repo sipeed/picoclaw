@@ -141,7 +141,18 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 		return
 	}
 
-	session.Messages = session.Messages[len(session.Messages)-keepLast:]
+	startIdx := len(session.Messages) - keepLast
+	// Adjust to start at a user message boundary for valid turn ordering.
+	// This prevents truncation from landing mid-sequence (e.g., starting
+	// with assistant+tool_calls or tool results).
+	for startIdx < len(session.Messages) && session.Messages[startIdx].Role != "user" {
+		startIdx++
+	}
+	if startIdx >= len(session.Messages) {
+		// No user message found — keep all messages rather than corrupt history
+		return
+	}
+	session.Messages = session.Messages[startIdx:]
 	session.Updated = time.Now()
 }
 

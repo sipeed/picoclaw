@@ -25,7 +25,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/tracing"
 	"github.com/sipeed/picoclaw/pkg/utils"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type AgentLoop struct {
@@ -45,14 +48,15 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string // Session identifier for history/context
-	Channel         string // Target channel for tool execution
-	ChatID          string // Target chat ID for tool execution
-	UserMessage     string // User message content (may include prefix)
-	DefaultResponse string // Response when LLM returns empty
-	EnableSummary   bool   // Whether to trigger summarization
-	SendResponse    bool   // Whether to send response via bus
-	NoHistory       bool   // If true, don't load session history (for heartbeat)
+	SessionKey      string   // Session identifier for history/context
+	Channel         string   // Target channel for tool execution
+	ChatID          string   // Target chat ID for tool execution
+	UserMessage     string   // User message content (may include prefix)
+	Media           []string // Media URLs (images) attached to the message
+	DefaultResponse string   // Response when LLM returns empty
+	EnableSummary   bool     // Whether to trigger summarization
+	SendResponse    bool     // Whether to send response via bus
+	NoHistory       bool     // If true, don't load session history (for heartbeat)
 }
 
 // createToolRegistry creates a tool registry with common tools.
@@ -258,6 +262,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
+		Media:           msg.Media,
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   true,
 		SendResponse:    false,
@@ -319,6 +324,14 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 // runAgentLoop is the core message processing logic.
 // It handles context building, LLM calls, tool execution, and response handling.
 func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (string, error) {
+	ctx, span := tracing.Tracer("agent").Start(ctx, "agent.processMessage",
+		trace.WithAttributes(
+			attribute.String("session_key", opts.SessionKey),
+			attribute.String("channel", opts.Channel),
+			attribute.String("chat_id", opts.ChatID),
+		))
+	defer span.End()
+
 	// 0. Record last channel for heartbeat notifications (skip internal channels)
 	if opts.Channel != "" && opts.ChatID != "" {
 		// Don't record internal channels (cli, system, subagent)
@@ -344,16 +357,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		history,
 		summary,
 		opts.UserMessage,
-		nil,
+		opts.Media,
 		opts.Channel,
 		opts.ChatID,
 	)
 
-	// 3. Save user message to session
-	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
-
-	// 4. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, messages, opts)
+	// 3. Run LLM iteration loop (no session saves until success)
+	historyOffset := 1 + len(history) // skip system prompt + existing history
+	finalContent, messages, iteration, err := al.runLLMIteration(ctx, messages, opts)
 	if err != nil {
 		return "", err
 	}
@@ -361,21 +372,25 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	// If last tool had ForUser content and we already sent it, we might not need to send final response
 	// This is controlled by the tool's Silent flag and ForUser content
 
-	// 5. Handle empty response
+	// 4. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
 	}
 
-	// 6. Save final assistant message to session
+	// 5. Atomically save all new messages (user + intermediate tool calls + final assistant) to session
+	// This prevents orphaned messages if the LLM call fails mid-way
+	for _, msg := range messages[historyOffset:] {
+		al.sessions.AddFullMessage(opts.SessionKey, msg)
+	}
 	al.sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 	al.sessions.Save(opts.SessionKey)
 
-	// 7. Optional: summarization
+	// 6. Optional: summarization
 	if opts.EnableSummary {
 		al.maybeSummarize(opts.SessionKey)
 	}
 
-	// 8. Optional: send response via bus
+	// 7. Optional: send response via bus
 	if opts.SendResponse {
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: opts.Channel,
@@ -384,7 +399,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		})
 	}
 
-	// 9. Log response
+	// 8. Log response
 	responsePreview := utils.Truncate(finalContent, 120)
 	logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
 		map[string]interface{}{
@@ -397,8 +412,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
-// Returns the final content, iteration count, and any error.
-func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.Message, opts processOptions) (string, int, error) {
+// Returns the final content, updated messages slice, iteration count, and any error.
+func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.Message, opts processOptions) (string, []providers.Message, int, error) {
 	iteration := 0
 	var finalContent string
 
@@ -435,10 +450,18 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 			})
 
 		// Call LLM
-		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
+		llmCtx, llmSpan := tracing.Tracer("agent").Start(ctx, "agent.llm.call",
+			trace.WithAttributes(
+				attribute.Int("iteration", iteration),
+				attribute.String("model", al.model),
+				attribute.Int("messages_count", len(messages)),
+				attribute.Int("tools_count", len(providerToolDefs)),
+			))
+		response, err := al.provider.Chat(llmCtx, messages, providerToolDefs, al.model, map[string]interface{}{
 			"max_tokens":  8192,
 			"temperature": 0.7,
 		})
+		llmSpan.End()
 
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed",
@@ -446,7 +469,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 					"iteration": iteration,
 					"error":     err.Error(),
 				})
-			return "", iteration, fmt.Errorf("LLM call failed: %w", err)
+			return "", messages, iteration, fmt.Errorf("LLM call failed: %w", err)
 		}
 
 		// Check if no tool calls - we're done
@@ -474,8 +497,9 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
+			Role:          "assistant",
+			Content:       response.Content,
+			RawAPIMessage: response.RawAssistantMessage,
 		}
 		for _, tc := range response.ToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
@@ -486,12 +510,10 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 					Name:      tc.Name,
 					Arguments: string(argumentsJSON),
 				},
+				ExtraContent: tc.ExtraContent,
 			})
 		}
 		messages = append(messages, assistantMsg)
-
-		// Save assistant message with tool calls to session
-		al.sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
 		// Execute tool calls
 		for _, tc := range response.ToolCalls {
@@ -520,7 +542,12 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 				}
 			}
 
+			_, toolSpan := tracing.Tracer("agent").Start(ctx, "agent.tool.execute",
+				trace.WithAttributes(
+					attribute.String("tool_name", tc.Name),
+				))
 			toolResult := al.tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+			toolSpan.End()
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
@@ -548,13 +575,10 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 				ToolCallID: tc.ID,
 			}
 			messages = append(messages, toolResultMsg)
-
-			// Save tool result message to session
-			al.sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
 	}
 
-	return finalContent, iteration, nil
+	return finalContent, messages, iteration, nil
 }
 
 // updateToolContexts updates the context for tools that need channel/chatID info.

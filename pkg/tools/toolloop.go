@@ -97,8 +97,9 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 
 		// 6. Build assistant message with tool calls
 		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
+			Role:          "assistant",
+			Content:       response.Content,
+			RawAPIMessage: response.RawAssistantMessage,
 		}
 		for _, tc := range response.ToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
@@ -109,6 +110,7 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 					Name:      tc.Name,
 					Arguments: string(argumentsJSON),
 				},
+				ExtraContent: tc.ExtraContent,
 			})
 		}
 		messages = append(messages, assistantMsg)
