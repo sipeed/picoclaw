@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -138,6 +139,8 @@ func main() {
 		migrateCmd()
 	case "auth":
 		authCmd()
+	case "install":
+		installCmd()
 	case "cron":
 		cronCmd()
 	case "skills":
@@ -207,6 +210,7 @@ func printHelp() {
 	fmt.Println("  agent       Interact with the agent directly")
 	fmt.Println("  auth        Manage authentication (login, logout, status)")
 	fmt.Println("  gateway     Start picoclaw gateway")
+	fmt.Println("  install     Install/uninstall launchd service (macOS)")
 	fmt.Println("  status      Show picoclaw status")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
@@ -1409,4 +1413,206 @@ func skillsShowCmd(loader *skills.SkillsLoader, skillName string) {
 	fmt.Printf("\n📦 Skill: %s\n", skillName)
 	fmt.Println("----------------------")
 	fmt.Println(content)
+}
+
+// installCmd handles the install subcommand
+func installCmd() {
+	if len(os.Args) < 3 {
+		doInstall()
+		return
+	}
+
+	switch os.Args[2] {
+	case "--help", "-h":
+		installHelp()
+	case "--uninstall":
+		uninstallInstall()
+	case "--status":
+		statusInstall()
+	default:
+		fmt.Printf("Unknown install option: %s\n", os.Args[2])
+		installHelp()
+	}
+}
+
+// installHelp displays help information for install command
+func installHelp() {
+	fmt.Println("\nInstall PicoClaw as a macOS service (launch agent)")
+	fmt.Println()
+	fmt.Println("Usage: picoclaw install [options]")
+	fmt.Println()
+	fmt.Println("Options:")
+	fmt.Println("  --uninstall    Uninstall the launch agent")
+	fmt.Println("  --status       Show installation status")
+	fmt.Println("  --help, -h     Show this help message")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  picoclaw install              Install as launch agent")
+	fmt.Println("  picoclaw install --uninstall  Uninstall the launch agent")
+	fmt.Println("  picoclaw install --status     Check installation status")
+}
+
+// doInstall executes the installation
+func doInstall() {
+	execPath, err := findExecutable()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Found picoclaw at: %s\n", execPath)
+
+	// Generate plist content
+	plistContent := generatePlist(execPath)
+
+	// Get plist path
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Printf("Error getting home directory: %v\n", err)
+		os.Exit(1)
+	}
+	plistDir := filepath.Join(home, "Library", "LaunchAgents")
+	plistPath := filepath.Join(plistDir, "io.picoclaw.gateway.plist")
+
+	// Create directory if not exists
+	if err := os.MkdirAll(plistDir, 0755); err != nil {
+		fmt.Printf("Error creating LaunchAgents directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Write plist file
+	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
+		fmt.Printf("Error writing plist file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Created plist at: %s\n", plistPath)
+
+	// Load the launch agent
+	cmd := exec.Command("launchctl", "load", plistPath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		fmt.Printf("Error loading launch agent: %v\n", err)
+		fmt.Printf("Output: %s\n", string(output))
+		os.Exit(1)
+	}
+
+	fmt.Println("\n✓ PicoClaw gateway installed successfully!")
+	fmt.Println("The gateway will start automatically on login.")
+}
+
+// findExecutable finds the picoclaw executable path
+func findExecutable() (string, error) {
+	// 使用 exec.LookPath 查找
+	path, err := exec.LookPath("picoclaw")
+	if err == nil {
+		return path, nil
+	}
+
+	// 如果不是 "not found" 错误，返回原错误
+	if !strings.Contains(err.Error(), "not found") {
+		return "", err
+	}
+
+	// 尝试常见路径
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot find home directory: %w", err)
+	}
+
+	commonPaths := []string{
+		"/usr/local/bin/picoclaw",
+		"/usr/bin/picoclaw",
+		filepath.Join(home, "go", "bin", "picoclaw"),
+	}
+
+	for _, p := range commonPaths {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+
+	return "", fmt.Errorf("picoclaw not found. Please run 'go install' first or ensure picoclaw is in your PATH")
+}
+
+// generatePlist generates the plist content for launch agent
+func generatePlist(execPath string) string {
+	currentPath := os.Getenv("PATH")
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.picoclaw.gateway</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+        <string>gateway</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>%s</string>
+    </dict>
+</dict>
+</plist>`, execPath, currentPath)
+}
+
+// uninstallInstall uninstalls the launch agent
+func uninstallInstall() {
+	home, _ := os.UserHomeDir()
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "io.picoclaw.gateway.plist")
+
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		fmt.Println("PicoClaw is not installed.")
+		return
+	}
+
+	// Unload the launch agent
+	cmd := exec.Command("launchctl", "unload", plistPath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		fmt.Printf("Error unloading launch agent: %v\n", err)
+		fmt.Printf("Output: %s\n", string(output))
+	}
+
+	// Remove plist file
+	if err := os.Remove(plistPath); err != nil {
+		fmt.Printf("Error removing plist file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("✓ PicoClaw gateway uninstalled successfully!")
+}
+
+// statusInstall shows the installation status
+func statusInstall() {
+	home, _ := os.UserHomeDir()
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "io.picoclaw.gateway.plist")
+
+	fmt.Println("\nPicoClaw Gateway Status:")
+	fmt.Println("------------------------")
+
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		fmt.Println("Status: Not installed")
+		fmt.Println("Run 'picoclaw install' to install as launch agent")
+		return
+	}
+
+	fmt.Println("Status: Installed")
+	fmt.Printf("Plist: %s\n", plistPath)
+
+	// Check if loaded
+	cmd := exec.Command("launchctl", "list", "io.picoclaw.gateway")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		fmt.Println("\nLaunch agent is loaded.")
+		if len(output) > 0 {
+			fmt.Println(string(output))
+		}
+	} else {
+		fmt.Println("\nLaunch agent is not running.")
+	}
 }
