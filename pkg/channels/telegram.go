@@ -35,6 +35,11 @@ type thinkingCancel struct {
 	fn context.CancelFunc
 }
 
+const (
+	telegramMaxMessageLength = 4096
+	telegramSplitTarget      = 3900
+)
+
 func (c *thinkingCancel) Cancel() {
 	if c != nil && c.fn != nil {
 		c.fn()
@@ -137,32 +142,63 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		c.stopThinking.Delete(msg.ChatID)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
+	chunks := splitTelegramMessageContent(msg.Content, telegramMaxMessageLength)
+	if len(chunks) == 0 {
+		return nil
+	}
 
 	// Try to edit placeholder
 	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
 		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
-		editMsg.ParseMode = telego.ModeHTML
-
-		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
+		if err := c.editMessageChunk(ctx, chatID, pID.(int), chunks[0]); err == nil {
+			for i := 1; i < len(chunks); i++ {
+				if sendErr := c.sendMessageChunk(ctx, chatID, chunks[i]); sendErr != nil {
+					return sendErr
+				}
+			}
 			return nil
 		}
 		// Fallback to new message if edit fails
 	}
 
+	for _, chunk := range chunks {
+		if err := c.sendMessageChunk(ctx, chatID, chunk); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *TelegramChannel) sendMessageChunk(ctx context.Context, chatID int64, content string) error {
+	htmlContent := markdownToTelegramHTML(content)
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 
-	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
 		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]interface{}{
 			"error": err.Error(),
 		})
-		tgMsg.ParseMode = ""
-		_, err = c.bot.SendMessage(ctx, tgMsg)
-		return err
+		plainMsg := tu.Message(tu.ID(chatID), content)
+		_, fallbackErr := c.bot.SendMessage(ctx, plainMsg)
+		return fallbackErr
 	}
 
+	return nil
+}
+
+func (c *TelegramChannel) editMessageChunk(ctx context.Context, chatID int64, messageID int, content string) error {
+	htmlContent := markdownToTelegramHTML(content)
+	editMsg := tu.EditMessageText(tu.ID(chatID), messageID, htmlContent)
+	editMsg.ParseMode = telego.ModeHTML
+	if _, err := c.bot.EditMessageText(ctx, editMsg); err != nil {
+		logger.ErrorCF("telegram", "HTML edit parse failed, falling back to plain text", map[string]interface{}{
+			"error": err.Error(),
+		})
+		plainEdit := tu.EditMessageText(tu.ID(chatID), messageID, content)
+		_, fallbackErr := c.bot.EditMessageText(ctx, plainEdit)
+		return fallbackErr
+	}
 	return nil
 }
 
@@ -433,6 +469,131 @@ func markdownToTelegramHTML(text string) string {
 	}
 
 	return text
+}
+
+func splitTelegramMessageContent(text string, maxLen int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	if maxLen <= 0 {
+		return []string{text}
+	}
+
+	if runeLen(markdownToTelegramHTML(text)) <= maxLen {
+		return []string{text}
+	}
+
+	target := telegramSplitTarget
+	if target >= maxLen {
+		target = maxLen - 64
+	}
+	if target < 256 {
+		target = maxLen / 2
+	}
+	if target < 1 {
+		target = 1
+	}
+
+	parts := splitTextByBoundary(text, target)
+	if len(parts) == 1 {
+		runes := []rune(text)
+		if len(runes) <= 1 {
+			return parts
+		}
+		mid := len(runes) / 2
+		if mid < 1 {
+			mid = 1
+		}
+		parts = []string{
+			strings.TrimSpace(string(runes[:mid])),
+			strings.TrimSpace(string(runes[mid:])),
+		}
+	}
+
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, splitTelegramMessageContent(p, maxLen)...)
+	}
+	return out
+}
+
+func splitTextByBoundary(text string, limit int) []string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return []string{text}
+	}
+
+	result := make([]string, 0)
+	for len(runes) > 0 {
+		if len(runes) <= limit {
+			tail := strings.TrimSpace(string(runes))
+			if tail != "" {
+				result = append(result, tail)
+			}
+			break
+		}
+
+		splitAt := findSplitPoint(runes, limit)
+		if splitAt <= 0 {
+			splitAt = limit
+		}
+		if splitAt > len(runes) {
+			splitAt = len(runes)
+		}
+
+		chunk := strings.TrimSpace(string(runes[:splitAt]))
+		if chunk != "" {
+			result = append(result, chunk)
+		}
+
+		runes = runes[splitAt:]
+		for len(runes) > 0 && (runes[0] == '\n' || runes[0] == '\r' || runes[0] == ' ' || runes[0] == '\t') {
+			runes = runes[1:]
+		}
+	}
+
+	return result
+}
+
+func findSplitPoint(runes []rune, limit int) int {
+	if len(runes) <= limit {
+		return len(runes)
+	}
+	if limit <= 1 {
+		return 1
+	}
+
+	floor := limit / 2
+	if floor < 1 {
+		floor = 1
+	}
+
+	for i := limit; i > floor; i-- {
+		if i > 1 && runes[i-1] == '\n' && runes[i-2] == '\n' {
+			return i
+		}
+	}
+	for i := limit; i > floor; i-- {
+		if runes[i-1] == '\n' {
+			return i
+		}
+	}
+	for i := limit; i > floor; i-- {
+		if runes[i-1] == ' ' || runes[i-1] == '\t' {
+			return i
+		}
+	}
+	return limit
+}
+
+func runeLen(text string) int {
+	return len([]rune(text))
 }
 
 type codeBlockMatch struct {
