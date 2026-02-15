@@ -82,6 +82,16 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	}
 	registry.Register(tools.NewWebFetchTool(50000))
 
+	// Firecrawl tool for advanced web scraping
+	if cfg.Tools.Firecrawl.Enabled && cfg.Tools.Firecrawl.APIKey != "" {
+		registry.Register(tools.NewFirecrawlTool(cfg.Tools.Firecrawl.APIKey, cfg.Tools.Firecrawl.APIBase))
+	}
+
+	// SerpAPI tool for Google search results
+	if cfg.Tools.SerpAPI.Enabled && cfg.Tools.SerpAPI.APIKey != "" {
+		registry.Register(tools.NewSerpAPITool(cfg.Tools.SerpAPI.APIKey, cfg.Tools.SerpAPI.MaxResults))
+	}
+
 	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 	registry.Register(tools.NewI2CTool())
 	registry.Register(tools.NewSPITool())

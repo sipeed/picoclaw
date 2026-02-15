@@ -107,14 +107,33 @@
     "moonshot": {
       "api_key": "sk-xxx",
       "api_base": ""
+    },
+    "mistral": {
+      "api_key": "YOUR_MISTRAL_API_KEY",
+      "api_base": "https://api.mistral.ai/v1"
     }
   },
   "tools": {
     "web": {
-      "search": {
+      "brave": {
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
       }
+    },
+    "firecrawl": {
+      "enabled": false,
+      "api_key": "YOUR_FIRECRAWL_API_KEY",
+      "api_base": "https://api.firecrawl.dev/v1"
+    },
+    "serpapi": {
+      "enabled": false,
+      "api_key": "YOUR_SERPAPI_KEY",
+      "max_results": 10
     }
   },
   "heartbeat": {

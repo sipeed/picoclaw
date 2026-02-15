@@ -179,6 +179,7 @@ type ProvidersConfig struct {
 	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig `json:"deepseek"`
 	GitHubCopilot ProviderConfig `json:"github_copilot"`
+	Mistral       ProviderConfig `json:"mistral"`
 }
 
 type ProviderConfig struct {
@@ -210,8 +211,22 @@ type WebToolsConfig struct {
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 }
 
+type FirecrawlConfig struct {
+	Enabled bool   `json:"enabled" env:"PICOCLAW_TOOLS_FIRECRAWL_ENABLED"`
+	APIKey  string `json:"api_key" env:"PICOCLAW_TOOLS_FIRECRAWL_API_KEY"`
+	APIBase string `json:"api_base" env:"PICOCLAW_TOOLS_FIRECRAWL_API_BASE"`
+}
+
+type SerpAPIConfig struct {
+	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_SERPAPI_ENABLED"`
+	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_SERPAPI_API_KEY"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_SERPAPI_MAX_RESULTS"`
+}
+
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web       WebToolsConfig  `json:"web"`
+	Firecrawl FirecrawlConfig `json:"firecrawl"`
+	SerpAPI   SerpAPIConfig   `json:"serpapi"`
 }
 
 func DefaultConfig() *Config {
@@ -304,6 +319,7 @@ func DefaultConfig() *Config {
 			Nvidia:       ProviderConfig{},
 			Moonshot:     ProviderConfig{},
 			ShengSuanYun: ProviderConfig{},
+			Mistral:      ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
@@ -320,6 +336,16 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+			},
+			Firecrawl: FirecrawlConfig{
+				Enabled: false,
+				APIKey:  "",
+				APIBase: "https://api.firecrawl.dev/v1",
+			},
+			SerpAPI: SerpAPIConfig{
+				Enabled:    false,
+				APIKey:     "",
+				MaxResults: 10,
 			},
 		},
 		Heartbeat: HeartbeatConfig{

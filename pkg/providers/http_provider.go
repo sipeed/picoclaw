@@ -56,7 +56,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5)
 	if idx := strings.Index(model, "/"); idx != -1 {
 		prefix := model[:idx]
-		if prefix == "moonshot" || prefix == "nvidia" {
+		if prefix == "moonshot" || prefix == "nvidia" || prefix == "mistral" {
 			model = model[idx+1:]
 		}
 	}
@@ -322,6 +322,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "localhost:4321"
 			}
 			return NewGitHubCopilotProvider(apiBase, cfg.Providers.GitHubCopilot.ConnectMode, model)
+		case "mistral":
+			if cfg.Providers.Mistral.APIKey != "" {
+				apiKey = cfg.Providers.Mistral.APIKey
+				apiBase = cfg.Providers.Mistral.APIBase
+				proxy = cfg.Providers.Mistral.Proxy
+				if apiBase == "" {
+					apiBase = "https://api.mistral.ai/v1"
+				}
+			}
 
 		}
 
@@ -405,6 +414,14 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			apiKey = cfg.Providers.VLLM.APIKey
 			apiBase = cfg.Providers.VLLM.APIBase
 			proxy = cfg.Providers.VLLM.Proxy
+
+		case (strings.Contains(lowerModel, "mistral") || strings.HasPrefix(model, "mistral/")) && cfg.Providers.Mistral.APIKey != "":
+			apiKey = cfg.Providers.Mistral.APIKey
+			apiBase = cfg.Providers.Mistral.APIBase
+			proxy = cfg.Providers.Mistral.Proxy
+			if apiBase == "" {
+				apiBase = "https://api.mistral.ai/v1"
+			}
 
 		default:
 			if cfg.Providers.OpenRouter.APIKey != "" {
