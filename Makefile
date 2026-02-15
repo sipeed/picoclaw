@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test
+.PHONY: all build build-debug build-all install uninstall clean help test
 
 # Build variables
 BINARY_NAME=picoclaw
@@ -11,7 +11,9 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date +%FT%T%z)
 GO_VERSION=$(shell $(GO) version | awk '{print $$3}')
-LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X main.buildTime=$(BUILD_TIME) -X main.goVersion=$(GO_VERSION)"
+# -s -w: strip symbol table and DWARF for smaller binary (default)
+LDFLAGS=-ldflags "$(if $(DEBUG),,-s -w )-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X main.buildTime=$(BUILD_TIME) -X main.goVersion=$(GO_VERSION)"
+LDFLAGS_DEBUG=-ldflags "-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X main.buildTime=$(BUILD_TIME) -X main.goVersion=$(GO_VERSION)"
 
 # Go variables
 GO?=go
@@ -77,6 +79,14 @@ build: generate
 	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
+
+## build-debug: Build with symbol table and DWARF for debugging (larger binary)
+build-debug: generate
+	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH) (debug, with symbols)..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GO) build $(GOFLAGS) $(LDFLAGS_DEBUG) -o $(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)-debug ./$(CMD_DIR)
+	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH)-debug $(BUILD_DIR)/$(BINARY_NAME)
+	@echo "Debug build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 ## build-all: Build picoclaw for all platforms
 build-all: generate
@@ -151,7 +161,8 @@ help:
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## /  /'
 	@echo ""
 	@echo "Examples:"
-	@echo "  make build              # Build for current platform"
+	@echo "  make build              # Build for current platform (minimal size)"
+	@echo "  make build-debug        # Build with symbols for debugging"
 	@echo "  make install            # Install to ~/.local/bin"
 	@echo "  make uninstall          # Remove from /usr/local/bin"
 	@echo "  make install-skills     # Install skills to workspace"
@@ -160,6 +171,7 @@ help:
 	@echo "  INSTALL_PREFIX          # Installation prefix (default: ~/.local)"
 	@echo "  WORKSPACE_DIR           # Workspace directory (default: ~/.picoclaw/workspace)"
 	@echo "  VERSION                 # Version string (default: git describe)"
+	@echo "  DEBUG=1                  # Keep symbols for debugging (make build-debug)"
 	@echo ""
 	@echo "Current Configuration:"
 	@echo "  Platform: $(PLATFORM)/$(ARCH)"
