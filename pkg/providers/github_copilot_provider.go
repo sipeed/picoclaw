@@ -33,11 +33,15 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 		if err := client.Start(context.Background()); err != nil {
 			return nil, fmt.Errorf("Can't connect to Github Copilot, https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md#connecting-to-an-external-cli-server for details")
 		}
-		defer client.Stop()
-		session, _ = client.CreateSession(context.Background(), &copilot.SessionConfig{
+		var err error
+		session, err = client.CreateSession(context.Background(), &copilot.SessionConfig{
 			Model: model,
 			Hooks: &copilot.SessionHooks{},
 		})
+		if err != nil {
+			client.Stop()
+			return nil, fmt.Errorf("failed to create Copilot session: %w", err)
+		}
 
 	}
 
