@@ -53,6 +53,17 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		return nil, fmt.Errorf("API base not configured")
 	}
 
+	// Detect if this is an Anthropic-style API (by checking the apiBase path)
+	// Anthropic APIs typically use /messages endpoint
+	isAnthropicStyle := strings.Contains(p.apiBase, "/anthropic") || strings.Contains(p.apiBase, "/api/anthropic")
+
+	if isAnthropicStyle {
+		return p.chatAnthropic(ctx, messages, tools, model, options)
+	}
+	return p.chatOpenAI(ctx, messages, tools, model, options)
+}
+
+func (p *HTTPProvider) chatOpenAI(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
 	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5)
 	if idx := strings.Index(model, "/"); idx != -1 {
 		prefix := model[:idx]
@@ -120,10 +131,131 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
 
-	return p.parseResponse(body)
+	return p.parseOpenAIResponse(body)
 }
 
-func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
+func (p *HTTPProvider) chatAnthropic(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+	// Build Anthropic-style request
+	var system []string
+	var anthropicMessages []map[string]interface{}
+
+	for _, msg := range messages {
+		switch msg.Role {
+		case "system":
+			system = append(system, msg.Content)
+		case "user":
+			// Content should be an array of blocks
+			anthropicMessages = append(anthropicMessages, map[string]interface{}{
+				"role": "user",
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": msg.Content,
+					},
+				},
+			})
+		case "assistant":
+			contentBlocks := []map[string]interface{}{
+				{"type": "text", "text": msg.Content},
+			}
+			// Add tool calls if present
+			for _, tc := range msg.ToolCalls {
+				contentBlocks = append(contentBlocks, map[string]interface{}{
+					"type":      "tool_use",
+					"id":        tc.ID,
+					"name":      tc.Name,
+					"input":     tc.Arguments,
+				})
+			}
+			anthropicMessages = append(anthropicMessages, map[string]interface{}{
+				"role":    "assistant",
+				"content": contentBlocks,
+			})
+		case "tool":
+			anthropicMessages = append(anthropicMessages, map[string]interface{}{
+				"role":    "user",
+				"content": []map[string]interface{}{
+					{
+						"type":      "tool_result",
+						"tool_use_id": msg.ToolCallID,
+						"content":   msg.Content,
+					},
+				},
+			})
+		}
+	}
+
+	requestBody := map[string]interface{}{
+		"model":     model,
+		"messages":  anthropicMessages,
+		"max_tokens": 8192,
+	}
+
+	if len(system) > 0 {
+		requestBody["system"] = strings.Join(system, "\n")
+	}
+
+	if len(tools) > 0 {
+		anthropicTools := make([]map[string]interface{}, len(tools))
+		for i, tool := range tools {
+			anthropicTools[i] = map[string]interface{}{
+				"name":        tool.Function.Name,
+				"description": tool.Function.Description,
+				"input_schema": tool.Function.Parameters,
+			}
+		}
+		requestBody["tools"] = anthropicTools
+	}
+
+	if maxTokens, ok := options["max_tokens"].(int); ok {
+		requestBody["max_tokens"] = maxTokens
+	}
+
+	if temperature, ok := options["temperature"].(float64); ok {
+		requestBody["temperature"] = temperature
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Anthropic uses /v1/messages or /messages endpoint
+	endpoint := "/v1/messages"
+	if strings.HasSuffix(p.apiBase, "/v1") || strings.HasSuffix(p.apiBase, "/anthropic") {
+		endpoint = "/messages"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+endpoint, bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", p.apiKey)
+	// Also support Bearer token as fallback
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
+	}
+
+	return p.parseAnthropicResponse(body)
+}
+
+func (p *HTTPProvider) parseOpenAIResponse(body []byte) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
@@ -189,6 +321,64 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 		Content:      choice.Message.Content,
 		ToolCalls:    toolCalls,
 		FinishReason: choice.FinishReason,
+		Usage:        apiResponse.Usage,
+	}, nil
+}
+
+func (p *HTTPProvider) parseAnthropicResponse(body []byte) (*LLMResponse, error) {
+	var apiResponse struct {
+		ID           string `json:"id"`
+		Type         string `json:"type"`
+		Role         string `json:"role"`
+		Content      []struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Input    interface{} `json:"input"`
+		} `json:"content"`
+		StopReason   string `json:"stop_reason"`
+		Usage       *UsageInfo `json:"usage"`
+	}
+
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal Anthropic response: %w", err)
+	}
+
+	var content strings.Builder
+	var toolCalls []ToolCall
+
+	for _, block := range apiResponse.Content {
+		switch block.Type {
+		case "text":
+			content.WriteString(block.Text)
+		case "tool_use":
+			// Convert arguments from interface{} to map[string]interface{}
+			var arguments map[string]interface{}
+			if block.Input != nil {
+				switch v := block.Input.(type) {
+				case map[string]interface{}:
+					arguments = v
+				case string:
+					if err := json.Unmarshal([]byte(v), &arguments); err != nil {
+						arguments = map[string]interface{}{"raw": v}
+					}
+				default:
+					arguments = map[string]interface{}{"raw": v}
+				}
+			}
+			toolCalls = append(toolCalls, ToolCall{
+				ID:        block.ID,
+				Name:      block.Name,
+				Arguments: arguments,
+			})
+		}
+	}
+
+	return &LLMResponse{
+		Content:      content.String(),
+		ToolCalls:    toolCalls,
+		FinishReason: apiResponse.StopReason,
 		Usage:        apiResponse.Usage,
 	}, nil
 }
