@@ -241,6 +241,8 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 			localFiles = append(localFiles, voicePath)
 			mediaPaths = append(mediaPaths, voicePath)
 
+			_ = c.bot.SendChatAction(ctx, tu.ChatAction(tu.ID(chatID), telego.ChatActionTyping))
+
 			transcribedText := ""
 			if c.transcriber != nil && c.transcriber.IsAvailable() {
 				ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
