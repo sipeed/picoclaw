@@ -59,7 +59,7 @@ func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, to
 	for _, msg := range messages {
 		out = append(out, tempMessage{
 			Role:    msg.Role,
-			Content: msg.Content,
+			Content: ContentToString(msg.Content),
 		})
 	}
 

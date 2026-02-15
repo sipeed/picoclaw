@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -56,6 +57,80 @@ func (p *ClaudeProvider) GetDefaultModel() string {
 	return "claude-sonnet-4-5-20250929"
 }
 
+// buildContentBlocks converts Content (interface{}) to Claude content blocks.
+// Handles both string content and multipart content (text + images).
+func buildContentBlocks(content interface{}) []anthropic.ContentBlockParamUnion {
+	if content == nil {
+		return []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock("")}
+	}
+
+	// Try string content first
+	if s, ok := content.(string); ok {
+		return []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock(s)}
+	}
+
+	// Try multipart content ([]interface{})
+	if parts, ok := content.([]interface{}); ok {
+		var blocks []anthropic.ContentBlockParamUnion
+
+		for _, part := range parts {
+			partMap, ok := part.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			partType, _ := partMap["type"].(string)
+			switch partType {
+			case "text":
+				if text, ok := partMap["text"].(string); ok {
+					blocks = append(blocks, anthropic.NewTextBlock(text))
+				}
+			case "image_url":
+				if imageURL, ok := partMap["image_url"].(map[string]interface{}); ok {
+					if url, ok := imageURL["url"].(string); ok {
+						// Parse data URL: data:image/jpeg;base64,<data>
+						if strings.HasPrefix(url, "data:") {
+							parts := strings.SplitN(url, ",", 2)
+							if len(parts) == 2 {
+								// Extract media type from data URL
+								mediaType := anthropic.Base64ImageSourceMediaTypeImageJPEG // default
+								if strings.Contains(parts[0], ";") {
+									mediaTypePart := strings.Split(parts[0], ";")[0]
+									if strings.HasPrefix(mediaTypePart, "data:") {
+										mimeType := mediaTypePart[5:]
+										switch mimeType {
+										case "image/png":
+											mediaType = anthropic.Base64ImageSourceMediaTypeImagePNG
+										case "image/gif":
+											mediaType = anthropic.Base64ImageSourceMediaTypeImageGIF
+										case "image/webp":
+											mediaType = anthropic.Base64ImageSourceMediaTypeImageWebP
+										default:
+											mediaType = anthropic.Base64ImageSourceMediaTypeImageJPEG
+										}
+									}
+								}
+								imageSource := anthropic.Base64ImageSourceParam{
+									Data:      parts[1],
+									MediaType: mediaType,
+								}
+								blocks = append(blocks, anthropic.NewImageBlock(imageSource))
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if len(blocks) > 0 {
+			return blocks
+		}
+	}
+
+	// Fallback to empty text block
+	return []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock("")}
+}
+
 func buildClaudeParams(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (anthropic.MessageNewParams, error) {
 	var system []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
@@ -63,35 +138,43 @@ func buildClaudeParams(messages []Message, tools []ToolDefinition, model string,
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
-			system = append(system, anthropic.TextBlockParam{Text: msg.Content})
+			systemText := ContentToString(msg.Content)
+			system = append(system, anthropic.TextBlockParam{Text: systemText})
 		case "user":
 			if msg.ToolCallID != "" {
+				// Tool result
+				resultText := ContentToString(msg.Content)
 				anthropicMessages = append(anthropicMessages,
-					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
+					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, resultText, false)),
 				)
 			} else {
+				// Regular user message (may include images)
+				blocks := buildContentBlocks(msg.Content)
 				anthropicMessages = append(anthropicMessages,
-					anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)),
+					anthropic.NewUserMessage(blocks...),
 				)
 			}
 		case "assistant":
 			if len(msg.ToolCalls) > 0 {
 				var blocks []anthropic.ContentBlockParamUnion
-				if msg.Content != "" {
-					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
+				contentText := ContentToString(msg.Content)
+				if contentText != "" {
+					blocks = append(blocks, anthropic.NewTextBlock(contentText))
 				}
 				for _, tc := range msg.ToolCalls {
 					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
+				contentText := ContentToString(msg.Content)
 				anthropicMessages = append(anthropicMessages,
-					anthropic.NewAssistantMessage(anthropic.NewTextBlock(msg.Content)),
+					anthropic.NewAssistantMessage(anthropic.NewTextBlock(contentText)),
 				)
 			}
 		case "tool":
+			resultText := ContentToString(msg.Content)
 			anthropicMessages = append(anthropicMessages,
-				anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
+				anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, resultText, false)),
 			)
 		}
 	}
