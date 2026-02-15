@@ -29,6 +29,7 @@ type TelegramChannel struct {
 	transcriber  *voice.GroqTranscriber
 	placeholders sync.Map // chatID -> messageID
 	stopThinking sync.Map // chatID -> thinkingCancel
+	privacyOnce  sync.Once
 }
 
 type thinkingCancel struct {
@@ -81,34 +82,13 @@ func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 func (c *TelegramChannel) Start(ctx context.Context) error {
 	logger.InfoC("telegram", "Starting Telegram bot (polling mode)...")
 
-	updates, err := c.bot.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
-		Timeout: 30,
-	})
+	updates, err := c.startLongPolling(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to start long polling: %w", err)
 	}
 
 	c.setRunning(true)
-	logger.InfoCF("telegram", "Telegram bot connected", map[string]interface{}{
-		"username": c.bot.Username(),
-	})
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case update, ok := <-updates:
-				if !ok {
-					logger.InfoC("telegram", "Updates channel closed, reconnecting...")
-					return
-				}
-				if update.Message != nil {
-					c.handleMessage(ctx, update)
-				}
-			}
-		}
-	}()
+	go c.runPollingLoop(ctx, updates)
 
 	return nil
 }
@@ -117,6 +97,93 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
 	c.setRunning(false)
 	return nil
+}
+
+func (c *TelegramChannel) runPollingLoop(ctx context.Context, updates <-chan telego.Update) {
+	defer c.setRunning(false)
+
+	backoff := time.Second
+	const maxBackoff = 30 * time.Second
+
+	for {
+		restart := false
+		for !restart {
+			select {
+			case <-ctx.Done():
+				return
+			case update, ok := <-updates:
+				if !ok {
+					logger.WarnC("telegram", "Updates channel closed, restarting long polling")
+					restart = true
+					continue
+				}
+				if update.Message != nil {
+					c.handleMessage(ctx, update)
+				}
+			}
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			nextUpdates, err := c.startLongPolling(ctx)
+			if err != nil {
+				logger.ErrorCF("telegram", "Failed to restart long polling", map[string]interface{}{
+					"error":       err.Error(),
+					"retry_after": backoff.String(),
+				})
+				timer := time.NewTimer(backoff)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+				if backoff < maxBackoff {
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
+				}
+				continue
+			}
+
+			backoff = time.Second
+			updates = nextUpdates
+			break
+		}
+	}
+}
+
+func (c *TelegramChannel) startLongPolling(ctx context.Context) (<-chan telego.Update, error) {
+	updates, err := c.bot.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
+		Timeout: 30,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	logger.InfoCF("telegram", "Telegram bot connected", map[string]interface{}{
+		"username": c.bot.Username(),
+	})
+	c.privacyOnce.Do(func() {
+		botUser, meErr := c.bot.GetMe(ctx)
+		if meErr != nil {
+			logger.WarnCF("telegram", "Failed to fetch bot profile for privacy mode check", map[string]interface{}{
+				"error": meErr.Error(),
+			})
+			return
+		}
+		if !botUser.CanReadAllGroupMessages {
+			logger.WarnC("telegram", "Privacy mode is enabled: in group chats, bot only receives commands, replies, and @mentions")
+		}
+	})
+
+	return updates, nil
 }
 
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
