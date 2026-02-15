@@ -115,6 +115,16 @@
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       }
+    },
+    "browser": {
+      "enabled": false,
+      "protocol": "cdp",
+      "cdp_url": "ws://localhost:3000",
+      "ws_url": "",
+      "token": "YOUR_BROWSER_TOKEN",
+      "stealth": true,
+      "launch_timeout": 120000,
+      "action_timeout": 30000
     }
   },
   "heartbeat": {

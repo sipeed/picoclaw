@@ -86,6 +86,24 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	registry.Register(tools.NewI2CTool())
 	registry.Register(tools.NewSPITool())
 
+	// Browser tool (Playwright — supports CDP and Playwright Wire Protocol)
+	if cfg.Tools.Browser.Enabled {
+		wsURL := cfg.Tools.Browser.CdpURL
+		if cfg.Tools.Browser.WsURL != "" {
+			wsURL = cfg.Tools.Browser.WsURL
+		}
+		if wsURL != "" {
+			registry.Register(tools.NewBrowserTool(tools.BrowserToolOptions{
+				Protocol:      cfg.Tools.Browser.Protocol,
+				WsURL:         wsURL,
+				Token:         cfg.Tools.Browser.Token,
+				Stealth:       cfg.Tools.Browser.Stealth,
+				LaunchTimeout: cfg.Tools.Browser.LaunchTimeout,
+				ActionTimeout: cfg.Tools.Browser.ActionTimeout,
+			}))
+		}
+	}
+
 	// Message tool - available to both agent and subagent
 	// Subagent uses it to communicate directly with user
 	messageTool := tools.NewMessageTool()
