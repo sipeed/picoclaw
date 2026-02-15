@@ -246,38 +246,33 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 	logger.InfoC("channels", "Outbound dispatcher started")
 
 	for {
-		select {
-		case <-ctx.Done():
+		msg, ok := m.bus.SubscribeOutbound(ctx)
+		if !ok {
 			logger.InfoC("channels", "Outbound dispatcher stopped")
 			return
-		default:
-			msg, ok := m.bus.SubscribeOutbound(ctx)
-			if !ok {
-				continue
-			}
+		}
 
-			// Silently skip internal channels
-			if constants.IsInternalChannel(msg.Channel) {
-				continue
-			}
+		// Silently skip internal channels
+		if constants.IsInternalChannel(msg.Channel) {
+			continue
+		}
 
-			m.mu.RLock()
-			channel, exists := m.channels[msg.Channel]
-			m.mu.RUnlock()
+		m.mu.RLock()
+		channel, exists := m.channels[msg.Channel]
+		m.mu.RUnlock()
 
-			if !exists {
-				logger.WarnCF("channels", "Unknown channel for outbound message", map[string]interface{}{
-					"channel": msg.Channel,
-				})
-				continue
-			}
+		if !exists {
+			logger.WarnCF("channels", "Unknown channel for outbound message", map[string]interface{}{
+				"channel": msg.Channel,
+			})
+			continue
+		}
 
-			if err := channel.Send(ctx, msg); err != nil {
-				logger.ErrorCF("channels", "Error sending message to channel", map[string]interface{}{
-					"channel": msg.Channel,
-					"error":   err.Error(),
-				})
-			}
+		if err := channel.Send(ctx, msg); err != nil {
+			logger.ErrorCF("channels", "Error sending message to channel", map[string]interface{}{
+				"channel": msg.Channel,
+				"error":   err.Error(),
+			})
 		}
 	}
 }
