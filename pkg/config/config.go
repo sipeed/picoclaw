@@ -50,7 +50,13 @@ type Config struct {
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
+	Tracing   TracingConfig   `json:"tracing"`
 	mu        sync.RWMutex
+}
+
+type TracingConfig struct {
+	Enabled  bool   `json:"enabled" env:"PICOCLAW_TRACING_ENABLED"`
+	Endpoint string `json:"endpoint" env:"PICOCLAW_TRACING_ENDPOINT"`
 }
 
 type AgentsConfig struct {
@@ -153,10 +159,11 @@ type ProvidersConfig struct {
 }
 
 type ProviderConfig struct {
-	APIKey     string `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase    string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy      string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	AuthMethod string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
+	APIKey     string   `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
+	APIKeys    []string `json:"api_keys,omitempty"`
+	APIBase    string   `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
+	Proxy      string   `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
+	AuthMethod string   `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
 }
 
 type GatewayConfig struct {
@@ -266,6 +273,10 @@ func DefaultConfig() *Config {
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
 			Interval: 30, // default 30 minutes
+		},
+		Tracing: TracingConfig{
+			Enabled:  false,
+			Endpoint: "localhost:4317",
 		},
 	}
 }

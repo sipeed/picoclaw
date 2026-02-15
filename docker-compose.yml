@@ -36,5 +36,20 @@ services:
       - picoclaw-workspace:/root/.picoclaw/workspace
     command: ["gateway"]
 
+  # ─────────────────────────────────────────────
+  # Jaeger (Tracing UI + OTLP collector)
+  #   UI: http://localhost:16686
+  # ─────────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/jaeger:2
+    container_name: picoclaw-jaeger
+    profiles:
+      - tracing
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
 volumes:
   picoclaw-workspace:

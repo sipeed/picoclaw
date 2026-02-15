@@ -31,6 +31,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/tracing"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
@@ -506,6 +507,16 @@ func agentCmd() {
 		os.Exit(1)
 	}
 
+	// Initialize tracing if enabled
+	if cfg.Tracing.Enabled {
+		_, err := tracing.Init("picoclaw-agent", cfg.Tracing.Endpoint)
+		if err != nil {
+			logger.WarnCF("agent", "Failed to initialize tracing: %v", map[string]interface{}{"error": err.Error()})
+		} else {
+			defer tracing.Shutdown(context.Background())
+		}
+	}
+
 	provider, err := providers.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
@@ -639,6 +650,17 @@ func gatewayCmd() {
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Initialize tracing if enabled
+	if cfg.Tracing.Enabled {
+		_, err := tracing.Init("picoclaw-gateway", cfg.Tracing.Endpoint)
+		if err != nil {
+			logger.WarnCF("gateway", "Failed to initialize tracing: %v", map[string]interface{}{"error": err.Error()})
+		} else {
+			defer tracing.Shutdown(context.Background())
+			fmt.Println("📡 Tracing enabled →", cfg.Tracing.Endpoint)
+		}
 	}
 
 	provider, err := providers.CreateProvider(cfg)
