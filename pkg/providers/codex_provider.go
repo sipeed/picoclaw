@@ -75,30 +75,33 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
-			instructions = msg.Content
+			instructions = ContentToString(msg.Content)
 		case "user":
 			if msg.ToolCallID != "" {
+				resultText := ContentToString(msg.Content)
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
 						CallID: msg.ToolCallID,
-						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: openai.Opt(msg.Content)},
+						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: openai.Opt(resultText)},
 					},
 				})
 			} else {
+				userText := ContentToString(msg.Content)
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 					OfMessage: &responses.EasyInputMessageParam{
 						Role:    responses.EasyInputMessageRoleUser,
-						Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(msg.Content)},
+						Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(userText)},
 					},
 				})
 			}
 		case "assistant":
 			if len(msg.ToolCalls) > 0 {
-				if msg.Content != "" {
+				assistantText := ContentToString(msg.Content)
+				if assistantText != "" {
 					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 						OfMessage: &responses.EasyInputMessageParam{
 							Role:    responses.EasyInputMessageRoleAssistant,
-							Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(msg.Content)},
+							Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(assistantText)},
 						},
 					})
 				}
@@ -113,18 +116,20 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 					})
 				}
 			} else {
+				assistantText := ContentToString(msg.Content)
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 					OfMessage: &responses.EasyInputMessageParam{
 						Role:    responses.EasyInputMessageRoleAssistant,
-						Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(msg.Content)},
+						Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(assistantText)},
 					},
 				})
 			}
 		case "tool":
+			resultText := ContentToString(msg.Content)
 			inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 				OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
 					CallID: msg.ToolCallID,
-					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: openai.Opt(msg.Content)},
+					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: openai.Opt(resultText)},
 				},
 			})
 		}

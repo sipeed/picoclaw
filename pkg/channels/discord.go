@@ -3,7 +3,6 @@ package channels
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -156,27 +155,16 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 
 	content := m.Content
 	mediaPaths := make([]string, 0, len(m.Attachments))
-	localFiles := make([]string, 0, len(m.Attachments))
-
-	// 确保临时文件在函数返回时被清理
-	defer func() {
-		for _, file := range localFiles {
-			if err := os.Remove(file); err != nil {
-				logger.DebugCF("discord", "Failed to cleanup temp file", map[string]any{
-					"file":  file,
-					"error": err.Error(),
-				})
-			}
-		}
-	}()
+	// Note: Files will be cleaned up by context.buildUserContent after base64 encoding
 
 	for _, attachment := range m.Attachments {
 		isAudio := utils.IsAudioFile(attachment.Filename, attachment.ContentType)
+		isImage := utils.IsImageFile(attachment.Filename, attachment.ContentType)
 
 		if isAudio {
 			localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
 			if localPath != "" {
-				localFiles = append(localFiles, localPath)
+				mediaPaths = append(mediaPaths, localPath)
 
 				transcribedText := ""
 				if c.transcriber != nil && c.transcriber.IsAvailable() {
@@ -205,12 +193,24 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 					"url":      attachment.URL,
 					"filename": attachment.Filename,
 				})
-				mediaPaths = append(mediaPaths, attachment.URL)
-				content = appendContent(content, fmt.Sprintf("[attachment: %s]", attachment.URL))
+				content = appendContent(content, fmt.Sprintf("[attachment: %s (download failed)]", attachment.Filename))
+			}
+		} else if isImage {
+			// Download image for vision processing
+			localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
+			if localPath != "" {
+				mediaPaths = append(mediaPaths, localPath)
+				content = appendContent(content, fmt.Sprintf("[image: %s]", attachment.Filename))
+			} else {
+				logger.WarnCF("discord", "Failed to download image attachment", map[string]any{
+					"url":      attachment.URL,
+					"filename": attachment.Filename,
+				})
+				content = appendContent(content, fmt.Sprintf("[image: %s (download failed)]", attachment.Filename))
 			}
 		} else {
-			mediaPaths = append(mediaPaths, attachment.URL)
-			content = appendContent(content, fmt.Sprintf("[attachment: %s]", attachment.URL))
+			// Non-image, non-audio attachment (documents, etc.)
+			content = appendContent(content, fmt.Sprintf("[attachment: %s]", attachment.Filename))
 		}
 	}
 

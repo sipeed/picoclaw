@@ -71,11 +71,14 @@ func (p *ClaudeCliProvider) messagesToPrompt(messages []Message) string {
 		case "system":
 			// handled via --system-prompt flag
 		case "user":
-			parts = append(parts, "User: "+msg.Content)
+			userText := ContentToString(msg.Content)
+			parts = append(parts, "User: "+userText)
 		case "assistant":
-			parts = append(parts, "Assistant: "+msg.Content)
+			assistantText := ContentToString(msg.Content)
+			parts = append(parts, "Assistant: "+assistantText)
 		case "tool":
-			parts = append(parts, fmt.Sprintf("[Tool Result for %s]: %s", msg.ToolCallID, msg.Content))
+			toolText := ContentToString(msg.Content)
+			parts = append(parts, fmt.Sprintf("[Tool Result for %s]: %s", msg.ToolCallID, toolText))
 		}
 	}
 
@@ -93,7 +96,8 @@ func (p *ClaudeCliProvider) buildSystemPrompt(messages []Message, tools []ToolDe
 
 	for _, msg := range messages {
 		if msg.Role == "system" {
-			parts = append(parts, msg.Content)
+			systemText := ContentToString(msg.Content)
+			parts = append(parts, systemText)
 		}
 	}
 

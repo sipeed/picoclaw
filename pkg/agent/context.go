@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type ContextBuilder struct {
@@ -157,6 +159,65 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	return result
 }
 
+// buildUserContent builds user message content with optional base64-encoded images.
+// Returns either a string (text-only) or []interface{} (text + images).
+func (cb *ContextBuilder) buildUserContent(text string, media []string) interface{} {
+	if len(media) == 0 {
+		return text
+	}
+
+	// Build multipart content with images
+	content := []interface{}{}
+
+	for _, mediaPath := range media {
+		mimeType := utils.GetMimeType(mediaPath)
+
+		// Only process image files
+		if !strings.HasPrefix(mimeType, "image/") {
+			continue
+		}
+
+		// Read and encode image
+		data, err := os.ReadFile(mediaPath)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to read media file",
+				map[string]interface{}{
+					"path":  mediaPath,
+					"error": err.Error(),
+				})
+			continue
+		}
+
+		b64 := base64.StdEncoding.EncodeToString(data)
+		imageURL := fmt.Sprintf("data:%s;base64,%s", mimeType, b64)
+
+		content = append(content, map[string]interface{}{
+			"type": "image_url",
+			"image_url": map[string]interface{}{
+				"url": imageURL,
+			},
+		})
+
+		// Clean up the temporary file after encoding
+		os.Remove(mediaPath)
+	}
+
+	// Add text content
+	if text != "" {
+		content = append(content, map[string]interface{}{
+			"type": "text",
+			"text": text,
+		})
+	}
+
+	// If no images were successfully processed, return text only
+	if len(content) == 0 || (len(content) == 1 && text != "") {
+		return text
+	}
+
+	return content
+}
+
 func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID string) []providers.Message {
 	messages := []providers.Message{}
 
@@ -207,9 +268,11 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	messages = append(messages, history...)
 
+	// Build user content with optional media
+	userContent := cb.buildUserContent(currentMessage, media)
 	messages = append(messages, providers.Message{
 		Role:    "user",
-		Content: currentMessage,
+		Content: userContent,
 	})
 
 	return messages

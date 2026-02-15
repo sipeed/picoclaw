@@ -46,14 +46,15 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string // Session identifier for history/context
-	Channel         string // Target channel for tool execution
-	ChatID          string // Target chat ID for tool execution
-	UserMessage     string // User message content (may include prefix)
-	DefaultResponse string // Response when LLM returns empty
-	EnableSummary   bool   // Whether to trigger summarization
-	SendResponse    bool   // Whether to send response via bus
-	NoHistory       bool   // If true, don't load session history (for heartbeat)
+	SessionKey      string   // Session identifier for history/context
+	Channel         string   // Target channel for tool execution
+	ChatID          string   // Target chat ID for tool execution
+	UserMessage     string   // User message content (may include prefix)
+	Media           []string // Media file paths (images, audio, etc.)
+	DefaultResponse string   // Response when LLM returns empty
+	EnableSummary   bool     // Whether to trigger summarization
+	SendResponse    bool     // Whether to send response via bus
+	NoHistory       bool     // If true, don't load session history (for heartbeat)
 }
 
 // createToolRegistry creates a tool registry with common tools.
@@ -256,6 +257,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"chat_id":     msg.ChatID,
 			"sender_id":   msg.SenderID,
 			"session_key": msg.SessionKey,
+			"media_count": len(msg.Media),
 		})
 
 	// Route system messages to processSystemMessage
@@ -269,6 +271,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
+		Media:           msg.Media,
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   true,
 		SendResponse:    false,
@@ -355,7 +358,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		history,
 		summary,
 		opts.UserMessage,
-		nil,
+		opts.Media,
 		opts.Channel,
 		opts.ChatID,
 	)
@@ -425,6 +428,14 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 		// Build tool definitions
 		providerToolDefs := al.tools.ToProviderDefs()
 
+		// Calculate system prompt length
+		systemPromptLen := 0
+		if len(messages) > 0 {
+			if s, ok := messages[0].Content.(string); ok {
+				systemPromptLen = len(s)
+			}
+		}
+
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
 			map[string]interface{}{
@@ -434,7 +445,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 				"tools_count":       len(providerToolDefs),
 				"max_tokens":        8192,
 				"temperature":       0.7,
-				"system_prompt_len": len(messages[0].Content),
+				"system_prompt_len": systemPromptLen,
 			})
 
 		// Log full messages (detailed)
@@ -640,9 +651,15 @@ func formatMessagesForLog(messages []providers.Message) string {
 				}
 			}
 		}
-		if msg.Content != "" {
-			content := utils.Truncate(msg.Content, 200)
-			result += fmt.Sprintf("  Content: %s\n", content)
+		if msg.Content != nil {
+			contentStr := ""
+			if s, ok := msg.Content.(string); ok {
+				contentStr = s
+			}
+			if contentStr != "" {
+				content := utils.Truncate(contentStr, 200)
+				result += fmt.Sprintf("  Content: %s\n", content)
+			}
 		}
 		if msg.ToolCallID != "" {
 			result += fmt.Sprintf("  ToolCallID: %s\n", msg.ToolCallID)
@@ -698,7 +715,11 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 			continue
 		}
 		// Estimate tokens for this message
-		msgTokens := len(m.Content) / 4
+		contentLen := 0
+		if s, ok := m.Content.(string); ok {
+			contentLen = len(s)
+		}
+		msgTokens := contentLen / 4
 		if msgTokens > maxMessageTokens {
 			omitted = true
 			continue
@@ -755,7 +776,11 @@ func (al *AgentLoop) summarizeBatch(ctx context.Context, batch []providers.Messa
 	}
 	prompt += "\nCONVERSATION:\n"
 	for _, m := range batch {
-		prompt += fmt.Sprintf("%s: %s\n", m.Role, m.Content)
+		contentStr := ""
+		if s, ok := m.Content.(string); ok {
+			contentStr = s
+		}
+		prompt += fmt.Sprintf("%s: %s\n", m.Role, contentStr)
 	}
 
 	response, err := al.provider.Chat(ctx, []providers.Message{{Role: "user", Content: prompt}}, nil, al.model, map[string]interface{}{
@@ -775,7 +800,11 @@ func (al *AgentLoop) summarizeBatch(ctx context.Context, batch []providers.Messa
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	total := 0
 	for _, m := range messages {
-		total += utf8.RuneCountInString(m.Content) / 3
+		contentStr := ""
+		if s, ok := m.Content.(string); ok {
+			contentStr = s
+		}
+		total += utf8.RuneCountInString(contentStr) / 3
 	}
 	return total
 }

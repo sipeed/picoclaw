@@ -2,6 +2,7 @@ package utils
 
 import (
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,44 @@ import (
 	"github.com/google/uuid"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+// GetMimeType returns the MIME type for a file based on its extension.
+// If the MIME type cannot be determined, returns "application/octet-stream".
+func GetMimeType(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == "" {
+		return "application/octet-stream"
+	}
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType == "" {
+		return "application/octet-stream"
+	}
+	// Remove charset parameter if present (e.g., "text/html; charset=utf-8" -> "text/html")
+	if idx := strings.Index(mimeType, ";"); idx > 0 {
+		mimeType = mimeType[:idx]
+	}
+	return mimeType
+}
+
+// IsImageFile checks if a file is an image file based on its filename extension and content type.
+func IsImageFile(filename, contentType string) bool {
+	imageExtensions := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
+	imageTypes := []string{"image/"}
+
+	for _, ext := range imageExtensions {
+		if strings.HasSuffix(strings.ToLower(filename), ext) {
+			return true
+		}
+	}
+
+	for _, imageType := range imageTypes {
+		if strings.HasPrefix(strings.ToLower(contentType), imageType) {
+			return true
+		}
+	}
+
+	return false
+}
 
 // IsAudioFile checks if a file is an audio file based on its filename extension and content type.
 func IsAudioFile(filename, contentType string) bool {
