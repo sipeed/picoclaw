@@ -212,6 +212,35 @@ type WebToolsConfig struct {
 
 type ToolsConfig struct {
 	Web WebToolsConfig `json:"web"`
+	MCP MCPConfig      `json:"mcp"`
+}
+
+// MCPServerConfig defines configuration for a single MCP server
+type MCPServerConfig struct {
+	// Enabled indicates whether this MCP server is active
+	Enabled bool `json:"enabled"`
+	// Command is the executable to run (e.g., "npx", "python", "/path/to/server")
+	Command string `json:"command"`
+	// Args are the arguments to pass to the command
+	Args []string `json:"args,omitempty"`
+	// Env are environment variables to set for the server process (stdio only)
+	Env map[string]string `json:"env,omitempty"`
+	// EnvFile is the path to a file containing environment variables (stdio only)
+	EnvFile string `json:"envFile,omitempty"`
+	// Type is "stdio", "sse", or "http" (default: stdio if command is set, sse if url is set)
+	Type string `json:"type,omitempty"`
+	// URL is used for SSE/HTTP transport
+	URL string `json:"url,omitempty"`
+	// Headers are HTTP headers to send with requests (sse/http only)
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// MCPConfig defines configuration for all MCP servers
+type MCPConfig struct {
+	// Enabled globally enables/disables MCP integration
+	Enabled bool `json:"enabled" env:"PICOCLAW_TOOLS_MCP_ENABLED"`
+	// Servers is a map of server name to server configuration
+	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
 }
 
 func DefaultConfig() *Config {
@@ -319,6 +348,38 @@ func DefaultConfig() *Config {
 				DuckDuckGo: DuckDuckGoConfig{
 					Enabled:    true,
 					MaxResults: 5,
+				},
+			},
+			MCP: MCPConfig{
+				Enabled: false,
+				Servers: map[string]MCPServerConfig{
+					"filesystem": {
+						Enabled: false,
+						Command: "npx",
+						Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
+						Env:     map[string]string{},
+					},
+					"github": {
+						Enabled: false,
+						Command: "npx",
+						Args:    []string{"-y", "@modelcontextprotocol/server-github"},
+						Env: map[string]string{
+							"GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN",
+						},
+					},
+					"brave-search": {
+						Enabled: false,
+						Command: "npx",
+						Args:    []string{"-y", "@modelcontextprotocol/server-brave-search"},
+						Env: map[string]string{
+							"BRAVE_API_KEY": "YOUR_BRAVE_API_KEY",
+						},
+					},
+					"postgres": {
+						Enabled: false,
+						Command: "npx",
+						Args:    []string{"-y", "@modelcontextprotocol/server-postgres", "postgresql://user:password@localhost/dbname"},
+					},
 				},
 			},
 		},

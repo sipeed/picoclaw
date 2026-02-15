@@ -22,6 +22,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -40,6 +41,7 @@ type AgentLoop struct {
 	state          *state.Manager
 	contextBuilder *ContextBuilder
 	tools          *tools.ToolRegistry
+	mcpManager     *mcp.Manager // MCP server manager for resource cleanup
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
 }
@@ -58,7 +60,7 @@ type processOptions struct {
 
 // createToolRegistry creates a tool registry with common tools.
 // This is shared between main agent and subagents.
-func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msgBus *bus.MessageBus) *tools.ToolRegistry {
+func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msgBus *bus.MessageBus, mcpManager *mcp.Manager) *tools.ToolRegistry {
 	registry := tools.NewToolRegistry()
 
 	// File system tools
@@ -99,6 +101,23 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	})
 	registry.Register(messageTool)
 
+	// Register MCP tools from all connected servers
+	if mcpManager != nil {
+		servers := mcpManager.GetServers()
+		for serverName, conn := range servers {
+			for _, tool := range conn.Tools {
+				mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+				registry.Register(mcpTool)
+				logger.DebugCF("agent", "Registered MCP tool",
+					map[string]interface{}{
+						"server": serverName,
+						"tool":   tool.Name,
+						"name":   mcpTool.Name(),
+					})
+			}
+		}
+	}
+
 	return registry
 }
 
@@ -108,12 +127,22 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	restrict := cfg.Agents.Defaults.RestrictToWorkspace
 
+	// Initialize MCP Manager and load servers
+	mcpManager := mcp.NewManager()
+	ctx := context.Background()
+	if err := mcpManager.LoadFromConfig(ctx, cfg); err != nil {
+		logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
+			map[string]interface{}{
+				"error": err.Error(),
+			})
+	}
+
 	// Create tool registry for main agent
-	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus)
+	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus, mcpManager)
 
 	// Create subagent manager with its own tool registry
 	subagentManager := tools.NewSubagentManager(provider, cfg.Agents.Defaults.Model, workspace, msgBus)
-	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus)
+	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus, mcpManager)
 	// Subagent doesn't need spawn/subagent tools to avoid recursion
 	subagentManager.SetTools(subagentTools)
 
@@ -145,6 +174,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		state:          stateManager,
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
+		mcpManager:     mcpManager,
 		summarizing:    sync.Map{},
 	}
 }
@@ -193,6 +223,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+
+	// Clean up MCP connections
+	if al.mcpManager != nil {
+		if err := al.mcpManager.Close(); err != nil {
+			logger.ErrorCF("agent", "Failed to close MCP manager",
+				map[string]interface{}{
+					"error": err.Error(),
+				})
+		}
+	}
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {

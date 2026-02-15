@@ -14,7 +14,9 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": [
+        "YOUR_USER_ID"
+      ]
     },
     "discord": {
       "enabled": false,
@@ -114,6 +116,62 @@
       "search": {
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
+      }
+    },
+    "mcp": {
+      "enabled": false,
+      "servers": {
+        "filesystem": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "/tmp"
+          ],
+          "env": {}
+        },
+        "github": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-github"
+          ],
+          "env": {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN"
+          },
+          "envFile": ".env"
+        },
+        "brave-search": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-brave-search"
+          ],
+          "env": {
+            "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY"
+          }
+        },
+        "postgres": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-postgres",
+            "postgresql://user:password@localhost/dbname"
+          ]
+        },
+        "remote-http-example": {
+          "enabled": false,
+          "url": "https://mcp-server.example.com/stream",
+          "type": "sse",
+          "headers": {
+            "Authorization": "Bearer YOUR_TOKEN",
+            "X-Custom-Header": "custom-value"
+          }
+        }
       }
     }
   },
