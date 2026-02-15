@@ -10,31 +10,31 @@ import (
 )
 
 type Server struct {
-	server   *http.Server
-	mu       sync.RWMutex
-	ready    bool
-	checks   map[string]Check
+	server    *http.Server
+	mu        sync.RWMutex
+	ready     bool
+	checks    map[string]Check
 	startTime time.Time
 }
 
 type Check struct {
-	Name    string    `json:"name"`
-	Status  string    `json:"status"`
-	Message string    `json:"message,omitempty"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	Message   string    `json:"message,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
 type StatusResponse struct {
-	Status    string            `json:"status"`
-	Uptime    string            `json:"uptime"`
-	Checks    map[string]Check  `json:"checks,omitempty"`
+	Status string           `json:"status"`
+	Uptime string           `json:"uptime"`
+	Checks map[string]Check `json:"checks,omitempty"`
 }
 
 func NewServer(host string, port int) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
-		ready:    false,
-		checks:   make(map[string]Check),
+		ready:     false,
+		checks:    make(map[string]Check),
 		startTime: time.Now(),
 	}
 
