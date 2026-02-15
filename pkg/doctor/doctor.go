@@ -265,7 +265,7 @@ func (d *Doctor) testProviderConnectivity() {
 				check.Details = append(check.Details, fmt.Sprintf("✓ %s: Reachable", name))
 				passed++
 			} else {
-				check.Details = append(check.Details, fmt.Sprintf("⚠️ %s: HTTP %d", name, resp.StatusCode))
+				check.Details = append(check.Details, fmt.Sprintf("⚠️ %s: HTTP %d %s", name, resp.StatusCode, resp.Status))
 				failed++
 			}
 		}
