@@ -43,6 +43,11 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type VoiceConfig struct {
+	Provider string `json:"provider" env:"PICOCLAW_VOICE_PROVIDER"` // "groq", "openrouter", or "" (auto)
+	Model    string `json:"model" env:"PICOCLAW_VOICE_MODEL"`
+}
+
 type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
 	Channels  ChannelsConfig  `json:"channels"`
@@ -51,6 +56,7 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Voice     VoiceConfig     `json:"voice"`
 	mu        sync.RWMutex
 }
 

@@ -23,7 +23,7 @@ type DiscordChannel struct {
 	*BaseChannel
 	session     *discordgo.Session
 	config      config.DiscordConfig
-	transcriber *voice.GroqTranscriber
+	transcriber voice.Transcriber
 	ctx         context.Context
 }
 
@@ -44,7 +44,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 	}, nil
 }
 
-func (c *DiscordChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
+func (c *DiscordChannel) SetTranscriber(transcriber voice.Transcriber) {
 	c.transcriber = transcriber
 }
 

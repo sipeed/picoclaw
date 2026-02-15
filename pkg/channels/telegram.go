@@ -26,7 +26,7 @@ type TelegramChannel struct {
 	bot          *telego.Bot
 	config       config.TelegramConfig
 	chatIDs      map[string]int64
-	transcriber  *voice.GroqTranscriber
+	transcriber  voice.Transcriber
 	placeholders sync.Map // chatID -> messageID
 	stopThinking sync.Map // chatID -> thinkingCancel
 }
@@ -74,7 +74,7 @@ func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*Telegr
 	}, nil
 }
 
-func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
+func (c *TelegramChannel) SetTranscriber(transcriber voice.Transcriber) {
 	c.transcriber = transcriber
 }
 
