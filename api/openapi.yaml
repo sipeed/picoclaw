@@ -1,0 +1,89 @@
+openapi: "3.1.0"
+info:
+  title: PicoClaw API
+  version: "1.0.0"
+  description: REST API for PicoClaw AI Gateway
+servers:
+  - url: http://localhost:18790
+security:
+  - ApiKeyAuth: []
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        session_id: { type: string, description: "Session ID (auto-generated if omitted)" }
+        message:    { type: string, description: "User message" }
+    ChatResponse:
+      type: object
+      properties:
+        session_id: { type: string }
+        response:   { type: string }
+    SessionList:
+      type: object
+      properties:
+        sessions: { type: array, items: { type: string } }
+    HealthResponse:
+      type: object
+      properties:
+        status:  { type: string, enum: [ok] }
+        version: { type: string }
+    Error:
+      type: object
+      properties:
+        error:   { type: string }
+        code:    { type: integer }
+paths:
+  /api/chat:
+    post:
+      operationId: sendMessage
+      summary: Send a message and get an AI response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatRequest" }
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatResponse" }
+        "401": { description: Unauthorized }
+        "500": { description: Internal error }
+  /api/sessions:
+    get:
+      operationId: listSessions
+      summary: List active sessions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionList" }
+  /api/health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+  /api/openapi.yaml:
+    get:
+      operationId: getSpec
+      summary: Serve the OpenAPI specification
+      security: []
+      responses:
+        "200":
+          description: OpenAPI spec
+          content:
+            application/x-yaml: {}

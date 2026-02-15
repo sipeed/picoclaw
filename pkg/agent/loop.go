@@ -203,6 +203,11 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	al.tools.Register(tool)
 }
 
+// GetSessionManager returns the session manager for external access (e.g. REST API).
+func (al *AgentLoop) GetSessionManager() *session.SessionManager {
+	return al.sessions
+}
+
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
 func (al *AgentLoop) RecordLastChannel(channel string) error {

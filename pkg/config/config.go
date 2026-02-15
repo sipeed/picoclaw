@@ -52,6 +52,7 @@ type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Tracing   TracingConfig   `json:"tracing"`
 	Devices   DevicesConfig   `json:"devices"`
+	API       APIConfig       `json:"api"`
 	mu        sync.RWMutex
 }
 
@@ -201,6 +202,11 @@ type GatewayConfig struct {
 	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
 }
 
+type APIConfig struct {
+	Enabled bool   `json:"enabled" env:"PICOCLAW_API_ENABLED"`
+	APIKey  string `json:"api_key" env:"PICOCLAW_API_KEY"`
+}
+
 type BraveConfig struct {
 	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
 	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
@@ -340,6 +346,10 @@ func DefaultConfig() *Config {
 		Devices: DevicesConfig{
 			Enabled:    false,
 			MonitorUSB: true,
+		},
+		API: APIConfig{
+			Enabled: false,
+			APIKey:  "",
 		},
 	}
 }

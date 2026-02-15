@@ -86,6 +86,18 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Messag
 	session.Updated = time.Now()
 }
 
+// ListSessions returns all session keys.
+func (sm *SessionManager) ListSessions() []string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	keys := make([]string, 0, len(sm.sessions))
+	for k := range sm.sessions {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func (sm *SessionManager) GetHistory(key string) []providers.Message {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
