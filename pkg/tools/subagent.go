@@ -89,9 +89,6 @@ func (sm *SubagentManager) Spawn(ctx context.Context, task, label, originChannel
 }
 
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {
-	task.Status = "running"
-	task.Created = time.Now().UnixMilli()
-
 	// Build system prompt for subagent
 	systemPrompt := `You are a subagent. Complete the given task independently and report the result.
 You have access to tools - use them as needed to complete your task.
@@ -209,6 +206,7 @@ func (sm *SubagentManager) ListTasks() []*SubagentTask {
 // Unlike SpawnTool which runs tasks asynchronously, SubagentTool waits for completion
 // and returns the result directly in the ToolResult.
 type SubagentTool struct {
+	mu            sync.Mutex
 	manager       *SubagentManager
 	originChannel string
 	originChatID  string
@@ -248,11 +246,18 @@ func (t *SubagentTool) Parameters() map[string]interface{} {
 }
 
 func (t *SubagentTool) SetContext(channel, chatID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.originChannel = channel
 	t.originChatID = chatID
 }
 
 func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+	t.mu.Lock()
+	originChannel := t.originChannel
+	originChatID := t.originChatID
+	t.mu.Unlock()
+
 	task, ok := args["task"].(string)
 	if !ok {
 		return ErrorResult("task is required").WithError(fmt.Errorf("task parameter is required"))
@@ -292,7 +297,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 			"max_tokens":  4096,
 			"temperature": 0.7,
 		},
-	}, messages, t.originChannel, t.originChatID)
+	}, messages, originChannel, originChatID)
 
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)
