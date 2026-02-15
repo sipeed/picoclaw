@@ -3,9 +3,18 @@ package auth
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
+
+func setTestHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+}
 
 func TestAuthCredentialIsExpired(t *testing.T) {
 	tests := []struct {
@@ -52,9 +61,7 @@ func TestAuthCredentialNeedsRefresh(t *testing.T) {
 
 func TestStoreRoundtrip(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	setTestHome(t, tmpDir)
 
 	cred := &AuthCredential{
 		AccessToken:  "test-access-token",
@@ -88,10 +95,12 @@ func TestStoreRoundtrip(t *testing.T) {
 }
 
 func TestStoreFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission bits are not reliable on windows")
+	}
+
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	setTestHome(t, tmpDir)
 
 	cred := &AuthCredential{
 		AccessToken: "secret-token",
@@ -115,9 +124,7 @@ func TestStoreFilePermissions(t *testing.T) {
 
 func TestStoreMultiProvider(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	setTestHome(t, tmpDir)
 
 	openaiCred := &AuthCredential{AccessToken: "openai-token", Provider: "openai", AuthMethod: "oauth"}
 	anthropicCred := &AuthCredential{AccessToken: "anthropic-token", Provider: "anthropic", AuthMethod: "token"}
@@ -148,9 +155,7 @@ func TestStoreMultiProvider(t *testing.T) {
 
 func TestDeleteCredential(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	setTestHome(t, tmpDir)
 
 	cred := &AuthCredential{AccessToken: "to-delete", Provider: "openai", AuthMethod: "oauth"}
 	if err := SetCredential("openai", cred); err != nil {
@@ -172,9 +177,7 @@ func TestDeleteCredential(t *testing.T) {
 
 func TestLoadStoreEmpty(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	setTestHome(t, tmpDir)
 
 	store, err := LoadStore()
 	if err != nil {

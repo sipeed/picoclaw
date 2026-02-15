@@ -44,8 +44,8 @@ func TestConvertKeysToSnake(t *testing.T) {
 		"apiKey":  "test-key",
 		"apiBase": "https://example.com",
 		"nested": map[string]interface{}{
-			"maxTokens":   float64(8192),
-			"allowFrom":   []interface{}{"user1", "user2"},
+			"maxTokens": float64(8192),
+			"allowFrom": []interface{}{"user1", "user2"},
 			"deeperLevel": map[string]interface{}{
 				"clientId": "abc",
 			},
@@ -256,11 +256,11 @@ func TestConvertConfig(t *testing.T) {
 		data := map[string]interface{}{
 			"agents": map[string]interface{}{
 				"defaults": map[string]interface{}{
-					"model":                "claude-3-opus",
-					"max_tokens":           float64(4096),
-					"temperature":          0.5,
-					"max_tool_iterations":  float64(10),
-					"workspace":            "~/.openclaw/workspace",
+					"model":               "claude-3-opus",
+					"max_tokens":          float64(4096),
+					"temperature":         0.5,
+					"max_tool_iterations": float64(10),
+					"workspace":           "~/.openclaw/workspace",
 				},
 			},
 		}
@@ -293,8 +293,8 @@ func TestConvertConfig(t *testing.T) {
 		if len(warnings) != 0 {
 			t.Errorf("expected no warnings, got %v", warnings)
 		}
-		if cfg.Agents.Defaults.Model != "glm-4.7" {
-			t.Errorf("default model should be glm-4.7, got %q", cfg.Agents.Defaults.Model)
+		if cfg.Agents.Defaults.Model != "openrouter/auto" {
+			t.Errorf("default model should be openrouter/auto, got %q", cfg.Agents.Defaults.Model)
 		}
 	})
 }

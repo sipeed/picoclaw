@@ -83,16 +83,16 @@ type QQConfig struct {
 }
 
 type DingTalkConfig struct {
-	Enabled          bool     `json:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
-	ClientID         string   `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret     string   `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
-	AllowFrom        []string `json:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
+	Enabled      bool     `json:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
+	ClientID     string   `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
+	ClientSecret string   `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	AllowFrom    []string `json:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
 type SlackConfig struct {
-	Enabled  bool     `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
-	BotToken string   `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken string   `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
+	Enabled   bool     `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
+	BotToken  string   `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
+	AppToken  string   `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
 	AllowFrom []string `json:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
 }
 
@@ -135,7 +135,7 @@ func DefaultConfig() *Config {
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:         "~/.picoclaw/workspace",
-				Model:             "glm-4.7",
+				Model:             "openrouter/auto",
 				MaxTokens:         8192,
 				Temperature:       0.7,
 				MaxToolIterations: 20,
@@ -233,6 +233,8 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	normalizeLegacyModelDefaults(cfg)
+
 	return cfg, nil
 }
 
@@ -250,7 +252,7 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return writePrivateFile(path, data)
 }
 
 func (c *Config) WorkspacePath() string {
@@ -316,4 +318,26 @@ func expandHome(path string) string {
 		return home
 	}
 	return path
+}
+
+func writePrivateFile(path string, data []byte) error {
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
+}
+
+func normalizeLegacyModelDefaults(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if cfg.Agents.Defaults.Model != "glm-4.7" {
+		return
+	}
+	if cfg.Providers.Zhipu.APIKey != "" {
+		return
+	}
+	if cfg.Providers.OpenRouter.APIKey != "" {
+		cfg.Agents.Defaults.Model = "openrouter/auto"
+	}
 }

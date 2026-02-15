@@ -282,9 +282,9 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	}
 
 	logger.DebugCF("slack", "Received message", map[string]interface{}{
-		"sender_id": senderID,
-		"chat_id":   chatID,
-		"preview":   utils.Truncate(content, 50),
+		"sender_id":  senderID,
+		"chat_id":    chatID,
+		"preview":    utils.Truncate(content, 50),
 		"has_thread": threadTS != "",
 	})
 
@@ -293,6 +293,12 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 
 func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 	if ev.User == c.botUserID {
+		return
+	}
+	if !c.IsAllowed(ev.User) {
+		logger.DebugCF("slack", "App mention rejected by allowlist", map[string]interface{}{
+			"user_id": ev.User,
+		})
 		return
 	}
 
@@ -346,6 +352,14 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 	}
 
 	senderID := cmd.UserID
+	if !c.IsAllowed(senderID) {
+		logger.DebugCF("slack", "Slash command rejected by allowlist", map[string]interface{}{
+			"user_id": senderID,
+			"command": cmd.Command,
+		})
+		return
+	}
+
 	channelID := cmd.ChannelID
 	chatID := channelID
 	content := cmd.Text
