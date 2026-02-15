@@ -28,5 +28,10 @@ COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 # Create picoclaw home directory
 RUN /usr/local/bin/picoclaw onboard
 
+# Set environment variables for testing
+ENV PICOCLAW_AGENTS_DEFAULTS_PROVIDER="gemini"
+ENV PICOCLAW_AGENTS_DEFAULTS_MODEL="gemini-1.5-flash"
+ENV PICOCLAW_PROVIDERS_GEMINI_API_KEY=""
+
 ENTRYPOINT ["picoclaw"]
 CMD ["gateway"]

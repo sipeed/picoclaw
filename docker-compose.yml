@@ -1,5 +1,24 @@
 services:
   # ─────────────────────────────────────────────
+  # PicoClaw Doctor (Diagnostic tool)
+  #   docker compose run --rm picoclaw-doctor
+  # ─────────────────────────────────────────────
+  picoclaw-doctor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: picoclaw-doctor
+    profiles:
+      - doctor
+    environment:
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=gemini
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-1.5-flash
+      - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - picoclaw-workspace:/root/.picoclaw/workspace
+    entrypoint: ["picoclaw", "doctor"]
+
+  # ─────────────────────────────────────────────
   # PicoClaw Agent (one-shot query)
   #   docker compose run --rm picoclaw-agent -m "Hello"
   # ─────────────────────────────────────────────
@@ -10,6 +29,10 @@ services:
     container_name: picoclaw-agent
     profiles:
       - agent
+    environment:
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=gemini
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-1.5-flash
+      - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - ./config/config.json:/root/.picoclaw/config.json:ro
       - picoclaw-workspace:/root/.picoclaw/workspace
@@ -29,6 +52,10 @@ services:
     restart: unless-stopped
     profiles:
       - gateway
+    environment:
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=gemini
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-1.5-flash
+      - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       # Configuration file
       - ./config/config.json:/root/.picoclaw/config.json:ro
