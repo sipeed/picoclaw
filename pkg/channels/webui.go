@@ -267,6 +267,8 @@ func (c *WebUIChannel) staticHandler() http.Handler {
 
 func (c *WebUIChannel) findUIRoot() string {
 	candidates := []string{
+		filepath.Join(string(os.PathSeparator), "usr", "local", "share", "picoclaw", "ui", "dist"),
+		filepath.Join(string(os.PathSeparator), "usr", "share", "picoclaw", "ui", "dist"),
 		filepath.Join("ui", "dist"),
 		"ui",
 	}

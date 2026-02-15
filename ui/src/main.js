@@ -2,11 +2,41 @@ import './style.css'
 
 const app = document.querySelector('#app')
 
+const THEME_STORAGE_KEY = 'picoclaw.theme'
+
+function getStoredTheme() {
+  const v = localStorage.getItem(THEME_STORAGE_KEY)
+  if (v === 'light' || v === 'dark' || v === 'system') return v
+  return 'system'
+}
+
+function applyTheme(mode) {
+  const root = document.documentElement
+  if (mode === 'system') {
+    root.removeAttribute('data-theme')
+  } else {
+    root.setAttribute('data-theme', mode)
+  }
+}
+
+let themeMode = getStoredTheme()
+applyTheme(themeMode)
+
 app.innerHTML = `
   <div class="wrap">
     <header class="header">
       <div class="title">PicoClaw</div>
-      <div class="status" id="status">disconnected</div>
+      <div class="header-right">
+        <label class="theme" for="theme">
+          <span class="theme-label">Theme</span>
+          <select class="theme-select" id="theme">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <div class="status" id="status">disconnected</div>
+      </div>
     </header>
 
     <main class="chat" id="chat"></main>
@@ -20,11 +50,38 @@ app.innerHTML = `
 
 const chat = document.querySelector('#chat')
 const statusEl = document.querySelector('#status')
+const themeSelect = document.querySelector('#theme')
 const form = document.querySelector('#form')
 const input = document.querySelector('#input')
 
 const chatId = 'browser'
-const pageToken = new URLSearchParams(location.search).get('token') || ''
+const TOKEN_STORAGE_KEY = 'picoclaw.gateway_token'
+const urlParams = new URLSearchParams(location.search)
+const tokenFromUrl = urlParams.get('token') || ''
+const tokenFromStorage = localStorage.getItem(TOKEN_STORAGE_KEY) || ''
+let gatewayToken = tokenFromUrl || tokenFromStorage
+let tokenCameFromUrl = !!tokenFromUrl
+
+function removeTokenFromUrl() {
+  const p = new URLSearchParams(location.search)
+  if (!p.has('token')) return
+  p.delete('token')
+  const qs = p.toString()
+  const newUrl = `${location.pathname}${qs ? `?${qs}` : ''}${location.hash || ''}`
+  history.replaceState(null, '', newUrl)
+}
+
+themeSelect.value = themeMode
+themeSelect.addEventListener('change', () => {
+  themeMode = themeSelect.value
+  localStorage.setItem(THEME_STORAGE_KEY, themeMode)
+  applyTheme(themeMode)
+})
+
+const media = window.matchMedia('(prefers-color-scheme: dark)')
+media.addEventListener('change', () => {
+  if (themeMode === 'system') applyTheme('system')
+})
 
 function addMessage(role, text) {
   const item = document.createElement('div')
@@ -41,7 +98,7 @@ function addMessage(role, text) {
 
 function wsUrl() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const tokenPart = pageToken ? `&token=${encodeURIComponent(pageToken)}` : ''
+  const tokenPart = gatewayToken ? `&token=${encodeURIComponent(gatewayToken)}` : ''
   return `${proto}//${location.host}/ws?chat_id=${encodeURIComponent(chatId)}${tokenPart}`
 }
 
@@ -61,6 +118,12 @@ function connect() {
 
   ws.addEventListener('open', () => {
     setStatus('connected')
+
+    if (tokenCameFromUrl && gatewayToken) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, gatewayToken)
+      removeTokenFromUrl()
+      tokenCameFromUrl = false
+    }
   })
 
   ws.addEventListener('close', () => {
