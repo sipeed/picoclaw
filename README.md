@@ -662,6 +662,16 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 | `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com) |
 | `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)           |
 
+### Provider Architecture
+
+PicoClaw routes providers by protocol family:
+
+- OpenAI-compatible protocol: OpenRouter, OpenAI-compatible gateways, Groq, Zhipu, and vLLM-style endpoints.
+- Anthropic protocol: Claude-native API behavior.
+- Codex/OAuth path: OpenAI OAuth/token authentication route.
+
+This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
+
 <details>
 <summary><b>Zhipu</b></summary>
 
