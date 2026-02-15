@@ -42,6 +42,7 @@ type AgentLoop struct {
 	tools          *tools.ToolRegistry
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
+	inflight       sync.WaitGroup
 }
 
 // processOptions configures how a message is processed
@@ -162,7 +163,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
+			al.inflight.Add(1)
+
 			response, err := al.processMessage(ctx, msg)
+			al.inflight.Done()
 			if err != nil {
 				response = fmt.Sprintf("Error processing message: %v", err)
 			}
@@ -193,6 +197,21 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+}
+
+func (al *AgentLoop) WaitForIdle(ctx context.Context) bool {
+	done := make(chan struct{})
+	go func() {
+		al.inflight.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {

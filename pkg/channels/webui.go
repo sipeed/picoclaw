@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -25,6 +27,9 @@ type WebUIChannel struct {
 	httpServer *http.Server
 	mu         sync.RWMutex
 	clients    map[*webUIClient]struct{}
+	acceptingWS atomic.Bool
+	drainExitFn func(timeout time.Duration) error
+	configUpdateFn func(raw []byte) error
 }
 
 type webUIClient struct {
@@ -48,11 +53,21 @@ type webUIOutboundMessage struct {
 
 func NewWebUIChannel(cfg config.GatewayConfig, messageBus *bus.MessageBus) (*WebUIChannel, error) {
 	base := NewBaseChannel("webui", cfg, messageBus, nil)
-	return &WebUIChannel{
+	c := &WebUIChannel{
 		BaseChannel: base,
 		cfg:         cfg,
 		clients:     make(map[*webUIClient]struct{}),
-	}, nil
+	}
+	c.acceptingWS.Store(true)
+	return c, nil
+}
+
+func (c *WebUIChannel) SetDrainExit(fn func(timeout time.Duration) error) {
+	c.drainExitFn = fn
+}
+
+func (c *WebUIChannel) SetConfigUpdate(fn func(raw []byte) error) {
+	c.configUpdateFn = fn
 }
 
 func (c *WebUIChannel) Start(ctx context.Context) error {
@@ -63,6 +78,8 @@ func (c *WebUIChannel) Start(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", c.handleWS)
+	mux.HandleFunc("/admin/config", c.handleAdminConfig)
+	mux.HandleFunc("/admin/drain-exit", c.handleAdminDrainExit)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
@@ -91,13 +108,7 @@ func (c *WebUIChannel) Start(ctx context.Context) error {
 
 func (c *WebUIChannel) Stop(ctx context.Context) error {
 	c.setRunning(false)
-
-	c.mu.Lock()
-	for cl := range c.clients {
-		cl.conn.Close()
-		delete(c.clients, cl)
-	}
-	c.mu.Unlock()
+	c.beginDrain()
 
 	if c.httpServer != nil {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -161,6 +172,11 @@ func (c *WebUIChannel) isAuthorized(u *url.URL) bool {
 }
 
 func (c *WebUIChannel) handleWS(w http.ResponseWriter, r *http.Request) {
+	if !c.acceptingWS.Load() {
+		http.Error(w, "Gateway is draining", http.StatusServiceUnavailable)
+		return
+	}
+
 	if !c.isAuthorized(r.URL) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -212,6 +228,9 @@ func (c *WebUIChannel) handleWS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
+		if !c.acceptingWS.Load() {
+			return
+		}
 
 		var in webUIInboundMessage
 		if err := json.Unmarshal(data, &in); err != nil {
@@ -234,8 +253,121 @@ func (c *WebUIChannel) handleWS(w http.ResponseWriter, r *http.Request) {
 		client.chatID = chatID
 		client.sender = senderID
 
+		c.bus.PublishInbound(bus.InboundMessage{
+			Channel:   "webui",
+			ChatID:     chatID,
+			SenderID:   senderID,
+			Content:    content,
+			SessionKey: chatID,
+			Metadata:   map[string]string{"source": "webui"},
+		})
 		c.HandleMessage(senderID, chatID, content, nil, map[string]string{"source": "webui"})
 	}
+}
+
+func (c *WebUIChannel) beginDrain() {
+	c.acceptingWS.Store(false)
+
+	c.mu.Lock()
+	for cl := range c.clients {
+		_ = cl.conn.Close()
+		delete(c.clients, cl)
+	}
+	c.mu.Unlock()
+}
+
+func (c *WebUIChannel) isAdminAuthorized(r *http.Request) bool {
+	expected := strings.TrimSpace(c.cfg.AdminToken)
+	if expected == "" {
+		return false
+	}
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	const prefix = "Bearer "
+	if !strings.HasPrefix(auth, prefix) {
+		return false
+	}
+	provided := strings.TrimSpace(strings.TrimPrefix(auth, prefix))
+	return provided != "" && provided == expected
+}
+
+func (c *WebUIChannel) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		w.Header().Set("Allow", http.MethodPut)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !c.isAdminAuthorized(r) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if c.configUpdateFn == nil {
+		http.Error(w, "Config update not available", http.StatusNotImplemented)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
+	if err != nil {
+		http.Error(w, "Failed to read body", http.StatusBadRequest)
+		return
+	}
+	if len(body) == 0 {
+		http.Error(w, "Empty body", http.StatusBadRequest)
+		return
+	}
+	if err := c.configUpdateFn(body); err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		if strings.Contains(lower, "config is not writable") {
+			http.Error(w, msg, http.StatusConflict)
+			return
+		}
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
+}
+
+type drainExitRequest struct {
+	TimeoutSeconds int `json:"timeout_seconds"`
+}
+
+func (c *WebUIChannel) handleAdminDrainExit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !c.isAdminAuthorized(r) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if c.drainExitFn == nil {
+		http.Error(w, "Drain/exit not available", http.StatusNotImplemented)
+		return
+	}
+
+	// Stop accepting new WS connections and close existing sessions immediately.
+	c.beginDrain()
+
+	timeout := 30 * time.Second
+	if r.Body != nil {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+		if len(strings.TrimSpace(string(body))) > 0 {
+			var req drainExitRequest
+			if err := json.Unmarshal(body, &req); err == nil {
+				if req.TimeoutSeconds > 0 {
+					timeout = time.Duration(req.TimeoutSeconds) * time.Second
+				}
+			}
+		}
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	w.Write([]byte("draining"))
+
+	go func() {
+		_ = c.drainExitFn(timeout)
+	}()
 }
 
 func (c *WebUIChannel) staticHandler() http.Handler {

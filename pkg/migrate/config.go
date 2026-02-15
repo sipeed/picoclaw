@@ -214,6 +214,9 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 		if v, ok := getString(gateway, "token"); ok {
 			cfg.Gateway.Token = v
 		}
+		if v, ok := getString(gateway, "admin_token"); ok {
+			cfg.Gateway.AdminToken = v
+		}
 	}
 
 	if tools, ok := getMap(data, "tools"); ok {

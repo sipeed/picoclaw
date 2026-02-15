@@ -796,6 +796,50 @@ If you set `gateway.token`, open:
 
 The listen address is controlled by `gateway.bind` (`local`, `tailnet`, `all`).
 
+### Admin API (Config Update + Graceful Restart)
+
+The gateway also exposes an **API-only** management interface for remote administration.
+
+It supports:
+
+- **Replace config**: `PUT /admin/config`
+- **Graceful drain + exit(0)** (so Docker/systemd can restart it): `POST /admin/drain-exit`
+
+**Authentication**
+
+Set `gateway.admin_token` (or `PICOCLAW_GATEWAY_ADMIN_TOKEN`) and pass it via:
+
+`Authorization: Bearer <admin_token>`
+
+If `gateway.admin_token` is empty, the admin API will always return `401 Unauthorized`.
+
+**Writable config required**
+
+The gateway writes to its normal config path (e.g. `~/.picoclaw/config.json`, or `/root/.picoclaw/config.json` in Docker).
+If that file is mounted read-only, the config update endpoint will fail with **"config is not writable"**.
+
+**Examples**
+
+Replace the full config:
+
+```bash
+curl -X PUT \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  --data-binary @config.json \
+  http://<gateway-host>:18790/admin/config
+```
+
+Trigger graceful drain and restart (default timeout 30s):
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"timeout_seconds":30}' \
+  http://<gateway-host>:18790/admin/drain-exit
+```
+
 ## CLI Reference
 
 | Command                   | Description                   |

@@ -199,6 +199,7 @@ type GatewayConfig struct {
 	Bind  string `json:"bind" env:"PICOCLAW_GATEWAY_BIND"`
 	Port  int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
 	Token string `json:"token" env:"PICOCLAW_GATEWAY_TOKEN"`
+	AdminToken string `json:"admin_token" env:"PICOCLAW_GATEWAY_ADMIN_TOKEN"`
 }
 
 type BraveConfig struct {
@@ -320,6 +321,7 @@ func DefaultConfig() *Config {
 			Bind:  "all",
 			Port:  18790,
 			Token: "",
+			AdminToken: "",
 		},
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{
