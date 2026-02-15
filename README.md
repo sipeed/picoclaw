@@ -766,6 +766,8 @@ picoclaw agent -m "Hello"
 }
 ```
 
+</details>
+
 ## 🌐 Web UI (Browser Chat)
 
 When running in `gateway` mode, PicoClaw can serve a simple browser-based chat UI over HTTP.
@@ -793,8 +795,6 @@ If you set `gateway.token`, open:
 `http://<gateway-host>:18790/?token=<secret>`
 
 The listen address is controlled by `gateway.bind` (`local`, `tailnet`, `all`).
-
-</details>
 
 ## CLI Reference
 
