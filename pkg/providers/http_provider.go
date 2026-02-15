@@ -56,7 +56,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5)
 	if idx := strings.Index(model, "/"); idx != -1 {
 		prefix := model[:idx]
-		if prefix == "moonshot" || prefix == "nvidia" {
+		if prefix == "moonshot" || prefix == "nvidia" || prefix == "zai" {
 			model = model[idx+1:]
 		}
 	}
@@ -277,6 +277,19 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 					apiBase = "https://open.bigmodel.cn/api/paas/v4"
 				}
 			}
+		case "zai", "z.ai":
+			if cfg.Providers.ZAI.APIKey != "" {
+				apiKey = cfg.Providers.ZAI.APIKey
+				apiBase = cfg.Providers.ZAI.APIBase
+				proxy = cfg.Providers.ZAI.Proxy
+				if apiBase == "" {
+					if strings.Contains(lowerModel, "coding") {
+						apiBase = "https://api.z.ai/api/coding/paas/v4"
+					} else {
+						apiBase = "https://api.z.ai/api/paas/v4"
+					}
+				}
+			}
 		case "gemini", "google":
 			if cfg.Providers.Gemini.APIKey != "" {
 				apiKey = cfg.Providers.Gemini.APIKey
@@ -377,7 +390,19 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "https://generativelanguage.googleapis.com/v1beta"
 			}
 
-		case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zhipu") || strings.Contains(lowerModel, "zai")) && cfg.Providers.Zhipu.APIKey != "":
+		case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "cogview") || strings.Contains(lowerModel, "cogvideo") || strings.Contains(lowerModel, "autoglm") || strings.Contains(lowerModel, "vidu")) && cfg.Providers.ZAI.APIKey != "":
+			apiKey = cfg.Providers.ZAI.APIKey
+			apiBase = cfg.Providers.ZAI.APIBase
+			proxy = cfg.Providers.ZAI.Proxy
+			if apiBase == "" {
+				if strings.Contains(lowerModel, "coding") {
+					apiBase = "https://api.z.ai/api/coding/paas/v4"
+				} else {
+					apiBase = "https://api.z.ai/api/paas/v4"
+				}
+			}
+
+		case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zhipu")) && cfg.Providers.Zhipu.APIKey != "":
 			apiKey = cfg.Providers.Zhipu.APIKey
 			apiBase = cfg.Providers.Zhipu.APIBase
 			proxy = cfg.Providers.Zhipu.Proxy
