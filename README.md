@@ -172,6 +172,32 @@ docker compose --profile gateway build --no-cache
 docker compose --profile gateway up -d
 ```
 
+### ☁️ Deploy on Coolify (3 Steps)
+
+Deploy PicoClaw on [Coolify](https://coolify.io) in under 5 minutes:
+
+**1. Create service** — In Coolify: **+ New** → **Docker Compose** → connect your fork of this repo
+   - Branch: `main`
+   - Compose file: `docker-compose-coolify.yml`
+
+**2. Add env vars** — Go to **Environment Variables** tab and add:
+
+| Variable | Value |
+|----------|-------|
+| `PICOCLAW_PROVIDERS_GEMINI_API_KEY` | Your [Gemini API key](https://aistudio.google.com/apikey) |
+| `PICOCLAW_CHANNELS_TELEGRAM_ENABLED` | `true` *(if using Telegram)* |
+| `PICOCLAW_CHANNELS_TELEGRAM_TOKEN` | Your bot token from [@BotFather](https://t.me/BotFather) |
+| `TZ` | `Asia/Kolkata` *(or your timezone)* |
+
+**3. Deploy!** 🚀
+
+> [!TIP]
+> **Need more control?** (custom providers like Ollama, allowlists, multiple channels)
+> Set `PICOCLAW_CONFIG_JSON` with your full config as a single env var.
+> See the complete guide: **[COOLIFY.md](COOLIFY.md)**
+
+---
+
 ### 🚀 Quick Start
 
 > [!TIP]

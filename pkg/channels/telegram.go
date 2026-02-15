@@ -27,8 +27,7 @@ type TelegramChannel struct {
 	config       config.TelegramConfig
 	chatIDs      map[string]int64
 	transcriber  *voice.GroqTranscriber
-	placeholders sync.Map // chatID -> messageID
-	stopThinking sync.Map // chatID -> thinkingCancel
+	stopThinking sync.Map // chatID -> typingCancel
 }
 
 type thinkingCancel struct {
@@ -69,7 +68,6 @@ func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*Telegr
 		config:       cfg,
 		chatIDs:      make(map[string]int64),
 		transcriber:  nil,
-		placeholders: sync.Map{},
 		stopThinking: sync.Map{},
 	}, nil
 }
@@ -87,6 +85,8 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to start long polling: %w", err)
 	}
+
+	c.registerCommands(ctx)
 
 	c.setRunning(true)
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]interface{}{
@@ -113,6 +113,41 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *TelegramChannel) registerCommands(ctx context.Context) {
+	commands := []telego.BotCommand{
+		{
+			Command:     "model",
+			Description: "View current model or switch using 'model <name>' or 'model <provider>/<model>'",
+		},
+		{
+			Command:     "models",
+			Description: "List all available models and configured providers",
+		},
+	}
+
+	err := c.bot.SetMyCommands(ctx, &telego.SetMyCommandsParams{
+		Commands: commands,
+	})
+	if err != nil {
+		logger.ErrorCF("telegram", "Failed to set bot commands", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Verify commands
+	registered, err := c.bot.GetMyCommands(ctx, &telego.GetMyCommandsParams{})
+	if err == nil {
+		var cmdNames []string
+		for _, cmd := range registered {
+			cmdNames = append(cmdNames, "/"+cmd.Command)
+		}
+		logger.InfoCF("telegram", "Successfully registered bot commands", map[string]interface{}{
+			"commands": strings.Join(cmdNames, ", "),
+		})
+	}
+}
+
 func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
 	c.setRunning(false)
@@ -129,7 +164,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid chat ID: %w", err)
 	}
 
-	// Stop thinking animation
+	// Stop typing indicator goroutine
 	if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
 		if cf, ok := stop.(*thinkingCancel); ok && cf != nil {
 			cf.Cancel()
@@ -138,18 +173,6 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 
 	htmlContent := markdownToTelegramHTML(msg.Content)
-
-	// Try to edit placeholder
-	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
-		editMsg.ParseMode = telego.ModeHTML
-
-		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
-			return nil
-		}
-		// Fallback to new message if edit fails
-	}
 
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
@@ -304,31 +327,31 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 		"preview":   utils.Truncate(content, 50),
 	})
 
-	// Thinking indicator
-	err := c.bot.SendChatAction(ctx, tu.ChatAction(tu.ID(chatID), telego.ChatActionTyping))
-	if err != nil {
-		logger.ErrorCF("telegram", "Failed to send chat action", map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
-
-	// Stop any previous thinking animation
+	// Start repeating typing indicator (expires after 5s per Telegram API,
+	// so we re-send every 4s until the response arrives)
 	chatIDStr := fmt.Sprintf("%d", chatID)
+	// Cancel any previous typing goroutine for this chat
 	if prevStop, ok := c.stopThinking.Load(chatIDStr); ok {
 		if cf, ok := prevStop.(*thinkingCancel); ok && cf != nil {
 			cf.Cancel()
 		}
 	}
-
-	// Create cancel function for thinking state
-	_, thinkCancel := context.WithTimeout(ctx, 5*time.Minute)
-	c.stopThinking.Store(chatIDStr, &thinkingCancel{fn: thinkCancel})
-
-	pMsg, err := c.bot.SendMessage(ctx, tu.Message(tu.ID(chatID), "Thinking... 💭"))
-	if err == nil {
-		pID := pMsg.MessageID
-		c.placeholders.Store(chatIDStr, pID)
-	}
+	typingCtx, typingCancel := context.WithCancel(ctx)
+	c.stopThinking.Store(chatIDStr, &thinkingCancel{fn: typingCancel})
+	go func() {
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		// Send immediately first
+		_ = c.bot.SendChatAction(typingCtx, tu.ChatAction(tu.ID(chatID), telego.ChatActionTyping))
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				_ = c.bot.SendChatAction(typingCtx, tu.ChatAction(tu.ID(chatID), telego.ChatActionTyping))
+			}
+		}
+	}()
 
 	metadata := map[string]string{
 		"message_id": fmt.Sprintf("%d", message.MessageID),
