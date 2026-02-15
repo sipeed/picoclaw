@@ -770,6 +770,8 @@ picoclaw agent -m "Hello"
 
 When running in `gateway` mode, PicoClaw can serve a simple browser-based chat UI over HTTP.
 
+![Web UI screenshot](assets/webchat.png)
+
 **1. Build UI assets**
 
 ```bash
