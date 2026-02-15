@@ -81,7 +81,15 @@ func buildClaudeParams(messages []Message, tools []ToolDefinition, model string,
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
+					name := tc.Name
+					if name == "" && tc.Function != nil {
+						name = tc.Function.Name
+					}
+					args := tc.Arguments
+					if args == nil && tc.Function != nil && tc.Function.Arguments != "" {
+						json.Unmarshal([]byte(tc.Function.Arguments), &args)
+					}
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, args, name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
