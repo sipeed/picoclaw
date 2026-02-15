@@ -1536,7 +1536,7 @@ func findExecutable() (string, error) {
 
 // generatePlist generates the plist content for launch agent
 func generatePlist(execPath string) string {
-	home := os.Getenv("HOME")
+	currentPath := os.Getenv("PATH")
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -1555,10 +1555,10 @@ func generatePlist(execPath string) string {
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:%s/.local/bin:%s/bin</string>
+        <string>%s</string>
     </dict>
 </dict>
-</plist>`, execPath, home, home)
+</plist>`, execPath, currentPath)
 }
 
 // uninstallInstall uninstalls the launch agent
