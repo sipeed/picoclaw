@@ -198,8 +198,18 @@ type WebToolsConfig struct {
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 }
 
+type BrowserConfig struct {
+	Enabled       bool   `json:"enabled" env:"PICOCLAW_TOOLS_BROWSER_ENABLED"`
+	CdpURL        string `json:"cdp_url" env:"PICOCLAW_TOOLS_BROWSER_CDP_URL"`
+	Token         string `json:"token" env:"PICOCLAW_TOOLS_BROWSER_TOKEN"`
+	Stealth       bool   `json:"stealth" env:"PICOCLAW_TOOLS_BROWSER_STEALTH"`
+	LaunchTimeout int    `json:"launch_timeout" env:"PICOCLAW_TOOLS_BROWSER_LAUNCH_TIMEOUT"`
+	ActionTimeout int    `json:"action_timeout" env:"PICOCLAW_TOOLS_BROWSER_ACTION_TIMEOUT"`
+}
+
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web     WebToolsConfig `json:"web"`
+	Browser BrowserConfig  `json:"browser"`
 }
 
 func DefaultConfig() *Config {
@@ -300,6 +310,12 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+			},
+			Browser: BrowserConfig{
+				Enabled:       false,
+				Stealth:       true,
+				LaunchTimeout: 120000,
+				ActionTimeout: 30000,
 			},
 		},
 		Heartbeat: HeartbeatConfig{

@@ -81,6 +81,17 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	}
 	registry.Register(tools.NewWebFetchTool(50000))
 
+	// Browser tool (CDP)
+	if cfg.Tools.Browser.Enabled && cfg.Tools.Browser.CdpURL != "" {
+		registry.Register(tools.NewBrowserTool(tools.BrowserToolOptions{
+			CdpURL:        cfg.Tools.Browser.CdpURL,
+			Token:         cfg.Tools.Browser.Token,
+			Stealth:       cfg.Tools.Browser.Stealth,
+			LaunchTimeout: cfg.Tools.Browser.LaunchTimeout,
+			ActionTimeout: cfg.Tools.Browser.ActionTimeout,
+		}))
+	}
+
 	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 	registry.Register(tools.NewI2CTool())
 	registry.Register(tools.NewSPITool())
