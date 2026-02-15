@@ -140,6 +140,12 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
+	if err := c.session.ChannelTyping(m.ChannelID); err != nil {
+		logger.ErrorCF("discord", "Failed to send typing indicator", map[string]any{
+			"error": err.Error(),
+		})
+	}
+
 	// 检查白名单，避免为被拒绝的用户下载附件和转录
 	if !c.IsAllowed(m.Author.ID) {
 		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
