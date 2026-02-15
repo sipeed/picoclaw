@@ -1,13 +1,17 @@
 package providers
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 type ToolCall struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type,omitempty"`
-	Function  *FunctionCall          `json:"function,omitempty"`
-	Name      string                 `json:"name,omitempty"`
-	Arguments map[string]interface{} `json:"arguments,omitempty"`
+	ID           string                 `json:"id"`
+	Type         string                 `json:"type,omitempty"`
+	Function     *FunctionCall          `json:"function,omitempty"`
+	ExtraContent map[string]interface{} `json:"extra_content,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+	Arguments    map[string]interface{} `json:"arguments,omitempty"`
 }
 
 type FunctionCall struct {
@@ -16,10 +20,11 @@ type FunctionCall struct {
 }
 
 type LLMResponse struct {
-	Content      string     `json:"content"`
-	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
-	FinishReason string     `json:"finish_reason"`
-	Usage        *UsageInfo `json:"usage,omitempty"`
+	Content             string          `json:"content"`
+	ToolCalls           []ToolCall      `json:"tool_calls,omitempty"`
+	FinishReason        string          `json:"finish_reason"`
+	Usage               *UsageInfo      `json:"usage,omitempty"`
+	RawAssistantMessage json.RawMessage `json:"-"`
 }
 
 type UsageInfo struct {
@@ -28,11 +33,23 @@ type UsageInfo struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
+type ContentPart struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *ImageURL `json:"image_url,omitempty"`
+}
+
+type ImageURL struct {
+	URL string `json:"url"`
+}
+
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role         string          `json:"role"`
+	Content      string          `json:"content"`
+	ContentParts []ContentPart   `json:"content_parts,omitempty"`
+	ToolCalls    []ToolCall      `json:"tool_calls,omitempty"`
+	ToolCallID   string          `json:"tool_call_id,omitempty"`
+	RawAPIMessage json.RawMessage `json:"raw_api_message,omitempty"`
 }
 
 type LLMProvider interface {

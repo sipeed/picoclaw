@@ -189,16 +189,8 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
 	}
 
-	//This fix prevents the session memory from LLM failure due to elimination of toolu_IDs required from LLM
-	// --- INICIO DEL FIX ---
-	//Diegox-17
-	for len(history) > 0 && (history[0].Role == "tool") {
-		logger.DebugCF("agent", "Removing orphaned tool message from history to prevent LLM error",
-			map[string]interface{}{"role": history[0].Role})
-		history = history[1:]
-	}
-	//Diegox-17
-	// --- FIN DEL FIX ---
+	// Sanitize history to ensure valid turn ordering for all providers
+	history = sanitizeHistory(history)
 
 	messages = append(messages, providers.Message{
 		Role:    "system",
@@ -207,10 +199,23 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	messages = append(messages, history...)
 
-	messages = append(messages, providers.Message{
+	userMsg := providers.Message{
 		Role:    "user",
 		Content: currentMessage,
-	})
+	}
+	if len(media) > 0 {
+		parts := []providers.ContentPart{
+			{Type: "text", Text: currentMessage},
+		}
+		for _, url := range media {
+			parts = append(parts, providers.ContentPart{
+				Type:     "image_url",
+				ImageURL: &providers.ImageURL{URL: url},
+			})
+		}
+		userMsg.ContentParts = parts
+	}
+	messages = append(messages, userMsg)
 
 	return messages
 }
@@ -265,4 +270,107 @@ func (cb *ContextBuilder) GetSkillsInfo() map[string]interface{} {
 		"available": len(allSkills),
 		"names":     skillNames,
 	}
+}
+
+// sanitizeHistory ensures valid turn ordering for all LLM providers.
+// It handles corruption from truncation, failed LLM calls, or race conditions.
+func sanitizeHistory(history []providers.Message) []providers.Message {
+	if len(history) == 0 {
+		return history
+	}
+
+	// 1. Remove leading non-user messages (tool results, assistant with tool_calls)
+	for len(history) > 0 && history[0].Role != "user" {
+		logger.DebugCF("agent", "Removing leading non-user message from history",
+			map[string]interface{}{"role": history[0].Role})
+		history = history[1:]
+	}
+
+	if len(history) == 0 {
+		return history
+	}
+
+	// 2. Walk through and build a valid sequence
+	sanitized := make([]providers.Message, 0, len(history))
+	for i := 0; i < len(history); i++ {
+		msg := history[i]
+
+		// Skip consecutive user messages (keep the last one in a run)
+		if msg.Role == "user" && i+1 < len(history) && history[i+1].Role == "user" {
+			logger.DebugCF("agent", "Removing duplicate consecutive user message",
+				map[string]interface{}{"index": i})
+			continue
+		}
+
+		// Skip tool messages that don't follow an assistant message with tool_calls
+		if msg.Role == "tool" {
+			if len(sanitized) == 0 || sanitized[len(sanitized)-1].Role != "assistant" || len(sanitized[len(sanitized)-1].ToolCalls) == 0 {
+				// Check if the preceding message (allowing for other tool messages) was an assistant with tool_calls
+				hasMatchingAssistant := false
+				for j := len(sanitized) - 1; j >= 0; j-- {
+					if sanitized[j].Role == "tool" {
+						continue
+					}
+					if sanitized[j].Role == "assistant" && len(sanitized[j].ToolCalls) > 0 {
+						hasMatchingAssistant = true
+					}
+					break
+				}
+				if !hasMatchingAssistant {
+					logger.DebugCF("agent", "Removing orphaned tool message from history",
+						map[string]interface{}{"index": i, "tool_call_id": msg.ToolCallID})
+					continue
+				}
+			}
+		}
+
+		sanitized = append(sanitized, msg)
+	}
+
+	// 3. Remove trailing incomplete tool-call sequences
+	// (assistant with tool_calls at the end without all corresponding tool results)
+	for len(sanitized) > 0 {
+		last := sanitized[len(sanitized)-1]
+		if last.Role == "assistant" && len(last.ToolCalls) > 0 {
+			logger.DebugCF("agent", "Removing trailing assistant with unanswered tool_calls",
+				map[string]interface{}{"tool_calls": len(last.ToolCalls)})
+			sanitized = sanitized[:len(sanitized)-1]
+			continue
+		}
+		// Also check if we end with tool results but the preceding assistant
+		// doesn't have all its tool_calls answered
+		if last.Role == "tool" {
+			// Find the preceding assistant message
+			assistantIdx := -1
+			for j := len(sanitized) - 2; j >= 0; j-- {
+				if sanitized[j].Role == "assistant" && len(sanitized[j].ToolCalls) > 0 {
+					assistantIdx = j
+					break
+				}
+				if sanitized[j].Role != "tool" {
+					break
+				}
+			}
+			if assistantIdx >= 0 {
+				// Count tool results after the assistant
+				expectedCount := len(sanitized[assistantIdx].ToolCalls)
+				actualCount := 0
+				for j := assistantIdx + 1; j < len(sanitized); j++ {
+					if sanitized[j].Role == "tool" {
+						actualCount++
+					}
+				}
+				if actualCount < expectedCount {
+					// Incomplete sequence — remove the assistant and all its tool results
+					logger.DebugCF("agent", "Removing trailing incomplete tool-call sequence",
+						map[string]interface{}{"expected": expectedCount, "actual": actualCount})
+					sanitized = sanitized[:assistantIdx]
+					continue
+				}
+			}
+		}
+		break
+	}
+
+	return sanitized
 }
