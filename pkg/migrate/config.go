@@ -205,8 +205,14 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 		if v, ok := getString(gateway, "host"); ok {
 			cfg.Gateway.Host = v
 		}
+		if v, ok := getString(gateway, "bind"); ok {
+			cfg.Gateway.Bind = v
+		}
 		if v, ok := getFloat(gateway, "port"); ok {
 			cfg.Gateway.Port = int(v)
+		}
+		if v, ok := getString(gateway, "token"); ok {
+			cfg.Gateway.Token = v
 		}
 	}
 

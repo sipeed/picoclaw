@@ -46,6 +46,19 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus) (*Manager, error
 func (m *Manager) initChannels() error {
 	logger.InfoC("channels", "Initializing channel manager")
 
+	if m.config.Channels.WebUI.Enabled {
+		logger.DebugC("channels", "Attempting to initialize WebUI channel")
+		webui, err := NewWebUIChannel(m.config.Gateway, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize WebUI channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["webui"] = webui
+			logger.InfoC("channels", "WebUI channel enabled successfully")
+		}
+	}
+
 	if m.config.Channels.Telegram.Enabled && m.config.Channels.Telegram.Token != "" {
 		logger.DebugC("channels", "Attempting to initialize Telegram channel")
 		telegram, err := NewTelegramChannel(m.config.Channels.Telegram, m.bus)

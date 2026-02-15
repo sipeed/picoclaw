@@ -766,6 +766,32 @@ picoclaw agent -m "Hello"
 }
 ```
 
+## 🌐 Web UI (Browser Chat)
+
+When running in `gateway` mode, PicoClaw can serve a simple browser-based chat UI over HTTP.
+
+**1. Build UI assets**
+
+```bash
+make ui-build
+```
+
+**2. Run gateway**
+
+```bash
+picoclaw gateway
+```
+
+**3. Open in browser**
+
+`http://<gateway-host>:18790/`
+
+If you set `gateway.token`, open:
+
+`http://<gateway-host>:18790/?token=<secret>`
+
+The listen address is controlled by `gateway.bind` (`local`, `tailnet`, `all`).
+
 </details>
 
 ## CLI Reference
