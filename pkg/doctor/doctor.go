@@ -400,7 +400,7 @@ func (d *Doctor) printSummary() {
 	fmt.Println()
 
 	if errorCount > 0 {
-		fmt.Println("❌ Please fix the errors above before using picoclaw")
+		fmt.Println("❌ Please fix the errors above before using PicoClaw")
 		os.Exit(1)
 	} else if warningCount > 0 {
 		fmt.Println("⚠️ PicoClaw should work, but consider addressing the warnings")
