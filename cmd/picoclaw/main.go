@@ -592,6 +592,9 @@ func gatewayCmd() {
 		os.Exit(1)
 	}
 
+	// Inject channel manager into agent loop for command handling
+	agentLoop.SetChannelManager(channelManager)
+
 	var transcriber *voice.GroqTranscriber
 	if cfg.Providers.Groq.APIKey != "" {
 		transcriber = voice.NewGroqTranscriber(cfg.Providers.Groq.APIKey)
