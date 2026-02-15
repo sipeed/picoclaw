@@ -29,6 +29,7 @@ type TelegramChannel struct {
 	transcriber  *voice.GroqTranscriber
 	placeholders sync.Map // chatID -> messageID
 	stopThinking sync.Map // chatID -> thinkingCancel
+	threadIDs    sync.Map // chatIDStr -> MessageThreadID
 }
 
 type thinkingCancel struct {
@@ -124,7 +125,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("telegram bot not running")
 	}
 
-	chatID, err := parseChatID(msg.ChatID)
+	chatID, threadID, err := parseTelegramChatID(msg.ChatID)
 	if err != nil {
 		return fmt.Errorf("invalid chat ID: %w", err)
 	}
@@ -144,6 +145,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		c.placeholders.Delete(msg.ChatID)
 		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
 		editMsg.ParseMode = telego.ModeHTML
+		// Note: EditMessageText doesn't require MessageThreadID as it edits existing message
 
 		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
 			return nil
@@ -153,6 +155,11 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
+	
+	// Set thread ID if present
+	if threadID != 0 {
+		tgMsg.MessageThreadID = threadID
+	}
 
 	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
 		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]interface{}{
@@ -194,6 +201,16 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 
 	chatID := message.Chat.ID
 	c.chatIDs[senderID] = chatID
+
+	// Check for message thread (forum topic)
+	messageThreadID := message.MessageThreadID
+	chatIDStr := fmt.Sprintf("%d", chatID)
+	if messageThreadID != 0 {
+		// Store thread ID for later use
+		c.threadIDs.Store(chatIDStr, messageThreadID)
+		// Encode thread ID into chatID string (similar to Slack pattern)
+		chatIDStr = fmt.Sprintf("%d:%d", chatID, messageThreadID)
+	}
 
 	content := ""
 	mediaPaths := []string{}
@@ -301,11 +318,16 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 	logger.DebugCF("telegram", "Received message", map[string]interface{}{
 		"sender_id": senderID,
 		"chat_id":   fmt.Sprintf("%d", chatID),
+		"thread_id": messageThreadID,
 		"preview":   utils.Truncate(content, 50),
 	})
 
-	// Thinking indicator
-	err := c.bot.SendChatAction(ctx, tu.ChatAction(tu.ID(chatID), telego.ChatActionTyping))
+	// Thinking indicator - include thread ID if present
+	chatAction := tu.ChatAction(tu.ID(chatID), telego.ChatActionTyping)
+	if messageThreadID != 0 {
+		chatAction.MessageThreadID = messageThreadID
+	}
+	err := c.bot.SendChatAction(ctx, chatAction)
 	if err != nil {
 		logger.ErrorCF("telegram", "Failed to send chat action", map[string]interface{}{
 			"error": err.Error(),
@@ -313,7 +335,6 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 	}
 
 	// Stop any previous thinking animation
-	chatIDStr := fmt.Sprintf("%d", chatID)
 	if prevStop, ok := c.stopThinking.Load(chatIDStr); ok {
 		if cf, ok := prevStop.(*thinkingCancel); ok && cf != nil {
 			cf.Cancel()
@@ -324,7 +345,12 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 	_, thinkCancel := context.WithTimeout(ctx, 5*time.Minute)
 	c.stopThinking.Store(chatIDStr, &thinkingCancel{fn: thinkCancel})
 
-	pMsg, err := c.bot.SendMessage(ctx, tu.Message(tu.ID(chatID), "Thinking... 💭"))
+	// Send "Thinking..." message - include thread ID if present
+	thinkingMsg := tu.Message(tu.ID(chatID), "Thinking... 💭")
+	if messageThreadID != 0 {
+		thinkingMsg.MessageThreadID = messageThreadID
+	}
+	pMsg, err := c.bot.SendMessage(ctx, thinkingMsg)
 	if err == nil {
 		pID := pMsg.MessageID
 		c.placeholders.Store(chatIDStr, pID)
@@ -337,8 +363,13 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 		"first_name": user.FirstName,
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
+	
+	if messageThreadID != 0 {
+		metadata["message_thread_id"] = fmt.Sprintf("%d", messageThreadID)
+		metadata["is_topic_message"] = "true"
+	}
 
-	c.HandleMessage(senderID, fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+	c.HandleMessage(senderID, chatIDStr, content, mediaPaths, metadata)
 }
 
 func (c *TelegramChannel) downloadPhoto(ctx context.Context, fileID string) string {
@@ -384,6 +415,30 @@ func parseChatID(chatIDStr string) (int64, error) {
 	var id int64
 	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
 	return id, err
+}
+
+// parseTelegramChatID extracts chatID and threadID from a combined chatID string
+// Format: "chatID" or "chatID:threadID"
+func parseTelegramChatID(chatIDStr string) (chatID int64, threadID int, err error) {
+	parts := strings.SplitN(chatIDStr, ":", 2)
+	
+	var id int64
+	_, err = fmt.Sscanf(parts[0], "%d", &id)
+	if err != nil {
+		return 0, 0, err
+	}
+	chatID = id
+	
+	if len(parts) > 1 {
+		var tid int
+		_, err = fmt.Sscanf(parts[1], "%d", &tid)
+		if err != nil {
+			return chatID, 0, fmt.Errorf("invalid thread ID: %w", err)
+		}
+		threadID = tid
+	}
+	
+	return chatID, threadID, nil
 }
 
 func markdownToTelegramHTML(text string) string {
