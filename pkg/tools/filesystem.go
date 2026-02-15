@@ -29,7 +29,7 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 		}
 	}
 
-	if restrict && !strings.HasPrefix(absPath, absWorkspace) {
+	if restrict && absPath != absWorkspace && !strings.HasPrefix(absPath, absWorkspace+string(filepath.Separator)) {
 		return "", fmt.Errorf("access denied: path is outside the workspace")
 	}
 
