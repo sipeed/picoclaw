@@ -13,6 +13,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
@@ -149,6 +150,32 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken != "" {
+		logger.DebugC("channels", "Attempting to initialize LINE channel")
+		line, err := NewLINEChannel(m.config.Channels.LINE, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize LINE channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["line"] = line
+			logger.InfoC("channels", "LINE channel enabled successfully")
+		}
+	}
+
+	if m.config.Channels.OneBot.Enabled && m.config.Channels.OneBot.WSUrl != "" {
+		logger.DebugC("channels", "Attempting to initialize OneBot channel")
+		onebot, err := NewOneBotChannel(m.config.Channels.OneBot, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize OneBot channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["onebot"] = onebot
+			logger.InfoC("channels", "OneBot channel enabled successfully")
+		}
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]interface{}{
 		"enabled_channels": len(m.channels),
 	})
@@ -226,6 +253,11 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 		default:
 			msg, ok := m.bus.SubscribeOutbound(ctx)
 			if !ok {
+				continue
+			}
+
+			// Silently skip internal channels
+			if constants.IsInternalChannel(msg.Channel) {
 				continue
 			}
 

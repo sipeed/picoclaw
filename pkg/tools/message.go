@@ -11,6 +11,7 @@ type MessageTool struct {
 	sendCallback   SendCallback
 	defaultChannel string
 	defaultChatID  string
+	sentInRound    bool // Tracks whether a message was sent in the current processing round
 }
 
 func NewMessageTool() *MessageTool {
@@ -49,16 +50,22 @@ func (t *MessageTool) Parameters() map[string]interface{} {
 func (t *MessageTool) SetContext(channel, chatID string) {
 	t.defaultChannel = channel
 	t.defaultChatID = chatID
+	t.sentInRound = false // Reset send tracking for new processing round
+}
+
+// HasSentInRound returns true if the message tool sent a message during the current round.
+func (t *MessageTool) HasSentInRound() bool {
+	return t.sentInRound
 }
 
 func (t *MessageTool) SetSendCallback(callback SendCallback) {
 	t.sendCallback = callback
 }
 
-func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	content, ok := args["content"].(string)
 	if !ok {
-		return "", fmt.Errorf("content is required")
+		return &ToolResult{ForLLM: "content is required", IsError: true}
 	}
 
 	channel, _ := args["channel"].(string)
@@ -72,16 +79,25 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	}
 
 	if channel == "" || chatID == "" {
-		return "Error: No target channel/chat specified", nil
+		return &ToolResult{ForLLM: "No target channel/chat specified", IsError: true}
 	}
 
 	if t.sendCallback == nil {
-		return "Error: Message sending not configured", nil
+		return &ToolResult{ForLLM: "Message sending not configured", IsError: true}
 	}
 
 	if err := t.sendCallback(channel, chatID, content); err != nil {
-		return fmt.Sprintf("Error sending message: %v", err), nil
+		return &ToolResult{
+			ForLLM:  fmt.Sprintf("sending message: %v", err),
+			IsError: true,
+			Err:     err,
+		}
 	}
 
-	return fmt.Sprintf("Message sent to %s:%s", channel, chatID), nil
+	t.sentInRound = true
+	// Silent: user already received the message directly
+	return &ToolResult{
+		ForLLM: fmt.Sprintf("Message sent to %s:%s", channel, chatID),
+		Silent: true,
+	}
 }

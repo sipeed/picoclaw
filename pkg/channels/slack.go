@@ -282,9 +282,9 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	}
 
 	logger.DebugCF("slack", "Received message", map[string]interface{}{
-		"sender_id": senderID,
-		"chat_id":   chatID,
-		"preview":   utils.Truncate(content, 50),
+		"sender_id":  senderID,
+		"chat_id":    chatID,
+		"preview":    utils.Truncate(content, 50),
 		"has_thread": threadTS != "",
 	})
 

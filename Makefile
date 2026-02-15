@@ -8,9 +8,10 @@ MAIN_GO=$(CMD_DIR)/main.go
 
 # Version
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date +%FT%T%z)
 GO_VERSION=$(shell $(GO) version | awk '{print $$3}')
-LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.goVersion=$(GO_VERSION)"
+LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X main.buildTime=$(BUILD_TIME) -X main.goVersion=$(GO_VERSION)"
 
 # Go variables
 GO?=go
@@ -62,16 +63,23 @@ BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
 # Default target
 all: build
 
+## generate: Run generate
+generate:
+	@echo "Run generate..."
+	@rm -r ./$(CMD_DIR)/workspace 2>/dev/null || true
+	@$(GO) generate ./...
+	@echo "Run generate complete"
+
 ## build: Build the picoclaw binary for current platform
-build:
+build: generate
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
+	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
 
 ## build-all: Build picoclaw for all platforms
-build-all:
+build-all: generate
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
@@ -88,34 +96,7 @@ install: build
 	@cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_BIN_DIR)/$(BINARY_NAME)
 	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)
 	@echo "Installed binary to $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
-	@echo "Installing builtin skills to $(WORKSPACE_SKILLS_DIR)..."
-	@mkdir -p $(WORKSPACE_SKILLS_DIR)
-	@for skill in $(BUILTIN_SKILLS_DIR)/*/; do \
-		if [ -d "$$skill" ]; then \
-			skill_name=$$(basename "$$skill"); \
-			if [ -f "$$skill/SKILL.md" ]; then \
-				cp -r "$$skill" $(WORKSPACE_SKILLS_DIR); \
-				echo "  ✓ Installed skill: $$skill_name"; \
-			fi; \
-		fi; \
-	done
 	@echo "Installation complete!"
-
-## install-skills: Install builtin skills to workspace
-install-skills:
-	@echo "Installing builtin skills to $(WORKSPACE_SKILLS_DIR)..."
-	@mkdir -p $(WORKSPACE_SKILLS_DIR)
-	@for skill in $(BUILTIN_SKILLS_DIR)/*/; do \
-		if [ -d "$$skill" ]; then \
-			skill_name=$$(basename "$$skill"); \
-			if [ -f "$$skill/SKILL.md" ]; then \
-				mkdir -p $(WORKSPACE_SKILLS_DIR)/$$skill_name; \
-				cp -r "$$skill" $(WORKSPACE_SKILLS_DIR); \
-				echo "  ✓ Installed skill: $$skill_name"; \
-			fi; \
-		fi; \
-	done
-	@echo "Skills installation complete!"
 
 ## uninstall: Remove picoclaw from system
 uninstall:
@@ -137,6 +118,14 @@ clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
 	@echo "Clean complete"
+
+## fmt: Format Go code
+vet:
+	@$(GO) vet ./...
+
+## fmt: Format Go code
+test:
+	@$(GO) test ./...
 
 ## fmt: Format Go code
 fmt:

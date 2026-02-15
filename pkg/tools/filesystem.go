@@ -66,23 +66,23 @@ func (t *ReadFileTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
-		return "", fmt.Errorf("path is required")
+		return ErrorResult("path is required")
 	}
 
 	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
 	if err != nil {
-		return "", err
+		return ErrorResult(err.Error())
 	}
 
 	content, err := os.ReadFile(resolvedPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
 
-	return string(content), nil
+	return NewToolResult(string(content))
 }
 
 type WriteFileTool struct {
@@ -119,32 +119,32 @@ func (t *WriteFileTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
-		return "", fmt.Errorf("path is required")
+		return ErrorResult("path is required")
 	}
 
 	content, ok := args["content"].(string)
 	if !ok {
-		return "", fmt.Errorf("content is required")
+		return ErrorResult("content is required")
 	}
 
 	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
 	if err != nil {
-		return "", err
+		return ErrorResult(err.Error())
 	}
 
 	dir := filepath.Dir(resolvedPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create directory: %w", err)
+		return ErrorResult(fmt.Sprintf("failed to create directory: %v", err))
 	}
 
 	if err := os.WriteFile(resolvedPath, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("failed to write file: %w", err)
+		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 
-	return "File written successfully", nil
+	return SilentResult(fmt.Sprintf("File written: %s", path))
 }
 
 type ListDirTool struct {
@@ -177,7 +177,7 @@ func (t *ListDirTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
 		path = "."
@@ -185,12 +185,12 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) 
 
 	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
 	if err != nil {
-		return "", err
+		return ErrorResult(err.Error())
 	}
 
 	entries, err := os.ReadDir(resolvedPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read directory: %w", err)
+		return ErrorResult(fmt.Sprintf("failed to read directory: %v", err))
 	}
 
 	result := ""
@@ -202,5 +202,5 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) 
 		}
 	}
 
-	return result, nil
+	return NewToolResult(result)
 }

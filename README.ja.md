@@ -186,7 +186,7 @@ picoclaw onboard
   "providers": {
     "openrouter": {
       "api_key": "xxx",
-      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+      "api_base": "https://openrouter.ai/api/v1"
     }
   },
   "tools": {
@@ -196,6 +196,10 @@ picoclaw onboard
         "max_results": 5
       }
     }
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
   }
 }
 ```
@@ -219,12 +223,15 @@ picoclaw agent -m "What is 2+2?"
 
 ## 💬 チャットアプリ
 
-Telegram で PicoClaw と会話できます
+Telegram、Discord、QQ、DingTalk、LINE で PicoClaw と会話できます
 
 | チャネル | セットアップ |
 |---------|------------|
 | **Telegram** | 簡単（トークンのみ） |
 | **Discord** | 簡単（Bot トークン + Intents） |
+| **QQ** | 簡単（AppID + AppSecret） |
+| **DingTalk** | 普通（アプリ認証情報） |
+| **LINE** | 普通（認証情報 + Webhook URL） |
 
 <details>
 <summary><b>Telegram</b>（推奨）</summary>
@@ -303,21 +310,323 @@ picoclaw gateway
 
 </details>
 
-## 設定 (Configuration)
+<details>
+<summary><b>QQ</b></summary>
 
-PicoClaw は設定に `config.json` を使用します。
+**1. Bot を作成**
+
+- [QQ オープンプラットフォーム](https://q.qq.com/#) にアクセス
+- アプリケーションを作成 → **AppID** と **AppSecret** を取得
+
+**2. 設定**
+
+```json
+{
+  "channels": {
+    "qq": {
+      "enabled": true,
+      "app_id": "YOUR_APP_ID",
+      "app_secret": "YOUR_APP_SECRET",
+      "allow_from": []
+    }
+  }
+}
+```
+
+> `allow_from` を空にすると全ユーザーを許可、QQ番号を指定してアクセス制限可能。
+
+**3. 起動**
+
+```bash
+picoclaw gateway
+```
+
+</details>
+
+<details>
+<summary><b>DingTalk</b></summary>
+
+**1. Bot を作成**
+
+- [オープンプラットフォーム](https://open.dingtalk.com/) にアクセス
+- 内部アプリを作成
+- Client ID と Client Secret をコピー
+
+**2. 設定**
+
+```json
+{
+  "channels": {
+    "dingtalk": {
+      "enabled": true,
+      "client_id": "YOUR_CLIENT_ID",
+      "client_secret": "YOUR_CLIENT_SECRET",
+      "allow_from": []
+    }
+  }
+}
+```
+
+> `allow_from` を空にすると全ユーザーを許可、ユーザーIDを指定してアクセス制限可能。
+
+**3. 起動**
+
+```bash
+picoclaw gateway
+```
+
+</details>
+
+<details>
+<summary><b>LINE</b></summary>
+
+**1. LINE 公式アカウントを作成**
+
+- [LINE Developers Console](https://developers.line.biz/) にアクセス
+- プロバイダーを作成 → Messaging API チャネルを作成
+- **チャネルシークレット** と **チャネルアクセストークン** をコピー
+
+**2. 設定**
+
+```json
+{
+  "channels": {
+    "line": {
+      "enabled": true,
+      "channel_secret": "YOUR_CHANNEL_SECRET",
+      "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
+      "webhook_path": "/webhook/line",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**3. Webhook URL を設定**
+
+LINE の Webhook には HTTPS が必要です。リバースプロキシまたはトンネルを使用してください:
+
+```bash
+# ngrok の例
+ngrok http 18791
+```
+
+LINE Developers Console で Webhook URL を `https://あなたのドメイン/webhook/line` に設定し、**Webhook の利用** を有効にしてください。
+
+**4. 起動**
+
+```bash
+picoclaw gateway
+```
+
+> グループチャットでは @メンション時のみ応答します。返信は元メッセージを引用する形式です。
+
+> **Docker Compose**: `picoclaw-gateway` サービスに `ports: ["18791:18791"]` を追加して Webhook ポートを公開してください。
+
+</details>
+
+## ⚙️ 設定
+
+設定ファイル: `~/.picoclaw/config.json`
+
+### ワークスペース構成
+
+PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw/workspace`）にデータを保存します：
+
+```
+~/.picoclaw/workspace/
+├── sessions/          # 会話セッションと履歴
+├── memory/            # 長期メモリ（MEMORY.md）
+├── state/             # 永続状態（最後のチャネルなど）
+├── cron/              # スケジュールジョブデータベース
+├── skills/            # カスタムスキル
+├── AGENTS.md          # エージェントの行動ガイド
+├── HEARTBEAT.md       # 定期タスクプロンプト（30分ごとに確認）
+├── IDENTITY.md        # エージェントのアイデンティティ
+├── SOUL.md            # エージェントのソウル
+├── TOOLS.md           # ツールの説明
+└── USER.md            # ユーザー設定
+```
+
+### 🔒 セキュリティサンドボックス
+
+PicoClaw はデフォルトでサンドボックス環境で実行されます。エージェントは設定されたワークスペース内のファイルにのみアクセスし、コマンドを実行できます。
+
+#### デフォルト設定
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.picoclaw/workspace",
+      "restrict_to_workspace": true
+    }
+  }
+}
+```
+
+| オプション | デフォルト | 説明 |
+|-----------|-----------|------|
+| `workspace` | `~/.picoclaw/workspace` | エージェントの作業ディレクトリ |
+| `restrict_to_workspace` | `true` | ファイル/コマンドアクセスをワークスペースに制限 |
+
+#### 保護対象ツール
+
+`restrict_to_workspace: true` の場合、以下のツールがサンドボックス化されます：
+
+| ツール | 機能 | 制限 |
+|-------|------|------|
+| `read_file` | ファイル読み込み | ワークスペース内のファイルのみ |
+| `write_file` | ファイル書き込み | ワークスペース内のファイルのみ |
+| `list_dir` | ディレクトリ一覧 | ワークスペース内のディレクトリのみ |
+| `edit_file` | ファイル編集 | ワークスペース内のファイルのみ |
+| `append_file` | ファイル追記 | ワークスペース内のファイルのみ |
+| `exec` | コマンド実行 | コマンドパスはワークスペース内である必要あり |
+
+#### exec ツールの追加保護
+
+`restrict_to_workspace: false` でも、`exec` ツールは以下の危険なコマンドをブロックします：
+
+- `rm -rf`, `del /f`, `rmdir /s` — 一括削除
+- `format`, `mkfs`, `diskpart` — ディスクフォーマット
+- `dd if=` — ディスクイメージング
+- `/dev/sd[a-z]` への書き込み — 直接ディスク書き込み
+- `shutdown`, `reboot`, `poweroff` — システムシャットダウン
+- フォークボム `:(){ :|:& };:`
+
+#### エラー例
+
+```
+[ERROR] tool: Tool execution failed
+{tool=exec, error=Command blocked by safety guard (path outside working dir)}
+```
+
+```
+[ERROR] tool: Tool execution failed
+{tool=exec, error=Command blocked by safety guard (dangerous pattern detected)}
+```
+
+#### 制限の無効化（セキュリティリスク）
+
+エージェントにワークスペース外のパスへのアクセスが必要な場合：
+
+**方法1: 設定ファイル**
+```json
+{
+  "agents": {
+    "defaults": {
+      "restrict_to_workspace": false
+    }
+  }
+}
+```
+
+**方法2: 環境変数**
+```bash
+export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
+```
+
+> ⚠️ **警告**: この制限を無効にすると、エージェントはシステム上の任意のパスにアクセスできるようになります。制御された環境でのみ慎重に使用してください。
+
+#### セキュリティ境界の一貫性
+
+`restrict_to_workspace` 設定は、すべての実行パスで一貫して適用されます：
+
+| 実行パス | セキュリティ境界 |
+|---------|-----------------|
+| メインエージェント | `restrict_to_workspace` ✅ |
+| サブエージェント / Spawn | 同じ制限を継承 ✅ |
+| ハートビートタスク | 同じ制限を継承 ✅ |
+
+すべてのパスで同じワークスペース制限が適用されます — サブエージェントやスケジュールタスクを通じてセキュリティ境界をバイパスする方法はありません。
+
+### ハートビート（定期タスク）
+
+PicoClaw は自動的に定期タスクを実行できます。ワークスペースに `HEARTBEAT.md` ファイルを作成します：
+
+```markdown
+# 定期タスク
+
+- 重要なメールをチェック
+- 今後の予定を確認
+- 天気予報をチェック
+```
+
+エージェントは30分ごと（設定可能）にこのファイルを読み込み、利用可能なツールを使ってタスクを実行します。
+
+#### spawn で非同期タスク実行
+
+時間のかかるタスク（Web検索、API呼び出し）には `spawn` ツールを使って**サブエージェント**を作成します：
+
+```markdown
+# 定期タスク
+
+## クイックタスク（直接応答）
+- 現在時刻を報告
+
+## 長時間タスク（spawn で非同期）
+- AIニュースを検索して要約
+- メールをチェックして重要なメッセージを報告
+```
+
+**主な特徴:**
+
+| 機能 | 説明 |
+|------|------|
+| **spawn** | 非同期サブエージェントを作成、ハートビートをブロックしない |
+| **独立コンテキスト** | サブエージェントは独自のコンテキストを持ち、セッション履歴なし |
+| **message ツール** | サブエージェントは message ツールで直接ユーザーと通信 |
+| **非ブロッキング** | spawn 後、ハートビートは次のタスクへ継続 |
+
+#### サブエージェントの通信方法
+
+```
+ハートビート発動
+    ↓
+エージェントが HEARTBEAT.md を読む
+    ↓
+長いタスク: spawn サブエージェント
+    ↓                           ↓
+次のタスクへ継続          サブエージェントが独立して動作
+    ↓                           ↓
+全タスク完了              message ツールを使用
+    ↓                           ↓
+HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
+```
+
+サブエージェントはツール（message、web_search など）にアクセスでき、メインエージェントを経由せずにユーザーと通信できます。
+
+**設定:**
+
+```json
+{
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
+  }
+}
+```
+
+| オプション | デフォルト | 説明 |
+|-----------|-----------|------|
+| `enabled` | `true` | ハートビートの有効/無効 |
+| `interval` | `30` | チェック間隔（分）、最小5分 |
+
+**環境変数:**
+- `PICOCLAW_HEARTBEAT_ENABLED=false` で無効化
+- `PICOCLAW_HEARTBEAT_INTERVAL=60` で間隔変更
+
+### 基本設定
 
 1.  **設定ファイルの作成:**
-
-    サンプル設定ファイルをコピーします:
 
     ```bash
     cp config.example.json config/config.json
     ```
 
 2.  **設定の編集:**
-
-    `config/config.json` を開き、APIキーや設定を記述します。
 
     ```json
     {
@@ -335,11 +644,11 @@ PicoClaw は設定に `config.json` を使用します。
     }
     ```
 
-**3. 実行**
+3.  **実行**
 
-```bash
-picoclaw agent -m "Hello"
-```
+    ```bash
+    picoclaw agent -m "Hello"
+    ```
 </details>
 
 <details>
@@ -389,6 +698,10 @@ picoclaw agent -m "Hello"
         "apiKey": "BSA..."
       }
     }
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
   }
 }
 ```

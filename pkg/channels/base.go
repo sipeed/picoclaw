@@ -59,7 +59,22 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 	for _, allowed := range c.allowList {
 		// Strip leading "@" from allowed value for username matching
 		trimmed := strings.TrimPrefix(allowed, "@")
-		if senderID == allowed || idPart == allowed || senderID == trimmed || idPart == trimmed || (userPart != "" && (userPart == allowed || userPart == trimmed)) {
+		allowedID := trimmed
+		allowedUser := ""
+		if idx := strings.Index(trimmed, "|"); idx > 0 {
+			allowedID = trimmed[:idx]
+			allowedUser = trimmed[idx+1:]
+		}
+
+		// Support either side using "id|username" compound form.
+		// This keeps backward compatibility with legacy Telegram allowlist entries.
+		if senderID == allowed ||
+			idPart == allowed ||
+			senderID == trimmed ||
+			idPart == trimmed ||
+			idPart == allowedID ||
+			(allowedUser != "" && senderID == allowedUser) ||
+			(userPart != "" && (userPart == allowed || userPart == trimmed || userPart == allowedUser)) {
 			return true
 		}
 	}

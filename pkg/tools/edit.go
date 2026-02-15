@@ -51,54 +51,54 @@ func (t *EditFileTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
-		return "", fmt.Errorf("path is required")
+		return ErrorResult("path is required")
 	}
 
 	oldText, ok := args["old_text"].(string)
 	if !ok {
-		return "", fmt.Errorf("old_text is required")
+		return ErrorResult("old_text is required")
 	}
 
 	newText, ok := args["new_text"].(string)
 	if !ok {
-		return "", fmt.Errorf("new_text is required")
+		return ErrorResult("new_text is required")
 	}
 
 	resolvedPath, err := validatePath(path, t.allowedDir, t.restrict)
 	if err != nil {
-		return "", err
+		return ErrorResult(err.Error())
 	}
 
 	if _, err := os.Stat(resolvedPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("file not found: %s", path)
+		return ErrorResult(fmt.Sprintf("file not found: %s", path))
 	}
 
 	content, err := os.ReadFile(resolvedPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
 
 	contentStr := string(content)
 
 	if !strings.Contains(contentStr, oldText) {
-		return "", fmt.Errorf("old_text not found in file. Make sure it matches exactly")
+		return ErrorResult("old_text not found in file. Make sure it matches exactly")
 	}
 
 	count := strings.Count(contentStr, oldText)
 	if count > 1 {
-		return "", fmt.Errorf("old_text appears %d times. Please provide more context to make it unique", count)
+		return ErrorResult(fmt.Sprintf("old_text appears %d times. Please provide more context to make it unique", count))
 	}
 
 	newContent := strings.Replace(contentStr, oldText, newText, 1)
 
 	if err := os.WriteFile(resolvedPath, []byte(newContent), 0644); err != nil {
-		return "", fmt.Errorf("failed to write file: %w", err)
+		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 
-	return fmt.Sprintf("Successfully edited %s", path), nil
+	return SilentResult(fmt.Sprintf("File edited: %s", path))
 }
 
 type AppendFileTool struct {
@@ -135,31 +135,31 @@ func (t *AppendFileTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *AppendFileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+func (t *AppendFileTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
-		return "", fmt.Errorf("path is required")
+		return ErrorResult("path is required")
 	}
 
 	content, ok := args["content"].(string)
 	if !ok {
-		return "", fmt.Errorf("content is required")
+		return ErrorResult("content is required")
 	}
 
 	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
 	if err != nil {
-		return "", err
+		return ErrorResult(err.Error())
 	}
 
 	f, err := os.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file: %w", err)
+		return ErrorResult(fmt.Sprintf("failed to open file: %v", err))
 	}
 	defer f.Close()
 
 	if _, err := f.WriteString(content); err != nil {
-		return "", fmt.Errorf("failed to append to file: %w", err)
+		return ErrorResult(fmt.Sprintf("failed to append to file: %v", err))
 	}
 
-	return fmt.Sprintf("Successfully appended to %s", path), nil
+	return SilentResult(fmt.Sprintf("Appended to %s", path))
 }
