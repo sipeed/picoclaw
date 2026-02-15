@@ -433,7 +433,7 @@ func parseTelegramChatID(chatIDStr string) (chatID int64, threadID int, err erro
 		var tid int
 		_, err = fmt.Sscanf(parts[1], "%d", &tid)
 		if err != nil {
-			return chatID, 0, fmt.Errorf("invalid thread ID: %w", err)
+			return chatID, 0, fmt.Errorf("invalid thread ID '%s': %w", parts[1], err)
 		}
 		threadID = tid
 	}
