@@ -78,6 +78,7 @@ type ChannelsConfig struct {
 	DingTalk DingTalkConfig `json:"dingtalk"`
 	Slack    SlackConfig    `json:"slack"`
 	LINE     LINEConfig     `json:"line"`
+	OneBot   OneBotConfig   `json:"onebot"`
 }
 
 type WhatsAppConfig struct {
@@ -144,6 +145,15 @@ type LINEConfig struct {
 	WebhookPort        int                 `json:"webhook_port" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
 	WebhookPath        string              `json:"webhook_path" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
+}
+
+type OneBotConfig struct {
+	Enabled            bool                `json:"enabled" env:"PICOCLAW_CHANNELS_ONEBOT_ENABLED"`
+	WSUrl              string              `json:"ws_url" env:"PICOCLAW_CHANNELS_ONEBOT_WS_URL"`
+	AccessToken        string              `json:"access_token" env:"PICOCLAW_CHANNELS_ONEBOT_ACCESS_TOKEN"`
+	ReconnectInterval  int                 `json:"reconnect_interval" env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
+	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {
@@ -272,6 +282,14 @@ func DefaultConfig() *Config {
 				WebhookHost:        "0.0.0.0",
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
+				AllowFrom:          FlexibleStringSlice{},
+			},
+			OneBot: OneBotConfig{
+				Enabled:            false,
+				WSUrl:              "ws://127.0.0.1:3001",
+				AccessToken:        "",
+				ReconnectInterval:  5,
+				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
 			},
 		},
