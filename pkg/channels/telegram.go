@@ -149,7 +149,7 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 
 func (c *TelegramChannel) initBotCommands(ctx context.Context) error {
 	currentCommands, err := c.bot.GetMyCommands(ctx, &telego.GetMyCommandsParams{
-		Scope: tu.ScopeAllPrivateChats(),
+		Scope: tu.ScopeDefault(),
 	})
 	if err != nil {
 		return fmt.Errorf("get commands: %w", err)
@@ -180,7 +180,7 @@ func (c *TelegramChannel) initBotCommands(ctx context.Context) error {
 
 		err = c.bot.SetMyCommands(ctx, &telego.SetMyCommandsParams{
 			Commands: commands,
-			Scope:    tu.ScopeAllPrivateChats(),
+			Scope:    tu.ScopeDefault(),
 		})
 		if err != nil {
 			return fmt.Errorf("set commands: %w", err)
