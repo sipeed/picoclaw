@@ -12,6 +12,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type ContextBuilder struct {
@@ -189,16 +190,24 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
 	}
 
-	//This fix prevents the session memory from LLM failure due to elimination of toolu_IDs required from LLM
+	// This fix prevents the session memory from LLM failure due to elimination of toolu_IDs required from LLM
 	// --- INICIO DEL FIX ---
-	//Diegox-17
+	// Diegox-17
 	for len(history) > 0 && (history[0].Role == "tool") {
 		logger.DebugCF("agent", "Removing orphaned tool message from history to prevent LLM error",
 			map[string]interface{}{"role": history[0].Role})
 		history = history[1:]
 	}
-	//Diegox-17
+	// Diegox-17
 	// --- FIN DEL FIX ---
+
+	if len(history) > 0 && history[len(history)-1].Role == "user" {
+		logger.WarnCF("agent", "Removing trailing user message from history to prevent consecutive user messages",
+			map[string]interface{}{
+				"content_preview": utils.Truncate(history[len(history)-1].Content, 50),
+			})
+		history = history[:len(history)-1]
+	}
 
 	messages = append(messages, providers.Message{
 		Role:    "system",
