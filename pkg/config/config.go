@@ -340,6 +340,9 @@ func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			if err := env.Parse(cfg); err != nil {
+				return nil, err
+			}
 			return cfg, nil
 		}
 		return nil, err

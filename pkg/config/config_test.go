@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -10,6 +11,21 @@ func TestDefaultConfig_HeartbeatEnabled(t *testing.T) {
 
 	if !cfg.Heartbeat.Enabled {
 		t.Error("Heartbeat should be enabled by default")
+	}
+}
+
+// TestLoadConfig_EnvOverridesWithoutFile ensures env vars are applied when the config file is missing.
+func TestLoadConfig_EnvOverridesWithoutFile(t *testing.T) {
+	t.Setenv("PICOCLAW_AGENTS_DEFAULTS_MODEL", "env-model")
+
+	missing := filepath.Join(t.TempDir(), "missing.json")
+	cfg, err := LoadConfig(missing)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if got := cfg.Agents.Defaults.Model; got != "env-model" {
+		t.Fatalf("expected model from env, got %q", got)
 	}
 }
 
