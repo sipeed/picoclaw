@@ -44,7 +44,7 @@
 > * **NO CRYPTO:** PicoClaw has **NO** official token/coin. All claims on `pump.fun` or other trading platforms are **SCAMS**.
 > * **OFFICIAL DOMAIN:** The **ONLY** official website is **[picoclaw.io](https://picoclaw.io)**, and company website is **[sipeed.com](https://sipeed.com)**
 > * **Warning:** Many `.ai/.org/.com/.net/...` domains are registered by third parties.
-> * **Warning:** picoclaw is in early development now and may have unresolved network security issues. Do not deploy to production environments before the v1.0 release.
+> * **Warning:** PicoClaw is in early development and may have unresolved network security issues. Do not deploy to production environments before the v1.0 release.
 
 ## 📢 News
 
@@ -61,7 +61,7 @@
 
 ⚡️ **Lightning Fast**: 400× faster startup time—boots in 1 second even on a 0.6GHz single core.
 
-🌍 **True Portability**: Single self-contained binary across RISC-V, ARM, and x86, One-click to Go!
+🌍 **True Portability**: Single self-contained binary across RISC-V, ARM, and x86—one click and you’re good to go.
 
 🤖 **AI-Bootstrapped**: Autonomous Go-native implementation — 95% Agent-generated core with human-in-the-loop refinement.
 
@@ -100,13 +100,13 @@
 
 PicoClaw can be deployed on almost any Linux device!
 
-- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) or W(WiFi6) version, for Minimal Home Assistant
+- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E (Ethernet) or W (WiFi 6) version, for minimal home assistant
 - $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), or $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) for Automated Server Maintenance
 - $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) or $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) for Smart Monitoring
 
 <https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4>
 
-🌟 More Deployment Cases Await！
+🌟 More deployment cases coming soon!
 
 ## 📦 Install
 
