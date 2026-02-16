@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -128,6 +129,9 @@ func (m *Manager) LoadFromConfig(ctx context.Context, cfg *config.Config) error 
 			"count": len(cfg.Tools.MCP.Servers),
 		})
 
+	// Get workspace path for resolving relative envFile paths
+	workspacePath := cfg.WorkspacePath()
+
 	var wg sync.WaitGroup
 	errs := make(chan error, len(cfg.Tools.MCP.Servers))
 	enabledCount := 0
@@ -143,8 +147,13 @@ func (m *Manager) LoadFromConfig(ctx context.Context, cfg *config.Config) error 
 
 		enabledCount++
 		wg.Add(1)
-		go func(name string, serverCfg config.MCPServerConfig) {
+		go func(name string, serverCfg config.MCPServerConfig, workspace string) {
 			defer wg.Done()
+
+			// Resolve relative envFile paths relative to workspace
+			if serverCfg.EnvFile != "" && !filepath.IsAbs(serverCfg.EnvFile) {
+				serverCfg.EnvFile = filepath.Join(workspace, serverCfg.EnvFile)
+			}
 
 			if err := m.ConnectServer(ctx, name, serverCfg); err != nil {
 				logger.ErrorCF("mcp", "Failed to connect to MCP server",
@@ -154,7 +163,7 @@ func (m *Manager) LoadFromConfig(ctx context.Context, cfg *config.Config) error 
 					})
 				errs <- fmt.Errorf("failed to connect to server %s: %w", name, err)
 			}
-		}(name, serverCfg)
+		}(name, serverCfg, workspacePath)
 	}
 
 	wg.Wait()
