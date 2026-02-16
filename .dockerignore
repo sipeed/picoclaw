@@ -3,6 +3,7 @@
 build/
 .picoclaw/
 config/
+!config/config.schema.json
 .env
 .env.example
 *.md
