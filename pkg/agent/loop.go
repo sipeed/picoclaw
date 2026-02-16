@@ -44,6 +44,7 @@ type AgentLoop struct {
 	tools          *tools.ToolRegistry
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
+	configPath     string   // Path to config.json for persistence
 }
 
 // processOptions configures how a message is processed
@@ -104,7 +105,7 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	return registry
 }
 
-func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
+func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, configPath string) *AgentLoop {
 	workspace := cfg.WorkspacePath()
 	os.MkdirAll(workspace, 0755)
 
@@ -149,6 +150,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
+		configPath:     configPath,
 	}
 }
 
@@ -204,6 +206,16 @@ func (al *AgentLoop) GetModel() string {
 
 func (al *AgentLoop) SetModel(model string) {
 	al.model = model
+	al.cfg.Agents.Defaults.Model = model
+	al.saveConfig()
+}
+
+func (al *AgentLoop) saveConfig() {
+	if al.configPath != "" {
+		if err := config.SaveConfig(al.configPath, al.cfg); err != nil {
+			logger.ErrorCF("agent", "Failed to save config", map[string]interface{}{"error": err.Error(), "path": al.configPath})
+		}
+	}
 }
 
 // listModelsResponse builds a dynamic /models response from the current config.
@@ -350,7 +362,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 					return fmt.Sprintf("❌ Failed to switch to `%s`: %v", newProvider, err), nil
 				}
 				al.provider = newLLM
-				al.SetModel(newModel)
+				al.SetModel(newModel) // This also calls saveConfig()
 				return fmt.Sprintf("✅ Switched: `%s/%s` → `%s/%s`", oldProvider, oldModel, newProvider, newModel), nil
 			}
 
