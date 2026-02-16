@@ -32,8 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install uv and symlink to system path
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    ln -s /root/.cargo/bin/uv /usr/local/bin/uv && \
-    uv --version
+  ln -s /root/.local/bin/uv /usr/local/bin/uv && \
+  ln -s /root/.local/bin/uvx /usr/local/bin/uvx && \
+  uv --version
 
 # Copy binary
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
