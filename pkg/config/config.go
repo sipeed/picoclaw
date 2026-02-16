@@ -184,7 +184,7 @@ type PerplexityConfig struct {
 type WebToolsConfig struct {
 	Brave      BraveConfig      `json:"brave"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
-	Perplexity PerplexityConfig  `json:"perplexity"`
+	Perplexity PerplexityConfig `json:"perplexity"`
 }
 
 type ToolsConfig struct {

@@ -114,7 +114,7 @@ func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, cou
 func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query string) (string, error) {
 	// Simple regex based extraction for DDG HTML
 	// Strategy: Find all result containers or key anchors directly
-	
+
 	// Try finding the result links directly first, as they are the most critical
 	// Pattern: <a class="result__a" href="...">Title</a>
 	// The previous regex was a bit strict. Let's make it more flexible for attributes order/content
@@ -133,14 +133,14 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 	// But simple global search for snippets might mismatch order.
 	// Since we only have the raw HTML string, let's just extract snippets globally and assume order matches (risky but simple for regex)
 	// Or better: Let's assume the snippet follows the link in the HTML
-	
+
 	// A better regex approach: iterate through text and find matches in order
 	// But for now, let's grab all snippets too
 	reSnippet := regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
 	snippetMatches := reSnippet.FindAllStringSubmatch(html, count+5)
 
 	maxItems := min(len(matches), count)
-	
+
 	for i := 0; i < maxItems; i++ {
 		urlStr := matches[i][1]
 		title := stripTags(matches[i][2])
@@ -157,7 +157,7 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 		}
 
 		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, title, urlStr))
-		
+
 		// Attempt to attach snippet if available and index aligns
 		if i < len(snippetMatches) {
 			snippet := stripTags(snippetMatches[i][1])
