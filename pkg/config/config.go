@@ -79,6 +79,7 @@ type ChannelsConfig struct {
 	Slack    SlackConfig    `json:"slack"`
 	LINE     LINEConfig     `json:"line"`
 	OneBot   OneBotConfig   `json:"onebot"`
+	Pushover PushoverConfig `json:"pushover"`
 }
 
 type WhatsAppConfig struct {
@@ -104,10 +105,9 @@ type FeishuConfig struct {
 }
 
 type DiscordConfig struct {
-	Enabled     bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token       string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom   FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
-	MentionOnly bool                `json:"mention_only" env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
+	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
 }
 
 type MaixCamConfig struct {
@@ -155,6 +155,12 @@ type OneBotConfig struct {
 	ReconnectInterval  int                 `json:"reconnect_interval" env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
+}
+
+type PushoverConfig struct {
+	Enabled  bool   `json:"enabled" env:"PICOCLAW_CHANNELS_PUSHOVER_ENABLED"`
+	AppToken string `json:"app_token" env:"PICOCLAW_CHANNELS_PUSHOVER_APP_TOKEN"`
+	UserKey  string `json:"user_key" env:"PICOCLAW_CHANNELS_PUSHOVER_USER_KEY"`
 }
 
 type HeartbeatConfig struct {
