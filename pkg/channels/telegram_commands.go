@@ -40,6 +40,8 @@ func (c *cmd) Help(ctx context.Context, message telego.Message) error {
 /help - Show this help message
 /show [model|channel] - Show current configuration
 /list [models|channels] - List available options
+/model [name] - View/Switch current model
+/models - List all available models and providers
 	`
 	_, err := c.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: message.Chat.ID},
