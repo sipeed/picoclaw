@@ -78,11 +78,10 @@ func truncateOutput(s string, max int) string {
 
 // BrowserSearchTool wraps `actionbook search` to find action manuals.
 type BrowserSearchTool struct {
-	headless bool
 }
 
-func NewBrowserSearchTool(headless bool) *BrowserSearchTool {
-	return &BrowserSearchTool{headless: headless}
+func NewBrowserSearchTool() *BrowserSearchTool {
+	return &BrowserSearchTool{}
 }
 
 func (t *BrowserSearchTool) Name() string { return "browser_search" }
