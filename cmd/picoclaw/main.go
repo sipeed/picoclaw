@@ -9,8 +9,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"embed"
 	"fmt"
 	"io"
+	"io/fs"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,14 +28,21 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
+	"github.com/sipeed/picoclaw/pkg/devices"
+	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/migrate"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
+
+//go:generate cp -r ../../workspace .
+//go:embed workspace
+var embeddedFiles embed.FS
 
 var (
 	version   = "dev"
@@ -227,10 +237,6 @@ func onboard() {
 	}
 
 	workspace := cfg.WorkspacePath()
-	os.MkdirAll(workspace, 0755)
-	os.MkdirAll(filepath.Join(workspace, "memory"), 0755)
-	os.MkdirAll(filepath.Join(workspace, "skills"), 0755)
-
 	createWorkspaceTemplates(workspace)
 
 	fmt.Printf("%s picoclaw is ready!\n", logo)
@@ -240,170 +246,57 @@ func onboard() {
 	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
 }
 
+func copyEmbeddedToTarget(targetDir string) error {
+	// Ensure target directory exists
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("Failed to create target directory: %w", err)
+	}
+
+	// Walk through all files in embed.FS
+	err := fs.WalkDir(embeddedFiles, "workspace", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if d.IsDir() {
+			return nil
+		}
+
+		// Read embedded file
+		data, err := embeddedFiles.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("Failed to read embedded file %s: %w", path, err)
+		}
+
+		new_path, err := filepath.Rel("workspace", path)
+		if err != nil {
+			return fmt.Errorf("Failed to get relative path for %s: %v\n", path, err)
+		}
+
+		// Build target file path
+		targetPath := filepath.Join(targetDir, new_path)
+
+		// Ensure target file's directory exists
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return fmt.Errorf("Failed to create directory %s: %w", filepath.Dir(targetPath), err)
+		}
+
+		// Write file
+		if err := os.WriteFile(targetPath, data, 0644); err != nil {
+			return fmt.Errorf("Failed to write file %s: %w", targetPath, err)
+		}
+
+		return nil
+	})
+
+	return err
+}
+
 func createWorkspaceTemplates(workspace string) {
-	templates := map[string]string{
-		"AGENTS.md": `# Agent Instructions
-
-You are a helpful AI assistant. Be concise, accurate, and friendly.
-
-## Guidelines
-
-- Always explain what you're doing before taking actions
-- Ask for clarification when request is ambiguous
-- Use tools to help accomplish tasks
-- Remember important information in your memory files
-- Be proactive and helpful
-- Learn from user feedback
-`,
-		"SOUL.md": `# Soul
-
-I am picoclaw, a lightweight AI assistant powered by AI.
-
-## Personality
-
-- Helpful and friendly
-- Concise and to the point
-- Curious and eager to learn
-- Honest and transparent
-
-## Values
-
-- Accuracy over speed
-- User privacy and safety
-- Transparency in actions
-- Continuous improvement
-`,
-		"USER.md": `# User
-
-Information about user goes here.
-
-## Preferences
-
-- Communication style: (casual/formal)
-- Timezone: (your timezone)
-- Language: (your preferred language)
-
-## Personal Information
-
-- Name: (optional)
-- Location: (optional)
-- Occupation: (optional)
-
-## Learning Goals
-
-- What the user wants to learn from AI
-- Preferred interaction style
-- Areas of interest
-`,
-		"IDENTITY.md": `# Identity
-
-## Name
-PicoClaw 🦞
-
-## Description
-Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
-
-## Version
-0.1.0
-
-## Purpose
-- Provide intelligent AI assistance with minimal resource usage
-- Support multiple LLM providers (OpenAI, Anthropic, Zhipu, etc.)
-- Enable easy customization through skills system
-- Run on minimal hardware ($10 boards, <10MB RAM)
-
-## Capabilities
-
-- Web search and content fetching
-- File system operations (read, write, edit)
-- Shell command execution
-- Multi-channel messaging (Telegram, WhatsApp, Feishu)
-- Skill-based extensibility
-- Memory and context management
-
-## Philosophy
-
-- Simplicity over complexity
-- Performance over features
-- User control and privacy
-- Transparent operation
-- Community-driven development
-
-## Goals
-
-- Provide a fast, lightweight AI assistant
-- Support offline-first operation where possible
-- Enable easy customization and extension
-- Maintain high quality responses
-- Run efficiently on constrained hardware
-
-## License
-MIT License - Free and open source
-
-## Repository
-https://github.com/sipeed/picoclaw
-
-## Contact
-Issues: https://github.com/sipeed/picoclaw/issues
-Discussions: https://github.com/sipeed/picoclaw/discussions
-
----
-
-"Every bit helps, every bit matters."
-- Picoclaw
-`,
-	}
-
-	for filename, content := range templates {
-		filePath := filepath.Join(workspace, filename)
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			os.WriteFile(filePath, []byte(content), 0644)
-			fmt.Printf("  Created %s\n", filename)
-		}
-	}
-
-	memoryDir := filepath.Join(workspace, "memory")
-	os.MkdirAll(memoryDir, 0755)
-	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
-	if _, err := os.Stat(memoryFile); os.IsNotExist(err) {
-		memoryContent := `# Long-term Memory
-
-This file stores important information that should persist across sessions.
-
-## User Information
-
-(Important facts about user)
-
-## Preferences
-
-(User preferences learned over time)
-
-## Important Notes
-
-(Things to remember)
-
-## Configuration
-
-- Model preferences
-- Channel settings
-- Skills enabled
-`
-		os.WriteFile(memoryFile, []byte(memoryContent), 0644)
-		fmt.Println("  Created memory/MEMORY.md")
-
-		skillsDir := filepath.Join(workspace, "skills")
-		if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
-			os.MkdirAll(skillsDir, 0755)
-			fmt.Println("  Created skills/")
-		}
-	}
-
-	for filename, content := range templates {
-		filePath := filepath.Join(workspace, filename)
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			os.WriteFile(filePath, []byte(content), 0644)
-			fmt.Printf("  Created %s\n", filename)
-		}
+	err := copyEmbeddedToTarget(workspace)
+	if err != nil {
+		fmt.Printf("Error copying workspace templates: %v\n", err)
 	}
 }
 
@@ -669,7 +562,7 @@ func gatewayCmd() {
 		})
 
 	// Setup cron tool and service
-	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath())
+	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.Agents.Defaults.RestrictToWorkspace)
 
 	heartbeatService := heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
@@ -700,6 +593,9 @@ func gatewayCmd() {
 		fmt.Printf("Error creating channel manager: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Inject channel manager into agent loop for command handling
+	agentLoop.SetChannelManager(channelManager)
 
 	var transcriber *voice.GroqTranscriber
 	if cfg.Providers.Groq.APIKey != "" {
@@ -751,9 +647,29 @@ func gatewayCmd() {
 	}
 	fmt.Println("✓ Heartbeat service started")
 
+	stateManager := state.NewManager(cfg.WorkspacePath())
+	deviceService := devices.NewService(devices.Config{
+		Enabled:    cfg.Devices.Enabled,
+		MonitorUSB: cfg.Devices.MonitorUSB,
+	}, stateManager)
+	deviceService.SetBus(msgBus)
+	if err := deviceService.Start(ctx); err != nil {
+		fmt.Printf("Error starting device service: %v\n", err)
+	} else if cfg.Devices.Enabled {
+		fmt.Println("✓ Device event service started")
+	}
+
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
+
+	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	go func() {
+		if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
+			logger.ErrorCF("health", "Health server error", map[string]interface{}{"error": err.Error()})
+		}
+	}()
+	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	go agentLoop.Run(ctx)
 
@@ -763,6 +679,8 @@ func gatewayCmd() {
 
 	fmt.Println("\nShutting down...")
 	cancel()
+	healthServer.Stop(context.Background())
+	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
 	agentLoop.Stop()
@@ -1069,14 +987,14 @@ func getConfigPath() string {
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
 
-func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string) *cron.CronService {
+func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool) *cron.CronService {
 	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
 
 	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
 
 	// Create and register CronTool
-	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace)
+	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict)
 	agentLoop.RegisterTool(cronTool)
 
 	// Set the onJob handler

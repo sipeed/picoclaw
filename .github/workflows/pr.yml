@@ -32,6 +32,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Run go generate
+        run: go generate ./...
+
       - name: Run go vet
         run: go vet ./...
 
@@ -46,6 +49,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      - name: Run go generate
+        run: go generate ./...
 
       - name: Run go test
         run: go test ./...

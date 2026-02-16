@@ -1,19 +1,34 @@
 package auth
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
 
+func makeJWTForClaims(t *testing.T, claims map[string]interface{}) string {
+	t.Helper()
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	payloadJSON, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatalf("marshal claims: %v", err)
+	}
+	payload := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	return header + "." + payload + ".sig"
+}
+
 func TestBuildAuthorizeURL(t *testing.T) {
 	cfg := OAuthProviderConfig{
-		Issuer:   "https://auth.example.com",
-		ClientID: "test-client-id",
-		Scopes:   "openid profile",
-		Port:     1455,
+		Issuer:     "https://auth.example.com",
+		ClientID:   "test-client-id",
+		Scopes:     "openid profile",
+		Originator: "codex_cli_rs",
+		Port:       1455,
 	}
 	pkce := PKCECodes{
 		CodeVerifier:  "test-verifier",
@@ -22,7 +37,7 @@ func TestBuildAuthorizeURL(t *testing.T) {
 
 	u := BuildAuthorizeURL(cfg, pkce, "test-state", "http://localhost:1455/auth/callback")
 
-	if !strings.HasPrefix(u, "https://auth.example.com/authorize?") {
+	if !strings.HasPrefix(u, "https://auth.example.com/oauth/authorize?") {
 		t.Errorf("URL does not start with expected prefix: %s", u)
 	}
 	if !strings.Contains(u, "client_id=test-client-id") {
@@ -39,6 +54,37 @@ func TestBuildAuthorizeURL(t *testing.T) {
 	}
 	if !strings.Contains(u, "response_type=code") {
 		t.Error("URL missing response_type")
+	}
+	if !strings.Contains(u, "id_token_add_organizations=true") {
+		t.Error("URL missing id_token_add_organizations")
+	}
+	if !strings.Contains(u, "codex_cli_simplified_flow=true") {
+		t.Error("URL missing codex_cli_simplified_flow")
+	}
+	if !strings.Contains(u, "originator=codex_cli_rs") {
+		t.Error("URL missing originator")
+	}
+}
+
+func TestBuildAuthorizeURLOpenAIExtras(t *testing.T) {
+	cfg := OpenAIOAuthConfig()
+	pkce := PKCECodes{CodeVerifier: "test-verifier", CodeChallenge: "test-challenge"}
+
+	u := BuildAuthorizeURL(cfg, pkce, "test-state", "http://localhost:1455/auth/callback")
+	parsed, err := url.Parse(u)
+	if err != nil {
+		t.Fatalf("url.Parse() error: %v", err)
+	}
+	q := parsed.Query()
+
+	if q.Get("id_token_add_organizations") != "true" {
+		t.Errorf("id_token_add_organizations = %q, want true", q.Get("id_token_add_organizations"))
+	}
+	if q.Get("codex_cli_simplified_flow") != "true" {
+		t.Errorf("codex_cli_simplified_flow = %q, want true", q.Get("codex_cli_simplified_flow"))
+	}
+	if q.Get("originator") != "codex_cli_rs" {
+		t.Errorf("originator = %q, want codex_cli_rs", q.Get("originator"))
 	}
 }
 
@@ -73,12 +119,69 @@ func TestParseTokenResponse(t *testing.T) {
 	}
 }
 
+func TestParseTokenResponseExtractsAccountIDFromIDToken(t *testing.T) {
+	idToken := makeJWTForClaims(t, map[string]interface{}{"chatgpt_account_id": "acc-id-from-id-token"})
+	resp := map[string]interface{}{
+		"access_token":  "opaque-access-token",
+		"refresh_token": "test-refresh-token",
+		"expires_in":    3600,
+		"id_token":      idToken,
+	}
+	body, _ := json.Marshal(resp)
+
+	cred, err := parseTokenResponse(body, "openai")
+	if err != nil {
+		t.Fatalf("parseTokenResponse() error: %v", err)
+	}
+	if cred.AccountID != "acc-id-from-id-token" {
+		t.Errorf("AccountID = %q, want %q", cred.AccountID, "acc-id-from-id-token")
+	}
+}
+
+func TestExtractAccountIDFromOrganizationsFallback(t *testing.T) {
+	token := makeJWTForClaims(t, map[string]interface{}{
+		"organizations": []interface{}{
+			map[string]interface{}{"id": "org_from_orgs"},
+		},
+	})
+
+	if got := extractAccountID(token); got != "org_from_orgs" {
+		t.Errorf("extractAccountID() = %q, want %q", got, "org_from_orgs")
+	}
+}
+
 func TestParseTokenResponseNoAccessToken(t *testing.T) {
 	body := []byte(`{"refresh_token": "test"}`)
 	_, err := parseTokenResponse(body, "openai")
 	if err == nil {
 		t.Error("expected error for missing access_token")
 	}
+}
+
+func TestParseTokenResponseAccountIDFromIDToken(t *testing.T) {
+	idToken := makeJWTWithAccountID("acc-from-id")
+	resp := map[string]interface{}{
+		"access_token":  "not-a-jwt",
+		"refresh_token": "test-refresh-token",
+		"expires_in":    3600,
+		"id_token":      idToken,
+	}
+	body, _ := json.Marshal(resp)
+
+	cred, err := parseTokenResponse(body, "openai")
+	if err != nil {
+		t.Fatalf("parseTokenResponse() error: %v", err)
+	}
+
+	if cred.AccountID != "acc-from-id" {
+		t.Errorf("AccountID = %q, want %q", cred.AccountID, "acc-from-id")
+	}
+}
+
+func makeJWTWithAccountID(accountID string) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"` + accountID + `"}}`))
+	return header + "." + payload + ".sig"
 }
 
 func TestExchangeCodeForTokens(t *testing.T) {
@@ -182,6 +285,37 @@ func TestRefreshAccessTokenNoRefreshToken(t *testing.T) {
 	_, err := RefreshAccessToken(cred, cfg)
 	if err == nil {
 		t.Error("expected error for missing refresh token")
+	}
+}
+
+func TestRefreshAccessTokenPreservesRefreshAndAccountID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"access_token": "new-access-token-only",
+			"expires_in":   3600,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := OAuthProviderConfig{Issuer: server.URL, ClientID: "test-client"}
+	cred := &AuthCredential{
+		AccessToken:  "old-access",
+		RefreshToken: "existing-refresh",
+		AccountID:    "acc_existing",
+		Provider:     "openai",
+		AuthMethod:   "oauth",
+	}
+
+	refreshed, err := RefreshAccessToken(cred, cfg)
+	if err != nil {
+		t.Fatalf("RefreshAccessToken() error: %v", err)
+	}
+	if refreshed.RefreshToken != "existing-refresh" {
+		t.Errorf("RefreshToken = %q, want %q", refreshed.RefreshToken, "existing-refresh")
+	}
+	if refreshed.AccountID != "acc_existing" {
+		t.Errorf("AccountID = %q, want %q", refreshed.AccountID, "acc_existing")
 	}
 }
 

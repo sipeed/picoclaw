@@ -247,3 +247,35 @@ func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 		t.Errorf("Expected success with default path '.', got IsError=true: %s", result.ForLLM)
 	}
 }
+
+// Block paths that look inside workspace but point outside via symlink.
+func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
+
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	secret := filepath.Join(root, "secret.txt")
+	if err := os.WriteFile(secret, []byte("top secret"), 0644); err != nil {
+		t.Fatalf("failed to write secret file: %v", err)
+	}
+
+	link := filepath.Join(workspace, "leak.txt")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewReadFileTool(workspace, true)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"path": link,
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected symlink escape to be blocked")
+	}
+	if !strings.Contains(result.ForLLM, "symlink resolves outside workspace") {
+		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
+	}
+}
