@@ -85,40 +85,6 @@ func printVersion() {
 	}
 }
 
-func copyDirectory(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-
-		dstPath := filepath.Join(dst, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
-		}
-
-		srcFile, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer srcFile.Close()
-
-		dstFile, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode())
-		if err != nil {
-			return err
-		}
-		defer dstFile.Close()
-
-		_, err = io.Copy(dstFile, srcFile)
-		return err
-	})
-}
-
 func main() {
 	if len(os.Args) < 2 {
 		printHelp()
@@ -1293,55 +1259,87 @@ func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
 }
 
 func skillsInstallBuiltinCmd(workspace string) {
-	builtinSkillsDir := "./picoclaw/skills"
-	workspaceSkillsDir := filepath.Join(workspace, "skills")
-
 	fmt.Printf("Copying builtin skills to workspace...\n")
 
-	skillsToInstall := []string{
-		"weather",
-		"news",
-		"stock",
-		"calculator",
+	// Get available skills from embedded FS
+	entries, err := embeddedFiles.ReadDir("workspace/skills")
+	if err != nil {
+		fmt.Printf("Error reading embedded skills: %v\n", err)
+		return
 	}
 
-	for _, skillName := range skillsToInstall {
-		builtinPath := filepath.Join(builtinSkillsDir, skillName)
-		workspacePath := filepath.Join(workspaceSkillsDir, skillName)
+	workspaceSkillsDir := filepath.Join(workspace, "skills")
+	if err := os.MkdirAll(workspaceSkillsDir, 0755); err != nil {
+		fmt.Printf("Failed to create skills directory: %v\n", err)
+		return
+	}
 
-		if _, err := os.Stat(builtinPath); err != nil {
-			fmt.Printf("⊘ Builtin skill '%s' not found: %v\n", skillName, err)
+	for _, entry := range entries {
+		if !entry.IsDir() {
 			continue
 		}
 
-		if err := os.MkdirAll(workspacePath, 0755); err != nil {
-			fmt.Printf("✗ Failed to create directory for %s: %v\n", skillName, err)
+		skillName := entry.Name()
+		skillSrcPath := filepath.Join("workspace", "skills", skillName)
+		skillDstPath := filepath.Join(workspaceSkillsDir, skillName)
+
+		// Check if skill already exists
+		if _, err := os.Stat(skillDstPath); err == nil {
+			fmt.Printf("✓ Skill '%s' already exists (skipping)\n", skillName)
 			continue
 		}
 
-		if err := copyDirectory(builtinPath, workspacePath); err != nil {
-			fmt.Printf("✗ Failed to copy %s: %v\n", skillName, err)
+		fmt.Printf("Installing skill '%s'...\n", skillName)
+		
+		if err := copyEmbeddedDir(skillSrcPath, skillDstPath); err != nil {
+			fmt.Printf("✗ Failed to install %s: %v\n", skillName, err)
+		} else {
+			fmt.Printf("✓ Installed %s\n", skillName)
 		}
 	}
 
-	fmt.Println("\n✓ All builtin skills installed!")
-	fmt.Println("Now you can use them in your workspace.")
+	fmt.Println("\nAll builtin skills processed!")
+}
+
+// copyEmbeddedDir recursively copies a directory from embedded FS to disk
+func copyEmbeddedDir(srcPath, dstPath string) error {
+	if err := os.MkdirAll(dstPath, 0755); err != nil {
+		return err
+	}
+
+	entries, err := embeddedFiles.ReadDir(srcPath)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcFile := filepath.Join(srcPath, entry.Name())
+		dstFile := filepath.Join(dstPath, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyEmbeddedDir(srcFile, dstFile); err != nil {
+				return err
+			}
+		} else {
+			data, err := embeddedFiles.ReadFile(srcFile)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(dstFile, data, 0644); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func skillsListBuiltinCmd() {
-	cfg, err := loadConfig()
-	if err != nil {
-		fmt.Printf("Error loading config: %v\n", err)
-		return
-	}
-	builtinSkillsDir := filepath.Join(filepath.Dir(cfg.WorkspacePath()), "picoclaw", "skills")
-
 	fmt.Println("\nAvailable Builtin Skills:")
 	fmt.Println("-----------------------")
 
-	entries, err := os.ReadDir(builtinSkillsDir)
+	entries, err := embeddedFiles.ReadDir("workspace/skills")
 	if err != nil {
-		fmt.Printf("Error reading builtin skills: %v\n", err)
+		fmt.Printf("Error reading embedded skills: %v\n", err)
 		return
 	}
 
@@ -1353,24 +1351,22 @@ func skillsListBuiltinCmd() {
 	for _, entry := range entries {
 		if entry.IsDir() {
 			skillName := entry.Name()
-			skillFile := filepath.Join(builtinSkillsDir, skillName, "SKILL.md")
-
 			description := "No description"
-			if _, err := os.Stat(skillFile); err == nil {
-				data, err := os.ReadFile(skillFile)
-				if err == nil {
-					content := string(data)
-					if idx := strings.Index(content, "\n"); idx > 0 {
-						firstLine := content[:idx]
-						if strings.Contains(firstLine, "description:") {
-							descLine := strings.Index(content[idx:], "\n")
-							if descLine > 0 {
-								description = strings.TrimSpace(content[idx+descLine : idx+descLine])
-							}
-						}
+			
+			// Try to read SKILL.md from embedded FS
+			skillFile := filepath.Join("workspace", "skills", skillName, "SKILL.md")
+			data, err := embeddedFiles.ReadFile(skillFile)
+			if err == nil {
+				content := string(data)
+				// Simple parsing for description
+				if idx := strings.Index(content, "description:"); idx > 0 {
+					rest := content[idx+12:] // len("description:")
+					if endIdx := strings.Index(rest, "\n"); endIdx > 0 {
+						description = strings.TrimSpace(rest[:endIdx])
 					}
 				}
 			}
+			
 			status := "✓"
 			fmt.Printf("  %s  %s\n", status, entry.Name())
 			if description != "" {
