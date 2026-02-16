@@ -93,6 +93,7 @@
 		"ChannelsConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Channel (messenger) integrations. Enable the channels you want to receive messages from.",
 			"required": [
 				"whatsapp",
 				"telegram",
@@ -123,6 +124,7 @@
 		"WhatsAppConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "WhatsApp channel integration (via a bridge service).",
 			"required": ["enabled", "bridge_url", "allow_from"],
 			"properties": {
 				"enabled": { "type": "boolean", "default": false },
@@ -133,6 +135,7 @@
 		"TelegramConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Telegram bot channel integration.",
 			"required": ["enabled", "token", "proxy", "allow_from"],
 			"properties": {
 				"enabled": { "type": "boolean", "default": false },
@@ -144,6 +147,7 @@
 		"FeishuConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Feishu / Lark (飞书 / Lark) bot channel integration.",
 			"required": [
 				"enabled",
 				"app_id",
@@ -164,6 +168,7 @@
 		"DiscordConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Discord bot channel integration.",
 			"required": ["enabled", "token", "allow_from"],
 			"properties": {
 				"enabled": { "type": "boolean", "default": false },
@@ -174,6 +179,7 @@
 		"MaixCamConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Sipeed MaixCam device channel integration.",
 			"required": ["enabled", "host", "port", "allow_from"],
 			"properties": {
 				"enabled": { "type": "boolean", "default": false },
@@ -190,6 +196,7 @@
 		"QQConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Tencent QQ (腾讯 QQ) bot/channel integration.",
 			"required": ["enabled", "app_id", "app_secret", "allow_from"],
 			"properties": {
 				"enabled": { "type": "boolean", "default": false },
@@ -201,6 +208,7 @@
 		"DingTalkConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "DingTalk / DingDing (钉钉) bot/channel integration.",
 			"required": ["enabled", "client_id", "client_secret", "allow_from"],
 			"properties": {
 				"enabled": { "type": "boolean", "default": false },
@@ -212,6 +220,7 @@
 		"SlackConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Slack bot channel integration.",
 			"required": ["enabled", "bot_token", "app_token", "allow_from"],
 			"properties": {
 				"enabled": { "type": "boolean", "default": false },
@@ -223,6 +232,7 @@
 		"LINEConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "LINE Messaging API channel integration.",
 			"required": [
 				"enabled",
 				"channel_secret",
@@ -250,6 +260,7 @@
 		"OneBotConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "OneBot (CQHTTP) compatible channel integration (often used for QQ bots via external bridges).",
 			"required": [
 				"enabled",
 				"ws_url",
@@ -274,6 +285,7 @@
 		"WebUIConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Built-in web UI channel. Serves the browser chat UI and /admin config editor over HTTP.",
 			"required": ["enabled"],
 			"properties": {
 				"enabled": { "type": "boolean", "default": true }
@@ -282,6 +294,7 @@
 		"ProvidersConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Model provider configuration. Each key enables and configures a provider integration (API key, base URL overrides, etc).",
 			"required": [
 				"anthropic",
 				"openai",
@@ -297,18 +310,54 @@
 				"github_copilot"
 			],
 			"properties": {
-				"anthropic": { "$ref": "#/$defs/ProviderConfig" },
-				"openai": { "$ref": "#/$defs/ProviderConfig" },
-				"openrouter": { "$ref": "#/$defs/ProviderConfig" },
-				"groq": { "$ref": "#/$defs/ProviderConfig" },
-				"zhipu": { "$ref": "#/$defs/ProviderConfig" },
-				"vllm": { "$ref": "#/$defs/ProviderConfig" },
-				"gemini": { "$ref": "#/$defs/ProviderConfig" },
-				"nvidia": { "$ref": "#/$defs/ProviderConfig" },
-				"moonshot": { "$ref": "#/$defs/ProviderConfig" },
-				"shengsuanyun": { "$ref": "#/$defs/ProviderConfig" },
-				"deepseek": { "$ref": "#/$defs/ProviderConfig" },
-				"github_copilot": { "$ref": "#/$defs/ProviderConfig" }
+				"anthropic": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "Anthropic (Claude) API provider."
+				},
+				"openai": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "OpenAI API provider (GPT models)."
+				},
+				"openrouter": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "OpenRouter aggregator provider (routes requests to many different model backends)."
+				},
+				"groq": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "Groq hosted inference provider (fast LLM serving)."
+				},
+				"zhipu": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "Zhipu AI (智谱AI) provider (GLM model family)."
+				},
+				"vllm": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "vLLM-compatible OpenAI-style endpoint (typically self-hosted)."
+				},
+				"gemini": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "Google Gemini API provider."
+				},
+				"nvidia": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "NVIDIA hosted model API provider (where supported)."
+				},
+				"moonshot": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "Moonshot AI provider (Kimi)."
+				},
+				"shengsuanyun": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "Shengsuanyun (生数云) provider (where supported)."
+				},
+				"deepseek": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "DeepSeek API provider."
+				},
+				"github_copilot": {
+					"allOf": [{ "$ref": "#/$defs/ProviderConfig" }],
+					"description": "GitHub Copilot provider (where supported by the integration)."
+				}
 			}
 		},
 		"ProviderConfig": {
@@ -397,10 +446,17 @@
 		"WebToolsConfig": {
 			"type": "object",
 			"additionalProperties": false,
+			"description": "Web search providers used by the web tool.",
 			"required": ["brave", "duckduckgo"],
 			"properties": {
-				"brave": { "$ref": "#/$defs/BraveConfig" },
-				"duckduckgo": { "$ref": "#/$defs/DuckDuckGoConfig" }
+				"brave": {
+					"allOf": [{ "$ref": "#/$defs/BraveConfig" }],
+					"description": "Brave Search API provider. Requires an API key."
+				},
+				"duckduckgo": {
+					"allOf": [{ "$ref": "#/$defs/DuckDuckGoConfig" }],
+					"description": "DuckDuckGo search provider. No API key required."
+				}
 			}
 		},
 		"BraveConfig": {

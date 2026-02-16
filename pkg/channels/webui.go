@@ -317,9 +317,14 @@ func (c *WebUIChannel) handleAdminConfig(w http.ResponseWriter, r *http.Request)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		masked, err := maskConfigJSON(raw)
+		if err != nil {
+			http.Error(w, "Failed to mask config", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(raw)
+		w.Write(masked)
 		return
 	}
 
@@ -336,7 +341,18 @@ func (c *WebUIChannel) handleAdminConfig(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Empty body", http.StatusBadRequest)
 		return
 	}
-	if err := c.configUpdateFn(body); err != nil {
+
+	mergedRaw := body
+	if c.configReadFn != nil {
+		oldRaw, rerr := c.configReadFn()
+		if rerr == nil {
+			if out, merr := mergePreserveMaskedSecrets(oldRaw, body); merr == nil {
+				mergedRaw = out
+			}
+		}
+	}
+
+	if err := c.configUpdateFn(mergedRaw); err != nil {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
 		if strings.Contains(lower, "config is not writable") {
@@ -348,6 +364,106 @@ func (c *WebUIChannel) handleAdminConfig(w http.ResponseWriter, r *http.Request)
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("ok"))
+}
+
+const maskedSentinel = "********"
+
+func maskStringPrefix8(s string) string {
+	if s == "" {
+		return s
+	}
+	n := 8
+	if len(s) < n {
+		n = len(s)
+	}
+	return s[:n] + maskedSentinel
+}
+
+func isSensitiveKey(k string) bool {
+	switch strings.ToLower(k) {
+	case "api_key", "token", "admin_token", "app_secret", "client_secret", "channel_secret", "channel_access_token", "access_token", "bot_token", "app_token", "encrypt_key", "verification_token":
+		return true
+	default:
+		return false
+	}
+}
+
+func maskConfigJSON(raw []byte) ([]byte, error) {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, err
+	}
+	maskAny(v)
+	return json.MarshalIndent(v, "", "  ")
+}
+
+func maskAny(v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, vv := range x {
+			if isSensitiveKey(k) {
+				if s, ok := vv.(string); ok && s != "" {
+					x[k] = maskStringPrefix8(s)
+					continue
+				}
+			}
+			maskAny(vv)
+		}
+	case []any:
+		for i := range x {
+			maskAny(x[i])
+		}
+	default:
+		return
+	}
+}
+
+func mergePreserveMaskedSecrets(oldRaw, newRaw []byte) ([]byte, error) {
+	var oldV any
+	var newV any
+	if err := json.Unmarshal(oldRaw, &oldV); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(newRaw, &newV); err != nil {
+		return nil, err
+	}
+	mergeAny(oldV, newV)
+	return json.MarshalIndent(newV, "", "  ")
+}
+
+func mergeAny(oldV any, newV any) {
+	oldMap, okOld := oldV.(map[string]any)
+	newMap, okNew := newV.(map[string]any)
+	if okOld && okNew {
+		for k, nv := range newMap {
+			ov, ok := oldMap[k]
+			if !ok {
+				continue
+			}
+			if isSensitiveKey(k) {
+				if s, ok := nv.(string); ok && strings.Contains(s, maskedSentinel) {
+					if os, ok := ov.(string); ok {
+						newMap[k] = os
+						continue
+					}
+				}
+			}
+			mergeAny(ov, nv)
+		}
+		return
+	}
+
+	oldArr, okOldArr := oldV.([]any)
+	newArr, okNewArr := newV.([]any)
+	if okOldArr && okNewArr {
+		min := len(oldArr)
+		if len(newArr) < min {
+			min = len(newArr)
+		}
+		for i := 0; i < min; i++ {
+			mergeAny(oldArr[i], newArr[i])
+		}
+	}
 }
 
 func (c *WebUIChannel) handleAdminSchema(w http.ResponseWriter, r *http.Request) {
