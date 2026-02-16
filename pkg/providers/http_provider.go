@@ -198,6 +198,15 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 		content = choice.Message.ReasoningContent
 	}
 
+	// Strip special tokens that some models include in their output
+	content = strings.TrimSpace(content)
+	specialTokens := []string{"<|im_end|>", "<|endoftext|>", "</think_fast>", "<|end|>"}
+	for _, token := range specialTokens {
+		content = strings.TrimSuffix(content, token)
+		content = strings.TrimPrefix(content, token)
+		content = strings.TrimSpace(content)
+	}
+
 	return &LLMResponse{
 		Content:      content,
 		ToolCalls:    toolCalls,
