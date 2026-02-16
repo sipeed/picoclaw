@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -97,6 +98,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		cmd = exec.CommandContext(cmdCtx, "powershell", "-NoProfile", "-NonInteractive", "-Command", command)
 	} else {
 		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	}
 	if cwd != "" {
 		cmd.Dir = cwd
@@ -106,7 +108,31 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-cmdCtx.Done():
+		if cmd.Process != nil {
+			if runtime.GOOS != "windows" {
+				if pgid, pgErr := syscall.Getpgid(cmd.Process.Pid); pgErr == nil {
+					_ = syscall.Kill(-pgid, syscall.SIGKILL)
+				} else {
+					_ = cmd.Process.Kill()
+				}
+			} else {
+				_ = cmd.Process.Kill()
+			}
+		}
+		err = <-done
+	}
+
 	output := stdout.String()
 	if stderr.Len() > 0 {
 		output += "\nSTDERR:\n" + stderr.String()
