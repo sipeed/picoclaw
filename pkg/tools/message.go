@@ -23,7 +23,7 @@ func (t *MessageTool) Name() string {
 }
 
 func (t *MessageTool) Description() string {
-	return "Send a message to user on a chat channel. Use this when you want to communicate something."
+	return "Send a message to user on a chat channel. Use this when you want to communicate something. You can also attach local files (images, documents, audio, video) using the media parameter — the files will be delivered natively through the channel."
 }
 
 func (t *MessageTool) Parameters() map[string]interface{} {
