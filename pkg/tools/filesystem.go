@@ -29,11 +29,52 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 		}
 	}
 
-	if restrict && !strings.HasPrefix(absPath, absWorkspace) {
-		return "", fmt.Errorf("access denied: path is outside the workspace")
+	if restrict {
+		if !isWithinWorkspace(absPath, absWorkspace) {
+			return "", fmt.Errorf("access denied: path is outside the workspace")
+		}
+
+		workspaceReal := absWorkspace
+		if resolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
+			workspaceReal = resolved
+		}
+
+		if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+			if !isWithinWorkspace(resolved, workspaceReal) {
+				return "", fmt.Errorf("access denied: symlink resolves outside workspace")
+			}
+		} else if os.IsNotExist(err) {
+			if parentResolved, err := resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
+				if !isWithinWorkspace(parentResolved, workspaceReal) {
+					return "", fmt.Errorf("access denied: symlink resolves outside workspace")
+				}
+			} else if !os.IsNotExist(err) {
+				return "", fmt.Errorf("failed to resolve path: %w", err)
+			}
+		} else {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
 	}
 
 	return absPath, nil
+}
+
+func resolveExistingAncestor(path string) (string, error) {
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			return resolved, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		if filepath.Dir(current) == current {
+			return "", os.ErrNotExist
+		}
+	}
+}
+
+func isWithinWorkspace(candidate, workspace string) bool {
+	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
 
 type ReadFileTool struct {
