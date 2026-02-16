@@ -76,7 +76,7 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult(fmt.Sprintf("file not found: %s", path))
 	}
 
-	content, err := os.ReadFile(resolvedPath)
+	content, err := safeReadFile(resolvedPath, t.allowedDir, t.restrict)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
@@ -94,7 +94,7 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{})
 
 	newContent := strings.Replace(contentStr, oldText, newText, 1)
 
-	if err := os.WriteFile(resolvedPath, []byte(newContent), 0644); err != nil {
+	if err := safeWriteFile(resolvedPath, []byte(newContent), 0644, t.allowedDir, t.restrict); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 
@@ -151,7 +151,7 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]interface{
 		return ErrorResult(err.Error())
 	}
 
-	f, err := os.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := safeOpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644, t.workspace, t.restrict)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to open file: %v", err))
 	}

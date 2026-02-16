@@ -279,3 +279,115 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
 	}
 }
+
+// TestFilesystemTool_WriteFile_RejectsSymlinkEscape verifies that writing via a symlink
+// that points outside the workspace is blocked (TOCTOU protection).
+func TestFilesystemTool_WriteFile_RejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	target := filepath.Join(root, "outside.txt")
+	if err := os.WriteFile(target, []byte("original"), 0644); err != nil {
+		t.Fatalf("failed to write target file: %v", err)
+	}
+
+	link := filepath.Join(workspace, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewWriteFileTool(workspace, true)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"path":    link,
+		"content": "hacked",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected symlink escape to be blocked for write")
+	}
+	if !strings.Contains(result.ForLLM, "symlink resolves outside workspace") {
+		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
+	}
+
+	// Verify original content was not overwritten
+	content, _ := os.ReadFile(target)
+	if string(content) != "original" {
+		t.Fatalf("expected original content to be preserved, got: %s", string(content))
+	}
+}
+
+// TestFilesystemTool_EditFile_RejectsSymlinkEscape verifies that editing via a symlink
+// that points outside the workspace is blocked (TOCTOU protection).
+func TestFilesystemTool_EditFile_RejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	target := filepath.Join(root, "outside.txt")
+	if err := os.WriteFile(target, []byte("original content"), 0644); err != nil {
+		t.Fatalf("failed to write target file: %v", err)
+	}
+
+	link := filepath.Join(workspace, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewEditFileTool(workspace, true)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"path":     link,
+		"old_text": "original",
+		"new_text": "hacked",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected symlink escape to be blocked for edit")
+	}
+
+	// Verify original content was not modified
+	content, _ := os.ReadFile(target)
+	if string(content) != "original content" {
+		t.Fatalf("expected original content to be preserved, got: %s", string(content))
+	}
+}
+
+// TestFilesystemTool_AppendFile_RejectsSymlinkEscape verifies that appending via a symlink
+// that points outside the workspace is blocked (TOCTOU protection).
+func TestFilesystemTool_AppendFile_RejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	target := filepath.Join(root, "outside.txt")
+	if err := os.WriteFile(target, []byte("original"), 0644); err != nil {
+		t.Fatalf("failed to write target file: %v", err)
+	}
+
+	link := filepath.Join(workspace, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewAppendFileTool(workspace, true)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"path":    link,
+		"content": "appended",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected symlink escape to be blocked for append")
+	}
+
+	// Verify original content was not modified
+	content, _ := os.ReadFile(target)
+	if string(content) != "original" {
+		t.Fatalf("expected original content to be preserved, got: %s", string(content))
+	}
+}

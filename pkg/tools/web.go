@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -266,7 +267,8 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 }
 
 type WebFetchTool struct {
-	maxChars int
+	maxChars       int
+	allowLoopback  bool
 }
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {
@@ -304,6 +306,47 @@ func (t *WebFetchTool) Parameters() map[string]interface{} {
 	}
 }
 
+func (t *WebFetchTool) setAllowLoopback(allow bool) {
+	t.allowLoopback = allow
+}
+
+// isBlockedHost returns true if the hostname resolves to a private/internal IP.
+func (t *WebFetchTool) isBlockedHost(hostname string) bool {
+	var ips []net.IP
+
+	if ip := net.ParseIP(hostname); ip != nil {
+		ips = append(ips, ip)
+	} else {
+		addrs, err := net.LookupHost(hostname)
+		if err != nil {
+			// If we can't resolve, block by default for safety
+			return true
+		}
+		for _, addr := range addrs {
+			if ip := net.ParseIP(addr); ip != nil {
+				ips = append(ips, ip)
+			}
+		}
+	}
+
+	for _, ip := range ips {
+		if ip.IsLoopback() && !t.allowLoopback {
+			return true
+		}
+		if ip.Equal(net.IPv4zero) {
+			return true
+		}
+		if ip.IsLinkLocalUnicast() {
+			return true
+		}
+		if ip.IsPrivate() {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	urlStr, ok := args["url"].(string)
 	if !ok {
@@ -321,6 +364,10 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 
 	if parsedURL.Host == "" {
 		return ErrorResult("missing domain in URL")
+	}
+
+	if t.isBlockedHost(parsedURL.Hostname()) {
+		return ErrorResult("URL blocked: requests to internal/private networks are not allowed")
 	}
 
 	maxChars := t.maxChars

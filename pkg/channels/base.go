@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 type Channel interface {
@@ -26,6 +27,11 @@ type BaseChannel struct {
 }
 
 func NewBaseChannel(name string, config interface{}, bus *bus.MessageBus, allowList []string) *BaseChannel {
+	if len(allowList) == 0 {
+		logger.WarnCF("channel", "Channel has empty allow_from: all messages will be rejected until configured", map[string]interface{}{
+			"channel": name,
+		})
+	}
 	return &BaseChannel{
 		config:    config,
 		bus:       bus,
@@ -45,7 +51,7 @@ func (c *BaseChannel) IsRunning() bool {
 
 func (c *BaseChannel) IsAllowed(senderID string) bool {
 	if len(c.allowList) == 0 {
-		return true
+		return false
 	}
 
 	// Extract parts from compound senderID like "123456|username"
@@ -84,6 +90,11 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 
 func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []string, metadata map[string]string) {
 	if !c.IsAllowed(senderID) {
+		logger.WarnCF("channel", "Message rejected: sender not in allow_from list", map[string]interface{}{
+			"channel":   c.name,
+			"sender_id": senderID,
+			"chat_id":   chatID,
+		})
 		return
 	}
 
