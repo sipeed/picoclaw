@@ -1,0 +1,185 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/sipeed/picoclaw/pkg/skills"
+)
+
+// InstallSkillTool allows the LLM agent to install skills from registries.
+// It shares the same RegistryManager that FindSkillsTool uses,
+// so all registries configured in config are available for installation.
+type InstallSkillTool struct {
+	registryMgr *skills.RegistryManager
+	workspace   string
+}
+
+// NewInstallSkillTool creates a new InstallSkillTool.
+// registryMgr is the shared registry manager (same instance as FindSkillsTool).
+// workspace is the root workspace directory; skills install to {workspace}/skills/{slug}/.
+func NewInstallSkillTool(registryMgr *skills.RegistryManager, workspace string) *InstallSkillTool {
+	return &InstallSkillTool{
+		registryMgr: registryMgr,
+		workspace:   workspace,
+	}
+}
+
+func (t *InstallSkillTool) Name() string {
+	return "install_skill"
+}
+
+func (t *InstallSkillTool) Description() string {
+	return "Install a skill from a registry by slug. Downloads and extracts the skill into the workspace. Use find_skills first to discover available skills."
+}
+
+func (t *InstallSkillTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"slug": map[string]interface{}{
+				"type":        "string",
+				"description": "The unique slug of the skill to install (e.g., 'github', 'docker-compose')",
+			},
+			"version": map[string]interface{}{
+				"type":        "string",
+				"description": "Specific version to install (optional, defaults to latest)",
+			},
+			"registry": map[string]interface{}{
+				"type":        "string",
+				"description": "Registry to install from (required, e.g., 'clawhub')",
+			},
+			"force": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Force reinstall if skill already exists (default false)",
+			},
+		},
+		"required": []string{"slug", "registry"},
+	}
+}
+
+func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+	slug, ok := args["slug"].(string)
+	if !ok || strings.TrimSpace(slug) == "" {
+		return ErrorResult("slug is required and must be a non-empty string")
+	}
+
+	slug = strings.TrimSpace(slug)
+
+	// Validate slug safety.
+	if strings.ContainsAny(slug, "/\\") || strings.Contains(slug, "..") {
+		return ErrorResult(fmt.Sprintf("invalid slug: %q (must not contain path separators or '..')", slug))
+	}
+
+	version, _ := args["version"].(string)
+	registryName, ok := args["registry"].(string)
+	if !ok || strings.TrimSpace(registryName) == "" {
+		return ErrorResult("registry is required")
+	}
+	registryName = strings.TrimSpace(registryName)
+
+	force, _ := args["force"].(bool)
+
+	// Check if already installed.
+	skillsDir := filepath.Join(t.workspace, "skills")
+	targetDir := filepath.Join(skillsDir, slug)
+
+	if !force {
+		if _, err := os.Stat(targetDir); err == nil {
+			return ErrorResult(fmt.Sprintf("skill %q already installed at %s. Use force=true to reinstall.", slug, targetDir))
+		}
+	} else {
+		// Force: remove existing if present.
+		os.RemoveAll(targetDir)
+	}
+
+	// Resolve which registry to use.
+	registry := t.registryMgr.GetRegistry(registryName)
+	if registry == nil {
+		return ErrorResult(fmt.Sprintf("registry %q not found", registryName))
+	}
+
+	// Fetch skill metadata (moderation checks).
+	meta, err := registry.GetSkillMeta(ctx, slug)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("failed to fetch metadata for %q: %v", slug, err))
+	}
+
+	// Moderation: block malware.
+	if meta.IsMalwareBlocked {
+		return ErrorResult(fmt.Sprintf("skill %q is flagged as malicious and cannot be installed", slug))
+	}
+
+	// Resolve version.
+	installVersion := version
+	if installVersion == "" {
+		installVersion = meta.LatestVersion
+	}
+	if installVersion == "" {
+		return ErrorResult(fmt.Sprintf("could not resolve version for %q", slug))
+	}
+
+	// Ensure skills directory exists.
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to create skills directory: %v", err))
+	}
+
+	// Download and extract.
+	if err := registry.DownloadAndExtract(ctx, slug, installVersion, targetDir); err != nil {
+		// Clean up partial install.
+		os.RemoveAll(targetDir)
+		return ErrorResult(fmt.Sprintf("failed to install %q: %v", slug, err))
+	}
+
+	// Write origin metadata.
+	if err := writeOriginMeta(targetDir, registry.Name(), slug, installVersion); err != nil {
+		// Non-fatal: skill is installed, just origin tracking failed.
+		_ = err
+	}
+
+	// Build result with moderation warning if suspicious.
+	var result string
+	if meta.IsSuspicious {
+		result = fmt.Sprintf("⚠️ Warning: skill %q is flagged as suspicious (may contain risky patterns).\n\n", slug)
+	}
+	result += fmt.Sprintf("Successfully installed skill %q v%s from %s registry.\nLocation: %s\n",
+		slug, installVersion, registry.Name(), targetDir)
+
+	if meta.Summary != "" {
+		result += fmt.Sprintf("Description: %s\n", meta.Summary)
+	}
+	result += "\nThe skill is now available and can be loaded in the current session."
+
+	return SilentResult(result)
+}
+
+// originMeta tracks which registry a skill was installed from.
+type originMeta struct {
+	Version          int    `json:"version"`
+	Registry         string `json:"registry"`
+	Slug             string `json:"slug"`
+	InstalledVersion string `json:"installed_version"`
+	InstalledAt      int64  `json:"installed_at"`
+}
+
+func writeOriginMeta(targetDir, registryName, slug, version string) error {
+	meta := originMeta{
+		Version:          1,
+		Registry:         registryName,
+		Slug:             slug,
+		InstalledVersion: version,
+		InstalledAt:      time.Now().UnixMilli(),
+	}
+
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath.Join(targetDir, ".clawhub-origin.json"), data, 0644)
+}

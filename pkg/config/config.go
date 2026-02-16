@@ -212,7 +212,25 @@ type WebToolsConfig struct {
 }
 
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web    WebToolsConfig    `json:"web"`
+	Skills SkillsToolsConfig `json:"skills"`
+}
+
+type SkillsToolsConfig struct {
+	Registries SkillsRegistriesConfig `json:"registries"`
+}
+
+type SkillsRegistriesConfig struct {
+	ClawHub ClawHubRegistryConfig `json:"clawhub"`
+}
+
+type ClawHubRegistryConfig struct {
+	Enabled      bool   `json:"enabled" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_ENABLED"`
+	BaseURL      string `json:"base_url" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_BASE_URL"`
+	AuthToken    string `json:"auth_token" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_AUTH_TOKEN"`
+	SearchPath   string `json:"search_path" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SEARCH_PATH"`
+	SkillsPath   string `json:"skills_path" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"`
+	DownloadPath string `json:"download_path" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_DOWNLOAD_PATH"`
 }
 
 func DefaultConfig() *Config {
@@ -320,6 +338,14 @@ func DefaultConfig() *Config {
 				DuckDuckGo: DuckDuckGoConfig{
 					Enabled:    true,
 					MaxResults: 5,
+				},
+			},
+			Skills: SkillsToolsConfig{
+				Registries: SkillsRegistriesConfig{
+					ClawHub: ClawHubRegistryConfig{
+						Enabled: true,
+						BaseURL: "https://clawhub.ai",
+					},
 				},
 			},
 		},

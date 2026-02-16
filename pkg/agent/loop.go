@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
+	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -100,6 +101,21 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 		return nil
 	})
 	registry.Register(messageTool)
+
+	// Skill discovery and installation tools
+	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
+		ClawHub: skills.ClawHubConfig{
+			Enabled:      cfg.Tools.Skills.Registries.ClawHub.Enabled,
+			BaseURL:      cfg.Tools.Skills.Registries.ClawHub.BaseURL,
+			AuthToken:    cfg.Tools.Skills.Registries.ClawHub.AuthToken,
+			SearchPath:   cfg.Tools.Skills.Registries.ClawHub.SearchPath,
+			SkillsPath:   cfg.Tools.Skills.Registries.ClawHub.SkillsPath,
+			DownloadPath: cfg.Tools.Skills.Registries.ClawHub.DownloadPath,
+		},
+	})
+	searchCache := skills.NewSearchCache(50, 5*time.Minute)
+	registry.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
+	registry.Register(tools.NewInstallSkillTool(registryMgr, workspace))
 
 	return registry
 }
