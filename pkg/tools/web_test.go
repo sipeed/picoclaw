@@ -19,6 +19,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	defer server.Close()
 
 	tool := NewWebFetchTool(50000)
+	tool.setAllowLoopback(true)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -55,6 +56,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	defer server.Close()
 
 	tool := NewWebFetchTool(50000)
+	tool.setAllowLoopback(true)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -146,6 +148,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	defer server.Close()
 
 	tool := NewWebFetchTool(1000) // Limit to 1000 chars
+	tool.setAllowLoopback(true)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -211,6 +214,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	defer server.Close()
 
 	tool := NewWebFetchTool(50000)
+	tool.setAllowLoopback(true)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -252,5 +256,39 @@ func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	// Should mention missing domain
 	if !strings.Contains(result.ForLLM, "domain") && !strings.Contains(result.ForUser, "domain") {
 		t.Errorf("Expected domain error message, got ForLLM: %s", result.ForLLM)
+	}
+}
+
+// TestWebFetchTool_SSRFBlocking verifies that requests to internal/private networks are blocked
+func TestWebFetchTool_SSRFBlocking(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{"loopback IPv4", "http://127.0.0.1/secret"},
+		{"localhost", "http://localhost/admin"},
+		{"cloud metadata", "http://169.254.169.254/latest/meta-data/"},
+		{"loopback IPv6", "http://[::1]/internal"},
+		{"private 10.x", "http://10.0.0.1/internal"},
+		{"private 192.168.x", "http://192.168.1.1/admin"},
+		{"private 172.16.x", "http://172.16.0.1/internal"},
+	}
+
+	tool := NewWebFetchTool(50000)
+	ctx := context.Background()
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			args := map[string]interface{}{
+				"url": tc.url,
+			}
+			result := tool.Execute(ctx, args)
+			if !result.IsError {
+				t.Errorf("Expected SSRF block for %s, but request was allowed", tc.url)
+			}
+			if !strings.Contains(result.ForLLM, "URL blocked") {
+				t.Errorf("Expected 'URL blocked' message for %s, got: %s", tc.url, result.ForLLM)
+			}
+		})
 	}
 }

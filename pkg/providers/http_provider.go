@@ -19,6 +19,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 type HTTPProvider struct {
@@ -39,6 +40,14 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 				Proxy: http.ProxyURL(proxyURL),
 			}
 		}
+	}
+
+	if strings.HasPrefix(apiBase, "http://") &&
+		!strings.Contains(apiBase, "localhost") &&
+		!strings.Contains(apiBase, "127.0.0.1") {
+		logger.WarnCF("provider", "API base uses plain HTTP — API keys may be transmitted without encryption", map[string]interface{}{
+			"api_base": apiBase,
+		})
 	}
 
 	return &HTTPProvider{
