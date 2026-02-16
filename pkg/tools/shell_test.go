@@ -133,6 +133,16 @@ func TestShellTool_DangerousCommand(t *testing.T) {
 	}
 }
 
+func TestShellTool_BlocksMetaCharacters(t *testing.T) {
+	tool := NewExecTool("", false)
+	ctx := context.Background()
+
+	result := tool.Execute(ctx, map[string]interface{}{"command": "echo ok && whoami"})
+	if !result.IsError {
+		t.Fatalf("expected meta-character command to be blocked")
+	}
+}
+
 // TestShellTool_MissingCommand verifies error handling for missing command
 func TestShellTool_MissingCommand(t *testing.T) {
 	tool := NewExecTool("", false)
@@ -154,16 +164,13 @@ func TestShellTool_StderrCapture(t *testing.T) {
 
 	ctx := context.Background()
 	args := map[string]interface{}{
-		"command": "sh -c 'echo stdout; echo stderr >&2'",
+		"command": "ls /nonexistent_directory_for_stderr_test",
 	}
 
 	result := tool.Execute(ctx, args)
 
 	// Both stdout and stderr should be in output
-	if !strings.Contains(result.ForLLM, "stdout") {
-		t.Errorf("Expected stdout in output, got: %s", result.ForLLM)
-	}
-	if !strings.Contains(result.ForLLM, "stderr") {
+	if !strings.Contains(result.ForLLM, "STDERR") {
 		t.Errorf("Expected stderr in output, got: %s", result.ForLLM)
 	}
 }
@@ -206,5 +213,20 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 
 	if !strings.Contains(result.ForLLM, "blocked") && !strings.Contains(result.ForUser, "blocked") {
 		t.Errorf("Expected 'blocked' message for path traversal, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
+	}
+}
+
+func TestShellTool_RestrictToWorkspaceAbsolutePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"command": "cat /etc/hosts",
+	}
+
+	result := tool.Execute(ctx, args)
+	if !result.IsError {
+		t.Fatalf("expected absolute path outside workspace to be blocked")
 	}
 }

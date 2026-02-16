@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type AuthCredential struct {
@@ -62,7 +64,7 @@ func LoadStore() (*AuthStore, error) {
 func SaveStore(store *AuthStore) error {
 	path := authFilePath()
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
@@ -70,7 +72,7 @@ func SaveStore(store *AuthStore) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return utils.WriteFileAtomic(path, data, 0600, 0700)
 }
 
 func GetCredential(provider string) (*AuthCredential, error) {

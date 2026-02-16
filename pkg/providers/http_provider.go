@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,6 +26,7 @@ type HTTPProvider struct {
 	apiKey     string
 	apiBase    string
 	httpClient *http.Client
+	maxRetries int
 }
 
 func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
@@ -45,6 +47,7 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 		apiKey:     apiKey,
 		apiBase:    strings.TrimRight(apiBase, "/"),
 		httpClient: client,
+		maxRetries: 3,
 	}
 }
 
@@ -94,26 +97,39 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	if len(jsonData) > 1_000_000 {
+		return nil, fmt.Errorf("request payload too large")
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	}
+	var resp *http.Response
+	for attempt := 0; attempt <= p.maxRetries; attempt++ {
+		req, reqErr := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+		if reqErr != nil {
+			return nil, fmt.Errorf("failed to create request: %w", reqErr)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if p.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
 
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		resp, err = p.httpClient.Do(req)
+		if err == nil {
+			break
+		}
+		if attempt == p.maxRetries {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+		time.Sleep(time.Duration(math.Pow(2, float64(attempt))) * 200 * time.Millisecond)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4_000_000))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode >= 500 && resp.StatusCode <= 599 {
+		return nil, fmt.Errorf("upstream temporary failure: status %d", resp.StatusCode)
 	}
 
 	if resp.StatusCode != http.StatusOK {

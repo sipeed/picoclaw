@@ -10,10 +10,10 @@ func TestBaseChannelIsAllowed(t *testing.T) {
 		want      bool
 	}{
 		{
-			name:      "empty allowlist allows all",
+			name:      "empty allowlist denies by default",
 			allowList: nil,
 			senderID:  "anyone",
-			want:      true,
+			want:      false,
 		},
 		{
 			name:      "compound sender matches numeric allowlist",

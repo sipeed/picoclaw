@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type CronSchedule struct {
@@ -331,7 +332,7 @@ func (cs *CronService) loadStore() error {
 
 func (cs *CronService) saveStoreUnsafe() error {
 	dir := filepath.Dir(cs.storePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
@@ -340,7 +341,7 @@ func (cs *CronService) saveStoreUnsafe() error {
 		return err
 	}
 
-	return os.WriteFile(cs.storePath, data, 0644)
+	return utils.WriteFileAtomic(cs.storePath, data, 0600, 0700)
 }
 
 func (cs *CronService) AddJob(name string, schedule CronSchedule, message string, deliver bool, channel, to string) (*CronJob, error) {

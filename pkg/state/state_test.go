@@ -40,6 +40,11 @@ func TestAtomicSave(t *testing.T) {
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
 		t.Error("Expected state file to exist")
 	}
+	if info, err := os.Stat(stateFile); err == nil {
+		if info.Mode().Perm() != 0600 {
+			t.Fatalf("expected state file mode 0600, got %o", info.Mode().Perm())
+		}
+	}
 
 	// Create a new manager to verify persistence
 	sm2 := NewManager(tmpDir)

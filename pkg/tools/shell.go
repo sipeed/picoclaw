@@ -31,6 +31,7 @@ func NewExecTool(workingDir string, restrict bool) *ExecTool {
 		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
 		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
 		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
+		regexp.MustCompile(`&&|\|\||;|` + "`" + `|\$\(|\||>|<`),
 	}
 
 	return &ExecTool{

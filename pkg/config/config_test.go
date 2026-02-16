@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -64,7 +66,7 @@ func TestDefaultConfig_Temperature(t *testing.T) {
 func TestDefaultConfig_Gateway(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -167,7 +169,7 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.MaxToolIterations == 0 {
 		t.Error("MaxToolIterations should not be zero")
 	}
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -175,5 +177,20 @@ func TestConfig_Complete(t *testing.T) {
 	}
 	if !cfg.Heartbeat.Enabled {
 		t.Error("Heartbeat should be enabled by default")
+	}
+}
+
+func TestSaveConfigPermissions(t *testing.T) {
+	cfg := DefaultConfig()
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat config: %v", err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("expected 0600, got %o", info.Mode().Perm())
 	}
 }

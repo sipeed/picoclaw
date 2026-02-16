@@ -353,7 +353,7 @@ picoclaw gateway
 }
 ```
 
-> Set `allow_from` to empty to allow all users, or specify QQ numbers to restrict access.
+> `allow_from` is deny-by-default. You must explicitly list allowed users/channels.
 
 **3. Run**
 
@@ -387,7 +387,7 @@ picoclaw gateway
 }
 ```
 
-> Set `allow_from` to empty to allow all users, or specify QQ numbers to restrict access.
+> `allow_from` is deny-by-default. You must explicitly list allowed users/channels.
 
 **3. Run**
 
@@ -415,7 +415,7 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
+      "webhook_host": "127.0.0.1",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
@@ -513,7 +513,7 @@ When `restrict_to_workspace: true`, the following tools are sandboxed:
 
 #### Additional Exec Protection
 
-Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous commands:
+By default, `exec` blocks shell metacharacters and dangerous command patterns:
 
 * `rm -rf`, `del /f`, `rmdir /s` — Bulk deletion
 * `format`, `mkfs`, `diskpart` — Disk formatting
@@ -521,6 +521,63 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 * Writing to `/dev/sd[a-z]` — Direct disk writes
 * `shutdown`, `reboot`, `poweroff` — System shutdown
 * Fork bomb `:(){ :|:& };:`
+
+
+### Secrets Management (Hardening)
+
+- Never commit API keys in `config.json`, docs, or source code.
+- Primary source for OpenAI key: `OPENAI_API_KEY` environment variable.
+- Optional local-dev source: `.secrets/local.env` (auto-loaded if present, ignored by git).
+- Optional Docker secret file source: `OPENAI_API_KEY_FILE=/run/secrets/openai_api_key`.
+- Model override: `OPENAI_MODEL` (default from config, recommended `gpt-4o-mini`).
+
+```bash
+mkdir -p .secrets
+printf 'OPENAI_API_KEY=...\nOPENAI_MODEL=gpt-4o-mini\n' > .secrets/local.env
+chmod 600 .secrets/local.env
+```
+
+### GitHub Actions Secrets
+
+1. Go to repository **Settings → Secrets and variables → Actions**.
+2. Add `OPENAI_API_KEY`.
+3. In workflow jobs, expose it as env:
+
+```yaml
+env:
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
+
+### Secret Leak Prevention
+
+- CI now runs `gitleaks` on PRs/pushes.
+- CI also fails if tracked files contain `sk-...` key-like patterns (excluding README examples).
+- Recommended local pre-commit:
+
+```bash
+pipx install pre-commit
+pre-commit install
+# or run directly
+gitleaks detect --source . --no-git
+```
+
+### Hardened Docker Run
+
+Use `Dockerfile.hardened` and `docker-compose.hardened.yml`:
+
+```bash
+docker build -f Dockerfile.hardened -t picoclaw:hardened .
+docker run --rm \
+  --user 1000:1000 \
+  --read-only \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  -v "$PWD/config/config.json:/home/picoclaw/.picoclaw/config.json:ro" \
+  -v picoclaw-workspace:/home/picoclaw/.picoclaw/workspace \
+  picoclaw:hardened gateway
+```
 
 #### Error Examples
 
@@ -711,7 +768,7 @@ picoclaw agent -m "Hello"
   },
   "providers": {
     "openrouter": {
-      "api_key": "sk-or-v1-xxx"
+      "api_key": "${OPENROUTER_API_KEY}"
     },
     "groq": {
       "api_key": "gsk_xxx"

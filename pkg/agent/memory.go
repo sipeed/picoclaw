@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // MemoryStore manages persistent memory for the agent.
@@ -29,7 +31,7 @@ func NewMemoryStore(workspace string) *MemoryStore {
 	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
 
 	// Ensure memory directory exists
-	os.MkdirAll(memoryDir, 0755)
+	os.MkdirAll(memoryDir, 0700)
 
 	return &MemoryStore{
 		workspace:  workspace,
@@ -57,7 +59,7 @@ func (ms *MemoryStore) ReadLongTerm() string {
 
 // WriteLongTerm writes content to the long-term memory file (MEMORY.md).
 func (ms *MemoryStore) WriteLongTerm(content string) error {
-	return os.WriteFile(ms.memoryFile, []byte(content), 0644)
+	return utils.WriteFileAtomic(ms.memoryFile, []byte(content), 0600, 0700)
 }
 
 // ReadToday reads today's daily note.
@@ -77,7 +79,7 @@ func (ms *MemoryStore) AppendToday(content string) error {
 
 	// Ensure month directory exists
 	monthDir := filepath.Dir(todayFile)
-	os.MkdirAll(monthDir, 0755)
+	os.MkdirAll(monthDir, 0700)
 
 	var existingContent string
 	if data, err := os.ReadFile(todayFile); err == nil {
@@ -94,7 +96,7 @@ func (ms *MemoryStore) AppendToday(content string) error {
 		newContent = existingContent + "\n" + content
 	}
 
-	return os.WriteFile(todayFile, []byte(newContent), 0644)
+	return utils.WriteFileAtomic(todayFile, []byte(newContent), 0600, 0700)
 }
 
 // GetRecentDailyNotes returns daily notes from the last N days.

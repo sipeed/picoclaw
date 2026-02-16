@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 )
@@ -23,6 +25,8 @@ type BaseChannel struct {
 	running   bool
 	name      string
 	allowList []string
+	rateMu    sync.Mutex
+	rateMap   map[string]time.Time
 }
 
 func NewBaseChannel(name string, config interface{}, bus *bus.MessageBus, allowList []string) *BaseChannel {
@@ -32,6 +36,7 @@ func NewBaseChannel(name string, config interface{}, bus *bus.MessageBus, allowL
 		name:      name,
 		allowList: allowList,
 		running:   false,
+		rateMap:   make(map[string]time.Time),
 	}
 }
 
@@ -45,7 +50,7 @@ func (c *BaseChannel) IsRunning() bool {
 
 func (c *BaseChannel) IsAllowed(senderID string) bool {
 	if len(c.allowList) == 0 {
-		return true
+		return false
 	}
 
 	// Extract parts from compound senderID like "123456|username"
@@ -86,6 +91,9 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 	if !c.IsAllowed(senderID) {
 		return
 	}
+	if !c.allowByRate(senderID) {
+		return
+	}
 
 	// Build session key: channel:chatID
 	sessionKey := fmt.Sprintf("%s:%s", c.name, chatID)
@@ -101,6 +109,18 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 	}
 
 	c.bus.PublishInbound(msg)
+}
+
+func (c *BaseChannel) allowByRate(senderID string) bool {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+	last, ok := c.rateMap[senderID]
+	now := time.Now()
+	if ok && now.Sub(last) < 250*time.Millisecond {
+		return false
+	}
+	c.rateMap[senderID] = now
+	return true
 }
 
 func (c *BaseChannel) setRunning(running bool) {

@@ -33,7 +33,7 @@ func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bu
 		cronService: cronService,
 		executor:    executor,
 		msgBus:      msgBus,
-		execTool:    NewExecTool(workspace, false),
+		execTool:    NewExecTool(workspace, true),
 	}
 }
 

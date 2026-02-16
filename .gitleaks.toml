@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Allow example docs"
+paths = [
+  '''README\.md''',
+  '''README\.zh\.md''',
+  '''README\.ja\.md'''
+]

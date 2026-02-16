@@ -24,6 +24,14 @@ build/
 
 # Secrets & Config (keep templates, ignore actual secrets)
 .env
+.env.*
+.secrets/
+.secrets/local.env
+*.pem
+*.key
+*.p12
+*.pfx
+*secrets*.json
 config/config.json
 
 # Test

@@ -1,0 +1,18 @@
+FROM golang:1.26.0-alpine AS builder
+RUN apk add --no-cache git make
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN make build
+
+FROM alpine:3.23
+RUN apk add --no-cache ca-certificates tzdata curl \
+    && addgroup -S picoclaw && adduser -S -G picoclaw -h /home/picoclaw picoclaw \
+    && mkdir -p /home/picoclaw/.picoclaw/workspace /home/picoclaw/.picoclaw/config \
+    && chown -R picoclaw:picoclaw /home/picoclaw
+COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+USER picoclaw
+WORKDIR /home/picoclaw
+ENTRYPOINT ["picoclaw"]
+CMD ["gateway"]

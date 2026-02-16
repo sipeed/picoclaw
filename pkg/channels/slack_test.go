@@ -145,15 +145,15 @@ func TestNewSlackChannel(t *testing.T) {
 func TestSlackChannelIsAllowed(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 
-	t.Run("empty allowlist allows all", func(t *testing.T) {
+	t.Run("empty allowlist denies all", func(t *testing.T) {
 		cfg := config.SlackConfig{
 			BotToken:  "xoxb-test",
 			AppToken:  "xapp-test",
 			AllowFrom: []string{},
 		}
 		ch, _ := NewSlackChannel(cfg, msgBus)
-		if !ch.IsAllowed("U_ANYONE") {
-			t.Error("empty allowlist should allow all users")
+		if ch.IsAllowed("U_ANYONE") {
+			t.Error("empty allowlist should deny by default")
 		}
 	})
 

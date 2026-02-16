@@ -23,7 +23,7 @@
     },
     "maixcam": {
       "enabled": false,
-      "host": "0.0.0.0",
+      "host": "127.0.0.1",
       "port": 18790,
       "allow_from": []
     },
@@ -56,7 +56,7 @@
       "enabled": false,
       "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
       "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
+      "webhook_host": "127.0.0.1",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
@@ -80,11 +80,11 @@
       "api_base": ""
     },
     "openrouter": {
-      "api_key": "sk-or-v1-xxx",
+      "api_key": "${OPENROUTER_API_KEY}",
       "api_base": ""
     },
     "groq": {
-      "api_key": "gsk_xxx",
+      "api_key": "${GROQ_API_KEY}",
       "api_base": ""
     },
     "zhipu": {
@@ -100,12 +100,12 @@
       "api_base": ""
     },
     "nvidia": {
-      "api_key": "nvapi-xxx",
+      "api_key": "${NVIDIA_API_KEY}",
       "api_base": "",
       "proxy": "http://127.0.0.1:7890"
     },
     "moonshot": {
-      "api_key": "sk-xxx",
+      "api_key": "${MOONSHOT_API_KEY}",
       "api_base": ""
     }
   },
@@ -126,7 +126,7 @@
     "monitor_usb": true
   },
   "gateway": {
-    "host": "0.0.0.0",
+    "host": "127.0.0.1",
     "port": 18790
   }
 }

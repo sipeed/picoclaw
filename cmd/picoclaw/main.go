@@ -239,8 +239,8 @@ func onboard() {
 
 	fmt.Printf("%s picoclaw is ready!\n", logo)
 	fmt.Println("\nNext steps:")
-	fmt.Println("  1. Add your API key to", configPath)
-	fmt.Println("     Get one at: https://openrouter.ai/keys")
+	fmt.Println("  1. Export OPENAI_API_KEY (or configure provider key via env/secrets)")
+	fmt.Println("     Example: export OPENAI_API_KEY=...;")
 	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
 }
 
@@ -1300,7 +1300,7 @@ func skillsInstallBuiltinCmd(workspace string) {
 			continue
 		}
 
-		if err := os.MkdirAll(workspacePath, 0755); err != nil {
+		if err := os.MkdirAll(workspacePath, 0700); err != nil {
 			fmt.Printf("✗ Failed to create directory for %s: %v\n", skillName, err)
 			continue
 		}

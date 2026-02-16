@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // State represents the persistent state for a workspace.
@@ -38,7 +40,7 @@ func NewManager(workspace string) *Manager {
 	oldStateFile := filepath.Join(workspace, "state.json")
 
 	// Create state directory if it doesn't exist
-	os.MkdirAll(stateDir, 0755)
+	os.MkdirAll(stateDir, 0700)
 
 	sm := &Manager{
 		workspace: workspace,
@@ -129,25 +131,14 @@ func (sm *Manager) GetTimestamp() time.Time {
 //
 // Must be called with the lock held.
 func (sm *Manager) saveAtomic() error {
-	// Create temp file in the same directory as the target
-	tempFile := sm.stateFile + ".tmp"
-
 	// Marshal state to JSON
 	data, err := json.MarshalIndent(sm.state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
 
-	// Write to temp file
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	// Atomic rename from temp to target
-	if err := os.Rename(tempFile, sm.stateFile); err != nil {
-		// Cleanup temp file if rename fails
-		os.Remove(tempFile)
-		return fmt.Errorf("failed to rename temp file: %w", err)
+	if err := utils.WriteFileAtomic(sm.stateFile, data, 0600, 0700); err != nil {
+		return fmt.Errorf("failed to write state file atomically: %w", err)
 	}
 
 	return nil

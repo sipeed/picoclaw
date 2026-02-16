@@ -1,0 +1,28 @@
+services:
+  picoclaw-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.hardened
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    environment:
+      - OPENAI_API_KEY_FILE=/run/secrets/openai_api_key
+      - OPENAI_MODEL=gpt-4o-mini
+    secrets:
+      - openai_api_key
+    volumes:
+      - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
+      - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
+    command: ["gateway"]
+
+secrets:
+  openai_api_key:
+    file: .secrets/openai_api_key
+
+volumes:
+  picoclaw-workspace:

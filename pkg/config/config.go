@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
@@ -253,7 +255,7 @@ func DefaultConfig() *Config {
 			},
 			MaixCam: MaixCamConfig{
 				Enabled:   false,
-				Host:      "0.0.0.0",
+				Host:      "127.0.0.1",
 				Port:      18790,
 				AllowFrom: FlexibleStringSlice{},
 			},
@@ -279,7 +281,7 @@ func DefaultConfig() *Config {
 				Enabled:            false,
 				ChannelSecret:      "",
 				ChannelAccessToken: "",
-				WebhookHost:        "0.0.0.0",
+				WebhookHost:        "127.0.0.1",
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
 				AllowFrom:          FlexibleStringSlice{},
@@ -306,7 +308,7 @@ func DefaultConfig() *Config {
 			ShengSuanYun: ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
+			Host: "127.0.0.1",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
@@ -335,6 +337,7 @@ func DefaultConfig() *Config {
 
 func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
+	_ = loadLocalEnvSecrets(filepath.Join(".secrets", "local.env"))
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -352,6 +355,18 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	if cfg.Providers.OpenAI.APIKey == "" {
+		if keyFile := strings.TrimSpace(os.Getenv("OPENAI_API_KEY_FILE")); keyFile != "" {
+			if data, err := os.ReadFile(keyFile); err == nil {
+				_ = os.Setenv("OPENAI_API_KEY", strings.TrimSpace(string(data)))
+			}
+		}
+		cfg.Providers.OpenAI.APIKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	}
+	if cfg.Agents.Defaults.Provider == "openai" && os.Getenv("OPENAI_MODEL") != "" {
+		cfg.Agents.Defaults.Model = strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+	}
+
 	return cfg, nil
 }
 
@@ -365,11 +380,41 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return utils.WriteFileAtomic(path, data, 0600, 0700)
+}
+
+func loadLocalEnvSecrets(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		k := strings.TrimSpace(parts[0])
+		v := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+		if k != "OPENAI_API_KEY" && k != "OPENAI_MODEL" {
+			continue
+		}
+		if os.Getenv(k) == "" {
+			_ = os.Setenv(k, v)
+		}
+	}
+	return nil
 }
 
 func (c *Config) WorkspacePath() string {
