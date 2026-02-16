@@ -166,7 +166,7 @@ func (c *TelegramChannel) initBotCommands(ctx context.Context) error {
 		},
 		{
 			Command:     "show",
-			Description: "Show the current configuration",
+			Description: "Show current configuration",
 		},
 		{
 			Command:     "list",
