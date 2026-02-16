@@ -68,6 +68,45 @@ func TestBuildCodexParams_ToolCallConversation(t *testing.T) {
 	}
 }
 
+func TestBuildCodexParams_ToolCallFunctionFallback(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "Read a file"},
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &FunctionCall{
+						Name:      "read_file",
+						Arguments: `{"path":"README.md"}`,
+					},
+				},
+			},
+		},
+		{Role: "tool", Content: "ok", ToolCallID: "call_1"},
+	}
+
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{})
+	if params.Input.OfInputItemList == nil {
+		t.Fatal("Input.OfInputItemList should not be nil")
+	}
+	if len(params.Input.OfInputItemList) != 3 {
+		t.Fatalf("len(Input items) = %d, want 3", len(params.Input.OfInputItemList))
+	}
+
+	fc := params.Input.OfInputItemList[1].OfFunctionCall
+	if fc == nil {
+		t.Fatal("assistant tool call should be converted to function_call input item")
+	}
+	if fc.Name != "read_file" {
+		t.Errorf("Function call name = %q, want %q", fc.Name, "read_file")
+	}
+	if fc.Arguments != `{"path":"README.md"}` {
+		t.Errorf("Function call arguments = %q, want %q", fc.Arguments, `{"path":"README.md"}`)
+	}
+}
+
 func TestBuildCodexParams_WithTools(t *testing.T) {
 	tools := []ToolDefinition{
 		{
