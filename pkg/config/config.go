@@ -179,6 +179,7 @@ type ProvidersConfig struct {
 	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig `json:"deepseek"`
 	GitHubCopilot ProviderConfig `json:"github_copilot"`
+	Mistral       ProviderConfig `json:"mistral"`
 }
 
 type ProviderConfig struct {
@@ -304,6 +305,7 @@ func DefaultConfig() *Config {
 			Nvidia:       ProviderConfig{},
 			Moonshot:     ProviderConfig{},
 			ShengSuanYun: ProviderConfig{},
+			Mistral:      ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
@@ -405,6 +407,9 @@ func (c *Config) GetAPIKey() string {
 	if c.Providers.ShengSuanYun.APIKey != "" {
 		return c.Providers.ShengSuanYun.APIKey
 	}
+	if c.Providers.Mistral.APIKey != "" {
+		return c.Providers.Mistral.APIKey
+	}
 	return ""
 }
 
@@ -422,6 +427,12 @@ func (c *Config) GetAPIBase() string {
 	}
 	if c.Providers.VLLM.APIKey != "" && c.Providers.VLLM.APIBase != "" {
 		return c.Providers.VLLM.APIBase
+	}
+	if c.Providers.Mistral.APIKey != "" {
+		if c.Providers.Mistral.APIBase != "" {
+			return c.Providers.Mistral.APIBase
+		}
+		return "https://api.mistral.ai/v1"
 	}
 	return ""
 }
