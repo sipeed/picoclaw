@@ -20,6 +20,11 @@ var (
 	shellMetaRe    = regexp.MustCompile("`|\\$\\(|\\$\\{")
 	varReferenceRe = regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*`)
 	cdAbsoluteRe   = regexp.MustCompile(`(?i)\bcd\s+/`)
+	ansiCQuoteRe   = regexp.MustCompile(`\$'`)
+	ansiDQuoteRe   = regexp.MustCompile(`\$"`)
+	hexEscapeRe    = regexp.MustCompile(`\\x[0-9a-fA-F]`)
+	octalEscapeRe  = regexp.MustCompile(`\\[0-7]{1,3}`)
+	escapedMetaRe  = regexp.MustCompile(`\\[` + "`" + `$]`)
 )
 
 type ExecTool struct {
@@ -106,6 +111,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
 		cwd = wd
+	}
+
+	if t.restrictToWorkspace && cwd != t.workingDir {
+		absCwd, err := filepath.Abs(cwd)
+		if err != nil {
+			return ErrorResult("invalid working directory")
+		}
+		absWs, err := filepath.Abs(t.workingDir)
+		if err != nil {
+			return ErrorResult("invalid workspace directory")
+		}
+		if !isWithinWorkspace(absCwd, absWs) {
+			return ErrorResult("Command blocked by safety guard (working directory outside workspace)")
+		}
 	}
 
 	if cwd == "" {
@@ -217,6 +236,18 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				"command_preview": truncateForLog(cmd),
 			})
 			return "Command blocked by safety guard (shell metacharacter in restricted mode)"
+		}
+
+		// Block escape sequences that can bypass shell metacharacter detection
+		escapePatterns := []*regexp.Regexp{ansiCQuoteRe, ansiDQuoteRe, hexEscapeRe, octalEscapeRe, escapedMetaRe}
+		for _, re := range escapePatterns {
+			if re.MatchString(cmd) {
+				logger.WarnCF("shell", "Command blocked (escape sequence in restricted mode)", map[string]interface{}{
+					"command_preview": truncateForLog(cmd),
+					"pattern":         re.String(),
+				})
+				return "Command blocked by safety guard (escape sequence in restricted mode)"
+			}
 		}
 
 		// Block variable expansion ($VAR) which can reference paths outside workspace

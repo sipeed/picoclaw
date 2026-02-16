@@ -525,6 +525,36 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 * `shutdown`, `reboot`, `poweroff` — System shutdown
 * Fork bomb `:(){ :|:& };:`
 
+#### Shell Escape Sequence Protection
+
+When `restrict_to_workspace: true`, the `exec` tool also blocks shell escape sequences that can bypass metacharacter detection:
+
+| Pattern | Example | Risk |
+|---------|---------|------|
+| ANSI-C quoting `$'...'` | `$'\x24(id)'` | Embeds command substitution via hex escape |
+| Locale quoting `$"..."` | `$"$(cmd)"` | Alternative command substitution syntax |
+| Hex escapes `\xNN` | `\x24(id)` | Encodes `$` as `\x24` to bypass `$()` check |
+| Octal escapes `\NNN` | `\060` | Encodes characters via octal to bypass checks |
+| Escaped metacharacters | `` \` ``, `\$` | Bypasses backtick and dollar sign detection |
+
+#### Working Directory Validation
+
+When `restrict_to_workspace: true`, the `exec` tool validates the `working_dir` parameter to ensure it stays within the configured workspace. Passing `working_dir` pointing outside the workspace (e.g. `/etc`) is blocked:
+
+```
+Command blocked by safety guard (working directory outside workspace)
+```
+
+#### Symlink TOCTOU Protection
+
+All file tools (`read_file`, `write_file`, `edit_file`, `append_file`) re-verify symlink targets immediately before the actual I/O operation. This closes the time-of-check-to-time-of-use (TOCTOU) window where an attacker could swap a symlink between the initial `validatePath()` check and the subsequent file operation:
+
+1. **Check**: `validatePath()` resolves the symlink and verifies the target is inside the workspace
+2. **Re-check**: `safeReadFile` / `safeWriteFile` / `safeOpenFile` calls `Lstat` right before I/O — if the path is a symlink, it re-resolves and re-validates the target
+3. **Operate**: The file operation uses the resolved path
+
+If the symlink target has changed to a path outside the workspace between steps 1 and 2, the operation is denied.
+
 #### SSRF Protection (Web Fetch)
 
 The `web_fetch` tool blocks requests to internal and private network addresses to prevent Server-Side Request Forgery (SSRF) attacks. This protects against unauthorized access to cloud metadata endpoints (e.g. `169.254.169.254`), internal services, and local resources.

@@ -313,3 +313,68 @@ func TestShellTool_WorkspaceAllowedCommands(t *testing.T) {
 		})
 	}
 }
+
+// TestShellTool_EscapeSequenceBlocking verifies that escape sequences that bypass
+// shell metacharacter detection are blocked in restricted mode.
+func TestShellTool_EscapeSequenceBlocking(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+	ctx := context.Background()
+
+	cases := []struct {
+		name    string
+		command string
+	}{
+		{"ANSI-C quoting", `echo $'\x24(id)'`},
+		{"locale quoting", `echo $"hello"`},
+		{"hex escape", `echo \x24(id)`},
+		{"octal escape", `echo \060`},
+		{"escaped dollar", `echo \$HOME`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := tool.Execute(ctx, map[string]interface{}{"command": tc.command})
+			if !result.IsError {
+				t.Errorf("Expected command to be blocked: %q", tc.command)
+			}
+			if !strings.Contains(result.ForLLM, "escape sequence") {
+				t.Errorf("Expected 'escape sequence' in error for %q, got: %s", tc.command, result.ForLLM)
+			}
+		})
+	}
+}
+
+// TestShellTool_WorkingDirRestriction verifies that working_dir outside workspace is blocked.
+func TestShellTool_WorkingDirRestriction(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+	ctx := context.Background()
+
+	// working_dir outside workspace should be blocked
+	t.Run("outside workspace blocked", func(t *testing.T) {
+		result := tool.Execute(ctx, map[string]interface{}{
+			"command":     "ls",
+			"working_dir": "/etc",
+		})
+		if !result.IsError {
+			t.Errorf("Expected working_dir outside workspace to be blocked")
+		}
+		if !strings.Contains(result.ForLLM, "working directory outside workspace") {
+			t.Errorf("Expected 'working directory outside workspace' error, got: %s", result.ForLLM)
+		}
+	})
+
+	// working_dir inside workspace should be allowed
+	t.Run("inside workspace allowed", func(t *testing.T) {
+		subDir := filepath.Join(tmpDir, "subdir")
+		os.MkdirAll(subDir, 0755)
+		result := tool.Execute(ctx, map[string]interface{}{
+			"command":     "pwd",
+			"working_dir": subDir,
+		})
+		if result.IsError && strings.Contains(result.ForLLM, "working directory outside workspace") {
+			t.Errorf("working_dir inside workspace should not be blocked, got: %s", result.ForLLM)
+		}
+	})
+}
