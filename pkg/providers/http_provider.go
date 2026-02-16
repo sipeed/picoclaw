@@ -58,6 +58,11 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	isAnthropicStyle := strings.Contains(p.apiBase, "/anthropic") || strings.Contains(p.apiBase, "/api/anthropic")
 
 	if isAnthropicStyle {
+		// Zhipu GLM coding plan (api.z.ai) doesn't properly support tool_use/tool_result
+		// Disable tools to avoid 500 errors
+		if strings.Contains(p.apiBase, "api.z.ai") {
+			return p.chatAnthropic(ctx, messages, nil, model, options)
+		}
 		return p.chatAnthropic(ctx, messages, tools, model, options)
 	}
 	return p.chatOpenAI(ctx, messages, tools, model, options)
