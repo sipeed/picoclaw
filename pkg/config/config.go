@@ -211,8 +211,15 @@ type WebToolsConfig struct {
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 }
 
+type MediaToolsConfig struct {
+	MaxInboundImageBytes int64 `json:"max_inbound_image_bytes" env:"PICOCLAW_TOOLS_MEDIA_MAX_INBOUND_IMAGE_BYTES"`
+	MaxInboundImages     int   `json:"max_inbound_images" env:"PICOCLAW_TOOLS_MEDIA_MAX_INBOUND_IMAGES"`
+	MaxOutboundFileBytes int64 `json:"max_outbound_file_bytes" env:"PICOCLAW_TOOLS_MEDIA_MAX_OUTBOUND_FILE_BYTES"`
+}
+
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web   WebToolsConfig   `json:"web"`
+	Media MediaToolsConfig `json:"media"`
 }
 
 func DefaultConfig() *Config {
@@ -321,6 +328,11 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+			},
+			Media: MediaToolsConfig{
+				MaxInboundImageBytes: 5 * 1024 * 1024,
+				MaxInboundImages:     3,
+				MaxOutboundFileBytes: 10 * 1024 * 1024,
 			},
 		},
 		Heartbeat: HeartbeatConfig{

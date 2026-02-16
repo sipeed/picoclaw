@@ -140,3 +140,30 @@ func DownloadFileSimple(url, filename string) string {
 		LoggerPrefix: "media",
 	})
 }
+
+// ScheduleFileCleanup removes a file after delay in a background goroutine.
+// Use this for transient media files that must survive past the current stack frame.
+func ScheduleFileCleanup(path string, delay time.Duration, loggerPrefix string) {
+	if path == "" {
+		return
+	}
+	if delay <= 0 {
+		delay = 10 * time.Minute
+	}
+	if loggerPrefix == "" {
+		loggerPrefix = "media"
+	}
+
+	go func() {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		<-timer.C
+
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			logger.DebugCF(loggerPrefix, "Failed to cleanup temp file", map[string]interface{}{
+				"path":  path,
+				"error": err.Error(),
+			})
+		}
+	}()
+}

@@ -1,7 +1,10 @@
 package agent
 
 import (
+	"encoding/base64"
 	"fmt"
+	"net/http"
+	"mime"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,11 +17,18 @@ import (
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
+const (
+	maxVisionImagesPerMessage = 3
+	maxVisionImageBytes       = 5 * 1024 * 1024
+)
+
 type ContextBuilder struct {
 	workspace    string
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
 	tools        *tools.ToolRegistry // Direct reference to tool registry
+	maxImages    int
+	maxImageSize int64
 }
 
 func getGlobalConfigDir() string {
@@ -40,12 +50,23 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 		workspace:    workspace,
 		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
 		memory:       NewMemoryStore(workspace),
+		maxImages:    maxVisionImagesPerMessage,
+		maxImageSize: maxVisionImageBytes,
 	}
 }
 
 // SetToolsRegistry sets the tools registry for dynamic tool summary generation.
 func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
 	cb.tools = registry
+}
+
+func (cb *ContextBuilder) SetMediaLimits(maxImages int, maxImageSize int64) {
+	if maxImages > 0 {
+		cb.maxImages = maxImages
+	}
+	if maxImageSize > 0 {
+		cb.maxImageSize = maxImageSize
+	}
 }
 
 func (cb *ContextBuilder) getIdentity() string {
@@ -207,12 +228,97 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	messages = append(messages, history...)
 
-	messages = append(messages, providers.Message{
+	userMsg := providers.Message{
 		Role:    "user",
 		Content: currentMessage,
-	})
+	}
+
+	visionMedia, skipped := cb.buildVisionMedia(media)
+	if len(visionMedia) > 0 {
+		userMsg.Media = visionMedia
+	}
+	if len(skipped) > 0 {
+		notice := "\n\n[media-note]\n" + strings.Join(skipped, "\n")
+		userMsg.Content += notice
+	}
+
+	messages = append(messages, userMsg)
 
 	return messages
+}
+
+func (cb *ContextBuilder) buildVisionMedia(paths []string) ([]providers.MediaItem, []string) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+
+	items := make([]providers.MediaItem, 0, len(paths))
+	skipped := make([]string, 0)
+
+	for _, p := range paths {
+		if len(items) >= cb.maxImages {
+			skipped = append(skipped, fmt.Sprintf("- skipped %q: image limit reached (%d)", p, cb.maxImages))
+			continue
+		}
+
+		item, reason, ok := loadImageAsDataURL(p, cb.maxImageSize)
+		if !ok {
+			if reason != "" {
+				skipped = append(skipped, fmt.Sprintf("- skipped %q: %s", p, reason))
+			}
+			continue
+		}
+		items = append(items, item)
+	}
+
+	return items, skipped
+}
+
+func loadImageAsDataURL(path string, maxImageSize int64) (providers.MediaItem, string, bool) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return providers.MediaItem{}, "file not found or unreadable", false
+	}
+	if info.IsDir() {
+		return providers.MediaItem{}, "is a directory", false
+	}
+	if maxImageSize > 0 && info.Size() > maxImageSize {
+		return providers.MediaItem{}, fmt.Sprintf("too large (%d bytes > %d bytes)", info.Size(), maxImageSize), false
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return providers.MediaItem{}, "failed to read file", false
+	}
+
+	mimeType := detectImageMIME(path, content)
+	if !strings.HasPrefix(mimeType, "image/") {
+		return providers.MediaItem{}, "", false
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(content)
+	return providers.MediaItem{
+		Type:      "image_url",
+		URL:       fmt.Sprintf("data:%s;base64,%s", mimeType, encoded),
+		MIMEType:  mimeType,
+		SourceRef: path,
+	}, "", true
+}
+
+func detectImageMIME(path string, content []byte) string {
+	if ext := strings.ToLower(filepath.Ext(path)); ext != "" {
+		if mt := mime.TypeByExtension(ext); mt != "" {
+			if semi := strings.Index(mt, ";"); semi > 0 {
+				return mt[:semi]
+			}
+			return mt
+		}
+	}
+	detected := http.DetectContentType(content)
+	if semi := strings.Index(detected, ";"); semi > 0 {
+		return detected[:semi]
+	}
+	return detected
 }
 
 func (cb *ContextBuilder) AddToolResult(messages []providers.Message, toolCallID, toolName, result string) []providers.Message {
