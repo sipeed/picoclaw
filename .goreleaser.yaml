@@ -66,10 +66,10 @@ changelog:
       - "^docs:"
       - "^test:"
 
-upx:
-   - enabled: true
-     compress: best
-     lzma: true
+# upx:
+#    - enabled: true
+#      compress: best
+#      lzma: true
 
 release:
   footer: >-
