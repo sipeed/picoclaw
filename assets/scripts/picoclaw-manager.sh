@@ -156,6 +156,38 @@ uninstall_picoclaw() {
         echo -e "${GREEN}[✓] PicoClaw uninstalled.${NC}"
     fi
     read -p "Press Enter to return to menu..."
+
+network_diagnostics() {
+    echo -e "${BLUE}--- Network Diagnostics ---${NC}"
+    echo -e "${YELLOW}[*] Testing DNS resolution...${NC}"
+    if nslookup google.com &> /dev/null; then
+        echo -e "${GREEN}[✓] DNS resolution working.${NC}"
+    else
+        echo -e "${RED}[!] DNS resolution failed.${NC}"
+        echo -e "${YELLOW}[TIP] Try running: echo \"nameserver 8.8.8.8\" > \$PREFIX/etc/resolv.conf${NC}"
+        read -p "Would you like to apply this fix now? (y/N): " fix_dns
+        if [[ "$fix_dns" == "y" || "$fix_dns" == "Y" ]]; then
+            mkdir -p "$PREFIX/etc"
+            echo "nameserver 8.8.8.8" > "$PREFIX/etc/resolv.conf"
+            echo -e "${GREEN}[✓] DNS fix applied.${NC}"
+        fi
+    fi
+
+    echo -e "\n${YELLOW}[*] Testing API connectivity...${NC}"
+    if curl -s --connect-timeout 5 https://generativelanguage.googleapis.com &> /dev/null; then
+        echo -e "${GREEN}[✓] Google API reachable.${NC}"
+    else
+        echo -e "${RED}[!] Google API unreachable.${NC}"
+    fi
+
+    if curl -s --connect-timeout 5 https://api.openai.com &> /dev/null; then
+        echo -e "${GREEN}[✓] OpenAI API reachable.${NC}"
+    else
+        echo -e "${RED}[!] OpenAI API unreachable.${NC}"
+    fi
+
+    echo -e "\n${YELLOW}[TIP] If you are in a restricted network, configure a proxy in option 2.${NC}"
+    read -p "Press Enter to return to menu..."
 }
 
 while true; do
@@ -164,8 +196,9 @@ while true; do
     echo "2) Configure (API Keys / Telegram)"
     echo "3) Start / Stop / Logs"
     echo "4) Show Status"
-    echo "5) Uninstall"
-    echo "6) Exit"
+    echo "5) Network Diagnostics"
+    echo "6) Uninstall"
+    echo "7) Exit"
     read -p "Select option: " opt
 
     case $opt in
@@ -173,8 +206,9 @@ while true; do
         2) configure_picoclaw ;;
         3) manage_service ;;
         4) picoclaw status; read -p "Press Enter to return to menu..." ;;
-        5) uninstall_picoclaw ;;
-        6) exit 0 ;;
+        5) network_diagnostics ;;
+        6) uninstall_picoclaw ;;
+        7) exit 0 ;;
         *) echo -e "${RED}[!] Invalid option${NC}"; sleep 1 ;;
     esac
 done
