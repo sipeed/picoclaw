@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -180,10 +181,63 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		})
 		tgMsg.ParseMode = ""
 		_, err = c.bot.SendMessage(ctx, tgMsg)
-		return err
+		if err != nil {
+			return err
+		}
+	}
+
+	// Send media files
+	for _, mediaPath := range msg.Media {
+		if err := c.sendMediaFile(ctx, chatID, mediaPath); err != nil {
+			logger.ErrorCF("telegram", "Failed to send media file", map[string]interface{}{
+				"path":  mediaPath,
+				"error": err.Error(),
+			})
+		}
 	}
 
 	return nil
+}
+
+func (c *TelegramChannel) sendMediaFile(ctx context.Context, chatID int64, filePath string) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open media file: %w", err)
+	}
+	defer f.Close()
+
+	fileName := filepath.Base(filePath)
+	ext := strings.ToLower(filepath.Ext(filePath))
+
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+		photo := &telego.SendPhotoParams{
+			ChatID: tu.ID(chatID),
+			Photo:  telego.InputFile{File: f},
+		}
+		_, err = c.bot.SendPhoto(ctx, photo)
+	case ".mp4", ".avi", ".mov", ".mkv":
+		video := &telego.SendVideoParams{
+			ChatID: tu.ID(chatID),
+			Video:  telego.InputFile{File: f},
+		}
+		_, err = c.bot.SendVideo(ctx, video)
+	case ".mp3", ".ogg", ".wav", ".flac", ".aac", ".m4a":
+		audio := &telego.SendAudioParams{
+			ChatID: tu.ID(chatID),
+			Audio:  telego.InputFile{File: f},
+		}
+		_, err = c.bot.SendAudio(ctx, audio)
+	default:
+		doc := &telego.SendDocumentParams{
+			ChatID:   tu.ID(chatID),
+			Document: telego.InputFile{File: f},
+			Caption:  fileName,
+		}
+		_, err = c.bot.SendDocument(ctx, doc)
+	}
+
+	return err
 }
 
 func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Message) error {

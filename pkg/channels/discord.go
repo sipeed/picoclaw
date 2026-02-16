@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -111,6 +112,32 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	for _, chunk := range chunks {
 		if err := c.sendChunk(ctx, channelID, chunk); err != nil {
 			return err
+		}
+	}
+
+	// Send media files
+	for _, mediaPath := range msg.Media {
+		f, err := os.Open(mediaPath)
+		if err != nil {
+			logger.ErrorCF("discord", "Failed to open media file", map[string]any{
+				"path":  mediaPath,
+				"error": err.Error(),
+			})
+			continue
+		}
+		msgSend := &discordgo.MessageSend{
+			Files: []*discordgo.File{{
+				Name:   filepath.Base(mediaPath),
+				Reader: f,
+			}},
+		}
+		_, sendErr := c.session.ChannelMessageSendComplex(channelID, msgSend)
+		f.Close()
+		if sendErr != nil {
+			logger.ErrorCF("discord", "Failed to send media file", map[string]any{
+				"path":  mediaPath,
+				"error": sendErr.Error(),
+			})
 		}
 	}
 
