@@ -11,22 +11,31 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
 // actionbookBinary caches the resolved path to the actionbook CLI.
-var actionbookBinary string
+var (
+	actionbookBinary string
+	actionbookOnce   sync.Once
+	actionbookErr    error
+)
 
 func resolveActionbook() (string, error) {
-	if actionbookBinary != "" {
-		return actionbookBinary, nil
+	actionbookOnce.Do(func() {
+		var path string
+		path, actionbookErr = exec.LookPath("actionbook")
+		if actionbookErr != nil {
+			actionbookErr = fmt.Errorf("actionbook CLI not found in PATH: %w", actionbookErr)
+			return
+		}
+		actionbookBinary = path
+	})
+	if actionbookErr != nil {
+		return "", actionbookErr
 	}
-	path, err := exec.LookPath("actionbook")
-	if err != nil {
-		return "", fmt.Errorf("actionbook CLI not found in PATH: %w", err)
-	}
-	actionbookBinary = path
-	return path, nil
+	return actionbookBinary, nil
 }
 
 // runActionbook executes an actionbook CLI command with a timeout.
