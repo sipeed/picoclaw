@@ -281,8 +281,19 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				}
 			}
 		case "gemini", "google":
-			if cfg.Providers.Gemini.APIKey != "" {
-				apiKey = cfg.Providers.Gemini.APIKey
+			if cfg.Providers.Gemini.APIKey != "" || cfg.Providers.Gemini.AuthMethod != "" {
+				if cfg.Providers.Gemini.AuthMethod == "token" && cfg.Providers.Gemini.APIKey == "" {
+					cred, err := auth.GetCredential("gemini")
+					if err != nil {
+						return nil, fmt.Errorf("loading auth credentials: %w", err)
+					}
+					if cred == nil {
+						return nil, fmt.Errorf("no credentials for gemini. Run: picoclaw auth login --provider gemini")
+					}
+					apiKey = cred.AccessToken
+				} else {
+					apiKey = cfg.Providers.Gemini.APIKey
+				}
 				apiBase = cfg.Providers.Gemini.APIBase
 				if apiBase == "" {
 					apiBase = "https://generativelanguage.googleapis.com/v1beta"
@@ -378,8 +389,19 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "https://api.openai.com/v1"
 			}
 
-		case (strings.Contains(lowerModel, "gemini") || strings.HasPrefix(model, "google/")) && cfg.Providers.Gemini.APIKey != "":
-			apiKey = cfg.Providers.Gemini.APIKey
+		case (strings.Contains(lowerModel, "gemini") || strings.HasPrefix(model, "google/")) && (cfg.Providers.Gemini.APIKey != "" || cfg.Providers.Gemini.AuthMethod != ""):
+			if cfg.Providers.Gemini.AuthMethod == "token" && cfg.Providers.Gemini.APIKey == "" {
+				cred, err := auth.GetCredential("gemini")
+				if err != nil {
+					return nil, fmt.Errorf("loading auth credentials: %w", err)
+				}
+				if cred == nil {
+					return nil, fmt.Errorf("no credentials for gemini. Run: picoclaw auth login --provider gemini")
+				}
+				apiKey = cred.AccessToken
+			} else {
+				apiKey = cfg.Providers.Gemini.APIKey
+			}
 			apiBase = cfg.Providers.Gemini.APIBase
 			proxy = cfg.Providers.Gemini.Proxy
 			if apiBase == "" {

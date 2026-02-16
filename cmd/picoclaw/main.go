@@ -789,13 +789,14 @@ func authHelp() {
 	fmt.Println("  status      Show current auth status")
 	fmt.Println()
 	fmt.Println("Login options:")
-	fmt.Println("  --provider <name>    Provider to login with (openai, anthropic)")
+	fmt.Println("  --provider <name>    Provider to login with (openai, anthropic, gemini)")
 	fmt.Println("  --device-code        Use device code flow (for headless environments)")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  picoclaw auth login --provider openai")
 	fmt.Println("  picoclaw auth login --provider openai --device-code")
 	fmt.Println("  picoclaw auth login --provider anthropic")
+	fmt.Println("  picoclaw auth login --provider gemini")
 	fmt.Println("  picoclaw auth logout --provider openai")
 	fmt.Println("  picoclaw auth status")
 }
@@ -819,18 +820,18 @@ func authLoginCmd() {
 
 	if provider == "" {
 		fmt.Println("Error: --provider is required")
-		fmt.Println("Supported providers: openai, anthropic")
+		fmt.Println("Supported providers: openai, anthropic, gemini")
 		return
 	}
 
 	switch provider {
 	case "openai":
 		authLoginOpenAI(useDeviceCode)
-	case "anthropic":
+	case "anthropic", "gemini":
 		authLoginPasteToken(provider)
 	default:
 		fmt.Printf("Unsupported provider: %s\n", provider)
-		fmt.Println("Supported providers: openai, anthropic")
+		fmt.Println("Supported providers: openai, anthropic, gemini")
 	}
 }
 
@@ -889,6 +890,8 @@ func authLoginPasteToken(provider string) {
 			appCfg.Providers.Anthropic.AuthMethod = "token"
 		case "openai":
 			appCfg.Providers.OpenAI.AuthMethod = "token"
+		case "gemini":
+			appCfg.Providers.Gemini.AuthMethod = "token"
 		}
 		if err := config.SaveConfig(getConfigPath(), appCfg); err != nil {
 			fmt.Printf("Warning: could not update config: %v\n", err)
@@ -925,6 +928,8 @@ func authLogoutCmd() {
 				appCfg.Providers.OpenAI.AuthMethod = ""
 			case "anthropic":
 				appCfg.Providers.Anthropic.AuthMethod = ""
+			case "gemini":
+				appCfg.Providers.Gemini.AuthMethod = ""
 			}
 			config.SaveConfig(getConfigPath(), appCfg)
 		}
@@ -940,6 +945,7 @@ func authLogoutCmd() {
 		if err == nil {
 			appCfg.Providers.OpenAI.AuthMethod = ""
 			appCfg.Providers.Anthropic.AuthMethod = ""
+			appCfg.Providers.Gemini.AuthMethod = ""
 			config.SaveConfig(getConfigPath(), appCfg)
 		}
 
