@@ -8,6 +8,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: picoclaw-agent
+    network_mode: host
     profiles:
       - agent
     volumes:
@@ -26,6 +27,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: picoclaw-gateway
+    network_mode: host
     restart: unless-stopped
     profiles:
       - gateway

@@ -26,6 +26,7 @@ type DiscordChannel struct {
 	config      config.DiscordConfig
 	transcriber *voice.GroqTranscriber
 	ctx         context.Context
+	botUserID   string
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -72,6 +73,7 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get bot user: %w", err)
 	}
+	c.botUserID = botUser.ID
 	logger.InfoCF("discord", "Discord bot connected", map[string]any{
 		"username": botUser.Username,
 		"user_id":  botUser.ID,
@@ -294,6 +296,23 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 			"user_id": m.Author.ID,
 		})
 		return
+	}
+
+	// 如果配置为仅响应提及，则检查是否被提及
+	if c.config.MentionOnly {
+		isMentioned := false
+		for _, mention := range m.Mentions {
+			if mention.ID == c.botUserID {
+				isMentioned = true
+				break
+			}
+		}
+		if !isMentioned {
+			logger.DebugCF("discord", "Message ignored - bot not mentioned", map[string]any{
+				"user_id": m.Author.ID,
+			})
+			return
+		}
 	}
 
 	senderID := m.Author.ID
