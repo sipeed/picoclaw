@@ -66,6 +66,7 @@ type AgentDefaults struct {
 	MaxTokens           int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations   int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	BotName             string  `json:"bot_name" env:"PICOCLAW_AGENTS_DEFAULTS_BOT_NAME"`
 }
 
 type ChannelsConfig struct {
@@ -226,6 +227,7 @@ func DefaultConfig() *Config {
 				MaxTokens:           8192,
 				Temperature:         0.7,
 				MaxToolIterations:   20,
+				BotName:             "PicoClaw",
 			},
 		},
 		Channels: ChannelsConfig{
