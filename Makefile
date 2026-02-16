@@ -145,9 +145,9 @@ docker-build:
 	@echo "Building minimal Docker image (Alpine-based)..."
 	docker-compose build
 
-## docker-build-full: Build Docker image with full MCP support (Debian-based)
+## docker-build-full: Build Docker image with full MCP support (Node.js 24)
 docker-build-full:
-	@echo "Building full-featured Docker image (Debian-based)..."
+	@echo "Building full-featured Docker image (Node.js 24)..."
 	docker-compose -f docker-compose.full.yml build
 
 ## docker-test: Test MCP tools in Docker container

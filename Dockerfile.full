@@ -16,22 +16,19 @@ COPY . .
 RUN make build
 
 # ============================================================
-# Stage 2: Debian-based runtime with full MCP support
+# Stage 2: Node.js-based runtime with full MCP support
 # ============================================================
-FROM debian:bookworm-slim
+FROM node:24-bookworm-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
   git \
-  nodejs \
-  npm \
   python3 \
   python3-pip \
   python3-venv \
-  && rm -rf /var/lib/apt/lists/* \
-  && npm install -g npm@latest
+  && rm -rf /var/lib/apt/lists/*
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
