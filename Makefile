@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test
+.PHONY: all build install uninstall clean help test deploy-hostinger deploy-hostinger-setup deploy-hostinger-status deploy-hostinger-rollback
 
 # Build variables
 BINARY_NAME=picoclaw
@@ -148,6 +148,44 @@ check: deps fmt vet test
 run: build
 	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
 
+# ── Hostinger Deployment ─────────────────────────────
+HOSTINGER_HOST?=
+HOSTINGER_USER?=root
+HOSTINGER_SSH_KEY?=$(HOME)/.ssh/id_rsa
+HOSTINGER_SSH_PORT?=22
+HOSTINGER_DEPLOY_METHOD?=docker
+
+## deploy-hostinger-setup: Run initial server setup on Hostinger VPS
+deploy-hostinger-setup:
+	@bash deploy/hostinger/setup-server.sh
+
+## deploy-hostinger: Deploy PicoClaw to Hostinger VPS
+deploy-hostinger:
+	@bash deploy/hostinger/deploy.sh \
+		-h "$(HOSTINGER_HOST)" \
+		-u "$(HOSTINGER_USER)" \
+		-k "$(HOSTINGER_SSH_KEY)" \
+		-p "$(HOSTINGER_SSH_PORT)" \
+		-m "$(HOSTINGER_DEPLOY_METHOD)"
+
+## deploy-hostinger-status: Check PicoClaw status on Hostinger VPS
+deploy-hostinger-status:
+	@bash deploy/hostinger/status.sh \
+		-h "$(HOSTINGER_HOST)" \
+		-u "$(HOSTINGER_USER)" \
+		-k "$(HOSTINGER_SSH_KEY)" \
+		-p "$(HOSTINGER_SSH_PORT)" \
+		-m "$(HOSTINGER_DEPLOY_METHOD)"
+
+## deploy-hostinger-rollback: Rollback PicoClaw on Hostinger VPS
+deploy-hostinger-rollback:
+	@bash deploy/hostinger/rollback.sh \
+		-h "$(HOSTINGER_HOST)" \
+		-u "$(HOSTINGER_USER)" \
+		-k "$(HOSTINGER_SSH_KEY)" \
+		-p "$(HOSTINGER_SSH_PORT)" \
+		-m "$(HOSTINGER_DEPLOY_METHOD)"
+
 ## help: Show this help message
 help:
 	@echo "picoclaw Makefile"
@@ -162,12 +200,21 @@ help:
 	@echo "  make build              # Build for current platform"
 	@echo "  make install            # Install to ~/.local/bin"
 	@echo "  make uninstall          # Remove from /usr/local/bin"
-	@echo "  make install-skills     # Install skills to workspace"
+	@echo ""
+	@echo "Hostinger Deployment:"
+	@echo "  make deploy-hostinger-setup  HOSTINGER_HOST=1.2.3.4  # Initial server setup"
+	@echo "  make deploy-hostinger        HOSTINGER_HOST=1.2.3.4  # Deploy to VPS"
+	@echo "  make deploy-hostinger-status HOSTINGER_HOST=1.2.3.4  # Check status"
+	@echo "  make deploy-hostinger-rollback HOSTINGER_HOST=1.2.3.4 # Rollback"
 	@echo ""
 	@echo "Environment Variables:"
-	@echo "  INSTALL_PREFIX          # Installation prefix (default: ~/.local)"
-	@echo "  WORKSPACE_DIR           # Workspace directory (default: ~/.picoclaw/workspace)"
-	@echo "  VERSION                 # Version string (default: git describe)"
+	@echo "  INSTALL_PREFIX              # Installation prefix (default: ~/.local)"
+	@echo "  WORKSPACE_DIR               # Workspace directory (default: ~/.picoclaw/workspace)"
+	@echo "  VERSION                     # Version string (default: git describe)"
+	@echo "  HOSTINGER_HOST              # Hostinger VPS IP address"
+	@echo "  HOSTINGER_USER              # SSH user (default: root)"
+	@echo "  HOSTINGER_SSH_KEY           # SSH key path (default: ~/.ssh/id_rsa)"
+	@echo "  HOSTINGER_DEPLOY_METHOD     # Deploy method: docker or binary (default: docker)"
 	@echo ""
 	@echo "Current Configuration:"
 	@echo "  Platform: $(PLATFORM)/$(ARCH)"

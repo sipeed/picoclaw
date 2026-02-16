@@ -1,0 +1,48 @@
+# ============================================================
+# PicoClaw - Production Docker Compose for Hostinger VPS
+# ============================================================
+# Usage:
+#   docker compose up -d picoclaw-gateway
+#   docker compose logs -f picoclaw-gateway
+#   docker compose down
+# ============================================================
+
+services:
+  picoclaw-gateway:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: picoclaw-gateway
+    restart: unless-stopped
+    ports:
+      - "18790:18790"
+    volumes:
+      # Configuration (read-only)
+      - /opt/picoclaw/config/config.json:/root/.picoclaw/config.json:ro
+      # Persistent workspace (sessions, memory, logs)
+      - picoclaw-workspace:/root/.picoclaw/workspace
+    env_file:
+      - /opt/picoclaw/config/.env
+    environment:
+      - TZ=${TZ:-America/Sao_Paulo}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:18790/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+
+volumes:
+  picoclaw-workspace:
+    driver: local

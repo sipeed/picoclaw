@@ -1,0 +1,51 @@
+# ============================================================
+# PicoClaw - systemd Service File
+# ============================================================
+# Install: sudo cp picoclaw.service /etc/systemd/system/
+#          sudo systemctl daemon-reload
+#          sudo systemctl enable picoclaw
+#          sudo systemctl start picoclaw
+# ============================================================
+
+[Unit]
+Description=PicoClaw AI Assistant Gateway
+Documentation=https://github.com/agenciaspace/picoclaw
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=picoclaw
+Group=picoclaw
+WorkingDirectory=/opt/picoclaw
+ExecStart=/opt/picoclaw/bin/picoclaw gateway
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+
+# Logging
+StandardOutput=append:/opt/picoclaw/logs/picoclaw.log
+StandardError=append:/opt/picoclaw/logs/picoclaw-error.log
+
+# Environment
+EnvironmentFile=-/opt/picoclaw/config/.env
+Environment=HOME=/opt/picoclaw
+Environment=PICOCLAW_CONFIG=/opt/picoclaw/config/config.json
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/picoclaw
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+
+[Install]
+WantedBy=multi-user.target
