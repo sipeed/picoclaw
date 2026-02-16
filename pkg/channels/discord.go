@@ -117,54 +117,54 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	return nil
 }
 
-// splitMessage splits long messages into chunks, preserving code block integrity
-// Uses natural boundaries (newlines, spaces) and extends messages slightly to avoid breaking code blocks
+// splitMessage splits long messages into chunks, preserving code block integrity.
+// All length calculations use rune count (characters) since Discord's 2000-char
+// limit is character-based, not byte-based.
 func splitMessage(content string, limit int) []string {
 	var messages []string
+	runes := []rune(content)
 
-	for len(content) > 0 {
-		if len(content) <= limit {
-			messages = append(messages, content)
+	for len(runes) > 0 {
+		if len(runes) <= limit {
+			messages = append(messages, string(runes))
 			break
 		}
 
 		msgEnd := limit
 
 		// Find natural split point within the limit
-		msgEnd = findLastNewline(content[:limit], 200)
+		msgEnd = findLastRuneNewline(runes[:limit], 200)
 		if msgEnd <= 0 {
-			msgEnd = findLastSpace(content[:limit], 100)
+			msgEnd = findLastRuneSpace(runes[:limit], 100)
 		}
 		if msgEnd <= 0 {
 			msgEnd = limit
 		}
 
 		// Check if this would end with an incomplete code block
-		candidate := content[:msgEnd]
-		unclosedIdx := findLastUnclosedCodeBlock(candidate)
+		unclosedRuneIdx := findLastUnclosedCodeBlockRune(runes[:msgEnd])
 
-		if unclosedIdx >= 0 {
+		if unclosedRuneIdx >= 0 {
 			// Message would end with incomplete code block
 			// Try to extend to include the closing ``` (with some buffer)
-			extendedLimit := limit + 500 // Allow 500 char buffer for code blocks
-			if len(content) > extendedLimit {
-				closingIdx := findNextClosingCodeBlock(content, msgEnd)
-				if closingIdx > 0 && closingIdx <= extendedLimit {
-					// Extend to include the closing ```
-					msgEnd = closingIdx
+			extendedLimit := limit + 400
+			if len(runes) > extendedLimit {
+				closingRuneIdx := findNextClosingCodeBlockRune(runes, msgEnd)
+				if closingRuneIdx > 0 && closingRuneIdx <= extendedLimit {
+					msgEnd = closingRuneIdx
 				} else {
 					// Can't find closing, split before the code block
-					msgEnd = findLastNewline(content[:unclosedIdx], 200)
+					msgEnd = findLastRuneNewline(runes[:unclosedRuneIdx], 200)
 					if msgEnd <= 0 {
-						msgEnd = findLastSpace(content[:unclosedIdx], 100)
+						msgEnd = findLastRuneSpace(runes[:unclosedRuneIdx], 100)
 					}
 					if msgEnd <= 0 {
-						msgEnd = unclosedIdx
+						msgEnd = unclosedRuneIdx
 					}
 				}
 			} else {
 				// Remaining content fits within extended limit
-				msgEnd = len(content)
+				msgEnd = len(runes)
 			}
 		}
 
@@ -172,22 +172,23 @@ func splitMessage(content string, limit int) []string {
 			msgEnd = limit
 		}
 
-		messages = append(messages, content[:msgEnd])
-		content = strings.TrimSpace(content[msgEnd:])
+		messages = append(messages, string(runes[:msgEnd]))
+		remaining := strings.TrimSpace(string(runes[msgEnd:]))
+		runes = []rune(remaining)
 	}
 
 	return messages
 }
 
-// findLastUnclosedCodeBlock finds the last opening ``` that doesn't have a closing ```
-// Returns the position of the opening ``` or -1 if all code blocks are complete
-func findLastUnclosedCodeBlock(text string) int {
+// findLastUnclosedCodeBlockRune finds the last opening ``` that doesn't have a closing ```
+// using rune-based indexing. Returns the rune position or -1 if all code blocks are complete.
+func findLastUnclosedCodeBlockRune(runes []rune) int {
 	count := 0
 	lastOpenIdx := -1
 
-	for i := 0; i < len(text); i++ {
-		if i+2 < len(text) && text[i] == '`' && text[i+1] == '`' && text[i+2] == '`' {
-			if count == 0 {
+	for i := 0; i < len(runes); i++ {
+		if i+2 < len(runes) && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
+			if count%2 == 0 {
 				lastOpenIdx = i
 			}
 			count++
@@ -195,48 +196,50 @@ func findLastUnclosedCodeBlock(text string) int {
 		}
 	}
 
-	// If odd number of ``` markers, last one is unclosed
 	if count%2 == 1 {
 		return lastOpenIdx
 	}
 	return -1
 }
 
-// findNextClosingCodeBlock finds the next closing ``` starting from a position
-// Returns the position after the closing ``` or -1 if not found
-func findNextClosingCodeBlock(text string, startIdx int) int {
-	for i := startIdx; i < len(text); i++ {
-		if i+2 < len(text) && text[i] == '`' && text[i+1] == '`' && text[i+2] == '`' {
-			return i + 3
+// findNextClosingCodeBlockRune finds the next closing ``` starting from a rune position.
+// Returns the rune position after the closing ``` or -1 if not found.
+func findNextClosingCodeBlockRune(runes []rune, startIdx int) int {
+	for i := startIdx; i < len(runes); i++ {
+		if i+2 < len(runes) && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
+			// Include any trailing newline after the closing ```
+			end := i + 3
+			if end < len(runes) && runes[end] == '\n' {
+				end++
+			}
+			return end
 		}
 	}
 	return -1
 }
 
-// findLastNewline finds the last newline character within the last N characters
-// Returns the position of the newline or -1 if not found
-func findLastNewline(s string, searchWindow int) int {
-	searchStart := len(s) - searchWindow
+// findLastRuneNewline finds the last newline within the last N runes.
+func findLastRuneNewline(runes []rune, searchWindow int) int {
+	searchStart := len(runes) - searchWindow
 	if searchStart < 0 {
 		searchStart = 0
 	}
-	for i := len(s) - 1; i >= searchStart; i-- {
-		if s[i] == '\n' {
+	for i := len(runes) - 1; i >= searchStart; i-- {
+		if runes[i] == '\n' {
 			return i
 		}
 	}
 	return -1
 }
 
-// findLastSpace finds the last space character within the last N characters
-// Returns the position of the space or -1 if not found
-func findLastSpace(s string, searchWindow int) int {
-	searchStart := len(s) - searchWindow
+// findLastRuneSpace finds the last space within the last N runes.
+func findLastRuneSpace(runes []rune, searchWindow int) int {
+	searchStart := len(runes) - searchWindow
 	if searchStart < 0 {
 		searchStart = 0
 	}
-	for i := len(s) - 1; i >= searchStart; i-- {
-		if s[i] == ' ' || s[i] == '\t' {
+	for i := len(runes) - 1; i >= searchStart; i-- {
+		if runes[i] == ' ' || runes[i] == '\t' {
 			return i
 		}
 	}
