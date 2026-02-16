@@ -20,7 +20,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": server.URL,
 	}
 
@@ -56,7 +56,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": server.URL,
 	}
 
@@ -77,7 +77,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": "not-a-valid-url",
 	}
 
@@ -98,7 +98,7 @@ func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": "ftp://example.com/file.txt",
 	}
 
@@ -119,7 +119,7 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 func TestWebTool_WebFetch_MissingURL(t *testing.T) {
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{}
+	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
 
@@ -147,7 +147,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 
 	tool := NewWebFetchTool(1000) // Limit to 1000 chars
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": server.URL,
 	}
 
@@ -159,7 +159,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}
 
 	// ForUser should contain truncated content (not the full 20000 chars)
-	resultMap := make(map[string]interface{})
+	resultMap := make(map[string]any)
 	json.Unmarshal([]byte(result.ForUser), &resultMap)
 	if text, ok := resultMap["text"].(string); ok {
 		if len(text) > 1100 { // Allow some margin
@@ -187,7 +187,7 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
 	tool := NewWebSearchTool(WebSearchToolOptions{BraveAPIKey: "test-key", BraveMaxResults: 5, BraveEnabled: true})
 	ctx := context.Background()
-	args := map[string]interface{}{}
+	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
 
@@ -208,7 +208,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": server.URL,
 	}
 
@@ -234,7 +234,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": "https://",
 	}
 

@@ -169,7 +169,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	// Log system prompt summary for debugging (debug mode only)
 	logger.DebugCF("agent", "System prompt built",
-		map[string]interface{}{
+		map[string]any{
 			"total_chars":   len(systemPrompt),
 			"total_lines":   strings.Count(systemPrompt, "\n") + 1,
 			"section_count": strings.Count(systemPrompt, "\n\n---\n\n") + 1,
@@ -181,7 +181,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		preview = preview[:500] + "... (truncated)"
 	}
 	logger.DebugCF("agent", "System prompt preview",
-		map[string]interface{}{
+		map[string]any{
 			"preview": preview,
 		})
 
@@ -194,7 +194,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	//Diegox-17
 	for len(history) > 0 && (history[0].Role == "tool") {
 		logger.DebugCF("agent", "Removing orphaned tool message from history to prevent LLM error",
-			map[string]interface{}{"role": history[0].Role})
+			map[string]any{"role": history[0].Role})
 		history = history[1:]
 	}
 	//Diegox-17
@@ -224,7 +224,7 @@ func (cb *ContextBuilder) AddToolResult(messages []providers.Message, toolCallID
 	return messages
 }
 
-func (cb *ContextBuilder) AddAssistantMessage(messages []providers.Message, content string, toolCalls []map[string]interface{}) []providers.Message {
+func (cb *ContextBuilder) AddAssistantMessage(messages []providers.Message, content string, toolCalls []map[string]any) []providers.Message {
 	msg := providers.Message{
 		Role:    "assistant",
 		Content: content,
@@ -254,13 +254,13 @@ func (cb *ContextBuilder) loadSkills() string {
 }
 
 // GetSkillsInfo returns information about loaded skills.
-func (cb *ContextBuilder) GetSkillsInfo() map[string]interface{} {
+func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 	allSkills := cb.skillsLoader.ListSkills()
 	skillNames := make([]string, 0, len(allSkills))
 	for _, s := range allSkills {
 		skillNames = append(skillNames, s.Name)
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"total":     len(allSkills),
 		"available": len(allSkills),
 		"names":     skillNames,

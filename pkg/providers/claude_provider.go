@@ -29,7 +29,7 @@ func NewClaudeProviderWithTokenSource(token string, tokenSource func() (string, 
 	return p
 }
 
-func (p *ClaudeProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *ClaudeProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (*LLMResponse, error) {
 	var opts []option.RequestOption
 	if p.tokenSource != nil {
 		tok, err := p.tokenSource()
@@ -56,7 +56,7 @@ func (p *ClaudeProvider) GetDefaultModel() string {
 	return "claude-sonnet-4-5-20250929"
 }
 
-func buildClaudeParams(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (anthropic.MessageNewParams, error) {
+func buildClaudeParams(messages []Message, tools []ToolDefinition, model string, options map[string]any) (anthropic.MessageNewParams, error) {
 	var system []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
 
@@ -134,7 +134,7 @@ func translateToolsForClaude(tools []ToolDefinition) []anthropic.ToolUnionParam 
 		if desc := t.Function.Description; desc != "" {
 			tool.Description = anthropic.String(desc)
 		}
-		if req, ok := t.Function.Parameters["required"].([]interface{}); ok {
+		if req, ok := t.Function.Parameters["required"].([]any); ok {
 			required := make([]string, 0, len(req))
 			for _, r := range req {
 				if s, ok := r.(string); ok {
@@ -159,9 +159,9 @@ func parseClaudeResponse(resp *anthropic.Message) *LLMResponse {
 			content += tb.Text
 		case "tool_use":
 			tu := block.AsToolUse()
-			var args map[string]interface{}
+			var args map[string]any
 			if err := json.Unmarshal(tu.Input, &args); err != nil {
-				args = map[string]interface{}{"raw": string(tu.Input)}
+				args = map[string]any{"raw": string(tu.Input)}
 			}
 			toolCalls = append(toolCalls, ToolCall{
 				ID:        tu.ID,

@@ -54,7 +54,7 @@ func TestBuildAuthorizeURL(t *testing.T) {
 }
 
 func TestParseTokenResponse(t *testing.T) {
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"access_token":  "test-access-token",
 		"refresh_token": "test-refresh-token",
 		"expires_in":    3600,
@@ -94,7 +94,7 @@ func TestParseTokenResponseNoAccessToken(t *testing.T) {
 
 func TestParseTokenResponseAccountIDFromIDToken(t *testing.T) {
 	idToken := makeJWTWithAccountID("acc-from-id")
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"access_token":  "not-a-jwt",
 		"refresh_token": "test-refresh-token",
 		"expires_in":    3600,
@@ -135,7 +135,7 @@ func TestExchangeCodeForTokens(t *testing.T) {
 			return
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"access_token":  "mock-access-token",
 			"refresh_token": "mock-refresh-token",
 			"expires_in":    3600,
@@ -174,7 +174,7 @@ func TestRefreshAccessToken(t *testing.T) {
 			return
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"access_token":  "refreshed-access-token",
 			"refresh_token": "refreshed-refresh-token",
 			"expires_in":    3600,

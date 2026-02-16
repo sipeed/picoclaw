@@ -409,10 +409,10 @@ func agentCmd() {
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
 	logger.InfoCF("agent", "Agent initialized",
-		map[string]interface{}{
-			"tools_count":      startupInfo["tools"].(map[string]interface{})["count"],
-			"skills_total":     startupInfo["skills"].(map[string]interface{})["total"],
-			"skills_available": startupInfo["skills"].(map[string]interface{})["available"],
+		map[string]any{
+			"tools_count":      startupInfo["tools"].(map[string]any)["count"],
+			"skills_total":     startupInfo["skills"].(map[string]any)["total"],
+			"skills_available": startupInfo["skills"].(map[string]any)["available"],
 		})
 
 	if message != "" {
@@ -544,8 +544,8 @@ func gatewayCmd() {
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
-	toolsInfo := startupInfo["tools"].(map[string]interface{})
-	skillsInfo := startupInfo["skills"].(map[string]interface{})
+	toolsInfo := startupInfo["tools"].(map[string]any)
+	skillsInfo := startupInfo["skills"].(map[string]any)
 	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
 	fmt.Printf("  • Skills: %d/%d available\n",
 		skillsInfo["available"],
@@ -553,7 +553,7 @@ func gatewayCmd() {
 
 	// Log to file as well
 	logger.InfoCF("agent", "Agent initialized",
-		map[string]interface{}{
+		map[string]any{
 			"tools_count":      toolsInfo["count"],
 			"skills_total":     skillsInfo["total"],
 			"skills_available": skillsInfo["available"],

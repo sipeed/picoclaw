@@ -76,9 +76,9 @@ type oneBotEvent struct {
 }
 
 type oneBotAPIRequest struct {
-	Action string      `json:"action"`
-	Params interface{} `json:"params"`
-	Echo   string      `json:"echo,omitempty"`
+	Action string `json:"action"`
+	Params any    `json:"params"`
+	Echo   string `json:"echo,omitempty"`
 }
 
 type oneBotSendPrivateMsgParams struct {
@@ -109,14 +109,14 @@ func (c *OneBotChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("OneBot ws_url not configured")
 	}
 
-	logger.InfoCF("onebot", "Starting OneBot channel", map[string]interface{}{
+	logger.InfoCF("onebot", "Starting OneBot channel", map[string]any{
 		"ws_url": c.config.WSUrl,
 	})
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	if err := c.connect(); err != nil {
-		logger.WarnCF("onebot", "Initial connection failed, will retry in background", map[string]interface{}{
+		logger.WarnCF("onebot", "Initial connection failed, will retry in background", map[string]any{
 			"error": err.Error(),
 		})
 	} else {
@@ -178,7 +178,7 @@ func (c *OneBotChannel) reconnectLoop() {
 			if conn == nil {
 				logger.InfoC("onebot", "Attempting to reconnect...")
 				if err := c.connect(); err != nil {
-					logger.ErrorCF("onebot", "Reconnect failed", map[string]interface{}{
+					logger.ErrorCF("onebot", "Reconnect failed", map[string]any{
 						"error": err.Error(),
 					})
 				} else {
@@ -246,7 +246,7 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	c.writeMu.Unlock()
 
 	if err != nil {
-		logger.ErrorCF("onebot", "Failed to send message", map[string]interface{}{
+		logger.ErrorCF("onebot", "Failed to send message", map[string]any{
 			"error": err.Error(),
 		})
 		return err
@@ -255,7 +255,7 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	return nil
 }
 
-func (c *OneBotChannel) buildSendRequest(msg bus.OutboundMessage) (string, interface{}, error) {
+func (c *OneBotChannel) buildSendRequest(msg bus.OutboundMessage) (string, any, error) {
 	chatID := msg.ChatID
 
 	if len(chatID) > 6 && chatID[:6] == "group:" {
@@ -308,7 +308,7 @@ func (c *OneBotChannel) listen() {
 
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				logger.ErrorCF("onebot", "WebSocket read error", map[string]interface{}{
+				logger.ErrorCF("onebot", "WebSocket read error", map[string]any{
 					"error": err.Error(),
 				})
 				c.mu.Lock()
@@ -320,14 +320,14 @@ func (c *OneBotChannel) listen() {
 				return
 			}
 
-			logger.DebugCF("onebot", "Raw WebSocket message received", map[string]interface{}{
+			logger.DebugCF("onebot", "Raw WebSocket message received", map[string]any{
 				"length":  len(message),
 				"payload": string(message),
 			})
 
 			var raw oneBotRawEvent
 			if err := json.Unmarshal(message, &raw); err != nil {
-				logger.WarnCF("onebot", "Failed to unmarshal raw event", map[string]interface{}{
+				logger.WarnCF("onebot", "Failed to unmarshal raw event", map[string]any{
 					"error":   err.Error(),
 					"payload": string(message),
 				})
@@ -335,14 +335,14 @@ func (c *OneBotChannel) listen() {
 			}
 
 			if raw.Echo != "" || raw.Status.Online || raw.Status.Good {
-				logger.DebugCF("onebot", "Received API response, skipping", map[string]interface{}{
+				logger.DebugCF("onebot", "Received API response, skipping", map[string]any{
 					"echo":   raw.Echo,
 					"status": raw.Status,
 				})
 				continue
 			}
 
-			logger.DebugCF("onebot", "Parsed raw event", map[string]interface{}{
+			logger.DebugCF("onebot", "Parsed raw event", map[string]any{
 				"post_type":       raw.PostType,
 				"message_type":    raw.MessageType,
 				"sub_type":        raw.SubType,
@@ -407,14 +407,14 @@ func parseMessageContentEx(raw json.RawMessage, selfID int64) parseMessageResult
 		return parseMessageResult{Text: s, IsBotMentioned: mentioned}
 	}
 
-	var segments []map[string]interface{}
+	var segments []map[string]any
 	if err := json.Unmarshal(raw, &segments); err == nil {
 		var text string
 		mentioned := false
 		selfIDStr := strconv.FormatInt(selfID, 10)
 		for _, seg := range segments {
 			segType, _ := seg["type"].(string)
-			data, _ := seg["data"].(map[string]interface{})
+			data, _ := seg["data"].(map[string]any)
 			switch segType {
 			case "text":
 				if data != nil {
@@ -441,7 +441,7 @@ func (c *OneBotChannel) handleRawEvent(raw *oneBotRawEvent) {
 	case "message":
 		evt, err := c.normalizeMessageEvent(raw)
 		if err != nil {
-			logger.WarnCF("onebot", "Failed to normalize message event", map[string]interface{}{
+			logger.WarnCF("onebot", "Failed to normalize message event", map[string]any{
 				"error": err.Error(),
 			})
 			return
@@ -450,20 +450,20 @@ func (c *OneBotChannel) handleRawEvent(raw *oneBotRawEvent) {
 	case "meta_event":
 		c.handleMetaEvent(raw)
 	case "notice":
-		logger.DebugCF("onebot", "Notice event received", map[string]interface{}{
+		logger.DebugCF("onebot", "Notice event received", map[string]any{
 			"sub_type": raw.SubType,
 		})
 	case "request":
-		logger.DebugCF("onebot", "Request event received", map[string]interface{}{
+		logger.DebugCF("onebot", "Request event received", map[string]any{
 			"sub_type": raw.SubType,
 		})
 	case "":
-		logger.DebugCF("onebot", "Event with empty post_type (possibly API response)", map[string]interface{}{
+		logger.DebugCF("onebot", "Event with empty post_type (possibly API response)", map[string]any{
 			"echo":   raw.Echo,
 			"status": raw.Status,
 		})
 	default:
-		logger.DebugCF("onebot", "Unknown post_type", map[string]interface{}{
+		logger.DebugCF("onebot", "Unknown post_type", map[string]any{
 			"post_type": raw.PostType,
 		})
 	}
@@ -498,14 +498,14 @@ func (c *OneBotChannel) normalizeMessageEvent(raw *oneBotRawEvent) (*oneBotEvent
 	var sender oneBotSender
 	if len(raw.Sender) > 0 {
 		if err := json.Unmarshal(raw.Sender, &sender); err != nil {
-			logger.WarnCF("onebot", "Failed to parse sender", map[string]interface{}{
+			logger.WarnCF("onebot", "Failed to parse sender", map[string]any{
 				"error":  err.Error(),
 				"sender": string(raw.Sender),
 			})
 		}
 	}
 
-	logger.DebugCF("onebot", "Normalized message event", map[string]interface{}{
+	logger.DebugCF("onebot", "Normalized message event", map[string]any{
 		"message_type": raw.MessageType,
 		"user_id":      userID,
 		"group_id":     groupID,
@@ -534,13 +534,13 @@ func (c *OneBotChannel) normalizeMessageEvent(raw *oneBotRawEvent) (*oneBotEvent
 func (c *OneBotChannel) handleMetaEvent(raw *oneBotRawEvent) {
 	switch raw.MetaEventType {
 	case "lifecycle":
-		logger.InfoCF("onebot", "Lifecycle event", map[string]interface{}{
+		logger.InfoCF("onebot", "Lifecycle event", map[string]any{
 			"sub_type": raw.SubType,
 		})
 	case "heartbeat":
 		logger.DebugC("onebot", "Heartbeat received")
 	default:
-		logger.DebugCF("onebot", "Unknown meta_event_type", map[string]interface{}{
+		logger.DebugCF("onebot", "Unknown meta_event_type", map[string]any{
 			"meta_event_type": raw.MetaEventType,
 		})
 	}
@@ -548,7 +548,7 @@ func (c *OneBotChannel) handleMetaEvent(raw *oneBotRawEvent) {
 
 func (c *OneBotChannel) handleMessage(evt *oneBotEvent) {
 	if c.isDuplicate(evt.MessageID) {
-		logger.DebugCF("onebot", "Duplicate message, skipping", map[string]interface{}{
+		logger.DebugCF("onebot", "Duplicate message, skipping", map[string]any{
 			"message_id": evt.MessageID,
 		})
 		return
@@ -556,7 +556,7 @@ func (c *OneBotChannel) handleMessage(evt *oneBotEvent) {
 
 	content := evt.Content
 	if content == "" {
-		logger.DebugCF("onebot", "Received empty message, ignoring", map[string]interface{}{
+		logger.DebugCF("onebot", "Received empty message, ignoring", map[string]any{
 			"message_id": evt.MessageID,
 		})
 		return
@@ -572,7 +572,7 @@ func (c *OneBotChannel) handleMessage(evt *oneBotEvent) {
 	switch evt.MessageType {
 	case "private":
 		chatID = "private:" + senderID
-		logger.InfoCF("onebot", "Received private message", map[string]interface{}{
+		logger.InfoCF("onebot", "Received private message", map[string]any{
 			"sender":     senderID,
 			"message_id": evt.MessageID,
 			"length":     len(content),
@@ -597,7 +597,7 @@ func (c *OneBotChannel) handleMessage(evt *oneBotEvent) {
 
 		triggered, strippedContent := c.checkGroupTrigger(content, evt.IsBotMentioned)
 		if !triggered {
-			logger.DebugCF("onebot", "Group message ignored (no trigger)", map[string]interface{}{
+			logger.DebugCF("onebot", "Group message ignored (no trigger)", map[string]any{
 				"sender":       senderID,
 				"group":        groupIDStr,
 				"is_mentioned": evt.IsBotMentioned,
@@ -607,7 +607,7 @@ func (c *OneBotChannel) handleMessage(evt *oneBotEvent) {
 		}
 		content = strippedContent
 
-		logger.InfoCF("onebot", "Received group message", map[string]interface{}{
+		logger.InfoCF("onebot", "Received group message", map[string]any{
 			"sender":       senderID,
 			"group":        groupIDStr,
 			"message_id":   evt.MessageID,
@@ -617,7 +617,7 @@ func (c *OneBotChannel) handleMessage(evt *oneBotEvent) {
 		})
 
 	default:
-		logger.WarnCF("onebot", "Unknown message type, cannot route", map[string]interface{}{
+		logger.WarnCF("onebot", "Unknown message type, cannot route", map[string]any{
 			"type":       evt.MessageType,
 			"message_id": evt.MessageID,
 			"user_id":    evt.UserID,
@@ -629,7 +629,7 @@ func (c *OneBotChannel) handleMessage(evt *oneBotEvent) {
 		metadata["nickname"] = evt.Sender.Nickname
 	}
 
-	logger.DebugCF("onebot", "Forwarding message to bus", map[string]interface{}{
+	logger.DebugCF("onebot", "Forwarding message to bus", map[string]any{
 		"sender_id": senderID,
 		"chat_id":   chatID,
 		"content":   truncate(content, 100),

@@ -41,12 +41,12 @@ type Logger struct {
 }
 
 type LogEntry struct {
-	Level     string                 `json:"level"`
-	Timestamp string                 `json:"timestamp"`
-	Component string                 `json:"component,omitempty"`
-	Message   string                 `json:"message"`
-	Fields    map[string]interface{} `json:"fields,omitempty"`
-	Caller    string                 `json:"caller,omitempty"`
+	Level     string         `json:"level"`
+	Timestamp string         `json:"timestamp"`
+	Component string         `json:"component,omitempty"`
+	Message   string         `json:"message"`
+	Fields    map[string]any `json:"fields,omitempty"`
+	Caller    string         `json:"caller,omitempty"`
 }
 
 func init() {
@@ -96,7 +96,7 @@ func DisableFileLogging() {
 	}
 }
 
-func logMessage(level LogLevel, component string, message string, fields map[string]interface{}) {
+func logMessage(level LogLevel, component string, message string, fields map[string]any) {
 	if level < currentLevel {
 		return
 	}
@@ -150,7 +150,7 @@ func formatComponent(component string) string {
 	return fmt.Sprintf(" %s:", component)
 }
 
-func formatFields(fields map[string]interface{}) string {
+func formatFields(fields map[string]any) string {
 	var parts []string
 	for k, v := range fields {
 		parts = append(parts, fmt.Sprintf("%s=%v", k, v))
@@ -166,11 +166,11 @@ func DebugC(component string, message string) {
 	logMessage(DEBUG, component, message, nil)
 }
 
-func DebugF(message string, fields map[string]interface{}) {
+func DebugF(message string, fields map[string]any) {
 	logMessage(DEBUG, "", message, fields)
 }
 
-func DebugCF(component string, message string, fields map[string]interface{}) {
+func DebugCF(component string, message string, fields map[string]any) {
 	logMessage(DEBUG, component, message, fields)
 }
 
@@ -182,11 +182,11 @@ func InfoC(component string, message string) {
 	logMessage(INFO, component, message, nil)
 }
 
-func InfoF(message string, fields map[string]interface{}) {
+func InfoF(message string, fields map[string]any) {
 	logMessage(INFO, "", message, fields)
 }
 
-func InfoCF(component string, message string, fields map[string]interface{}) {
+func InfoCF(component string, message string, fields map[string]any) {
 	logMessage(INFO, component, message, fields)
 }
 
@@ -198,11 +198,11 @@ func WarnC(component string, message string) {
 	logMessage(WARN, component, message, nil)
 }
 
-func WarnF(message string, fields map[string]interface{}) {
+func WarnF(message string, fields map[string]any) {
 	logMessage(WARN, "", message, fields)
 }
 
-func WarnCF(component string, message string, fields map[string]interface{}) {
+func WarnCF(component string, message string, fields map[string]any) {
 	logMessage(WARN, component, message, fields)
 }
 
@@ -214,11 +214,11 @@ func ErrorC(component string, message string) {
 	logMessage(ERROR, component, message, nil)
 }
 
-func ErrorF(message string, fields map[string]interface{}) {
+func ErrorF(message string, fields map[string]any) {
 	logMessage(ERROR, "", message, fields)
 }
 
-func ErrorCF(component string, message string, fields map[string]interface{}) {
+func ErrorCF(component string, message string, fields map[string]any) {
 	logMessage(ERROR, component, message, fields)
 }
 
@@ -230,10 +230,10 @@ func FatalC(component string, message string) {
 	logMessage(FATAL, component, message, nil)
 }
 
-func FatalF(message string, fields map[string]interface{}) {
+func FatalF(message string, fields map[string]any) {
 	logMessage(FATAL, "", message, fields)
 }
 
-func FatalCF(component string, message string, fields map[string]interface{}) {
+func FatalCF(component string, message string, fields map[string]any) {
 	logMessage(FATAL, component, message, fields)
 }

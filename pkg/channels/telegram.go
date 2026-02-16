@@ -89,7 +89,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	}
 
 	c.setRunning(true)
-	logger.InfoCF("telegram", "Telegram bot connected", map[string]interface{}{
+	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
 		"username": c.bot.Username(),
 	})
 
@@ -155,7 +155,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	tgMsg.ParseMode = telego.ModeHTML
 
 	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]interface{}{
+		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
 			"error": err.Error(),
 		})
 		tgMsg.ParseMode = ""
@@ -185,7 +185,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 
 	// 检查白名单，避免为被拒绝的用户下载附件
 	if !c.IsAllowed(userID) && !c.IsAllowed(senderID) {
-		logger.DebugCF("telegram", "Message rejected by allowlist", map[string]interface{}{
+		logger.DebugCF("telegram", "Message rejected by allowlist", map[string]any{
 			"user_id":  userID,
 			"username": user.Username,
 		})
@@ -203,7 +203,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 	defer func() {
 		for _, file := range localFiles {
 			if err := os.Remove(file); err != nil {
-				logger.DebugCF("telegram", "Failed to cleanup temp file", map[string]interface{}{
+				logger.DebugCF("telegram", "Failed to cleanup temp file", map[string]any{
 					"file":  file,
 					"error": err.Error(),
 				})
@@ -248,14 +248,14 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 
 				result, err := c.transcriber.Transcribe(ctx, voicePath)
 				if err != nil {
-					logger.ErrorCF("telegram", "Voice transcription failed", map[string]interface{}{
+					logger.ErrorCF("telegram", "Voice transcription failed", map[string]any{
 						"error": err.Error(),
 						"path":  voicePath,
 					})
 					transcribedText = fmt.Sprintf("[voice (transcription failed)]")
 				} else {
 					transcribedText = fmt.Sprintf("[voice transcription: %s]", result.Text)
-					logger.InfoCF("telegram", "Voice transcribed successfully", map[string]interface{}{
+					logger.InfoCF("telegram", "Voice transcribed successfully", map[string]any{
 						"text": result.Text,
 					})
 				}
@@ -298,7 +298,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 		content = "[empty message]"
 	}
 
-	logger.DebugCF("telegram", "Received message", map[string]interface{}{
+	logger.DebugCF("telegram", "Received message", map[string]any{
 		"sender_id": senderID,
 		"chat_id":   fmt.Sprintf("%d", chatID),
 		"preview":   utils.Truncate(content, 50),
@@ -307,7 +307,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 	// Thinking indicator
 	err := c.bot.SendChatAction(ctx, tu.ChatAction(tu.ID(chatID), telego.ChatActionTyping))
 	if err != nil {
-		logger.ErrorCF("telegram", "Failed to send chat action", map[string]interface{}{
+		logger.ErrorCF("telegram", "Failed to send chat action", map[string]any{
 			"error": err.Error(),
 		})
 	}
@@ -344,7 +344,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 func (c *TelegramChannel) downloadPhoto(ctx context.Context, fileID string) string {
 	file, err := c.bot.GetFile(ctx, &telego.GetFileParams{FileID: fileID})
 	if err != nil {
-		logger.ErrorCF("telegram", "Failed to get photo file", map[string]interface{}{
+		logger.ErrorCF("telegram", "Failed to get photo file", map[string]any{
 			"error": err.Error(),
 		})
 		return ""
@@ -359,7 +359,7 @@ func (c *TelegramChannel) downloadFileWithInfo(file *telego.File, ext string) st
 	}
 
 	url := c.bot.FileDownloadURL(file.FilePath)
-	logger.DebugCF("telegram", "File URL", map[string]interface{}{"url": url})
+	logger.DebugCF("telegram", "File URL", map[string]any{"url": url})
 
 	// Use FilePath as filename for better identification
 	filename := file.FilePath + ext
@@ -371,7 +371,7 @@ func (c *TelegramChannel) downloadFileWithInfo(file *telego.File, ext string) st
 func (c *TelegramChannel) downloadFile(ctx context.Context, fileID, ext string) string {
 	file, err := c.bot.GetFile(ctx, &telego.GetFileParams{FileID: fileID})
 	if err != nil {
-		logger.ErrorCF("telegram", "Failed to get file", map[string]interface{}{
+		logger.ErrorCF("telegram", "Failed to get file", map[string]any{
 			"error": err.Error(),
 		})
 		return ""

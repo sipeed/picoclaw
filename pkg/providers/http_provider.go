@@ -48,7 +48,7 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 	}
 }
 
-func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (*LLMResponse, error) {
 	if p.apiBase == "" {
 		return nil, fmt.Errorf("API base not configured")
 	}
@@ -61,7 +61,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		}
 	}
 
-	requestBody := map[string]interface{}{
+	requestBody := map[string]any{
 		"model":    model,
 		"messages": messages,
 	}
@@ -157,7 +157,7 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 
 	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
 	for _, tc := range choice.Message.ToolCalls {
-		arguments := make(map[string]interface{})
+		arguments := make(map[string]any)
 		name := ""
 
 		// Handle OpenAI format with nested function object

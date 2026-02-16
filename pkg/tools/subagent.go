@@ -230,15 +230,15 @@ func (t *SubagentTool) Description() string {
 	return "Execute a subagent task synchronously and return the result. Use this for delegating specific tasks to an independent agent instance. Returns execution summary to user and full details to LLM."
 }
 
-func (t *SubagentTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *SubagentTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"task": map[string]interface{}{
+		"properties": map[string]any{
+			"task": map[string]any{
 				"type":        "string",
 				"description": "The task for subagent to complete",
 			},
-			"label": map[string]interface{}{
+			"label": map[string]any{
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
@@ -252,7 +252,7 @@ func (t *SubagentTool) SetContext(channel, chatID string) {
 	t.originChatID = chatID
 }
 
-func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok {
 		return ErrorResult("task is required").WithError(fmt.Errorf("task parameter is required"))

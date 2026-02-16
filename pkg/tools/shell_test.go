@@ -14,7 +14,7 @@ func TestShellTool_Success(t *testing.T) {
 	tool := NewExecTool("", false)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command": "echo 'hello world'",
 	}
 
@@ -41,7 +41,7 @@ func TestShellTool_Failure(t *testing.T) {
 	tool := NewExecTool("", false)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command": "ls /nonexistent_directory_12345",
 	}
 
@@ -69,7 +69,7 @@ func TestShellTool_Timeout(t *testing.T) {
 	tool.SetTimeout(100 * time.Millisecond)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command": "sleep 10",
 	}
 
@@ -96,7 +96,7 @@ func TestShellTool_WorkingDir(t *testing.T) {
 	tool := NewExecTool("", false)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command":     "cat test.txt",
 		"working_dir": tmpDir,
 	}
@@ -117,7 +117,7 @@ func TestShellTool_DangerousCommand(t *testing.T) {
 	tool := NewExecTool("", false)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command": "rm -rf /",
 	}
 
@@ -138,7 +138,7 @@ func TestShellTool_MissingCommand(t *testing.T) {
 	tool := NewExecTool("", false)
 
 	ctx := context.Background()
-	args := map[string]interface{}{}
+	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
 
@@ -153,7 +153,7 @@ func TestShellTool_StderrCapture(t *testing.T) {
 	tool := NewExecTool("", false)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command": "sh -c 'echo stdout; echo stderr >&2'",
 	}
 
@@ -174,7 +174,7 @@ func TestShellTool_OutputTruncation(t *testing.T) {
 
 	ctx := context.Background()
 	// Generate long output (>10000 chars)
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command": "python3 -c \"print('x' * 20000)\" || echo " + strings.Repeat("x", 20000),
 	}
 
@@ -193,7 +193,7 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	tool.SetRestrictToWorkspace(true)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command": "cat ../../etc/passwd",
 	}
 

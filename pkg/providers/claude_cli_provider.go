@@ -24,7 +24,7 @@ func NewClaudeCliProvider(workspace string) *ClaudeCliProvider {
 }
 
 // Chat implements LLMProvider.Chat by executing the claude CLI.
-func (p *ClaudeCliProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *ClaudeCliProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (*LLMResponse, error) {
 	systemPrompt := p.buildSystemPrompt(messages, tools)
 	prompt := p.messagesToPrompt(messages)
 
@@ -202,7 +202,7 @@ func (p *ClaudeCliProvider) extractToolCalls(text string) []ToolCall {
 
 	var result []ToolCall
 	for _, tc := range wrapper.ToolCalls {
-		var args map[string]interface{}
+		var args map[string]any
 		json.Unmarshal([]byte(tc.Function.Arguments), &args)
 
 		result = append(result, ToolCall{

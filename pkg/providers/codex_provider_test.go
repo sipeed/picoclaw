@@ -15,7 +15,7 @@ func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	messages := []Message{
 		{Role: "user", Content: "Hello"},
 	}
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]any{
 		"max_tokens": 2048,
 	})
 	if params.Model != "gpt-4o" {
@@ -34,7 +34,7 @@ func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
 		{Role: "system", Content: "You are helpful"},
 		{Role: "user", Content: "Hi"},
 	}
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{})
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]any{})
 	if !params.Instructions.Valid() {
 		t.Fatal("Instructions should be set")
 	}
@@ -49,12 +49,12 @@ func TestBuildCodexParams_ToolCallConversation(t *testing.T) {
 		{
 			Role: "assistant",
 			ToolCalls: []ToolCall{
-				{ID: "call_1", Name: "get_weather", Arguments: map[string]interface{}{"city": "SF"}},
+				{ID: "call_1", Name: "get_weather", Arguments: map[string]any{"city": "SF"}},
 			},
 		},
 		{Role: "tool", Content: `{"temp": 72}`, ToolCallID: "call_1"},
 	}
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{})
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]any{})
 	if params.Input.OfInputItemList == nil {
 		t.Fatal("Input.OfInputItemList should not be nil")
 	}
@@ -70,16 +70,16 @@ func TestBuildCodexParams_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather",
-				Parameters: map[string]interface{}{
+				Parameters: map[string]any{
 					"type": "object",
-					"properties": map[string]interface{}{
-						"city": map[string]interface{}{"type": "string"},
+					"properties": map[string]any{
+						"city": map[string]any{"type": "string"},
 					},
 				},
 			},
 		},
 	}
-	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, tools, "gpt-4o", map[string]interface{}{})
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, tools, "gpt-4o", map[string]any{})
 	if len(params.Tools) != 1 {
 		t.Fatalf("len(Tools) = %d, want 1", len(params.Tools))
 	}
@@ -92,7 +92,7 @@ func TestBuildCodexParams_WithTools(t *testing.T) {
 }
 
 func TestBuildCodexParams_StoreIsFalse(t *testing.T) {
-	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]interface{}{})
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]any{})
 	if !params.Store.Valid() || params.Store.Or(true) != false {
 		t.Error("Store should be explicitly set to false")
 	}
@@ -203,27 +203,27 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 			return
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"id":     "resp_test",
 			"object": "response",
 			"status": "completed",
-			"output": []map[string]interface{}{
+			"output": []map[string]any{
 				{
 					"id":     "msg_1",
 					"type":   "message",
 					"role":   "assistant",
 					"status": "completed",
-					"content": []map[string]interface{}{
+					"content": []map[string]any{
 						{"type": "output_text", "text": "Hi from Codex!"},
 					},
 				},
 			},
-			"usage": map[string]interface{}{
+			"usage": map[string]any{
 				"input_tokens":          12,
 				"output_tokens":         6,
 				"total_tokens":          18,
-				"input_tokens_details":  map[string]interface{}{"cached_tokens": 0},
-				"output_tokens_details": map[string]interface{}{"reasoning_tokens": 0},
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -235,7 +235,7 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]interface{}{"max_tokens": 1024})
+	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]any{"max_tokens": 1024})
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}

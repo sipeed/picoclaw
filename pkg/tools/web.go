@@ -222,15 +222,15 @@ func (t *WebSearchTool) Description() string {
 	return "Search the web for current information. Returns titles, URLs, and snippets from search results."
 }
 
-func (t *WebSearchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *WebSearchTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
+		"properties": map[string]any{
+			"query": map[string]any{
 				"type":        "string",
 				"description": "Search query",
 			},
-			"count": map[string]interface{}{
+			"count": map[string]any{
 				"type":        "integer",
 				"description": "Number of results (1-10)",
 				"minimum":     1.0,
@@ -241,7 +241,7 @@ func (t *WebSearchTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	query, ok := args["query"].(string)
 	if !ok {
 		return ErrorResult("query is required")
@@ -286,15 +286,15 @@ func (t *WebFetchTool) Description() string {
 	return "Fetch a URL and extract readable content (HTML to text). Use this to get weather info, news, articles, or any web content."
 }
 
-func (t *WebFetchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *WebFetchTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"url": map[string]interface{}{
+		"properties": map[string]any{
+			"url": map[string]any{
 				"type":        "string",
 				"description": "URL to fetch",
 			},
-			"maxChars": map[string]interface{}{
+			"maxChars": map[string]any{
 				"type":        "integer",
 				"description": "Maximum characters to extract",
 				"minimum":     100.0,
@@ -304,7 +304,7 @@ func (t *WebFetchTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	urlStr, ok := args["url"].(string)
 	if !ok {
 		return ErrorResult("url is required")
@@ -369,7 +369,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	var text, extractor string
 
 	if strings.Contains(contentType, "application/json") {
-		var jsonData interface{}
+		var jsonData any
 		if err := json.Unmarshal(body, &jsonData); err == nil {
 			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
 			text = string(formatted)
@@ -392,7 +392,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 		text = text[:maxChars]
 	}
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		"url":       urlStr,
 		"status":    resp.StatusCode,
 		"extractor": extractor,

@@ -40,20 +40,20 @@ func TestCamelToSnake(t *testing.T) {
 }
 
 func TestConvertKeysToSnake(t *testing.T) {
-	input := map[string]interface{}{
+	input := map[string]any{
 		"apiKey":  "test-key",
 		"apiBase": "https://example.com",
-		"nested": map[string]interface{}{
+		"nested": map[string]any{
 			"maxTokens": float64(8192),
-			"allowFrom": []interface{}{"user1", "user2"},
-			"deeperLevel": map[string]interface{}{
+			"allowFrom": []any{"user1", "user2"},
+			"deeperLevel": map[string]any{
 				"clientId": "abc",
 			},
 		},
 	}
 
 	result := convertKeysToSnake(input)
-	m, ok := result.(map[string]interface{})
+	m, ok := result.(map[string]any)
 	if !ok {
 		t.Fatal("expected map[string]interface{}")
 	}
@@ -65,7 +65,7 @@ func TestConvertKeysToSnake(t *testing.T) {
 		t.Error("expected key 'api_base' after conversion")
 	}
 
-	nested, ok := m["nested"].(map[string]interface{})
+	nested, ok := m["nested"].(map[string]any)
 	if !ok {
 		t.Fatal("expected nested map")
 	}
@@ -76,7 +76,7 @@ func TestConvertKeysToSnake(t *testing.T) {
 		t.Error("expected key 'allow_from' in nested map")
 	}
 
-	deeper, ok := nested["deeper_level"].(map[string]interface{})
+	deeper, ok := nested["deeper_level"].(map[string]any)
 	if !ok {
 		t.Fatal("expected deeper_level map")
 	}
@@ -89,15 +89,15 @@ func TestLoadOpenClawConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "openclaw.json")
 
-	openclawConfig := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	openclawConfig := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey":  "sk-ant-test123",
 				"apiBase": "https://api.anthropic.com",
 			},
 		},
-		"agents": map[string]interface{}{
-			"defaults": map[string]interface{}{
+		"agents": map[string]any{
+			"defaults": map[string]any{
 				"maxTokens": float64(4096),
 				"model":     "claude-3-opus",
 			},
@@ -117,11 +117,11 @@ func TestLoadOpenClawConfig(t *testing.T) {
 		t.Fatalf("LoadOpenClawConfig: %v", err)
 	}
 
-	providers, ok := result["providers"].(map[string]interface{})
+	providers, ok := result["providers"].(map[string]any)
 	if !ok {
 		t.Fatal("expected providers map")
 	}
-	anthropic, ok := providers["anthropic"].(map[string]interface{})
+	anthropic, ok := providers["anthropic"].(map[string]any)
 	if !ok {
 		t.Fatal("expected anthropic map")
 	}
@@ -129,11 +129,11 @@ func TestLoadOpenClawConfig(t *testing.T) {
 		t.Errorf("api_key = %v, want sk-ant-test123", anthropic["api_key"])
 	}
 
-	agents, ok := result["agents"].(map[string]interface{})
+	agents, ok := result["agents"].(map[string]any)
 	if !ok {
 		t.Fatal("expected agents map")
 	}
-	defaults, ok := agents["defaults"].(map[string]interface{})
+	defaults, ok := agents["defaults"].(map[string]any)
 	if !ok {
 		t.Fatal("expected defaults map")
 	}
@@ -144,16 +144,16 @@ func TestLoadOpenClawConfig(t *testing.T) {
 
 func TestConvertConfig(t *testing.T) {
 	t.Run("providers mapping", func(t *testing.T) {
-		data := map[string]interface{}{
-			"providers": map[string]interface{}{
-				"anthropic": map[string]interface{}{
+		data := map[string]any{
+			"providers": map[string]any{
+				"anthropic": map[string]any{
 					"api_key":  "sk-ant-test",
 					"api_base": "https://api.anthropic.com",
 				},
-				"openrouter": map[string]interface{}{
+				"openrouter": map[string]any{
 					"api_key": "sk-or-test",
 				},
-				"groq": map[string]interface{}{
+				"groq": map[string]any{
 					"api_key": "gsk-test",
 				},
 			},
@@ -178,9 +178,9 @@ func TestConvertConfig(t *testing.T) {
 	})
 
 	t.Run("unsupported provider warning", func(t *testing.T) {
-		data := map[string]interface{}{
-			"providers": map[string]interface{}{
-				"deepseek": map[string]interface{}{
+		data := map[string]any{
+			"providers": map[string]any{
+				"deepseek": map[string]any{
 					"api_key": "sk-deep-test",
 				},
 			},
@@ -199,14 +199,14 @@ func TestConvertConfig(t *testing.T) {
 	})
 
 	t.Run("channels mapping", func(t *testing.T) {
-		data := map[string]interface{}{
-			"channels": map[string]interface{}{
-				"telegram": map[string]interface{}{
+		data := map[string]any{
+			"channels": map[string]any{
+				"telegram": map[string]any{
 					"enabled":    true,
 					"token":      "tg-token-123",
-					"allow_from": []interface{}{"user1"},
+					"allow_from": []any{"user1"},
 				},
-				"discord": map[string]interface{}{
+				"discord": map[string]any{
 					"enabled": true,
 					"token":   "disc-token-456",
 				},
@@ -232,9 +232,9 @@ func TestConvertConfig(t *testing.T) {
 	})
 
 	t.Run("unsupported channel warning", func(t *testing.T) {
-		data := map[string]interface{}{
-			"channels": map[string]interface{}{
-				"email": map[string]interface{}{
+		data := map[string]any{
+			"channels": map[string]any{
+				"email": map[string]any{
 					"enabled": true,
 				},
 			},
@@ -253,9 +253,9 @@ func TestConvertConfig(t *testing.T) {
 	})
 
 	t.Run("agent defaults", func(t *testing.T) {
-		data := map[string]interface{}{
-			"agents": map[string]interface{}{
-				"defaults": map[string]interface{}{
+		data := map[string]any{
+			"agents": map[string]any{
+				"defaults": map[string]any{
 					"model":               "claude-3-opus",
 					"max_tokens":          float64(4096),
 					"temperature":         0.5,
@@ -284,7 +284,7 @@ func TestConvertConfig(t *testing.T) {
 	})
 
 	t.Run("empty config", func(t *testing.T) {
-		data := map[string]interface{}{}
+		data := map[string]any{}
 
 		cfg, warnings, err := ConvertConfig(data)
 		if err != nil {
@@ -576,9 +576,9 @@ func TestRunDryRun(t *testing.T) {
 	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0644)
 	os.WriteFile(filepath.Join(wsDir, "AGENTS.md"), []byte("# Agents"), 0644)
 
-	configData := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	configData := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey": "test-key",
 			},
 		},
@@ -622,17 +622,17 @@ func TestRunFullMigration(t *testing.T) {
 	os.MkdirAll(memDir, 0755)
 	os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("# Memory notes"), 0644)
 
-	configData := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	configData := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey": "sk-ant-migrate-test",
 			},
-			"openrouter": map[string]interface{}{
+			"openrouter": map[string]any{
 				"apiKey": "sk-or-migrate-test",
 			},
 		},
-		"channels": map[string]interface{}{
-			"telegram": map[string]interface{}{
+		"channels": map[string]any{
+			"telegram": map[string]any{
 				"enabled": true,
 				"token":   "tg-migrate-test",
 			},
@@ -777,9 +777,9 @@ func TestRunConfigOnly(t *testing.T) {
 	os.MkdirAll(wsDir, 0755)
 	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0644)
 
-	configData := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	configData := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey": "sk-config-only",
 			},
 		},
@@ -817,9 +817,9 @@ func TestRunWorkspaceOnly(t *testing.T) {
 	os.MkdirAll(wsDir, 0755)
 	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0644)
 
-	configData := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	configData := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey": "sk-ws-only",
 			},
 		},

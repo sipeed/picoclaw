@@ -41,7 +41,7 @@ func NewCodexProviderWithTokenSource(token, accountID string, tokenSource func()
 	return p
 }
 
-func (p *CodexProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *CodexProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (*LLMResponse, error) {
 	var opts []option.RequestOption
 	if p.tokenSource != nil {
 		tok, accID, err := p.tokenSource()
@@ -68,7 +68,7 @@ func (p *CodexProvider) GetDefaultModel() string {
 	return "gpt-4o"
 }
 
-func buildCodexParams(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) responses.ResponseNewParams {
+func buildCodexParams(messages []Message, tools []ToolDefinition, model string, options map[string]any) responses.ResponseNewParams {
 	var inputItems responses.ResponseInputParam
 	var instructions string
 
@@ -189,9 +189,9 @@ func parseCodexResponse(resp *responses.Response) *LLMResponse {
 				}
 			}
 		case "function_call":
-			var args map[string]interface{}
+			var args map[string]any
 			if err := json.Unmarshal([]byte(item.Arguments), &args); err != nil {
-				args = map[string]interface{}{"raw": item.Arguments}
+				args = map[string]any{"raw": item.Arguments}
 			}
 			toolCalls = append(toolCalls, ToolCall{
 				ID:        item.CallID,

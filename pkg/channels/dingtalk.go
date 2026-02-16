@@ -108,7 +108,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
 	}
 
-	logger.DebugCF("dingtalk", "Sending message", map[string]interface{}{
+	logger.DebugCF("dingtalk", "Sending message", map[string]any{
 		"chat_id": msg.ChatID,
 		"preview": utils.Truncate(msg.Content, 100),
 	})
@@ -125,7 +125,7 @@ func (c *DingTalkChannel) onChatBotMessageReceived(ctx context.Context, data *ch
 	content := data.Text.Content
 	if content == "" {
 		// Try to extract from Content interface{} if Text is empty
-		if contentMap, ok := data.Content.(map[string]interface{}); ok {
+		if contentMap, ok := data.Content.(map[string]any); ok {
 			if textContent, ok := contentMap["content"].(string); ok {
 				content = textContent
 			}
@@ -155,7 +155,7 @@ func (c *DingTalkChannel) onChatBotMessageReceived(ctx context.Context, data *ch
 		"session_webhook":   data.SessionWebhook,
 	}
 
-	logger.DebugCF("dingtalk", "Received message", map[string]interface{}{
+	logger.DebugCF("dingtalk", "Received message", map[string]any{
 		"sender_nick": senderNick,
 		"sender_id":   senderID,
 		"preview":     utils.Truncate(content, 50),

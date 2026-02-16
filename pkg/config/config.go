@@ -23,7 +23,7 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 	}
 
 	// Try []interface{} to handle mixed types
-	var raw []interface{}
+	var raw []any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}

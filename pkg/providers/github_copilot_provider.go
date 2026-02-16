@@ -49,7 +49,7 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 }
 
 // Chat sends a chat request to GitHub Copilot
-func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (*LLMResponse, error) {
 	type tempMessage struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`

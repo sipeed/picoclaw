@@ -16,7 +16,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 	tool := &ReadFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": testFile,
 	}
 
@@ -43,7 +43,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 	tool := &ReadFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
 	}
 
@@ -64,7 +64,7 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 func TestFilesystemTool_ReadFile_MissingPath(t *testing.T) {
 	tool := &ReadFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{}
+	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
 
@@ -86,7 +86,7 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 
 	tool := &WriteFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path":    testFile,
 		"content": "hello world",
 	}
@@ -125,7 +125,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 
 	tool := &WriteFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path":    testFile,
 		"content": "test",
 	}
@@ -151,7 +151,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 	tool := &WriteFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"content": "test",
 	}
 
@@ -167,7 +167,7 @@ func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 	tool := &WriteFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": "/tmp/test.txt",
 	}
 
@@ -193,7 +193,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 
 	tool := &ListDirTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": tmpDir,
 	}
 
@@ -217,7 +217,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 	tool := &ListDirTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": "/nonexistent_directory_12345",
 	}
 
@@ -238,7 +238,7 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 	tool := &ListDirTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{}
+	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
 

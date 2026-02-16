@@ -193,7 +193,7 @@ func (hs *HeartbeatService) executeHeartbeat() {
 	if result.Async {
 		hs.logInfo("Async task started: %s", result.ForLLM)
 		logger.InfoCF("heartbeat", "Async heartbeat task started",
-			map[string]interface{}{
+			map[string]any{
 				"message": result.ForLLM,
 			})
 		return

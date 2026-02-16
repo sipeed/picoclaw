@@ -386,12 +386,12 @@ func extractAccountID(accessToken string) string {
 		return ""
 	}
 
-	var claims map[string]interface{}
+	var claims map[string]any
 	if err := json.Unmarshal(decoded, &claims); err != nil {
 		return ""
 	}
 
-	if authClaim, ok := claims["https://api.openai.com/auth"].(map[string]interface{}); ok {
+	if authClaim, ok := claims["https://api.openai.com/auth"].(map[string]any); ok {
 		if accountID, ok := authClaim["chatgpt_account_id"].(string); ok {
 			return accountID
 		}
