@@ -172,11 +172,14 @@ func (p *HTTPProvider) chatAnthropic(ctx context.Context, messages []Message, to
 				"content": contentBlocks,
 			})
 		case "tool":
+			// Zhipu GLM coding plan requires 'id' field in tool_result blocks
+			// Use tool_use_id as the id to work around their API implementation
 			anthropicMessages = append(anthropicMessages, map[string]interface{}{
 				"role":    "user",
 				"content": []map[string]interface{}{
 					{
 						"type":      "tool_result",
+						"id":        msg.ToolCallID, // Required by Zhipu GLM coding plan
 						"tool_use_id": msg.ToolCallID,
 						"content":   msg.Content,
 					},
