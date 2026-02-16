@@ -84,6 +84,13 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	}
 	registry.Register(tools.NewWebFetchTool(50000))
 
+	// Browser automation tools (ActionBook)
+	if cfg.Tools.Browser.Enabled {
+		registry.Register(tools.NewBrowserSearchTool(cfg.Tools.Browser.Headless))
+		registry.Register(tools.NewBrowserGetTool())
+		registry.Register(tools.NewBrowserTool(cfg.Tools.Browser.Headless))
+	}
+
 	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 	registry.Register(tools.NewI2CTool())
 	registry.Register(tools.NewSPITool())

@@ -211,8 +211,14 @@ type WebToolsConfig struct {
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 }
 
+type BrowserConfig struct {
+	Enabled  bool `json:"enabled" env:"PICOCLAW_TOOLS_BROWSER_ENABLED"`
+	Headless bool `json:"headless" env:"PICOCLAW_TOOLS_BROWSER_HEADLESS"`
+}
+
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web     WebToolsConfig `json:"web"`
+	Browser BrowserConfig  `json:"browser"`
 }
 
 func DefaultConfig() *Config {
@@ -321,6 +327,10 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+			},
+			Browser: BrowserConfig{
+				Enabled:  true,
+				Headless: true,
 			},
 		},
 		Heartbeat: HeartbeatConfig{
