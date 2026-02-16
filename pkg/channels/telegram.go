@@ -27,14 +27,14 @@ type TelegramChannel struct {
 	config       config.TelegramConfig
 	chatIDs      map[string]int64
 	transcriber  *voice.GroqTranscriber
-	stopThinking sync.Map // chatID -> typingCancel
+	typingTasks  sync.Map // chatID -> *typingTask
 }
 
-type thinkingCancel struct {
+type typingTask struct {
 	fn context.CancelFunc
 }
 
-func (c *thinkingCancel) Cancel() {
+func (c *typingTask) Cancel() {
 	if c != nil && c.fn != nil {
 		c.fn()
 	}
@@ -68,7 +68,7 @@ func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*Telegr
 		config:       cfg,
 		chatIDs:      make(map[string]int64),
 		transcriber:  nil,
-		stopThinking: sync.Map{},
+		typingTasks:  sync.Map{},
 	}, nil
 }
 
@@ -165,11 +165,11 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 
 	// Stop typing indicator goroutine
-	if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
-		if cf, ok := stop.(*thinkingCancel); ok && cf != nil {
+	if stop, ok := c.typingTasks.Load(msg.ChatID); ok {
+		if cf, ok := stop.(*typingTask); ok && cf != nil {
 			cf.Cancel()
 		}
-		c.stopThinking.Delete(msg.ChatID)
+		c.typingTasks.Delete(msg.ChatID)
 	}
 
 	htmlContent := markdownToTelegramHTML(msg.Content)
@@ -331,13 +331,13 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 	// so we re-send every 4s until the response arrives)
 	chatIDStr := fmt.Sprintf("%d", chatID)
 	// Cancel any previous typing goroutine for this chat
-	if prevStop, ok := c.stopThinking.Load(chatIDStr); ok {
-		if cf, ok := prevStop.(*thinkingCancel); ok && cf != nil {
+	if prevStop, ok := c.typingTasks.Load(chatIDStr); ok {
+		if cf, ok := prevStop.(*typingTask); ok && cf != nil {
 			cf.Cancel()
 		}
 	}
 	typingCtx, typingCancel := context.WithCancel(ctx)
-	c.stopThinking.Store(chatIDStr, &thinkingCancel{fn: typingCancel})
+	c.typingTasks.Store(chatIDStr, &typingTask{fn: typingCancel})
 	go func() {
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
