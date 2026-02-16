@@ -260,10 +260,6 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 		params.Instructions = openai.Opt(defaultCodexInstructions)
 	}
 
-	if maxTokens, ok := options["max_tokens"].(int); ok {
-		params.MaxOutputTokens = openai.Opt(int64(maxTokens))
-	}
-
 	if len(tools) > 0 {
 		params.Tools = translateToolsForCodex(tools)
 	}
