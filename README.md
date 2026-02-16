@@ -702,6 +702,8 @@ picoclaw agent -m "Hello"
 <details>
 <summary><b>Full config example</b></summary>
 
+Schema: `config/config.schema.json`
+
 ```json
 {
   "agents": {
@@ -767,6 +769,106 @@ picoclaw agent -m "Hello"
 ```
 
 </details>
+
+## 🌐 Web UI (Browser Chat)
+
+When running in `gateway` mode, PicoClaw can serve a simple browser-based chat UI over HTTP.
+
+![Web UI screenshot](assets/webchat.png)
+
+**1. Build UI assets**
+
+```bash
+make ui-build
+```
+
+**2. Run gateway**
+
+```bash
+picoclaw gateway
+```
+
+**3. Open in browser**
+
+`http://<gateway-host>:18790/`
+
+If you set `gateway.token`, open:
+
+`http://<gateway-host>:18790/?token=<secret>`
+
+The listen address is controlled by `gateway.bind` (`local`, `tailnet`, `all`).
+
+### Admin Web UI (Config Editor)
+
+The gateway also serves an admin web UI at:
+
+`http://<gateway-host>:18790/admin`
+
+It provides two editing modes:
+
+- **Form editor**: a generic UI generated from `config/config.schema.json` (served by the gateway).
+- **Raw JSON editor**: edit the full config as JSON.
+
+**Authentication**
+
+The admin UI uses the same bearer token as the Admin API.
+Set `gateway.admin_token` (or `PICOCLAW_GATEWAY_ADMIN_TOKEN`) and enter it in the UI.
+Requests are sent with:
+
+`Authorization: Bearer <admin_token>`
+
+If `gateway.admin_token` is empty, `/admin/*` will always return `401 Unauthorized`.
+
+**Writable config required**
+
+Saving changes writes to the normal config path (e.g. `~/.picoclaw/config.json`, or `/root/.picoclaw/config.json` in Docker).
+If the config file is mounted read-only, saving will fail with **"config is not writable"**.
+
+### Admin API (Config Update + Graceful Restart)
+
+The gateway also exposes an **API-only** management interface for remote administration.
+
+It supports:
+
+- **Replace config**: `PUT /admin/config`
+- **Read config**: `GET /admin/config`
+- **Read config schema**: `GET /admin/schema`
+- **Graceful drain + exit(0)** (so Docker/systemd can restart it): `POST /admin/drain-exit`
+
+**Authentication**
+
+Set `gateway.admin_token` (or `PICOCLAW_GATEWAY_ADMIN_TOKEN`) and pass it via:
+
+`Authorization: Bearer <admin_token>`
+
+If `gateway.admin_token` is empty, the admin API will always return `401 Unauthorized`.
+
+**Writable config required**
+
+The gateway writes to its normal config path (e.g. `~/.picoclaw/config.json`, or `/root/.picoclaw/config.json` in Docker).
+If that file is mounted read-only, the config update endpoint will fail with **"config is not writable"**.
+
+**Examples**
+
+Replace the full config:
+
+```bash
+curl -X PUT \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  --data-binary @config.json \
+  http://<gateway-host>:18790/admin/config
+```
+
+Trigger graceful drain and restart (default timeout 30s):
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"timeout_seconds":30}' \
+  http://<gateway-host>:18790/admin/drain-exit
+```
 
 ## CLI Reference
 

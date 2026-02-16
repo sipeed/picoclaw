@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test
+.PHONY: all build install uninstall clean help test ui-deps ui-build
 
 # Build variables
 BINARY_NAME=picoclaw
@@ -62,6 +62,18 @@ BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
 
 # Default target
 all: build
+
+## ui-deps: Install UI dependencies (ui/)
+ui-deps:
+	@echo "Installing UI dependencies..."
+	@cd ui && npm install
+	@echo "UI dependencies installed"
+
+## ui-build: Build UI assets to ui/dist (ui/)
+ui-build: ui-deps
+	@echo "Building UI..."
+	@cd ui && npm run build
+	@echo "UI build complete: ui/dist"
 
 ## generate: Run generate
 generate:

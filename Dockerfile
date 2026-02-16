@@ -3,7 +3,7 @@
 # ============================================================
 FROM golang:1.26.0-alpine AS builder
 
-RUN apk add --no-cache git make
+RUN apk add --no-cache git make nodejs npm
 
 WORKDIR /src
 
@@ -13,6 +13,7 @@ RUN go mod download
 
 # Copy source and build
 COPY . .
+RUN make ui-build
 RUN make build
 
 # ============================================================
@@ -28,6 +29,12 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Copy binary
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+
+# Copy built Web UI assets
+COPY --from=builder /src/ui/dist /usr/local/share/picoclaw/ui/dist
+
+# Copy config schema for /admin/schema
+COPY --from=builder /src/config/config.schema.json /usr/local/share/picoclaw/config/config.schema.json
 
 # Create picoclaw home directory
 RUN /usr/local/bin/picoclaw onboard

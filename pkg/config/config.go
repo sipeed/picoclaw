@@ -79,6 +79,7 @@ type ChannelsConfig struct {
 	Slack    SlackConfig    `json:"slack"`
 	LINE     LINEConfig     `json:"line"`
 	OneBot   OneBotConfig   `json:"onebot"`
+	WebUI    WebUIConfig    `json:"webui"`
 }
 
 type WhatsAppConfig struct {
@@ -156,6 +157,10 @@ type OneBotConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
 }
 
+type WebUIConfig struct {
+	Enabled bool `json:"enabled" env:"PICOCLAW_CHANNELS_WEBUI_ENABLED"`
+}
+
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled" env:"PICOCLAW_HEARTBEAT_ENABLED"`
 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
@@ -191,8 +196,11 @@ type ProviderConfig struct {
 }
 
 type GatewayConfig struct {
-	Host string `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
-	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
+	Host  string `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
+	Bind  string `json:"bind" env:"PICOCLAW_GATEWAY_BIND"`
+	Port  int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
+	Token string `json:"token" env:"PICOCLAW_GATEWAY_TOKEN"`
+	AdminToken string `json:"admin_token" env:"PICOCLAW_GATEWAY_ADMIN_TOKEN"`
 }
 
 type BraveConfig struct {
@@ -293,6 +301,9 @@ func DefaultConfig() *Config {
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
 			},
+			WebUI: WebUIConfig{
+				Enabled: true,
+			},
 		},
 		Providers: ProvidersConfig{
 			Anthropic:    ProviderConfig{},
@@ -307,8 +318,11 @@ func DefaultConfig() *Config {
 			ShengSuanYun: ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
-			Port: 18790,
+			Host:  "0.0.0.0",
+			Bind:  "all",
+			Port:  18790,
+			Token: "",
+			AdminToken: "",
 		},
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{
