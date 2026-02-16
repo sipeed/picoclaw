@@ -299,7 +299,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				}
 			}
 		case "claude-cli", "claudecode", "claude-code":
-			workspace := cfg.Agents.Defaults.Workspace
+			workspace := cfg.WorkspacePath()
 			if workspace == "" {
 				workspace = "."
 			}
