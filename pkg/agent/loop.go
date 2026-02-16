@@ -46,6 +46,7 @@ type AgentLoop struct {
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
 	channelManager *channels.Manager
+	configPath     string   // Path to config.json for persistence
 }
 
 // processOptions configures how a message is processed
@@ -109,7 +110,7 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	return registry
 }
 
-func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
+func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, configPath string) *AgentLoop {
 	workspace := cfg.WorkspacePath()
 	os.MkdirAll(workspace, 0755)
 
@@ -154,6 +155,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
+		configPath:     configPath,
 	}
 }
 
@@ -209,6 +211,16 @@ func (al *AgentLoop) GetModel() string {
 
 func (al *AgentLoop) SetModel(model string) {
 	al.model = model
+	al.cfg.Agents.Defaults.Model = model
+	al.saveConfig()
+}
+
+func (al *AgentLoop) saveConfig() {
+	if al.configPath != "" {
+		if err := config.SaveConfig(al.configPath, al.cfg); err != nil {
+			logger.ErrorCF("agent", "Failed to save config", map[string]interface{}{"error": err.Error(), "path": al.configPath})
+		}
+	}
 }
 
 // listModelsResponse builds a dynamic /models response from the current config.

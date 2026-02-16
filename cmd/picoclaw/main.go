@@ -406,7 +406,7 @@ func agentCmd() {
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, getConfigPath())
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
@@ -541,7 +541,7 @@ func gatewayCmd() {
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, getConfigPath())
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
