@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -217,65 +218,43 @@ func (al *AgentLoop) listModelsResponse() string {
 	sb.WriteString(fmt.Sprintf("**Active model:** `%s`\n", al.model))
 	sb.WriteString(fmt.Sprintf("**Active provider:** `%s`\n\n", al.cfg.Agents.Defaults.Provider))
 
-	// List all configured providers
-	type providerEntry struct {
-		Name    string
-		APIBase string
-	}
-	providersList := []providerEntry{
-		{"gemini", al.cfg.Providers.Gemini.APIBase},
-		{"openrouter", al.cfg.Providers.OpenRouter.APIBase},
-		{"openai", al.cfg.Providers.OpenAI.APIBase},
-		{"anthropic", al.cfg.Providers.Anthropic.APIBase},
-		{"vllm", al.cfg.Providers.VLLM.APIBase},
-		{"groq", al.cfg.Providers.Groq.APIBase},
-		{"deepseek", al.cfg.Providers.DeepSeek.APIBase},
-		{"nvidia", al.cfg.Providers.Nvidia.APIBase},
-		{"moonshot", al.cfg.Providers.Moonshot.APIBase},
-		{"zhipu", al.cfg.Providers.Zhipu.APIBase},
-	}
+	sb.WriteString("**Configured providers:**\n")
+
+	// Use reflection to iterate over Config.Providers fields
+	v := reflect.ValueOf(al.cfg.Providers)
+	t := v.Type()
 
 	hasConfigured := false
-	for _, p := range providersList {
-		// Show providers that have either an API key or API base configured
-		hasKey := false
-		switch p.Name {
-		case "gemini":
-			hasKey = al.cfg.Providers.Gemini.APIKey != ""
-		case "openrouter":
-			hasKey = al.cfg.Providers.OpenRouter.APIKey != ""
-		case "openai":
-			hasKey = al.cfg.Providers.OpenAI.APIKey != ""
-		case "anthropic":
-			hasKey = al.cfg.Providers.Anthropic.APIKey != ""
-		case "vllm":
-			hasKey = al.cfg.Providers.VLLM.APIKey != "" || al.cfg.Providers.VLLM.APIBase != ""
-		case "groq":
-			hasKey = al.cfg.Providers.Groq.APIKey != ""
-		case "deepseek":
-			hasKey = al.cfg.Providers.DeepSeek.APIKey != ""
-		case "nvidia":
-			hasKey = al.cfg.Providers.Nvidia.APIKey != ""
-		case "moonshot":
-			hasKey = al.cfg.Providers.Moonshot.APIKey != ""
-		case "zhipu":
-			hasKey = al.cfg.Providers.Zhipu.APIKey != ""
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		fieldName := strings.ToLower(t.Field(i).Name)
+
+		// Provider name from json tag if available
+		jsonTag := t.Field(i).Tag.Get("json")
+		if jsonTag != "" {
+			fieldName = strings.Split(jsonTag, ",")[0]
 		}
-		if hasKey {
-			if !hasConfigured {
-				sb.WriteString("**Configured providers:**\n")
-				hasConfigured = true
-			}
+
+		// Check if provider has API key or Base URL
+		apiKey := field.FieldByName("APIKey").String()
+		apiBase := field.FieldByName("APIBase").String()
+
+		if apiKey != "" || apiBase != "" {
 			active := ""
-			if p.Name == al.cfg.Agents.Defaults.Provider {
+			if fieldName == al.cfg.Agents.Defaults.Provider {
 				active = " ✅"
 			}
-			if p.APIBase != "" {
-				sb.WriteString(fmt.Sprintf("- `%s` → %s%s\n", p.Name, p.APIBase, active))
+			if apiBase != "" {
+				sb.WriteString(fmt.Sprintf("- `%s` → %s%s\n", fieldName, apiBase, active))
 			} else {
-				sb.WriteString(fmt.Sprintf("- `%s`%s\n", p.Name, active))
+				sb.WriteString(fmt.Sprintf("- `%s`%s\n", fieldName, active))
 			}
+			hasConfigured = true
 		}
+	}
+
+	if !hasConfigured {
+		sb.WriteString("_None configured_\n")
 	}
 
 	sb.WriteString("\n_Usage: `/model <name>` or `/model <provider>/<model>`_")

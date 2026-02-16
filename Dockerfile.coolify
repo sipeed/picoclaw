@@ -34,10 +34,8 @@ RUN /usr/local/bin/picoclaw onboard
 COPY entrypoint-coolify.sh /usr/local/bin/entrypoint-coolify.sh
 RUN chmod +x /usr/local/bin/entrypoint-coolify.sh
 
-# Default env vars (overridden by Coolify)
-ENV PICOCLAW_AGENTS_DEFAULTS_PROVIDER="gemini"
-ENV PICOCLAW_AGENTS_DEFAULTS_MODEL="gemini-2.5-flash-lite"
-ENV PICOCLAW_PROVIDERS_GEMINI_API_KEY=""
+# Default env vars (can be overridden by Coolify)
+ENV TZ=UTC
 
 ENTRYPOINT ["/usr/local/bin/entrypoint-coolify.sh"]
 CMD ["gateway"]
