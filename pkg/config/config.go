@@ -175,6 +175,7 @@ type ProvidersConfig struct {
 	VLLM          ProviderConfig `json:"vllm"`
 	Gemini        ProviderConfig `json:"gemini"`
 	Nvidia        ProviderConfig `json:"nvidia"`
+	Ollama        ProviderConfig `json:"ollama"`
 	Moonshot      ProviderConfig `json:"moonshot"`
 	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig `json:"deepseek"`
