@@ -79,6 +79,7 @@ type ChannelsConfig struct {
 	Slack    SlackConfig    `json:"slack"`
 	LINE     LINEConfig     `json:"line"`
 	OneBot   OneBotConfig   `json:"onebot"`
+	Pushover PushoverConfig `json:"pushover"`
 }
 
 type WhatsAppConfig struct {
@@ -104,9 +105,10 @@ type FeishuConfig struct {
 }
 
 type DiscordConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	Enabled     bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	Token       string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	AllowFrom   FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	MentionOnly bool                `json:"mention_only" env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
 }
 
 type MaixCamConfig struct {
@@ -156,6 +158,12 @@ type OneBotConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
 }
 
+type PushoverConfig struct {
+	Enabled  bool   `json:"enabled" env:"PICOCLAW_CHANNELS_PUSHOVER_ENABLED"`
+	AppToken string `json:"app_token" env:"PICOCLAW_CHANNELS_PUSHOVER_APP_TOKEN"`
+	UserKey  string `json:"user_key" env:"PICOCLAW_CHANNELS_PUSHOVER_USER_KEY"`
+}
+
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled" env:"PICOCLAW_HEARTBEAT_ENABLED"`
 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
@@ -175,7 +183,6 @@ type ProvidersConfig struct {
 	VLLM          ProviderConfig `json:"vllm"`
 	Gemini        ProviderConfig `json:"gemini"`
 	Nvidia        ProviderConfig `json:"nvidia"`
-	Ollama        ProviderConfig `json:"ollama"`
 	Moonshot      ProviderConfig `json:"moonshot"`
 	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig `json:"deepseek"`
@@ -370,7 +377,7 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0600)
+	return os.WriteFile(path, data, 0644)
 }
 
 func (c *Config) WorkspacePath() string {
