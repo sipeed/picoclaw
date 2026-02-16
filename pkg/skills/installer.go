@@ -30,6 +30,23 @@ type BuiltinSkill struct {
 	Enabled bool   `json:"enabled"`
 }
 
+const maxRetries = 3
+
+func doRequestWithRetry(client *http.Client, req *http.Request) (*http.Response, error) {
+	var resp *http.Response
+	var err error
+	for i := range maxRetries {
+		resp, err = client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			break
+		}
+		if i < maxRetries-1 {
+			time.Sleep(time.Second * time.Duration(i+1))
+		}
+	}
+	return resp, err
+}
+
 func NewSkillInstaller(workspace string) *SkillInstaller {
 	return &SkillInstaller{
 		workspace: workspace,
@@ -51,7 +68,7 @@ func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, repo string) er
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := doRequestWithRetry(client, req)
 	if err != nil {
 		return fmt.Errorf("failed to fetch skill: %w", err)
 	}
@@ -101,7 +118,7 @@ func (si *SkillInstaller) ListAvailableSkills(ctx context.Context) ([]AvailableS
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := doRequestWithRetry(client, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch skills list: %w", err)
 	}
