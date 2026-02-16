@@ -172,6 +172,16 @@ docker compose logs -f picoclaw-gateway
 docker compose --profile gateway down
 ```
 
+## 📱 Mobile (Android / Termux)
+
+Run PicoClaw on your Android device with our interactive manager:
+
+```bash
+pkg install -y curl && curl -sSL https://raw.githubusercontent.com/sipeed/picoclaw/main/assets/scripts/picoclaw-manager.sh -o picoclaw-manager.sh && chmod +x picoclaw-manager.sh && ./picoclaw-manager.sh
+```
+
+For detailed instructions, see the [Termux Installation Guide](docs/TERMUX_INSTALL.md).
+
 ### Agent Mode (One-shot)
 
 ```bash
