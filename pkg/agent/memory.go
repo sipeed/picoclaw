@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -118,14 +119,14 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 	}
 
 	// Join with separator
-	var result string
+	var sb strings.Builder
 	for i, note := range notes {
 		if i > 0 {
-			result += "\n\n---\n\n"
+			sb.WriteString("\n\n---\n\n")
 		}
-		result += note
+		sb.WriteString(note)
 	}
-	return result
+	return sb.String()
 }
 
 // GetMemoryContext returns formatted memory context for the agent prompt.
@@ -150,12 +151,12 @@ func (ms *MemoryStore) GetMemoryContext() string {
 	}
 
 	// Join parts with separator
-	var result string
+	var sb strings.Builder
 	for i, part := range parts {
 		if i > 0 {
-			result += "\n\n---\n\n"
+			sb.WriteString("\n\n---\n\n")
 		}
-		result += part
+		sb.WriteString(part)
 	}
-	return fmt.Sprintf("# Memory\n\n%s", result)
+	return "# Memory\n\n" + sb.String()
 }
