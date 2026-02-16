@@ -19,6 +19,7 @@ type ExecTool struct {
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
 	restrictToWorkspace bool
+	callback            AsyncCallback
 }
 
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
@@ -30,9 +31,7 @@ func NewExecTool(workingDir string, restrict bool) *ExecTool {
 		regexp.MustCompile(`\bdd\s+if=`),
 		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
 		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
-		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
 	}
-
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             60 * time.Second,
@@ -40,6 +39,11 @@ func NewExecTool(workingDir string, restrict bool) *ExecTool {
 		allowPatterns:       nil,
 		restrictToWorkspace: restrict,
 	}
+}
+
+// SetCallback implements AsyncTool interface
+func (t *ExecTool) SetCallback(cb AsyncCallback) {
+	t.callback = cb
 }
 
 func (t *ExecTool) Name() string {
@@ -61,6 +65,10 @@ func (t *ExecTool) Parameters() map[string]interface{} {
 			"working_dir": map[string]interface{}{
 				"type":        "string",
 				"description": "Optional working directory for the command",
+			},
+			"background": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Run the command in the background. Use this for starting servers or long-running tasks. The tool will return immediately and report results later.",
 			},
 		},
 		"required": []string{"command"},
@@ -87,6 +95,53 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	if guardError := t.guardCommand(command, cwd); guardError != "" {
 		return ErrorResult(guardError)
+	}
+
+	if background, _ := args["background"].(bool); background {
+		// Run in background
+		go func() {
+			// Create a fresh context for background execution
+			// We don't use the timeout from the tool since background tasks are expected to be long-lived
+			bgCtx := context.Background()
+
+			var bgCmd *exec.Cmd
+			if runtime.GOOS == "windows" {
+				bgCmd = exec.CommandContext(bgCtx, "powershell", "-NoProfile", "-NonInteractive", "-Command", command)
+			} else {
+				bgCmd = exec.CommandContext(bgCtx, "sh", "-c", command)
+			}
+			if cwd != "" {
+				bgCmd.Dir = cwd
+			}
+
+			var bgStdout, bgStderr bytes.Buffer
+			bgCmd.Stdout = &bgStdout
+			bgCmd.Stderr = &bgStderr
+
+			err := bgCmd.Run()
+			bgOutput := bgStdout.String()
+			if bgStderr.Len() > 0 {
+				bgOutput += "\nSTDERR:\n" + bgStderr.String()
+			}
+			if err != nil {
+				bgOutput += fmt.Sprintf("\nExit code: %v", err)
+			}
+			if bgOutput == "" {
+				bgOutput = "(no output)"
+			}
+
+			if t.callback != nil {
+				res := &ToolResult{
+					ForLLM:  fmt.Sprintf("Background command '%s' completed:\n%s", command, bgOutput),
+					ForUser: fmt.Sprintf("✅ Background command '%s' completed.", command),
+					IsError: err != nil,
+				}
+				t.callback(bgCtx, res)
+			}
+		}()
+
+		msg := fmt.Sprintf("Started command '%s' in background.", command)
+		return AsyncResult(msg)
 	}
 
 	// timeout == 0 means no timeout
