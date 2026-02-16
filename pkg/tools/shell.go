@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-
 type ExecTool struct {
 	workingDir          string
 	timeout             time.Duration

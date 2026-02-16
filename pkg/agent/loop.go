@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -33,14 +34,14 @@ type AgentLoop struct {
 	provider       providers.LLMProvider
 	workspace      string
 	model          string
-	contextWindow  int           // Maximum context window size in tokens
+	contextWindow  int // Maximum context window size in tokens
 	maxIterations  int
 	sessions       *session.SessionManager
 	state          *state.Manager
 	contextBuilder *ContextBuilder
 	tools          *tools.ToolRegistry
 	running        atomic.Bool
-	summarizing    sync.Map      // Tracks which sessions are currently being summarized
+	summarizing    sync.Map // Tracks which sessions are currently being summarized
 }
 
 // processOptions configures how a message is processed
@@ -70,10 +71,20 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	// Shell execution
 	registry.Register(tools.NewExecTool(workspace, restrict))
 
-	// Web tools
-	braveAPIKey := cfg.Tools.Web.Search.APIKey
-	registry.Register(tools.NewWebSearchTool(braveAPIKey, cfg.Tools.Web.Search.MaxResults))
+	if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
+		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
+		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
+		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+	}); searchTool != nil {
+		registry.Register(searchTool)
+	}
 	registry.Register(tools.NewWebFetchTool(50000))
+
+	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
+	registry.Register(tools.NewI2CTool())
+	registry.Register(tools.NewSPITool())
 
 	// Message tool - available to both agent and subagent
 	// Subagent uses it to communicate directly with user
@@ -157,11 +168,22 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			}
 
 			if response != "" {
-				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel: msg.Channel,
-					ChatID:  msg.ChatID,
-					Content: response,
-				})
+				// Check if the message tool already sent a response during this round.
+				// If so, skip publishing to avoid duplicate messages to the user.
+				alreadySent := false
+				if tool, ok := al.tools.Get("message"); ok {
+					if mt, ok := tool.(*tools.MessageTool); ok {
+						alreadySent = mt.HasSentInRound()
+					}
+				}
+
+				if !alreadySent {
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel: msg.Channel,
+						ChatID:  msg.ChatID,
+						Content: response,
+					})
+				}
 			}
 		}
 	}
@@ -285,9 +307,9 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	if constants.IsInternalChannel(originChannel) {
 		logger.InfoCF("agent", "Subagent completed (internal channel)",
 			map[string]interface{}{
-				"sender_id":    msg.SenderID,
-				"content_len":  len(content),
-				"channel":      originChannel,
+				"sender_id":   msg.SenderID,
+				"content_len": len(content),
+				"channel":     originChannel,
 			})
 		return "", nil
 	}
@@ -296,9 +318,9 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	// Don't forward result here, subagent should use message tool to communicate with user
 	logger.InfoCF("agent", "Subagent completed",
 		map[string]interface{}{
-			"sender_id":    msg.SenderID,
-			"channel":      originChannel,
-			"content_len":  len(content),
+			"sender_id":   msg.SenderID,
+			"channel":     originChannel,
+			"content_len": len(content),
 		})
 
 	// Agent only logs, does not respond to user
@@ -357,7 +379,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 
 	// 6. Save final assistant message to session
 	al.sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
-	al.sessions.Save(al.sessions.GetOrCreate(opts.SessionKey))
+	al.sessions.Save(opts.SessionKey)
 
 	// 7. Optional: summarization
 	if opts.EnableSummary {
@@ -721,7 +743,7 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 	if finalSummary != "" {
 		al.sessions.SetSummary(sessionKey, finalSummary)
 		al.sessions.TruncateHistory(sessionKey, 4)
-		al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+		al.sessions.Save(sessionKey)
 	}
 }
 
@@ -747,10 +769,13 @@ func (al *AgentLoop) summarizeBatch(ctx context.Context, batch []providers.Messa
 }
 
 // estimateTokens estimates the number of tokens in a message list.
+// Uses rune count instead of byte length so that CJK and other multi-byte
+// characters are not over-counted (a Chinese character is 3 bytes but roughly
+// one token).
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	total := 0
 	for _, m := range messages {
-		total += len(m.Content) / 4 // Simple heuristic: 4 chars per token
+		total += utf8.RuneCountInString(m.Content) / 3
 	}
 	return total
 }

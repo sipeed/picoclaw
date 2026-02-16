@@ -18,7 +18,7 @@ type mockProvider struct{}
 
 func (m *mockProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]interface{}) (*providers.LLMResponse, error) {
 	return &providers.LLMResponse{
-		Content:  "Mock response",
+		Content:   "Mock response",
 		ToolCalls: []providers.ToolCall{},
 	}, nil
 }
@@ -364,7 +364,7 @@ type simpleMockProvider struct {
 
 func (m *simpleMockProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]interface{}) (*providers.LLMResponse, error) {
 	return &providers.LLMResponse{
-		Content:  m.response,
+		Content:   m.response,
 		ToolCalls: []providers.ToolCall{},
 	}, nil
 }
@@ -475,7 +475,7 @@ func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 		SenderID:   "user1",
 		ChatID:     "chat1",
 		Content:    "read test.txt",
-		SessionKey:  "test-session",
+		SessionKey: "test-session",
 	}
 
 	response := helper.executeAndGetResponse(t, ctx, msg)
@@ -517,7 +517,7 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 		SenderID:   "user1",
 		ChatID:     "chat1",
 		Content:    "run hello",
-		SessionKey:  "test-session",
+		SessionKey: "test-session",
 	}
 
 	response := helper.executeAndGetResponse(t, ctx, msg)

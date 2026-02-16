@@ -22,27 +22,27 @@ type SubagentTask struct {
 }
 
 type SubagentManager struct {
-	tasks        map[string]*SubagentTask
-	mu           sync.RWMutex
-	provider     providers.LLMProvider
-	defaultModel string
-	bus          *bus.MessageBus
-	workspace    string
-	tools        *ToolRegistry
+	tasks         map[string]*SubagentTask
+	mu            sync.RWMutex
+	provider      providers.LLMProvider
+	defaultModel  string
+	bus           *bus.MessageBus
+	workspace     string
+	tools         *ToolRegistry
 	maxIterations int
-	nextID       int
+	nextID        int
 }
 
 func NewSubagentManager(provider providers.LLMProvider, defaultModel, workspace string, bus *bus.MessageBus) *SubagentManager {
 	return &SubagentManager{
-		tasks:        make(map[string]*SubagentTask),
-		provider:     provider,
-		defaultModel: defaultModel,
-		bus:          bus,
-		workspace:    workspace,
-		tools:        NewToolRegistry(),
+		tasks:         make(map[string]*SubagentTask),
+		provider:      provider,
+		defaultModel:  defaultModel,
+		bus:           bus,
+		workspace:     workspace,
+		tools:         NewToolRegistry(),
 		maxIterations: 10,
-		nextID:       1,
+		nextID:        1,
 	}
 }
 

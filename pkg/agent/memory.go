@@ -40,8 +40,8 @@ func NewMemoryStore(workspace string) *MemoryStore {
 
 // getTodayFile returns the path to today's daily note file (memory/YYYYMM/YYYYMMDD.md).
 func (ms *MemoryStore) getTodayFile() string {
-	today := time.Now().Format("20060102")      // YYYYMMDD
-	monthDir := today[:6]                       // YYYYMM
+	today := time.Now().Format("20060102") // YYYYMMDD
+	monthDir := today[:6]                  // YYYYMM
 	filePath := filepath.Join(ms.memoryDir, monthDir, today+".md")
 	return filePath
 }
@@ -104,8 +104,8 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 
 	for i := 0; i < days; i++ {
 		date := time.Now().AddDate(0, 0, -i)
-		dateStr := date.Format("20060102")      // YYYYMMDD
-		monthDir := dateStr[:6]                 // YYYYMM
+		dateStr := date.Format("20060102") // YYYYMMDD
+		monthDir := dateStr[:6]            // YYYYMM
 		filePath := filepath.Join(ms.memoryDir, monthDir, dateStr+".md")
 
 		if data, err := os.ReadFile(filePath); err == nil {

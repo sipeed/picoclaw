@@ -1,4 +1,4 @@
-	package tools
+package tools
 
 import (
 	"context"
@@ -147,8 +147,8 @@ func (t *CronTool) addJob(args map[string]interface{}) *ToolResult {
 	if hasAt {
 		atMS := time.Now().UnixMilli() + int64(atSeconds)*1000
 		schedule = cron.CronSchedule{
-			Kind:  "at",
-			AtMS:  &atMS,
+			Kind: "at",
+			AtMS: &atMS,
 		}
 	} else if hasEvery {
 		everyMS := int64(everySeconds) * 1000
@@ -194,7 +194,7 @@ func (t *CronTool) addJob(args map[string]interface{}) *ToolResult {
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Error adding job: %v", err))
 	}
-	
+
 	if command != "" {
 		job.Payload.Command = command
 		// Need to save the updated payload

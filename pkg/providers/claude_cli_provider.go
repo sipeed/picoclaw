@@ -254,22 +254,22 @@ func findMatchingBrace(text string, pos int) int {
 // claudeCliJSONResponse represents the JSON output from the claude CLI.
 // Matches the real claude CLI v2.x output format.
 type claudeCliJSONResponse struct {
-	Type         string               `json:"type"`
-	Subtype      string               `json:"subtype"`
-	IsError      bool                 `json:"is_error"`
-	Result       string               `json:"result"`
-	SessionID    string               `json:"session_id"`
-	TotalCostUSD float64              `json:"total_cost_usd"`
-	DurationMS   int                  `json:"duration_ms"`
-	DurationAPI  int                  `json:"duration_api_ms"`
-	NumTurns     int                  `json:"num_turns"`
-	Usage        claudeCliUsageInfo   `json:"usage"`
+	Type         string             `json:"type"`
+	Subtype      string             `json:"subtype"`
+	IsError      bool               `json:"is_error"`
+	Result       string             `json:"result"`
+	SessionID    string             `json:"session_id"`
+	TotalCostUSD float64            `json:"total_cost_usd"`
+	DurationMS   int                `json:"duration_ms"`
+	DurationAPI  int                `json:"duration_api_ms"`
+	NumTurns     int                `json:"num_turns"`
+	Usage        claudeCliUsageInfo `json:"usage"`
 }
 
 // claudeCliUsageInfo represents token usage from the claude CLI response.
 type claudeCliUsageInfo struct {
-	InputTokens                int `json:"input_tokens"`
-	OutputTokens               int `json:"output_tokens"`
-	CacheCreationInputTokens   int `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens       int `json:"cache_read_input_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }

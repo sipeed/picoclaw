@@ -18,6 +18,8 @@ type CodexProvider struct {
 	tokenSource func() (string, string, error)
 }
 
+const defaultCodexInstructions = "You are Codex, a coding assistant."
+
 func NewCodexProvider(token, accountID string) *CodexProvider {
 	opts := []option.RequestOption{
 		option.WithBaseURL("https://chatgpt.com/backend-api/codex"),
@@ -138,6 +140,9 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 
 	if instructions != "" {
 		params.Instructions = openai.Opt(instructions)
+	} else {
+		// ChatGPT Codex backend requires instructions to be present.
+		params.Instructions = openai.Opt(defaultCodexInstructions)
 	}
 
 	if maxTokens, ok := options["max_tokens"].(int); ok {

@@ -2,11 +2,20 @@ package skills
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+)
+
+var namePattern = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
+
+const (
+	MaxNameLength        = 64
+	MaxDescriptionLength = 1024
 )
 
 type SkillMetadata struct {
@@ -19,6 +28,27 @@ type SkillInfo struct {
 	Path        string `json:"path"`
 	Source      string `json:"source"`
 	Description string `json:"description"`
+}
+
+func (info SkillInfo) validate() error {
+	var errs error
+	if info.Name == "" {
+		errs = errors.Join(errs, errors.New("name is required"))
+	} else {
+		if len(info.Name) > MaxNameLength {
+			errs = errors.Join(errs, fmt.Errorf("name exceeds %d characters", MaxNameLength))
+		}
+		if !namePattern.MatchString(info.Name) {
+			errs = errors.Join(errs, errors.New("name must be alphanumeric with hyphens"))
+		}
+	}
+
+	if info.Description == "" {
+		errs = errors.Join(errs, errors.New("description is required"))
+	} else if len(info.Description) > MaxDescriptionLength {
+		errs = errors.Join(errs, fmt.Errorf("description exceeds %d character", MaxDescriptionLength))
+	}
+	return errs
 }
 
 type SkillsLoader struct {
@@ -54,6 +84,11 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 						metadata := sl.getSkillMetadata(skillFile)
 						if metadata != nil {
 							info.Description = metadata.Description
+							info.Name = metadata.Name
+						}
+						if err := info.validate(); err != nil {
+							slog.Warn("invalid skill from workspace", "name", info.Name, "error", err)
+							continue
 						}
 						skills = append(skills, info)
 					}
@@ -89,6 +124,11 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 						metadata := sl.getSkillMetadata(skillFile)
 						if metadata != nil {
 							info.Description = metadata.Description
+							info.Name = metadata.Name
+						}
+						if err := info.validate(); err != nil {
+							slog.Warn("invalid skill from global", "name", info.Name, "error", err)
+							continue
 						}
 						skills = append(skills, info)
 					}
@@ -123,6 +163,11 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 						metadata := sl.getSkillMetadata(skillFile)
 						if metadata != nil {
 							info.Description = metadata.Description
+							info.Name = metadata.Name
+						}
+						if err := info.validate(); err != nil {
+							slog.Warn("invalid skill from builtin", "name", info.Name, "error", err)
+							continue
 						}
 						skills = append(skills, info)
 					}
