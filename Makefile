@@ -143,12 +143,12 @@ run: build
 ## docker-build: Build Docker image (minimal Alpine-based)
 docker-build:
 	@echo "Building minimal Docker image (Alpine-based)..."
-	docker-compose build
+	docker compose build
 
 ## docker-build-full: Build Docker image with full MCP support (Node.js 24)
 docker-build-full:
 	@echo "Building full-featured Docker image (Node.js 24)..."
-	docker-compose -f docker-compose.full.yml build
+	docker compose -f docker-compose.full.yml build
 
 ## docker-test: Test MCP tools in Docker container
 docker-test:
@@ -158,24 +158,24 @@ docker-test:
 
 ## docker-run: Run picoclaw gateway in Docker (Alpine-based)
 docker-run:
-	docker-compose --profile gateway up
+	docker compose --profile gateway up
 
 ## docker-run-full: Run picoclaw gateway in Docker (full-featured)
 docker-run-full:
-	docker-compose -f docker-compose.full.yml --profile gateway up
+	docker compose -f docker-compose.full.yml --profile gateway up
 
 ## docker-run-agent: Run picoclaw agent in Docker (interactive, Alpine-based)
 docker-run-agent:
-	docker-compose run --rm picoclaw-agent
+	docker compose run --rm picoclaw-agent
 
 ## docker-run-agent-full: Run picoclaw agent in Docker (interactive, full-featured)
 docker-run-agent-full:
-	docker-compose -f docker-compose.full.yml run --rm picoclaw-agent
+	docker compose -f docker-compose.full.yml run --rm picoclaw-agent
 
 ## docker-clean: Clean Docker images and volumes
 docker-clean:
-	docker-compose down -v
-	docker-compose -f docker-compose.full.yml down -v
+	docker compose down -v
+	docker compose -f docker-compose.full.yml down -v
 	docker rmi picoclaw:latest picoclaw:full 2>/dev/null || true
 
 ## help: Show this help message
