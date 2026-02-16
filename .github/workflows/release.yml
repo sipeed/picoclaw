@@ -38,14 +38,18 @@ jobs:
           git tag -a "${{ inputs.tag }}" -m "Release ${{ inputs.tag }}"
           git push origin "${{ inputs.tag }}"
 
-  build-binaries:
-    name: Build Release Binaries
+  release:
+    name: GoReleaser Release
     needs: create-tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - name: Checkout tag
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ inputs.tag }}
 
       - name: Setup Go from go.mod
@@ -53,47 +57,42 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build all binaries
-        run: make build-all
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-      - name: Generate checksums
-        shell: bash
-        run: |
-          shasum -a 256 build/picoclaw-* > build/sha256sums.txt
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Upload release binaries artifact
-        uses: actions/upload-artifact@v4
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          name: picoclaw-binaries
-          path: |
-            build/picoclaw-*
-            build/sha256sums.txt
-          if-no-files-found: error
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  create-release:
-    name: Create GitHub Release
-    needs: [create-tag, build-binaries]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          path: release-artifacts
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Show downloaded files
-        run: ls -R release-artifacts
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          tag_name: ${{ inputs.tag }}
-          name: ${{ inputs.tag }}
-          draft: ${{ inputs.draft }}
-          prerelease: ${{ inputs.prerelease }}
-          files: |
-            release-artifacts/**/*
-          generate_release_notes: true
+          distribution: goreleaser
+          version: ~> v2
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
+
+      - name: Apply release flags
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ inputs.tag }}" \
+            --draft=${{ inputs.draft }} \
+            --prerelease=${{ inputs.prerelease }}
