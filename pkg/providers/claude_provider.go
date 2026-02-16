@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -56,6 +57,22 @@ func (p *ClaudeProvider) GetDefaultModel() string {
 	return "claude-sonnet-4-5-20250929"
 }
 
+// sanitizeToolID replaces characters not allowed in Anthropic tool use IDs
+// (which must match ^[a-zA-Z0-9-]+$) with hyphens. The same transformation is
+// applied to both tool_use and tool_result blocks so their IDs still match.
+func sanitizeToolID(id string) string {
+	var b strings.Builder
+	b.Grow(len(id))
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
+}
+
 func buildClaudeParams(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (anthropic.MessageNewParams, error) {
 	var system []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
@@ -67,7 +84,7 @@ func buildClaudeParams(messages []Message, tools []ToolDefinition, model string,
 		case "user":
 			if msg.ToolCallID != "" {
 				anthropicMessages = append(anthropicMessages,
-					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
+					anthropic.NewUserMessage(anthropic.NewToolResultBlock(sanitizeToolID(msg.ToolCallID), msg.Content, false)),
 				)
 			} else {
 				anthropicMessages = append(anthropicMessages,
@@ -81,7 +98,7 @@ func buildClaudeParams(messages []Message, tools []ToolDefinition, model string,
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
+					blocks = append(blocks, anthropic.NewToolUseBlock(sanitizeToolID(tc.ID), tc.Arguments, tc.Name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
@@ -91,7 +108,7 @@ func buildClaudeParams(messages []Message, tools []ToolDefinition, model string,
 			}
 		case "tool":
 			anthropicMessages = append(anthropicMessages,
-				anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
+				anthropic.NewUserMessage(anthropic.NewToolResultBlock(sanitizeToolID(msg.ToolCallID), msg.Content, false)),
 			)
 		}
 	}
