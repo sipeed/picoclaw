@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -28,8 +29,16 @@ type HTTPProvider struct {
 }
 
 func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
+	// Default timeout 120s, override via env
+	timeout := 120 * time.Second
+	if envTimeout := os.Getenv("PICOCLAW_HTTP_TIMEOUT"); envTimeout != "" {
+		if d, err := time.ParseDuration(envTimeout); err == nil {
+			timeout = d
+		}
+	}
+
 	client := &http.Client{
-		Timeout: 120 * time.Second,
+		Timeout: timeout,
 	}
 
 	if proxy != "" {
