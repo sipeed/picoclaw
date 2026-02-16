@@ -562,7 +562,7 @@ func gatewayCmd() {
 		})
 
 	// Setup cron tool and service
-	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath())
+	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.Agents.Defaults.RestrictToWorkspace)
 
 	heartbeatService := heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
@@ -593,6 +593,9 @@ func gatewayCmd() {
 		fmt.Printf("Error creating channel manager: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Inject channel manager into agent loop for command handling
+	agentLoop.SetChannelManager(channelManager)
 
 	var transcriber *voice.GroqTranscriber
 	if cfg.Providers.Groq.APIKey != "" {
@@ -984,14 +987,14 @@ func getConfigPath() string {
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
 
-func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string) *cron.CronService {
+func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool) *cron.CronService {
 	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
 
 	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
 
 	// Create and register CronTool
-	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace)
+	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict)
 	agentLoop.RegisterTool(cronTool)
 
 	// Set the onJob handler

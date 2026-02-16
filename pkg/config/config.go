@@ -370,7 +370,7 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 func (c *Config) WorkspacePath() string {

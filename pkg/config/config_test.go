@@ -1,6 +1,9 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/caarlos0/env/v11"
@@ -172,6 +175,30 @@ func TestProviderConfig_EnvVars(t *testing.T) {
 	}
 	if cfg.Providers.GitHubCopilot.ConnectMode != "stdio" {
 		t.Errorf("GitHub Copilot connect mode: got %q, want %q", cfg.Providers.GitHubCopilot.ConnectMode, "stdio")
+	}
+}
+
+func TestSaveConfig_FilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission bits are not enforced on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "config.json")
+
+	cfg := DefaultConfig()
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig failed: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat failed: %v", err)
+	}
+
+	perm := info.Mode().Perm()
+	if perm != 0600 {
+		t.Errorf("config file has permission %04o, want 0600", perm)
 	}
 }
 

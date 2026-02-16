@@ -119,7 +119,7 @@ clean:
 	@rm -rf $(BUILD_DIR)
 	@echo "Clean complete"
 
-## fmt: Format Go code
+## vet: Run go vet for static analysis
 vet:
 	@$(GO) vet ./...
 
@@ -131,10 +131,18 @@ test:
 fmt:
 	@$(GO) fmt ./...
 
-## deps: Update dependencies
+## deps: Download dependencies
 deps:
+	@$(GO) mod download
+	@$(GO) mod verify
+
+## update-deps: Update dependencies
+update-deps:
 	@$(GO) get -u ./...
 	@$(GO) mod tidy
+
+## check: Run vet, fmt, and verify dependencies
+check: deps fmt vet test
 
 ## run: Build and run picoclaw
 run: build
