@@ -622,8 +622,9 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 		for _, tc := range response.ToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
+				ID:           tc.ID,
+				Type:         "function",
+				ExtraContent: tc.ExtraContent,
 				Function: &providers.FunctionCall{
 					Name:      tc.Name,
 					Arguments: string(argumentsJSON),
