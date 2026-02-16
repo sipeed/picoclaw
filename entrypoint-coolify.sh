@@ -23,6 +23,17 @@ mkdir -p "${CONFIG_DIR}"
 if [ -n "${PICOCLAW_CONFIG_JSON}" ]; then
   echo "📝 Using config from PICOCLAW_CONFIG_JSON env var"
   echo "${PICOCLAW_CONFIG_JSON}" > "${CONFIG_FILE}"
+
+  # CRITICAL: Unset all PICOCLAW_* env vars (except PICOCLAW_CONFIG_JSON)
+  # so that Go's env.Parse() does NOT override values from the JSON file.
+  # Without this, Dockerfile ENV defaults (e.g. PICOCLAW_AGENTS_DEFAULTS_PROVIDER=gemini)
+  # would silently overwrite the user's JSON config every time.
+  for var in $(env | grep '^PICOCLAW_' | cut -d= -f1); do
+    if [ "$var" != "PICOCLAW_CONFIG_JSON" ]; then
+      unset "$var"
+    fi
+  done
+
   exec picoclaw "$@"
 fi
 
@@ -36,6 +47,12 @@ fi
 if [ -f "/config/config.json" ]; then
   echo "📝 Using mounted config from /config/config.json"
   cp /config/config.json "${CONFIG_FILE}"
+
+  # Same protection as Method 1: unset PICOCLAW_* env vars
+  for var in $(env | grep '^PICOCLAW_' | cut -d= -f1); do
+    unset "$var"
+  done
+
   exec picoclaw "$@"
 fi
 

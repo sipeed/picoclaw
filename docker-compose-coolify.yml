@@ -9,12 +9,15 @@
 #   4. Add environment variables in Coolify's UI (see below)
 #   5. Deploy!
 #
-# REQUIRED ENVIRONMENT VARIABLES (set in Coolify UI):
+# RECOMMENDED: Use PICOCLAW_CONFIG_JSON for full control:
+#   PICOCLAW_CONFIG_JSON    — Full JSON config (overrides everything below)
+#
+# ALTERNATIVE: Individual environment variables:
 #   GEMINI_API_KEY          — Your Gemini API key
 #
 # OPTIONAL ENVIRONMENT VARIABLES:
-#   LLM_PROVIDER            — LLM provider (default: gemini)
-#   LLM_MODEL               — Model name (default: gemini-2.5-flash-lite)
+#   LLM_PROVIDER            — LLM provider (e.g. gemini, vllm, openrouter)
+#   LLM_MODEL               — Model name (e.g. gemini-2.5-flash-lite)
 #   TELEGRAM_BOT_TOKEN      — Telegram bot token
 #   DISCORD_BOT_TOKEN       — Discord bot token
 #   OPENROUTER_API_KEY      — OpenRouter API key
@@ -124,8 +127,8 @@ services:
     profiles:
       - agent
     environment:
-      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${LLM_PROVIDER:-gemini}
-      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${LLM_MODEL:-gemini-2.5-flash-lite}
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${LLM_PROVIDER:-}
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${LLM_MODEL:-}
       - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - PICOCLAW_PROVIDERS_OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - PICOCLAW_PROVIDERS_OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -151,8 +154,8 @@ services:
     profiles:
       - doctor
     environment:
-      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${LLM_PROVIDER:-gemini}
-      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${LLM_MODEL:-gemini-2.5-flash-lite}
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${LLM_PROVIDER:-}
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${LLM_MODEL:-}
       - PICOCLAW_PROVIDERS_GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - TZ=${TZ:-UTC}
     volumes:
