@@ -61,6 +61,9 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		}
 	}
 
+	// Convert periods to dashes for OpenRouter model slugs (e.g., glm-4.7 -> glm-4-7)
+	model = strings.ReplaceAll(model, ".", "-")
+
 	requestBody := map[string]interface{}{
 		"model":    model,
 		"messages": messages,
