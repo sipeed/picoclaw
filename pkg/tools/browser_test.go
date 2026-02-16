@@ -188,6 +188,17 @@ func TestBrowserTool_PressRequiresValue(t *testing.T) {
 	}
 }
 
+// TestBrowserTool_ScrollRequiresValue verifies scroll needs value
+func TestBrowserTool_ScrollRequiresValue(t *testing.T) {
+	tool := NewBrowserTool(true)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "scroll",
+	})
+	if !result.IsError {
+		t.Error("expected error when value is missing for scroll")
+	}
+}
+
 // TestBrowserTool_EvalRequiresValue verifies eval needs script value
 func TestBrowserTool_EvalRequiresValue(t *testing.T) {
 	tool := NewBrowserTool(true)

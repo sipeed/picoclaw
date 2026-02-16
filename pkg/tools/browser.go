@@ -215,6 +215,7 @@ var allowedBrowserActions = map[string]bool{
 	"cookies":    true,
 	"status":     true,
 	"viewport":   true,
+	"scroll":     true,
 }
 
 // BrowserTool wraps `actionbook browser` for browser automation.
@@ -228,7 +229,7 @@ func NewBrowserTool(headless bool) *BrowserTool {
 
 func (t *BrowserTool) Name() string { return "browser" }
 func (t *BrowserTool) Description() string {
-	return `Execute browser automation commands via ActionBook. Supported actions: open, goto, click, fill, type, select, hover, focus, press, text, snapshot, screenshot, wait, wait-nav, back, forward, reload, close, pages, switch, eval, html, pdf, cookies, status, viewport. Typical workflow: browser_search → browser_get → browser (open → interact → close).`
+	return `Execute browser automation commands via ActionBook. Supported actions: open, goto, click, fill, type, select, hover, focus, press, text, scroll, snapshot, screenshot, wait, wait-nav, back, forward, reload, close, pages, switch, eval, html, pdf, cookies, status, viewport. Typical workflow: browser_search → browser_get → browser (open → interact → close).`
 }
 
 func (t *BrowserTool) Parameters() map[string]interface{} {
@@ -249,7 +250,7 @@ func (t *BrowserTool) Parameters() map[string]interface{} {
 			},
 			"value": map[string]interface{}{
 				"type":        "string",
-				"description": "Value for fill/type/select/press/eval/switch actions",
+				"description": "Value for fill/type/select/press/eval/switch/scroll actions",
 			},
 			"timeout": map[string]interface{}{
 				"type":        "integer",
@@ -272,7 +273,7 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]interface{}) 
 
 	action = strings.TrimSpace(strings.ToLower(action))
 	if !allowedBrowserActions[action] {
-		return ErrorResult(fmt.Sprintf("unknown browser action %q — allowed: open, goto, click, fill, type, select, hover, focus, press, text, snapshot, screenshot, wait, wait-nav, back, forward, reload, close, pages, switch, eval, html, pdf, cookies, status, viewport", action))
+		return ErrorResult(fmt.Sprintf("unknown browser action %q — allowed: open, goto, click, fill, type, select, hover, focus, press, text, scroll, snapshot, screenshot, wait, wait-nav, back, forward, reload, close, pages, switch, eval, html, pdf, cookies, status, viewport", action))
 	}
 
 	// Build argument list
@@ -337,6 +338,13 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]interface{}) 
 			return ErrorResult("value is required for press action (e.g. 'Enter', 'Tab')")
 		}
 		cmdArgs = append(cmdArgs, key)
+
+	case "scroll":
+		val, ok := args["value"].(string)
+		if !ok || val == "" {
+			return ErrorResult("value is required for scroll action (e.g. 'down', 'up', 'bottom', 'top', or pixels)")
+		}
+		cmdArgs = append(cmdArgs, val)
 
 	case "wait":
 		sel, ok := args["selector"].(string)
