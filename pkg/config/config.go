@@ -167,27 +167,27 @@ type DevicesConfig struct {
 }
 
 type ProvidersConfig struct {
-	Anthropic     ProviderConfig `json:"anthropic"`
-	OpenAI        ProviderConfig `json:"openai"`
-	OpenRouter    ProviderConfig `json:"openrouter"`
-	Groq          ProviderConfig `json:"groq"`
-	Zhipu         ProviderConfig `json:"zhipu"`
-	VLLM          ProviderConfig `json:"vllm"`
-	Gemini        ProviderConfig `json:"gemini"`
-	Nvidia        ProviderConfig `json:"nvidia"`
-	Ollama        ProviderConfig `json:"ollama"`
-	Moonshot      ProviderConfig `json:"moonshot"`
-	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig `json:"deepseek"`
-	GitHubCopilot ProviderConfig `json:"github_copilot"`
+	Anthropic     ProviderConfig `json:"anthropic" envPrefix:"PICOCLAW_PROVIDERS_ANTHROPIC_"`
+	OpenAI        ProviderConfig `json:"openai" envPrefix:"PICOCLAW_PROVIDERS_OPENAI_"`
+	OpenRouter    ProviderConfig `json:"openrouter" envPrefix:"PICOCLAW_PROVIDERS_OPENROUTER_"`
+	Groq          ProviderConfig `json:"groq" envPrefix:"PICOCLAW_PROVIDERS_GROQ_"`
+	Zhipu         ProviderConfig `json:"zhipu" envPrefix:"PICOCLAW_PROVIDERS_ZHIPU_"`
+	VLLM          ProviderConfig `json:"vllm" envPrefix:"PICOCLAW_PROVIDERS_VLLM_"`
+	Gemini        ProviderConfig `json:"gemini" envPrefix:"PICOCLAW_PROVIDERS_GEMINI_"`
+	Nvidia        ProviderConfig `json:"nvidia" envPrefix:"PICOCLAW_PROVIDERS_NVIDIA_"`
+	Ollama        ProviderConfig `json:"ollama" envPrefix:"PICOCLAW_PROVIDERS_OLLAMA_"`
+	Moonshot      ProviderConfig `json:"moonshot" envPrefix:"PICOCLAW_PROVIDERS_MOONSHOT_"`
+	ShengSuanYun  ProviderConfig `json:"shengsuanyun" envPrefix:"PICOCLAW_PROVIDERS_SHENGSUANYUN_"`
+	DeepSeek      ProviderConfig `json:"deepseek" envPrefix:"PICOCLAW_PROVIDERS_DEEPSEEK_"`
+	GitHubCopilot ProviderConfig `json:"github_copilot" envPrefix:"PICOCLAW_PROVIDERS_GITHUB_COPILOT_"`
 }
 
 type ProviderConfig struct {
-	APIKey      string `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase     string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+	APIKey      string `json:"api_key" env:"API_KEY"`
+	APIBase     string `json:"api_base" env:"API_BASE"`
+	Proxy       string `json:"proxy,omitempty" env:"PROXY"`
+	AuthMethod  string `json:"auth_method,omitempty" env:"AUTH_METHOD"`
+	ConnectMode string `json:"connect_mode,omitempty" env:"CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
 }
 
 type GatewayConfig struct {

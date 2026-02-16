@@ -2,6 +2,8 @@ package config
 
 import (
 	"testing"
+
+	"github.com/caarlos0/env/v11"
 )
 
 // TestDefaultConfig_HeartbeatEnabled verifies heartbeat is enabled by default
@@ -144,6 +146,32 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	}
 	if cfg.Tools.Web.DuckDuckGo.MaxResults != 5 {
 		t.Error("Expected DuckDuckGo MaxResults 5, got ", cfg.Tools.Web.DuckDuckGo.MaxResults)
+	}
+}
+
+// TestProviderConfig_EnvVars verifies provider env vars are correctly parsed
+func TestProviderConfig_EnvVars(t *testing.T) {
+	t.Setenv("PICOCLAW_PROVIDERS_ANTHROPIC_API_KEY", "test-anthropic-key")
+	t.Setenv("PICOCLAW_PROVIDERS_OPENAI_API_KEY", "test-openai-key")
+	t.Setenv("PICOCLAW_PROVIDERS_OPENAI_API_BASE", "https://custom.openai.example.com")
+	t.Setenv("PICOCLAW_PROVIDERS_GITHUB_COPILOT_CONNECT_MODE", "stdio")
+
+	cfg := DefaultConfig()
+	if err := env.Parse(cfg); err != nil {
+		t.Fatalf("env.Parse failed: %v", err)
+	}
+
+	if cfg.Providers.Anthropic.APIKey != "test-anthropic-key" {
+		t.Errorf("Anthropic API key: got %q, want %q", cfg.Providers.Anthropic.APIKey, "test-anthropic-key")
+	}
+	if cfg.Providers.OpenAI.APIKey != "test-openai-key" {
+		t.Errorf("OpenAI API key: got %q, want %q", cfg.Providers.OpenAI.APIKey, "test-openai-key")
+	}
+	if cfg.Providers.OpenAI.APIBase != "https://custom.openai.example.com" {
+		t.Errorf("OpenAI API base: got %q, want %q", cfg.Providers.OpenAI.APIBase, "https://custom.openai.example.com")
+	}
+	if cfg.Providers.GitHubCopilot.ConnectMode != "stdio" {
+		t.Errorf("GitHub Copilot connect mode: got %q, want %q", cfg.Providers.GitHubCopilot.ConnectMode, "stdio")
 	}
 }
 
