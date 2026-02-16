@@ -198,7 +198,10 @@ picoclaw onboard
       "model": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "compression_trigger_ratio": 0.75,
+      "summary_trigger_messages": 20,
+      "summary_trigger_ratio": 0.75
     }
   },
   "providers": {
@@ -649,6 +652,30 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 
 * `PICOCLAW_HEARTBEAT_ENABLED=false` to disable
 * `PICOCLAW_HEARTBEAT_INTERVAL=60` to change interval
+
+### Threshold Configuration
+
+PicoClaw supports customizable conversation summary and compression trigger thresholds to prevent premature context truncation.
+
+| Configuration | Default | Description |
+|--------------|---------|-------------|
+| `max_tokens` | `8192` | Context window size and LLM output token limit |
+| `compression_trigger_ratio` | `0.75` | Trigger force compression when context exceeds `max_tokens × compression_trigger_ratio` |
+| `summary_trigger_messages` | `20` | Trigger automatic summary when history message count exceeds this value (set to 0 to disable message count-based triggering) |
+| `summary_trigger_ratio` | `0.75` | Trigger automatic summary when history token estimate exceeds `max_tokens × summary_trigger_ratio` |
+
+**Environment variables:**
+
+* `PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS=16384` Increase context window
+* `PICOCLAW_AGENTS_DEFAULTS_COMPRESSION_TRIGGER_RATIO=0.9` Raise compression trigger threshold (e.g., from 75% to 90%)
+* `PICOCLAW_AGENTS_DEFAULTS_SUMMARY_TRIGGER_MESSAGES=50` Delay message count-based triggering (e.g., from 20 to 50 messages)
+* `PICOCLAW_AGENTS_DEFAULTS_SUMMARY_TRIGGER_RATIO=0.85` Raise summary trigger threshold (e.g., from 75% to 85%)
+
+**Usage recommendations:**
+
+- **Longer conversations**: Increase all thresholds for longer conversations
+- **Faster response**: Decrease thresholds for quicker summarization and compression
+- **Token-only control**: Set `summary_trigger_messages=0` to only use `summary_trigger_ratio` for summary triggering
 
 ### Providers
 

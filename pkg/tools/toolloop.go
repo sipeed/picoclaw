@@ -20,6 +20,8 @@ import (
 type ToolLoopConfig struct {
 	Provider      providers.LLMProvider
 	Model         string
+	MaxTokens     int
+	Temperature   float64
 	Tools         *ToolRegistry
 	MaxIterations int
 	LLMOptions    map[string]any
@@ -55,10 +57,17 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 		// 2. Set default LLM options
 		llmOpts := config.LLMOptions
 		if llmOpts == nil {
-			llmOpts = map[string]any{
-				"max_tokens":  4096,
-				"temperature": 0.7,
-			}
+			llmOpts = map[string]any{}
+		}
+
+		// Set max_tokens if not specified in LLMOptions
+		if _, ok := llmOpts["max_tokens"]; !ok && config.MaxTokens > 0 {
+			llmOpts["max_tokens"] = config.MaxTokens
+		}
+
+		// Set temperature if not specified in LLMOptions
+		if _, ok := llmOpts["temperature"]; !ok && config.Temperature > 0 {
+			llmOpts["temperature"] = config.Temperature
 		}
 
 		// 3. Call LLM
