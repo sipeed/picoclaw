@@ -2,8 +2,12 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -207,4 +211,96 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	if !strings.Contains(result.ForLLM, "blocked") && !strings.Contains(result.ForUser, "blocked") {
 		t.Errorf("Expected 'blocked' message for path traversal, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
 	}
+}
+
+// TestShellTool_Timeout_KillsChildProcesses verifies timeout cleanup includes child processes.
+func TestShellTool_Timeout_KillsChildProcesses(t *testing.T) {
+	tool := NewExecTool("", false)
+	tool.SetTimeout(1200 * time.Millisecond)
+
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	var cmd string
+	if runtime.GOOS == "windows" {
+		escapedPidFile := strings.ReplaceAll(pidFile, "'", "''")
+		cmd = fmt.Sprintf(
+			"$p = Start-Process -FilePath powershell -ArgumentList '-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 30' -WindowStyle Hidden -PassThru; Set-Content -Path '%s' -Value $p.Id; Start-Sleep -Seconds 30",
+			escapedPidFile,
+		)
+	} else {
+		cmd = fmt.Sprintf("sleep 30 & echo $! > %q; sleep 30", pidFile)
+	}
+
+	result := tool.Execute(context.Background(), map[string]interface{}{"command": cmd})
+	if !result.IsError {
+		t.Fatalf("Expected timeout error for long-running command tree")
+	}
+	if !strings.Contains(strings.ToLower(result.ForLLM), "timed out") {
+		t.Fatalf("Expected timeout message, got: %s", result.ForLLM)
+	}
+
+	childPID, err := waitForPID(pidFile, 4*time.Second)
+	if err != nil {
+		t.Fatalf("failed to obtain child pid file before timeout: %v", err)
+	}
+
+	// Give timeout cleanup a short grace period before checking process liveness.
+	time.Sleep(400 * time.Millisecond)
+	alive := processAlive(childPID)
+	if alive {
+		status := processStatus(childPID)
+		killProcess(childPID)
+		t.Fatalf("expected child process %d to be terminated after timeout; status: %s", childPID, status)
+	}
+}
+
+func waitForPID(path string, timeout time.Duration) (int, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(raw)))
+			if parseErr == nil && pid > 0 {
+				return pid, nil
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return 0, fmt.Errorf("pid file %s not ready within %v", path, timeout)
+}
+
+func processAlive(pid int) bool {
+	if runtime.GOOS == "windows" {
+		err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", fmt.Sprintf("Get-Process -Id %d | Out-Null", pid)).Run()
+		return err == nil
+	}
+
+	output, err := exec.Command("sh", "-c", fmt.Sprintf("ps -o stat= -p %d", pid)).CombinedOutput()
+	if err != nil {
+		return false
+	}
+
+	state := strings.TrimSpace(string(output))
+	if state == "" || strings.HasPrefix(state, "Z") {
+		return false
+	}
+
+	return true
+}
+
+func processStatus(pid int) string {
+	if runtime.GOOS == "windows" {
+		output, _ := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid)).CombinedOutput()
+		return strings.TrimSpace(string(output))
+	}
+
+	output, _ := exec.Command("sh", "-c", fmt.Sprintf("ps -o pid=,ppid=,pgid=,stat=,cmd= -p %d", pid)).CombinedOutput()
+	return strings.TrimSpace(string(output))
+}
+
+func killProcess(pid int) {
+	if runtime.GOOS == "windows" {
+		_ = exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
+		return
+	}
+	_ = exec.Command("kill", "-KILL", strconv.Itoa(pid)).Run()
 }

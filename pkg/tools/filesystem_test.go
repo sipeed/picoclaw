@@ -247,3 +247,55 @@ func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 		t.Errorf("Expected success with default path '.', got IsError=true: %s", result.ForLLM)
 	}
 }
+
+// TestFilesystemTool_Restrict_BlocksSymlinkEscape verifies symlink traversal outside workspace is blocked.
+func TestFilesystemTool_Restrict_BlocksSymlinkEscape(t *testing.T) {
+	workspace := t.TempDir()
+	outside := t.TempDir()
+	secretFile := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secretFile, []byte("do-not-read"), 0644); err != nil {
+		t.Fatalf("failed to create outside file: %v", err)
+	}
+
+	linkPath := filepath.Join(workspace, "leak.txt")
+	if err := os.Symlink(secretFile, linkPath); err != nil {
+		t.Skipf("symlink unavailable in this environment: %v", err)
+	}
+
+	tool := NewReadFileTool(workspace, true)
+	result := tool.Execute(context.Background(), map[string]interface{}{"path": "leak.txt"})
+	if !result.IsError {
+		t.Fatalf("Expected symlink escape to be blocked")
+	}
+	if !strings.Contains(strings.ToLower(result.ForLLM), "outside") {
+		t.Fatalf("Expected workspace boundary error, got: %s", result.ForLLM)
+	}
+}
+
+// TestFilesystemTool_Restrict_BlocksPrefixBypass verifies prefix confusion paths are blocked.
+func TestFilesystemTool_Restrict_BlocksPrefixBypass(t *testing.T) {
+	parent := t.TempDir()
+	workspace := filepath.Join(parent, "workspace")
+	prefixBypassDir := filepath.Join(parent, "workspace-evil")
+
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+	if err := os.MkdirAll(prefixBypassDir, 0755); err != nil {
+		t.Fatalf("failed to create bypass dir: %v", err)
+	}
+
+	bypassFile := filepath.Join(prefixBypassDir, "stolen.txt")
+	if err := os.WriteFile(bypassFile, []byte("secret"), 0644); err != nil {
+		t.Fatalf("failed to create bypass file: %v", err)
+	}
+
+	tool := NewReadFileTool(workspace, true)
+	result := tool.Execute(context.Background(), map[string]interface{}{"path": bypassFile})
+	if !result.IsError {
+		t.Fatalf("Expected prefix bypass path to be blocked")
+	}
+	if !strings.Contains(strings.ToLower(result.ForLLM), "outside") {
+		t.Fatalf("Expected workspace boundary error, got: %s", result.ForLLM)
+	}
+}

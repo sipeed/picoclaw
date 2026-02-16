@@ -94,33 +94,62 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(cmdCtx, "powershell", "-NoProfile", "-NonInteractive", "-Command", command)
+		cmd = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", command)
 	} else {
-		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
+		cmd = exec.Command("sh", "-c", command)
 	}
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
 
+	prepareCommandForTreeControl(cmd)
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
+	}
+
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- cmd.Wait()
+	}()
+
+	var err error
+	timedOut := false
+
+	select {
+	case err = <-waitDone:
+	case <-cmdCtx.Done():
+		if killErr := killCommandTree(cmd); killErr != nil {
+			return ErrorResult(fmt.Sprintf("failed to terminate command tree: %v", killErr))
+		}
+
+		timedOut = cmdCtx.Err() == context.DeadlineExceeded
+		select {
+		case err = <-waitDone:
+		case <-time.After(3 * time.Second):
+			return ErrorResult("command termination timed out after deadline")
+		}
+	}
+
 	output := stdout.String()
 	if stderr.Len() > 0 {
 		output += "\nSTDERR:\n" + stderr.String()
 	}
 
-	if err != nil {
-		if cmdCtx.Err() == context.DeadlineExceeded {
-			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
-			return &ToolResult{
-				ForLLM:  msg,
-				ForUser: msg,
-				IsError: true,
-			}
+	if timedOut {
+		msg := fmt.Sprintf("Command timed out after %v", t.timeout)
+		return &ToolResult{
+			ForLLM:  msg,
+			ForUser: msg,
+			IsError: true,
 		}
+	}
+
+	if err != nil {
 		output += fmt.Sprintf("\nExit code: %v", err)
 	}
 

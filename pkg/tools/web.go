@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -266,15 +267,21 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 }
 
 type WebFetchTool struct {
-	maxChars int
+	maxChars  int
+	validator *fetchTargetValidator
 }
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {
+	return newWebFetchTool(maxChars, nil)
+}
+
+func newWebFetchTool(maxChars int, allowHosts []string) *WebFetchTool {
 	if maxChars <= 0 {
 		maxChars = 50000
 	}
 	return &WebFetchTool{
-		maxChars: maxChars,
+		maxChars:  maxChars,
+		validator: newFetchTargetValidator(allowHosts, net.DefaultResolver),
 	}
 }
 
@@ -330,12 +337,21 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 		}
 	}
 
+	if err := t.validator.validateURL(ctx, parsedURL); err != nil {
+		return ErrorResult(err.Error())
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to create request: %v", err))
 	}
 
 	req.Header.Set("User-Agent", userAgent)
+
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
 
 	client := &http.Client{
 		Timeout: 60 * time.Second,
@@ -344,10 +360,14 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 			IdleConnTimeout:     30 * time.Second,
 			DisableCompression:  false,
 			TLSHandshakeTimeout: 15 * time.Second,
+			DialContext:         guardedDialContext(dialer, t.validator),
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("stopped after 5 redirects")
+			}
+			if err := t.validator.validateURL(req.Context(), req.URL); err != nil {
+				return err
 			}
 			return nil
 		},

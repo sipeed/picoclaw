@@ -511,6 +511,21 @@ When `restrict_to_workspace: true`, the following tools are sandboxed:
 | `append_file` | Append to files | Only files within workspace |
 | `exec` | Execute commands | Command paths must be within workspace |
 
+#### Web Fetch Network Boundary
+
+`web_fetch` enforces an outbound network boundary independent of `restrict_to_workspace`.
+
+Blocked destination classes include:
+
+* loopback
+* private RFC1918 / unique-local ranges
+* link-local
+* multicast
+* unspecified / non-routable internal targets
+* redirect hops that resolve to blocked targets
+
+This policy is applied both before connect and during redirect handling, so a public URL cannot bounce into private infrastructure through redirects.
+
 #### Additional Exec Protection
 
 Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous commands:
@@ -532,6 +547,11 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 ```
 [ERROR] tool: Tool execution failed
 {tool=exec, error=Command blocked by safety guard (dangerous pattern detected)}
+```
+
+```
+[ERROR] tool: Tool execution failed
+{tool=web_fetch, error=blocked destination: host "127.0.0.1" resolves to non-public IP 127.0.0.1}
 ```
 
 #### Disabling Restrictions (Security Risk)
@@ -560,7 +580,12 @@ export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
 
 #### Security Boundary Consistency
 
-The `restrict_to_workspace` setting applies consistently across all execution paths:
+PicoClaw enforces complementary boundaries:
+
+* Filesystem + shell boundary via `restrict_to_workspace`
+* Network egress boundary via `web_fetch` public-target validation
+
+The workspace boundary (`restrict_to_workspace`) applies consistently across all execution paths:
 
 | Execution Path | Security Boundary |
 |----------------|-------------------|

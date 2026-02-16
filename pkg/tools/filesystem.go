@@ -19,21 +19,98 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 		return "", fmt.Errorf("failed to resolve workspace path: %w", err)
 	}
 
-	var absPath string
-	if filepath.IsAbs(path) {
-		absPath = filepath.Clean(path)
-	} else {
-		absPath, err = filepath.Abs(filepath.Join(absWorkspace, path))
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve file path: %w", err)
-		}
+	absPath, err := resolveTargetPath(path, absWorkspace)
+	if err != nil {
+		return "", err
 	}
 
-	if restrict && !strings.HasPrefix(absPath, absWorkspace) {
+	if !restrict {
+		return absPath, nil
+	}
+
+	canonicalPath, err := pathWithinWorkspace(absPath, absWorkspace)
+	if err != nil {
+		return "", err
+	}
+
+	return canonicalPath, nil
+}
+
+func resolveTargetPath(path, absWorkspace string) (string, error) {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+
+	absPath, err := filepath.Abs(filepath.Join(absWorkspace, path))
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve file path: %w", err)
+	}
+	return filepath.Clean(absPath), nil
+}
+
+func pathWithinWorkspace(target, workspace string) (string, error) {
+	canonicalWorkspace, err := canonicalizeExistingPath(workspace)
+	if err != nil {
+		return "", fmt.Errorf("failed to canonicalize workspace path: %w", err)
+	}
+
+	canonicalTarget, err := canonicalizePathForBoundary(target)
+	if err != nil {
+		return "", fmt.Errorf("failed to canonicalize target path: %w", err)
+	}
+
+	rel, err := filepath.Rel(canonicalWorkspace, canonicalTarget)
+	if err != nil {
+		return "", fmt.Errorf("failed to evaluate workspace boundary: %w", err)
+	}
+
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("access denied: path is outside the workspace")
 	}
 
-	return absPath, nil
+	return canonicalTarget, nil
+}
+
+func canonicalizeExistingPath(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
+}
+
+func canonicalizePathForBoundary(path string) (string, error) {
+	cleanPath := filepath.Clean(path)
+	segments := make([]string, 0, 4)
+	current := cleanPath
+
+	for {
+		_, err := os.Lstat(current)
+		if err == nil {
+			resolved, evalErr := filepath.EvalSymlinks(current)
+			if evalErr != nil {
+				return "", evalErr
+			}
+
+			for i := len(segments) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, segments[i])
+			}
+
+			return filepath.Clean(resolved), nil
+		}
+
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("could not resolve existing parent for %q", path)
+		}
+
+		segments = append(segments, filepath.Base(current))
+		current = parent
+	}
 }
 
 type ReadFileTool struct {

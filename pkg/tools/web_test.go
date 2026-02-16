@@ -5,9 +5,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
+
+// newWebFetchToolForTests centralizes test construction.
+// allowHosts is wired in Phase 2 once fetch target policy is introduced.
+func newWebFetchToolForTests(maxChars int, allowHosts ...string) *WebFetchTool {
+	return newWebFetchTool(maxChars, allowHosts)
+}
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
@@ -18,7 +25,11 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse test server URL: %v", err)
+	}
+	tool := newWebFetchToolForTests(50000, parsed.Host)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -54,7 +65,11 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse test server URL: %v", err)
+	}
+	tool := newWebFetchToolForTests(50000, parsed.Host)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -145,7 +160,11 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(1000) // Limit to 1000 chars
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse test server URL: %v", err)
+	}
+	tool := newWebFetchToolForTests(1000, parsed.Host) // Limit to 1000 chars
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -206,7 +225,11 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse test server URL: %v", err)
+	}
+	tool := newWebFetchToolForTests(50000, parsed.Host)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -248,5 +271,49 @@ func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	// Should mention missing domain
 	if !strings.Contains(result.ForLLM, "domain") && !strings.Contains(result.ForUser, "domain") {
 		t.Errorf("Expected domain error message, got ForLLM: %s", result.ForLLM)
+	}
+}
+
+// TestWebTool_WebFetch_BlocksLoopback verifies loopback targets are blocked
+func TestWebTool_WebFetch_BlocksLoopback(t *testing.T) {
+	tool := NewWebFetchTool(50000)
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"url": "http://127.0.0.1/",
+	}
+
+	result := tool.Execute(ctx, args)
+	if !result.IsError {
+		t.Fatalf("Expected blocked destination error for loopback target")
+	}
+	if !strings.Contains(strings.ToLower(result.ForLLM), "blocked destination") {
+		t.Fatalf("Expected blocked destination message, got: %s", result.ForLLM)
+	}
+}
+
+// TestWebTool_WebFetch_BlocksRedirectToPrivate verifies private redirect hops are blocked
+func TestWebTool_WebFetch_BlocksRedirectToPrivate(t *testing.T) {
+	redirectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://127.0.0.1:1/private", http.StatusFound)
+	}))
+	defer redirectServer.Close()
+
+	parsed, err := url.Parse(redirectServer.URL)
+	if err != nil {
+		t.Fatalf("failed to parse test server URL: %v", err)
+	}
+
+	tool := newWebFetchToolForTests(50000, parsed.Host)
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"url": redirectServer.URL,
+	}
+
+	result := tool.Execute(ctx, args)
+	if !result.IsError {
+		t.Fatalf("Expected blocked destination error for redirect to private target")
+	}
+	if !strings.Contains(strings.ToLower(result.ForLLM), "blocked destination") {
+		t.Fatalf("Expected blocked destination message, got: %s", result.ForLLM)
 	}
 }
