@@ -186,6 +186,18 @@ network_diagnostics() {
         echo -e "${RED}[!] OpenAI API unreachable.${NC}"
     fi
 
+    if curl -s --connect-timeout 5 https://open.bigmodel.cn &> /dev/null; then
+        echo -e "${GREEN}[✓] Zhipu (BigModel) API reachable.${NC}"
+    else
+        echo -e "${RED}[!] Zhipu (BigModel) API unreachable.${NC}"
+    fi
+
+    if curl -s --connect-timeout 5 https://api.moonshot.cn &> /dev/null; then
+        echo -e "${GREEN}[✓] Moonshot API reachable.${NC}"
+    else
+        echo -e "${RED}[!] Moonshot API unreachable.${NC}"
+    fi
+
     echo -e "\n${YELLOW}[TIP] If you are in a restricted network, configure a proxy in option 2.${NC}"
     read -p "Press Enter to return to menu..."
 }
