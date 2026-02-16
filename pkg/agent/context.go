@@ -140,7 +140,7 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	bootstrapFiles := []string{
-		"AGENTS.md",
+		"AGENT.md",
 		"SOUL.md",
 		"USER.md",
 		"IDENTITY.md",
