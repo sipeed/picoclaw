@@ -9,7 +9,7 @@ import (
 
 // TestBrowserSearchTool_Name verifies tool name
 func TestBrowserSearchTool_Name(t *testing.T) {
-	tool := NewBrowserSearchTool(true)
+	tool := NewBrowserSearchTool()
 	if tool.Name() != "browser_search" {
 		t.Errorf("expected name 'browser_search', got '%s'", tool.Name())
 	}
@@ -17,7 +17,7 @@ func TestBrowserSearchTool_Name(t *testing.T) {
 
 // TestBrowserSearchTool_Description verifies description is non-empty
 func TestBrowserSearchTool_Description(t *testing.T) {
-	tool := NewBrowserSearchTool(true)
+	tool := NewBrowserSearchTool()
 	if tool.Description() == "" {
 		t.Error("expected non-empty description")
 	}
@@ -25,7 +25,7 @@ func TestBrowserSearchTool_Description(t *testing.T) {
 
 // TestBrowserSearchTool_Parameters verifies parameter schema
 func TestBrowserSearchTool_Parameters(t *testing.T) {
-	tool := NewBrowserSearchTool(true)
+	tool := NewBrowserSearchTool()
 	params := tool.Parameters()
 	props, ok := params["properties"].(map[string]interface{})
 	if !ok {
@@ -45,7 +45,7 @@ func TestBrowserSearchTool_Parameters(t *testing.T) {
 
 // TestBrowserSearchTool_MissingQuery verifies error when query is missing
 func TestBrowserSearchTool_MissingQuery(t *testing.T) {
-	tool := NewBrowserSearchTool(true)
+	tool := NewBrowserSearchTool()
 	result := tool.Execute(context.Background(), map[string]interface{}{})
 	if !result.IsError {
 		t.Error("expected error when query is missing")
@@ -251,7 +251,7 @@ func TestBrowserSearchTool_Integration(t *testing.T) {
 		t.Skip("actionbook not in PATH, skipping integration test")
 	}
 
-	tool := NewBrowserSearchTool(true)
+	tool := NewBrowserSearchTool()
 	result := tool.Execute(context.Background(), map[string]interface{}{
 		"query": "google search",
 	})

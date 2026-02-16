@@ -86,7 +86,7 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 
 	// Browser automation tools (ActionBook)
 	if cfg.Tools.Browser.Enabled {
-		registry.Register(tools.NewBrowserSearchTool(cfg.Tools.Browser.Headless))
+		registry.Register(tools.NewBrowserSearchTool())
 		registry.Register(tools.NewBrowserGetTool())
 		registry.Register(tools.NewBrowserTool(cfg.Tools.Browser.Headless))
 	}
