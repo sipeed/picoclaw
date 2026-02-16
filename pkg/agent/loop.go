@@ -387,6 +387,32 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		return "", err
 	}
 
+	// FIX: If we used tools (iteration > 1) but got no final response, ask for a summary.
+	// This happens when the model thinks "Action completed" is enough and stops generating.
+	if finalContent == "" && iteration > 1 {
+		logger.InfoCF("agent", "Empty response after tool use, forcing summary", nil)
+
+		// Append a system instruction to force a response
+		forceSummaryMsg := providers.Message{
+			Role:    "user",
+			Content: "The tools have finished execution. Please provide a concise final answer to the user's original request based on the tool outputs above.",
+		}
+		messages = append(messages, forceSummaryMsg)
+
+		// One last call without tools allowed, just for summary
+		resp, err := al.provider.Chat(ctx, messages, nil, al.model, map[string]interface{}{
+			"max_tokens":  4096,
+			"temperature": 0.7,
+		})
+		if err == nil && resp.Content != "" {
+			finalContent = resp.Content
+			// Update iteration count to reflect this extra step
+			iteration++
+		} else if err != nil {
+			logger.WarnCF("agent", "Failed to force summary: %v", map[string]interface{}{"error": err.Error()})
+		}
+	}
+
 	// If last tool had ForUser content and we already sent it, we might not need to send final response
 	// This is controlled by the tool's Silent flag and ForUser content
 
