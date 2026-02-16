@@ -10,6 +10,9 @@ Run this command in Termux:
 pkg install -y curl && curl -sSL https://raw.githubusercontent.com/sipeed/picoclaw/main/assets/scripts/picoclaw-manager.sh -o picoclaw-manager.sh && chmod +x picoclaw-manager.sh && ./picoclaw-manager.sh
 ```
 
+<img src="../assets/termux/termux-01.png" width="300" alt="PicoClaw Termux Manager">
+
+
 ---
 
 ## 🛠️ Manual Method
@@ -96,3 +99,5 @@ Once the gateway is running, you should see:
 `[INFO] telegram: Telegram bot connected {username=...}`
 
 You can now chat with your PicoClaw assistant directly on Telegram!
+
+<img src="../assets/termux/termux-02.png" width="300" alt="PicoClaw Termux Status">
