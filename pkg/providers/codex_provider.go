@@ -260,9 +260,8 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 		params.Instructions = openai.Opt(defaultCodexInstructions)
 	}
 
-	if maxTokens, ok := options["max_tokens"].(int); ok {
-		params.MaxOutputTokens = openai.Opt(int64(maxTokens))
-	}
+	// ChatGPT Codex backend currently rejects max_output_tokens with 400.
+	// Keep token budgeting at the agent layer for this provider.
 
 	if len(tools) > 0 {
 		params.Tools = translateToolsForCodex(tools)

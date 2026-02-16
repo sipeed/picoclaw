@@ -29,6 +29,9 @@ func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	if params.Instructions.Or("") != defaultCodexInstructions {
 		t.Errorf("Instructions = %q, want %q", params.Instructions.Or(""), defaultCodexInstructions)
 	}
+	if params.MaxOutputTokens.Valid() {
+		t.Errorf("MaxOutputTokens should be omitted for codex backend, got %d", params.MaxOutputTokens.Or(0))
+	}
 }
 
 func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
@@ -423,6 +426,8 @@ func TestResolveCodexModel(t *testing.T) {
 		{name: "empty", input: "", wantModel: codexDefaultModel, wantFallback: true},
 		{name: "unsupported namespace", input: "anthropic/claude-3.5", wantModel: codexDefaultModel, wantFallback: true},
 		{name: "non-openai prefixed", input: "glm-4.7", wantModel: codexDefaultModel, wantFallback: true},
+		{name: "codex alias", input: "gpt-5.3-codex", wantModel: "gpt-5.3-codex", wantFallback: false},
+		{name: "codex alias with openai prefix", input: "openai/gpt-5.3-codex", wantModel: "gpt-5.3-codex", wantFallback: false},
 		{name: "openai prefix", input: "openai/gpt-5.2", wantModel: "gpt-5.2", wantFallback: false},
 		{name: "direct gpt", input: "gpt-4o", wantModel: "gpt-4o", wantFallback: false},
 	}
