@@ -525,6 +525,32 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 * `shutdown`, `reboot`, `poweroff` — System shutdown
 * Fork bomb `:(){ :|:& };:`
 
+#### SSRF Protection (Web Fetch)
+
+The `web_fetch` tool blocks requests to internal and private network addresses to prevent Server-Side Request Forgery (SSRF) attacks. This protects against unauthorized access to cloud metadata endpoints (e.g. `169.254.169.254`), internal services, and local resources.
+
+| Blocked Range | Description |
+|---------------|-------------|
+| `127.0.0.0/8`, `::1` | Loopback addresses |
+| `0.0.0.0` | Unspecified address |
+| `169.254.0.0/16` | Link-local (cloud metadata) |
+| `10.0.0.0/8` | Private network (RFC 1918) |
+| `172.16.0.0/12` | Private network (RFC 1918) |
+| `192.168.0.0/16` | Private network (RFC 1918) |
+| `fc00::/7` | IPv6 unique local addresses |
+
+Hostnames are resolved before checking, so DNS rebinding to internal IPs is also blocked.
+
+#### TLS Warning for API Providers
+
+When an LLM provider is configured with a plain `http://` API base URL (not `localhost` or `127.0.0.1`), PicoClaw logs a warning:
+
+```
+[WARN] [provider] API base uses plain HTTP — API keys may be transmitted without encryption
+```
+
+This helps prevent accidental credential exposure over unencrypted connections.
+
 #### Error Examples
 
 ```
