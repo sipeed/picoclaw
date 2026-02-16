@@ -9,7 +9,6 @@ Run this command in Termux:
 ```bash
 pkg install -y curl && curl -sSL https://raw.githubusercontent.com/sipeed/picoclaw/main/assets/scripts/picoclaw-manager.sh -o picoclaw-manager.sh && chmod +x picoclaw-manager.sh && ./picoclaw-manager.sh
 ```
-*(Note: Replace with the actual URL once the script is added to the repo)*
 
 ---
 
