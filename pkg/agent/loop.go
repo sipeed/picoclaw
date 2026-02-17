@@ -143,6 +143,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	cmdRegistry.Register(&command.ShowCommand{})
 	cmdRegistry.Register(&command.ListCommand{})
 	cmdRegistry.Register(&command.SwitchCommand{})
+	cmdRegistry.Register(&command.SessionCommand{}) // Register new session command
 	cmdRegistry.Register(&command.StartCommand{})
 	cmdRegistry.Register(&command.HelpCommand{Registry: cmdRegistry})
 
@@ -162,6 +163,16 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 }
 
+// GetSessionManager exposes the session manager.
+func (al *AgentLoop) GetSessionManager() interface{} {
+	return al.sessions
+}
+
+// GetStateManager exposes the state manager.
+func (al *AgentLoop) GetStateManager() interface{} {
+	return al.state
+}
+
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
 
@@ -173,6 +184,19 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			msg, ok := al.bus.ConsumeInbound(ctx)
 			if !ok {
 				continue
+			}
+
+			// Resolve effective session key based on user's active session
+			// Default key is channel:chatID
+			// If user has active session "xyz", key becomes channel:chatID:xyz
+			baseKey := fmt.Sprintf("%s:%s", msg.Channel, msg.ChatID)
+			activeSession := al.state.GetUserSession(baseKey)
+
+			effectiveSessionKey := msg.SessionKey
+			if activeSession != "" && activeSession != "default" {
+				effectiveSessionKey = fmt.Sprintf("%s:%s", baseKey, activeSession)
+				// Update msg.SessionKey so downstream logic uses the correct context
+				msg.SessionKey = effectiveSessionKey
 			}
 
 			response, err := al.processMessage(ctx, msg)
@@ -246,12 +270,21 @@ func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey stri
 }
 
 func (al *AgentLoop) ProcessDirectWithChannel(ctx context.Context, content, sessionKey, channel, chatID string) (string, error) {
+	// Resolve effective session key based on user's active session
+	baseKey := fmt.Sprintf("%s:%s", channel, chatID)
+	activeSession := al.state.GetUserSession(baseKey)
+
+	effectiveSessionKey := sessionKey
+	if activeSession != "" && activeSession != "default" {
+		effectiveSessionKey = fmt.Sprintf("%s:%s", baseKey, activeSession)
+	}
+
 	msg := bus.InboundMessage{
 		Channel:    channel,
 		SenderID:   "cron",
 		ChatID:     chatID,
 		Content:    content,
-		SessionKey: sessionKey,
+		SessionKey: effectiveSessionKey,
 	}
 
 	return al.processMessage(ctx, msg)

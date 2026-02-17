@@ -21,6 +21,9 @@ type State struct {
 
 	// Timestamp is the last time this state was updated
 	Timestamp time.Time `json:"timestamp"`
+
+	// UserSessions maps user IDs to their active session names
+	UserSessions map[string]string `json:"user_sessions,omitempty"`
 }
 
 // Manager manages persistent state with atomic saves.
@@ -153,7 +156,7 @@ func (sm *Manager) saveAtomic() error {
 	return nil
 }
 
-// load loads the state from disk.
+// Load loads the state from disk.
 func (sm *Manager) load() error {
 	data, err := os.ReadFile(sm.stateFile)
 	if err != nil {
@@ -169,4 +172,35 @@ func (sm *Manager) load() error {
 	}
 
 	return nil
+}
+
+// SetUserSession atomically updates the active session for a user.
+func (sm *Manager) SetUserSession(userID, sessionName string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.state.UserSessions == nil {
+		sm.state.UserSessions = make(map[string]string)
+	}
+
+	sm.state.UserSessions[userID] = sessionName
+	sm.state.Timestamp = time.Now()
+
+	// Atomic save using temp file + rename
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
+// GetUserSession returns the active session for a user.
+func (sm *Manager) GetUserSession(userID string) string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	if sm.state.UserSessions == nil {
+		return ""
+	}
+	return sm.state.UserSessions[userID]
 }
