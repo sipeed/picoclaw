@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test
+.PHONY: all build install uninstall clean help test memory-check
 
 # Build variables
 BINARY_NAME=picoclaw
@@ -126,9 +126,13 @@ clean:
 vet:
 	@$(GO) vet ./...
 
-## fmt: Format Go code
+## test: Run unit tests
 test:
 	@$(GO) test ./...
+
+## memory-check: Validate startup memory stays under budget (default 20MB RSS)
+memory-check:
+	@bash ./scripts/memory_budget_check.sh
 
 ## fmt: Format Go code
 fmt:
