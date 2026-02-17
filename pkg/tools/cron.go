@@ -28,12 +28,15 @@ type CronTool struct {
 }
 
 // NewCronTool creates a new CronTool
-func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool) *CronTool {
+// execTimeout: 0 means no timeout, >0 sets the timeout duration
+func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration) *CronTool {
+	execTool := NewExecTool(workspace, restrict)
+	execTool.SetTimeout(execTimeout) // 0 means no timeout
 	return &CronTool{
 		cronService: cronService,
 		executor:    executor,
 		msgBus:      msgBus,
-		execTool:    NewExecTool(workspace, restrict),
+		execTool:    execTool,
 	}
 }
 
