@@ -15,9 +15,16 @@ To authenticate with Antigravity, run the following command:
 picoclaw auth login --provider antigravity
 ```
 
-*   This will open a browser window for Google OAuth.
-*   After successful login, it will automatically fetch your **Project ID** and **Email**.
-*   It will automatically update your `~/.picoclaw/config.json` to set `antigravity` as the default provider and `gemini-3-flash` as the default model.
+### Manual Authentication (Headless/VPS)
+If you are running on a server (Coolify/Docker) and cannot reach `localhost`, follow these steps:
+1.  Run the command above.
+2.  Copy the URL provided and open it in your local browser.
+3.  Complete the login.
+4.  Your browser will redirect to a `localhost:51121` URL (which will fail to load).
+5.  **Copy that final URL** from your browser's address bar.
+6.  **Paste it back into the terminal** where PicoClaw is waiting.
+
+PicoClaw will extract the authorization code and complete the process automatically.
 
 ## 2. Managing Models
 
