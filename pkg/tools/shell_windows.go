@@ -8,7 +8,43 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 )
+
+const (
+	JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+)
+
+var (
+	kernel32                     = syscall.MustLoadDLL("kernel32.dll")
+	procCreateJobObject          = kernel32.MustFindProc("CreateJobObjectW")
+	procAssignProcessToJobObject = kernel32.MustFindProc("AssignProcessToJobObject")
+	procTerminateJobObject       = kernel32.MustFindProc("TerminateJobObject")
+)
+
+func createJobObject() (syscall.Handle, error) {
+	ret, _, err := procCreateJobObject.Call(0, 0)
+	if ret == 0 {
+		return 0, err
+	}
+	return syscall.Handle(ret), nil
+}
+
+func assignProcessToJobObject(job syscall.Handle, process syscall.Handle) error {
+	ret, _, err := procAssignProcessToJobObject.Call(uintptr(job), uintptr(process))
+	if ret == 0 {
+		return err
+	}
+	return nil
+}
+
+func terminateJobObject(job syscall.Handle, exitCode uint32) error {
+	ret, _, err := procTerminateJobObject.Call(uintptr(job), uintptr(exitCode))
+	if ret == 0 {
+		return err
+	}
+	return nil
+}
 
 func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	command, ok := args["command"].(string)
@@ -58,6 +94,11 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		}
 	}
 
+	job, err := createJobObject()
+	if err == nil {
+		assignProcessToJobObject(job, syscall.Handle(cmd.Process.Pid))
+	}
+
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
@@ -65,8 +106,8 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	select {
 	case <-cmdCtx.Done():
-		if cmd.Process != nil {
-			cmd.Process.Kill()
+		if job != 0 {
+			terminateJobObject(job, 1)
 		}
 		err = cmdCtx.Err()
 	case err = <-done:
