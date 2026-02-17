@@ -188,8 +188,12 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
+		// Strip URLs before path checking so they don't get misidentified as file paths
+		urlPattern := regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s\"']+`)
+		stripped := urlPattern.ReplaceAllString(cmd, "")
+
 		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		matches := pathPattern.FindAllString(stripped, -1)
 
 		for _, raw := range matches {
 			p, err := filepath.Abs(raw)
