@@ -21,7 +21,7 @@ type ExecTool struct {
 	restrictToWorkspace bool
 }
 
-func NewExecTool(workingDir string, restrict bool) *ExecTool {
+func NewExecTool(workingDir string, restrict bool, allowPatterns ...string) *ExecTool {
 	denyPatterns := []*regexp.Regexp{
 		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
 		regexp.MustCompile(`\bdel\s+/[fq]\b`),
@@ -33,11 +33,19 @@ func NewExecTool(workingDir string, restrict bool) *ExecTool {
 		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
 	}
 
+	var allowRegex []*regexp.Regexp
+	if len(allowPatterns) > 0 {
+		allowRegex = make([]*regexp.Regexp, 0, len(allowPatterns))
+		for _, p := range allowPatterns {
+			allowRegex = append(allowRegex, regexp.MustCompile(p))
+		}
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             60 * time.Second,
 		denyPatterns:        denyPatterns,
-		allowPatterns:       nil,
+		allowPatterns:       allowRegex,
 		restrictToWorkspace: restrict,
 	}
 }
