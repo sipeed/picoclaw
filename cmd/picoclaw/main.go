@@ -931,7 +931,7 @@ func authLoginGoogleAntigravity() {
 			appCfg.Agents.Defaults.Provider = "antigravity"
 		}
 		if appCfg.Agents.Defaults.Provider == "antigravity" || appCfg.Agents.Defaults.Provider == "google-antigravity" {
-			appCfg.Agents.Defaults.Model = "gemini-3-flash-preview"
+			appCfg.Agents.Defaults.Model = "gemini-3-flash"
 		}
 		if err := config.SaveConfig(getConfigPath(), appCfg); err != nil {
 			fmt.Printf("Warning: could not update config: %v\n", err)
@@ -939,7 +939,7 @@ func authLoginGoogleAntigravity() {
 	}
 
 	fmt.Println("\n✓ Google Antigravity login successful!")
-	fmt.Println("Config updated: provider=antigravity, model=gemini-3-flash-preview")
+	fmt.Println("Config updated: provider=antigravity, model=gemini-3-flash")
 	fmt.Println("Try it: picoclaw agent -m \"Hello world\"")
 }
 
