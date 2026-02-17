@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // InstallSkillTool allows the LLM agent to install skills from registries.
@@ -64,25 +66,25 @@ func (t *InstallSkillTool) Parameters() map[string]interface{} {
 }
 
 func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
-	slug, ok := args["slug"].(string)
-	if !ok || strings.TrimSpace(slug) == "" {
-		return ErrorResult("slug is required and must be a non-empty string")
+	// Install lock to prevent concurrent directory operations.
+	// Ideally this should be done at a `slug` level, currently, its at a `workspace` level.
+	slugLock := sync.Mutex{}
+	slugLock.Lock()
+	defer slugLock.Unlock()
+
+	// Validate slug
+	slug, _ := args["slug"].(string)
+	if err := utils.ValidateSkillIdentifier(slug); err != nil {
+		return ErrorResult(fmt.Sprintf("invalid slug %q: error: %s", slug, err.Error()))
 	}
 
-	slug = strings.TrimSpace(slug)
-
-	// Validate slug safety.
-	if strings.ContainsAny(slug, "/\\") || strings.Contains(slug, "..") {
-		return ErrorResult(fmt.Sprintf("invalid slug: %q (must not contain path separators or '..')", slug))
+	// Validate registry
+	registryName, _ := args["registry"].(string)
+	if err := utils.ValidateSkillIdentifier(registryName); err != nil {
+		return ErrorResult(fmt.Sprintf("invalid registry %q: error: %s", registryName, err.Error()))
 	}
 
 	version, _ := args["version"].(string)
-	registryName, ok := args["registry"].(string)
-	if !ok || strings.TrimSpace(registryName) == "" {
-		return ErrorResult("registry is required")
-	}
-	registryName = strings.TrimSpace(registryName)
-
 	force, _ := args["force"].(bool)
 
 	// Check if already installed.
@@ -125,7 +127,15 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interfac
 
 	// Write origin metadata.
 	if err := writeOriginMeta(targetDir, registry.Name(), slug, result.Version); err != nil {
-		// Non-fatal: skill is installed, just origin tracking failed.
+		logger.ErrorCF("tool", "Failed to write origin metadata",
+			map[string]interface{}{
+				"tool":     "install_skill",
+				"error":    err.Error(),
+				"target":   targetDir,
+				"registry": registry.Name(),
+				"slug":     slug,
+				"version":  result.Version,
+			})
 		_ = err
 	}
 

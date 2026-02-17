@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +20,7 @@ type SearchCache struct {
 
 type cacheEntry struct {
 	query     string
-	trigrams  map[string]struct{}
+	trigrams  []uint32
 	results   []SearchResult
 	createdAt time.Time
 }
@@ -53,12 +54,13 @@ func (sc *SearchCache) Get(query string) ([]SearchResult, bool) {
 		return nil, false
 	}
 
-	sc.mu.RLock()
-	defer sc.mu.RUnlock()
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
 
 	// Exact match first.
 	if entry, ok := sc.entries[normalized]; ok {
 		if time.Since(entry.createdAt) < sc.ttl {
+			sc.moveToEndLocked(normalized)
 			return copyResults(entry.results), true
 		}
 	}
@@ -80,6 +82,7 @@ func (sc *SearchCache) Get(query string) ([]SearchResult, bool) {
 	}
 
 	if bestSim >= similarityThreshold && bestEntry != nil {
+		sc.moveToEndLocked(bestEntry.query)
 		return copyResults(bestEntry.results), true
 	}
 
@@ -166,39 +169,53 @@ func normalizeQuery(q string) string {
 	return strings.ToLower(strings.TrimSpace(q))
 }
 
-// buildTrigrams generates character trigrams from a string.
+// buildTrigrams generates hash of trigrams from a string.
 // Example: "hello" → {"hel", "ell", "llo"}
-func buildTrigrams(s string) map[string]struct{} {
-	trigrams := make(map[string]struct{})
-	runes := []rune(s)
-	for i := 0; i <= len(runes)-3; i++ {
-		tri := string(runes[i : i+3])
-		trigrams[tri] = struct{}{}
+// "hel" -> 0x0068656c -> 4 bytes; compared to 16 byptes of a string
+func buildTrigrams(s string) []uint32 {
+	if len(s) < 3 {
+		return nil
 	}
-	return trigrams
+
+	trigrams := make([]uint32, 0, len(s)-2)
+	for i := 0; i <= len(s)-3; i++ {
+		trigrams = append(trigrams, uint32(s[i])<<16|uint32(s[i+1])<<8|uint32(s[i+2]))
+	}
+
+	// Sort and Deduplication
+	sort.Slice(trigrams, func(i, j int) bool { return trigrams[i] < trigrams[j] })
+	n := 1
+	for i := 1; i < len(trigrams); i++ {
+		if trigrams[i] != trigrams[i-1] {
+			trigrams[n] = trigrams[i]
+			n++
+		}
+	}
+
+	return trigrams[:n]
 }
 
 // jaccardSimilarity computes |A ∩ B| / |A ∪ B|.
-func jaccardSimilarity(a, b map[string]struct{}) float64 {
+func jaccardSimilarity(a, b []uint32) float64 {
 	if len(a) == 0 && len(b) == 0 {
-		return 1.0
+		return 1
 	}
-	if len(a) == 0 || len(b) == 0 {
-		return 0.0
-	}
-
+	i, j := 0, 0
 	intersection := 0
-	for k := range a {
-		if _, ok := b[k]; ok {
+
+	for i < len(a) && j < len(b) {
+		if a[i] == b[j] {
 			intersection++
+			i++
+			j++
+		} else if a[i] < b[j] {
+			i++
+		} else {
+			j++
 		}
 	}
 
 	union := len(a) + len(b) - intersection
-	if union == 0 {
-		return 0.0
-	}
-
 	return float64(intersection) / float64(union)
 }
 

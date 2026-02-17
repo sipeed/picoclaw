@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -159,8 +160,12 @@ func TestExtractZipPathTraversal(t *testing.T) {
 
 	zw.Close()
 
+	// Write to temp file for extractZipFile.
+	tmpZip := filepath.Join(t.TempDir(), "bad.zip")
+	require.NoError(t, os.WriteFile(tmpZip, buf.Bytes(), 0644))
+
 	tmpDir := t.TempDir()
-	err = extractZip(buf.Bytes(), tmpDir)
+	err = utils.ExtractZipFile(tmpZip, tmpDir)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsafe path")
 }
@@ -172,10 +177,14 @@ func TestExtractZipWithSubdirectories(t *testing.T) {
 		"examples/demo.yaml": "key: value",
 	})
 
+	// Write to temp file for extractZipFile.
+	tmpZip := filepath.Join(t.TempDir(), "test.zip")
+	require.NoError(t, os.WriteFile(tmpZip, zipBuf, 0644))
+
 	tmpDir := t.TempDir()
 	targetDir := filepath.Join(tmpDir, "my-skill")
 
-	err := extractZip(zipBuf, targetDir)
+	err := utils.ExtractZipFile(tmpZip, targetDir)
 	require.NoError(t, err)
 
 	// Verify nested file.

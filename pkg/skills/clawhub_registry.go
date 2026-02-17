@@ -1,8 +1,6 @@
 package skills
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,9 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -121,17 +119,17 @@ func (c *ClawHubRegistry) Search(ctx context.Context, query string, limit int) (
 
 	results := make([]SearchResult, 0, len(resp.Results))
 	for _, r := range resp.Results {
-		slug := derefStr(r.Slug, "")
+		slug := utils.DerefStr(r.Slug, "")
 		if slug == "" {
 			continue
 		}
 
-		summary := derefStr(r.Summary, "")
+		summary := utils.DerefStr(r.Summary, "")
 		if summary == "" {
 			continue
 		}
 
-		displayName := derefStr(r.DisplayName, "")
+		displayName := utils.DerefStr(r.DisplayName, "")
 		if displayName == "" {
 			displayName = slug
 		}
@@ -141,7 +139,7 @@ func (c *ClawHubRegistry) Search(ctx context.Context, query string, limit int) (
 			Slug:         slug,
 			DisplayName:  displayName,
 			Summary:      summary,
-			Version:      derefStr(r.Version, ""),
+			Version:      utils.DerefStr(r.Version, ""),
 			RegistryName: c.Name(),
 		})
 	}
@@ -169,8 +167,8 @@ type clawhubModerationInfo struct {
 }
 
 func (c *ClawHubRegistry) GetSkillMeta(ctx context.Context, slug string) (*SkillMeta, error) {
-	if !isSafeSlug(slug) {
-		return nil, fmt.Errorf("invalid slug: %q", slug)
+	if err := utils.ValidateSkillIdentifier(slug); err != nil {
+		return nil, fmt.Errorf("invalid slug %q: error: %s", slug, err.Error())
 	}
 
 	u := c.baseURL + c.skillsPath + "/" + url.PathEscape(slug)
@@ -209,8 +207,8 @@ func (c *ClawHubRegistry) GetSkillMeta(ctx context.Context, slug string) (*Skill
 // downloads the skill ZIP, and extracts it to targetDir.
 // Returns an InstallResult for the caller to use for moderation decisions.
 func (c *ClawHubRegistry) DownloadAndInstall(ctx context.Context, slug, version, targetDir string) (*InstallResult, error) {
-	if !isSafeSlug(slug) {
-		return nil, fmt.Errorf("invalid slug: %q", slug)
+	if err := utils.ValidateSkillIdentifier(slug); err != nil {
+		return nil, fmt.Errorf("invalid slug %q: error: %s", slug, err.Error())
 	}
 
 	// Step 1: Fetch metadata (with fallback).
@@ -237,7 +235,7 @@ func (c *ClawHubRegistry) DownloadAndInstall(ctx context.Context, slug, version,
 	}
 	result.Version = installVersion
 
-	// Step 3: Download ZIP.
+	// Step 3: Download ZIP to temp file (streams in ~32KB chunks).
 	u, err := url.Parse(c.baseURL + c.downloadPath)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", err)
@@ -250,17 +248,22 @@ func (c *ClawHubRegistry) DownloadAndInstall(ctx context.Context, slug, version,
 	}
 	u.RawQuery = q.Encode()
 
-	zipData, err := c.doGet(ctx, u.String())
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+
+	tmpPath, err := utils.DownloadToFile(ctx, c.client, req, int64(c.maxZipSize))
 	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
+	defer os.Remove(tmpPath)
 
-	if len(zipData) > c.maxZipSize {
-		return nil, fmt.Errorf("ZIP too large: %d bytes (max %d)", len(zipData), c.maxZipSize)
-	}
-
-	// Step 4: Extract.
-	if err := extractZip(zipData, targetDir); err != nil {
+	// Step 4: Extract from file on disk.
+	if err := utils.ExtractZipFile(tmpPath, targetDir); err != nil {
 		return nil, err
 	}
 
@@ -297,84 +300,4 @@ func (c *ClawHubRegistry) doGet(ctx context.Context, urlStr string) ([]byte, err
 	}
 
 	return body, nil
-}
-
-// --- ZIP extraction ---
-
-func extractZip(data []byte, targetDir string) error {
-	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return fmt.Errorf("invalid ZIP: %w", err)
-	}
-
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		return fmt.Errorf("failed to create target dir: %w", err)
-	}
-
-	for _, f := range reader.File {
-		// Path traversal protection.
-		cleanName := filepath.Clean(f.Name)
-		if strings.HasPrefix(cleanName, "..") || filepath.IsAbs(cleanName) {
-			return fmt.Errorf("zip entry has unsafe path: %q", f.Name)
-		}
-
-		destPath := filepath.Join(targetDir, cleanName)
-
-		// Double-check the resolved path is within target.
-		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(targetDir)) {
-			return fmt.Errorf("zip entry escapes target dir: %q", f.Name)
-		}
-
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(destPath, 0755); err != nil {
-				return err
-			}
-			continue
-		}
-
-		// Ensure parent directory exists.
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			return err
-		}
-
-		rc, err := f.Open()
-		if err != nil {
-			return fmt.Errorf("failed to open zip entry %q: %w", f.Name, err)
-		}
-
-		outFile, err := os.Create(destPath)
-		if err != nil {
-			rc.Close()
-			return fmt.Errorf("failed to create file %q: %w", destPath, err)
-		}
-
-		_, err = io.Copy(outFile, rc)
-		rc.Close()
-		outFile.Close()
-		if err != nil {
-			return fmt.Errorf("failed to extract %q: %w", f.Name, err)
-		}
-	}
-
-	return nil
-}
-
-// --- Utilities ---
-
-func isSafeSlug(slug string) bool {
-	slug = strings.TrimSpace(slug)
-	if slug == "" {
-		return false
-	}
-	if strings.ContainsAny(slug, "/\\") || strings.Contains(slug, "..") {
-		return false
-	}
-	return true
-}
-
-func derefStr(s *string, fallback string) string {
-	if s == nil {
-		return fallback
-	}
-	return *s
 }

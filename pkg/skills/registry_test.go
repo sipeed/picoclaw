@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -169,10 +170,10 @@ func TestSortByScoreDesc(t *testing.T) {
 }
 
 func TestIsSafeSlug(t *testing.T) {
-	assert.True(t, isSafeSlug("github"))
-	assert.True(t, isSafeSlug("docker-compose"))
-	assert.False(t, isSafeSlug(""))
-	assert.False(t, isSafeSlug("../etc/passwd"))
-	assert.False(t, isSafeSlug("path/traversal"))
-	assert.False(t, isSafeSlug("path\\traversal"))
+	assert.NoError(t, utils.ValidateSkillIdentifier("github"))
+	assert.NoError(t, utils.ValidateSkillIdentifier("docker-compose"))
+	assert.Error(t, utils.ValidateSkillIdentifier(""))
+	assert.Error(t, utils.ValidateSkillIdentifier("../etc/passwd"))
+	assert.Error(t, utils.ValidateSkillIdentifier("path/traversal"))
+	assert.Error(t, utils.ValidateSkillIdentifier("path\\traversal"))
 }

@@ -53,7 +53,8 @@ func (t *FindSkillsTool) Parameters() map[string]interface{} {
 
 func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	query, ok := args["query"].(string)
-	if !ok || strings.TrimSpace(query) == "" {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if !ok || query == "" {
 		return ErrorResult("query is required and must be a non-empty string")
 	}
 

@@ -160,7 +160,7 @@ func (rm *RegistryManager) SearchAll(ctx context.Context, query string, limit in
 				return
 			}
 
-			searchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			searchCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 			defer cancel()
 
 			results, err := r.Search(searchCtx, query, limit)
@@ -182,16 +182,18 @@ func (rm *RegistryManager) SearchAll(ctx context.Context, query string, limit in
 	var merged []SearchResult
 	var lastErr error
 
+	var anyRegistrySucceeded bool
 	for rr := range resultsCh {
 		if rr.err != nil {
 			lastErr = rr.err
 			continue
 		}
+		anyRegistrySucceeded = true
 		merged = append(merged, rr.results...)
 	}
 
 	// If all registries failed, return the last error.
-	if len(merged) == 0 && lastErr != nil {
+	if !anyRegistrySucceeded && lastErr != nil {
 		return nil, fmt.Errorf("all registries failed: %w", lastErr)
 	}
 

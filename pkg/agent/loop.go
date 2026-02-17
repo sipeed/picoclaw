@@ -108,18 +108,9 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	// Skill discovery and installation tools
 	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-		ClawHub: skills.ClawHubConfig{
-			Enabled:      cfg.Tools.Skills.Registries.ClawHub.Enabled,
-			BaseURL:      cfg.Tools.Skills.Registries.ClawHub.BaseURL,
-			AuthToken:    cfg.Tools.Skills.Registries.ClawHub.AuthToken,
-			SearchPath:   cfg.Tools.Skills.Registries.ClawHub.SearchPath,
-			SkillsPath:   cfg.Tools.Skills.Registries.ClawHub.SkillsPath,
-			DownloadPath: cfg.Tools.Skills.Registries.ClawHub.DownloadPath,
-			Timeout:      cfg.Tools.Skills.Registries.ClawHub.Timeout,
-			MaxZipSize:   cfg.Tools.Skills.Registries.ClawHub.MaxZipSize,
-		},
+		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
 	})
-	searchCache := skills.NewSearchCache(cfg.Tools.Skills.SearchCache.MaxSize, time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds) * time.Second)
+	searchCache := skills.NewSearchCache(cfg.Tools.Skills.SearchCache.MaxSize, time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second)
 	registry.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
 	registry.Register(tools.NewInstallSkillTool(registryMgr, workspace))
 

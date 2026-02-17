@@ -376,6 +376,11 @@ func DefaultConfig() *Config {
 						BaseURL: "https://clawhub.ai",
 					},
 				},
+				MaxConcurrentSearches: 2,
+				SearchCache: SearchCacheConfig{
+					MaxSize:    50,
+					TTLSeconds: 300,
+				},
 			},
 		},
 		Heartbeat: HeartbeatConfig{
