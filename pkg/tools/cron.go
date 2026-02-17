@@ -28,12 +28,12 @@ type CronTool struct {
 }
 
 // NewCronTool creates a new CronTool
-func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string) *CronTool {
+func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool) *CronTool {
 	return &CronTool{
 		cronService: cronService,
 		executor:    executor,
 		msgBus:      msgBus,
-		execTool:    NewExecTool(workspace, false),
+		execTool:    NewExecTool(workspace, restrict),
 	}
 }
 

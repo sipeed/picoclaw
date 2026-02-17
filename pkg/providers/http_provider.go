@@ -53,10 +53,10 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		return nil, fmt.Errorf("API base not configured")
 	}
 
-	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5)
+	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5, groq/openai/gpt-oss-120b -> openai/gpt-oss-120b, ollama/qwen2.5:14b -> qwen2.5:14b)
 	if idx := strings.Index(model, "/"); idx != -1 {
 		prefix := model[:idx]
-		if prefix == "moonshot" || prefix == "nvidia" {
+		if prefix == "moonshot" || prefix == "nvidia" || prefix == "groq" || prefix == "ollama" {
 			model = model[idx+1:]
 		}
 	}
@@ -240,6 +240,9 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			}
 		case "openai", "gpt":
 			if cfg.Providers.OpenAI.APIKey != "" || cfg.Providers.OpenAI.AuthMethod != "" {
+				if cfg.Providers.OpenAI.AuthMethod == "codex-cli" {
+					return NewCodexProviderWithTokenSource("", "", CreateCodexCliTokenSource()), nil
+				}
 				if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
 					return createCodexAuthProvider()
 				}
@@ -299,11 +302,17 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				}
 			}
 		case "claude-cli", "claudecode", "claude-code":
-			workspace := cfg.Agents.Defaults.Workspace
+			workspace := cfg.WorkspacePath()
 			if workspace == "" {
 				workspace = "."
 			}
 			return NewClaudeCliProvider(workspace), nil
+		case "codex-cli", "codex-code":
+			workspace := cfg.WorkspacePath()
+			if workspace == "" {
+				workspace = "."
+			}
+			return NewCodexCliProvider(workspace), nil
 		case "deepseek":
 			if cfg.Providers.DeepSeek.APIKey != "" {
 				apiKey = cfg.Providers.DeepSeek.APIKey
@@ -400,7 +409,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			if apiBase == "" {
 				apiBase = "https://integrate.api.nvidia.com/v1"
 			}
-
+		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
+			fmt.Println("Ollama provider selected based on model name prefix")
+			apiKey = cfg.Providers.Ollama.APIKey
+			apiBase = cfg.Providers.Ollama.APIBase
+			proxy = cfg.Providers.Ollama.Proxy
+			if apiBase == "" {
+				apiBase = "http://localhost:11434/v1"
+			}
+			fmt.Println("Ollama apiBase:", apiBase)
 		case cfg.Providers.VLLM.APIBase != "":
 			apiKey = cfg.Providers.VLLM.APIKey
 			apiBase = cfg.Providers.VLLM.APIBase
