@@ -78,30 +78,58 @@ jobs:
             -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=15 \
             -p "${SSH_PORT}" \
-            "${SSH_USER}@${{ secrets.HOSTINGER_HOST }}" <<'EOF'
-          # Update .env with secrets (keep existing values, only override if provided)
+            "${SSH_USER}@${{ secrets.HOSTINGER_HOST }}" bash -s <<EOF
+          set -e
           ENV_FILE="/opt/picoclaw/config/.env"
+          CONFIG_FILE="/opt/picoclaw/config/config.json"
+
+          mkdir -p /opt/picoclaw/config
+          touch "\$ENV_FILE"
+
+          set_env_var() {
+            local key="\$1"
+            local value="\$2"
+            if grep -q "^\${key}=" "\$ENV_FILE" 2>/dev/null; then
+              sed -i "s|^\${key}=.*|\${key}=\${value}|" "\$ENV_FILE"
+            else
+              echo "\${key}=\${value}" >> "\$ENV_FILE"
+            fi
+          }
 
           # Telegram Bot Token + Enable
-          if [ -n "${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}" ]; then
-            grep -q "PICOCLAW_CHANNELS_TELEGRAM_TOKEN" "$ENV_FILE" && \
-              sed -i "s|^PICOCLAW_CHANNELS_TELEGRAM_TOKEN=.*|PICOCLAW_CHANNELS_TELEGRAM_TOKEN=${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}|" "$ENV_FILE" || \
-              echo "PICOCLAW_CHANNELS_TELEGRAM_TOKEN=${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}" >> "$ENV_FILE"
-
-            # Enable Telegram channel when token is provided
-            grep -q "PICOCLAW_CHANNELS_TELEGRAM_ENABLED" "$ENV_FILE" && \
-              sed -i "s|^PICOCLAW_CHANNELS_TELEGRAM_ENABLED=.*|PICOCLAW_CHANNELS_TELEGRAM_ENABLED=true|" "$ENV_FILE" || \
-              echo "PICOCLAW_CHANNELS_TELEGRAM_ENABLED=true" >> "$ENV_FILE"
+          TELEGRAM_TOKEN="${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}"
+          if [ -n "\$TELEGRAM_TOKEN" ]; then
+            set_env_var "PICOCLAW_CHANNELS_TELEGRAM_TOKEN" "\$TELEGRAM_TOKEN"
+            set_env_var "PICOCLAW_CHANNELS_TELEGRAM_ENABLED" "true"
+            echo "Telegram: token and enabled flag configured"
+          else
+            echo "WARNING: PICOCLAW_TELEGRAM_BOT_TOKEN secret is empty - Telegram will not start"
           fi
 
           # Anthropic API Key
-          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
-            grep -q "ANTHROPIC_API_KEY" "$ENV_FILE" && \
-              sed -i "s|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}|" "$ENV_FILE" || \
-              echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> "$ENV_FILE"
+          ANTHROPIC_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
+          if [ -n "\$ANTHROPIC_KEY" ]; then
+            set_env_var "ANTHROPIC_API_KEY" "\$ANTHROPIC_KEY"
+            echo "Anthropic: API key configured"
           fi
 
-          echo "Environment variables updated"
+          # Create config.json if it doesn't exist (copy from example)
+          if [ ! -f "\$CONFIG_FILE" ]; then
+            if [ -f "/opt/picoclaw/src/config/config.example.json" ]; then
+              cp /opt/picoclaw/src/config/config.example.json "\$CONFIG_FILE"
+              echo "Created config.json from example template"
+            fi
+          fi
+
+          # Verify critical config
+          echo ""
+          echo "=== Deploy Config Verification ==="
+          echo "ENV file exists: \$(test -f "\$ENV_FILE" && echo YES || echo NO)"
+          echo "Config file exists: \$(test -f "\$CONFIG_FILE" && echo YES || echo NO)"
+          echo "Telegram enabled: \$(grep -c 'PICOCLAW_CHANNELS_TELEGRAM_ENABLED=true' "\$ENV_FILE" 2>/dev/null || echo 0)"
+          echo "Telegram token set: \$(grep -c 'PICOCLAW_CHANNELS_TELEGRAM_TOKEN=' "\$ENV_FILE" 2>/dev/null || echo 0)"
+          echo "Anthropic key set: \$(grep -c 'ANTHROPIC_API_KEY=' "\$ENV_FILE" 2>/dev/null || echo 0)"
+          echo "=================================="
           EOF
 
       - name: Build and restart Docker container
@@ -136,12 +164,15 @@ jobs:
           if docker compose ps picoclaw-gateway 2>/dev/null | grep -qE "Up|running"; then
               echo "Container is running!"
               docker compose ps
+              echo ""
+              echo "=== Recent logs ==="
+              docker compose logs --tail=15 picoclaw-gateway 2>&1 || true
           else
-              echo "Container status:"
+              echo "Container FAILED to start!"
               docker compose ps
               echo ""
               echo "Container logs:"
-              docker compose logs --tail=30 picoclaw-gateway
+              docker compose logs --tail=50 picoclaw-gateway
               exit 1
           fi
 
