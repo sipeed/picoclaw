@@ -195,6 +195,7 @@ type antigravityGenConfig struct {
 
 func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) antigravityRequest {
 	req := antigravityRequest{}
+	toolCallNames := make(map[string]string)
 
 	// Build contents from messages
 	for _, msg := range messages {
@@ -205,12 +206,13 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 			}
 		case "user":
 			if msg.ToolCallID != "" {
+				toolName := resolveToolResponseName(msg.ToolCallID, toolCallNames)
 				// Tool result
 				req.Contents = append(req.Contents, antigravityContent{
 					Role: "user",
 					Parts: []antigravityPart{{
 						FunctionResponse: &antigravityFunctionResponse{
-							Name: msg.ToolCallID,
+							Name: toolName,
 							Response: map[string]interface{}{
 								"result": msg.Content,
 							},
@@ -231,10 +233,20 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 				content.Parts = append(content.Parts, antigravityPart{Text: msg.Content})
 			}
 			for _, tc := range msg.ToolCalls {
+				toolName, toolArgs := normalizeStoredToolCall(tc)
+				if toolName == "" {
+					logger.WarnCF("provider.antigravity", "Skipping tool call with empty name in history", map[string]interface{}{
+						"tool_call_id": tc.ID,
+					})
+					continue
+				}
+				if tc.ID != "" {
+					toolCallNames[tc.ID] = toolName
+				}
 				content.Parts = append(content.Parts, antigravityPart{
 					FunctionCall: &antigravityFunctionCall{
-						Name: tc.Name,
-						Args: tc.Arguments,
+						Name: toolName,
+						Args: toolArgs,
 					},
 				})
 			}
@@ -242,11 +254,12 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 				req.Contents = append(req.Contents, content)
 			}
 		case "tool":
+			toolName := resolveToolResponseName(msg.ToolCallID, toolCallNames)
 			req.Contents = append(req.Contents, antigravityContent{
 				Role: "user",
 				Parts: []antigravityPart{{
 					FunctionResponse: &antigravityFunctionResponse{
-						Name: msg.ToolCallID,
+						Name: toolName,
 						Response: map[string]interface{}{
 							"result": msg.Content,
 						},
@@ -292,6 +305,56 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 	}
 
 	return req
+}
+
+func normalizeStoredToolCall(tc ToolCall) (string, map[string]interface{}) {
+	name := tc.Name
+	args := tc.Arguments
+
+	if name == "" && tc.Function != nil {
+		name = tc.Function.Name
+	}
+
+	if args == nil {
+		args = map[string]interface{}{}
+	}
+
+	if len(args) == 0 && tc.Function != nil && tc.Function.Arguments != "" {
+		var parsed map[string]interface{}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &parsed); err == nil && parsed != nil {
+			args = parsed
+		}
+	}
+
+	return name, args
+}
+
+func resolveToolResponseName(toolCallID string, toolCallNames map[string]string) string {
+	if toolCallID == "" {
+		return ""
+	}
+
+	if name, ok := toolCallNames[toolCallID]; ok && name != "" {
+		return name
+	}
+
+	return inferToolNameFromCallID(toolCallID)
+}
+
+func inferToolNameFromCallID(toolCallID string) string {
+	if !strings.HasPrefix(toolCallID, "call_") {
+		return toolCallID
+	}
+
+	rest := strings.TrimPrefix(toolCallID, "call_")
+	if idx := strings.LastIndex(rest, "_"); idx > 0 {
+		candidate := rest[:idx]
+		if candidate != "" {
+			return candidate
+		}
+	}
+
+	return toolCallID
 }
 
 // --- Response parsing ---

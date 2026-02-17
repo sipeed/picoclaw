@@ -605,15 +605,20 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 			break
 		}
 
-		// Log tool calls
-		toolNames := make([]string, 0, len(response.ToolCalls))
+		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
 		for _, tc := range response.ToolCalls {
+			normalizedToolCalls = append(normalizedToolCalls, normalizeProviderToolCall(tc))
+		}
+
+		// Log tool calls
+		toolNames := make([]string, 0, len(normalizedToolCalls))
+		for _, tc := range normalizedToolCalls {
 			toolNames = append(toolNames, tc.Name)
 		}
 		logger.InfoCF("agent", "LLM requested tool calls",
 			map[string]interface{}{
 				"tools":     toolNames,
-				"count":     len(response.ToolCalls),
+				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
 
@@ -622,7 +627,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 			Role:    "assistant",
 			Content: response.Content,
 		}
-		for _, tc := range response.ToolCalls {
+		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
 			thoughtSignature := ""
 			if tc.Function != nil {
@@ -630,8 +635,10 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 			}
 
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
+				ID:        tc.ID,
+				Type:      "function",
+				Name:      tc.Name,
+				Arguments: tc.Arguments,
 				Function: &providers.FunctionCall{
 					Name:             tc.Name,
 					Arguments:        string(argumentsJSON),
@@ -645,7 +652,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 		al.sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
 		// Execute tool calls
-		for _, tc := range response.ToolCalls {
+		for _, tc := range normalizedToolCalls {
 			// Log tool call with arguments preview
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
@@ -706,6 +713,45 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 	}
 
 	return finalContent, iteration, nil
+}
+
+func normalizeProviderToolCall(tc providers.ToolCall) providers.ToolCall {
+	normalized := tc
+
+	if normalized.Name == "" && normalized.Function != nil {
+		normalized.Name = normalized.Function.Name
+	}
+
+	if normalized.Arguments == nil {
+		normalized.Arguments = map[string]interface{}{}
+	}
+
+	if len(normalized.Arguments) == 0 && normalized.Function != nil && normalized.Function.Arguments != "" {
+		var parsed map[string]interface{}
+		if err := json.Unmarshal([]byte(normalized.Function.Arguments), &parsed); err == nil && parsed != nil {
+			normalized.Arguments = parsed
+		}
+	}
+
+	argsJSON, _ := json.Marshal(normalized.Arguments)
+	if normalized.Function == nil {
+		normalized.Function = &providers.FunctionCall{
+			Name:      normalized.Name,
+			Arguments: string(argsJSON),
+		}
+	} else {
+		if normalized.Function.Name == "" {
+			normalized.Function.Name = normalized.Name
+		}
+		if normalized.Name == "" {
+			normalized.Name = normalized.Function.Name
+		}
+		if normalized.Function.Arguments == "" {
+			normalized.Function.Arguments = string(argsJSON)
+		}
+	}
+
+	return normalized
 }
 
 // updateToolContexts updates the context for tools that need channel/chatID info.
