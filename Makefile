@@ -16,6 +16,7 @@ LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X 
 # Go variables
 GO?=go
 GOFLAGS?=-v
+export GOTOOLCHAIN?=local
 
 # Installation
 INSTALL_PREFIX?=$(HOME)/.local
