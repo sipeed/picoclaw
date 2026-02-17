@@ -331,6 +331,8 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "localhost:4321"
 			}
 			return NewGitHubCopilotProvider(apiBase, cfg.Providers.GitHubCopilot.ConnectMode, model)
+		case "antigravity", "google-antigravity":
+			return NewAntigravityProvider(), nil
 
 		}
 
