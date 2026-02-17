@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/caarlos0/env/v11"
@@ -51,7 +52,10 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
-	mu        sync.RWMutex
+	// MCPServers is a compatibility alias for configs using top-level "mcpServers".
+	// Canonical config remains tools.mcp.servers.
+	MCPServers map[string]LegacyMCPServerConfig `json:"mcpServers,omitempty"`
+	mu         sync.RWMutex
 }
 
 type AgentsConfig struct {
@@ -222,9 +226,38 @@ type CronToolsConfig struct {
 	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
 }
 
+type MCPServerConfig struct {
+	Enabled            bool              `json:"enabled"`
+	Command            string            `json:"command"`
+	Args               []string          `json:"args"`
+	Env                map[string]string `json:"env"`
+	WorkingDir         string            `json:"working_dir"`
+	Protocol           string            `json:"protocol"`
+	InitTimeoutSeconds int               `json:"init_timeout_seconds"`
+	CallTimeoutSeconds int               `json:"call_timeout_seconds"`
+	MaxResponseBytes   int               `json:"max_response_bytes"`
+	IncludeTools       []string          `json:"include_tools"`
+	ExcludeTools       []string          `json:"exclude_tools"`
+}
+
+type MCPToolsConfig struct {
+	Enabled bool                       `json:"enabled" env:"PICOCLAW_TOOLS_MCP_ENABLED"`
+	Servers map[string]MCPServerConfig `json:"servers"`
+}
+
+// LegacyMCPServerConfig supports compatibility with "mcpServers" style config.
+type LegacyMCPServerConfig struct {
+	Type     string            `json:"type"`
+	Command  string            `json:"command"`
+	Args     []string          `json:"args"`
+	Env      map[string]string `json:"env"`
+	Protocol string            `json:"protocol"`
+}
+
 type ToolsConfig struct {
 	Web  WebToolsConfig  `json:"web"`
 	Cron CronToolsConfig `json:"cron"`
+	MCP  MCPToolsConfig  `json:"mcp"`
 }
 
 func DefaultConfig() *Config {
@@ -342,6 +375,10 @@ func DefaultConfig() *Config {
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
 			},
+			MCP: MCPToolsConfig{
+				Enabled: false,
+				Servers: map[string]MCPServerConfig{},
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
@@ -373,7 +410,51 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	cfg.applyLegacyMCPServers()
+
 	return cfg, nil
+}
+
+func (c *Config) applyLegacyMCPServers() {
+	// If canonical MCP config already exists, keep it as source of truth.
+	if len(c.Tools.MCP.Servers) > 0 {
+		return
+	}
+	if len(c.MCPServers) == 0 {
+		return
+	}
+
+	if c.Tools.MCP.Servers == nil {
+		c.Tools.MCP.Servers = map[string]MCPServerConfig{}
+	}
+
+	for name, legacy := range c.MCPServers {
+		if strings.TrimSpace(legacy.Command) == "" {
+			continue
+		}
+
+		enabled := true
+		if legacy.Type != "" && legacy.Type != "stdio" {
+			enabled = false
+		}
+
+		envCopy := make(map[string]string, len(legacy.Env))
+		for key, value := range legacy.Env {
+			envCopy[key] = value
+		}
+
+		c.Tools.MCP.Servers[name] = MCPServerConfig{
+			Enabled:  enabled,
+			Command:  legacy.Command,
+			Args:     append([]string{}, legacy.Args...),
+			Env:      envCopy,
+			Protocol: legacy.Protocol,
+		}
+	}
+
+	if len(c.Tools.MCP.Servers) > 0 {
+		c.Tools.MCP.Enabled = true
+	}
 }
 
 func SaveConfig(path string, cfg *Config) error {

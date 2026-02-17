@@ -23,6 +23,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -44,7 +45,11 @@ type AgentLoop struct {
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
 	channelManager *channels.Manager
+	mcpManager     *mcp.Manager
+	mcpCloseOnce   sync.Once
 }
+
+const defaultWebFetchMaxChars = 50000
 
 // processOptions configures how a message is processed
 type processOptions struct {
@@ -60,7 +65,14 @@ type processOptions struct {
 
 // createToolRegistry creates a tool registry with common tools.
 // This is shared between main agent and subagents.
-func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msgBus *bus.MessageBus) *tools.ToolRegistry {
+func createToolRegistry(
+	workspace string,
+	restrict bool,
+	cfg *config.Config,
+	msgBus *bus.MessageBus,
+	mcpManager *mcp.Manager,
+	discoveredMCPTools []mcp.RegisteredTool,
+) *tools.ToolRegistry {
 	registry := tools.NewToolRegistry()
 
 	// File system tools
@@ -85,7 +97,9 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	}); searchTool != nil {
 		registry.Register(searchTool)
 	}
-	registry.Register(tools.NewWebFetchTool(50000))
+	registry.Register(tools.NewWebFetchTool(defaultWebFetchMaxChars))
+
+	tools.RegisterKnownMCPTools(registry, mcpManager, discoveredMCPTools)
 
 	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 	registry.Register(tools.NewI2CTool())
@@ -113,12 +127,35 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	restrict := cfg.Agents.Defaults.RestrictToWorkspace
 
+	var (
+		mcpManager         *mcp.Manager
+		discoveredMCPTools []mcp.RegisteredTool
+	)
+	if cfg.Tools.MCP.Enabled {
+		bootstrap, err := bootstrapMCP(cfg.Tools.MCP)
+		if err != nil {
+			logger.WarnCF("agent", "MCP tool bootstrap failed",
+				map[string]interface{}{
+					"error": err.Error(),
+				})
+		} else if bootstrap != nil {
+			mcpManager = bootstrap.Manager
+			discoveredMCPTools = bootstrap.Tools
+			if len(discoveredMCPTools) > 0 {
+				logger.InfoCF("agent", "MCP tools registered",
+					map[string]interface{}{
+						"count": len(discoveredMCPTools),
+					})
+			}
+		}
+	}
+
 	// Create tool registry for main agent
-	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus)
+	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus, mcpManager, discoveredMCPTools)
 
 	// Create subagent manager with its own tool registry
 	subagentManager := tools.NewSubagentManager(provider, cfg.Agents.Defaults.Model, workspace, msgBus)
-	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus)
+	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus, mcpManager, discoveredMCPTools)
 	// Subagent doesn't need spawn/subagent tools to avoid recursion
 	subagentManager.SetTools(subagentTools)
 
@@ -151,11 +188,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
+		mcpManager:     mcpManager,
 	}
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
+	defer al.closeMCP()
 
 	for al.running.Load() {
 		select {
@@ -198,6 +237,22 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+	al.closeMCP()
+}
+
+func (al *AgentLoop) closeMCP() {
+	if al.mcpManager == nil {
+		return
+	}
+
+	al.mcpCloseOnce.Do(func() {
+		if err := al.mcpManager.Close(); err != nil {
+			logger.WarnCF("agent", "Failed to close MCP manager",
+				map[string]interface{}{
+					"error": err.Error(),
+				})
+		}
+	})
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {

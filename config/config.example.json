@@ -130,6 +130,28 @@
     },
     "cron": {
       "exec_timeout_minutes": 5
+    },
+    "mcp": {
+      "enabled": false,
+      "servers": {
+        "filesystem": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "/tmp"
+          ],
+          "protocol": "mcp",
+          "env": {},
+          "working_dir": "",
+          "init_timeout_seconds": 60,
+          "call_timeout_seconds": 30,
+          "max_response_bytes": 65536,
+          "include_tools": [],
+          "exclude_tools": []
+        }
+      }
     }
   },
   "heartbeat": {
