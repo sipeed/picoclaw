@@ -18,7 +18,7 @@ import (
 
 const (
 	antigravityBaseURL      = "https://cloudcode-pa.googleapis.com"
-	antigravityDefaultModel = "gemini-3-flash"
+	antigravityDefaultModel = "gemini-3-flash-preview"
 	antigravityUserAgent    = "antigravity"
 	antigravityXGoogClient  = "google-cloud-sdk vscode_cloudshelleditor/0.1"
 	antigravityVersion      = "1.15.8"
