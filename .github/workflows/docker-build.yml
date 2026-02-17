@@ -1,18 +1,12 @@
 name: 🐳 Build & Push Docker Image
 
 on:
-  workflow_call:
-    inputs:
-      tag:
-        description: "Release tag"
-        required: true
-        type: string
+  release:
+    types: [published]
 
 env:
-  GHCR_REGISTRY: ghcr.io
-  GHCR_IMAGE_NAME: ${{ github.repository_owner }}/picoclaw
-  DOCKERHUB_REGISTRY: docker.io
-  DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/picoclaw
 
 jobs:
   build:
@@ -26,8 +20,6 @@ jobs:
       # ── Checkout ──────────────────────────────
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag }}
 
       # ── Docker Buildx ─────────────────────────
       - name: 🔧 Set up Docker Buildx
@@ -35,42 +27,36 @@ jobs:
 
       # ── Login to GHCR ─────────────────────────
       - name: 🔑 Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.GHCR_REGISTRY }}
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Login to Docker Hub ────────────────────
-      - name: 🔑 Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.DOCKERHUB_REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       # ── Metadata (tags & labels) ──────────────
-      - name: 🏷️ Prepare image tags
-        id: tags
-        shell: bash
-        run: |
-          tag="${{ inputs.tag }}"
-          echo "ghcr_tag=${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE_NAME }}:${tag}" >> "$GITHUB_OUTPUT"
-          echo "ghcr_latest=${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
-          echo "dockerhub_tag=${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE_NAME }}:${tag}" >> "$GITHUB_OUTPUT"
-          echo "dockerhub_latest=${{ env.DOCKERHUB_REGISTRY }}/${{ env.DOCKERHUB_IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
+      - name: 🏷️ Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value={{date 'YYYYMMDD-HHmmss'}},enable={{is_default_branch}}
 
       # ── Build & Push ──────────────────────────
       - name: 🚀 Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-          tags: |
-            ${{ steps.tags.outputs.ghcr_tag }}
-            ${{ steps.tags.outputs.ghcr_latest }}
-            ${{ steps.tags.outputs.dockerhub_tag }}
-            ${{ steps.tags.outputs.dockerhub_latest }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64,linux/riscv64
+          platforms: linux/amd64,linux/arm64
