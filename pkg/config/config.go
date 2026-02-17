@@ -206,13 +206,25 @@ type DuckDuckGoConfig struct {
 	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
+type PerplexityConfig struct {
+	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
+	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+}
+
 type WebToolsConfig struct {
 	Brave      BraveConfig      `json:"brave"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
+	Perplexity PerplexityConfig `json:"perplexity"`
+}
+
+type CronToolsConfig struct {
+	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
 }
 
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web  WebToolsConfig  `json:"web"`
+	Cron CronToolsConfig `json:"cron"`
 }
 
 func DefaultConfig() *Config {
@@ -321,6 +333,14 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+				Perplexity: PerplexityConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
+			},
+			Cron: CronToolsConfig{
+				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
 			},
 		},
 		Heartbeat: HeartbeatConfig{

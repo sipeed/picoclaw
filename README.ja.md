@@ -12,7 +12,7 @@
 <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
-**日本語** | [English](README.md)
+[中文](README.zh.md) | **日本語** | [English](README.md)
 
 </div>
 
@@ -195,6 +195,9 @@ picoclaw onboard
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
     }
   },
   "heartbeat": {
@@ -697,6 +700,9 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
       "search": {
         "apiKey": "BSA..."
       }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
     }
   },
   "heartbeat": {

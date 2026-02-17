@@ -79,6 +79,9 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
 		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+		PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 	}); searchTool != nil {
 		registry.Register(searchTool)
 	}

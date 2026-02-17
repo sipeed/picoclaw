@@ -29,6 +29,9 @@ func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	if params.Instructions.Or("") != defaultCodexInstructions {
 		t.Errorf("Instructions = %q, want %q", params.Instructions.Or(""), defaultCodexInstructions)
 	}
+	if params.MaxOutputTokens.Valid() {
+		t.Fatalf("MaxOutputTokens should not be set for Codex backend")
+	}
 }
 
 func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
@@ -62,6 +65,45 @@ func TestBuildCodexParams_ToolCallConversation(t *testing.T) {
 	}
 	if len(params.Input.OfInputItemList) != 3 {
 		t.Errorf("len(Input items) = %d, want 3", len(params.Input.OfInputItemList))
+	}
+}
+
+func TestBuildCodexParams_ToolCallFunctionFallback(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "Read a file"},
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &FunctionCall{
+						Name:      "read_file",
+						Arguments: `{"path":"README.md"}`,
+					},
+				},
+			},
+		},
+		{Role: "tool", Content: "ok", ToolCallID: "call_1"},
+	}
+
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{})
+	if params.Input.OfInputItemList == nil {
+		t.Fatal("Input.OfInputItemList should not be nil")
+	}
+	if len(params.Input.OfInputItemList) != 3 {
+		t.Fatalf("len(Input items) = %d, want 3", len(params.Input.OfInputItemList))
+	}
+
+	fc := params.Input.OfInputItemList[1].OfFunctionCall
+	if fc == nil {
+		t.Fatal("assistant tool call should be converted to function_call input item")
+	}
+	if fc.Name != "read_file" {
+		t.Errorf("Function call name = %q, want %q", fc.Name, "read_file")
+	}
+	if fc.Arguments != `{"path":"README.md"}` {
+		t.Errorf("Function call arguments = %q, want %q", fc.Arguments, `{"path":"README.md"}`)
 	}
 }
 
@@ -214,6 +256,10 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 			http.Error(w, "stream must be true", http.StatusBadRequest)
 			return
 		}
+		if _, ok := reqBody["max_output_tokens"]; ok {
+			http.Error(w, "max_output_tokens is not supported", http.StatusBadRequest)
+			return
+		}
 
 		resp := map[string]interface{}{
 			"id":     "resp_test",
@@ -291,6 +337,10 @@ func TestCodexProvider_ChatRoundTrip_TokenSourceFallbackAccountID(t *testing.T) 
 		}
 		if _, ok := reqBody["temperature"]; ok {
 			http.Error(w, "temperature is not supported", http.StatusBadRequest)
+			return
+		}
+		if _, ok := reqBody["max_output_tokens"]; ok {
+			http.Error(w, "max_output_tokens is not supported", http.StatusBadRequest)
 			return
 		}
 		if reqBody["stream"] != true {
