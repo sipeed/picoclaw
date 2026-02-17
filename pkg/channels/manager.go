@@ -9,6 +9,7 @@ package channels
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -312,6 +313,19 @@ func (m *Manager) GetEnabledChannels() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// RegisterWebhooks registers webhook routes for channels that support HTTP webhooks
+// on the shared gateway mux, so they share the same port as the health server.
+func (m *Manager) RegisterWebhooks(mux *http.ServeMux) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if line, ok := m.channels["line"]; ok {
+		if lc, ok := line.(*LINEChannel); ok {
+			lc.RegisterWebhook(mux)
+		}
+	}
 }
 
 func (m *Manager) RegisterChannel(name string, channel Channel) {

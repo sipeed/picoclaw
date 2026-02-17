@@ -11,6 +11,7 @@ import (
 
 type Server struct {
 	server    *http.Server
+	mux       *http.ServeMux
 	mu        sync.RWMutex
 	ready     bool
 	checks    map[string]Check
@@ -30,14 +31,23 @@ type StatusResponse struct {
 	Checks map[string]Check `json:"checks,omitempty"`
 }
 
+type GatewayInfo struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Uptime  string `json:"uptime"`
+	Version string `json:"version"`
+}
+
 func NewServer(host string, port int) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
+		mux:       mux,
 		ready:     false,
 		checks:    make(map[string]Check),
 		startTime: time.Now(),
 	}
 
+	mux.HandleFunc("/", s.rootHandler)
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 
@@ -50,6 +60,11 @@ func NewServer(host string, port int) *Server {
 	}
 
 	return s
+}
+
+// Mux returns the HTTP mux so channels can register webhook routes on the gateway port.
+func (s *Server) Mux() *http.ServeMux {
+	return s.mux
 }
 
 func (s *Server) Start() error {
@@ -101,6 +116,25 @@ func (s *Server) RegisterCheck(name string, checkFn func() (bool, string)) {
 		Message:   msg,
 		Timestamp: time.Now(),
 	}
+}
+
+func (s *Server) rootHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	uptime := time.Since(s.startTime)
+	resp := GatewayInfo{
+		Name:    "PicoClaw Gateway",
+		Status:  "running",
+		Uptime:  uptime.String(),
+		Version: "1.0.0",
+	}
+
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {

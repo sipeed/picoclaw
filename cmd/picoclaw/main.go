@@ -659,17 +659,20 @@ func gatewayCmd() {
 		fmt.Println("✓ Device event service started")
 	}
 
+	// Create the gateway HTTP server first so channels can register webhooks on it
+	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	channelManager.RegisterWebhooks(healthServer.Mux())
+
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
-	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
 	go func() {
 		if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
 			logger.ErrorCF("health", "Health server error", map[string]interface{}{"error": err.Error()})
 		}
 	}()
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf("✓ Gateway listening on http://%s:%d (health, webhooks)\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	go agentLoop.Run(ctx)
 

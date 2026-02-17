@@ -44,6 +44,7 @@ type LINEChannel struct {
 	*BaseChannel
 	config         config.LINEConfig
 	httpServer     *http.Server
+	useSharedMux   bool     // true when webhook is registered on the gateway mux
 	botUserID      string   // Bot's user ID
 	botBasicID     string   // Bot's basic ID (e.g. @216ru...)
 	botDisplayName string   // Bot's display name for text-based mention detection
@@ -67,6 +68,20 @@ func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINECha
 	}, nil
 }
 
+// RegisterWebhook registers the LINE webhook handler on a shared HTTP mux
+// (typically the gateway mux) so no separate server is needed.
+func (c *LINEChannel) RegisterWebhook(mux *http.ServeMux) {
+	path := c.config.WebhookPath
+	if path == "" {
+		path = "/webhook/line"
+	}
+	mux.HandleFunc(path, c.webhookHandler)
+	c.useSharedMux = true
+	logger.InfoCF("line", "LINE webhook registered on gateway", map[string]interface{}{
+		"path": path,
+	})
+}
+
 // Start launches the HTTP webhook server.
 func (c *LINEChannel) Start(ctx context.Context) error {
 	logger.InfoC("line", "Starting LINE channel (Webhook Mode)")
@@ -84,6 +99,13 @@ func (c *LINEChannel) Start(ctx context.Context) error {
 			"basic_id":     c.botBasicID,
 			"display_name": c.botDisplayName,
 		})
+	}
+
+	// If webhook was already registered on the shared gateway mux, skip creating a standalone server
+	if c.useSharedMux {
+		c.setRunning(true)
+		logger.InfoC("line", "LINE channel started (shared gateway webhook)")
+		return nil
 	}
 
 	mux := http.NewServeMux()
