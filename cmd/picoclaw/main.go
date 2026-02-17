@@ -636,7 +636,13 @@ func gatewayCmd() {
 
 	// Attach TTS synthesis callbacks to the message tool (enables voice=true).
 	if cfg.Tools.TTS.Enabled {
-		synthesizer := voice.NewKokoroSynthesizer(cfg.Tools.TTS.APIBase, cfg.Tools.TTS.Voice)
+		synthesizer := voice.NewKokoroSynthesizerFromProfile(voice.TTSProfile{
+			APIBase: cfg.Tools.TTS.APIBase,
+			Voice:   cfg.Tools.TTS.Voice,
+			Model:   cfg.Tools.TTS.Model,
+			Format:  cfg.Tools.TTS.Format,
+			Speed:   cfg.Tools.TTS.Speed,
+		})
 		if synthesizer.IsAvailable() {
 			logger.InfoCF("voice", "TTS enabled — voice=true supported in message tool", map[string]interface{}{
 				"api_base": cfg.Tools.TTS.APIBase,

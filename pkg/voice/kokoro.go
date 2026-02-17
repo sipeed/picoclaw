@@ -13,41 +13,75 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-// KokoroSynthesizer uses a Kokoro TTS server (OpenAI-compatible /v1/audio/speech API).
+// KokoroSynthesizer uses any OpenAI-compatible /v1/audio/speech endpoint
+// (Kokoro, Piper, Chatterbox, OpenAI, etc.).
 type KokoroSynthesizer struct {
 	apiBase    string
 	voice      string
 	model      string
+	format     string
+	speed      float64
 	httpClient *http.Client
 }
 
 type kokoroRequest struct {
-	Model  string `json:"model"`
-	Input  string `json:"input"`
-	Voice  string `json:"voice"`
-	Format string `json:"response_format,omitempty"`
+	Model  string  `json:"model"`
+	Input  string  `json:"input"`
+	Voice  string  `json:"voice"`
+	Format string  `json:"response_format,omitempty"`
+	Speed  float64 `json:"speed,omitempty"`
 }
 
-// NewKokoroSynthesizer creates a Kokoro TTS client.
-// apiBase defaults to "http://localhost:8102".
-// voice defaults to "af_nova".
+// TTSProfile holds the full voice profile for the synthesizer.
+type TTSProfile struct {
+	APIBase string
+	Voice   string
+	Model   string
+	Format  string
+	Speed   float64
+}
+
+// NewKokoroSynthesizer creates a TTS client from a voice profile.
+// Sensible defaults are applied for any zero-value field.
 func NewKokoroSynthesizer(apiBase, voice string) *KokoroSynthesizer {
-	if apiBase == "" {
-		apiBase = "http://localhost:8102"
+	return NewKokoroSynthesizerFromProfile(TTSProfile{
+		APIBase: apiBase,
+		Voice:   voice,
+	})
+}
+
+// NewKokoroSynthesizerFromProfile creates a TTS client with full profile control.
+func NewKokoroSynthesizerFromProfile(p TTSProfile) *KokoroSynthesizer {
+	if p.APIBase == "" {
+		p.APIBase = "http://localhost:8100"
 	}
-	if voice == "" {
-		voice = "af_nova"
+	if p.Voice == "" {
+		p.Voice = "en_us-lessac-medium"
+	}
+	if p.Model == "" {
+		p.Model = "tts-1"
+	}
+	if p.Format == "" {
+		p.Format = "mp3"
+	}
+	if p.Speed == 0 {
+		p.Speed = 1.0
 	}
 
-	logger.InfoCF("voice", "Creating Kokoro TTS synthesizer", map[string]interface{}{
-		"api_base": apiBase,
-		"voice":    voice,
+	logger.InfoCF("voice", "Creating TTS synthesizer", map[string]interface{}{
+		"api_base": p.APIBase,
+		"voice":    p.Voice,
+		"model":    p.Model,
+		"format":   p.Format,
+		"speed":    p.Speed,
 	})
 
 	return &KokoroSynthesizer{
-		apiBase: apiBase,
-		voice:   voice,
-		model:   "kokoro",
+		apiBase: p.APIBase,
+		voice:   p.Voice,
+		model:   p.Model,
+		format:  p.Format,
+		speed:   p.Speed,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -66,7 +100,8 @@ func (s *KokoroSynthesizer) Synthesize(ctx context.Context, text string) (string
 		Model:  s.model,
 		Input:  text,
 		Voice:  s.voice,
-		Format: "mp3",
+		Format: s.format,
+		Speed:  s.speed,
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)
@@ -93,7 +128,7 @@ func (s *KokoroSynthesizer) Synthesize(ctx context.Context, text string) (string
 	}
 
 	// Write audio to temp file
-	tmpFile, err := os.CreateTemp("", "picoclaw-tts-*.mp3")
+	tmpFile, err := os.CreateTemp("", "picoclaw-tts-*."+s.format)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp audio file: %w", err)
 	}

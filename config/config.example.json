@@ -14,7 +14,9 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": [
+        "YOUR_USER_ID"
+      ]
     },
     "discord": {
       "enabled": false,
@@ -119,6 +121,14 @@
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       }
+    },
+    "tts": {
+      "enabled": false,
+      "api_base": "http://localhost:8100",
+      "voice": "en_us-lessac-medium",
+      "model": "tts-1",
+      "format": "mp3",
+      "speed": 1.0
     }
   },
   "heartbeat": {
