@@ -597,8 +597,18 @@ func gatewayCmd() {
 	// Inject channel manager into agent loop for command handling
 	agentLoop.SetChannelManager(channelManager)
 
-	var transcriber *voice.GroqTranscriber
-	if cfg.Providers.Groq.APIKey != "" {
+	// Set up STT transcription: prefer local Whisper, fall back to Groq.
+	var transcriber voice.Transcriber
+	if cfg.Tools.Whisper.Enabled {
+		w := voice.NewWhisperTranscriber(cfg.Tools.Whisper.APIBase)
+		if w.IsAvailable() {
+			transcriber = w
+			logger.InfoC("voice", "Whisper STT transcription enabled")
+		} else {
+			logger.WarnC("voice", "Whisper STT configured but not reachable, falling back to Groq")
+		}
+	}
+	if transcriber == nil && cfg.Providers.Groq.APIKey != "" {
 		transcriber = voice.NewGroqTranscriber(cfg.Providers.Groq.APIKey)
 		logger.InfoC("voice", "Groq voice transcription enabled")
 	}
@@ -607,19 +617,19 @@ func gatewayCmd() {
 		if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
 			if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
 				tc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Telegram channel")
+				logger.InfoC("voice", "Transcription attached to Telegram channel")
 			}
 		}
 		if discordChannel, ok := channelManager.GetChannel("discord"); ok {
 			if dc, ok := discordChannel.(*channels.DiscordChannel); ok {
 				dc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Discord channel")
+				logger.InfoC("voice", "Transcription attached to Discord channel")
 			}
 		}
 		if slackChannel, ok := channelManager.GetChannel("slack"); ok {
 			if sc, ok := slackChannel.(*channels.SlackChannel); ok {
 				sc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Slack channel")
+				logger.InfoC("voice", "Transcription attached to Slack channel")
 			}
 		}
 	}

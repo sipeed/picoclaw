@@ -211,8 +211,14 @@ type WebToolsConfig struct {
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 }
 
+type WhisperConfig struct {
+	Enabled bool   `json:"enabled" env:"PICOCLAW_TOOLS_WHISPER_ENABLED"`
+	APIBase string `json:"api_base" env:"PICOCLAW_TOOLS_WHISPER_API_BASE"`
+}
+
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web     WebToolsConfig `json:"web"`
+	Whisper WhisperConfig  `json:"whisper"`
 }
 
 func DefaultConfig() *Config {
@@ -321,6 +327,10 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+			},
+			Whisper: WhisperConfig{
+				Enabled: false,
+				APIBase: "http://localhost:8200",
 			},
 		},
 		Heartbeat: HeartbeatConfig{
