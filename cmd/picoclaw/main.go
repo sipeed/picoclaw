@@ -121,6 +121,9 @@ func copyDirectory(src, dst string) error {
 
 func main() {
 	if len(os.Args) < 2 {
+		if maybeRunZeroConfigWizard() {
+			return
+		}
 		printHelp()
 		os.Exit(1)
 	}
