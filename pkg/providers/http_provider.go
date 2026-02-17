@@ -327,6 +327,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "localhost:4321"
 			}
 			return NewGitHubCopilotProvider(apiBase, cfg.Providers.GitHubCopilot.ConnectMode, model)
+		case "minimax":
+			if cfg.Providers.MiniMax.APIKey != "" {
+				apiKey = cfg.Providers.MiniMax.APIKey
+				apiBase = cfg.Providers.MiniMax.APIBase
+				proxy = cfg.Providers.MiniMax.Proxy
+				if apiBase == "" {
+					apiBase = "https://api.minimax.chat/v1"
+				}
+			}
 
 		}
 
@@ -409,6 +418,13 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "http://localhost:11434/v1"
 			}
 			fmt.Println("Ollama apiBase:", apiBase)
+		case (strings.Contains(lowerModel, "minimax") || strings.HasPrefix(model, "minimax/")) && cfg.Providers.MiniMax.APIKey != "":
+			apiKey = cfg.Providers.MiniMax.APIKey
+			apiBase = cfg.Providers.MiniMax.APIBase
+			proxy = cfg.Providers.MiniMax.Proxy
+			if apiBase == "" {
+				apiBase = "https://api.minimax.chat/v1"
+			}
 		case cfg.Providers.VLLM.APIBase != "":
 			apiKey = cfg.Providers.VLLM.APIKey
 			apiBase = cfg.Providers.VLLM.APIBase
