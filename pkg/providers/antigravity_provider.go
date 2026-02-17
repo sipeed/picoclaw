@@ -159,9 +159,11 @@ type antigravityContent struct {
 }
 
 type antigravityPart struct {
-	Text             string                       `json:"text,omitempty"`
-	FunctionCall     *antigravityFunctionCall     `json:"functionCall,omitempty"`
-	FunctionResponse *antigravityFunctionResponse `json:"functionResponse,omitempty"`
+	Text                  string                       `json:"text,omitempty"`
+	ThoughtSignature      string                       `json:"thoughtSignature,omitempty"`
+	ThoughtSignatureSnake string                       `json:"thought_signature,omitempty"`
+	FunctionCall          *antigravityFunctionCall     `json:"functionCall,omitempty"`
+	FunctionResponse      *antigravityFunctionResponse `json:"functionResponse,omitempty"`
 }
 
 type antigravityFunctionCall struct {
@@ -233,7 +235,7 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 				content.Parts = append(content.Parts, antigravityPart{Text: msg.Content})
 			}
 			for _, tc := range msg.ToolCalls {
-				toolName, toolArgs := normalizeStoredToolCall(tc)
+				toolName, toolArgs, thoughtSignature := normalizeStoredToolCall(tc)
 				if toolName == "" {
 					logger.WarnCF("provider.antigravity", "Skipping tool call with empty name in history", map[string]interface{}{
 						"tool_call_id": tc.ID,
@@ -244,6 +246,8 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 					toolCallNames[tc.ID] = toolName
 				}
 				content.Parts = append(content.Parts, antigravityPart{
+					ThoughtSignature:      thoughtSignature,
+					ThoughtSignatureSnake: thoughtSignature,
 					FunctionCall: &antigravityFunctionCall{
 						Name: toolName,
 						Args: toolArgs,
@@ -307,12 +311,16 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 	return req
 }
 
-func normalizeStoredToolCall(tc ToolCall) (string, map[string]interface{}) {
+func normalizeStoredToolCall(tc ToolCall) (string, map[string]interface{}, string) {
 	name := tc.Name
 	args := tc.Arguments
+	thoughtSignature := ""
 
 	if name == "" && tc.Function != nil {
 		name = tc.Function.Name
+		thoughtSignature = tc.Function.ThoughtSignature
+	} else if tc.Function != nil {
+		thoughtSignature = tc.Function.ThoughtSignature
 	}
 
 	if args == nil {
@@ -326,7 +334,7 @@ func normalizeStoredToolCall(tc ToolCall) (string, map[string]interface{}) {
 		}
 	}
 
-	return name, args
+	return name, args, thoughtSignature
 }
 
 func resolveToolResponseName(toolCallID string, toolCallNames map[string]string) string {
@@ -363,8 +371,10 @@ type antigravityJSONResponse struct {
 	Candidates []struct {
 		Content struct {
 			Parts []struct {
-				Text         string                   `json:"text,omitempty"`
-				FunctionCall *antigravityFunctionCall `json:"functionCall,omitempty"`
+				Text                  string                   `json:"text,omitempty"`
+				ThoughtSignature      string                   `json:"thoughtSignature,omitempty"`
+				ThoughtSignatureSnake string                   `json:"thought_signature,omitempty"`
+				FunctionCall          *antigravityFunctionCall `json:"functionCall,omitempty"`
 			} `json:"parts"`
 			Role string `json:"role"`
 		} `json:"content"`
@@ -396,10 +406,16 @@ func (p *AntigravityProvider) parseJSONResponse(body []byte) (*LLMResponse, erro
 			contentParts = append(contentParts, part.Text)
 		}
 		if part.FunctionCall != nil {
+			argumentsJSON, _ := json.Marshal(part.FunctionCall.Args)
 			toolCalls = append(toolCalls, ToolCall{
 				ID:        fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixNano()),
 				Name:      part.FunctionCall.Name,
 				Arguments: part.FunctionCall.Args,
+				Function: &FunctionCall{
+					Name:             part.FunctionCall.Name,
+					Arguments:        string(argumentsJSON),
+					ThoughtSignature: extractPartThoughtSignature(part.ThoughtSignature, part.ThoughtSignatureSnake),
+				},
 			})
 		}
 	}
@@ -461,10 +477,16 @@ func (p *AntigravityProvider) parseSSEResponse(body string) (*LLMResponse, error
 					contentParts = append(contentParts, part.Text)
 				}
 				if part.FunctionCall != nil {
+					argumentsJSON, _ := json.Marshal(part.FunctionCall.Args)
 					toolCalls = append(toolCalls, ToolCall{
 						ID:        fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixNano()),
 						Name:      part.FunctionCall.Name,
 						Arguments: part.FunctionCall.Args,
+						Function: &FunctionCall{
+							Name:             part.FunctionCall.Name,
+							Arguments:        string(argumentsJSON),
+							ThoughtSignature: extractPartThoughtSignature(part.ThoughtSignature, part.ThoughtSignatureSnake),
+						},
 					})
 				}
 			}
@@ -496,6 +518,16 @@ func (p *AntigravityProvider) parseSSEResponse(body string) (*LLMResponse, error
 		FinishReason: mappedFinish,
 		Usage:        usage,
 	}, nil
+}
+
+func extractPartThoughtSignature(thoughtSignature string, thoughtSignatureSnake string) string {
+	if thoughtSignature != "" {
+		return thoughtSignature
+	}
+	if thoughtSignatureSnake != "" {
+		return thoughtSignatureSnake
+	}
+	return ""
 }
 
 // --- Schema sanitization ---
