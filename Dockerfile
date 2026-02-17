@@ -3,7 +3,7 @@
 # ============================================================
 FROM golang:1.26.0-alpine AS builder
 
-RUN apk add --no-cache git make
+RUN apk add --no-cache git make ca-certificates tzdata
 
 WORKDIR /src
 
@@ -13,31 +13,35 @@ RUN go mod download
 
 # Copy source and build
 COPY . .
-RUN make build
+RUN CGO_ENABLED=0 make build GOFLAGS="-v -trimpath" LDFLAGS='-ldflags "-s -w"'
+
+# Create non-root user entry for scratch
+RUN echo "picoclaw:x:10001:10001::/home/picoclaw:/sbin/nologin" > /tmp/passwd && \
+  echo "picoclaw:x:10001:" > /tmp/group && \
+  mkdir -p /home/picoclaw
 
 # ============================================================
-# Stage 2: Minimal runtime image
+# Stage 2: Minimal runtime image (scratch)
 # ============================================================
-FROM alpine:3.23
+FROM scratch
 
-RUN apk add --no-cache ca-certificates tzdata curl
+# Copy user/group files for non-root execution
+COPY --from=builder /tmp/passwd /etc/passwd
+COPY --from=builder /tmp/group /etc/group
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -q --spider http://localhost:18790/health || exit 1
+# Copy SSL certs and timezone data
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+
+# Copy home directory (owned by picoclaw user)
+COPY --from=builder --chown=10001:10001 /home/picoclaw /home/picoclaw
 
 # Copy binary
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 
-# Create non-root user and group
-RUN addgroup -g 1000 picoclaw && \
-    adduser -D -u 1000 -G picoclaw picoclaw
+USER 10001
 
-# Switch to non-root user
-USER picoclaw
-
-# Run onboard to create initial directories and config
-RUN /usr/local/bin/picoclaw onboard
+EXPOSE 18790
 
 ENTRYPOINT ["picoclaw"]
 CMD ["gateway"]

@@ -1,5 +1,6 @@
 .git
 .gitignore
+.github/
 build/
 .picoclaw/
 config/
@@ -8,3 +9,7 @@ config/
 *.md
 LICENSE
 assets/
+doc/
+docker-compose.yml
+Dockerfile.goreleaser
+.goreleaser.yaml

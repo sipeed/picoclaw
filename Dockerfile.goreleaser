@@ -1,10 +1,24 @@
-FROM alpine:3.21
+# syntax=docker/dockerfile:1
+
+# Certs stage — provides CA certificates and timezone data for scratch
+FROM alpine:3.23 AS certs
+RUN apk add --no-cache ca-certificates tzdata
+RUN echo "picoclaw:x:10001:10001::/home/picoclaw:/sbin/nologin" > /tmp/passwd && \
+    echo "picoclaw:x:10001:" > /tmp/group
+
+# Runtime
+FROM scratch
 
 ARG TARGETPLATFORM
 
-RUN apk add --no-cache ca-certificates tzdata
+COPY --from=certs /tmp/passwd /etc/passwd
+COPY --from=certs /tmp/group /etc/group
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
 
 COPY $TARGETPLATFORM/picoclaw /usr/local/bin/picoclaw
+
+USER 10001
 
 ENTRYPOINT ["picoclaw"]
 CMD ["gateway"]
