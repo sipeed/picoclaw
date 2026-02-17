@@ -324,6 +324,13 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 					model = "deepseek-chat"
 				}
 			}
+		case "ollama":
+			apiKey = ""
+			apiBase = cfg.Providers.Ollama.APIBase
+			if apiBase == "" {
+				apiBase = "http://localhost:11434/v1"
+			}
+			return NewHTTPProvider(apiKey, apiBase, proxy), nil
 		case "github_copilot", "copilot":
 			if cfg.Providers.GitHubCopilot.APIBase != "" {
 				apiBase = cfg.Providers.GitHubCopilot.APIBase
@@ -331,9 +338,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "localhost:4321"
 			}
 			return NewGitHubCopilotProvider(apiBase, cfg.Providers.GitHubCopilot.ConnectMode, model)
-
 		}
-
 	}
 
 	// Fallback: detect provider from model name
@@ -409,15 +414,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			if apiBase == "" {
 				apiBase = "https://integrate.api.nvidia.com/v1"
 			}
-		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
-			fmt.Println("Ollama provider selected based on model name prefix")
-			apiKey = cfg.Providers.Ollama.APIKey
+
+		case cfg.Providers.Ollama.APIBase != "":
+			apiKey = ""
 			apiBase = cfg.Providers.Ollama.APIBase
 			proxy = cfg.Providers.Ollama.Proxy
 			if apiBase == "" {
 				apiBase = "http://localhost:11434/v1"
 			}
-			fmt.Println("Ollama apiBase:", apiBase)
+
 		case cfg.Providers.VLLM.APIBase != "":
 			apiKey = cfg.Providers.VLLM.APIKey
 			apiBase = cfg.Providers.VLLM.APIBase
@@ -438,7 +443,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 		}
 	}
 
-	if apiKey == "" && !strings.HasPrefix(model, "bedrock/") {
+	if apiKey == "" && !strings.HasPrefix(model, "bedrock/") && !strings.Contains(apiBase, "11434") {
 		return nil, fmt.Errorf("no API key configured for provider (model: %s)", model)
 	}
 
