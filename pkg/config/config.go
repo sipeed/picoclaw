@@ -188,6 +188,7 @@ type ProviderConfig struct {
 	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
 	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
 	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+	APIFormat   string `json:"api_format,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_FORMAT"`     // "responses" to use OpenAI Responses API
 }
 
 type GatewayConfig struct {
