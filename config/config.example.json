@@ -14,7 +14,9 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": [
+        "YOUR_USER_ID"
+      ]
     },
     "discord": {
       "enabled": false,
@@ -68,6 +70,16 @@
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
       "allow_from": []
+    },
+    "matrix": {
+      "enabled": false,
+      "homeserver": "https://matrix.example.com",
+      "user_id": "@bot:matrix.example.com",
+      "access_token": "syt_YOUR_ACCESS_TOKEN_HERE",
+      "device_id": "",
+      "allow_from": [],
+      "join_on_invite": true,
+      "require_mention_in_group": true
     }
   },
   "providers": {
@@ -119,6 +131,16 @@
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       }
+    },
+    "tts": {
+      "enabled": false,
+      "api_base": "http://localhost:8100",
+      "voice": "en_us-lessac-medium",
+      "model": "tts-1",
+      "format": "mp3",
+      "speed": 1.0,
+      "exaggeration": 0.5,
+      "cfg_weight": 0.5
     }
   },
   "heartbeat": {

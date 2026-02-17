@@ -176,6 +176,19 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.Matrix.Enabled && m.config.Channels.Matrix.AccessToken != "" {
+		logger.DebugC("channels", "Attempting to initialize Matrix channel")
+		matrix, err := NewMatrixChannel(m.config.Channels.Matrix, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize Matrix channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["matrix"] = matrix
+			logger.InfoC("channels", "Matrix channel enabled successfully")
+		}
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]interface{}{
 		"enabled_channels": len(m.channels),
 	})
@@ -339,6 +352,26 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 		Channel: channelName,
 		ChatID:  chatID,
 		Content: content,
+	}
+
+	return channel.Send(ctx, msg)
+}
+
+// SendFileToChannel sends one or more local media files to a channel synchronously.
+// The caller is responsible for cleaning up the files after this returns.
+func (m *Manager) SendFileToChannel(ctx context.Context, channelName, chatID string, filePaths []string) error {
+	m.mu.RLock()
+	channel, exists := m.channels[channelName]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("channel %s not found", channelName)
+	}
+
+	msg := bus.OutboundMessage{
+		Channel: channelName,
+		ChatID:  chatID,
+		Media:   filePaths,
 	}
 
 	return channel.Send(ctx, msg)

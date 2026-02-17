@@ -79,6 +79,18 @@ type ChannelsConfig struct {
 	Slack    SlackConfig    `json:"slack"`
 	LINE     LINEConfig     `json:"line"`
 	OneBot   OneBotConfig   `json:"onebot"`
+	Matrix   MatrixConfig   `json:"matrix"`
+}
+
+type MatrixConfig struct {
+	Enabled               bool                `json:"enabled" env:"PICOCLAW_CHANNELS_MATRIX_ENABLED"`
+	Homeserver            string              `json:"homeserver" env:"PICOCLAW_CHANNELS_MATRIX_HOMESERVER"`
+	UserID                string              `json:"user_id" env:"PICOCLAW_CHANNELS_MATRIX_USER_ID"`
+	AccessToken           string              `json:"access_token" env:"PICOCLAW_CHANNELS_MATRIX_ACCESS_TOKEN"`
+	DeviceID              string              `json:"device_id" env:"PICOCLAW_CHANNELS_MATRIX_DEVICE_ID"`
+	AllowFrom             FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_MATRIX_ALLOW_FROM"`
+	JoinOnInvite          bool                `json:"join_on_invite" env:"PICOCLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
+	RequireMentionInGroup bool                `json:"require_mention_in_group" env:"PICOCLAW_CHANNELS_MATRIX_REQUIRE_MENTION_IN_GROUP"`
 }
 
 type WhatsAppConfig struct {
@@ -211,8 +223,26 @@ type WebToolsConfig struct {
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 }
 
+type WhisperConfig struct {
+	Enabled bool   `json:"enabled" env:"PICOCLAW_TOOLS_WHISPER_ENABLED"`
+	APIBase string `json:"api_base" env:"PICOCLAW_TOOLS_WHISPER_API_BASE"`
+}
+
+type TTSConfig struct {
+	Enabled      bool    `json:"enabled" env:"PICOCLAW_TOOLS_TTS_ENABLED"`
+	APIBase      string  `json:"api_base" env:"PICOCLAW_TOOLS_TTS_API_BASE"`
+	Voice        string  `json:"voice" env:"PICOCLAW_TOOLS_TTS_VOICE"`
+	Model        string  `json:"model" env:"PICOCLAW_TOOLS_TTS_MODEL"`
+	Format       string  `json:"format" env:"PICOCLAW_TOOLS_TTS_FORMAT"`
+	Speed        float64 `json:"speed" env:"PICOCLAW_TOOLS_TTS_SPEED"`
+	Exaggeration float64 `json:"exaggeration" env:"PICOCLAW_TOOLS_TTS_EXAGGERATION"` // Chatterbox: emotion expressiveness 0.0–1.0
+	CFGWeight    float64 `json:"cfg_weight" env:"PICOCLAW_TOOLS_TTS_CFG_WEIGHT"`     // Chatterbox: voice guidance weight 0.0–1.0
+}
+
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web     WebToolsConfig `json:"web"`
+	Whisper WhisperConfig  `json:"whisper"`
+	TTS     TTSConfig      `json:"tts"`
 }
 
 func DefaultConfig() *Config {
@@ -293,6 +323,16 @@ func DefaultConfig() *Config {
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
 			},
+			Matrix: MatrixConfig{
+				Enabled:               false,
+				Homeserver:            "https://matrix.org",
+				UserID:                "",
+				AccessToken:           "",
+				DeviceID:              "",
+				AllowFrom:             FlexibleStringSlice{},
+				JoinOnInvite:          true,
+				RequireMentionInGroup: true,
+			},
 		},
 		Providers: ProvidersConfig{
 			Anthropic:    ProviderConfig{},
@@ -321,6 +361,20 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+			},
+			Whisper: WhisperConfig{
+				Enabled: false,
+				APIBase: "http://localhost:8200",
+			},
+			TTS: TTSConfig{
+				Enabled:      false,
+				APIBase:      "http://localhost:8100",
+				Voice:        "en_us-lessac-medium",
+				Model:        "tts-1",
+				Format:       "mp3",
+				Speed:        1.0,
+				Exaggeration: 0.5,
+				CFGWeight:    0.5,
 			},
 		},
 		Heartbeat: HeartbeatConfig{
