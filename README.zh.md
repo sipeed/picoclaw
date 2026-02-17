@@ -218,6 +218,7 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
+      "allow_patterns": [],
       "model": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
@@ -462,6 +463,48 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 ### 心跳 / 周期性任务 (Heartbeat)
 
+### 🔒 安全沙箱 (Security Sandbox)
+
+默认情况下，PicoClaw 在沙箱中运行，Agent 仅能在工作区内访问文件与执行命令。
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.picoclaw/workspace",
+      "restrict_to_workspace": true,
+      "allow_patterns": []
+    }
+  }
+}
+```
+
+| 选项 | 默认值 | 描述 |
+| --- | --- | --- |
+| `workspace` | `~/.picoclaw/workspace` | Agent 工作目录 |
+| `restrict_to_workspace` | `true` | 限制文件/命令访问仅在工作区内 |
+| `allow_patterns` | `[]` | 可选：对 `exec` 命令内容做正则白名单匹配；设置后命令必须命中至少一条规则 |
+
+`allow_patterns` 会对完整命令进行匹配（不区分大小写）。为空数组时，不启用白名单过滤。
+
+示例：
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "allow_patterns": [
+        "^ls(\\s|$)",
+        "^pwd$",
+        "^cat\\s+README\\.md$"
+      ]
+    }
+  }
+}
+```
+
+> ⚠️ 说明：`allow_patterns` 只影响 `exec` 工具；仍受 `restrict_to_workspace` 约束。
+
 PicoClaw 可以自动执行周期性任务。在工作区创建 `HEARTBEAT.md` 文件：
 
 ```markdown
@@ -570,6 +613,7 @@ Agent 读取 HEARTBEAT.md
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
+      "allow_patterns": [],
       "model": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
