@@ -634,6 +634,27 @@ func gatewayCmd() {
 		}
 	}
 
+	// Attach TTS synthesis callbacks to the message tool (enables voice=true).
+	if cfg.Tools.TTS.Enabled {
+		synthesizer := voice.NewKokoroSynthesizer(cfg.Tools.TTS.APIBase, cfg.Tools.TTS.Voice)
+		if synthesizer.IsAvailable() {
+			logger.InfoCF("voice", "TTS enabled — voice=true supported in message tool", map[string]interface{}{
+				"api_base": cfg.Tools.TTS.APIBase,
+				"voice":    cfg.Tools.TTS.Voice,
+			})
+			agentLoop.SetVoiceCallbacks(
+				func(ctx context.Context, text string) (string, error) {
+					return synthesizer.Synthesize(ctx, text)
+				},
+				func(ctx context.Context, channel, chatID string, filePaths []string) error {
+					return channelManager.SendFileToChannel(ctx, channel, chatID, filePaths)
+				},
+			)
+		} else {
+			logger.WarnC("voice", "TTS configured but service not reachable — voice=true disabled")
+		}
+	}
+
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
 		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)

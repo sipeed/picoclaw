@@ -216,9 +216,16 @@ type WhisperConfig struct {
 	APIBase string `json:"api_base" env:"PICOCLAW_TOOLS_WHISPER_API_BASE"`
 }
 
+type TTSConfig struct {
+	Enabled bool   `json:"enabled" env:"PICOCLAW_TOOLS_TTS_ENABLED"`
+	APIBase string `json:"api_base" env:"PICOCLAW_TOOLS_TTS_API_BASE"`
+	Voice   string `json:"voice" env:"PICOCLAW_TOOLS_TTS_VOICE"`
+}
+
 type ToolsConfig struct {
 	Web     WebToolsConfig `json:"web"`
 	Whisper WhisperConfig  `json:"whisper"`
+	TTS     TTSConfig      `json:"tts"`
 }
 
 func DefaultConfig() *Config {
@@ -331,6 +338,11 @@ func DefaultConfig() *Config {
 			Whisper: WhisperConfig{
 				Enabled: false,
 				APIBase: "http://localhost:8200",
+			},
+			TTS: TTSConfig{
+				Enabled: false,
+				APIBase: "http://localhost:8100",
+				Voice:   "en_us-lessac-medium",
 			},
 		},
 		Heartbeat: HeartbeatConfig{

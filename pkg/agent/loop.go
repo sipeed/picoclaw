@@ -201,6 +201,17 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	al.tools.Register(tool)
 }
 
+// SetVoiceCallbacks attaches TTS synthesis and media-send callbacks to the
+// message tool so it can handle voice=true calls. Safe to call after init.
+func (al *AgentLoop) SetVoiceCallbacks(synth tools.SynthesizeCallback, sendMedia tools.SendMediaCallback) {
+	if tool, ok := al.tools.Get("message"); ok {
+		if mt, ok := tool.(*tools.MessageTool); ok {
+			mt.SetSynthesizeCallback(synth)
+			mt.SetSendMediaCallback(sendMedia)
+		}
+	}
+}
+
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
