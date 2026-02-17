@@ -168,6 +168,14 @@ deploy-hostinger-full:
 deploy-hostinger-setup:
 	@bash deploy/hostinger/setup-server.sh
 
+## setup-telegram: Interactive setup for Telegram bot integration
+setup-telegram:
+	@bash deploy/hostinger/setup-telegram.sh
+
+## setup-tailscale: Interactive setup for Tailscale secure access
+setup-tailscale:
+	@bash deploy/hostinger/setup-tailscale.sh
+
 ## deploy-hostinger: Deploy PicoClaw to Hostinger VPS
 deploy-hostinger:
 	@bash deploy/hostinger/deploy.sh \
