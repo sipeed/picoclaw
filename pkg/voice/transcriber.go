@@ -16,6 +16,15 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// Transcriber is the interface for speech-to-text providers.
+// Any STT backend (Groq, Whisper, etc.) must implement this.
+type Transcriber interface {
+	// Transcribe converts the audio file at audioFilePath to text.
+	Transcribe(ctx context.Context, audioFilePath string) (*TranscriptionResponse, error)
+	// IsAvailable returns true if the provider is configured and reachable.
+	IsAvailable() bool
+}
+
 type GroqTranscriber struct {
 	apiKey     string
 	apiBase    string

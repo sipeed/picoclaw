@@ -30,7 +30,7 @@ type TelegramChannel struct {
 	commands     TelegramCommander
 	config       *config.Config
 	chatIDs      map[string]int64
-	transcriber  *voice.GroqTranscriber
+	transcriber  voice.Transcriber
 	placeholders sync.Map // chatID -> messageID
 	stopThinking sync.Map // chatID -> thinkingCancel
 }
@@ -80,7 +80,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	}, nil
 }
 
-func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
+func (c *TelegramChannel) SetTranscriber(transcriber voice.Transcriber) {
 	c.transcriber = transcriber
 }
 
