@@ -52,7 +52,7 @@ func (c *cmd) Help(ctx context.Context, message telego.Message) error {
 }
 
 func (c *cmd) Start(ctx context.Context, message telego.Message) error {
-	botName := c.config.Agents.Defaults.BotName
+	botName := c.config.Channels.Telegram.BotName
 	if botName == "" {
 		botName = "PicoClaw"
 	}
