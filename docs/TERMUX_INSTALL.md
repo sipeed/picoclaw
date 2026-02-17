@@ -26,31 +26,25 @@ If you prefer to set up everything manually, follow these steps:
 Open Termux and install the necessary packages:
 ```bash
 pkg update && pkg upgrade
-pkg install -y golang git make jq tmux
+pkg install -y curl jq tmux
 ```
 
-## 2. Clone and Prepare PicoClaw
-```bash
-git clone https://github.com/sipeed/picoclaw.git ~/.picoclaw-repo
-cd ~/.picoclaw-repo
-```
+## 2. Download Pre-compiled Binary
+PicoClaw provides pre-compiled Android binaries for every release — no build tools needed.
 
-### Fix Go Version Requirement
-Termux might have a slightly older version of Go than required by `go.mod`. Use this command to automatically adjust the requirement to match your installed Go version:
 ```bash
-sed -i "s/go 1.25.7/go $(go version | awk '{print $3}' | sed 's/go//' | cut -d. -f1,2,3)/" go.mod
-```
+# Fetch latest version tag
+VERSION=$(curl -s https://api.github.com/repos/sipeed/picoclaw/releases/latest | jq -r '.tag_name')
+echo "Installing PicoClaw $VERSION..."
 
-### Build and Install PicoClaw
-Build the project with CGO disabled for maximum compatibility across different Android architectures, then move it to your system PATH:
-```bash
-export CGO_ENABLED=0
-make deps
-make build
+# Download the Android arm64 binary (built with GOOS=android for Termux compatibility)
+curl -fSL "https://github.com/sipeed/picoclaw/releases/download/${VERSION}/picoclaw_Android_arm64.tar.gz" -o /tmp/picoclaw.tar.gz
+tar -xzf /tmp/picoclaw.tar.gz -C /tmp picoclaw
 
 # Install to Termux bin directory
-cp build/picoclaw-linux-arm64 $PREFIX/bin/picoclaw
+cp /tmp/picoclaw $PREFIX/bin/picoclaw
 chmod +x $PREFIX/bin/picoclaw
+rm /tmp/picoclaw.tar.gz /tmp/picoclaw
 ```
 
 Now you can run `picoclaw` from anywhere!

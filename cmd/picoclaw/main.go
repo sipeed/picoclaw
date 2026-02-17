@@ -120,6 +120,17 @@ func copyDirectory(src, dst string) error {
 }
 
 func main() {
+	// Android's Bionic linker duplicates argv[0] when loading PIE executables,
+	// inserting the full binary path as argv[1] and shifting real arguments.
+	// For example: argv = ["picoclaw", "/data/.../bin/picoclaw", "onboard"]
+	// Detect this by checking if argv[1] is a path whose base name matches
+	// argv[0] (the program name).
+	if len(os.Args) >= 2 && runtime.GOOS == "android" {
+		if filepath.Base(os.Args[1]) == filepath.Base(os.Args[0]) && strings.Contains(os.Args[1], "/") {
+			os.Args = append(os.Args[:1], os.Args[2:]...)
+		}
+	}
+
 	if len(os.Args) < 2 {
 		printHelp()
 		os.Exit(1)

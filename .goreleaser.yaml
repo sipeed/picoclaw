@@ -11,6 +11,8 @@ builds:
   - id: picoclaw
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w
     goos:
       - linux
       - windows
@@ -27,6 +29,19 @@ builds:
     ignore:
       - goos: windows
         goarch: arm
+
+  # Android/Termux requires PIE executables (ET_DYN) built with GOOS=android.
+  # Standard Linux binaries (ET_EXEC) are rejected by Android's kernel.
+  - id: picoclaw-android
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+    goos:
+      - android
+    goarch:
+      - arm64
+    main: ./cmd/picoclaw
 
 dockers_v2:
   - id: picoclaw
@@ -45,7 +60,10 @@ dockers_v2:
       - linux/riscv64
 
 archives:
-  - formats: [tar.gz]
+  - ids:
+      - picoclaw
+      - picoclaw-android
+    formats: [tar.gz]
     # this name template makes the OS and Arch compatible with the results of `uname`.
     name_template: >-
       {{ .ProjectName }}_

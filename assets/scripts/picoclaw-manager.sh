@@ -9,8 +9,10 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+GITHUB_REPO="sipeed/picoclaw"
 CONFIG_FILE="$HOME/.picoclaw/config.json"
-REPO_DIR="$HOME/.picoclaw-repo"
+DATA_DIR="$HOME/.picoclaw"
+LOG_FILE="$DATA_DIR/picoclaw.log"
 BIN_PATH="$PREFIX/bin/picoclaw"
 
 show_header() {
@@ -29,9 +31,15 @@ EOF
     echo -e "==========================================${NC}"
 }
 
+is_android() {
+    [[ "$(uname -o 2>/dev/null)" == "Android" ]] || [ -n "$ANDROID_ROOT" ] || [ -d "/data/data/com.termux" ]
+}
+
 check_dependencies() {
     echo -e "${YELLOW}[*] Checking dependencies...${NC}"
-    deps=("golang" "git" "make" "jq" "tmux")
+
+    deps=("curl" "jq" "tmux" "tar")
+
     to_install=()
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
@@ -47,34 +55,100 @@ check_dependencies() {
     fi
 }
 
-install_picoclaw() {
-    check_dependencies
-    
-    echo -e "${YELLOW}[*] Cloning repository...${NC}"
-    if [ -d "$REPO_DIR" ]; then
-        cd "$REPO_DIR" && git pull
-    else
-        git clone https://github.com/sipeed/picoclaw.git "$REPO_DIR"
-        cd "$REPO_DIR"
+detect_arch() {
+    local arch
+    arch=$(uname -m)
+    case "$arch" in
+        aarch64|arm64) echo "arm64" ;;
+        armv7l|armv6l) echo "armv6" ;;
+        x86_64|amd64)  echo "x86_64" ;;
+        *)
+            echo -e "${RED}[!] Unsupported architecture: $arch${NC}" >&2
+            return 1
+            ;;
+    esac
+}
+
+get_latest_version() {
+    curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" | jq -r '.tag_name'
+}
+
+# Download prebuilt binary from GitHub Releases
+install_from_release() {
+    local version="$1"
+    local arch="$2"
+
+    # Android/Termux uses a dedicated Android binary (GOOS=android, PIE).
+    # Standard Linux uses the regular Linux binary.
+    local os_name="Linux"
+    if is_android; then
+        os_name="Android"
     fi
 
-    echo -e "${YELLOW}[*] Building PicoClaw...${NC}"
-    # Adjust Go version
-    GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//' | cut -d. -f1,2,3)
-    sed -i "s/go 1.25.7/go $GO_VERSION/" go.mod
-    
-    export CGO_ENABLED=0
-    make deps
-    make build
+    local filename="picoclaw_${os_name}_${arch}.tar.gz"
+    local url="https://github.com/${GITHUB_REPO}/releases/download/${version}/${filename}"
+    local tmpdir
+    tmpdir=$(mktemp -d -p "${TMPDIR:-/tmp}")
 
-    echo -e "${YELLOW}[*] Installing to bin...${NC}"
-    cp build/picoclaw-linux-arm64 "$BIN_PATH"
+    echo -e "${YELLOW}[*] Downloading ${filename}...${NC}"
+    if ! curl -fSL --progress-bar "$url" -o "${tmpdir}/${filename}"; then
+        echo -e "${RED}[!] Download failed. URL: ${url}${NC}"
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    echo -e "${YELLOW}[*] Extracting binary...${NC}"
+    tar -xzf "${tmpdir}/${filename}" -C "$tmpdir"
+
+    if [ ! -f "${tmpdir}/picoclaw" ]; then
+        echo -e "${RED}[!] Binary not found in archive.${NC}"
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$BIN_PATH")"
+    cp "${tmpdir}/picoclaw" "$BIN_PATH"
     chmod +x "$BIN_PATH"
-    
+    rm -rf "$tmpdir"
+    return 0
+}
+
+install_picoclaw() {
+    check_dependencies
+
+    echo -e "${YELLOW}[*] Detecting architecture...${NC}"
+    local arch
+    arch=$(detect_arch)
+    if [ $? -ne 0 ] || [ -z "$arch" ]; then
+        echo -e "${RED}[!] Could not detect architecture. Aborting.${NC}"
+        read -p "Press Enter to return to menu..."
+        return
+    fi
+    echo -e "${GREEN}[✓] Architecture: $arch${NC}"
+
+    echo -e "${YELLOW}[*] Fetching latest release...${NC}"
+    local version
+    version=$(get_latest_version)
+    if [ -z "$version" ] || [ "$version" = "null" ]; then
+        echo -e "${RED}[!] Could not fetch latest version. Check your internet connection.${NC}"
+        read -p "Press Enter to return to menu..."
+        return
+    fi
+    echo -e "${GREEN}[✓] Latest version: $version${NC}"
+
+    install_from_release "$version" "$arch"
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}[!] Installation failed.${NC}"
+        read -p "Press Enter to return to menu..."
+        return
+    fi
+
     if ! command -v picoclaw &> /dev/null; then
-        echo -e "${RED}[!] Installation failed. Bin not in PATH?${NC}"
+        echo -e "${RED}[!] Installation failed. Is $PREFIX/bin in your PATH?${NC}"
     else
-        echo -e "${GREEN}[✓] PicoClaw installed successfully!${NC}"
+        echo -e "${GREEN}[✓] PicoClaw ${version} installed successfully!${NC}"
+        echo -e "${YELLOW}[*] Running initial setup...${NC}"
         picoclaw onboard
     fi
     read -p "Press Enter to return to menu..."
@@ -121,7 +195,8 @@ manage_service() {
             if tmux has-session -t picoclaw 2>/dev/null; then
                 echo -e "${YELLOW}[!] Session 'picoclaw' already exists.${NC}"
             else
-                tmux new-session -d -s picoclaw "picoclaw gateway | tee $REPO_DIR/picoclaw.log"
+                mkdir -p "$DATA_DIR"
+                tmux new-session -d -s picoclaw "picoclaw gateway 2>&1 | tee $LOG_FILE"
                 echo -e "${GREEN}[✓] Gateway started in tmux session 'picoclaw'.${NC}"
             fi
             ;;
@@ -134,11 +209,16 @@ manage_service() {
             pkill -9 picoclaw
             tmux kill-session -t picoclaw 2>/dev/null
             sleep 1
-            tmux new-session -d -s picoclaw "picoclaw gateway | tee $REPO_DIR/picoclaw.log"
+            mkdir -p "$DATA_DIR"
+            tmux new-session -d -s picoclaw "picoclaw gateway 2>&1 | tee $LOG_FILE"
             echo -e "${GREEN}[✓] Gateway restarted.${NC}"
             ;;
         4)
-            tail -f "$REPO_DIR/picoclaw.log"
+            if [ -f "$LOG_FILE" ]; then
+                tail -f "$LOG_FILE"
+            else
+                echo -e "${YELLOW}[!] No log file found. Start the gateway first.${NC}"
+            fi
             ;;
         *) return ;;
     esac
@@ -150,12 +230,12 @@ uninstall_picoclaw() {
     if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
         pkill -9 picoclaw
         tmux kill-session -t picoclaw 2>/dev/null
-        rm "$BIN_PATH"
-        rm -rf "$REPO_DIR"
-        rm -rf "$HOME/.picoclaw"
+        rm -f "$BIN_PATH"
+        rm -rf "$DATA_DIR"
         echo -e "${GREEN}[✓] PicoClaw uninstalled.${NC}"
     fi
     read -p "Press Enter to return to menu..."
+}
 
 network_diagnostics() {
     echo -e "${BLUE}--- Network Diagnostics ---${NC}"
