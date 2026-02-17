@@ -182,6 +182,7 @@ type ProvidersConfig struct {
 	Cerebras      ProviderConfig `json:"cerebras"`
 	VolcEngine    ProviderConfig `json:"volcengine"`
 	GitHubCopilot ProviderConfig `json:"github_copilot"`
+	Antigravity   ProviderConfig `json:"antigravity"`
 	Qwen          ProviderConfig `json:"qwen"`
 }
 

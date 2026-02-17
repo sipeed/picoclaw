@@ -132,8 +132,9 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function *struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
+						Name             string `json:"name"`
+						Arguments        string `json:"arguments"`
+						ThoughtSignature string `json:"thought_signature"`
 					} `json:"function"`
 				} `json:"tool_calls"`
 			} `json:"message"`
@@ -159,18 +160,11 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 	for _, tc := range choice.Message.ToolCalls {
 		arguments := make(map[string]interface{})
 		name := ""
+		thoughtSignature := ""
 
-		// Handle OpenAI format with nested function object
-		if tc.Type == "function" && tc.Function != nil {
+		if tc.Function != nil {
 			name = tc.Function.Name
-			if tc.Function.Arguments != "" {
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
-					arguments["raw"] = tc.Function.Arguments
-				}
-			}
-		} else if tc.Function != nil {
-			// Legacy format without type field
-			name = tc.Function.Name
+			thoughtSignature = tc.Function.ThoughtSignature
 			if tc.Function.Arguments != "" {
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
 					arguments["raw"] = tc.Function.Arguments
@@ -179,7 +173,13 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 		}
 
 		toolCalls = append(toolCalls, ToolCall{
-			ID:        tc.ID,
+			ID:   tc.ID,
+			Type: tc.Type,
+			Function: &FunctionCall{
+				Name:             name,
+				Arguments:        tc.Function.Arguments,
+				ThoughtSignature: thoughtSignature,
+			},
 			Name:      name,
 			Arguments: arguments,
 		})
@@ -347,6 +347,8 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "localhost:4321"
 			}
 			return NewGitHubCopilotProvider(apiBase, cfg.Providers.GitHubCopilot.ConnectMode, model)
+		case "antigravity", "google-antigravity":
+			return NewAntigravityProvider(), nil
 
 		case "volcengine", "doubao":
 			if cfg.Providers.VolcEngine.APIKey != "" {
