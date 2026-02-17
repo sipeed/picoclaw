@@ -16,7 +16,8 @@ type mockRegistry struct {
 	searchErr     error
 	meta          *SkillMeta
 	metaErr       error
-	downloadErr   error
+	installResult *InstallResult
+	installErr    error
 }
 
 func (m *mockRegistry) Name() string { return m.name }
@@ -29,8 +30,8 @@ func (m *mockRegistry) GetSkillMeta(_ context.Context, _ string) (*SkillMeta, er
 	return m.meta, m.metaErr
 }
 
-func (m *mockRegistry) DownloadAndExtract(_ context.Context, _, _, _ string) error {
-	return m.downloadErr
+func (m *mockRegistry) DownloadAndInstall(_ context.Context, _, _, _ string) (*InstallResult, error) {
+	return m.installResult, m.installErr
 }
 
 func TestRegistryManagerSearchAllSingle(t *testing.T) {

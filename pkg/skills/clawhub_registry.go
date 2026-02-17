@@ -16,22 +16,27 @@ import (
 )
 
 const (
-	clawHubDefaultTimeout = 15 * time.Second
-	maxZipSize            = 10 * 1024 * 1024 // 10 MB max ZIP size
+	defaultClawHubTimeout = 30 * time.Second
+	defaultMaxZipSize     = 50 * 1024 * 1024 // 50 MB
 )
 
 // ClawHubRegistry implements SkillRegistry for the ClawhHub platform.
 type ClawHubRegistry struct {
 	baseURL      string
-	authToken    string
-	searchPath   string
-	skillsPath   string
-	downloadPath string
+	authToken    string // Optional - for elevated rate limits
+	searchPath   string // Search API
+	skillsPath   string // For retrieving skill metadata
+	downloadPath string // For fetching ZIP files for download
+	maxZipSize   int
 	client       *http.Client
 }
 
 // NewClawHubRegistry creates a new ClawhHub registry client from config.
 func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://clawhub.ai"
+	}
 	searchPath := cfg.SearchPath
 	if searchPath == "" {
 		searchPath = "/api/v1/search"
@@ -45,14 +50,25 @@ func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
 		downloadPath = "/api/v1/download"
 	}
 
+	timeout := defaultClawHubTimeout
+	if cfg.Timeout > 0 {
+		timeout = time.Duration(cfg.Timeout) * time.Second
+	}
+
+	maxZip := defaultMaxZipSize
+	if cfg.MaxZipSize > 0 {
+		maxZip = cfg.MaxZipSize
+	}
+
 	return &ClawHubRegistry{
-		baseURL:      strings.TrimRight(cfg.BaseURL, "/"),
+		baseURL:      cfg.BaseURL,
 		authToken:    cfg.AuthToken,
 		searchPath:   searchPath,
 		skillsPath:   skillsPath,
 		downloadPath: downloadPath,
+		maxZipSize:   maxZip,
 		client: &http.Client{
-			Timeout: clawHubDefaultTimeout,
+			Timeout: timeout,
 			Transport: &http.Transport{
 				MaxIdleConns:        5,
 				IdleConnTimeout:     30 * time.Second,
@@ -105,11 +121,26 @@ func (c *ClawHubRegistry) Search(ctx context.Context, query string, limit int) (
 
 	results := make([]SearchResult, 0, len(resp.Results))
 	for _, r := range resp.Results {
+		slug := derefStr(r.Slug, "")
+		if slug == "" {
+			continue
+		}
+
+		summary := derefStr(r.Summary, "")
+		if summary == "" {
+			continue
+		}
+
+		displayName := derefStr(r.DisplayName, "")
+		if displayName == "" {
+			displayName = slug
+		}
+
 		results = append(results, SearchResult{
 			Score:        r.Score,
-			Slug:         derefStr(r.Slug, "unknown"),
-			DisplayName:  derefStr(r.DisplayName, ""),
-			Summary:      derefStr(r.Summary, ""),
+			Slug:         slug,
+			DisplayName:  displayName,
+			Summary:      summary,
 			Version:      derefStr(r.Version, ""),
 			RegistryName: c.Name(),
 		})
@@ -172,35 +203,68 @@ func (c *ClawHubRegistry) GetSkillMeta(ctx context.Context, slug string) (*Skill
 	return meta, nil
 }
 
-// --- DownloadAndExtract ---
+// --- DownloadAndInstall ---
 
-func (c *ClawHubRegistry) DownloadAndExtract(ctx context.Context, slug, version, targetDir string) error {
+// DownloadAndInstall fetches metadata (with fallback), resolves version,
+// downloads the skill ZIP, and extracts it to targetDir.
+// Returns an InstallResult for the caller to use for moderation decisions.
+func (c *ClawHubRegistry) DownloadAndInstall(ctx context.Context, slug, version, targetDir string) (*InstallResult, error) {
 	if !isSafeSlug(slug) {
-		return fmt.Errorf("invalid slug: %q", slug)
+		return nil, fmt.Errorf("invalid slug: %q", slug)
 	}
 
+	// Step 1: Fetch metadata (with fallback).
+	result := &InstallResult{}
+	meta, err := c.GetSkillMeta(ctx, slug)
+	if err != nil {
+		// Fallback: proceed without metadata.
+		meta = nil
+	}
+
+	if meta != nil {
+		result.IsMalwareBlocked = meta.IsMalwareBlocked
+		result.IsSuspicious = meta.IsSuspicious
+		result.Summary = meta.Summary
+	}
+
+	// Step 2: Resolve version.
+	installVersion := version
+	if installVersion == "" && meta != nil {
+		installVersion = meta.LatestVersion
+	}
+	if installVersion == "" {
+		installVersion = "latest"
+	}
+	result.Version = installVersion
+
+	// Step 3: Download ZIP.
 	u, err := url.Parse(c.baseURL + c.downloadPath)
 	if err != nil {
-		return fmt.Errorf("invalid base URL: %w", err)
+		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
 
 	q := u.Query()
 	q.Set("slug", slug)
-	if version != "" {
-		q.Set("version", version)
+	if installVersion != "latest" {
+		q.Set("version", installVersion)
 	}
 	u.RawQuery = q.Encode()
 
 	zipData, err := c.doGet(ctx, u.String())
 	if err != nil {
-		return fmt.Errorf("download failed: %w", err)
+		return nil, fmt.Errorf("download failed: %w", err)
 	}
 
-	if len(zipData) > maxZipSize {
-		return fmt.Errorf("ZIP too large: %d bytes (max %d)", len(zipData), maxZipSize)
+	if len(zipData) > c.maxZipSize {
+		return nil, fmt.Errorf("ZIP too large: %d bytes (max %d)", len(zipData), c.maxZipSize)
 	}
 
-	return extractZip(zipData, targetDir)
+	// Step 4: Extract.
+	if err := extractZip(zipData, targetDir); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // --- HTTP helper ---
@@ -223,13 +287,13 @@ func (c *ClawHubRegistry) doGet(ctx context.Context, urlStr string) ([]byte, err
 	defer resp.Body.Close()
 
 	// Limit response body read to prevent memory issues.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxZipSize+1024))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(c.maxZipSize)+1024))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncateBytes(body, 200))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	return body, nil
@@ -313,11 +377,4 @@ func derefStr(s *string, fallback string) string {
 		return fallback
 	}
 	return *s
-}
-
-func truncateBytes(b []byte, maxLen int) string {
-	if len(b) <= maxLen {
-		return string(b)
-	}
-	return string(b[:maxLen]) + "…"
 }

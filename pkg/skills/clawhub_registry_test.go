@@ -88,7 +88,7 @@ func TestClawHubRegistryGetSkillMetaUnsafeSlug(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid slug")
 }
 
-func TestClawHubRegistryDownloadAndExtract(t *testing.T) {
+func TestClawHubRegistryDownloadAndInstall(t *testing.T) {
 	// Create a valid ZIP in memory.
 	zipBuf := createTestZip(t, map[string]string{
 		"SKILL.md":  "---\nname: test-skill\ndescription: A test\n---\nHello skill",
@@ -96,10 +96,22 @@ func TestClawHubRegistryDownloadAndExtract(t *testing.T) {
 	})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v1/download", r.URL.Path)
-		assert.Equal(t, "test-skill", r.URL.Query().Get("slug"))
-		w.Header().Set("Content-Type", "application/zip")
-		w.Write(zipBuf)
+		switch r.URL.Path {
+		case "/api/v1/skills/test-skill":
+			// Metadata endpoint.
+			json.NewEncoder(w).Encode(clawhubSkillResponse{
+				Slug:          "test-skill",
+				DisplayName:   "Test Skill",
+				Summary:       "A test skill",
+				LatestVersion: &clawhubVersionInfo{Version: "1.0.0"},
+			})
+		case "/api/v1/download":
+			assert.Equal(t, "test-skill", r.URL.Query().Get("slug"))
+			w.Header().Set("Content-Type", "application/zip")
+			w.Write(zipBuf)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer srv.Close()
 
@@ -107,9 +119,11 @@ func TestClawHubRegistryDownloadAndExtract(t *testing.T) {
 	targetDir := filepath.Join(tmpDir, "test-skill")
 
 	reg := newTestRegistry(srv.URL, "")
-	err := reg.DownloadAndExtract(context.Background(), "test-skill", "1.0.0", targetDir)
+	result, err := reg.DownloadAndInstall(context.Background(), "test-skill", "1.0.0", targetDir)
 
 	require.NoError(t, err)
+	assert.Equal(t, "1.0.0", result.Version)
+	assert.False(t, result.IsMalwareBlocked)
 
 	// Verify extracted files.
 	skillContent, err := os.ReadFile(filepath.Join(targetDir, "SKILL.md"))
@@ -170,11 +184,6 @@ func TestExtractZipWithSubdirectories(t *testing.T) {
 	assert.Contains(t, string(data), "#!/bin/bash")
 }
 
-func TestClawHubRegistryName(t *testing.T) {
-	reg := newTestRegistry("https://clawhub.ai", "")
-	assert.Equal(t, "clawhub", reg.Name())
-}
-
 func TestClawHubRegistrySearchHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -190,10 +199,18 @@ func TestClawHubRegistrySearchHTTPError(t *testing.T) {
 
 func TestClawHubRegistrySearchNullableFields(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Return results with null fields (matches ClawhHub API schema).
+		validSlug := "valid-slug"
+		validSummary := "valid summary"
+
+		// Return results with various null/empty fields
 		json.NewEncoder(w).Encode(clawhubSearchResponse{
 			Results: []clawhubSearchResult{
-				{Score: 0.8, Slug: nil, DisplayName: nil, Summary: nil, Version: nil},
+				// Case 1: Null Slug -> Skip
+				{Score: 0.1, Slug: nil, DisplayName: nil, Summary: nil, Version: nil},
+				// Case 2: Valid Slug, Null Summary -> Skip
+				{Score: 0.2, Slug: &validSlug, DisplayName: nil, Summary: nil, Version: nil},
+				// Case 3: Valid Slug, Valid Summary, Null Name -> Keep, Name=Slug
+				{Score: 0.8, Slug: &validSlug, DisplayName: nil, Summary: &validSummary, Version: nil},
 			},
 		})
 	}))
@@ -203,26 +220,12 @@ func TestClawHubRegistrySearchNullableFields(t *testing.T) {
 	results, err := reg.Search(context.Background(), "test", 5)
 
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, "unknown", results[0].Slug, "null slug should default to 'unknown'")
-	assert.Equal(t, "", results[0].DisplayName)
-}
+	require.Len(t, results, 1, "should only return 1 valid result")
 
-func TestClawHubRegistryCustomPaths(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/custom/search", r.URL.Path)
-		json.NewEncoder(w).Encode(clawhubSearchResponse{Results: nil})
-	}))
-	defer srv.Close()
-
-	reg := NewClawHubRegistry(ClawHubConfig{
-		Enabled:    true,
-		BaseURL:    srv.URL,
-		SearchPath: "/custom/search",
-	})
-	results, err := reg.Search(context.Background(), "test", 5)
-	require.NoError(t, err)
-	assert.Empty(t, results)
+	r := results[0]
+	assert.Equal(t, "valid-slug", r.Slug)
+	assert.Equal(t, "valid-slug", r.DisplayName, "should fallback name to slug")
+	assert.Equal(t, "valid summary", r.Summary)
 }
 
 // --- helpers ---

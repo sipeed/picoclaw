@@ -9,8 +9,6 @@ import (
 // SearchCache provides lightweight caching for search results.
 // It uses trigram-based similarity to match similar queries to cached results,
 // avoiding redundant API calls. Thread-safe for concurrent access.
-//
-// Memory budget: ~50 entries * ~2KB per entry ≈ ~100KB — well within <10MB target.
 type SearchCache struct {
 	mu         sync.RWMutex
 	entries    map[string]*cacheEntry

@@ -104,58 +104,45 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interfac
 		return ErrorResult(fmt.Sprintf("registry %q not found", registryName))
 	}
 
-	// Fetch skill metadata (moderation checks).
-	meta, err := registry.GetSkillMeta(ctx, slug)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to fetch metadata for %q: %v", slug, err))
-	}
-
-	// Moderation: block malware.
-	if meta.IsMalwareBlocked {
-		return ErrorResult(fmt.Sprintf("skill %q is flagged as malicious and cannot be installed", slug))
-	}
-
-	// Resolve version.
-	installVersion := version
-	if installVersion == "" {
-		installVersion = meta.LatestVersion
-	}
-	if installVersion == "" {
-		return ErrorResult(fmt.Sprintf("could not resolve version for %q", slug))
-	}
-
 	// Ensure skills directory exists.
 	if err := os.MkdirAll(skillsDir, 0755); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to create skills directory: %v", err))
 	}
 
-	// Download and extract.
-	if err := registry.DownloadAndExtract(ctx, slug, installVersion, targetDir); err != nil {
+	// Download and install (handles metadata, version resolution, extraction).
+	result, err := registry.DownloadAndInstall(ctx, slug, version, targetDir)
+	if err != nil {
 		// Clean up partial install.
 		os.RemoveAll(targetDir)
 		return ErrorResult(fmt.Sprintf("failed to install %q: %v", slug, err))
 	}
 
+	// Moderation: block malware.
+	if result.IsMalwareBlocked {
+		os.RemoveAll(targetDir)
+		return ErrorResult(fmt.Sprintf("skill %q is flagged as malicious and cannot be installed", slug))
+	}
+
 	// Write origin metadata.
-	if err := writeOriginMeta(targetDir, registry.Name(), slug, installVersion); err != nil {
+	if err := writeOriginMeta(targetDir, registry.Name(), slug, result.Version); err != nil {
 		// Non-fatal: skill is installed, just origin tracking failed.
 		_ = err
 	}
 
 	// Build result with moderation warning if suspicious.
-	var result string
-	if meta.IsSuspicious {
-		result = fmt.Sprintf("⚠️ Warning: skill %q is flagged as suspicious (may contain risky patterns).\n\n", slug)
+	var output string
+	if result.IsSuspicious {
+		output = fmt.Sprintf("⚠️ Warning: skill %q is flagged as suspicious (may contain risky patterns).\n\n", slug)
 	}
-	result += fmt.Sprintf("Successfully installed skill %q v%s from %s registry.\nLocation: %s\n",
-		slug, installVersion, registry.Name(), targetDir)
+	output += fmt.Sprintf("Successfully installed skill %q v%s from %s registry.\nLocation: %s\n",
+		slug, result.Version, registry.Name(), targetDir)
 
-	if meta.Summary != "" {
-		result += fmt.Sprintf("Description: %s\n", meta.Summary)
+	if result.Summary != "" {
+		output += fmt.Sprintf("Description: %s\n", result.Summary)
 	}
-	result += "\nThe skill is now available and can be loaded in the current session."
+	output += "\nThe skill is now available and can be loaded in the current session."
 
-	return SilentResult(result)
+	return SilentResult(output)
 }
 
 // originMeta tracks which registry a skill was installed from.

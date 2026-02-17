@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+const (
+	defaultMaxConcurrentSearches = 2
+)
+
 // SearchResult represents a single result from a skill registry search.
 type SearchResult struct {
 	Score        float64 `json:"score"`
@@ -29,8 +33,17 @@ type SkillMeta struct {
 	RegistryName     string `json:"registry_name"`
 }
 
+// InstallResult is returned by DownloadAndInstall to carry metadata
+// back to the caller for moderation and user messaging.
+type InstallResult struct {
+	Version          string
+	IsMalwareBlocked bool
+	IsSuspicious     bool
+	Summary          string
+}
+
 // SkillRegistry is the interface that all skill registries must implement.
-// Each registry represents a different source of skills (e.g., ClawhHub, GitHub, etc.)
+// Each registry represents a different source of skills (e.g., clawhub.ai)
 type SkillRegistry interface {
 	// Name returns the unique name of this registry (e.g., "clawhub").
 	Name() string
@@ -38,14 +51,17 @@ type SkillRegistry interface {
 	Search(ctx context.Context, query string, limit int) ([]SearchResult, error)
 	// GetSkillMeta retrieves metadata for a specific skill by slug.
 	GetSkillMeta(ctx context.Context, slug string) (*SkillMeta, error)
-	// DownloadAndExtract downloads a skill and extracts it to targetDir.
-	DownloadAndExtract(ctx context.Context, slug, version, targetDir string) error
+	// DownloadAndInstall fetches metadata, resolves the version, downloads and
+	// installs the skill to targetDir. Returns an InstallResult with metadata
+	// for the caller to use for moderation and user messaging.
+	DownloadAndInstall(ctx context.Context, slug, version, targetDir string) (*InstallResult, error)
 }
 
 // RegistryConfig holds configuration for all skill registries.
 // This is the input to NewRegistryManagerFromConfig.
 type RegistryConfig struct {
-	ClawHub ClawHubConfig
+	ClawHub               ClawHubConfig
+	MaxConcurrentSearches int
 }
 
 // ClawHubConfig configures the ClawhHub registry.
@@ -56,19 +72,23 @@ type ClawHubConfig struct {
 	SearchPath   string // e.g. "/api/v1/search"
 	SkillsPath   string // e.g. "/api/v1/skills"
 	DownloadPath string // e.g. "/api/v1/download"
+	Timeout      int    // seconds, 0 = default (30s)
+	MaxZipSize   int    // bytes, 0 = default (50MB)
 }
 
 // RegistryManager coordinates multiple skill registries.
 // It fans out search requests and routes installs to the correct registry.
 type RegistryManager struct {
-	registries []SkillRegistry
-	mu         sync.RWMutex
+	registries    []SkillRegistry
+	maxConcurrent int
+	mu            sync.RWMutex
 }
 
 // NewRegistryManager creates an empty RegistryManager.
 func NewRegistryManager() *RegistryManager {
 	return &RegistryManager{
-		registries: make([]SkillRegistry, 0),
+		registries:    make([]SkillRegistry, 0),
+		maxConcurrent: defaultMaxConcurrentSearches,
 	}
 }
 
@@ -76,7 +96,10 @@ func NewRegistryManager() *RegistryManager {
 // instantiating only the enabled registries.
 func NewRegistryManagerFromConfig(cfg RegistryConfig) *RegistryManager {
 	rm := NewRegistryManager()
-	if cfg.ClawHub.Enabled && cfg.ClawHub.BaseURL != "" {
+	if cfg.MaxConcurrentSearches > 0 {
+		rm.maxConcurrent = cfg.MaxConcurrentSearches
+	}
+	if cfg.ClawHub.Enabled {
 		rm.AddRegistry(NewClawHubRegistry(cfg.ClawHub))
 	}
 	return rm
@@ -101,7 +124,7 @@ func (rm *RegistryManager) GetRegistry(name string) SkillRegistry {
 	return nil
 }
 
-// SearchAll fans out the query to all registries concurrently (max 2 goroutines)
+// SearchAll fans out the query to all registries concurrently
 // and merges results sorted by score descending.
 func (rm *RegistryManager) SearchAll(ctx context.Context, query string, limit int) ([]SearchResult, error) {
 	rm.mu.RLock()
@@ -118,8 +141,8 @@ func (rm *RegistryManager) SearchAll(ctx context.Context, query string, limit in
 		err     error
 	}
 
-	// Semaphore: limit concurrency to 2 goroutines for lightweight infra.
-	sem := make(chan struct{}, 2)
+	// Semaphore: limit concurrency.
+	sem := make(chan struct{}, rm.maxConcurrent)
 	resultsCh := make(chan regResult, len(regs))
 
 	var wg sync.WaitGroup
