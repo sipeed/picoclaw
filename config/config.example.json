@@ -93,6 +93,10 @@
       "api_key": "YOUR_ZHIPU_API_KEY",
       "api_base": ""
     },
+    "bailian": {
+      "api_key": "YOUR_BAILIAN_API_KEY",
+      "api_base": ""
+    },
     "gemini": {
       "api_key": "",
       "api_base": ""
