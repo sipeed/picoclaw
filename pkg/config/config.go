@@ -211,8 +211,17 @@ type WebToolsConfig struct {
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 }
 
+type BrowserConfig struct {
+	Enabled  bool   `json:"enabled" env:"PICOCLAW_TOOLS_BROWSER_ENABLED"`
+	Session  string `json:"session" env:"PICOCLAW_TOOLS_BROWSER_SESSION"`
+	Headless bool   `json:"headless" env:"PICOCLAW_TOOLS_BROWSER_HEADLESS"`
+	Timeout  int    `json:"timeout" env:"PICOCLAW_TOOLS_BROWSER_TIMEOUT"`
+	CDPPort  int    `json:"cdp_port" env:"PICOCLAW_TOOLS_BROWSER_CDP_PORT"`
+}
+
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web     WebToolsConfig `json:"web"`
+	Browser BrowserConfig  `json:"browser"`
 }
 
 func DefaultConfig() *Config {
@@ -321,6 +330,12 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+			},
+			Browser: BrowserConfig{
+				Enabled:  false,
+				Headless: true,
+				Timeout:  30,
+				CDPPort:  9222,
 			},
 		},
 		Heartbeat: HeartbeatConfig{
