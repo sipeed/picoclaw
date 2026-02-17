@@ -42,6 +42,7 @@ type AgentLoop struct {
 	contextBuilder *ContextBuilder
 	tools          *tools.ToolRegistry
 	running        atomic.Bool
+	timeout        int
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
 	channelManager *channels.Manager
 }
@@ -148,6 +149,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
 		sessions:       sessionsManager,
 		state:          stateManager,
+		timeout:        cfg.Agents.Defaults.Timeout,
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
@@ -876,7 +878,11 @@ func formatToolsForLog(tools []providers.ToolDefinition) string {
 
 // summarizeSession summarizes the conversation history for a session.
 func (al *AgentLoop) summarizeSession(sessionKey string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	summarizeTimeout := al.timeout
+	if summarizeTimeout <= 0 {
+		summarizeTimeout = 120
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(summarizeTimeout)*time.Second)
 	defer cancel()
 
 	history := al.sessions.GetHistory(sessionKey)
