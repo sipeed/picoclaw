@@ -52,29 +52,29 @@ func (info SkillInfo) validate() error {
 }
 
 type SkillsLoader struct {
-	workspace       string
-	workspaceSkills string // workspace skills (项目级别)
-	globalSkills    string // 全局 skills (~/.picoclaw/skills)
-	builtinSkills   string // 内置 skills
+	dataDir       string
+	dataSkills    string // data dir skills
+	globalSkills  string // global skills (~/.picoclaw/skills)
+	builtinSkills string // builtin skills
 }
 
-func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string) *SkillsLoader {
+func NewSkillsLoader(dataDir string, globalSkills string, builtinSkills string) *SkillsLoader {
 	return &SkillsLoader{
-		workspace:       workspace,
-		workspaceSkills: filepath.Join(workspace, "skills"),
-		globalSkills:    globalSkills, // ~/.picoclaw/skills
-		builtinSkills:   builtinSkills,
+		dataDir:       dataDir,
+		dataSkills:    filepath.Join(dataDir, "skills"),
+		globalSkills:  globalSkills, // ~/.picoclaw/skills
+		builtinSkills: builtinSkills,
 	}
 }
 
 func (sl *SkillsLoader) ListSkills() []SkillInfo {
 	skills := make([]SkillInfo, 0)
 
-	if sl.workspaceSkills != "" {
-		if dirs, err := os.ReadDir(sl.workspaceSkills); err == nil {
+	if sl.dataSkills != "" {
+		if dirs, err := os.ReadDir(sl.dataSkills); err == nil {
 			for _, dir := range dirs {
 				if dir.IsDir() {
-					skillFile := filepath.Join(sl.workspaceSkills, dir.Name(), "SKILL.md")
+					skillFile := filepath.Join(sl.dataSkills, dir.Name(), "SKILL.md")
 					if _, err := os.Stat(skillFile); err == nil {
 						info := SkillInfo{
 							Name:   dir.Name(),
@@ -87,7 +87,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 							info.Name = metadata.Name
 						}
 						if err := info.validate(); err != nil {
-							slog.Warn("invalid skill from workspace", "name", info.Name, "error", err)
+							slog.Warn("invalid skill from data dir", "name", info.Name, "error", err)
 							continue
 						}
 						skills = append(skills, info)
@@ -181,8 +181,8 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 
 func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 	// 1. 优先从 workspace skills 加载（项目级别）
-	if sl.workspaceSkills != "" {
-		skillFile := filepath.Join(sl.workspaceSkills, name, "SKILL.md")
+	if sl.dataSkills != "" {
+		skillFile := filepath.Join(sl.dataSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {
 			return sl.stripFrontmatter(string(content)), true
 		}
@@ -234,12 +234,10 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 	for _, s := range allSkills {
 		escapedName := escapeXML(s.Name)
 		escapedDesc := escapeXML(s.Description)
-		escapedPath := escapeXML(s.Path)
 
 		lines = append(lines, fmt.Sprintf("  <skill>"))
 		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapedName))
 		lines = append(lines, fmt.Sprintf("    <description>%s</description>", escapedDesc))
-		lines = append(lines, fmt.Sprintf("    <location>%s</location>", escapedPath))
 		lines = append(lines, fmt.Sprintf("    <source>%s</source>", s.Source))
 		lines = append(lines, "  </skill>")
 	}

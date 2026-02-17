@@ -67,7 +67,7 @@ func TestDefaultConfig_Temperature(t *testing.T) {
 func TestDefaultConfig_Gateway(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -198,6 +198,34 @@ func TestSaveConfig_FilePermissions(t *testing.T) {
 	}
 }
 
+// TestDefaultConfig_DataDir verifies data dir default value
+func TestDefaultConfig_DataDir(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Agents.Defaults.DataDir == "" {
+		t.Error("DataDir should not be empty")
+	}
+	if cfg.Agents.Defaults.DataDir != "~/.picoclaw/data" {
+		t.Errorf("DataDir should be '~/.picoclaw/data', got '%s'", cfg.Agents.Defaults.DataDir)
+	}
+}
+
+// TestConfig_DataPath verifies DataPath expands home directory
+func TestConfig_DataPath(t *testing.T) {
+	cfg := DefaultConfig()
+
+	path := cfg.DataPath()
+	if path == "" {
+		t.Error("DataPath should not be empty")
+	}
+	if path == "~/.picoclaw/data" {
+		t.Error("DataPath should expand ~ to home directory")
+	}
+	if path[0] == '~' {
+		t.Error("DataPath should not start with ~")
+	}
+}
+
 // TestConfig_Complete verifies all config fields are set
 func TestConfig_Complete(t *testing.T) {
 	cfg := DefaultConfig()
@@ -218,7 +246,7 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.MaxToolIterations == 0 {
 		t.Error("MaxToolIterations should not be zero")
 	}
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {

@@ -156,31 +156,26 @@ func main() {
 			os.Exit(1)
 		}
 
-		workspace := cfg.WorkspacePath()
-		installer := skills.NewSkillInstaller(workspace)
+		dataDir := cfg.DataPath()
 		// 获取全局配置目录和内置 skills 目录
 		globalDir := filepath.Dir(getConfigPath())
 		globalSkillsDir := filepath.Join(globalDir, "skills")
 		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
-		skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
+		skillsLoader := skills.NewSkillsLoader(dataDir, globalSkillsDir, builtinSkillsDir)
 
 		switch subcommand {
 		case "list":
 			skillsListCmd(skillsLoader)
-		case "install":
-			skillsInstallCmd(installer)
 		case "remove", "uninstall":
 			if len(os.Args) < 4 {
 				fmt.Println("Usage: picoclaw skills remove <skill-name>")
 				return
 			}
-			skillsRemoveCmd(installer, os.Args[3])
+			skillsRemoveCmd(dataDir, os.Args[3])
 		case "install-builtin":
-			skillsInstallBuiltinCmd(workspace)
+			skillsInstallBuiltinCmd(dataDir)
 		case "list-builtin":
 			skillsListBuiltinCmd()
-		case "search":
-			skillsSearchCmd(installer)
 		case "show":
 			if len(os.Args) < 4 {
 				fmt.Println("Usage: picoclaw skills show <skill-name>")
@@ -237,7 +232,9 @@ func onboard() {
 	}
 
 	workspace := cfg.WorkspacePath()
-	createWorkspaceTemplates(workspace)
+	dataDir := cfg.DataPath()
+	os.MkdirAll(workspace, 0755)
+	createWorkspaceTemplates(dataDir)
 
 	fmt.Printf("%s picoclaw is ready!\n", logo)
 	fmt.Println("\nNext steps:")
@@ -562,10 +559,11 @@ func gatewayCmd() {
 		})
 
 	// Setup cron tool and service
-	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.Agents.Defaults.RestrictToWorkspace)
+	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.DataPath(), cfg.Agents.Defaults.RestrictToWorkspace)
 
 	heartbeatService := heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
+		cfg.DataPath(),
 		cfg.Heartbeat.Interval,
 		cfg.Heartbeat.Enabled,
 	)
@@ -647,7 +645,7 @@ func gatewayCmd() {
 	}
 	fmt.Println("✓ Heartbeat service started")
 
-	stateManager := state.NewManager(cfg.WorkspacePath())
+	stateManager := state.NewManager(cfg.DataPath())
 	deviceService := devices.NewService(devices.Config{
 		Enabled:    cfg.Devices.Enabled,
 		MonitorUSB: cfg.Devices.MonitorUSB,
@@ -987,13 +985,13 @@ func getConfigPath() string {
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
 
-func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool) *cron.CronService {
-	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
+func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, dataDir string, restrict bool) *cron.CronService {
+	cronStorePath := filepath.Join(dataDir, "cron", "jobs.json")
 
 	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
 
-	// Create and register CronTool
+	// Create and register CronTool (workspace is for ExecTool sandboxing)
 	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict)
 	agentLoop.RegisterTool(cronTool)
 
@@ -1025,7 +1023,7 @@ func cronCmd() {
 		return
 	}
 
-	cronStorePath := filepath.Join(cfg.WorkspacePath(), "cron", "jobs.json")
+	cronStorePath := filepath.Join(cfg.DataPath(), "cron", "jobs.json")
 
 	switch subcommand {
 	case "list":
@@ -1227,16 +1225,16 @@ func cronEnableCmd(storePath string, disable bool) {
 func skillsHelp() {
 	fmt.Println("\nSkills commands:")
 	fmt.Println("  list                    List installed skills")
-	fmt.Println("  install <repo>          Install skill from GitHub")
-	fmt.Println("  install-builtin          Install all builtin skills to workspace")
-	fmt.Println("  list-builtin             List available builtin skills")
+	fmt.Println("  install-builtin         Install all builtin skills to workspace")
+	fmt.Println("  list-builtin            List available builtin skills")
 	fmt.Println("  remove <name>           Remove installed skill")
-	fmt.Println("  search                  Search available skills")
 	fmt.Println("  show <name>             Show skill details")
+	fmt.Println()
+	fmt.Println("To install custom skills, place SKILL.md files manually in:")
+	fmt.Println("  ~/.picoclaw/data/skills/<skill-name>/SKILL.md")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  picoclaw skills list")
-	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills/weather")
 	fmt.Println("  picoclaw skills install-builtin")
 	fmt.Println("  picoclaw skills list-builtin")
 	fmt.Println("  picoclaw skills remove weather")
@@ -1260,31 +1258,16 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 	}
 }
 
-func skillsInstallCmd(installer *skills.SkillInstaller) {
-	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw skills install <github-repo>")
-		fmt.Println("Example: picoclaw skills install sipeed/picoclaw-skills/weather")
-		return
-	}
+func skillsRemoveCmd(dataDir string, skillName string) {
+	skillDir := filepath.Join(dataDir, "skills", skillName)
 
-	repo := os.Args[3]
-	fmt.Printf("Installing skill from %s...\n", repo)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := installer.InstallFromGitHub(ctx, repo); err != nil {
-		fmt.Printf("✗ Failed to install skill: %v\n", err)
+	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
+		fmt.Printf("✗ Skill '%s' not found\n", skillName)
 		os.Exit(1)
 	}
 
-	fmt.Printf("✓ Skill '%s' installed successfully!\n", filepath.Base(repo))
-}
-
-func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
 	fmt.Printf("Removing skill '%s'...\n", skillName)
-
-	if err := installer.Uninstall(skillName); err != nil {
+	if err := os.RemoveAll(skillDir); err != nil {
 		fmt.Printf("✗ Failed to remove skill: %v\n", err)
 		os.Exit(1)
 	}
@@ -1292,9 +1275,9 @@ func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
 	fmt.Printf("✓ Skill '%s' removed successfully!\n", skillName)
 }
 
-func skillsInstallBuiltinCmd(workspace string) {
+func skillsInstallBuiltinCmd(dataDir string) {
 	builtinSkillsDir := "./picoclaw/skills"
-	workspaceSkillsDir := filepath.Join(workspace, "skills")
+	skillsDir := filepath.Join(dataDir, "skills")
 
 	fmt.Printf("Copying builtin skills to workspace...\n")
 
@@ -1307,19 +1290,19 @@ func skillsInstallBuiltinCmd(workspace string) {
 
 	for _, skillName := range skillsToInstall {
 		builtinPath := filepath.Join(builtinSkillsDir, skillName)
-		workspacePath := filepath.Join(workspaceSkillsDir, skillName)
+		destPath := filepath.Join(skillsDir, skillName)
 
 		if _, err := os.Stat(builtinPath); err != nil {
 			fmt.Printf("⊘ Builtin skill '%s' not found: %v\n", skillName, err)
 			continue
 		}
 
-		if err := os.MkdirAll(workspacePath, 0755); err != nil {
+		if err := os.MkdirAll(destPath, 0755); err != nil {
 			fmt.Printf("✗ Failed to create directory for %s: %v\n", skillName, err)
 			continue
 		}
 
-		if err := copyDirectory(builtinPath, workspacePath); err != nil {
+		if err := copyDirectory(builtinPath, destPath); err != nil {
 			fmt.Printf("✗ Failed to copy %s: %v\n", skillName, err)
 		}
 	}
@@ -1377,39 +1360,6 @@ func skillsListBuiltinCmd() {
 				fmt.Printf("     %s\n", description)
 			}
 		}
-	}
-}
-
-func skillsSearchCmd(installer *skills.SkillInstaller) {
-	fmt.Println("Searching for available skills...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	availableSkills, err := installer.ListAvailableSkills(ctx)
-	if err != nil {
-		fmt.Printf("✗ Failed to fetch skills list: %v\n", err)
-		return
-	}
-
-	if len(availableSkills) == 0 {
-		fmt.Println("No skills available.")
-		return
-	}
-
-	fmt.Printf("\nAvailable Skills (%d):\n", len(availableSkills))
-	fmt.Println("--------------------")
-	for _, skill := range availableSkills {
-		fmt.Printf("  📦 %s\n", skill.Name)
-		fmt.Printf("     %s\n", skill.Description)
-		fmt.Printf("     Repo: %s\n", skill.Repository)
-		if skill.Author != "" {
-			fmt.Printf("     Author: %s\n", skill.Author)
-		}
-		if len(skill.Tags) > 0 {
-			fmt.Printf("     Tags: %v\n", skill.Tags)
-		}
-		fmt.Println()
 	}
 }
 

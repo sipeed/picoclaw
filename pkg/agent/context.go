@@ -16,6 +16,7 @@ import (
 
 type ContextBuilder struct {
 	workspace    string
+	dataDir      string
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
 	tools        *tools.ToolRegistry // Direct reference to tool registry
@@ -29,7 +30,7 @@ func getGlobalConfigDir() string {
 	return filepath.Join(home, ".picoclaw")
 }
 
-func NewContextBuilder(workspace string) *ContextBuilder {
+func NewContextBuilder(workspace string, dataDir string) *ContextBuilder {
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
 	wd, _ := os.Getwd()
@@ -38,9 +39,20 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 
 	return &ContextBuilder{
 		workspace:    workspace,
-		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
-		memory:       NewMemoryStore(workspace),
+		dataDir:      dataDir,
+		skillsLoader: skills.NewSkillsLoader(dataDir, globalSkillsDir, builtinSkillsDir),
+		memory:       NewMemoryStore(dataDir),
 	}
+}
+
+// GetMemory returns the memory store for tool registration.
+func (cb *ContextBuilder) GetMemory() *MemoryStore {
+	return cb.memory
+}
+
+// GetSkillsLoader returns the skills loader for tool registration.
+func (cb *ContextBuilder) GetSkillsLoader() *skills.SkillsLoader {
+	return cb.skillsLoader
 }
 
 // SetToolsRegistry sets the tools registry for dynamic tool summary generation.
@@ -68,9 +80,6 @@ You are picoclaw, a helpful AI assistant.
 
 ## Workspace
 Your workspace is at: %s
-- Memory: %s/memory/MEMORY.md
-- Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
-- Skills: %s/skills/{skill-name}/SKILL.md
 
 %s
 
@@ -80,8 +89,12 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
+3. **Memory** - Use the memory tool to store and retrieve information.
+   - write_long_term: Save important, date-independent facts (user preferences, project info, permanent notes)
+   - append_daily: Record today's events and memos (diary-like daily entries)
+   - read_long_term: Read long-term memory
+   - read_daily: Read today's daily notes`,
+		now, runtime, workspacePath, toolsSection)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
@@ -118,12 +131,12 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 		parts = append(parts, bootstrapContent)
 	}
 
-	// Skills - show summary, AI can read full content with read_file tool
+	// Skills - show summary, AI can read full content with skill_read tool
 	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
 	if skillsSummary != "" {
 		parts = append(parts, fmt.Sprintf(`# Skills
 
-The following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.
+The following skills extend your capabilities. To use a skill, call the skill_read tool with the skill name.
 
 %s`, skillsSummary))
 	}
@@ -148,7 +161,7 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 
 	var result string
 	for _, filename := range bootstrapFiles {
-		filePath := filepath.Join(cb.workspace, filename)
+		filePath := filepath.Join(cb.dataDir, filename)
 		if data, err := os.ReadFile(filePath); err == nil {
 			result += fmt.Sprintf("## %s\n\n%s\n\n", filename, string(data))
 		}

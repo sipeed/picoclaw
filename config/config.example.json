@@ -23,8 +23,8 @@
     },
     "maixcam": {
       "enabled": false,
-      "host": "0.0.0.0",
-      "port": 18790,
+      "host": "127.0.0.1",
+      "port": 18792,
       "allow_from": []
     },
     "whatsapp": {
@@ -56,7 +56,7 @@
       "enabled": false,
       "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
       "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
+      "webhook_host": "127.0.0.1",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
@@ -139,7 +139,11 @@
     "monitor_usb": true
   },
   "gateway": {
-    "host": "0.0.0.0",
+    "host": "127.0.0.1",
     "port": 18790
+  },
+  "rate_limits": {
+    "max_tool_calls_per_minute": 60,
+    "max_requests_per_minute": 30
   }
 }

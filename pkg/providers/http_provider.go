@@ -22,12 +22,13 @@ import (
 )
 
 type HTTPProvider struct {
-	apiKey     string
-	apiBase    string
-	httpClient *http.Client
+	apiKey       string
+	apiBase      string
+	providerName string
+	httpClient   *http.Client
 }
 
-func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
+func NewHTTPProvider(apiKey, apiBase, proxy, providerName string) *HTTPProvider {
 	client := &http.Client{
 		Timeout: 120 * time.Second,
 	}
@@ -42,9 +43,10 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 	}
 
 	return &HTTPProvider{
-		apiKey:     apiKey,
-		apiBase:    strings.TrimRight(apiBase, "/"),
-		httpClient: client,
+		apiKey:       apiKey,
+		apiBase:      strings.TrimRight(apiBase, "/"),
+		providerName: providerName,
+		httpClient:   client,
 	}
 }
 
@@ -72,8 +74,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	}
 
 	if maxTokens, ok := options["max_tokens"].(int); ok {
-		lowerModel := strings.ToLower(model)
-		if strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "o1") {
+		if p.providerName == "openai" || p.providerName == "zhipu" || p.providerName == "glm" {
 			requestBody["max_completion_tokens"] = maxTokens
 		} else {
 			requestBody["max_tokens"] = maxTokens
@@ -82,9 +83,9 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 
 	if temperature, ok := options["temperature"].(float64); ok {
 		lowerModel := strings.ToLower(model)
-		// Kimi k2 models only support temperature=1
-		if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
-			requestBody["temperature"] = 1.0
+		// OpenAI reasoning models (o1/o3/o4, gpt-5.x) and Kimi k2 only support temperature=1
+		if p.providerName == "openai" || (strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2")) {
+			// Don't send temperature; let the API use its default
 		} else {
 			requestBody["temperature"] = temperature
 		}
@@ -374,6 +375,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			apiKey = cfg.Providers.OpenAI.APIKey
 			apiBase = cfg.Providers.OpenAI.APIBase
 			proxy = cfg.Providers.OpenAI.Proxy
+			providerName = "openai"
 			if apiBase == "" {
 				apiBase = "https://api.openai.com/v1"
 			}
@@ -390,6 +392,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			apiKey = cfg.Providers.Zhipu.APIKey
 			apiBase = cfg.Providers.Zhipu.APIBase
 			proxy = cfg.Providers.Zhipu.Proxy
+			providerName = "zhipu"
 			if apiBase == "" {
 				apiBase = "https://open.bigmodel.cn/api/paas/v4"
 			}
@@ -446,5 +449,5 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 		return nil, fmt.Errorf("no API base configured for provider (model: %s)", model)
 	}
 
-	return NewHTTPProvider(apiKey, apiBase, proxy), nil
+	return NewHTTPProvider(apiKey, apiBase, proxy, providerName), nil
 }

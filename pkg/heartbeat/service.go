@@ -34,6 +34,7 @@ type HeartbeatHandler func(prompt, channel, chatID string) *tools.ToolResult
 // HeartbeatService manages periodic heartbeat checks
 type HeartbeatService struct {
 	workspace string
+	dataDir   string
 	bus       *bus.MessageBus
 	state     *state.Manager
 	handler   HeartbeatHandler
@@ -44,7 +45,7 @@ type HeartbeatService struct {
 }
 
 // NewHeartbeatService creates a new heartbeat service
-func NewHeartbeatService(workspace string, intervalMinutes int, enabled bool) *HeartbeatService {
+func NewHeartbeatService(workspace string, dataDir string, intervalMinutes int, enabled bool) *HeartbeatService {
 	// Apply minimum interval
 	if intervalMinutes < minIntervalMinutes && intervalMinutes != 0 {
 		intervalMinutes = minIntervalMinutes
@@ -56,9 +57,10 @@ func NewHeartbeatService(workspace string, intervalMinutes int, enabled bool) *H
 
 	return &HeartbeatService{
 		workspace: workspace,
+		dataDir:   dataDir,
 		interval:  time.Duration(intervalMinutes) * time.Minute,
 		enabled:   enabled,
-		state:     state.NewManager(workspace),
+		state:     state.NewManager(dataDir),
 	}
 }
 
@@ -217,7 +219,7 @@ func (hs *HeartbeatService) executeHeartbeat() {
 
 // buildPrompt builds the heartbeat prompt from HEARTBEAT.md
 func (hs *HeartbeatService) buildPrompt() string {
-	heartbeatPath := filepath.Join(hs.workspace, "HEARTBEAT.md")
+	heartbeatPath := filepath.Join(hs.dataDir, "HEARTBEAT.md")
 
 	data, err := os.ReadFile(heartbeatPath)
 	if err != nil {
@@ -249,7 +251,7 @@ If there is nothing that requires attention, respond ONLY with: HEARTBEAT_OK
 
 // createDefaultHeartbeatTemplate creates the default HEARTBEAT.md file
 func (hs *HeartbeatService) createDefaultHeartbeatTemplate() {
-	heartbeatPath := filepath.Join(hs.workspace, "HEARTBEAT.md")
+	heartbeatPath := filepath.Join(hs.dataDir, "HEARTBEAT.md")
 
 	defaultContent := `# Heartbeat Check List
 
@@ -353,7 +355,7 @@ func (hs *HeartbeatService) logError(format string, args ...any) {
 
 // log writes a message to the heartbeat log file
 func (hs *HeartbeatService) log(level, format string, args ...any) {
-	logFile := filepath.Join(hs.workspace, "heartbeat.log")
+	logFile := filepath.Join(hs.dataDir, "heartbeat.log")
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return

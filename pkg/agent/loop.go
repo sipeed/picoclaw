@@ -44,6 +44,7 @@ type AgentLoop struct {
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
 	channelManager *channels.Manager
+	rateLimiter    *rateLimiter
 }
 
 // processOptions configures how a message is processed
@@ -112,7 +113,9 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	workspace := cfg.WorkspacePath()
+	dataDir := cfg.DataPath()
 	os.MkdirAll(workspace, 0755)
+	os.MkdirAll(dataDir, 0755)
 
 	restrict := cfg.Agents.Defaults.RestrictToWorkspace
 
@@ -133,14 +136,24 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	subagentTool := tools.NewSubagentTool(subagentManager)
 	toolsRegistry.Register(subagentTool)
 
-	sessionsManager := session.NewSessionManager(filepath.Join(workspace, "sessions"))
+	// Use dataDir for sessions and state (outside workspace for security)
+	sessionsManager := session.NewSessionManager(filepath.Join(dataDir, "sessions"))
 
 	// Create state manager for atomic state persistence
-	stateManager := state.NewManager(workspace)
+	stateManager := state.NewManager(dataDir)
 
 	// Create context builder and set tools registry
-	contextBuilder := NewContextBuilder(workspace)
+	contextBuilder := NewContextBuilder(workspace, dataDir)
 	contextBuilder.SetToolsRegistry(toolsRegistry)
+
+	// Register memory and skill tools (controlled access to dataDir)
+	memoryTool := tools.NewMemoryTool(contextBuilder.GetMemory())
+	toolsRegistry.Register(memoryTool)
+	subagentTools.Register(memoryTool)
+
+	skillTool := tools.NewSkillTool(contextBuilder.GetSkillsLoader())
+	toolsRegistry.Register(skillTool)
+	subagentTools.Register(skillTool)
 
 	return &AgentLoop{
 		bus:            msgBus,
@@ -154,6 +167,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
+		rateLimiter:    newRateLimiter(cfg.RateLimits.MaxToolCallsPerMinute, cfg.RateLimits.MaxRequestsPerMinute),
 	}
 }
 
@@ -273,6 +287,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
+	}
+
+	// Check request rate limit
+	if err := al.rateLimiter.checkRequest(); err != nil {
+		logger.WarnCF("agent", "Request rate limited",
+			map[string]interface{}{
+				"channel":   msg.Channel,
+				"sender_id": msg.SenderID,
+			})
+		return fmt.Sprintf("Rate limited: %v. Please try again later.", err), nil
 	}
 
 	// Check for commands
@@ -643,6 +667,23 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 
 		// Execute tool calls
 		for _, tc := range response.ToolCalls {
+			// Check tool call rate limit
+			if err := al.rateLimiter.checkToolCall(); err != nil {
+				logger.WarnCF("agent", "Tool call rate limited",
+					map[string]interface{}{
+						"tool":      tc.Name,
+						"iteration": iteration,
+					})
+				toolResultMsg := providers.Message{
+					Role:       "tool",
+					Content:    fmt.Sprintf("Rate limited: %v", err),
+					ToolCallID: tc.ID,
+				}
+				messages = append(messages, toolResultMsg)
+				al.sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
+				continue
+			}
+
 			// Log tool call with arguments preview
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)

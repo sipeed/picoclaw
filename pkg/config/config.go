@@ -44,14 +44,15 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers"`
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
-	mu        sync.RWMutex
+	Agents     AgentsConfig     `json:"agents"`
+	Channels   ChannelsConfig   `json:"channels"`
+	Providers  ProvidersConfig  `json:"providers"`
+	Gateway    GatewayConfig    `json:"gateway"`
+	Tools      ToolsConfig      `json:"tools"`
+	Heartbeat  HeartbeatConfig  `json:"heartbeat"`
+	Devices    DevicesConfig    `json:"devices"`
+	RateLimits RateLimitsConfig `json:"rate_limits"`
+	mu         sync.RWMutex
 }
 
 type AgentsConfig struct {
@@ -60,6 +61,7 @@ type AgentsConfig struct {
 
 type AgentDefaults struct {
 	Workspace           string  `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	DataDir             string  `json:"data_dir" env:"PICOCLAW_AGENTS_DEFAULTS_DATA_DIR"`
 	RestrictToWorkspace bool    `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 	Provider            string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
 	Model               string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
@@ -166,6 +168,11 @@ type DevicesConfig struct {
 	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
 }
 
+type RateLimitsConfig struct {
+	MaxToolCallsPerMinute int `json:"max_tool_calls_per_minute" env:"PICOCLAW_RATE_LIMITS_MAX_TOOL_CALLS_PER_MINUTE"` // 0 = unlimited
+	MaxRequestsPerMinute  int `json:"max_requests_per_minute" env:"PICOCLAW_RATE_LIMITS_MAX_REQUESTS_PER_MINUTE"`     // 0 = unlimited
+}
+
 type ProvidersConfig struct {
 	Anthropic     ProviderConfig `json:"anthropic"`
 	OpenAI        ProviderConfig `json:"openai"`
@@ -235,6 +242,7 @@ func DefaultConfig() *Config {
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:           "~/.picoclaw/workspace",
+				DataDir:             "~/.picoclaw/data",
 				RestrictToWorkspace: true,
 				Provider:            "",
 				Model:               "glm-4.7",
@@ -269,8 +277,8 @@ func DefaultConfig() *Config {
 			},
 			MaixCam: MaixCamConfig{
 				Enabled:   false,
-				Host:      "0.0.0.0",
-				Port:      18790,
+				Host:      "127.0.0.1",
+				Port:      18792,
 				AllowFrom: FlexibleStringSlice{},
 			},
 			QQ: QQConfig{
@@ -295,7 +303,7 @@ func DefaultConfig() *Config {
 				Enabled:            false,
 				ChannelSecret:      "",
 				ChannelAccessToken: "",
-				WebhookHost:        "0.0.0.0",
+				WebhookHost:        "127.0.0.1",
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
 				AllowFrom:          FlexibleStringSlice{},
@@ -322,7 +330,7 @@ func DefaultConfig() *Config {
 			ShengSuanYun: ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
+			Host: "127.0.0.1",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
@@ -354,6 +362,10 @@ func DefaultConfig() *Config {
 		Devices: DevicesConfig{
 			Enabled:    false,
 			MonitorUSB: true,
+		},
+		RateLimits: RateLimitsConfig{
+			MaxToolCallsPerMinute: 60,
+			MaxRequestsPerMinute:  30,
 		},
 	}
 }
@@ -401,6 +413,12 @@ func (c *Config) WorkspacePath() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return expandHome(c.Agents.Defaults.Workspace)
+}
+
+func (c *Config) DataPath() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return expandHome(c.Agents.Defaults.DataDir)
 }
 
 func (c *Config) GetAPIKey() string {

@@ -17,22 +17,22 @@ import (
 // - Long-term memory: memory/MEMORY.md
 // - Daily notes: memory/YYYYMM/YYYYMMDD.md
 type MemoryStore struct {
-	workspace  string
+	dataDir    string
 	memoryDir  string
 	memoryFile string
 }
 
-// NewMemoryStore creates a new MemoryStore with the given workspace path.
+// NewMemoryStore creates a new MemoryStore with the given data directory path.
 // It ensures the memory directory exists.
-func NewMemoryStore(workspace string) *MemoryStore {
-	memoryDir := filepath.Join(workspace, "memory")
+func NewMemoryStore(dataDir string) *MemoryStore {
+	memoryDir := filepath.Join(dataDir, "memory")
 	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
 
 	// Ensure memory directory exists
 	os.MkdirAll(memoryDir, 0755)
 
 	return &MemoryStore{
-		workspace:  workspace,
+		dataDir:    dataDir,
 		memoryDir:  memoryDir,
 		memoryFile: memoryFile,
 	}
