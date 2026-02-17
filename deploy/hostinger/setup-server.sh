@@ -185,8 +185,12 @@ if [ ! -f "${PICOCLAW_HOME}/config/.env" ]; then
 # OPENROUTER_API_KEY=sk-or-v1-xxx
 # GEMINI_API_KEY=xxx
 
-# ── Chat Channel ─────────────────────────────────────
-# TELEGRAM_BOT_TOKEN=123456:ABC...
+# ── Telegram Bot ─────────────────────────────────────
+# Get token from @BotFather on Telegram
+PICOCLAW_CHANNELS_TELEGRAM_ENABLED=true
+PICOCLAW_CHANNELS_TELEGRAM_TOKEN=
+
+# ── Other Chat Channels ──────────────────────────────
 # DISCORD_BOT_TOKEN=xxx
 
 # ── Web Search (optional) ────────────────────────────
@@ -216,8 +220,9 @@ if [ ! -f "${PICOCLAW_HOME}/config/config.json" ]; then
   },
   "channels": {
     "telegram": {
-      "enabled": false,
+      "enabled": true,
       "token": "",
+      "proxy": "",
       "allow_from": []
     }
   },

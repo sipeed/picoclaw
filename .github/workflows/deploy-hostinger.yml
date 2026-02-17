@@ -65,6 +65,40 @@ jobs:
             deploy/hostinger/docker-compose.production.yml \
             "${SSH_USER}@${{ secrets.HOSTINGER_HOST }}:${REMOTE_DIR}/docker-compose.yml"
 
+      - name: Configure environment variables
+        env:
+          SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+        run: |
+          SSH_PORT="${{ secrets.HOSTINGER_SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          SSH_USER="${{ secrets.HOSTINGER_SSH_USER }}"
+          SSH_USER="${SSH_USER:-root}"
+
+          sshpass -e ssh \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 \
+            -p "${SSH_PORT}" \
+            "${SSH_USER}@${{ secrets.HOSTINGER_HOST }}" <<'EOF'
+          # Update .env with secrets (keep existing values, only override if provided)
+          ENV_FILE="/opt/picoclaw/config/.env"
+
+          # Telegram Bot Token
+          if [ -n "${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}" ]; then
+            grep -q "PICOCLAW_CHANNELS_TELEGRAM_TOKEN" "$ENV_FILE" && \
+              sed -i "s|^PICOCLAW_CHANNELS_TELEGRAM_TOKEN=.*|PICOCLAW_CHANNELS_TELEGRAM_TOKEN=${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}|" "$ENV_FILE" || \
+              echo "PICOCLAW_CHANNELS_TELEGRAM_TOKEN=${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}" >> "$ENV_FILE"
+          fi
+
+          # Anthropic API Key
+          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            grep -q "ANTHROPIC_API_KEY" "$ENV_FILE" && \
+              sed -i "s|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}|" "$ENV_FILE" || \
+              echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> "$ENV_FILE"
+          fi
+
+          echo "Environment variables updated"
+          EOF
+
       - name: Build and restart Docker container
         env:
           SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
