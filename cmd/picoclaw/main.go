@@ -559,7 +559,7 @@ func gatewayCmd() {
 		})
 
 	// Setup cron tool and service
-	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.DataPath(), cfg.Agents.Defaults.RestrictToWorkspace)
+	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.DataPath(), cfg.Agents.Defaults.RestrictToWorkspace, cfg.Tools.Exec.Enabled)
 
 	heartbeatService := heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
@@ -985,14 +985,14 @@ func getConfigPath() string {
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
 
-func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, dataDir string, restrict bool) *cron.CronService {
+func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, dataDir string, restrict bool, execEnabled bool) *cron.CronService {
 	cronStorePath := filepath.Join(dataDir, "cron", "jobs.json")
 
 	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
 
 	// Create and register CronTool (workspace is for ExecTool sandboxing)
-	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict)
+	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execEnabled)
 	agentLoop.RegisterTool(cronTool)
 
 	// Set the onJob handler

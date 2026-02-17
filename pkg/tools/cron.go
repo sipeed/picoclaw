@@ -22,18 +22,24 @@ type CronTool struct {
 	executor    JobExecutor
 	msgBus      *bus.MessageBus
 	execTool    *ExecTool
+	execEnabled bool
 	channel     string
 	chatID      string
 	mu          sync.RWMutex
 }
 
 // NewCronTool creates a new CronTool
-func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool) *CronTool {
+func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool, execEnabled bool) *CronTool {
+	var execTool *ExecTool
+	if execEnabled {
+		execTool = NewExecTool(workspace, restrict)
+	}
 	return &CronTool{
 		cronService: cronService,
 		executor:    executor,
 		msgBus:      msgBus,
-		execTool:    NewExecTool(workspace, restrict),
+		execTool:    execTool,
+		execEnabled: execEnabled,
 	}
 }
 
@@ -44,49 +50,62 @@ func (t *CronTool) Name() string {
 
 // Description returns the tool description
 func (t *CronTool) Description() string {
-	return "Schedule reminders, tasks, or system commands. IMPORTANT: When user asks to be reminded or scheduled, you MUST call this tool. Use 'at_seconds' for one-time reminders (e.g., 'remind me in 10 minutes' → at_seconds=600). Use 'every_seconds' ONLY for recurring tasks (e.g., 'every 2 hours' → every_seconds=7200). Use 'cron_expr' for complex recurring schedules. Use 'command' to execute shell commands directly."
+	if t.execEnabled {
+		return "Schedule reminders, tasks, or system commands. IMPORTANT: When user asks to be reminded or scheduled, you MUST call this tool. Use 'at_seconds' for one-time reminders (e.g., 'remind me in 10 minutes' → at_seconds=600). Use 'every_seconds' ONLY for recurring tasks (e.g., 'every 2 hours' → every_seconds=7200). Use 'cron_expr' for complex recurring schedules. Use 'command' to execute shell commands directly."
+	}
+	return "Schedule reminders and tasks. IMPORTANT: When user asks to be reminded or scheduled, you MUST call this tool. Use 'at_seconds' for one-time reminders (e.g., 'remind me in 10 minutes' → at_seconds=600). Use 'every_seconds' ONLY for recurring tasks (e.g., 'every 2 hours' → every_seconds=7200). Use 'cron_expr' for complex recurring schedules."
 }
 
 // Parameters returns the tool parameters schema
 func (t *CronTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"add", "list", "remove", "enable", "disable"},
-				"description": "Action to perform. Use 'add' when user wants to schedule a reminder or task.",
-			},
-			"message": map[string]interface{}{
-				"type":        "string",
-				"description": "The reminder/task message to display when triggered. If 'command' is used, this describes what the command does.",
-			},
-			"command": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional: Shell command to execute directly (e.g., 'df -h'). If set, the agent will run this command and report output instead of just showing the message. 'deliver' will be forced to false for commands.",
-			},
-			"at_seconds": map[string]interface{}{
-				"type":        "integer",
-				"description": "One-time reminder: seconds from now when to trigger (e.g., 600 for 10 minutes later). Use this for one-time reminders like 'remind me in 10 minutes'.",
-			},
-			"every_seconds": map[string]interface{}{
-				"type":        "integer",
-				"description": "Recurring interval in seconds (e.g., 3600 for every hour). Use this ONLY for recurring tasks like 'every 2 hours' or 'daily reminder'.",
-			},
-			"cron_expr": map[string]interface{}{
-				"type":        "string",
-				"description": "Cron expression for complex recurring schedules (e.g., '0 9 * * *' for daily at 9am). Use this for complex recurring schedules.",
-			},
-			"job_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Job ID (for remove/enable/disable)",
-			},
-			"deliver": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, send message directly to channel. If false, let agent process message (for complex tasks). Default: true",
-			},
+	props := map[string]interface{}{
+		"action": map[string]interface{}{
+			"type":        "string",
+			"enum":        []string{"add", "list", "remove", "enable", "disable"},
+			"description": "Action to perform. Use 'add' when user wants to schedule a reminder or task.",
 		},
-		"required": []string{"action"},
+		"message": map[string]interface{}{
+			"type":        "string",
+			"description": "The reminder/task message to display when triggered.",
+		},
+		"at_seconds": map[string]interface{}{
+			"type":        "integer",
+			"description": "One-time reminder: seconds from now when to trigger (e.g., 600 for 10 minutes later). Use this for one-time reminders like 'remind me in 10 minutes'.",
+		},
+		"every_seconds": map[string]interface{}{
+			"type":        "integer",
+			"description": "Recurring interval in seconds (e.g., 3600 for every hour). Use this ONLY for recurring tasks like 'every 2 hours' or 'daily reminder'.",
+		},
+		"cron_expr": map[string]interface{}{
+			"type":        "string",
+			"description": "Cron expression for complex recurring schedules (e.g., '0 9 * * *' for daily at 9am). Use this for complex recurring schedules.",
+		},
+		"job_id": map[string]interface{}{
+			"type":        "string",
+			"description": "Job ID (for remove/enable/disable)",
+		},
+		"deliver": map[string]interface{}{
+			"type":        "boolean",
+			"description": "If true, send message directly to channel. If false, let agent process message (for complex tasks). Default: true",
+		},
+	}
+
+	if t.execEnabled {
+		props["command"] = map[string]interface{}{
+			"type":        "string",
+			"description": "Optional: Shell command to execute directly (e.g., 'df -h'). If set, the agent will run this command and report output instead of just showing the message. 'deliver' will be forced to false for commands.",
+		}
+		// Update message description to mention command
+		props["message"] = map[string]interface{}{
+			"type":        "string",
+			"description": "The reminder/task message to display when triggered. If 'command' is used, this describes what the command does.",
+		}
+	}
+
+	return map[string]interface{}{
+		"type":       "object",
+		"properties": props,
+		"required":   []string{"action"},
 	}
 }
 
@@ -172,11 +191,11 @@ func (t *CronTool) addJob(args map[string]interface{}) *ToolResult {
 	}
 
 	command, _ := args["command"].(string)
+	if command != "" && t.execTool == nil {
+		// Exec is disabled; ignore command parameter
+		command = ""
+	}
 	if command != "" {
-		// Commands must be processed by agent/exec tool, so deliver must be false (or handled specifically)
-		// Actually, let's keep deliver=false to let the system know it's not a simple chat message
-		// But for our new logic in ExecuteJob, we can handle it regardless of deliver flag if Payload.Command is set.
-		// However, logically, it's not "delivered" to chat directly as is.
 		deliver = false
 	}
 
@@ -273,8 +292,8 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		chatID = "direct"
 	}
 
-	// Execute command if present
-	if job.Payload.Command != "" {
+	// Execute command if present (only when exec is enabled)
+	if job.Payload.Command != "" && t.execTool != nil {
 		args := map[string]interface{}{
 			"command": job.Payload.Command,
 		}
