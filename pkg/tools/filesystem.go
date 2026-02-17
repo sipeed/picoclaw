@@ -77,6 +77,71 @@ func isWithinWorkspace(candidate, workspace string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
 
+// recheckSymlink verifies that path does not resolve outside workspace via symlink.
+// This is called right before the actual I/O operation to close the TOCTOU window
+// between validatePath and the file operation.
+func recheckSymlink(path, workspace string, restrict bool) (string, error) {
+	if !restrict || workspace == "" {
+		return path, nil
+	}
+
+	info, err := os.Lstat(path)
+	if err != nil {
+		// File doesn't exist yet (e.g. new file write) — nothing to recheck
+		if os.IsNotExist(err) {
+			return path, nil
+		}
+		return "", fmt.Errorf("failed to stat path: %w", err)
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve symlink: %w", err)
+		}
+		absWorkspace, err := filepath.Abs(workspace)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve workspace: %w", err)
+		}
+		if wsResolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
+			absWorkspace = wsResolved
+		}
+		if !isWithinWorkspace(resolved, absWorkspace) {
+			return "", fmt.Errorf("access denied: symlink resolves outside workspace")
+		}
+		return resolved, nil
+	}
+
+	return path, nil
+}
+
+// safeReadFile re-checks symlinks right before reading to prevent TOCTOU attacks.
+func safeReadFile(path, workspace string, restrict bool) ([]byte, error) {
+	resolved, err := recheckSymlink(path, workspace, restrict)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(resolved)
+}
+
+// safeWriteFile re-checks symlinks right before writing to prevent TOCTOU attacks.
+func safeWriteFile(path string, data []byte, perm os.FileMode, workspace string, restrict bool) error {
+	resolved, err := recheckSymlink(path, workspace, restrict)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(resolved, data, perm)
+}
+
+// safeOpenFile re-checks symlinks right before opening to prevent TOCTOU attacks.
+func safeOpenFile(path string, flag int, perm os.FileMode, workspace string, restrict bool) (*os.File, error) {
+	resolved, err := recheckSymlink(path, workspace, restrict)
+	if err != nil {
+		return nil, err
+	}
+	return os.OpenFile(resolved, flag, perm)
+}
+
 type ReadFileTool struct {
 	workspace string
 	restrict  bool
@@ -118,7 +183,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult(err.Error())
 	}
 
-	content, err := os.ReadFile(resolvedPath)
+	content, err := safeReadFile(resolvedPath, t.workspace, t.restrict)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
@@ -181,7 +246,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 		return ErrorResult(fmt.Sprintf("failed to create directory: %v", err))
 	}
 
-	if err := os.WriteFile(resolvedPath, []byte(content), 0644); err != nil {
+	if err := safeWriteFile(resolvedPath, []byte(content), 0644, t.workspace, t.restrict); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 

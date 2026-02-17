@@ -11,6 +11,20 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
+)
+
+// Precompiled regexes for workspace-escape checks (used when restrictToWorkspace=true)
+var (
+	shellMetaRe    = regexp.MustCompile("`|\\$\\(|\\$\\{")
+	varReferenceRe = regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*`)
+	cdAbsoluteRe   = regexp.MustCompile(`(?i)\bcd\s+/`)
+	ansiCQuoteRe   = regexp.MustCompile(`\$'`)
+	ansiDQuoteRe   = regexp.MustCompile(`\$"`)
+	hexEscapeRe    = regexp.MustCompile(`\\x[0-9a-fA-F]`)
+	octalEscapeRe  = regexp.MustCompile(`\\[0-7]{1,3}`)
+	escapedMetaRe  = regexp.MustCompile(`\\[` + "`" + `$]`)
 )
 
 type ExecTool struct {
@@ -23,14 +37,35 @@ type ExecTool struct {
 
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
 	denyPatterns := []*regexp.Regexp{
+		// rm with short flags
 		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
+		// rm with long flags
+		regexp.MustCompile(`\brm\s+--recursive\b`),
+		regexp.MustCompile(`\brm\s+--force\b`),
+		// Windows delete commands
 		regexp.MustCompile(`\bdel\s+/[fq]\b`),
 		regexp.MustCompile(`\brmdir\s+/s\b`),
-		regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`), // Match disk wiping commands (must be followed by space/args)
+		// Disk wiping commands
+		regexp.MustCompile(`\b(format|mkfs|diskpart|fdisk|parted|wipefs)\b\s`),
 		regexp.MustCompile(`\bdd\s+if=`),
-		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
+		// Block writes to disk devices (but allow /dev/null)
+		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`),
+		// System shutdown/reboot
 		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
+		// Fork bomb
 		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
+		// base64 decode piped to shell execution
+		regexp.MustCompile(`base64\s+(-d|--decode).*\|\s*(sh|bash|ash|dash)\b`),
+		// Scripting languages with inline execution flags
+		regexp.MustCompile(`\b(python3?|perl|ruby)\s+-(c|e)\b`),
+		// eval with dynamic content
+		regexp.MustCompile(`\beval\s+["'` + "`" + `$]`),
+		// curl/wget piped to shell
+		regexp.MustCompile(`\b(curl|wget)\b.*\|\s*(sh|bash|ash|dash)\b`),
+		// find -exec rm
+		regexp.MustCompile(`\bfind\b.*-exec\s+rm\b`),
+		// xargs rm
+		regexp.MustCompile(`\bxargs\b.*\brm\b`),
 	}
 
 	return &ExecTool{
@@ -76,6 +111,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
 		cwd = wd
+	}
+
+	if t.restrictToWorkspace && cwd != t.workingDir {
+		absCwd, err := filepath.Abs(cwd)
+		if err != nil {
+			return ErrorResult("invalid working directory")
+		}
+		absWs, err := filepath.Abs(t.workingDir)
+		if err != nil {
+			return ErrorResult("invalid workspace directory")
+		}
+		if !isWithinWorkspace(absCwd, absWs) {
+			return ErrorResult("Command blocked by safety guard (working directory outside workspace)")
+		}
 	}
 
 	if cwd == "" {
@@ -159,12 +208,18 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
 
+	// Check denylist patterns
 	for _, pattern := range t.denyPatterns {
 		if pattern.MatchString(lower) {
+			logger.WarnCF("shell", "Command blocked (dangerous pattern)", map[string]interface{}{
+				"command_preview": truncateForLog(cmd),
+				"pattern":         pattern.String(),
+			})
 			return "Command blocked by safety guard (dangerous pattern detected)"
 		}
 	}
 
+	// Check allowlist if configured
 	if len(t.allowPatterns) > 0 {
 		allowed := false
 		for _, pattern := range t.allowPatterns {
@@ -174,15 +229,59 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			}
 		}
 		if !allowed {
+			logger.WarnCF("shell", "Command blocked (not in allowlist)", map[string]interface{}{
+				"command_preview": truncateForLog(cmd),
+			})
 			return "Command blocked by safety guard (not in allowlist)"
 		}
 	}
 
 	if t.restrictToWorkspace {
+		// Block shell metacharacters that enable workspace escape (backticks, $(), ${})
+		if shellMetaRe.MatchString(cmd) {
+			logger.WarnCF("shell", "Command blocked (shell metacharacter in restricted mode)", map[string]interface{}{
+				"command_preview": truncateForLog(cmd),
+			})
+			return "Command blocked by safety guard (shell metacharacter in restricted mode)"
+		}
+
+		// Block escape sequences that can bypass shell metacharacter detection
+		escapePatterns := []*regexp.Regexp{ansiCQuoteRe, ansiDQuoteRe, hexEscapeRe, octalEscapeRe, escapedMetaRe}
+		for _, re := range escapePatterns {
+			if re.MatchString(cmd) {
+				logger.WarnCF("shell", "Command blocked (escape sequence in restricted mode)", map[string]interface{}{
+					"command_preview": truncateForLog(cmd),
+					"pattern":         re.String(),
+				})
+				return "Command blocked by safety guard (escape sequence in restricted mode)"
+			}
+		}
+
+		// Block variable expansion ($VAR) which can reference paths outside workspace
+		if varReferenceRe.MatchString(cmd) {
+			logger.WarnCF("shell", "Command blocked (variable expansion in restricted mode)", map[string]interface{}{
+				"command_preview": truncateForLog(cmd),
+			})
+			return "Command blocked by safety guard (variable expansion in restricted mode)"
+		}
+
+		// Block cd to absolute path
+		if cdAbsoluteRe.MatchString(cmd) {
+			logger.WarnCF("shell", "Command blocked (cd to absolute path in restricted mode)", map[string]interface{}{
+				"command_preview": truncateForLog(cmd),
+			})
+			return "Command blocked by safety guard (cd to absolute path in restricted mode)"
+		}
+
+		// Block relative path traversal
 		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
+			logger.WarnCF("shell", "Command blocked (path traversal)", map[string]interface{}{
+				"command_preview": truncateForLog(cmd),
+			})
 			return "Command blocked by safety guard (path traversal detected)"
 		}
 
+		// Block absolute paths outside workspace
 		cwdPath, err := filepath.Abs(cwd)
 		if err != nil {
 			return ""
@@ -203,6 +302,10 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			}
 
 			if strings.HasPrefix(rel, "..") {
+				logger.WarnCF("shell", "Command blocked (path outside working dir)", map[string]interface{}{
+					"command_preview": truncateForLog(cmd),
+					"path":            raw,
+				})
 				return "Command blocked by safety guard (path outside working dir)"
 			}
 		}
@@ -229,4 +332,13 @@ func (t *ExecTool) SetAllowPatterns(patterns []string) error {
 		t.allowPatterns = append(t.allowPatterns, re)
 	}
 	return nil
+}
+
+// truncateForLog truncates a string for safe logging, avoiding exposure of full commands.
+func truncateForLog(s string) string {
+	const maxLen = 120
+	if len(s) > maxLen {
+		return s[:maxLen] + "..."
+	}
+	return s
 }
