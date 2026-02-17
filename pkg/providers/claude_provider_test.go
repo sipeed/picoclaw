@@ -175,7 +175,7 @@ func TestClaudeProvider_ChatRoundTrip(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewClaudeProvider("test-token")
+	provider := NewClaudeProvider("test-token", "")
 	provider.client = createAnthropicTestClient(server.URL, "test-token")
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
@@ -195,7 +195,7 @@ func TestClaudeProvider_ChatRoundTrip(t *testing.T) {
 }
 
 func TestClaudeProvider_GetDefaultModel(t *testing.T) {
-	p := NewClaudeProvider("test-token")
+	p := NewClaudeProvider("test-token", "")
 	if got := p.GetDefaultModel(); got != "claude-sonnet-4-5-20250929" {
 		t.Errorf("GetDefaultModel() = %q, want %q", got, "claude-sonnet-4-5-20250929")
 	}

@@ -15,16 +15,19 @@ type ClaudeProvider struct {
 	tokenSource func() (string, error)
 }
 
-func NewClaudeProvider(token string) *ClaudeProvider {
+func NewClaudeProvider(token string, apiBase string) *ClaudeProvider {
+	if apiBase == "" {
+		apiBase = "https://api.anthropic.com"
+	}
 	client := anthropic.NewClient(
 		option.WithAuthToken(token),
-		option.WithBaseURL("https://api.anthropic.com"),
+		option.WithBaseURL(apiBase),
 	)
 	return &ClaudeProvider{client: &client}
 }
 
-func NewClaudeProviderWithTokenSource(token string, tokenSource func() (string, error)) *ClaudeProvider {
-	p := NewClaudeProvider(token)
+func NewClaudeProviderWithTokenSource(token string, apiBase string, tokenSource func() (string, error)) *ClaudeProvider {
+	p := NewClaudeProvider(token, apiBase)
 	p.tokenSource = tokenSource
 	return p
 }
