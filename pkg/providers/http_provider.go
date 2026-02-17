@@ -280,6 +280,14 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 					apiBase = "https://open.bigmodel.cn/api/paas/v4"
 				}
 			}
+		case "bailian", "dashscope", "aliyun":
+			if cfg.Providers.Bailian.APIKey != "" {
+				apiKey = cfg.Providers.Bailian.APIKey
+				apiBase = cfg.Providers.Bailian.APIBase
+				if apiBase == "" {
+					apiBase = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+				}
+			}
 		case "gemini", "google":
 			if cfg.Providers.Gemini.APIKey != "" {
 				apiKey = cfg.Providers.Gemini.APIKey
@@ -333,7 +341,6 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			return NewGitHubCopilotProvider(apiBase, cfg.Providers.GitHubCopilot.ConnectMode, model)
 
 		}
-
 	}
 
 	// Fallback: detect provider from model name
