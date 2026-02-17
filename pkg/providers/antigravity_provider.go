@@ -54,10 +54,15 @@ func (p *AntigravityProvider) Chat(ctx context.Context, messages []Message, tool
 	if model == "" || model == "antigravity" || model == "google-antigravity" {
 		model = antigravityDefaultModel
 	}
-	// Strip provider prefix if present
-	if strings.HasPrefix(model, "google-antigravity/") {
-		model = strings.TrimPrefix(model, "google-antigravity/")
-	}
+	// Strip provider prefixes if present
+	model = strings.TrimPrefix(model, "google-antigravity/")
+	model = strings.TrimPrefix(model, "antigravity/")
+
+	logger.DebugCF("provider.antigravity", "Starting chat", map[string]interface{}{
+		"model":     model,
+		"project":   projectID,
+		"requestId": fmt.Sprintf("agent-%d-%s", time.Now().UnixMilli(), randomString(9)),
+	})
 
 	// Build the inner Gemini-format request
 	innerRequest := p.buildRequest(messages, tools, model, options)
@@ -272,8 +277,12 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 
 	// Generation config
 	config := &antigravityGenConfig{}
-	if maxTokens, ok := options["max_tokens"].(int); ok && maxTokens > 0 {
-		config.MaxOutputTokens = maxTokens
+	if val, ok := options["max_tokens"]; ok {
+		if maxTokens, ok := val.(int); ok && maxTokens > 0 {
+			config.MaxOutputTokens = maxTokens
+		} else if maxTokens, ok := val.(float64); ok && maxTokens > 0 {
+			config.MaxOutputTokens = int(maxTokens)
+		}
 	}
 	if temp, ok := options["temperature"].(float64); ok {
 		config.Temperature = temp
@@ -636,6 +645,30 @@ func FetchAntigravityModels(accessToken, projectID string) ([]AntigravityModelIn
 			ID:          id,
 			DisplayName: info.DisplayName,
 			IsExhausted: info.QuotaInfo.IsExhausted,
+		})
+	}
+
+	// Ensure gemini-3-flash-preview and gemini-3-flash are in the list if they aren't already
+	hasFlashPreview := false
+	hasFlash := false
+	for _, m := range models {
+		if m.ID == "gemini-3-flash-preview" {
+			hasFlashPreview = true
+		}
+		if m.ID == "gemini-3-flash" {
+			hasFlash = true
+		}
+	}
+	if !hasFlashPreview {
+		models = append(models, AntigravityModelInfo{
+			ID:          "gemini-3-flash-preview",
+			DisplayName: "Gemini 3 Flash (Preview)",
+		})
+	}
+	if !hasFlash {
+		models = append(models, AntigravityModelInfo{
+			ID:          "gemini-3-flash",
+			DisplayName: "Gemini 3 Flash",
 		})
 	}
 
