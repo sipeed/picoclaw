@@ -68,6 +68,13 @@
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
       "allow_from": []
+    },
+    "websocket": {
+      "enabled": false,
+      "host": "127.0.0.1",
+      "port": 18793,
+      "path": "/ws",
+      "allow_from": []
     }
   },
   "providers": {

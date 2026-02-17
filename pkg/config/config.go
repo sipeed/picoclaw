@@ -71,16 +71,17 @@ type AgentDefaults struct {
 }
 
 type ChannelsConfig struct {
-	WhatsApp WhatsAppConfig `json:"whatsapp"`
-	Telegram TelegramConfig `json:"telegram"`
-	Feishu   FeishuConfig   `json:"feishu"`
-	Discord  DiscordConfig  `json:"discord"`
-	MaixCam  MaixCamConfig  `json:"maixcam"`
-	QQ       QQConfig       `json:"qq"`
-	DingTalk DingTalkConfig `json:"dingtalk"`
-	Slack    SlackConfig    `json:"slack"`
-	LINE     LINEConfig     `json:"line"`
-	OneBot   OneBotConfig   `json:"onebot"`
+	WhatsApp  WhatsAppConfig  `json:"whatsapp"`
+	Telegram  TelegramConfig  `json:"telegram"`
+	Feishu    FeishuConfig    `json:"feishu"`
+	Discord   DiscordConfig   `json:"discord"`
+	MaixCam   MaixCamConfig   `json:"maixcam"`
+	QQ        QQConfig        `json:"qq"`
+	DingTalk  DingTalkConfig  `json:"dingtalk"`
+	Slack     SlackConfig     `json:"slack"`
+	LINE      LINEConfig      `json:"line"`
+	OneBot    OneBotConfig    `json:"onebot"`
+	WebSocket WebSocketConfig `json:"websocket"`
 }
 
 type WhatsAppConfig struct {
@@ -156,6 +157,14 @@ type OneBotConfig struct {
 	ReconnectInterval  int                 `json:"reconnect_interval" env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
+}
+
+type WebSocketConfig struct {
+	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WEBSOCKET_ENABLED"`
+	Host      string              `json:"host" env:"PICOCLAW_CHANNELS_WEBSOCKET_HOST"`
+	Port      int                 `json:"port" env:"PICOCLAW_CHANNELS_WEBSOCKET_PORT"`
+	Path      string              `json:"path" env:"PICOCLAW_CHANNELS_WEBSOCKET_PATH"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WEBSOCKET_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {
@@ -315,6 +324,13 @@ func DefaultConfig() *Config {
 				ReconnectInterval:  5,
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
+			},
+			WebSocket: WebSocketConfig{
+				Enabled:   true,
+				Host:      "127.0.0.1",
+				Port:      18793,
+				Path:      "/ws",
+				AllowFrom: FlexibleStringSlice{},
 			},
 		},
 		Providers: ProvidersConfig{

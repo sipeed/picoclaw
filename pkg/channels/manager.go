@@ -176,6 +176,19 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.WebSocket.Enabled {
+		logger.DebugC("channels", "Attempting to initialize WebSocket channel")
+		ws, err := NewWebSocketChannel(m.config.Channels.WebSocket, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize WebSocket channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["websocket"] = ws
+			logger.InfoC("channels", "WebSocket channel enabled successfully")
+		}
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]interface{}{
 		"enabled_channels": len(m.channels),
 	})
