@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 type Channel interface {
@@ -18,21 +19,28 @@ type Channel interface {
 }
 
 type BaseChannel struct {
-	config    interface{}
-	bus       *bus.MessageBus
-	running   bool
-	name      string
-	allowList []string
+	config         interface{}
+	messagesConfig config.MessagesConfig
+	bus            *bus.MessageBus
+	running        bool
+	name           string
+	allowList      []string
 }
 
-func NewBaseChannel(name string, config interface{}, bus *bus.MessageBus, allowList []string) *BaseChannel {
+func NewBaseChannel(name string, config interface{}, messagesCfg config.MessagesConfig, bus *bus.MessageBus, allowList []string) *BaseChannel {
 	return &BaseChannel{
-		config:    config,
-		bus:       bus,
-		name:      name,
-		allowList: allowList,
-		running:   false,
+		config:         config,
+		messagesConfig: messagesCfg,
+		bus:            bus,
+		name:           name,
+		allowList:      allowList,
+		running:        false,
 	}
+}
+
+// MessagesConfig returns the global messages configuration
+func (c *BaseChannel) MessagesConfig() config.MessagesConfig {
+	return c.messagesConfig
 }
 
 func (c *BaseChannel) Name() string {

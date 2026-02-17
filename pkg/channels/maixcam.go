@@ -28,8 +28,8 @@ type MaixCamMessage struct {
 	Data      map[string]interface{} `json:"data"`
 }
 
-func NewMaixCamChannel(cfg config.MaixCamConfig, bus *bus.MessageBus) (*MaixCamChannel, error) {
-	base := NewBaseChannel("maixcam", cfg, bus, cfg.AllowFrom)
+func NewMaixCamChannel(cfg config.MaixCamConfig, messagesCfg config.MessagesConfig, bus *bus.MessageBus) (*MaixCamChannel, error) {
+	base := NewBaseChannel("maixcam", cfg, messagesCfg, bus, cfg.AllowFrom)
 
 	return &MaixCamChannel{
 		BaseChannel: base,

@@ -30,8 +30,8 @@ type FeishuChannel struct {
 	cancel context.CancelFunc
 }
 
-func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
-	base := NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom)
+func NewFeishuChannel(cfg config.FeishuConfig, messagesCfg config.MessagesConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
+	base := NewBaseChannel("feishu", cfg, messagesCfg, bus, cfg.AllowFrom)
 
 	return &FeishuChannel{
 		BaseChannel: base,
@@ -128,7 +128,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	return nil
 }
 
-func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2MessageReceiveV1) error {
+func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
 		return nil
 	}
@@ -151,14 +151,26 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		content = "[empty message]"
 	}
 
+	// Determine chat type: p2p = direct, group = group chat
+	chatType := stringValue(message.ChatType)
+	isGroup := chatType == "group"
+	isDirect := chatType == "p2p"
+
+	// Check if bot was mentioned
+	wasMentioned := false
+	if message.Mentions != nil && len(message.Mentions) > 0 {
+		wasMentioned = true
+	}
+
 	metadata := map[string]string{}
-	if messageID := stringValue(message.MessageId); messageID != "" {
+	messageID := stringValue(message.MessageId)
+	if messageID != "" {
 		metadata["message_id"] = messageID
 	}
 	if messageType := stringValue(message.MessageType); messageType != "" {
 		metadata["message_type"] = messageType
 	}
-	if chatType := stringValue(message.ChatType); chatType != "" {
+	if chatType != "" {
 		metadata["chat_type"] = chatType
 	}
 	if sender != nil && sender.TenantKey != nil {
@@ -170,6 +182,30 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		"chat_id":   chatID,
 		"preview":   utils.Truncate(content, 80),
 	})
+
+	// Add emoji ack reaction based on configuration
+	ackReaction := c.MessagesConfig().AckReaction
+	if ackReaction != "" && messageID != "" {
+		shouldAck := ShouldAckReaction(AckReactionParams{
+			Scope:               AckReactionScope(c.MessagesConfig().AckReactionScope),
+			IsDirect:            isDirect,
+			IsGroup:             isGroup,
+			IsMentionableGroup:  true, // Feishu groups support mentions
+			RequireMention:      true,
+			CanDetectMention:    true,
+			WasMentioned:        wasMentioned,
+			ShouldBypassMention: false,
+		})
+
+		if shouldAck {
+			if err := c.addMessageReaction(ctx, messageID, ackReaction); err != nil {
+				logger.ErrorCF("feishu", "Failed to add emoji reaction", map[string]interface{}{
+					"error":      err.Error(),
+					"message_id": messageID,
+				})
+			}
+		}
+	}
 
 	c.HandleMessage(senderID, chatID, content, nil, metadata)
 	return nil
@@ -215,4 +251,31 @@ func stringValue(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func (c *FeishuChannel) addMessageReaction(ctx context.Context, messageID, emojiType string) error {
+	req := larkim.NewCreateMessageReactionReqBuilder().
+		MessageId(messageID).
+		Body(larkim.NewCreateMessageReactionReqBodyBuilder().
+			ReactionType(larkim.NewEmojiBuilder().
+				EmojiType(emojiType).
+				Build()).
+			Build()).
+		Build()
+
+	resp, err := c.client.Im.V1.MessageReaction.Create(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to create message reaction: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("feishu reaction api error: code=%d msg=%s", resp.Code, resp.Msg)
+	}
+
+	logger.DebugCF("feishu", "Emoji reaction added", map[string]interface{}{
+		"message_id": messageID,
+		"emoji_type": emojiType,
+	})
+
+	return nil
 }

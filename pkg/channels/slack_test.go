@@ -106,7 +106,7 @@ func TestNewSlackChannel(t *testing.T) {
 			BotToken: "",
 			AppToken: "xapp-test",
 		}
-		_, err := NewSlackChannel(cfg, msgBus)
+		_, err := NewSlackChannel(cfg, config.MessagesConfig{}, msgBus)
 		if err == nil {
 			t.Error("expected error for missing bot_token, got nil")
 		}
@@ -117,7 +117,7 @@ func TestNewSlackChannel(t *testing.T) {
 			BotToken: "xoxb-test",
 			AppToken: "",
 		}
-		_, err := NewSlackChannel(cfg, msgBus)
+		_, err := NewSlackChannel(cfg, config.MessagesConfig{}, msgBus)
 		if err == nil {
 			t.Error("expected error for missing app_token, got nil")
 		}
@@ -129,7 +129,7 @@ func TestNewSlackChannel(t *testing.T) {
 			AppToken:  "xapp-test",
 			AllowFrom: []string{"U123"},
 		}
-		ch, err := NewSlackChannel(cfg, msgBus)
+		ch, err := NewSlackChannel(cfg, config.MessagesConfig{}, msgBus)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -151,7 +151,7 @@ func TestSlackChannelIsAllowed(t *testing.T) {
 			AppToken:  "xapp-test",
 			AllowFrom: []string{},
 		}
-		ch, _ := NewSlackChannel(cfg, msgBus)
+		ch, _ := NewSlackChannel(cfg, config.MessagesConfig{}, msgBus)
 		if !ch.IsAllowed("U_ANYONE") {
 			t.Error("empty allowlist should allow all users")
 		}
@@ -163,7 +163,7 @@ func TestSlackChannelIsAllowed(t *testing.T) {
 			AppToken:  "xapp-test",
 			AllowFrom: []string{"U_ALLOWED"},
 		}
-		ch, _ := NewSlackChannel(cfg, msgBus)
+		ch, _ := NewSlackChannel(cfg, config.MessagesConfig{}, msgBus)
 		if !ch.IsAllowed("U_ALLOWED") {
 			t.Error("allowed user should pass allowlist check")
 		}

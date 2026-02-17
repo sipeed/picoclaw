@@ -36,7 +36,7 @@ type slackMessageRef struct {
 	Timestamp string
 }
 
-func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*SlackChannel, error) {
+func NewSlackChannel(cfg config.SlackConfig, messagesCfg config.MessagesConfig, messageBus *bus.MessageBus) (*SlackChannel, error) {
 	if cfg.BotToken == "" || cfg.AppToken == "" {
 		return nil, fmt.Errorf("slack bot_token and app_token are required")
 	}
@@ -48,7 +48,7 @@ func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*Slack
 
 	socketClient := socketmode.New(api)
 
-	base := NewBaseChannel("slack", cfg, messageBus, cfg.AllowFrom)
+	base := NewBaseChannel("slack", cfg, messagesCfg, messageBus, cfg.AllowFrom)
 
 	return &SlackChannel{
 		BaseChannel:  base,

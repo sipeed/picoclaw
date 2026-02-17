@@ -54,12 +54,12 @@ type LINEChannel struct {
 }
 
 // NewLINEChannel creates a new LINE channel instance.
-func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINEChannel, error) {
+func NewLINEChannel(cfg config.LINEConfig, messagesCfg config.MessagesConfig, messageBus *bus.MessageBus) (*LINEChannel, error) {
 	if cfg.ChannelSecret == "" || cfg.ChannelAccessToken == "" {
 		return nil, fmt.Errorf("line channel_secret and channel_access_token are required")
 	}
 
-	base := NewBaseChannel("line", cfg, messageBus, cfg.AllowFrom)
+	base := NewBaseChannel("line", cfg, messagesCfg, messageBus, cfg.AllowFrom)
 
 	return &LINEChannel{
 		BaseChannel: base,

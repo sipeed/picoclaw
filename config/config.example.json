@@ -129,6 +129,11 @@
     "enabled": false,
     "monitor_usb": true
   },
+  "messages": {
+    "ack_reaction": "OK",
+    "ack_reaction_scope": "group-mentions",
+    "remove_ack_after_reply": false
+  },
   "gateway": {
     "host": "0.0.0.0",
     "port": 18790

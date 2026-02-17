@@ -51,6 +51,7 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Messages  MessagesConfig  `json:"messages"`
 	mu        sync.RWMutex
 }
 
@@ -164,6 +165,16 @@ type HeartbeatConfig struct {
 type DevicesConfig struct {
 	Enabled    bool `json:"enabled" env:"PICOCLAW_DEVICES_ENABLED"`
 	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
+}
+
+// MessagesConfig controls global message behavior for all channels
+type MessagesConfig struct {
+	// AckReaction is the emoji used to acknowledge inbound messages (empty to disable)
+	AckReaction string `json:"ack_reaction" env:"PICOCLAW_MESSAGES_ACK_REACTION"`
+	// AckReactionScope controls when to send ack reactions: "all", "direct", "group-all", "group-mentions", "off"
+	AckReactionScope string `json:"ack_reaction_scope" env:"PICOCLAW_MESSAGES_ACK_REACTION_SCOPE"`
+	// RemoveAckAfterReply removes the ack reaction after reply is sent
+	RemoveAckAfterReply bool `json:"remove_ack_after_reply" env:"PICOCLAW_MESSAGES_REMOVE_ACK_AFTER_REPLY"`
 }
 
 type ProvidersConfig struct {
@@ -330,6 +341,11 @@ func DefaultConfig() *Config {
 		Devices: DevicesConfig{
 			Enabled:    false,
 			MonitorUSB: true,
+		},
+		Messages: MessagesConfig{
+			AckReaction:         "OK",
+			AckReactionScope:    "group-mentions",
+			RemoveAckAfterReply: false,
 		},
 	}
 }

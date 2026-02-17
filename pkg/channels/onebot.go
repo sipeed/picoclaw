@@ -91,8 +91,8 @@ type oneBotSendGroupMsgParams struct {
 	Message string `json:"message"`
 }
 
-func NewOneBotChannel(cfg config.OneBotConfig, messageBus *bus.MessageBus) (*OneBotChannel, error) {
-	base := NewBaseChannel("onebot", cfg, messageBus, cfg.AllowFrom)
+func NewOneBotChannel(cfg config.OneBotConfig, messagesCfg config.MessagesConfig, messageBus *bus.MessageBus) (*OneBotChannel, error) {
+	base := NewBaseChannel("onebot", cfg, messagesCfg, messageBus, cfg.AllowFrom)
 
 	const dedupSize = 1024
 	return &OneBotChannel{

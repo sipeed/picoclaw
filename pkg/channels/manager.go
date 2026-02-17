@@ -61,7 +61,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.WhatsApp.Enabled && m.config.Channels.WhatsApp.BridgeURL != "" {
 		logger.DebugC("channels", "Attempting to initialize WhatsApp channel")
-		whatsapp, err := NewWhatsAppChannel(m.config.Channels.WhatsApp, m.bus)
+		whatsapp, err := NewWhatsAppChannel(m.config.Channels.WhatsApp, m.config.Messages, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize WhatsApp channel", map[string]interface{}{
 				"error": err.Error(),
@@ -74,7 +74,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.Feishu.Enabled {
 		logger.DebugC("channels", "Attempting to initialize Feishu channel")
-		feishu, err := NewFeishuChannel(m.config.Channels.Feishu, m.bus)
+		feishu, err := NewFeishuChannel(m.config.Channels.Feishu, m.config.Messages, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize Feishu channel", map[string]interface{}{
 				"error": err.Error(),
@@ -87,7 +87,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.Discord.Enabled && m.config.Channels.Discord.Token != "" {
 		logger.DebugC("channels", "Attempting to initialize Discord channel")
-		discord, err := NewDiscordChannel(m.config.Channels.Discord, m.bus)
+		discord, err := NewDiscordChannel(m.config.Channels.Discord, m.config.Messages, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize Discord channel", map[string]interface{}{
 				"error": err.Error(),
@@ -100,7 +100,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.MaixCam.Enabled {
 		logger.DebugC("channels", "Attempting to initialize MaixCam channel")
-		maixcam, err := NewMaixCamChannel(m.config.Channels.MaixCam, m.bus)
+		maixcam, err := NewMaixCamChannel(m.config.Channels.MaixCam, m.config.Messages, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize MaixCam channel", map[string]interface{}{
 				"error": err.Error(),
@@ -113,7 +113,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.QQ.Enabled {
 		logger.DebugC("channels", "Attempting to initialize QQ channel")
-		qq, err := NewQQChannel(m.config.Channels.QQ, m.bus)
+		qq, err := NewQQChannel(m.config.Channels.QQ, m.config.Messages, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize QQ channel", map[string]interface{}{
 				"error": err.Error(),
@@ -126,7 +126,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.DingTalk.Enabled && m.config.Channels.DingTalk.ClientID != "" {
 		logger.DebugC("channels", "Attempting to initialize DingTalk channel")
-		dingtalk, err := NewDingTalkChannel(m.config.Channels.DingTalk, m.bus)
+		dingtalk, err := NewDingTalkChannel(m.config.Channels.DingTalk, m.config.Messages, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize DingTalk channel", map[string]interface{}{
 				"error": err.Error(),
@@ -139,7 +139,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.Slack.Enabled && m.config.Channels.Slack.BotToken != "" {
 		logger.DebugC("channels", "Attempting to initialize Slack channel")
-		slackCh, err := NewSlackChannel(m.config.Channels.Slack, m.bus)
+		slackCh, err := NewSlackChannel(m.config.Channels.Slack, m.config.Messages, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize Slack channel", map[string]interface{}{
 				"error": err.Error(),
@@ -152,7 +152,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.LINE.Enabled && m.config.Channels.LINE.ChannelAccessToken != "" {
 		logger.DebugC("channels", "Attempting to initialize LINE channel")
-		line, err := NewLINEChannel(m.config.Channels.LINE, m.bus)
+		line, err := NewLINEChannel(m.config.Channels.LINE, m.config.Messages, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize LINE channel", map[string]interface{}{
 				"error": err.Error(),
@@ -165,7 +165,7 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.OneBot.Enabled && m.config.Channels.OneBot.WSUrl != "" {
 		logger.DebugC("channels", "Attempting to initialize OneBot channel")
-		onebot, err := NewOneBotChannel(m.config.Channels.OneBot, m.bus)
+		onebot, err := NewOneBotChannel(m.config.Channels.OneBot, m.config.Messages, m.bus)
 		if err != nil {
 			logger.ErrorCF("channels", "Failed to initialize OneBot channel", map[string]interface{}{
 				"error": err.Error(),

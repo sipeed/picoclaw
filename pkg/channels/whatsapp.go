@@ -24,8 +24,8 @@ type WhatsAppChannel struct {
 	connected bool
 }
 
-func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsAppChannel, error) {
-	base := NewBaseChannel("whatsapp", cfg, bus, cfg.AllowFrom)
+func NewWhatsAppChannel(cfg config.WhatsAppConfig, messagesCfg config.MessagesConfig, bus *bus.MessageBus) (*WhatsAppChannel, error) {
+	base := NewBaseChannel("whatsapp", cfg, messagesCfg, bus, cfg.AllowFrom)
 
 	return &WhatsAppChannel{
 		BaseChannel: base,

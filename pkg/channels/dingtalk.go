@@ -31,12 +31,12 @@ type DingTalkChannel struct {
 }
 
 // NewDingTalkChannel creates a new DingTalk channel instance
-func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (*DingTalkChannel, error) {
+func NewDingTalkChannel(cfg config.DingTalkConfig, messagesCfg config.MessagesConfig, messageBus *bus.MessageBus) (*DingTalkChannel, error) {
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return nil, fmt.Errorf("dingtalk client_id and client_secret are required")
 	}
 
-	base := NewBaseChannel("dingtalk", cfg, messageBus, cfg.AllowFrom)
+	base := NewBaseChannel("dingtalk", cfg, messagesCfg, messageBus, cfg.AllowFrom)
 
 	return &DingTalkChannel{
 		BaseChannel:  base,

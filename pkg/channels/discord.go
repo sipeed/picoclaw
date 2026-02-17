@@ -28,13 +28,13 @@ type DiscordChannel struct {
 	ctx         context.Context
 }
 
-func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
+func NewDiscordChannel(cfg config.DiscordConfig, messagesCfg config.MessagesConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}
 
-	base := NewBaseChannel("discord", cfg, bus, cfg.AllowFrom)
+	base := NewBaseChannel("discord", cfg, messagesCfg, bus, cfg.AllowFrom)
 
 	return &DiscordChannel{
 		BaseChannel: base,
