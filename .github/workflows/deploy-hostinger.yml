@@ -82,11 +82,16 @@ jobs:
           # Update .env with secrets (keep existing values, only override if provided)
           ENV_FILE="/opt/picoclaw/config/.env"
 
-          # Telegram Bot Token
+          # Telegram Bot Token + Enable
           if [ -n "${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}" ]; then
             grep -q "PICOCLAW_CHANNELS_TELEGRAM_TOKEN" "$ENV_FILE" && \
               sed -i "s|^PICOCLAW_CHANNELS_TELEGRAM_TOKEN=.*|PICOCLAW_CHANNELS_TELEGRAM_TOKEN=${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}|" "$ENV_FILE" || \
               echo "PICOCLAW_CHANNELS_TELEGRAM_TOKEN=${{ secrets.PICOCLAW_TELEGRAM_BOT_TOKEN }}" >> "$ENV_FILE"
+
+            # Enable Telegram channel when token is provided
+            grep -q "PICOCLAW_CHANNELS_TELEGRAM_ENABLED" "$ENV_FILE" && \
+              sed -i "s|^PICOCLAW_CHANNELS_TELEGRAM_ENABLED=.*|PICOCLAW_CHANNELS_TELEGRAM_ENABLED=true|" "$ENV_FILE" || \
+              echo "PICOCLAW_CHANNELS_TELEGRAM_ENABLED=true" >> "$ENV_FILE"
           fi
 
           # Anthropic API Key
