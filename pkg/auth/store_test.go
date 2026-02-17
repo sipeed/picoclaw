@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestAuthCredentialIsExpired(t *testing.T) {
@@ -102,7 +104,7 @@ func TestStoreFilePermissions(t *testing.T) {
 		t.Fatalf("SetCredential() error: %v", err)
 	}
 
-	path := filepath.Join(tmpDir, ".picoclaw", "auth.json")
+	path := config.ResolveRuntimePaths().AuthPath
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("Stat() error: %v", err)
@@ -185,5 +187,55 @@ func TestLoadStoreEmpty(t *testing.T) {
 	}
 	if len(store.Credentials) != 0 {
 		t.Errorf("expected empty credentials, got %d", len(store.Credentials))
+	}
+}
+
+func TestStoreUsesPicoClawHomeOverride(t *testing.T) {
+	baseDir := t.TempDir()
+	home := filepath.Join(baseDir, "home")
+	override := filepath.Join(baseDir, "pico-home")
+
+	t.Setenv("HOME", home)
+	t.Setenv(config.EnvPicoClawConfig, "")
+	t.Setenv(config.EnvPicoClawHome, override)
+
+	cred := &AuthCredential{
+		AccessToken: "override-token",
+		Provider:    "openai",
+		AuthMethod:  "oauth",
+	}
+	if err := SetCredential("openai", cred); err != nil {
+		t.Fatalf("SetCredential() error: %v", err)
+	}
+
+	expectedPath := filepath.Join(override, "auth.json")
+	if _, err := os.Stat(expectedPath); err != nil {
+		t.Fatalf("expected auth store at %s, got stat error: %v", expectedPath, err)
+	}
+}
+
+func TestStoreUsesConfigDirectoryWhenConfigOverrideSet(t *testing.T) {
+	baseDir := t.TempDir()
+	home := filepath.Join(baseDir, "home")
+	homeOverride := filepath.Join(baseDir, "pico-home")
+	configDir := filepath.Join(baseDir, "custom-config-dir")
+	configPath := filepath.Join(configDir, "config.json")
+
+	t.Setenv("HOME", home)
+	t.Setenv(config.EnvPicoClawHome, homeOverride)
+	t.Setenv(config.EnvPicoClawConfig, configPath)
+
+	cred := &AuthCredential{
+		AccessToken: "config-override-token",
+		Provider:    "openai",
+		AuthMethod:  "oauth",
+	}
+	if err := SetCredential("openai", cred); err != nil {
+		t.Fatalf("SetCredential() error: %v", err)
+	}
+
+	expectedPath := filepath.Join(configDir, "auth.json")
+	if _, err := os.Stat(expectedPath); err != nil {
+		t.Fatalf("expected auth store at %s, got stat error: %v", expectedPath, err)
 	}
 }

@@ -204,3 +204,17 @@ func TestConfig_Complete(t *testing.T) {
 		t.Error("Heartbeat should be enabled by default")
 	}
 }
+
+func TestLoadConfig_AppliesEnvWithoutConfigFile(t *testing.T) {
+	t.Setenv("PICOCLAW_AGENTS_DEFAULTS_MODEL", "env-only-model")
+
+	missingPath := filepath.Join(t.TempDir(), "missing-config.json")
+	cfg, err := LoadConfig(missingPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	if cfg.Agents.Defaults.Model != "env-only-model" {
+		t.Errorf("Model = %q, want %q", cfg.Agents.Defaults.Model, "env-only-model")
+	}
+}
