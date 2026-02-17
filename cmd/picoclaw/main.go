@@ -120,6 +120,20 @@ func copyDirectory(src, dst string) error {
 }
 
 func main() {
+	parsedArgs, configOverride, err := parseGlobalFlags(os.Args)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if configOverride != "" {
+		if err := os.Setenv(config.EnvPicoClawConfig, configOverride); err != nil {
+			fmt.Printf("Error setting %s: %v\n", config.EnvPicoClawConfig, err)
+			os.Exit(1)
+		}
+	}
+	os.Args = parsedArgs
+
 	if len(os.Args) < 2 {
 		printHelp()
 		os.Exit(1)
@@ -158,10 +172,9 @@ func main() {
 
 		workspace := cfg.WorkspacePath()
 		installer := skills.NewSkillInstaller(workspace)
-		// 获取全局配置目录和内置 skills 目录
-		globalDir := filepath.Dir(getConfigPath())
-		globalSkillsDir := filepath.Join(globalDir, "skills")
-		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
+		paths := config.ResolveRuntimePaths()
+		globalSkillsDir := paths.GlobalSkillsDir
+		builtinSkillsDir := filepath.Join(paths.HomeDir, "picoclaw", "skills")
 		skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
 
 		switch subcommand {
@@ -200,9 +213,45 @@ func main() {
 	}
 }
 
+func parseGlobalFlags(args []string) ([]string, string, error) {
+	if len(args) == 0 {
+		return args, "", nil
+	}
+
+	filtered := make([]string, 0, len(args))
+	filtered = append(filtered, args[0])
+	var configOverride string
+
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+
+		switch {
+		case arg == "--config":
+			if i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
+				return nil, "", fmt.Errorf("--config requires a path")
+			}
+			configOverride = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--config="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--config="))
+			if value == "" {
+				return nil, "", fmt.Errorf("--config requires a path")
+			}
+			configOverride = value
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+
+	return filtered, configOverride, nil
+}
+
 func printHelp() {
 	fmt.Printf("%s picoclaw - Personal AI Assistant v%s\n\n", logo, version)
-	fmt.Println("Usage: picoclaw <command>")
+	fmt.Println("Usage: picoclaw [--config <path>] <command>")
+	fmt.Println()
+	fmt.Println("Global options:")
+	fmt.Println("  --config <path>    Use a custom config file path")
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
@@ -984,8 +1033,7 @@ func authStatusCmd() {
 }
 
 func getConfigPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "config.json")
+	return config.ResolveRuntimePaths().ConfigPath
 }
 
 func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration) *cron.CronService {

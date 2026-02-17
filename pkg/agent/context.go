@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -22,11 +23,7 @@ type ContextBuilder struct {
 }
 
 func getGlobalConfigDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".picoclaw")
+	return config.ResolveRuntimePaths().HomeDir
 }
 
 func NewContextBuilder(workspace string) *ContextBuilder {
