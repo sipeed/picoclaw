@@ -27,7 +27,6 @@ import (
 type TelegramChannel struct {
 	*BaseChannel
 	bot          *telego.Bot
-	commands     TelegramCommander
 	config       *config.Config
 	chatIDs      map[string]int64
 	transcriber  *voice.GroqTranscriber
@@ -70,7 +69,6 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 
 	return &TelegramChannel{
 		BaseChannel:  base,
-		commands:     NewTelegramCommands(bot, cfg),
 		bot:          bot,
 		config:       cfg,
 		chatIDs:      make(map[string]int64),
@@ -98,22 +96,6 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create bot handler: %w", err)
 	}
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		c.commands.Help(ctx, message)
-		return nil
-	}, th.CommandEqual("help"))
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Start(ctx, message)
-	}, th.CommandEqual("start"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Show(ctx, message)
-	}, th.CommandEqual("show"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.List(ctx, message)
-	}, th.CommandEqual("list"))
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
