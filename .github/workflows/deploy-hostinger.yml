@@ -1,0 +1,141 @@
+name: Deploy to Hostinger VPS
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  REMOTE_DIR: /opt/picoclaw
+  DEPLOY_METHOD: docker
+
+jobs:
+  deploy:
+    name: Deploy to Hostinger
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass rsync
+
+      - name: Verify SSH connection
+        env:
+          SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+        run: |
+          sshpass -e ssh \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 \
+            -p ${{ secrets.HOSTINGER_SSH_PORT || '22' }} \
+            ${{ secrets.HOSTINGER_SSH_USER || 'root' }}@${{ secrets.HOSTINGER_HOST }} \
+            "echo 'SSH connection OK'"
+
+      - name: Sync project files to server
+        env:
+          SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+        run: |
+          SSH_PORT="${{ secrets.HOSTINGER_SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          SSH_USER="${{ secrets.HOSTINGER_SSH_USER }}"
+          SSH_USER="${SSH_USER:-root}"
+
+          rsync -az --delete \
+            -e "sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -p ${SSH_PORT}" \
+            --exclude '.git' \
+            --exclude 'build/' \
+            --exclude '.env' \
+            --exclude 'node_modules/' \
+            --exclude '.deploy.env' \
+            ./ "${SSH_USER}@${{ secrets.HOSTINGER_HOST }}:${REMOTE_DIR}/src/"
+
+      - name: Copy Docker Compose production config
+        env:
+          SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+        run: |
+          SSH_PORT="${{ secrets.HOSTINGER_SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          SSH_USER="${{ secrets.HOSTINGER_SSH_USER }}"
+          SSH_USER="${SSH_USER:-root}"
+
+          sshpass -e scp \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 \
+            -P "${SSH_PORT}" \
+            deploy/hostinger/docker-compose.production.yml \
+            "${SSH_USER}@${{ secrets.HOSTINGER_HOST }}:${REMOTE_DIR}/docker-compose.yml"
+
+      - name: Build and restart Docker container
+        env:
+          SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+        run: |
+          SSH_PORT="${{ secrets.HOSTINGER_SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          SSH_USER="${{ secrets.HOSTINGER_SSH_USER }}"
+          SSH_USER="${SSH_USER:-root}"
+
+          sshpass -e ssh \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 \
+            -p "${SSH_PORT}" \
+            "${SSH_USER}@${{ secrets.HOSTINGER_HOST }}" <<'EOF'
+          set -e
+          cd /opt/picoclaw
+
+          echo "Building Docker image..."
+          docker compose build picoclaw-gateway
+
+          echo "Stopping existing container..."
+          docker compose down --timeout 30 2>/dev/null || true
+
+          echo "Starting PicoClaw gateway..."
+          docker compose up -d picoclaw-gateway
+
+          echo "Waiting for container to start..."
+          sleep 5
+
+          if docker compose ps picoclaw-gateway 2>/dev/null | grep -qE "Up|running"; then
+              echo "Container is running!"
+              docker compose ps
+          else
+              echo "Container status:"
+              docker compose ps
+              echo ""
+              echo "Container logs:"
+              docker compose logs --tail=30 picoclaw-gateway
+              exit 1
+          fi
+
+          docker image prune -f >/dev/null 2>&1
+          echo "Docker deploy complete"
+          EOF
+
+      - name: Health check
+        env:
+          SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+        run: |
+          SSH_PORT="${{ secrets.HOSTINGER_SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          SSH_USER="${{ secrets.HOSTINGER_SSH_USER }}"
+          SSH_USER="${SSH_USER:-root}"
+
+          HEALTH_OK=false
+          for i in 1 2 3 4 5; do
+            sleep 3
+            if sshpass -e ssh \
+              -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=15 \
+              -p "${SSH_PORT}" \
+              "${SSH_USER}@${{ secrets.HOSTINGER_HOST }}" \
+              "curl -sf http://localhost:18790/health" 2>/dev/null; then
+              HEALTH_OK=true
+              echo ""
+              echo "Health check PASSED!"
+              break
+            fi
+            echo "Waiting for gateway to start... (attempt ${i}/5)"
+          done
+
+          if [ "${HEALTH_OK}" = false ]; then
+            echo "::warning::Health check did not pass after 5 attempts. The service may still be starting up."
+          fi
