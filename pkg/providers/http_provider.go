@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -58,11 +59,6 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	isAnthropicStyle := strings.Contains(p.apiBase, "/anthropic") || strings.Contains(p.apiBase, "/api/anthropic")
 
 	if isAnthropicStyle {
-		// Zhipu GLM coding plan (api.z.ai) doesn't properly support tool_use/tool_result
-		// Disable tools to avoid 500 errors
-		if strings.Contains(p.apiBase, "api.z.ai") {
-			return p.chatAnthropic(ctx, messages, nil, model, options)
-		}
 		return p.chatAnthropic(ctx, messages, tools, model, options)
 	}
 	return p.chatOpenAI(ctx, messages, tools, model, options)
@@ -160,39 +156,63 @@ func (p *HTTPProvider) chatAnthropic(ctx context.Context, messages []Message, to
 				},
 			})
 		case "assistant":
-			contentBlocks := []map[string]interface{}{
-				{"type": "text", "text": msg.Content},
-			}
-			// Add tool calls if present
-			for _, tc := range msg.ToolCalls {
-				contentBlocks = append(contentBlocks, map[string]interface{}{
-					"type":      "tool_use",
-					"id":        tc.ID,
-					"name":      tc.Name,
-					"input":     tc.Arguments,
+			// For Zhipu GLM coding plan, don't send tool_use blocks
+			// Just send the text content
+			if p.isZhipuEndpoint() && len(msg.ToolCalls) > 0 {
+				// Zhipu doesn't support tool_use blocks, so just send text
+				// The tool calls are already embedded in the text content
+				anthropicMessages = append(anthropicMessages, map[string]interface{}{
+					"role":    "assistant",
+					"content": msg.Content,
+				})
+			} else {
+				// Standard format with tool_use blocks for other providers
+				contentBlocks := []map[string]interface{}{
+					{"type": "text", "text": msg.Content},
+				}
+				// Add tool calls if present
+				for _, tc := range msg.ToolCalls {
+					contentBlocks = append(contentBlocks, map[string]interface{}{
+						"type":      "tool_use",
+						"id":        tc.ID,
+						"name":      tc.Name,
+						"input":     tc.Arguments,
+					})
+				}
+				anthropicMessages = append(anthropicMessages, map[string]interface{}{
+					"role":    "assistant",
+					"content": contentBlocks,
 				})
 			}
-			anthropicMessages = append(anthropicMessages, map[string]interface{}{
-				"role":    "assistant",
-				"content": contentBlocks,
-			})
 		case "tool":
-			// Zhipu GLM coding plan requires 'id' field in tool_result blocks
-			// Skip if ToolCallID is empty to avoid API errors
-			if msg.ToolCallID == "" {
-				continue
-			}
-			anthropicMessages = append(anthropicMessages, map[string]interface{}{
-				"role":    "user",
-				"content": []map[string]interface{}{
-					{
-						"type":      "tool_result",
-						"id":        msg.ToolCallID, // Required by Zhipu GLM coding plan
-						"tool_use_id": msg.ToolCallID,
-						"content":   msg.Content,
+			// For Zhipu GLM coding plan, send tool results as regular text
+			// since it doesn't support standard tool_result blocks
+			if p.isZhipuEndpoint() {
+				// Format as plain text: "Tool result: ..."
+				toolResultText := fmt.Sprintf("Tool result for %s: %s", msg.ToolCallID, msg.Content)
+				anthropicMessages = append(anthropicMessages, map[string]interface{}{
+					"role": "user",
+					"content": []map[string]interface{}{
+						{
+							"type": "text",
+							"text": toolResultText,
+						},
 					},
-				},
-			})
+				})
+			} else {
+				// Standard tool_result format for other providers
+				anthropicMessages = append(anthropicMessages, map[string]interface{}{
+					"role": "user",
+					"content": []map[string]interface{}{
+						{
+							"type":      "tool_result",
+							"id":        msg.ToolCallID,
+							"tool_use_id": msg.ToolCallID,
+							"content":   msg.Content,
+						},
+					},
+				})
+			}
 		}
 	}
 
@@ -336,6 +356,36 @@ func (p *HTTPProvider) parseOpenAIResponse(body []byte) (*LLMResponse, error) {
 	}, nil
 }
 
+// isZhipuEndpoint checks if the current API endpoint is Zhipu GLM coding plan
+func (p *HTTPProvider) isZhipuEndpoint() bool {
+	return strings.Contains(p.apiBase, "api.z.ai") || strings.Contains(p.apiBase, "zhipu")
+}
+
+// parseToolCallsFromText extracts tool calls from embedded XML-like tags in text content
+// This is needed for Zhipu GLM coding plan which doesn't return proper tool_use blocks
+func (p *HTTPProvider) parseToolCallsFromText(text string) []ToolCall {
+	var toolCalls []ToolCall
+
+	// Pattern: <function_name>| attribute: "value" |</function_name>
+	// Example: <exec>| command: "ls" |</exec>
+	re := regexp.MustCompile(`<(\w+)\s*\|\s*\n\s*\|\s*([^:\s]+):\s+"([^"]+)"`)
+	matches := re.FindAllStringSubmatch(text, -1)
+
+	for i, match := range matches {
+		if len(match) > 3 {
+			toolCalls = append(toolCalls, ToolCall{
+				ID:   fmt.Sprintf("zhipu_%d_%d", time.Now().UnixNano(), i),
+				Name: match[1],
+				Arguments: map[string]interface{}{
+					match[2]: match[3],
+				},
+			})
+		}
+	}
+
+	return toolCalls
+}
+
 func (p *HTTPProvider) parseAnthropicResponse(body []byte) (*LLMResponse, error) {
 	var apiResponse struct {
 		ID           string `json:"id"`
@@ -363,6 +413,12 @@ func (p *HTTPProvider) parseAnthropicResponse(body []byte) (*LLMResponse, error)
 		switch block.Type {
 		case "text":
 			content.WriteString(block.Text)
+			// CUSTOM: Parse tool calls from text for Zhipu GLM coding plan
+			// Zhipu doesn't return proper tool_use blocks, so we extract from XML-like tags
+			if p.isZhipuEndpoint() {
+				parsedTools := p.parseToolCallsFromText(block.Text)
+				toolCalls = append(toolCalls, parsedTools...)
+			}
 		case "tool_use":
 			// Convert arguments from interface{} to map[string]interface{}
 			var arguments map[string]interface{}
