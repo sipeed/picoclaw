@@ -2,7 +2,7 @@ name: Deploy to Hostinger VPS
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "claude/hostinger-remote-deployment-*"]
   workflow_dispatch:
 
 env:
