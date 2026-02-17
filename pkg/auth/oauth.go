@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -127,8 +129,17 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 		fmt.Printf("Could not open browser automatically.\nPlease open this URL manually:\n\n%s\n\n", authURL)
 	}
 
-	fmt.Println("If you're running in a headless environment, use: picoclaw auth login --provider openai --device-code")
-	fmt.Println("Waiting for authentication in browser...")
+	fmt.Printf("Wait! If you are in a headless environment (like Coolify/VPS) and cannot reach localhost:%d,\n", cfg.Port)
+	fmt.Println("please complete the login in your local browser and then PASTE the final redirect URL (or just the code) here.")
+	fmt.Println("Waiting for authentication (browser or manual paste)...")
+
+	// Start manual input in a goroutine
+	manualCh := make(chan string)
+	go func() {
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		manualCh <- strings.TrimSpace(input)
+	}()
 
 	select {
 	case result := <-resultCh:
@@ -136,6 +147,22 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 			return nil, result.err
 		}
 		return exchangeCodeForTokens(cfg, result.code, pkce.CodeVerifier, redirectURI)
+	case manualInput := <-manualCh:
+		if manualInput == "" {
+			return nil, fmt.Errorf("manual input cancelled")
+		}
+		// Extract code from URL if it's a full URL
+		code := manualInput
+		if strings.Contains(manualInput, "?") {
+			u, err := url.Parse(manualInput)
+			if err == nil {
+				code = u.Query().Get("code")
+			}
+		}
+		if code == "" {
+			return nil, fmt.Errorf("could not find authorization code in input")
+		}
+		return exchangeCodeForTokens(cfg, code, pkce.CodeVerifier, redirectURI)
 	case <-time.After(5 * time.Minute):
 		return nil, fmt.Errorf("authentication timed out after 5 minutes")
 	}
