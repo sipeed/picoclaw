@@ -61,7 +61,7 @@ func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
 	}
 
 	return &ClawHubRegistry{
-		baseURL:      cfg.BaseURL,
+		baseURL:      baseURL,
 		authToken:    cfg.AuthToken,
 		searchPath:   searchPath,
 		skillsPath:   skillsPath,
