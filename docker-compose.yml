@@ -1,40 +1,131 @@
 services:
-  # ─────────────────────────────────────────────
-  # PicoClaw Agent (one-shot query)
-  #   docker compose run --rm picoclaw-agent -m "Hello"
-  # ─────────────────────────────────────────────
   picoclaw-agent:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: picoclaw-agent
-    profiles:
-      - agent
+    profiles: [agent]
     volumes:
-      - ./config/config.json:/root/.picoclaw/config.json:ro
+      - ./config/config.example.json:/root/.picoclaw/config.json:ro
       - picoclaw-workspace:/root/.picoclaw/workspace
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
+    environment:
+      - PICOCLAW_OBSERVABILITY_ENABLED=true
+      - PICOCLAW_OBSERVABILITY_SERVICE_NAME=picoclaw-agent
+      - PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT=${PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT:-otel-collector:4317}
+      - PICOCLAW_OBSERVABILITY_INSECURE=true
+      - PICOCLAW_OBSERVABILITY_SAMPLE_RATIO=1.0
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${PICOCLAW_AGENTS_DEFAULTS_PROVIDER:-}
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${PICOCLAW_AGENTS_DEFAULTS_MODEL:-}
+      - PICOCLAW_PROVIDERS_OPENAI_API_KEY=${PICOCLAW_PROVIDERS_OPENAI_API_KEY:-}
+      - PICOCLAW_PROVIDERS_OPENAI_API_BASE=${PICOCLAW_PROVIDERS_OPENAI_API_BASE:-}
+      - PICOCLAW_PROVIDERS_OPENROUTER_API_KEY=${PICOCLAW_PROVIDERS_OPENROUTER_API_KEY:-}
+      - PICOCLAW_PROVIDERS_ZHIPU_API_KEY=${PICOCLAW_PROVIDERS_ZHIPU_API_KEY:-}
+    depends_on:
+      - otel-collector
 
-  # ─────────────────────────────────────────────
-  # PicoClaw Gateway (Long-running Bot)
-  #   docker compose up picoclaw-gateway
-  # ─────────────────────────────────────────────
   picoclaw-gateway:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: picoclaw-gateway
     restart: unless-stopped
-    profiles:
-      - gateway
+    profiles: [gateway]
     volumes:
-      # Configuration file
-      - ./config/config.json:/root/.picoclaw/config.json:ro
-      # Persistent workspace (sessions, memory, logs)
+      - ./config/config.example.json:/root/.picoclaw/config.json:ro
       - picoclaw-workspace:/root/.picoclaw/workspace
     command: ["gateway"]
+    ports:
+      - "18790:18790"
+    environment:
+      - PICOCLAW_OBSERVABILITY_ENABLED=true
+      - PICOCLAW_OBSERVABILITY_SERVICE_NAME=picoclaw-gateway
+      - PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT=${PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT:-otel-collector:4317}
+      - PICOCLAW_OBSERVABILITY_INSECURE=true
+      - PICOCLAW_OBSERVABILITY_SAMPLE_RATIO=1.0
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${PICOCLAW_AGENTS_DEFAULTS_PROVIDER:-}
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${PICOCLAW_AGENTS_DEFAULTS_MODEL:-}
+      - PICOCLAW_PROVIDERS_OPENAI_API_KEY=${PICOCLAW_PROVIDERS_OPENAI_API_KEY:-}
+      - PICOCLAW_PROVIDERS_OPENAI_API_BASE=${PICOCLAW_PROVIDERS_OPENAI_API_BASE:-}
+      - PICOCLAW_PROVIDERS_OPENROUTER_API_KEY=${PICOCLAW_PROVIDERS_OPENROUTER_API_KEY:-}
+      - PICOCLAW_PROVIDERS_ZHIPU_API_KEY=${PICOCLAW_PROVIDERS_ZHIPU_API_KEY:-}
+    depends_on:
+      - otel-collector
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    container_name: otel-collector
+    profiles: [observability]
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "9464:9464"
+    networks:
+      default:
+        aliases:
+          - otel-collector
+
+  prometheus:
+    image: prom/prometheus:v3.4.2
+    container_name: prometheus
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+
+  loki:
+    image: grafana/loki:3.5.3
+    container_name: loki
+    profiles: [observability]
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:3.5.3
+    container_name: promtail
+    profiles: [observability]
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./observability/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    container_name: grafana
+    profiles: [observability]
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
 
 volumes:
   picoclaw-workspace:
+  prometheus-data:
+  loki-data:
+  grafana-data:

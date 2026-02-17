@@ -33,6 +33,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/migrate"
+	"github.com/sipeed/picoclaw/pkg/observability"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -399,6 +400,13 @@ func agentCmd() {
 		os.Exit(1)
 	}
 
+	otelShutdown, err := observability.Init(context.Background(), cfg.Observability)
+	if err != nil {
+		fmt.Printf("Error initializing observability: %v\n", err)
+		os.Exit(1)
+	}
+	defer otelShutdown(context.Background())
+
 	provider, err := providers.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
@@ -533,6 +541,13 @@ func gatewayCmd() {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
 	}
+
+	otelShutdown, err := observability.Init(context.Background(), cfg.Observability)
+	if err != nil {
+		fmt.Printf("Error initializing observability: %v\n", err)
+		os.Exit(1)
+	}
+	defer otelShutdown(context.Background())
 
 	provider, err := providers.CreateProvider(cfg)
 	if err != nil {
@@ -746,6 +761,11 @@ func statusCmd() {
 			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)
 		} else {
 			fmt.Println("vLLM/Local: not set")
+		}
+		if cfg.Observability.Enabled {
+			fmt.Printf("Observability: ✓ OTLP=%s sample_ratio=%.2f\n", cfg.Observability.OTLPEndpoint, cfg.Observability.SampleRatio)
+		} else {
+			fmt.Println("Observability: not set")
 		}
 
 		store, _ := auth.LoadStore()
