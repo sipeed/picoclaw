@@ -279,6 +279,9 @@ func MergeConfig(existing, incoming *config.Config) *config.Config {
 	if existing.Tools.Web.Brave.APIKey == "" {
 		existing.Tools.Web.Brave = incoming.Tools.Web.Brave
 	}
+	if existing.Tools.Web.Exa.APIKey == "" {
+		existing.Tools.Web.Exa = incoming.Tools.Web.Exa
+	}
 
 	return existing
 }

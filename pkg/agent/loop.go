@@ -77,6 +77,9 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
 		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+		ExaAPIKey:            cfg.Tools.Web.Exa.APIKey,
+		ExaMaxResults:        cfg.Tools.Web.Exa.MaxResults,
+		ExaEnabled:           cfg.Tools.Web.Exa.Enabled,
 		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
 	}); searchTool != nil {

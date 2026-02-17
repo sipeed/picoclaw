@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -78,6 +79,78 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
 		if item.Description != "" {
 			lines = append(lines, fmt.Sprintf("   %s", item.Description))
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
+type ExaSearchProvider struct {
+	apiKey string
+}
+
+func (p *ExaSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	reqBody, err := json.Marshal(map[string]interface{}{
+		"query":      query,
+		"numResults": count,
+		"contents": map[string]interface{}{
+			"text": map[string]interface{}{
+				"maxCharacters": 10000,
+			},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.exa.ai/search", bytes.NewReader(reqBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", p.apiKey)
+	req.Header.Set("x-exa-integration", "picoclaw")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var searchResp struct {
+		Results []struct {
+			Title string `json:"title"`
+			URL   string `json:"url"`
+			Text  string `json:"text"`
+		} `json:"results"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		fmt.Printf("Exa API Error Body: %s\n", string(body))
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	results := searchResp.Results
+	if len(results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Results for: %s", query))
+	for i, item := range results {
+		if i >= count {
+			break
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+		if item.Text != "" {
+			lines = append(lines, fmt.Sprintf("   %s", item.Text))
 		}
 	}
 
@@ -185,6 +258,9 @@ type WebSearchToolOptions struct {
 	BraveAPIKey          string
 	BraveMaxResults      int
 	BraveEnabled         bool
+	ExaAPIKey            string
+	ExaMaxResults        int
+	ExaEnabled           bool
 	DuckDuckGoMaxResults int
 	DuckDuckGoEnabled    bool
 }
@@ -193,11 +269,16 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Brave > DuckDuckGo
+	// Priority: Brave > Exa > DuckDuckGo
 	if opts.BraveEnabled && opts.BraveAPIKey != "" {
 		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey}
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
+		}
+	} else if opts.ExaEnabled && opts.ExaAPIKey != "" {
+		provider = &ExaSearchProvider{apiKey: opts.ExaAPIKey}
+		if opts.ExaMaxResults > 0 {
+			maxResults = opts.ExaMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
 		provider = &DuckDuckGoSearchProvider{}

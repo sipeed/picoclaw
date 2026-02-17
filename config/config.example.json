@@ -115,8 +115,14 @@
   },
   "tools": {
     "web": {
-      "search": {
+      "brave": {
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "exa": {
+        "enabled": false,
+        "api_key": "YOUR_EXA_API_KEY",
         "max_results": 5
       }
     }

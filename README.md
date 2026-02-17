@@ -194,7 +194,7 @@ docker compose --profile gateway up -d
 > [!TIP]
 > Set your API key in `~/.picoclaw/config.json`.
 > Get API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web search is **optional** - get free [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
+> Web search is **optional** - get free [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or free [Exa Search API](https://exa.ai) (AI-native search), or use built-in auto fallback.
 
 **1. Initialize**
 
@@ -228,6 +228,11 @@ picoclaw onboard
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       },
+      "exa": {
+        "enabled": false,
+        "api_key": "YOUR_EXA_API_KEY",
+        "max_results": 5
+      },
       "duckduckgo": {
         "enabled": true,
         "max_results": 5
@@ -240,7 +245,7 @@ picoclaw onboard
 **3. Get API Keys**
 
 * **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-* **Web Search** (optional): [Brave Search](https://brave.com/search/api) - Free tier available (2000 requests/month)
+* **Web Search** (optional): [Brave Search](https://brave.com/search/api) (2000 free requests/month) · [Exa Search](https://exa.ai) (free API key)
 
 > **Note**: See `config.example.json` for a complete configuration template.
 
@@ -770,6 +775,11 @@ picoclaw agent -m "Hello"
         "api_key": "BSA...",
         "max_results": 5
       },
+      "exa": {
+        "enabled": false,
+        "api_key": "YOUR_EXA_API_KEY",
+        "max_results": 5
+      },
       "duckduckgo": {
         "enabled": true,
         "max_results": 5
@@ -829,10 +839,11 @@ This is normal if you haven't configured a search API key yet. PicoClaw will pro
 
 To enable web search:
 
-1. **Option 1 (Recommended)**: Get a free API key at [https://brave.com/search/api](https://brave.com/search/api) (2000 free queries/month) for the best results.
-2. **Option 2 (No Credit Card)**: If you don't have a key, we automatically fall back to **DuckDuckGo** (no key required).
+1. **Option 1**: Get a free API key at [Brave Search](https://brave.com/search/api) (2000 free queries/month).
+2. **Option 2**: Get a free API key at [Exa](https://exa.ai) for AI-native neural search.
+3. **Option 3 (No Credit Card)**: If you don't have a key, we automatically fall back to **DuckDuckGo** (no key required).
 
-Add the key to `~/.picoclaw/config.json` if using Brave:
+Add the key to `~/.picoclaw/config.json`:
 
 ```json
 {
@@ -841,6 +852,11 @@ Add the key to `~/.picoclaw/config.json` if using Brave:
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "exa": {
+        "enabled": false,
+        "api_key": "YOUR_EXA_API_KEY",
         "max_results": 5
       },
       "duckduckgo": {
@@ -869,4 +885,5 @@ This happens when another instance of the bot is running. Make sure only one `pi
 | **OpenRouter**   | 200K tokens/month   | Multiple models (Claude, GPT-4, etc.) |
 | **Zhipu**        | 200K tokens/month   | Best for Chinese users                |
 | **Brave Search** | 2000 queries/month  | Web search functionality              |
+| **Exa Search**   | Free API key        | AI-native neural web search           |
 | **Groq**         | Free tier available | Fast inference (Llama, Mixtral)       |

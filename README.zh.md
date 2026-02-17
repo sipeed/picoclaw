@@ -202,7 +202,7 @@ docker compose --profile gateway up -d
 > [!TIP]
 > 在 `~/.picoclaw/config.json` 中设置您的 API Key。
 > 获取 API Key: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu (智谱)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> 网络搜索是 **可选的** - 获取免费的 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询)
+> 网络搜索是 **可选的** - 获取免费的 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询) 或免费的 [Exa Search API](https://exa.ai) (AI 原生搜索)
 
 **1. 初始化 (Initialize)**
 
@@ -232,8 +232,18 @@ picoclaw onboard
   },
   "tools": {
     "web": {
-      "search": {
+      "brave": {
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "exa": {
+        "enabled": false,
+        "api_key": "YOUR_EXA_API_KEY",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
         "max_results": 5
       }
     }
@@ -245,7 +255,7 @@ picoclaw onboard
 **3. 获取 API Key**
 
 * **LLM 提供商**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-* **网络搜索** (可选): [Brave Search](https://brave.com/search/api) - 提供免费层级 (2000 请求/月)
+* **网络搜索** (可选): [Brave Search](https://brave.com/search/api) (2000 请求/月) · [Exa Search](https://exa.ai) (免费 API Key)
 
 > **注意**: 完整的配置模板请参考 `config.example.json`。
 
@@ -700,14 +710,21 @@ Discord:  [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 
 启用网络搜索：
 
-1. 在 [https://brave.com/search/api](https://brave.com/search/api) 获取免费 API Key (每月 2000 次免费查询)
-2. 添加到 `~/.picoclaw/config.json`:
+1. 在 [Brave Search](https://brave.com/search/api) 获取免费 API Key (每月 2000 次免费查询)
+2. 或在 [Exa](https://exa.ai) 获取免费 API Key (AI 原生搜索)
+3. 添加到 `~/.picoclaw/config.json`:
 ```json
 {
   "tools": {
     "web": {
-      "search": {
+      "brave": {
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "exa": {
+        "enabled": false,
+        "api_key": "YOUR_EXA_API_KEY",
         "max_results": 5
       }
     }
@@ -735,4 +752,5 @@ Discord:  [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 | **OpenRouter** | 200K tokens/月 | 多模型聚合 (Claude, GPT-4 等) |
 | **智谱 (Zhipu)** | 200K tokens/月 | 最适合中国用户 |
 | **Brave Search** | 2000 次查询/月 | 网络搜索功能 |
+| **Exa Search** | 免费 API Key | AI 原生网络搜索 |
 | **Groq** | 提供免费层级 | 极速推理 (Llama, Mixtral) |

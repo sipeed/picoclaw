@@ -201,6 +201,12 @@ type BraveConfig struct {
 	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
 }
 
+type ExaConfig struct {
+	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_EXA_ENABLED"`
+	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_EXA_API_KEY"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_EXA_MAX_RESULTS"`
+}
+
 type DuckDuckGoConfig struct {
 	Enabled    bool `json:"enabled" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
 	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
@@ -208,6 +214,7 @@ type DuckDuckGoConfig struct {
 
 type WebToolsConfig struct {
 	Brave      BraveConfig      `json:"brave"`
+	Exa        ExaConfig        `json:"exa"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 }
 
@@ -313,6 +320,11 @@ func DefaultConfig() *Config {
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{
 				Brave: BraveConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
+				Exa: ExaConfig{
 					Enabled:    false,
 					APIKey:     "",
 					MaxResults: 5,

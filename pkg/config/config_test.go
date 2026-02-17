@@ -145,6 +145,12 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	if cfg.Tools.Web.Brave.APIKey != "" {
 		t.Error("Brave API key should be empty by default")
 	}
+	if cfg.Tools.Web.Exa.MaxResults != 5 {
+		t.Error("Expected Exa MaxResults 5, got ", cfg.Tools.Web.Exa.MaxResults)
+	}
+	if cfg.Tools.Web.Exa.APIKey != "" {
+		t.Error("Exa API key should be empty by default")
+	}
 	if cfg.Tools.Web.DuckDuckGo.MaxResults != 5 {
 		t.Error("Expected DuckDuckGo MaxResults 5, got ", cfg.Tools.Web.DuckDuckGo.MaxResults)
 	}
