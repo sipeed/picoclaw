@@ -217,12 +217,18 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 					})
 				}
 				for _, tc := range msg.ToolCalls {
-					argsJSON, _ := json.Marshal(tc.Arguments)
+					name, args, ok := resolveCodexToolCall(tc)
+					if !ok {
+						logger.WarnCF("provider.codex", "Skipping invalid tool call in history", map[string]interface{}{
+							"call_id": tc.ID,
+						})
+						continue
+					}
 					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 						OfFunctionCall: &responses.ResponseFunctionToolCallParam{
 							CallID:    tc.ID,
-							Name:      tc.Name,
-							Arguments: string(argsJSON),
+							Name:      name,
+							Arguments: args,
 						},
 					})
 				}
@@ -260,15 +266,35 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 		params.Instructions = openai.Opt(defaultCodexInstructions)
 	}
 
-	if maxTokens, ok := options["max_tokens"].(int); ok {
-		params.MaxOutputTokens = openai.Opt(int64(maxTokens))
-	}
-
 	if len(tools) > 0 {
 		params.Tools = translateToolsForCodex(tools)
 	}
 
 	return params
+}
+
+func resolveCodexToolCall(tc ToolCall) (name string, arguments string, ok bool) {
+	name = tc.Name
+	if name == "" && tc.Function != nil {
+		name = tc.Function.Name
+	}
+	if name == "" {
+		return "", "", false
+	}
+
+	if len(tc.Arguments) > 0 {
+		argsJSON, err := json.Marshal(tc.Arguments)
+		if err != nil {
+			return "", "", false
+		}
+		return name, string(argsJSON), true
+	}
+
+	if tc.Function != nil && tc.Function.Arguments != "" {
+		return name, tc.Function.Arguments, true
+	}
+
+	return name, "{}", true
 }
 
 func translateToolsForCodex(tools []ToolDefinition) []responses.ToolUnionParam {
