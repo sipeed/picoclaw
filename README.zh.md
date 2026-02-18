@@ -218,18 +218,24 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
+      "model": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
     }
   },
-  "providers": {
-    "openrouter": {
-      "api_key": "xxx",
-      "api_base": "https://openrouter.ai/api/v1"
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-4o",
+      "api_key": "your-api-key"
+    },
+    {
+      "model_name": "claude3",
+      "model": "anthropic/claude-3-sonnet",
+      "api_key": "your-anthropic-key"
     }
-  },
+  ],
   "tools": {
     "web": {
       "search": {
@@ -244,6 +250,8 @@ picoclaw onboard
 }
 
 ```
+
+> **新功能**: `model_list` 配置格式支持零代码添加 provider。详见[模型配置](#-模型配置-model_list)章节。
 
 **3. 获取 API Key**
 
@@ -557,6 +565,63 @@ Agent 读取 HEARTBEAT.md
 | `qwen` | LLM (通义千问) | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq` | LLM + **语音转录** (Whisper) | [console.groq.com](https://console.groq.com) |
 | `cerebras` | LLM (Cerebras 直连) | [cerebras.ai](https://cerebras.ai) |
+
+### 模型配置 (model_list)
+
+新的 `model_list` 配置格式支持零代码添加 provider。使用协议前缀指定提供商类型：
+
+| 前缀 | 提供商 | 示例 |
+|------|--------|------|
+| `openai/` | OpenAI (默认) | `openai/gpt-4o` |
+| `anthropic/` | Anthropic | `anthropic/claude-3-sonnet` |
+| `antigravity/` | Google via OAuth | `antigravity/gemini-2.0-flash` |
+| `deepseek/` | DeepSeek | `deepseek/deepseek-chat` |
+| `qwen/` | 通义千问 | `qwen/qwen-max` |
+| `groq/` | Groq | `groq/llama-3.1-70b` |
+| `cerebras/` | Cerebras | `cerebras/llama-3.3-70b` |
+
+**示例：**
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-4o",
+      "api_key": "your-openai-key"
+    },
+    {
+      "model_name": "claude3",
+      "model": "anthropic/claude-3-sonnet",
+      "api_key": "your-anthropic-key"
+    },
+    {
+      "model_name": "custom",
+      "model": "openai/your-model",
+      "api_base": "https://your-api.com/v1",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt4"
+    }
+  }
+}
+```
+
+**负载均衡：** 为同一模型配置多个端点：
+
+```json
+{
+  "model_list": [
+    {"model_name": "gpt4", "model": "openai/gpt-4o", "api_base": "https://api1.example.com/v1"},
+    {"model_name": "gpt4", "model": "openai/gpt-4o", "api_base": "https://api2.example.com/v1"}
+  ]
+}
+```
+
+> **注意**: 旧的 `providers` 配置格式已弃用。详见[迁移指南](docs/migration/model-list-migration.md)。
 
 <details>
 <summary><b>智谱 (Zhipu) 配置示例</b></summary>

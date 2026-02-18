@@ -209,18 +209,24 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
+      "model": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
     }
   },
-  "providers": {
-    "openrouter": {
-      "api_key": "xxx",
-      "api_base": "https://openrouter.ai/api/v1"
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-4o",
+      "api_key": "your-api-key"
+    },
+    {
+      "model_name": "claude3",
+      "model": "anthropic/claude-3-sonnet",
+      "api_key": "your-anthropic-key"
     }
-  },
+  ],
   "tools": {
     "web": {
       "brave": {
@@ -236,6 +242,8 @@ picoclaw onboard
   }
 }
 ```
+
+> **New**: The `model_list` configuration format allows zero-code provider addition. See [Model Configuration](#-model-configuration) for details.
 
 **3. Get API Keys**
 
@@ -680,6 +688,63 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 | `qwen`                     | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)           |
 | `cerebras`                 | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                     |
+
+### Model Configuration (model_list)
+
+The new `model_list` configuration allows you to add providers with zero code changes. Use protocol prefixes to specify the provider type:
+
+| Prefix | Provider | Example |
+|--------|----------|---------|
+| `openai/` | OpenAI (default) | `openai/gpt-4o` |
+| `anthropic/` | Anthropic | `anthropic/claude-3-sonnet` |
+| `antigravity/` | Google via OAuth | `antigravity/gemini-2.0-flash` |
+| `deepseek/` | DeepSeek | `deepseek/deepseek-chat` |
+| `qwen/` | Alibaba Qwen | `qwen/qwen-max` |
+| `groq/` | Groq | `groq/llama-3.1-70b` |
+| `cerebras/` | Cerebras | `cerebras/llama-3.3-70b` |
+
+**Example:**
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-4o",
+      "api_key": "your-openai-key"
+    },
+    {
+      "model_name": "claude3",
+      "model": "anthropic/claude-3-sonnet",
+      "api_key": "your-anthropic-key"
+    },
+    {
+      "model_name": "custom",
+      "model": "openai/your-model",
+      "api_base": "https://your-api.com/v1",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt4"
+    }
+  }
+}
+```
+
+**Load Balancing:** Configure multiple endpoints for the same model:
+
+```json
+{
+  "model_list": [
+    {"model_name": "gpt4", "model": "openai/gpt-4o", "api_base": "https://api1.example.com/v1"},
+    {"model_name": "gpt4", "model": "openai/gpt-4o", "api_base": "https://api2.example.com/v1"}
+  ]
+}
+```
+
+> **Note**: The legacy `providers` configuration is deprecated. See [migration guide](docs/migration/model-list-migration.md) for details.
 
 <details>
 <summary><b>Zhipu</b></summary>

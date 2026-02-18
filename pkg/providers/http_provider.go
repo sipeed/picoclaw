@@ -221,6 +221,27 @@ func createCodexAuthProvider() (LLMProvider, error) {
 
 func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	model := cfg.Agents.Defaults.Model
+
+	// First, try to use model_list configuration
+	if len(cfg.ModelList) > 0 {
+		// Try to get config by model name first
+		modelCfg, err := cfg.GetModelConfig(model)
+		if err == nil {
+			// Found in model_list, use factory to create provider
+			provider, err := CreateProviderFromConfig(modelCfg)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create provider from model_list: %w", err)
+			}
+			return provider, nil
+		}
+		// Model not found in model_list, fall through to providers config
+	}
+
+	// Log deprecation warning if using old providers config
+	if cfg.HasProvidersConfig() && len(cfg.ModelList) == 0 {
+		fmt.Println("WARNING: providers config is deprecated, please migrate to model_list")
+	}
+
 	providerName := strings.ToLower(cfg.Agents.Defaults.Provider)
 
 	var apiKey, apiBase, proxy string

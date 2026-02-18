@@ -3,12 +3,48 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model": "glm-4.7",
+      "model": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
     }
   },
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-4o",
+      "api_key": "sk-your-openai-key",
+      "api_base": "https://api.openai.com/v1"
+    },
+    {
+      "model_name": "claude3",
+      "model": "anthropic/claude-3-sonnet",
+      "api_key": "sk-ant-your-key",
+      "api_base": "https://api.anthropic.com/v1"
+    },
+    {
+      "model_name": "gemini",
+      "model": "antigravity/gemini-2.0-flash",
+      "auth_method": "oauth"
+    },
+    {
+      "model_name": "deepseek",
+      "model": "deepseek/deepseek-chat",
+      "api_key": "sk-your-deepseek-key"
+    },
+    {
+      "model_name": "loadbalanced-gpt4",
+      "model": "openai/gpt-4o",
+      "api_key": "sk-key1",
+      "api_base": "https://api1.example.com/v1"
+    },
+    {
+      "model_name": "loadbalanced-gpt4",
+      "model": "openai/gpt-4o",
+      "api_key": "sk-key2",
+      "api_base": "https://api2.example.com/v1"
+    }
+  ],
   "channels": {
     "telegram": {
       "enabled": false,
@@ -73,6 +109,7 @@
     }
   },
   "providers": {
+    "_comment": "DEPRECATED: Use model_list instead. This will be removed in v2.0",
     "anthropic": {
       "api_key": "",
       "api_base": ""
