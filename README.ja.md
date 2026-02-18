@@ -3,7 +3,7 @@
 
 <h1>PicoClaw: Go で書かれた超効率 AI アシスタント</h1>
 
-<h3>$10 ハードウェア · 10MB RAM · 1秒起動 · 皮皮虾，我们走！</h3>
+<h3>$10 ハードウェア · 10MB RAM · 1秒起動 · 行くぜ、シャコ！</h3>
 <h3></h3>
 
 <p>
@@ -12,7 +12,7 @@
 <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
-**日本語** | [English](README.md)
+[中文](README.zh.md) | **日本語** | [Português](README.pt-br.md) | [English](README.md)
 
 </div>
 
@@ -39,7 +39,7 @@
 </table>
 
 ## 📢 ニュース
-2026-02-09 🎉 PicoClaw リリース！$10 ハードウェアで 10MB 未満の RAM で動く AI エージェントを 1 日で構築。🦐 皮皮虾，我们走！
+2026-02-09 🎉 PicoClaw リリース！$10 ハードウェアで 10MB 未満の RAM で動く AI エージェントを 1 日で構築。🦐 行くぜ、シャコ！
 
 ## ✨ 特徴
 
@@ -735,7 +735,7 @@ Discord: https://discord.gg/V4sAZ9XWpN
 
 ## 🐛 トラブルシューティング
 
-### Web 検索で「API 配置问题」と表示される
+### Web 検索で「API 設定の問題」と表示される
 
 検索 API キーをまだ設定していない場合、これは正常です。PicoClaw は手動検索用の便利なリンクを提供します。
 

@@ -14,7 +14,7 @@
     <a href="https://x.com/SipeedIO"><img src="https://img.shields.io/badge/X_(Twitter)-SipeedIO-black?style=flat&logo=x&logoColor=white" alt="Twitter"></a>
   </p>
 
- **中文** | [日本語](README.ja.md) | [English](README.md)
+ **中文** | [日本語](README.ja.md) | [Português](README.pt-br.md) | [English](README.md)
 </div>
 
 ---

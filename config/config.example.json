@@ -79,7 +79,8 @@
     },
     "openai": {
       "api_key": "",
-      "api_base": ""
+      "api_base": "",
+      "web_search": true
     },
     "openrouter": {
       "api_key": "sk-or-v1-xxx",
