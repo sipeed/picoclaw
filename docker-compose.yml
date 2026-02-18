@@ -16,6 +16,11 @@ services:
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   # ─────────────────────────────────────────────
   # PicoClaw Gateway (Long-running Bot)
@@ -35,6 +40,11 @@ services:
       # Persistent workspace (sessions, memory, logs)
       - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
     command: ["gateway"]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
 volumes:
   picoclaw-workspace:

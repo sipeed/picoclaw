@@ -24,6 +24,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/security"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -63,15 +64,29 @@ type processOptions struct {
 func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msgBus *bus.MessageBus) *tools.ToolRegistry {
 	registry := tools.NewToolRegistry()
 
+	// Create shared PolicyEngine from security config
+	pe := security.NewPolicyEngine(&cfg.Security, msgBus)
+
+	pathOpts := tools.PathPolicyOpts{
+		PathMode:     pe.GetMode("path_validation"),
+		PolicyEngine: pe,
+	}
+
 	// File system tools
-	registry.Register(tools.NewReadFileTool(workspace, restrict))
-	registry.Register(tools.NewWriteFileTool(workspace, restrict))
-	registry.Register(tools.NewListDirTool(workspace, restrict))
-	registry.Register(tools.NewEditFileTool(workspace, restrict))
-	registry.Register(tools.NewAppendFileTool(workspace, restrict))
+	registry.Register(tools.NewReadFileToolWithPolicy(workspace, restrict, pathOpts))
+	registry.Register(tools.NewWriteFileToolWithPolicy(workspace, restrict, pathOpts))
+	registry.Register(tools.NewListDirToolWithPolicy(workspace, restrict, pathOpts))
+	registry.Register(tools.NewEditFileToolWithPolicy(workspace, restrict, pathOpts))
+	registry.Register(tools.NewAppendFileToolWithPolicy(workspace, restrict, pathOpts))
 
 	// Shell execution
-	registry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
+	registry.Register(tools.NewExecToolWithConfig(workspace, restrict, tools.ExecToolConfig{
+		DenyPatterns:  cfg.Tools.Exec.DenyPatterns,
+		AllowPatterns: cfg.Tools.Exec.AllowPatterns,
+		MaxTimeout:    cfg.Tools.Exec.MaxTimeout,
+		PolicyEngine:  pe,
+		ExecGuardMode: pe.GetMode("exec_guard"),
+	}))
 
 	if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
 		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
@@ -85,7 +100,11 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	}); searchTool != nil {
 		registry.Register(searchTool)
 	}
-	registry.Register(tools.NewWebFetchTool(50000))
+	registry.Register(tools.NewWebFetchToolWithPolicy(tools.WebFetchToolOptions{
+		MaxChars:     50000,
+		PolicyEngine: pe,
+		SSRFMode:     pe.GetMode("ssrf"),
+	}))
 
 	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 	registry.Register(tools.NewI2CTool())

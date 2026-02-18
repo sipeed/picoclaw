@@ -10,6 +10,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/security"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -339,16 +342,39 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 }
 
 type WebFetchTool struct {
-	maxChars int
+	maxChars     int
+	ssrfMode     security.PolicyMode
+	policyEngine *security.PolicyEngine
+	channel      string
+	chatID       string
+}
+
+// WebFetchToolOptions configures optional security policy for WebFetchTool.
+type WebFetchToolOptions struct {
+	MaxChars     int
+	PolicyEngine *security.PolicyEngine
+	SSRFMode     security.PolicyMode
 }
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {
-	if maxChars <= 0 {
-		maxChars = 50000
+	return NewWebFetchToolWithPolicy(WebFetchToolOptions{MaxChars: maxChars})
+}
+
+func NewWebFetchToolWithPolicy(opts WebFetchToolOptions) *WebFetchTool {
+	if opts.MaxChars <= 0 {
+		opts.MaxChars = 50000
 	}
 	return &WebFetchTool{
-		maxChars: maxChars,
+		maxChars:     opts.MaxChars,
+		policyEngine: opts.PolicyEngine,
+		ssrfMode:     opts.SSRFMode,
 	}
+}
+
+// SetContext implements ContextualTool for IM-based approval.
+func (t *WebFetchTool) SetContext(channel, chatID string) {
+	t.channel = channel
+	t.chatID = chatID
 }
 
 func (t *WebFetchTool) Name() string {
@@ -383,13 +409,29 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult("url is required")
 	}
 
+	// SSRF protection (mode-aware)
+	if !t.ssrfMode.IsOff() {
+		if err := utils.ValidateURL(urlStr); err != nil {
+			if t.policyEngine != nil {
+				pErr := t.policyEngine.Evaluate(ctx, t.ssrfMode, security.Violation{
+					Category: "ssrf",
+					Tool:     "web_fetch",
+					Action:   urlStr,
+					Reason:   err.Error(),
+				}, t.channel, t.chatID)
+				if pErr != nil {
+					return ErrorResult(fmt.Sprintf("URL blocked: %v", pErr))
+				}
+				// approved by user
+			} else {
+				return ErrorResult(fmt.Sprintf("URL blocked: %v", err))
+			}
+		}
+	}
+
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("invalid URL: %v", err))
-	}
-
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return ErrorResult("only http/https URLs are allowed")
 	}
 
 	if parsedURL.Host == "" {
@@ -421,6 +463,11 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("stopped after 5 redirects")
+			}
+			if !t.ssrfMode.IsOff() {
+				if err := utils.ValidateURL(req.URL.String()); err != nil {
+					return fmt.Errorf("redirect blocked: %w", err)
+				}
 			}
 			return nil
 		},

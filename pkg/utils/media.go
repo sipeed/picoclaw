@@ -48,9 +48,10 @@ func SanitizeFilename(filename string) string {
 
 // DownloadOptions holds optional parameters for downloading files
 type DownloadOptions struct {
-	Timeout      time.Duration
-	ExtraHeaders map[string]string
-	LoggerPrefix string
+	Timeout           time.Duration
+	ExtraHeaders      map[string]string
+	LoggerPrefix      string
+	SkipURLValidation bool // When true, skip SSRF validation (caller handles it)
 }
 
 // DownloadFile downloads a file from URL to a local temp directory.
@@ -62,6 +63,17 @@ func DownloadFile(url, filename string, opts DownloadOptions) string {
 	}
 	if opts.LoggerPrefix == "" {
 		opts.LoggerPrefix = "utils"
+	}
+
+	// Validate URL against SSRF attacks (skipped when caller handles policy)
+	if !opts.SkipURLValidation {
+		if err := ValidateURL(url); err != nil {
+			logger.ErrorCF(opts.LoggerPrefix, "URL validation failed", map[string]interface{}{
+				"error": err.Error(),
+				"url":   url,
+			})
+			return ""
+		}
 	}
 
 	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")

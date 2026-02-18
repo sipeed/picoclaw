@@ -17,3 +17,7 @@ type OutboundMessage struct {
 }
 
 type MessageHandler func(InboundMessage) error
+
+// InboundInterceptor inspects an inbound message before it reaches the main consumer.
+// Returns true if the message was consumed and should not be enqueued.
+type InboundInterceptor func(msg InboundMessage) bool

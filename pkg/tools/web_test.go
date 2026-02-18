@@ -9,6 +9,12 @@ import (
 	"testing"
 )
 
+// newTestWebFetchTool creates a WebFetchTool with SSRF check disabled for local test servers.
+func newTestWebFetchTool(maxChars int) *WebFetchTool {
+	return NewWebFetchToolWithPolicy(WebFetchToolOptions{MaxChars: maxChars})
+	// ssrfMode defaults to ModeOff (""), which disables SSRF checks
+}
+
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -18,7 +24,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := newTestWebFetchTool(50000)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -54,7 +60,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := newTestWebFetchTool(50000)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -109,8 +115,8 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 		t.Errorf("Expected error for unsupported URL scheme")
 	}
 
-	// Should mention only http/https allowed
-	if !strings.Contains(result.ForLLM, "http/https") && !strings.Contains(result.ForUser, "http/https") {
+	// Should mention scheme issue (http/https or unsupported protocol scheme)
+	if !strings.Contains(result.ForLLM, "http/https") && !strings.Contains(result.ForLLM, "unsupported protocol scheme") {
 		t.Errorf("Expected scheme error message, got ForLLM: %s", result.ForLLM)
 	}
 }
@@ -145,7 +151,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(1000) // Limit to 1000 chars
+	tool := newTestWebFetchTool(1000) // Limit to 1000 chars
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -210,7 +216,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := newTestWebFetchTool(50000)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -234,6 +240,30 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}
 }
 
+// TestWebTool_WebFetch_SSRFBlocked verifies that SSRF attempts are blocked
+func TestWebTool_WebFetch_SSRFBlocked(t *testing.T) {
+	tool := NewWebFetchToolWithPolicy(WebFetchToolOptions{MaxChars: 50000, SSRFMode: "block"})
+	ctx := context.Background()
+
+	ssrfURLs := []string{
+		"http://127.0.0.1/admin",
+		"http://localhost/secret",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://10.0.0.1/internal",
+		"http://192.168.1.1/router",
+	}
+
+	for _, u := range ssrfURLs {
+		result := tool.Execute(ctx, map[string]interface{}{"url": u})
+		if !result.IsError {
+			t.Errorf("Expected SSRF block for %s, but got success", u)
+		}
+		if !strings.Contains(result.ForLLM, "blocked") {
+			t.Errorf("Expected 'blocked' in error for %s, got: %s", u, result.ForLLM)
+		}
+	}
+}
+
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	tool := NewWebFetchTool(50000)
@@ -249,8 +279,44 @@ func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 		t.Errorf("Expected error for URL without domain")
 	}
 
-	// Should mention missing domain
-	if !strings.Contains(result.ForLLM, "domain") && !strings.Contains(result.ForUser, "domain") {
-		t.Errorf("Expected domain error message, got ForLLM: %s", result.ForLLM)
+	// Should mention missing domain or host
+	if !strings.Contains(result.ForLLM, "domain") && !strings.Contains(result.ForLLM, "host") &&
+		!strings.Contains(result.ForUser, "domain") && !strings.Contains(result.ForUser, "host") {
+		t.Errorf("Expected domain/host error message, got ForLLM: %s", result.ForLLM)
+	}
+}
+
+func TestWebFetchTool_SetContext(t *testing.T) {
+	tool := NewWebFetchTool(50000)
+	tool.SetContext("slack", "C12345")
+
+	if tool.channel != "slack" {
+		t.Errorf("Expected channel 'slack', got %q", tool.channel)
+	}
+	if tool.chatID != "C12345" {
+		t.Errorf("Expected chatID 'C12345', got %q", tool.chatID)
+	}
+}
+
+func TestWebFetchTool_SSRFBlocked_NoPolicyEngine(t *testing.T) {
+	tool := NewWebFetchToolWithPolicy(WebFetchToolOptions{
+		MaxChars: 50000,
+		SSRFMode: "block",
+	})
+	ctx := context.Background()
+
+	result := tool.Execute(ctx, map[string]interface{}{"url": "http://127.0.0.1/secret"})
+	if !result.IsError {
+		t.Error("Expected SSRF block without policy engine")
+	}
+	if !strings.Contains(result.ForLLM, "blocked") {
+		t.Errorf("Expected 'blocked' in error, got: %s", result.ForLLM)
+	}
+}
+
+func TestWebFetchTool_DefaultMaxChars(t *testing.T) {
+	tool := NewWebFetchToolWithPolicy(WebFetchToolOptions{MaxChars: 0})
+	if tool.maxChars != 50000 {
+		t.Errorf("Expected default maxChars 50000, got %d", tool.maxChars)
 	}
 }

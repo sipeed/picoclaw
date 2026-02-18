@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/sipeed/picoclaw/pkg/config"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +11,18 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/security"
 )
+
+// ExecToolConfig holds configurable options for ExecTool.
+type ExecToolConfig struct {
+	DenyPatterns  []string // Additional regex deny patterns from config
+	AllowPatterns []string // If set, only matching commands are allowed
+	MaxTimeout    int      // Seconds, default 60
+	PolicyEngine  *security.PolicyEngine
+	ExecGuardMode security.PolicyMode
+}
 
 type ExecTool struct {
 	workingDir          string
@@ -20,6 +30,10 @@ type ExecTool struct {
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
 	restrictToWorkspace bool
+	policyEngine        *security.PolicyEngine
+	execGuardMode       security.PolicyMode
+	channel             string
+	chatID              string
 }
 
 var defaultDenyPatterns = []*regexp.Regexp{
@@ -51,6 +65,13 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bpkill\b`),
 	regexp.MustCompile(`\bkillall\b`),
 	regexp.MustCompile(`\bkill\s+-[9]\b`),
+	regexp.MustCompile(`\bcurl\b.*\s+(-d|--data|--data-raw|--data-binary|-F|--form|-T|--upload-file)\b`),
+	regexp.MustCompile(`\bwget\b.*\s+(--post-data|--post-file)\b`),
+	regexp.MustCompile(`\bnc\b\s+\S+\s+\d+`),
+	regexp.MustCompile(`\bncat\b\s+\S+\s+\d+`),
+	regexp.MustCompile(`base64\b.*\|\s*(sh|bash|zsh)\b`),
+	regexp.MustCompile(`\b(bash|sh|zsh)\s+-i\s+[>&]`),
+	regexp.MustCompile(`/dev/tcp/`),
 	regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
 	regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
 	regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
@@ -68,45 +89,49 @@ var defaultDenyPatterns = []*regexp.Regexp{
 }
 
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
-	return NewExecToolWithConfig(workingDir, restrict, nil)
+	return NewExecToolWithConfig(workingDir, restrict, ExecToolConfig{})
 }
 
-func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
-	denyPatterns := make([]*regexp.Regexp, 0)
+func NewExecToolWithConfig(workingDir string, restrict bool, cfg ExecToolConfig) *ExecTool {
+	denyPatterns := make([]*regexp.Regexp, len(defaultDenyPatterns))
+	copy(denyPatterns, defaultDenyPatterns)
 
-	enableDenyPatterns := true
-	if config != nil {
-		execConfig := config.Tools.Exec
-		enableDenyPatterns = execConfig.EnableDenyPatterns
-		if enableDenyPatterns {
-			if len(execConfig.CustomDenyPatterns) > 0 {
-				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
-				for _, pattern := range execConfig.CustomDenyPatterns {
-					re, err := regexp.Compile(pattern)
-					if err != nil {
-						fmt.Printf("Invalid custom deny pattern %q: %v\n", pattern, err)
-						continue
-					}
-					denyPatterns = append(denyPatterns, re)
-				}
-			} else {
-				denyPatterns = append(denyPatterns, defaultDenyPatterns...)
-			}
-		} else {
-			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
-			fmt.Println("Warning: deny patterns are disabled. All commands will be allowed.")
+	for _, p := range cfg.DenyPatterns {
+		re, err := regexp.Compile(p)
+		if err == nil {
+			denyPatterns = append(denyPatterns, re)
 		}
-	} else {
-		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
+	}
+
+	var allowPatterns []*regexp.Regexp
+	for _, p := range cfg.AllowPatterns {
+		re, err := regexp.Compile(p)
+		if err == nil {
+			allowPatterns = append(allowPatterns, re)
+		}
+	}
+
+	timeout := 60 * time.Second
+	if cfg.MaxTimeout > 0 {
+		timeout = time.Duration(cfg.MaxTimeout) * time.Second
 	}
 
 	return &ExecTool{
 		workingDir:          workingDir,
-		timeout:             60 * time.Second,
+		timeout:             timeout,
 		denyPatterns:        denyPatterns,
-		allowPatterns:       nil,
+		allowPatterns:       allowPatterns,
 		restrictToWorkspace: restrict,
+		policyEngine:        cfg.PolicyEngine,
+		execGuardMode:       cfg.ExecGuardMode,
 	}
+}
+
+// SetContext implements ContextualTool so the ExecTool receives the current
+// IM channel and chatID for approval requests.
+func (t *ExecTool) SetContext(channel, chatID string) {
+	t.channel = channel
+	t.chatID = chatID
 }
 
 func (t *ExecTool) Name() string {
@@ -152,7 +177,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		}
 	}
 
-	if guardError := t.guardCommand(command, cwd); guardError != "" {
+	if guardError := t.guardCommand(ctx, command, cwd); guardError != "" {
 		return ErrorResult(guardError)
 	}
 
@@ -222,32 +247,60 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	}
 }
 
-func (t *ExecTool) guardCommand(command, cwd string) string {
+func (t *ExecTool) guardCommand(ctx context.Context, command, cwd string) string {
+	mode := t.execGuardMode
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
 
-	for _, pattern := range t.denyPatterns {
-		if pattern.MatchString(lower) {
-			return "Command blocked by safety guard (dangerous pattern detected)"
-		}
-	}
-
-	if len(t.allowPatterns) > 0 {
-		allowed := false
-		for _, pattern := range t.allowPatterns {
+	// Deny-pattern check (mode-aware)
+	if !mode.IsOff() {
+		for _, pattern := range t.denyPatterns {
 			if pattern.MatchString(lower) {
-				allowed = true
-				break
+				reason := "dangerous pattern detected: " + pattern.String()
+				if err := t.evaluatePolicy(ctx, mode, command, reason, pattern.String()); err != nil {
+					return err.Error()
+				}
+				break // approved by user, continue
 			}
 		}
-		if !allowed {
-			return "Command blocked by safety guard (not in allowlist)"
+
+		// Allow-pattern check
+		if len(t.allowPatterns) > 0 {
+			allowed := false
+			for _, pattern := range t.allowPatterns {
+				if pattern.MatchString(lower) {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				reason := "command not in allowlist"
+				if err := t.evaluatePolicy(ctx, mode, command, reason, "allowlist"); err != nil {
+					return err.Error()
+				}
+			}
 		}
 	}
 
+	// Workspace restriction checks (always active when restrictToWorkspace is true)
 	if t.restrictToWorkspace {
 		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
 			return "Command blocked by safety guard (path traversal detected)"
+		}
+
+		sensitivePathPatterns := []*regexp.Regexp{
+			regexp.MustCompile(`\b/etc/`),
+			regexp.MustCompile(`\b/var/`),
+			regexp.MustCompile(`\b/root\b`),
+			regexp.MustCompile(`\b/home/`),
+			regexp.MustCompile(`\b/proc/`),
+			regexp.MustCompile(`\b/sys/`),
+			regexp.MustCompile(`\b/boot/`),
+		}
+		for _, pattern := range sensitivePathPatterns {
+			if pattern.MatchString(lower) {
+				return "Command blocked by safety guard (access to sensitive path)"
+			}
 		}
 
 		cwdPath, err := filepath.Abs(cwd)
@@ -276,6 +329,23 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	return ""
+}
+
+// evaluatePolicy delegates to the PolicyEngine when available.
+func (t *ExecTool) evaluatePolicy(ctx context.Context, mode security.PolicyMode, action, reason, ruleName string) error {
+	if t.policyEngine == nil {
+		if mode == security.ModeOff {
+			return nil
+		}
+		return fmt.Errorf("blocked by safety guard: %s", reason)
+	}
+	return t.policyEngine.Evaluate(ctx, mode, security.Violation{
+		Category: "exec_guard",
+		Tool:     "exec",
+		Action:   action,
+		Reason:   reason,
+		RuleName: ruleName,
+	}, t.channel, t.chatID)
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

@@ -3,14 +3,22 @@ package bus
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
+type interceptorEntry struct {
+	id uint64
+	fn InboundInterceptor
+}
+
 type MessageBus struct {
-	inbound  chan InboundMessage
-	outbound chan OutboundMessage
-	handlers map[string]MessageHandler
-	closed   bool
-	mu       sync.RWMutex
+	inbound      chan InboundMessage
+	outbound     chan OutboundMessage
+	handlers     map[string]MessageHandler
+	interceptors []*interceptorEntry
+	nextID       uint64
+	closed       bool
+	mu           sync.RWMutex
 }
 
 func NewMessageBus() *MessageBus {
@@ -21,11 +29,42 @@ func NewMessageBus() *MessageBus {
 	}
 }
 
+// AddInterceptor registers an interceptor that inspects inbound messages before
+// they reach the main consumer queue. Returns a removal function.
+func (mb *MessageBus) AddInterceptor(fn InboundInterceptor) func() {
+	id := atomic.AddUint64(&mb.nextID, 1)
+	entry := &interceptorEntry{id: id, fn: fn}
+
+	mb.mu.Lock()
+	mb.interceptors = append(mb.interceptors, entry)
+	mb.mu.Unlock()
+
+	return func() {
+		mb.mu.Lock()
+		defer mb.mu.Unlock()
+		for i, e := range mb.interceptors {
+			if e.id == id {
+				mb.interceptors = append(mb.interceptors[:i], mb.interceptors[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
 func (mb *MessageBus) PublishInbound(msg InboundMessage) {
 	mb.mu.RLock()
-	defer mb.mu.RUnlock()
 	if mb.closed {
+		mb.mu.RUnlock()
 		return
+	}
+	interceptors := make([]*interceptorEntry, len(mb.interceptors))
+	copy(interceptors, mb.interceptors)
+	mb.mu.RUnlock()
+
+	for _, entry := range interceptors {
+		if entry.fn(msg) {
+			return
+		}
 	}
 	mb.inbound <- msg
 }

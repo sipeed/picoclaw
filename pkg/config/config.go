@@ -49,6 +49,7 @@ type Config struct {
 	Providers ProvidersConfig `json:"providers"`
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
+	Security  SecurityConfig  `json:"security"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 	mu        sync.RWMutex
@@ -228,14 +229,26 @@ type CronToolsConfig struct {
 }
 
 type ExecConfig struct {
-	EnableDenyPatterns bool     `json:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
-	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
+	DenyPatterns  []string `json:"deny_patterns"`  // Additional regex deny patterns
+	AllowPatterns []string `json:"allow_patterns"` // If set, only matching commands are allowed
+	MaxTimeout    int      `json:"max_timeout"`    // Seconds, default 60
 }
 
 type ToolsConfig struct {
 	Web  WebToolsConfig  `json:"web"`
 	Cron CronToolsConfig `json:"cron"`
 	Exec ExecConfig      `json:"exec"`
+}
+
+// SecurityConfig controls optional security features.
+// All modes default to "off" to preserve pre-security-modification behavior.
+// Supported modes: "off" (disabled), "block" (reject), "approve" (IM-based approval).
+type SecurityConfig struct {
+	ExecGuard       string `json:"exec_guard" env:"PICOCLAW_SECURITY_EXEC_GUARD"`             // "off" | "block" | "approve"
+	SSRFProtection  string `json:"ssrf_protection" env:"PICOCLAW_SECURITY_SSRF_PROTECTION"`   // "off" | "block" | "approve"
+	PathValidation  string `json:"path_validation" env:"PICOCLAW_SECURITY_PATH_VALIDATION"`   // "off" | "block" | "approve"
+	SkillValidation string `json:"skill_validation" env:"PICOCLAW_SECURITY_SKILL_VALIDATION"` // "off" | "block" | "approve"
+	ApprovalTimeout int    `json:"approval_timeout" env:"PICOCLAW_SECURITY_APPROVAL_TIMEOUT"` // seconds, default 300
 }
 
 func DefaultConfig() *Config {
@@ -350,12 +363,21 @@ func DefaultConfig() *Config {
 					MaxResults: 5,
 				},
 			},
-			Cron: CronToolsConfig{
-				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
-			},
-			Exec: ExecConfig{
-				EnableDenyPatterns: true,
-			},
+		Cron: CronToolsConfig{
+			ExecTimeoutMinutes: 5,
+		},
+		Exec: ExecConfig{
+			DenyPatterns:  []string{},
+			AllowPatterns: []string{},
+			MaxTimeout:    60,
+		},
+		},
+		Security: SecurityConfig{
+			ExecGuard:       "off",
+			SSRFProtection:  "off",
+			PathValidation:  "off",
+			SkillValidation: "off",
+			ApprovalTimeout: 300,
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,

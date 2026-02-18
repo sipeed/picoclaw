@@ -5,13 +5,19 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/security"
 )
 
 // EditFileTool edits a file by replacing old_text with new_text.
 // The old_text must exist exactly in the file.
 type EditFileTool struct {
-	allowedDir string
-	restrict   bool
+	allowedDir   string
+	restrict     bool
+	pathMode     security.PolicyMode
+	policyEngine *security.PolicyEngine
+	channel      string
+	chatID       string
 }
 
 // NewEditFileTool creates a new EditFileTool with optional directory restriction.
@@ -20,6 +26,15 @@ func NewEditFileTool(allowedDir string, restrict bool) *EditFileTool {
 		allowedDir: allowedDir,
 		restrict:   restrict,
 	}
+}
+
+func NewEditFileToolWithPolicy(allowedDir string, restrict bool, opts PathPolicyOpts) *EditFileTool {
+	return &EditFileTool{allowedDir: allowedDir, restrict: restrict, pathMode: opts.PathMode, policyEngine: opts.PolicyEngine}
+}
+
+func (t *EditFileTool) SetContext(channel, chatID string) {
+	t.channel = channel
+	t.chatID = chatID
 }
 
 func (t *EditFileTool) Name() string {
@@ -67,14 +82,21 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult("new_text is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.allowedDir, t.restrict)
+	resolvedPath, err := validatePathWithMode(path, t.allowedDir, t.restrict, t.pathMode, t.policyEngine, t.channel, t.chatID)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
 
-	if _, err := os.Stat(resolvedPath); os.IsNotExist(err) {
+	info, err := os.Stat(resolvedPath)
+	if os.IsNotExist(err) {
 		return ErrorResult(fmt.Sprintf("file not found: %s", path))
 	}
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("failed to stat file: %v", err))
+	}
+
+	// Preserve original file permissions
+	perm := info.Mode().Perm()
 
 	content, err := os.ReadFile(resolvedPath)
 	if err != nil {
@@ -94,7 +116,7 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{})
 
 	newContent := strings.Replace(contentStr, oldText, newText, 1)
 
-	if err := os.WriteFile(resolvedPath, []byte(newContent), 0644); err != nil {
+	if err := os.WriteFile(resolvedPath, []byte(newContent), perm); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 
@@ -102,12 +124,25 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{})
 }
 
 type AppendFileTool struct {
-	workspace string
-	restrict  bool
+	workspace    string
+	restrict     bool
+	pathMode     security.PolicyMode
+	policyEngine *security.PolicyEngine
+	channel      string
+	chatID       string
 }
 
 func NewAppendFileTool(workspace string, restrict bool) *AppendFileTool {
 	return &AppendFileTool{workspace: workspace, restrict: restrict}
+}
+
+func NewAppendFileToolWithPolicy(workspace string, restrict bool, opts PathPolicyOpts) *AppendFileTool {
+	return &AppendFileTool{workspace: workspace, restrict: restrict, pathMode: opts.PathMode, policyEngine: opts.PolicyEngine}
+}
+
+func (t *AppendFileTool) SetContext(channel, chatID string) {
+	t.channel = channel
+	t.chatID = chatID
 }
 
 func (t *AppendFileTool) Name() string {
@@ -146,7 +181,7 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]interface{
 		return ErrorResult("content is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
+	resolvedPath, err := validatePathWithMode(path, t.workspace, t.restrict, t.pathMode, t.policyEngine, t.channel, t.chatID)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}

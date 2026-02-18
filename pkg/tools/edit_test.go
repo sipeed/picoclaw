@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/security"
 )
 
 // TestEditTool_EditFile_Success verifies successful file editing
@@ -285,5 +287,37 @@ func TestEditTool_AppendFile_MissingContent(t *testing.T) {
 	// Should return error result
 	if !result.IsError {
 		t.Errorf("Expected error when content is missing")
+	}
+}
+
+func TestEditFileTool_SetContext(t *testing.T) {
+	tool := NewEditFileToolWithPolicy("", false, PathPolicyOpts{PathMode: security.ModeBlock})
+	tool.SetContext("slack", "C999")
+	if tool.channel != "slack" || tool.chatID != "C999" {
+		t.Errorf("SetContext failed: channel=%q, chatID=%q", tool.channel, tool.chatID)
+	}
+}
+
+func TestAppendFileTool_SetContext(t *testing.T) {
+	tool := NewAppendFileToolWithPolicy("", false, PathPolicyOpts{PathMode: security.ModeApprove})
+	tool.SetContext("telegram", "chat-42")
+	if tool.channel != "telegram" || tool.chatID != "chat-42" {
+		t.Errorf("SetContext failed: channel=%q, chatID=%q", tool.channel, tool.chatID)
+	}
+}
+
+func TestNewEditFileToolWithPolicy(t *testing.T) {
+	opts := PathPolicyOpts{PathMode: security.ModeBlock}
+	tool := NewEditFileToolWithPolicy("/dir", true, opts)
+	if tool.allowedDir != "/dir" || !tool.restrict || tool.pathMode != security.ModeBlock {
+		t.Error("WithPolicy constructor did not set fields correctly")
+	}
+}
+
+func TestNewAppendFileToolWithPolicy(t *testing.T) {
+	opts := PathPolicyOpts{PathMode: security.ModeApprove}
+	tool := NewAppendFileToolWithPolicy("/ws", true, opts)
+	if tool.workspace != "/ws" || !tool.restrict || tool.pathMode != security.ModeApprove {
+		t.Error("WithPolicy constructor did not set fields correctly")
 	}
 }

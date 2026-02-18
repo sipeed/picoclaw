@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -28,17 +27,25 @@ type CronTool struct {
 	mu          sync.RWMutex
 }
 
-// NewCronTool creates a new CronTool
-// execTimeout: 0 means no timeout, >0 sets the timeout duration
-func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration, config *config.Config) *CronTool {
-	execTool := NewExecToolWithConfig(workspace, restrict, config)
-	execTool.SetTimeout(execTimeout)
+// NewCronTool creates a new CronTool.
+func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool) *CronTool {
+	return NewCronToolWithConfig(cronService, executor, msgBus, workspace, restrict, ExecToolConfig{})
+}
+
+// NewCronToolWithConfig creates a CronTool with explicit ExecToolConfig (including PolicyEngine).
+// execTimeout from CronToolsConfig is applied after construction via SetTimeout.
+func NewCronToolWithConfig(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool, execCfg ExecToolConfig) *CronTool {
 	return &CronTool{
 		cronService: cronService,
 		executor:    executor,
 		msgBus:      msgBus,
-		execTool:    execTool,
+		execTool:    NewExecToolWithConfig(workspace, restrict, execCfg),
 	}
+}
+
+// SetExecTimeout sets the exec timeout for the cron tool's internal ExecTool.
+func (t *CronTool) SetExecTimeout(d time.Duration) {
+	t.execTool.SetTimeout(d)
 }
 
 // Name returns the tool name

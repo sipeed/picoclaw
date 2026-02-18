@@ -34,6 +34,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/migrate"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/security"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -562,8 +563,7 @@ func gatewayCmd() {
 		})
 
 	// Setup cron tool and service
-	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
-	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.Agents.Defaults.RestrictToWorkspace, execTimeout, cfg)
+	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.Agents.Defaults.RestrictToWorkspace, cfg)
 
 	heartbeatService := heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
@@ -988,14 +988,29 @@ func getConfigPath() string {
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
 
-func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration, config *config.Config) *cron.CronService {
+func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool, cfg *config.Config) *cron.CronService {
 	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
 
 	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
 
-	// Create and register CronTool
-	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, config)
+	// Create PolicyEngine for cron exec tool
+	pe := security.NewPolicyEngine(&cfg.Security, msgBus)
+
+	execCfg := tools.ExecToolConfig{
+		DenyPatterns:  cfg.Tools.Exec.DenyPatterns,
+		AllowPatterns: cfg.Tools.Exec.AllowPatterns,
+		MaxTimeout:    cfg.Tools.Exec.MaxTimeout,
+		PolicyEngine:  pe,
+		ExecGuardMode: pe.GetMode("exec_guard"),
+	}
+
+	cronTool := tools.NewCronToolWithConfig(cronService, agentLoop, msgBus, workspace, restrict, execCfg)
+
+	// Apply cron-specific exec timeout if configured
+	if cfg.Tools.Cron.ExecTimeoutMinutes > 0 {
+		cronTool.SetExecTimeout(time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute)
+	}
 	agentLoop.RegisterTool(cronTool)
 
 	// Set the onJob handler

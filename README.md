@@ -153,6 +153,8 @@ make install
 
 You can also run PicoClaw using Docker Compose without installing anything locally.
 
+> **Security**: The Docker image runs as a non-root user (`picoclaw`, UID 1000) by default. Resource limits (CPU: 1.0, Memory: 512MB) are configured in `docker-compose.yml`.
+
 ```bash
 # 1. Clone this repo
 git clone https://github.com/sipeed/picoclaw.git
@@ -528,16 +530,101 @@ When `restrict_to_workspace: true`, the following tools are sandboxed:
 | `append_file` | Append to files | Only files within workspace |
 | `exec` | Execute commands | Command paths must be within workspace |
 
-#### Additional Exec Protection
+<details>
+<summary><b>Exec Configuration</b></summary>
 
-Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous commands:
+You can customize the `exec` tool's security behavior through configuration:
 
-* `rm -rf`, `del /f`, `rmdir /s` — Bulk deletion
-* `format`, `mkfs`, `diskpart` — Disk formatting
-* `dd if=` — Disk imaging
-* Writing to `/dev/sd[a-z]` — Direct disk writes
-* `shutdown`, `reboot`, `poweroff` — System shutdown
-* Fork bomb `:(){ :|:& };:`
+```json
+{
+  "tools": {
+    "exec": {
+      "deny_patterns": [],
+      "allow_patterns": [],
+      "max_timeout": 60
+    }
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `deny_patterns` | `[]` | Additional regex patterns to block (merged with built-in rules) |
+| `allow_patterns` | `[]` | If set, **only** matching commands are allowed (allowlist mode) |
+| `max_timeout` | `60` | Maximum command execution timeout in seconds |
+
+**`deny_patterns` example** — block `pip install` and any `docker` commands:
+
+```json
+{
+  "tools": {
+    "exec": {
+      "deny_patterns": [
+        "\\bpip\\s+install\\b",
+        "\\bdocker\\b"
+      ]
+    }
+  }
+}
+```
+
+**`allow_patterns` example** — only allow `git`, `ls`, `cat`, and `echo` commands:
+
+```json
+{
+  "tools": {
+    "exec": {
+      "allow_patterns": [
+        "^git\\b",
+        "^ls\\b",
+        "^cat\\b",
+        "^echo\\b"
+      ]
+    }
+  }
+}
+```
+
+> **Note**: `deny_patterns` are merged with the built-in rules (both apply). `allow_patterns` acts as a whitelist — when set, commands not matching any allow pattern are blocked regardless of deny patterns.
+
+</details>
+
+#### Built-in Exec Protection
+
+When `security.exec_guard` is set to `"block"` or `"approve"`, the `exec` tool has built-in deny rules that cannot be overridden by configuration:
+
+| Category | Blocked Pattern | Description |
+|----------|----------------|-------------|
+| Destructive | `rm -rf`, `del /f`, `rmdir /s` | Bulk deletion |
+| Destructive | `format`, `mkfs`, `diskpart` | Disk formatting |
+| Destructive | `dd if=` | Disk imaging |
+| Destructive | `> /dev/sd[a-z]` | Direct disk writes |
+| System | `shutdown`, `reboot`, `poweroff` | System control |
+| System | `:(){ :\|:& };:` | Fork bomb |
+| Exfiltration | `curl -d/--data/-F/--upload-file` | HTTP data upload |
+| Exfiltration | `wget --post-data/--post-file` | HTTP POST upload |
+| Exfiltration | `nc <host> <port>`, `ncat` | Netcat connections |
+| Code injection | `base64 ... \| sh/bash/zsh` | Encoded command execution |
+| Reverse shell | `bash -i >&`, `/dev/tcp/` | Reverse shell patterns |
+
+When `restrict_to_workspace: true`, additional restrictions apply:
+
+* Access to sensitive system paths (`/etc/`, `/var/`, `/root`, `/home/`, `/proc/`, `/sys/`, `/boot/`) is blocked
+* Symlink-based path traversal is detected and blocked
+* Path traversal via `../` is blocked
+
+> For the full list of built-in regex patterns, see [`pkg/tools/shell.go`](pkg/tools/shell.go#L37-L59).
+
+#### SSRF Protection
+
+When `security.ssrf_protection` is set to `"block"` or `"approve"`, all outbound HTTP requests (via `web_fetch` tool and file downloads) are validated against SSRF attacks:
+
+* Private IP ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) are blocked
+* Loopback addresses (`127.0.0.0/8`, `::1`) are blocked
+* Link-local addresses (`169.254.0.0/16`) are blocked
+* Cloud metadata endpoints (`169.254.169.254`) are blocked
+* Only `http://` and `https://` schemes are allowed
+* Redirect targets are also validated to prevent redirect-based SSRF
 
 #### Error Examples
 
@@ -584,8 +671,68 @@ The `restrict_to_workspace` setting applies consistently across all execution pa
 | Main Agent | `restrict_to_workspace` ✅ |
 | Subagent / Spawn | Inherits same restriction ✅ |
 | Heartbeat tasks | Inherits same restriction ✅ |
+| Cron scheduled jobs | Inherits same restriction ✅ |
 
-All paths share the same workspace restriction — there's no way to bypass the security boundary through subagents or scheduled tasks.
+All paths share the same workspace restriction — there's no way to bypass the security boundary through subagents, cron jobs, or scheduled tasks.
+
+#### Security Policy Modes
+
+All security checks (exec guard, SSRF protection, path validation, skill validation) support three configurable modes. By default, all modes are set to `"off"` — security features are **opt-in** and do not change behavior unless explicitly configured.
+
+| Mode | Behavior |
+|------|----------|
+| `off` | Security check disabled (default). No enforcement. |
+| `block` | Violations are immediately rejected with an error. |
+| `approve` | Violations pause execution, send an approval request to the user via IM, and wait for a reply. |
+
+<details>
+<summary><b>Security Configuration</b></summary>
+
+```json
+{
+  "security": {
+    "exec_guard": "off",
+    "ssrf_protection": "off",
+    "path_validation": "off",
+    "skill_validation": "off",
+    "approval_timeout": 300
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `exec_guard` | `"off"` | Mode for command deny/allow pattern checks |
+| `ssrf_protection` | `"off"` | Mode for outbound URL validation (private IP, metadata endpoints) |
+| `path_validation` | `"off"` | Mode for enhanced symlink-aware path restriction |
+| `skill_validation` | `"off"` | Mode for skill installation repository format checks |
+| `approval_timeout` | `300` | Seconds to wait for user approval before auto-deny |
+
+Environment variables are also supported (e.g. `PICOCLAW_SECURITY_EXEC_GUARD=approve`).
+
+</details>
+
+#### IM-based Approval
+
+When a security check is set to `"approve"` mode, instead of immediately rejecting the command, PicoClaw will:
+
+1. **Pause** the tool execution
+2. **Send** an approval request to the user via the current IM channel (Telegram, Feishu, DingTalk, Slack, etc.)
+3. **Wait** for the user to reply with an approval or denial keyword
+4. **Resume** execution if approved, or return an error if denied or timed out
+
+**Supported approval keywords:**
+
+| Action | English | Chinese | Japanese |
+|--------|---------|---------|----------|
+| Approve | approve, yes, allow, ok, y | 批准, 允许, 通过, 是 | 承認, 許可, はい |
+| Deny | deny, no, reject, block, n | 拒绝, 否决, 不 | 拒否, いいえ |
+
+**Notes:**
+- In CLI mode, `"approve"` falls back to `"block"` since there is no async IM channel.
+- For cron jobs, the approval request is sent to the last active IM channel; if none is available, it falls back to `"block"`.
+- Non-approval messages sent during an active approval request are passed through to the agent normally.
+- If no reply is received within `approval_timeout` seconds, the request is auto-denied.
 
 ### Heartbeat (Periodic Tasks)
 
@@ -787,6 +934,11 @@ picoclaw agent -m "Hello"
     },
     "cron": {
       "exec_timeout_minutes": 5
+    },
+    "exec": {
+      "deny_patterns": [],
+      "allow_patterns": [],
+      "max_timeout": 60
     }
   },
   "heartbeat": {
