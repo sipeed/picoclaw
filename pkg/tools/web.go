@@ -413,6 +413,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 		Transport: &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
 			MaxIdleConns:        10,
 			IdleConnTimeout:     30 * time.Second,
 			DisableCompression:  false,
