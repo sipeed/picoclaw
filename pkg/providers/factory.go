@@ -17,6 +17,7 @@ type providerType int
 const (
 	providerTypeHTTPCompat providerType = iota
 	providerTypeClaudeAuth
+	providerTypeClaudeAPIKey
 	providerTypeCodexAuth
 	providerTypeCodexCLIToken
 	providerTypeClaudeCLI
@@ -118,6 +119,8 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 				if sel.apiBase == "" {
 					sel.apiBase = defaultAnthropicAPIBase
 				}
+				sel.providerType = providerTypeClaudeAPIKey
+				return sel, nil
 			}
 		case "openrouter":
 			if cfg.Providers.OpenRouter.APIKey != "" {
@@ -250,6 +253,8 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			if sel.apiBase == "" {
 				sel.apiBase = defaultAnthropicAPIBase
 			}
+			sel.providerType = providerTypeClaudeAPIKey
+			return sel, nil
 		case (strings.Contains(lowerModel, "gpt") || strings.HasPrefix(model, "openai/")) &&
 			(cfg.Providers.OpenAI.APIKey != "" || cfg.Providers.OpenAI.AuthMethod != ""):
 			sel.enableWebSearch = cfg.Providers.OpenAI.WebSearch
@@ -342,6 +347,8 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	switch sel.providerType {
 	case providerTypeClaudeAuth:
 		return createClaudeAuthProvider(sel.apiBase)
+	case providerTypeClaudeAPIKey:
+		return NewClaudeProviderWithBaseURL(sel.apiKey, sel.apiBase), nil
 	case providerTypeCodexAuth:
 		return createCodexAuthProvider(sel.enableWebSearch)
 	case providerTypeCodexCLIToken:
