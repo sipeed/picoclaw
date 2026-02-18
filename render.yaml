@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: picoclaw
+    runtime: docker
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: ZHIPU_API_KEY
+        sync: false
+      - key: WEB_SEARCH_ENABLED
+        value: true
+      - key: WEB_SEARCH_PROVIDER
+        value: duckduckgo
+    disk:
+      name: picoclaw-data
+      mountPath: /root/.picoclaw
+      sizeGB: 1
