@@ -112,7 +112,7 @@ jobs:
             set_env_var "PICOCLAW_PROVIDERS_MOONSHOT_API_KEY" "\$MOONSHOT_KEY"
             set_env_var "PICOCLAW_PROVIDERS_MOONSHOT_API_BASE" "https://api.moonshot.cn/v1"
             set_env_var "PICOCLAW_AGENTS_DEFAULTS_PROVIDER" "moonshot"
-            set_env_var "PICOCLAW_AGENTS_DEFAULTS_MODEL" "kimi-k2-0711-preview"
+            set_env_var "PICOCLAW_AGENTS_DEFAULTS_MODEL" "kimi-k2.5"
             echo "Moonshot/Kimi: API key and default model configured"
           else
             echo "WARNING: PICOCLAW_MOONSHOT_API_KEY secret is empty"
