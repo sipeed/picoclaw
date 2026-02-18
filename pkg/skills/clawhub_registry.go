@@ -19,7 +19,7 @@ const (
 	defaultMaxResponseSize = 2 * 1024 * 1024  // 2 MB
 )
 
-// ClawHubRegistry implements SkillRegistry for the ClawhHub platform.
+// ClawHubRegistry implements SkillRegistry for the ClawHub platform.
 type ClawHubRegistry struct {
 	baseURL         string
 	authToken       string // Optional - for elevated rate limits
@@ -31,7 +31,7 @@ type ClawHubRegistry struct {
 	client          *http.Client
 }
 
-// NewClawHubRegistry creates a new ClawhHub registry client from config.
+// NewClawHubRegistry creates a new ClawHub registry client from config.
 func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
 	baseURL := cfg.BaseURL
 	if baseURL == "" {

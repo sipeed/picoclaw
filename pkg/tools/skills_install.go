@@ -116,13 +116,29 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interfac
 	result, err := registry.DownloadAndInstall(ctx, slug, version, targetDir)
 	if err != nil {
 		// Clean up partial install.
-		os.RemoveAll(targetDir)
+		rmErr := os.RemoveAll(targetDir)
+		if rmErr != nil {
+			logger.ErrorCF("tool", "Failed to remove partial install",
+				map[string]interface{}{
+					"tool":       "install_skill",
+					"target_dir": targetDir,
+					"error":      rmErr.Error(),
+				})
+		}
 		return ErrorResult(fmt.Sprintf("failed to install %q: %v", slug, err))
 	}
 
 	// Moderation: block malware.
 	if result.IsMalwareBlocked {
-		os.RemoveAll(targetDir)
+		rmErr := os.RemoveAll(targetDir)
+		if rmErr != nil {
+			logger.ErrorCF("tool", "Failed to remove partial install",
+				map[string]interface{}{
+					"tool":       "install_skill",
+					"target_dir": targetDir,
+					"error":      rmErr.Error(),
+				})
+		}
 		return ErrorResult(fmt.Sprintf("skill %q is flagged as malicious and cannot be installed", slug))
 	}
 

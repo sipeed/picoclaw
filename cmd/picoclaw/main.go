@@ -1344,13 +1344,19 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
 
 	result, err := registry.DownloadAndInstall(ctx, slug, "", targetDir)
 	if err != nil {
-		os.RemoveAll(targetDir)
+		rmErr := os.RemoveAll(targetDir)
+		if rmErr != nil {
+			fmt.Printf("\u2717 Failed to remove partial install: %v\n", rmErr)
+		}
 		fmt.Printf("\u2717 Failed to install skill: %v\n", err)
 		os.Exit(1)
 	}
 
 	if result.IsMalwareBlocked {
-		os.RemoveAll(targetDir)
+		rmErr := os.RemoveAll(targetDir)
+		if rmErr != nil {
+			fmt.Printf("\u2717 Failed to remove partial install: %v\n", rmErr)
+		}
 		fmt.Printf("\u2717 Skill '%s' is flagged as malicious and cannot be installed.\n", slug)
 		os.Exit(1)
 	}

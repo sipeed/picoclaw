@@ -64,7 +64,7 @@ type RegistryConfig struct {
 	MaxConcurrentSearches int
 }
 
-// ClawHubConfig configures the ClawhHub registry.
+// ClawHubConfig configures the ClawHub registry.
 type ClawHubConfig struct {
 	Enabled         bool
 	BaseURL         string
