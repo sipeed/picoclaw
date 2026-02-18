@@ -12,6 +12,7 @@ activity-compose = "1.12.4"
 core-ktx = "1.17.0"
 coroutines = "1.10.2"
 coil = "3.1.0"
+markdown-renderer = "0.39.0"
 
 [libraries]
 # Compose
@@ -51,6 +52,9 @@ coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutin
 
 # Coil
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+
+# Markdown
+markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "markdown-renderer" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

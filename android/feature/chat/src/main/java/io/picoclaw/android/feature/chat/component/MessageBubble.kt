@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -18,6 +17,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
 import io.picoclaw.android.core.domain.model.ChatMessage
 import io.picoclaw.android.core.domain.model.MessageSender
 import io.picoclaw.android.core.ui.theme.AgentBubble
@@ -68,10 +70,12 @@ fun MessageBubble(
                     )
                 }
                 if (message.content.isNotEmpty()) {
-                    Text(
-                        text = message.content,
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyLarge
+                    Markdown(
+                        content = message.content,
+                        colors = markdownColor(text = Color.White),
+                        typography = markdownTypography(
+                            paragraph = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                        ),
                     )
                 }
             }

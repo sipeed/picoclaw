@@ -41,5 +41,7 @@ dependencies {
 
     implementation(libs.coil.compose)
 
+    implementation(libs.markdown.renderer.m3)
+
     debugImplementation(libs.compose.ui.tooling)
 }
