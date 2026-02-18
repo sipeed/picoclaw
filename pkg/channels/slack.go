@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -128,6 +129,40 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 	_, _, err := c.api.PostMessageContext(ctx, channelID, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to send slack message: %w", err)
+	}
+
+	// Upload media files
+	for _, mediaPath := range msg.Media {
+		fi, err := os.Stat(mediaPath)
+		if err != nil {
+			logger.ErrorCF("slack", "Failed to stat media file", map[string]interface{}{
+				"path":  mediaPath,
+				"error": err.Error(),
+			})
+			continue
+		}
+		f, err := os.Open(mediaPath)
+		if err != nil {
+			logger.ErrorCF("slack", "Failed to open media file", map[string]interface{}{
+				"path":  mediaPath,
+				"error": err.Error(),
+			})
+			continue
+		}
+		_, err = c.api.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
+			Reader:          f,
+			FileSize:        int(fi.Size()),
+			Filename:        filepath.Base(mediaPath),
+			Channel:         channelID,
+			ThreadTimestamp:  threadTS,
+		})
+		f.Close()
+		if err != nil {
+			logger.ErrorCF("slack", "Failed to upload media file", map[string]interface{}{
+				"path":  mediaPath,
+				"error": err.Error(),
+			})
+		}
 	}
 
 	if ref, ok := c.pendingAcks.LoadAndDelete(msg.ChatID); ok {

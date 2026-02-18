@@ -405,6 +405,9 @@ func agentCmd() {
 		os.Exit(1)
 	}
 
+	// Apply workspace upgrades before starting the agent
+	migrate.UpgradeWorkspace(cfg.WorkspacePath())
+
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
@@ -539,6 +542,9 @@ func gatewayCmd() {
 		fmt.Printf("Error creating provider: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Apply workspace upgrades before starting the agent
+	migrate.UpgradeWorkspace(cfg.WorkspacePath())
 
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)

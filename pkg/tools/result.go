@@ -27,6 +27,9 @@ type ToolResult struct {
 	// When true, the tool will complete later and notify via callback.
 	Async bool `json:"async"`
 
+	// Media contains local file paths to send alongside the message.
+	Media []string `json:"media,omitempty"`
+
 	// Err is the underlying error (not JSON serialized).
 	// Used for internal error handling and logging.
 	Err error `json:"-"`

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-type SendCallback func(channel, chatID, content string) error
+type SendCallback func(channel, chatID, content string, media []string) error
 
 type MessageTool struct {
 	sendCallback   SendCallback
@@ -23,7 +23,7 @@ func (t *MessageTool) Name() string {
 }
 
 func (t *MessageTool) Description() string {
-	return "Send a message to user on a chat channel. Use this when you want to communicate something."
+	return "Send a message to user on a chat channel. Use this when you want to communicate something. You can also attach local files (images, documents, audio, video) using the media parameter — the files will be delivered natively through the channel."
 }
 
 func (t *MessageTool) Parameters() map[string]interface{} {
@@ -41,6 +41,13 @@ func (t *MessageTool) Parameters() map[string]interface{} {
 			"chat_id": map[string]interface{}{
 				"type":        "string",
 				"description": "Optional: target chat/user ID",
+			},
+			"media": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional: list of local file paths to send as media attachments",
+				"items": map[string]interface{}{
+					"type": "string",
+				},
 			},
 		},
 		"required": []string{"content"},
@@ -71,6 +78,15 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	channel, _ := args["channel"].(string)
 	chatID, _ := args["chat_id"].(string)
 
+	var media []string
+	if rawMedia, ok := args["media"].([]interface{}); ok {
+		for _, item := range rawMedia {
+			if path, ok := item.(string); ok {
+				media = append(media, path)
+			}
+		}
+	}
+
 	if channel == "" {
 		channel = t.defaultChannel
 	}
@@ -86,7 +102,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 		return &ToolResult{ForLLM: "Message sending not configured", IsError: true}
 	}
 
-	if err := t.sendCallback(channel, chatID, content); err != nil {
+	if err := t.sendCallback(channel, chatID, content, media); err != nil {
 		return &ToolResult{
 			ForLLM:  fmt.Sprintf("sending message: %v", err),
 			IsError: true,

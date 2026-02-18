@@ -1,0 +1,10 @@
+# docker-compose.override.yml
+services:
+  picoclaw-agent:
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.5'
+  picoclaw-gateway:
+    restart: unless-stopped
