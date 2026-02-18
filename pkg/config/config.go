@@ -51,6 +51,7 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Logging   LoggingConfig   `json:"logging"`
 	mu        sync.RWMutex
 }
 
@@ -164,6 +165,12 @@ type HeartbeatConfig struct {
 type DevicesConfig struct {
 	Enabled    bool `json:"enabled" env:"PICOCLAW_DEVICES_ENABLED"`
 	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
+}
+
+type LoggingConfig struct {
+	EnableFile bool   `json:"enable_file" env:"PICOCLAW_LOGGING_ENABLE_FILE"`
+	FilePath   string `json:"file_path" env:"PICOCLAW_LOGGING_FILE_PATH"`
+	Level      string `json:"level" env:"PICOCLAW_LOGGING_LEVEL"`
 }
 
 type ProvidersConfig struct {
@@ -355,6 +362,11 @@ func DefaultConfig() *Config {
 		Devices: DevicesConfig{
 			Enabled:    false,
 			MonitorUSB: true,
+		},
+		Logging: LoggingConfig{
+			EnableFile: false,
+			FilePath:   "~/.picoclaw/workspace/picoclaw_audit.log",
+			Level:      "info",
 		},
 	}
 }
