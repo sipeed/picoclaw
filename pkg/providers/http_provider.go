@@ -250,6 +250,13 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
 					return createCodexAuthProvider(cfg.Providers.OpenAI.WebSearch)
 				}
+				if cfg.Providers.OpenAI.APIFormat == "responses" {
+					base := cfg.Providers.OpenAI.APIBase
+					if base == "" {
+						base = "https://api.openai.com/v1"
+					}
+					return NewCodexProviderWithBase(cfg.Providers.OpenAI.APIKey, "", base), nil
+				}
 				apiKey = cfg.Providers.OpenAI.APIKey
 				apiBase = cfg.Providers.OpenAI.APIBase
 				if apiBase == "" {
