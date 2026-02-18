@@ -109,6 +109,7 @@ type AgentConfig struct {
 	Workspace    string            `json:"workspace,omitempty"`
 	Model        *AgentModelConfig `json:"model,omitempty"`
 	Skills       []string          `json:"skills,omitempty"`
+	Capabilities []string          `json:"capabilities,omitempty"`
 	Subagents    *SubagentsConfig  `json:"subagents,omitempty"`
 }
 

@@ -51,6 +51,9 @@ func (t *HandoffTool) Description() string {
 		if a.Role != "" {
 			fmt.Fprintf(&sb, ": %s", a.Role)
 		}
+		if len(a.Capabilities) > 0 {
+			fmt.Fprintf(&sb, " [%s]", strings.Join(a.Capabilities, ", "))
+		}
 		sb.WriteString("\n")
 	}
 	return sb.String()
@@ -63,7 +66,11 @@ func (t *HandoffTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"agent_id": map[string]any{
 				"type":        "string",
-				"description": "The ID of the target agent to hand off to",
+				"description": "The ID of the target agent to hand off to (required if capability is not set)",
+			},
+			"capability": map[string]any{
+				"type":        "string",
+				"description": "Route to an agent with this capability instead of by ID (e.g. \"coding\", \"research\")",
 			},
 			"task": map[string]any{
 				"type":        "string",
@@ -74,7 +81,7 @@ func (t *HandoffTool) Parameters() map[string]any {
 				"description": "Optional key-value context to share via blackboard before handoff",
 			},
 		},
-		"required": []string{"agent_id", "task"},
+		"required": []string{"task"},
 	}
 }
 
@@ -86,20 +93,24 @@ func (t *HandoffTool) SetContext(channel, chatID string) {
 
 // Execute delegates a task to the specified target agent.
 func (t *HandoffTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
-	agentID, ok := args["agent_id"].(string)
-	if !ok {
-		agentID = ""
-	}
-	task, ok := args["task"].(string)
-	if !ok {
-		task = ""
-	}
+	agentID, _ := args["agent_id"].(string)
+	capability, _ := args["capability"].(string)
+	task, _ := args["task"].(string)
 
-	if agentID == "" {
-		return tools.ErrorResult("agent_id is required")
-	}
 	if task == "" {
 		return tools.ErrorResult("task is required")
+	}
+
+	// Resolve agent: by ID or by capability
+	if agentID == "" && capability != "" {
+		matches := FindAgentsByCapability(t.resolver, capability)
+		if len(matches) == 0 {
+			return tools.ErrorResult(fmt.Sprintf("no agent found with capability %q", capability))
+		}
+		agentID = matches[0].ID
+	}
+	if agentID == "" {
+		return tools.ErrorResult("agent_id or capability is required")
 	}
 
 	// Parse optional context map
