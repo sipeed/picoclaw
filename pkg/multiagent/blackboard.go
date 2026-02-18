@@ -16,6 +16,13 @@ type BlackboardEntry struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// BoardAware is implemented by tools that need the session blackboard injected
+// before each execution. This fixes the split-brain bug where tools were bound
+// to a static board at registration time instead of the per-session board.
+type BoardAware interface {
+	SetBoard(board *Blackboard)
+}
+
 // Blackboard is a thread-safe shared context pool for multi-agent collaboration.
 // Agents read and write string key-value entries, each tagged with authorship
 // and scope metadata.

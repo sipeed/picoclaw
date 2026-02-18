@@ -23,6 +23,12 @@ func NewBlackboardTool(board *Blackboard, agentID string) *BlackboardTool {
 	}
 }
 
+// SetBoard replaces the blackboard reference, allowing the tool to be wired
+// to the correct per-session board before each execution.
+func (t *BlackboardTool) SetBoard(board *Blackboard) {
+	t.board = board
+}
+
 // Name returns the tool name.
 func (t *BlackboardTool) Name() string { return "blackboard" }
 

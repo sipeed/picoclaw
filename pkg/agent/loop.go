@@ -174,14 +174,14 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		if len(registry.ListAgentIDs()) > 1 {
 			resolver := &registryResolver{registry: registry}
 
-			// Blackboard tool: per-agent instance sharing a common blackboard
-			// The actual blackboard is created per session in getOrCreateBlackboard
-			// For tool registration, we use a shared "global" blackboard.
-			sharedBoard := multiagent.NewBlackboard()
-			agent.Tools.Register(multiagent.NewBlackboardTool(sharedBoard, agentID))
+			// Blackboard tool: per-agent instance sharing a placeholder blackboard.
+			// The actual per-session blackboard is wired via SetBoard in updateToolContexts
+			// before each message processing cycle (fixing the split-brain bug).
+			placeholderBoard := multiagent.NewBlackboard()
+			agent.Tools.Register(multiagent.NewBlackboardTool(placeholderBoard, agentID))
 
 			// Handoff tool: delegate tasks to other agents
-			agent.Tools.Register(multiagent.NewHandoffTool(resolver, sharedBoard, agentID))
+			agent.Tools.Register(multiagent.NewHandoffTool(resolver, placeholderBoard, agentID))
 
 			// List agents tool: discover available agents
 			agent.Tools.Register(multiagent.NewListAgentsTool(resolver))
@@ -438,8 +438,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		}
 	}
 
-	// 1. Update tool contexts
-	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
+	// 1. Update tool contexts (including per-session blackboard wiring)
+	al.updateToolContexts(agent, opts.Channel, opts.ChatID, opts.SessionKey)
 
 	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message
@@ -742,8 +742,9 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 	return finalContent, iteration, nil
 }
 
-// updateToolContexts updates the context for tools that need channel/chatID info.
-func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID string) {
+// updateToolContexts updates the context for tools that need channel/chatID info
+// and wires the per-session blackboard to board-aware tools.
+func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID string, sessionKey string) {
 	// Use ContextualTool interface instead of type assertions
 	if tool, ok := agent.Tools.Get("message"); ok {
 		if mt, ok := tool.(tools.ContextualTool); ok {
@@ -763,6 +764,20 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 	if tool, ok := agent.Tools.Get("handoff"); ok {
 		if ht, ok := tool.(tools.ContextualTool); ok {
 			ht.SetContext(channel, chatID)
+		}
+	}
+
+	// Wire the per-session blackboard to board-aware tools (fixes split-brain bug).
+	// This ensures BlackboardTool and HandoffTool operate on the same board that
+	// gets injected into the system prompt via getOrCreateBlackboard.
+	if sessionKey != "" {
+		bb := al.getOrCreateBlackboard(sessionKey)
+		for _, toolName := range []string{"blackboard", "handoff"} {
+			if tool, ok := agent.Tools.Get(toolName); ok {
+				if ba, ok := tool.(multiagent.BoardAware); ok {
+					ba.SetBoard(bb)
+				}
+			}
 		}
 	}
 }

@@ -85,6 +85,12 @@ func (t *HandoffTool) Parameters() map[string]any {
 	}
 }
 
+// SetBoard replaces the blackboard reference, allowing the tool to be wired
+// to the correct per-session board before each execution.
+func (t *HandoffTool) SetBoard(board *Blackboard) {
+	t.board = board
+}
+
 // SetContext updates the origin channel and chat ID for handoff routing.
 func (t *HandoffTool) SetContext(channel, chatID string) {
 	t.originChannel = channel
