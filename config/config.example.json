@@ -25,7 +25,7 @@
     },
     "maixcam": {
       "enabled": false,
-      "host": "127.0.0.1",
+      "host": "0.0.0.0",
       "port": 18790,
       "allow_from": []
     },
@@ -58,7 +58,7 @@
       "enabled": false,
       "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
       "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "127.0.0.1",
+      "webhook_host": "0.0.0.0",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []

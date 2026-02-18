@@ -360,7 +360,7 @@ func DefaultConfig() *Config {
 			},
 			MaixCam: MaixCamConfig{
 				Enabled:   false,
-				Host:      "127.0.0.1",
+				Host:      "0.0.0.0",
 				Port:      18790,
 				AllowFrom: FlexibleStringSlice{},
 			},
@@ -386,7 +386,7 @@ func DefaultConfig() *Config {
 				Enabled:            false,
 				ChannelSecret:      "",
 				ChannelAccessToken: "",
-				WebhookHost:        "127.0.0.1",
+				WebhookHost:        "0.0.0.0",
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
 				AllowFrom:          FlexibleStringSlice{},

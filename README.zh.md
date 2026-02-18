@@ -167,8 +167,12 @@ cd picoclaw
 cp config/config.example.json config/config.json
 vim config/config.json      # 设置 DISCORD_BOT_TOKEN, API keys 等
 
-# 3. 构建并启动
+# 3. 構建並啟動
 docker compose --profile gateway up -d
+
+> [!TIP]
+> **Docker 用戶**: 預設情況下，Gateway 監聽 `127.0.0.1`，這在容器內無法從外部訪問。如果您需要透過端口映射訪問健康檢查接口，請在環境變量中設置 `PICOCLAW_GATEWAY_HOST=0.0.0.0` 或修改 `config.json`。
+
 
 # 4. 查看日志
 docker compose logs -f picoclaw-gateway

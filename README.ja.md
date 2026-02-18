@@ -133,6 +133,10 @@ vim config/config.json      # DISCORD_BOT_TOKEN, プロバイダーの API キ�
 # 3. ビルドと起動
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Docker ユーザー**: デフォルトでは、Gateway は `127.0.0.1` でリッスンしており、ホストからアクセスできません。ヘルスチェックエンドポイントにアクセスしたり、ポートを公開したりする必要がある場合は、環境変数で `PICOCLAW_GATEWAY_HOST=0.0.0.0` を設定するか、`config.json` を更新してください。
+
+
 # 4. ログ確認
 docker compose logs -f picoclaw-gateway
 
@@ -398,7 +402,7 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "127.0.0.1",
+      "webhook_host": "0.0.0.0",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []

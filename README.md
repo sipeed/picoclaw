@@ -165,6 +165,10 @@ vim config/config.json      # Set DISCORD_BOT_TOKEN, API keys, etc.
 # 3. Build & Start
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Docker Users**: By default, the Gateway listens on `127.0.0.1` which is not accessible from the host. If you need to access the health endpoints or expose ports, set `PICOCLAW_GATEWAY_HOST=0.0.0.0` in your environment or update `config.json`.
+
+
 # 4. Check logs
 docker compose logs -f picoclaw-gateway
 
@@ -432,7 +436,7 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "127.0.0.1",
+      "webhook_host": "0.0.0.0",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
