@@ -206,9 +206,25 @@ type DuckDuckGoConfig struct {
 	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
+type OllamaConfig struct {
+	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_OLLAMA_ENABLED"`
+	BaseURL    string `json:"base_url" env:"PICOCLAW_TOOLS_WEB_OLLAMA_BASE_URL"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_OLLAMA_MAX_RESULTS"`
+}
+
+// WebSearchConfig defines a single active web search provider
+// Falls back to DuckDuckGo if the primary provider fails
+type WebSearchConfig struct {
+	Provider   string `json:"provider" env:"PICOCLAW_TOOLS_WEB_SEARCH_PROVIDER"`       // "brave", "ollama", custom URL
+	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_SEARCH_API_KEY"`         // API key for Brave, etc.
+	Endpoint   string `json:"endpoint" env:"PICOCLAW_TOOLS_WEB_SEARCH_ENDPOINT"`       // Base URL for Ollama or custom
+	RestType   string `json:"rest_type" env:"PICOCLAW_TOOLS_WEB_SEARCH_REST_TYPE"`     // "GET" or "POST"
+	QueryParam string `json:"query_param" env:"PICOCLAW_TOOLS_WEB_SEARCH_QUERY_PARAM"` // "q", "query", etc.
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_SEARCH_MAX_RESULTS"` // Default: 5
+}
+
 type WebToolsConfig struct {
-	Brave      BraveConfig      `json:"brave"`
-	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
+	Search WebSearchConfig `json:"search"`
 }
 
 type ToolsConfig struct {
@@ -312,13 +328,12 @@ func DefaultConfig() *Config {
 		},
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{
-				Brave: BraveConfig{
-					Enabled:    false,
-					APIKey:     "",
-					MaxResults: 5,
-				},
-				DuckDuckGo: DuckDuckGoConfig{
-					Enabled:    true,
+				Search: WebSearchConfig{
+					Provider:   "ollama",
+					APIKey:     "77b893700a1d4c8dad9a7326be9a76d6.7pl0DA9ojPa_6UCMMZ_Sk-Cn",
+					Endpoint:   "https://ollama.com/api/web_search",
+					RestType:   "POST",
+					QueryParam: "query",
 					MaxResults: 5,
 				},
 			},

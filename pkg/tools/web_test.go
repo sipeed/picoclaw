@@ -175,21 +175,22 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 
 // TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
-	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: ""})
+	// Brave without API key should return nil
+	tool := NewWebSearchTool(WebSearchToolOptions{Provider: "brave", APIKey: ""})
 	if tool != nil {
 		t.Errorf("Expected nil tool when Brave API key is empty")
 	}
 
-	// Also nil when nothing is enabled
-	tool = NewWebSearchTool(WebSearchToolOptions{})
+	// No providers should return nil
+	tool = NewWebSearchTool()
 	if tool != nil {
-		t.Errorf("Expected nil tool when no provider is enabled")
+		t.Errorf("Expected nil tool when no providers are provided")
 	}
 }
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
+	tool := NewWebSearchTool(WebSearchToolOptions{Provider: "duckduckgo", Enabled: true, MaxResults: 5})
 	ctx := context.Background()
 	args := map[string]interface{}{}
 

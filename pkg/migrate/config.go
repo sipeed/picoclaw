@@ -212,17 +212,24 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 
 	if tools, ok := getMap(data, "tools"); ok {
 		if web, ok := getMap(tools, "web"); ok {
-			// Migrate old "search" config to "brave" if api_key is present
 			if search, ok := getMap(web, "search"); ok {
 				if v, ok := getString(search, "api_key"); ok {
-					cfg.Tools.Web.Brave.APIKey = v
-					if v != "" {
-						cfg.Tools.Web.Brave.Enabled = true
-					}
+					cfg.Tools.Web.Search.APIKey = v
+				}
+				if v, ok := getString(search, "provider"); ok {
+					cfg.Tools.Web.Search.Provider = v
+				}
+				if v, ok := getString(search, "endpoint"); ok {
+					cfg.Tools.Web.Search.Endpoint = v
+				}
+				if v, ok := getString(search, "rest_type"); ok {
+					cfg.Tools.Web.Search.RestType = v
+				}
+				if v, ok := getString(search, "query_param"); ok {
+					cfg.Tools.Web.Search.QueryParam = v
 				}
 				if v, ok := getFloat(search, "max_results"); ok {
-					cfg.Tools.Web.Brave.MaxResults = int(v)
-					cfg.Tools.Web.DuckDuckGo.MaxResults = int(v)
+					cfg.Tools.Web.Search.MaxResults = int(v)
 				}
 			}
 		}
@@ -276,8 +283,23 @@ func MergeConfig(existing, incoming *config.Config) *config.Config {
 		existing.Channels.MaixCam = incoming.Channels.MaixCam
 	}
 
-	if existing.Tools.Web.Brave.APIKey == "" {
-		existing.Tools.Web.Brave = incoming.Tools.Web.Brave
+	if existing.Tools.Web.Search.APIKey == "" {
+		existing.Tools.Web.Search.APIKey = incoming.Tools.Web.Search.APIKey
+	}
+	if existing.Tools.Web.Search.Provider == "" {
+		existing.Tools.Web.Search.Provider = incoming.Tools.Web.Search.Provider
+	}
+	if existing.Tools.Web.Search.Endpoint == "" {
+		existing.Tools.Web.Search.Endpoint = incoming.Tools.Web.Search.Endpoint
+	}
+	if existing.Tools.Web.Search.RestType == "" {
+		existing.Tools.Web.Search.RestType = incoming.Tools.Web.Search.RestType
+	}
+	if existing.Tools.Web.Search.QueryParam == "" {
+		existing.Tools.Web.Search.QueryParam = incoming.Tools.Web.Search.QueryParam
+	}
+	if existing.Tools.Web.Search.MaxResults == 0 {
+		existing.Tools.Web.Search.MaxResults = incoming.Tools.Web.Search.MaxResults
 	}
 
 	return existing

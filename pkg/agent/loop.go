@@ -73,13 +73,24 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	// Shell execution
 	registry.Register(tools.NewExecTool(workspace, restrict))
 
-	if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
-		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
-		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
-		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-	}); searchTool != nil {
+	// Build web search tool from config - single provider with fallback to DuckDuckGo
+	searchOpts := []tools.WebSearchToolOptions{
+		{
+			Provider:   cfg.Tools.Web.Search.Provider,
+			APIKey:     cfg.Tools.Web.Search.APIKey,
+			BaseURL:    cfg.Tools.Web.Search.Endpoint,
+			MaxResults: cfg.Tools.Web.Search.MaxResults,
+			Mode:       cfg.Tools.Web.Search.RestType,
+			Param:      cfg.Tools.Web.Search.QueryParam,
+		},
+		// Always add DuckDuckGo as fallback
+		{
+			Provider:   "duckduckgo",
+			MaxResults: 5,
+		},
+	}
+
+	if searchTool := tools.NewWebSearchTool(searchOpts...); searchTool != nil {
 		registry.Register(searchTool)
 	}
 	registry.Register(tools.NewWebFetchTool(50000))

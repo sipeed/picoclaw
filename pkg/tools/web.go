@@ -176,41 +176,153 @@ func stripTags(content string) string {
 	return re.ReplaceAllString(content, "")
 }
 
+type OllamaSearchProvider struct {
+	baseURL    string
+	apiKey     string
+	queryParam string // Parameter name for query (e.g., "query", "q")
+}
+
+func (p *OllamaSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	// Call Ollama REST API for web search
+	requestBody := map[string]interface{}{
+		p.queryParam: query,
+	}
+
+	bodyJSON, _ := json.Marshal(requestBody)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL, strings.NewReader(string(bodyJSON)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", p.apiKey))
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request to Ollama failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Return the raw JSON string for the agent/tool to process
+	return string(body), nil
+}
+
 type WebSearchTool struct {
 	provider   SearchProvider
 	maxResults int
 }
 
+// WebSearchToolOptions defines configuration for web search providers.
+// This is the unified API for all search providers.
+//
+// If Provider is set, it's considered enabled. Use empty Provider to disable.
+// BaseURL is generic and works for any provider (e.g., custom Ollama instances).
+// Model is not needed for web search - results are translated by the main LLM.
+//
+// Usage example:
+//
+//	opts := []WebSearchToolOptions{
+//	    {Provider: "brave", APIKey: "key", MaxResults: 5},
+//	    {Provider: "ollama", BaseURL: "http://localhost:11434", MaxResults: 5},
+//	    {Provider: "duckduckgo", MaxResults: 5},
+//	}
+//	tool := NewWebSearchTool(opts...)
 type WebSearchToolOptions struct {
-	BraveAPIKey          string
-	BraveMaxResults      int
-	BraveEnabled         bool
-	DuckDuckGoMaxResults int
-	DuckDuckGoEnabled    bool
+	Provider   string // "brave", "ollama", "duckduckgo"
+	APIKey     string // For Brave API
+	BaseURL    string // For custom providers (e.g., Ollama)
+	MaxResults int    // Default: 5
+	Mode       string // "GET" or "POST" (reserved for future use)
+	Param      string // Query param name: "q", "query", etc. (reserved for future use)
 }
 
-func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
-	var provider SearchProvider
-	maxResults := 5
+func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
+	// Priority order: Brave > Ollama > DuckDuckGo
+	priorityOrder := []string{"brave", "ollama", "duckduckgo"}
+	optMap := make(map[string]WebSearchToolOptions)
 
-	// Priority: Brave > DuckDuckGo
-	if opts.BraveEnabled && opts.BraveAPIKey != "" {
-		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey}
-		if opts.BraveMaxResults > 0 {
-			maxResults = opts.BraveMaxResults
+	// Build map of enabled providers
+	for _, opt := range opts {
+		if opt.Provider != "" {
+			optMap[opt.Provider] = opt
 		}
-	} else if opts.DuckDuckGoEnabled {
-		provider = &DuckDuckGoSearchProvider{}
-		if opts.DuckDuckGoMaxResults > 0 {
-			maxResults = opts.DuckDuckGoMaxResults
+	}
+
+	var selectedOpt *WebSearchToolOptions
+	var provider SearchProvider
+
+	// Try providers in priority order
+	for _, providerName := range priorityOrder {
+		opt, exists := optMap[providerName]
+		if !exists {
+			continue
 		}
-	} else {
+
+		selectedOpt = &opt
+		var err error
+		provider, err = createProvider(&opt)
+		if err == nil && provider != nil {
+			break
+		}
+	}
+
+	if provider == nil {
 		return nil
+	}
+
+	maxResults := 5
+	if selectedOpt != nil && selectedOpt.MaxResults > 0 {
+		maxResults = selectedOpt.MaxResults
 	}
 
 	return &WebSearchTool{
 		provider:   provider,
 		maxResults: maxResults,
+	}
+}
+
+// createProvider creates a SearchProvider based on configuration
+// Provider is considered enabled if non-empty
+func createProvider(opt *WebSearchToolOptions) (SearchProvider, error) {
+	if opt == nil || opt.Provider == "" {
+		return nil, fmt.Errorf("provider not set")
+	}
+
+	switch opt.Provider {
+	case "brave":
+		if opt.APIKey == "" {
+			return nil, fmt.Errorf("Brave API key required")
+		}
+		return &BraveSearchProvider{apiKey: opt.APIKey}, nil
+
+	case "ollama":
+		if opt.BaseURL == "" {
+			return nil, fmt.Errorf("Ollama BaseURL required")
+		}
+		queryParam := opt.Param
+		if queryParam == "" {
+			queryParam = "query" // Default query parameter
+		}
+		return &OllamaSearchProvider{
+			baseURL:    opt.BaseURL,
+			apiKey:     opt.APIKey, // Bearer token for API authentication
+			queryParam: queryParam,
+		}, nil
+
+	case "duckduckgo":
+		return &DuckDuckGoSearchProvider{}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown provider: %s", opt.Provider)
 	}
 }
 
@@ -259,6 +371,38 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 		return ErrorResult(fmt.Sprintf("search failed: %v", err))
 	}
 
+	// If Ollama, synthesize a readable answer for the user
+	if _, ok := t.provider.(*OllamaSearchProvider); ok {
+		var parsed struct {
+			Results []struct {
+				Title   string `json:"title"`
+				URL     string `json:"url"`
+				Content string `json:"content"`
+			} `json:"results"`
+		}
+		if err := json.Unmarshal([]byte(result), &parsed); err == nil && len(parsed.Results) > 0 {
+			// Synthesize a readable answer
+			var summary []string
+			summary = append(summary, fmt.Sprintf("Web search summary for: %s", query))
+			maxItems := count
+			if len(parsed.Results) < count {
+				maxItems = len(parsed.Results)
+			}
+			for i := 0; i < maxItems; i++ {
+				r := parsed.Results[i]
+				summary = append(summary, fmt.Sprintf("%d. %s\n   %s", i+1, r.Title, r.URL))
+				if r.Content != "" {
+					summary = append(summary, fmt.Sprintf("   %s", r.Content))
+				}
+			}
+			return &ToolResult{
+				ForLLM:  result, // raw for LLM
+				ForUser: strings.Join(summary, "\n"),
+			}
+		}
+	}
+
+	// Default: return as-is
 	return &ToolResult{
 		ForLLM:  result,
 		ForUser: result,
