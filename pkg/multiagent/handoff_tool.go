@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -19,6 +20,8 @@ type HandoffTool struct {
 	visited          []string         // agent IDs already in the call chain
 	maxDepth         int              // max allowed depth (0 = use DefaultMaxHandoffDepth)
 	allowlistChecker AllowlistChecker // optional; nil = allow all
+	registry         *RunRegistry     // optional; nil = no run tracking
+	parentSessionKey string           // session key of the parent run
 }
 
 // NewHandoffTool creates a handoff tool bound to a specific source agent.
@@ -101,6 +104,12 @@ func (t *HandoffTool) SetAllowlistChecker(checker AllowlistChecker) {
 	t.allowlistChecker = checker
 }
 
+// SetRunRegistry sets the registry for tracking active runs (cascade cancellation).
+func (t *HandoffTool) SetRunRegistry(registry *RunRegistry, parentSessionKey string) {
+	t.registry = registry
+	t.parentSessionKey = parentSessionKey
+}
+
 // SetContext updates the origin channel and chat ID for handoff routing.
 func (t *HandoffTool) SetContext(channel, chatID string) {
 	t.originChannel = channel
@@ -143,14 +152,33 @@ func (t *HandoffTool) Execute(ctx context.Context, args map[string]any) *tools.T
 		}
 	}
 
-	result := ExecuteHandoff(ctx, t.resolver, t.board, HandoffRequest{
-		FromAgentID: t.fromAgentID,
-		ToAgentID:   agentID,
-		Task:        task,
-		Context:     contextMap,
-		Depth:       t.depth,
-		Visited:     t.visited,
-		MaxDepth:    t.maxDepth,
+	// Create cancellable context for cascade stop support.
+	// If the parent context is cancelled, this handoff is also cancelled.
+	childCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Register this run in the registry for cascade cancellation.
+	childSessionKey := fmt.Sprintf("handoff:%s:%s:%d:%d", t.fromAgentID, agentID, t.depth, time.Now().UnixNano())
+	if t.registry != nil {
+		t.registry.Register(&ActiveRun{
+			SessionKey: childSessionKey,
+			AgentID:    agentID,
+			ParentKey:  t.parentSessionKey,
+			Cancel:     cancel,
+			StartedAt:  time.Now(),
+		})
+		defer t.registry.Deregister(childSessionKey)
+	}
+
+	result := ExecuteHandoff(childCtx, t.resolver, t.board, HandoffRequest{
+		FromAgentID:  t.fromAgentID,
+		ToAgentID:    agentID,
+		Task:         task,
+		Context:      contextMap,
+		Depth:        t.depth,
+		Visited:      t.visited,
+		MaxDepth:     t.maxDepth,
+		ParentRunKey: childSessionKey,
 	}, t.originChannel, t.originChatID)
 
 	if !result.Success {

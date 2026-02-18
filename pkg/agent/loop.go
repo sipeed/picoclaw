@@ -39,6 +39,7 @@ type AgentLoop struct {
 	blackboards    sync.Map // sessionKey -> *multiagent.Blackboard
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
+	runRegistry    *multiagent.RunRegistry // tracks active handoff/spawn runs for cascade stop
 }
 
 // processOptions configures how a message is processed
@@ -55,9 +56,10 @@ type processOptions struct {
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
+	runRegistry := multiagent.NewRunRegistry()
 
 	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
+	registerSharedTools(cfg, msgBus, registry, provider, runRegistry)
 
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
@@ -77,6 +79,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		state:       stateManager,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
+		runRegistry: runRegistry,
 	}
 }
 
@@ -122,7 +125,7 @@ func (r *registryResolver) ListAgents() []multiagent.AgentInfo {
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
-func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *AgentRegistry, provider providers.LLMProvider) {
+func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *AgentRegistry, provider providers.LLMProvider, runReg *multiagent.RunRegistry) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {
@@ -197,6 +200,7 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 				}
 				return registry.CanSpawnSubagent(currentAgentIDForHandoff, to)
 			}))
+			handoffTool.SetRunRegistry(runReg, "")
 			agent.Tools.Register(handoffTool)
 
 			// List agents tool: discover available agents

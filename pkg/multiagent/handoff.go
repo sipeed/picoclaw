@@ -58,13 +58,14 @@ const DefaultMaxHandoffDepth = 3
 
 // HandoffRequest describes a delegation from one agent to another.
 type HandoffRequest struct {
-	FromAgentID string
-	ToAgentID   string
-	Task        string
-	Context     map[string]string // k-v to write to blackboard before handoff
-	Depth       int               // current depth level (0 = top-level)
-	Visited     []string          // agent IDs already in the call chain
-	MaxDepth    int               // max allowed depth (0 = use DefaultMaxHandoffDepth)
+	FromAgentID  string
+	ToAgentID    string
+	Task         string
+	Context      map[string]string // k-v to write to blackboard before handoff
+	Depth        int               // current depth level (0 = top-level)
+	Visited      []string          // agent IDs already in the call chain
+	MaxDepth     int               // max allowed depth (0 = use DefaultMaxHandoffDepth)
+	ParentRunKey string            // parent run session key for cascade stop tracking
 }
 
 // HandoffResult contains the outcome of a handoff execution.
@@ -139,6 +140,7 @@ func ExecuteHandoff(ctx context.Context, resolver AgentResolver, board *Blackboa
 				ht.depth = req.Depth + 1
 				ht.visited = newVisited
 				ht.maxDepth = maxDepth
+				ht.parentSessionKey = req.ParentRunKey
 			}
 		}
 	}
