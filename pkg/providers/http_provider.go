@@ -324,6 +324,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 					model = "deepseek-chat"
 				}
 			}
+		case "moonshot", "kimi":
+			if cfg.Providers.Moonshot.APIKey != "" {
+				apiKey = cfg.Providers.Moonshot.APIKey
+				apiBase = cfg.Providers.Moonshot.APIBase
+				proxy = cfg.Providers.Moonshot.Proxy
+				if apiBase == "" {
+					apiBase = "https://api.moonshot.cn/v1"
+				}
+			}
 		case "github_copilot", "copilot":
 			if cfg.Providers.GitHubCopilot.APIBase != "" {
 				apiBase = cfg.Providers.GitHubCopilot.APIBase
