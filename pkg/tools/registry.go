@@ -12,6 +12,7 @@ import (
 
 type ToolRegistry struct {
 	tools map[string]Tool
+	hooks []ToolHook
 	mu    sync.RWMutex
 }
 
@@ -19,6 +20,14 @@ func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
 		tools: make(map[string]Tool),
 	}
+}
+
+// AddHook registers a hook that will be called around tool executions.
+// Hooks are called in registration order.
+func (r *ToolRegistry) AddHook(hook ToolHook) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.hooks = append(r.hooks, hook)
 }
 
 func (r *ToolRegistry) Register(tool Tool) {
@@ -71,6 +80,27 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 			})
 	}
 
+	// Run BeforeExecute hooks — any hook returning error blocks execution.
+	r.mu.RLock()
+	hooks := r.hooks
+	r.mu.RUnlock()
+
+	for _, hook := range hooks {
+		if err := hook.BeforeExecute(ctx, name, args); err != nil {
+			logger.WarnCF("tool", "Hook blocked tool execution",
+				map[string]interface{}{
+					"tool":  name,
+					"error": err.Error(),
+				})
+			blocked := ErrorResult(fmt.Sprintf("tool %q blocked by hook: %s", name, err.Error()))
+			// Still run AfterExecute hooks for observability
+			for _, h := range hooks {
+				h.AfterExecute(ctx, name, args, blocked)
+			}
+			return blocked
+		}
+	}
+
 	start := time.Now()
 	result := tool.Execute(ctx, args)
 	duration := time.Since(start)
@@ -96,6 +126,11 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 				"duration_ms":   duration.Milliseconds(),
 				"result_length": len(result.ForLLM),
 			})
+	}
+
+	// Run AfterExecute hooks for observability
+	for _, hook := range hooks {
+		hook.AfterExecute(ctx, name, args, result)
 	}
 
 	return result
