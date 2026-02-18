@@ -40,6 +40,11 @@ type LLMProvider interface {
 	GetDefaultModel() string
 }
 
+type CloseableProvider interface {
+	LLMProvider
+	Close()
+}
+
 type ToolDefinition struct {
 	Type     string                 `json:"type"`
 	Function ToolFunctionDefinition `json:"function"`

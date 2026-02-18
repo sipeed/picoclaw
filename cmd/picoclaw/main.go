@@ -680,6 +680,9 @@ func gatewayCmd() {
 
 	fmt.Println("\nShutting down...")
 	cancel()
+	if cp, ok := provider.(providers.CloseableProvider); ok {
+		cp.Close()
+	}
 	healthServer.Stop(context.Background())
 	deviceService.Stop()
 	heartbeatService.Stop()
