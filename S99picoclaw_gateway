@@ -1,0 +1,52 @@
+#!/bin/sh
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+DAEMON="/root/picoclaw"
+DAEMON_ARGS="gateway"
+LOG="/var/log/picoclaw_gateway.log"
+PIDFILE="/var/run/picoclaw_gateway.pid"
+RUN_USER="root"
+
+start() {
+    [ -x "$DAEMON" ] || { echo "picoclaw 未找到"; exit 1; }
+    mkdir -p /var/run
+    printf "启动 picoclaw: "
+    su - $RUN_USER -c "\"$DAEMON\" $DAEMON_ARGS >\"$LOG\" 2>&1 & echo \$! >\"$PIDFILE\""
+    sleep 1
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "OK"
+    else
+        echo "失败"
+        rm -f "$PIDFILE"
+        exit 1
+    fi
+}
+
+stop() {
+    printf "停止 picoclaw: "
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null || true
+        sleep 2
+        kill -0 "$(cat "$PIDFILE")" 2>/dev/null && kill -9 "$(cat "$PIDFILE")" 2>/dev/null || true
+        rm -f "$PIDFILE"
+        echo "OK"
+    else
+        su - $RUN_USER -c "killall picoclaw 2>/dev/null" && echo "OK" || echo "进程未运行"
+    fi
+}
+
+status() {
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "picoclaw 正在运行（pid $(cat "$PIDFILE")）"
+    else
+        echo "picoclaw 已停止"; exit 1
+    fi
+}
+
+case "$1" in
+  start) start ;;
+  stop) stop ;;
+  restart|reload) stop; start ;;
+  status) status ;;
+  *) echo "用法: $0 {start|stop|restart|status}"; exit 1 ;;
+esac
+exit 0
