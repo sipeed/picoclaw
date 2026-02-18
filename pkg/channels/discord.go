@@ -376,6 +376,13 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"preview":     utils.Truncate(content, 50),
 	})
 
+	peerKind := "channel"
+	peerID := m.ChannelID
+	if m.GuildID == "" {
+		peerKind = "direct"
+		peerID = senderID
+	}
+
 	metadata := map[string]string{
 		"message_id":   m.ID,
 		"user_id":      senderID,
@@ -384,6 +391,8 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"guild_id":     m.GuildID,
 		"channel_id":   m.ChannelID,
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
+		"peer_kind":    peerKind,
+		"peer_id":      peerID,
 	}
 
 	c.HandleMessage(senderID, m.ChannelID, content, mediaPaths, metadata)

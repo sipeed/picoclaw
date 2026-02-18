@@ -299,6 +299,24 @@ func TestConvertConfig(t *testing.T) {
 	})
 }
 
+func TestSupportedProvidersCompatibility(t *testing.T) {
+	expected := []string{
+		"anthropic",
+		"openai",
+		"openrouter",
+		"groq",
+		"zhipu",
+		"vllm",
+		"gemini",
+	}
+
+	for _, provider := range expected {
+		if !supportedProviders[provider] {
+			t.Fatalf("supportedProviders missing expected key %q", provider)
+		}
+	}
+}
+
 func TestMergeConfig(t *testing.T) {
 	t.Run("fills empty fields", func(t *testing.T) {
 		existing := config.DefaultConfig()
