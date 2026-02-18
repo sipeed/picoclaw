@@ -328,6 +328,55 @@ func TestBlackboardTool_SetBoard(t *testing.T) {
 	}
 }
 
+// TestBlackboard_UnmarshalJSON_InvalidData verifies that UnmarshalJSON returns an error
+// for malformed input instead of silently producing a broken blackboard.
+func TestBlackboard_UnmarshalJSON_InvalidData(t *testing.T) {
+	bb := NewBlackboard()
+	err := bb.UnmarshalJSON([]byte("not valid json"))
+	if err == nil {
+		t.Error("expected error for invalid JSON input")
+	}
+	// Board should remain empty after a failed unmarshal
+	if bb.Size() != 0 {
+		t.Errorf("Size() = %d after failed unmarshal, want 0", bb.Size())
+	}
+}
+
+// TestBlackboardTool_ListEmpty verifies the "Blackboard is empty" message path when
+// the board has no entries.
+func TestBlackboardTool_ListEmpty(t *testing.T) {
+	bb := NewBlackboard()
+	tool := NewBlackboardTool(bb, "lister")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action": "list",
+	})
+	if result.IsError {
+		t.Fatalf("list on empty board should not error: %s", result.ForLLM)
+	}
+	if !contains(result.ForLLM, "empty") {
+		t.Errorf("expected 'empty' in result for empty board, got %q", result.ForLLM)
+	}
+}
+
+// TestBlackboardTool_DeleteMissing verifies the "not found" path for delete on a
+// key that does not exist.
+func TestBlackboardTool_DeleteMissing(t *testing.T) {
+	bb := NewBlackboard()
+	tool := NewBlackboardTool(bb, "deleter")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action": "delete",
+		"key":    "nonexistent_key",
+	})
+	if result.IsError {
+		t.Fatalf("delete of missing key should not be an error: %s", result.ForLLM)
+	}
+	if !contains(result.ForLLM, "not found") {
+		t.Errorf("expected 'not found' in result, got %q", result.ForLLM)
+	}
+}
+
 func TestBoardAware_Interface(t *testing.T) {
 	// Verify both tools implement BoardAware
 	bb := NewBlackboard()

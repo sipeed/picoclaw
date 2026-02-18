@@ -2,6 +2,7 @@ package multiagent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -597,6 +598,142 @@ func TestAllowlistCheckerFunc(t *testing.T) {
 	}
 	if checker.CanHandoff("other", "coder") {
 		t.Error("expected other->coder to be blocked")
+	}
+}
+
+// TestExecuteHandoff_DepthBoundary verifies that depth == maxDepth - 1 (one below limit) succeeds,
+// while depth == maxDepth fails. This is the exact boundary behaviour of the recursion guard.
+func TestExecuteHandoff_DepthBoundary(t *testing.T) {
+	provider := &mockProvider{response: "done"}
+	resolver := newMockResolver(&AgentInfo{
+		ID: "target", Name: "Target", Model: "test",
+		Provider: provider, Tools: tools.NewToolRegistry(), MaxIter: 5,
+	})
+	bb := NewBlackboard()
+
+	// depth == maxDepth - 1 (2 < 3): must succeed
+	result := ExecuteHandoff(context.Background(), resolver, bb, HandoffRequest{
+		FromAgentID: "main",
+		ToAgentID:   "target",
+		Task:        "do something",
+		Depth:       2,
+		MaxDepth:    3,
+		Visited:     []string{"main", "middle"},
+	}, "cli", "direct")
+	if !result.Success {
+		t.Errorf("depth == maxDepth-1 should succeed, got error: %s", result.Error)
+	}
+
+	// depth == maxDepth (3 >= 3): must fail
+	result = ExecuteHandoff(context.Background(), resolver, bb, HandoffRequest{
+		FromAgentID: "main",
+		ToAgentID:   "target",
+		Task:        "do something",
+		Depth:       3,
+		MaxDepth:    3,
+		Visited:     []string{"main", "a", "b"},
+	}, "cli", "direct")
+	if result.Success {
+		t.Error("depth == maxDepth should fail")
+	}
+	if !strings.Contains(result.Error, "depth limit") {
+		t.Errorf("Error = %q, expected 'depth limit'", result.Error)
+	}
+}
+
+// TestExecuteHandoff_ProviderError verifies that a provider error during RunToolLoop
+// is surfaced as a failed HandoffResult with an error message.
+func TestExecuteHandoff_ProviderError(t *testing.T) {
+	provider := &mockProvider{err: fmt.Errorf("LLM provider unavailable")}
+	resolver := newMockResolver(&AgentInfo{
+		ID: "target", Name: "Target", Model: "test",
+		Provider: provider, Tools: tools.NewToolRegistry(), MaxIter: 5,
+	})
+
+	bb := NewBlackboard()
+	result := ExecuteHandoff(context.Background(), resolver, bb, HandoffRequest{
+		FromAgentID: "main",
+		ToAgentID:   "target",
+		Task:        "failing task",
+	}, "cli", "direct")
+
+	if result.Success {
+		t.Error("expected failure when provider returns error")
+	}
+	if !strings.Contains(result.Error, "provider unavailable") {
+		t.Errorf("Error = %q, expected provider error message", result.Error)
+	}
+	if result.AgentID != "target" {
+		t.Errorf("AgentID = %q, want 'target'", result.AgentID)
+	}
+}
+
+// TestExecuteHandoff_MaxIterDefault verifies that MaxIter == 0 on the target agent
+// is defaulted to 10 inside ExecuteHandoff (not left as 0 which would mean no iterations).
+func TestExecuteHandoff_MaxIterDefault(t *testing.T) {
+	provider := &mockProvider{response: "ran with default iter"}
+	resolver := newMockResolver(&AgentInfo{
+		ID:       "target",
+		Name:     "Target",
+		Model:    "test",
+		Provider: provider,
+		Tools:    tools.NewToolRegistry(),
+		MaxIter:  0, // explicitly zero, should default to 10
+	})
+
+	bb := NewBlackboard()
+	result := ExecuteHandoff(context.Background(), resolver, bb, HandoffRequest{
+		FromAgentID: "main",
+		ToAgentID:   "target",
+		Task:        "task with default iter",
+	}, "cli", "direct")
+
+	if !result.Success {
+		t.Errorf("expected success with default MaxIter, got: %s", result.Error)
+	}
+}
+
+// TestExecuteHandoff_CycleDetectionSingleHop verifies A->A (self-handoff) is caught.
+func TestExecuteHandoff_CycleDetectionSingleHop(t *testing.T) {
+	provider := &mockProvider{response: "done"}
+	resolver := newMockResolver(&AgentInfo{
+		ID: "main", Name: "Main", Model: "test",
+		Provider: provider, Tools: tools.NewToolRegistry(), MaxIter: 5,
+	})
+
+	bb := NewBlackboard()
+	// "main" handing off to itself, already in visited
+	result := ExecuteHandoff(context.Background(), resolver, bb, HandoffRequest{
+		FromAgentID: "main",
+		ToAgentID:   "main",
+		Task:        "self task",
+		Depth:       0,
+		Visited:     []string{"main"},
+	}, "cli", "direct")
+
+	if result.Success {
+		t.Error("expected failure for self-handoff cycle")
+	}
+	if !strings.Contains(result.Error, "cycle detected") {
+		t.Errorf("Error = %q, expected 'cycle detected'", result.Error)
+	}
+}
+
+// TestHandoffTool_SetContext verifies SetContext updates origin channel and chatID.
+func TestHandoffTool_SetContext(t *testing.T) {
+	resolver := newMockResolver()
+	bb := NewBlackboard()
+	tool := NewHandoffTool(resolver, bb, "main")
+
+	tool.SetContext("telegram", "chat-123")
+
+	// Verify fields are updated (access via the exported setter, values verified by ensuring
+	// no panic and the defaults were overwritten — integration confirmed via Execute routing).
+	if tool.originChannel != "telegram" {
+		t.Errorf("originChannel = %q, want %q", tool.originChannel, "telegram")
+	}
+	if tool.originChatID != "chat-123" {
+		t.Errorf("originChatID = %q, want %q", tool.originChatID, "chat-123")
 	}
 }
 

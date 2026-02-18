@@ -111,3 +111,72 @@ func TestToolHook_FirstBlockStopsChain(t *testing.T) {
 		t.Error("hook2 before should NOT have been called (chain stopped)")
 	}
 }
+
+// TestToolHook_AfterExecuteRunsForAllHooksOnBlock verifies that when a BeforeExecute
+// hook blocks execution, AfterExecute is still invoked on ALL registered hooks
+// (not just the blocking one) for observability purposes.
+func TestToolHook_AfterExecuteRunsForAllHooksOnBlock(t *testing.T) {
+	reg := NewToolRegistry()
+	reg.Register(&dummyTool{name: "observed_tool"})
+
+	hook1 := &testHook{blockTool: "observed_tool"}
+	hook2 := &testHook{} // does not block, but should still get AfterExecute
+	reg.AddHook(hook1)
+	reg.AddHook(hook2)
+
+	result := reg.Execute(context.Background(), "observed_tool", nil)
+
+	if !result.IsError {
+		t.Error("expected error result when hook1 blocks")
+	}
+	// BeforeExecute: hook1 called, hook2 NOT called (chain stopped)
+	if len(hook1.beforeCalls) != 1 {
+		t.Errorf("hook1.beforeCalls = %d, want 1", len(hook1.beforeCalls))
+	}
+	if len(hook2.beforeCalls) != 0 {
+		t.Errorf("hook2.beforeCalls = %d, want 0 (chain stopped)", len(hook2.beforeCalls))
+	}
+	// AfterExecute: BOTH hooks called (inner loop over all hooks for observability)
+	if len(hook1.afterCalls) != 1 {
+		t.Errorf("hook1.afterCalls = %d, want 1", len(hook1.afterCalls))
+	}
+	if len(hook2.afterCalls) != 1 {
+		t.Errorf("hook2.afterCalls = %d, want 1 (AfterExecute runs for all hooks even on block)", len(hook2.afterCalls))
+	}
+}
+
+// TestToolHook_NotFoundToolSkipsHooks verifies that hooks are not called when
+// a tool does not exist in the registry.
+func TestToolHook_NotFoundToolSkipsHooks(t *testing.T) {
+	reg := NewToolRegistry()
+	// Do NOT register the tool
+
+	hook := &testHook{}
+	reg.AddHook(hook)
+
+	result := reg.Execute(context.Background(), "ghost_tool", nil)
+
+	if !result.IsError {
+		t.Error("expected error for unknown tool")
+	}
+	// Hooks should not be called when the tool doesn't exist (early return before hook loop)
+	if len(hook.beforeCalls) != 0 {
+		t.Errorf("hook.beforeCalls = %d, want 0 for missing tool", len(hook.beforeCalls))
+	}
+	if len(hook.afterCalls) != 0 {
+		t.Errorf("hook.afterCalls = %d, want 0 for missing tool", len(hook.afterCalls))
+	}
+}
+
+// TestToolHook_NoHooksSucceeds verifies that a tool executes normally with no hooks registered.
+func TestToolHook_NoHooksSucceeds(t *testing.T) {
+	reg := NewToolRegistry()
+	reg.Register(&dummyTool{name: "plain_tool"})
+	// No hooks added
+
+	result := reg.Execute(context.Background(), "plain_tool", nil)
+
+	if result.IsError {
+		t.Errorf("expected success with no hooks, got error: %s", result.ForLLM)
+	}
+}
