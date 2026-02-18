@@ -16,12 +16,12 @@ func TestSearchCache_LRU_Behavior(t *testing.T) {
 	cache.Put("query-C", []SearchResult{{Slug: "C"}})
 
 	// Access query-A (should make it most recently used)
-	// Current behavior: query-A remains at front (oldest) if Get doesn't update order
+	// In correct LRU behavior, this access updates the order so query-A is not evicted next.
 	if _, found := cache.Get("query-A"); !found {
 		t.Fatal("query-A should be in cache")
 	}
 
-	// Add query-D. Should evict query-A if FIFO (current bug), or query-B if LRU (desired).
+	// Add query-D. Correct LRU behavior should evict query-B (the least recently used).
 	cache.Put("query-D", []SearchResult{{Slug: "D"}})
 
 	// Check if query-A is still there
