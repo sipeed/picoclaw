@@ -66,6 +66,7 @@ type AgentDefaults struct {
 	MaxTokens           int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations   int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	SessionTTL          string  `json:"session_ttl" env:"PICOCLAW_AGENTS_DEFAULTS_SESSION_TTL"`
 }
 
 type ChannelsConfig struct {
@@ -83,16 +84,18 @@ type ChannelsConfig struct {
 }
 
 type WhatsAppConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	Enabled    bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
+	BridgeURL  string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
+	AllowFrom  FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	SessionTTL string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_WHATSAPP_SESSION_TTL"`
 }
 
 type TelegramConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	Proxy     string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled    bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token      string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	Proxy      string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom  FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	SessionTTL string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_TELEGRAM_SESSION_TTL"`
 }
 
 type FeishuConfig struct {
@@ -102,26 +105,30 @@ type FeishuConfig struct {
 	EncryptKey        string              `json:"encrypt_key" env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
 	VerificationToken string              `json:"verification_token" env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
 	AllowFrom         FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
+	SessionTTL        string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_FEISHU_SESSION_TTL"`
 }
 
 type DiscordConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	Enabled    bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	Token      string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	AllowFrom  FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	SessionTTL string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_DISCORD_SESSION_TTL"`
 }
 
 type MaixCamConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
-	Host      string              `json:"host" env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
-	Port      int                 `json:"port" env:"PICOCLAW_CHANNELS_MAIXCAM_PORT"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_MAIXCAM_ALLOW_FROM"`
+	Enabled    bool                `json:"enabled" env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
+	Host       string              `json:"host" env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
+	Port       int                 `json:"port" env:"PICOCLAW_CHANNELS_MAIXCAM_PORT"`
+	AllowFrom  FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_MAIXCAM_ALLOW_FROM"`
+	SessionTTL string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_MAIXCAM_SESSION_TTL"`
 }
 
 type QQConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID     string              `json:"app_id" env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret string              `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	Enabled    bool                `json:"enabled" env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID      string              `json:"app_id" env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	AppSecret  string              `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
+	AllowFrom  FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	SessionTTL string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_QQ_SESSION_TTL"`
 }
 
 type DingTalkConfig struct {
@@ -129,13 +136,15 @@ type DingTalkConfig struct {
 	ClientID     string              `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
 	ClientSecret string              `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
 	AllowFrom    FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
+	SessionTTL   string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_DINGTALK_SESSION_TTL"`
 }
 
 type SlackConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
-	BotToken  string              `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken  string              `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
+	Enabled    bool                `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
+	BotToken   string              `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
+	AppToken   string              `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
+	AllowFrom  FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
+	SessionTTL string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_SLACK_SESSION_TTL"`
 }
 
 type LINEConfig struct {
@@ -146,6 +155,7 @@ type LINEConfig struct {
 	WebhookPort        int                 `json:"webhook_port" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
 	WebhookPath        string              `json:"webhook_path" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
+	SessionTTL         string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_LINE_SESSION_TTL"`
 }
 
 type OneBotConfig struct {
@@ -155,21 +165,17 @@ type OneBotConfig struct {
 	ReconnectInterval  int                 `json:"reconnect_interval" env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
+	SessionTTL         string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_ONEBOT_SESSION_TTL"`
 }
 
 type XMPPConfig struct {
-	Enabled           bool                `json:"enabled" env:"PICOCLAW_CHANNELS_XMPP_ENABLED"`
-	Server            string              `json:"server" env:"PICOCLAW_CHANNELS_XMPP_SERVER"`
-	Domain            string              `json:"domain" env:"PICOCLAW_CHANNELS_XMPP_DOMAIN"`
-	Username          string              `json:"username" env:"PICOCLAW_CHANNELS_XMPP_USERNAME"`
-	Password          string              `json:"password" env:"PICOCLAW_CHANNELS_XMPP_PASSWORD"`
-	Resource          string              `json:"resource" env:"PICOCLAW_CHANNELS_XMPP_RESOURCE"`
-	Rooms             []string            `json:"rooms" env:"PICOCLAW_CHANNELS_XMPP_ROOMS"`
-	Nickname          string              `json:"nickname" env:"PICOCLAW_CHANNELS_XMPP_NICKNAME"`
-	UseTLS            bool                `json:"use_tls" env:"PICOCLAW_CHANNELS_XMPP_USE_TLS"`
-	InsecureSkipVerify bool               `json:"insecure_skip_verify" env:"PICOCLAW_CHANNELS_XMPP_INSECURE_SKIP_VERIFY"`
-	EnableReceipts    bool                `json:"enable_receipts" env:"PICOCLAW_CHANNELS_XMPP_ENABLE_RECEIPTS"`
-	AllowFrom         FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_XMPP_ALLOW_FROM"`
+	Enabled      bool                `json:"enabled" env:"PICOCLAW_CHANNELS_XMPP_ENABLED"`
+	JID          string              `json:"jid" env:"PICOCLAW_CHANNELS_XMPP_JID"`
+	Password     string              `json:"password" env:"PICOCLAW_CHANNELS_XMPP_PASSWORD"`
+	Server       string              `json:"server" env:"PICOCLAW_CHANNELS_XMPP_SERVER"`
+	UploadDomain string              `json:"upload_domain" env:"PICOCLAW_CHANNELS_XMPP_UPLOAD_DOMAIN"`
+	AllowFrom    FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_XMPP_ALLOW_FROM"`
+	SessionTTL   string              `json:"session_ttl" env:"PICOCLAW_CHANNELS_XMPP_SESSION_TTL"`
 }
 
 type HeartbeatConfig struct {
@@ -222,13 +228,25 @@ type DuckDuckGoConfig struct {
 	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
+type PerplexityConfig struct {
+	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
+	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+}
+
 type WebToolsConfig struct {
 	Brave      BraveConfig      `json:"brave"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
+	Perplexity PerplexityConfig `json:"perplexity"`
+}
+
+type CronToolsConfig struct {
+	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
 }
 
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web  WebToolsConfig  `json:"web"`
+	Cron CronToolsConfig `json:"cron"`
 }
 
 func DefaultConfig() *Config {
@@ -242,18 +260,21 @@ func DefaultConfig() *Config {
 				MaxTokens:           8192,
 				Temperature:         0.7,
 				MaxToolIterations:   20,
+				SessionTTL:          "",
 			},
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
-				Enabled:   false,
-				BridgeURL: "ws://localhost:3001",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:    false,
+				BridgeURL:  "ws://localhost:3001",
+				AllowFrom:  FlexibleStringSlice{},
+				SessionTTL: "false",
 			},
 			Telegram: TelegramConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:    false,
+				Token:      "",
+				AllowFrom:  FlexibleStringSlice{},
+				SessionTTL: "false",
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,
@@ -262,35 +283,41 @@ func DefaultConfig() *Config {
 				EncryptKey:        "",
 				VerificationToken: "",
 				AllowFrom:         FlexibleStringSlice{},
+				SessionTTL:        "false",
 			},
 			Discord: DiscordConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:    false,
+				Token:      "",
+				AllowFrom:  FlexibleStringSlice{},
+				SessionTTL: "false",
 			},
 			MaixCam: MaixCamConfig{
-				Enabled:   false,
-				Host:      "0.0.0.0",
-				Port:      18790,
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:    false,
+				Host:       "0.0.0.0",
+				Port:       18790,
+				AllowFrom:  FlexibleStringSlice{},
+				SessionTTL: "false",
 			},
 			QQ: QQConfig{
-				Enabled:   false,
-				AppID:     "",
-				AppSecret: "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:    false,
+				AppID:      "",
+				AppSecret:  "",
+				AllowFrom:  FlexibleStringSlice{},
+				SessionTTL: "false",
 			},
 			DingTalk: DingTalkConfig{
 				Enabled:      false,
 				ClientID:     "",
 				ClientSecret: "",
 				AllowFrom:    FlexibleStringSlice{},
+				SessionTTL:   "false",
 			},
 			Slack: SlackConfig{
-				Enabled:   false,
-				BotToken:  "",
-				AppToken:  "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:    false,
+				BotToken:   "",
+				AppToken:   "",
+				AllowFrom:  FlexibleStringSlice{},
+				SessionTTL: "false",
 			},
 			LINE: LINEConfig{
 				Enabled:            false,
@@ -300,6 +327,7 @@ func DefaultConfig() *Config {
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
 				AllowFrom:          FlexibleStringSlice{},
+				SessionTTL:         "false",
 			},
 			OneBot: OneBotConfig{
 				Enabled:            false,
@@ -308,20 +336,16 @@ func DefaultConfig() *Config {
 				ReconnectInterval:  5,
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
+				SessionTTL:         "false",
 			},
 			XMPP: XMPPConfig{
-				Enabled:            false,
-				Server:             "",
-				Domain:             "",
-				Username:           "",
-				Password:           "",
-				Resource:           "picoclaw",
-				Rooms:              []string{},
-				Nickname:           "PicoClaw",
-				UseTLS:             true,
-				InsecureSkipVerify: false,
-				EnableReceipts:     true,
-				AllowFrom:          FlexibleStringSlice{},
+				Enabled:      false,
+				JID:          "",
+				Password:     "",
+				Server:       "",
+				UploadDomain: "",
+				AllowFrom:    FlexibleStringSlice{},
+				SessionTTL:   "false",
 			},
 		},
 		Providers: ProvidersConfig{
@@ -351,6 +375,14 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+				Perplexity: PerplexityConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
+			},
+			Cron: CronToolsConfig{
+				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
 			},
 		},
 		Heartbeat: HeartbeatConfig{

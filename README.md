@@ -49,7 +49,7 @@
 
 
 ## 📢 News
-2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](doc/picoclaw_community_roadmap_260216.md) —we can’t wait to have you on board!
+2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](docs/picoclaw_community_roadmap_260216.md) —we can’t wait to have you on board!
 
 2026-02-13 🎉 PicoClaw hit 5000 stars in 4days! Thank you for the community! There are so many PRs&issues come in (during Chinese New Year holidays), we are finalizing the Project Roadmap and setting up the Developer Group to accelerate PicoClaw's development.  
 🚀 Call to Action: Please submit your feature requests in GitHub Discussions. We will review and prioritize them during our upcoming weekly meeting.
@@ -98,6 +98,20 @@
     <td align="center">Discovery • Insights • Trends</td>
   </tr>
 </table>
+
+### 📱 Run on old Android Phones
+Give your decade-old phone a second life! Turn it into a smart AI Assistant with PicoClaw. Quick Start:
+1. **Install Termux** (Available on F-Droid or Google Play).
+2. **Execute cmds**
+```bash
+# Note: Replace v0.1.1 with the latest version from the Releases page
+wget https://github.com/sipeed/picoclaw/releases/download/v0.1.1/picoclaw-linux-arm64
+chmod +x picoclaw-linux-arm64
+pkg install proot
+termux-chroot ./picoclaw-linux-arm64 onboard
+```
+And then follow the instructions in the "Quick Start" section to complete the configuration!
+<img src="assets/termux.jpg" alt="PicoClaw" width="512">
 
 ### 🐜 Innovative Low-Footprint Deploy
 
@@ -760,6 +774,9 @@ picoclaw agent -m "Hello"
         "enabled": true,
         "max_results": 5
       }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
     }
   },
   "heartbeat": {

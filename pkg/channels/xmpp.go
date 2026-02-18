@@ -5,337 +5,562 @@ import (
 	"crypto/tls"
 	"encoding/xml"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"mellium.im/sasl"
 	"mellium.im/xmlstream"
 	"mellium.im/xmpp"
+	"mellium.im/xmpp/disco"
+	"mellium.im/xmpp/disco/items"
 	"mellium.im/xmpp/jid"
+	"mellium.im/xmpp/mux"
 	"mellium.im/xmpp/stanza"
+	"mellium.im/xmpp/upload"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type XMPPChannel struct {
 	*BaseChannel
-	config      config.XMPPConfig
-	session     *xmpp.Session
-	ctx         context.Context
-	cancel      context.CancelFunc
-	mu          sync.Mutex
-	joinedRooms map[string]bool
+	config     config.XMPPConfig
+	session    *xmpp.Session
+	ctx        context.Context
+	cancel     context.CancelFunc
+	httpClient *http.Client
+
+	uploadMu  sync.Mutex
+	uploadJID jid.JID
+
+	lastMsgMu    sync.Mutex
+	lastFromBare string
+	lastContent  string
+	lastTime     time.Time
 }
 
-func NewXMPPChannel(cfg config.XMPPConfig, bus *bus.MessageBus) (*XMPPChannel, error) {
-	base := NewBaseChannel("xmpp", cfg, bus, cfg.AllowFrom)
+func NewXMPPChannel(cfg config.XMPPConfig, messageBus *bus.MessageBus) (*XMPPChannel, error) {
+	if cfg.JID == "" {
+		return nil, fmt.Errorf("xmpp jid is required")
+	}
+	if cfg.Password == "" {
+		return nil, fmt.Errorf("xmpp password is required")
+	}
+
+	base := NewBaseChannel("xmpp", cfg, messageBus, cfg.AllowFrom)
+
 	return &XMPPChannel{
 		BaseChannel: base,
 		config:      cfg,
-		joinedRooms: make(map[string]bool),
+		httpClient:  newHTTPClient(),
 	}, nil
 }
 
 func (c *XMPPChannel) Start(ctx context.Context) error {
-	if !c.config.Enabled {
-		return fmt.Errorf("xmpp channel disabled")
-	}
-	if c.config.Server == "" || c.config.Domain == "" || c.config.Username == "" {
-		return fmt.Errorf("xmpp server, domain and username must be configured")
+	if c.IsRunning() {
+		return nil
 	}
 
-	j, err := jid.Parse(fmt.Sprintf("%s@%s", c.config.Username, c.config.Domain))
+	j, err := jid.Parse(c.config.JID)
 	if err != nil {
-		return fmt.Errorf("invalid jid: %w", err)
+		return fmt.Errorf("invalid xmpp jid: %w", err)
 	}
 
-	dialCtx, cancel := context.WithCancel(ctx)
-	c.ctx = dialCtx
-	c.cancel = cancel
+	logger.InfoCF("xmpp", "Connecting XMPP client", map[string]interface{}{
+		"jid": j.String(),
+	})
 
-	features := []xmpp.StreamFeature{}
-	if c.config.UseTLS {
-		features = append(features, xmpp.StartTLS(&tls.Config{
-			InsecureSkipVerify: c.config.InsecureSkipVerify,
-			ServerName:         c.config.Domain,
-		}))
-	}
-	if c.config.Password != "" {
-		features = append(features, xmpp.SASL("", c.config.Password, sasl.Plain))
-	}
-	features = append(features, xmpp.BindResource())
-
-	session, err := xmpp.DialClientSession(dialCtx, j, features...)
+	session, err := xmpp.DialClientSession(
+		ctx,
+		j,
+		xmpp.StartTLS(&tls.Config{
+			ServerName: j.Domain().String(),
+			MinVersion: tls.VersionTLS12,
+		}),
+		xmpp.SASL("", c.config.Password, sasl.ScramSha256Plus, sasl.ScramSha1Plus, sasl.ScramSha256, sasl.ScramSha1, sasl.Plain),
+		xmpp.BindResource(),
+	)
 	if err != nil {
-		cancel()
-		return fmt.Errorf("failed to dial xmpp: %w", err)
+		return fmt.Errorf("failed to establish XMPP session: %w", err)
 	}
 
-	c.mu.Lock()
+	handler := mux.MessageHandlerFunc(func(msg stanza.Message, t xmlstream.TokenReadEncoder) error {
+		return c.handleIncomingMessage(msg, t)
+	})
+
+	m := mux.New(
+		stanza.NSClient,
+		mux.Message(stanza.ChatMessage, xml.Name{}, handler),
+		mux.Message(stanza.MessageType(""), xml.Name{}, handler),
+	)
+
 	c.session = session
-	c.mu.Unlock()
+	c.ctx, c.cancel = context.WithCancel(context.Background())
 
-	for _, room := range c.config.Rooms {
-		if room == "" {
-			continue
-		}
-		go c.joinRoom(room)
+	if err := c.sendInitialPresence(); err != nil {
+		logger.WarnCF("xmpp", "Failed to send initial presence", map[string]interface{}{
+			"error": err.Error(),
+		})
 	}
 
 	c.setRunning(true)
-	go c.readLoop()
+
+	go func() {
+		err := session.Serve(m)
+		if err != nil {
+			logger.ErrorCF("xmpp", "XMPP session ended with error", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			logger.InfoC("xmpp", "XMPP session ended")
+		}
+		c.setRunning(false)
+	}()
 
 	return nil
 }
 
 func (c *XMPPChannel) Stop(ctx context.Context) error {
-	c.setRunning(false)
-	c.mu.Lock()
+	if !c.IsRunning() {
+		return nil
+	}
+
 	if c.cancel != nil {
 		c.cancel()
 	}
 	if c.session != nil {
-		_ = c.session.Close()
+		if err := c.session.Close(); err != nil {
+			logger.WarnCF("xmpp", "Error closing XMPP session", map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
 	}
-	c.mu.Unlock()
+
+	c.setRunning(false)
+	logger.InfoC("xmpp", "XMPP channel stopped")
 	return nil
 }
 
 func (c *XMPPChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
-	if !c.IsRunning() {
+	if !c.IsRunning() || c.session == nil {
 		return fmt.Errorf("xmpp channel not running")
 	}
 
-	c.mu.Lock()
-	session := c.session
-	c.mu.Unlock()
-	if session == nil {
-		return fmt.Errorf("xmpp session not ready")
-	}
-
-	toJID, err := jid.Parse(msg.ChatID)
+	to, err := jid.Parse(msg.ChatID)
 	if err != nil {
-		return fmt.Errorf("invalid chat id: %w", err)
+		return fmt.Errorf("invalid xmpp chat id: %w", err)
 	}
 
-	msgType := stanza.ChatMessage
-	if c.isRoomJID(toJID) {
-		msgType = stanza.GroupChatMessage
-	}
+	content := strings.TrimSpace(msg.Content)
 
-	message := stanza.Message{
-		To:   toJID,
-		Type: msgType,
-	}
+	var mediaLinks []string
+	var inlineParts []string
+	if len(msg.Media) > 0 {
+		uploadJID, discoverErr := c.discoverUploadService(ctx)
+		if discoverErr != nil {
+			logger.ErrorCF("xmpp", "Failed to discover XEP-0363 upload service", map[string]interface{}{
+				"error": discoverErr.Error(),
+			})
+		}
 
-	type outgoing struct {
-		stanza.Message
-		Body    string `xml:"body"`
-		Request *struct {
-			XMLName xml.Name `xml:"urn:xmpp:receipts request"`
-		} `xml:"request,omitempty"`
-	}
+		for _, path := range msg.Media {
+			if discoverErr == nil {
+				link, err := c.uploadFile(ctx, uploadJID, path)
+				if err == nil && link != "" {
+					mediaLinks = append(mediaLinks, link)
+					continue
+				}
+				if err != nil {
+					logger.ErrorCF("xmpp", "Failed to upload media file", map[string]interface{}{
+						"path":  path,
+						"error": err.Error(),
+					})
+				}
+			}
 
-	o := outgoing{
-		Message: message,
-		Body:    msg.Content,
-	}
-	if c.config.EnableReceipts {
-		o.Request = &struct {
-			XMLName xml.Name `xml:"urn:xmpp:receipts request"`
-		}{
-			XMLName: xml.Name{Space: "urn:xmpp:receipts", Local: "request"},
+			inlineContent, err := c.readSmallFile(path, 32*1024)
+			if err != nil {
+				logger.ErrorCF("xmpp", "Failed to inline media file", map[string]interface{}{
+					"path":  path,
+					"error": err.Error(),
+				})
+				continue
+			}
+
+			inlineParts = append(inlineParts, fmt.Sprintf("文件 %s:\n%s", filepath.Base(path), inlineContent))
 		}
 	}
 
-	if err := session.Encode(ctx, o); err != nil {
-		return fmt.Errorf("failed to send xmpp message: %w", err)
+	if len(inlineParts) > 0 {
+		inlineText := strings.Join(inlineParts, "\n\n")
+		if content == "" {
+			content = inlineText
+		} else {
+			content = content + "\n\n" + inlineText
+		}
+	}
+
+	if len(mediaLinks) > 0 {
+		body := mediaLinks[0]
+		desc := content
+		return c.sendChatMessage(to, body, desc, mediaLinks)
+	}
+
+	if content == "" {
+		return nil
+	}
+
+	return c.sendChatMessage(to, content, "", nil)
+}
+
+func (c *XMPPChannel) sendInitialPresence() error {
+	return c.sendStanza(stanza.Presence{}.Wrap(nil))
+}
+
+func (c *XMPPChannel) sendChatMessage(to jid.JID, body string, desc string, mediaLinks []string) error {
+	bodyElem := xmlstream.Wrap(
+		xmlstream.Token(xml.CharData([]byte(body))),
+		xml.StartElement{Name: xml.Name{Local: "body"}},
+	)
+
+	children := []xml.TokenReader{bodyElem}
+
+	for _, link := range mediaLinks {
+		urlElem := xmlstream.Wrap(
+			xmlstream.Token(xml.CharData([]byte(link))),
+			xml.StartElement{Name: xml.Name{Local: "url"}},
+		)
+
+		var inner xml.TokenReader = urlElem
+
+		if desc != "" {
+			descElem := xmlstream.Wrap(
+				xmlstream.Token(xml.CharData([]byte(desc))),
+				xml.StartElement{Name: xml.Name{Local: "desc"}},
+			)
+			inner = xmlstream.MultiReader(urlElem, descElem)
+		}
+
+		xElem := xmlstream.Wrap(
+			inner,
+			xml.StartElement{
+				Name: xml.Name{Local: "x"},
+				Attr: []xml.Attr{
+					{Name: xml.Name{Local: "xmlns"}, Value: "jabber:x:oob"},
+				},
+			},
+		)
+
+		children = append(children, xElem)
+	}
+
+	var payload xml.TokenReader
+	if len(children) == 1 {
+		payload = children[0]
+	} else {
+		payload = xmlstream.MultiReader(children...)
+	}
+
+	st := stanza.Message{
+		Type: stanza.ChatMessage,
+		To:   to,
+	}
+
+	return c.sendStanza(st.Wrap(payload))
+}
+
+func (c *XMPPChannel) sendStanza(r xml.TokenReader) error {
+	if c.session == nil {
+		return fmt.Errorf("xmpp session not initialized")
+	}
+
+	w := c.session.TokenWriter()
+	defer w.Close()
+
+	if _, err := xmlstream.Copy(w, r); err != nil {
+		return err
+	}
+
+	type flusher interface {
+		Flush() error
+	}
+
+	if f, ok := w.(flusher); ok {
+		return f.Flush()
 	}
 
 	return nil
 }
 
-func (c *XMPPChannel) readLoop() {
-	c.mu.Lock()
-	session := c.session
-	c.mu.Unlock()
-	if session == nil {
-		return
+func (c *XMPPChannel) handleIncomingMessage(msg stanza.Message, t xmlstream.TokenReadEncoder) error {
+	var payload struct {
+		Body string `xml:"body"`
 	}
 
-	type inbound struct {
-		stanza.Message
-		Body    string `xml:"body"`
-		Request *struct {
-			XMLName xml.Name `xml:"urn:xmpp:receipts request"`
-		} `xml:"request"`
+	d := xml.NewTokenDecoder(t)
+	if err := d.Decode(&payload); err != nil {
+		return err
 	}
 
-	err := session.Serve(xmpp.HandlerFunc(func(t xmlstream.TokenReadEncoder, start *xml.StartElement) error {
-		if start.Name.Local != "message" {
-			return nil
-		}
-
-		var msg inbound
-		dec := xml.NewTokenDecoder(t)
-		if err := dec.DecodeElement(&msg, start); err != nil {
-			logger.ErrorCF("xmpp", "decode message error", map[string]interface{}{
-				"error": err.Error(),
-			})
-			return nil
-		}
-
-		if msg.Body == "" {
-			return nil
-		}
-
-		senderID := c.buildSenderID(msg.From)
-		if !c.IsAllowed(senderID) {
-			return nil
-		}
-
-		chatID := c.buildChatID(msg.Message)
-		if chatID == "" {
-			return nil
-		}
-
-		metadata := map[string]string{}
-		if msg.ID != "" {
-			metadata["xmpp_id"] = msg.ID
-		}
-		if msg.Type == stanza.GroupChatMessage {
-			metadata["xmpp_type"] = "groupchat"
-		} else {
-			metadata["xmpp_type"] = "chat"
-		}
-
-		if msg.Request != nil && msg.ID != "" && c.config.EnableReceipts {
-			go c.sendReceipt(msg.Message)
-		}
-
-		c.HandleMessage(senderID, chatID, msg.Body, nil, metadata)
+	content := strings.TrimSpace(payload.Body)
+	if content == "" {
 		return nil
-	}))
-
-	if err != nil && c.ctx.Err() == nil {
-		logger.ErrorCF("xmpp", "session serve error", map[string]interface{}{
-			"error": err.Error(),
-		})
 	}
+
+	fromBare := msg.From.Bare().String()
+	chatID := msg.From.String()
+
+	c.lastMsgMu.Lock()
+	if fromBare == c.lastFromBare && content == c.lastContent && time.Since(c.lastTime) < 2*time.Second {
+		c.lastMsgMu.Unlock()
+		return nil
+	}
+	c.lastFromBare = fromBare
+	c.lastContent = content
+	c.lastTime = time.Now()
+	c.lastMsgMu.Unlock()
+
+	logger.DebugCF("xmpp", "Received message", map[string]interface{}{
+		"from":      chatID,
+		"from_bare": fromBare,
+		"preview":   utils.Truncate(content, 80),
+	})
+
+	c.HandleMessage(fromBare, chatID, content, nil, map[string]string{
+		"stanza_type": "message",
+		"from_full":   chatID,
+	})
+
+	return nil
 }
 
-func (c *XMPPChannel) sendReceipt(m stanza.Message) {
-	c.mu.Lock()
-	session := c.session
-	c.mu.Unlock()
-	if session == nil {
-		return
+func (c *XMPPChannel) discoverUploadService(ctx context.Context) (jid.JID, error) {
+	c.uploadMu.Lock()
+	defer c.uploadMu.Unlock()
+
+	if !c.uploadJID.Equal(jid.JID{}) {
+		return c.uploadJID, nil
 	}
 
-	type receipt struct {
-		stanza.Message
-		Received struct {
-			XMLName xml.Name `xml:"urn:xmpp:receipts received"`
-			ID      string   `xml:"id,attr"`
-		} `xml:"received"`
-	}
-
-	r := receipt{
-		Message: stanza.Message{
-			To:   m.From,
-			Type: m.Type,
-		},
-	}
-	r.Received.ID = m.ID
-
-	_ = session.Encode(context.Background(), r)
-}
-
-func (c *XMPPChannel) buildSenderID(j jid.JID) string {
-	bare := j.Bare().String()
-	resource := j.Resourcepart()
-	if resource == "" {
-		return bare
-	}
-	return bare + "|" + resource
-}
-
-func (c *XMPPChannel) buildChatID(m stanza.Message) string {
-	if m.Type == stanza.GroupChatMessage {
-		return m.From.Bare().String()
-	}
-	return m.From.Bare().String()
-}
-
-func (c *XMPPChannel) isRoomJID(j jid.JID) bool {
-	for _, room := range c.config.Rooms {
-		if room == "" {
-			continue
-		}
-		if strings.EqualFold(j.Bare().String(), room) {
-			return true
+	if c.config.UploadDomain != "" {
+		j, err := jid.Parse(c.config.UploadDomain)
+		if err == nil {
+			c.uploadJID = j
+			return c.uploadJID, nil
 		}
 	}
-	return false
-}
 
-func (c *XMPPChannel) effectiveResource() string {
-	if strings.TrimSpace(c.config.Resource) != "" {
-		return c.config.Resource
-	}
-	return "picoclaw"
-}
-
-func (c *XMPPChannel) joinRoom(room string) {
-	c.mu.Lock()
-	session := c.session
-	ctx := c.ctx
-	c.mu.Unlock()
-	if session == nil || ctx == nil {
-		return
+	if c.session == nil {
+		return jid.JID{}, fmt.Errorf("xmpp session not initialized")
 	}
 
-	roomJID, err := jid.Parse(room + "/" + c.roomNickname())
+	userJID, err := jid.Parse(c.config.JID)
 	if err != nil {
-		logger.ErrorCF("xmpp", "invalid room jid", map[string]interface{}{
-			"room":  room,
-			"error": err.Error(),
-		})
-		return
+		return jid.JID{}, fmt.Errorf("invalid xmpp jid in config: %w", err)
+	}
+	domain := userJID.Domain()
+	info, err := disco.GetInfo(ctx, "", domain, c.session)
+	if err == nil {
+		for _, f := range info.Features {
+			if f.Var == upload.NS {
+				c.uploadJID = domain
+				logger.InfoCF("xmpp", "Discovered HTTP upload support on server domain", map[string]interface{}{
+					"jid": domain.String(),
+				})
+				return c.uploadJID, nil
+			}
+		}
 	}
 
-	type mucPresence struct {
-		stanza.Presence
-		X struct {
-			XMLName xml.Name `xml:"http://jabber.org/protocol/muc x"`
-		} `xml:"x"`
+	var found jid.JID
+	err = disco.WalkItem(ctx, items.Item{JID: domain}, c.session, func(level int, item items.Item, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+
+		info, err := disco.GetInfo(ctx, "", item.JID, c.session)
+		if err != nil {
+			return nil
+		}
+
+		for _, f := range info.Features {
+			if f.Var == upload.NS {
+				found = item.JID
+				return fmt.Errorf("found")
+			}
+		}
+		return nil
+	})
+	if err != nil && err.Error() != "found" {
+		return jid.JID{}, fmt.Errorf("service discovery failed: %w", err)
 	}
 
-	p := mucPresence{
-		Presence: stanza.Presence{
-			To: roomJID,
+	if found.Equal(jid.JID{}) {
+		return jid.JID{}, fmt.Errorf("no XEP-0363 upload service found via disco")
+	}
+
+	c.uploadJID = found
+	logger.InfoCF("xmpp", "Discovered HTTP upload service via disco", map[string]interface{}{
+		"jid": found.String(),
+	})
+	return c.uploadJID, nil
+}
+
+func (c *XMPPChannel) uploadFile(ctx context.Context, uploadJID jid.JID, path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open file: %w", err)
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return "", fmt.Errorf("stat file: %w", err)
+	}
+
+	size := info.Size()
+	if size <= 0 {
+		return "", fmt.Errorf("file is empty")
+	}
+
+	buffer := make([]byte, 512)
+	n, _ := f.Read(buffer)
+	if _, err := f.Seek(0, 0); err != nil {
+		return "", fmt.Errorf("seek file: %w", err)
+	}
+
+	contentType := http.DetectContentType(buffer[:n])
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	file := upload.File{
+		Name: filepath.Base(path),
+		Size: int(size),
+		Type: contentType,
+	}
+
+	slot, err := upload.GetSlot(ctx, file, uploadJID, c.session)
+	if err != nil {
+		return "", fmt.Errorf("get upload slot: %w", err)
+	}
+
+	logger.InfoCF("xmpp", "XEP-0363 upload slot acquired", map[string]interface{}{
+		"put_url": func() string {
+			if slot.PutURL != nil {
+				return slot.PutURL.String()
+			}
+			return ""
+		}(),
+		"get_url": func() string {
+			if slot.GetURL != nil {
+				return slot.GetURL.String()
+			}
+			return ""
+		}(),
+		"headers":  slot.Header,
+		"mime":     contentType,
+		"size":     size,
+		"filename": filepath.Base(path),
+	})
+
+	req, err := slot.Put(ctx, f)
+	if err != nil {
+		return "", fmt.Errorf("build put request: %w", err)
+	}
+
+	req.ContentLength = size
+	if req.Header == nil {
+		req.Header = make(http.Header)
+	}
+	if req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("http put: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		bodyText := strings.TrimSpace(string(snippet))
+		if bodyText != "" {
+			return "", fmt.Errorf("upload failed with status %s: %s", resp.Status, bodyText)
+		}
+		return "", fmt.Errorf("upload failed with status %s", resp.Status)
+	}
+
+	if slot.GetURL == nil {
+		return "", fmt.Errorf("no download URL returned for upload slot")
+	}
+
+	return slot.GetURL.String(), nil
+}
+
+func (c *XMPPChannel) readSmallFile(path string, maxSize int64) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("not a regular file")
+	}
+	if info.Size() <= 0 {
+		return "", fmt.Errorf("file is empty")
+	}
+	if info.Size() > maxSize {
+		return "", fmt.Errorf("file too large to inline")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}
+
+func newHTTPClient() *http.Client {
+	dialer := &net.Dialer{}
+
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := dialer.DialContext(ctx, network, addr)
+			if err == nil {
+				return conn, nil
+			}
+
+			if !strings.Contains(err.Error(), "no such host") {
+				return nil, err
+			}
+
+			host, port, splitErr := net.SplitHostPort(addr)
+			if splitErr != nil {
+				return nil, err
+			}
+
+			parts := strings.SplitN(host, ".", 2)
+			if len(parts) != 2 || parts[1] == "" {
+				return nil, err
+			}
+
+			fallbackHost := parts[1]
+			return dialer.DialContext(ctx, network, net.JoinHostPort(fallbackHost, port))
 		},
 	}
 
-	if err := session.Encode(ctx, p); err != nil {
-		logger.ErrorCF("xmpp", "join room failed", map[string]interface{}{
-			"room":  room,
-			"error": err.Error(),
-		})
-		return
+	return &http.Client{
+		Timeout:   60 * time.Second,
+		Transport: transport,
 	}
-
-	c.mu.Lock()
-	c.joinedRooms[roomJID.Bare().String()] = true
-	c.mu.Unlock()
-}
-
-func (c *XMPPChannel) roomNickname() string {
-	n := strings.TrimSpace(c.config.Nickname)
-	if n == "" {
-		return "PicoClaw"
-	}
-	return n
 }

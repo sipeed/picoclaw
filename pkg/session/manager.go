@@ -19,6 +19,12 @@ type Session struct {
 	Updated  time.Time           `json:"updated"`
 }
 
+type SessionInfo struct {
+	Key     string
+	Created time.Time
+	Updated time.Time
+}
+
 type SessionManager struct {
 	sessions map[string]*Session
 	mu       sync.RWMutex
@@ -145,6 +151,21 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	session.Updated = time.Now()
 }
 
+func (sm *SessionManager) ListSessions() []SessionInfo {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	infos := make([]SessionInfo, 0, len(sm.sessions))
+	for _, s := range sm.sessions {
+		infos = append(infos, SessionInfo{
+			Key:     s.Key,
+			Created: s.Created,
+			Updated: s.Updated,
+		})
+	}
+	return infos
+}
+
 // sanitizeFilename converts a session key into a cross-platform safe filename.
 // Session keys use "channel:chatID" (e.g. "telegram:123456") but ':' is the
 // volume separator on Windows, so filepath.Base would misinterpret the key.
@@ -152,6 +173,29 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 // so loadSessions still maps back to the right in-memory key.
 func sanitizeFilename(key string) string {
 	return strings.ReplaceAll(key, ":", "_")
+}
+
+func (sm *SessionManager) DeleteSession(key string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	delete(sm.sessions, key)
+
+	if sm.storage == "" {
+		return nil
+	}
+
+	filename := sanitizeFilename(key)
+	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
+		return os.ErrInvalid
+	}
+
+	sessionPath := filepath.Join(sm.storage, filename+".json")
+	err := os.Remove(sessionPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func (sm *SessionManager) Save(key string) error {

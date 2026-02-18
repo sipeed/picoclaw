@@ -14,7 +14,9 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": [
+        "YOUR_USER_ID"
+      ]
     },
     "discord": {
       "enabled": false,
@@ -68,20 +70,6 @@
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
       "allow_from": []
-    },
-    "xmpp": {
-      "enabled": false,
-      "server": "example.com:5222",
-      "domain": "example.com",
-      "username": "bot",
-      "password": "YOUR_PASSWORD",
-      "resource": "picoclaw",
-      "rooms": [],
-      "nickname": "PicoClaw",
-      "use_tls": true,
-      "insecure_skip_verify": false,
-      "enable_receipts": true,
-      "allow_from": []
     }
   },
   "providers": {
@@ -129,10 +117,19 @@
   },
   "tools": {
     "web": {
-      "search": {
+      "brave": {
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "pplx-xxx",
+        "max_results": 5
       }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
     }
   },
   "heartbeat": {

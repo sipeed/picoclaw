@@ -50,7 +50,7 @@
 
 
 ## 📢 新闻 (News)
-2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](doc/picoclaw_community_roadmap_260216.md), 期待你的参与！
+2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](docs/picoclaw_community_roadmap_260216.md), 期待你的参与！
 
 2026-02-13 🎉 **PicoClaw 在 4 天内突破 5000 Stars！** 感谢社区的支持！由于正值中国春节假期，PR 和 Issue 涌入较多，我们正在利用这段时间敲定 **项目路线图 (Roadmap)** 并组建 **开发者群组**，以便加速 PicoClaw 的开发。
 🚀 **行动号召：** 请在 GitHub Discussions 中提交您的功能请求 (Feature Requests)。我们将在接下来的周会上进行审查和优先级排序。
@@ -99,6 +99,23 @@
 <td align="center">发现 • 洞察 • 趋势</td>
 </tr>
 </table>
+
+### 📱 在手机上轻松运行
+picoclaw 可以将你10年前的老旧手机废物利用，变身成为你的AI助理！快速指南:
+1. 先去应用商店下载安装Termux
+2. 打开后执行指令
+```bash
+# 注意: 下面的v0.1.1 可以换为你实际看到的最新版本
+wget https://github.com/sipeed/picoclaw/releases/download/v0.1.1/picoclaw-linux-arm64
+chmod +x picoclaw-linux-arm64
+pkg install proot
+termux-chroot ./picoclaw-linux-arm64 onboard
+```
+然后跟随下面的“快速开始”章节继续配置picoclaw即可使用！   
+<img src="assets/termux.jpg" alt="PicoClaw" width="512">
+
+
+
 
 ### 🐜 创新的低占用部署
 
@@ -219,6 +236,9 @@ picoclaw onboard
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
     }
   }
 }
@@ -440,6 +460,46 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 ```
 
+### 按渠道清理对话会话 (session_ttl)
+
+每个渠道的配置下都包含一个可选字段 `session_ttl`，用于控制该渠道的**对话会话保留时间**（存放在 `workspace/sessions/` 目录中的会话文件）。
+
+示例（以 XMPP 为例）：
+
+```json
+{
+  "channels": {
+    "xmpp": {
+      "enabled": true,
+      "jid": "bot@example.com",
+      "password": "YOUR_PASSWORD",
+      "server": "example.com:5222",
+      "upload_domain": "upload.example.com",
+      "allow_from": [],
+      "session_ttl": "1h"
+    }
+  }
+}
+```
+
+行为说明：
+
+- `session_ttl`: 字符串形式的时间长度，仅对该渠道生效
+  - `"false"` 或空字符串：禁用自动清理（默认值）
+  - `"30m"`：保留 30 分钟
+  - `"1h"`：保留 1 小时
+  - `"2h"`：保留 2 小时
+  - `"1d"`：保留 1 天（等价于 `24h`）
+- Agent 会定期检查所有会话：
+  - 如果某个会话最后更新时间早于当前时间减去 `session_ttl`
+  - 则删除该会话的历史记录（内存 + `sessions/*.json` 文件）
+- 只影响会话历史，不会删除 `memory/` 目录中的长期记忆（MEMORY.md）或每日笔记。
+
+这可以帮助在树莓派等内存/存储有限的设备上，按渠道控制对话保留时间，例如：
+
+- 对安全敏感的 XMPP 渠道设置较短 TTL（如 `1h`），降低明文历史泄露风险
+- 对相对不敏感或需要长期上下文的渠道保留 `"false"`，完全不自动清理
+
 ### 心跳 / 周期性任务 (Heartbeat)
 
 PicoClaw 可以自动执行周期性任务。在工作区创建 `HEARTBEAT.md` 文件：
@@ -627,6 +687,9 @@ picoclaw agent -m "你好"
       "search": {
         "api_key": "BSA..."
       }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
     }
   },
   "heartbeat": {

@@ -5,6 +5,11 @@
 - [ ] 📖 Documentation update
 - [ ] ⚡ Code refactoring (no functional changes, no api changes)
 
+## 🤖 AI Code Generation
+- [ ] 🤖 Fully AI-generated (100% AI, 0% Human)
+- [ ] 🛠️ Mostly AI-generated (AI draft, Human verified/modified)
+- [ ] 👨‍💻 Mostly Human-written (Human lead, AI assisted or none)
+
 
 ## 🔗 Linked Issue
 ## 📚 Technical Context (Skip for Docs)

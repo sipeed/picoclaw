@@ -176,6 +176,71 @@ func stripTags(content string) string {
 	return re.ReplaceAllString(content, "")
 }
 
+type PerplexitySearchProvider struct {
+	apiKey string
+}
+
+func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := "https://api.perplexity.ai/chat/completions"
+
+	payload := map[string]interface{}{
+		"model": "sonar",
+		"messages": []map[string]string{
+			{"role": "system", "content": "You are a search assistant. Provide concise search results with titles, URLs, and brief descriptions in the following format:\n1. Title\n   URL\n   Description\n\nDo not add extra commentary."},
+			{"role": "user", "content": fmt.Sprintf("Search for: %s. Provide up to %d relevant results.", query, count)},
+		},
+		"max_tokens": 1000,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, strings.NewReader(string(payloadBytes)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("User-Agent", userAgent)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Perplexity API error: %s", string(body))
+	}
+
+	var searchResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(searchResp.Choices) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
+}
+
 type WebSearchTool struct {
 	provider   SearchProvider
 	maxResults int
@@ -187,14 +252,22 @@ type WebSearchToolOptions struct {
 	BraveEnabled         bool
 	DuckDuckGoMaxResults int
 	DuckDuckGoEnabled    bool
+	PerplexityAPIKey     string
+	PerplexityMaxResults int
+	PerplexityEnabled    bool
 }
 
 func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Brave > DuckDuckGo
-	if opts.BraveEnabled && opts.BraveAPIKey != "" {
+	// Priority: Perplexity > Brave > DuckDuckGo
+	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
+		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey}
+		if opts.PerplexityMaxResults > 0 {
+			maxResults = opts.PerplexityMaxResults
+		}
+	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
 		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey}
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults

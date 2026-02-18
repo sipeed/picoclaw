@@ -201,17 +201,17 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 			case "xmpp":
 				cfg.Channels.XMPP.Enabled = enabled
 				cfg.Channels.XMPP.AllowFrom = allowFrom
-				if v, ok := getString(cMap, "server"); ok {
-					cfg.Channels.XMPP.Server = v
-				}
-				if v, ok := getString(cMap, "domain"); ok {
-					cfg.Channels.XMPP.Domain = v
-				}
-				if v, ok := getString(cMap, "username"); ok {
-					cfg.Channels.XMPP.Username = v
+				if v, ok := getString(cMap, "jid"); ok {
+					cfg.Channels.XMPP.JID = v
 				}
 				if v, ok := getString(cMap, "password"); ok {
 					cfg.Channels.XMPP.Password = v
+				}
+				if v, ok := getString(cMap, "server"); ok {
+					cfg.Channels.XMPP.Server = v
+				}
+				if v, ok := getString(cMap, "upload_domain"); ok {
+					cfg.Channels.XMPP.UploadDomain = v
 				}
 			}
 		}
@@ -290,6 +290,9 @@ func MergeConfig(existing, incoming *config.Config) *config.Config {
 	}
 	if !existing.Channels.MaixCam.Enabled && incoming.Channels.MaixCam.Enabled {
 		existing.Channels.MaixCam = incoming.Channels.MaixCam
+	}
+	if !existing.Channels.XMPP.Enabled && incoming.Channels.XMPP.Enabled {
+		existing.Channels.XMPP = incoming.Channels.XMPP
 	}
 
 	if existing.Tools.Web.Brave.APIKey == "" {

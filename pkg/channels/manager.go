@@ -176,7 +176,7 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
-	if m.config.Channels.XMPP.Enabled && m.config.Channels.XMPP.Server != "" {
+	if m.config.Channels.XMPP.Enabled && m.config.Channels.XMPP.JID != "" && m.config.Channels.XMPP.Password != "" {
 		logger.DebugC("channels", "Attempting to initialize XMPP channel")
 		xmppCh, err := NewXMPPChannel(m.config.Channels.XMPP, m.bus)
 		if err != nil {
