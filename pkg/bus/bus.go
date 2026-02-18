@@ -17,6 +17,7 @@ type MessageBus struct {
 	handlers     map[string]MessageHandler
 	interceptors []*interceptorEntry
 	nextID       uint64
+	closed       bool
 	mu           sync.RWMutex
 }
 
@@ -52,6 +53,10 @@ func (mb *MessageBus) AddInterceptor(fn InboundInterceptor) func() {
 
 func (mb *MessageBus) PublishInbound(msg InboundMessage) {
 	mb.mu.RLock()
+	if mb.closed {
+		mb.mu.RUnlock()
+		return
+	}
 	interceptors := make([]*interceptorEntry, len(mb.interceptors))
 	copy(interceptors, mb.interceptors)
 	mb.mu.RUnlock()
@@ -74,6 +79,11 @@ func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool)
 }
 
 func (mb *MessageBus) PublishOutbound(msg OutboundMessage) {
+	mb.mu.RLock()
+	defer mb.mu.RUnlock()
+	if mb.closed {
+		return
+	}
 	mb.outbound <- msg
 }
 
@@ -100,6 +110,12 @@ func (mb *MessageBus) GetHandler(channel string) (MessageHandler, bool) {
 }
 
 func (mb *MessageBus) Close() {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+	if mb.closed {
+		return
+	}
+	mb.closed = true
 	close(mb.inbound)
 	close(mb.outbound)
 }

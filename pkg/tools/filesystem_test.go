@@ -253,26 +253,22 @@ func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 // TestValidatePath_SymlinkEscape verifies that symlinks pointing outside workspace are blocked
 // when path validation mode is "block" (enhanced symlink resolution).
 func TestValidatePath_SymlinkEscape(t *testing.T) {
-	// Create workspace and an outside directory
 	workspace := t.TempDir()
 	outsideDir := t.TempDir()
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
 	os.WriteFile(outsideFile, []byte("secret"), 0644)
 
-	// Create a symlink inside workspace pointing outside
 	symlinkPath := filepath.Join(workspace, "escape")
 	if err := os.Symlink(outsideDir, symlinkPath); err != nil {
 		t.Skipf("Cannot create symlink: %v", err)
 	}
 
-	// Try to access the symlinked file with restrict=true and path validation enabled
 	_, err := validatePathWithMode("escape/secret.txt", workspace, true, security.ModeBlock, nil, "", "")
 	if err == nil {
 		t.Error("Expected symlink escape to be blocked, but it was allowed")
 	}
 }
 
-// TestValidatePath_PrefixCollision verifies that /workspace2 is not confused with /workspace
 func TestValidatePath_PrefixCollision(t *testing.T) {
 	baseDir := t.TempDir()
 	workspace := filepath.Join(baseDir, "workspace")
@@ -280,18 +276,15 @@ func TestValidatePath_PrefixCollision(t *testing.T) {
 	os.MkdirAll(workspace, 0755)
 	os.MkdirAll(otherDir, 0755)
 
-	// Try to access workspace2 when restricted to workspace
 	_, err := validatePath(otherDir, workspace, true)
 	if err == nil {
 		t.Error("Expected prefix collision path to be blocked, but it was allowed")
 	}
 }
 
-// TestValidatePath_AllowsWorkspaceItself verifies accessing the workspace root is allowed
 func TestValidatePath_AllowsWorkspaceItself(t *testing.T) {
 	workspace := t.TempDir()
 
-	// With block mode (enhanced symlink resolution), path should be resolved
 	path, err := validatePathWithMode(".", workspace, true, security.ModeBlock, nil, "", "")
 	if err != nil {
 		t.Errorf("Expected workspace root access to be allowed, got error: %v", err)
@@ -372,5 +365,35 @@ func TestNewListDirToolWithPolicy(t *testing.T) {
 	tool := NewListDirToolWithPolicy("/ws", false, opts)
 	if tool.workspace != "/ws" || tool.restrict || tool.pathMode != security.ModeBlock {
 		t.Error("WithPolicy constructor did not set fields correctly")
+	}
+}
+
+func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	secret := filepath.Join(root, "secret.txt")
+	if err := os.WriteFile(secret, []byte("top secret"), 0644); err != nil {
+		t.Fatalf("failed to write secret file: %v", err)
+	}
+
+	link := filepath.Join(workspace, "leak.txt")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewReadFileTool(workspace, true)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"path": link,
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected symlink escape to be blocked")
+	}
+	if !strings.Contains(result.ForLLM, "symlink resolves outside workspace") {
+		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
 	}
 }

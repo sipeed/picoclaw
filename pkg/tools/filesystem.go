@@ -47,21 +47,25 @@ func validatePathWithMode(path, workspace string, restrict bool, pathMode securi
 				realWorkspace = resolved
 			}
 		}
-		workspacePrefix := filepath.Clean(realWorkspace) + string(filepath.Separator)
 
 		realPath := absPath
 		if useSymlinkResolution {
 			if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
 				realPath = resolved
+			} else if os.IsNotExist(err) {
+				if parentResolved, e2 := resolveExistingAncestor(filepath.Dir(absPath)); e2 == nil {
+					realPath = filepath.Join(parentResolved, filepath.Base(absPath))
+				}
 			} else if resolved, err := filepath.EvalSymlinks(filepath.Dir(absPath)); err == nil {
 				realPath = filepath.Join(resolved, filepath.Base(absPath))
 			}
 		}
 
-		if realPath != filepath.Clean(realWorkspace) &&
-			!strings.HasPrefix(realPath+string(filepath.Separator), workspacePrefix) &&
-			!strings.HasPrefix(realPath, workspacePrefix) {
-			violation := fmt.Errorf("access denied: path is outside the workspace")
+		if !isWithinWorkspace(realPath, realWorkspace) {
+			violation := fmt.Errorf("access denied: symlink resolves outside workspace")
+			if !useSymlinkResolution {
+				violation = fmt.Errorf("access denied: path is outside the workspace")
+			}
 			if pe != nil && pathMode == security.ModeApprove {
 				ctx := context.Background()
 				pErr := pe.Evaluate(ctx, pathMode, security.Violation{
@@ -73,7 +77,6 @@ func validatePathWithMode(path, workspace string, restrict bool, pathMode securi
 				if pErr != nil {
 					return "", pErr
 				}
-				// approved
 			} else {
 				return "", violation
 			}
@@ -83,6 +86,24 @@ func validatePathWithMode(path, workspace string, restrict bool, pathMode securi
 	}
 
 	return absPath, nil
+}
+
+func resolveExistingAncestor(path string) (string, error) {
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			return resolved, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		if filepath.Dir(current) == current {
+			return "", os.ErrNotExist
+		}
+	}
+}
+
+func isWithinWorkspace(candidate, workspace string) bool {
+	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
 
 // PathPolicyOpts holds optional security policy settings for filesystem tools.

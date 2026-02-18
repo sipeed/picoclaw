@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -28,6 +29,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/devices"
+	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/migrate"
@@ -593,6 +595,9 @@ func gatewayCmd() {
 		os.Exit(1)
 	}
 
+	// Inject channel manager into agent loop for command handling
+	agentLoop.SetChannelManager(channelManager)
+
 	var transcriber *voice.GroqTranscriber
 	if cfg.Providers.Groq.APIKey != "" {
 		transcriber = voice.NewGroqTranscriber(cfg.Providers.Groq.APIKey)
@@ -659,6 +664,14 @@ func gatewayCmd() {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
+	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	go func() {
+		if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
+			logger.ErrorCF("health", "Health server error", map[string]interface{}{"error": err.Error()})
+		}
+	}()
+	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+
 	go agentLoop.Run(ctx)
 
 	sigChan := make(chan os.Signal, 1)
@@ -667,6 +680,7 @@ func gatewayCmd() {
 
 	fmt.Println("\nShutting down...")
 	cancel()
+	healthServer.Stop(context.Background())
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
@@ -983,14 +997,20 @@ func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace
 	// Create PolicyEngine for cron exec tool
 	pe := security.NewPolicyEngine(&cfg.Security, msgBus)
 
-	// Create and register CronTool (uses same workspace restriction and security policy as main agent)
-	cronTool := tools.NewCronToolWithConfig(cronService, agentLoop, msgBus, workspace, restrict, tools.ExecToolConfig{
+	execCfg := tools.ExecToolConfig{
 		DenyPatterns:  cfg.Tools.Exec.DenyPatterns,
 		AllowPatterns: cfg.Tools.Exec.AllowPatterns,
 		MaxTimeout:    cfg.Tools.Exec.MaxTimeout,
 		PolicyEngine:  pe,
 		ExecGuardMode: pe.GetMode("exec_guard"),
-	})
+	}
+
+	cronTool := tools.NewCronToolWithConfig(cronService, agentLoop, msgBus, workspace, restrict, execCfg)
+
+	// Apply cron-specific exec timeout if configured
+	if cfg.Tools.Cron.ExecTimeoutMinutes > 0 {
+		cronTool.SetExecTimeout(time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute)
+	}
 	agentLoop.RegisterTool(cronTool)
 
 	// Set the onJob handler

@@ -11,7 +11,10 @@ import (
 	"sync"
 	"time"
 
+	th "github.com/mymmrac/telego/telegohandler"
+
 	"github.com/mymmrac/telego"
+	"github.com/mymmrac/telego/telegohandler"
 	tu "github.com/mymmrac/telego/telegoutil"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -24,7 +27,8 @@ import (
 type TelegramChannel struct {
 	*BaseChannel
 	bot          *telego.Bot
-	config       config.TelegramConfig
+	commands     TelegramCommander
+	config       *config.Config
 	chatIDs      map[string]int64
 	transcriber  *voice.GroqTranscriber
 	placeholders sync.Map // chatID -> messageID
@@ -41,13 +45,14 @@ func (c *thinkingCancel) Cancel() {
 	}
 }
 
-func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*TelegramChannel, error) {
+func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
 	var opts []telego.BotOption
+	telegramCfg := cfg.Channels.Telegram
 
-	if cfg.Proxy != "" {
-		proxyURL, parseErr := url.Parse(cfg.Proxy)
+	if telegramCfg.Proxy != "" {
+		proxyURL, parseErr := url.Parse(telegramCfg.Proxy)
 		if parseErr != nil {
-			return nil, fmt.Errorf("invalid proxy URL %q: %w", cfg.Proxy, parseErr)
+			return nil, fmt.Errorf("invalid proxy URL %q: %w", telegramCfg.Proxy, parseErr)
 		}
 		opts = append(opts, telego.WithHTTPClient(&http.Client{
 			Transport: &http.Transport{
@@ -56,15 +61,16 @@ func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*Telegr
 		}))
 	}
 
-	bot, err := telego.NewBot(cfg.Token, opts...)
+	bot, err := telego.NewBot(telegramCfg.Token, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
 
-	base := NewBaseChannel("telegram", cfg, bus, cfg.AllowFrom)
+	base := NewBaseChannel("telegram", telegramCfg, bus, telegramCfg.AllowFrom)
 
 	return &TelegramChannel{
 		BaseChannel:  base,
+		commands:     NewTelegramCommands(bot, cfg),
 		bot:          bot,
 		config:       cfg,
 		chatIDs:      make(map[string]int64),
@@ -88,31 +94,45 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start long polling: %w", err)
 	}
 
+	bh, err := telegohandler.NewBotHandler(c.bot, updates)
+	if err != nil {
+		return fmt.Errorf("failed to create bot handler: %w", err)
+	}
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		c.commands.Help(ctx, message)
+		return nil
+	}, th.CommandEqual("help"))
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.commands.Start(ctx, message)
+	}, th.CommandEqual("start"))
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.commands.Show(ctx, message)
+	}, th.CommandEqual("show"))
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.commands.List(ctx, message)
+	}, th.CommandEqual("list"))
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.handleMessage(ctx, &message)
+	}, th.AnyMessage())
+
 	c.setRunning(true)
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]interface{}{
 		"username": c.bot.Username(),
 	})
 
+	go bh.Start()
+
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case update, ok := <-updates:
-				if !ok {
-					logger.InfoC("telegram", "Updates channel closed, reconnecting...")
-					return
-				}
-				if update.Message != nil {
-					c.handleMessage(ctx, update)
-				}
-			}
-		}
+		<-ctx.Done()
+		bh.Stop()
 	}()
 
 	return nil
 }
-
 func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
 	c.setRunning(false)
@@ -166,30 +186,27 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	return nil
 }
 
-func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Update) {
-	message := update.Message
+func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Message) error {
 	if message == nil {
-		return
+		return fmt.Errorf("message is nil")
 	}
 
 	user := message.From
 	if user == nil {
-		return
+		return fmt.Errorf("message sender (user) is nil")
 	}
 
-	userID := fmt.Sprintf("%d", user.ID)
-	senderID := userID
+	senderID := fmt.Sprintf("%d", user.ID)
 	if user.Username != "" {
-		senderID = fmt.Sprintf("%s|%s", userID, user.Username)
+		senderID = fmt.Sprintf("%d|%s", user.ID, user.Username)
 	}
 
 	// 检查白名单，避免为被拒绝的用户下载附件
-	if !c.IsAllowed(userID) && !c.IsAllowed(senderID) {
+	if !c.IsAllowed(senderID) {
 		logger.DebugCF("telegram", "Message rejected by allowlist", map[string]interface{}{
-			"user_id":  userID,
-			"username": user.Username,
+			"user_id": senderID,
 		})
-		return
+		return nil
 	}
 
 	chatID := message.Chat.ID
@@ -222,7 +239,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 		content += message.Caption
 	}
 
-	if message.Photo != nil && len(message.Photo) > 0 {
+	if len(message.Photo) > 0 {
 		photo := message.Photo[len(message.Photo)-1]
 		photoPath := c.downloadPhoto(ctx, photo.FileID)
 		if photoPath != "" {
@@ -231,7 +248,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 			if content != "" {
 				content += "\n"
 			}
-			content += fmt.Sprintf("[image: photo]")
+			content += "[image: photo]"
 		}
 	}
 
@@ -252,7 +269,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 						"error": err.Error(),
 						"path":  voicePath,
 					})
-					transcribedText = fmt.Sprintf("[voice (transcription failed)]")
+					transcribedText = "[voice (transcription failed)]"
 				} else {
 					transcribedText = fmt.Sprintf("[voice transcription: %s]", result.Text)
 					logger.InfoCF("telegram", "Voice transcribed successfully", map[string]interface{}{
@@ -260,7 +277,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 					})
 				}
 			} else {
-				transcribedText = fmt.Sprintf("[voice]")
+				transcribedText = "[voice]"
 			}
 
 			if content != "" {
@@ -278,7 +295,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 			if content != "" {
 				content += "\n"
 			}
-			content += fmt.Sprintf("[audio]")
+			content += "[audio]"
 		}
 	}
 
@@ -290,7 +307,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 			if content != "" {
 				content += "\n"
 			}
-			content += fmt.Sprintf("[file]")
+			content += "[file]"
 		}
 	}
 
@@ -338,7 +355,8 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, update telego.Updat
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
 
-	c.HandleMessage(senderID, fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+	return nil
 }
 
 func (c *TelegramChannel) downloadPhoto(ctx context.Context, fileID string) string {

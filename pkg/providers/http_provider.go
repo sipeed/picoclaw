@@ -53,10 +53,10 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		return nil, fmt.Errorf("API base not configured")
 	}
 
-	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5)
+	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5, groq/openai/gpt-oss-120b -> openai/gpt-oss-120b, ollama/qwen2.5:14b -> qwen2.5:14b)
 	if idx := strings.Index(model, "/"); idx != -1 {
 		prefix := model[:idx]
-		if prefix == "moonshot" || prefix == "nvidia" {
+		if prefix == "moonshot" || prefix == "nvidia" || prefix == "groq" || prefix == "ollama" {
 			model = model[idx+1:]
 		}
 	}
@@ -208,7 +208,7 @@ func createClaudeAuthProvider() (LLMProvider, error) {
 	return NewClaudeProviderWithTokenSource(cred.AccessToken, createClaudeTokenSource()), nil
 }
 
-func createCodexAuthProvider() (LLMProvider, error) {
+func createCodexAuthProvider(enableWebSearch bool) (LLMProvider, error) {
 	cred, err := auth.GetCredential("openai")
 	if err != nil {
 		return nil, fmt.Errorf("loading auth credentials: %w", err)
@@ -216,7 +216,9 @@ func createCodexAuthProvider() (LLMProvider, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("no credentials for openai. Run: picoclaw auth login --provider openai")
 	}
-	return NewCodexProviderWithTokenSource(cred.AccessToken, cred.AccountID, createCodexTokenSource()), nil
+	p := NewCodexProviderWithTokenSource(cred.AccessToken, cred.AccountID, createCodexTokenSource())
+	p.enableWebSearch = enableWebSearch
+	return p, nil
 }
 
 func CreateProvider(cfg *config.Config) (LLMProvider, error) {
@@ -240,8 +242,13 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			}
 		case "openai", "gpt":
 			if cfg.Providers.OpenAI.APIKey != "" || cfg.Providers.OpenAI.AuthMethod != "" {
+				if cfg.Providers.OpenAI.AuthMethod == "codex-cli" {
+					c := NewCodexProviderWithTokenSource("", "", CreateCodexCliTokenSource())
+					c.enableWebSearch = cfg.Providers.OpenAI.WebSearch
+					return c, nil
+				}
 				if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
-					return createCodexAuthProvider()
+					return createCodexAuthProvider(cfg.Providers.OpenAI.WebSearch)
 				}
 				apiKey = cfg.Providers.OpenAI.APIKey
 				apiBase = cfg.Providers.OpenAI.APIBase
@@ -299,11 +306,17 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				}
 			}
 		case "claude-cli", "claudecode", "claude-code":
-			workspace := cfg.Agents.Defaults.Workspace
+			workspace := cfg.WorkspacePath()
 			if workspace == "" {
 				workspace = "."
 			}
 			return NewClaudeCliProvider(workspace), nil
+		case "codex-cli", "codex-code":
+			workspace := cfg.WorkspacePath()
+			if workspace == "" {
+				workspace = "."
+			}
+			return NewCodexCliProvider(workspace), nil
 		case "deepseek":
 			if cfg.Providers.DeepSeek.APIKey != "" {
 				apiKey = cfg.Providers.DeepSeek.APIKey
@@ -360,7 +373,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 
 		case (strings.Contains(lowerModel, "gpt") || strings.HasPrefix(model, "openai/")) && (cfg.Providers.OpenAI.APIKey != "" || cfg.Providers.OpenAI.AuthMethod != ""):
 			if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
-				return createCodexAuthProvider()
+				return createCodexAuthProvider(cfg.Providers.OpenAI.WebSearch)
 			}
 			apiKey = cfg.Providers.OpenAI.APIKey
 			apiBase = cfg.Providers.OpenAI.APIBase
@@ -400,7 +413,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			if apiBase == "" {
 				apiBase = "https://integrate.api.nvidia.com/v1"
 			}
-
+		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
+			fmt.Println("Ollama provider selected based on model name prefix")
+			apiKey = cfg.Providers.Ollama.APIKey
+			apiBase = cfg.Providers.Ollama.APIBase
+			proxy = cfg.Providers.Ollama.Proxy
+			if apiBase == "" {
+				apiBase = "http://localhost:11434/v1"
+			}
+			fmt.Println("Ollama apiBase:", apiBase)
 		case cfg.Providers.VLLM.APIBase != "":
 			apiKey = cfg.Providers.VLLM.APIKey
 			apiBase = cfg.Providers.VLLM.APIBase

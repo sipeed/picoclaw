@@ -36,37 +36,59 @@ type ExecTool struct {
 	chatID              string
 }
 
+var defaultDenyPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
+	regexp.MustCompile(`\bdel\s+/[fq]\b`),
+	regexp.MustCompile(`\brmdir\s+/s\b`),
+	regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`), // Match disk wiping commands (must be followed by space/args)
+	regexp.MustCompile(`\bdd\s+if=`),
+	regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
+	regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
+	regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
+	regexp.MustCompile(`\$\([^)]+\)`),
+	regexp.MustCompile(`\$\{[^}]+\}`),
+	regexp.MustCompile("`[^`]+`"),
+	regexp.MustCompile(`\|\s*sh\b`),
+	regexp.MustCompile(`\|\s*bash\b`),
+	regexp.MustCompile(`;\s*rm\s+-[rf]`),
+	regexp.MustCompile(`&&\s*rm\s+-[rf]`),
+	regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
+	regexp.MustCompile(`>\s*/dev/null\s*>&?\s*\d?`),
+	regexp.MustCompile(`<<\s*EOF`),
+	regexp.MustCompile(`\$\(\s*cat\s+`),
+	regexp.MustCompile(`\$\(\s*curl\s+`),
+	regexp.MustCompile(`\$\(\s*wget\s+`),
+	regexp.MustCompile(`\$\(\s*which\s+`),
+	regexp.MustCompile(`\bsudo\b`),
+	regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
+	regexp.MustCompile(`\bchown\b`),
+	regexp.MustCompile(`\bpkill\b`),
+	regexp.MustCompile(`\bkillall\b`),
+	regexp.MustCompile(`\bkill\s+-[9]\b`),
+	regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
+	regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
+	regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
+	regexp.MustCompile(`\bpip\s+install\s+--user\b`),
+	regexp.MustCompile(`\bapt\s+(install|remove|purge)\b`),
+	regexp.MustCompile(`\byum\s+(install|remove)\b`),
+	regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
+	regexp.MustCompile(`\bdocker\s+run\b`),
+	regexp.MustCompile(`\bdocker\s+exec\b`),
+	regexp.MustCompile(`\bgit\s+push\b`),
+	regexp.MustCompile(`\bgit\s+force\b`),
+	regexp.MustCompile(`\bssh\b.*@`),
+	regexp.MustCompile(`\beval\b`),
+	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
+}
+
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
 	return NewExecToolWithConfig(workingDir, restrict, ExecToolConfig{})
 }
 
 func NewExecToolWithConfig(workingDir string, restrict bool, cfg ExecToolConfig) *ExecTool {
-	// Built-in deny patterns (always active)
-	denyPatterns := []*regexp.Regexp{
-		// Destructive filesystem commands
-		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
-		regexp.MustCompile(`\bdel\s+/[fq]\b`),
-		regexp.MustCompile(`\brmdir\s+/s\b`),
-		regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`),
-		regexp.MustCompile(`\bdd\s+if=`),
-		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`),
-		// System control
-		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
-		// Fork bomb
-		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
-		// Data exfiltration patterns
-		regexp.MustCompile(`\bcurl\b.*\s+(-d|--data|--data-raw|--data-binary|-F|--form|-T|--upload-file)\b`),
-		regexp.MustCompile(`\bwget\b.*\s+(--post-data|--post-file)\b`),
-		regexp.MustCompile(`\bnc\b\s+\S+\s+\d+`),
-		regexp.MustCompile(`\bncat\b\s+\S+\s+\d+`),
-		// Encoded command execution (base64 pipe to shell)
-		regexp.MustCompile(`base64\b.*\|\s*(sh|bash|zsh)\b`),
-		// Reverse shell patterns
-		regexp.MustCompile(`\b(bash|sh|zsh)\s+-i\s+[>&]`),
-		regexp.MustCompile(`/dev/tcp/`),
-	}
+	denyPatterns := make([]*regexp.Regexp, len(defaultDenyPatterns))
+	copy(denyPatterns, defaultDenyPatterns)
 
-	// Merge user-configured deny patterns
 	for _, p := range cfg.DenyPatterns {
 		re, err := regexp.Compile(p)
 		if err == nil {
@@ -74,7 +96,6 @@ func NewExecToolWithConfig(workingDir string, restrict bool, cfg ExecToolConfig)
 		}
 	}
 
-	// Parse user-configured allow patterns
 	var allowPatterns []*regexp.Regexp
 	for _, p := range cfg.AllowPatterns {
 		re, err := regexp.Compile(p)
@@ -153,7 +174,14 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult(guardError)
 	}
 
-	cmdCtx, cancel := context.WithTimeout(ctx, t.timeout)
+	// timeout == 0 means no timeout
+	var cmdCtx context.Context
+	var cancel context.CancelFunc
+	if t.timeout > 0 {
+		cmdCtx, cancel = context.WithTimeout(ctx, t.timeout)
+	} else {
+		cmdCtx, cancel = context.WithCancel(ctx)
+	}
 	defer cancel()
 
 	var cmd *exec.Cmd

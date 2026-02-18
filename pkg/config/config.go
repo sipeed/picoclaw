@@ -168,18 +168,19 @@ type DevicesConfig struct {
 }
 
 type ProvidersConfig struct {
-	Anthropic     ProviderConfig `json:"anthropic"`
-	OpenAI        ProviderConfig `json:"openai"`
-	OpenRouter    ProviderConfig `json:"openrouter"`
-	Groq          ProviderConfig `json:"groq"`
-	Zhipu         ProviderConfig `json:"zhipu"`
-	VLLM          ProviderConfig `json:"vllm"`
-	Gemini        ProviderConfig `json:"gemini"`
-	Nvidia        ProviderConfig `json:"nvidia"`
-	Moonshot      ProviderConfig `json:"moonshot"`
-	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig `json:"deepseek"`
-	GitHubCopilot ProviderConfig `json:"github_copilot"`
+	Anthropic     ProviderConfig       `json:"anthropic"`
+	OpenAI        OpenAIProviderConfig `json:"openai"`
+	OpenRouter    ProviderConfig       `json:"openrouter"`
+	Groq          ProviderConfig       `json:"groq"`
+	Zhipu         ProviderConfig       `json:"zhipu"`
+	VLLM          ProviderConfig       `json:"vllm"`
+	Gemini        ProviderConfig       `json:"gemini"`
+	Nvidia        ProviderConfig       `json:"nvidia"`
+	Ollama        ProviderConfig       `json:"ollama"`
+	Moonshot      ProviderConfig       `json:"moonshot"`
+	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
+	DeepSeek      ProviderConfig       `json:"deepseek"`
+	GitHubCopilot ProviderConfig       `json:"github_copilot"`
 }
 
 type ProviderConfig struct {
@@ -188,6 +189,11 @@ type ProviderConfig struct {
 	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
 	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
 	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+}
+
+type OpenAIProviderConfig struct {
+	ProviderConfig
+	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
 }
 
 type GatewayConfig struct {
@@ -206,9 +212,20 @@ type DuckDuckGoConfig struct {
 	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
+type PerplexityConfig struct {
+	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
+	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+}
+
 type WebToolsConfig struct {
 	Brave      BraveConfig      `json:"brave"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
+	Perplexity PerplexityConfig `json:"perplexity"`
+}
+
+type CronToolsConfig struct {
+	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
 }
 
 type ExecConfig struct {
@@ -218,8 +235,9 @@ type ExecConfig struct {
 }
 
 type ToolsConfig struct {
-	Web  WebToolsConfig `json:"web"`
-	Exec ExecConfig     `json:"exec"`
+	Web  WebToolsConfig  `json:"web"`
+	Cron CronToolsConfig `json:"cron"`
+	Exec ExecConfig      `json:"exec"`
 }
 
 // SecurityConfig controls optional security features.
@@ -314,7 +332,7 @@ func DefaultConfig() *Config {
 		},
 		Providers: ProvidersConfig{
 			Anthropic:    ProviderConfig{},
-			OpenAI:       ProviderConfig{},
+			OpenAI:       OpenAIProviderConfig{WebSearch: true},
 			OpenRouter:   ProviderConfig{},
 			Groq:         ProviderConfig{},
 			Zhipu:        ProviderConfig{},
@@ -339,12 +357,20 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+				Perplexity: PerplexityConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
 			},
-			Exec: ExecConfig{
-				DenyPatterns:  []string{},
-				AllowPatterns: []string{},
-				MaxTimeout:    60,
-			},
+		Cron: CronToolsConfig{
+			ExecTimeoutMinutes: 5,
+		},
+		Exec: ExecConfig{
+			DenyPatterns:  []string{},
+			AllowPatterns: []string{},
+			MaxTimeout:    60,
+		},
 		},
 		Security: SecurityConfig{
 			ExecGuard:       "off",
@@ -400,7 +426,7 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 func (c *Config) WorkspacePath() string {

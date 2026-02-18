@@ -28,12 +28,12 @@ type CronTool struct {
 }
 
 // NewCronTool creates a new CronTool.
-// The restrict parameter controls whether cron commands are restricted to the workspace.
 func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool) *CronTool {
 	return NewCronToolWithConfig(cronService, executor, msgBus, workspace, restrict, ExecToolConfig{})
 }
 
 // NewCronToolWithConfig creates a CronTool with explicit ExecToolConfig (including PolicyEngine).
+// execTimeout from CronToolsConfig is applied after construction via SetTimeout.
 func NewCronToolWithConfig(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool, execCfg ExecToolConfig) *CronTool {
 	return &CronTool{
 		cronService: cronService,
@@ -41,6 +41,11 @@ func NewCronToolWithConfig(cronService *cron.CronService, executor JobExecutor, 
 		msgBus:      msgBus,
 		execTool:    NewExecToolWithConfig(workspace, restrict, execCfg),
 	}
+}
+
+// SetExecTimeout sets the exec timeout for the cron tool's internal ExecTool.
+func (t *CronTool) SetExecTimeout(d time.Duration) {
+	t.execTool.SetTimeout(d)
 }
 
 // Name returns the tool name
