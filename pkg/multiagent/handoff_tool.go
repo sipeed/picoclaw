@@ -15,6 +15,9 @@ type HandoffTool struct {
 	fromAgentID   string
 	originChannel string
 	originChatID  string
+	depth         int      // current handoff depth (0 = top-level)
+	visited       []string // agent IDs already in the call chain
+	maxDepth      int      // max allowed depth (0 = use DefaultMaxHandoffDepth)
 }
 
 // NewHandoffTool creates a handoff tool bound to a specific source agent.
@@ -133,6 +136,9 @@ func (t *HandoffTool) Execute(ctx context.Context, args map[string]any) *tools.T
 		ToAgentID:   agentID,
 		Task:        task,
 		Context:     contextMap,
+		Depth:       t.depth,
+		Visited:     t.visited,
+		MaxDepth:    t.maxDepth,
 	}, t.originChannel, t.originChatID)
 
 	if !result.Success {
