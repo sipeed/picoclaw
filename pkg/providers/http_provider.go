@@ -19,12 +19,17 @@ import (
 )
 
 type HTTPProvider struct {
-	apiKey     string
-	apiBase    string
-	httpClient *http.Client
+	apiKey         string
+	apiBase        string
+	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	httpClient     *http.Client
 }
 
 func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
+	return NewHTTPProviderWithMaxTokensField(apiKey, apiBase, proxy, "")
+}
+
+func NewHTTPProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *HTTPProvider {
 	client := &http.Client{
 		Timeout: 120 * time.Second,
 	}
@@ -39,9 +44,10 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 	}
 
 	return &HTTPProvider{
-		apiKey:     apiKey,
-		apiBase:    strings.TrimRight(apiBase, "/"),
-		httpClient: client,
+		apiKey:         apiKey,
+		apiBase:        strings.TrimRight(apiBase, "/"),
+		maxTokensField: maxTokensField,
+		httpClient:     client,
 	}
 }
 
@@ -69,12 +75,18 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	}
 
 	if maxTokens, ok := options["max_tokens"].(int); ok {
-		lowerModel := strings.ToLower(model)
-		if strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "o1") {
-			requestBody["max_completion_tokens"] = maxTokens
-		} else {
-			requestBody["max_tokens"] = maxTokens
+		// Use configured max_tokens_field if specified, otherwise fallback to model-based detection
+		fieldName := p.maxTokensField
+		if fieldName == "" {
+			// Fallback: detect from model name for backward compatibility
+			lowerModel := strings.ToLower(model)
+			if strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "o1") {
+				fieldName = "max_completion_tokens"
+			} else {
+				fieldName = "max_tokens"
+			}
 		}
+		requestBody[fieldName] = maxTokens
 	}
 
 	if temperature, ok := options["temperature"].(float64); ok {

@@ -81,7 +81,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProvider(cfg.APIKey, apiBase, cfg.Proxy), modelID, nil
+		return NewHTTPProviderWithMaxTokensField(cfg.APIKey, apiBase, cfg.Proxy, cfg.MaxTokensField), modelID, nil
 
 	case "anthropic":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
@@ -100,7 +100,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProvider(cfg.APIKey, apiBase, cfg.Proxy), modelID, nil
+		return NewHTTPProviderWithMaxTokensField(cfg.APIKey, apiBase, cfg.Proxy, cfg.MaxTokensField), modelID, nil
 
 	case "antigravity":
 		return NewAntigravityProvider(), modelID, nil
@@ -168,6 +168,8 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://ark.cn-beijing.volces.com/api/v3"
 	case "qwen":
 		return "https://dashscope.aliyuncs.com/compatible-mode/v1"
+	case "vllm":
+		return "http://localhost:8000/v1"
 	default:
 		return ""
 	}

@@ -106,6 +106,9 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"openrouter", "openrouter", "https://openrouter.ai/api/v1"},
 		{"cerebras", "cerebras", "https://api.cerebras.ai/v1"},
 		{"qwen", "qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+		{"vllm", "vllm", "http://localhost:8000/v1"},
+		{"deepseek", "deepseek", "https://api.deepseek.com/v1"},
+		{"ollama", "ollama", "http://localhost:11434/v1"},
 	}
 
 	for _, tt := range tests {
