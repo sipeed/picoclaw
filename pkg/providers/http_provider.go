@@ -53,10 +53,10 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		return nil, fmt.Errorf("API base not configured")
 	}
 
-	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5, groq/openai/gpt-oss-120b -> openai/gpt-oss-120b, ollama/qwen2.5:14b -> qwen2.5:14b)
+	// Strip provider prefix from model name (e.g., zai/glm-4.7 -> glm-4.7, groq/openai/gpt-oss-120b -> openai/gpt-oss-120b, ollama/qwen2.5:14b -> qwen2.5:14b)
 	if idx := strings.Index(model, "/"); idx != -1 {
 		prefix := model[:idx]
-		if prefix == "moonshot" || prefix == "nvidia" || prefix == "groq" || prefix == "ollama" {
+		if prefix == "zai" || prefix == "moonshot" || prefix == "nvidia" || prefix == "groq" || prefix == "ollama" {
 			model = model[idx+1:]
 		}
 	}
@@ -272,12 +272,13 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 					apiBase = "https://openrouter.ai/api/v1"
 				}
 			}
-		case "zhipu", "glm":
-			if cfg.Providers.Zhipu.APIKey != "" {
-				apiKey = cfg.Providers.Zhipu.APIKey
-				apiBase = cfg.Providers.Zhipu.APIBase
+		case "zai", "z.ai", "zhipu", "glm":
+			if cfg.Providers.Zai.APIKey != "" {
+				apiKey = cfg.Providers.Zai.APIKey
+				apiBase = cfg.Providers.Zai.APIBase
+				proxy = cfg.Providers.Zai.Proxy
 				if apiBase == "" {
-					apiBase = "https://open.bigmodel.cn/api/paas/v4"
+					apiBase = "https://api.z.ai/api/paas/v4"
 				}
 			}
 		case "gemini", "google":
@@ -325,12 +326,12 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				}
 			}
 		case "moonshot", "kimi":
-			if cfg.Providers.Moonshot.APIKey != "" {
-				apiKey = cfg.Providers.Moonshot.APIKey
-				apiBase = cfg.Providers.Moonshot.APIBase
-				proxy = cfg.Providers.Moonshot.Proxy
+			if cfg.Providers.Zai.APIKey != "" {
+				apiKey = cfg.Providers.Zai.APIKey
+				apiBase = cfg.Providers.Zai.APIBase
+				proxy = cfg.Providers.Zai.Proxy
 				if apiBase == "" {
-					apiBase = "https://api.moonshot.cn/v1"
+					apiBase = "https://api.z.ai/api/paas/v4"
 				}
 			}
 		case "github_copilot", "copilot":
@@ -348,12 +349,12 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	// Fallback: detect provider from model name
 	if apiKey == "" && apiBase == "" {
 		switch {
-		case (strings.Contains(lowerModel, "kimi") || strings.Contains(lowerModel, "moonshot") || strings.HasPrefix(model, "moonshot/")) && cfg.Providers.Moonshot.APIKey != "":
-			apiKey = cfg.Providers.Moonshot.APIKey
-			apiBase = cfg.Providers.Moonshot.APIBase
-			proxy = cfg.Providers.Moonshot.Proxy
+		case (strings.Contains(lowerModel, "kimi") || strings.Contains(lowerModel, "moonshot") || strings.HasPrefix(model, "moonshot/") || strings.Contains(lowerModel, "zai") || strings.HasPrefix(model, "zai/")) && cfg.Providers.Zai.APIKey != "":
+			apiKey = cfg.Providers.Zai.APIKey
+			apiBase = cfg.Providers.Zai.APIBase
+			proxy = cfg.Providers.Zai.Proxy
 			if apiBase == "" {
-				apiBase = "https://api.moonshot.cn/v1"
+				apiBase = "https://api.z.ai/api/paas/v4"
 			}
 
 		case strings.HasPrefix(model, "openrouter/") || strings.HasPrefix(model, "anthropic/") || strings.HasPrefix(model, "openai/") || strings.HasPrefix(model, "meta-llama/") || strings.HasPrefix(model, "deepseek/") || strings.HasPrefix(model, "google/"):
@@ -395,12 +396,12 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "https://generativelanguage.googleapis.com/v1beta"
 			}
 
-		case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zhipu") || strings.Contains(lowerModel, "zai")) && cfg.Providers.Zhipu.APIKey != "":
-			apiKey = cfg.Providers.Zhipu.APIKey
-			apiBase = cfg.Providers.Zhipu.APIBase
-			proxy = cfg.Providers.Zhipu.Proxy
+		case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zhipu")) && cfg.Providers.Zai.APIKey != "":
+			apiKey = cfg.Providers.Zai.APIKey
+			apiBase = cfg.Providers.Zai.APIBase
+			proxy = cfg.Providers.Zai.Proxy
 			if apiBase == "" {
-				apiBase = "https://open.bigmodel.cn/api/paas/v4"
+				apiBase = "https://api.z.ai/api/paas/v4"
 			}
 
 		case (strings.Contains(lowerModel, "groq") || strings.HasPrefix(model, "groq/")) && cfg.Providers.Groq.APIKey != "":

@@ -113,8 +113,8 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 				cfg.Providers.OpenRouter = pc
 			case "groq":
 				cfg.Providers.Groq = pc
-			case "zhipu":
-				cfg.Providers.Zhipu = pc
+			case "zhipu", "zai":
+				cfg.Providers.Zai = pc
 			case "vllm":
 				cfg.Providers.VLLM = pc
 			case "gemini":
@@ -244,8 +244,8 @@ func MergeConfig(existing, incoming *config.Config) *config.Config {
 	if existing.Providers.Groq.APIKey == "" {
 		existing.Providers.Groq = incoming.Providers.Groq
 	}
-	if existing.Providers.Zhipu.APIKey == "" {
-		existing.Providers.Zhipu = incoming.Providers.Zhipu
+	if existing.Providers.Zai.APIKey == "" {
+		existing.Providers.Zai = incoming.Providers.Zai
 	}
 	if existing.Providers.VLLM.APIKey == "" && existing.Providers.VLLM.APIBase == "" {
 		existing.Providers.VLLM = incoming.Providers.VLLM

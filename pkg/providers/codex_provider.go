@@ -158,7 +158,7 @@ func resolveCodexModel(model string) (string, string) {
 		"anthropic",
 		"gemini",
 		"google",
-		"moonshot",
+		"zai",
 		"kimi",
 		"qwen",
 		"deepseek",
@@ -168,6 +168,7 @@ func resolveCodexModel(model string) (string, string) {
 		"grok",
 		"xai",
 		"zhipu",
+		"moonshot",
 	}
 	for _, prefix := range unsupportedPrefixes {
 		if strings.HasPrefix(m, prefix) {

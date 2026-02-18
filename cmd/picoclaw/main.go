@@ -729,7 +729,7 @@ func statusCmd() {
 		hasAnthropic := cfg.Providers.Anthropic.APIKey != ""
 		hasOpenAI := cfg.Providers.OpenAI.APIKey != ""
 		hasGemini := cfg.Providers.Gemini.APIKey != ""
-		hasZhipu := cfg.Providers.Zhipu.APIKey != ""
+		hasZai := cfg.Providers.Zai.APIKey != ""
 		hasGroq := cfg.Providers.Groq.APIKey != ""
 		hasVLLM := cfg.Providers.VLLM.APIBase != ""
 
@@ -743,7 +743,7 @@ func statusCmd() {
 		fmt.Println("Anthropic API:", status(hasAnthropic))
 		fmt.Println("OpenAI API:", status(hasOpenAI))
 		fmt.Println("Gemini API:", status(hasGemini))
-		fmt.Println("Zhipu API:", status(hasZhipu))
+		fmt.Println("Z.ai API:", status(hasZai))
 		fmt.Println("Groq API:", status(hasGroq))
 		if hasVLLM {
 			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)

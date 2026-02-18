@@ -171,12 +171,13 @@ type ProvidersConfig struct {
 	OpenAI        ProviderConfig `json:"openai"`
 	OpenRouter    ProviderConfig `json:"openrouter"`
 	Groq          ProviderConfig `json:"groq"`
-	Zhipu         ProviderConfig `json:"zhipu"`
+	Zai           ProviderConfig `json:"zai"`
+	Zhipu         ProviderConfig `json:"zhipu"`    // Deprecated: use "zai" instead
 	VLLM          ProviderConfig `json:"vllm"`
 	Gemini        ProviderConfig `json:"gemini"`
 	Nvidia        ProviderConfig `json:"nvidia"`
 	Ollama        ProviderConfig `json:"ollama"`
-	Moonshot      ProviderConfig `json:"moonshot"`
+	Moonshot      ProviderConfig `json:"moonshot"` // Deprecated: use "zai" instead
 	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig `json:"deepseek"`
 	GitHubCopilot ProviderConfig `json:"github_copilot"`
@@ -311,11 +312,10 @@ func DefaultConfig() *Config {
 			OpenAI:       ProviderConfig{},
 			OpenRouter:   ProviderConfig{},
 			Groq:         ProviderConfig{},
-			Zhipu:        ProviderConfig{},
+			Zai:          ProviderConfig{},
 			VLLM:         ProviderConfig{},
 			Gemini:       ProviderConfig{},
 			Nvidia:       ProviderConfig{},
-			Moonshot:     ProviderConfig{},
 			ShengSuanYun: ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
@@ -373,7 +373,22 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Migrate deprecated provider configs to Zai (Z.ai, formerly Zhipu/Moonshot)
+	cfg.migrateProviders()
+
 	return cfg, nil
+}
+
+// migrateProviders merges deprecated Zhipu and Moonshot provider configs into Zai.
+// If Zai is not configured, it falls back to Zhipu first, then Moonshot.
+func (c *Config) migrateProviders() {
+	if c.Providers.Zai.APIKey == "" {
+		if c.Providers.Zhipu.APIKey != "" {
+			c.Providers.Zai = c.Providers.Zhipu
+		} else if c.Providers.Moonshot.APIKey != "" {
+			c.Providers.Zai = c.Providers.Moonshot
+		}
+	}
 }
 
 func SaveConfig(path string, cfg *Config) error {
@@ -414,8 +429,8 @@ func (c *Config) GetAPIKey() string {
 	if c.Providers.Gemini.APIKey != "" {
 		return c.Providers.Gemini.APIKey
 	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIKey
+	if c.Providers.Zai.APIKey != "" {
+		return c.Providers.Zai.APIKey
 	}
 	if c.Providers.Groq.APIKey != "" {
 		return c.Providers.Groq.APIKey
@@ -438,8 +453,8 @@ func (c *Config) GetAPIBase() string {
 		}
 		return "https://openrouter.ai/api/v1"
 	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIBase
+	if c.Providers.Zai.APIKey != "" {
+		return c.Providers.Zai.APIBase
 	}
 	if c.Providers.VLLM.APIKey != "" && c.Providers.VLLM.APIBase != "" {
 		return c.Providers.VLLM.APIBase

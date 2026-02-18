@@ -89,8 +89,8 @@
       "api_key": "gsk_xxx",
       "api_base": ""
     },
-    "zhipu": {
-      "api_key": "YOUR_ZHIPU_API_KEY",
+    "zai": {
+      "api_key": "YOUR_ZAI_API_KEY",
       "api_base": ""
     },
     "gemini": {
@@ -107,7 +107,7 @@
       "proxy": "http://127.0.0.1:7890"
     },
     "moonshot": {
-      "api_key": "sk-xxx",
+      "api_key": "",
       "api_base": ""
     },
     "ollama": {

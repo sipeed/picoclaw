@@ -92,8 +92,8 @@ func TestDefaultConfig_Providers(t *testing.T) {
 	if cfg.Providers.Groq.APIKey != "" {
 		t.Error("Groq API key should be empty by default")
 	}
-	if cfg.Providers.Zhipu.APIKey != "" {
-		t.Error("Zhipu API key should be empty by default")
+	if cfg.Providers.Zai.APIKey != "" {
+		t.Error("Z.ai API key should be empty by default")
 	}
 	if cfg.Providers.VLLM.APIKey != "" {
 		t.Error("VLLM API key should be empty by default")
