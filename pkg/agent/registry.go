@@ -32,14 +32,14 @@ func NewAgentRegistry(
 			ID:      "main",
 			Default: true,
 		}
-		instance := NewAgentInstance(implicitAgent, &cfg.Agents.Defaults, provider)
+		instance := NewAgentInstance(implicitAgent, &cfg.Agents.Defaults, cfg, provider)
 		registry.agents["main"] = instance
 		logger.InfoCF("agent", "Created implicit main agent (no agents.list configured)", nil)
 	} else {
 		for i := range agentConfigs {
 			ac := &agentConfigs[i]
 			id := routing.NormalizeAgentID(ac.ID)
-			instance := NewAgentInstance(ac, &cfg.Agents.Defaults, provider)
+			instance := NewAgentInstance(ac, &cfg.Agents.Defaults, cfg, provider)
 			registry.agents[id] = instance
 			logger.InfoCF("agent", "Registered agent",
 				map[string]interface{}{
