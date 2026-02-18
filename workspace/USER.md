@@ -1,21 +1,18 @@
 # User
 
-Information about user goes here.
-
 ## Preferences
 
-- Communication style: (casual/formal)
-- Timezone: (your timezone)
-- Language: (your preferred language)
+- Language: auto-detect (respond in the same language the user writes in)
+- Communication style: concise and practical
+- Timezone: (not set)
 
-## Personal Information
+## Context
 
-- Name: (optional)
-- Location: (optional)
-- Occupation: (optional)
+- Name: (not set)
+- Location: (not set)
+- Technical level: (not set)
 
-## Learning Goals
+## Notes
 
-- What the user wants to learn from AI
-- Preferred interaction style
-- Areas of interest
+Add important facts about this user here as you learn them.
+The agent should update this file when it learns persistent user preferences.

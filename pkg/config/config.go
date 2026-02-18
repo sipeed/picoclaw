@@ -237,8 +237,8 @@ func DefaultConfig() *Config {
 				Provider:            "",
 				Model:               "glm-5",
 				MaxTokens:           8192,
-				Temperature:         0.7,
-				MaxToolIterations:   20,
+				Temperature:         0.5,
+				MaxToolIterations:   25,
 			},
 		},
 		Channels: ChannelsConfig{
