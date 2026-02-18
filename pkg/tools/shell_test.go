@@ -215,7 +215,7 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 // TestShellTool_DataExfiltrationBlocked verifies data exfiltration patterns are blocked
 // when exec_guard mode is "block".
 func TestShellTool_DataExfiltrationBlocked(t *testing.T) {
-	tool := NewExecToolWithConfig("", false, ExecToolConfig{ExecGuardMode: "block"})
+	tool := NewExecToolWithConfig("", false, ExecToolConfig{ExecGuardMode: security.ModeBlock})
 	ctx := context.Background()
 
 	dangerousCmds := []string{
