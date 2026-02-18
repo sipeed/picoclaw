@@ -86,3 +86,23 @@ func TestLoadConfigKeepsLegacyGLMModelWhenZhipuConfigured(t *testing.T) {
 		t.Fatalf("model = %q, want %q", cfg.Agents.Defaults.Model, "glm-4.7")
 	}
 }
+
+func TestLoadConfigKeepsLegacyGLMModelWhenNoProviderKeysConfigured(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	content := `{
+  "agents": { "defaults": { "model": "glm-4.7" } }
+}`
+
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write config fixture: %v", err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if cfg.Agents.Defaults.Model != "glm-4.7" {
+		t.Fatalf("model = %q, want %q", cfg.Agents.Defaults.Model, "glm-4.7")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type Config struct {
@@ -252,7 +253,7 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
-	return writePrivateFile(path, data)
+	return utils.WritePrivateFile(path, data)
 }
 
 func (c *Config) WorkspacePath() string {
@@ -318,13 +319,6 @@ func expandHome(path string) string {
 		return home
 	}
 	return path
-}
-
-func writePrivateFile(path string, data []byte) error {
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0600)
 }
 
 func normalizeLegacyModelDefaults(cfg *Config) {
