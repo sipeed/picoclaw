@@ -120,7 +120,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			}
 			return provider, modelID, nil
 		}
-		// Use API key with HTTP API
+		// Use API key with native Claude provider (not OpenAI-compatible HTTP).
+		// The Anthropic API uses /v1/messages (not /v1/chat/completions) and
+		// requires x-api-key header, so HTTPProvider would produce 404 errors.
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = "https://api.anthropic.com/v1"
@@ -128,13 +130,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
-			apiBase,
-			cfg.Proxy,
-			cfg.MaxTokensField,
-			cfg.RequestTimeout,
-		), modelID, nil
+		return NewClaudeProviderWithBaseURL(cfg.APIKey, apiBase), modelID, nil
 
 	case "antigravity":
 		return NewAntigravityProvider(), modelID, nil
