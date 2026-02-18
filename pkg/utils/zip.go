@@ -41,8 +41,9 @@ func ExtractZipFile(zipPath string, targetDir string) error {
 
 		destPath := filepath.Join(targetDir, cleanName)
 
-		// Double-check the resolved path is within target.
-		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(targetDir)) {
+		// Double-check the resolved path is within target directory (defense-in-depth).
+		targetDirClean := filepath.Clean(targetDir)
+		if !strings.HasPrefix(filepath.Clean(destPath), targetDirClean+string(filepath.Separator)) && filepath.Clean(destPath) != targetDirClean {
 			return fmt.Errorf("zip entry escapes target dir: %q", f.Name)
 		}
 
@@ -73,8 +74,15 @@ func ExtractZipFile(zipPath string, targetDir string) error {
 	return nil
 }
 
-// extractSingleFile extracts one zip.File entry to destPath.
+// extractSingleFile extracts one zip.File entry to destPath, with a size check.
 func extractSingleFile(f *zip.File, destPath string) error {
+	const maxFileSize = 5 * 1024 * 1024 // 5MB, adjust as appropriate
+
+	// Check the uncompressed size from the header, if available.
+	if f.UncompressedSize64 > maxFileSize {
+		return fmt.Errorf("zip entry %q is too large (%d bytes)", f.Name, f.UncompressedSize64)
+	}
+
 	rc, err := f.Open()
 	if err != nil {
 		return fmt.Errorf("failed to open zip entry %q: %w", f.Name, err)
@@ -85,16 +93,23 @@ func extractSingleFile(f *zip.File, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create file %q: %w", destPath, err)
 	}
+	defer func() {
+		// Ensure file is closed in all paths.
+		if cerr := outFile.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("failed to close file %q: %w", destPath, cerr)
+			_ = os.Remove(destPath)
+		}
+	}()
 
-	if _, err := io.Copy(outFile, rc); err != nil {
-		_ = outFile.Close()
+	// Streamed size check: prevent overruns and malicious/corrupt headers.
+	written, err := io.CopyN(outFile, rc, maxFileSize+1)
+	if err != nil && err != io.EOF {
 		_ = os.Remove(destPath)
 		return fmt.Errorf("failed to extract %q: %w", f.Name, err)
 	}
-
-	if err := outFile.Close(); err != nil {
+	if written > maxFileSize {
 		_ = os.Remove(destPath)
-		return fmt.Errorf("failed to close file %q: %w", destPath, err)
+		return fmt.Errorf("zip entry %q exceeds max size (%d bytes)", f.Name, written)
 	}
 
 	return nil

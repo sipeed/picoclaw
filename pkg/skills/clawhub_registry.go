@@ -14,19 +14,21 @@ import (
 )
 
 const (
-	defaultClawHubTimeout = 30 * time.Second
-	defaultMaxZipSize     = 50 * 1024 * 1024 // 50 MB
+	defaultClawHubTimeout  = 30 * time.Second
+	defaultMaxZipSize      = 50 * 1024 * 1024 // 50 MB
+	defaultMaxResponseSize = 2 * 1024 * 1024  // 2 MB
 )
 
 // ClawHubRegistry implements SkillRegistry for the ClawhHub platform.
 type ClawHubRegistry struct {
-	baseURL      string
-	authToken    string // Optional - for elevated rate limits
-	searchPath   string // Search API
-	skillsPath   string // For retrieving skill metadata
-	downloadPath string // For fetching ZIP files for download
-	maxZipSize   int
-	client       *http.Client
+	baseURL         string
+	authToken       string // Optional - for elevated rate limits
+	searchPath      string // Search API
+	skillsPath      string // For retrieving skill metadata
+	downloadPath    string // For fetching ZIP files for download
+	maxZipSize      int
+	maxResponseSize int
+	client          *http.Client
 }
 
 // NewClawHubRegistry creates a new ClawhHub registry client from config.
@@ -58,13 +60,19 @@ func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
 		maxZip = cfg.MaxZipSize
 	}
 
+	maxResp := defaultMaxResponseSize
+	if cfg.MaxResponseSize > 0 {
+		maxResp = cfg.MaxResponseSize
+	}
+
 	return &ClawHubRegistry{
-		baseURL:      baseURL,
-		authToken:    cfg.AuthToken,
-		searchPath:   searchPath,
-		skillsPath:   skillsPath,
-		downloadPath: downloadPath,
-		maxZipSize:   maxZip,
+		baseURL:         baseURL,
+		authToken:       cfg.AuthToken,
+		searchPath:      searchPath,
+		skillsPath:      skillsPath,
+		downloadPath:    downloadPath,
+		maxZipSize:      maxZip,
+		maxResponseSize: maxResp,
 		client: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
@@ -290,7 +298,7 @@ func (c *ClawHubRegistry) doGet(ctx context.Context, urlStr string) ([]byte, err
 	defer resp.Body.Close()
 
 	// Limit response body read to prevent memory issues.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(c.maxZipSize)+1024))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(c.maxResponseSize)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}

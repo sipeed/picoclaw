@@ -37,6 +37,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
@@ -1300,6 +1301,18 @@ func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config) {
 
 // skillsInstallFromRegistry installs a skill from a named registry (e.g. clawhub).
 func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
+	err := utils.ValidateSkillIdentifier(registryName)
+	if err != nil {
+		fmt.Printf("\u2717 Invalid registry name: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = utils.ValidateSkillIdentifier(slug)
+	if err != nil {
+		fmt.Printf("\u2717 Invalid slug: %v\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Printf("Installing skill '%s' from %s registry...\n", slug, registryName)
 
 	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{

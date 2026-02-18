@@ -20,6 +20,7 @@ import (
 type InstallSkillTool struct {
 	registryMgr *skills.RegistryManager
 	workspace   string
+	mu          sync.Mutex
 }
 
 // NewInstallSkillTool creates a new InstallSkillTool.
@@ -29,6 +30,7 @@ func NewInstallSkillTool(registryMgr *skills.RegistryManager, workspace string) 
 	return &InstallSkillTool{
 		registryMgr: registryMgr,
 		workspace:   workspace,
+		mu:          sync.Mutex{},
 	}
 }
 
@@ -68,9 +70,8 @@ func (t *InstallSkillTool) Parameters() map[string]interface{} {
 func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	// Install lock to prevent concurrent directory operations.
 	// Ideally this should be done at a `slug` level, currently, its at a `workspace` level.
-	slugLock := sync.Mutex{}
-	slugLock.Lock()
-	defer slugLock.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	// Validate slug
 	slug, _ := args["slug"].(string)

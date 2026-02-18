@@ -66,14 +66,15 @@ type RegistryConfig struct {
 
 // ClawHubConfig configures the ClawhHub registry.
 type ClawHubConfig struct {
-	Enabled      bool
-	BaseURL      string
-	AuthToken    string
-	SearchPath   string // e.g. "/api/v1/search"
-	SkillsPath   string // e.g. "/api/v1/skills"
-	DownloadPath string // e.g. "/api/v1/download"
-	Timeout      int    // seconds, 0 = default (30s)
-	MaxZipSize   int    // bytes, 0 = default (50MB)
+	Enabled         bool
+	BaseURL         string
+	AuthToken       string
+	SearchPath      string // e.g. "/api/v1/search"
+	SkillsPath      string // e.g. "/api/v1/skills"
+	DownloadPath    string // e.g. "/api/v1/download"
+	Timeout         int    // seconds, 0 = default (30s)
+	MaxZipSize      int    // bytes, 0 = default (50MB)
+	MaxResponseSize int    // bytes, 0 = default (2MB)
 }
 
 // RegistryManager coordinates multiple skill registries.
