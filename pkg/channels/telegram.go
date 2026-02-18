@@ -275,6 +275,20 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 					logger.InfoCF("telegram", "Voice transcribed successfully", map[string]interface{}{
 						"text": result.Text,
 					})
+
+					replyText := fmt.Sprintf("🎤 <b>Transcription: </b><i>%s</i>", escapeHTML(result.Text))
+					replyMsg := tu.Message(tu.ID(chatID), replyText)
+					replyMsg.ReplyParameters = &telego.ReplyParameters{
+						MessageID: message.MessageID,
+					}
+
+					replyMsg.ParseMode = telego.ModeHTML
+
+					if _, err := c.bot.SendMessage(ctx, replyMsg); err != nil {
+						logger.ErrorCF("telegram", "Failed to send transcription reply", map[string]interface{}{
+							"error": err.Error(),
+						})
+					}
 				}
 			} else {
 				transcribedText = "[voice]"
