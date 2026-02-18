@@ -129,8 +129,13 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 			Message struct {
 				Content   string `json:"content"`
 				ToolCalls []struct {
-					ID       string `json:"id"`
-					Type     string `json:"type"`
+					ID           string `json:"id"`
+					Type         string `json:"type"`
+					ExtraContent struct {
+						Google struct {
+							ThoughtSignature string `json:"thought_signature,omitempty"`
+						} `json:"google,omitempty"`
+					} `json:"extra_content,omitempty"`
 					Function *struct {
 						Name      string `json:"name"`
 						Arguments string `json:"arguments"`
@@ -179,7 +184,12 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 		}
 
 		toolCalls = append(toolCalls, ToolCall{
-			ID:        tc.ID,
+			ID: tc.ID,
+			ExtraContent: ExtraContent{
+				Google: GoogleExtraContent{
+					ThoughtSignature: tc.ExtraContent.Google.ThoughtSignature,
+				},
+			},
 			Name:      name,
 			Arguments: arguments,
 		})

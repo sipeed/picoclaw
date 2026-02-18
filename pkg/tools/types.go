@@ -10,11 +10,20 @@ type Message struct {
 }
 
 type ToolCall struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type"`
-	Function  *FunctionCall          `json:"function,omitempty"`
-	Name      string                 `json:"name,omitempty"`
-	Arguments map[string]interface{} `json:"arguments,omitempty"`
+	ID           string                 `json:"id"`
+	Type         string                 `json:"type"`
+	ExtraContent ExtraContent           `json:"extra_content,omitempty"`
+	Function     *FunctionCall          `json:"function,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+	Arguments    map[string]interface{} `json:"arguments,omitempty"`
+}
+
+type ExtraContent struct {
+	Google GoogleExtraContent `json:"google,omitempty"`
+}
+
+type GoogleExtraContent struct {
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 type FunctionCall struct {
