@@ -191,6 +191,31 @@ func (r *ToolRegistry) List() []string {
 	return names
 }
 
+// Clone creates a shallow copy of the registry.
+// Tool instances are shared (not deep-copied), only the map and hooks slice are copied.
+// This is used for depth-based policy: clone → remove denied tools → pass to RunToolLoop.
+func (r *ToolRegistry) Clone() *ToolRegistry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	cloned := &ToolRegistry{
+		tools: make(map[string]Tool, len(r.tools)),
+		hooks: make([]ToolHook, len(r.hooks)),
+	}
+	for name, tool := range r.tools {
+		cloned.tools[name] = tool
+	}
+	copy(cloned.hooks, r.hooks)
+	return cloned
+}
+
+// Remove unregisters a tool by name.
+func (r *ToolRegistry) Remove(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.tools, name)
+}
+
 // Count returns the number of registered tools.
 func (r *ToolRegistry) Count() int {
 	r.mu.RLock()
