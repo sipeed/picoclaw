@@ -594,7 +594,11 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 		{Role: "assistant", Content: "Old response 2"},
 		{Role: "user", Content: "Trigger message"},
 	}
-	al.sessions.SetHistory(sessionKey, history)
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	defaultAgent.Sessions.SetHistory(sessionKey, history)
 
 	// Call ProcessDirectWithChannel
 	// Note: ProcessDirectWithChannel calls processMessage which will execute runLLMIteration
@@ -614,7 +618,7 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	}
 
 	// Check final history length
-	finalHistory := al.sessions.GetHistory(sessionKey)
+	finalHistory := defaultAgent.Sessions.GetHistory(sessionKey)
 	// We verify that the history has been modified (compressed)
 	// Original length: 6
 	// Expected behavior: compression drops ~50% of history (mid slice)
