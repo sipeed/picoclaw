@@ -6,8 +6,8 @@ services:
     container_name: picoclaw-agent
     profiles: [agent]
     volumes:
-      - ./config/config.example.json:/root/.picoclaw/config.json:ro
-      - picoclaw-workspace:/root/.picoclaw/workspace
+      - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
+      - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
@@ -34,8 +34,8 @@ services:
     restart: unless-stopped
     profiles: [gateway]
     volumes:
-      - ./config/config.example.json:/root/.picoclaw/config.json:ro
-      - picoclaw-workspace:/root/.picoclaw/workspace
+      - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
+      - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
     command: ["gateway"]
     ports:
       - "18790:18790"
