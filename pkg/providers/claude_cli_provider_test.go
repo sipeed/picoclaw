@@ -416,8 +416,10 @@ func TestChat_EmptyWorkspaceDoesNotSetDir(t *testing.T) {
 
 func TestCreateProvider_ClaudeCli(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claude-cli"
-	cfg.Agents.Defaults.Workspace = "/test/ws"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claude-sonnet-4", Model: "claude-cli/claude-sonnet-4-20250514", Workspace: "/test/ws"},
+	}
+	cfg.Agents.Defaults.Model = "claude-sonnet-4"
 
 	provider, _, err := CreateProvider(cfg)
 	if err != nil {
@@ -435,7 +437,10 @@ func TestCreateProvider_ClaudeCli(t *testing.T) {
 
 func TestCreateProvider_ClaudeCode(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claude-code"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claude-code", Model: "claude-cli/claude-code"},
+	}
+	cfg.Agents.Defaults.Model = "claude-code"
 
 	provider, _, err := CreateProvider(cfg)
 	if err != nil {
@@ -448,7 +453,10 @@ func TestCreateProvider_ClaudeCode(t *testing.T) {
 
 func TestCreateProvider_ClaudeCodec(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claudecode"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claudecode", Model: "claude-cli/claudecode"},
+	}
+	cfg.Agents.Defaults.Model = "claudecode"
 
 	provider, _, err := CreateProvider(cfg)
 	if err != nil {
@@ -461,7 +469,10 @@ func TestCreateProvider_ClaudeCodec(t *testing.T) {
 
 func TestCreateProvider_ClaudeCliDefaultWorkspace(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claude-cli"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claude-cli", Model: "claude-cli/claude-sonnet"},
+	}
+	cfg.Agents.Defaults.Model = "claude-cli"
 	cfg.Agents.Defaults.Workspace = ""
 
 	provider, _, err := CreateProvider(cfg)

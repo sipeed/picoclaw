@@ -215,6 +215,7 @@ type ModelConfig struct {
 	// Special providers (CLI-based, OAuth, etc.)
 	AuthMethod  string `json:"auth_method,omitempty"`   // Authentication method: oauth, token
 	ConnectMode string `json:"connect_mode,omitempty"`  // Connection mode: stdio, grpc
+	Workspace   string `json:"workspace,omitempty"`     // Workspace path for CLI-based providers
 
 	// Optional optimizations
 	RPM            int    `json:"rpm,omitempty"`             // Requests per minute limit
@@ -286,6 +287,11 @@ func LoadConfig(path string) (*Config, error) {
 
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
+	}
+
+	// Auto-migrate: if only legacy providers config exists, convert to model_list
+	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
+		cfg.ModelList = ConvertProvidersToModelList(cfg)
 	}
 
 	return cfg, nil

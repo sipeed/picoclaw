@@ -9,8 +9,33 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
+
+// createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
+func createClaudeAuthProvider() (LLMProvider, error) {
+	cred, err := auth.GetCredential("anthropic")
+	if err != nil {
+		return nil, fmt.Errorf("loading auth credentials: %w", err)
+	}
+	if cred == nil {
+		return nil, fmt.Errorf("no credentials for anthropic. Run: picoclaw auth login --provider anthropic")
+	}
+	return NewClaudeProviderWithTokenSource(cred.AccessToken, createClaudeTokenSource()), nil
+}
+
+// createCodexAuthProvider creates a Codex provider using OAuth credentials from auth store.
+func createCodexAuthProvider() (LLMProvider, error) {
+	cred, err := auth.GetCredential("openai")
+	if err != nil {
+		return nil, fmt.Errorf("loading auth credentials: %w", err)
+	}
+	if cred == nil {
+		return nil, fmt.Errorf("no credentials for openai. Run: picoclaw auth login --provider openai")
+	}
+	return NewCodexProviderWithTokenSource(cred.AccessToken, cred.AccountID, createCodexTokenSource()), nil
+}
 
 // ExtractProtocol extracts the protocol prefix and model identifier from a model string.
 // If no prefix is specified, it defaults to "openai".
@@ -60,13 +85,20 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "anthropic":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
-			// Use Claude SDK with token
-			return NewClaudeProvider(cfg.APIKey), modelID, nil
+			// Use OAuth credentials from auth store
+			provider, err := createClaudeAuthProvider()
+			if err != nil {
+				return nil, "", err
+			}
+			return provider, modelID, nil
 		}
-		// Use HTTP API
+		// Use API key with HTTP API
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = "https://api.anthropic.com/v1"
+		}
+		if cfg.APIKey == "" {
+			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
 		return NewHTTPProvider(cfg.APIKey, apiBase, cfg.Proxy), modelID, nil
 
@@ -74,11 +106,17 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return NewAntigravityProvider(), modelID, nil
 
 	case "claude-cli", "claudecli":
-		workspace := "."
+		workspace := cfg.Workspace
+		if workspace == "" {
+			workspace = "."
+		}
 		return NewClaudeCliProvider(workspace), modelID, nil
 
 	case "codex-cli", "codexcli":
-		workspace := "."
+		workspace := cfg.Workspace
+		if workspace == "" {
+			workspace = "."
+		}
 		return NewCodexCliProvider(workspace), modelID, nil
 
 	case "github-copilot", "copilot":
