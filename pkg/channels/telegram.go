@@ -276,7 +276,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 						"text": result.Text,
 					})
 
-					replyText := fmt.Sprintf("🎤 <b>Transcription: </b><i>%s</i>", escapeHTML(result.Text))
+					replyText := fmt.Sprintf("<b>Transcript: </b><i>%s</i>", escapeHTML(result.Text))
 					replyMsg := tu.Message(tu.ID(chatID), replyText)
 					replyMsg.ReplyParameters = &telego.ReplyParameters{
 						MessageID: message.MessageID,
