@@ -192,6 +192,73 @@ func TestHandoffTool_Description(t *testing.T) {
 	}
 }
 
+func TestHandoffTool_Description_WithCapabilities(t *testing.T) {
+	resolver := newMockResolver(
+		&AgentInfo{ID: "main", Name: "Main"},
+		&AgentInfo{ID: "coder", Name: "Coder", Role: "coding", Capabilities: []string{"coding", "review"}},
+	)
+	bb := NewBlackboard()
+	tool := NewHandoffTool(resolver, bb, "main")
+
+	desc := tool.Description()
+	if !strings.Contains(desc, "coding, review") {
+		t.Errorf("Description = %q, expected capabilities", desc)
+	}
+}
+
+func TestHandoffTool_ExecuteByCapability(t *testing.T) {
+	provider := &mockProvider{response: "capability result"}
+	resolver := newMockResolver(
+		&AgentInfo{ID: "main", Name: "Main", Provider: provider, Tools: tools.NewToolRegistry(), MaxIter: 5},
+		&AgentInfo{ID: "coder", Name: "Coder", Capabilities: []string{"coding"}, Provider: provider, Tools: tools.NewToolRegistry(), MaxIter: 5},
+	)
+	bb := NewBlackboard()
+	tool := NewHandoffTool(resolver, bb, "main")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"capability": "coding",
+		"task":       "write a function",
+	})
+
+	if result.IsError {
+		t.Fatalf("handoff by capability failed: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "capability result") {
+		t.Errorf("ForLLM = %q, expected 'capability result'", result.ForLLM)
+	}
+}
+
+func TestHandoffTool_ExecuteByCapability_NotFound(t *testing.T) {
+	resolver := newMockResolver(
+		&AgentInfo{ID: "main", Name: "Main"},
+	)
+	bb := NewBlackboard()
+	tool := NewHandoffTool(resolver, bb, "main")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"capability": "nonexistent",
+		"task":       "do something",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for unknown capability")
+	}
+}
+
+func TestHandoffTool_ExecuteNoAgentNoCapability(t *testing.T) {
+	resolver := newMockResolver()
+	bb := NewBlackboard()
+	tool := NewHandoffTool(resolver, bb, "main")
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"task": "do something",
+	})
+
+	if !result.IsError {
+		t.Error("expected error when neither agent_id nor capability provided")
+	}
+}
+
 func TestListAgentsTool_Execute(t *testing.T) {
 	resolver := newMockResolver(
 		&AgentInfo{ID: "main", Name: "Main Agent", Role: "general"},
