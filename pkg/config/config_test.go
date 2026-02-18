@@ -205,14 +205,14 @@ func TestConfig_Complete(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig_OpenAICodexWebSearchEnabled(t *testing.T) {
+func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
 	cfg := DefaultConfig()
-	if !cfg.Providers.OpenAI.CodexWebSearch {
-		t.Fatal("DefaultConfig().Providers.OpenAI.CodexWebSearch should be true")
+	if !cfg.Providers.OpenAI.WebSearch {
+		t.Fatal("DefaultConfig().Providers.OpenAI.WebSearch should be true")
 	}
 }
 
-func TestLoadConfig_OpenAICodexWebSearchDefaultsTrueWhenUnset(t *testing.T) {
+func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_base":""}}}`), 0o600); err != nil {
@@ -223,15 +223,15 @@ func TestLoadConfig_OpenAICodexWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error: %v", err)
 	}
-	if !cfg.Providers.OpenAI.CodexWebSearch {
+	if !cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should remain true when unset in config file")
 	}
 }
 
-func TestLoadConfig_OpenAICodexWebSearchCanBeDisabled(t *testing.T) {
+func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"codex_web_search":false}}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}}}`), 0o600); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -239,7 +239,7 @@ func TestLoadConfig_OpenAICodexWebSearchCanBeDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error: %v", err)
 	}
-	if cfg.Providers.OpenAI.CodexWebSearch {
+	if cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
 	}
 }

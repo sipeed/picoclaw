@@ -243,10 +243,12 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 		case "openai", "gpt":
 			if cfg.Providers.OpenAI.APIKey != "" || cfg.Providers.OpenAI.AuthMethod != "" {
 				if cfg.Providers.OpenAI.AuthMethod == "codex-cli" {
-					return NewCodexProviderWithTokenSource("", "", CreateCodexCliTokenSource()), nil
+					c := NewCodexProviderWithTokenSource("", "", CreateCodexCliTokenSource())
+					c.enableWebSearch = cfg.Providers.OpenAI.WebSearch
+					return c, nil
 				}
 				if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
-					return createCodexAuthProvider(cfg.Providers.OpenAI.CodexWebSearch)
+					return createCodexAuthProvider(cfg.Providers.OpenAI.WebSearch)
 				}
 				apiKey = cfg.Providers.OpenAI.APIKey
 				apiBase = cfg.Providers.OpenAI.APIBase
@@ -371,7 +373,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 
 		case (strings.Contains(lowerModel, "gpt") || strings.HasPrefix(model, "openai/")) && (cfg.Providers.OpenAI.APIKey != "" || cfg.Providers.OpenAI.AuthMethod != ""):
 			if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
-				return createCodexAuthProvider(cfg.Providers.OpenAI.CodexWebSearch)
+				return createCodexAuthProvider(cfg.Providers.OpenAI.WebSearch)
 			}
 			apiKey = cfg.Providers.OpenAI.APIKey
 			apiBase = cfg.Providers.OpenAI.APIBase

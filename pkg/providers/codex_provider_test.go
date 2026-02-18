@@ -32,9 +32,6 @@ func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	if params.MaxOutputTokens.Valid() {
 		t.Fatalf("MaxOutputTokens should not be set for Codex backend")
 	}
-	if params.MaxOutputTokens.Valid() {
-		t.Error("MaxOutputTokens should not be set for codex backend")
-	}
 }
 
 func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
