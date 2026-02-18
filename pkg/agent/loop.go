@@ -20,6 +20,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/command"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -31,19 +32,20 @@ import (
 )
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	provider       providers.LLMProvider
-	workspace      string
-	model          string
-	contextWindow  int // Maximum context window size in tokens
-	maxIterations  int
-	sessions       *session.SessionManager
-	state          *state.Manager
-	contextBuilder *ContextBuilder
-	tools          *tools.ToolRegistry
-	running        atomic.Bool
-	summarizing    sync.Map // Tracks which sessions are currently being summarized
-	channelManager *channels.Manager
+	bus             *bus.MessageBus
+	provider        providers.LLMProvider
+	workspace       string
+	model           string
+	contextWindow   int // Maximum context window size in tokens
+	maxIterations   int
+	sessions        *session.SessionManager
+	state           *state.Manager
+	contextBuilder  *ContextBuilder
+	tools           *tools.ToolRegistry
+	running         atomic.Bool
+	summarizing     sync.Map // Tracks which sessions are currently being summarized
+	channelManager  *channels.Manager
+	commandRegistry *command.Registry
 }
 
 // processOptions configures how a message is processed
@@ -139,19 +141,39 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	contextBuilder := NewContextBuilder(workspace)
 	contextBuilder.SetToolsRegistry(toolsRegistry)
 
+	// Create command registry
+	cmdRegistry := command.NewRegistry()
+	cmdRegistry.Register(&command.ShowCommand{})
+	cmdRegistry.Register(&command.ListCommand{})
+	cmdRegistry.Register(&command.SwitchCommand{})
+	cmdRegistry.Register(&command.SessionCommand{}) // Register new session command
+	cmdRegistry.Register(&command.StartCommand{})
+	cmdRegistry.Register(&command.HelpCommand{Registry: cmdRegistry})
+
 	return &AgentLoop{
-		bus:            msgBus,
-		provider:       provider,
-		workspace:      workspace,
-		model:          cfg.Agents.Defaults.Model,
-		contextWindow:  cfg.Agents.Defaults.MaxTokens, // Restore context window for summarization
-		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
-		sessions:       sessionsManager,
-		state:          stateManager,
-		contextBuilder: contextBuilder,
-		tools:          toolsRegistry,
-		summarizing:    sync.Map{},
+		bus:             msgBus,
+		provider:        provider,
+		workspace:       workspace,
+		model:           cfg.Agents.Defaults.Model,
+		contextWindow:   cfg.Agents.Defaults.MaxTokens, // Restore context window for summarization
+		maxIterations:   cfg.Agents.Defaults.MaxToolIterations,
+		sessions:        sessionsManager,
+		state:           stateManager,
+		contextBuilder:  contextBuilder,
+		tools:           toolsRegistry,
+		summarizing:     sync.Map{},
+		commandRegistry: cmdRegistry,
 	}
+}
+
+// GetSessionManager exposes the session manager.
+func (al *AgentLoop) GetSessionManager() interface{} {
+	return al.sessions
+}
+
+// GetStateManager exposes the state manager.
+func (al *AgentLoop) GetStateManager() interface{} {
+	return al.state
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
@@ -165,6 +187,19 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			msg, ok := al.bus.ConsumeInbound(ctx)
 			if !ok {
 				continue
+			}
+
+			// Resolve effective session key based on user's active session
+			// Default key is channel:chatID
+			// If user has active session "xyz", key becomes channel:chatID:xyz
+			baseKey := fmt.Sprintf("%s:%s", msg.Channel, msg.ChatID)
+			activeSession := al.state.GetUserSession(baseKey)
+
+			effectiveSessionKey := msg.SessionKey
+			if activeSession != "" && activeSession != "default" {
+				effectiveSessionKey = fmt.Sprintf("%s:%s", baseKey, activeSession)
+				// Update msg.SessionKey so downstream logic uses the correct context
+				msg.SessionKey = effectiveSessionKey
 			}
 
 			response, err := al.processMessage(ctx, msg)
@@ -208,6 +243,19 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
+// Implement AgentState interface
+func (al *AgentLoop) GetModel() string {
+	return al.model
+}
+
+func (al *AgentLoop) SetModel(model string) {
+	al.model = model
+}
+
+func (al *AgentLoop) GetChannelManager() interface{} {
+	return al.channelManager
+}
+
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
 func (al *AgentLoop) RecordLastChannel(channel string) error {
@@ -225,12 +273,21 @@ func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey stri
 }
 
 func (al *AgentLoop) ProcessDirectWithChannel(ctx context.Context, content, sessionKey, channel, chatID string) (string, error) {
+	// Resolve effective session key based on user's active session
+	baseKey := fmt.Sprintf("%s:%s", channel, chatID)
+	activeSession := al.state.GetUserSession(baseKey)
+
+	effectiveSessionKey := sessionKey
+	if activeSession != "" && activeSession != "default" {
+		effectiveSessionKey = fmt.Sprintf("%s:%s", baseKey, activeSession)
+	}
+
 	msg := bus.InboundMessage{
 		Channel:    channel,
 		SenderID:   "cron",
 		ChatID:     chatID,
 		Content:    content,
-		SessionKey: sessionKey,
+		SessionKey: effectiveSessionKey,
 	}
 
 	return al.processMessage(ctx, msg)
@@ -983,84 +1040,14 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 }
 
 func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
-	content := strings.TrimSpace(msg.Content)
-	if !strings.HasPrefix(content, "/") {
+	name, args, ok := al.commandRegistry.Parse(msg.Content)
+	if !ok {
 		return "", false
 	}
 
-	parts := strings.Fields(content)
-	if len(parts) == 0 {
-		return "", false
+	response, handled, err := al.commandRegistry.Execute(ctx, al, name, args, msg)
+	if err != nil {
+		return fmt.Sprintf("Error executing command: %v", err), true
 	}
-
-	cmd := parts[0]
-	args := parts[1:]
-
-	switch cmd {
-	case "/show":
-		if len(args) < 1 {
-			return "Usage: /show [model|channel]", true
-		}
-		switch args[0] {
-		case "model":
-			return fmt.Sprintf("Current model: %s", al.model), true
-		case "channel":
-			return fmt.Sprintf("Current channel: %s", msg.Channel), true
-		default:
-			return fmt.Sprintf("Unknown show target: %s", args[0]), true
-		}
-
-	case "/list":
-		if len(args) < 1 {
-			return "Usage: /list [models|channels]", true
-		}
-		switch args[0] {
-		case "models":
-			// TODO: Fetch available models dynamically if possible
-			return "Available models: glm-4.7, claude-3-5-sonnet, gpt-4o (configured in config.json/env)", true
-		case "channels":
-			if al.channelManager == nil {
-				return "Channel manager not initialized", true
-			}
-			channels := al.channelManager.GetEnabledChannels()
-			if len(channels) == 0 {
-				return "No channels enabled", true
-			}
-			return fmt.Sprintf("Enabled channels: %s", strings.Join(channels, ", ")), true
-		default:
-			return fmt.Sprintf("Unknown list target: %s", args[0]), true
-		}
-
-	case "/switch":
-		if len(args) < 3 || args[1] != "to" {
-			return "Usage: /switch [model|channel] to <name>", true
-		}
-		target := args[0]
-		value := args[2]
-
-		switch target {
-		case "model":
-			oldModel := al.model
-			al.model = value
-			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
-		case "channel":
-			// This changes the 'default' channel for some operations, or effectively redirects output?
-			// For now, let's just validate if the channel exists
-			if al.channelManager == nil {
-				return "Channel manager not initialized", true
-			}
-			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
-				return fmt.Sprintf("Channel '%s' not found or not enabled", value), true
-			}
-
-			// If message came from CLI, maybe we want to redirect CLI output to this channel?
-			// That would require state persistence about "redirected channel"
-			// For now, just acknowledged.
-			return fmt.Sprintf("Switched target channel to %s (Note: this currently only validates existence)", value), true
-		default:
-			return fmt.Sprintf("Unknown switch target: %s", target), true
-		}
-	}
-
-	return "", false
+	return response, handled
 }

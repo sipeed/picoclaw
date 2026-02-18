@@ -280,3 +280,41 @@ func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 		session.Updated = time.Now()
 	}
 }
+
+// ListSessions returns a list of sessions that match the given prefix.
+// The prefix is typically the channel:chatID part.
+func (sm *SessionManager) ListSessions(prefix string) []string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	var sessions []string
+	for key := range sm.sessions {
+		if strings.HasPrefix(key, prefix) {
+			sessions = append(sessions, key)
+		}
+	}
+	return sessions
+}
+
+// DeleteSession removes a session from memory and disk.
+func (sm *SessionManager) DeleteSession(key string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	// Remove from memory
+	delete(sm.sessions, key)
+
+	if sm.storage == "" {
+		return nil
+	}
+
+	// Remove from disk
+	filename := sanitizeFilename(key) + ".json"
+	sessionPath := filepath.Join(sm.storage, filename)
+
+	if err := os.Remove(sessionPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	return nil
+}
