@@ -204,3 +204,42 @@ func TestConfig_Complete(t *testing.T) {
 		t.Error("Heartbeat should be enabled by default")
 	}
 }
+
+func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Providers.OpenAI.WebSearch {
+		t.Fatal("DefaultConfig().Providers.OpenAI.WebSearch should be true")
+	}
+}
+
+func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_base":""}}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if !cfg.Providers.OpenAI.WebSearch {
+		t.Fatal("OpenAI codex web search should remain true when unset in config file")
+	}
+}
+
+func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Providers.OpenAI.WebSearch {
+		t.Fatal("OpenAI codex web search should be false when disabled in config file")
+	}
+}

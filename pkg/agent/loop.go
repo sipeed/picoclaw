@@ -71,7 +71,7 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	registry.Register(tools.NewAppendFileTool(workspace, restrict))
 
 	// Shell execution
-	registry.Register(tools.NewExecTool(workspace, restrict))
+	registry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
 
 	if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
 		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
@@ -79,6 +79,9 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
 		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+		PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 	}); searchTool != nil {
 		registry.Register(searchTool)
 	}

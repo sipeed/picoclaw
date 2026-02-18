@@ -14,7 +14,9 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": [
+        "YOUR_USER_ID"
+      ]
     },
     "discord": {
       "enabled": false,
@@ -77,7 +79,8 @@
     },
     "openai": {
       "api_key": "",
-      "api_base": ""
+      "api_base": "",
+      "web_search": true
     },
     "openrouter": {
       "api_key": "sk-or-v1-xxx",
@@ -115,10 +118,19 @@
   },
   "tools": {
     "web": {
-      "search": {
+      "brave": {
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "pplx-xxx",
+        "max_results": 5
       }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
     }
   },
   "heartbeat": {

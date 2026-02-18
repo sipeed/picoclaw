@@ -33,7 +33,14 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Copy the compiled binary from the builder stage
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 
-# Create necessary directories and initialize
+# Create non-root user and group
+RUN addgroup -g 1000 picoclaw && \
+    adduser -D -u 1000 -G picoclaw picoclaw
+
+# Switch to non-root user
+USER picoclaw
+
+# Run onboard to create initial directories and config
 RUN /usr/local/bin/picoclaw onboard
 
 # Set the binary as the entrypoint
