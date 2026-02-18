@@ -286,8 +286,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
 	sessionKey := route.SessionKey
-	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
-		sessionKey = msg.SessionKey
+	if msg.SessionKey != "" {
+		// Direct CLI calls should honor explicit session keys.
+		// Agent-scoped keys are always honored for other channels.
+		if strings.HasPrefix(msg.SessionKey, "agent:") || msg.Channel == "cli" {
+			sessionKey = msg.SessionKey
+		}
 	}
 
 	logger.InfoCF("agent", "Routed message",
@@ -448,6 +452,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, messages []providers.Message, opts processOptions) (string, int, error) {
 	iteration := 0
 	var finalContent string
+	llmMaxTokens := agent.ContextWindow
+	if llmMaxTokens <= 0 {
+		llmMaxTokens = 8192
+	}
+	llmTemperature := agent.Temperature
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -470,8 +479,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				"model":             agent.Model,
 				"messages_count":    len(messages),
 				"tools_count":       len(providerToolDefs),
-				"max_tokens":        8192,
-				"temperature":       0.7,
+				"max_tokens":        llmMaxTokens,
+				"temperature":       llmTemperature,
 				"system_prompt_len": len(messages[0].Content),
 			})
 
@@ -492,8 +501,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]interface{}{
-							"max_tokens":  8192,
-							"temperature": 0.7,
+							"max_tokens":  llmMaxTokens,
+							"temperature": llmTemperature,
 						})
 					},
 				)
@@ -508,8 +517,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				return fbResult.Response, nil
 			}
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]interface{}{
-				"max_tokens":  8192,
-				"temperature": 0.7,
+				"max_tokens":  llmMaxTokens,
+				"temperature": llmTemperature,
 			})
 		}
 
@@ -526,6 +535,10 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				strings.Contains(errMsg, "context") ||
 				strings.Contains(errMsg, "invalidparameter") ||
 				strings.Contains(errMsg, "length")
+			isTransientNetworkError := strings.Contains(errMsg, "eof") ||
+				strings.Contains(errMsg, "connection reset") ||
+				strings.Contains(errMsg, "broken pipe") ||
+				strings.Contains(errMsg, "server closed idle connection")
 
 			if isContextError && retry < maxRetries {
 				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]interface{}{
@@ -548,6 +561,17 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 					newHistory, newSummary, "",
 					nil, opts.Channel, opts.ChatID,
 				)
+				continue
+			}
+
+			if isTransientNetworkError && retry < maxRetries {
+				backoff := time.Duration(retry+1) * 2 * time.Second
+				logger.WarnCF("agent", "Transient network error, retrying LLM call", map[string]interface{}{
+					"error":       err.Error(),
+					"retry":       retry,
+					"backoff_sec": backoff.Seconds(),
+				})
+				time.Sleep(backoff)
 				continue
 			}
 			break
