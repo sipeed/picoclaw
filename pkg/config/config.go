@@ -379,15 +379,13 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// migrateProviders merges deprecated Zhipu and Moonshot provider configs into Zai.
-// If Zai is not configured, it falls back to Zhipu first, then Moonshot.
+// migrateProviders merges deprecated Zhipu provider config into Zai.
+// Zhipu AI rebranded to Z.ai in 2025 - same company, same API.
+// Note: Moonshot (Kimi) is a separate service and is NOT migrated
+// automatically, as Moonshot API keys are incompatible with Z.ai.
 func (c *Config) migrateProviders() {
-	if c.Providers.Zai.APIKey == "" {
-		if c.Providers.Zhipu.APIKey != "" {
-			c.Providers.Zai = c.Providers.Zhipu
-		} else if c.Providers.Moonshot.APIKey != "" {
-			c.Providers.Zai = c.Providers.Moonshot
-		}
+	if c.Providers.Zai.APIKey == "" && c.Providers.Zhipu.APIKey != "" {
+		c.Providers.Zai = c.Providers.Zhipu
 	}
 }
 

@@ -326,12 +326,21 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				}
 			}
 		case "moonshot", "kimi":
+			// Moonshot/Kimi is deprecated. Prefer using "zai" provider instead.
+			// Falls back to legacy Moonshot config for backward compat.
 			if cfg.Providers.Zai.APIKey != "" {
 				apiKey = cfg.Providers.Zai.APIKey
 				apiBase = cfg.Providers.Zai.APIBase
 				proxy = cfg.Providers.Zai.Proxy
 				if apiBase == "" {
 					apiBase = "https://api.z.ai/api/paas/v4"
+				}
+			} else if cfg.Providers.Moonshot.APIKey != "" {
+				apiKey = cfg.Providers.Moonshot.APIKey
+				apiBase = cfg.Providers.Moonshot.APIBase
+				proxy = cfg.Providers.Moonshot.Proxy
+				if apiBase == "" {
+					apiBase = "https://api.moonshot.cn/v1"
 				}
 			}
 		case "github_copilot", "copilot":
@@ -349,12 +358,30 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	// Fallback: detect provider from model name
 	if apiKey == "" && apiBase == "" {
 		switch {
-		case (strings.Contains(lowerModel, "kimi") || strings.Contains(lowerModel, "moonshot") || strings.HasPrefix(model, "moonshot/") || strings.Contains(lowerModel, "zai") || strings.HasPrefix(model, "zai/")) && cfg.Providers.Zai.APIKey != "":
+		case (strings.Contains(lowerModel, "zai") || strings.HasPrefix(model, "zai/")) && cfg.Providers.Zai.APIKey != "":
 			apiKey = cfg.Providers.Zai.APIKey
 			apiBase = cfg.Providers.Zai.APIBase
 			proxy = cfg.Providers.Zai.Proxy
 			if apiBase == "" {
 				apiBase = "https://api.z.ai/api/paas/v4"
+			}
+
+		case (strings.Contains(lowerModel, "kimi") || strings.Contains(lowerModel, "moonshot") || strings.HasPrefix(model, "moonshot/")):
+			// Kimi/Moonshot models: prefer Zai, fallback to legacy Moonshot config
+			if cfg.Providers.Zai.APIKey != "" {
+				apiKey = cfg.Providers.Zai.APIKey
+				apiBase = cfg.Providers.Zai.APIBase
+				proxy = cfg.Providers.Zai.Proxy
+				if apiBase == "" {
+					apiBase = "https://api.z.ai/api/paas/v4"
+				}
+			} else if cfg.Providers.Moonshot.APIKey != "" {
+				apiKey = cfg.Providers.Moonshot.APIKey
+				apiBase = cfg.Providers.Moonshot.APIBase
+				proxy = cfg.Providers.Moonshot.Proxy
+				if apiBase == "" {
+					apiBase = "https://api.moonshot.cn/v1"
+				}
 			}
 
 		case strings.HasPrefix(model, "openrouter/") || strings.HasPrefix(model, "anthropic/") || strings.HasPrefix(model, "openai/") || strings.HasPrefix(model, "meta-llama/") || strings.HasPrefix(model, "deepseek/") || strings.HasPrefix(model, "google/"):

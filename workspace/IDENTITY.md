@@ -11,7 +11,7 @@ Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
 
 ## Purpose
 - Provide intelligent AI assistance with minimal resource usage
-- Support multiple LLM providers (OpenAI, Anthropic, Zhipu, etc.)
+- Support multiple LLM providers (OpenAI, Anthropic, Z.ai, etc.)
 - Enable easy customization through skills system
 - Run on minimal hardware ($10 boards, <10MB RAM)
 
