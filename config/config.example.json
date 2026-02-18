@@ -3,6 +3,8 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
+      "provider": "",
+      "allow_patterns": [],
       "model": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
@@ -120,6 +122,10 @@
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
         "max_results": 5
       },
       "perplexity": {

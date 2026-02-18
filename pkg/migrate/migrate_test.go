@@ -261,6 +261,7 @@ func TestConvertConfig(t *testing.T) {
 					"temperature":         0.5,
 					"max_tool_iterations": float64(10),
 					"workspace":           "~/.openclaw/workspace",
+					"allow_patterns":      []interface{}{"^ls(\\s|$)", "^pwd$"},
 				},
 			},
 		}
@@ -280,6 +281,15 @@ func TestConvertConfig(t *testing.T) {
 		}
 		if cfg.Agents.Defaults.Workspace != "~/.picoclaw/workspace" {
 			t.Errorf("Workspace = %q, want %q", cfg.Agents.Defaults.Workspace, "~/.picoclaw/workspace")
+		}
+		if len(cfg.Agents.Defaults.AllowPatterns) != 2 {
+			t.Fatalf("AllowPatterns length = %d, want 2", len(cfg.Agents.Defaults.AllowPatterns))
+		}
+		if cfg.Agents.Defaults.AllowPatterns[0] != "^ls(\\s|$)" {
+			t.Errorf("AllowPatterns[0] = %q, want %q", cfg.Agents.Defaults.AllowPatterns[0], "^ls(\\s|$)")
+		}
+		if cfg.Agents.Defaults.AllowPatterns[1] != "^pwd$" {
+			t.Errorf("AllowPatterns[1] = %q, want %q", cfg.Agents.Defaults.AllowPatterns[1], "^pwd$")
 		}
 	})
 
@@ -359,6 +369,36 @@ func TestMergeConfig(t *testing.T) {
 		result := MergeConfig(existing, incoming)
 		if result.Channels.Telegram.Token != "existing-token" {
 			t.Errorf("Telegram.Token should be preserved, got %q", result.Channels.Telegram.Token)
+		}
+	})
+
+	t.Run("fills empty allow patterns", func(t *testing.T) {
+		existing := config.DefaultConfig()
+		incoming := config.DefaultConfig()
+		incoming.Agents.Defaults.AllowPatterns = []string{"^ls(\\s|$)", "^pwd$"}
+
+		result := MergeConfig(existing, incoming)
+		if len(result.Agents.Defaults.AllowPatterns) != 2 {
+			t.Fatalf("AllowPatterns length = %d, want 2", len(result.Agents.Defaults.AllowPatterns))
+		}
+		if result.Agents.Defaults.AllowPatterns[0] != "^ls(\\s|$)" {
+			t.Errorf("AllowPatterns[0] = %q, want %q", result.Agents.Defaults.AllowPatterns[0], "^ls(\\s|$)")
+		}
+	})
+
+	t.Run("preserves existing allow patterns", func(t *testing.T) {
+		existing := config.DefaultConfig()
+		existing.Agents.Defaults.AllowPatterns = []string{"^cat\\s+README\\.md$"}
+
+		incoming := config.DefaultConfig()
+		incoming.Agents.Defaults.AllowPatterns = []string{"^ls(\\s|$)"}
+
+		result := MergeConfig(existing, incoming)
+		if len(result.Agents.Defaults.AllowPatterns) != 1 {
+			t.Fatalf("AllowPatterns length = %d, want 1", len(result.Agents.Defaults.AllowPatterns))
+		}
+		if result.Agents.Defaults.AllowPatterns[0] != "^cat\\s+README\\.md$" {
+			t.Errorf("AllowPatterns[0] should be preserved, got %q", result.Agents.Defaults.AllowPatterns[0])
 		}
 	})
 }

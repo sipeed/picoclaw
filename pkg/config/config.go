@@ -61,6 +61,7 @@ type AgentsConfig struct {
 type AgentDefaults struct {
 	Workspace           string  `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
 	RestrictToWorkspace bool    `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	AllowPatterns       []string `json:"allow_patterns" env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_PATTERNS" envSeparator:","`
 	Provider            string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
 	Model               string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
 	MaxTokens           int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
@@ -233,6 +234,7 @@ func DefaultConfig() *Config {
 			Defaults: AgentDefaults{
 				Workspace:           "~/.picoclaw/workspace",
 				RestrictToWorkspace: true,
+				AllowPatterns:       []string{},
 				Provider:            "",
 				Model:               "glm-4.7",
 				MaxTokens:           8192,
