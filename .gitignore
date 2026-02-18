@@ -42,5 +42,12 @@ tasks/
 .vscode/
 .idea/
 
+# Android
+*.apk
+*.aab
+*.keystore
+*.jks
+local.properties
+
 # Added by goreleaser init:
 dist/
