@@ -5,6 +5,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.websocket.WebSockets
 import io.picoclaw.android.core.data.local.AppDatabase
+import io.picoclaw.android.core.data.local.ImageFileStorage
 import io.picoclaw.android.core.data.remote.WebSocketClient
 import io.picoclaw.android.core.data.repository.ChatRepositoryImpl
 import io.picoclaw.android.core.domain.repository.ChatRepository
@@ -51,8 +52,11 @@ val appModule = module {
     // WebSocketClient
     single { WebSocketClient(get()) }
 
+    // ImageFileStorage
+    single { ImageFileStorage(androidContext()) }
+
     // Repository
-    single<ChatRepository> { ChatRepositoryImpl(get(), get(), get()) }
+    single<ChatRepository> { ChatRepositoryImpl(get(), get(), get(), get()) }
 
     // UseCases
     factory { SendMessageUseCase(get()) }

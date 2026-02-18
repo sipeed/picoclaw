@@ -34,7 +34,7 @@ fun MessageInput(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterEnd
+        verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onCameraClick) {
             Icon(Icons.Default.CameraAlt, contentDescription = "Camera")

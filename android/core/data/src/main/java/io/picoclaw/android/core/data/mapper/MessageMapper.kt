@@ -14,7 +14,7 @@ import java.util.UUID
 object MessageMapper {
 
     fun toDomain(entity: MessageEntity): ChatMessage {
-        val images = entity.imageBase64List?.let {
+        val images = entity.imagePathList?.let {
             try {
                 Json.decodeFromString<List<String>>(it)
             } catch (_: Exception) {
@@ -37,22 +37,22 @@ object MessageMapper {
             id = UUID.randomUUID().toString(),
             content = dto.content,
             sender = MessageSender.AGENT.name,
-            imageBase64List = null,
+            imagePathList = null,
             timestamp = System.currentTimeMillis(),
             status = MessageStatus.RECEIVED.name
         )
     }
 
-    fun toEntity(text: String, images: List<ImageAttachment>, status: MessageStatus): MessageEntity {
-        val imageJson = if (images.isNotEmpty()) {
-            Json.encodeToString(images.map { it.base64 })
+    fun toEntity(text: String, imagePaths: List<String>, status: MessageStatus): MessageEntity {
+        val pathJson = if (imagePaths.isNotEmpty()) {
+            Json.encodeToString(imagePaths)
         } else null
 
         return MessageEntity(
             id = UUID.randomUUID().toString(),
             content = text,
             sender = MessageSender.USER.name,
-            imageBase64List = imageJson,
+            imagePathList = pathJson,
             timestamp = System.currentTimeMillis(),
             status = status.name
         )

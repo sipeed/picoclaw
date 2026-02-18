@@ -1,16 +1,17 @@
 [versions]
-agp = "8.7.3"
-kotlin = "2.1.0"
-ksp = "2.1.0-1.0.29"
-compose-bom = "2024.12.01"
-ktor = "3.0.3"
-koin = "4.0.2"
-serialization = "1.7.3"
-room = "2.6.1"
-lifecycle = "2.8.7"
-activity-compose = "1.9.3"
-core-ktx = "1.15.0"
-coroutines = "1.9.0"
+agp = "9.0.1"
+kotlin = "2.3.0"
+ksp = "2.3.6"
+compose-bom = "2026.01.01"
+ktor = "3.4.0"
+koin = "4.1.1"
+serialization = "1.10.0"
+room = "2.8.4"
+lifecycle = "2.10.0"
+activity-compose = "1.12.4"
+core-ktx = "1.17.0"
+coroutines = "1.10.2"
+coil = "3.1.0"
 
 [libraries]
 # Compose
@@ -47,6 +48,9 @@ koin-compose = { group = "io.insert-koin", name = "koin-androidx-compose", versi
 
 # Coroutines
 coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+
+# Coil
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

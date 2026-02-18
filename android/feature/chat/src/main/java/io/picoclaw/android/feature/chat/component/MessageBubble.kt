@@ -1,8 +1,5 @@
 package io.picoclaw.android.feature.chat.component
 
-import android.graphics.BitmapFactory
-import android.util.Base64
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,17 +10,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import io.picoclaw.android.core.domain.model.ChatMessage
 import io.picoclaw.android.core.domain.model.MessageSender
 import io.picoclaw.android.core.ui.theme.AgentBubble
 import io.picoclaw.android.core.ui.theme.UserBubble
+import java.io.File
 
 @Composable
 fun MessageBubble(
@@ -52,25 +49,15 @@ fun MessageBubble(
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                message.images.forEach { base64 ->
-                    val bitmap = remember(base64) {
-                        try {
-                            val bytes = Base64.decode(base64, Base64.DEFAULT)
-                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                        } catch (_: Exception) {
-                            null
-                        }
-                    }
-                    bitmap?.let {
-                        Image(
-                            bitmap = it,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp),
-                            contentScale = ContentScale.FillWidth
-                        )
-                    }
+                message.images.forEach { filePath ->
+                    AsyncImage(
+                        model = File(filePath),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        contentScale = ContentScale.FillWidth
+                    )
                 }
                 if (message.content.isNotEmpty()) {
                     Text(

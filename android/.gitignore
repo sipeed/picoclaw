@@ -11,3 +11,5 @@ local.properties
 /app/build
 /feature/*/build
 /core/*/build
+keystore.properties
+keystore/

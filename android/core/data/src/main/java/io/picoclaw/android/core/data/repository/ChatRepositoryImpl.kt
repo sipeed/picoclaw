@@ -1,5 +1,6 @@
 package io.picoclaw.android.core.data.repository
 
+import io.picoclaw.android.core.data.local.ImageFileStorage
 import io.picoclaw.android.core.data.local.dao.MessageDao
 import io.picoclaw.android.core.data.mapper.MessageMapper
 import io.picoclaw.android.core.data.remote.WebSocketClient
@@ -21,7 +22,8 @@ import kotlinx.coroutines.launch
 class ChatRepositoryImpl(
     private val webSocketClient: WebSocketClient,
     private val messageDao: MessageDao,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val imageFileStorage: ImageFileStorage
 ) : ChatRepository {
 
     private val _displayLimit = MutableStateFlow(INITIAL_LOAD_COUNT)
@@ -31,7 +33,7 @@ class ChatRepositoryImpl(
         _displayLimit.flatMapLatest { limit ->
             messageDao.getRecentMessages(limit)
         }.map { entities ->
-            entities.map { MessageMapper.toDomain(it) }.reversed()
+            entities.map { MessageMapper.toDomain(it) }
         }.stateIn(scope, SharingStarted.Lazily, emptyList())
 
     override val connectionState: StateFlow<ConnectionState> = webSocketClient.connectionState
@@ -46,7 +48,8 @@ class ChatRepositoryImpl(
     }
 
     override suspend fun sendMessage(text: String, images: List<ImageAttachment>) {
-        val entity = MessageMapper.toEntity(text, images, MessageStatus.SENDING)
+        val imagePaths = images.map { imageFileStorage.saveBase64ToFile(it.base64) }
+        val entity = MessageMapper.toEntity(text, imagePaths, MessageStatus.SENDING)
         messageDao.insert(entity)
         val wsDto = MessageMapper.toWsIncoming(text, images)
         val success = webSocketClient.send(wsDto)

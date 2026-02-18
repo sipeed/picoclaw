@@ -8,7 +8,7 @@ data class MessageEntity(
     @PrimaryKey val id: String,
     val content: String,
     val sender: String,
-    val imageBase64List: String?,
+    val imagePathList: String?,
     val timestamp: Long,
     val status: String
 )

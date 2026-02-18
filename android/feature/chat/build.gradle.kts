@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "io.picoclaw.android.feature.chat"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 28
@@ -38,6 +38,8 @@ dependencies {
     implementation(libs.koin.compose)
 
     implementation(libs.coroutines.android)
+
+    implementation(libs.coil.compose)
 
     debugImplementation(libs.compose.ui.tooling)
 }

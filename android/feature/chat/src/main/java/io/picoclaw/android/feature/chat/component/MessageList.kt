@@ -29,7 +29,7 @@ fun MessageList(
         contentPadding = PaddingValues(vertical = 8.dp)
     ) {
         items(
-            items = messages.reversed(),
+            items = messages,
             key = { it.id }
         ) { message ->
             MessageBubble(message = message)
