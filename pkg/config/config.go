@@ -164,6 +164,10 @@ type AgentBinding struct {
 type SessionConfig struct {
 	DMScope       string              `json:"dm_scope,omitempty"`
 	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
+	// Memory summarization: trigger when history exceeds message count or token percent of context window
+	MemoryMessageLimit int  `json:"memory_message_limit,omitempty"` // default 20
+	MemoryTokenPercent int  `json:"memory_token_percent,omitempty"` // default 75
+	MemoryNotifyUser   bool `json:"memory_notify_user,omitempty"`   // if true, send "Memory threshold reached..." to user; default false
 }
 
 type AgentDefaults struct {

@@ -9,6 +9,11 @@
       "max_tool_iterations": 20
     }
   },
+  "session": {
+    "memory_message_limit": 20,
+    "memory_token_percent": 75,
+    "memory_notify_user": false
+  },
   "model_list": [
     {
       "model_name": "gpt4",
