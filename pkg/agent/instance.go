@@ -28,6 +28,7 @@ type AgentInstance struct {
 	Sessions       *session.SessionManager
 	ContextBuilder *ContextBuilder
 	Tools          *tools.ToolRegistry
+	Capabilities   []string
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
 	Candidates     []providers.FallbackCandidate
@@ -67,6 +68,7 @@ func NewAgentInstance(
 	agentSystemPrompt := ""
 	var subagents *config.SubagentsConfig
 	var skillsFilter []string
+	var capabilities []string
 
 	if agentCfg != nil {
 		agentID = routing.NormalizeAgentID(agentCfg.ID)
@@ -75,6 +77,7 @@ func NewAgentInstance(
 		agentSystemPrompt = agentCfg.SystemPrompt
 		subagents = agentCfg.Subagents
 		skillsFilter = agentCfg.Skills
+		capabilities = agentCfg.Capabilities
 	}
 
 	maxIter := defaults.MaxToolIterations
@@ -103,6 +106,7 @@ func NewAgentInstance(
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,
 		Tools:          toolsRegistry,
+		Capabilities:   capabilities,
 		Subagents:      subagents,
 		SkillsFilter:   skillsFilter,
 		Candidates:     candidates,

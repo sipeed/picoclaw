@@ -3,6 +3,7 @@ package multiagent
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -26,6 +27,18 @@ type AgentInfo struct {
 	Provider     providers.LLMProvider
 	Tools        *tools.ToolRegistry
 	MaxIter      int
+	Capabilities []string // optional tags for capability-based routing (e.g. "coding", "research")
+}
+
+// FindAgentsByCapability returns agents that advertise the given capability.
+func FindAgentsByCapability(resolver AgentResolver, capability string) []AgentInfo {
+	var matches []AgentInfo
+	for _, a := range resolver.ListAgents() {
+		if slices.Contains(a.Capabilities, capability) {
+			matches = append(matches, a)
+		}
+	}
+	return matches
 }
 
 // HandoffRequest describes a delegation from one agent to another.

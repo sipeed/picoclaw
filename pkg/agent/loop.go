@@ -99,6 +99,7 @@ func (r *registryResolver) GetAgentInfo(agentID string) *multiagent.AgentInfo {
 		Provider:     agent.Provider,
 		Tools:        agent.Tools,
 		MaxIter:      agent.MaxIterations,
+		Capabilities: agent.Capabilities,
 	}
 }
 
@@ -111,9 +112,10 @@ func (r *registryResolver) ListAgents() []multiagent.AgentInfo {
 			continue
 		}
 		agents = append(agents, multiagent.AgentInfo{
-			ID:   agent.ID,
-			Name: agent.Name,
-			Role: agent.Role,
+			ID:           agent.ID,
+			Name:         agent.Name,
+			Role:         agent.Role,
+			Capabilities: agent.Capabilities,
 		})
 	}
 	return agents

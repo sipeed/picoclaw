@@ -224,6 +224,70 @@ func TestListAgentsTool_Empty(t *testing.T) {
 	}
 }
 
+func TestFindAgentsByCapability(t *testing.T) {
+	resolver := newMockResolver(
+		&AgentInfo{ID: "coder", Name: "Coder", Capabilities: []string{"coding", "review"}},
+		&AgentInfo{ID: "researcher", Name: "Researcher", Capabilities: []string{"research", "web_search"}},
+		&AgentInfo{ID: "generalist", Name: "Generalist"},
+	)
+
+	// Find coding agents
+	matches := FindAgentsByCapability(resolver, "coding")
+	if len(matches) != 1 || matches[0].ID != "coder" {
+		t.Errorf("FindAgentsByCapability(coding) = %v, want [coder]", matches)
+	}
+
+	// Find research agents
+	matches = FindAgentsByCapability(resolver, "research")
+	if len(matches) != 1 || matches[0].ID != "researcher" {
+		t.Errorf("FindAgentsByCapability(research) = %v, want [researcher]", matches)
+	}
+
+	// No match
+	matches = FindAgentsByCapability(resolver, "design")
+	if len(matches) != 0 {
+		t.Errorf("FindAgentsByCapability(design) = %v, want empty", matches)
+	}
+}
+
+func TestFindAgentsByCapability_Multiple(t *testing.T) {
+	resolver := newMockResolver(
+		&AgentInfo{ID: "a", Capabilities: []string{"coding"}},
+		&AgentInfo{ID: "b", Capabilities: []string{"coding", "review"}},
+		&AgentInfo{ID: "c", Capabilities: []string{"research"}},
+	)
+
+	matches := FindAgentsByCapability(resolver, "coding")
+	if len(matches) != 2 {
+		t.Errorf("expected 2 matches, got %d", len(matches))
+	}
+}
+
+func TestFindAgentsByCapability_Empty(t *testing.T) {
+	resolver := newMockResolver()
+	matches := FindAgentsByCapability(resolver, "anything")
+	if len(matches) != 0 {
+		t.Errorf("expected empty, got %v", matches)
+	}
+}
+
+func TestAgentInfo_Capabilities(t *testing.T) {
+	agent := &AgentInfo{
+		ID:           "coder",
+		Name:         "Code Agent",
+		Capabilities: []string{"coding", "review", "testing"},
+	}
+	if len(agent.Capabilities) != 3 {
+		t.Errorf("Capabilities len = %d, want 3", len(agent.Capabilities))
+	}
+
+	// Nil capabilities should not panic
+	agent2 := &AgentInfo{ID: "basic"}
+	if agent2.Capabilities != nil {
+		t.Error("expected nil Capabilities for unset agent")
+	}
+}
+
 func TestBuildHandoffSystemPrompt(t *testing.T) {
 	agent := &AgentInfo{
 		Name:         "Code Agent",
