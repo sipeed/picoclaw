@@ -1,6 +1,6 @@
 # Tools Configuration
 
-PicoClaw's tools configuration is located in the `tools` field of `config.json`.
+PicoClaw's tools configuration is located in the `tools` field of your config file (`config.json` or `config.yml`).
 
 ## Directory Structure
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -241,5 +242,83 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	}
 	if cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
+	}
+}
+
+func TestLoadConfig_YAML(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yml")
+	data := `
+agents:
+  defaults:
+    model: gpt-4o-mini
+providers:
+  openai:
+    web_search: false
+channels:
+  telegram:
+    enabled: true
+`
+	if err := os.WriteFile(configPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	if cfg.Agents.Defaults.Model != "gpt-4o-mini" {
+		t.Fatalf("Agents.Defaults.Model = %q, want %q", cfg.Agents.Defaults.Model, "gpt-4o-mini")
+	}
+	if cfg.Providers.OpenAI.WebSearch {
+		t.Fatal("OpenAI web_search should be false from YAML")
+	}
+	if !cfg.Channels.Telegram.Enabled {
+		t.Fatal("Channels.Telegram.Enabled should be true from YAML")
+	}
+}
+
+func TestSaveConfig_YAML(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yml")
+
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Model = "test-model"
+	if err := SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error: %v", err)
+	}
+
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error: %v", err)
+	}
+
+	content := string(raw)
+	if !strings.Contains(content, "agents:") {
+		t.Fatalf("yaml output should contain root key 'agents', got: %s", content)
+	}
+	if !strings.Contains(content, "defaults:") {
+		t.Fatalf("yaml output should contain key 'defaults', got: %s", content)
+	}
+	if !strings.Contains(content, "model: test-model") {
+		t.Fatalf("yaml output should contain updated model, got: %s", content)
+	}
+}
+
+func TestLoadConfig_YAML_ExtensionYAMLNotSupported(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	data := `
+agents:
+  defaults:
+    model: gpt-4o-mini
+`
+	if err := os.WriteFile(configPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	if _, err := LoadConfig(configPath); err == nil {
+		t.Fatal("LoadConfig() should fail for .yaml; only .yml is supported")
 	}
 }

@@ -192,7 +192,7 @@ docker compose --profile gateway up -d
 ### 🚀 Quick Start
 
 > [!TIP]
-> Set your API key in `~/.picoclaw/config.json`.
+> Set your API key in `~/.picoclaw/config.json` (or `~/.picoclaw/config.yml`).
 > Get API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
 > Web search is **optional** - get free [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
 
@@ -202,7 +202,7 @@ docker compose --profile gateway up -d
 picoclaw onboard
 ```
 
-**2. Configure** (`~/.picoclaw/config.json`)
+**2. Configure** (`~/.picoclaw/config.json` or `~/.picoclaw/config.yml`)
 
 ```json
 {
@@ -472,7 +472,7 @@ Connect Picoclaw to the Agent Social Network simply by sending a single message 
 
 ## ⚙️ Configuration
 
-Config file: `~/.picoclaw/config.json`
+Config file: `~/.picoclaw/config.json` (also supports `~/.picoclaw/config.yml`)
 
 ### Workspace Layout
 
@@ -835,7 +835,7 @@ To enable web search:
 1. **Option 1 (Recommended)**: Get a free API key at [https://brave.com/search/api](https://brave.com/search/api) (2000 free queries/month) for the best results.
 2. **Option 2 (No Credit Card)**: If you don't have a key, we automatically fall back to **DuckDuckGo** (no key required).
 
-Add the key to `~/.picoclaw/config.json` if using Brave:
+Add the key to your config file (`~/.picoclaw/config.json` or `~/.picoclaw/config.yml`) if using Brave:
 
 ```json
 {

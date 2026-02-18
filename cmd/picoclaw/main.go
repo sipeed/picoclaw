@@ -985,7 +985,19 @@ func authStatusCmd() {
 
 func getConfigPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "config.json")
+	configDir := filepath.Join(home, ".picoclaw")
+
+	jsonPath := filepath.Join(configDir, "config.json")
+	if _, err := os.Stat(jsonPath); err == nil {
+		return jsonPath
+	}
+
+	ymlPath := filepath.Join(configDir, "config.yml")
+	if _, err := os.Stat(ymlPath); err == nil {
+		return ymlPath
+	}
+
+	return jsonPath
 }
 
 func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration, config *config.Config) *cron.CronService {
