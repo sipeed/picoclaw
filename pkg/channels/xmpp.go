@@ -47,6 +47,9 @@ type XMPPChannel struct {
 	lastTime     time.Time
 }
 
+const chatStatesNS = "http://jabber.org/protocol/chatstates"
+const receiptsNS = "urn:xmpp:receipts"
+
 func NewXMPPChannel(cfg config.XMPPConfig, messageBus *bus.MessageBus) (*XMPPChannel, error) {
 	if cfg.JID == "" {
 		return nil, fmt.Errorf("xmpp jid is required")
@@ -269,12 +272,24 @@ func (c *XMPPChannel) sendChatMessage(to jid.JID, body string, desc string, medi
 		payload = xmlstream.MultiReader(children...)
 	}
 
+	stateElem := xmlstream.Wrap(
+		nil,
+		xml.StartElement{
+			Name: xml.Name{Local: "active"},
+			Attr: []xml.Attr{
+				{Name: xml.Name{Local: "xmlns"}, Value: chatStatesNS},
+			},
+		},
+	)
+
+	fullPayload := xmlstream.MultiReader(payload, stateElem)
+
 	st := stanza.Message{
 		Type: stanza.ChatMessage,
 		To:   to,
 	}
 
-	return c.sendStanza(st.Wrap(payload))
+	return c.sendStanza(st.Wrap(fullPayload))
 }
 
 func (c *XMPPChannel) sendStanza(r xml.TokenReader) error {
@@ -302,7 +317,10 @@ func (c *XMPPChannel) sendStanza(r xml.TokenReader) error {
 
 func (c *XMPPChannel) handleIncomingMessage(msg stanza.Message, t xmlstream.TokenReadEncoder) error {
 	var payload struct {
-		Body string `xml:"body"`
+		Body    string `xml:"body"`
+		Request *struct {
+			XMLName xml.Name `xml:"urn:xmpp:receipts request"`
+		} `xml:"urn:xmpp:receipts request"`
 	}
 
 	d := xml.NewTokenDecoder(t)
@@ -312,7 +330,14 @@ func (c *XMPPChannel) handleIncomingMessage(msg stanza.Message, t xmlstream.Toke
 
 	content := strings.TrimSpace(payload.Body)
 	if content == "" {
+		if payload.Request != nil && msg.ID != "" {
+			go c.sendDeliveryReceipt(msg)
+		}
 		return nil
+	}
+
+	if payload.Request != nil && msg.ID != "" {
+		go c.sendDeliveryReceipt(msg)
 	}
 
 	fromBare := msg.From.Bare().String()
@@ -340,6 +365,71 @@ func (c *XMPPChannel) handleIncomingMessage(msg stanza.Message, t xmlstream.Toke
 	})
 
 	return nil
+}
+
+func (c *XMPPChannel) sendChatState(to jid.JID, state string) error {
+	if !c.IsRunning() || c.session == nil {
+		return nil
+	}
+
+	elem := xmlstream.Wrap(
+		nil,
+		xml.StartElement{
+			Name: xml.Name{Local: state},
+			Attr: []xml.Attr{
+				{Name: xml.Name{Local: "xmlns"}, Value: chatStatesNS},
+			},
+		},
+	)
+
+	msg := stanza.Message{
+		Type: stanza.ChatMessage,
+		To:   to,
+	}
+
+	return c.sendStanza(msg.Wrap(elem))
+}
+
+func (c *XMPPChannel) SendTyping(ctx context.Context, chatID string, composing bool) error {
+	if !c.IsRunning() || c.session == nil {
+		return nil
+	}
+
+	to, err := jid.Parse(chatID)
+	if err != nil {
+		return err
+	}
+
+	state := "active"
+	if composing {
+		state = "composing"
+	}
+
+	return c.sendChatState(to, state)
+}
+
+func (c *XMPPChannel) sendDeliveryReceipt(orig stanza.Message) error {
+	if !c.IsRunning() || c.session == nil || orig.ID == "" {
+		return nil
+	}
+
+	payload := xmlstream.Wrap(
+		nil,
+		xml.StartElement{
+			Name: xml.Name{Local: "received"},
+			Attr: []xml.Attr{
+				{Name: xml.Name{Local: "xmlns"}, Value: receiptsNS},
+				{Name: xml.Name{Local: "id"}, Value: orig.ID},
+			},
+		},
+	)
+
+	reply := stanza.Message{
+		Type: orig.Type,
+		To:   orig.From,
+	}
+
+	return c.sendStanza(reply.Wrap(payload))
 }
 
 func (c *XMPPChannel) discoverUploadService(ctx context.Context) (jid.JID, error) {

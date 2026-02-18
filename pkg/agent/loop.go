@@ -275,17 +275,19 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"session_key": msg.SessionKey,
 		})
 
-	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
 	}
 
-	// Check for commands
 	if response, handled := al.handleCommand(ctx, msg); handled {
 		return response, nil
 	}
 
-	// Process as user message
+	if al.channelManager != nil && msg.Channel != "" && msg.ChatID != "" && !constants.IsInternalChannel(msg.Channel) {
+		al.channelManager.NotifyTyping(ctx, msg.Channel, msg.ChatID, true)
+		defer al.channelManager.NotifyTyping(ctx, msg.Channel, msg.ChatID, false)
+	}
+
 	return al.runAgentLoop(ctx, processOptions{
 		SessionKey:      msg.SessionKey,
 		Channel:         msg.Channel,

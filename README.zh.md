@@ -500,6 +500,13 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 - 对安全敏感的 XMPP 渠道设置较短 TTL（如 `1h`），降低明文历史泄露风险
 - 对相对不敏感或需要长期上下文的渠道保留 `"false"`，完全不自动清理
 
+对于 XMPP 渠道，Agent 会默认：
+
+- 在处理用户消息时发送「正在输入 / active」状态（XEP‑0085），方便前端展示输入指示；
+- 在收到带 `<request xmlns="urn:xmpp:receipts"/>` 的消息时自动发送 `<received/>` 回执（XEP‑0184）。
+
+这两个行为都是**默认开启且向后兼容**的：旧版 `config.json` 不需要增加任何字段即可使用，新版客户端若不支持相应 XEP 也会直接忽略这些附加元素。
+
 ### 心跳 / 周期性任务 (Heartbeat)
 
 PicoClaw 可以自动执行周期性任务。在工作区创建 `HEARTBEAT.md` 文件：
