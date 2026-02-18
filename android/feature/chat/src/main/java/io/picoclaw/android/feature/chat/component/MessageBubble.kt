@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,8 +62,9 @@ fun MessageBubble(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 8.dp)
-                            .aspectRatio(ratio),
-                        contentScale = ContentScale.FillWidth
+                            .heightIn(max = 360.dp)
+                            .aspectRatio(ratio, matchHeightConstraintsFirst = ratio < 0.75f),
+                        contentScale = ContentScale.Fit
                     )
                 }
                 if (message.content.isNotEmpty()) {
