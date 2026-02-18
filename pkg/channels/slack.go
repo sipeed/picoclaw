@@ -25,7 +25,7 @@ type SlackChannel struct {
 	api          *slack.Client
 	socketClient *socketmode.Client
 	botUserID    string
-	transcriber  *voice.GroqTranscriber
+	transcriber  voice.Transcriber
 	ctx          context.Context
 	cancel       context.CancelFunc
 	pendingAcks  sync.Map
@@ -58,7 +58,7 @@ func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*Slack
 	}, nil
 }
 
-func (c *SlackChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
+func (c *SlackChannel) SetTranscriber(transcriber voice.Transcriber) {
 	c.transcriber = transcriber
 }
 
