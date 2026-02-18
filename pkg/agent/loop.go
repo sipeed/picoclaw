@@ -31,19 +31,23 @@ import (
 )
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	provider       providers.LLMProvider
-	workspace      string
-	model          string
-	contextWindow  int // Maximum context window size in tokens
-	maxIterations  int
-	sessions       *session.SessionManager
-	state          *state.Manager
-	contextBuilder *ContextBuilder
-	tools          *tools.ToolRegistry
-	running        atomic.Bool
-	summarizing    sync.Map // Tracks which sessions are currently being summarized
-	channelManager *channels.Manager
+	bus                    *bus.MessageBus
+	provider               providers.LLMProvider
+	workspace              string
+	model                  string
+	contextWindow          int // Maximum context window size in tokens
+	maxIterations          int
+	sessions               *session.SessionManager
+	state                  *state.Manager
+	contextBuilder         *ContextBuilder
+	tools                  *tools.ToolRegistry
+	running                atomic.Bool
+	summarizing             sync.Map // Tracks which sessions are currently being summarized
+	channelManager          *channels.Manager
+	compressionTriggerRatio float64
+	summaryTriggerMessages  int
+	summaryTriggerRatio    float64
+	temperature            float64
 }
 
 // processOptions configures how a message is processed
@@ -117,7 +121,14 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus)
 
 	// Create subagent manager with its own tool registry
-	subagentManager := tools.NewSubagentManager(provider, cfg.Agents.Defaults.Model, workspace, msgBus)
+	subagentManager := tools.NewSubagentManager(
+		provider,
+		cfg.Agents.Defaults.Model,
+		cfg.Agents.Defaults.MaxTokens,
+		cfg.Agents.Defaults.Temperature,
+		workspace,
+		msgBus,
+	)
 	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus)
 	// Subagent doesn't need spawn/subagent tools to avoid recursion
 	subagentManager.SetTools(subagentTools)
@@ -140,17 +151,21 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	contextBuilder.SetToolsRegistry(toolsRegistry)
 
 	return &AgentLoop{
-		bus:            msgBus,
-		provider:       provider,
-		workspace:      workspace,
-		model:          cfg.Agents.Defaults.Model,
-		contextWindow:  cfg.Agents.Defaults.MaxTokens, // Restore context window for summarization
-		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
-		sessions:       sessionsManager,
-		state:          stateManager,
-		contextBuilder: contextBuilder,
-		tools:          toolsRegistry,
-		summarizing:    sync.Map{},
+		bus:                    msgBus,
+		provider:               provider,
+		workspace:              workspace,
+		model:                  cfg.Agents.Defaults.Model,
+		contextWindow:          cfg.Agents.Defaults.MaxTokens,
+		maxIterations:          cfg.Agents.Defaults.MaxToolIterations,
+		sessions:               sessionsManager,
+		state:                  stateManager,
+		contextBuilder:         contextBuilder,
+		tools:                  toolsRegistry,
+		summarizing:             sync.Map{},
+		compressionTriggerRatio: cfg.Agents.Defaults.CompressionTriggerRatio,
+		summaryTriggerMessages:  cfg.Agents.Defaults.SummaryTriggerMessages,
+		summaryTriggerRatio:    cfg.Agents.Defaults.SummaryTriggerRatio,
+		temperature:            cfg.Agents.Defaults.Temperature,
 	}
 }
 
@@ -446,8 +461,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 				"model":             al.model,
 				"messages_count":    len(messages),
 				"tools_count":       len(providerToolDefs),
-				"max_tokens":        8192,
-				"temperature":       0.7,
+				"max_tokens":        al.contextWindow,
+				"temperature":       al.temperature,
 				"system_prompt_len": len(messages[0].Content),
 			})
 
@@ -466,8 +481,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 		maxRetries := 2
 		for retry := 0; retry <= maxRetries; retry++ {
 			response, err = al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
-				"max_tokens":  8192,
-				"temperature": 0.7,
+				"max_tokens":  al.contextWindow,
+				"temperature": al.temperature,
 			})
 
 			if err == nil {
@@ -726,9 +741,9 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string) {
 func (al *AgentLoop) maybeSummarize(sessionKey, channel, chatID string) {
 	newHistory := al.sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
-	threshold := al.contextWindow * 75 / 100
+	threshold := int(float64(al.contextWindow) * al.summaryTriggerRatio)
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	if len(newHistory) > al.summaryTriggerMessages || tokenEstimate > threshold {
 		if _, loading := al.summarizing.LoadOrStore(sessionKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(sessionKey)
@@ -890,8 +905,8 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 	toSummarize := history[:len(history)-4]
 
 	// Oversized Message Guard
-	// Skip messages larger than 50% of context window to prevent summarizer overflow
-	maxMessageTokens := al.contextWindow / 2
+	// Skip messages larger than compression_trigger_ratio of context window to prevent summarizer overflow
+	maxMessageTokens := int(float64(al.contextWindow) * al.compressionTriggerRatio)
 	validMessages := make([]providers.Message, 0)
 	omitted := false
 

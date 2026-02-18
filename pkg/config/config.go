@@ -59,13 +59,16 @@ type AgentsConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace           string  `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool    `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
-	MaxTokens           int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace               string  `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace     bool    `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Provider                string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	Model                   string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	MaxTokens               int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature             float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations       int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	CompressionTriggerRatio float64 `json:"compression_trigger_ratio" env:"PICOCLAW_AGENTS_DEFAULTS_COMPRESSION_TRIGGER_RATIO"`
+	SummaryTriggerMessages  int     `json:"summary_trigger_messages" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARY_TRIGGER_MESSAGES"`
+	SummaryTriggerRatio    float64 `json:"summary_trigger_ratio" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARY_TRIGGER_RATIO"`
 }
 
 type ChannelsConfig struct {
@@ -242,13 +245,16 @@ func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:           "~/.picoclaw/workspace",
-				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "glm-4.7",
-				MaxTokens:           8192,
-				Temperature:         0.7,
-				MaxToolIterations:   20,
+				Workspace:               "~/.picoclaw/workspace",
+				RestrictToWorkspace:     true,
+				Provider:                "",
+				Model:                   "glm-4.7",
+				MaxTokens:               8192,
+				Temperature:             0.7,
+				MaxToolIterations:       20,
+				CompressionTriggerRatio: 0.75,
+				SummaryTriggerMessages:  20,
+				SummaryTriggerRatio:    0.75,
 			},
 		},
 		Channels: ChannelsConfig{

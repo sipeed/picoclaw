@@ -221,7 +221,10 @@ picoclaw onboard
       "model": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "compression_trigger_ratio": 0.75,
+      "summary_trigger_messages": 20,
+      "summary_trigger_ratio": 0.75
     }
   },
   "providers": {
@@ -540,6 +543,30 @@ Agent 读取 HEARTBEAT.md
 
 * `PICOCLAW_HEARTBEAT_ENABLED=false` 禁用
 * `PICOCLAW_HEARTBEAT_INTERVAL=60` 更改间隔
+
+### 对话阈值配置 (Threshold Configuration)
+
+PicoClaw 支持自定义对话总结和压缩触发阈值，避免过早截断上下文。
+
+| 配置项 | 默认值 | 描述 |
+| --- | --- | --- |
+| `max_tokens` | `8192` | 上下文窗口大小和 LLM 输出 token 上限 |
+| `compression_trigger_ratio` | `0.75` | 当上下文超过 `max_tokens × compression_trigger_ratio` 时触发强制压缩（forceCompression） |
+| `summary_trigger_messages` | `20` | 当历史消息数超过此值时触发自动总结（设为 0 可禁用按条数触发） |
+| `summary_trigger_ratio` | `0.75` | 当历史消息 token 估算超过 `max_tokens × summary_trigger_ratio` 时触发自动总结 |
+
+**环境变量:**
+
+* `PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS=16384` 提升上下文窗口
+* `PICOCLAW_AGENTS_DEFAULTS_COMPRESSION_TRIGGER_RATIO=0.9` 提高压缩触发阈值（例如从 75% 提升到 90%）
+* `PICOCLAW_AGENTS_DEFAULTS_SUMMARY_TRIGGER_MESSAGES=50` 延迟按条数触发（例如从 20 条提升到 50 条）
+* `PICOCLAW_AGENTS_DEFAULTS_SUMMARY_TRIGGER_RATIO=0.85` 提高总结触发阈值（例如从 75% 提升到 85%）
+
+**使用建议:**
+
+- **延长对话**: 提高所有阈值，让对话保持更长时间
+- **快速响应**: 降低阈值，更快触发总结和压缩
+- **仅按 token 控制**: 设置 `summary_trigger_messages=0`，仅使用 `summary_trigger_ratio` 控制总结触发
 
 ### 提供商 (Providers)
 

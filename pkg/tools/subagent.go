@@ -26,6 +26,8 @@ type SubagentManager struct {
 	mu            sync.RWMutex
 	provider      providers.LLMProvider
 	defaultModel  string
+	maxTokens     int
+	temperature   float64
 	bus           *bus.MessageBus
 	workspace     string
 	tools         *ToolRegistry
@@ -33,11 +35,13 @@ type SubagentManager struct {
 	nextID        int
 }
 
-func NewSubagentManager(provider providers.LLMProvider, defaultModel, workspace string, bus *bus.MessageBus) *SubagentManager {
+func NewSubagentManager(provider providers.LLMProvider, defaultModel string, maxTokens int, temperature float64, workspace string, bus *bus.MessageBus) *SubagentManager {
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
 		defaultModel:  defaultModel,
+		maxTokens:     maxTokens,
+		temperature:   temperature,
 		bus:           bus,
 		workspace:     workspace,
 		tools:         NewToolRegistry(),
@@ -123,17 +127,17 @@ After completing the task, provide a clear summary of what was done.`
 	sm.mu.RLock()
 	tools := sm.tools
 	maxIter := sm.maxIterations
+	maxTokens := sm.maxTokens
+	temperature := sm.temperature
 	sm.mu.RUnlock()
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
 		Provider:      sm.provider,
 		Model:         sm.defaultModel,
+		MaxTokens:     maxTokens,
+		Temperature:   temperature,
 		Tools:         tools,
 		MaxIterations: maxIter,
-		LLMOptions: map[string]any{
-			"max_tokens":  4096,
-			"temperature": 0.7,
-		},
 	}, messages, task.OriginChannel, task.OriginChatID)
 
 	sm.mu.Lock()

@@ -6,7 +6,10 @@
       "model": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "compression_trigger_ratio": 0.75,
+      "summary_trigger_messages": 20,
+      "summary_trigger_ratio": 0.75
     }
   },
   "channels": {
