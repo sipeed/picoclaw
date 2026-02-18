@@ -1,0 +1,10 @@
+FROM alpine:3.21
+
+ARG TARGETPLATFORM
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY $TARGETPLATFORM/picoclaw /usr/local/bin/picoclaw
+
+ENTRYPOINT ["picoclaw"]
+CMD ["gateway"]

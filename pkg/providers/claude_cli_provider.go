@@ -171,68 +171,14 @@ func (p *ClaudeCliProvider) parseClaudeCliResponse(output string) (*LLMResponse,
 	}, nil
 }
 
-// extractToolCalls parses tool call JSON from the response text.
+// extractToolCalls delegates to the shared extractToolCallsFromText function.
 func (p *ClaudeCliProvider) extractToolCalls(text string) []ToolCall {
-	start := strings.Index(text, `{"tool_calls"`)
-	if start == -1 {
-		return nil
-	}
-
-	end := findMatchingBrace(text, start)
-	if end == start {
-		return nil
-	}
-
-	jsonStr := text[start:end]
-
-	var wrapper struct {
-		ToolCalls []struct {
-			ID       string `json:"id"`
-			Type     string `json:"type"`
-			Function struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			} `json:"function"`
-		} `json:"tool_calls"`
-	}
-
-	if err := json.Unmarshal([]byte(jsonStr), &wrapper); err != nil {
-		return nil
-	}
-
-	var result []ToolCall
-	for _, tc := range wrapper.ToolCalls {
-		var args map[string]interface{}
-		json.Unmarshal([]byte(tc.Function.Arguments), &args)
-
-		result = append(result, ToolCall{
-			ID:        tc.ID,
-			Type:      tc.Type,
-			Name:      tc.Function.Name,
-			Arguments: args,
-			Function: &FunctionCall{
-				Name:      tc.Function.Name,
-				Arguments: tc.Function.Arguments,
-			},
-		})
-	}
-
-	return result
+	return extractToolCallsFromText(text)
 }
 
-// stripToolCallsJSON removes tool call JSON from response text.
+// stripToolCallsJSON delegates to the shared stripToolCallsFromText function.
 func (p *ClaudeCliProvider) stripToolCallsJSON(text string) string {
-	start := strings.Index(text, `{"tool_calls"`)
-	if start == -1 {
-		return text
-	}
-
-	end := findMatchingBrace(text, start)
-	if end == start {
-		return text
-	}
-
-	return strings.TrimSpace(text[:start] + text[end:])
+	return stripToolCallsFromText(text)
 }
 
 // findMatchingBrace finds the index after the closing brace matching the opening brace at pos.

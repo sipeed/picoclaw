@@ -89,7 +89,14 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult(guardError)
 	}
 
-	cmdCtx, cancel := context.WithTimeout(ctx, t.timeout)
+	// timeout == 0 means no timeout
+	var cmdCtx context.Context
+	var cancel context.CancelFunc
+	if t.timeout > 0 {
+		cmdCtx, cancel = context.WithTimeout(ctx, t.timeout)
+	} else {
+		cmdCtx, cancel = context.WithCancel(ctx)
+	}
 	defer cancel()
 
 	var cmd *exec.Cmd
