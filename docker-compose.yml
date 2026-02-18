@@ -1,13 +1,20 @@
 services:
+  # ----------------------------------------
+  # PicoClaw Agent (one-shot query)
+  #   docker compose run --rm picoclaw-agent -m "Hello"
+  # ----------------------------------------
   picoclaw-agent:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: picoclaw-agent
-    profiles: [agent]
+    profiles:
+      - agent
     volumes:
-      - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
-      - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
+      # Configuration file
+      - ./config/config.json:/root/.picoclaw/config.json:ro
+      # Persistent workspace (sessions, memory, logs)
+      - picoclaw-workspace:/root/.picoclaw/workspace
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
@@ -36,9 +43,9 @@ services:
       - gateway
     volumes:
       # Configuration file
-      - ./config/config.json:/root/.picoclaw/config.json:ro
+      - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
       # Persistent workspace (sessions, memory, logs)
-      - picoclaw-workspace:/root/.picoclaw/workspace
+      - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
     command: ["gateway"]
     ports:
       - "18790:18790"
