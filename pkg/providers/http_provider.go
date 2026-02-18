@@ -90,6 +90,12 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		}
 	}
 
+	// K2-Think models require reasoning_effort parameter for proper tool calling
+	lowerModel := strings.ToLower(model)
+	if strings.Contains(lowerModel, "k2-think") {
+		requestBody["reasoning_effort"] = "high"
+	}
+
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -127,8 +133,9 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
-				Content   string `json:"content"`
-				ToolCalls []struct {
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"` // For reasoning models like K2-Think
+				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function *struct {
@@ -185,8 +192,23 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 		})
 	}
 
+	// For reasoning models (like K2-Think), use reasoning_content if content is null/empty
+	content := choice.Message.Content
+	if content == "" && choice.Message.ReasoningContent != "" {
+		content = choice.Message.ReasoningContent
+	}
+
+	// Strip special tokens that some models include in their output
+	content = strings.TrimSpace(content)
+	specialTokens := []string{"<|im_end|>", "<|endoftext|>", "</think_fast>", "<|end|>"}
+	for _, token := range specialTokens {
+		content = strings.TrimSuffix(content, token)
+		content = strings.TrimPrefix(content, token)
+		content = strings.TrimSpace(content)
+	}
+
 	return &LLMResponse{
-		Content:      choice.Message.Content,
+		Content:      content,
 		ToolCalls:    toolCalls,
 		FinishReason: choice.FinishReason,
 		Usage:        apiResponse.Usage,
