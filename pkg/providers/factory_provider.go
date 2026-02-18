@@ -32,13 +32,14 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
 // Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
-func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, error) {
+// Returns the provider, the model ID (without protocol prefix), and any error.
+func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("config is nil")
+		return nil, "", fmt.Errorf("config is nil")
 	}
 
 	if cfg.Model == "" {
-		return nil, fmt.Errorf("model is required")
+		return nil, "", fmt.Errorf("model is required")
 	}
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
@@ -49,36 +50,36 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, error) {
 		"volcengine", "vllm", "qwen":
 		// All OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
-			return nil, fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProvider(cfg.APIKey, apiBase, cfg.Proxy), nil
+		return NewHTTPProvider(cfg.APIKey, apiBase, cfg.Proxy), modelID, nil
 
 	case "anthropic":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
 			// Use Claude SDK with token
-			return NewClaudeProvider(cfg.APIKey), nil
+			return NewClaudeProvider(cfg.APIKey), modelID, nil
 		}
 		// Use HTTP API
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = "https://api.anthropic.com/v1"
 		}
-		return NewHTTPProvider(cfg.APIKey, apiBase, cfg.Proxy), nil
+		return NewHTTPProvider(cfg.APIKey, apiBase, cfg.Proxy), modelID, nil
 
 	case "antigravity":
-		return NewAntigravityProvider(), nil
+		return NewAntigravityProvider(), modelID, nil
 
 	case "claude-cli", "claudecli":
 		workspace := "."
-		return NewClaudeCliProvider(workspace), nil
+		return NewClaudeCliProvider(workspace), modelID, nil
 
 	case "codex-cli", "codexcli":
 		workspace := "."
-		return NewCodexCliProvider(workspace), nil
+		return NewCodexCliProvider(workspace), modelID, nil
 
 	case "github-copilot", "copilot":
 		apiBase := cfg.APIBase
@@ -89,10 +90,14 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, error) {
 		if connectMode == "" {
 			connectMode = "grpc"
 		}
-		return NewGitHubCopilotProvider(apiBase, connectMode, modelID)
+		provider, err := NewGitHubCopilotProvider(apiBase, connectMode, modelID)
+		if err != nil {
+			return nil, "", err
+		}
+		return provider, modelID, nil
 
 	default:
-		return nil, fmt.Errorf("unknown protocol %q in model %q", protocol, cfg.Model)
+		return nil, "", fmt.Errorf("unknown protocol %q in model %q", protocol, cfg.Model)
 	}
 }
 

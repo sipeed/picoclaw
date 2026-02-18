@@ -419,7 +419,7 @@ func TestCreateProvider_ClaudeCli(t *testing.T) {
 	cfg.Agents.Defaults.Provider = "claude-cli"
 	cfg.Agents.Defaults.Workspace = "/test/ws"
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider(claude-cli) error = %v", err)
 	}
@@ -437,7 +437,7 @@ func TestCreateProvider_ClaudeCode(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Provider = "claude-code"
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider(claude-code) error = %v", err)
 	}
@@ -450,7 +450,7 @@ func TestCreateProvider_ClaudeCodec(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Provider = "claudecode"
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider(claudecode) error = %v", err)
 	}
@@ -464,7 +464,7 @@ func TestCreateProvider_ClaudeCliDefaultWorkspace(t *testing.T) {
 	cfg.Agents.Defaults.Provider = "claude-cli"
 	cfg.Agents.Defaults.Workspace = ""
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider error = %v", err)
 	}
