@@ -1,5 +1,6 @@
 package io.picoclaw.android.core.data.remote
 
+import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.websocket.Frame
@@ -9,9 +10,7 @@ import io.picoclaw.android.core.data.remote.dto.WsIncoming
 import io.picoclaw.android.core.data.remote.dto.WsOutgoing
 import io.picoclaw.android.core.domain.model.ConnectionState
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +23,10 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class WebSocketClient(private val client: HttpClient) {
+class WebSocketClient(
+    private val client: HttpClient,
+    private val scope: CoroutineScope
+) {
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -35,7 +37,6 @@ class WebSocketClient(private val client: HttpClient) {
     private var session: WebSocketSession? = null
     private var connectJob: Job? = null
     private val json = Json { ignoreUnknownKeys = true }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     var wsUrl: String = "ws://127.0.0.1:18793/ws"
 
@@ -56,12 +57,14 @@ class WebSocketClient(private val client: HttpClient) {
                                 try {
                                     val msg = json.decodeFromString<WsOutgoing>(text)
                                     _incomingMessages.emit(msg)
-                                } catch (_: Exception) {
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Failed to parse WebSocket message", e)
                                 }
                             }
                         }
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    Log.w(TAG, "WebSocket connection error", e)
                 }
                 session = null
                 _connectionState.value = ConnectionState.RECONNECTING
@@ -82,12 +85,14 @@ class WebSocketClient(private val client: HttpClient) {
         return try {
             session?.send(Frame.Text(json.encodeToString(dto)))
             true
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to send WebSocket message", e)
             false
         }
     }
 
     companion object {
+        private const val TAG = "WebSocketClient"
         private const val INITIAL_DELAY = 1000L
         private const val MAX_DELAY = 30000L
     }

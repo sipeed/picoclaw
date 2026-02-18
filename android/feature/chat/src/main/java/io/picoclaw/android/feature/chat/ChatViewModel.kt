@@ -2,7 +2,8 @@ package io.picoclaw.android.feature.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import io.picoclaw.android.core.domain.repository.ChatRepository
+import io.picoclaw.android.core.domain.usecase.ConnectChatUseCase
+import io.picoclaw.android.core.domain.usecase.DisconnectChatUseCase
 import io.picoclaw.android.core.domain.usecase.LoadMoreMessagesUseCase
 import io.picoclaw.android.core.domain.usecase.ObserveConnectionUseCase
 import io.picoclaw.android.core.domain.usecase.ObserveMessagesUseCase
@@ -18,14 +19,15 @@ class ChatViewModel(
     private val observeMessages: ObserveMessagesUseCase,
     private val observeConnection: ObserveConnectionUseCase,
     private val loadMoreMessages: LoadMoreMessagesUseCase,
-    private val repository: ChatRepository
+    private val connectChat: ConnectChatUseCase,
+    private val disconnectChat: DisconnectChatUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     init {
-        repository.connect()
+        connectChat()
 
         viewModelScope.launch {
             observeMessages().collect { messages ->
@@ -80,6 +82,6 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        repository.disconnect()
+        disconnectChat()
     }
 }

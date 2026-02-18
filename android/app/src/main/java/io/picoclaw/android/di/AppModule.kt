@@ -9,6 +9,8 @@ import io.picoclaw.android.core.data.local.ImageFileStorage
 import io.picoclaw.android.core.data.remote.WebSocketClient
 import io.picoclaw.android.core.data.repository.ChatRepositoryImpl
 import io.picoclaw.android.core.domain.repository.ChatRepository
+import io.picoclaw.android.core.domain.usecase.ConnectChatUseCase
+import io.picoclaw.android.core.domain.usecase.DisconnectChatUseCase
 import io.picoclaw.android.core.domain.usecase.LoadMoreMessagesUseCase
 import io.picoclaw.android.core.domain.usecase.ObserveConnectionUseCase
 import io.picoclaw.android.core.domain.usecase.ObserveMessagesUseCase
@@ -33,7 +35,7 @@ val appModule = module {
             androidContext(),
             AppDatabase::class.java,
             "picoclaw.db"
-        ).build()
+        ).fallbackToDestructiveMigration(dropAllTables = true).build()
     }
     single { get<AppDatabase>().messageDao() }
 
@@ -50,7 +52,7 @@ val appModule = module {
     }
 
     // WebSocketClient
-    single { WebSocketClient(get()) }
+    single { WebSocketClient(get(), get()) }
 
     // ImageFileStorage
     single { ImageFileStorage(androidContext()) }
@@ -63,7 +65,9 @@ val appModule = module {
     factory { ObserveMessagesUseCase(get()) }
     factory { ObserveConnectionUseCase(get()) }
     factory { LoadMoreMessagesUseCase(get()) }
+    factory { ConnectChatUseCase(get()) }
+    factory { DisconnectChatUseCase(get()) }
 
     // ViewModel
-    viewModel { ChatViewModel(get(), get(), get(), get(), get()) }
+    viewModel { ChatViewModel(get(), get(), get(), get(), get(), get()) }
 }

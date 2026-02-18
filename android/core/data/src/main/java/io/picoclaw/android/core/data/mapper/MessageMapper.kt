@@ -1,5 +1,6 @@
 package io.picoclaw.android.core.data.mapper
 
+import android.util.Log
 import io.picoclaw.android.core.data.local.entity.MessageEntity
 import io.picoclaw.android.core.data.remote.dto.WsIncoming
 import io.picoclaw.android.core.data.remote.dto.WsOutgoing
@@ -23,7 +24,8 @@ object MessageMapper {
                 Json.decodeFromString<List<ImageEntry>>(it).map { e ->
                     ImageData(e.path, e.width, e.height)
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.w("MessageMapper", "Failed to parse image path list", e)
                 emptyList()
             }
         } ?: emptyList()

@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import io.picoclaw.android.core.domain.model.ImageData
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -17,7 +19,7 @@ class ImageFileStorage(private val context: Context) {
         val base64: String
     )
 
-    fun saveFromUri(uriString: String): SaveResult {
+    suspend fun saveFromUri(uriString: String): SaveResult = withContext(Dispatchers.IO) {
         val bytes = context.contentResolver.openInputStream(Uri.parse(uriString))?.use {
             it.readBytes()
         } ?: error("Cannot read URI: $uriString")
@@ -28,7 +30,7 @@ class ImageFileStorage(private val context: Context) {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, opts)
 
-        return SaveResult(
+        SaveResult(
             imageData = ImageData(file.absolutePath, opts.outWidth, opts.outHeight),
             base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
         )
