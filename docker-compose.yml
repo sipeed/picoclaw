@@ -1,8 +1,8 @@
 services:
-  # ----------------------------------------
+  # ─────────────────────────────────────────────
   # PicoClaw Agent (one-shot query)
   #   docker compose run --rm picoclaw-agent -m "Hello"
-  # ----------------------------------------
+  # ─────────────────────────────────────────────
   picoclaw-agent:
     build:
       context: .
@@ -32,7 +32,10 @@ services:
       - PICOCLAW_PROVIDERS_ZHIPU_API_KEY=${PICOCLAW_PROVIDERS_ZHIPU_API_KEY:-}
     depends_on:
       - otel-collector
-
+  # ─────────────────────────────────────────────
+  # PicoClaw Gateway (Long-running Bot)
+  #   docker compose up picoclaw-gateway
+  # ─────────────────────────────────────────────
   picoclaw-gateway:
     build:
       context: .
