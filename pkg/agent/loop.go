@@ -203,9 +203,28 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 			agent.Tools.Register(multiagent.NewListAgentsTool(resolver))
 		}
 
-		// Update context builder with the complete tools registry
+		// Apply per-agent tool policy (static, startup-time filtering).
+		// This removes denied tools from the registry before the LLM ever sees them.
+		if agentCfg := findAgentConfig(cfg, agentID); agentCfg != nil && agentCfg.ToolPolicy != nil {
+			tools.ApplyPolicy(agent.Tools, tools.ToolPolicy{
+				Allow: agentCfg.ToolPolicy.Allow,
+				Deny:  agentCfg.ToolPolicy.Deny,
+			})
+		}
+
+		// Update context builder with the (possibly filtered) tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
 	}
+}
+
+// findAgentConfig returns the AgentConfig for a given agent ID, or nil if not found.
+func findAgentConfig(cfg *config.Config, agentID string) *config.AgentConfig {
+	for i := range cfg.Agents.List {
+		if routing.NormalizeAgentID(cfg.Agents.List[i].ID) == agentID {
+			return &cfg.Agents.List[i]
+		}
+	}
+	return nil
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {

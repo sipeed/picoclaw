@@ -156,10 +156,19 @@ func ExecuteHandoff(ctx context.Context, resolver AgentResolver, board *Blackboa
 		maxIter = 10
 	}
 
+	// Apply depth-based tool policy: clone target tools and remove depth-denied tools.
+	// At max depth, leaf agents lose spawn/handoff/list_agents to prevent further chaining.
+	targetTools := target.Tools
+	denyList := tools.DepthDenyList(req.Depth+1, maxDepth)
+	if len(denyList) > 0 && targetTools != nil {
+		targetTools = target.Tools.Clone()
+		tools.ApplyPolicy(targetTools, tools.ToolPolicy{Deny: denyList})
+	}
+
 	loopResult, err := tools.RunToolLoop(ctx, tools.ToolLoopConfig{
 		Provider:      target.Provider,
 		Model:         target.Model,
-		Tools:         target.Tools,
+		Tools:         targetTools,
 		MaxIterations: maxIter,
 		LLMOptions: map[string]any{
 			"max_tokens":  4096,
