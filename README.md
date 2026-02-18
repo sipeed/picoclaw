@@ -404,7 +404,7 @@ picoclaw gateway
 }
 ```
 
-> Set `allow_from` to empty to allow all users, or specify QQ numbers to restrict access.
+> Set `allow_from` to empty to allow all users, or specify sender_id to restrict access, find sender_id in logs.
 
 **3. Run**
 
