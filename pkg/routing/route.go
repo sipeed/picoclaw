@@ -21,8 +21,8 @@ type ResolvedRoute struct {
 	AgentID        string
 	Channel        string
 	AccountID      string
-	SessionKey     string
-	MainSessionKey string
+	SessionKey     string `json:"session_key"`      //nolint:gosec // G117: not a secret, this is a session identifier
+	MainSessionKey string `json:"main_session_key"` //nolint:gosec // G117: not a secret, this is a session identifier
 	MatchedBy      string // "binding.peer", "binding.peer.parent", "binding.guild", "binding.team", "binding.account", "binding.channel", "default"
 }
 
@@ -141,7 +141,7 @@ func matchesAccountID(matchAccountID, actual string) bool {
 	if trimmed == "*" {
 		return true
 	}
-	return strings.ToLower(trimmed) == strings.ToLower(actual)
+	return strings.EqualFold(trimmed, actual)
 }
 
 func (r *RouteResolver) findPeerMatch(bindings []config.AgentBinding, peer *RoutePeer) *config.AgentBinding {

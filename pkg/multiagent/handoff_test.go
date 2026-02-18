@@ -15,7 +15,7 @@ type mockProvider struct {
 	err      error
 }
 
-func (m *mockProvider) Chat(_ context.Context, _ []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]interface{}) (*providers.LLMResponse, error) {
+func (m *mockProvider) Chat(_ context.Context, _ []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -140,7 +140,7 @@ func TestHandoffTool_Execute(t *testing.T) {
 	bb := NewBlackboard()
 	tool := NewHandoffTool(resolver, bb, "main")
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"agent_id": "coder",
 		"task":     "write code",
 	})
@@ -159,7 +159,7 @@ func TestHandoffTool_MissingArgs(t *testing.T) {
 	tool := NewHandoffTool(resolver, bb, "main")
 
 	// Missing agent_id
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"task": "do something",
 	})
 	if !result.IsError {
@@ -167,7 +167,7 @@ func TestHandoffTool_MissingArgs(t *testing.T) {
 	}
 
 	// Missing task
-	result = tool.Execute(context.Background(), map[string]interface{}{
+	result = tool.Execute(context.Background(), map[string]any{
 		"agent_id": "coder",
 	})
 	if !result.IsError {

@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// Agent ID defaults and constraints.
 const (
 	DefaultAgentID   = "main"
 	DefaultMainKey   = "main"

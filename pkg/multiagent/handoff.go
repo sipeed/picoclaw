@@ -81,7 +81,7 @@ func ExecuteHandoff(ctx context.Context, resolver AgentResolver, board *Blackboa
 		Model:         target.Model,
 		Tools:         target.Tools,
 		MaxIterations: maxIter,
-		LLMOptions: map[string]interface{}{
+		LLMOptions: map[string]any{
 			"max_tokens":  4096,
 			"temperature": 0.7,
 		},

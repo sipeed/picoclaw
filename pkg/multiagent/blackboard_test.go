@@ -118,20 +118,18 @@ func TestBlackboard_Size(t *testing.T) {
 	}
 }
 
-func TestBlackboard_ConcurrentAccess(t *testing.T) {
+func TestBlackboard_ConcurrentAccess(_ *testing.T) {
 	bb := NewBlackboard()
 	var wg sync.WaitGroup
 
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func(n int) {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			key := "key"
 			bb.Set(key, "val", "agent")
 			bb.Get(key)
 			bb.List()
 			bb.Snapshot()
-		}(i)
+		})
 	}
 	wg.Wait()
 }
@@ -160,7 +158,7 @@ func TestBlackboardTool_Write(t *testing.T) {
 	bb := NewBlackboard()
 	tool := NewBlackboardTool(bb, "test-agent")
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"action": "write",
 		"key":    "task",
 		"value":  "implement feature",
@@ -183,7 +181,7 @@ func TestBlackboardTool_Read(t *testing.T) {
 	bb.Set("info", "hello", "other")
 	tool := NewBlackboardTool(bb, "reader")
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"action": "read",
 		"key":    "info",
 	})
@@ -199,7 +197,7 @@ func TestBlackboardTool_ReadMissing(t *testing.T) {
 	bb := NewBlackboard()
 	tool := NewBlackboardTool(bb, "reader")
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"action": "read",
 		"key":    "nope",
 	})
@@ -217,7 +215,7 @@ func TestBlackboardTool_List(t *testing.T) {
 	bb.Set("b", "2", "y")
 	tool := NewBlackboardTool(bb, "lister")
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"action": "list",
 	})
 	if result.IsError {
@@ -233,7 +231,7 @@ func TestBlackboardTool_Delete(t *testing.T) {
 	bb.Set("tmp", "val", "x")
 	tool := NewBlackboardTool(bb, "deleter")
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"action": "delete",
 		"key":    "tmp",
 	})
@@ -249,7 +247,7 @@ func TestBlackboardTool_InvalidAction(t *testing.T) {
 	bb := NewBlackboard()
 	tool := NewBlackboardTool(bb, "test")
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"action": "invalid",
 	})
 	if !result.IsError {
@@ -262,7 +260,7 @@ func TestBlackboardTool_MissingKey(t *testing.T) {
 	tool := NewBlackboardTool(bb, "test")
 
 	// read without key
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"action": "read",
 	})
 	if !result.IsError {
@@ -270,7 +268,7 @@ func TestBlackboardTool_MissingKey(t *testing.T) {
 	}
 
 	// write without key
-	result = tool.Execute(context.Background(), map[string]interface{}{
+	result = tool.Execute(context.Background(), map[string]any{
 		"action": "write",
 		"value":  "test",
 	})
@@ -279,7 +277,7 @@ func TestBlackboardTool_MissingKey(t *testing.T) {
 	}
 
 	// write without value
-	result = tool.Execute(context.Background(), map[string]interface{}{
+	result = tool.Execute(context.Background(), map[string]any{
 		"action": "write",
 		"key":    "k",
 	})

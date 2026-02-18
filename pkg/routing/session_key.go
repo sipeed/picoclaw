@@ -8,6 +8,7 @@ import (
 // DMScope controls DM session isolation granularity.
 type DMScope string
 
+// DM scope constants control session isolation granularity.
 const (
 	DMScopeMain                  DMScope = "main"
 	DMScopePerPeer               DMScope = "per-peer"
@@ -86,6 +87,8 @@ func BuildAgentPeerSessionKey(params SessionKeyParams) string {
 			if peerID != "" {
 				return fmt.Sprintf("agent:%s:direct:%s", agentID, peerID)
 			}
+		default:
+			// DMScopeMain or unrecognized: fall through to main session key
 		}
 		return BuildAgentMainSessionKey(agentID)
 	}

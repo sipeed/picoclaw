@@ -18,34 +18,38 @@ func NewListAgentsTool(resolver AgentResolver) *ListAgentsTool {
 	return &ListAgentsTool{resolver: resolver}
 }
 
+// Name returns the tool name.
 func (t *ListAgentsTool) Name() string { return "list_agents" }
 
+// Description returns a human-readable description of the tool.
 func (t *ListAgentsTool) Description() string {
 	return "List all available agents with their IDs, names, and roles."
 }
 
-func (t *ListAgentsTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+// Parameters returns the JSON Schema for the tool's input.
+func (t *ListAgentsTool) Parameters() map[string]any {
+	return map[string]any{
 		"type":       "object",
-		"properties": map[string]interface{}{},
+		"properties": map[string]any{},
 	}
 }
 
-func (t *ListAgentsTool) Execute(_ context.Context, _ map[string]interface{}) *tools.ToolResult {
+// Execute lists all registered agents with their metadata.
+func (t *ListAgentsTool) Execute(_ context.Context, _ map[string]any) *tools.ToolResult {
 	agents := t.resolver.ListAgents()
 	if len(agents) == 0 {
 		return tools.NewToolResult("No agents registered.")
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Available agents (%d):\n", len(agents)))
+	fmt.Fprintf(&sb, "Available agents (%d):\n", len(agents))
 	for _, a := range agents {
-		sb.WriteString(fmt.Sprintf("- ID: %s", a.ID))
+		fmt.Fprintf(&sb, "- ID: %s", a.ID)
 		if a.Name != "" {
-			sb.WriteString(fmt.Sprintf(", Name: %s", a.Name))
+			fmt.Fprintf(&sb, ", Name: %s", a.Name)
 		}
 		if a.Role != "" {
-			sb.WriteString(fmt.Sprintf(", Role: %s", a.Role))
+			fmt.Fprintf(&sb, ", Role: %s", a.Role)
 		}
 		sb.WriteString("\n")
 	}

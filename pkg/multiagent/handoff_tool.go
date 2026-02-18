@@ -28,8 +28,10 @@ func NewHandoffTool(resolver AgentResolver, board *Blackboard, fromAgentID strin
 	}
 }
 
+// Name returns the tool name.
 func (t *HandoffTool) Name() string { return "handoff" }
 
+// Description returns a dynamic description listing available target agents.
 func (t *HandoffTool) Description() string {
 	agents := t.resolver.ListAgents()
 	if len(agents) <= 1 {
@@ -42,31 +44,32 @@ func (t *HandoffTool) Description() string {
 		if a.ID == t.fromAgentID {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("- %s", a.ID))
+		fmt.Fprintf(&sb, "- %s", a.ID)
 		if a.Name != "" {
-			sb.WriteString(fmt.Sprintf(" (%s)", a.Name))
+			fmt.Fprintf(&sb, " (%s)", a.Name)
 		}
 		if a.Role != "" {
-			sb.WriteString(fmt.Sprintf(": %s", a.Role))
+			fmt.Fprintf(&sb, ": %s", a.Role)
 		}
 		sb.WriteString("\n")
 	}
 	return sb.String()
 }
 
-func (t *HandoffTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+// Parameters returns the JSON Schema for the tool's input.
+func (t *HandoffTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"agent_id": map[string]interface{}{
+		"properties": map[string]any{
+			"agent_id": map[string]any{
 				"type":        "string",
 				"description": "The ID of the target agent to hand off to",
 			},
-			"task": map[string]interface{}{
+			"task": map[string]any{
 				"type":        "string",
 				"description": "The task description for the target agent",
 			},
-			"context": map[string]interface{}{
+			"context": map[string]any{
 				"type":        "object",
 				"description": "Optional key-value context to share via blackboard before handoff",
 			},
@@ -75,14 +78,22 @@ func (t *HandoffTool) Parameters() map[string]interface{} {
 	}
 }
 
+// SetContext updates the origin channel and chat ID for handoff routing.
 func (t *HandoffTool) SetContext(channel, chatID string) {
 	t.originChannel = channel
 	t.originChatID = chatID
 }
 
-func (t *HandoffTool) Execute(ctx context.Context, args map[string]interface{}) *tools.ToolResult {
-	agentID, _ := args["agent_id"].(string)
-	task, _ := args["task"].(string)
+// Execute delegates a task to the specified target agent.
+func (t *HandoffTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	agentID, ok := args["agent_id"].(string)
+	if !ok {
+		agentID = ""
+	}
+	task, ok := args["task"].(string)
+	if !ok {
+		task = ""
+	}
 
 	if agentID == "" {
 		return tools.ErrorResult("agent_id is required")
@@ -93,7 +104,7 @@ func (t *HandoffTool) Execute(ctx context.Context, args map[string]interface{}) 
 
 	// Parse optional context map
 	var contextMap map[string]string
-	if ctxRaw, ok := args["context"].(map[string]interface{}); ok {
+	if ctxRaw, ok := args["context"].(map[string]any); ok {
 		contextMap = make(map[string]string, len(ctxRaw))
 		for k, v := range ctxRaw {
 			contextMap[k] = fmt.Sprintf("%v", v)

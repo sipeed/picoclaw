@@ -23,27 +23,30 @@ func NewBlackboardTool(board *Blackboard, agentID string) *BlackboardTool {
 	}
 }
 
+// Name returns the tool name.
 func (t *BlackboardTool) Name() string { return "blackboard" }
 
+// Description returns a human-readable description of the tool.
 func (t *BlackboardTool) Description() string {
 	return "Read, write, list, or delete entries in the shared context blackboard. " +
 		"Use this to share information between agents in a multi-agent session."
 }
 
-func (t *BlackboardTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+// Parameters returns the JSON Schema for the tool's input.
+func (t *BlackboardTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
+		"properties": map[string]any{
+			"action": map[string]any{
 				"type":        "string",
 				"enum":        []string{"read", "write", "list", "delete"},
 				"description": "The action to perform on the blackboard",
 			},
-			"key": map[string]interface{}{
+			"key": map[string]any{
 				"type":        "string",
 				"description": "The key to read, write, or delete (not required for list)",
 			},
-			"value": map[string]interface{}{
+			"value": map[string]any{
 				"type":        "string",
 				"description": "The value to write (only required for write action)",
 			},
@@ -52,10 +55,20 @@ func (t *BlackboardTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *BlackboardTool) Execute(_ context.Context, args map[string]interface{}) *tools.ToolResult {
-	action, _ := args["action"].(string)
-	key, _ := args["key"].(string)
-	value, _ := args["value"].(string)
+// Execute runs the blackboard action specified in args.
+func (t *BlackboardTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+	action, ok := args["action"].(string)
+	if !ok {
+		action = ""
+	}
+	key, ok := args["key"].(string)
+	if !ok {
+		key = ""
+	}
+	value, ok := args["value"].(string)
+	if !ok {
+		value = ""
+	}
 
 	switch strings.ToLower(action) {
 	case "read":
@@ -85,11 +98,11 @@ func (t *BlackboardTool) Execute(_ context.Context, args map[string]interface{})
 			return tools.NewToolResult("Blackboard is empty")
 		}
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Blackboard entries (%d):\n", len(keys)))
+		fmt.Fprintf(&sb, "Blackboard entries (%d):\n", len(keys))
 		for _, k := range keys {
 			entry := t.board.GetEntry(k)
 			if entry != nil {
-				sb.WriteString(fmt.Sprintf("- %s (by %s): %s\n", k, entry.Author, entry.Value))
+				fmt.Fprintf(&sb, "- %s (by %s): %s\n", k, entry.Author, entry.Value)
 			}
 		}
 		return tools.NewToolResult(sb.String())

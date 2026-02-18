@@ -768,11 +768,16 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 // getOrCreateBlackboard returns the blackboard for a session, creating one if needed.
 func (al *AgentLoop) getOrCreateBlackboard(sessionKey string) *multiagent.Blackboard {
 	if v, ok := al.blackboards.Load(sessionKey); ok {
-		return v.(*multiagent.Blackboard)
+		if bb, ok := v.(*multiagent.Blackboard); ok {
+			return bb
+		}
 	}
 	bb := multiagent.NewBlackboard()
 	actual, _ := al.blackboards.LoadOrStore(sessionKey, bb)
-	return actual.(*multiagent.Blackboard)
+	if result, ok := actual.(*multiagent.Blackboard); ok {
+		return result
+	}
+	return bb
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
