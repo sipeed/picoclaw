@@ -83,10 +83,10 @@ func NewBaseAgent(cfg AgentConfig, registry *tools.ToolRegistry) *BaseAgent {
 	}
 }
 
-func (a *BaseAgent) Name() string             { return a.config.Name }
-func (a *BaseAgent) Role() string             { return a.config.Role }
-func (a *BaseAgent) SystemPrompt() string     { return a.config.SystemPrompt }
-func (a *BaseAgent) Capabilities() []string   { return a.config.Capabilities }
+func (a *BaseAgent) Name() string               { return a.config.Name }
+func (a *BaseAgent) Role() string               { return a.config.Role }
+func (a *BaseAgent) SystemPrompt() string       { return a.config.SystemPrompt }
+func (a *BaseAgent) Capabilities() []string     { return a.config.Capabilities }
 func (a *BaseAgent) Tools() *tools.ToolRegistry { return a.tools }
 
 // HandoffRequest represents a request to delegate a task from one agent

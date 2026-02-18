@@ -37,11 +37,11 @@ func newMockAgent(name, role string, capabilities []string) *mockAgent {
 	}
 }
 
-func (m *mockAgent) Name() string                 { return m.name }
-func (m *mockAgent) Role() string                 { return m.role }
-func (m *mockAgent) SystemPrompt() string         { return m.systemPrompt }
-func (m *mockAgent) Capabilities() []string       { return m.capabilities }
-func (m *mockAgent) Tools() *tools.ToolRegistry   { return m.toolRegistry }
+func (m *mockAgent) Name() string               { return m.name }
+func (m *mockAgent) Role() string               { return m.role }
+func (m *mockAgent) SystemPrompt() string       { return m.systemPrompt }
+func (m *mockAgent) Capabilities() []string     { return m.capabilities }
+func (m *mockAgent) Tools() *tools.ToolRegistry { return m.toolRegistry }
 func (m *mockAgent) Execute(ctx context.Context, task string, shared *SharedContext) (string, error) {
 	return m.executeFunc(ctx, task, shared)
 }

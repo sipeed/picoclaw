@@ -36,9 +36,9 @@ type agentEntry struct {
 //
 // Thread-safe: all operations are protected by a read-write mutex.
 type AgentRegistry struct {
-	mu      sync.RWMutex
-	agents  map[string]*agentEntry
-	shared  *SharedContext
+	mu     sync.RWMutex
+	agents map[string]*agentEntry
+	shared *SharedContext
 }
 
 // NewAgentRegistry creates a new AgentRegistry with a fresh SharedContext.
