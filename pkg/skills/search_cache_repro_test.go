@@ -7,7 +7,6 @@ import (
 
 func TestSearchCache_LRU_Behavior(t *testing.T) {
 	// Capacity 3
-	// Capacity 3
 	cache := NewSearchCache(3, time.Hour)
 
 	// Fill cache: query-A, query-B, query-C

@@ -93,11 +93,15 @@ func extractSingleFile(f *zip.File, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create file %q: %w", destPath, err)
 	}
+	// We don't return the close error via return, since it's not a named error return.
+	// Instead, we log to stderr and remove the partially written file as defensive cleanup.
 	defer func() {
-		// Ensure file is closed in all paths.
-		if cerr := outFile.Close(); cerr != nil && err == nil {
-			err = fmt.Errorf("failed to close file %q: %w", destPath, cerr)
+		if cerr := outFile.Close(); cerr != nil {
 			_ = os.Remove(destPath)
+			logger.ErrorCF("zip", "Failed to close file", map[string]interface{}{
+				"dest_path": destPath,
+				"error":     cerr.Error(),
+			})
 		}
 	}()
 
