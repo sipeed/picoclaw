@@ -15,9 +15,10 @@ type HandoffTool struct {
 	fromAgentID   string
 	originChannel string
 	originChatID  string
-	depth         int      // current handoff depth (0 = top-level)
-	visited       []string // agent IDs already in the call chain
-	maxDepth      int      // max allowed depth (0 = use DefaultMaxHandoffDepth)
+	depth            int              // current handoff depth (0 = top-level)
+	visited          []string         // agent IDs already in the call chain
+	maxDepth         int              // max allowed depth (0 = use DefaultMaxHandoffDepth)
+	allowlistChecker AllowlistChecker // optional; nil = allow all
 }
 
 // NewHandoffTool creates a handoff tool bound to a specific source agent.
@@ -94,6 +95,12 @@ func (t *HandoffTool) SetBoard(board *Blackboard) {
 	t.board = board
 }
 
+// SetAllowlistChecker sets an optional checker that controls which agents
+// can be handed off to. If nil, all handoffs are allowed.
+func (t *HandoffTool) SetAllowlistChecker(checker AllowlistChecker) {
+	t.allowlistChecker = checker
+}
+
 // SetContext updates the origin channel and chat ID for handoff routing.
 func (t *HandoffTool) SetContext(channel, chatID string) {
 	t.originChannel = channel
@@ -120,6 +127,11 @@ func (t *HandoffTool) Execute(ctx context.Context, args map[string]any) *tools.T
 	}
 	if agentID == "" {
 		return tools.ErrorResult("agent_id or capability is required")
+	}
+
+	// Allowlist check: if a checker is set and it denies the handoff, block it.
+	if t.allowlistChecker != nil && !t.allowlistChecker.CanHandoff(t.fromAgentID, agentID) {
+		return tools.ErrorResult(fmt.Sprintf("handoff from %q to %q not allowed by policy", t.fromAgentID, agentID))
 	}
 
 	// Parse optional context map

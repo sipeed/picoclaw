@@ -16,6 +16,18 @@ type AgentResolver interface {
 	ListAgents() []AgentInfo
 }
 
+// AllowlistChecker determines whether a handoff from one agent to another is allowed.
+type AllowlistChecker interface {
+	CanHandoff(fromAgentID, toAgentID string) bool
+}
+
+// AllowlistCheckerFunc adapts a function to the AllowlistChecker interface.
+type AllowlistCheckerFunc func(fromAgentID, toAgentID string) bool
+
+func (f AllowlistCheckerFunc) CanHandoff(fromAgentID, toAgentID string) bool {
+	return f(fromAgentID, toAgentID)
+}
+
 // AgentInfo is a minimal view of an agent for handoff purposes,
 // decoupled from the full AgentInstance to avoid circular imports.
 type AgentInfo struct {

@@ -181,7 +181,23 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 			agent.Tools.Register(multiagent.NewBlackboardTool(placeholderBoard, agentID))
 
 			// Handoff tool: delegate tasks to other agents
-			agent.Tools.Register(multiagent.NewHandoffTool(resolver, placeholderBoard, agentID))
+			handoffTool := multiagent.NewHandoffTool(resolver, placeholderBoard, agentID)
+
+			// Allowlist checker: default-open when no subagents config,
+			// enforces allow_agents when configured.
+			currentAgentIDForHandoff := agentID
+			handoffTool.SetAllowlistChecker(multiagent.AllowlistCheckerFunc(func(from, to string) bool {
+				parent, ok := registry.GetAgent(from)
+				if !ok {
+					return false
+				}
+				// Default open: if no allowlist configured, allow all handoffs
+				if parent.Subagents == nil || parent.Subagents.AllowAgents == nil {
+					return true
+				}
+				return registry.CanSpawnSubagent(currentAgentIDForHandoff, to)
+			}))
+			agent.Tools.Register(handoffTool)
 
 			// List agents tool: discover available agents
 			agent.Tools.Register(multiagent.NewListAgentsTool(resolver))
