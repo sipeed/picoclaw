@@ -256,15 +256,16 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, DingTalk, or LINE
+Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or Email
 
-| Channel      | Setup                              |
-| ------------ | ---------------------------------- |
-| **Telegram** | Easy (just a token)                |
-| **Discord**  | Easy (bot token + intents)         |
-| **QQ**       | Easy (AppID + AppSecret)           |
-| **DingTalk** | Medium (app credentials)           |
-| **LINE**     | Medium (credentials + webhook URL) |
+| Channel      | Setup                                          |
+| ------------ | ---------------------------------------------- |
+| **Telegram** | Easy (just a token)                            |
+| **Discord**  | Easy (bot token + intents)                     |
+| **QQ**       | Easy (AppID + AppSecret)                       |
+| **DingTalk** | Medium (app credentials)                       |
+| **LINE**     | Medium (credentials + webhook URL)             |
+| **Email**    | Medium (IMAP + optional SMTP, allow list)    |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -461,6 +462,64 @@ picoclaw gateway
 > In group chats, the bot responds only when @mentioned. Replies quote the original message.
 
 > **Docker Compose**: Add `ports: ["18791:18791"]` to the `picoclaw-gateway` service to expose the webhook port.
+
+</details>
+
+<details>
+<summary><b>Email</b></summary>
+
+Use an inbox as a channel: PicoClaw connects via IMAP to read new mail and (optionally) sends replies via SMTP. Sender address is used as chat identity; only senders in `allow_from` are accepted.
+
+**1. Prepare mailbox**
+
+* Use a mailbox that supports IMAP (e.g. 163, QQ, Gmail). Use an **app password / authorization code**, not the account password:
+  * **QQ mail**： [qq mail](https://wx.mail.qq.com/list/readtemplate?name=app_intro.html#/agreement/authorizationCode)
+  * **163 mail**： [163 FAQ](https://help.mail.163.com/faq.do?m=list&categoryID=90)
+* Optional: configure SMTP on the same or another server to let the agent send replies.
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "email": {
+      "enabled": true,
+      "imap_server": "imap.qq.com",
+      "imap_port": 993,
+      "username": "your@qq.com",
+      "password": "YOUR_APP_PASSWORD",
+      "mailbox": "INBOX",
+      "check_interval": 30,
+      "use_idle": true,
+      "use_tls": true,
+      "allow_from": ["allowed-sender@example.com"],
+      "attachment_dir": "/path/to/save/attachments",
+      "smtp_server": "smtp.qq.com",
+      "smtp_port": 465,
+      "smtp_use_tls": true
+    }
+  }
+}
+```
+
+| Field | Description |
+| ----- | ----------- |
+| `imap_server`, `imap_port` | IMAP server (e.g. 993 with TLS). |
+| `username`, `password` | Mailbox login; 163/QQ require app password. |
+| `mailbox` | Folder to watch (default `INBOX`). |
+| `use_idle` | `true`: use IMAP IDLE when supported (push); `false`: poll every `check_interval` seconds. |
+| `check_interval` | Polling interval in seconds when IDLE is off or unsupported (default 30). |
+| `allow_from` | Allowed sender addresses; only their mails trigger the agent. |
+| `attachment_dir` | Directory to save attachments; leave empty to skip saving. |
+| `smtp_server`, `smtp_port`, `smtp_use_tls` | Optional; if set, the agent can send replies. |
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+> Incoming mail is processed as user messages; replies are sent to the sender. Session is keyed by sender email address.
 
 </details>
 
