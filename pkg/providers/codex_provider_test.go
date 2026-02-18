@@ -19,7 +19,7 @@ func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{
 		"max_tokens":  2048,
 		"temperature": 0.7,
-	})
+	}, true)
 	if params.Model != "gpt-4o" {
 		t.Errorf("Model = %q, want %q", params.Model, "gpt-4o")
 	}
@@ -39,7 +39,7 @@ func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
 		{Role: "system", Content: "You are helpful"},
 		{Role: "user", Content: "Hi"},
 	}
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{})
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{}, true)
 	if !params.Instructions.Valid() {
 		t.Fatal("Instructions should be set")
 	}
@@ -59,7 +59,7 @@ func TestBuildCodexParams_ToolCallConversation(t *testing.T) {
 		},
 		{Role: "tool", Content: `{"temp": 72}`, ToolCallID: "call_1"},
 	}
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{})
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{}, false)
 	if params.Input.OfInputItemList == nil {
 		t.Fatal("Input.OfInputItemList should not be nil")
 	}
@@ -87,7 +87,7 @@ func TestBuildCodexParams_ToolCallFunctionFallback(t *testing.T) {
 		{Role: "tool", Content: "ok", ToolCallID: "call_1"},
 	}
 
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{})
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{}, false)
 	if params.Input.OfInputItemList == nil {
 		t.Fatal("Input.OfInputItemList should not be nil")
 	}
@@ -123,7 +123,7 @@ func TestBuildCodexParams_WithTools(t *testing.T) {
 			},
 		},
 	}
-	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, tools, "gpt-4o", map[string]interface{}{})
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, tools, "gpt-4o", map[string]interface{}{}, false)
 	if len(params.Tools) != 1 {
 		t.Fatalf("len(Tools) = %d, want 1", len(params.Tools))
 	}
@@ -136,9 +136,58 @@ func TestBuildCodexParams_WithTools(t *testing.T) {
 }
 
 func TestBuildCodexParams_StoreIsFalse(t *testing.T) {
-	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]interface{}{})
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]interface{}{}, false)
 	if !params.Store.Valid() || params.Store.Or(true) != false {
 		t.Error("Store should be explicitly set to false")
+	}
+}
+
+func TestBuildCodexParams_DefaultWebSearchEnabled(t *testing.T) {
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]interface{}{}, true)
+	if len(params.Tools) != 1 {
+		t.Fatalf("len(Tools) = %d, want 1", len(params.Tools))
+	}
+	if params.Tools[0].OfWebSearch == nil {
+		t.Fatal("Tool should include built-in web_search")
+	}
+	if params.Tools[0].OfWebSearch.Type != responses.WebSearchToolTypeWebSearch {
+		t.Errorf("Web search tool type = %q, want %q", params.Tools[0].OfWebSearch.Type, responses.WebSearchToolTypeWebSearch)
+	}
+}
+
+func TestBuildCodexParams_WebSearchFunctionReplacedWithBuiltin(t *testing.T) {
+	tools := []ToolDefinition{
+		{
+			Type: "function",
+			Function: ToolFunctionDefinition{
+				Name:        "web_search",
+				Description: "local web search",
+				Parameters: map[string]interface{}{
+					"type": "object",
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: ToolFunctionDefinition{
+				Name:        "read_file",
+				Description: "read file",
+				Parameters: map[string]interface{}{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, tools, "gpt-4o", map[string]interface{}{}, true)
+	if len(params.Tools) != 2 {
+		t.Fatalf("len(Tools) = %d, want 2", len(params.Tools))
+	}
+	if params.Tools[0].OfFunction == nil || params.Tools[0].OfFunction.Name != "read_file" {
+		t.Fatalf("first tool should be function read_file, got %#v", params.Tools[0])
+	}
+	if params.Tools[1].OfWebSearch == nil {
+		t.Fatalf("second tool should be built-in web_search, got %#v", params.Tools[1])
 	}
 }
 
@@ -260,6 +309,16 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 			http.Error(w, "max_output_tokens is not supported", http.StatusBadRequest)
 			return
 		}
+		toolsAny, ok := reqBody["tools"].([]interface{})
+		if !ok || len(toolsAny) != 1 {
+			http.Error(w, "missing default web search tool", http.StatusBadRequest)
+			return
+		}
+		toolObj, ok := toolsAny[0].(map[string]interface{})
+		if !ok || toolObj["type"] != "web_search" {
+			http.Error(w, "expected web_search tool", http.StatusBadRequest)
+			return
+		}
 
 		resp := map[string]interface{}{
 			"id":     "resp_test",
@@ -304,6 +363,64 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 	}
 	if resp.Usage.TotalTokens != 18 {
 		t.Errorf("TotalTokens = %d, want 18", resp.Usage.TotalTokens)
+	}
+}
+
+func TestCodexProvider_ChatRoundTrip_WebSearchDisabled(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if _, ok := reqBody["tools"]; ok {
+			http.Error(w, "tools should be absent when web search disabled", http.StatusBadRequest)
+			return
+		}
+
+		resp := map[string]interface{}{
+			"id":     "resp_test",
+			"object": "response",
+			"status": "completed",
+			"output": []map[string]interface{}{
+				{
+					"id":     "msg_1",
+					"type":   "message",
+					"role":   "assistant",
+					"status": "completed",
+					"content": []map[string]interface{}{
+						{"type": "output_text", "text": "Hi from Codex!"},
+					},
+				},
+			},
+			"usage": map[string]interface{}{
+				"input_tokens":          4,
+				"output_tokens":         3,
+				"total_tokens":          7,
+				"input_tokens_details":  map[string]interface{}{"cached_tokens": 0},
+				"output_tokens_details": map[string]interface{}{"reasoning_tokens": 0},
+			},
+		}
+		writeCompletedSSE(w, resp)
+	}))
+	defer server.Close()
+
+	provider := NewCodexProvider("test-token", "acc-123")
+	provider.enableWebSearch = false
+	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
+
+	messages := []Message{{Role: "user", Content: "Hello"}}
+	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+	if resp.Content != "Hi from Codex!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hi from Codex!")
 	}
 }
 

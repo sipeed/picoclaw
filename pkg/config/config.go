@@ -167,19 +167,19 @@ type DevicesConfig struct {
 }
 
 type ProvidersConfig struct {
-	Anthropic     ProviderConfig `json:"anthropic"`
-	OpenAI        ProviderConfig `json:"openai"`
-	OpenRouter    ProviderConfig `json:"openrouter"`
-	Groq          ProviderConfig `json:"groq"`
-	Zhipu         ProviderConfig `json:"zhipu"`
-	VLLM          ProviderConfig `json:"vllm"`
-	Gemini        ProviderConfig `json:"gemini"`
-	Nvidia        ProviderConfig `json:"nvidia"`
-	Ollama        ProviderConfig `json:"ollama"`
-	Moonshot      ProviderConfig `json:"moonshot"`
-	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig `json:"deepseek"`
-	GitHubCopilot ProviderConfig `json:"github_copilot"`
+	Anthropic     ProviderConfig       `json:"anthropic"`
+	OpenAI        OpenAIProviderConfig `json:"openai"`
+	OpenRouter    ProviderConfig       `json:"openrouter"`
+	Groq          ProviderConfig       `json:"groq"`
+	Zhipu         ProviderConfig       `json:"zhipu"`
+	VLLM          ProviderConfig       `json:"vllm"`
+	Gemini        ProviderConfig       `json:"gemini"`
+	Nvidia        ProviderConfig       `json:"nvidia"`
+	Ollama        ProviderConfig       `json:"ollama"`
+	Moonshot      ProviderConfig       `json:"moonshot"`
+	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
+	DeepSeek      ProviderConfig       `json:"deepseek"`
+	GitHubCopilot ProviderConfig       `json:"github_copilot"`
 }
 
 type ProviderConfig struct {
@@ -188,6 +188,11 @@ type ProviderConfig struct {
 	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
 	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
 	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+}
+
+type OpenAIProviderConfig struct {
+	ProviderConfig
+	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
 }
 
 type GatewayConfig struct {
@@ -222,9 +227,15 @@ type CronToolsConfig struct {
 	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
 }
 
+type ExecConfig struct {
+	EnableDenyPatterns bool     `json:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
+	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
+}
+
 type ToolsConfig struct {
 	Web  WebToolsConfig  `json:"web"`
 	Cron CronToolsConfig `json:"cron"`
+	Exec ExecConfig      `json:"exec"`
 }
 
 func DefaultConfig() *Config {
@@ -308,7 +319,7 @@ func DefaultConfig() *Config {
 		},
 		Providers: ProvidersConfig{
 			Anthropic:    ProviderConfig{},
-			OpenAI:       ProviderConfig{},
+			OpenAI:       OpenAIProviderConfig{WebSearch: true},
 			OpenRouter:   ProviderConfig{},
 			Groq:         ProviderConfig{},
 			Zhipu:        ProviderConfig{},
@@ -341,6 +352,9 @@ func DefaultConfig() *Config {
 			},
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
+			},
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
 			},
 		},
 		Heartbeat: HeartbeatConfig{

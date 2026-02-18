@@ -55,6 +55,7 @@ jobs:
           ref: ${{ inputs.tag }}
 
       - name: Setup Go from go.mod
+        id: setup-go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -89,6 +90,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
+          GOVERSION: ${{ steps.setup-go.outputs.go-version }}
 
       - name: Apply release flags
         shell: bash
