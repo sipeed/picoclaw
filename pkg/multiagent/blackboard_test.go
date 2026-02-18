@@ -286,6 +286,57 @@ func TestBlackboardTool_MissingKey(t *testing.T) {
 	}
 }
 
+func TestBlackboardTool_SetBoard(t *testing.T) {
+	bb1 := NewBlackboard()
+	bb2 := NewBlackboard()
+	bb2.Set("from_session", "session_data", "system")
+
+	tool := NewBlackboardTool(bb1, "agent1")
+
+	// Initially reads from bb1 (empty)
+	result := tool.Execute(context.Background(), map[string]any{
+		"action": "read",
+		"key":    "from_session",
+	})
+	if !contains(result.ForLLM, "No entry") {
+		t.Errorf("expected 'No entry' before SetBoard, got %q", result.ForLLM)
+	}
+
+	// Switch to session board
+	tool.SetBoard(bb2)
+
+	// Now reads from bb2
+	result = tool.Execute(context.Background(), map[string]any{
+		"action": "read",
+		"key":    "from_session",
+	})
+	if !contains(result.ForLLM, "session_data") {
+		t.Errorf("expected 'session_data' after SetBoard, got %q", result.ForLLM)
+	}
+
+	// Writes go to bb2, not bb1
+	tool.Execute(context.Background(), map[string]any{
+		"action": "write",
+		"key":    "new_key",
+		"value":  "new_val",
+	})
+	if bb1.Get("new_key") != "" {
+		t.Error("write went to old board after SetBoard")
+	}
+	if bb2.Get("new_key") != "new_val" {
+		t.Error("write didn't go to new board after SetBoard")
+	}
+}
+
+func TestBoardAware_Interface(t *testing.T) {
+	// Verify both tools implement BoardAware
+	bb := NewBlackboard()
+	var _ BoardAware = NewBlackboardTool(bb, "test")
+
+	resolver := newMockResolver()
+	var _ BoardAware = NewHandoffTool(resolver, bb, "test")
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsStr(s, sub))
 }
