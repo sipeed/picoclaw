@@ -266,7 +266,7 @@ func DefaultConfig() *Config {
 			},
 			MaixCam: MaixCamConfig{
 				Enabled:   false,
-				Host:      "0.0.0.0",
+				Host:      "127.0.0.1",
 				Port:      18790,
 				AllowFrom: FlexibleStringSlice{},
 			},
@@ -292,7 +292,7 @@ func DefaultConfig() *Config {
 				Enabled:            false,
 				ChannelSecret:      "",
 				ChannelAccessToken: "",
-				WebhookHost:        "0.0.0.0",
+				WebhookHost:        "127.0.0.1",
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
 				AllowFrom:          FlexibleStringSlice{},
@@ -319,7 +319,7 @@ func DefaultConfig() *Config {
 			ShengSuanYun: ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
+			Host: "127.0.0.1",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{

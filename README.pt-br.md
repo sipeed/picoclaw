@@ -438,7 +438,7 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
+      "webhook_host": "127.0.0.1",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
