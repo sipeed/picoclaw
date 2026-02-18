@@ -25,14 +25,15 @@ const (
 )
 
 type providerSelection struct {
-	providerType    providerType
-	apiKey          string
-	apiBase         string
-	proxy           string
-	model           string
-	workspace       string
-	connectMode     string
-	enableWebSearch bool
+	providerType     providerType
+	apiKey           string
+	apiBase          string
+	proxy            string
+	model            string
+	workspace        string
+	connectMode      string
+	enableWebSearch  bool
+	allowEmptyAPIKey bool
 }
 
 func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
@@ -172,6 +173,14 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.model = "deepseek-chat"
 				}
 			}
+		case "ollama":
+			sel.apiKey = cfg.Providers.Ollama.APIKey
+			sel.apiBase = cfg.Providers.Ollama.APIBase
+			sel.proxy = cfg.Providers.Ollama.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "http://localhost:11434/v1"
+			}
+			sel.allowEmptyAPIKey = true
 		case "github_copilot", "copilot":
 			sel.providerType = providerTypeGitHubCopilot
 			if cfg.Providers.GitHubCopilot.APIBase != "" {
@@ -268,13 +277,14 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			if sel.apiBase == "" {
 				sel.apiBase = "https://integrate.api.nvidia.com/v1"
 			}
-		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
+		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && (cfg.Providers.Ollama.APIBase != "" || cfg.Providers.Ollama.APIKey != ""):
 			sel.apiKey = cfg.Providers.Ollama.APIKey
 			sel.apiBase = cfg.Providers.Ollama.APIBase
 			sel.proxy = cfg.Providers.Ollama.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "http://localhost:11434/v1"
 			}
+			sel.allowEmptyAPIKey = true
 		case cfg.Providers.VLLM.APIBase != "":
 			sel.apiKey = cfg.Providers.VLLM.APIKey
 			sel.apiBase = cfg.Providers.VLLM.APIBase
@@ -295,7 +305,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 	}
 
 	if sel.providerType == providerTypeHTTPCompat {
-		if sel.apiKey == "" && !strings.HasPrefix(model, "bedrock/") {
+		if sel.apiKey == "" && !strings.HasPrefix(model, "bedrock/") && !sel.allowEmptyAPIKey {
 			return providerSelection{}, fmt.Errorf("no API key configured for provider (model: %s)", model)
 		}
 		if sel.apiBase == "" {
