@@ -25,6 +25,7 @@ type SlackChannel struct {
 	api          *slack.Client
 	socketClient *socketmode.Client
 	botUserID    string
+	teamID       string
 	transcriber  *voice.GroqTranscriber
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -72,6 +73,7 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("slack auth test failed: %w", err)
 	}
 	c.botUserID = authResp.UserID
+	c.teamID = authResp.TeamID
 
 	logger.InfoCF("slack", "Slack bot connected", map[string]interface{}{
 		"bot_user_id": c.botUserID,
@@ -274,11 +276,21 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 
+	peerKind := "channel"
+	peerID := channelID
+	if strings.HasPrefix(channelID, "D") {
+		peerKind = "direct"
+		peerID = senderID
+	}
+
 	metadata := map[string]string{
 		"message_ts": messageTS,
 		"channel_id": channelID,
 		"thread_ts":  threadTS,
 		"platform":   "slack",
+		"peer_kind":  peerKind,
+		"peer_id":    peerID,
+		"team_id":    c.teamID,
 	}
 
 	logger.DebugCF("slack", "Received message", map[string]interface{}{
@@ -297,6 +309,13 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 	}
 	if !c.IsAllowed(ev.User) {
 		logger.DebugCF("slack", "App mention rejected by allowlist", map[string]interface{}{
+			"user_id": ev.User,
+		})
+		return
+	}
+
+	if !c.IsAllowed(ev.User) {
+		logger.DebugCF("slack", "Mention rejected by allowlist", map[string]interface{}{
 			"user_id": ev.User,
 		})
 		return
@@ -330,12 +349,22 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		return
 	}
 
+	mentionPeerKind := "channel"
+	mentionPeerID := channelID
+	if strings.HasPrefix(channelID, "D") {
+		mentionPeerKind = "direct"
+		mentionPeerID = senderID
+	}
+
 	metadata := map[string]string{
 		"message_ts": messageTS,
 		"channel_id": channelID,
 		"thread_ts":  threadTS,
 		"platform":   "slack",
 		"is_mention": "true",
+		"peer_kind":  mentionPeerKind,
+		"peer_id":    mentionPeerID,
+		"team_id":    c.teamID,
 	}
 
 	c.HandleMessage(senderID, chatID, content, nil, metadata)
@@ -349,6 +378,13 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 
 	if event.Request != nil {
 		c.socketClient.Ack(*event.Request)
+	}
+
+	if !c.IsAllowed(cmd.UserID) {
+		logger.DebugCF("slack", "Slash command rejected by allowlist", map[string]interface{}{
+			"user_id": cmd.UserID,
+		})
+		return
 	}
 
 	senderID := cmd.UserID
@@ -373,6 +409,9 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 		"platform":   "slack",
 		"is_command": "true",
 		"trigger_id": cmd.TriggerID,
+		"peer_kind":  "channel",
+		"peer_id":    channelID,
+		"team_id":    c.teamID,
 	}
 
 	logger.DebugCF("slack", "Slash command received", map[string]interface{}{

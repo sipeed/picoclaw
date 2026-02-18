@@ -73,9 +73,8 @@ func DownloadFile(url, filename string, opts DownloadOptions) string {
 	}
 
 	// Generate unique filename with UUID prefix to prevent conflicts
-	ext := filepath.Ext(filename)
 	safeName := SanitizeFilename(filename)
-	localPath := filepath.Join(mediaDir, uuid.New().String()[:8]+"_"+safeName+ext)
+	localPath := filepath.Join(mediaDir, uuid.New().String()[:8]+"_"+safeName)
 
 	// Create HTTP request
 	req, err := http.NewRequest("GET", url, nil)

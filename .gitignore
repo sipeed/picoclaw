@@ -1,5 +1,7 @@
 # Binaries
+# Go build artifacts
 bin/
+build/
 *.exe
 *.dll
 *.so
@@ -8,14 +10,23 @@ bin/
 *.out
 /picoclaw
 /picoclaw-test
+cmd/picoclaw/workspace
 
 # Picoclaw specific
+
+# PicoClaw
 .picoclaw/
 config.json
 sessions/
 build/
 
 # Coverage
+
+# Secrets & Config (keep templates, ignore actual secrets)
+.env
+config/config.json
+
+# Test
 coverage.txt
 coverage.html
 
@@ -24,3 +35,12 @@ coverage.html
 
 # Ralph workspace
 ralph/
+.ralph/
+tasks/
+
+# Editors
+.vscode/
+.idea/
+
+# Added by goreleaser init:
+dist/

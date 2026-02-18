@@ -19,18 +19,20 @@ import (
 )
 
 type OAuthProviderConfig struct {
-	Issuer   string
-	ClientID string
-	Scopes   string
-	Port     int
+	Issuer     string
+	ClientID   string
+	Scopes     string
+	Originator string
+	Port       int
 }
 
 func OpenAIOAuthConfig() OAuthProviderConfig {
 	return OAuthProviderConfig{
-		Issuer:   "https://auth.openai.com",
-		ClientID: "app_EMoamEEZ73f0CkXaXp7hrann",
-		Scopes:   "openid profile email offline_access",
-		Port:     1455,
+		Issuer:     "https://auth.openai.com",
+		ClientID:   "app_EMoamEEZ73f0CkXaXp7hrann",
+		Scopes:     "openid profile email offline_access",
+		Originator: "codex_cli_rs",
+		Port:       1455,
 	}
 }
 
@@ -279,7 +281,17 @@ func RefreshAccessToken(cred *AuthCredential, cfg OAuthProviderConfig) (*AuthCre
 		return nil, fmt.Errorf("token refresh failed: %s", string(body))
 	}
 
-	return parseTokenResponse(body, cred.Provider)
+	refreshed, err := parseTokenResponse(body, cred.Provider)
+	if err != nil {
+		return nil, err
+	}
+	if refreshed.RefreshToken == "" {
+		refreshed.RefreshToken = cred.RefreshToken
+	}
+	if refreshed.AccountID == "" {
+		refreshed.AccountID = cred.AccountID
+	}
+	return refreshed, nil
 }
 
 func BuildAuthorizeURL(cfg OAuthProviderConfig, pkce PKCECodes, state, redirectURI string) string {
@@ -288,15 +300,23 @@ func BuildAuthorizeURL(cfg OAuthProviderConfig, pkce PKCECodes, state, redirectU
 
 func buildAuthorizeURL(cfg OAuthProviderConfig, pkce PKCECodes, state, redirectURI string) string {
 	params := url.Values{
-		"response_type":         {"code"},
-		"client_id":             {cfg.ClientID},
-		"redirect_uri":          {redirectURI},
-		"scope":                 {cfg.Scopes},
-		"code_challenge":        {pkce.CodeChallenge},
-		"code_challenge_method": {"S256"},
-		"state":                 {state},
+		"response_type":              {"code"},
+		"client_id":                  {cfg.ClientID},
+		"redirect_uri":               {redirectURI},
+		"scope":                      {cfg.Scopes},
+		"code_challenge":             {pkce.CodeChallenge},
+		"code_challenge_method":      {"S256"},
+		"id_token_add_organizations": {"true"},
+		"codex_cli_simplified_flow":  {"true"},
+		"state":                      {state},
 	}
-	return cfg.Issuer + "/authorize?" + params.Encode()
+	if strings.Contains(strings.ToLower(cfg.Issuer), "auth.openai.com") {
+		params.Set("originator", "picoclaw")
+	}
+	if cfg.Originator != "" {
+		params.Set("originator", cfg.Originator)
+	}
+	return cfg.Issuer + "/oauth/authorize?" + params.Encode()
 }
 
 func exchangeCodeForTokens(cfg OAuthProviderConfig, code, codeVerifier, redirectURI string) (*AuthCredential, error) {
@@ -350,17 +370,55 @@ func parseTokenResponse(body []byte, provider string) (*AuthCredential, error) {
 		AuthMethod:   "oauth",
 	}
 
-	if accountID := extractAccountID(tokenResp.AccessToken); accountID != "" {
+	if accountID := extractAccountID(tokenResp.IDToken); accountID != "" {
+		cred.AccountID = accountID
+	} else if accountID := extractAccountID(tokenResp.AccessToken); accountID != "" {
+		cred.AccountID = accountID
+	} else if accountID := extractAccountID(tokenResp.IDToken); accountID != "" {
+		// Recent OpenAI OAuth responses may only include chatgpt_account_id in id_token claims.
 		cred.AccountID = accountID
 	}
 
 	return cred, nil
 }
 
-func extractAccountID(accessToken string) string {
-	parts := strings.Split(accessToken, ".")
-	if len(parts) < 2 {
+func extractAccountID(token string) string {
+	claims, err := parseJWTClaims(token)
+	if err != nil {
 		return ""
+	}
+
+	if accountID, ok := claims["chatgpt_account_id"].(string); ok && accountID != "" {
+		return accountID
+	}
+
+	if accountID, ok := claims["https://api.openai.com/auth.chatgpt_account_id"].(string); ok && accountID != "" {
+		return accountID
+	}
+
+	if authClaim, ok := claims["https://api.openai.com/auth"].(map[string]interface{}); ok {
+		if accountID, ok := authClaim["chatgpt_account_id"].(string); ok && accountID != "" {
+			return accountID
+		}
+	}
+
+	if orgs, ok := claims["organizations"].([]interface{}); ok {
+		for _, org := range orgs {
+			if orgMap, ok := org.(map[string]interface{}); ok {
+				if accountID, ok := orgMap["id"].(string); ok && accountID != "" {
+					return accountID
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
+func parseJWTClaims(token string) (map[string]interface{}, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("token is not a JWT")
 	}
 
 	payload := parts[1]
@@ -373,21 +431,15 @@ func extractAccountID(accessToken string) string {
 
 	decoded, err := base64URLDecode(payload)
 	if err != nil {
-		return ""
+		return nil, err
 	}
 
 	var claims map[string]interface{}
 	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return ""
+		return nil, err
 	}
 
-	if authClaim, ok := claims["https://api.openai.com/auth"].(map[string]interface{}); ok {
-		if accountID, ok := authClaim["chatgpt_account_id"].(string); ok {
-			return accountID
-		}
-	}
-
-	return ""
+	return claims, nil
 }
 
 func base64URLDecode(s string) ([]byte, error) {

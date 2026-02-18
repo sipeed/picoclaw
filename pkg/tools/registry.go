@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 type ToolRegistry struct {
@@ -33,11 +34,14 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	return tool, ok
 }
 
-func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (string, error) {
-	return r.ExecuteWithContext(ctx, name, args, "", "")
+func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) *ToolResult {
+	return r.ExecuteWithContext(ctx, name, args, "", "", nil)
 }
 
-func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args map[string]interface{}, channel, chatID string) (string, error) {
+// ExecuteWithContext executes a tool with channel/chatID context and optional async callback.
+// If the tool implements AsyncTool and a non-nil callback is provided,
+// the callback will be set on the tool before execution.
+func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args map[string]interface{}, channel, chatID string, asyncCallback AsyncCallback) *ToolResult {
 	logger.InfoCF("tool", "Tool execution started",
 		map[string]interface{}{
 			"tool": name,
@@ -50,7 +54,7 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 			map[string]interface{}{
 				"tool": name,
 			})
-		return "", fmt.Errorf("tool '%s' not found", name)
+		return ErrorResult(fmt.Sprintf("tool %q not found", name)).WithError(fmt.Errorf("tool not found"))
 	}
 
 	// If tool implements ContextualTool, set context
@@ -58,27 +62,43 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 		contextualTool.SetContext(channel, chatID)
 	}
 
+	// If tool implements AsyncTool and callback is provided, set callback
+	if asyncTool, ok := tool.(AsyncTool); ok && asyncCallback != nil {
+		asyncTool.SetCallback(asyncCallback)
+		logger.DebugCF("tool", "Async callback injected",
+			map[string]interface{}{
+				"tool": name,
+			})
+	}
+
 	start := time.Now()
-	result, err := tool.Execute(ctx, args)
+	result := tool.Execute(ctx, args)
 	duration := time.Since(start)
 
-	if err != nil {
+	// Log based on result type
+	if result.IsError {
 		logger.ErrorCF("tool", "Tool execution failed",
 			map[string]interface{}{
 				"tool":     name,
 				"duration": duration.Milliseconds(),
-				"error":    err.Error(),
+				"error":    result.ForLLM,
+			})
+	} else if result.Async {
+		logger.InfoCF("tool", "Tool started (async)",
+			map[string]interface{}{
+				"tool":     name,
+				"duration": duration.Milliseconds(),
 			})
 	} else {
 		logger.InfoCF("tool", "Tool execution completed",
 			map[string]interface{}{
 				"tool":          name,
 				"duration_ms":   duration.Milliseconds(),
-				"result_length": len(result),
+				"result_length": len(result.ForLLM),
 			})
 	}
 
-	return result, err
+	return result
 }
 
 func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {
@@ -88,6 +108,38 @@ func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {
 	definitions := make([]map[string]interface{}, 0, len(r.tools))
 	for _, tool := range r.tools {
 		definitions = append(definitions, ToolToSchema(tool))
+	}
+	return definitions
+}
+
+// ToProviderDefs converts tool definitions to provider-compatible format.
+// This is the format expected by LLM provider APIs.
+func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	definitions := make([]providers.ToolDefinition, 0, len(r.tools))
+	for _, tool := range r.tools {
+		schema := ToolToSchema(tool)
+
+		// Safely extract nested values with type checks
+		fn, ok := schema["function"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		name, _ := fn["name"].(string)
+		desc, _ := fn["description"].(string)
+		params, _ := fn["parameters"].(map[string]interface{})
+
+		definitions = append(definitions, providers.ToolDefinition{
+			Type: "function",
+			Function: providers.ToolFunctionDefinition{
+				Name:        name,
+				Description: desc,
+				Parameters:  params,
+			},
+		})
 	}
 	return definitions
 }
