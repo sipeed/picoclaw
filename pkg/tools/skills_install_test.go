@@ -20,7 +20,7 @@ func TestInstallSkillToolMissingSlug(t *testing.T) {
 	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir())
 	result := tool.Execute(context.Background(), map[string]interface{}{})
 	assert.True(t, result.IsError)
-	assert.Contains(t, result.ForLLM, "slug is required")
+	assert.Contains(t, result.ForLLM, "identifier is required and must be a non-empty string")
 }
 
 func TestInstallSkillToolEmptySlug(t *testing.T) {
@@ -29,6 +29,7 @@ func TestInstallSkillToolEmptySlug(t *testing.T) {
 		"slug": "   ",
 	})
 	assert.True(t, result.IsError)
+	assert.Contains(t, result.ForLLM, "identifier is required and must be a non-empty string")
 }
 
 func TestInstallSkillToolUnsafeSlug(t *testing.T) {
