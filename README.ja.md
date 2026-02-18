@@ -160,7 +160,7 @@ docker compose --profile gateway up -d
 ### 🚀 クイックスタート（ネイティブ）
 
 > [!TIP]
-> `~/.picoclaw/config.json` に API キーを設定してください。
+> API キーは `~/.picoclaw/config.json`（または `~/.picoclaw/config.yml`）に設定してください。
 > API キーの取得先: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
 > Web 検索は **任意** です - 無料の [Brave Search API](https://brave.com/search/api) (月 2000 クエリ無料)
 
@@ -170,7 +170,7 @@ docker compose --profile gateway up -d
 picoclaw onboard
 ```
 
-**2. 設定** (`~/.picoclaw/config.json`)
+**2. 設定** (`~/.picoclaw/config.json` または `~/.picoclaw/config.yml`)
 
 ```json
 {
@@ -432,7 +432,7 @@ picoclaw gateway
 
 ## ⚙️ 設定
 
-設定ファイル: `~/.picoclaw/config.json`
+設定ファイル: `~/.picoclaw/config.json`（`~/.picoclaw/config.yml` も対応）
 
 ### ワークスペース構成
 
@@ -741,7 +741,7 @@ Discord: https://discord.gg/V4sAZ9XWpN
 
 Web 検索を有効にするには：
 1. [https://brave.com/search/api](https://brave.com/search/api) で無料の API キーを取得（月 2000 クエリ無料）
-2. `~/.picoclaw/config.json` に追加：
+2. 設定ファイル（`~/.picoclaw/config.json` または `~/.picoclaw/config.yml`）に追加：
    ```json
    {
      "tools": {

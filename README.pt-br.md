@@ -198,7 +198,7 @@ docker compose --profile gateway up -d
 ### 🚀 Inicio Rapido
 
 > [!TIP]
-> Configure sua API key em `~/.picoclaw/config.json`.
+> Configure sua API key em `~/.picoclaw/config.json` (ou `~/.picoclaw/config.yml`).
 > Obtenha API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
 > Busca web e **opcional** — obtenha a [Brave Search API](https://brave.com/search/api) gratuita (2000 consultas gratis/mes) ou use o fallback automatico integrado.
 
@@ -208,7 +208,7 @@ docker compose --profile gateway up -d
 picoclaw onboard
 ```
 
-**2. Configurar** (`~/.picoclaw/config.json`)
+**2. Configurar** (`~/.picoclaw/config.json` ou `~/.picoclaw/config.yml`)
 
 ```json
 {
@@ -478,7 +478,7 @@ Conecte o PicoClaw a Rede Social de Agentes simplesmente enviando uma unica mens
 
 ## ⚙️ Configuracao Detalhada
 
-Arquivo de configuracao: `~/.picoclaw/config.json`
+Arquivo de configuracao: `~/.picoclaw/config.json` (tambem suporta `~/.picoclaw/config.yml`)
 
 ### Estrutura do Workspace
 
@@ -841,7 +841,7 @@ Para habilitar a busca web:
 1. **Opcao 1 (Recomendado)**: Obtenha uma API key gratuita em [https://brave.com/search/api](https://brave.com/search/api) (2000 consultas gratis/mes) para os melhores resultados.
 2. **Opcao 2 (Sem Cartao de Credito)**: Se voce nao tem uma key, o sistema automaticamente usa o **DuckDuckGo** como fallback (sem necessidade de key).
 
-Adicione a key em `~/.picoclaw/config.json` se usar o Brave:
+Adicione a key no arquivo de configuracao (`~/.picoclaw/config.json` ou `~/.picoclaw/config.yml`) se usar o Brave:
 
 ```json
 {

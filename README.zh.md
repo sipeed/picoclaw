@@ -200,7 +200,7 @@ docker compose --profile gateway up -d
 ### 🚀 快速开始
 
 > [!TIP]
-> 在 `~/.picoclaw/config.json` 中设置您的 API Key。
+> 在配置文件中设置您的 API Key：`~/.picoclaw/config.json`（或 `~/.picoclaw/config.yml`）。
 > 获取 API Key: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu (智谱)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
 > 网络搜索是 **可选的** - 获取免费的 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询)
 
@@ -211,7 +211,7 @@ picoclaw onboard
 
 ```
 
-**2. 配置 (Configure)** (`~/.picoclaw/config.json`)
+**2. 配置 (Configure)** (`~/.picoclaw/config.json` 或 `~/.picoclaw/config.yml`)
 
 ```json
 {
@@ -438,7 +438,7 @@ picoclaw gateway
 
 ## ⚙️ 配置详解
 
-配置文件路径: `~/.picoclaw/config.json`
+配置文件路径: `~/.picoclaw/config.json`（也支持 `~/.picoclaw/config.yml`）
 
 ### 工作区布局 (Workspace Layout)
 
@@ -707,7 +707,7 @@ Discord:  [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 启用网络搜索：
 
 1. 在 [https://brave.com/search/api](https://brave.com/search/api) 获取免费 API Key (每月 2000 次免费查询)
-2. 添加到 `~/.picoclaw/config.json`:
+2. 添加到配置文件（`~/.picoclaw/config.json` 或 `~/.picoclaw/config.yml`）:
 ```json
 {
   "tools": {

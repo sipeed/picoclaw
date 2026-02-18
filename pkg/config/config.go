@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/caarlos0/env/v11"
+	"gopkg.in/yaml.v3"
 )
 
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
@@ -379,7 +381,7 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
-	if err := json.Unmarshal(data, cfg); err != nil {
+	if err := unmarshalConfigData(path, data, cfg); err != nil {
 		return nil, err
 	}
 
@@ -394,7 +396,7 @@ func SaveConfig(path string, cfg *Config) error {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	data, err := marshalConfigData(path, cfg)
 	if err != nil {
 		return err
 	}
@@ -405,6 +407,75 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 
 	return os.WriteFile(path, data, 0600)
+}
+
+func isYAMLPath(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".yml"
+}
+
+func unmarshalConfigData(path string, data []byte, cfg *Config) error {
+	if isYAMLPath(path) {
+		return unmarshalYAMLIntoConfig(data, cfg)
+	}
+	return json.Unmarshal(data, cfg)
+}
+
+func unmarshalYAMLIntoConfig(data []byte, cfg *Config) error {
+	var raw interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	normalized := normalizeYAMLValue(raw)
+	jsonData, err := json.Marshal(normalized)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(jsonData, cfg)
+}
+
+func normalizeYAMLValue(v interface{}) interface{} {
+	switch t := v.(type) {
+	case map[string]interface{}:
+		m := make(map[string]interface{}, len(t))
+		for k, vv := range t {
+			m[k] = normalizeYAMLValue(vv)
+		}
+		return m
+	case map[interface{}]interface{}:
+		m := make(map[string]interface{}, len(t))
+		for k, vv := range t {
+			m[fmt.Sprintf("%v", k)] = normalizeYAMLValue(vv)
+		}
+		return m
+	case []interface{}:
+		out := make([]interface{}, len(t))
+		for i := range t {
+			out[i] = normalizeYAMLValue(t[i])
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func marshalConfigData(path string, cfg *Config) ([]byte, error) {
+	if !isYAMLPath(path) {
+		return json.MarshalIndent(cfg, "", "  ")
+	}
+
+	jsonData, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(jsonData, &raw); err != nil {
+		return nil, err
+	}
+
+	return yaml.Marshal(raw)
 }
 
 func (c *Config) WorkspacePath() string {
