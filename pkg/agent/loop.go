@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/multiagent"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -35,6 +36,7 @@ type AgentLoop struct {
 	state          *state.Manager
 	running        atomic.Bool
 	summarizing    sync.Map
+	blackboards    sync.Map // sessionKey -> *multiagent.Blackboard
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 }
@@ -76,6 +78,45 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
 	}
+}
+
+// registryResolver adapts AgentRegistry to multiagent.AgentResolver.
+type registryResolver struct {
+	registry *AgentRegistry
+}
+
+func (r *registryResolver) GetAgentInfo(agentID string) *multiagent.AgentInfo {
+	agent, ok := r.registry.GetAgent(agentID)
+	if !ok {
+		return nil
+	}
+	return &multiagent.AgentInfo{
+		ID:           agent.ID,
+		Name:         agent.Name,
+		Role:         agent.Role,
+		SystemPrompt: agent.SystemPrompt,
+		Model:        agent.Model,
+		Provider:     agent.Provider,
+		Tools:        agent.Tools,
+		MaxIter:      agent.MaxIterations,
+	}
+}
+
+func (r *registryResolver) ListAgents() []multiagent.AgentInfo {
+	ids := r.registry.ListAgentIDs()
+	agents := make([]multiagent.AgentInfo, 0, len(ids))
+	for _, id := range ids {
+		agent, ok := r.registry.GetAgent(id)
+		if !ok {
+			continue
+		}
+		agents = append(agents, multiagent.AgentInfo{
+			ID:   agent.ID,
+			Name: agent.Name,
+			Role: agent.Role,
+		})
+	}
+	return agents
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
@@ -122,6 +163,24 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 		})
 		agent.Tools.Register(spawnTool)
+
+		// Multi-agent collaboration tools (blackboard, handoff, discovery)
+		// Only register when multiple agents are configured.
+		if len(registry.ListAgentIDs()) > 1 {
+			resolver := &registryResolver{registry: registry}
+
+			// Blackboard tool: per-agent instance sharing a common blackboard
+			// The actual blackboard is created per session in getOrCreateBlackboard
+			// For tool registration, we use a shared "global" blackboard.
+			sharedBoard := multiagent.NewBlackboard()
+			agent.Tools.Register(multiagent.NewBlackboardTool(sharedBoard, agentID))
+
+			// Handoff tool: delegate tasks to other agents
+			agent.Tools.Register(multiagent.NewHandoffTool(resolver, sharedBoard, agentID))
+
+			// List agents tool: discover available agents
+			agent.Tools.Register(multiagent.NewListAgentsTool(resolver))
+		}
 
 		// Update context builder with the complete tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
@@ -392,6 +451,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		opts.Channel,
 		opts.ChatID,
 	)
+
+	// 2b. Inject blackboard snapshot into system context if available
+	if bb := al.getOrCreateBlackboard(opts.SessionKey); bb != nil && bb.Size() > 0 {
+		snapshot := bb.Snapshot()
+		if snapshot != "" && len(messages) > 0 && messages[0].Role == "system" {
+			messages[0].Content += "\n\n" + snapshot
+		}
+	}
 
 	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
@@ -688,6 +755,21 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 			st.SetContext(channel, chatID)
 		}
 	}
+	if tool, ok := agent.Tools.Get("handoff"); ok {
+		if ht, ok := tool.(tools.ContextualTool); ok {
+			ht.SetContext(channel, chatID)
+		}
+	}
+}
+
+// getOrCreateBlackboard returns the blackboard for a session, creating one if needed.
+func (al *AgentLoop) getOrCreateBlackboard(sessionKey string) *multiagent.Blackboard {
+	if v, ok := al.blackboards.Load(sessionKey); ok {
+		return v.(*multiagent.Blackboard)
+	}
+	bb := multiagent.NewBlackboard()
+	actual, _ := al.blackboards.LoadOrStore(sessionKey, bb)
+	return actual.(*multiagent.Blackboard)
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.

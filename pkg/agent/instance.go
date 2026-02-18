@@ -17,6 +17,8 @@ import (
 type AgentInstance struct {
 	ID             string
 	Name           string
+	Role           string
+	SystemPrompt   string
 	Model          string
 	Fallbacks      []string
 	Workspace      string
@@ -60,12 +62,16 @@ func NewAgentInstance(
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
+	agentRole := ""
+	agentSystemPrompt := ""
 	var subagents *config.SubagentsConfig
 	var skillsFilter []string
 
 	if agentCfg != nil {
 		agentID = routing.NormalizeAgentID(agentCfg.ID)
 		agentName = agentCfg.Name
+		agentRole = agentCfg.Role
+		agentSystemPrompt = agentCfg.SystemPrompt
 		subagents = agentCfg.Subagents
 		skillsFilter = agentCfg.Skills
 	}
@@ -85,6 +91,8 @@ func NewAgentInstance(
 	return &AgentInstance{
 		ID:             agentID,
 		Name:           agentName,
+		Role:           agentRole,
+		SystemPrompt:   agentSystemPrompt,
 		Model:          model,
 		Fallbacks:      fallbacks,
 		Workspace:      workspace,
