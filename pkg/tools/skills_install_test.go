@@ -99,5 +99,5 @@ func TestInstallSkillToolMissingRegistry(t *testing.T) {
 		"slug": "some-skill",
 	})
 	assert.True(t, result.IsError)
-	assert.Contains(t, result.ForLLM, "registry is required")
+	assert.Contains(t, result.ForLLM, "invalid registry")
 }
