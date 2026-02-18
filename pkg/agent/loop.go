@@ -71,7 +71,7 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	registry.Register(tools.NewAppendFileTool(workspace, restrict))
 
 	// Shell execution
-	registry.Register(tools.NewExecTool(workspace, restrict))
+	registry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
 
 	if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
 		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
