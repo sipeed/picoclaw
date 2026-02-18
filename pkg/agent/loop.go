@@ -617,8 +617,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			})
 		}
 
-		// Retry loop for context/token errors
-		maxRetries := 2
+		// Retry loop for recoverable errors (context window + rate limits).
+		maxRetries := 3
 		for retry := 0; retry <= maxRetries; retry++ {
 			response, err = callLLM()
 			if err == nil {
@@ -626,6 +626,34 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			}
 
 			errMsg := strings.ToLower(err.Error())
+
+			// Rate-limit / transient errors: wait with exponential backoff.
+			isRateLimitError := strings.Contains(errMsg, "429") ||
+				strings.Contains(errMsg, "rate limit") ||
+				strings.Contains(errMsg, "rate_limit") ||
+				strings.Contains(errMsg, "resource_exhausted") ||
+				strings.Contains(errMsg, "resource exhausted") ||
+				strings.Contains(errMsg, "too many requests") ||
+				strings.Contains(errMsg, "overloaded") ||
+				strings.Contains(errMsg, "quota")
+
+			if isRateLimitError && retry < maxRetries {
+				backoff := time.Duration(1<<uint(retry)) * 5 * time.Second // 5s, 10s, 20s
+				logger.WarnCF("agent", "Rate limit detected, backing off", map[string]interface{}{
+					"error":   err.Error(),
+					"retry":   retry + 1,
+					"backoff": backoff.String(),
+				})
+
+				select {
+				case <-ctx.Done():
+					return "", iteration, ctx.Err()
+				case <-time.After(backoff):
+				}
+				continue
+			}
+
+			// Context window errors: compress history and retry.
 			isContextError := strings.Contains(errMsg, "token") ||
 				strings.Contains(errMsg, "context") ||
 				strings.Contains(errMsg, "invalidparameter") ||
