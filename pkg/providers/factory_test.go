@@ -85,6 +85,36 @@ func TestResolveProviderSelection(t *testing.T) {
 			wantType: providerTypeClaudeAuth,
 		},
 		{
+			name: "explicit anthropic provider with api key routes to claude api key provider",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "anthropic"
+				cfg.Agents.Defaults.Model = "claude-opus-4-6"
+				cfg.Providers.Anthropic.APIKey = "sk-ant-api03-test"
+			},
+			wantType:    providerTypeClaudeAPIKey,
+			wantAPIBase: "https://api.anthropic.com/v1",
+		},
+		{
+			name: "explicit claude provider with api key and custom base routes to claude api key provider",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "claude"
+				cfg.Agents.Defaults.Model = "claude-opus-4-6"
+				cfg.Providers.Anthropic.APIKey = "sk-ant-api03-test"
+				cfg.Providers.Anthropic.APIBase = "https://proxy.example.com/v1"
+			},
+			wantType:    providerTypeClaudeAPIKey,
+			wantAPIBase: "https://proxy.example.com/v1",
+		},
+		{
+			name: "claude model name with api key infers claude api key provider",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Model = "claude-opus-4-6"
+				cfg.Providers.Anthropic.APIKey = "sk-ant-api03-test"
+			},
+			wantType:    providerTypeClaudeAPIKey,
+			wantAPIBase: "https://api.anthropic.com/v1",
+		},
+		{
 			name: "openai oauth routes to codex auth provider",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "gpt-4o"
@@ -290,6 +320,22 @@ func TestCreateProviderReturnsClaudeProviderForAnthropicOAuth(t *testing.T) {
 		t.Fatalf("provider type = %T, want *ClaudeProvider", provider)
 	}
 	// TODO: Test custom APIBase when createClaudeAuthProvider supports it
+}
+
+func TestCreateProviderReturnsClaudeProviderForAnthropicAPIKey(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "anthropic"
+	cfg.Agents.Defaults.Model = "claude-opus-4-6"
+	cfg.Providers.Anthropic.APIKey = "sk-ant-api03-test"
+
+	provider, err := CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider() error = %v", err)
+	}
+
+	if _, ok := provider.(*ClaudeProvider); !ok {
+		t.Fatalf("provider type = %T, want *ClaudeProvider", provider)
+	}
 }
 
 func TestCreateProviderReturnsCodexProviderForOpenAIOAuth(t *testing.T) {
