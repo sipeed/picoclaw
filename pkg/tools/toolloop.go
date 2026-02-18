@@ -97,8 +97,9 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 
 		// 6. Build assistant message with tool calls
 		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
+			Role:             "assistant",
+			Content:          response.Content,
+			ReasoningContent: response.ReasoningContent, // Preserve for thinking models (e.g., GLM-Z1)
 		}
 		for _, tc := range response.ToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
