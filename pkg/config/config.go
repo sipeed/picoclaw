@@ -100,6 +100,14 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 	return json.Marshal(raw{Primary: m.Primary, Fallbacks: m.Fallbacks})
 }
 
+// ToolPolicyConfig defines allow/deny lists for per-agent tool filtering.
+// Tool names can be individual (e.g. "exec") or group refs (e.g. "group:web").
+// nil = full access (no filtering applied).
+type ToolPolicyConfig struct {
+	Allow []string `json:"allow,omitempty"` // tool names or group refs
+	Deny  []string `json:"deny,omitempty"`  // tool names or group refs
+}
+
 type AgentConfig struct {
 	ID           string            `json:"id"`
 	Default      bool              `json:"default,omitempty"`
@@ -111,6 +119,7 @@ type AgentConfig struct {
 	Skills       []string          `json:"skills,omitempty"`
 	Capabilities []string          `json:"capabilities,omitempty"`
 	Subagents    *SubagentsConfig  `json:"subagents,omitempty"`
+	ToolPolicy   *ToolPolicyConfig `json:"tool_policy,omitempty"`
 }
 
 type SubagentsConfig struct {
