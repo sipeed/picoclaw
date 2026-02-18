@@ -335,7 +335,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				apiBase = "localhost:4321"
 			}
 			return NewGitHubCopilotProvider(apiBase, cfg.Providers.GitHubCopilot.ConnectMode, model)
-
+		case "nvidia":
+			if cfg.Providers.Nvidia.APIKey != "" {
+				apiKey = cfg.Providers.Nvidia.APIKey
+				apiBase = cfg.Providers.Nvidia.APIBase
+				proxy = cfg.Providers.Nvidia.Proxy
+				if apiBase == "" {
+					apiBase = "https://integrate.api.nvidia.com/v1"
+				}
+			}
 		}
 
 	}
