@@ -212,6 +212,10 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 			})
 		}
 
+		// Register loop detector hook (per-agent, session-isolated via context key).
+		// Uses production defaults: warn@10 repeats, block@20, circuit breaker@30.
+		agent.Tools.AddHook(tools.NewLoopDetector(tools.DefaultLoopDetectorConfig()))
+
 		// Update context builder with the (possibly filtered) tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
 	}
@@ -503,7 +507,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 4. Run LLM iteration loop
+	// 4. Inject session key into context for loop detection
+	ctx = tools.WithSessionKey(ctx, opts.SessionKey)
+
+	// 5. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
 		return "", err
