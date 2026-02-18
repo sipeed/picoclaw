@@ -177,6 +177,7 @@ type ProvidersConfig struct {
 	Nvidia        ProviderConfig       `json:"nvidia"`
 	Ollama        ProviderConfig       `json:"ollama"`
 	Moonshot      ProviderConfig       `json:"moonshot"`
+	Minimax       ProviderConfig       `json:"minimax"`
 	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig       `json:"deepseek"`
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
@@ -327,6 +328,7 @@ func DefaultConfig() *Config {
 			Gemini:       ProviderConfig{},
 			Nvidia:       ProviderConfig{},
 			Moonshot:     ProviderConfig{},
+			Minimax:      ProviderConfig{},
 			ShengSuanYun: ProviderConfig{},
 		},
 		Gateway: GatewayConfig{

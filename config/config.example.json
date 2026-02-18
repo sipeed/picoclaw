@@ -111,6 +111,10 @@
       "api_key": "sk-xxx",
       "api_base": ""
     },
+    "minimax": {
+      "api_key": "sk-xxx",
+      "api_base": ""
+    },
     "ollama": {
       "api_key": "",
       "api_base": "http://localhost:11434/v1"
