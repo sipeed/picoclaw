@@ -737,6 +737,90 @@ func TestHandoffTool_SetContext(t *testing.T) {
 	}
 }
 
+// TestHandoff_DepthPolicy_LeafNoSpawn verifies that at max depth, the target agent's
+// tool registry clone has spawn/handoff/list_agents removed.
+func TestHandoff_DepthPolicy_LeafNoSpawn(t *testing.T) {
+	provider := &mockProvider{response: "leaf result"}
+	targetRegistry := tools.NewToolRegistry()
+	targetRegistry.Register(&simpleTool{name: "read_file"})
+	targetRegistry.Register(&simpleTool{name: "spawn"})
+	targetRegistry.Register(&simpleTool{name: "handoff"})
+	targetRegistry.Register(&simpleTool{name: "list_agents"})
+
+	resolver := newMockResolver(&AgentInfo{
+		ID: "leaf", Name: "Leaf Agent", Model: "test",
+		Provider: provider, Tools: targetRegistry, MaxIter: 5,
+	})
+
+	bb := NewBlackboard()
+	// Depth 2, maxDepth 3: the target will run at depth 3 (req.Depth+1),
+	// which equals maxDepth, triggering depth deny.
+	result := ExecuteHandoff(context.Background(), resolver, bb, HandoffRequest{
+		FromAgentID: "main",
+		ToAgentID:   "leaf",
+		Task:        "do something as a leaf",
+		Depth:       2,
+		MaxDepth:    3,
+		Visited:     []string{"main", "middle"},
+	}, "cli", "direct")
+
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+
+	// Original registry should still have all 4 tools (clone was modified, not original)
+	if targetRegistry.Count() != 4 {
+		t.Errorf("original registry count = %d, want 4 (unmodified)", targetRegistry.Count())
+	}
+}
+
+// TestHandoff_DepthPolicy_MidChain verifies that mid-chain agents retain all tools.
+func TestHandoff_DepthPolicy_MidChain(t *testing.T) {
+	provider := &mockProvider{response: "mid-chain result"}
+	targetRegistry := tools.NewToolRegistry()
+	targetRegistry.Register(&simpleTool{name: "read_file"})
+	targetRegistry.Register(&simpleTool{name: "spawn"})
+	targetRegistry.Register(&simpleTool{name: "handoff"})
+	targetRegistry.Register(&simpleTool{name: "list_agents"})
+
+	resolver := newMockResolver(&AgentInfo{
+		ID: "mid", Name: "Mid Agent", Model: "test",
+		Provider: provider, Tools: targetRegistry, MaxIter: 5,
+	})
+
+	bb := NewBlackboard()
+	// Depth 0, maxDepth 3: target runs at depth 1, well below max.
+	result := ExecuteHandoff(context.Background(), resolver, bb, HandoffRequest{
+		FromAgentID: "main",
+		ToAgentID:   "mid",
+		Task:        "mid-chain task",
+		Depth:       0,
+		MaxDepth:    3,
+		Visited:     []string{"main"},
+	}, "cli", "direct")
+
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+
+	// Original registry should still have all 4 tools
+	if targetRegistry.Count() != 4 {
+		t.Errorf("original registry count = %d, want 4", targetRegistry.Count())
+	}
+}
+
+// simpleTool is a minimal tool for depth policy tests.
+type simpleTool struct {
+	name string
+}
+
+func (s *simpleTool) Name() string                                                  { return s.name }
+func (s *simpleTool) Description() string                                            { return "test tool" }
+func (s *simpleTool) Parameters() map[string]interface{}                             { return nil }
+func (s *simpleTool) Execute(_ context.Context, _ map[string]interface{}) *tools.ToolResult {
+	return tools.NewToolResult("ok")
+}
+
 func TestBuildHandoffSystemPrompt(t *testing.T) {
 	agent := &AgentInfo{
 		Name:         "Code Agent",
