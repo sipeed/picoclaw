@@ -30,10 +30,12 @@ type dummyTool struct {
 	name string
 }
 
-func (d *dummyTool) Name() string                                                  { return d.name }
-func (d *dummyTool) Description() string                                            { return "test tool" }
-func (d *dummyTool) Parameters() map[string]interface{}                             { return nil }
-func (d *dummyTool) Execute(_ context.Context, _ map[string]interface{}) *ToolResult { return NewToolResult("ok") }
+func (d *dummyTool) Name() string                       { return d.name }
+func (d *dummyTool) Description() string                { return "test tool" }
+func (d *dummyTool) Parameters() map[string]interface{} { return nil }
+func (d *dummyTool) Execute(_ context.Context, _ map[string]interface{}) *ToolResult {
+	return NewToolResult("ok")
+}
 
 func TestToolHook_BeforeAndAfterCalled(t *testing.T) {
 	reg := NewToolRegistry()

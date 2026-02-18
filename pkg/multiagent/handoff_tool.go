@@ -10,11 +10,11 @@ import (
 
 // HandoffTool allows an LLM agent to delegate a task to another agent.
 type HandoffTool struct {
-	resolver      AgentResolver
-	board         *Blackboard
-	fromAgentID   string
-	originChannel string
-	originChatID  string
+	resolver         AgentResolver
+	board            *Blackboard
+	fromAgentID      string
+	originChannel    string
+	originChatID     string
 	depth            int              // current handoff depth (0 = top-level)
 	visited          []string         // agent IDs already in the call chain
 	maxDepth         int              // max allowed depth (0 = use DefaultMaxHandoffDepth)

@@ -814,9 +814,9 @@ type simpleTool struct {
 	name string
 }
 
-func (s *simpleTool) Name() string                                                  { return s.name }
-func (s *simpleTool) Description() string                                            { return "test tool" }
-func (s *simpleTool) Parameters() map[string]interface{}                             { return nil }
+func (s *simpleTool) Name() string                       { return s.name }
+func (s *simpleTool) Description() string                { return "test tool" }
+func (s *simpleTool) Parameters() map[string]interface{} { return nil }
 func (s *simpleTool) Execute(_ context.Context, _ map[string]interface{}) *tools.ToolResult {
 	return tools.NewToolResult("ok")
 }
