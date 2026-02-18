@@ -171,7 +171,7 @@ func normalizeQuery(q string) string {
 
 // buildTrigrams generates hash of trigrams from a string.
 // Example: "hello" → {"hel", "ell", "llo"}
-// "hel" -> 0x0068656c -> 4 bytes; compared to 16 byptes of a string
+// "hel" -> 0x0068656c -> 4 bytes; compared to 16 bytes of a string
 func buildTrigrams(s string) []uint32 {
 	if len(s) < 3 {
 		return nil
