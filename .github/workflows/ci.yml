@@ -29,6 +29,9 @@ jobs:
             exit 1
           fi
 
+      - name: Generate embedded workspace files
+        run: go generate ./cmd/picoclaw
+
       - name: Run go vet
         run: go vet ./...
 
