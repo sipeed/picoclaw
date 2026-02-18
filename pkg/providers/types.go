@@ -33,6 +33,7 @@ type Message struct {
 	Content    string     `json:"content"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Timestamp  int64      `json:"timestamp,omitempty"`
 }
 
 type LLMProvider interface {

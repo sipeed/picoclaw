@@ -63,6 +63,7 @@ func (sm *SessionManager) AddMessage(sessionKey, role, content string) {
 	sm.AddFullMessage(sessionKey, providers.Message{
 		Role:    role,
 		Content: content,
+		Timestamp: time.Now().Unix(),
 	})
 }
 
@@ -80,6 +81,11 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Messag
 			Created:  time.Now(),
 		}
 		sm.sessions[sessionKey] = session
+	}
+
+	// Set timestamp if not already set
+	if msg.Timestamp == 0 {
+		msg.Timestamp = time.Now().Unix()
 	}
 
 	session.Messages = append(session.Messages, msg)
