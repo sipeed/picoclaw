@@ -671,20 +671,115 @@ O subagente tem acesso às ferramentas (message, web_search, etc.) e pode se com
 * `PICOCLAW_HEARTBEAT_ENABLED=false` para desabilitar
 * `PICOCLAW_HEARTBEAT_INTERVAL=60` para alterar o intervalo
 
-### Provedores
+### Provedores (Providers)
+
+O PicoClaw suporta múltiplos provedores de modelos de IA através de uma interface de configuração unificada. Todos os provedores são configurados na seção `providers` do `config.json`.
 
 > [!NOTE]
 > O Groq fornece transcrição de voz gratuita via Whisper. Se configurado, mensagens de voz do Telegram serão automaticamente transcritas.
 
-| Provedor | Finalidade | Obter API Key |
-| --- | --- | --- |
-| `gemini` | LLM (Gemini direto) | [aistudio.google.com](https://aistudio.google.com) |
-| `zhipu` | LLM (Zhipu direto) | [bigmodel.cn](bigmodel.cn) |
-| `openrouter` (Em teste) | LLM (recomendado, acesso a todos os modelos) | [openrouter.ai](https://openrouter.ai) |
-| `anthropic` (Em teste) | LLM (Claude direto) | [console.anthropic.com](https://console.anthropic.com) |
-| `openai` (Em teste) | LLM (GPT direto) | [platform.openai.com](https://platform.openai.com) |
-| `deepseek` (Em teste) | LLM (DeepSeek direto) | [platform.deepseek.com](https://platform.deepseek.com) |
-| `groq` | LLM + **Transcrição de voz** (Whisper) | [console.groq.com](https://console.groq.com) |
+#### Provedores Suportados
+
+Com base no arquivo de configuração, o PicoClaw atualmente suporta os seguintes provedores:
+
+| Provedor | Chave de Configuração | Formato da API Key | API Base Padrão | Notas |
+|----------|----------------------|-------------------|-----------------|-------|
+| **Anthropic** | `anthropic` | Sua API key do Anthropic | `https://api.anthropic.com` | Modelos Claude (Claude 3.5 Sonnet, Claude 3 Opus, etc.) |
+| **OpenAI** | `openai` | Sua API key do OpenAI | `https://api.openai.com/v1` | GPT-4, GPT-3.5, etc. Suporta busca web quando habilitado |
+| **OpenRouter** | `openrouter` | `sk-or-v1-xxx` | `https://openrouter.ai/api/v1` | Acesso a múltiplos modelos de diferentes provedores |
+| **Groq** | `groq` | `gsk_xxx` | `https://api.groq.com/openai/v1` | Inferência rápida com modelos Llama, Mixtral + transcrição de voz Whisper |
+| **Zhipu** | `zhipu` | Sua API key do Zhipu | `https://open.bigmodel.cn/api/paas/v4` | Modelos GLM (GLM-4, GLM-4V, etc.) |
+| **Gemini** | `gemini` | Sua API key do Google AI Studio | `https://generativelanguage.googleapis.com/v1beta` | Modelos Gemini (Gemini Pro, Gemini Flash, etc.) |
+| **vLLM** | `vllm` | (Opcional) | `http://localhost:8000/v1` | Servidor vLLM local para modelos auto-hospedados |
+| **NVIDIA** | `nvidia` | `nvapi-xxx` | `https://integrate.api.nvidia.com/v1` | Modelos NVIDIA NIM, suporta configuração de proxy |
+| **Moonshot** | `moonshot` | `sk-xxx` | `https://api.moonshot.cn/v1` | Modelos Moonshot AI (Kimi, etc.) |
+| **Ollama** | `ollama` | (Opcional) | `http://localhost:11434/v1` | Servidor Ollama local para executar modelos localmente |
+
+#### Exemplo de Configuração
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "api_key": "sua-chave-api-anthropic",
+      "api_base": "https://api.anthropic.com"
+    },
+    "openai": {
+      "api_key": "sua-chave-api-openai",
+      "api_base": "https://api.openai.com/v1",
+      "web_search": true
+    },
+    "openrouter": {
+      "api_key": "sk-or-v1-sua-chave-openrouter",
+      "api_base": "https://openrouter.ai/api/v1"
+    },
+    "groq": {
+      "api_key": "gsk_sua-chave-groq",
+      "api_base": "https://api.groq.com/openai/v1"
+    },
+    "zhipu": {
+      "api_key": "sua-chave-api-zhipu",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    },
+    "gemini": {
+      "api_key": "sua-chave-google-ai-studio",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta"
+    },
+    "vllm": {
+      "api_key": "",
+      "api_base": "http://localhost:8000/v1"
+    },
+    "nvidia": {
+      "api_key": "nvapi-sua-chave-nvidia",
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "proxy": "http://127.0.0.1:7890"
+    },
+    "moonshot": {
+      "api_key": "sk-sua-chave-moonshot",
+      "api_base": "https://api.moonshot.cn/v1"
+    },
+    "ollama": {
+      "api_key": "",
+      "api_base": "http://localhost:11434/v1"
+    }
+  }
+}
+```
+
+#### Arquitetura dos Provedores
+
+O PicoClaw roteia provedores por família de protocolo:
+
+- **Protocolo compatível com OpenAI**: Endpoints OpenRouter, OpenAI, Groq, Zhipu, vLLM, NVIDIA, Moonshot e Ollama.
+- **Protocolo Anthropic**: Comportamento de API nativa do Claude.
+- **Protocolo Gemini**: API Gemini do Google.
+
+Isso mantém o runtime leve enquanto novos backends compatíveis com OpenAI são principalmente uma operação de configuração (`api_base` + `api_key`).
+
+#### Obtendo API Keys
+
+| Provedor | Onde Obter API Key | Plano Gratuito |
+|----------|-------------------|----------------|
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) | Créditos gratuitos limitados |
+| **OpenAI** | [platform.openai.com](https://platform.openai.com) | $5 de crédito gratuito para novos usuários |
+| **OpenRouter** | [openrouter.ai/keys](https://openrouter.ai/keys) | 200K tokens/mês gratuitos |
+| **Groq** | [console.groq.com](https://console.groq.com) | Plano gratuito disponível |
+| **Zhipu** | [bigmodel.cn](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | 200K tokens/mês gratuitos |
+| **Gemini** | [aistudio.google.com](https://aistudio.google.com) | Plano gratuito com limites |
+| **NVIDIA** | [build.nvidia.com](https://build.nvidia.com) | Créditos gratuitos disponíveis |
+| **Moonshot** | [platform.moonshot.cn](https://platform.moonshot.cn) | Plano gratuito disponível |
+| **Ollama** | [ollama.com](https://ollama.com) | Gratuito (auto-hospedado) |
+
+#### Compatibilidade de Modelos
+
+A maioria dos provedores suporta o formato padrão da API OpenAI, facilitando a troca entre eles. Por exemplo:
+
+- Use `model: "gpt-4"` para OpenAI
+- Use `model: "claude-3-5-sonnet-20241022"` para Anthropic  
+- Use `model: "glm-4"` para Zhipu
+- Use `model: "gemini-1.5-pro"` para Gemini
+- Use `model: "llama-3.1-70b"` para Groq
+- Use `model: "qwen-2.5-32b"` para OpenRouter
 
 <details>
 <summary><b>Configuração Zhipu</b></summary>

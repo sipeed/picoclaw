@@ -621,98 +621,115 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 - `PICOCLAW_HEARTBEAT_ENABLED=false` で無効化
 - `PICOCLAW_HEARTBEAT_INTERVAL=60` で間隔変更
 
-### 基本設定
+### プロバイダー (Providers)
 
-1.  **設定ファイルの作成:**
+PicoClaw は統一された設定インターフェースを通じて複数の AI モデルプロバイダーをサポートします。すべてのプロバイダーは `config.json` の `providers` セクションで設定されます。
 
-    ```bash
-    cp config.example.json config/config.json
-    ```
+> [!NOTE]
+> Groq は Whisper を通じて無料の音声文字起こしを提供します。設定されている場合、Telegram の音声メッセージは自動的に文字起こしされます。
 
-2.  **設定の編集:**
+#### サポートされているプロバイダー
 
-    ```json
-    {
-      "providers": {
-        "openrouter": {
-          "api_key": "sk-or-v1-..."
-        }
-      },
-      "channels": {
-        "discord": {
-          "enabled": true,
-          "token": "YOUR_DISCORD_BOT_TOKEN"
-        }
-      }
-    }
-    ```
+設定ファイルに基づき、PicoClaw は現在以下のプロバイダーをサポートしています：
 
-3.  **実行**
+| プロバイダー | 設定キー | API キー形式 | デフォルト API Base | 備考 |
+|-------------|----------|--------------|---------------------|------|
+| **Anthropic** | `anthropic` | Anthropic API キー | `https://api.anthropic.com` | Claude モデル (Claude 3.5 Sonnet, Claude 3 Opus など) |
+| **OpenAI** | `openai` | OpenAI API キー | `https://api.openai.com/v1` | GPT-4, GPT-3.5 など。有効時は Web 検索をサポート |
+| **OpenRouter** | `openrouter` | `sk-or-v1-xxx` | `https://openrouter.ai/api/v1` | 複数プロバイダーからのモデルへのアクセス |
+| **Groq** | `groq` | `gsk_xxx` | `https://api.groq.com/openai/v1` | Llama、Mixtral モデルでの高速推論 + Whisper 音声文字起こし |
+| **智譜 (Zhipu)** | `zhipu` | 智譜 API キー | `https://open.bigmodel.cn/api/paas/v4` | GLM モデル (GLM-4, GLM-4V など) |
+| **Gemini** | `gemini` | Google AI Studio API キー | `https://generativelanguage.googleapis.com/v1beta` | Gemini モデル (Gemini Pro, Gemini Flash など) |
+| **vLLM** | `vllm` | (オプション) | `http://localhost:8000/v1` | セルフホストモデル用のローカル vLLM サーバー |
+| **NVIDIA** | `nvidia` | `nvapi-xxx` | `https://integrate.api.nvidia.com/v1` | NVIDIA NIM モデル、プロキシ設定をサポート |
+| **Moonshot** | `moonshot` | `sk-xxx` | `https://api.moonshot.cn/v1` | Moonshot AI モデル (Kimi など) |
+| **Ollama** | `ollama` | (オプション) | `http://localhost:11434/v1` | ローカルモデル実行用のローカル Ollama サーバー |
 
-    ```bash
-    picoclaw agent -m "Hello"
-    ```
-</details>
-
-<details>
-<summary><b>完全な設定例</b></summary>
+#### 設定例
 
 ```json
 {
-  "agents": {
-    "defaults": {
-      "model": "anthropic/claude-opus-4-5"
-    }
-  },
   "providers": {
+    "anthropic": {
+      "api_key": "your-anthropic-api-key",
+      "api_base": "https://api.anthropic.com"
+    },
+    "openai": {
+      "api_key": "your-openai-api-key",
+      "api_base": "https://api.openai.com/v1",
+      "web_search": true
+    },
     "openrouter": {
-      "apiKey": "sk-or-v1-xxx"
+      "api_key": "sk-or-v1-your-openrouter-key",
+      "api_base": "https://openrouter.ai/api/v1"
     },
     "groq": {
-      "apiKey": "gsk_xxx"
+      "api_key": "gsk_your-groq-key",
+      "api_base": "https://api.groq.com/openai/v1"
+    },
+    "zhipu": {
+      "api_key": "your-zhipu-api-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    },
+    "gemini": {
+      "api_key": "your-google-ai-studio-key",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta"
+    },
+    "vllm": {
+      "api_key": "",
+      "api_base": "http://localhost:8000/v1"
+    },
+    "nvidia": {
+      "api_key": "nvapi-your-nvidia-key",
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "proxy": "http://127.0.0.1:7890"
+    },
+    "moonshot": {
+      "api_key": "sk-your-moonshot-key",
+      "api_base": "https://api.moonshot.cn/v1"
+    },
+    "ollama": {
+      "api_key": "",
+      "api_base": "http://localhost:11434/v1"
     }
-  },
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "123456:ABC...",
-      "allow_from": ["123456789"]
-    },
-    "discord": {
-      "enabled": true,
-      "token": "",
-      "allow_from": [""]
-    },
-    "whatsapp": {
-      "enabled": false
-    },
-    "feishu": {
-      "enabled": false,
-      "appId": "cli_xxx",
-      "appSecret": "xxx",
-      "encryptKey": "",
-      "verificationToken": "",
-      "allow_from": []
-    }
-  },
-  "tools": {
-    "web": {
-      "search": {
-        "apiKey": "BSA..."
-      }
-    },
-    "cron": {
-      "exec_timeout_minutes": 5
-    }
-  },
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
   }
 }
 ```
 
-</details>
+#### プロバイダーアーキテクチャ
+
+PicoClaw はプロトコルファミリーごとにプロバイダーをルーティングします：
+
+- **OpenAI 互換プロトコル**: OpenRouter, OpenAI, Groq, Zhipu, vLLM, NVIDIA, Moonshot, Ollama エンドポイント。
+- **Anthropic プロトコル**: Claude ネイティブ API 動作。
+- **Gemini プロトコル**: Google の Gemini API。
+
+これによりランタイムを軽量に保ちながら、新しい OpenAI 互換バックエンドはほとんど設定操作 (`api_base` + `api_key`) のみで済みます。
+
+#### API キーの取得
+
+| プロバイダー | API キー取得先 | 無料枠 |
+|-------------|----------------|--------|
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) | 限定無料クレジット |
+| **OpenAI** | [platform.openai.com](https://platform.openai.com) | 新規ユーザー $5 無料クレジット |
+| **OpenRouter** | [openrouter.ai/keys](https://openrouter.ai/keys) | 月 200K トークン無料 |
+| **Groq** | [console.groq.com](https://console.groq.com) | 無料枠あり |
+| **智譜 (Zhipu)** | [bigmodel.cn](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | 月 200K トークン無料 |
+| **Gemini** | [aistudio.google.com](https://aistudio.google.com) | 制限付き無料枠 |
+| **NVIDIA** | [build.nvidia.com](https://build.nvidia.com) | 無料クレジットあり |
+| **Moonshot** | [platform.moonshot.cn](https://platform.moonshot.cn) | 無料枠あり |
+| **Ollama** | [ollama.com](https://ollama.com) | 無料 (セルフホスト) |
+
+#### モデル互換性
+
+ほとんどのプロバイダーは標準の OpenAI API 形式をサポートしており、切り替えが容易です。例えば：
+
+- OpenAI には `model: "gpt-4"` を使用
+- Anthropic には `model: "claude-3-5-sonnet-20241022"` を使用  
+- Zhipu には `model: "glm-4"` を使用
+- Gemini には `model: "gemini-1.5-pro"` を使用
+- Groq には `model: "llama-3.1-70b"` を使用
+- OpenRouter には `model: "qwen-2.5-32b"` を使用
 
 ## CLI リファレンス
 

@@ -239,10 +239,20 @@ picoclaw onboard
 
 **3. Get API Keys**
 
-* **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+* **LLM Providers**: 
+  - [OpenRouter](https://openrouter.ai/keys) (recommended, access to multiple models)
+  - [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (GLM models)
+  - [Anthropic](https://console.anthropic.com) (Claude models)
+  - [OpenAI](https://platform.openai.com) (GPT models)
+  - [Gemini](https://aistudio.google.com/api-keys) (Google AI models)
+  - [Groq](https://console.groq.com) (fast inference + Whisper voice transcription)
+  - [Moonshot](https://platform.moonshot.cn) (Kimi models)
+  - [NVIDIA](https://build.nvidia.com) (NIM models)
+  - [vLLM](https://vllm.readthedocs.io) (self-hosted models)
+  - [Ollama](https://ollama.com) (local models)
 * **Web Search** (optional): [Brave Search](https://brave.com/search/api) - Free tier available (2000 requests/month)
 
-> **Note**: See `config.example.json` for a complete configuration template.
+> **Note**: See `config.example.json` for a complete configuration template with all supported providers.
 
 **4. Chat**
 
@@ -666,28 +676,113 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 
 ### Providers
 
+PicoClaw supports multiple AI model providers through a unified configuration interface. All providers are configured in the `providers` section of `config.json`.
+
 > [!NOTE]
 > Groq provides free voice transcription via Whisper. If configured, Telegram voice messages will be automatically transcribed.
 
-| Provider                   | Purpose                                 | Get API Key                                            |
-| -------------------------- | --------------------------------------- | ------------------------------------------------------ |
-| `gemini`                   | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)     |
-| `zhipu`                    | LLM (Zhipu direct)                      | [bigmodel.cn](bigmodel.cn)                             |
-| `openrouter(To be tested)` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                 |
-| `anthropic(To be tested)`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com) |
-| `openai(To be tested)`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)     |
-| `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com) |
-| `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)           |
+#### Supported Providers
 
-### Provider Architecture
+Based on the configuration file, PicoClaw currently supports the following providers:
+
+| Provider | Configuration Key | API Key Format | Default API Base | Notes |
+|----------|-------------------|----------------|------------------|-------|
+| **Anthropic** | `anthropic` | Your Anthropic API key | `https://api.anthropic.com` | Claude models (Claude 3.5 Sonnet, Claude 3 Opus, etc.) |
+| **OpenAI** | `openai` | Your OpenAI API key | `https://api.openai.com/v1` | GPT-4, GPT-3.5, etc. Supports web search when enabled |
+| **OpenRouter** | `openrouter` | `sk-or-v1-xxx` | `https://openrouter.ai/api/v1` | Access to multiple models from different providers |
+| **Groq** | `groq` | `gsk_xxx` | `https://api.groq.com/openai/v1` | Fast inference with Llama, Mixtral models + Whisper voice transcription |
+| **Zhipu** | `zhipu` | Your Zhipu API key | `https://open.bigmodel.cn/api/paas/v4` | GLM models (GLM-4, GLM-4V, etc.) |
+| **Gemini** | `gemini` | Your Google AI Studio API key | `https://generativelanguage.googleapis.com/v1beta` | Gemini models (Gemini Pro, Gemini Flash, etc.) |
+| **vLLM** | `vllm` | (Optional) | `http://localhost:8000/v1` | Local vLLM server for self-hosted models |
+| **NVIDIA** | `nvidia` | `nvapi-xxx` | `https://integrate.api.nvidia.com/v1` | NVIDIA NIM models, supports proxy configuration |
+| **Moonshot** | `moonshot` | `sk-xxx` | `https://api.moonshot.cn/v1` | Moonshot AI models (Kimi, etc.) |
+| **Ollama** | `ollama` | (Optional) | `http://localhost:11434/v1` | Local Ollama server for running models locally |
+
+#### Configuration Example
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "api_key": "your-anthropic-api-key",
+      "api_base": "https://api.anthropic.com"
+    },
+    "openai": {
+      "api_key": "your-openai-api-key",
+      "api_base": "https://api.openai.com/v1",
+      "web_search": true
+    },
+    "openrouter": {
+      "api_key": "sk-or-v1-your-openrouter-key",
+      "api_base": "https://openrouter.ai/api/v1"
+    },
+    "groq": {
+      "api_key": "gsk_your-groq-key",
+      "api_base": "https://api.groq.com/openai/v1"
+    },
+    "zhipu": {
+      "api_key": "your-zhipu-api-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    },
+    "gemini": {
+      "api_key": "your-google-ai-studio-key",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta"
+    },
+    "vllm": {
+      "api_key": "",
+      "api_base": "http://localhost:8000/v1"
+    },
+    "nvidia": {
+      "api_key": "nvapi-your-nvidia-key",
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "proxy": "http://127.0.0.1:7890"
+    },
+    "moonshot": {
+      "api_key": "sk-your-moonshot-key",
+      "api_base": "https://api.moonshot.cn/v1"
+    },
+    "ollama": {
+      "api_key": "",
+      "api_base": "http://localhost:11434/v1"
+    }
+  }
+}
+```
+
+#### Provider Architecture
 
 PicoClaw routes providers by protocol family:
 
-- OpenAI-compatible protocol: OpenRouter, OpenAI-compatible gateways, Groq, Zhipu, and vLLM-style endpoints.
-- Anthropic protocol: Claude-native API behavior.
-- Codex/OAuth path: OpenAI OAuth/token authentication route.
+- **OpenAI-compatible protocol**: OpenRouter, OpenAI, Groq, Zhipu, vLLM, NVIDIA, Moonshot, and Ollama endpoints.
+- **Anthropic protocol**: Claude-native API behavior.
+- **Gemini protocol**: Google's Gemini API.
 
 This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
+
+#### Getting API Keys
+
+| Provider | Where to Get API Key | Free Tier |
+|----------|----------------------|-----------|
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) | Limited free credits |
+| **OpenAI** | [platform.openai.com](https://platform.openai.com) | $5 free credit for new users |
+| **OpenRouter** | [openrouter.ai/keys](https://openrouter.ai/keys) | 200K tokens/month free |
+| **Groq** | [console.groq.com](https://console.groq.com) | Free tier available |
+| **Zhipu** | [bigmodel.cn](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | 200K tokens/month free |
+| **Gemini** | [aistudio.google.com](https://aistudio.google.com) | Free tier with limits |
+| **NVIDIA** | [build.nvidia.com](https://build.nvidia.com) | Free credits available |
+| **Moonshot** | [platform.moonshot.cn](https://platform.moonshot.cn) | Free tier available |
+| **Ollama** | [ollama.com](https://ollama.com) | Free (self-hosted) |
+
+#### Model Compatibility
+
+Most providers support the standard OpenAI API format, making it easy to switch between them. For example:
+
+- Use `model: "gpt-4"` for OpenAI
+- Use `model: "claude-3-5-sonnet-20241022"` for Anthropic  
+- Use `model: "glm-4"` for Zhipu
+- Use `model: "gemini-1.5-pro"` for Gemini
+- Use `model: "llama-3.1-70b"` for Groq
+- Use `model: "qwen-2.5-32b"` for OpenRouter
 
 <details>
 <summary><b>Zhipu</b></summary>
