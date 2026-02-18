@@ -106,11 +106,16 @@ jobs:
             echo "WARNING: PICOCLAW_TELEGRAM_BOT_TOKEN secret is empty - Telegram will not start"
           fi
 
-          # Anthropic API Key
-          ANTHROPIC_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
-          if [ -n "\$ANTHROPIC_KEY" ]; then
-            set_env_var "ANTHROPIC_API_KEY" "\$ANTHROPIC_KEY"
-            echo "Anthropic: API key configured"
+          # Moonshot (Kimi) API Key
+          MOONSHOT_KEY="${{ secrets.PICOCLAW_MOONSHOT_API_KEY }}"
+          if [ -n "\$MOONSHOT_KEY" ]; then
+            set_env_var "PICOCLAW_PROVIDERS_MOONSHOT_API_KEY" "\$MOONSHOT_KEY"
+            set_env_var "PICOCLAW_PROVIDERS_MOONSHOT_API_BASE" "https://api.moonshot.cn/v1"
+            set_env_var "PICOCLAW_AGENTS_DEFAULTS_PROVIDER" "moonshot"
+            set_env_var "PICOCLAW_AGENTS_DEFAULTS_MODEL" "kimi-k2-0711-preview"
+            echo "Moonshot/Kimi: API key and default model configured"
+          else
+            echo "WARNING: PICOCLAW_MOONSHOT_API_KEY secret is empty"
           fi
 
           # Create config.json if it doesn't exist (copy from example)
@@ -128,7 +133,7 @@ jobs:
           echo "Config file exists: \$(test -f "\$CONFIG_FILE" && echo YES || echo NO)"
           echo "Telegram enabled: \$(grep -c 'PICOCLAW_CHANNELS_TELEGRAM_ENABLED=true' "\$ENV_FILE" 2>/dev/null || echo 0)"
           echo "Telegram token set: \$(grep -c 'PICOCLAW_CHANNELS_TELEGRAM_TOKEN=' "\$ENV_FILE" 2>/dev/null || echo 0)"
-          echo "Anthropic key set: \$(grep -c 'ANTHROPIC_API_KEY=' "\$ENV_FILE" 2>/dev/null || echo 0)"
+          echo "Moonshot key set: \$(grep -c 'PICOCLAW_PROVIDERS_MOONSHOT_API_KEY=' "\$ENV_FILE" 2>/dev/null || echo 0)"
           echo "=================================="
           EOF
 
