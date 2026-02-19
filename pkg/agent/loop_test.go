@@ -628,3 +628,311 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
 	}
 }
+
+// TestTruncateToolResults_OversizedResultTruncated verifies that tool results
+// exceeding maxToolResultChars are truncated with a warning footer.
+func TestTruncateToolResults_OversizedResultTruncated(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	// Create a large tool result (> maxToolResultChars)
+	bigContent := ""
+	for i := 0; i < maxToolResultChars+1000; i++ {
+		bigContent += "x"
+	}
+
+	sessionKey := "test-truncate"
+	agent.Sessions.GetOrCreate(sessionKey) // ensure session exists
+	history := []providers.Message{
+		{Role: "system", Content: "You are a helper."},
+		{Role: "user", Content: "Do something"},
+		{Role: "assistant", Content: "Calling tool..."},
+		{Role: "tool", Content: bigContent, ToolCallID: "call-1"},
+		{Role: "assistant", Content: "Here is the result."},
+	}
+	agent.Sessions.SetHistory(sessionKey, history)
+
+	al.truncateToolResults(agent, sessionKey)
+
+	updated := agent.Sessions.GetHistory(sessionKey)
+	toolMsg := updated[3]
+	if len(toolMsg.Content) >= len(bigContent) {
+		t.Errorf("Expected tool result to be truncated, got length %d", len(toolMsg.Content))
+	}
+	if toolMsg.ToolCallID != "call-1" {
+		t.Errorf("ToolCallID should be preserved, got %q", toolMsg.ToolCallID)
+	}
+	if !containsString(toolMsg.Content, "[... content truncated") {
+		t.Error("Expected truncation footer in tool result")
+	}
+}
+
+// TestTruncateToolResults_SmallResultUntouched verifies that tool results
+// under the threshold are not modified.
+func TestTruncateToolResults_SmallResultUntouched(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	originalContent := "Short tool result"
+	sessionKey := "test-no-truncate"
+	agent.Sessions.GetOrCreate(sessionKey)
+	history := []providers.Message{
+		{Role: "system", Content: "You are a helper."},
+		{Role: "user", Content: "Do something"},
+		{Role: "tool", Content: originalContent, ToolCallID: "call-1"},
+		{Role: "assistant", Content: "Done."},
+	}
+	agent.Sessions.SetHistory(sessionKey, history)
+
+	al.truncateToolResults(agent, sessionKey)
+
+	updated := agent.Sessions.GetHistory(sessionKey)
+	if updated[2].Content != originalContent {
+		t.Errorf("Small tool result should not be modified, got %q", updated[2].Content)
+	}
+}
+
+// TestTruncateToolResults_NonToolMessagesUntouched verifies that user and
+// assistant messages are never truncated, even if large.
+func TestTruncateToolResults_NonToolMessagesUntouched(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	// Create large user & assistant messages
+	bigContent := ""
+	for i := 0; i < maxToolResultChars+500; i++ {
+		bigContent += "y"
+	}
+
+	sessionKey := "test-non-tool"
+	agent.Sessions.GetOrCreate(sessionKey)
+	history := []providers.Message{
+		{Role: "system", Content: "Prompt"},
+		{Role: "user", Content: bigContent},
+		{Role: "assistant", Content: bigContent},
+	}
+	agent.Sessions.SetHistory(sessionKey, history)
+
+	al.truncateToolResults(agent, sessionKey)
+
+	updated := agent.Sessions.GetHistory(sessionKey)
+	if updated[1].Content != bigContent {
+		t.Error("User message should not be truncated")
+	}
+	if updated[2].Content != bigContent {
+		t.Error("Assistant message should not be truncated")
+	}
+}
+
+// TestTruncateToolResults_NewlineBoundary verifies truncation prefers
+// newline boundaries for cleaner output.
+func TestTruncateToolResults_NewlineBoundary(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	// Build content with a newline near the cut point.
+	// Place a newline 50 chars before maxToolResultChars.
+	content := ""
+	for i := 0; i < maxToolResultChars-50; i++ {
+		content += "a"
+	}
+	content += "\n" // newline at maxToolResultChars - 49
+	for i := 0; i < 1500; i++ {
+		content += "b"
+	}
+
+	sessionKey := "test-newline"
+	agent.Sessions.GetOrCreate(sessionKey)
+	history := []providers.Message{
+		{Role: "system", Content: "Prompt"},
+		{Role: "tool", Content: content, ToolCallID: "call-1"},
+	}
+	agent.Sessions.SetHistory(sessionKey, history)
+
+	al.truncateToolResults(agent, sessionKey)
+
+	updated := agent.Sessions.GetHistory(sessionKey)
+	toolContent := updated[1].Content
+
+	// The truncation should have cut at the newline, not at maxToolResultChars
+	// The content before the footer should end at the newline boundary
+	if !containsString(toolContent, "[... content truncated") {
+		t.Error("Expected truncation footer")
+	}
+	// The truncated content should be shorter than maxToolResultChars + footer
+	if len([]rune(toolContent)) > maxToolResultChars+100 {
+		t.Error("Content should be truncated near the newline boundary")
+	}
+}
+
+// TestTruncateToolResults_MultipleToolResults verifies that all oversized tool
+// results in a session are truncated.
+func TestTruncateToolResults_MultipleToolResults(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	bigContent := ""
+	for i := 0; i < maxToolResultChars+2000; i++ {
+		bigContent += "z"
+	}
+
+	sessionKey := "test-multi-tool"
+	agent.Sessions.GetOrCreate(sessionKey)
+	history := []providers.Message{
+		{Role: "system", Content: "Prompt"},
+		{Role: "user", Content: "Step 1"},
+		{Role: "tool", Content: bigContent, ToolCallID: "call-1"},
+		{Role: "assistant", Content: "Got it"},
+		{Role: "user", Content: "Step 2"},
+		{Role: "tool", Content: bigContent, ToolCallID: "call-2"},
+		{Role: "tool", Content: "small result", ToolCallID: "call-3"},
+		{Role: "assistant", Content: "Done"},
+	}
+	agent.Sessions.SetHistory(sessionKey, history)
+
+	al.truncateToolResults(agent, sessionKey)
+
+	updated := agent.Sessions.GetHistory(sessionKey)
+
+	// call-1 should be truncated
+	if !containsString(updated[2].Content, "[... content truncated") {
+		t.Error("First oversized tool result should be truncated")
+	}
+	// call-2 should be truncated
+	if !containsString(updated[5].Content, "[... content truncated") {
+		t.Error("Second oversized tool result should be truncated")
+	}
+	// call-3 should be untouched
+	if updated[6].Content != "small result" {
+		t.Error("Small tool result should not be modified")
+	}
+}
+
+// containsString is a simple helper to check substring presence.
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && searchSubstring(s, substr)
+}
+
+func searchSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
