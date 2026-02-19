@@ -413,7 +413,7 @@ func DefaultConfig() *Config {
 			ShengSuanYun: ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
-			Host: "127.0.0.1",
+			Host: "0.0.0.0",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
