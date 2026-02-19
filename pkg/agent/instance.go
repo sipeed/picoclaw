@@ -69,6 +69,9 @@ func NewAgentInstance(
 		agentName = agentCfg.Name
 		subagents = agentCfg.Subagents
 		skillsFilter = agentCfg.Skills
+		if agentCfg.Profile != "" {
+			contextBuilder.SetProfilePath(agentCfg.Profile)
+		}
 	}
 
 	maxIter := defaults.MaxToolIterations
