@@ -100,6 +100,7 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 			agent.Tools.Register(searchTool)
 		}
 		agent.Tools.Register(tools.NewWebFetchTool(50000))
+			agent.Tools.Register(tools.NewHttpFetchTool(512 * 1024))
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		agent.Tools.Register(tools.NewI2CTool())
