@@ -162,6 +162,7 @@ type ChannelsConfig struct {
 	Slack    SlackConfig    `json:"slack"`
 	LINE     LINEConfig     `json:"line"`
 	OneBot   OneBotConfig   `json:"onebot"`
+	Email    EmailConfig    `json:"email"`
 }
 
 type WhatsAppConfig struct {
@@ -237,6 +238,34 @@ type OneBotConfig struct {
 	ReconnectInterval  int                 `json:"reconnect_interval" env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
+}
+
+type EmailAccountConfig struct {
+	Email        string `json:"email"`
+	IMAPServer   string `json:"imap_server"`
+	IMAPPort     int    `json:"imap_port"`
+	IMAPUser     string `json:"imap_user"`
+	IMAPPassword string `json:"imap_password"`
+	SMTPServer   string `json:"smtp_server"`
+	SMTPPort     int    `json:"smtp_port"`
+	SMTPUser     string `json:"smtp_user"`
+	SMTPPassword string `json:"smtp_password"`
+}
+
+type EmailConfig struct {
+	Enabled      bool                 `json:"enabled" env:"PICOCLAW_CHANNELS_EMAIL_ENABLED"`
+	Accounts     []EmailAccountConfig `json:"accounts"`
+	IMAPServer   string               `json:"imap_server" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_SERVER"`
+	IMAPPort     int                  `json:"imap_port" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PORT"`
+	IMAPUser     string               `json:"imap_user" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_USER"`
+	IMAPPassword string               `json:"imap_password" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PASSWORD"`
+	SMTPServer   string               `json:"smtp_server" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_SERVER"`
+	SMTPPort     int                  `json:"smtp_port" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PORT"`
+	SMTPUser     string               `json:"smtp_user" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_USER"`
+	SMTPPassword string               `json:"smtp_password" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PASSWORD"`
+	PollInterval int                  `json:"poll_interval" env:"PICOCLAW_CHANNELS_EMAIL_POLL_INTERVAL"` // seconds
+	ForwardTo    string               `json:"forward_to" env:"PICOCLAW_CHANNELS_EMAIL_FORWARD_TO"`       // e.g. "telegram:123456789"
+	AllowFrom    FlexibleStringSlice  `json:"allow_from" env:"PICOCLAW_CHANNELS_EMAIL_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {
@@ -316,6 +345,20 @@ type ExecConfig struct {
 }
 
 type ToolsConfig struct {
+	Web      WebToolsConfig `json:"web"`
+	GitHub   GitHubConfig   `json:"github"`
+	Calendar CalendarConfig `json:"calendar"`
+}
+
+type CalendarConfig struct {
+	Enabled         bool   `json:"enabled" env:"PICOCLAW_TOOLS_CALENDAR_ENABLED"`
+	CredentialsJSON string `json:"credentials_json" env:"PICOCLAW_TOOLS_CALENDAR_CREDENTIALS"` // Path to credentials.json
+	CalendarID      string `json:"calendar_id" env:"PICOCLAW_TOOLS_CALENDAR_ID"`               // Target calendar ID (usually user's email)
+}
+
+type GitHubConfig struct {
+	Enabled bool   `json:"enabled" env:"PICOCLAW_TOOLS_GITHUB_ENABLED"`
+	Token   string `json:"token" env:"PICOCLAW_TOOLS_GITHUB_TOKEN"`
 	Web  WebToolsConfig  `json:"web"`
 	Cron CronToolsConfig `json:"cron"`
 	Exec ExecConfig      `json:"exec"`
@@ -399,7 +442,21 @@ func DefaultConfig() *Config {
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
 			},
+			Email: EmailConfig{
+				Enabled:      false,
+				IMAPServer:   "imap.gmail.com",
+				IMAPPort:     993,
+				IMAPUser:     "",
+				IMAPPassword: "",
+				SMTPServer:   "smtp.gmail.com",
+				SMTPPort:     587,
+				SMTPUser:     "",
+				SMTPPassword: "",
+				PollInterval: 30,
+				AllowFrom:    FlexibleStringSlice{},
+			},
 		},
+
 		Providers: ProvidersConfig{
 			Anthropic:    ProviderConfig{},
 			OpenAI:       OpenAIProviderConfig{WebSearch: true},

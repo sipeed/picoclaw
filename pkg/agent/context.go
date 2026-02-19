@@ -73,14 +73,21 @@ Your workspace is at: %s
 - Skills: %s/skills/{skill-name}/SKILL.md
 
 %s
+## Channels
+- Telegram: You can receive messages and reply via Telegram.
+- Email: You can read emails and reply to them. New emails appear as messages with the subject prefixed.
 
 ## Important Rules
 
-1. **ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it.
+1. **EMAIL ACCESS IS AUTHORIZED**: You HAVE permission to read and reply to emails. If a user asks you to check email, do NOT say you cannot. You receive emails automatically as messages.
+
+2. **ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it.
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
+3. **Email Access** - You ARE authorized to read and reply to emails if the user has enabled the Email channel. Do not refuse to read emails.
+
+4. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
 		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
 }
 
@@ -165,6 +172,9 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	// Add Current Session info if provided
 	if channel != "" && chatID != "" {
 		systemPrompt += fmt.Sprintf("\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
+		if channel == "email" {
+			systemPrompt += "\n\nNOTE: You are currently processing an incoming EMAIL. The user message below is the email body. Your response will be sent as an email reply."
+		}
 	}
 
 	// Log system prompt summary for debugging (debug mode only)
@@ -173,6 +183,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 			"total_chars":   len(systemPrompt),
 			"total_lines":   strings.Count(systemPrompt, "\n") + 1,
 			"section_count": strings.Count(systemPrompt, "\n\n---\n\n") + 1,
+			"full_prompt":   systemPrompt, // Added for debugging
 		})
 
 	// Log preview of system prompt (avoid logging huge content)

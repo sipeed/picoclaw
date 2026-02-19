@@ -176,6 +176,17 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.Email.Enabled {
+		logger.DebugC("channels", "Attempting to initialize Email channel")
+		email := NewEmailChannel(m.config.Channels.Email, m.bus)
+		if email == nil {
+			logger.ErrorC("channels", "Failed to initialize Email channel")
+		} else {
+			m.channels["email"] = email
+			logger.InfoC("channels", "Email channel enabled successfully")
+		}
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]interface{}{
 		"enabled_channels": len(m.channels),
 	})
