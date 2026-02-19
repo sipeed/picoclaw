@@ -136,7 +136,12 @@ func StripJSONObject(text, pattern string) string {
 		return text
 	}
 
-	return strings.TrimSpace(text[:start] + text[end:])
+	before := strings.TrimRight(text[:start], " \t\n\r")
+	after := strings.TrimLeft(text[end:], " \t\n\r")
+	if before != "" && after != "" {
+		return before + " " + after
+	}
+	return before + after
 }
 
 // StripToolCallsFromText removes tool call JSON from response text.

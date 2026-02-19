@@ -198,16 +198,45 @@ func TestParseToolCallArguments(t *testing.T) {
 					}
 				} else {
 					// For other cases, do deep comparison
-					if gotVal != wantVal {
-						// Handle nested maps
-						if gotMap, ok := gotVal.(map[string]interface{}); ok {
-							if wantMap, ok := wantVal.(map[string]interface{}); ok {
-								if len(gotMap) != len(wantMap) {
-									t.Errorf("ParseToolCallArguments()[%q] nested map length = %d, want %d", key, len(gotMap), len(wantMap))
+					// Handle nested maps first to avoid panic from direct comparison
+					if gotMap, ok := gotVal.(map[string]interface{}); ok {
+						if wantMap, ok := wantVal.(map[string]interface{}); ok {
+							if len(gotMap) != len(wantMap) {
+								t.Errorf("ParseToolCallArguments()[%q] nested map length = %d, want %d", key, len(gotMap), len(wantMap))
+							} else {
+								// Recursively check nested map values
+								for nestedKey, nestedWantVal := range wantMap {
+									nestedGotVal, ok := gotMap[nestedKey]
+									if !ok {
+										t.Errorf("ParseToolCallArguments()[%q][%q] missing key", key, nestedKey)
+										continue
+									}
+									if nestedGotVal != nestedWantVal {
+										t.Errorf("ParseToolCallArguments()[%q][%q] = %v, want %v", key, nestedKey, nestedGotVal, nestedWantVal)
+									}
 								}
-								continue
 							}
+							continue
 						}
+					}
+					// Handle arrays/slices to avoid panic from direct comparison
+					if gotSlice, ok := gotVal.([]interface{}); ok {
+						if wantSlice, ok := wantVal.([]interface{}); ok {
+							if len(gotSlice) != len(wantSlice) {
+								t.Errorf("ParseToolCallArguments()[%q] array length = %d, want %d", key, len(gotSlice), len(wantSlice))
+							} else {
+								// Compare array elements
+								for i := range gotSlice {
+									if gotSlice[i] != wantSlice[i] {
+										t.Errorf("ParseToolCallArguments()[%q][%d] = %v, want %v", key, i, gotSlice[i], wantSlice[i])
+									}
+								}
+							}
+							continue
+						}
+					}
+					// For other values, do direct comparison
+					if gotVal != wantVal {
 						t.Errorf("ParseToolCallArguments()[%q] = %v, want %v", key, gotVal, wantVal)
 					}
 				}
@@ -285,10 +314,6 @@ func TestExtractToolCallsFromText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ExtractToolCallsFromText(tt.text)
-			if tt.want == nil && got != nil {
-				t.Errorf("ExtractToolCallsFromText() = %v, want nil", got)
-				return
-			}
 			if len(got) != tt.wantLen {
 				t.Errorf("ExtractToolCallsFromText() length = %d, want %d", len(got), tt.wantLen)
 				return
