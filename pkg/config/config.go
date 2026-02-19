@@ -178,8 +178,11 @@ type AgentDefaults struct {
 	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
 	ImageModel          string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
+	ContextWindow       int      `json:"context_window"                  env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
 	MaxTokens           int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	SummaryMaxTokens    int      `json:"summary_max_tokens"              env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARY_MAX_TOKENS"`
+	SummaryTemperature  float64  `json:"summary_temperature"             env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARY_TEMPERATURE"`
 	MaxToolIterations   int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 

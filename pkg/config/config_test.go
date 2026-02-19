@@ -215,6 +215,15 @@ func TestDefaultConfig_Model(t *testing.T) {
 	}
 }
 
+// TestDefaultConfig_ContextWindow verifies context_window has default value
+func TestDefaultConfig_ContextWindow(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Agents.Defaults.ContextWindow == 0 {
+		t.Error("ContextWindow should not be zero")
+	}
+}
+
 // TestDefaultConfig_MaxTokens verifies max tokens has default value
 func TestDefaultConfig_MaxTokens(t *testing.T) {
 	cfg := DefaultConfig()
@@ -336,6 +345,9 @@ func TestConfig_Complete(t *testing.T) {
 	}
 	if cfg.Agents.Defaults.Temperature != nil {
 		t.Error("Temperature should be nil when not provided")
+	}
+	if cfg.Agents.Defaults.ContextWindow == 0 {
+		t.Error("ContextWindow should not be zero")
 	}
 	if cfg.Agents.Defaults.MaxTokens == 0 {
 		t.Error("MaxTokens should not be zero")

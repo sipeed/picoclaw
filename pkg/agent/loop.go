@@ -977,8 +977,8 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 			nil,
 			agent.Model,
 			map[string]any{
-				"max_tokens":  1024,
-				"temperature": 0.3,
+				"max_tokens":  agent.SummaryMaxTokens,
+				"temperature": agent.SummaryTemperature,
 			},
 		)
 		if err == nil {
@@ -1027,8 +1027,8 @@ func (al *AgentLoop) summarizeBatch(
 		nil,
 		agent.Model,
 		map[string]any{
-			"max_tokens":  1024,
-			"temperature": 0.3,
+			"max_tokens":  agent.SummaryMaxTokens,
+			"temperature": agent.SummaryTemperature,
 		},
 	)
 	if err != nil {
