@@ -171,10 +171,11 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	Proxy     string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled        bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token          string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	Proxy          string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom      FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	ShowTranscript bool                `json:"show_transcript" env:"PICOCLAW_CHANNELS_TELEGRAM_SHOW_TRANSCRIPT"`
 }
 
 type FeishuConfig struct {
@@ -341,9 +342,10 @@ func DefaultConfig() *Config {
 				AllowFrom: FlexibleStringSlice{},
 			},
 			Telegram: TelegramConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:        false,
+				Token:          "",
+				AllowFrom:      FlexibleStringSlice{},
+				ShowTranscript: true,
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,

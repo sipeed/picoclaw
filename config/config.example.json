@@ -16,7 +16,8 @@
       "proxy": "",
       "allow_from": [
         "YOUR_USER_ID"
-      ]
+      ],
+      "show_transcript": true
     },
     "discord": {
       "enabled": false,
