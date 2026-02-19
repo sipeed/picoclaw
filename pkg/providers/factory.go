@@ -6,6 +6,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
+	anthropicprovider "github.com/sipeed/picoclaw/pkg/providers/anthropic"
 )
 
 const defaultAnthropicAPIBase = "https://api.anthropic.com/v1"
@@ -17,6 +18,7 @@ type providerType int
 const (
 	providerTypeHTTPCompat providerType = iota
 	providerTypeClaudeAuth
+	providerTypeClaudeAPIKey
 	providerTypeCodexAuth
 	providerTypeCodexCLIToken
 	providerTypeClaudeCLI
@@ -118,6 +120,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 				if sel.apiBase == "" {
 					sel.apiBase = defaultAnthropicAPIBase
 				}
+				sel.providerType = providerTypeClaudeAPIKey
 			}
 		case "openrouter":
 			if cfg.Providers.OpenRouter.APIKey != "" {
@@ -342,6 +345,8 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	switch sel.providerType {
 	case providerTypeClaudeAuth:
 		return createClaudeAuthProvider(sel.apiBase)
+	case providerTypeClaudeAPIKey:
+		return anthropicprovider.NewProviderWithBaseURL(sel.apiKey, sel.apiBase), nil
 	case providerTypeCodexAuth:
 		return createCodexAuthProvider(sel.enableWebSearch)
 	case providerTypeCodexCLIToken:
