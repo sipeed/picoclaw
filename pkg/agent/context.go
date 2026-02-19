@@ -12,7 +12,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type ContextBuilder struct {
@@ -201,12 +200,23 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	// Diegox-17
 	// --- FIN DEL FIX ---
 
+	var coalescedUser *providers.Message
 	if len(history) > 0 && history[len(history)-1].Role == "user" {
-		logger.WarnCF("agent", "Removing trailing user message from history to prevent consecutive user messages",
-			map[string]interface{}{
-				"content_preview": utils.Truncate(history[len(history)-1].Content, 50),
-			})
+		last := history[len(history)-1]
 		history = history[:len(history)-1]
+		merged := last.Content
+		if merged != "" && currentMessage != "" {
+			merged += "\n\n" + currentMessage
+		} else if currentMessage != "" {
+			merged = currentMessage
+		}
+		coalescedUser = &providers.Message{Role: "user", Content: merged}
+		logger.InfoCF("agent", "Coalesced consecutive user messages",
+			map[string]interface{}{
+				"prev_len":   len(last.Content),
+				"new_len":    len(currentMessage),
+				"merged_len": len(merged),
+			})
 	}
 
 	messages = append(messages, providers.Message{
@@ -216,10 +226,11 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	messages = append(messages, history...)
 
-	messages = append(messages, providers.Message{
-		Role:    "user",
-		Content: currentMessage,
-	})
+	if coalescedUser != nil {
+		messages = append(messages, *coalescedUser)
+	} else {
+		messages = append(messages, providers.Message{Role: "user", Content: currentMessage})
+	}
 
 	return messages
 }
