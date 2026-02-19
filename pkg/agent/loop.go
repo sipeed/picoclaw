@@ -603,7 +603,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 					Name:      tc.Name,
 					Arguments: string(argumentsJSON),
 				},
-				Name: tc.Name,
+				Name:         tc.Name,
+				ExtraContent: tc.ExtraContent,
 			})
 		}
 		messages = append(messages, assistantMsg)

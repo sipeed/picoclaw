@@ -133,6 +133,11 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 						Name      string `json:"name"`
 						Arguments string `json:"arguments"`
 					} `json:"function"`
+					ExtraContent *struct {
+						Google *struct {
+							ThoughtSignature string `json:"thought_signature"`
+						} `json:"google"`
+					} `json:"extra_content"`
 				} `json:"tool_calls"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
@@ -167,10 +172,20 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 			}
 		}
 
+		var extra *protocoltypes.ToolCallExtraContent
+		if tc.ExtraContent != nil && tc.ExtraContent.Google != nil {
+			extra = &protocoltypes.ToolCallExtraContent{
+				Google: &protocoltypes.GoogleExtraContent{
+					ThoughtSignature: tc.ExtraContent.Google.ThoughtSignature,
+				},
+			}
+		}
+
 		toolCalls = append(toolCalls, ToolCall{
-			ID:        tc.ID,
-			Name:      name,
-			Arguments: arguments,
+			ID:           tc.ID,
+			Name:         name,
+			Arguments:    arguments,
+			ExtraContent: extra,
 		})
 	}
 
