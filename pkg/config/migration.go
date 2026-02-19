@@ -109,14 +109,14 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		},
 		{
 			providerNames: []string{"zhipu", "glm"},
-			protocol:      "openai",
+			protocol:      "zhipu",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
 					ModelName: "zhipu",
-					Model:     "openai/glm-4",
+					Model:     "zhipu/glm-4",
 					APIKey:    p.Zhipu.APIKey,
 					APIBase:   p.Zhipu.APIBase,
 					Proxy:     p.Zhipu.Proxy,
@@ -125,14 +125,14 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		},
 		{
 			providerNames: []string{"vllm"},
-			protocol:      "openai",
+			protocol:      "vllm",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.VLLM.APIKey == "" && p.VLLM.APIBase == "" {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
 					ModelName: "vllm",
-					Model:     "openai/auto",
+					Model:     "vllm/auto",
 					APIKey:    p.VLLM.APIKey,
 					APIBase:   p.VLLM.APIBase,
 					Proxy:     p.VLLM.Proxy,
@@ -141,14 +141,14 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		},
 		{
 			providerNames: []string{"gemini", "google"},
-			protocol:      "openai",
+			protocol:      "gemini",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.Gemini.APIKey == "" && p.Gemini.APIBase == "" {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
 					ModelName: "gemini",
-					Model:     "openai/gemini-pro",
+					Model:     "gemini/gemini-pro",
 					APIKey:    p.Gemini.APIKey,
 					APIBase:   p.Gemini.APIBase,
 					Proxy:     p.Gemini.Proxy,
@@ -205,14 +205,14 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		},
 		{
 			providerNames: []string{"shengsuanyun"},
-			protocol:      "openai",
+			protocol:      "shengsuanyun",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
 					ModelName: "shengsuanyun",
-					Model:     "openai/auto",
+					Model:     "shengsuanyun/auto",
 					APIKey:    p.ShengSuanYun.APIKey,
 					APIBase:   p.ShengSuanYun.APIBase,
 					Proxy:     p.ShengSuanYun.Proxy,
@@ -221,14 +221,14 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		},
 		{
 			providerNames: []string{"deepseek"},
-			protocol:      "openai",
+			protocol:      "deepseek",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
 					ModelName: "deepseek",
-					Model:     "openai/deepseek-chat",
+					Model:     "deepseek/deepseek-chat",
 					APIKey:    p.DeepSeek.APIKey,
 					APIBase:   p.DeepSeek.APIBase,
 					Proxy:     p.DeepSeek.Proxy,
@@ -253,14 +253,14 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		},
 		{
 			providerNames: []string{"volcengine", "doubao"},
-			protocol:      "openai",
+			protocol:      "volcengine",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
 					ModelName: "volcengine",
-					Model:     "openai/doubao-pro",
+					Model:     "volcengine/doubao-pro",
 					APIKey:    p.VolcEngine.APIKey,
 					APIBase:   p.VolcEngine.APIBase,
 					Proxy:     p.VolcEngine.Proxy,

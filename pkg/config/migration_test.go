@@ -205,8 +205,8 @@ func TestConvertProvidersToModelList_PreservesUserModel_DeepSeek(t *testing.T) {
 	}
 
 	// Should use user's model, not default
-	if result[0].Model != "openai/deepseek-reasoner" {
-		t.Errorf("Model = %q, want %q (user's configured model)", result[0].Model, "openai/deepseek-reasoner")
+	if result[0].Model != "deepseek/deepseek-reasoner" {
+		t.Errorf("Model = %q, want %q (user's configured model)", result[0].Model, "deepseek/deepseek-reasoner")
 	}
 }
 
@@ -302,8 +302,8 @@ func TestConvertProvidersToModelList_UsesDefaultWhenNoUserModel(t *testing.T) {
 	}
 
 	// Should use default model
-	if result[0].Model != "openai/deepseek-chat" {
-		t.Errorf("Model = %q, want %q (default)", result[0].Model, "openai/deepseek-chat")
+	if result[0].Model != "deepseek/deepseek-chat" {
+		t.Errorf("Model = %q, want %q (default)", result[0].Model, "deepseek/deepseek-chat")
 	}
 }
 
@@ -335,8 +335,8 @@ func TestConvertProvidersToModelList_MultipleProviders_PreservesUserModel(t *tes
 				t.Errorf("OpenAI Model = %q, want %q (default)", mc.Model, "openai/gpt-4o")
 			}
 		case "deepseek":
-			if mc.Model != "openai/deepseek-reasoner" {
-				t.Errorf("DeepSeek Model = %q, want %q (user's)", mc.Model, "openai/deepseek-reasoner")
+			if mc.Model != "deepseek/deepseek-reasoner" {
+				t.Errorf("DeepSeek Model = %q, want %q (user's)", mc.Model, "deepseek/deepseek-reasoner")
 			}
 		}
 	}
@@ -350,7 +350,7 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 	}{
 		{"gpt", "openai/gpt-4-custom", ProviderConfig{APIKey: "key"}},
 		{"claude", "anthropic/claude-custom", ProviderConfig{APIKey: "key"}},
-		{"doubao", "openai/doubao-custom", ProviderConfig{APIKey: "key"}},
+		{"doubao", "volcengine/doubao-custom", ProviderConfig{APIKey: "key"}},
 		{"tongyi", "qwen/qwen-custom", ProviderConfig{APIKey: "key"}},
 		{"kimi", "moonshot/kimi-custom", ProviderConfig{APIKey: "key"}},
 	}
@@ -430,8 +430,8 @@ func TestConvertProvidersToModelList_NoProviderField_SingleProvider(t *testing.T
 	}
 
 	// Model should use the user's model with protocol prefix
-	if result[0].Model != "openai/glm-4.7" {
-		t.Errorf("Model = %q, want %q", result[0].Model, "openai/glm-4.7")
+	if result[0].Model != "zhipu/glm-4.7" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "zhipu/glm-4.7")
 	}
 }
 
