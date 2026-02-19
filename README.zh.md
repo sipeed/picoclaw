@@ -543,18 +543,113 @@ Agent 读取 HEARTBEAT.md
 
 ### 提供商 (Providers)
 
+PicoClaw 通过统一的配置接口支持多个 AI 模型提供商。所有提供商都在 `config.json` 的 `providers` 部分进行配置。
+
 > [!NOTE]
 > Groq 通过 Whisper 提供免费的语音转录。如果配置了 Groq，Telegram 语音消息将被自动转录为文字。
 
-| 提供商 | 用途 | 获取 API Key |
-| --- | --- | --- |
-| `gemini` | LLM (Gemini 直连) | [aistudio.google.com](https://aistudio.google.com) |
-| `zhipu` | LLM (智谱直连) | [bigmodel.cn](bigmodel.cn) |
-| `openrouter(待测试)` | LLM (推荐，可访问所有模型) | [openrouter.ai](https://openrouter.ai) |
-| `anthropic(待测试)` | LLM (Claude 直连) | [console.anthropic.com](https://console.anthropic.com) |
-| `openai(待测试)` | LLM (GPT 直连) | [platform.openai.com](https://platform.openai.com) |
-| `deepseek(待测试)` | LLM (DeepSeek 直连) | [platform.deepseek.com](https://platform.deepseek.com) |
-| `groq` | LLM + **语音转录** (Whisper) | [console.groq.com](https://console.groq.com) |
+#### 支持的提供商
+
+根据配置文件，PicoClaw 目前支持以下提供商：
+
+| 提供商 | 配置键 | API Key 格式 | 默认 API Base | 备注 |
+|--------|--------|--------------|---------------|------|
+| **Anthropic** | `anthropic` | 您的 Anthropic API key | `https://api.anthropic.com` | Claude 模型 (Claude 3.5 Sonnet, Claude 3 Opus 等) |
+| **OpenAI** | `openai` | 您的 OpenAI API key | `https://api.openai.com/v1` | GPT-4, GPT-3.5 等。启用时支持网络搜索 |
+| **OpenRouter** | `openrouter` | `sk-or-v1-xxx` | `https://openrouter.ai/api/v1` | 访问来自不同提供商的多模型 |
+| **Groq** | `groq` | `gsk_xxx` | `https://api.groq.com/openai/v1` | 使用 Llama、Mixtral 模型的快速推理 + Whisper 语音转录 |
+| **智谱 (Zhipu)** | `zhipu` | 您的智谱 API key | `https://open.bigmodel.cn/api/paas/v4` | GLM 模型 (GLM-4, GLM-4V 等) |
+| **Gemini** | `gemini` | 您的 Google AI Studio API key | `https://generativelanguage.googleapis.com/v1beta` | Gemini 模型 (Gemini Pro, Gemini Flash 等) |
+| **vLLM** | `vllm` | (可选) | `http://localhost:8000/v1` | 本地 vLLM 服务器，用于自托管模型 |
+| **NVIDIA** | `nvidia` | `nvapi-xxx` | `https://integrate.api.nvidia.com/v1` | NVIDIA NIM 模型，支持代理配置 |
+| **Moonshot** | `moonshot` | `sk-xxx` | `https://api.moonshot.cn/v1` | Moonshot AI 模型 (Kimi 等) |
+| **Ollama** | `ollama` | (可选) | `http://localhost:11434/v1` | 本地 Ollama 服务器，用于本地运行模型 |
+
+#### 配置示例
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "api_key": "your-anthropic-api-key",
+      "api_base": "https://api.anthropic.com"
+    },
+    "openai": {
+      "api_key": "your-openai-api-key",
+      "api_base": "https://api.openai.com/v1",
+      "web_search": true
+    },
+    "openrouter": {
+      "api_key": "sk-or-v1-your-openrouter-key",
+      "api_base": "https://openrouter.ai/api/v1"
+    },
+    "groq": {
+      "api_key": "gsk_your-groq-key",
+      "api_base": "https://api.groq.com/openai/v1"
+    },
+    "zhipu": {
+      "api_key": "your-zhipu-api-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    },
+    "gemini": {
+      "api_key": "your-google-ai-studio-key",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta"
+    },
+    "vllm": {
+      "api_key": "",
+      "api_base": "http://localhost:8000/v1"
+    },
+    "nvidia": {
+      "api_key": "nvapi-your-nvidia-key",
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "proxy": "http://127.0.0.1:7890"
+    },
+    "moonshot": {
+      "api_key": "sk-your-moonshot-key",
+      "api_base": "https://api.moonshot.cn/v1"
+    },
+    "ollama": {
+      "api_key": "",
+      "api_base": "http://localhost:11434/v1"
+    }
+  }
+}
+```
+
+#### 提供商架构
+
+PicoClaw 按协议族路由提供商：
+
+- **OpenAI 兼容协议**: OpenRouter, OpenAI, Groq, Zhipu, vLLM, NVIDIA, Moonshot 和 Ollama 端点。
+- **Anthropic 协议**: Claude 原生 API 行为。
+- **Gemini 协议**: Google 的 Gemini API。
+
+这使得运行时保持轻量，同时新的 OpenAI 兼容后端大多只需配置操作 (`api_base` + `api_key`)。
+
+#### 获取 API Key
+
+| 提供商 | 获取 API Key 地址 | 免费层级 |
+|--------|-------------------|----------|
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) | 有限免费额度 |
+| **OpenAI** | [platform.openai.com](https://platform.openai.com) | 新用户 $5 免费额度 |
+| **OpenRouter** | [openrouter.ai/keys](https://openrouter.ai/keys) | 200K tokens/月免费 |
+| **Groq** | [console.groq.com](https://console.groq.com) | 提供免费层级 |
+| **智谱 (Zhipu)** | [bigmodel.cn](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | 200K tokens/月免费 |
+| **Gemini** | [aistudio.google.com](https://aistudio.google.com) | 有限免费层级 |
+| **NVIDIA** | [build.nvidia.com](https://build.nvidia.com) | 提供免费额度 |
+| **Moonshot** | [platform.moonshot.cn](https://platform.moonshot.cn) | 提供免费层级 |
+| **Ollama** | [ollama.com](https://ollama.com) | 免费 (自托管) |
+
+#### 模型兼容性
+
+大多数提供商支持标准的 OpenAI API 格式，使得在它们之间切换变得容易。例如：
+
+- 使用 `model: "gpt-4"` 对应 OpenAI
+- 使用 `model: "claude-3-5-sonnet-20241022"` 对应 Anthropic  
+- 使用 `model: "glm-4"` 对应智谱
+- 使用 `model: "gemini-1.5-pro"` 对应 Gemini
+- 使用 `model: "llama-3.1-70b"` 对应 Groq
+- 使用 `model: "qwen-2.5-32b"` 对应 OpenRouter
 
 <details>
 <summary><b>智谱 (Zhipu) 配置示例</b></summary>

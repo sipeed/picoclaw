@@ -653,18 +653,113 @@ Subagent có quyền truy cập các công cụ (message, web_search, v.v.) và 
 
 ### Nhà cung cấp (Providers)
 
+PicoClaw hỗ trợ nhiều nhà cung cấp mô hình AI thông qua giao diện cấu hình thống nhất. Tất cả nhà cung cấp được cấu hình trong phần `providers` của `config.json`.
+
 > [!NOTE]
 > Groq cung cấp dịch vụ chuyển giọng nói thành văn bản miễn phí qua Whisper. Nếu đã cấu hình Groq, tin nhắn thoại trên Telegram sẽ được tự động chuyển thành văn bản.
 
-| Nhà cung cấp | Mục đích | Lấy API Key |
-| --- | --- | --- |
-| `gemini` | LLM (Gemini trực tiếp) | [aistudio.google.com](https://aistudio.google.com) |
-| `zhipu` | LLM (Zhipu trực tiếp) | [bigmodel.cn](bigmodel.cn) |
-| `openrouter` (Đang thử nghiệm) | LLM (khuyên dùng, truy cập mọi model) | [openrouter.ai](https://openrouter.ai) |
-| `anthropic` (Đang thử nghiệm) | LLM (Claude trực tiếp) | [console.anthropic.com](https://console.anthropic.com) |
-| `openai` (Đang thử nghiệm) | LLM (GPT trực tiếp) | [platform.openai.com](https://platform.openai.com) |
-| `deepseek` (Đang thử nghiệm) | LLM (DeepSeek trực tiếp) | [platform.deepseek.com](https://platform.deepseek.com) |
-| `groq` | LLM + **Chuyển giọng nói** (Whisper) | [console.groq.com](https://console.groq.com) |
+#### Nhà cung cấp được hỗ trợ
+
+Dựa trên file cấu hình, PicoClaw hiện hỗ trợ các nhà cung cấp sau:
+
+| Nhà cung cấp | Khóa cấu hình | Định dạng API Key | API Base mặc định | Ghi chú |
+|-------------|---------------|-------------------|-------------------|---------|
+| **Anthropic** | `anthropic` | API key Anthropic của bạn | `https://api.anthropic.com` | Mô hình Claude (Claude 3.5 Sonnet, Claude 3 Opus, v.v.) |
+| **OpenAI** | `openai` | API key OpenAI của bạn | `https://api.openai.com/v1` | GPT-4, GPT-3.5, v.v. Hỗ trợ tìm kiếm web khi bật |
+| **OpenRouter** | `openrouter` | `sk-or-v1-xxx` | `https://openrouter.ai/api/v1` | Truy cập nhiều mô hình từ các nhà cung cấp khác nhau |
+| **Groq** | `groq` | `gsk_xxx` | `https://api.groq.com/openai/v1` | Suy luận nhanh với mô hình Llama, Mixtral + chuyển giọng nói Whisper |
+| **智谱 (Zhipu)** | `zhipu` | API key Zhipu của bạn | `https://open.bigmodel.cn/api/paas/v4` | Mô hình GLM (GLM-4, GLM-4V, v.v.) |
+| **Gemini** | `gemini` | API key Google AI Studio của bạn | `https://generativelanguage.googleapis.com/v1beta` | Mô hình Gemini (Gemini Pro, Gemini Flash, v.v.) |
+| **vLLM** | `vllm` | (Tùy chọn) | `http://localhost:8000/v1` | Máy chủ vLLM cục bộ cho mô hình tự lưu trữ |
+| **NVIDIA** | `nvidia` | `nvapi-xxx` | `https://integrate.api.nvidia.com/v1` | Mô hình NVIDIA NIM, hỗ trợ cấu hình proxy |
+| **Moonshot** | `moonshot` | `sk-xxx` | `https://api.moonshot.cn/v1` | Mô hình Moonshot AI (Kimi, v.v.) |
+| **Ollama** | `ollama` | (Tùy chọn) | `http://localhost:11434/v1` | Máy chủ Ollama cục bộ để chạy mô hình tại chỗ |
+
+#### Ví dụ cấu hình
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "api_key": "your-anthropic-api-key",
+      "api_base": "https://api.anthropic.com"
+    },
+    "openai": {
+      "api_key": "your-openai-api-key",
+      "api_base": "https://api.openai.com/v1",
+      "web_search": true
+    },
+    "openrouter": {
+      "api_key": "sk-or-v1-your-openrouter-key",
+      "api_base": "https://openrouter.ai/api/v1"
+    },
+    "groq": {
+      "api_key": "gsk_your-groq-key",
+      "api_base": "https://api.groq.com/openai/v1"
+    },
+    "zhipu": {
+      "api_key": "your-zhipu-api-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    },
+    "gemini": {
+      "api_key": "your-google-ai-studio-key",
+      "api_base": "https://generativelanguage.googleapis.com/v1beta"
+    },
+    "vllm": {
+      "api_key": "",
+      "api_base": "http://localhost:8000/v1"
+    },
+    "nvidia": {
+      "api_key": "nvapi-your-nvidia-key",
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "proxy": "http://127.0.0.1:7890"
+    },
+    "moonshot": {
+      "api_key": "sk-your-moonshot-key",
+      "api_base": "https://api.moonshot.cn/v1"
+    },
+    "ollama": {
+      "api_key": "",
+      "api_base": "http://localhost:11434/v1"
+    }
+  }
+}
+```
+
+#### Kiến trúc nhà cung cấp
+
+PicoClaw định tuyến nhà cung cấp theo họ giao thức:
+
+- **Giao thức tương thích OpenAI**: Các endpoint OpenRouter, OpenAI, Groq, Zhipu, vLLM, NVIDIA, Moonshot và Ollama.
+- **Giao thức Anthropic**: Hành vi API gốc của Claude.
+- **Giao thức Gemini**: API Gemini của Google.
+
+Điều này giữ cho runtime nhẹ trong khi các backend tương thích OpenAI mới chủ yếu chỉ là thao tác cấu hình (`api_base` + `api_key`).
+
+#### Lấy API Key
+
+| Nhà cung cấp | Nơi lấy API Key | Gói miễn phí |
+|-------------|-----------------|-------------|
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) | Tín dụng miễn phí giới hạn |
+| **OpenAI** | [platform.openai.com](https://platform.openai.com) | $5 tín dụng miễn phí cho người dùng mới |
+| **OpenRouter** | [openrouter.ai/keys](https://openrouter.ai/keys) | 200K tokens/tháng miễn phí |
+| **Groq** | [console.groq.com](https://console.groq.com) | Có gói miễn phí |
+| **智谱 (Zhipu)** | [bigmodel.cn](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | 200K tokens/tháng miễn phí |
+| **Gemini** | [aistudio.google.com](https://aistudio.google.com) | Gói miễn phí có giới hạn |
+| **NVIDIA** | [build.nvidia.com](https://build.nvidia.com) | Có tín dụng miễn phí |
+| **Moonshot** | [platform.moonshot.cn](https://platform.moonshot.cn) | Có gói miễn phí |
+| **Ollama** | [ollama.com](https://ollama.com) | Miễn phí (tự lưu trữ) |
+
+#### Tương thích mô hình
+
+Hầu hết các nhà cung cấp hỗ trợ định dạng API OpenAI tiêu chuẩn, giúp việc chuyển đổi giữa chúng dễ dàng. Ví dụ:
+
+- Dùng `model: "gpt-4"` cho OpenAI
+- Dùng `model: "claude-3-5-sonnet-20241022"` cho Anthropic  
+- Dùng `model: "glm-4"` cho Zhipu
+- Dùng `model: "gemini-1.5-pro"` cho Gemini
+- Dùng `model: "llama-3.1-70b"` cho Groq
+- Dùng `model: "qwen-2.5-32b"` cho OpenRouter
 
 <details>
 <summary><b>Cấu hình Zhipu</b></summary>
