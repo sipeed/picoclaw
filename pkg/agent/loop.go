@@ -140,8 +140,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		mcpManager := mcp.NewManager()
 		defaultAgent := al.registry.GetDefaultAgent()
 		workspacePath := ""
-		if defaultAgent != nil {
+		if defaultAgent != nil && defaultAgent.Workspace != "" {
 			workspacePath = defaultAgent.Workspace
+		} else {
+			workspacePath = al.cfg.WorkspacePath()
 		}
 
 		if err := mcpManager.LoadFromMCPConfig(ctx, al.cfg.Tools.MCP, workspacePath); err != nil {
