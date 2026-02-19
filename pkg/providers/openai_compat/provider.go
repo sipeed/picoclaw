@@ -22,6 +22,8 @@ type UsageInfo = protocoltypes.UsageInfo
 type Message = protocoltypes.Message
 type ToolDefinition = protocoltypes.ToolDefinition
 type ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
+type ExtraContent = protocoltypes.ExtraContent
+type GoogleExtra = protocoltypes.GoogleExtra
 
 type Provider struct {
 	apiKey         string
@@ -145,6 +147,11 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 						Name      string `json:"name"`
 						Arguments string `json:"arguments"`
 					} `json:"function"`
+					ExtraContent *struct {
+						Google *struct {
+							ThoughtSignature string `json:"thought_signature"`
+						} `json:"google"`
+					} `json:"extra_content"`
 				} `json:"tool_calls"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
@@ -169,6 +176,12 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		arguments := make(map[string]interface{})
 		name := ""
 
+		// Extract thought_signature from Gemini/Google-specific extra content
+		thoughtSignature := ""
+		if tc.ExtraContent != nil && tc.ExtraContent.Google != nil {
+			thoughtSignature = tc.ExtraContent.Google.ThoughtSignature
+		}
+
 		if tc.Function != nil {
 			name = tc.Function.Name
 			if tc.Function.Arguments != "" {
@@ -179,11 +192,23 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 			}
 		}
 
-		toolCalls = append(toolCalls, ToolCall{
-			ID:        tc.ID,
-			Name:      name,
-			Arguments: arguments,
-		})
+		// Build ToolCall with ExtraContent for Gemini 3 thought_signature persistence
+		toolCall := ToolCall{
+			ID:               tc.ID,
+			Name:             name,
+			Arguments:        arguments,
+			ThoughtSignature: thoughtSignature,
+		}
+
+		if thoughtSignature != "" {
+			toolCall.ExtraContent = &ExtraContent{
+				Google: &GoogleExtra{
+					ThoughtSignature: thoughtSignature,
+				},
+			}
+		}
+
+		toolCalls = append(toolCalls, toolCall)
 	}
 
 	return &LLMResponse{

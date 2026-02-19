@@ -600,21 +600,24 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		}
 		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
+			// Copy ExtraContent to ensure thought_signature is persisted for Gemini 3
+			extraContent := tc.ExtraContent
 			thoughtSignature := ""
 			if tc.Function != nil {
 				thoughtSignature = tc.Function.ThoughtSignature
 			}
 
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:        tc.ID,
-				Type:      "function",
-				Name:      tc.Name,
-				Arguments: tc.Arguments,
+				ID:   tc.ID,
+				Type: "function",
+				Name: tc.Name,
 				Function: &providers.FunctionCall{
 					Name:             tc.Name,
 					Arguments:        string(argumentsJSON),
 					ThoughtSignature: thoughtSignature,
 				},
+				ExtraContent:     extraContent,
+				ThoughtSignature: thoughtSignature,
 			})
 		}
 		messages = append(messages, assistantMsg)
