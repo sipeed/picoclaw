@@ -10,14 +10,20 @@ import (
 type SendCallback func(channel, chatID, content string, attachments []bus.Attachment) error
 
 type MessageTool struct {
+	allowedDir     string
+	restrict       bool
 	sendCallback   SendCallback
 	defaultChannel string
 	defaultChatID  string
 	sentInRound    bool // Tracks whether a message was sent in the current processing round
 }
 
-func NewMessageTool() *MessageTool {
-	return &MessageTool{}
+// NewMessageTool creates a new MessageTool with optional uploading directory restriction.
+func NewMessageTool(allowedDir string, restrict bool) *MessageTool {
+	return &MessageTool{
+		allowedDir: allowedDir,
+		restrict:   restrict,
+	}
 }
 
 func (t *MessageTool) Name() string {
@@ -110,16 +116,26 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	var attachments []bus.Attachment
 	if attachmentsRaw, ok := args["attachments"].([]interface{}); ok {
 		for _, attachRaw := range attachmentsRaw {
-			if attachMap, ok := attachRaw.(map[string]interface{}); ok {
-				path, pathOk := attachMap["path"].(string)
-				filename, filenameOk := attachMap["filename"].(string)
-				if pathOk && filenameOk {
-					attachments = append(attachments, bus.Attachment{
-						Path:     path,
-						Filename: filename,
-					})
-				}
+			attachMap, ok := attachRaw.(map[string]interface{})
+			if !ok {
+				continue // Skip invalid attachment entries
 			}
+
+			path, pathOk := attachMap["path"].(string)
+			filename, filenameOk := attachMap["filename"].(string)
+			if !pathOk || !filenameOk {
+				continue // Skip invalid attachment entries
+			}
+
+			resolvedPath, err := validatePath(path, t.allowedDir, t.restrict)
+			if err != nil {
+				return ErrorResult(err.Error())
+			}
+
+			attachments = append(attachments, bus.Attachment{
+				Path:     resolvedPath,
+				Filename: filename,
+			})
 		}
 	}
 

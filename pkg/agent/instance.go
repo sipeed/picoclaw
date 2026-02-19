@@ -15,20 +15,21 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID             string
-	Name           string
-	Model          string
-	Fallbacks      []string
-	Workspace      string
-	MaxIterations  int
-	ContextWindow  int
-	Provider       providers.LLMProvider
-	Sessions       *session.SessionManager
-	ContextBuilder *ContextBuilder
-	Tools          *tools.ToolRegistry
-	Subagents      *config.SubagentsConfig
-	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
+	ID                  string
+	Name                string
+	Model               string
+	Fallbacks           []string
+	Workspace           string
+	MaxIterations       int
+	ContextWindow       int
+	RestrictToWorkspace bool
+	Provider            providers.LLMProvider
+	Sessions            *session.SessionManager
+	ContextBuilder      *ContextBuilder
+	Tools               *tools.ToolRegistry
+	Subagents           *config.SubagentsConfig
+	SkillsFilter        []string
+	Candidates          []providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -84,20 +85,21 @@ func NewAgentInstance(
 	candidates := providers.ResolveCandidates(modelCfg, defaults.Provider)
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		ContextWindow:  defaults.MaxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
+		ID:                  agentID,
+		Name:                agentName,
+		Model:               model,
+		Fallbacks:           fallbacks,
+		Workspace:           workspace,
+		MaxIterations:       maxIter,
+		ContextWindow:       defaults.MaxTokens,
+		RestrictToWorkspace: restrict,
+		Provider:            provider,
+		Sessions:            sessionsManager,
+		ContextBuilder:      contextBuilder,
+		Tools:               toolsRegistry,
+		Subagents:           subagents,
+		SkillsFilter:        skillsFilter,
+		Candidates:          candidates,
 	}
 }
 
