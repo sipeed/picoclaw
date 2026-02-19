@@ -730,6 +730,163 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 
 </details>
 
+### モデル設定 (model_list)
+
+> **新機能！** PicoClaw は現在 **モデル中心** の設定アプローチを採用しています。`ベンダー/モデル` 形式（例: `zhipu/glm-4.7`）を指定するだけで、新しいプロバイダーを追加できます—**コードの変更は一切不要！**
+
+この設計は、柔軟なプロバイダー選択による **マルチエージェントサポート** も可能にします：
+
+- **異なるエージェント、異なるプロバイダー** : 各エージェントは独自の LLM プロバイダーを使用可能
+- **フォールバックモデル** : 耐障性のため、プライマリモデルとフォールバックモデルを設定可能
+- **ロードバランシング** : 複数のエンドポイントにリクエストを分散
+- **集中設定管理** : すべてのプロバイダーを一箇所で管理
+
+#### 📋 サポートされているすべてのベンダー
+
+| ベンダー | `model` プレフィックス | デフォルト API Base | プロトコル | API キー |
+|-------------|-----------------|---------------------|----------|---------|
+| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [キーを取得](https://platform.openai.com) |
+| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [キーを取得](https://console.anthropic.com) |
+| **Zhipu AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [キーを取得](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [キーを取得](https://platform.deepseek.com) |
+| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [キーを取得](https://aistudio.google.com/api-keys) |
+| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [キーを取得](https://console.groq.com) |
+| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [キーを取得](https://platform.moonshot.cn) |
+| **Qwen (Alibaba)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [キーを取得](https://dashscope.console.aliyun.com) |
+| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [キーを取得](https://build.nvidia.com) |
+| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | ローカル（キー不要） |
+| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [キーを取得](https://openrouter.ai/keys) |
+| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | ローカル |
+| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [キーを取得](https://cerebras.ai) |
+| **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [キーを取得](https://console.volcengine.com) |
+| **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ |
+| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
+
+#### 基本設定
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_key": "sk-your-openai-key"
+    },
+    {
+      "model_name": "claude-3-sonnet",
+      "model": "anthropic/claude-3-5-sonnet-20241022",
+      "api_key": "sk-ant-your-key"
+    },
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt-4o"
+    }
+  }
+}
+```
+
+#### ベンダー別の例
+
+**OpenAI**
+```json
+{
+  "model_name": "gpt-4o",
+  "model": "openai/gpt-4o",
+  "api_key": "sk-..."
+}
+```
+
+**Zhipu AI (GLM)**
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**Anthropic (OAuth使用)**
+```json
+{
+  "model_name": "claude-sonnet-4",
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "auth_method": "oauth"
+}
+```
+> OAuth認証を設定するには、`picoclaw auth login --provider anthropic` を実行してください。
+
+#### ロードバランシング
+
+同じモデル名で複数のエンドポイントを設定すると、PicoClaw が自動的にラウンドロビンで分散します：
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
+  ]
+}
+```
+
+#### 従来の `providers` 設定からの移行
+
+古い `providers` 設定は**非推奨**ですが、後方互換性のためにサポートされています。
+
+**旧設定（非推奨）:**
+```json
+{
+  "providers": {
+    "zhipu": {
+      "api_key": "your-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "zhipu",
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+**新設定（推奨）:**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+詳細な移行ガイドは、[docs/migration/model-list-migration.md](docs/migration/model-list-migration.md) を参照してください。
+
 ## CLI リファレンス
 
 | コマンド | 説明 |

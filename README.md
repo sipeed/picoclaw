@@ -691,60 +691,187 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 
 ### Model Configuration (model_list)
 
-The new `model_list` configuration allows you to add providers with zero code changes. Use protocol prefixes to specify the provider type:
+> **What's New?** PicoClaw now uses a **model-centric** configuration approach. Simply specify `vendor/model` format (e.g., `zhipu/glm-4.7`) to add new providers—**zero code changes required!**
 
-| Prefix | Provider | Example |
-|--------|----------|---------|
-| `openai/` | OpenAI (default) | `openai/gpt-4o` |
-| `anthropic/` | Anthropic | `anthropic/claude-3-sonnet` |
-| `antigravity/` | Google via OAuth | `antigravity/gemini-2.0-flash` |
-| `deepseek/` | DeepSeek | `deepseek/deepseek-chat` |
-| `qwen/` | Alibaba Qwen | `qwen/qwen-max` |
-| `groq/` | Groq | `groq/llama-3.1-70b` |
-| `cerebras/` | Cerebras | `cerebras/llama-3.3-70b` |
+This design also enables **multi-agent support** with flexible provider selection:
 
-**Example:**
+- **Different agents, different providers**: Each agent can use its own LLM provider
+- **Model fallbacks**: Configure primary and fallback models for resilience
+- **Load balancing**: Distribute requests across multiple endpoints
+- **Centralized configuration**: Manage all providers in one place
+
+#### 📋 All Supported Vendors
+
+| Vendor | `model` Prefix | Default API Base | Protocol | API Key |
+|--------|----------------|------------------|----------|---------|
+| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [Get Key](https://platform.openai.com) |
+| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [Get Key](https://console.anthropic.com) |
+| **智谱 AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [Get Key](https://platform.deepseek.com) |
+| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [Get Key](https://aistudio.google.com/api-keys) |
+| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [Get Key](https://console.groq.com) |
+| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [Get Key](https://platform.moonshot.cn) |
+| **通义千问 (Qwen)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [Get Key](https://dashscope.console.aliyun.com) |
+| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [Get Key](https://build.nvidia.com) |
+| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | Local (no key needed) |
+| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [Get Key](https://openrouter.ai/keys) |
+| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | Local |
+| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Get Key](https://cerebras.ai) |
+| **火山引擎** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Get Key](https://console.volcengine.com) |
+| **神算云** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **Antigravity** | `antigravity/` | Google Cloud | Custom | OAuth only |
+| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
+
+#### Basic Configuration
 
 ```json
 {
   "model_list": [
     {
-      "model_name": "gpt4",
+      "model_name": "gpt-4o",
       "model": "openai/gpt-4o",
-      "api_key": "your-openai-key"
+      "api_key": "sk-your-openai-key"
     },
     {
-      "model_name": "claude3",
-      "model": "anthropic/claude-3-sonnet",
-      "api_key": "your-anthropic-key"
+      "model_name": "claude-3-sonnet",
+      "model": "anthropic/claude-3-5-sonnet-20241022",
+      "api_key": "sk-ant-your-key"
     },
     {
-      "model_name": "custom",
-      "model": "openai/your-model",
-      "api_base": "https://your-api.com/v1",
-      "api_key": "your-key"
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
     }
   ],
   "agents": {
     "defaults": {
-      "model": "gpt4"
+      "model": "gpt-4o"
     }
   }
 }
 ```
 
-**Load Balancing:** Configure multiple endpoints for the same model:
+#### Vendor-Specific Examples
+
+**OpenAI**
+```json
+{
+  "model_name": "gpt-4o",
+  "model": "openai/gpt-4o",
+  "api_key": "sk-..."
+}
+```
+
+**智谱 AI (GLM)**
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**DeepSeek**
+```json
+{
+  "model_name": "deepseek-chat",
+  "model": "deepseek/deepseek-chat",
+  "api_key": "sk-..."
+}
+```
+
+**Anthropic (with OAuth)**
+```json
+{
+  "model_name": "claude-sonnet-4",
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "auth_method": "oauth"
+}
+```
+> Run `picoclaw auth login --provider anthropic` to set up OAuth credentials.
+
+**Ollama (local)**
+```json
+{
+  "model_name": "llama3",
+  "model": "ollama/llama3"
+}
+```
+
+**Custom Proxy/API**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-..."
+}
+```
+
+#### Load Balancing
+
+Configure multiple endpoints for the same model name—PicoClaw will automatically round-robin between them:
 
 ```json
 {
   "model_list": [
-    {"model_name": "gpt4", "model": "openai/gpt-4o", "api_base": "https://api1.example.com/v1"},
-    {"model_name": "gpt4", "model": "openai/gpt-4o", "api_base": "https://api2.example.com/v1"}
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
   ]
 }
 ```
 
-> **Note**: The legacy `providers` configuration is deprecated. See [migration guide](docs/migration/model-list-migration.md) for details.
+#### Migration from Legacy `providers` Config
+
+The old `providers` configuration is **deprecated** but still supported for backward compatibility.
+
+**Old Config (deprecated):**
+```json
+{
+  "providers": {
+    "zhipu": {
+      "api_key": "your-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "zhipu",
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+**New Config (recommended):**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+For detailed migration guide, see [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md).
 
 ### Provider Architecture
 

@@ -568,60 +568,187 @@ Agent 读取 HEARTBEAT.md
 
 ### 模型配置 (model_list)
 
-新的 `model_list` 配置格式支持零代码添加 provider。使用协议前缀指定提供商类型：
+> **新功能！** PicoClaw 现在采用**以模型为中心**的配置方式。只需使用 `厂商/模型` 格式（如 `zhipu/glm-4.7`）即可添加新的 provider——**无需修改任何代码！**
 
-| 前缀 | 提供商 | 示例 |
-|------|--------|------|
-| `openai/` | OpenAI (默认) | `openai/gpt-4o` |
-| `anthropic/` | Anthropic | `anthropic/claude-3-sonnet` |
-| `antigravity/` | Google via OAuth | `antigravity/gemini-2.0-flash` |
-| `deepseek/` | DeepSeek | `deepseek/deepseek-chat` |
-| `qwen/` | 通义千问 | `qwen/qwen-max` |
-| `groq/` | Groq | `groq/llama-3.1-70b` |
-| `cerebras/` | Cerebras | `cerebras/llama-3.3-70b` |
+该设计同时支持**多 Agent 场景**，提供灵活的 Provider 选择：
 
-**示例：**
+- **不同 Agent 使用不同 Provider**：每个 Agent 可以使用自己的 LLM provider
+- **模型回退（Fallback）**：配置主模型和备用模型，提高可靠性
+- **负载均衡**：在多个 API 端点之间分配请求
+- **集中化配置**：在一个地方管理所有 provider
+
+#### 📋 所有支持的厂商
+
+| 厂商 | `model` 前缀 | 默认 API Base | 协议 | 获取 API Key |
+|------|-------------|---------------|------|--------------|
+| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [获取密钥](https://platform.openai.com) |
+| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [获取密钥](https://console.anthropic.com) |
+| **智谱 AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [获取密钥](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [获取密钥](https://platform.deepseek.com) |
+| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [获取密钥](https://aistudio.google.com/api-keys) |
+| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [获取密钥](https://console.groq.com) |
+| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [获取密钥](https://platform.moonshot.cn) |
+| **通义千问 (Qwen)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [获取密钥](https://dashscope.console.aliyun.com) |
+| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [获取密钥](https://build.nvidia.com) |
+| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | 本地（无需密钥） |
+| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [获取密钥](https://openrouter.ai/keys) |
+| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | 本地 |
+| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [获取密钥](https://cerebras.ai) |
+| **火山引擎** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [获取密钥](https://console.volcengine.com) |
+| **神算云** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **Antigravity** | `antigravity/` | Google Cloud | 自定义 | 仅 OAuth |
+| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
+
+#### 基础配置示例
 
 ```json
 {
   "model_list": [
     {
-      "model_name": "gpt4",
+      "model_name": "gpt-4o",
       "model": "openai/gpt-4o",
-      "api_key": "your-openai-key"
+      "api_key": "sk-your-openai-key"
     },
     {
-      "model_name": "claude3",
-      "model": "anthropic/claude-3-sonnet",
-      "api_key": "your-anthropic-key"
+      "model_name": "claude-3-sonnet",
+      "model": "anthropic/claude-3-5-sonnet-20241022",
+      "api_key": "sk-ant-your-key"
     },
     {
-      "model_name": "custom",
-      "model": "openai/your-model",
-      "api_base": "https://your-api.com/v1",
-      "api_key": "your-key"
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
     }
   ],
   "agents": {
     "defaults": {
-      "model": "gpt4"
+      "model": "gpt-4o"
     }
   }
 }
 ```
 
-**负载均衡：** 为同一模型配置多个端点：
+#### 各厂商配置示例
+
+**OpenAI**
+```json
+{
+  "model_name": "gpt-4o",
+  "model": "openai/gpt-4o",
+  "api_key": "sk-..."
+}
+```
+
+**智谱 AI (GLM)**
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**DeepSeek**
+```json
+{
+  "model_name": "deepseek-chat",
+  "model": "deepseek/deepseek-chat",
+  "api_key": "sk-..."
+}
+```
+
+**Anthropic (使用 OAuth)**
+```json
+{
+  "model_name": "claude-sonnet-4",
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "auth_method": "oauth"
+}
+```
+> 运行 `picoclaw auth login --provider anthropic` 来设置 OAuth 凭证。
+
+**Ollama (本地)**
+```json
+{
+  "model_name": "llama3",
+  "model": "ollama/llama3"
+}
+```
+
+**自定义代理/API**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-..."
+}
+```
+
+#### 负载均衡
+
+为同一个模型名称配置多个端点——PicoClaw 会自动在它们之间轮询：
 
 ```json
 {
   "model_list": [
-    {"model_name": "gpt4", "model": "openai/gpt-4o", "api_base": "https://api1.example.com/v1"},
-    {"model_name": "gpt4", "model": "openai/gpt-4o", "api_base": "https://api2.example.com/v1"}
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
   ]
 }
 ```
 
-> **注意**: 旧的 `providers` 配置格式已弃用。详见[迁移指南](docs/migration/model-list-migration.md)。
+#### 从旧的 `providers` 配置迁移
+
+旧的 `providers` 配置格式**已弃用**，但为向后兼容仍支持。
+
+**旧配置（已弃用）：**
+```json
+{
+  "providers": {
+    "zhipu": {
+      "api_key": "your-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "zhipu",
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+**新配置（推荐）：**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+详细的迁移指南请参考 [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md)。
 
 <details>
 <summary><b>智谱 (Zhipu) 配置示例</b></summary>

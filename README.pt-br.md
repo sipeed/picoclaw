@@ -795,6 +795,163 @@ picoclaw agent -m "Ola, como vai?"
 
 </details>
 
+### Configuração de Modelo (model_list)
+
+> **Novidade!** PicoClaw agora usa uma abordagem de configuração **centrada no modelo**. Basta especificar o formato `fornecedor/modelo` (ex: `zhipu/glm-4.7`) para adicionar novos provedores—**nenhuma alteração de código necessária!**
+
+Este design também possibilita o **suporte multi-agent** com seleção flexível de provedores:
+
+- **Diferentes agentes, diferentes provedores** : Cada agente pode usar seu próprio provedor LLM
+- **Modelos de fallback** : Configure modelos primários e de reserva para resiliência
+- **Balanceamento de carga** : Distribua solicitações entre múltiplos endpoints
+- **Configuração centralizada** : Gerencie todos os provedores em um só lugar
+
+#### 📋 Todos os Fornecedores Suportados
+
+| Fornecedor | Prefixo `model` | API Base Padrão | Protocolo | Chave API |
+|-------------|-----------------|------------------|----------|-----------|
+| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [Obter Chave](https://platform.openai.com) |
+| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [Obter Chave](https://console.anthropic.com) |
+| **Zhipu AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [Obter Chave](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [Obter Chave](https://platform.deepseek.com) |
+| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [Obter Chave](https://aistudio.google.com/api-keys) |
+| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [Obter Chave](https://console.groq.com) |
+| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [Obter Chave](https://platform.moonshot.cn) |
+| **Qwen (Alibaba)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [Obter Chave](https://dashscope.console.aliyun.com) |
+| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [Obter Chave](https://build.nvidia.com) |
+| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | Local (sem chave necessária) |
+| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [Obter Chave](https://openrouter.ai/keys) |
+| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | Local |
+| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Obter Chave](https://cerebras.ai) |
+| **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obter Chave](https://console.volcengine.com) |
+| **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **Antigravity** | `antigravity/` | Google Cloud | Custom | Apenas OAuth |
+| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
+
+#### Configuração Básica
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_key": "sk-your-openai-key"
+    },
+    {
+      "model_name": "claude-3-sonnet",
+      "model": "anthropic/claude-3-5-sonnet-20241022",
+      "api_key": "sk-ant-your-key"
+    },
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt-4o"
+    }
+  }
+}
+```
+
+#### Exemplos por Fornecedor
+
+**OpenAI**
+```json
+{
+  "model_name": "gpt-4o",
+  "model": "openai/gpt-4o",
+  "api_key": "sk-..."
+}
+```
+
+**Zhipu AI (GLM)**
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**Anthropic (com OAuth)**
+```json
+{
+  "model_name": "claude-sonnet-4",
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "auth_method": "oauth"
+}
+```
+> Execute `picoclaw auth login --provider anthropic` para configurar credenciais OAuth.
+
+#### Balanceamento de Carga
+
+Configure vários endpoints para o mesmo nome de modelo—PicoClaw fará round-robin automaticamente entre eles:
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-4o",
+      "model": "openai/gpt-4o",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
+  ]
+}
+```
+
+#### Migração da Configuração Legada `providers`
+
+A configuração antiga `providers` está **descontinuada** mas ainda é suportada para compatibilidade reversa.
+
+**Configuração Antiga (descontinuada):**
+```json
+{
+  "providers": {
+    "zhipu": {
+      "api_key": "your-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "zhipu",
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+**Nova Configuração (recomendada):**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+Para o guia de migração detalhado, consulte [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md).
+
 ## Referência CLI
 
 | Comando | Descrição |
