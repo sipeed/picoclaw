@@ -8,139 +8,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+	anthropicprovider "github.com/sipeed/picoclaw/pkg/providers/anthropic"
 )
-
-func TestBuildClaudeParams_BasicMessage(t *testing.T) {
-	messages := []Message{
-		{Role: "user", Content: "Hello"},
-	}
-	params, err := buildClaudeParams(messages, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{
-		"max_tokens": 1024,
-	})
-	if err != nil {
-		t.Fatalf("buildClaudeParams() error: %v", err)
-	}
-	if string(params.Model) != "claude-sonnet-4-5-20250929" {
-		t.Errorf("Model = %q, want %q", params.Model, "claude-sonnet-4-5-20250929")
-	}
-	if params.MaxTokens != 1024 {
-		t.Errorf("MaxTokens = %d, want 1024", params.MaxTokens)
-	}
-	if len(params.Messages) != 1 {
-		t.Fatalf("len(Messages) = %d, want 1", len(params.Messages))
-	}
-}
-
-func TestBuildClaudeParams_SystemMessage(t *testing.T) {
-	messages := []Message{
-		{Role: "system", Content: "You are helpful"},
-		{Role: "user", Content: "Hi"},
-	}
-	params, err := buildClaudeParams(messages, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{})
-	if err != nil {
-		t.Fatalf("buildClaudeParams() error: %v", err)
-	}
-	if len(params.System) != 1 {
-		t.Fatalf("len(System) = %d, want 1", len(params.System))
-	}
-	if params.System[0].Text != "You are helpful" {
-		t.Errorf("System[0].Text = %q, want %q", params.System[0].Text, "You are helpful")
-	}
-	if len(params.Messages) != 1 {
-		t.Fatalf("len(Messages) = %d, want 1", len(params.Messages))
-	}
-}
-
-func TestBuildClaudeParams_ToolCallMessage(t *testing.T) {
-	messages := []Message{
-		{Role: "user", Content: "What's the weather?"},
-		{
-			Role:    "assistant",
-			Content: "",
-			ToolCalls: []ToolCall{
-				{
-					ID:        "call_1",
-					Name:      "get_weather",
-					Arguments: map[string]interface{}{"city": "SF"},
-				},
-			},
-		},
-		{Role: "tool", Content: `{"temp": 72}`, ToolCallID: "call_1"},
-	}
-	params, err := buildClaudeParams(messages, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{})
-	if err != nil {
-		t.Fatalf("buildClaudeParams() error: %v", err)
-	}
-	if len(params.Messages) != 3 {
-		t.Fatalf("len(Messages) = %d, want 3", len(params.Messages))
-	}
-}
-
-func TestBuildClaudeParams_WithTools(t *testing.T) {
-	tools := []ToolDefinition{
-		{
-			Type: "function",
-			Function: ToolFunctionDefinition{
-				Name:        "get_weather",
-				Description: "Get weather for a city",
-				Parameters: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"city": map[string]interface{}{"type": "string"},
-					},
-					"required": []interface{}{"city"},
-				},
-			},
-		},
-	}
-	params, err := buildClaudeParams([]Message{{Role: "user", Content: "Hi"}}, tools, "claude-sonnet-4-5-20250929", map[string]interface{}{})
-	if err != nil {
-		t.Fatalf("buildClaudeParams() error: %v", err)
-	}
-	if len(params.Tools) != 1 {
-		t.Fatalf("len(Tools) = %d, want 1", len(params.Tools))
-	}
-}
-
-func TestParseClaudeResponse_TextOnly(t *testing.T) {
-	resp := &anthropic.Message{
-		Content: []anthropic.ContentBlockUnion{},
-		Usage: anthropic.Usage{
-			InputTokens:  10,
-			OutputTokens: 20,
-		},
-	}
-	result := parseClaudeResponse(resp)
-	if result.Usage.PromptTokens != 10 {
-		t.Errorf("PromptTokens = %d, want 10", result.Usage.PromptTokens)
-	}
-	if result.Usage.CompletionTokens != 20 {
-		t.Errorf("CompletionTokens = %d, want 20", result.Usage.CompletionTokens)
-	}
-	if result.FinishReason != "stop" {
-		t.Errorf("FinishReason = %q, want %q", result.FinishReason, "stop")
-	}
-}
-
-func TestParseClaudeResponse_StopReasons(t *testing.T) {
-	tests := []struct {
-		stopReason anthropic.StopReason
-		want       string
-	}{
-		{anthropic.StopReasonEndTurn, "stop"},
-		{anthropic.StopReasonMaxTokens, "length"},
-		{anthropic.StopReasonToolUse, "tool_calls"},
-	}
-	for _, tt := range tests {
-		resp := &anthropic.Message{
-			StopReason: tt.stopReason,
-		}
-		result := parseClaudeResponse(resp)
-		if result.FinishReason != tt.want {
-			t.Errorf("StopReason %q: FinishReason = %q, want %q", tt.stopReason, result.FinishReason, tt.want)
-		}
-	}
-}
 
 func TestClaudeProvider_ChatRoundTrip(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -175,8 +44,8 @@ func TestClaudeProvider_ChatRoundTrip(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewClaudeProvider("test-token")
-	provider.client = createAnthropicTestClient(server.URL, "test-token")
+	delegate := anthropicprovider.NewProviderWithClient(createAnthropicTestClient(server.URL, "test-token"))
+	provider := newClaudeProviderWithDelegate(delegate)
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
 	resp, err := provider.Chat(t.Context(), messages, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{"max_tokens": 1024})

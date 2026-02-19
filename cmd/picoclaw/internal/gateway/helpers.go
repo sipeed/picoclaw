@@ -124,6 +124,13 @@ func gatewayCmd(debug bool) error {
 				logger.InfoC("voice", "Groq transcription attached to Slack channel")
 			}
 		}
+
+		if onebotChannel, ok := channelManager.GetChannel("onebot"); ok {
+			if oc, ok := onebotChannel.(*channels.OneBotChannel); ok {
+				oc.SetTranscriber(transcriber)
+				logger.InfoC("voice", "Groq transcription attached to OneBot channel")
+			}
+		}
 	}
 
 	enabledChannels := channelManager.GetEnabledChannels()
