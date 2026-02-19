@@ -23,6 +23,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -45,6 +46,7 @@ type AgentLoop struct {
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
 	channelManager *channels.Manager
 	rateLimiter    *rateLimiter
+	mcpManager     *mcp.Manager
 }
 
 // processOptions configures how a message is processed
@@ -156,6 +158,16 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(skillTool)
 	subagentTools.Register(skillTool)
 
+	// MCP server manager and bridge tool
+	var mcpManager *mcp.Manager
+	if len(cfg.Tools.MCP) > 0 {
+		mcpManager = mcp.NewManager(cfg.Tools.MCP)
+		mcpBridgeTool := tools.NewMCPBridgeTool(mcpManager)
+		toolsRegistry.Register(mcpBridgeTool)
+		subagentTools.Register(mcpBridgeTool)
+		contextBuilder.SetMCPManager(mcpManager)
+	}
+
 	return &AgentLoop{
 		bus:            msgBus,
 		provider:       provider,
@@ -169,6 +181,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
 		rateLimiter:    newRateLimiter(cfg.RateLimits.MaxToolCallsPerMinute, cfg.RateLimits.MaxRequestsPerMinute),
+		mcpManager:     mcpManager,
 	}
 }
 
@@ -223,6 +236,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+	if al.mcpManager != nil {
+		al.mcpManager.Stop()
+	}
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {

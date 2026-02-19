@@ -56,6 +56,8 @@ func statusLabel(toolName string, args map[string]interface{}) string {
 			return fmt.Sprintf("サブタスク実行中...（%s）", truncLabel(l, 20))
 		}
 		return "サブタスク実行中..."
+	case "mcp":
+		return mcpStatusLabel(args)
 	case "i2c":
 		return i2cStatusLabel(args)
 	case "spi":
@@ -111,6 +113,28 @@ func cronStatusLabel(args map[string]interface{}) string {
 		return "スケジュール削除中..."
 	default:
 		return "スケジュール変更中..."
+	}
+}
+
+func mcpStatusLabel(args map[string]interface{}) string {
+	switch strArg(args, "action") {
+	case "mcp_list":
+		return "MCPサーバー一覧取得中..."
+	case "mcp_tools":
+		if s := strArg(args, "server"); s != "" {
+			return fmt.Sprintf("MCPツール取得中...（%s）", s)
+		}
+		return "MCPツール取得中..."
+	case "mcp_call":
+		if t := strArg(args, "tool"); t != "" {
+			if s := strArg(args, "server"); s != "" {
+				return fmt.Sprintf("MCPツール実行中...（%s/%s）", s, t)
+			}
+			return fmt.Sprintf("MCPツール実行中...（%s）", t)
+		}
+		return "MCPツール実行中..."
+	default:
+		return "MCP操作中..."
 	}
 }
 

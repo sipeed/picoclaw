@@ -239,11 +239,26 @@ type SPIToolsConfig struct {
 	Enabled bool `json:"enabled" env:"PICOCLAW_TOOLS_SPI_ENABLED"`
 }
 
+type MCPServerConfig struct {
+	// Stdio transport
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	// HTTP transport
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	// Common
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	IdleTimeout int    `json:"idle_timeout,omitempty"` // seconds, default 300
+}
+
 type ToolsConfig struct {
-	Web  WebToolsConfig  `json:"web"`
-	Exec ExecToolsConfig `json:"exec"`
-	I2C  I2CToolsConfig  `json:"i2c"`
-	SPI  SPIToolsConfig  `json:"spi"`
+	Web  WebToolsConfig             `json:"web"`
+	Exec ExecToolsConfig            `json:"exec"`
+	I2C  I2CToolsConfig             `json:"i2c"`
+	SPI  SPIToolsConfig             `json:"spi"`
+	MCP  map[string]MCPServerConfig `json:"mcp,omitempty"`
 }
 
 func DefaultConfig() *Config {

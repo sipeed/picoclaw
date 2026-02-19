@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -20,6 +21,7 @@ type ContextBuilder struct {
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
 	tools        *tools.ToolRegistry // Direct reference to tool registry
+	mcpManager   *mcp.Manager        // MCP server manager
 }
 
 func getGlobalConfigDir() string {
@@ -58,6 +60,11 @@ func (cb *ContextBuilder) GetSkillsLoader() *skills.SkillsLoader {
 // SetToolsRegistry sets the tools registry for dynamic tool summary generation.
 func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
 	cb.tools = registry
+}
+
+// SetMCPManager sets the MCP manager for system prompt integration.
+func (cb *ContextBuilder) SetMCPManager(manager *mcp.Manager) {
+	cb.mcpManager = manager
 }
 
 func (cb *ContextBuilder) getIdentity() string {
@@ -139,6 +146,19 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 The following skills extend your capabilities. To use a skill, call the skill_read tool with the skill name.
 
 %s`, skillsSummary))
+	}
+
+	// MCP Servers - show summary, AI uses mcp tool to discover and call
+	if cb.mcpManager != nil {
+		mcpSummary := cb.mcpManager.BuildSummary()
+		if mcpSummary != "" {
+			parts = append(parts, fmt.Sprintf(`# MCP Servers
+
+The following MCP servers provide additional tools.
+Use the mcp tool to discover and call server tools.
+
+%s`, mcpSummary))
+		}
 	}
 
 	// Memory context

@@ -135,6 +135,22 @@
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       }
+    },
+    "mcp": {
+      "example-stdio": {
+        "command": "npx",
+        "args": ["-y", "@example/mcp-server"],
+        "description": "Example local MCP server (stdio)",
+        "enabled": false
+      },
+      "example-http": {
+        "url": "https://mcp.example.com/mcp",
+        "headers": {
+          "Authorization": "Bearer YOUR_TOKEN"
+        },
+        "description": "Example remote MCP server (HTTP)",
+        "enabled": false
+      }
     }
   },
   "heartbeat": {
