@@ -83,9 +83,9 @@ func NewAgentInstance(
 		maxTokens = 8192
 	}
 
-	temperature := defaults.Temperature
-	if temperature == 0 {
-		temperature = 0.7
+	temperature := 0.7
+	if defaults.Temperature != nil {
+		temperature = *defaults.Temperature
 	}
 
 	// Resolve fallback candidates
