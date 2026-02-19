@@ -189,16 +189,35 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
 	}
 
-	//This fix prevents the session memory from LLM failure due to elimination of toolu_IDs required from LLM
+	// This fix prevents the session memory from LLM failure due to elimination of toolu_IDs required from LLM
 	// --- INICIO DEL FIX ---
-	//Diegox-17
+	// Diegox-17
 	for len(history) > 0 && (history[0].Role == "tool") {
 		logger.DebugCF("agent", "Removing orphaned tool message from history to prevent LLM error",
 			map[string]interface{}{"role": history[0].Role})
 		history = history[1:]
 	}
-	//Diegox-17
+	// Diegox-17
 	// --- FIN DEL FIX ---
+
+	var coalescedUser *providers.Message
+	if len(history) > 0 && history[len(history)-1].Role == "user" {
+		last := history[len(history)-1]
+		history = history[:len(history)-1]
+		merged := last.Content
+		if merged != "" && currentMessage != "" {
+			merged += "\n\n" + currentMessage
+		} else if currentMessage != "" {
+			merged = currentMessage
+		}
+		coalescedUser = &providers.Message{Role: "user", Content: merged}
+		logger.InfoCF("agent", "Coalesced consecutive user messages",
+			map[string]interface{}{
+				"prev_len":   len(last.Content),
+				"new_len":    len(currentMessage),
+				"merged_len": len(merged),
+			})
+	}
 
 	messages = append(messages, providers.Message{
 		Role:    "system",
@@ -207,10 +226,11 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	messages = append(messages, history...)
 
-	messages = append(messages, providers.Message{
-		Role:    "user",
-		Content: currentMessage,
-	})
+	if coalescedUser != nil {
+		messages = append(messages, *coalescedUser)
+	} else {
+		messages = append(messages, providers.Message{Role: "user", Content: currentMessage})
+	}
 
 	return messages
 }
