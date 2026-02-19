@@ -45,13 +45,11 @@ func createCodexAuthProvider() (LLMProvider, error) {
 //   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
 func ExtractProtocol(model string) (protocol, modelID string) {
 	model = strings.TrimSpace(model)
-	for i := 0; i < len(model); i++ {
-		if model[i] == '/' {
-			return model[:i], model[i+1:]
-		}
+	protocol, modelID, found := strings.Cut(model, "/")
+	if !found {
+		return "openai", model
 	}
-	// No prefix found, default to openai
-	return "openai", model
+	return protocol, modelID
 }
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.

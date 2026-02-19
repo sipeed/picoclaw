@@ -6,6 +6,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -13,7 +14,7 @@ func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
 	cfg := &Config{
 		Providers: ProvidersConfig{
 			OpenAI: ProviderConfig{
-				APIKey: "sk-test-key",
+				APIKey:  "sk-test-key",
 				APIBase: "https://custom.api.com/v1",
 			},
 		},
@@ -40,7 +41,7 @@ func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
 	cfg := &Config{
 		Providers: ProvidersConfig{
 			Anthropic: ProviderConfig{
-				APIKey: "ant-key",
+				APIKey:  "ant-key",
 				APIBase: "https://custom.anthropic.com",
 			},
 		},
@@ -111,23 +112,23 @@ func TestConvertProvidersToModelList_Nil(t *testing.T) {
 func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 	cfg := &Config{
 		Providers: ProvidersConfig{
-			OpenAI:       ProviderConfig{APIKey: "key1"},
-			Anthropic:    ProviderConfig{APIKey: "key2"},
-			OpenRouter:   ProviderConfig{APIKey: "key3"},
-			Groq:         ProviderConfig{APIKey: "key4"},
-			Zhipu:        ProviderConfig{APIKey: "key5"},
-			VLLM:         ProviderConfig{APIKey: "key6"},
-			Gemini:       ProviderConfig{APIKey: "key7"},
-			Nvidia:       ProviderConfig{APIKey: "key8"},
-			Ollama:       ProviderConfig{APIKey: "key9"},
-			Moonshot:     ProviderConfig{APIKey: "key10"},
-			ShengSuanYun: ProviderConfig{APIKey: "key11"},
-			DeepSeek:     ProviderConfig{APIKey: "key12"},
-			Cerebras:     ProviderConfig{APIKey: "key13"},
-			VolcEngine:   ProviderConfig{APIKey: "key14"},
+			OpenAI:        ProviderConfig{APIKey: "key1"},
+			Anthropic:     ProviderConfig{APIKey: "key2"},
+			OpenRouter:    ProviderConfig{APIKey: "key3"},
+			Groq:          ProviderConfig{APIKey: "key4"},
+			Zhipu:         ProviderConfig{APIKey: "key5"},
+			VLLM:          ProviderConfig{APIKey: "key6"},
+			Gemini:        ProviderConfig{APIKey: "key7"},
+			Nvidia:        ProviderConfig{APIKey: "key8"},
+			Ollama:        ProviderConfig{APIKey: "key9"},
+			Moonshot:      ProviderConfig{APIKey: "key10"},
+			ShengSuanYun:  ProviderConfig{APIKey: "key11"},
+			DeepSeek:      ProviderConfig{APIKey: "key12"},
+			Cerebras:      ProviderConfig{APIKey: "key13"},
+			VolcEngine:    ProviderConfig{APIKey: "key14"},
 			GitHubCopilot: ProviderConfig{ConnectMode: "grpc"},
-			Antigravity:  ProviderConfig{AuthMethod: "oauth"},
-			Qwen:         ProviderConfig{APIKey: "key17"},
+			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
+			Qwen:          ProviderConfig{APIKey: "key17"},
 		},
 	}
 
@@ -173,5 +174,220 @@ func TestConvertProvidersToModelList_AuthMethod(t *testing.T) {
 
 	if len(result) != 0 {
 		t.Errorf("len(result) = %d, want 0 (AuthMethod alone should not create entry)", len(result))
+	}
+}
+
+// Tests for preserving user's configured model during migration
+
+func TestConvertProvidersToModelList_PreservesUserModel_DeepSeek(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "deepseek",
+				Model:    "deepseek-reasoner",
+			},
+		},
+		Providers: ProvidersConfig{
+			DeepSeek: ProviderConfig{APIKey: "sk-deepseek"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// Should use user's model, not default
+	if result[0].Model != "openai/deepseek-reasoner" {
+		t.Errorf("Model = %q, want %q (user's configured model)", result[0].Model, "openai/deepseek-reasoner")
+	}
+}
+
+func TestConvertProvidersToModelList_PreservesUserModel_OpenAI(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "openai",
+				Model:    "gpt-4-turbo",
+			},
+		},
+		Providers: ProvidersConfig{
+			OpenAI: ProviderConfig{APIKey: "sk-openai"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	if result[0].Model != "openai/gpt-4-turbo" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "openai/gpt-4-turbo")
+	}
+}
+
+func TestConvertProvidersToModelList_PreservesUserModel_Anthropic(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "claude", // alternative name
+				Model:    "claude-3-opus-20240229",
+			},
+		},
+		Providers: ProvidersConfig{
+			Anthropic: ProviderConfig{APIKey: "sk-ant"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	if result[0].Model != "anthropic/claude-3-opus-20240229" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "anthropic/claude-3-opus-20240229")
+	}
+}
+
+func TestConvertProvidersToModelList_PreservesUserModel_Qwen(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "qwen",
+				Model:    "qwen-plus",
+			},
+		},
+		Providers: ProvidersConfig{
+			Qwen: ProviderConfig{APIKey: "sk-qwen"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	if result[0].Model != "qwen/qwen-plus" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "qwen/qwen-plus")
+	}
+}
+
+func TestConvertProvidersToModelList_UsesDefaultWhenNoUserModel(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "deepseek",
+				Model:    "", // no model specified
+			},
+		},
+		Providers: ProvidersConfig{
+			DeepSeek: ProviderConfig{APIKey: "sk-deepseek"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// Should use default model
+	if result[0].Model != "openai/deepseek-chat" {
+		t.Errorf("Model = %q, want %q (default)", result[0].Model, "openai/deepseek-chat")
+	}
+}
+
+func TestConvertProvidersToModelList_MultipleProviders_PreservesUserModel(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "deepseek",
+				Model:    "deepseek-reasoner",
+			},
+		},
+		Providers: ProvidersConfig{
+			OpenAI:   ProviderConfig{APIKey: "sk-openai"},
+			DeepSeek: ProviderConfig{APIKey: "sk-deepseek"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+
+	// Find each provider and verify model
+	for _, mc := range result {
+		switch mc.ModelName {
+		case "openai":
+			if mc.Model != "openai/gpt-4o" {
+				t.Errorf("OpenAI Model = %q, want %q (default)", mc.Model, "openai/gpt-4o")
+			}
+		case "deepseek":
+			if mc.Model != "openai/deepseek-reasoner" {
+				t.Errorf("DeepSeek Model = %q, want %q (user's)", mc.Model, "openai/deepseek-reasoner")
+			}
+		}
+	}
+}
+
+func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
+	tests := []struct {
+		providerAlias string
+		expectedModel string
+		provider      ProviderConfig
+	}{
+		{"gpt", "openai/gpt-4-custom", ProviderConfig{APIKey: "key"}},
+		{"claude", "anthropic/claude-custom", ProviderConfig{APIKey: "key"}},
+		{"doubao", "openai/doubao-custom", ProviderConfig{APIKey: "key"}},
+		{"tongyi", "qwen/qwen-custom", ProviderConfig{APIKey: "key"}},
+		{"kimi", "moonshot/kimi-custom", ProviderConfig{APIKey: "key"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.providerAlias, func(t *testing.T) {
+			cfg := &Config{
+				Agents: AgentsConfig{
+					Defaults: AgentDefaults{
+						Provider: tt.providerAlias,
+						Model:    strings.TrimPrefix(tt.expectedModel, tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1]),
+					},
+				},
+				Providers: ProvidersConfig{},
+			}
+
+			// Set the appropriate provider config
+			switch tt.providerAlias {
+			case "gpt":
+				cfg.Providers.OpenAI = tt.provider
+			case "claude":
+				cfg.Providers.Anthropic = tt.provider
+			case "doubao":
+				cfg.Providers.VolcEngine = tt.provider
+			case "tongyi":
+				cfg.Providers.Qwen = tt.provider
+			case "kimi":
+				cfg.Providers.Moonshot = tt.provider
+			}
+
+			// Need to fix the model name in config
+			cfg.Agents.Defaults.Model = strings.TrimPrefix(tt.expectedModel, tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1])
+
+			result := ConvertProvidersToModelList(cfg)
+			if len(result) != 1 {
+				t.Fatalf("len(result) = %d, want 1", len(result))
+			}
+
+			// Extract just the model ID part (after the first /)
+			expectedModelID := tt.expectedModel
+			if result[0].Model != expectedModelID {
+				t.Errorf("Model = %q, want %q", result[0].Model, expectedModelID)
+			}
+		})
 	}
 }

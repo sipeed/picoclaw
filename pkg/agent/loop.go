@@ -607,7 +607,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 
 		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
 		for _, tc := range response.ToolCalls {
-			normalizedToolCalls = append(normalizedToolCalls, normalizeProviderToolCall(tc))
+			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
 		}
 
 		// Log tool calls
@@ -713,45 +713,6 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 	}
 
 	return finalContent, iteration, nil
-}
-
-func normalizeProviderToolCall(tc providers.ToolCall) providers.ToolCall {
-	normalized := tc
-
-	if normalized.Name == "" && normalized.Function != nil {
-		normalized.Name = normalized.Function.Name
-	}
-
-	if normalized.Arguments == nil {
-		normalized.Arguments = map[string]interface{}{}
-	}
-
-	if len(normalized.Arguments) == 0 && normalized.Function != nil && normalized.Function.Arguments != "" {
-		var parsed map[string]interface{}
-		if err := json.Unmarshal([]byte(normalized.Function.Arguments), &parsed); err == nil && parsed != nil {
-			normalized.Arguments = parsed
-		}
-	}
-
-	argsJSON, _ := json.Marshal(normalized.Arguments)
-	if normalized.Function == nil {
-		normalized.Function = &providers.FunctionCall{
-			Name:      normalized.Name,
-			Arguments: string(argsJSON),
-		}
-	} else {
-		if normalized.Function.Name == "" {
-			normalized.Function.Name = normalized.Name
-		}
-		if normalized.Name == "" {
-			normalized.Name = normalized.Function.Name
-		}
-		if normalized.Function.Arguments == "" {
-			normalized.Function.Arguments = string(argsJSON)
-		}
-	}
-
-	return normalized
 }
 
 // updateToolContexts updates the context for tools that need channel/chatID info.

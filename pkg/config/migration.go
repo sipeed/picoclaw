@@ -5,201 +5,326 @@
 
 package config
 
+import (
+	"slices"
+	"strings"
+)
+
+// providerMigrationConfig defines how to migrate a provider from old config to new format.
+type providerMigrationConfig struct {
+	// providerNames are the possible names used in agents.defaults.provider
+	providerNames []string
+	// protocol is the protocol prefix for the model field
+	protocol string
+	// buildConfig creates the ModelConfig from ProviderConfig
+	buildConfig func(p ProvidersConfig) (ModelConfig, bool)
+}
+
 // ConvertProvidersToModelList converts the old ProvidersConfig to a slice of ModelConfig.
 // This enables backward compatibility with existing configurations.
+// It preserves the user's configured model from agents.defaults.model when possible.
 func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 	if cfg == nil {
 		return nil
 	}
 
+	// Get user's configured provider and model
+	userProvider := strings.ToLower(cfg.Agents.Defaults.Provider)
+	userModel := cfg.Agents.Defaults.Model
+
 	var result []ModelConfig
 	p := cfg.Providers
 
-	// OpenAI
-	if p.OpenAI.APIKey != "" || p.OpenAI.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName:  "openai",
-			Model:      "openai/gpt-4o",
-			APIKey:     p.OpenAI.APIKey,
-			APIBase:    p.OpenAI.APIBase,
-			Proxy:      p.OpenAI.Proxy,
-			AuthMethod: p.OpenAI.AuthMethod,
-		})
+	// Define migration rules for each provider
+	migrations := []providerMigrationConfig{
+		{
+			providerNames: []string{"openai", "gpt"},
+			protocol:      "openai",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:  "openai",
+					Model:      "openai/gpt-4o",
+					APIKey:     p.OpenAI.APIKey,
+					APIBase:    p.OpenAI.APIBase,
+					Proxy:      p.OpenAI.Proxy,
+					AuthMethod: p.OpenAI.AuthMethod,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"anthropic", "claude"},
+			protocol:      "anthropic",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:  "anthropic",
+					Model:      "anthropic/claude-3-sonnet",
+					APIKey:     p.Anthropic.APIKey,
+					APIBase:    p.Anthropic.APIBase,
+					Proxy:      p.Anthropic.Proxy,
+					AuthMethod: p.Anthropic.AuthMethod,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"openrouter"},
+			protocol:      "openrouter",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.OpenRouter.APIKey == "" && p.OpenRouter.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "openrouter",
+					Model:     "openrouter/auto",
+					APIKey:    p.OpenRouter.APIKey,
+					APIBase:   p.OpenRouter.APIBase,
+					Proxy:     p.OpenRouter.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"groq"},
+			protocol:      "groq",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Groq.APIKey == "" && p.Groq.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "groq",
+					Model:     "groq/llama-3.1-70b-versatile",
+					APIKey:    p.Groq.APIKey,
+					APIBase:   p.Groq.APIBase,
+					Proxy:     p.Groq.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"zhipu", "glm"},
+			protocol:      "openai",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "zhipu",
+					Model:     "openai/glm-4",
+					APIKey:    p.Zhipu.APIKey,
+					APIBase:   p.Zhipu.APIBase,
+					Proxy:     p.Zhipu.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"vllm"},
+			protocol:      "openai",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.VLLM.APIKey == "" && p.VLLM.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "vllm",
+					Model:     "openai/auto",
+					APIKey:    p.VLLM.APIKey,
+					APIBase:   p.VLLM.APIBase,
+					Proxy:     p.VLLM.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"gemini", "google"},
+			protocol:      "openai",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Gemini.APIKey == "" && p.Gemini.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "gemini",
+					Model:     "openai/gemini-pro",
+					APIKey:    p.Gemini.APIKey,
+					APIBase:   p.Gemini.APIBase,
+					Proxy:     p.Gemini.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"nvidia"},
+			protocol:      "nvidia",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Nvidia.APIKey == "" && p.Nvidia.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "nvidia",
+					Model:     "nvidia/meta/llama-3.1-8b-instruct",
+					APIKey:    p.Nvidia.APIKey,
+					APIBase:   p.Nvidia.APIBase,
+					Proxy:     p.Nvidia.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"ollama"},
+			protocol:      "ollama",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Ollama.APIKey == "" && p.Ollama.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "ollama",
+					Model:     "ollama/llama3",
+					APIKey:    p.Ollama.APIKey,
+					APIBase:   p.Ollama.APIBase,
+					Proxy:     p.Ollama.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"moonshot", "kimi"},
+			protocol:      "moonshot",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "moonshot",
+					Model:     "moonshot/kimi",
+					APIKey:    p.Moonshot.APIKey,
+					APIBase:   p.Moonshot.APIBase,
+					Proxy:     p.Moonshot.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"shengsuanyun"},
+			protocol:      "openai",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "shengsuanyun",
+					Model:     "openai/auto",
+					APIKey:    p.ShengSuanYun.APIKey,
+					APIBase:   p.ShengSuanYun.APIBase,
+					Proxy:     p.ShengSuanYun.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"deepseek"},
+			protocol:      "openai",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "deepseek",
+					Model:     "openai/deepseek-chat",
+					APIKey:    p.DeepSeek.APIKey,
+					APIBase:   p.DeepSeek.APIBase,
+					Proxy:     p.DeepSeek.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"cerebras"},
+			protocol:      "cerebras",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "cerebras",
+					Model:     "cerebras/llama-3.3-70b",
+					APIKey:    p.Cerebras.APIKey,
+					APIBase:   p.Cerebras.APIBase,
+					Proxy:     p.Cerebras.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"volcengine", "doubao"},
+			protocol:      "openai",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "volcengine",
+					Model:     "openai/doubao-pro",
+					APIKey:    p.VolcEngine.APIKey,
+					APIBase:   p.VolcEngine.APIBase,
+					Proxy:     p.VolcEngine.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"github_copilot", "copilot"},
+			protocol:      "github-copilot",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" && p.GitHubCopilot.ConnectMode == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:   "github-copilot",
+					Model:       "github-copilot/gpt-4o",
+					APIBase:     p.GitHubCopilot.APIBase,
+					ConnectMode: p.GitHubCopilot.ConnectMode,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"antigravity"},
+			protocol:      "antigravity",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Antigravity.APIKey == "" && p.Antigravity.AuthMethod == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:  "antigravity",
+					Model:      "antigravity/gemini-2.0-flash",
+					APIKey:     p.Antigravity.APIKey,
+					AuthMethod: p.Antigravity.AuthMethod,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"qwen", "tongyi"},
+			protocol:      "qwen",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Qwen.APIKey == "" && p.Qwen.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "qwen",
+					Model:     "qwen/qwen-max",
+					APIKey:    p.Qwen.APIKey,
+					APIBase:   p.Qwen.APIBase,
+					Proxy:     p.Qwen.Proxy,
+				}, true
+			},
+		},
 	}
 
-	// Anthropic
-	if p.Anthropic.APIKey != "" || p.Anthropic.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName:  "anthropic",
-			Model:      "anthropic/claude-3-sonnet",
-			APIKey:     p.Anthropic.APIKey,
-			APIBase:    p.Anthropic.APIBase,
-			Proxy:      p.Anthropic.Proxy,
-			AuthMethod: p.Anthropic.AuthMethod,
-		})
-	}
+	// Process each provider migration
+	for _, m := range migrations {
+		mc, ok := m.buildConfig(p)
+		if !ok {
+			continue
+		}
 
-	// OpenRouter
-	if p.OpenRouter.APIKey != "" || p.OpenRouter.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "openrouter",
-			Model:     "openrouter/auto",
-			APIKey:    p.OpenRouter.APIKey,
-			APIBase:   p.OpenRouter.APIBase,
-			Proxy:     p.OpenRouter.Proxy,
-		})
-	}
+		// Check if this is the user's configured provider
+		if slices.Contains(m.providerNames, userProvider) && userModel != "" {
+			// Use the user's configured model instead of default
+			mc.Model = m.protocol + "/" + userModel
+		}
 
-	// Groq
-	if p.Groq.APIKey != "" || p.Groq.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "groq",
-			Model:     "groq/llama-3.1-70b-versatile",
-			APIKey:    p.Groq.APIKey,
-			APIBase:   p.Groq.APIBase,
-			Proxy:     p.Groq.Proxy,
-		})
-	}
-
-	// Zhipu
-	if p.Zhipu.APIKey != "" || p.Zhipu.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "zhipu",
-			Model:     "openai/glm-4",
-			APIKey:    p.Zhipu.APIKey,
-			APIBase:   p.Zhipu.APIBase,
-			Proxy:     p.Zhipu.Proxy,
-		})
-	}
-
-	// VLLM
-	if p.VLLM.APIKey != "" || p.VLLM.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "vllm",
-			Model:     "openai/auto",
-			APIKey:    p.VLLM.APIKey,
-			APIBase:   p.VLLM.APIBase,
-			Proxy:     p.VLLM.Proxy,
-		})
-	}
-
-	// Gemini
-	if p.Gemini.APIKey != "" || p.Gemini.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "gemini",
-			Model:     "openai/gemini-pro",
-			APIKey:    p.Gemini.APIKey,
-			APIBase:   p.Gemini.APIBase,
-			Proxy:     p.Gemini.Proxy,
-		})
-	}
-
-	// Nvidia
-	if p.Nvidia.APIKey != "" || p.Nvidia.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "nvidia",
-			Model:     "nvidia/meta/llama-3.1-8b-instruct",
-			APIKey:    p.Nvidia.APIKey,
-			APIBase:   p.Nvidia.APIBase,
-			Proxy:     p.Nvidia.Proxy,
-		})
-	}
-
-	// Ollama
-	if p.Ollama.APIKey != "" || p.Ollama.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "ollama",
-			Model:     "ollama/llama3",
-			APIKey:    p.Ollama.APIKey,
-			APIBase:   p.Ollama.APIBase,
-			Proxy:     p.Ollama.Proxy,
-		})
-	}
-
-	// Moonshot
-	if p.Moonshot.APIKey != "" || p.Moonshot.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "moonshot",
-			Model:     "moonshot/kimi",
-			APIKey:    p.Moonshot.APIKey,
-			APIBase:   p.Moonshot.APIBase,
-			Proxy:     p.Moonshot.Proxy,
-		})
-	}
-
-	// ShengSuanYun
-	if p.ShengSuanYun.APIKey != "" || p.ShengSuanYun.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "shengsuanyun",
-			Model:     "openai/auto",
-			APIKey:    p.ShengSuanYun.APIKey,
-			APIBase:   p.ShengSuanYun.APIBase,
-			Proxy:     p.ShengSuanYun.Proxy,
-		})
-	}
-
-	// DeepSeek
-	if p.DeepSeek.APIKey != "" || p.DeepSeek.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "deepseek",
-			Model:     "openai/deepseek-chat",
-			APIKey:    p.DeepSeek.APIKey,
-			APIBase:   p.DeepSeek.APIBase,
-			Proxy:     p.DeepSeek.Proxy,
-		})
-	}
-
-	// Cerebras
-	if p.Cerebras.APIKey != "" || p.Cerebras.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "cerebras",
-			Model:     "cerebras/llama-3.3-70b",
-			APIKey:    p.Cerebras.APIKey,
-			APIBase:   p.Cerebras.APIBase,
-			Proxy:     p.Cerebras.Proxy,
-		})
-	}
-
-	// VolcEngine (Doubao)
-	if p.VolcEngine.APIKey != "" || p.VolcEngine.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "volcengine",
-			Model:     "openai/doubao-pro",
-			APIKey:    p.VolcEngine.APIKey,
-			APIBase:   p.VolcEngine.APIBase,
-			Proxy:     p.VolcEngine.Proxy,
-		})
-	}
-
-	// GitHub Copilot
-	if p.GitHubCopilot.APIKey != "" || p.GitHubCopilot.APIBase != "" || p.GitHubCopilot.ConnectMode != "" {
-		result = append(result, ModelConfig{
-			ModelName:   "github-copilot",
-			Model:       "github-copilot/gpt-4o",
-			APIBase:     p.GitHubCopilot.APIBase,
-			ConnectMode: p.GitHubCopilot.ConnectMode,
-		})
-	}
-
-	// Antigravity
-	if p.Antigravity.APIKey != "" || p.Antigravity.AuthMethod != "" {
-		result = append(result, ModelConfig{
-			ModelName:  "antigravity",
-			Model:      "antigravity/gemini-2.0-flash",
-			APIKey:     p.Antigravity.APIKey,
-			AuthMethod: p.Antigravity.AuthMethod,
-		})
-	}
-
-	// Qwen
-	if p.Qwen.APIKey != "" || p.Qwen.APIBase != "" {
-		result = append(result, ModelConfig{
-			ModelName: "qwen",
-			Model:     "qwen/qwen-max",
-			APIKey:    p.Qwen.APIKey,
-			APIBase:   p.Qwen.APIBase,
-			Proxy:     p.Qwen.Proxy,
-		})
+		result = append(result, mc)
 	}
 
 	return result
