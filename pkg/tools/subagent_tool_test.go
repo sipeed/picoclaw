@@ -10,7 +10,7 @@ import (
 )
 
 // MockLLMProvider is a test implementation of LLMProvider
-type MockLLMProvider struct{
+type MockLLMProvider struct {
 	lastOptions map[string]interface{}
 }
 
