@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -408,6 +409,17 @@ func agentCmd() {
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
+	// If observability mode is enabled, emit structured tool events to stderr.
+	// Python gateway reads these lines and logs them to Weave.
+	if os.Getenv("PICOCLAW_WEAVE_OBSERVE") == "1" {
+		agentLoop.SetToolObserver(func(name string, args map[string]interface{}, result *tools.ToolResult, durationMs int64) {
+			argsJSON, _ := json.Marshal(args)
+			evt := fmt.Sprintf(`{"tool":%q,"duration_ms":%d,"is_error":%v,"args":%s}`,
+				name, durationMs, result.IsError, argsJSON)
+			fmt.Fprintf(os.Stderr, "WEAVE_TOOL_EVENT:%s\n", evt)
+		})
+	}
+
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
 	logger.InfoCF("agent", "Agent initialized",
@@ -621,12 +633,6 @@ func gatewayCmd() {
 			if sc, ok := slackChannel.(*channels.SlackChannel); ok {
 				sc.SetTranscriber(transcriber)
 				logger.InfoC("voice", "Groq transcription attached to Slack channel")
-			}
-		}
-		if onebotChannel, ok := channelManager.GetChannel("onebot"); ok {
-			if oc, ok := onebotChannel.(*channels.OneBotChannel); ok {
-				oc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to OneBot channel")
 			}
 		}
 	}
