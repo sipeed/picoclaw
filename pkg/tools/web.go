@@ -311,6 +311,15 @@ type WebSearchToolOptions struct {
 }
 
 func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
+	// If no options are provided, default to DuckDuckGo with 5 results.
+	if len(opts) == 0 {
+		opts = []WebSearchToolOptions{
+			{
+				Provider:   "duckduckgo",
+				MaxResults: 5,
+			},
+		}
+	}
 	// Priority order: Brave > Ollama > DuckDuckGo
 	priorityOrder := []string{"brave", "ollama", "duckduckgo"}
 	optMap := make(map[string]WebSearchToolOptions)
