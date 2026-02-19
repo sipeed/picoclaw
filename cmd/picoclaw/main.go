@@ -599,8 +599,8 @@ func gatewayCmd() {
 	agentLoop.SetChannelManager(channelManager)
 
 	var transcriber *voice.GroqTranscriber
-	if cfg.Providers.Groq.APIKey != "" {
-		transcriber = voice.NewGroqTranscriber(cfg.Providers.Groq.APIKey)
+	if cfg.Providers["groq"].APIKey != "" {
+		transcriber = voice.NewGroqTranscriber(cfg.Providers["groq"].APIKey)
 		logger.InfoC("voice", "Groq voice transcription enabled")
 	}
 
@@ -722,13 +722,13 @@ func statusCmd() {
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("Model: %s\n", cfg.Agents.Defaults.Model)
 
-		hasOpenRouter := cfg.Providers.OpenRouter.APIKey != ""
-		hasAnthropic := cfg.Providers.Anthropic.APIKey != ""
-		hasOpenAI := cfg.Providers.OpenAI.APIKey != ""
-		hasGemini := cfg.Providers.Gemini.APIKey != ""
-		hasZhipu := cfg.Providers.Zhipu.APIKey != ""
-		hasGroq := cfg.Providers.Groq.APIKey != ""
-		hasVLLM := cfg.Providers.VLLM.APIBase != ""
+		hasOpenRouter := cfg.Providers["openrouter"].APIKey != ""
+		hasAnthropic := cfg.Providers["anthropic"].APIKey != ""
+		hasOpenAI := cfg.Providers["openai"].APIKey != ""
+		hasGemini := cfg.Providers["gemini"].APIKey != ""
+		hasZhipu := cfg.Providers["zhipu"].APIKey != ""
+		hasGroq := cfg.Providers["groq"].APIKey != ""
+		hasVLLM := cfg.Providers["vllm"].APIBase != ""
 
 		status := func(enabled bool) string {
 			if enabled {
@@ -743,7 +743,7 @@ func statusCmd() {
 		fmt.Println("Zhipu API:", status(hasZhipu))
 		fmt.Println("Groq API:", status(hasGroq))
 		if hasVLLM {
-			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)
+			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers["vllm"].APIBase)
 		} else {
 			fmt.Println("vLLM/Local: not set")
 		}
@@ -859,7 +859,8 @@ func authLoginOpenAI(useDeviceCode bool) {
 
 	appCfg, err := loadConfig()
 	if err == nil {
-		appCfg.Providers.OpenAI.AuthMethod = "oauth"
+		temp := appCfg.Providers["openai"]
+		temp.AuthMethod = "oauth"
 		if err := config.SaveConfig(getConfigPath(), appCfg); err != nil {
 			fmt.Printf("Warning: could not update config: %v\n", err)
 		}
@@ -887,9 +888,9 @@ func authLoginPasteToken(provider string) {
 	if err == nil {
 		switch provider {
 		case "anthropic":
-			appCfg.Providers.Anthropic.AuthMethod = "token"
+			appCfg.Providers["anthropic"].AuthMethod = "token"
 		case "openai":
-			appCfg.Providers.OpenAI.AuthMethod = "token"
+			appCfg.Providers["openai"].AuthMethod = "token"
 		}
 		if err := config.SaveConfig(getConfigPath(), appCfg); err != nil {
 			fmt.Printf("Warning: could not update config: %v\n", err)
@@ -923,9 +924,9 @@ func authLogoutCmd() {
 		if err == nil {
 			switch provider {
 			case "openai":
-				appCfg.Providers.OpenAI.AuthMethod = ""
+				appCfg.Providers["openai"].AuthMethod = ""
 			case "anthropic":
-				appCfg.Providers.Anthropic.AuthMethod = ""
+				appCfg.Providers["anthropic"].AuthMethod = ""
 			}
 			config.SaveConfig(getConfigPath(), appCfg)
 		}
@@ -939,8 +940,8 @@ func authLogoutCmd() {
 
 		appCfg, err := loadConfig()
 		if err == nil {
-			appCfg.Providers.OpenAI.AuthMethod = ""
-			appCfg.Providers.Anthropic.AuthMethod = ""
+			appCfg.Providers["openai"].AuthMethod = ""
+			appCfg.Providers["anthropic"].AuthMethod = ""
 			config.SaveConfig(getConfigPath(), appCfg)
 		}
 

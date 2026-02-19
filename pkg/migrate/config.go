@@ -106,22 +106,20 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 			pc := config.ProviderConfig{APIKey: apiKey, APIBase: apiBase}
 			switch name {
 			case "anthropic":
-				cfg.Providers.Anthropic = pc
+				cfg.Providers["anthropic"] = &pc
 			case "openai":
-				cfg.Providers.OpenAI = config.OpenAIProviderConfig{
-					ProviderConfig: pc,
-					WebSearch:      getBoolOrDefault(pMap, "web_search", true),
-				}
+				pc.WebSearch = getBoolOrDefault(pMap, "web_search", true)
+				cfg.Providers["openai"] = &pc
 			case "openrouter":
-				cfg.Providers.OpenRouter = pc
+				cfg.Providers["openrouter"] = &pc
 			case "groq":
-				cfg.Providers.Groq = pc
+				cfg.Providers["groq"] = &pc
 			case "zhipu":
-				cfg.Providers.Zhipu = pc
+				cfg.Providers["zhipu"] = &pc
 			case "vllm":
-				cfg.Providers.VLLM = pc
+				cfg.Providers["vllm"] = &pc
 			case "gemini":
-				cfg.Providers.Gemini = pc
+				cfg.Providers["gemini"] = &pc
 			}
 		}
 	}
@@ -235,26 +233,10 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 }
 
 func MergeConfig(existing, incoming *config.Config) *config.Config {
-	if existing.Providers.Anthropic.APIKey == "" {
-		existing.Providers.Anthropic = incoming.Providers.Anthropic
-	}
-	if existing.Providers.OpenAI.APIKey == "" {
-		existing.Providers.OpenAI = incoming.Providers.OpenAI
-	}
-	if existing.Providers.OpenRouter.APIKey == "" {
-		existing.Providers.OpenRouter = incoming.Providers.OpenRouter
-	}
-	if existing.Providers.Groq.APIKey == "" {
-		existing.Providers.Groq = incoming.Providers.Groq
-	}
-	if existing.Providers.Zhipu.APIKey == "" {
-		existing.Providers.Zhipu = incoming.Providers.Zhipu
-	}
-	if existing.Providers.VLLM.APIKey == "" && existing.Providers.VLLM.APIBase == "" {
-		existing.Providers.VLLM = incoming.Providers.VLLM
-	}
-	if existing.Providers.Gemini.APIKey == "" {
-		existing.Providers.Gemini = incoming.Providers.Gemini
+	for provider, cfg := range existing.Providers {
+		if incoming.Providers[provider].APIKey != "" {
+			incoming.Providers[provider] = cfg
+		}
 	}
 
 	if !existing.Channels.Telegram.Enabled && incoming.Channels.Telegram.Enabled {

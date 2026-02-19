@@ -233,74 +233,74 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	if providerName != "" {
 		switch providerName {
 		case "groq":
-			if cfg.Providers.Groq.APIKey != "" {
-				apiKey = cfg.Providers.Groq.APIKey
-				apiBase = cfg.Providers.Groq.APIBase
+			if cfg.Providers["groq"].APIKey != "" {
+				apiKey = cfg.Providers["groq"].APIKey
+				apiBase = cfg.Providers["groq"].APIBase
 				if apiBase == "" {
 					apiBase = "https://api.groq.com/openai/v1"
 				}
 			}
 		case "openai", "gpt":
-			if cfg.Providers.OpenAI.APIKey != "" || cfg.Providers.OpenAI.AuthMethod != "" {
-				if cfg.Providers.OpenAI.AuthMethod == "codex-cli" {
+			if cfg.Providers["openai"].APIKey != "" || cfg.Providers["openai"].AuthMethod != "" {
+				if cfg.Providers["openai"].AuthMethod == "codex-cli" {
 					c := NewCodexProviderWithTokenSource("", "", CreateCodexCliTokenSource())
-					c.enableWebSearch = cfg.Providers.OpenAI.WebSearch
+					c.enableWebSearch = cfg.Providers["openai"].WebSearch
 					return c, nil
 				}
-				if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
-					return createCodexAuthProvider(cfg.Providers.OpenAI.WebSearch)
+				if cfg.Providers["openai"].AuthMethod == "oauth" || cfg.Providers["openai"].AuthMethod == "token" {
+					return createCodexAuthProvider(cfg.Providers["openai"].WebSearch)
 				}
-				apiKey = cfg.Providers.OpenAI.APIKey
-				apiBase = cfg.Providers.OpenAI.APIBase
+				apiKey = cfg.Providers["openai"].APIKey
+				apiBase = cfg.Providers["openai"].APIBase
 				if apiBase == "" {
 					apiBase = "https://api.openai.com/v1"
 				}
 			}
 		case "anthropic", "claude":
-			if cfg.Providers.Anthropic.APIKey != "" || cfg.Providers.Anthropic.AuthMethod != "" {
-				if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" {
+			if cfg.Providers["anthropic"].APIKey != "" || cfg.Providers["anthropic"].AuthMethod != "" {
+				if cfg.Providers["anthropic"].AuthMethod == "oauth" || cfg.Providers["anthropic"].AuthMethod == "token" {
 					return createClaudeAuthProvider()
 				}
-				apiKey = cfg.Providers.Anthropic.APIKey
-				apiBase = cfg.Providers.Anthropic.APIBase
+				apiKey = cfg.Providers["anthropic"].APIKey
+				apiBase = cfg.Providers["anthropic"].APIBase
 				if apiBase == "" {
 					apiBase = "https://api.anthropic.com/v1"
 				}
 			}
 		case "openrouter":
-			if cfg.Providers.OpenRouter.APIKey != "" {
-				apiKey = cfg.Providers.OpenRouter.APIKey
-				if cfg.Providers.OpenRouter.APIBase != "" {
-					apiBase = cfg.Providers.OpenRouter.APIBase
+			if cfg.Providers["openrouter"].APIKey != "" {
+				apiKey = cfg.Providers["openrouter"].APIKey
+				if cfg.Providers["openrouter"].APIBase != "" {
+					apiBase = cfg.Providers["openrouter"].APIBase
 				} else {
 					apiBase = "https://openrouter.ai/api/v1"
 				}
 			}
 		case "zhipu", "glm":
-			if cfg.Providers.Zhipu.APIKey != "" {
-				apiKey = cfg.Providers.Zhipu.APIKey
-				apiBase = cfg.Providers.Zhipu.APIBase
+			if cfg.Providers["zhipu"].APIKey != "" {
+				apiKey = cfg.Providers["zhipu"].APIKey
+				apiBase = cfg.Providers["zhipu"].APIBase
 				if apiBase == "" {
 					apiBase = "https://open.bigmodel.cn/api/paas/v4"
 				}
 			}
 		case "gemini", "google":
-			if cfg.Providers.Gemini.APIKey != "" {
-				apiKey = cfg.Providers.Gemini.APIKey
-				apiBase = cfg.Providers.Gemini.APIBase
+			if cfg.Providers["gemini"].APIKey != "" {
+				apiKey = cfg.Providers["gemini"].APIKey
+				apiBase = cfg.Providers["gemini"].APIBase
 				if apiBase == "" {
 					apiBase = "https://generativelanguage.googleapis.com/v1beta"
 				}
 			}
 		case "vllm":
-			if cfg.Providers.VLLM.APIBase != "" {
-				apiKey = cfg.Providers.VLLM.APIKey
-				apiBase = cfg.Providers.VLLM.APIBase
+			if cfg.Providers["vllm"].APIBase != "" {
+				apiKey = cfg.Providers["vllm"].APIKey
+				apiBase = cfg.Providers["vllm"].APIBase
 			}
 		case "shengsuanyun":
-			if cfg.Providers.ShengSuanYun.APIKey != "" {
-				apiKey = cfg.Providers.ShengSuanYun.APIKey
-				apiBase = cfg.Providers.ShengSuanYun.APIBase
+			if cfg.Providers["shengsuanyun"].APIKey != "" {
+				apiKey = cfg.Providers["shengsuanyun"].APIKey
+				apiBase = cfg.Providers["shengsuanyun"].APIBase
 				if apiBase == "" {
 					apiBase = "https://router.shengsuanyun.com/api/v1"
 				}
@@ -318,9 +318,9 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			}
 			return NewCodexCliProvider(workspace), nil
 		case "deepseek":
-			if cfg.Providers.DeepSeek.APIKey != "" {
-				apiKey = cfg.Providers.DeepSeek.APIKey
-				apiBase = cfg.Providers.DeepSeek.APIBase
+			if cfg.Providers["deepseek"].APIKey != "" {
+				apiKey = cfg.Providers["deepseek"].APIKey
+				apiBase = cfg.Providers["deepseek"].APIBase
 				if apiBase == "" {
 					apiBase = "https://api.deepseek.com/v1"
 				}
@@ -329,12 +329,12 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 				}
 			}
 		case "github_copilot", "copilot":
-			if cfg.Providers.GitHubCopilot.APIBase != "" {
-				apiBase = cfg.Providers.GitHubCopilot.APIBase
+			if cfg.Providers["githubcopilot"].APIBase != "" {
+				apiBase = cfg.Providers["githubcopilot"].APIBase
 			} else {
 				apiBase = "localhost:4321"
 			}
-			return NewGitHubCopilotProvider(apiBase, cfg.Providers.GitHubCopilot.ConnectMode, model)
+			return NewGitHubCopilotProvider(apiBase, cfg.Providers["githubcopilot"].ConnectMode, model)
 
 		}
 
@@ -343,96 +343,96 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	// Fallback: detect provider from model name
 	if apiKey == "" && apiBase == "" {
 		switch {
-		case (strings.Contains(lowerModel, "kimi") || strings.Contains(lowerModel, "moonshot") || strings.HasPrefix(model, "moonshot/")) && cfg.Providers.Moonshot.APIKey != "":
-			apiKey = cfg.Providers.Moonshot.APIKey
-			apiBase = cfg.Providers.Moonshot.APIBase
-			proxy = cfg.Providers.Moonshot.Proxy
+		case (strings.Contains(lowerModel, "kimi") || strings.Contains(lowerModel, "moonshot") || strings.HasPrefix(model, "moonshot/")) && cfg.Providers["moonshot"].APIKey != "":
+			apiKey = cfg.Providers["moonshot"].APIKey
+			apiBase = cfg.Providers["moonshot"].APIBase
+			proxy = cfg.Providers["moonshot"].Proxy
 			if apiBase == "" {
 				apiBase = "https://api.moonshot.cn/v1"
 			}
 
 		case strings.HasPrefix(model, "openrouter/") || strings.HasPrefix(model, "anthropic/") || strings.HasPrefix(model, "openai/") || strings.HasPrefix(model, "meta-llama/") || strings.HasPrefix(model, "deepseek/") || strings.HasPrefix(model, "google/"):
-			apiKey = cfg.Providers.OpenRouter.APIKey
-			proxy = cfg.Providers.OpenRouter.Proxy
-			if cfg.Providers.OpenRouter.APIBase != "" {
-				apiBase = cfg.Providers.OpenRouter.APIBase
+			apiKey = cfg.Providers["openrouter"].APIKey
+			proxy = cfg.Providers["openrouter"].Proxy
+			if cfg.Providers["openrouter"].APIBase != "" {
+				apiBase = cfg.Providers["openrouter"].APIBase
 			} else {
 				apiBase = "https://openrouter.ai/api/v1"
 			}
 
-		case (strings.Contains(lowerModel, "claude") || strings.HasPrefix(model, "anthropic/")) && (cfg.Providers.Anthropic.APIKey != "" || cfg.Providers.Anthropic.AuthMethod != ""):
-			if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" {
+		case (strings.Contains(lowerModel, "claude") || strings.HasPrefix(model, "anthropic/")) && (cfg.Providers["anthropic"].APIKey != "" || cfg.Providers["anthropic"].AuthMethod != ""):
+			if cfg.Providers["anthropic"].AuthMethod == "oauth" || cfg.Providers["anthropic"].AuthMethod == "token" {
 				return createClaudeAuthProvider()
 			}
-			apiKey = cfg.Providers.Anthropic.APIKey
-			apiBase = cfg.Providers.Anthropic.APIBase
-			proxy = cfg.Providers.Anthropic.Proxy
+			apiKey = cfg.Providers["anthropic"].APIKey
+			apiBase = cfg.Providers["anthropic"].APIBase
+			proxy = cfg.Providers["anthropic"].Proxy
 			if apiBase == "" {
 				apiBase = "https://api.anthropic.com/v1"
 			}
 
-		case (strings.Contains(lowerModel, "gpt") || strings.HasPrefix(model, "openai/")) && (cfg.Providers.OpenAI.APIKey != "" || cfg.Providers.OpenAI.AuthMethod != ""):
-			if cfg.Providers.OpenAI.AuthMethod == "oauth" || cfg.Providers.OpenAI.AuthMethod == "token" {
-				return createCodexAuthProvider(cfg.Providers.OpenAI.WebSearch)
+		case (strings.Contains(lowerModel, "gpt") || strings.HasPrefix(model, "openai/")) && (cfg.Providers["openai"].APIKey != "" || cfg.Providers["openai"].AuthMethod != ""):
+			if cfg.Providers["openai"].AuthMethod == "oauth" || cfg.Providers["openai"].AuthMethod == "token" {
+				return createCodexAuthProvider(cfg.Providers["openai"].WebSearch)
 			}
-			apiKey = cfg.Providers.OpenAI.APIKey
-			apiBase = cfg.Providers.OpenAI.APIBase
-			proxy = cfg.Providers.OpenAI.Proxy
+			apiKey = cfg.Providers["openai"].APIKey
+			apiBase = cfg.Providers["openai"].APIBase
+			proxy = cfg.Providers["openai"].Proxy
 			if apiBase == "" {
 				apiBase = "https://api.openai.com/v1"
 			}
 
-		case (strings.Contains(lowerModel, "gemini") || strings.HasPrefix(model, "google/")) && cfg.Providers.Gemini.APIKey != "":
-			apiKey = cfg.Providers.Gemini.APIKey
-			apiBase = cfg.Providers.Gemini.APIBase
-			proxy = cfg.Providers.Gemini.Proxy
+		case (strings.Contains(lowerModel, "gemini") || strings.HasPrefix(model, "google/")) && cfg.Providers["gemini"].APIKey != "":
+			apiKey = cfg.Providers["gemini"].APIKey
+			apiBase = cfg.Providers["gemini"].APIBase
+			proxy = cfg.Providers["gemini"].Proxy
 			if apiBase == "" {
 				apiBase = "https://generativelanguage.googleapis.com/v1beta"
 			}
 
-		case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zhipu") || strings.Contains(lowerModel, "zai")) && cfg.Providers.Zhipu.APIKey != "":
-			apiKey = cfg.Providers.Zhipu.APIKey
-			apiBase = cfg.Providers.Zhipu.APIBase
-			proxy = cfg.Providers.Zhipu.Proxy
+		case (strings.Contains(lowerModel, "glm") || strings.Contains(lowerModel, "zhipu") || strings.Contains(lowerModel, "zai")) && cfg.Providers["zhipu"].APIKey != "":
+			apiKey = cfg.Providers["zhipu"].APIKey
+			apiBase = cfg.Providers["zhipu"].APIBase
+			proxy = cfg.Providers["zhipu"].Proxy
 			if apiBase == "" {
 				apiBase = "https://open.bigmodel.cn/api/paas/v4"
 			}
 
-		case (strings.Contains(lowerModel, "groq") || strings.HasPrefix(model, "groq/")) && cfg.Providers.Groq.APIKey != "":
-			apiKey = cfg.Providers.Groq.APIKey
-			apiBase = cfg.Providers.Groq.APIBase
-			proxy = cfg.Providers.Groq.Proxy
+		case (strings.Contains(lowerModel, "groq") || strings.HasPrefix(model, "groq/")) && cfg.Providers["groq"].APIKey != "":
+			apiKey = cfg.Providers["groq"].APIKey
+			apiBase = cfg.Providers["groq"].APIBase
+			proxy = cfg.Providers["groq"].Proxy
 			if apiBase == "" {
 				apiBase = "https://api.groq.com/openai/v1"
 			}
 
-		case (strings.Contains(lowerModel, "nvidia") || strings.HasPrefix(model, "nvidia/")) && cfg.Providers.Nvidia.APIKey != "":
-			apiKey = cfg.Providers.Nvidia.APIKey
-			apiBase = cfg.Providers.Nvidia.APIBase
-			proxy = cfg.Providers.Nvidia.Proxy
+		case (strings.Contains(lowerModel, "nvidia") || strings.HasPrefix(model, "nvidia/")) && cfg.Providers["nvidia"].APIKey != "":
+			apiKey = cfg.Providers["nvidia"].APIKey
+			apiBase = cfg.Providers["nvidia"].APIBase
+			proxy = cfg.Providers["nvidia"].Proxy
 			if apiBase == "" {
 				apiBase = "https://integrate.api.nvidia.com/v1"
 			}
-		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
+		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers["ollama"].APIKey != "":
 			fmt.Println("Ollama provider selected based on model name prefix")
-			apiKey = cfg.Providers.Ollama.APIKey
-			apiBase = cfg.Providers.Ollama.APIBase
-			proxy = cfg.Providers.Ollama.Proxy
+			apiKey = cfg.Providers["ollama"].APIKey
+			apiBase = cfg.Providers["ollama"].APIBase
+			proxy = cfg.Providers["ollama"].Proxy
 			if apiBase == "" {
 				apiBase = "http://localhost:11434/v1"
 			}
 			fmt.Println("Ollama apiBase:", apiBase)
-		case cfg.Providers.VLLM.APIBase != "":
-			apiKey = cfg.Providers.VLLM.APIKey
-			apiBase = cfg.Providers.VLLM.APIBase
-			proxy = cfg.Providers.VLLM.Proxy
+		case cfg.Providers["vllm"].APIBase != "":
+			apiKey = cfg.Providers["vllm"].APIKey
+			apiBase = cfg.Providers["vllm"].APIBase
+			proxy = cfg.Providers["vllm"].Proxy
 
 		default:
-			if cfg.Providers.OpenRouter.APIKey != "" {
-				apiKey = cfg.Providers.OpenRouter.APIKey
-				proxy = cfg.Providers.OpenRouter.Proxy
-				if cfg.Providers.OpenRouter.APIBase != "" {
-					apiBase = cfg.Providers.OpenRouter.APIBase
+			if cfg.Providers["openrouter"].APIKey != "" {
+				apiKey = cfg.Providers["openrouter"].APIKey
+				proxy = cfg.Providers["openrouter"].Proxy
+				if cfg.Providers["openrouter"].APIBase != "" {
+					apiBase = cfg.Providers["openrouter"].APIBase
 				} else {
 					apiBase = "https://openrouter.ai/api/v1"
 				}

@@ -44,14 +44,21 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers"`
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
+	Agents    AgentsConfig               `json:"agents"`
+	Router    RouterConfig               `json:"router"`
+	Channels  ChannelsConfig             `json:"channels"`
+	Providers map[string]*ProviderConfig `json:"providers"`
+	Gateway   GatewayConfig              `json:"gateway"`
+	Tools     ToolsConfig                `json:"tools"`
+	Heartbeat HeartbeatConfig            `json:"heartbeat"`
+	Devices   DevicesConfig              `json:"devices"`
 	mu        sync.RWMutex
+}
+
+type RouterConfig struct {
+	Enabled    bool   `json:"enabled"`
+	HeavyModel string `json:"heavy_model"`
+	LightModel string `json:"light_model"`
 }
 
 type AgentsConfig struct {
@@ -167,19 +174,19 @@ type DevicesConfig struct {
 }
 
 type ProvidersConfig struct {
-	Anthropic     ProviderConfig       `json:"anthropic"`
-	OpenAI        OpenAIProviderConfig `json:"openai"`
-	OpenRouter    ProviderConfig       `json:"openrouter"`
-	Groq          ProviderConfig       `json:"groq"`
-	Zhipu         ProviderConfig       `json:"zhipu"`
-	VLLM          ProviderConfig       `json:"vllm"`
-	Gemini        ProviderConfig       `json:"gemini"`
-	Nvidia        ProviderConfig       `json:"nvidia"`
-	Ollama        ProviderConfig       `json:"ollama"`
-	Moonshot      ProviderConfig       `json:"moonshot"`
-	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig       `json:"deepseek"`
-	GitHubCopilot ProviderConfig       `json:"github_copilot"`
+	Anthropic     ProviderConfig `json:"anthropic"`
+	OpenAI        ProviderConfig `json:"openai"`
+	OpenRouter    ProviderConfig `json:"openrouter"`
+	Groq          ProviderConfig `json:"groq"`
+	Zhipu         ProviderConfig `json:"zhipu"`
+	VLLM          ProviderConfig `json:"vllm"`
+	Gemini        ProviderConfig `json:"gemini"`
+	Nvidia        ProviderConfig `json:"nvidia"`
+	Ollama        ProviderConfig `json:"ollama"`
+	Moonshot      ProviderConfig `json:"moonshot"`
+	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
+	DeepSeek      ProviderConfig `json:"deepseek"`
+	GitHubCopilot ProviderConfig `json:"github_copilot"`
 }
 
 type ProviderConfig struct {
@@ -188,6 +195,7 @@ type ProviderConfig struct {
 	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
 	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
 	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+	WebSearch   bool   `json:"web_search" env:"PICOCLAW_PROVIDERS_{{.Name}}_WEB_SEARCH"`
 }
 
 type OpenAIProviderConfig struct {
@@ -250,6 +258,11 @@ func DefaultConfig() *Config {
 				Temperature:         0.7,
 				MaxToolIterations:   20,
 			},
+		},
+		Router: RouterConfig{
+			Enabled:    false,
+			HeavyModel: "glm-4.7",
+			LightModel: "glm-4.7-flash",
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
@@ -317,17 +330,17 @@ func DefaultConfig() *Config {
 				AllowFrom:          FlexibleStringSlice{},
 			},
 		},
-		Providers: ProvidersConfig{
-			Anthropic:    ProviderConfig{},
-			OpenAI:       OpenAIProviderConfig{WebSearch: true},
-			OpenRouter:   ProviderConfig{},
-			Groq:         ProviderConfig{},
-			Zhipu:        ProviderConfig{},
-			VLLM:         ProviderConfig{},
-			Gemini:       ProviderConfig{},
-			Nvidia:       ProviderConfig{},
-			Moonshot:     ProviderConfig{},
-			ShengSuanYun: ProviderConfig{},
+		Providers: map[string]*ProviderConfig{
+			"anthropic":    &ProviderConfig{},
+			"openai":       &ProviderConfig{WebSearch: true},
+			"openrouter":   &ProviderConfig{},
+			"groq":         &ProviderConfig{},
+			"zhipu":        &ProviderConfig{},
+			"vllm":         &ProviderConfig{},
+			"gemini":       &ProviderConfig{},
+			"nvidia":       &ProviderConfig{},
+			"moonshot":     &ProviderConfig{},
+			"shengsuanyun": &ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
@@ -413,32 +426,23 @@ func (c *Config) WorkspacePath() string {
 	return expandHome(c.Agents.Defaults.Workspace)
 }
 
+//func (c *Config) GetEnabledProviders() {
+//	c.mu.RLock()
+//	defer c.mu.RUnlock()
+//
+//	for _, provider := range c.Providers {
+//
+//	}
+//
+//}
+
 func (c *Config) GetAPIKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.Providers.OpenRouter.APIKey != "" {
-		return c.Providers.OpenRouter.APIKey
-	}
-	if c.Providers.Anthropic.APIKey != "" {
-		return c.Providers.Anthropic.APIKey
-	}
-	if c.Providers.OpenAI.APIKey != "" {
-		return c.Providers.OpenAI.APIKey
-	}
-	if c.Providers.Gemini.APIKey != "" {
-		return c.Providers.Gemini.APIKey
-	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIKey
-	}
-	if c.Providers.Groq.APIKey != "" {
-		return c.Providers.Groq.APIKey
-	}
-	if c.Providers.VLLM.APIKey != "" {
-		return c.Providers.VLLM.APIKey
-	}
-	if c.Providers.ShengSuanYun.APIKey != "" {
-		return c.Providers.ShengSuanYun.APIKey
+	for _, config := range c.Providers {
+		if config.APIKey != "" {
+			return config.APIKey
+		}
 	}
 	return ""
 }
@@ -446,17 +450,18 @@ func (c *Config) GetAPIKey() string {
 func (c *Config) GetAPIBase() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.Providers.OpenRouter.APIKey != "" {
-		if c.Providers.OpenRouter.APIBase != "" {
-			return c.Providers.OpenRouter.APIBase
+
+	if c.Providers["openrouter"].APIKey != "" {
+		if c.Providers["openrouter"].APIBase != "" {
+			return c.Providers["openrouter"].APIBase
 		}
 		return "https://openrouter.ai/api/v1"
 	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIBase
+	if c.Providers["zhipu"].APIKey != "" {
+		return c.Providers["zhipu"].APIBase
 	}
-	if c.Providers.VLLM.APIKey != "" && c.Providers.VLLM.APIBase != "" {
-		return c.Providers.VLLM.APIBase
+	if c.Providers["vllm"].APIKey != "" && c.Providers["vllm"].APIBase != "" {
+		return c.Providers["vllm"].APIBase
 	}
 	return ""
 }
