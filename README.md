@@ -125,6 +125,22 @@ PicoClaw can be deployed on almost any Linux device!
 
 🌟 More Deployment Cases Await！
 
+---
+## 📚 Full Documentation
+
+For comprehensive guides and references, see the [docs/](docs/) directory:
+
+- **[Getting Started](docs/getting-started/README.md)** - Installation and quick start
+- **[User Guide](docs/user-guide/README.md)** - Complete feature documentation
+- **[Developer Guide](docs/developer-guide/README.md)** - Building and extending PicoClaw
+- **[Deployment](docs/deployment/README.md)** - Docker, systemd, SBC guides
+- **[Configuration Reference](docs/configuration/config-file.md)** - All config options
+- **[Troubleshooting](docs/operations/troubleshooting.md)** - Common issues and solutions
+
+
+---
+
+
 ## 📦 Install
 
 ### Install with precompiled binary
@@ -824,15 +840,40 @@ Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
 
 PRs welcome! The codebase is intentionally small and readable. 🤗
 
-Roadmap coming soon...
+### Roadmap Highlights
 
-Developer group building, Entry Requirement: At least 1 Merged PR.
+| Focus Area | Goals |
+|------------|-------|
+| **Core Optimization** | Run on 64MB RAM devices with <20MB memory |
+| **Security Hardening** | Sandbox, OAuth 2.0, prompt injection defense |
+| **Connectivity** | More channels, MCP support, skill marketplace |
+| **Multi-Agent** | Model routing, swarm mode, AIEOS integration |
+| **DevEx** | Interactive CLI wizard, comprehensive docs |
 
-User Groups:
+See [Full Roadmap](ROADMAP.md) and [Community Roadmap](docs/picoclaw_community_roadmap_260216.md) for details.
 
-discord:  <https://discord.gg/V4sAZ9XWpN>
+### Volunteer Roles
 
-<img src="assets/wechat.png" alt="PicoClaw" width="512">
+We're looking for contributors in:
+- **Issue/PR Reviewers** - Help triage and merge PRs
+- **Resource Optimization** - Keep PicoClaw lightweight
+- **Security Audit** - Review and harden security
+- **Documentation** - Improve guides and tutorials
+- **CI/CD Automation** - AI-powered builds and issue triage
+
+**Perks:** Exclusive AI hardware, token discounts, and more!
+
+### How to Join
+
+1. **Fast Track**: Merge 1+ PR → Join Developer Discord
+2. **Apply**: Email support@sipeed.com with `[Apply: PicoClaw Expert Volunteer]`
+
+### Community
+
+- **Discord**: <https://discord.gg/V4sAZ9XWpN>
+- **GitHub Discussions**: Share ideas and feature requests
+
+<img src="assets/wechat.png" alt="PicoClaw WeChat" width="512">
 
 ## 🐛 Troubleshooting
 
