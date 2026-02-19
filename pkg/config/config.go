@@ -278,11 +278,25 @@ type ProvidersConfig struct {
 }
 
 type ProviderConfig struct {
-	APIKey      string `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase     string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+	APIKey      string   `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
+	APIKeys     []string `json:"api_keys,omitempty"` // multiple keys for auth rotation (takes precedence over api_key)
+	APIBase     string   `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
+	Proxy       string   `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
+	AuthMethod  string   `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
+	ConnectMode string   `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+}
+
+// ResolveAPIKeys returns the effective list of API keys for this provider.
+// If APIKeys is set, returns it. Otherwise wraps APIKey as a single-element slice.
+// Returns nil if no keys are configured.
+func (pc *ProviderConfig) ResolveAPIKeys() []string {
+	if len(pc.APIKeys) > 0 {
+		return pc.APIKeys
+	}
+	if pc.APIKey != "" {
+		return []string{pc.APIKey}
+	}
+	return nil
 }
 
 type OpenAIProviderConfig struct {

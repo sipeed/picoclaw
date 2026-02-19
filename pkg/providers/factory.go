@@ -26,7 +26,9 @@ const (
 
 type providerSelection struct {
 	providerType    providerType
+	providerName    string // resolved provider name (e.g. "openrouter", "anthropic")
 	apiKey          string
+	apiKeys         []string // multiple keys for auth rotation (nil = single key)
 	apiBase         string
 	proxy           string
 	model           string
@@ -120,7 +122,9 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 				}
 			}
 		case "openrouter":
-			if cfg.Providers.OpenRouter.APIKey != "" {
+			if cfg.Providers.OpenRouter.APIKey != "" || len(cfg.Providers.OpenRouter.APIKeys) > 0 {
+				sel.providerName = "openrouter"
+				sel.apiKeys = cfg.Providers.OpenRouter.ResolveAPIKeys()
 				sel.apiKey = cfg.Providers.OpenRouter.APIKey
 				sel.proxy = cfg.Providers.OpenRouter.Proxy
 				if cfg.Providers.OpenRouter.APIBase != "" {
@@ -227,6 +231,8 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			strings.HasPrefix(model, "meta-llama/") ||
 			strings.HasPrefix(model, "deepseek/") ||
 			strings.HasPrefix(model, "google/"):
+			sel.providerName = "openrouter"
+			sel.apiKeys = cfg.Providers.OpenRouter.ResolveAPIKeys()
 			sel.apiKey = cfg.Providers.OpenRouter.APIKey
 			sel.proxy = cfg.Providers.OpenRouter.Proxy
 			if cfg.Providers.OpenRouter.APIBase != "" {
@@ -307,7 +313,9 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.apiBase = cfg.Providers.VLLM.APIBase
 			sel.proxy = cfg.Providers.VLLM.Proxy
 		default:
-			if cfg.Providers.OpenRouter.APIKey != "" {
+			if cfg.Providers.OpenRouter.APIKey != "" || len(cfg.Providers.OpenRouter.APIKeys) > 0 {
+				sel.providerName = "openrouter"
+				sel.apiKeys = cfg.Providers.OpenRouter.ResolveAPIKeys()
 				sel.apiKey = cfg.Providers.OpenRouter.APIKey
 				sel.proxy = cfg.Providers.OpenRouter.Proxy
 				if cfg.Providers.OpenRouter.APIBase != "" {
@@ -322,7 +330,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 	}
 
 	if sel.providerType == providerTypeHTTPCompat {
-		if sel.apiKey == "" && !strings.HasPrefix(model, "bedrock/") {
+		if sel.apiKey == "" && len(sel.apiKeys) == 0 && !strings.HasPrefix(model, "bedrock/") {
 			return providerSelection{}, fmt.Errorf("no API key configured for provider (model: %s)", model)
 		}
 		if sel.apiBase == "" {
@@ -355,6 +363,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	case providerTypeGitHubCopilot:
 		return NewGitHubCopilotProvider(sel.apiBase, sel.connectMode, sel.model)
 	default:
+		// Auth rotation: wrap with AuthRotatingProvider if multiple keys configured.
+		if len(sel.apiKeys) > 1 {
+			profiles := BuildAuthProfiles(sel.providerName, sel.apiKeys)
+			cooldown := NewCooldownTracker()
+			factory := func(apiKey string) LLMProvider {
+				return NewHTTPProvider(apiKey, sel.apiBase, sel.proxy)
+			}
+			return NewAuthRotatingProvider(profiles, cooldown, factory), nil
+		}
 		return NewHTTPProvider(sel.apiKey, sel.apiBase, sel.proxy), nil
 	}
 }
