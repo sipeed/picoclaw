@@ -817,17 +817,54 @@ O PicoClaw suporta lembretes agendados e tarefas recorrentes por meio da ferrame
 
 As tarefas são armazenadas em `~/.picoclaw/workspace/cron/` e processadas automaticamente.
 
+---
+
+## 📚 Documentação Completa
+
+Para guias e referências abrangentes, consulte o diretório [docs/](docs/):
+
+- **[Primeiros Passos](docs/getting-started/README.md)** - Instalação e início rápido
+- **[Guia do Usuário](docs/user-guide/README.md)** - Documentação completa de recursos
+- **[Guia do Desenvolvedor](docs/developer-guide/README.md)** - Arquitetura e contribuição
+- **[Implantação](docs/deployment/README.md)** - Guias Docker, systemd, SBC
+- **[Referência de Configuração](docs/configuration/README.md)** - Referência completa de opções de configuração
+
 ## 🤝 Contribuir & Roadmap
 
 PRs são bem-vindos! O código-fonte é intencionalmente pequeno e legível. 🤗
 
-Roadmap em breve...
+### Destaques do Roadmap
 
-Grupo de desenvolvedores em formação. Requisito de entrada: Pelo menos 1 PR com merge.
+| Área de Foco | Metas |
+|-------------|-------|
+| **Otimização Principal** | Rodar em dispositivos de 64MB RAM com <20MB de memória |
+| **Endurecimento de Segurança** | Sandbox, OAuth 2.0, defesa contra injeção de prompt |
+| **Conectividade** | Mais canais, suporte MCP, marketplace de skills |
+| **Multi-Agentes** | Roteamento de modelos, modo swarm, integração AIEOS |
+| **Experiência do Desenvolvedor** | Assistente CLI interativo, documentação completa |
 
-Grupos de usuários:
+Veja o [Roadmap Completo](ROADMAP.md) e [Roadmap da Comunidade](docs/picoclaw_community_roadmap_260216.md) para detalhes.
 
-Discord: <https://discord.gg/V4sAZ9XWpN>
+### Funções de Voluntário
+
+Estamos procurando contribuidores em:
+- **Revisores de Issue/PR** - Ajudar a triar e merge PRs
+- **Otimização de Recursos** - Manter o PicoClaw leve
+- **Auditoria de Segurança** - Revisar e fortalecer a segurança
+- **Documentação** - Melhorar guias e tutoriais
+- **Automação CI/CD** - Builds e triagem de issues com IA
+
+**Benefícios:** Hardware de IA exclusivo, descontos em tokens e mais!
+
+### Como Participar
+
+1. **Via Rápida**: Mergear 1+ PR → Entrar no Discord de Desenvolvedores
+2. **Candidatura**: Email para support@sipeed.com com `[Apply: PicoClaw Expert Volunteer]`
+
+### Comunidade
+
+- **Discord**: <https://discord.gg/V4sAZ9XWpN>
+- **GitHub Discussions**: Compartilhe ideias e solicitações de recursos
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 

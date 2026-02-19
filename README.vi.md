@@ -794,17 +794,54 @@ PicoClaw hỗ trợ nhắc nhở theo lịch và tác vụ lặp lại thông qu
 
 Các tác vụ được lưu trong `~/.picoclaw/workspace/cron/` và được xử lý tự động.
 
+---
+
+## 📚 Tài liệu Đầy đủ
+
+Để có hướng dẫn và tài liệu tham khảo đầy đủ, xem thư mục [docs/](docs/):
+
+- **[Bắt đầu](docs/getting-started/README.md)** - Cài đặt và bắt đầu nhanh
+- **[Hướng dẫn Người dùng](docs/user-guide/README.md)** - Tài liệu tính năng đầy đủ
+- **[Hướng dẫn Nhà phát triển](docs/developer-guide/README.md)** - Kiến trúc và đóng góp
+- **[Triển khai](docs/deployment/README.md)** - Hướng dẫn Docker, systemd, SBC
+- **[Tham khảo Cấu hình](docs/configuration/README.md)** - Tài liệu tham khảo đầy đủ về cấu hình
+
 ## 🤝 Đóng góp & Lộ trình
 
 Chào đón mọi PR! Mã nguồn được thiết kế nhỏ gọn và dễ đọc. 🤗
 
-Lộ trình sắp được công bố...
+### Tóm tắt Lộ trình
 
-Nhóm phát triển đang được xây dựng. Điều kiện tham gia: Ít nhất 1 PR đã được merge.
+| Lĩnh vực trọng tâm | Mục tiêu |
+|-------------------|----------|
+| **Tối ưu hóa Core** | Chạy trên thiết bị 64MB RAM với <20MB bộ nhớ |
+| **Tăng cường Bảo mật** | Sandbox, OAuth 2.0, phòng chống prompt injection |
+| **Kết nối** | Thêm kênh, hỗ trợ MCP, marketplace skill |
+| **Multi-Agent** | Định tuyến mô hình, chế độ swarm, tích hợp AIEOS |
+| **Trải nghiệm Dev** | Trợ lý CLI tương tác, tài liệu đầy đủ |
 
-Nhóm người dùng:
+Xem [Lộ trình Đầy đủ](ROADMAP.md) và [Lộ trình Cộng đồng](docs/picoclaw_community_roadmap_260216.md) để biết chi tiết.
 
-Discord: <https://discord.gg/V4sAZ9XWpN>
+### Vai trò Tình nguyện viên
+
+Chúng tôi đang tìm kiếm người đóng góp trong:
+- **Người xem xét Issue/PR** - Giúp phân loại và merge PR
+- **Tối ưu hóa Tài nguyên** - Giữ PicoClaw nhẹ nhàng
+- **Kiểm toán Bảo mật** - Xem xét và tăng cường bảo mật
+- **Tài liệu** - Cải thiện hướng dẫn và tutorial
+- **Tự động hóa CI/CD** - Build và xử lý issue với AI
+
+**Quyền lợi:** Phần cứng AI độc quyền, giảm giá token và hơn thế!
+
+### Cách Tham gia
+
+1. **Đường nhanh**: Merge 1+ PR → Tham gia Discord Nhà phát triển
+2. **Ứng tuyển**: Email support@sipeed.com với `[Apply: PicoClaw Expert Volunteer]`
+
+### Cộng đồng
+
+- **Discord**: <https://discord.gg/V4sAZ9XWpN>
+- **GitHub Discussions**: Chia sẻ ý tưởng và yêu cầu tính năng
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 

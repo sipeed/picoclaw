@@ -724,11 +724,44 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | `picoclaw gateway` | ゲートウェイを起動 |
 | `picoclaw status` | ステータスを表示 |
 
+---
+
+## 📚 完全なドキュメント
+
+包括的なガイドとリファレンスについては、[docs/](docs/) ディレクトリをご覧ください：
+
+- **[はじめに](docs/getting-started/README.md)** - インストールとクイックスタート
+- **[ユーザーガイド](docs/user-guide/README.md)** - 完全な機能ドキュメント
+- **[開発者ガイド](docs/developer-guide/README.md)** - アーキテクチャとコントリビューション
+- **[デプロイ](docs/deployment/README.md)** - Docker、systemd、SBC ガイド
+- **[設定リファレンス](docs/configuration/README.md)** - 設定オプションの完全なリファレンス
+
 ## 🤝 コントリビュート＆ロードマップ
 
-PR 歓迎！コードベースは意図的に小さく読みやすくしています。🤗
+### ロードマップハイライト
 
-Discord: https://discord.gg/V4sAZ9XWpN
+| 重点分野 | 目標 |
+|----------|------|
+| **コア最適化** | 64MB RAM デバイスで <20MB メモリで動作 |
+| **セキュリティ強化** | プロンプトインジェクション対策、SSRF 保護、サンドボックス |
+| **接続性** | プロトコルファーストアーキテクチャ、OneBot 標準対応 |
+| **高度機能** | MCP 対応、ブラウザ自動化、マルチエージェント協調 |
+| **開発者体験** | ゼロ設定スタート、包括的なドキュメント |
+
+### コントリビュート
+
+PR を歓迎します！コードベースは意図的に小さく読みやすくしています。🤗
+
+- **高速トラック**: 1 つのマージされた PR で開発者 Discord に参加可能
+- **アプリケーショントラック**: `support@sipeed.com` にメール（件名: `[Apply Join PicoClaw Dev Group] + GitHub アカウント`）
+
+### コミュニティ
+
+- **Discord**: https://discord.gg/V4sAZ9XWpN
+- **Twitter**: #picoclaw で @SipeedIO をメンション
+- **Bilibili**: @Sipeed矽速科技
+
+詳細なロードマップについては [ROADMAP.md](ROADMAP.md) をご覧ください。
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 

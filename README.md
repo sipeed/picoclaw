@@ -836,6 +836,8 @@ PicoClaw supports scheduled reminders and recurring tasks through the `cron` too
 
 Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
 
+---
+
 ## 🤝 Contribute & Roadmap
 
 PRs welcome! The codebase is intentionally small and readable. 🤗
@@ -874,6 +876,8 @@ We're looking for contributors in:
 - **GitHub Discussions**: Share ideas and feature requests
 
 <img src="assets/wechat.png" alt="PicoClaw WeChat" width="512">
+
+---
 
 ## 🐛 Troubleshooting
 

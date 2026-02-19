@@ -684,17 +684,54 @@ PicoClaw 通过 `cron` 工具支持定时提醒和重复任务：
 
 任务存储在 `~/.picoclaw/workspace/cron/` 中并自动处理。
 
+---
+
+## 📚 完整文档
+
+如需完整的指南和参考，请查看 [docs/](docs/) 目录：
+
+- **[入门指南](docs/getting-started/README.md)** - 安装和快速开始
+- **[用户指南](docs/user-guide/README.md)** - 完整功能文档
+- **[开发者指南](docs/developer-guide/README.md)** - 架构和贡献
+- **[部署指南](docs/deployment/README.md)** - Docker、systemd、SBC 指南
+- **[配置参考](docs/configuration/README.md)** - 完整配置选项参考
+
 ## 🤝 贡献与路线图 (Roadmap)
 
 欢迎提交 PR！代码库刻意保持小巧和可读。🤗
 
-路线图即将发布...
+### 路线图概要
 
-开发者群组正在组建中，入群门槛：至少合并过 1 个 PR。
+| 重点领域 | 目标 |
+|---------|------|
+| **核心优化** | 在 64MB 内存设备上运行，占用 <20MB |
+| **安全加固** | 沙盒、OAuth 2.0、提示注入防御 |
+| **连接性** | 更多频道、MCP 支持、技能市场 |
+| **多智能体** | 模型路由、集群模式、AIEOS 集成 |
+| **开发者体验** | 交互式 CLI 向导、完善文档 |
 
-用户群组：
+详见 [完整路线图](ROADMAP.md) 和 [社区路线图](docs/picoclaw_community_roadmap_260216.md)。
 
-Discord:  [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
+### 志愿者角色
+
+我们正在寻找以下领域的贡献者：
+- **Issue/PR 审核者** - 协助分类和合并 PR
+- **资源优化** - 保持 PicoClaw 轻量级
+- **安全审计** - 审查和加固安全性
+- **文档** - 改进指南和教程
+- **CI/CD 自动化** - AI 驱动的构建和问题分流
+
+**福利：** 专属 AI 硬件、Token 折扣等！
+
+### 如何加入
+
+1. **快速通道**：合并 1+ PR → 加入开发者 Discord
+2. **申请**：发送邮件至 support@sipeed.com，标题 `[Apply: PicoClaw Expert Volunteer]`
+
+### 社区
+
+- **Discord**: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
+- **GitHub Discussions**: 分享想法和功能请求
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 
