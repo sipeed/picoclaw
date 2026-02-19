@@ -120,9 +120,9 @@ func copyDirectory(src, dst string) error {
 }
 
 func main() {
-	if len(os.Args) < 2 {
+	if len(os.Args) < 2 || os.Args[1] == "--help" || os.Args[1] == "-h" {
 		printHelp()
-		os.Exit(1)
+		os.Exit(0)
 	}
 
 	command := os.Args[1]
@@ -1370,9 +1370,15 @@ func skillsListBuiltinCmd() {
 					if idx := strings.Index(content, "\n"); idx > 0 {
 						firstLine := content[:idx]
 						if strings.Contains(firstLine, "description:") {
-							descLine := strings.Index(content[idx:], "\n")
-							if descLine > 0 {
-								description = strings.TrimSpace(content[idx+descLine : idx+descLine])
+							// Find the start of the description line (after the first newline)
+							descStart := idx + 1
+							// Find the end of the description line
+							descEnd := strings.Index(content[descStart:], "\n")
+							if descEnd != -1 {
+								description = strings.TrimSpace(content[descStart : descStart+descEnd])
+							} else {
+								// If there's no more newline, take the rest of the content
+								description = strings.TrimSpace(content[descStart:])
 							}
 						}
 					}
