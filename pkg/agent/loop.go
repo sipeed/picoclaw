@@ -671,10 +671,12 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				strings.Contains(errMsg, "length")
 
 			if isContextError && retry < maxRetries {
-				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]interface{}{
-					"error": err.Error(),
-					"retry": retry,
-				})
+				logger.WarnCF("agent", "Context overflow recovery",
+					map[string]interface{}{
+						"error": err.Error(),
+						"retry": retry,
+						"tier":  retry + 1,
+					})
 
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 					al.bus.PublishOutbound(bus.OutboundMessage{
@@ -684,7 +686,19 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 					})
 				}
 
-				al.forceCompression(agent, opts.SessionKey)
+				// 3-tier context overflow recovery:
+				// Tier 1: Truncate oversized tool results (cheapest, no LLM call)
+				// Tier 2: Drop oldest 50% of messages
+				// Tier 3: Both truncation + compression (most aggressive)
+				switch retry {
+				case 0:
+					al.truncateToolResults(agent, opts.SessionKey)
+				case 1:
+					al.forceCompression(agent, opts.SessionKey)
+				default:
+					al.truncateToolResults(agent, opts.SessionKey)
+					al.forceCompression(agent, opts.SessionKey)
+				}
 				newHistory := agent.Sessions.GetHistory(opts.SessionKey)
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
@@ -892,6 +906,51 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 				al.summarizeSession(agent, sessionKey)
 			}()
 		}
+	}
+}
+
+// maxToolResultChars is the maximum allowed length for a single tool result message.
+// Results exceeding this are truncated during context overflow recovery (Tier 1).
+// 8000 chars ≈ ~2000 tokens — large enough for useful output, small enough to reclaim space.
+const maxToolResultChars = 8000
+
+// truncateToolResults walks the message history and truncates oversized tool
+// result messages in-place. This is the cheapest recovery tier — no messages
+// are dropped, only oversized Content fields are shortened.
+func (al *AgentLoop) truncateToolResults(agent *AgentInstance, sessionKey string) {
+	history := agent.Sessions.GetHistory(sessionKey)
+	truncated := 0
+
+	for i := range history {
+		if history[i].Role != "tool" {
+			continue
+		}
+		if utf8.RuneCountInString(history[i].Content) <= maxToolResultChars {
+			continue
+		}
+
+		// Truncate at a newline boundary if possible, otherwise at the limit.
+		runes := []rune(history[i].Content)
+		cutPoint := maxToolResultChars
+		// Search backward from cut point for a newline (up to 200 chars back).
+		for j := cutPoint; j > cutPoint-200 && j > 0; j-- {
+			if runes[j] == '\n' {
+				cutPoint = j
+				break
+			}
+		}
+		history[i].Content = string(runes[:cutPoint]) +
+			"\n\n[... content truncated — original too large for context window]"
+		truncated++
+	}
+
+	if truncated > 0 {
+		agent.Sessions.SetHistory(sessionKey, history)
+		logger.WarnCF("agent", "Tool results truncated", map[string]interface{}{
+			"session_key": sessionKey,
+			"truncated":   truncated,
+			"max_chars":   maxToolResultChars,
+		})
 	}
 }
 
