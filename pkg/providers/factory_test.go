@@ -38,8 +38,8 @@ func TestResolveProviderSelection(t *testing.T) {
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Provider = "deepseek"
 				cfg.Agents.Defaults.Model = "deepseek/deepseek-chat"
-				cfg.Providers.DeepSeek.APIKey = "deepseek-key"
-				cfg.Providers.DeepSeek.Proxy = "http://127.0.0.1:7890"
+				cfg.Providers["deepseek"].APIKey = "deepseek-key"
+				cfg.Providers["deepseek"].Proxy = "http://127.0.0.1:7890"
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "https://api.deepseek.com/v1",
@@ -49,8 +49,8 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "explicit shengsuanyun provider uses defaults",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Provider = "shengsuanyun"
-				cfg.Providers.ShengSuanYun.APIKey = "ssy-key"
-				cfg.Providers.ShengSuanYun.Proxy = "http://127.0.0.1:7890"
+				cfg.Providers["shengsuanyun"].APIKey = "ssy-key"
+				cfg.Providers["shengsuanyun"].Proxy = "http://127.0.0.1:7890"
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "https://router.shengsuanyun.com/api/v1",
@@ -60,8 +60,8 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "explicit nvidia provider uses defaults",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Provider = "nvidia"
-				cfg.Providers.Nvidia.APIKey = "nvapi-test"
-				cfg.Providers.Nvidia.Proxy = "http://127.0.0.1:7890"
+				cfg.Providers["nvidia"].APIKey = "nvapi-test"
+				cfg.Providers["nvidia"].Proxy = "http://127.0.0.1:7890"
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "https://integrate.api.nvidia.com/v1",
@@ -71,7 +71,7 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "openrouter model uses openrouter defaults",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "openrouter/auto"
-				cfg.Providers.OpenRouter.APIKey = "sk-or-test"
+				cfg.Providers["openrouter"].APIKey = "sk-or-test"
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "https://openrouter.ai/api/v1",
@@ -80,7 +80,7 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "anthropic oauth routes to claude auth provider",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "claude-sonnet-4-5-20250929"
-				cfg.Providers.Anthropic.AuthMethod = "oauth"
+				cfg.Providers["anthropic"].AuthMethod = "oauth"
 			},
 			wantType: providerTypeClaudeAuth,
 		},
@@ -88,7 +88,7 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "openai oauth routes to codex auth provider",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "gpt-4o"
-				cfg.Providers.OpenAI.AuthMethod = "oauth"
+				cfg.Providers["openai"].AuthMethod = "oauth"
 			},
 			wantType: providerTypeCodexAuth,
 		},
@@ -96,7 +96,7 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "openai codex-cli auth routes to codex cli token provider",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "gpt-4o"
-				cfg.Providers.OpenAI.AuthMethod = "codex-cli"
+				cfg.Providers["openai"].AuthMethod = "codex-cli"
 			},
 			wantType: providerTypeCodexCLIToken,
 		},
@@ -112,7 +112,7 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "zhipu model uses zhipu base default",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "glm-4.7"
-				cfg.Providers.Zhipu.APIKey = "zhipu-key"
+				cfg.Providers["zhipu"].APIKey = "zhipu-key"
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "https://open.bigmodel.cn/api/paas/v4",
@@ -121,7 +121,7 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "groq model uses groq base default",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "groq/llama-3.3-70b"
-				cfg.Providers.Groq.APIKey = "gsk-key"
+				cfg.Providers["groq"].APIKey = "gsk-key"
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "https://api.groq.com/openai/v1",
@@ -130,7 +130,7 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "ollama model uses ollama base default",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "ollama/qwen2.5:14b"
-				cfg.Providers.Ollama.APIKey = "ollama-key"
+				cfg.Providers["ollama"].APIKey = "ollama-key"
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "http://localhost:11434/v1",
@@ -139,8 +139,8 @@ func TestResolveProviderSelection(t *testing.T) {
 			name: "moonshot model keeps proxy and default base",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "moonshot/kimi-k2.5"
-				cfg.Providers.Moonshot.APIKey = "moonshot-key"
-				cfg.Providers.Moonshot.Proxy = "http://127.0.0.1:7890"
+				cfg.Providers["moonshot"].APIKey = "moonshot-key"
+				cfg.Providers["moonshot"].Proxy = "http://127.0.0.1:7890"
 			},
 			wantType:    providerTypeHTTPCompat,
 			wantAPIBase: "https://api.moonshot.cn/v1",
@@ -197,7 +197,7 @@ func TestResolveProviderSelection(t *testing.T) {
 func TestCreateProviderReturnsHTTPProviderForOpenRouter(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Model = "openrouter/auto"
-	cfg.Providers.OpenRouter.APIKey = "sk-or-test"
+	cfg.Providers["openrouter"].APIKey = "sk-or-test"
 
 	provider, err := CreateProvider(cfg)
 	if err != nil {
@@ -226,7 +226,7 @@ func TestCreateProviderReturnsCodexCliProviderForCodexCode(t *testing.T) {
 func TestCreateProviderReturnsCodexProviderForCodexCliAuthMethod(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Provider = "openai"
-	cfg.Providers.OpenAI.AuthMethod = "codex-cli"
+	cfg.Providers["openai"].AuthMethod = "codex-cli"
 
 	provider, err := CreateProvider(cfg)
 	if err != nil {
@@ -253,8 +253,8 @@ func TestCreateProviderReturnsClaudeProviderForAnthropicOAuth(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Provider = "anthropic"
-	cfg.Providers.Anthropic.AuthMethod = "oauth"
-	cfg.Providers.Anthropic.APIBase = "https://proxy.example.com/v1"
+	cfg.Providers["anthropic"].AuthMethod = "oauth"
+	cfg.Providers["anthropic"].APIBase = "https://proxy.example.com/v1"
 
 	provider, err := CreateProvider(cfg)
 	if err != nil {
@@ -286,7 +286,7 @@ func TestCreateProviderReturnsCodexProviderForOpenAIOAuth(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Provider = "openai"
-	cfg.Providers.OpenAI.AuthMethod = "oauth"
+	cfg.Providers["openai"].AuthMethod = "oauth"
 
 	provider, err := CreateProvider(cfg)
 	if err != nil {
