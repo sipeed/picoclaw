@@ -6,6 +6,7 @@
 package config
 
 import (
+	"strings"
 	"sync"
 	"testing"
 )
@@ -163,6 +164,7 @@ func TestConfig_ValidateModelList(t *testing.T) {
 		name    string
 		config  *Config
 		wantErr bool
+		errMsg  string // partial error message to check
 	}{
 		{
 			name: "valid list",
@@ -183,6 +185,7 @@ func TestConfig_ValidateModelList(t *testing.T) {
 				},
 			},
 			wantErr: true,
+			errMsg:  "model_name is required",
 		},
 		{
 			name: "empty list",
@@ -191,6 +194,29 @@ func TestConfig_ValidateModelList(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "duplicate model_name",
+			config: &Config{
+				ModelList: []ModelConfig{
+					{ModelName: "gpt-4", Model: "openai/gpt-4o", APIKey: "key1"},
+					{ModelName: "gpt-4", Model: "openai/gpt-4-turbo", APIKey: "key2"},
+				},
+			},
+			wantErr: true,
+			errMsg:  "duplicate model_name",
+		},
+		{
+			name: "duplicate model_name non-adjacent",
+			config: &Config{
+				ModelList: []ModelConfig{
+					{ModelName: "model-a", Model: "openai/gpt-4o"},
+					{ModelName: "model-b", Model: "anthropic/claude"},
+					{ModelName: "model-a", Model: "openai/gpt-4-turbo"},
+				},
+			},
+			wantErr: true,
+			errMsg:  "duplicate model_name \"model-a\"",
+		},
 	}
 
 	for _, tt := range tests {
@@ -198,6 +224,11 @@ func TestConfig_ValidateModelList(t *testing.T) {
 			err := tt.config.ValidateModelList()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateModelList() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil && tt.errMsg != "" {
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("ValidateModelList() error = %v, want error containing %q", err, tt.errMsg)
+				}
 			}
 		})
 	}

@@ -294,6 +294,11 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
 	}
 
+	// Validate model_list for uniqueness and required fields
+	if err := cfg.ValidateModelList(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 
@@ -471,12 +476,20 @@ func (c *Config) HasProvidersConfig() bool {
 }
 
 // ValidateModelList validates all ModelConfig entries in the model_list.
-// It checks that each model_name/model combination is valid.
+// It checks that each model_name/model combination is valid and that
+// model_name is unique across all entries.
 func (c *Config) ValidateModelList() error {
+	seen := make(map[string]int)
 	for i := range c.ModelList {
 		if err := c.ModelList[i].Validate(); err != nil {
 			return fmt.Errorf("model_list[%d]: %w", i, err)
 		}
+		// Check for duplicate model_name
+		name := c.ModelList[i].ModelName
+		if prevIdx, exists := seen[name]; exists {
+			return fmt.Errorf("model_list: duplicate model_name %q at index %d and %d", name, prevIdx, i)
+		}
+		seen[name] = i
 	}
 	return nil
 }
