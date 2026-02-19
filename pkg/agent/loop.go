@@ -108,7 +108,7 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 
 		// Vision tool
 		if cfg.Tools.Vision.Enabled {
-			agent.Tools.Register(tools.NewAnalyzeImageTool(cfg.Tools.Vision))
+			agent.Tools.Register(tools.NewAnalyzeImageTool(cfg.Tools.Vision, cfg.WorkspacePath(), cfg.Agents.Defaults.RestrictToWorkspace))
 		}
 
 		// Message tool
