@@ -144,5 +144,10 @@
   "gateway": {
     "host": "0.0.0.0",
     "port": 18790
+  },
+  "logging": {
+    "enable_file": false,
+    "file_path": "~/.picoclaw/workspace/history.jsonl",
+    "level": "info"
   }
 }

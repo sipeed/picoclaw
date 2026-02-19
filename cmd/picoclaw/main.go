@@ -405,6 +405,9 @@ func agentCmd() {
 		os.Exit(1)
 	}
 
+	setupLogging(cfg)
+	defer logger.DisableFileLogging()
+
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
@@ -533,6 +536,9 @@ func gatewayCmd() {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
 	}
+
+	setupLogging(cfg)
+	defer logger.DisableFileLogging()
 
 	provider, err := providers.CreateProvider(cfg)
 	if err != nil {
@@ -1430,4 +1436,42 @@ func skillsShowCmd(loader *skills.SkillsLoader, skillName string) {
 	fmt.Printf("\n📦 Skill: %s\n", skillName)
 	fmt.Println("----------------------")
 	fmt.Println(content)
+}
+
+func parseLogLevel(level string) logger.LogLevel {
+	switch strings.ToLower(level) {
+	case "debug":
+		return logger.DEBUG
+	case "warn":
+		return logger.WARN
+	case "error":
+		return logger.ERROR
+	default:
+		return logger.INFO
+	}
+}
+
+func expandPath(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, p[1:])
+		}
+	}
+	return p
+}
+
+func setupLogging(cfg *config.Config) {
+	logger.SetLevel(parseLogLevel(cfg.Logging.Level))
+
+	if cfg.Logging.EnableFile && cfg.Logging.FilePath != "" {
+		logPath := expandPath(cfg.Logging.FilePath)
+
+		if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+			fmt.Printf("Warning: unable to create log directory: %v\n", err)
+		}
+
+		if err := logger.EnableFileLogging(logPath); err != nil {
+			fmt.Printf("Warning: unable to create log file: %v\n", err)
+		}
+	}
 }
