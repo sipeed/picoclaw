@@ -31,10 +31,10 @@ type AnalyzeImageTool struct {
 	restrict  bool
 }
 
-func NewAnalyzeImageTool(opts config.VisionToolConfig) *AnalyzeImageTool {
+func NewAnalyzeImageTool(opts config.VisionToolConfig, workspace string, restrict bool) *AnalyzeImageTool {
 	return &AnalyzeImageTool{
-		workspace: opts.Workspace,
-		restrict:  opts.Restrict,
+		workspace: workspace,
+		restrict:  restrict,
 		apiKey:    opts.ApiKey,
 		apiURL:    opts.ApiURL,
 		model:     opts.Model,

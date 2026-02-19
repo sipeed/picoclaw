@@ -316,12 +316,10 @@ type ExecConfig struct {
 }
 
 type VisionToolConfig struct {
-	Enabled   bool   `json:"enabled" env:"PICOCLAW_TOOLS_VISION_ENABLED"`
-	ApiKey    string `json:"api_key" env:"PICOCLAW_TOOLS_VISION_API_KEY"`
-	ApiURL    string `json:"api_url" env:"PICOCLAW_TOOLS_VISION_API_URL"`
-	Model     string `json:"model" env:"PICOCLAW_TOOLS_VISION_MODEL"`
-	Workspace string `json:"workspace" env:"PICOCLAW_TOOLS_VISION_WORKSPACE"`
-	Restrict  bool   `json:"restrict" env:"PICOCLAW_TOOLS_VISION_RESTRICT"`
+	Enabled bool   `json:"enabled" env:"PICOCLAW_TOOLS_VISION_ENABLED"`
+	ApiKey  string `json:"api_key" env:"PICOCLAW_TOOLS_VISION_API_KEY"`
+	ApiURL  string `json:"api_url" env:"PICOCLAW_TOOLS_VISION_API_URL"`
+	Model   string `json:"model" env:"PICOCLAW_TOOLS_VISION_MODEL"`
 }
 
 type ToolsConfig struct {
@@ -450,11 +448,9 @@ func DefaultConfig() *Config {
 				EnableDenyPatterns: true,
 			},
 			Vision: VisionToolConfig{
-				Enabled:   false,
-				ApiURL:    "",
-				Model:     "gpt-4o-mini",
-				Restrict:  true,
-				Workspace: "",
+				Enabled: false,
+				ApiURL:  "",
+				Model:   "gpt-4o-mini",
 			},
 		},
 		Heartbeat: HeartbeatConfig{
