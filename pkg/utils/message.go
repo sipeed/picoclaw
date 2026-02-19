@@ -12,6 +12,21 @@ import (
 func SplitMessage(content string, maxLen int) []string {
 	var messages []string
 
+	_ = SplitMessageIter(content, maxLen, func(chunk string) error {
+		messages = append(messages, chunk)
+		return nil
+	})
+
+	return messages
+}
+
+// SplitMessageIter splits content into chunks and calls cb for each chunk.
+// This avoids allocating a slice to hold all chunks and is more memory-efficient for very large messages.
+func SplitMessageIter(content string, maxLen int, cb func(chunk string) error) error {
+	if maxLen <= 0 {
+		return nil
+	}
+
 	// Dynamic buffer: 10% of maxLen, but at least 50 chars if possible
 	codeBlockBuffer := maxLen / 10
 	if codeBlockBuffer < 50 {
@@ -21,9 +36,14 @@ func SplitMessage(content string, maxLen int) []string {
 		codeBlockBuffer = maxLen / 2
 	}
 
+	content = strings.TrimSpace(content)
 	for len(content) > 0 {
 		if len(content) <= maxLen {
-			messages = append(messages, content)
+			if content != "" {
+				if err := cb(content); err != nil {
+					return err
+				}
+			}
 			break
 		}
 
@@ -75,7 +95,11 @@ func SplitMessage(content string, maxLen int) []string {
 						} else {
 							msgEnd = innerLimit
 						}
-						messages = append(messages, strings.TrimRight(content[:msgEnd], " \t\n\r")+"\n```")
+
+						chunk := strings.TrimRight(content[:msgEnd], " \t\n\r") + "\n```"
+						if err := cb(chunk); err != nil {
+							return err
+						}
 						content = strings.TrimSpace(header + "\n" + content[msgEnd:])
 						continue
 					}
@@ -93,7 +117,11 @@ func SplitMessage(content string, maxLen int) []string {
 							msgEnd = unclosedIdx
 						} else {
 							msgEnd = maxLen - 5
-							messages = append(messages, strings.TrimRight(content[:msgEnd], " \t\n\r")+"\n```")
+
+							chunk := strings.TrimRight(content[:msgEnd], " \t\n\r") + "\n```"
+							if err := cb(chunk); err != nil {
+								return err
+							}
 							content = strings.TrimSpace(header + "\n" + content[msgEnd:])
 							continue
 						}
@@ -106,11 +134,16 @@ func SplitMessage(content string, maxLen int) []string {
 			msgEnd = effectiveLimit
 		}
 
-		messages = append(messages, content[:msgEnd])
+		chunk := strings.TrimSpace(content[:msgEnd])
+		if chunk != "" {
+			if err := cb(chunk); err != nil {
+				return err
+			}
+		}
 		content = strings.TrimSpace(content[msgEnd:])
 	}
 
-	return messages
+	return nil
 }
 
 // findLastUnclosedCodeBlock finds the last opening ``` that doesn't have a closing ```
