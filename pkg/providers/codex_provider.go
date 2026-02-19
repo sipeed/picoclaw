@@ -268,6 +268,12 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 		params.Instructions = openai.Opt(defaultCodexInstructions)
 	}
 
+	if re, ok := options["reasoning_effort"].(string); ok && re != "" {
+		params.Reasoning = responses.ReasoningParam{
+			Effort: responses.ReasoningEffort(re),
+		}
+	}
+
 	if len(tools) > 0 || enableWebSearch {
 		params.Tools = translateToolsForCodex(tools, enableWebSearch)
 	}

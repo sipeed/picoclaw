@@ -149,6 +149,7 @@ type AgentDefaults struct {
 	MaxTokens           int      `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         float64  `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations   int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	ReasoningEffort     string   `json:"reasoning_effort,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_REASONING_EFFORT"`
 }
 
 type ChannelsConfig struct {

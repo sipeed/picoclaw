@@ -142,6 +142,75 @@ func TestBuildCodexParams_StoreIsFalse(t *testing.T) {
 	}
 }
 
+func TestBuildCodexParams_NilOptions(t *testing.T) {
+	// Passing nil options should not panic.
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", nil, false)
+	if params.Model != "gpt-4o" {
+		t.Errorf("Model = %q, want %q", params.Model, "gpt-4o")
+	}
+	if params.Reasoning.Effort != "" {
+		t.Errorf("Reasoning.Effort = %q, want empty", params.Reasoning.Effort)
+	}
+}
+
+func TestBuildCodexParams_MissingReasoningEffortKey(t *testing.T) {
+	// Options map without reasoning_effort should produce zero-value Reasoning.
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "o3", map[string]interface{}{
+		"max_tokens": 4096,
+	}, false)
+	if params.Reasoning.Effort != "" {
+		t.Errorf("Reasoning.Effort = %q, want empty", params.Reasoning.Effort)
+	}
+}
+
+func TestBuildCodexParams_ReasoningEffort(t *testing.T) {
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "o3", map[string]interface{}{
+		"reasoning_effort": "medium",
+	}, false)
+	if params.Reasoning.Effort != responses.ReasoningEffortMedium {
+		t.Errorf("Reasoning.Effort = %q, want %q", params.Reasoning.Effort, responses.ReasoningEffortMedium)
+	}
+
+	// Verify the JSON serialization includes the reasoning field.
+	b, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	reasoning, ok := raw["reasoning"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("reasoning field missing or wrong type in JSON: %s", string(b))
+	}
+	if reasoning["effort"] != "medium" {
+		t.Errorf("JSON reasoning.effort = %v, want %q", reasoning["effort"], "medium")
+	}
+}
+
+func TestBuildCodexParams_ReasoningEffortEmpty(t *testing.T) {
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "o3", map[string]interface{}{
+		"reasoning_effort": "",
+	}, false)
+	if params.Reasoning.Effort != "" {
+		t.Errorf("Reasoning.Effort = %q, want empty", params.Reasoning.Effort)
+	}
+
+	// When empty, reasoning should not appear in JSON.
+	b, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if _, ok := raw["reasoning"]; ok {
+		t.Errorf("reasoning field should be absent in JSON when empty, got: %s", string(b))
+	}
+}
+
 func TestBuildCodexParams_DefaultWebSearchEnabled(t *testing.T) {
 	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]interface{}{}, true)
 	if len(params.Tools) != 1 {

@@ -472,6 +472,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				"tools_count":       len(providerToolDefs),
 				"max_tokens":        8192,
 				"temperature":       0.7,
+				"reasoning_effort":  agent.ReasoningEffort,
 				"system_prompt_len": len(messages[0].Content),
 			})
 
@@ -492,8 +493,9 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]interface{}{
-							"max_tokens":  8192,
-							"temperature": 0.7,
+							"max_tokens":       8192,
+							"temperature":      0.7,
+							"reasoning_effort": agent.ReasoningEffort,
 						})
 					},
 				)
@@ -508,8 +510,9 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				return fbResult.Response, nil
 			}
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]interface{}{
-				"max_tokens":  8192,
-				"temperature": 0.7,
+				"max_tokens":       8192,
+				"temperature":      0.7,
+				"reasoning_effort": agent.ReasoningEffort,
 			})
 		}
 
