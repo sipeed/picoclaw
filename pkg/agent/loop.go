@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/multiagent"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -35,8 +36,12 @@ type AgentLoop struct {
 	state          *state.Manager
 	running        atomic.Bool
 	summarizing    sync.Map
+	blackboards    sync.Map // sessionKey -> *multiagent.Blackboard
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
+	runRegistry    *multiagent.RunRegistry    // tracks active handoff/spawn runs for cascade stop
+	announcer      *multiagent.Announcer      // per-session spawn result delivery (Phase 4b)
+	spawnManager   *multiagent.SpawnManager   // async spawn orchestrator (Phase 4a)
 }
 
 // processOptions configures how a message is processed
@@ -53,9 +58,29 @@ type processOptions struct {
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
+	runRegistry := multiagent.NewRunRegistry()
+	announcer := multiagent.NewAnnouncer(32)
+
+	// Resolve spawn limits from config (per-agent settings, with defaults).
+	maxChildren := multiagent.DefaultMaxChildren
+	spawnTimeout := multiagent.DefaultSpawnTimeout
+	if len(cfg.Agents.List) > 0 {
+		for _, ac := range cfg.Agents.List {
+			if ac.Subagents != nil {
+				if ac.Subagents.MaxChildrenPerAgent > 0 {
+					maxChildren = ac.Subagents.MaxChildrenPerAgent
+				}
+				if ac.Subagents.SpawnTimeoutSec > 0 {
+					spawnTimeout = time.Duration(ac.Subagents.SpawnTimeoutSec) * time.Second
+				}
+				break // use first configured value as global default
+			}
+		}
+	}
+	spawnManager := multiagent.NewSpawnManager(runRegistry, announcer, maxChildren, spawnTimeout)
 
 	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
+	registerSharedTools(cfg, msgBus, registry, provider, runRegistry, spawnManager, announcer)
 
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
@@ -69,17 +94,61 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 
 	return &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		summarizing: sync.Map{},
-		fallback:    fallbackChain,
+		bus:          msgBus,
+		cfg:          cfg,
+		registry:     registry,
+		state:        stateManager,
+		summarizing:  sync.Map{},
+		fallback:     fallbackChain,
+		runRegistry:  runRegistry,
+		announcer:    announcer,
+		spawnManager: spawnManager,
 	}
 }
 
+// registryResolver adapts AgentRegistry to multiagent.AgentResolver.
+type registryResolver struct {
+	registry *AgentRegistry
+}
+
+func (r *registryResolver) GetAgentInfo(agentID string) *multiagent.AgentInfo {
+	agent, ok := r.registry.GetAgent(agentID)
+	if !ok {
+		return nil
+	}
+	return &multiagent.AgentInfo{
+		ID:           agent.ID,
+		Name:         agent.Name,
+		Role:         agent.Role,
+		SystemPrompt: agent.SystemPrompt,
+		Model:        agent.Model,
+		Provider:     agent.Provider,
+		Tools:        agent.Tools,
+		MaxIter:      agent.MaxIterations,
+		Capabilities: agent.Capabilities,
+	}
+}
+
+func (r *registryResolver) ListAgents() []multiagent.AgentInfo {
+	ids := r.registry.ListAgentIDs()
+	agents := make([]multiagent.AgentInfo, 0, len(ids))
+	for _, id := range ids {
+		agent, ok := r.registry.GetAgent(id)
+		if !ok {
+			continue
+		}
+		agents = append(agents, multiagent.AgentInfo{
+			ID:           agent.ID,
+			Name:         agent.Name,
+			Role:         agent.Role,
+			Capabilities: agent.Capabilities,
+		})
+	}
+	return agents
+}
+
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
-func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *AgentRegistry, provider providers.LLMProvider) {
+func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *AgentRegistry, provider providers.LLMProvider, runReg *multiagent.RunRegistry, spawnMgr *multiagent.SpawnManager, announcer *multiagent.Announcer) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {
@@ -127,9 +196,85 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		})
 		agent.Tools.Register(spawnTool)
 
-		// Update context builder with the complete tools registry
+		// Multi-agent collaboration tools (blackboard, handoff, discovery)
+		// Only register when multiple agents are configured.
+		if len(registry.ListAgentIDs()) > 1 {
+			resolver := &registryResolver{registry: registry}
+
+			// Blackboard tool: per-agent instance sharing a placeholder blackboard.
+			// The actual per-session blackboard is wired via SetBoard in updateToolContexts
+			// before each message processing cycle (fixing the split-brain bug).
+			placeholderBoard := multiagent.NewBlackboard()
+			agent.Tools.Register(multiagent.NewBlackboardTool(placeholderBoard, agentID))
+
+			// Handoff tool: delegate tasks to other agents
+			handoffTool := multiagent.NewHandoffTool(resolver, placeholderBoard, agentID)
+
+			// Allowlist checker: default-open when no subagents config,
+			// enforces allow_agents when configured.
+			currentAgentIDForHandoff := agentID
+			handoffTool.SetAllowlistChecker(multiagent.AllowlistCheckerFunc(func(from, to string) bool {
+				parent, ok := registry.GetAgent(from)
+				if !ok {
+					return false
+				}
+				// Default open: if no allowlist configured, allow all handoffs
+				if parent.Subagents == nil || parent.Subagents.AllowAgents == nil {
+					return true
+				}
+				return registry.CanSpawnSubagent(currentAgentIDForHandoff, to)
+			}))
+			handoffTool.SetRunRegistry(runReg, "")
+			agent.Tools.Register(handoffTool)
+
+			// List agents tool: discover available agents
+			agent.Tools.Register(multiagent.NewListAgentsTool(resolver))
+
+			// Async spawn tool: fire-and-forget agent invocation (Phase 4a).
+			// Results are auto-announced back to the parent session via the Announcer.
+			if spawnMgr != nil {
+				spawnAgentTool := multiagent.NewSpawnTool(resolver, placeholderBoard, spawnMgr, agentID)
+				currentAgentIDForSpawn := agentID
+				spawnAgentTool.SetAllowlistChecker(multiagent.AllowlistCheckerFunc(func(from, to string) bool {
+					parent, ok := registry.GetAgent(from)
+					if !ok {
+						return false
+					}
+					if parent.Subagents == nil || parent.Subagents.AllowAgents == nil {
+						return true
+					}
+					return registry.CanSpawnSubagent(currentAgentIDForSpawn, to)
+				}))
+				agent.Tools.Register(spawnAgentTool)
+			}
+		}
+
+		// Apply per-agent tool policy (static, startup-time filtering).
+		// This removes denied tools from the registry before the LLM ever sees them.
+		if agentCfg := findAgentConfig(cfg, agentID); agentCfg != nil && agentCfg.ToolPolicy != nil {
+			tools.ApplyPolicy(agent.Tools, tools.ToolPolicy{
+				Allow: agentCfg.ToolPolicy.Allow,
+				Deny:  agentCfg.ToolPolicy.Deny,
+			})
+		}
+
+		// Register loop detector hook (per-agent, session-isolated via context key).
+		// Uses production defaults: warn@10 repeats, block@20, circuit breaker@30.
+		agent.Tools.AddHook(tools.NewLoopDetector(tools.DefaultLoopDetectorConfig()))
+
+		// Update context builder with the (possibly filtered) tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
 	}
+}
+
+// findAgentConfig returns the AgentConfig for a given agent ID, or nil if not found.
+func findAgentConfig(cfg *config.Config, agentID string) *config.AgentConfig {
+	for i := range cfg.Agents.List {
+		if routing.NormalizeAgentID(cfg.Agents.List[i].ID) == agentID {
+			return &cfg.Agents.List[i]
+		}
+	}
+	return nil
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
@@ -378,8 +523,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		}
 	}
 
-	// 1. Update tool contexts
-	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
+	// 1. Update tool contexts (including per-session blackboard wiring)
+	al.updateToolContexts(agent, opts.Channel, opts.ChatID, opts.SessionKey)
 
 	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message
@@ -397,10 +542,21 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		opts.ChatID,
 	)
 
+	// 2b. Inject blackboard snapshot into system context if available
+	if bb := al.getOrCreateBlackboard(opts.SessionKey); bb != nil && bb.Size() > 0 {
+		snapshot := bb.Snapshot()
+		if snapshot != "" && len(messages) > 0 && messages[0].Role == "system" {
+			messages[0].Content += "\n\n" + snapshot
+		}
+	}
+
 	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 4. Run LLM iteration loop
+	// 4. Inject session key into context for loop detection
+	ctx = tools.WithSessionKey(ctx, opts.SessionKey)
+
+	// 5. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
 		return "", err
@@ -452,6 +608,21 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 
 	for iteration < agent.MaxIterations {
 		iteration++
+
+		// Drain pending spawn announcements and inject as context (Phase 4b).
+		// Between each LLM iteration, check if any child spawns completed
+		// and inject their results so the LLM can use them.
+		if al.announcer != nil {
+			anns := al.announcer.Drain(opts.SessionKey)
+			for _, ann := range anns {
+				annMsg := providers.Message{
+					Role:    "system",
+					Content: fmt.Sprintf("[Spawn result from agent %q (run: %s)]\n%s", ann.AgentID, ann.RunID, ann.Content),
+				}
+				messages = append(messages, annMsg)
+				agent.Sessions.AddFullMessage(opts.SessionKey, annMsg)
+			}
+		}
 
 		logger.DebugCF("agent", "LLM iteration",
 			map[string]interface{}{
@@ -514,8 +685,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			})
 		}
 
-		// Retry loop for context/token errors
-		maxRetries := 2
+		// Retry loop for recoverable errors (context window + rate limits).
+		maxRetries := 3
 		for retry := 0; retry <= maxRetries; retry++ {
 			response, err = callLLM()
 			if err == nil {
@@ -523,16 +694,46 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			}
 
 			errMsg := strings.ToLower(err.Error())
+
+			// Rate-limit / transient errors: wait with exponential backoff.
+			isRateLimitError := strings.Contains(errMsg, "429") ||
+				strings.Contains(errMsg, "rate limit") ||
+				strings.Contains(errMsg, "rate_limit") ||
+				strings.Contains(errMsg, "resource_exhausted") ||
+				strings.Contains(errMsg, "resource exhausted") ||
+				strings.Contains(errMsg, "too many requests") ||
+				strings.Contains(errMsg, "overloaded") ||
+				strings.Contains(errMsg, "quota")
+
+			if isRateLimitError && retry < maxRetries {
+				backoff := time.Duration(1<<uint(retry)) * 5 * time.Second // 5s, 10s, 20s
+				logger.WarnCF("agent", "Rate limit detected, backing off", map[string]interface{}{
+					"error":   err.Error(),
+					"retry":   retry + 1,
+					"backoff": backoff.String(),
+				})
+
+				select {
+				case <-ctx.Done():
+					return "", iteration, ctx.Err()
+				case <-time.After(backoff):
+				}
+				continue
+			}
+
+			// Context window errors: compress history and retry.
 			isContextError := strings.Contains(errMsg, "token") ||
 				strings.Contains(errMsg, "context") ||
 				strings.Contains(errMsg, "invalidparameter") ||
 				strings.Contains(errMsg, "length")
 
 			if isContextError && retry < maxRetries {
-				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]interface{}{
-					"error": err.Error(),
-					"retry": retry,
-				})
+				logger.WarnCF("agent", "Context overflow recovery",
+					map[string]interface{}{
+						"error": err.Error(),
+						"retry": retry,
+						"tier":  retry + 1,
+					})
 
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 					al.bus.PublishOutbound(bus.OutboundMessage{
@@ -542,7 +743,19 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 					})
 				}
 
-				al.forceCompression(agent, opts.SessionKey)
+				// 3-tier context overflow recovery:
+				// Tier 1: Truncate oversized tool results (cheapest, no LLM call)
+				// Tier 2: Drop oldest 50% of messages
+				// Tier 3: Both truncation + compression (most aggressive)
+				switch retry {
+				case 0:
+					al.truncateToolResults(agent, opts.SessionKey)
+				case 1:
+					al.forceCompression(agent, opts.SessionKey)
+				default:
+					al.truncateToolResults(agent, opts.SessionKey)
+					al.forceCompression(agent, opts.SessionKey)
+				}
 				newHistory := agent.Sessions.GetHistory(opts.SessionKey)
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
@@ -675,8 +888,9 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 	return finalContent, iteration, nil
 }
 
-// updateToolContexts updates the context for tools that need channel/chatID info.
-func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID string) {
+// updateToolContexts updates the context for tools that need channel/chatID info
+// and wires the per-session blackboard to board-aware tools.
+func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID string, sessionKey string) {
 	// Use ContextualTool interface instead of type assertions
 	if tool, ok := agent.Tools.Get("message"); ok {
 		if mt, ok := tool.(tools.ContextualTool); ok {
@@ -693,6 +907,45 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 			st.SetContext(channel, chatID)
 		}
 	}
+	if tool, ok := agent.Tools.Get("handoff"); ok {
+		if ht, ok := tool.(tools.ContextualTool); ok {
+			ht.SetContext(channel, chatID)
+		}
+	}
+	if tool, ok := agent.Tools.Get("spawn_agent"); ok {
+		if st, ok := tool.(tools.ContextualTool); ok {
+			st.SetContext(channel, chatID)
+		}
+	}
+
+	// Wire the per-session blackboard to board-aware tools (fixes split-brain bug).
+	// This ensures BlackboardTool, HandoffTool, and SpawnTool operate on the same
+	// board that gets injected into the system prompt via getOrCreateBlackboard.
+	if sessionKey != "" {
+		bb := al.getOrCreateBlackboard(sessionKey)
+		for _, toolName := range []string{"blackboard", "handoff", "spawn_agent"} {
+			if tool, ok := agent.Tools.Get(toolName); ok {
+				if ba, ok := tool.(multiagent.BoardAware); ok {
+					ba.SetBoard(bb)
+				}
+			}
+		}
+	}
+}
+
+// getOrCreateBlackboard returns the blackboard for a session, creating one if needed.
+func (al *AgentLoop) getOrCreateBlackboard(sessionKey string) *multiagent.Blackboard {
+	if v, ok := al.blackboards.Load(sessionKey); ok {
+		if bb, ok := v.(*multiagent.Blackboard); ok {
+			return bb
+		}
+	}
+	bb := multiagent.NewBlackboard()
+	actual, _ := al.blackboards.LoadOrStore(sessionKey, bb)
+	if result, ok := actual.(*multiagent.Blackboard); ok {
+		return result
+	}
+	return bb
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
@@ -716,6 +969,51 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 				al.summarizeSession(agent, sessionKey)
 			}()
 		}
+	}
+}
+
+// maxToolResultChars is the maximum allowed length for a single tool result message.
+// Results exceeding this are truncated during context overflow recovery (Tier 1).
+// 8000 chars ≈ ~2000 tokens — large enough for useful output, small enough to reclaim space.
+const maxToolResultChars = 8000
+
+// truncateToolResults walks the message history and truncates oversized tool
+// result messages in-place. This is the cheapest recovery tier — no messages
+// are dropped, only oversized Content fields are shortened.
+func (al *AgentLoop) truncateToolResults(agent *AgentInstance, sessionKey string) {
+	history := agent.Sessions.GetHistory(sessionKey)
+	truncated := 0
+
+	for i := range history {
+		if history[i].Role != "tool" {
+			continue
+		}
+		if utf8.RuneCountInString(history[i].Content) <= maxToolResultChars {
+			continue
+		}
+
+		// Truncate at a newline boundary if possible, otherwise at the limit.
+		runes := []rune(history[i].Content)
+		cutPoint := maxToolResultChars
+		// Search backward from cut point for a newline (up to 200 chars back).
+		for j := cutPoint; j > cutPoint-200 && j > 0; j-- {
+			if runes[j] == '\n' {
+				cutPoint = j
+				break
+			}
+		}
+		history[i].Content = string(runes[:cutPoint]) +
+			"\n\n[... content truncated — original too large for context window]"
+		truncated++
+	}
+
+	if truncated > 0 {
+		agent.Sessions.SetHistory(sessionKey, history)
+		logger.WarnCF("agent", "Tool results truncated", map[string]interface{}{
+			"session_key": sessionKey,
+			"truncated":   truncated,
+			"max_chars":   maxToolResultChars,
+		})
 	}
 }
 

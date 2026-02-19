@@ -100,19 +100,33 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 	return json.Marshal(raw{Primary: m.Primary, Fallbacks: m.Fallbacks})
 }
 
+// ToolPolicyConfig defines allow/deny lists for per-agent tool filtering.
+// Tool names can be individual (e.g. "exec") or group refs (e.g. "group:web").
+// nil = full access (no filtering applied).
+type ToolPolicyConfig struct {
+	Allow []string `json:"allow,omitempty"` // tool names or group refs
+	Deny  []string `json:"deny,omitempty"`  // tool names or group refs
+}
+
 type AgentConfig struct {
-	ID        string            `json:"id"`
-	Default   bool              `json:"default,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Model     *AgentModelConfig `json:"model,omitempty"`
-	Skills    []string          `json:"skills,omitempty"`
-	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	ID           string            `json:"id"`
+	Default      bool              `json:"default,omitempty"`
+	Name         string            `json:"name,omitempty"`
+	Role         string            `json:"role,omitempty"`
+	SystemPrompt string            `json:"system_prompt,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Model        *AgentModelConfig `json:"model,omitempty"`
+	Skills       []string          `json:"skills,omitempty"`
+	Capabilities []string          `json:"capabilities,omitempty"`
+	Subagents    *SubagentsConfig  `json:"subagents,omitempty"`
+	ToolPolicy   *ToolPolicyConfig `json:"tool_policy,omitempty"`
 }
 
 type SubagentsConfig struct {
-	AllowAgents []string          `json:"allow_agents,omitempty"`
-	Model       *AgentModelConfig `json:"model,omitempty"`
+	AllowAgents       []string          `json:"allow_agents,omitempty"`
+	Model             *AgentModelConfig `json:"model,omitempty"`
+	MaxChildrenPerAgent int             `json:"max_children_per_agent,omitempty"` // max concurrent async spawns per parent (default 5)
+	SpawnTimeoutSec   int               `json:"spawn_timeout_sec,omitempty"`      // per-spawn timeout in seconds (default 300)
 }
 
 type PeerMatch struct {
@@ -266,11 +280,25 @@ type ProvidersConfig struct {
 }
 
 type ProviderConfig struct {
-	APIKey      string `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase     string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+	APIKey      string   `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
+	APIKeys     []string `json:"api_keys,omitempty"` // multiple keys for auth rotation (takes precedence over api_key)
+	APIBase     string   `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
+	Proxy       string   `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
+	AuthMethod  string   `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
+	ConnectMode string   `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+}
+
+// ResolveAPIKeys returns the effective list of API keys for this provider.
+// If APIKeys is set, returns it. Otherwise wraps APIKey as a single-element slice.
+// Returns nil if no keys are configured.
+func (pc *ProviderConfig) ResolveAPIKeys() []string {
+	if len(pc.APIKeys) > 0 {
+		return pc.APIKeys
+	}
+	if pc.APIKey != "" {
+		return []string{pc.APIKey}
+	}
+	return nil
 }
 
 type OpenAIProviderConfig struct {
