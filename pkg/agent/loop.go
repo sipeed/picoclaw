@@ -779,31 +779,21 @@ func (al *AgentLoop) forceCompression(sessionKey string) {
 	mid := len(conversation) / 2
 
 	// New history structure:
-	// 1. System Prompt
-	// 2. [Summary of dropped part] - synthesized
-	// 3. Second half of conversation
-	// 4. Last message
-
-	// Simplified approach for emergency: Drop first half of conversation
-	// and rely on existing summary if present, or create a placeholder.
+	// 1. System Prompt (with compression note appended)
+	// 2. Second half of conversation
+	// 3. Last message
 
 	droppedCount := mid
 	keptConversation := conversation[mid:]
 
 	newHistory := make([]providers.Message, 0)
-	newHistory = append(newHistory, history[0]) // System prompt
 
-	// Add a note about compression
-	compressionNote := fmt.Sprintf("[System: Emergency compression dropped %d oldest messages due to context limit]", droppedCount)
-	// If there was an existing summary, we might lose it if it was in the dropped part (which is just messages).
-	// The summary is stored separately in session.Summary, so it persists!
-	// We just need to ensure the user knows there's a gap.
-
-	// We only modify the messages list here
-	newHistory = append(newHistory, providers.Message{
-		Role:    "system",
-		Content: compressionNote,
-	})
+	// Append compression note to the original system prompt instead of adding a new system message
+	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
+	compressionNote := fmt.Sprintf("\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]", droppedCount)
+	enhancedSystemPrompt := history[0]
+	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
+	newHistory = append(newHistory, enhancedSystemPrompt)
 
 	newHistory = append(newHistory, keptConversation...)
 	newHistory = append(newHistory, history[len(history)-1]) // Last message
