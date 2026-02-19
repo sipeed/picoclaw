@@ -419,16 +419,6 @@ func (c *Config) WorkspacePath() string {
 	return expandHome(c.Agents.Defaults.Workspace)
 }
 
-//func (c *Config) GetEnabledProviders() {
-//	c.mu.RLock()
-//	defer c.mu.RUnlock()
-//
-//	for _, provider := range c.Providers {
-//
-//	}
-//
-//}
-
 func (c *Config) GetAPIKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
