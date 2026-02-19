@@ -167,7 +167,7 @@ cd picoclaw
 cp config/config.example.json config/config.json
 vim config/config.json      # 设置 DISCORD_BOT_TOKEN, API keys 等
 
-# 3. 建構並啟動
+# 3. 构建并启动
 docker compose --profile gateway up -d
 
 # 4. 查看日志
