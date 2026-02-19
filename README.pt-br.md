@@ -119,6 +119,31 @@ Depois siga as instrucoes na secao "Inicio Rapido" para completar a configuracao
 
 <img src="assets/termux.jpg" alt="PicoClaw" width="512">
 
+<details> 
+<summary><b> Possiveis erros que voce pode encontrar:</b> </summary>
+
+**1. tls: failed to verify certificate**
+
+```
+Error: LLM call failed: failed to send request: Post "https://<your-provider>/api/v1/chat/completions": tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+Este erro indica que o aplicativo (`picoclaw`) nao pode verificar o certificado de seguranca da API do seu provedor. Este e um problema muito comum no **Termux** porque o ambiente frequentemente carece das ultimas autoridades certificadoras raiz necessarias para validar conexoes HTTPS.
+
+Solucao:
+Execute os seguintes comandos:
+
+```bash
+pkg update && pkg upgrade
+pkg install ca-certificates openssl
+echo 'export SSL_CERT_FILE=/data/data/com.termux/files/usr/etc/tls/cert.pem' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Alternativamente, reinicie o Termux se preferir nao executar `source ~/.bashrc`
+
+</details>
+
 ### 🐜 Implantacao Inovadora com Baixo Consumo
 
 O PicoClaw pode ser implantado em praticamente qualquer dispositivo Linux!
