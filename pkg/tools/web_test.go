@@ -190,7 +190,7 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool := NewWebSearchTool(WebSearchToolOptions{Provider: "duckduckgo", Enabled: true, MaxResults: 5})
+	tool := NewWebSearchTool(WebSearchToolOptions{Provider: "duckduckgo", MaxResults: 5})
 	ctx := context.Background()
 	args := map[string]interface{}{}
 
