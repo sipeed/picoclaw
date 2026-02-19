@@ -70,3 +70,42 @@ func stripToolCallsFromText(text string) string {
 
 	return strings.TrimSpace(text[:start] + text[end:])
 }
+
+// findMatchingBrace finds the index after the closing brace matching the opening brace at pos.
+// It accounts for braces inside strings and escaped characters.
+func findMatchingBrace(text string, pos int) int {
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i := pos; i < len(text); i++ {
+		char := text[i]
+
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if char == '\\' {
+			escaped = true
+			continue
+		}
+
+		if char == '"' {
+			inString = !inString
+			continue
+		}
+
+		if !inString {
+			if char == '{' {
+				depth++
+			} else if char == '}' {
+				depth--
+				if depth == 0 {
+					return i + 1
+				}
+			}
+		}
+	}
+	return pos
+}
