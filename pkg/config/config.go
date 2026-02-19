@@ -123,8 +123,10 @@ type AgentConfig struct {
 }
 
 type SubagentsConfig struct {
-	AllowAgents []string          `json:"allow_agents,omitempty"`
-	Model       *AgentModelConfig `json:"model,omitempty"`
+	AllowAgents       []string          `json:"allow_agents,omitempty"`
+	Model             *AgentModelConfig `json:"model,omitempty"`
+	MaxChildrenPerAgent int             `json:"max_children_per_agent,omitempty"` // max concurrent async spawns per parent (default 5)
+	SpawnTimeoutSec   int               `json:"spawn_timeout_sec,omitempty"`      // per-spawn timeout in seconds (default 300)
 }
 
 type PeerMatch struct {
