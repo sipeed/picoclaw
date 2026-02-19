@@ -152,22 +152,29 @@ type AgentDefaults struct {
 }
 
 type ChannelsConfig struct {
-	WhatsApp WhatsAppConfig `json:"whatsapp"`
-	Telegram TelegramConfig `json:"telegram"`
-	Feishu   FeishuConfig   `json:"feishu"`
-	Discord  DiscordConfig  `json:"discord"`
-	MaixCam  MaixCamConfig  `json:"maixcam"`
-	QQ       QQConfig       `json:"qq"`
-	DingTalk DingTalkConfig `json:"dingtalk"`
-	Slack    SlackConfig    `json:"slack"`
-	LINE     LINEConfig     `json:"line"`
-	OneBot   OneBotConfig   `json:"onebot"`
+	WhatsApp  WhatsAppConfig  `json:"whatsapp"`
+	Whatsmeow WhatsmeowConfig `json:"whatsmeow"`
+	Telegram  TelegramConfig  `json:"telegram"`
+	Feishu    FeishuConfig    `json:"feishu"`
+	Discord   DiscordConfig   `json:"discord"`
+	MaixCam   MaixCamConfig   `json:"maixcam"`
+	QQ        QQConfig        `json:"qq"`
+	DingTalk  DingTalkConfig  `json:"dingtalk"`
+	Slack     SlackConfig     `json:"slack"`
+	LINE      LINEConfig      `json:"line"`
+	OneBot    OneBotConfig    `json:"onebot"`
 }
 
 type WhatsAppConfig struct {
 	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
 	BridgeURL string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
+}
+
+type WhatsmeowConfig struct {
+	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSMEOW_ENABLED"`
+	DBPath    string              `json:"db_path" env:"PICOCLAW_CHANNELS_WHATSMEOW_DB_PATH"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSMEOW_ALLOW_FROM"`
 }
 
 type TelegramConfig struct {
@@ -339,6 +346,10 @@ func DefaultConfig() *Config {
 				Enabled:   false,
 				BridgeURL: "ws://localhost:3001",
 				AllowFrom: FlexibleStringSlice{},
+			},
+			Whatsmeow: WhatsmeowConfig{
+				Enabled: false,
+				DBPath:  "~/.picoclaw/whatsmeow.db",
 			},
 			Telegram: TelegramConfig{
 				Enabled:   false,

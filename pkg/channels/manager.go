@@ -72,6 +72,19 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.Whatsmeow.Enabled {
+		logger.DebugC("channels", "Attempting to initialize Whatsmeow channel")
+		wm, err := NewWhatsmeowChannel(m.config.Channels.Whatsmeow, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize Whatsmeow channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["whatsmeow"] = wm
+			logger.InfoC("channels", "Whatsmeow channel enabled successfully")
+		}
+	}
+
 	if m.config.Channels.Feishu.Enabled {
 		logger.DebugC("channels", "Attempting to initialize Feishu channel")
 		feishu, err := NewFeishuChannel(m.config.Channels.Feishu, m.bus)
