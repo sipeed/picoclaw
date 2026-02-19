@@ -43,6 +43,9 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 			if !isWithinWorkspace(resolved, workspaceReal) {
 				return "", fmt.Errorf("access denied: symlink resolves outside workspace")
 			}
+			// Return the resolved path to prevent TOCTOU race
+			// the caller operates on the validated target directly.
+			absPath = resolved
 		} else if os.IsNotExist(err) {
 			if parentResolved, err := resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
 				if !isWithinWorkspace(parentResolved, workspaceReal) {
