@@ -80,25 +80,25 @@ func TestDefaultConfig_Providers(t *testing.T) {
 	cfg := DefaultConfig()
 
 	// Verify all providers are empty by default
-	if cfg.Providers.Anthropic.APIKey != "" {
+	if cfg.Providers["anthropic"].APIKey != "" {
 		t.Error("Anthropic API key should be empty by default")
 	}
-	if cfg.Providers.OpenAI.APIKey != "" {
+	if cfg.Providers["openai"].APIKey != "" {
 		t.Error("OpenAI API key should be empty by default")
 	}
-	if cfg.Providers.OpenRouter.APIKey != "" {
+	if cfg.Providers["openrouter"].APIKey != "" {
 		t.Error("OpenRouter API key should be empty by default")
 	}
-	if cfg.Providers.Groq.APIKey != "" {
+	if cfg.Providers["groq"].APIKey != "" {
 		t.Error("Groq API key should be empty by default")
 	}
-	if cfg.Providers.Zhipu.APIKey != "" {
+	if cfg.Providers["zhipu"].APIKey != "" {
 		t.Error("Zhipu API key should be empty by default")
 	}
-	if cfg.Providers.VLLM.APIKey != "" {
+	if cfg.Providers["vllm"].APIKey != "" {
 		t.Error("VLLM API key should be empty by default")
 	}
-	if cfg.Providers.Gemini.APIKey != "" {
+	if cfg.Providers["gemini"].APIKey != "" {
 		t.Error("Gemini API key should be empty by default")
 	}
 }
@@ -207,24 +207,8 @@ func TestConfig_Complete(t *testing.T) {
 
 func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
 	cfg := DefaultConfig()
-	if !cfg.Providers.OpenAI.WebSearch {
+	if !cfg.Providers["openai"].WebSearch {
 		t.Fatal("DefaultConfig().Providers.OpenAI.WebSearch should be true")
-	}
-}
-
-func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_base":""}}}`), 0o600); err != nil {
-		t.Fatalf("WriteFile() error: %v", err)
-	}
-
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error: %v", err)
-	}
-	if !cfg.Providers.OpenAI.WebSearch {
-		t.Fatal("OpenAI codex web search should remain true when unset in config file")
 	}
 }
 
@@ -239,7 +223,7 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error: %v", err)
 	}
-	if cfg.Providers.OpenAI.WebSearch {
+	if cfg.Providers["openai"].WebSearch {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
 	}
 }

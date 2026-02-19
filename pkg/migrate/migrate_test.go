@@ -303,7 +303,7 @@ func TestMergeConfig(t *testing.T) {
 	t.Run("fills empty fields", func(t *testing.T) {
 		existing := config.DefaultConfig()
 		incoming := config.DefaultConfig()
-		incoming.Providers = map[string]config.ProviderConfig{
+		incoming.Providers = map[string]*config.ProviderConfig{
 			"anthropic": {
 				APIKey: "sk-ant-incoming",
 			},
@@ -323,19 +323,19 @@ func TestMergeConfig(t *testing.T) {
 
 	t.Run("preserves existing non-empty fields", func(t *testing.T) {
 		existing := config.DefaultConfig()
-		existing.Providers = map[string]config.ProviderConfig{
+		existing.Providers = map[string]*config.ProviderConfig{
 			"anthropic": {
 				APIKey: "sk-ant-existing",
 			},
 		}
 
 		incoming := config.DefaultConfig()
-		incoming.Providers = map[string]config.ProviderConfig{
+		incoming.Providers = map[string]*config.ProviderConfig{
 			"anthropic": {
 				APIKey: "sk-ant-incoming",
 			},
 			"openai": {
-				APIKey: "sk-or-incoming",
+				APIKey: "sk-oai-incoming",
 			},
 		}
 

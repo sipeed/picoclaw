@@ -233,12 +233,26 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 }
 
 func MergeConfig(existing, incoming *config.Config) *config.Config {
-	for provider, cfg := range existing.Providers {
+
+	for provider, _ := range existing.Providers {
+		if incoming.Providers[provider] == nil {
+			continue
+		}
+
+		if existing.Providers[provider].APIKey != "" {
+			continue
+		}
+
 		if incoming.Providers[provider].APIKey != "" {
-			incoming.Providers[provider] = cfg
+			existing.Providers[provider] = incoming.Providers[provider]
 		}
 	}
 
+	for provider, _ := range incoming.Providers {
+		if existing.Providers[provider] == nil {
+			existing.Providers[provider] = incoming.Providers[provider]
+		}
+	}
 	if !existing.Channels.Telegram.Enabled && incoming.Channels.Telegram.Enabled {
 		existing.Channels.Telegram = incoming.Channels.Telegram
 	}
