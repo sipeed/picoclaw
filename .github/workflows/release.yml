@@ -26,17 +26,19 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Create and push tag
         shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ inputs.tag }}" -m "Release ${{ inputs.tag }}"
-          git push origin "${{ inputs.tag }}"
+          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
 
   release:
     name: GoReleaser Release
@@ -47,13 +49,14 @@ jobs:
       packages: write
     steps:
       - name: Checkout tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag }}
 
       - name: Setup Go from go.mod
-        uses: actions/setup-go@v5
+        id: setup-go
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -87,6 +90,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
+          GOVERSION: ${{ steps.setup-go.outputs.go-version }}
 
       - name: Apply release flags
         shell: bash
