@@ -263,6 +263,15 @@ type ProvidersConfig struct {
 	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig       `json:"deepseek"`
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
+	PicoLM        PicoLMProviderConfig `json:"picolm"`
+}
+
+type PicoLMProviderConfig struct {
+	Binary    string `json:"binary" env:"PICOCLAW_PROVIDERS_PICOLM_BINARY"`
+	Model     string `json:"model" env:"PICOCLAW_PROVIDERS_PICOLM_MODEL"`
+	MaxTokens int    `json:"max_tokens" env:"PICOCLAW_PROVIDERS_PICOLM_MAX_TOKENS"`
+	Threads   int    `json:"threads" env:"PICOCLAW_PROVIDERS_PICOLM_THREADS"`
+	Template  string `json:"template" env:"PICOCLAW_PROVIDERS_PICOLM_TEMPLATE"`
 }
 
 type ProviderConfig struct {
