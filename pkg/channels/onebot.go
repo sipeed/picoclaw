@@ -866,7 +866,7 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 	switch raw.MessageType {
 	case "private":
 		chatID = "private:" + senderID
-		metadata["peer_kind"] = "private"
+		metadata["peer_kind"] = "direct"
 		metadata["peer_id"] = senderID
 
 	case "group":
