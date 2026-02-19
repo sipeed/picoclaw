@@ -75,6 +75,12 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 	// First, prefer explicit provider configuration.
 	if providerName != "" {
 		switch providerName {
+		case "custom":
+			if cfg.Providers.Custom.APIBase != "" {
+				sel.apiKey = cfg.Providers.Custom.APIKey
+				sel.apiBase = cfg.Providers.Custom.APIBase
+				sel.proxy = cfg.Providers.Custom.Proxy
+			}
 		case "groq":
 			if cfg.Providers.Groq.APIKey != "" {
 				sel.apiKey = cfg.Providers.Groq.APIKey
@@ -214,6 +220,10 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 	// Fallback: infer provider from model and configured keys.
 	if sel.apiKey == "" && sel.apiBase == "" {
 		switch {
+		case cfg.Providers.Custom.APIBase != "":
+			sel.apiKey = cfg.Providers.Custom.APIKey
+			sel.apiBase = cfg.Providers.Custom.APIBase
+			sel.proxy = cfg.Providers.Custom.Proxy
 		case (strings.Contains(lowerModel, "kimi") || strings.Contains(lowerModel, "moonshot") || strings.HasPrefix(model, "moonshot/")) && cfg.Providers.Moonshot.APIKey != "":
 			sel.apiKey = cfg.Providers.Moonshot.APIKey
 			sel.apiBase = cfg.Providers.Moonshot.APIBase
