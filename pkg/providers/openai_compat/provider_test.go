@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 )
 
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
@@ -273,5 +274,24 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
+	}
+}
+
+func TestProvider_TimeoutDefaults(t *testing.T) {
+	pRemote := NewProvider("key", "https://api.openai.com/v1", "")
+	if pRemote.httpClient.Timeout != defaultRequestTimeout {
+		t.Fatalf("remote timeout = %v, want %v", pRemote.httpClient.Timeout, defaultRequestTimeout)
+	}
+
+	pLocal := NewProvider("key", "http://127.0.0.1:11434/v1", "")
+	if pLocal.httpClient.Timeout != localRequestTimeout {
+		t.Fatalf("local timeout = %v, want %v", pLocal.httpClient.Timeout, localRequestTimeout)
+	}
+}
+
+func TestProvider_CustomTimeoutOverride(t *testing.T) {
+	p := NewProviderWithTimeout("key", "http://127.0.0.1:11434/v1", "", 45)
+	if p.httpClient.Timeout != 45*time.Second {
+		t.Fatalf("timeout = %v, want %v", p.httpClient.Timeout, 45*time.Second)
 	}
 }

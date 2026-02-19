@@ -535,10 +535,12 @@ type failFirstMockProvider struct {
 	currentCall int
 	failError   error
 	successResp string
+	lastOpts    map[string]interface{}
 }
 
 func (m *failFirstMockProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]interface{}) (*providers.LLMResponse, error) {
 	m.currentCall++
+	m.lastOpts = opts
 	if m.currentCall <= m.failures {
 		return nil, m.failError
 	}
@@ -626,5 +628,133 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+// TestAgentLoop_TransientEOFRetry verifies retry on transient network EOF errors.
+func TestAgentLoop_TransientEOFRetry(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         2048,
+				Temperature:       0.2,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &failFirstMockProvider{
+		failures:    1,
+		failError:   fmt.Errorf("failed to send request: EOF"),
+		successResp: "Recovered from transient error",
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+	response, err := al.ProcessDirectWithChannel(context.Background(), "Ping", "eof-retry-session", "test", "chat")
+	if err != nil {
+		t.Fatalf("Expected success after transient retry, got error: %v", err)
+	}
+	if response != "Recovered from transient error" {
+		t.Errorf("Expected 'Recovered from transient error', got '%s'", response)
+	}
+	if provider.currentCall != 2 {
+		t.Errorf("Expected 2 calls (1 fail + 1 success), got %d", provider.currentCall)
+	}
+}
+
+// TestProcessDirectWithChannel_HonorsCLISessionKey verifies explicit CLI session keys are used.
+func TestProcessDirectWithChannel_HonorsCLISessionKey(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         1024,
+				MaxToolIterations: 5,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	sessionKey := "my-cli-session"
+	_, err = al.ProcessDirectWithChannel(context.Background(), "hello", sessionKey, "cli", "direct")
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) == 0 {
+		t.Fatalf("Expected history under explicit CLI session key %q, got none", sessionKey)
+	}
+}
+
+// TestAgentLoop_UsesConfiguredLLMOptions verifies max_tokens and temperature are sourced from config.
+func TestAgentLoop_UsesConfiguredLLMOptions(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         1536,
+				Temperature:       0.25,
+				MaxToolIterations: 5,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &failFirstMockProvider{
+		successResp: "ok",
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+	_, err = al.ProcessDirectWithChannel(context.Background(), "hello", "opts-session", "cli", "direct")
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+
+	gotMax, ok := provider.lastOpts["max_tokens"].(int)
+	if !ok {
+		t.Fatalf("Expected max_tokens int option, got %#v", provider.lastOpts["max_tokens"])
+	}
+	if gotMax != 1536 {
+		t.Fatalf("max_tokens = %d, want 1536", gotMax)
+	}
+
+	gotTemp, ok := provider.lastOpts["temperature"].(float64)
+	if !ok {
+		t.Fatalf("Expected temperature float64 option, got %#v", provider.lastOpts["temperature"])
+	}
+	if gotTemp != 0.25 {
+		t.Fatalf("temperature = %v, want 0.25", gotTemp)
 	}
 }

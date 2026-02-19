@@ -22,6 +22,7 @@ type AgentInstance struct {
 	Workspace      string
 	MaxIterations  int
 	ContextWindow  int
+	Temperature    float64
 	Provider       providers.LLMProvider
 	Sessions       *session.SessionManager
 	ContextBuilder *ContextBuilder
@@ -91,6 +92,7 @@ func NewAgentInstance(
 		Workspace:      workspace,
 		MaxIterations:  maxIter,
 		ContextWindow:  defaults.MaxTokens,
+		Temperature:    defaults.Temperature,
 		Provider:       provider,
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,

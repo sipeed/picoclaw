@@ -29,9 +29,22 @@ type Provider struct {
 	httpClient *http.Client
 }
 
+const (
+	defaultRequestTimeout = 120 * time.Second
+	localRequestTimeout   = 10 * time.Minute
+)
+
 func NewProvider(apiKey, apiBase, proxy string) *Provider {
+	return NewProviderWithTimeout(apiKey, apiBase, proxy, 0)
+}
+
+// NewProviderWithTimeout creates a provider with optional custom timeout seconds.
+// timeoutSeconds <= 0 uses defaults:
+// - local endpoints (localhost/127.0.0.1/::1): 10 minutes
+// - other endpoints: 120 seconds
+func NewProviderWithTimeout(apiKey, apiBase, proxy string, timeoutSeconds int) *Provider {
 	client := &http.Client{
-		Timeout: 120 * time.Second,
+		Timeout: resolveRequestTimeout(apiBase, timeoutSeconds),
 	}
 
 	if proxy != "" {
@@ -50,6 +63,29 @@ func NewProvider(apiKey, apiBase, proxy string) *Provider {
 		apiBase:    strings.TrimRight(apiBase, "/"),
 		httpClient: client,
 	}
+}
+
+func resolveRequestTimeout(apiBase string, timeoutSeconds int) time.Duration {
+	if timeoutSeconds > 0 {
+		return time.Duration(timeoutSeconds) * time.Second
+	}
+	if isLocalAPIBase(apiBase) {
+		return localRequestTimeout
+	}
+	return defaultRequestTimeout
+}
+
+func isLocalAPIBase(apiBase string) bool {
+	parsed, err := url.Parse(apiBase)
+	if err != nil {
+		lower := strings.ToLower(apiBase)
+		return strings.Contains(lower, "localhost") ||
+			strings.Contains(lower, "127.0.0.1") ||
+			strings.Contains(lower, "::1")
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func (p *Provider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
