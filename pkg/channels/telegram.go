@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	th "github.com/mymmrac/telego/telegohandler"
 
@@ -22,6 +23,13 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/sipeed/picoclaw/pkg/voice"
+)
+
+const (
+	// Telegram has a limit of 4096 characters per message.
+	// Use a conservative limit on the original content to account for HTML markup expansion.
+	telegramMessageLimit      = 4096
+	telegramSafeContentLength = 3000
 )
 
 type TelegramChannel struct {
@@ -157,33 +165,81 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		c.stopThinking.Delete(msg.ChatID)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
+	var (
+		placeholderID  int
+		hasPlaceholder bool
+	)
 
-	// Try to edit placeholder
+	// Try to use placeholder (thinking...) message for the first chunk
 	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
 		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
-		editMsg.ParseMode = telego.ModeHTML
-
-		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
-			return nil
+		if id, ok := pID.(int); ok {
+			placeholderID = id
+			hasPlaceholder = true
 		}
-		// Fallback to new message if edit fails
 	}
 
-	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
-	tgMsg.ParseMode = telego.ModeHTML
+	chunkIndex := 0
 
-	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]interface{}{
-			"error": err.Error(),
-		})
-		tgMsg.ParseMode = ""
-		_, err = c.bot.SendMessage(ctx, tgMsg)
-		return err
-	}
+	// Split long messages to stay under Telegram limits and avoid delivery failures.
+	sendErr := utils.SplitMessageIter(msg.Content, telegramSafeContentLength, func(chunk string) error {
+		htmlContent := markdownToTelegramHTML(chunk)
 
-	return nil
+		// First chunk: try to edit the existing placeholder message
+		if hasPlaceholder && chunkIndex == 0 {
+			editMsg := tu.EditMessageText(tu.ID(chatID), placeholderID, htmlContent)
+			editMsg.ParseMode = telego.ModeHTML
+
+			if _, err := c.bot.EditMessageText(ctx, editMsg); err == nil {
+				chunkIndex++
+				return nil
+			}
+
+			logger.WarnCF("telegram", "Failed to edit placeholder message, sending new message instead", map[string]interface{}{
+				"error": err.Error(),
+			})
+
+			// If edit fails, fall back to sending a new message for this and subsequent chunks
+			hasPlaceholder = false
+		}
+
+		tgMsg := tu.Message(tu.ID(chatID), htmlContent)
+		tgMsg.ParseMode = telego.ModeHTML
+
+		if utf8.RuneCountInString(tgMsg.Text) > telegramMessageLimit {
+			// As an extra safeguard, truncate if HTML expansion unexpectedly exceeds Telegram's hard limit.
+			runes := []rune(tgMsg.Text)
+			if len(runes) > telegramMessageLimit {
+				tgMsg.Text = string(runes[:telegramMessageLimit])
+			}
+		}
+
+		if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
+			logger.ErrorCF("telegram", "Failed to send HTML message, falling back to plain text", map[string]interface{}{
+				"error": err.Error(),
+			})
+
+			// Fallback to plain text using the original chunk content
+			tgMsg.ParseMode = ""
+			tgMsg.Text = chunk
+
+			// Final safety: hard truncate plain text if still too long
+			if utf8.RuneCountInString(tgMsg.Text) > telegramMessageLimit {
+				runes := []rune(tgMsg.Text)
+				if len(runes) > telegramMessageLimit {
+					tgMsg.Text = string(runes[:telegramMessageLimit])
+				}
+			}
+
+			if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
+				return err
+			}
+		}
+		chunkIndex++
+		return nil
+	})
+
+	return sendErr
 }
 
 func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Message) error {
