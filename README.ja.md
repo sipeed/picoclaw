@@ -128,7 +128,7 @@ cd picoclaw
 
 # 2. API キーを設定
 cp config/config.example.json config/config.json
-vim config/config.json      # DISCORD_BOT_TOKEN, プロバイダーの API キーを設定
+vim config/config.json      # または config.yaml を使用（DISCORD_BOT_TOKEN、プロバイダーの API キーを設定）
 
 # 3. ビルドと起動
 docker compose --profile gateway up -d
@@ -160,7 +160,8 @@ docker compose --profile gateway up -d
 ### 🚀 クイックスタート（ネイティブ）
 
 > [!TIP]
-> `~/.picoclaw/config.json` に API キーを設定してください。
+> `~/.picoclaw/config.json`、`~/.picoclaw/config.yaml`、`~/.picoclaw/config.toml`、または `~/.picoclaw/config.ini` に API キーを設定してください。
+> PicoClaw は複数の設定フォーマットをサポート：**JSON**（デフォルト）、**YAML**、**TOML**、**INI** ([spf13/viper](https://github.com/spf13/viper) 経由)。
 > API キーの取得先: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
 > Web 検索は **任意** です - 無料の [Brave Search API](https://brave.com/search/api) (月 2000 クエリ無料)
 
@@ -170,7 +171,13 @@ docker compose --profile gateway up -d
 picoclaw onboard
 ```
 
-**2. 設定** (`~/.picoclaw/config.json`)
+**2. 設定** (`~/.picoclaw/config.json`、`~/.picoclaw/config.yaml`、`~/.picoclaw/config.toml`、または `~/.picoclaw/config.ini`)
+
+[spf13/viper](https://github.com/spf13/viper) 経由で複数の設定フォーマットをサポート。以下のいずれかを選択：
+- `config.json` - JSON フォーマット（デフォルト）
+- `config.yaml` または `config.yml` - YAML フォーマット
+- `config.toml` - TOML フォーマット
+- `config.ini` - INI フォーマット
 
 ```json
 {

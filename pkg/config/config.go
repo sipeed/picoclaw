@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/go-viper/mapstructure/v2"
+	"github.com/spf13/viper"
 )
 
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
@@ -56,6 +59,14 @@ type Config struct {
 	mu        sync.RWMutex
 }
 
+var configFileNames = []string{
+	"config.json",
+	"config.yaml",
+	"config.yml",
+	"config.toml",
+	"config.ini",
+}
+
 type AgentsConfig struct {
 	Defaults AgentDefaults `json:"defaults"`
 	List     []AgentConfig `json:"list,omitempty"`
@@ -65,8 +76,8 @@ type AgentsConfig struct {
 // String format: "gpt-4" (just primary, no fallbacks)
 // Object format: {"primary": "gpt-4", "fallbacks": ["claude-haiku"]}
 type AgentModelConfig struct {
-	Primary   string   `json:"primary,omitempty"`
-	Fallbacks []string `json:"fallbacks,omitempty"`
+	Primary   string   `json:"primary" mapstructure:"primary"`
+	Fallbacks []string `json:"fallbacks,omitempty" mapstructure:"fallbacks"`
 }
 
 func (m *AgentModelConfig) UnmarshalJSON(data []byte) error {
@@ -76,28 +87,18 @@ func (m *AgentModelConfig) UnmarshalJSON(data []byte) error {
 		m.Fallbacks = nil
 		return nil
 	}
-	type raw struct {
+
+	type Alias struct {
 		Primary   string   `json:"primary"`
 		Fallbacks []string `json:"fallbacks"`
 	}
-	var r raw
-	if err := json.Unmarshal(data, &r); err != nil {
+	aux := &Alias{}
+	if err := json.Unmarshal(data, aux); err != nil {
 		return err
 	}
-	m.Primary = r.Primary
-	m.Fallbacks = r.Fallbacks
+	m.Primary = aux.Primary
+	m.Fallbacks = aux.Fallbacks
 	return nil
-}
-
-func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
-	if len(m.Fallbacks) == 0 && m.Primary != "" {
-		return json.Marshal(m.Primary)
-	}
-	type raw struct {
-		Primary   string   `json:"primary,omitempty"`
-		Fallbacks []string `json:"fallbacks,omitempty"`
-	}
-	return json.Marshal(raw{Primary: m.Primary, Fallbacks: m.Fallbacks})
 }
 
 type AgentConfig struct {
@@ -139,16 +140,16 @@ type SessionConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace           string   `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool     `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string   `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string   `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
-	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
-	ImageModel          string   `json:"image_model,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
-	MaxTokens           int      `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         float64  `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace           string   `json:"workspace" mapstructure:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool     `json:"restrict_to_workspace" mapstructure:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Provider            string   `json:"provider" mapstructure:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	Model               string   `json:"model" mapstructure:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	ModelFallbacks      []string `json:"model_fallbacks,omitempty" mapstructure:"model_fallbacks,omitempty"`
+	ImageModel          string   `json:"image_model,omitempty" mapstructure:"image_model" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty" mapstructure:"image_model_fallbacks,omitempty"`
+	MaxTokens           int      `json:"max_tokens" mapstructure:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature         float64  `json:"temperature" mapstructure:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int      `json:"max_tool_iterations" mapstructure:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
 type ChannelsConfig struct {
@@ -275,7 +276,7 @@ type ProviderConfig struct {
 
 type OpenAIProviderConfig struct {
 	ProviderConfig
-	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
+	WebSearch bool `json:"web_search" mapstructure:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
 }
 
 type GatewayConfig struct {
@@ -454,20 +455,69 @@ func DefaultConfig() *Config {
 func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := env.Parse(cfg); err != nil {
+			return nil, err
 		}
-		return nil, err
+		return cfg, nil
 	}
 
-	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, err
+	v := viper.New()
+	v.SetConfigFile(path)
+
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := v.Unmarshal(cfg, func(dc *mapstructure.DecoderConfig) {
+		dc.TagName = "json"
+		dc.WeaklyTypedInput = true
+		dc.Squash = true
+		dc.DecodeHook = mapstructure.ComposeDecodeHookFunc(
+			func(_ reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+				modelCfgPtr := reflect.TypeOf((*AgentModelConfig)(nil))
+				modelCfgVal := reflect.TypeOf(AgentModelConfig{})
+				if t != modelCfgPtr && t != modelCfgVal {
+					return data, nil
+				}
+
+				switch raw := data.(type) {
+				case string:
+					m := AgentModelConfig{Primary: raw}
+					if t == modelCfgPtr {
+						return &m, nil
+					}
+					return m, nil
+				case map[string]interface{}:
+					m := AgentModelConfig{}
+					if primary, ok := raw["primary"]; ok {
+						m.Primary = fmt.Sprintf("%v", primary)
+					}
+					if fallbacks, ok := raw["fallbacks"]; ok {
+						switch fb := fallbacks.(type) {
+						case []interface{}:
+							for _, item := range fb {
+								m.Fallbacks = append(m.Fallbacks, fmt.Sprintf("%v", item))
+							}
+						case []string:
+							m.Fallbacks = append(m.Fallbacks, fb...)
+						}
+					}
+					if t == modelCfgPtr {
+						return &m, nil
+					}
+					return m, nil
+				default:
+					return data, nil
+				}
+			},
+		)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to decode config data: %w", err)
 	}
 
 	if err := env.Parse(cfg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse env overrides: %w", err)
 	}
 
 	return cfg, nil
@@ -477,17 +527,66 @@ func SaveConfig(path string, cfg *Config) error {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	ext := filepath.Ext(path)
+	var configType string
+	switch ext {
+	case ".yaml", ".yml":
+		configType = "yaml"
+	case ".toml":
+		configType = "toml"
+	case ".ini":
+		configType = "ini"
+	case ".json", "":
+		configType = "json"
+		if ext == "" {
+			path = path + ".json"
+		}
+	default:
+		configType = "json"
+	}
+
+	v := viper.New()
+	v.SetConfigType(configType)
+	v.SetConfigFile(path)
+
+	data, err := json.Marshal(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	var dataMap map[string]interface{}
+	if err := json.Unmarshal(data, &dataMap); err != nil {
+		return fmt.Errorf("failed to unmarshal config map: %w", err)
+	}
+
+	for key, val := range dataMap {
+		v.Set(key, val)
 	}
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0600)
+	if err := v.WriteConfigAs(path); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return fmt.Errorf("failed to set config file permission: %w", err)
+	}
+
+	return nil
+}
+
+func ResolveConfigPath(home string) string {
+	configDir := filepath.Join(home, ".picoclaw")
+	for _, name := range configFileNames {
+		path := filepath.Join(configDir, name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return filepath.Join(configDir, "config.json")
 }
 
 func (c *Config) WorkspacePath() string {

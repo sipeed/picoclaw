@@ -167,7 +167,7 @@ cd picoclaw
 
 # 2. Configure suas API keys
 cp config/config.example.json config/config.json
-vim config/config.json      # Configure DISCORD_BOT_TOKEN, API keys, etc.
+vim config/config.json      # Configure DISCORD_BOT_TOKEN, API keys, etc. (ou use config.yaml/config.yaml/config.toml/config.ini)
 
 # 3. Build & Iniciar
 docker compose --profile gateway up -d
@@ -199,7 +199,8 @@ docker compose --profile gateway up -d
 ### 🚀 Início Rápido
 
 > [!TIP]
-> Configure sua API key em `~/.picoclaw/config.json`.
+> Configure sua API key em `~/.picoclaw/config.json`, `~/.picoclaw/config.yaml`, `~/.picoclaw/config.toml` ou `~/.picoclaw/config.ini`.
+> PicoClaw suporta múltiplos formatos de configuração: **JSON** (padrão), **YAML**, **TOML**, **INI** via [spf13/viper](https://github.com/spf13/viper).
 > Obtenha API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
 > Busca web e **opcional** — obtenha a [Brave Search API](https://brave.com/search/api) gratuita (2000 consultas grátis/mês) ou use o fallback automático integrado.
 
@@ -209,7 +210,13 @@ docker compose --profile gateway up -d
 picoclaw onboard
 ```
 
-**2. Configurar** (`~/.picoclaw/config.json`)
+**2. Configurar** (`~/.picoclaw/config.json`, `~/.picoclaw/config.yaml`, `~/.picoclaw/config.toml` ou `~/.picoclaw/config.ini`)
+
+PicoClaw suporta múltiplos formatos via [spf13/viper](https://github.com/spf13/viper). Escolha qualquer um:
+- `config.json` - Formato JSON (padrão)
+- `config.yaml` ou `config.yml` - Formato YAML
+- `config.toml` - Formato TOML
+- `config.ini` - Formato INI
 
 ```json
 {

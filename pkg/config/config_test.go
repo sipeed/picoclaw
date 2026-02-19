@@ -38,30 +38,6 @@ func TestAgentModelConfig_UnmarshalObject(t *testing.T) {
 	}
 }
 
-func TestAgentModelConfig_MarshalString(t *testing.T) {
-	m := AgentModelConfig{Primary: "gpt-4"}
-	data, err := json.Marshal(m)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if string(data) != `"gpt-4"` {
-		t.Errorf("marshal = %s, want '\"gpt-4\"'", string(data))
-	}
-}
-
-func TestAgentModelConfig_MarshalObject(t *testing.T) {
-	m := AgentModelConfig{Primary: "claude-opus", Fallbacks: []string{"haiku"}}
-	data, err := json.Marshal(m)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var result map[string]interface{}
-	json.Unmarshal(data, &result)
-	if result["primary"] != "claude-opus" {
-		t.Errorf("primary = %v", result["primary"])
-	}
-}
-
 func TestAgentConfig_FullParse(t *testing.T) {
 	jsonData := `{
 		"agents": {

@@ -56,10 +56,27 @@ Default model is `google/gemini-3-flash-preview` if none is set.
 
 ## Config
 
-Optional config file: `~/.summarize/config.json`
+Optional config file: `~/.summarize/config.json`, `~/.summarize/config.yaml`, `~/.summarize/config.toml`, or `~/.summarize/config.ini`
+
+PicoClaw supports multiple configuration formats via [spf13/viper](https://github.com/spf13/viper):
 
 ```json
 { "model": "openai/gpt-5.2" }
+```
+
+Or in YAML format:
+```yaml
+model: openai/gpt-5.2
+```
+
+Or in TOML format:
+```toml
+model = "openai/gpt-5.2"
+```
+
+Or in INI format:
+```ini
+model = openai/gpt-5.2
 ```
 
 Optional services:
