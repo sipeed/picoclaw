@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.PicoClaw" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.PicoClaw" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF050510</item>
+    </style>
 </resources>

@@ -1,17 +1,15 @@
-// TTS settings are currently used only within the chat feature, so this screen
-// is placed under feature/chat. If TTS settings become shared across multiple
-// features in the future, consider extracting them into a dedicated feature/settings module.
 package io.picoclaw.android.feature.chat.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -21,10 +19,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,9 +35,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import io.picoclaw.android.core.domain.model.TtsEngineInfo
 import io.picoclaw.android.core.domain.model.TtsVoiceInfo
+import io.picoclaw.android.core.ui.theme.DeepBlack
+import io.picoclaw.android.core.ui.theme.GlassBorder
+import io.picoclaw.android.core.ui.theme.GlassWhite
+import io.picoclaw.android.core.ui.theme.GradientCyan
+import io.picoclaw.android.core.ui.theme.GradientPurple
+import io.picoclaw.android.core.ui.theme.NeonCyan
+import io.picoclaw.android.core.ui.theme.TextPrimary
+import io.picoclaw.android.core.ui.theme.TextSecondary
+import com.composables.icons.lucide.R as LucideR
 import io.picoclaw.android.feature.chat.SettingsViewModel
 import org.koin.androidx.compose.koinViewModel
 
@@ -48,58 +63,102 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DeepBlack)
+            .drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            GradientCyan.copy(alpha = 0.07f),
+                            Color.Transparent
+                        ),
+                        center = Offset(size.width * 0.15f, size.height * 0.1f),
+                        radius = size.width * 0.8f
+                    )
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            GradientPurple.copy(alpha = 0.07f),
+                            Color.Transparent
+                        ),
+                        center = Offset(size.width * 0.85f, size.height * 0.9f),
+                        radius = size.width * 0.7f
+                    )
+                )
+            }
+    ) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = { Text("Settings") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                painter = painterResource(LucideR.drawable.lucide_ic_arrow_left),
+                                contentDescription = "Back",
+                                tint = TextSecondary
+                            )
+                        }
                     }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            Text("Text-to-Speech", style = MaterialTheme.typography.titleMedium)
-
-            EngineSelector(
-                selectedEngine = uiState.ttsConfig.enginePackageName,
-                engines = uiState.availableEngines,
-                onEngineSelected = viewModel::onEngineSelected
-            )
-
-            VoiceSelector(
-                selectedVoiceName = uiState.ttsConfig.voiceName,
-                voices = uiState.availableVoices,
-                onVoiceSelected = viewModel::onVoiceSelected
-            )
-
-            SliderSetting(
-                label = "Speed",
-                value = uiState.ttsConfig.speechRate,
-                valueRange = 0.5f..2.0f,
-                onValueChangeFinished = viewModel::onSpeechRateChanged
-            )
-
-            SliderSetting(
-                label = "Pitch",
-                value = uiState.ttsConfig.pitch,
-                valueRange = 0.5f..2.0f,
-                onValueChangeFinished = viewModel::onPitchChanged
-            )
-
-            Button(
-                onClick = viewModel::onTestSpeak,
-                enabled = !uiState.isTesting
+                )
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                Text(if (uiState.isTesting) "Speaking..." else "Test Voice")
+                Text(
+                    "Text-to-Speech",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = NeonCyan
+                )
+
+                EngineSelector(
+                    selectedEngine = uiState.ttsConfig.enginePackageName,
+                    engines = uiState.availableEngines,
+                    onEngineSelected = viewModel::onEngineSelected
+                )
+
+                VoiceSelector(
+                    selectedVoiceName = uiState.ttsConfig.voiceName,
+                    voices = uiState.availableVoices,
+                    onVoiceSelected = viewModel::onVoiceSelected
+                )
+
+                SliderSetting(
+                    label = "Speed",
+                    value = uiState.ttsConfig.speechRate,
+                    valueRange = 0.5f..2.0f,
+                    onValueChangeFinished = viewModel::onSpeechRateChanged
+                )
+
+                SliderSetting(
+                    label = "Pitch",
+                    value = uiState.ttsConfig.pitch,
+                    valueRange = 0.5f..2.0f,
+                    onValueChangeFinished = viewModel::onPitchChanged
+                )
+
+                Button(
+                    onClick = viewModel::onTestSpeak,
+                    enabled = !uiState.isTesting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NeonCyan,
+                        contentColor = DeepBlack
+                    )
+                ) {
+                    Text(if (uiState.isTesting) "Speaking..." else "Test Voice")
+                }
             }
         }
     }
@@ -127,8 +186,16 @@ private fun EngineSelector(
             value = displayText,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Engine") },
+            label = { Text("Engine", color = TextSecondary) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = NeonCyan.copy(alpha = 0.5f),
+                unfocusedBorderColor = GlassBorder,
+                focusedContainerColor = GlassWhite,
+                unfocusedContainerColor = Color.Transparent,
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary
+            ),
             modifier = Modifier
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth()
@@ -179,8 +246,16 @@ private fun VoiceSelector(
             value = displayText,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Voice") },
+            label = { Text("Voice", color = TextSecondary) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = NeonCyan.copy(alpha = 0.5f),
+                unfocusedBorderColor = GlassBorder,
+                focusedContainerColor = GlassWhite,
+                unfocusedContainerColor = Color.Transparent,
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary
+            ),
             modifier = Modifier
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth()
@@ -224,11 +299,11 @@ private fun SliderSetting(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
             Text(
                 "%.1f".format(localValue),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                color = TextSecondary
             )
         }
         Slider(
@@ -236,7 +311,12 @@ private fun SliderSetting(
             onValueChange = { localValue = it },
             onValueChangeFinished = { onValueChangeFinished(localValue) },
             valueRange = valueRange,
-            steps = 14
+            steps = 14,
+            colors = SliderDefaults.colors(
+                thumbColor = NeonCyan,
+                activeTrackColor = NeonCyan,
+                inactiveTrackColor = GlassWhite
+            )
         )
     }
 }

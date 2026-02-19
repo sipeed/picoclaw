@@ -22,12 +22,12 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-private val ListeningColor = Color(0xFF4A9EFF)
+private val ListeningColor = Color(0xFF00D4FF)
 private val SendingColor = Color(0xFFFF8C42)
 private val ThinkingColor = Color(0xFFA855F7)
 private val SpeakingColor = Color(0xFF22C55E)
 private val ErrorColor = Color(0xFFEF4444)
-private val IdleColor = Color(0xFF6B7280)
+private val IdleColor = Color(0xFF4A5568)
 
 @Composable
 fun VoiceOrb(

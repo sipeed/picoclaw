@@ -16,6 +16,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.picoclaw.android.core.ui.theme.NeonCyan
+import io.picoclaw.android.core.ui.theme.TextSecondary
 
 @Composable
 fun StatusIndicator(
@@ -36,13 +38,13 @@ fun StatusIndicator(
             CircularProgressIndicator(
                 modifier = Modifier.size(14.dp),
                 strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = NeonCyan
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = label ?: "",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = TextSecondary
             )
         }
     }

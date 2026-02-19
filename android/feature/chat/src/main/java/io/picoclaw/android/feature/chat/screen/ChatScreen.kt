@@ -7,19 +7,19 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,11 +29,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.core.content.FileProvider
 import io.picoclaw.android.core.domain.model.ImageAttachment
+import io.picoclaw.android.core.ui.theme.DeepBlack
+import io.picoclaw.android.core.ui.theme.GradientCyan
+import io.picoclaw.android.core.ui.theme.GradientPink
+import io.picoclaw.android.core.ui.theme.GradientPurple
+import io.picoclaw.android.core.ui.theme.TextSecondary
 import io.picoclaw.android.feature.chat.ChatEvent
 import io.picoclaw.android.feature.chat.ChatViewModel
+import com.composables.icons.lucide.R as LucideR
 import io.picoclaw.android.feature.chat.component.ConnectionBanner
 import io.picoclaw.android.feature.chat.component.ImagePreviewRow
 import io.picoclaw.android.feature.chat.component.MessageInput
@@ -96,7 +107,6 @@ fun ChatScreen(
         }
     }
 
-    // RECORD_AUDIO permission
     var pendingVoiceStart by remember { mutableStateOf(false) }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
@@ -119,7 +129,6 @@ fun ChatScreen(
         }
     }
 
-    // Back handler for voice mode
     BackHandler(enabled = uiState.voiceModeState.isActive) {
         viewModel.onEvent(ChatEvent.OnVoiceModeStop)
     }
@@ -152,14 +161,58 @@ fun ChatScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DeepBlack)
+            .drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            GradientCyan.copy(alpha = 0.07f),
+                            Color.Transparent
+                        ),
+                        center = Offset(size.width * 0.15f, size.height * 0.1f),
+                        radius = size.width * 0.8f
+                    )
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            GradientPurple.copy(alpha = 0.07f),
+                            Color.Transparent
+                        ),
+                        center = Offset(size.width * 0.85f, size.height * 0.9f),
+                        radius = size.width * 0.7f
+                    )
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            GradientPink.copy(alpha = 0.03f),
+                            Color.Transparent
+                        ),
+                        center = Offset(size.width * 0.5f, size.height * 0.5f),
+                        radius = size.width * 0.5f
+                    )
+                )
+            }
+    ) {
         Scaffold(
+            containerColor = Color.Transparent,
             topBar = {
                 TopAppBar(
                     title = { Text("PicoClaw") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent
+                    ),
                     actions = {
                         IconButton(onClick = onNavigateToSettings) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                            Icon(
+                                painter = painterResource(LucideR.drawable.lucide_ic_settings),
+                                contentDescription = "Settings",
+                                tint = TextSecondary
+                            )
                         }
                     }
                 )

@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -26,9 +24,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.picoclaw.android.core.domain.model.VoicePhase
+import io.picoclaw.android.core.ui.theme.DeepBlack
+import io.picoclaw.android.core.ui.theme.GradientCyan
+import io.picoclaw.android.core.ui.theme.GradientPurple
+import io.picoclaw.android.core.ui.theme.TextPrimary
+import io.picoclaw.android.core.ui.theme.TextSecondary
+import com.composables.icons.lucide.R as LucideR
 
 @Composable
 fun VoiceModeOverlay(
@@ -45,9 +54,30 @@ fun VoiceModeOverlay(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
+                .background(DeepBlack)
+                .drawBehind {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                GradientCyan.copy(alpha = 0.1f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.3f, size.height * 0.3f),
+                            radius = size.width * 0.6f
+                        )
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                GradientPurple.copy(alpha = 0.1f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.7f, size.height * 0.7f),
+                            radius = size.width * 0.5f
+                        )
+                    )
+                }
         ) {
-            // Close button
             IconButton(
                 onClick = onClose,
                 modifier = Modifier
@@ -55,13 +85,13 @@ fun VoiceModeOverlay(
                     .padding(16.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "閉じる",
-                    modifier = Modifier.size(28.dp)
+                    painter = painterResource(LucideR.drawable.lucide_ic_x),
+                    contentDescription = "Close",
+                    modifier = Modifier.size(28.dp),
+                    tint = TextSecondary
                 )
             }
 
-            // Center content
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -87,38 +117,34 @@ fun VoiceModeOverlay(
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // Phase label
                 Text(
                     text = state.statusText.takeIf { state.phase == VoicePhase.THINKING }
                         ?: phaseLabel(state.phase),
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    color = TextSecondary
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Recognized text
                 if (state.recognizedText.isNotEmpty()) {
                     Text(
                         text = state.recognizedText,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = TextPrimary,
                         textAlign = TextAlign.Center
                     )
                 }
 
-                // Response text
                 if (state.responseText.isNotEmpty() && state.phase == VoicePhase.SPEAKING) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = state.responseText,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                        color = TextSecondary,
                         textAlign = TextAlign.Center
                     )
                 }
 
-                // Error message
                 if (state.errorMessage != null) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
@@ -135,9 +161,9 @@ fun VoiceModeOverlay(
 
 private fun phaseLabel(phase: VoicePhase): String = when (phase) {
     VoicePhase.IDLE -> ""
-    VoicePhase.LISTENING -> "聞き取り中..."
-    VoicePhase.SENDING -> "送信中..."
-    VoicePhase.THINKING -> "考え中..."
-    VoicePhase.SPEAKING -> "話しています..."
-    VoicePhase.ERROR -> "エラー"
+    VoicePhase.LISTENING -> "Listening..."
+    VoicePhase.SENDING -> "Sending..."
+    VoicePhase.THINKING -> "Thinking..."
+    VoicePhase.SPEAKING -> "Speaking..."
+    VoicePhase.ERROR -> "Error"
 }
