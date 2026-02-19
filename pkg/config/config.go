@@ -315,10 +315,20 @@ type ExecConfig struct {
 	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 }
 
+type VisionToolConfig struct {
+	Enabled   bool   `json:"enabled" env:"PICOCLAW_TOOLS_VISION_ENABLED"`
+	ApiKey    string `json:"api_key" env:"PICOCLAW_TOOLS_VISION_API_KEY"`
+	ApiURL    string `json:"api_url" env:"PICOCLAW_TOOLS_VISION_API_URL"`
+	Model     string `json:"model" env:"PICOCLAW_TOOLS_VISION_MODEL"`
+	Workspace string `json:"workspace" env:"PICOCLAW_TOOLS_VISION_WORKSPACE"`
+	Restrict  bool   `json:"restrict" env:"PICOCLAW_TOOLS_VISION_RESTRICT"`
+}
+
 type ToolsConfig struct {
-	Web  WebToolsConfig  `json:"web"`
-	Cron CronToolsConfig `json:"cron"`
-	Exec ExecConfig      `json:"exec"`
+	Web    WebToolsConfig   `json:"web"`
+	Cron   CronToolsConfig  `json:"cron"`
+	Exec   ExecConfig       `json:"exec"`
+	Vision VisionToolConfig `json:"vision"`
 }
 
 func DefaultConfig() *Config {
@@ -438,6 +448,13 @@ func DefaultConfig() *Config {
 			},
 			Exec: ExecConfig{
 				EnableDenyPatterns: true,
+			},
+			Vision: VisionToolConfig{
+				Enabled:   false,
+				ApiURL:    "",
+				Model:     "gpt-4o-mini",
+				Restrict:  true,
+				Workspace: "",
 			},
 		},
 		Heartbeat: HeartbeatConfig{
