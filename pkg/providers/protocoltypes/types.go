@@ -9,8 +9,9 @@ type ToolCall struct {
 }
 
 type FunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	Name             string `json:"name"`
+	Arguments        string `json:"arguments"`
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 type LLMResponse struct {

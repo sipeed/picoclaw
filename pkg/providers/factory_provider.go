@@ -9,13 +9,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
 func createClaudeAuthProvider() (LLMProvider, error) {
-	cred, err := auth.GetCredential("anthropic")
+	cred, err := getCredential("anthropic")
 	if err != nil {
 		return nil, fmt.Errorf("loading auth credentials: %w", err)
 	}
@@ -27,7 +26,7 @@ func createClaudeAuthProvider() (LLMProvider, error) {
 
 // createCodexAuthProvider creates a Codex provider using OAuth credentials from auth store.
 func createCodexAuthProvider() (LLMProvider, error) {
-	cred, err := auth.GetCredential("openai")
+	cred, err := getCredential("openai")
 	if err != nil {
 		return nil, fmt.Errorf("loading auth credentials: %w", err)
 	}
