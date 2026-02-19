@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
+	"github.com/sipeed/picoclaw/pkg/providers/toolcall"
 )
 
 type ToolCall = protocoltypes.ToolCall
@@ -152,34 +153,64 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	}
 
 	choice := apiResponse.Choices[0]
-	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
-	for _, tc := range choice.Message.ToolCalls {
-		arguments := make(map[string]interface{})
-		name := ""
 
-		if tc.Function != nil {
-			name = tc.Function.Name
-			if tc.Function.Arguments != "" {
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
-					log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
-					arguments["raw"] = tc.Function.Arguments
-				}
-			}
-		}
+	// Parse structured tool calls from the standard tool_calls array
+	toolCalls := toolcall.ParseStructuredToolCalls(choice.Message.ToolCalls)
 
-		toolCalls = append(toolCalls, ToolCall{
-			ID:        tc.ID,
-			Name:      name,
-			Arguments: arguments,
-		})
+	// Extract any additional tool calls from the content text (tool calls in text content)
+	content := choice.Message.Content
+	textToolCalls := toolcall.ExtractToolCallsFromText(content)
+
+	toolCalls = mergeToolCalls(toolCalls, textToolCalls)
+
+	if len(textToolCalls) > 0 {
+		content = toolcall.StripToolCallsFromText(content)
 	}
 
+	// Determine finish reason based on tool calls
+	finishReason := determineFinishReason(choice.FinishReason, len(toolCalls))
+
 	return &LLMResponse{
-		Content:      choice.Message.Content,
+		Content:      strings.TrimSpace(content),
 		ToolCalls:    toolCalls,
-		FinishReason: choice.FinishReason,
+		FinishReason: finishReason,
 		Usage:        apiResponse.Usage,
 	}, nil
+}
+
+// mergeToolCalls merges embedded tool calls with structured tool calls.
+func mergeToolCalls(structured []ToolCall, embedded []ToolCall) []ToolCall {
+	if len(embedded) == 0 {
+		return structured
+	}
+
+	existingIDs := make(map[string]bool, len(structured))
+	for _, tc := range structured {
+		existingIDs[tc.ID] = true
+	}
+
+	// Append embedded tool calls that don't already exist
+	for _, etc := range embedded {
+		if !existingIDs[etc.ID] {
+			structured = append(structured, etc)
+		}
+	}
+
+	return structured
+}
+
+// determineFinishReason determines the appropriate finish reason based on the API response
+// and whether tool calls are present.
+func determineFinishReason(apiFinishReason string, toolCallCount int) string {
+	if toolCallCount > 0 && apiFinishReason == "stop" {
+		return "tool_calls"
+	}
+
+	if apiFinishReason != "" {
+		return apiFinishReason
+	}
+
+	return "stop"
 }
 
 func normalizeModel(model, apiBase string) string {
