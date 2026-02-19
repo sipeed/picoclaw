@@ -63,7 +63,7 @@ func NewProviderWithTokenSource(token string, tokenSource func() (string, error)
 func NewProviderWithTokenSourceAndBaseURL(token string, tokenSource func() (string, error), apiBase string) *Provider {
 	p := NewProviderWithBaseURL(token, apiBase)
 	p.tokenSource = tokenSource
-	p.isOAuth = true
+	p.isOAuth = strings.HasPrefix(token, "sk-ant-oat01-")
 	return p
 }
 
