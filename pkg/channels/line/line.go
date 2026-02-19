@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -176,6 +177,9 @@ func (c *LINEChannel) processEvent(event webhook.EventInterface) {
 	var mediaPaths []string
 	var messageID string
 	var isMentioned bool
+	if f := reflect.Indirect(reflect.ValueOf(msgEvent.Message)).FieldByName("Id"); f.IsValid() {
+		messageID = f.String()
+	}
 
 	// Helper to register a local file with the media store
 	storeMedia := func(localPath, filename, scope string) string {
@@ -193,7 +197,6 @@ func (c *LINEChannel) processEvent(event webhook.EventInterface) {
 
 	switch msg := msgEvent.Message.(type) {
 	case webhook.TextMessageContent:
-		messageID = msg.Id
 		content = msg.Text
 		isMentioned = c.isBotMentioned(msg)
 		if msg.QuoteToken != "" {
@@ -203,37 +206,35 @@ func (c *LINEChannel) processEvent(event webhook.EventInterface) {
 			content = c.stripBotMention(content, msg)
 		}
 	case webhook.ImageMessageContent:
-		messageID = msg.Id
-		localPath := c.downloadContent(msg.Id, "image.jpg")
+		localPath := c.downloadContent(messageID, "image.jpg")
 		if localPath != "" {
 			scope := channels.BuildMediaScope("line", chatID, msg.Id)
 			mediaPaths = append(mediaPaths, storeMedia(localPath, "image.jpg", scope))
 			content = "[image]"
 		}
 	case webhook.AudioMessageContent:
-		messageID = msg.Id
-		localPath := c.downloadContent(msg.Id, "audio.m4a")
+		localPath := c.downloadContent(messageID, "audio.m4a")
 		if localPath != "" {
 			scope := channels.BuildMediaScope("line", chatID, msg.Id)
 			mediaPaths = append(mediaPaths, storeMedia(localPath, "audio.m4a", scope))
 			content = "[audio]"
 		}
 	case webhook.VideoMessageContent:
-		messageID = msg.Id
-		localPath := c.downloadContent(msg.Id, "video.mp4")
+		localPath := c.downloadContent(messageID, "video.mp4")
 		if localPath != "" {
 			scope := channels.BuildMediaScope("line", chatID, msg.Id)
 			mediaPaths = append(mediaPaths, storeMedia(localPath, "video.mp4", scope))
 			content = "[video]"
 		}
 	case webhook.FileMessageContent:
-		messageID = msg.Id
 		content = "[file]"
 	case webhook.StickerMessageContent:
-		messageID = msg.Id
 		content = "[sticker]"
 	default:
-		content = fmt.Sprintf("[%s]", msgEvent.Message.GetType())
+		logger.WarnCF("line", "Ignoring unsupported message type", map[string]interface{}{
+			"type": msgEvent.Message.GetType(),
+		})
+		return
 	}
 
 	if strings.TrimSpace(content) == "" {
