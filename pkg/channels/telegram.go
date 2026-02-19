@@ -771,6 +771,8 @@ func displayWidth(s string) int {
 			continue
 		case unicode.Is(unicode.Mn, r):
 			continue
+		case isEmojiRune(r):
+			w += 3
 		case unicode.In(r,
 			unicode.Han,
 			unicode.Hiragana,
@@ -785,6 +787,13 @@ func displayWidth(s string) int {
 		}
 	}
 	return w
+}
+
+func isEmojiRune(r rune) bool {
+	// Common emoji blocks + Dingbats/Stars used in rating tables.
+	return (r >= 0x1F300 && r <= 0x1FAFF) || // Misc emoji/pictographs/symbols
+		(r >= 0x2600 && r <= 0x27BF) || // Misc symbols + dingbats
+		r == 0x2B50 // WHITE MEDIUM STAR (⭐)
 }
 
 func wrapByDisplayWidth(s string, maxWidth int) []string {

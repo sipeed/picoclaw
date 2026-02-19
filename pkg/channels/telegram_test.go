@@ -79,3 +79,10 @@ func TestMarkdownToTelegramHTML_TableWrapsLongCell(t *testing.T) {
 		t.Fatalf("expected wrapped long cell content, got: %q", got)
 	}
 }
+
+func TestDisplayWidth_EmojiIsThree(t *testing.T) {
+	got := displayWidth("⭐⭐⭐⭐⭐")
+	if got != 15 {
+		t.Fatalf("displayWidth(stars) = %d, want 15", got)
+	}
+}
