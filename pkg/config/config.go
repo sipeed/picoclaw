@@ -45,7 +45,6 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 
 type Config struct {
 	Agents    AgentsConfig               `json:"agents"`
-	Router    RouterConfig               `json:"router"`
 	Channels  ChannelsConfig             `json:"channels"`
 	Providers map[string]*ProviderConfig `json:"providers"`
 	Gateway   GatewayConfig              `json:"gateway"`
@@ -53,12 +52,6 @@ type Config struct {
 	Heartbeat HeartbeatConfig            `json:"heartbeat"`
 	Devices   DevicesConfig              `json:"devices"`
 	mu        sync.RWMutex
-}
-
-type RouterConfig struct {
-	Enabled    bool   `json:"enabled"`
-	HeavyModel string `json:"heavy_model"`
-	LightModel string `json:"light_model"`
 }
 
 type AgentsConfig struct {

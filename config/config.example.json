@@ -9,11 +9,6 @@
       "max_tool_iterations": 20
     }
   },
-  "router": {
-    "enabled": false,
-    "heavy_model": "glm-4.7",
-    "light_model": "glm-4.7-flash"
-  },
   "channels": {
     "telegram": {
       "enabled": false,
