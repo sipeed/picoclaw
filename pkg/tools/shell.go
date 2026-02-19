@@ -80,7 +80,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		execConfig := config.Tools.Exec
 		enableDenyPatterns = execConfig.EnableDenyPatterns
 		if enableDenyPatterns {
-			denyPatterns = append(denyPatterns, defaultDenyPatterns...)  
+			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			if len(execConfig.CustomDenyPatterns) > 0 {
 				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
 				for _, pattern := range execConfig.CustomDenyPatterns {
