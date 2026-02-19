@@ -28,7 +28,8 @@ type AgentInstance struct {
 	Tools          *tools.ToolRegistry
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
+	Candidates      []providers.FallbackCandidate
+	ReasoningEffort string
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -84,20 +85,21 @@ func NewAgentInstance(
 	candidates := providers.ResolveCandidates(modelCfg, defaults.Provider)
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		ContextWindow:  defaults.MaxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
+		ID:              agentID,
+		Name:            agentName,
+		Model:           model,
+		Fallbacks:       fallbacks,
+		Workspace:       workspace,
+		MaxIterations:   maxIter,
+		ContextWindow:   defaults.MaxTokens,
+		Provider:        provider,
+		Sessions:        sessionsManager,
+		ContextBuilder:  contextBuilder,
+		Tools:           toolsRegistry,
+		Subagents:       subagents,
+		SkillsFilter:    skillsFilter,
+		Candidates:      candidates,
+		ReasoningEffort: defaults.ReasoningEffort,
 	}
 }
 
