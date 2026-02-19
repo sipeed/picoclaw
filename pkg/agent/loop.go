@@ -106,6 +106,11 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		agent.Tools.Register(tools.NewI2CTool())
 		agent.Tools.Register(tools.NewSPITool())
 
+		// Vision tool
+		if cfg.Tools.Vision.Enabled {
+			agent.Tools.Register(tools.NewAnalyzeImageTool(cfg.Tools.Vision))
+		}
+
 		// Message tool
 		messageTool := tools.NewMessageTool()
 		messageTool.SetSendCallback(func(channel, chatID, content string) error {
