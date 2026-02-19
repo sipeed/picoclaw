@@ -66,6 +66,22 @@ func TestExtractToolCallsFromText(t *testing.T) {
 			},
 		},
 		{
+			name: "Multiple JSON blocks",
+			text: `Some config: {"debug": true}. Then the tool call: {"tool_calls":[{"id":"c1","type":"function","function":{"name":"search","arguments":"{}"}}]}.`,
+			want: []ToolCall{
+				{
+					ID:   "c1",
+					Type: "function",
+					Name: "search",
+					Arguments: map[string]interface{}{},
+					Function: &FunctionCall{
+						Name:      "search",
+						Arguments: "{}",
+					},
+				},
+			},
+		},
+		{
 			name: "No tool calls",
 			text: "Just some normal text here.",
 			want: nil,
