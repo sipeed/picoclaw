@@ -45,6 +45,10 @@ func (c *thinkingCancel) Cancel() {
 	}
 }
 
+const telegramMaxMessageChars = 3900
+
+var thinkBlockPattern = regexp.MustCompile(`(?is)<think>.*?</think>`)
+
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
 	var opts []telego.BotOption
 	telegramCfg := cfg.Channels.Telegram
@@ -157,33 +161,60 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		c.stopThinking.Delete(msg.ChatID)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
+	cleanContent := sanitizeTelegramOutgoingContent(msg.Content)
+	chunks := utils.SplitMessage(cleanContent, telegramMaxMessageChars)
+	if len(chunks) == 0 {
+		chunks = []string{cleanContent}
+	}
 
 	// Try to edit placeholder
+	firstChunkSent := false
 	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
 		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
+		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), markdownToTelegramHTML(chunks[0]))
 		editMsg.ParseMode = telego.ModeHTML
 
 		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
-			return nil
+			firstChunkSent = true
 		}
 		// Fallback to new message if edit fails
 	}
 
-	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
-	tgMsg.ParseMode = telego.ModeHTML
+	sendChunk := func(text string) error {
+		tgMsg := tu.Message(tu.ID(chatID), markdownToTelegramHTML(text))
+		tgMsg.ParseMode = telego.ModeHTML
+		if _, sendErr := c.bot.SendMessage(ctx, tgMsg); sendErr != nil {
+			logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]interface{}{
+				"error": sendErr.Error(),
+			})
+			fallbackMsg := tu.Message(tu.ID(chatID), text)
+			fallbackMsg.ParseMode = ""
+			_, sendErr = c.bot.SendMessage(ctx, fallbackMsg)
+			return sendErr
+		}
+		return nil
+	}
 
-	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]interface{}{
-			"error": err.Error(),
-		})
-		tgMsg.ParseMode = ""
-		_, err = c.bot.SendMessage(ctx, tgMsg)
-		return err
+	startIdx := 0
+	if firstChunkSent {
+		startIdx = 1
+	}
+	for i := startIdx; i < len(chunks); i++ {
+		if err = sendChunk(chunks[i]); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func sanitizeTelegramOutgoingContent(content string) string {
+	cleaned := thinkBlockPattern.ReplaceAllString(content, "")
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return "(empty response)"
+	}
+	return cleaned
 }
 
 func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Message) error {
