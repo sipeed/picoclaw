@@ -150,6 +150,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					"error": err.Error(),
 				})
 		} else {
+			// Ensure MCP connections are cleaned up on exit, only if initialization succeeded
+			defer func() {
+				if err := mcpManager.Close(); err != nil {
+					logger.ErrorCF("agent", "Failed to close MCP manager",
+						map[string]interface{}{
+							"error": err.Error(),
+						})
+				}
+			}()
+
 			// Register MCP tools for all agents
 			servers := mcpManager.GetServers()
 			toolCount := 0
@@ -179,16 +189,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					"tool_count":   toolCount,
 				})
 		}
-
-		// Ensure MCP connections are cleaned up on exit
-		defer func() {
-			if err := mcpManager.Close(); err != nil {
-				logger.ErrorCF("agent", "Failed to close MCP manager",
-					map[string]interface{}{
-						"error": err.Error(),
-					})
-			}
-		}()
 	}
 
 	for al.running.Load() {
