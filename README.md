@@ -14,7 +14,7 @@
     <a href="https://x.com/SipeedIO"><img src="https://img.shields.io/badge/X_(Twitter)-SipeedIO-black?style=flat&logo=x&logoColor=white" alt="Twitter"></a>
   </p>
 
- [中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | **English**
+ [中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | **English**
 </div>
 
 ---
@@ -283,7 +283,7 @@ Talk to your picoclaw through Telegram, Discord, DingTalk, or LINE
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -326,7 +326,7 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -678,6 +678,16 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 | `openai(To be tested)`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)     |
 | `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com) |
 | `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)           |
+
+### Provider Architecture
+
+PicoClaw routes providers by protocol family:
+
+- OpenAI-compatible protocol: OpenRouter, OpenAI-compatible gateways, Groq, Zhipu, and vLLM-style endpoints.
+- Anthropic protocol: Claude-native API behavior.
+- Codex/OAuth path: OpenAI OAuth/token authentication route.
+
+This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
 
 <details>
 <summary><b>Zhipu</b></summary>

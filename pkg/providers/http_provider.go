@@ -54,7 +54,6 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	}
 
 	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5, groq/openai/gpt-oss-120b -> openai/gpt-oss-120b, ollama/qwen2.5:14b -> qwen2.5:14b)
-	// This helps in correctly identifying the model for providers like NVIDIA NIM.
 	if idx := strings.Index(model, "/"); idx != -1 {
 		prefix := model[:idx]
 		// Don't strip if it's the required namespace for NVIDIA NIM (like moonshotai/)
@@ -334,6 +333,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 					apiBase = "https://integrate.api.nvidia.com/v1"
 				}
 			}
+		case "ollama":
+			apiKey = cfg.Providers.Ollama.APIKey
+			if apiKey == "" {
+				apiKey = "ollama"
+			}
+			apiBase = cfg.Providers.Ollama.APIBase
+			if apiBase == "" {
+				apiBase = "http://localhost:11434/v1"
+			}
 		case "github_copilot", "copilot":
 			if cfg.Providers.GitHubCopilot.APIBase != "" {
 				apiBase = cfg.Providers.GitHubCopilot.APIBase
@@ -426,15 +434,16 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 			if apiBase == "" {
 				apiBase = "https://integrate.api.nvidia.com/v1"
 			}
-		case (strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/")) && cfg.Providers.Ollama.APIKey != "":
-			fmt.Println("Ollama provider selected based on model name prefix")
+		case strings.Contains(lowerModel, "ollama") || strings.HasPrefix(model, "ollama/"):
 			apiKey = cfg.Providers.Ollama.APIKey
+			if apiKey == "" {
+				apiKey = "ollama"
+			}
 			apiBase = cfg.Providers.Ollama.APIBase
 			proxy = cfg.Providers.Ollama.Proxy
 			if apiBase == "" {
 				apiBase = "http://localhost:11434/v1"
 			}
-			fmt.Println("Ollama apiBase:", apiBase)
 		case cfg.Providers.VLLM.APIBase != "":
 			apiKey = cfg.Providers.VLLM.APIKey
 			apiBase = cfg.Providers.VLLM.APIBase
