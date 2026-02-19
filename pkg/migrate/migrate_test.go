@@ -275,8 +275,11 @@ func TestConvertConfig(t *testing.T) {
 		if cfg.Agents.Defaults.MaxTokens != 4096 {
 			t.Errorf("MaxTokens = %d, want %d", cfg.Agents.Defaults.MaxTokens, 4096)
 		}
-		if cfg.Agents.Defaults.Temperature != 0.5 {
-			t.Errorf("Temperature = %f, want %f", cfg.Agents.Defaults.Temperature, 0.5)
+		if cfg.Agents.Defaults.Temperature == nil {
+			t.Fatalf("Temperature is nil, want %f", 0.5)
+		}
+		if *cfg.Agents.Defaults.Temperature != 0.5 {
+			t.Errorf("Temperature = %f, want %f", *cfg.Agents.Defaults.Temperature, 0.5)
 		}
 		if cfg.Agents.Defaults.Workspace != "~/.picoclaw/workspace" {
 			t.Errorf("Workspace = %q, want %q", cfg.Agents.Defaults.Workspace, "~/.picoclaw/workspace")
@@ -297,6 +300,24 @@ func TestConvertConfig(t *testing.T) {
 			t.Errorf("default model should be glm-4.7, got %q", cfg.Agents.Defaults.Model)
 		}
 	})
+}
+
+func TestSupportedProvidersCompatibility(t *testing.T) {
+	expected := []string{
+		"anthropic",
+		"openai",
+		"openrouter",
+		"groq",
+		"zhipu",
+		"vllm",
+		"gemini",
+	}
+
+	for _, provider := range expected {
+		if !supportedProviders[provider] {
+			t.Fatalf("supportedProviders missing expected key %q", provider)
+		}
+	}
 }
 
 func TestMergeConfig(t *testing.T) {

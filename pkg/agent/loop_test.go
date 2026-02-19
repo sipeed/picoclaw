@@ -14,20 +14,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
-// mockProvider is a simple mock LLM provider for testing
-type mockProvider struct{}
-
-func (m *mockProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]interface{}) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{
-		Content:   "Mock response",
-		ToolCalls: []providers.ToolCall{},
-	}, nil
-}
-
-func (m *mockProvider) GetDefaultModel() string {
-	return "mock-model"
-}
-
 func TestRecordLastChannel(t *testing.T) {
 	// Create temp workspace
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
@@ -594,12 +580,15 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 		{Role: "assistant", Content: "Old response 2"},
 		{Role: "user", Content: "Trigger message"},
 	}
-	al.sessions.SetHistory(sessionKey, history)
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	defaultAgent.Sessions.SetHistory(sessionKey, history)
 
 	// Call ProcessDirectWithChannel
 	// Note: ProcessDirectWithChannel calls processMessage which will execute runLLMIteration
 	response, err := al.ProcessDirectWithChannel(context.Background(), "Trigger message", sessionKey, "test", "test-chat")
-
 	if err != nil {
 		t.Fatalf("Expected success after retry, got error: %v", err)
 	}
@@ -614,7 +603,7 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	}
 
 	// Check final history length
-	finalHistory := al.sessions.GetHistory(sessionKey)
+	finalHistory := defaultAgent.Sessions.GetHistory(sessionKey)
 	// We verify that the history has been modified (compressed)
 	// Original length: 6
 	// Expected behavior: compression drops ~50% of history (mid slice)
