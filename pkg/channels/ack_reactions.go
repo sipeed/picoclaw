@@ -69,6 +69,10 @@ func ShouldAckReaction(params AckReactionParams) bool {
 
 	// Group mentions only
 	if scope == AckReactionScopeGroupMentions {
+		// Not a group message, don't ack
+		if !params.IsGroup {
+			return false
+		}
 		// Not a mentionable group, don't ack
 		if !params.IsMentionableGroup {
 			return false
@@ -90,8 +94,6 @@ func ShouldAckReaction(params AckReactionParams) bool {
 
 // AckReactionManager manages the lifecycle of acknowledgment reactions
 type AckReactionManager struct {
-	// RemoveAfterReply indicates whether to remove the ack after reply
-	RemoveAfterReply bool
 	// ReactionValue is the current reaction value (emoji)
 	ReactionValue string
 	// Added indicates if the ack reaction has been added
@@ -99,20 +101,14 @@ type AckReactionManager struct {
 }
 
 // NewAckReactionManager creates a new ack reaction manager
-func NewAckReactionManager(removeAfterReply bool, reaction string) *AckReactionManager {
+func NewAckReactionManager(reaction string) *AckReactionManager {
 	return &AckReactionManager{
-		RemoveAfterReply: removeAfterReply,
-		ReactionValue:    reaction,
-		Added:            false,
+		ReactionValue: reaction,
+		Added:         false,
 	}
 }
 
 // MarkAdded marks the ack reaction as added
 func (m *AckReactionManager) MarkAdded() {
 	m.Added = true
-}
-
-// ShouldRemoveAfterReply determines whether to remove the ack after reply
-func (m *AckReactionManager) ShouldRemoveAfterReply() bool {
-	return m.RemoveAfterReply && m.Added && m.ReactionValue != ""
 }

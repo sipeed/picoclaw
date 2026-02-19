@@ -151,14 +151,24 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		content = "[empty message]"
 	}
 
+	// Check allowlist before processing
+	if !c.IsAllowed(senderID) {
+		logger.DebugCF("feishu", "Message blocked by allowlist", map[string]interface{}{
+			"sender_id": senderID,
+		})
+		return nil
+	}
+
 	// Determine chat type: p2p = direct, group = group chat
 	chatType := stringValue(message.ChatType)
 	isGroup := chatType == "group"
 	isDirect := chatType == "p2p"
 
 	// Check if bot was mentioned
+	// Without a reliable bot ID in scope, we conservatively only
+	// treat mentions in direct (p2p) chats as relevant to the bot.
 	wasMentioned := false
-	if message.Mentions != nil && len(message.Mentions) > 0 {
+	if isDirect && message.Mentions != nil && len(message.Mentions) > 0 {
 		wasMentioned = true
 	}
 

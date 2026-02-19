@@ -130,9 +130,8 @@
     "monitor_usb": true
   },
   "messages": {
-    "ack_reaction": "OK",
-    "ack_reaction_scope": "group-mentions",
-    "remove_ack_after_reply": false
+    "ack_reaction": "",
+    "ack_reaction_scope": "group-mentions"
   },
   "gateway": {
     "host": "0.0.0.0",

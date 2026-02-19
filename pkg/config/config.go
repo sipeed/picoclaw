@@ -171,10 +171,8 @@ type DevicesConfig struct {
 type MessagesConfig struct {
 	// AckReaction is the emoji used to acknowledge inbound messages (empty to disable)
 	AckReaction string `json:"ack_reaction" env:"PICOCLAW_MESSAGES_ACK_REACTION"`
-	// AckReactionScope controls when to send ack reactions: "all", "direct", "group-all", "group-mentions", "off"
+	// AckReactionScope controls when to send ack reactions: "all", "direct", "group-all", "group-mentions", "off" (or "none" to disable)
 	AckReactionScope string `json:"ack_reaction_scope" env:"PICOCLAW_MESSAGES_ACK_REACTION_SCOPE"`
-	// RemoveAckAfterReply removes the ack reaction after reply is sent
-	RemoveAckAfterReply bool `json:"remove_ack_after_reply" env:"PICOCLAW_MESSAGES_REMOVE_ACK_AFTER_REPLY"`
 }
 
 type ProvidersConfig struct {
@@ -343,9 +341,8 @@ func DefaultConfig() *Config {
 			MonitorUSB: true,
 		},
 		Messages: MessagesConfig{
-			AckReaction:         "OK",
-			AckReactionScope:    "group-mentions",
-			RemoveAckAfterReply: false,
+			AckReaction:      "",
+			AckReactionScope: "group-mentions",
 		},
 	}
 }
