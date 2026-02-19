@@ -106,12 +106,13 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		agent.Tools.Register(tools.NewSPITool())
 
 		// Message tool
-		messageTool := tools.NewMessageTool()
-		messageTool.SetSendCallback(func(channel, chatID, content string) error {
+		messageTool := tools.NewMessageTool(agent.Workspace, agent.RestrictToWorkspace)
+		messageTool.SetSendCallback(func(channel, chatID, content string, attachments []bus.Attachment) error {
 			msgBus.PublishOutbound(bus.OutboundMessage{
-				Channel: channel,
-				ChatID:  chatID,
-				Content: content,
+				Channel:     channel,
+				ChatID:      chatID,
+				Content:     content,
+				Attachments: attachments,
 			})
 			return nil
 		})

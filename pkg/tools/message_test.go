@@ -4,17 +4,21 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/bus"
 )
 
 func TestMessageTool_Execute_Success(t *testing.T) {
-	tool := NewMessageTool()
+	tool := NewMessageTool("", false)
 	tool.SetContext("test-channel", "test-chat-id")
 
 	var sentChannel, sentChatID, sentContent string
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	var sentAttachments []bus.Attachment
+	tool.SetSendCallback(func(channel, chatID, content string, attachments []bus.Attachment) error {
 		sentChannel = channel
 		sentChatID = chatID
 		sentContent = content
+		sentAttachments = attachments
 		return nil
 	})
 
@@ -34,6 +38,9 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 	}
 	if sentContent != "Hello, world!" {
 		t.Errorf("Expected content 'Hello, world!', got '%s'", sentContent)
+	}
+	if len(sentAttachments) != 0 {
+		t.Errorf("Expected no attachments, got %d", len(sentAttachments))
 	}
 
 	// Verify ToolResult meets US-011 criteria:
@@ -59,11 +66,11 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 }
 
 func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
-	tool := NewMessageTool()
+	tool := NewMessageTool("", false)
 	tool.SetContext("default-channel", "default-chat-id")
 
 	var sentChannel, sentChatID string
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content string, attachments []bus.Attachment) error {
 		sentChannel = channel
 		sentChatID = chatID
 		return nil
@@ -95,11 +102,11 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 }
 
 func TestMessageTool_Execute_SendFailure(t *testing.T) {
-	tool := NewMessageTool()
+	tool := NewMessageTool("", false)
 	tool.SetContext("test-channel", "test-chat-id")
 
 	sendErr := errors.New("network error")
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content string, attachments []bus.Attachment) error {
 		return sendErr
 	})
 
@@ -132,7 +139,7 @@ func TestMessageTool_Execute_SendFailure(t *testing.T) {
 }
 
 func TestMessageTool_Execute_MissingContent(t *testing.T) {
-	tool := NewMessageTool()
+	tool := NewMessageTool("", false)
 	tool.SetContext("test-channel", "test-chat-id")
 
 	ctx := context.Background()
@@ -150,10 +157,10 @@ func TestMessageTool_Execute_MissingContent(t *testing.T) {
 }
 
 func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
-	tool := NewMessageTool()
+	tool := NewMessageTool("", false)
 	// No SetContext called, so defaultChannel and defaultChatID are empty
 
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(channel, chatID, content string, attachments []bus.Attachment) error {
 		return nil
 	})
 
@@ -174,7 +181,7 @@ func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 }
 
 func TestMessageTool_Execute_NotConfigured(t *testing.T) {
-	tool := NewMessageTool()
+	tool := NewMessageTool("", false)
 	tool.SetContext("test-channel", "test-chat-id")
 	// No SetSendCallback called
 
@@ -195,14 +202,14 @@ func TestMessageTool_Execute_NotConfigured(t *testing.T) {
 }
 
 func TestMessageTool_Name(t *testing.T) {
-	tool := NewMessageTool()
+	tool := NewMessageTool("", false)
 	if tool.Name() != "message" {
 		t.Errorf("Expected name 'message', got '%s'", tool.Name())
 	}
 }
 
 func TestMessageTool_Description(t *testing.T) {
-	tool := NewMessageTool()
+	tool := NewMessageTool("", false)
 	desc := tool.Description()
 	if desc == "" {
 		t.Error("Description should not be empty")
@@ -210,7 +217,7 @@ func TestMessageTool_Description(t *testing.T) {
 }
 
 func TestMessageTool_Parameters(t *testing.T) {
-	tool := NewMessageTool()
+	tool := NewMessageTool("", false)
 	params := tool.Parameters()
 
 	// Verify parameters structure
@@ -255,5 +262,82 @@ func TestMessageTool_Parameters(t *testing.T) {
 	}
 	if chatIDProp["type"] != "string" {
 		t.Error("Expected chat_id type to be 'string'")
+	}
+
+	// Check attachments property (optional)
+	attachmentsProp, ok := props["attachments"].(map[string]interface{})
+	if !ok {
+		t.Error("Expected 'attachments' property")
+	}
+	if attachmentsProp["type"] != "array" {
+		t.Error("Expected attachments type to be 'array'")
+	}
+}
+
+func TestMessageTool_Execute_WithAttachments(t *testing.T) {
+	tool := NewMessageTool("", false)
+	tool.SetContext("test-channel", "test-chat-id")
+
+	var sentChannel, sentChatID, sentContent string
+	var sentAttachments []bus.Attachment
+	tool.SetSendCallback(func(channel, chatID, content string, attachments []bus.Attachment) error {
+		sentChannel = channel
+		sentChatID = chatID
+		sentContent = content
+		sentAttachments = attachments
+		return nil
+	})
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"content": "Here's your document",
+		"attachments": []interface{}{
+			map[string]interface{}{
+				"path":     "/tmp/test.docx",
+				"filename": "test.docx",
+			},
+			map[string]interface{}{
+				"path":     "/tmp/test.pdf",
+				"filename": "test.pdf",
+			},
+		},
+	}
+
+	result := tool.Execute(ctx, args)
+
+	// Verify message was sent with correct parameters
+	if sentChannel != "test-channel" {
+		t.Errorf("Expected channel 'test-channel', got '%s'", sentChannel)
+	}
+	if sentChatID != "test-chat-id" {
+		t.Errorf("Expected chatID 'test-chat-id', got '%s'", sentChatID)
+	}
+	if sentContent != "Here's your document" {
+		t.Errorf("Expected content 'Here's your document', got '%s'", sentContent)
+	}
+
+	// Verify attachments were passed correctly
+	if len(sentAttachments) != 2 {
+		t.Fatalf("Expected 2 attachments, got %d", len(sentAttachments))
+	}
+	if sentAttachments[0].Path != "/tmp/test.docx" {
+		t.Errorf("Expected first attachment path '/tmp/test.docx', got '%s'", sentAttachments[0].Path)
+	}
+	if sentAttachments[0].Filename != "test.docx" {
+		t.Errorf("Expected first attachment filename 'test.docx', got '%s'", sentAttachments[0].Filename)
+	}
+	if sentAttachments[1].Path != "/tmp/test.pdf" {
+		t.Errorf("Expected second attachment path '/tmp/test.pdf', got '%s'", sentAttachments[1].Path)
+	}
+	if sentAttachments[1].Filename != "test.pdf" {
+		t.Errorf("Expected second attachment filename 'test.pdf', got '%s'", sentAttachments[1].Filename)
+	}
+
+	// Verify successful result
+	if !result.Silent {
+		t.Error("Expected Silent=true for successful send")
+	}
+	if result.IsError {
+		t.Error("Expected IsError=false for successful send")
 	}
 }

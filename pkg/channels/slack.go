@@ -119,6 +119,11 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
 
+	// If there are attachments, send them
+	if len(msg.Attachments) > 0 {
+		return c.sendWithAttachments(ctx, msg.ChatID, channelID, threadTS, msg.Content, msg.Attachments)
+	}
+
 	opts := []slack.MsgOption{
 		slack.MsgOptionText(msg.Content, false),
 	}
@@ -143,6 +148,53 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 	logger.DebugCF("slack", "Message sent", map[string]interface{}{
 		"channel_id": channelID,
 		"thread_ts":  threadTS,
+	})
+
+	return nil
+}
+
+func (c *SlackChannel) sendWithAttachments(ctx context.Context, chatID, channelID, threadTS, content string, attachments []bus.Attachment) error {
+	for _, attachment := range attachments {
+		uploadErr := func() error {
+			file, err := os.Open(attachment.Path)
+			if err != nil {
+				return fmt.Errorf("failed to open attachment %s: %w", attachment.Path, err)
+			}
+			defer file.Close()
+
+			params := slack.UploadFileV2Parameters{
+				Channel:         channelID,
+				Filename:        attachment.Filename,
+				Reader:          file,
+				InitialComment:  content,
+				ThreadTimestamp: threadTS,
+			}
+
+			if _, err = c.api.UploadFileV2Context(ctx, params); err != nil {
+				return fmt.Errorf("failed to upload file %s: %w", attachment.Filename, err)
+			}
+			return nil
+		}()
+		if uploadErr != nil {
+			return uploadErr
+		}
+
+		// Only use content for first attachment to avoid duplicate comments
+		content = ""
+	}
+
+	if ref, ok := c.pendingAcks.LoadAndDelete(chatID); ok {
+		msgRef := ref.(slackMessageRef)
+		c.api.AddReaction("white_check_mark", slack.ItemRef{
+			Channel:   msgRef.ChannelID,
+			Timestamp: msgRef.Timestamp,
+		})
+	}
+
+	logger.DebugCF("slack", "Message with attachments sent", map[string]interface{}{
+		"channel_id":       channelID,
+		"thread_ts":        threadTS,
+		"attachment_count": len(attachments),
 	})
 
 	return nil

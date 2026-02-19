@@ -114,6 +114,11 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		return fmt.Errorf("channel ID is empty")
 	}
 
+	// If there are attachments, send them with the message
+	if len(msg.Attachments) > 0 {
+		return c.sendWithAttachments(ctx, channelID, msg.Content, msg.Attachments)
+	}
+
 	runes := []rune(msg.Content)
 	if len(runes) == 0 {
 		return nil
@@ -122,6 +127,72 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	chunks := utils.SplitMessage(msg.Content, 2000) // Split messages into chunks, Discord length limit: 2000 chars
 
 	for _, chunk := range chunks {
+		if err := c.sendChunk(ctx, channelID, chunk); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *DiscordChannel) sendWithAttachments(ctx context.Context, channelID, content string, attachments []bus.Attachment) error {
+	// Split content to respect Discord's 2000-char limit.
+	// The first chunk is sent together with the files; remaining chunks follow as plain text.
+	chunks := utils.SplitMessage(content, 2000)
+	firstChunk := ""
+	if len(chunks) > 0 {
+		firstChunk = chunks[0]
+	}
+
+	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		files := make([]*discordgo.File, 0, len(attachments))
+		openedFiles := make([]*os.File, 0, len(attachments))
+
+		// Clean up all opened files when done
+		defer func() {
+			for _, f := range openedFiles {
+				f.Close()
+			}
+		}()
+
+		for _, attachment := range attachments {
+			file, err := os.Open(attachment.Path)
+			if err != nil {
+				done <- fmt.Errorf("failed to open attachment %s: %w", attachment.Path, err)
+				return
+			}
+			openedFiles = append(openedFiles, file)
+
+			files = append(files, &discordgo.File{
+				Name:   attachment.Filename,
+				Reader: file,
+			})
+		}
+
+		messageData := &discordgo.MessageSend{
+			Content: firstChunk,
+			Files:   files,
+		}
+
+		_, err := c.session.ChannelMessageSendComplex(channelID, messageData)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("failed to send discord message with attachments: %w", err)
+		}
+	case <-sendCtx.Done():
+		return fmt.Errorf("send message timeout: %w", sendCtx.Err())
+	}
+
+	// Send any remaining chunks as follow-up plain text messages
+	for _, chunk := range chunks[1:] {
 		if err := c.sendChunk(ctx, channelID, chunk); err != nil {
 			return err
 		}
