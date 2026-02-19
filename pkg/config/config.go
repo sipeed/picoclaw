@@ -315,6 +315,15 @@ type WebToolsConfig struct {
 	Search WebSearchConfig `json:"search"`
 }
 
+type CronToolsConfig struct {
+	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"`
+}
+
+type ExecConfig struct {
+	EnableDenyPatterns bool     `json:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
+	CustomDenyPatterns []string `json:"custom_deny_patterns,omitempty"`
+}
+
 type ToolsConfig struct {
 	Web  WebToolsConfig  `json:"web"`
 	Cron CronToolsConfig `json:"cron"`
@@ -426,6 +435,13 @@ func DefaultConfig() *Config {
 					QueryParam: "query",
 					MaxResults: 5,
 				},
+			},
+			Cron: CronToolsConfig{
+				ExecTimeoutMinutes: 5,
+			},
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
+				CustomDenyPatterns: []string{},
 			},
 		},
 		Heartbeat: HeartbeatConfig{

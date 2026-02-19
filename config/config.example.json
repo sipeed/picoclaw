@@ -120,7 +120,7 @@
     "web": {
       "search": {
         "provider": "ollama",
-        "api_key": "77b893700a1d4c8dad9a7326be9a76d6.7pl0DA9ojPa_6UCMMZ_Sk-Cn",
+        "api_key": "Your Ollama API Key",
         "endpoint": "https://ollama.com/api/web_search",
         "rest_type": "POST",
         "query_param": "query",
