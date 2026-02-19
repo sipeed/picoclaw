@@ -303,3 +303,56 @@ func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
 	// Verify it failed for the right reason
 	assert.Contains(t, result.ForLLM, "workspace is not defined", "Expected 'workspace is not defined' error")
 }
+
+func TestMkdirAllInRoot(t *testing.T) {
+	workspace := t.TempDir()
+	root, err := os.OpenRoot(workspace)
+	if err != nil {
+		t.Fatalf("failed to open root: %v", err)
+	}
+	defer root.Close()
+
+	// Test case 1: Single directory
+	err = mkdirAllInRoot(root, "dir1")
+	assert.NoError(t, err)
+	_, err = os.Stat(filepath.Join(workspace, "dir1"))
+	assert.NoError(t, err)
+
+	// Test case 2: Deeply nested directory
+	err = mkdirAllInRoot(root, "a/b/c/d")
+	assert.NoError(t, err)
+	_, err = os.Stat(filepath.Join(workspace, "a/b/c/d"))
+	assert.NoError(t, err)
+
+	// Test case 3: Already exists
+	err = mkdirAllInRoot(root, "a/b/c/d")
+	assert.NoError(t, err)
+
+	// Test case 4: File exists with same name (should fail)
+	err = os.WriteFile(filepath.Join(workspace, "file_exists"), []byte("data"), 0644)
+	assert.NoError(t, err)
+	err = mkdirAllInRoot(root, "file_exists")
+	assert.Error(t, err)
+}
+
+func TestFilesystemTool_WriteFile_Restricted_CreateDir(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewWriteFileTool(workspace, true)
+	ctx := context.Background()
+
+	testFile := "deep/nested/path/to/file.txt"
+	content := "deep content"
+	args := map[string]any{
+		"path":    testFile,
+		"content": content,
+	}
+
+	result := tool.Execute(ctx, args)
+	assert.False(t, result.IsError, "Expected success, got: %s", result.ForLLM)
+
+	// Verify file content
+	actualPath := filepath.Join(workspace, testFile)
+	data, err := os.ReadFile(actualPath)
+	assert.NoError(t, err)
+	assert.Equal(t, content, string(data))
+}

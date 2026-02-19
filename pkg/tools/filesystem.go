@@ -291,7 +291,18 @@ func mkdirAllInRoot(root *os.Root, relPath string) error {
 	}
 
 	err := root.Mkdir(relPath, 0755)
-	if err != nil && !os.IsExist(err) {
+	if err != nil {
+		if os.IsExist(err) {
+			// Check if it's a directory
+			st, statErr := root.Stat(relPath)
+			if statErr != nil {
+				return statErr
+			}
+			if !st.IsDir() {
+				return fmt.Errorf("%s: not a directory", relPath)
+			}
+			return nil
+		}
 		return err
 	}
 	return nil
