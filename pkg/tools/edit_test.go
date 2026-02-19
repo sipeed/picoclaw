@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestEditTool_EditFile_Success verifies successful file editing
@@ -151,14 +153,13 @@ func TestEditTool_EditFile_OutsideAllowedDir(t *testing.T) {
 	result := tool.Execute(ctx, args)
 
 	// Should return error result
-	if !result.IsError {
-		t.Errorf("Expected error when path is outside allowed directory")
-	}
+	assert.True(t, result.IsError, "Expected error when path is outside allowed directory")
 
 	// Should mention outside allowed directory
-	if !strings.Contains(result.ForLLM, "outside") && !strings.Contains(result.ForUser, "outside") {
-		t.Errorf("Expected 'outside allowed' message, got ForLLM: %s", result.ForLLM)
-	}
+	// Note: ErrorResult only sets ForLLM by default, so ForUser might be empty.
+	// We check ForLLM as it's the primary error channel.
+	assert.True(t, strings.Contains(result.ForLLM, "outside") || strings.Contains(result.ForLLM, "access denied") || strings.Contains(result.ForLLM, "escapes"),
+		"Expected 'outside allowed' or 'access denied' message, got ForLLM: %s", result.ForLLM)
 }
 
 // TestEditTool_EditFile_MissingPath verifies error handling for missing path

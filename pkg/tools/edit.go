@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -67,38 +68,77 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult("new_text is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.allowedDir, t.restrict)
-	if err != nil {
-		return ErrorResult(err.Error())
+	// If not restricted, perform operations directly
+	if !t.restrict {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return ErrorResult(fmt.Sprintf("file not found: %s", path))
+			}
+			return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
+		}
+
+		contentStr := string(content)
+		if !strings.Contains(contentStr, oldText) {
+			return ErrorResult("old_text not found in file. Make sure it matches exactly")
+		}
+
+		count := strings.Count(contentStr, oldText)
+		if count > 1 {
+			return ErrorResult(fmt.Sprintf("old_text appears %d times. Please provide more context to make it unique", count))
+		}
+
+		newContent := strings.Replace(contentStr, oldText, newText, 1)
+
+		if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
+		}
+
+		return SilentResult(fmt.Sprintf("File edited: %s", path))
 	}
 
-	if _, err := os.Stat(resolvedPath); os.IsNotExist(err) {
-		return ErrorResult(fmt.Sprintf("file not found: %s", path))
-	}
+	// Use executeInRoot to safely access the file
+	return executeInRoot(t.allowedDir, path, func(root *os.Root, relPath string) (*ToolResult, error) {
+		f, err := root.Open(relPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("file not found: %s", path)
+			}
+			return nil, fmt.Errorf("failed to open file: %w", err)
+		}
 
-	content, err := os.ReadFile(resolvedPath)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
-	}
+		content, err := io.ReadAll(f)
+		f.Close()
 
-	contentStr := string(content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file: %v", err)
+		}
 
-	if !strings.Contains(contentStr, oldText) {
-		return ErrorResult("old_text not found in file. Make sure it matches exactly")
-	}
+		contentStr := string(content)
 
-	count := strings.Count(contentStr, oldText)
-	if count > 1 {
-		return ErrorResult(fmt.Sprintf("old_text appears %d times. Please provide more context to make it unique", count))
-	}
+		if !strings.Contains(contentStr, oldText) {
+			return nil, fmt.Errorf("old_text not found in file. Make sure it matches exactly")
+		}
 
-	newContent := strings.Replace(contentStr, oldText, newText, 1)
+		count := strings.Count(contentStr, oldText)
+		if count > 1 {
+			return nil, fmt.Errorf("old_text appears %d times. Please provide more context to make it unique", count)
+		}
 
-	if err := os.WriteFile(resolvedPath, []byte(newContent), 0644); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
-	}
+		newContent := strings.Replace(contentStr, oldText, newText, 1)
 
-	return SilentResult(fmt.Sprintf("File edited: %s", path))
+		fw, err := root.Create(relPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create file for writing: %w", err)
+		}
+		defer fw.Close()
+
+		if _, err := fw.Write([]byte(newContent)); err != nil {
+			return nil, fmt.Errorf("failed to write file: %v", err)
+		}
+
+		return SilentResult(fmt.Sprintf("File edited: %s", path)), nil
+	})
 }
 
 type AppendFileTool struct {
@@ -146,20 +186,33 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]interface{
 		return ErrorResult("content is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
-	if err != nil {
-		return ErrorResult(err.Error())
+	// If not restricted, perform operations directly
+	if !t.restrict {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to open file: %v", err))
+		}
+		defer f.Close()
+
+		if _, err := f.WriteString(content); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to append to file: %v", err))
+		}
+
+		return SilentResult(fmt.Sprintf("Appended to %s", path))
 	}
 
-	f, err := os.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to open file: %v", err))
-	}
-	defer f.Close()
+	// Use executeInRoot to safely access the file
+	return executeInRoot(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
+		f, err := root.OpenFile(relPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open file: %w", err)
+		}
+		defer f.Close()
 
-	if _, err := f.WriteString(content); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to append to file: %v", err))
-	}
+		if _, err := f.WriteString(content); err != nil {
+			return nil, fmt.Errorf("failed to append to file: %w", err)
+		}
 
-	return SilentResult(fmt.Sprintf("Appended to %s", path))
+		return SilentResult(fmt.Sprintf("Appended to %s", path)), nil
+	})
 }

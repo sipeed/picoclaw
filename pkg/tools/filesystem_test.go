@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestFilesystemTool_ReadFile_Success verifies successful file reading
@@ -275,7 +277,29 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 	if !result.IsError {
 		t.Fatalf("expected symlink escape to be blocked")
 	}
-	if !strings.Contains(result.ForLLM, "symlink resolves outside workspace") {
+	// os.Root might return different errors depending on platform/implementation
+	// but it definitely should error.
+	// Our wrapper returns "access denied or file not found"
+	if !strings.Contains(result.ForLLM, "access denied") && !strings.Contains(result.ForLLM, "file not found") && !strings.Contains(result.ForLLM, "no such file") {
 		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
 	}
+}
+
+func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
+	tool := NewReadFileTool("", true) // restrict=true but workspace=""
+
+	// Try to read a sensitive file (simulated by a temp file outside workspace)
+	tmpDir := t.TempDir()
+	secretFile := filepath.Join(tmpDir, "shadow")
+	os.WriteFile(secretFile, []byte("secret data"), 0600)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path": secretFile,
+	})
+
+	// We EXPECT IsError=true (access blocked due to empty workspace)
+	assert.True(t, result.IsError, "Security Regression: Empty workspace allowed access! content: %s", result.ForLLM)
+
+	// Verify it failed for the right reason
+	assert.Contains(t, result.ForLLM, "workspace is not defined", "Expected 'workspace is not defined' error")
 }
