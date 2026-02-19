@@ -54,43 +54,35 @@ type processOptions struct {
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
-	// File system tools
-	registry.Register(tools.NewReadFileTool(workspace, restrict))
-	registry.Register(tools.NewWriteFileTool(workspace, restrict))
-	registry.Register(tools.NewListDirTool(workspace, restrict))
-	registry.Register(tools.NewEditFileTool(workspace, restrict))
-	registry.Register(tools.NewAppendFileTool(workspace, restrict))
+	for _, agentID := range registry.ListAgentIDs() {
+		agent, ok := registry.GetAgent(agentID)
+		if !ok {
+			continue
+		}
 
-	// Shell execution
-	registry.Register(tools.NewExecTool(workspace, restrict))
-
-	// Build web search tool from config - single provider with fallback to DuckDuckGo
-	searchOpts := []tools.WebSearchToolOptions{
-		{
-			Provider:   cfg.Tools.Web.Search.Provider,
-			APIKey:     cfg.Tools.Web.Search.APIKey,
-			BaseURL:    cfg.Tools.Web.Search.Endpoint,
-			MaxResults: cfg.Tools.Web.Search.MaxResults,
-			Mode:       cfg.Tools.Web.Search.RestType,
-			Param:      cfg.Tools.Web.Search.QueryParam,
-		},
-		// Always add DuckDuckGo as fallback
-		{
-			Provider:   "duckduckgo",
-			MaxResults: 5,
-		},
-	}
-
-	if searchTool := tools.NewWebSearchTool(searchOpts...); searchTool != nil {
-		registry.Register(searchTool)
-	}
-	registry.Register(tools.NewWebFetchTool(50000))
+		searchOpts := []tools.WebSearchToolOptions{
+			{
+				Provider:   cfg.Tools.Web.Search.Provider,
+				APIKey:     cfg.Tools.Web.Search.APIKey,
+				BaseURL:    cfg.Tools.Web.Search.Endpoint,
+				MaxResults: cfg.Tools.Web.Search.MaxResults,
+				Mode:       cfg.Tools.Web.Search.RestType,
+				Param:      cfg.Tools.Web.Search.QueryParam,
+			},
+			{
+				Provider:   "duckduckgo",
+				MaxResults: 5,
+			},
+		}
+		if searchTool := tools.NewWebSearchTool(searchOpts...); searchTool != nil {
+			agent.Tools.Register(searchTool)
+		}
+		agent.Tools.Register(tools.NewWebFetchTool(50000))
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		agent.Tools.Register(tools.NewI2CTool())
 		agent.Tools.Register(tools.NewSPITool())
 
-		// Message tool
 		messageTool := tools.NewMessageTool()
 		messageTool.SetSendCallback(func(channel, chatID, content string) error {
 			msgBus.PublishOutbound(bus.OutboundMessage{
@@ -102,8 +94,15 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		})
 		agent.Tools.Register(messageTool)
 
-		// Spawn tool with allowlist checker
 		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
+		subagentTools := tools.NewToolRegistry()
+		for _, toolName := range agent.Tools.List() {
+			if tool, exists := agent.Tools.Get(toolName); exists {
+				subagentTools.Register(tool)
+			}
+		}
+		subagentManager.SetTools(subagentTools)
+
 		spawnTool := tools.NewSpawnTool(subagentManager)
 		currentAgentID := agentID
 		spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
@@ -111,8 +110,19 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		})
 		agent.Tools.Register(spawnTool)
 
-		// Update context builder with the complete tools registry
+		subagentTool := tools.NewSubagentTool(subagentManager)
+		agent.Tools.Register(subagentTool)
+
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
+	}
+
+	return &AgentLoop{
+		bus:         msgBus,
+		cfg:         cfg,
+		registry:    registry,
+		state:       state.NewManager(cfg.WorkspacePath()),
+		fallback:    providers.NewFallbackChain(providers.NewCooldownTracker()),
+		summarizing: sync.Map{},
 	}
 }
 
