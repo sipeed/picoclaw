@@ -46,6 +46,8 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 
 type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
+	Bindings  []AgentBinding  `json:"bindings,omitempty"`
+	Session   SessionConfig   `json:"session,omitempty"`
 	Channels  ChannelsConfig  `json:"channels"`
 	Providers ProvidersConfig `json:"providers"`
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
@@ -59,16 +61,97 @@ type Config struct {
 
 type AgentsConfig struct {
 	Defaults AgentDefaults `json:"defaults"`
+	List     []AgentConfig `json:"list,omitempty"`
+}
+
+// AgentModelConfig supports both string and structured model config.
+// String format: "gpt-4" (just primary, no fallbacks)
+// Object format: {"primary": "gpt-4", "fallbacks": ["claude-haiku"]}
+type AgentModelConfig struct {
+	Primary   string   `json:"primary,omitempty"`
+	Fallbacks []string `json:"fallbacks,omitempty"`
+}
+
+func (m *AgentModelConfig) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		m.Primary = s
+		m.Fallbacks = nil
+		return nil
+	}
+	type raw struct {
+		Primary   string   `json:"primary"`
+		Fallbacks []string `json:"fallbacks"`
+	}
+	var r raw
+	if err := json.Unmarshal(data, &r); err != nil {
+		return err
+	}
+	m.Primary = r.Primary
+	m.Fallbacks = r.Fallbacks
+	return nil
+}
+
+func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
+	if len(m.Fallbacks) == 0 && m.Primary != "" {
+		return json.Marshal(m.Primary)
+	}
+	type raw struct {
+		Primary   string   `json:"primary,omitempty"`
+		Fallbacks []string `json:"fallbacks,omitempty"`
+	}
+	return json.Marshal(raw{Primary: m.Primary, Fallbacks: m.Fallbacks})
+}
+
+type AgentConfig struct {
+	ID        string            `json:"id"`
+	Default   bool              `json:"default,omitempty"`
+	Name      string            `json:"name,omitempty"`
+	Workspace string            `json:"workspace,omitempty"`
+	Model     *AgentModelConfig `json:"model,omitempty"`
+	Skills    []string          `json:"skills,omitempty"`
+	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+}
+
+type SubagentsConfig struct {
+	AllowAgents []string          `json:"allow_agents,omitempty"`
+	Model       *AgentModelConfig `json:"model,omitempty"`
+}
+
+type PeerMatch struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+type BindingMatch struct {
+	Channel   string     `json:"channel"`
+	AccountID string     `json:"account_id,omitempty"`
+	Peer      *PeerMatch `json:"peer,omitempty"`
+	GuildID   string     `json:"guild_id,omitempty"`
+	TeamID    string     `json:"team_id,omitempty"`
+}
+
+type AgentBinding struct {
+	AgentID string       `json:"agent_id"`
+	Match   BindingMatch `json:"match"`
+}
+
+type SessionConfig struct {
+	DMScope       string              `json:"dm_scope,omitempty"`
+	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
 }
 
 type AgentDefaults struct {
-	Workspace           string  `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool    `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
-	MaxTokens           int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace           string   `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool     `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Provider            string   `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	Model               string   `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
+	ImageModel          string   `json:"image_model,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
+	MaxTokens           int      `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature         float64  `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
 type ChannelsConfig struct {
@@ -170,23 +253,23 @@ type DevicesConfig struct {
 }
 
 type ProvidersConfig struct {
-	Anthropic     ProviderConfig `json:"anthropic"`
-	OpenAI        ProviderConfig `json:"openai"`
-	OpenRouter    ProviderConfig `json:"openrouter"`
-	Groq          ProviderConfig `json:"groq"`
-	Zhipu         ProviderConfig `json:"zhipu"`
-	VLLM          ProviderConfig `json:"vllm"`
-	Gemini        ProviderConfig `json:"gemini"`
-	Nvidia        ProviderConfig `json:"nvidia"`
-	Ollama        ProviderConfig `json:"ollama"`
-	Moonshot      ProviderConfig `json:"moonshot"`
-	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig `json:"deepseek"`
-	Cerebras      ProviderConfig `json:"cerebras"`
-	VolcEngine    ProviderConfig `json:"volcengine"`
-	GitHubCopilot ProviderConfig `json:"github_copilot"`
-	Antigravity   ProviderConfig `json:"antigravity"`
-	Qwen          ProviderConfig `json:"qwen"`
+	Anthropic     ProviderConfig       `json:"anthropic"`
+	OpenAI        OpenAIProviderConfig `json:"openai"`
+	OpenRouter    ProviderConfig       `json:"openrouter"`
+	Groq          ProviderConfig       `json:"groq"`
+	Zhipu         ProviderConfig       `json:"zhipu"`
+	VLLM          ProviderConfig       `json:"vllm"`
+	Gemini        ProviderConfig       `json:"gemini"`
+	Nvidia        ProviderConfig       `json:"nvidia"`
+	Ollama        ProviderConfig       `json:"ollama"`
+	Moonshot      ProviderConfig       `json:"moonshot"`
+	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
+	DeepSeek      ProviderConfig       `json:"deepseek"`
+	Cerebras      ProviderConfig       `json:"cerebras"`
+	VolcEngine    ProviderConfig       `json:"volcengine"`
+	GitHubCopilot ProviderConfig       `json:"github_copilot"`
+	Antigravity   ProviderConfig       `json:"antigravity"`
+	Qwen          ProviderConfig       `json:"qwen"`
 }
 
 type ProviderConfig struct {
@@ -195,6 +278,11 @@ type ProviderConfig struct {
 	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
 	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
 	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+}
+
+type OpenAIProviderConfig struct {
+	ProviderConfig
+	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
@@ -265,9 +353,15 @@ type CronToolsConfig struct {
 	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
 }
 
+type ExecConfig struct {
+	EnableDenyPatterns bool     `json:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
+	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
+}
+
 type ToolsConfig struct {
 	Web  WebToolsConfig  `json:"web"`
 	Cron CronToolsConfig `json:"cron"`
+	Exec ExecConfig      `json:"exec"`
 }
 
 func LoadConfig(path string) (*Config, error) {

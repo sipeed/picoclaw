@@ -110,7 +110,10 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 			case "anthropic":
 				cfg.Providers.Anthropic = pc
 			case "openai":
-				cfg.Providers.OpenAI = pc
+				cfg.Providers.OpenAI = config.OpenAIProviderConfig{
+					ProviderConfig: pc,
+					WebSearch:      getBoolOrDefault(pMap, "web_search", true),
+				}
 			case "openrouter":
 				cfg.Providers.OpenRouter = pc
 			case "groq":
@@ -372,6 +375,13 @@ func getBool(data map[string]interface{}, key string) (bool, bool) {
 	}
 	b, ok := v.(bool)
 	return b, ok
+}
+
+func getBoolOrDefault(data map[string]interface{}, key string, defaultVal bool) bool {
+	if v, ok := getBool(data, key); ok {
+		return v
+	}
+	return defaultVal
 }
 
 func getStringSlice(data map[string]interface{}, key string) []string {

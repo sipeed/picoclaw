@@ -11,6 +11,14 @@ builds:
   - id: picoclaw
     env:
       - CGO_ENABLED=0
+    tags:
+      - stdjson
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.gitCommit={{ .ShortCommit }}
+      - -X main.buildTime={{ .Date }}
+      - -X main.goVersion={{ .Env.GOVERSION }}
     goos:
       - linux
       - windows

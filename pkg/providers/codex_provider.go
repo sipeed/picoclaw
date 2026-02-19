@@ -18,9 +18,10 @@ const codexDefaultModel = "gpt-5.2"
 const codexDefaultInstructions = "You are Codex, a coding assistant."
 
 type CodexProvider struct {
-	client      *openai.Client
-	accountID   string
-	tokenSource func() (string, string, error)
+	client          *openai.Client
+	accountID       string
+	tokenSource     func() (string, string, error)
+	enableWebSearch bool
 }
 
 const defaultCodexInstructions = "You are Codex, a coding assistant."
@@ -37,8 +38,9 @@ func NewCodexProvider(token, accountID string) *CodexProvider {
 	}
 	client := openai.NewClient(opts...)
 	return &CodexProvider{
-		client:    &client,
-		accountID: accountID,
+		client:          &client,
+		accountID:       accountID,
+		enableWebSearch: true,
 	}
 }
 
@@ -78,7 +80,7 @@ func (p *CodexProvider) Chat(ctx context.Context, messages []Message, tools []To
 		})
 	}
 
-	params := buildCodexParams(messages, tools, resolvedModel, options)
+	params := buildCodexParams(messages, tools, resolvedModel, options, p.enableWebSearch)
 
 	stream := p.client.Responses.NewStreaming(ctx, params, opts...)
 	defer stream.Close()
@@ -182,7 +184,7 @@ func resolveCodexModel(model string) (string, string) {
 	return codexDefaultModel, "unsupported model family"
 }
 
-func buildCodexParams(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) responses.ResponseNewParams {
+func buildCodexParams(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}, enableWebSearch bool) responses.ResponseNewParams {
 	var inputItems responses.ResponseInputParam
 	var instructions string
 
@@ -217,12 +219,18 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 					})
 				}
 				for _, tc := range msg.ToolCalls {
-					argsJSON, _ := json.Marshal(tc.Arguments)
+					name, args, ok := resolveCodexToolCall(tc)
+					if !ok {
+						logger.WarnCF("provider.codex", "Skipping invalid tool call in history", map[string]interface{}{
+							"call_id": tc.ID,
+						})
+						continue
+					}
 					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 						OfFunctionCall: &responses.ResponseFunctionToolCallParam{
 							CallID:    tc.ID,
-							Name:      tc.Name,
-							Arguments: string(argsJSON),
+							Name:      name,
+							Arguments: args,
 						},
 					})
 				}
@@ -260,20 +268,50 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 		params.Instructions = openai.Opt(defaultCodexInstructions)
 	}
 
-	if maxTokens, ok := options["max_tokens"].(int); ok {
-		params.MaxOutputTokens = openai.Opt(int64(maxTokens))
-	}
-
-	if len(tools) > 0 {
-		params.Tools = translateToolsForCodex(tools)
+	if len(tools) > 0 || enableWebSearch {
+		params.Tools = translateToolsForCodex(tools, enableWebSearch)
 	}
 
 	return params
 }
 
-func translateToolsForCodex(tools []ToolDefinition) []responses.ToolUnionParam {
-	result := make([]responses.ToolUnionParam, 0, len(tools))
+func resolveCodexToolCall(tc ToolCall) (name string, arguments string, ok bool) {
+	name = tc.Name
+	if name == "" && tc.Function != nil {
+		name = tc.Function.Name
+	}
+	if name == "" {
+		return "", "", false
+	}
+
+	if len(tc.Arguments) > 0 {
+		argsJSON, err := json.Marshal(tc.Arguments)
+		if err != nil {
+			return "", "", false
+		}
+		return name, string(argsJSON), true
+	}
+
+	if tc.Function != nil && tc.Function.Arguments != "" {
+		return name, tc.Function.Arguments, true
+	}
+
+	return name, "{}", true
+}
+
+func translateToolsForCodex(tools []ToolDefinition, enableWebSearch bool) []responses.ToolUnionParam {
+	capHint := len(tools)
+	if enableWebSearch {
+		capHint++
+	}
+	result := make([]responses.ToolUnionParam, 0, capHint)
 	for _, t := range tools {
+		if t.Type != "function" {
+			continue
+		}
+		if enableWebSearch && strings.EqualFold(t.Function.Name, "web_search") {
+			continue
+		}
 		ft := responses.FunctionToolParam{
 			Name:       t.Function.Name,
 			Parameters: t.Function.Parameters,
@@ -283,6 +321,9 @@ func translateToolsForCodex(tools []ToolDefinition) []responses.ToolUnionParam {
 			ft.Description = openai.Opt(t.Function.Description)
 		}
 		result = append(result, responses.ToolUnionParam{OfFunction: &ft})
+	}
+	if enableWebSearch {
+		result = append(result, responses.ToolParamOfWebSearch(responses.WebSearchToolTypeWebSearch))
 	}
 	return result
 }

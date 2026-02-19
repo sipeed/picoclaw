@@ -75,3 +75,105 @@ func TestSkillsInfoValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractFrontmatter(t *testing.T) {
+	sl := &SkillsLoader{}
+
+	testcases := []struct {
+		name           string
+		content        string
+		expectedName   string
+		expectedDesc   string
+		lineEndingType string
+	}{
+		{
+			name:           "unix-line-endings",
+			lineEndingType: "Unix (\\n)",
+			content:        "---\nname: test-skill\ndescription: A test skill\n---\n\n# Skill Content",
+			expectedName:   "test-skill",
+			expectedDesc:   "A test skill",
+		},
+		{
+			name:           "windows-line-endings",
+			lineEndingType: "Windows (\\r\\n)",
+			content:        "---\r\nname: test-skill\r\ndescription: A test skill\r\n---\r\n\r\n# Skill Content",
+			expectedName:   "test-skill",
+			expectedDesc:   "A test skill",
+		},
+		{
+			name:           "classic-mac-line-endings",
+			lineEndingType: "Classic Mac (\\r)",
+			content:        "---\rname: test-skill\rdescription: A test skill\r---\r\r# Skill Content",
+			expectedName:   "test-skill",
+			expectedDesc:   "A test skill",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Extract frontmatter
+			frontmatter := sl.extractFrontmatter(tc.content)
+			assert.NotEmpty(t, frontmatter, "Frontmatter should be extracted for %s line endings", tc.lineEndingType)
+
+			// Parse YAML to get name and description (parseSimpleYAML now handles all line ending types)
+			yamlMeta := sl.parseSimpleYAML(frontmatter)
+			assert.Equal(t, tc.expectedName, yamlMeta["name"], "Name should be correctly parsed from frontmatter with %s line endings", tc.lineEndingType)
+			assert.Equal(t, tc.expectedDesc, yamlMeta["description"], "Description should be correctly parsed from frontmatter with %s line endings", tc.lineEndingType)
+		})
+	}
+}
+
+func TestStripFrontmatter(t *testing.T) {
+	sl := &SkillsLoader{}
+
+	testcases := []struct {
+		name            string
+		content         string
+		expectedContent string
+		lineEndingType  string
+	}{
+		{
+			name:            "unix-line-endings",
+			lineEndingType:  "Unix (\\n)",
+			content:         "---\nname: test-skill\ndescription: A test skill\n---\n\n# Skill Content",
+			expectedContent: "# Skill Content",
+		},
+		{
+			name:            "windows-line-endings",
+			lineEndingType:  "Windows (\\r\\n)",
+			content:         "---\r\nname: test-skill\r\ndescription: A test skill\r\n---\r\n\r\n# Skill Content",
+			expectedContent: "# Skill Content",
+		},
+		{
+			name:            "classic-mac-line-endings",
+			lineEndingType:  "Classic Mac (\\r)",
+			content:         "---\rname: test-skill\rdescription: A test skill\r---\r\r# Skill Content",
+			expectedContent: "# Skill Content",
+		},
+		{
+			name:            "unix-line-endings-without-trailing-newline",
+			lineEndingType:  "Unix (\\n) without trailing newline",
+			content:         "---\nname: test-skill\ndescription: A test skill\n---\n# Skill Content",
+			expectedContent: "# Skill Content",
+		},
+		{
+			name:            "windows-line-endings-without-trailing-newline",
+			lineEndingType:  "Windows (\\r\\n) without trailing newline",
+			content:         "---\r\nname: test-skill\r\ndescription: A test skill\r\n---\r\n# Skill Content",
+			expectedContent: "# Skill Content",
+		},
+		{
+			name:            "no-frontmatter",
+			lineEndingType:  "No frontmatter",
+			content:         "# Skill Content\n\nSome content here.",
+			expectedContent: "# Skill Content\n\nSome content here.",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := sl.stripFrontmatter(tc.content)
+			assert.Equal(t, tc.expectedContent, result, "Frontmatter should be stripped correctly for %s", tc.lineEndingType)
+		})
+	}
+}
