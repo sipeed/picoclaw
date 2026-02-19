@@ -125,9 +125,9 @@ Error: LLM call failed: failed to send request: Post "https://<your-provider>/ap
 
 This error indicates that the application (`picoclaw`) cannot verify the security certificate of Your Provider API. This is a very common issue in **Termux** because the environment often lacks the latest root certificate authorities required to validate HTTPS connections.
 
+Fix:
+Run the following
 
-Fix : 
-Run the following 
 ```bash
 pkg update && pkg upgrade
 pkg install ca-certificates openssl
@@ -135,10 +135,8 @@ echo 'export SSL_CERT_FILE=/data/data/com.termux/files/usr/etc/tls/cert.pem' >> 
 source ~/.bashrc
 ```
 
-**After running this:**
+Alternatively, restart Termux if you prefer not to run `source ~/.bashrc`
 
-1. Restart Termux (completely close the app and reopen it).
-2. Try running `picoclaw` again.
 </details>
 
 ### 🐜 Innovative Low-Footprint Deploy
