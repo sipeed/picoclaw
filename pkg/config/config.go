@@ -174,6 +174,7 @@ type TelegramConfig struct {
 	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
 	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
 	Proxy     string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	BotName   string              `json:"bot_name" env:"PICOCLAW_CHANNELS_TELEGRAM_BOT_NAME"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
 }
 
@@ -210,6 +211,7 @@ type DingTalkConfig struct {
 	Enabled      bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
 	ClientID     string              `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
 	ClientSecret string              `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	BotName      string              `json:"bot_name" env:"PICOCLAW_CHANNELS_DINGTALK_BOT_NAME"`
 	AllowFrom    FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
@@ -343,6 +345,7 @@ func DefaultConfig() *Config {
 			Telegram: TelegramConfig{
 				Enabled:   false,
 				Token:     "",
+				BotName:   "PicoClaw",
 				AllowFrom: FlexibleStringSlice{},
 			},
 			Feishu: FeishuConfig{
@@ -374,6 +377,7 @@ func DefaultConfig() *Config {
 				Enabled:      false,
 				ClientID:     "",
 				ClientSecret: "",
+				BotName:      "PicoClaw",
 				AllowFrom:    FlexibleStringSlice{},
 			},
 			Slack: SlackConfig{

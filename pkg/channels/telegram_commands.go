@@ -52,9 +52,13 @@ func (c *cmd) Help(ctx context.Context, message telego.Message) error {
 }
 
 func (c *cmd) Start(ctx context.Context, message telego.Message) error {
+	botName := c.config.Channels.Telegram.BotName
+	if botName == "" {
+		botName = "PicoClaw"
+	}
 	_, err := c.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: message.Chat.ID},
-		Text:   "Hello! I am PicoClaw 🦞",
+		Text:   fmt.Sprintf("Hello! I am %s 🦞", botName),
 		ReplyParameters: &telego.ReplyParameters{
 			MessageID: message.MessageID,
 		},

@@ -23,6 +23,7 @@ type DingTalkChannel struct {
 	config       config.DingTalkConfig
 	clientID     string
 	clientSecret string
+	botName      string
 	streamClient *client.StreamClient
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -36,6 +37,11 @@ func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (
 		return nil, fmt.Errorf("dingtalk client_id and client_secret are required")
 	}
 
+	botName := cfg.BotName
+	if botName == "" {
+		botName = "PicoClaw"
+	}
+
 	base := NewBaseChannel("dingtalk", cfg, messageBus, cfg.AllowFrom)
 
 	return &DingTalkChannel{
@@ -43,6 +49,7 @@ func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (
 		config:       cfg,
 		clientID:     cfg.ClientID,
 		clientSecret: cfg.ClientSecret,
+		botName:      botName,
 	}, nil
 }
 
@@ -175,7 +182,7 @@ func (c *DingTalkChannel) SendDirectReply(ctx context.Context, sessionWebhook, c
 
 	// Convert string content to []byte for the API
 	contentBytes := []byte(content)
-	titleBytes := []byte("PicoClaw")
+	titleBytes := []byte(c.botName)
 
 	// Send markdown formatted reply
 	err := replier.SimpleReplyMarkdown(
