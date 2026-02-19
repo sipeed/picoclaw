@@ -109,6 +109,7 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 					Name:      tc.Name,
 					Arguments: string(argumentsJSON),
 				},
+				Name: tc.Name,
 			})
 		}
 		messages = append(messages, assistantMsg)
