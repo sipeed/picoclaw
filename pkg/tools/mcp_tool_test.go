@@ -39,9 +39,9 @@ func TestNewMCPTool(t *testing.T) {
 					"type":        "string",
 					"description": "Test input",
 				},
-				},
 			},
-		}
+		},
+	}
 
 	mcpTool := NewMCPTool(manager, "test_server", tool)
 

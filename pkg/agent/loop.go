@@ -161,8 +161,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		contextBuilder:  contextBuilder,
 		tools:           toolsRegistry,
 		mcpManager:      mcpManager,
-		mcpConfig:       cfg.Tools.MCP,    // Store only MCP config (minimal dependency)
-		workspacePath:   workspace,        // Store workspace path for envFile resolution
+		mcpConfig:       cfg.Tools.MCP, // Store only MCP config (minimal dependency)
+		workspacePath:   workspace,     // Store workspace path for envFile resolution
 		subagentManager: subagentManager,
 		summarizing:     sync.Map{},
 	}

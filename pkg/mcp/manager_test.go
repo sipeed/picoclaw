@@ -134,32 +134,32 @@ func TestEnvFilePriority(t *testing.T) {
 	// Create a temporary .env file
 	tmpDir := t.TempDir()
 	envFile := filepath.Join(tmpDir, ".env")
-	
+
 	envContent := `API_KEY=from_file
 DATABASE_URL=from_file
 SHARED_VAR=from_file`
-	
+
 	if err := os.WriteFile(envFile, []byte(envContent), 0644); err != nil {
 		t.Fatalf("Failed to create .env file: %v", err)
 	}
-	
+
 	// Load envFile
 	envVars, err := loadEnvFile(envFile)
 	if err != nil {
 		t.Fatalf("Failed to load env file: %v", err)
 	}
-	
+
 	// Verify envFile variables
 	if envVars["API_KEY"] != "from_file" {
 		t.Errorf("Expected API_KEY=from_file, got %s", envVars["API_KEY"])
 	}
-	
+
 	// Simulate config.Env overriding envFile
 	configEnv := map[string]string{
 		"SHARED_VAR": "from_config",
 		"NEW_VAR":    "from_config",
 	}
-	
+
 	// Merge: envFile first, then config overrides
 	merged := make(map[string]string)
 	for k, v := range envVars {
@@ -168,7 +168,7 @@ SHARED_VAR=from_file`
 	for k, v := range configEnv {
 		merged[k] = v
 	}
-	
+
 	// Verify priority: config.Env should override envFile
 	if merged["SHARED_VAR"] != "from_config" {
 		t.Errorf("Expected SHARED_VAR=from_config (config should override file), got %s", merged["SHARED_VAR"])
