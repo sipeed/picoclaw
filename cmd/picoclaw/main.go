@@ -36,6 +36,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
+	"github.com/sipeed/picoclaw/pkg/swarm"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
@@ -142,6 +143,8 @@ func main() {
 		authCmd()
 	case "cron":
 		cronCmd()
+	case "swarm":
+		swarmCmd()
 	case "skills":
 		if len(os.Args) < 3 {
 			skillsHelp()
@@ -213,6 +216,7 @@ func printHelp() {
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
+	fmt.Println("  swarm       Run in swarm mode (multi-instance collaboration)")
 	fmt.Println("  version     Show version information")
 }
 
@@ -1430,4 +1434,171 @@ func skillsShowCmd(loader *skills.SkillsLoader, skillName string) {
 	fmt.Printf("\n📦 Skill: %s\n", skillName)
 	fmt.Println("----------------------")
 	fmt.Println(content)
+}
+
+// ==================== Swarm Commands ====================
+
+func swarmCmd() {
+	if len(os.Args) < 3 {
+		swarmHelp()
+		return
+	}
+
+	subcommand := os.Args[2]
+
+	switch subcommand {
+	case "start":
+		swarmStartCmd()
+	case "status":
+		swarmStatusCmd()
+	case "nodes":
+		swarmNodesCmd()
+	default:
+		fmt.Printf("Unknown swarm command: %s\n", subcommand)
+		swarmHelp()
+	}
+}
+
+func swarmHelp() {
+	fmt.Println("\nSwarm commands:")
+	fmt.Println("  start       Start swarm node")
+	fmt.Println("  status      Show swarm configuration")
+	fmt.Println("  nodes       List discovered nodes (requires running node)")
+	fmt.Println()
+	fmt.Println("Start options:")
+	fmt.Println("  --role <role>         Node role: coordinator, worker, specialist")
+	fmt.Println("  --capabilities <list> Comma-separated capabilities")
+	fmt.Println("  --embedded            Use embedded NATS server (development mode)")
+	fmt.Println("  --debug               Enable debug logging")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  picoclaw swarm start --role coordinator --embedded")
+	fmt.Println("  picoclaw swarm start --role worker --capabilities code,search")
+	fmt.Println("  picoclaw swarm status")
+}
+
+func swarmStartCmd() {
+	// Parse flags
+	role := "worker"
+	capabilities := []string{}
+	embedded := false
+
+	args := os.Args[3:]
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--role", "-r":
+			if i+1 < len(args) {
+				role = args[i+1]
+				i++
+			}
+		case "--capabilities", "-c":
+			if i+1 < len(args) {
+				capabilities = strings.Split(args[i+1], ",")
+				i++
+			}
+		case "--embedded":
+			embedded = true
+		case "--debug", "-d":
+			logger.SetLevel(logger.DEBUG)
+			fmt.Println("Debug mode enabled")
+		}
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Override config with CLI flags
+	cfg.Swarm.Enabled = true
+	cfg.Swarm.Role = role
+	if len(capabilities) > 0 {
+		cfg.Swarm.Capabilities = capabilities
+	}
+	cfg.Swarm.NATS.Embedded = embedded
+
+	// Create provider
+	provider, err := providers.CreateProvider(cfg)
+	if err != nil {
+		fmt.Printf("Error creating provider: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create message bus and agent loop
+	msgBus := bus.NewMessageBus()
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+
+	// Create and start swarm manager
+	manager := swarm.NewManager(cfg, agentLoop, provider, msgBus)
+	if manager == nil {
+		fmt.Println("Error: failed to create swarm manager (invalid configuration)")
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := manager.Start(ctx); err != nil {
+		fmt.Printf("Error starting swarm: %v\n", err)
+		os.Exit(1)
+	}
+
+	nodeInfo := manager.GetNodeInfo()
+	fmt.Printf("%s Swarm node started\n", logo)
+	fmt.Printf("  Node ID: %s\n", nodeInfo.ID)
+	fmt.Printf("  Role: %s\n", nodeInfo.Role)
+	fmt.Printf("  Capabilities: %v\n", nodeInfo.Capabilities)
+	if embedded {
+		fmt.Println("  Mode: Embedded NATS (development)")
+	}
+	fmt.Printf("  NATS: %v\n", manager.IsNATSConnected())
+	fmt.Printf("  Temporal: %v\n", manager.IsTemporalConnected())
+	fmt.Println("\nPress Ctrl+C to stop")
+
+	// Start agent loop in background
+	go agentLoop.Run(ctx)
+
+	// Wait for interrupt
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	<-sigChan
+
+	fmt.Println("\nShutting down...")
+	cancel()
+	manager.Stop()
+	agentLoop.Stop()
+	fmt.Printf("%s Swarm node stopped\n", logo)
+}
+
+func swarmStatusCmd() {
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		return
+	}
+
+	fmt.Printf("%s Swarm Configuration\n\n", logo)
+	fmt.Printf("Enabled: %v\n", cfg.Swarm.Enabled)
+	fmt.Printf("Node ID: %s\n", cfg.Swarm.NodeID)
+	fmt.Printf("Role: %s\n", cfg.Swarm.Role)
+	fmt.Printf("Capabilities: %v\n", cfg.Swarm.Capabilities)
+	fmt.Printf("Max Concurrent: %d\n", cfg.Swarm.MaxConcurrent)
+	fmt.Println("\nNATS:")
+	fmt.Printf("  URLs: %v\n", cfg.Swarm.NATS.URLs)
+	fmt.Printf("  Embedded: %v\n", cfg.Swarm.NATS.Embedded)
+	fmt.Printf("  Heartbeat: %s\n", cfg.Swarm.NATS.HeartbeatInterval)
+	fmt.Printf("  Node Timeout: %s\n", cfg.Swarm.NATS.NodeTimeout)
+	fmt.Println("\nTemporal:")
+	fmt.Printf("  Host: %s\n", cfg.Swarm.Temporal.Host)
+	fmt.Printf("  Namespace: %s\n", cfg.Swarm.Temporal.Namespace)
+	fmt.Printf("  Task Queue: %s\n", cfg.Swarm.Temporal.TaskQueue)
+}
+
+func swarmNodesCmd() {
+	fmt.Printf("%s Swarm Nodes\n\n", logo)
+	fmt.Println("Note: To discover nodes, run 'picoclaw swarm start' first.")
+	fmt.Println("This command requires an active swarm connection to query the network.")
+	fmt.Println()
+	fmt.Println("In a running swarm node, nodes are discovered automatically via NATS.")
 }
