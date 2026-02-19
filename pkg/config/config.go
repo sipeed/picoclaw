@@ -45,16 +45,16 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty"`
-	Session   SessionConfig   `json:"session,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
+	Agents     AgentsConfig    `json:"agents"`
+	Bindings   []AgentBinding  `json:"bindings,omitempty"`
+	Session    SessionConfig   `json:"session,omitempty"`
+	Channels   ChannelsConfig  `json:"channels"`
+	Providers  ProvidersConfig `json:"providers"`
+	ModelList  []ModelConfig   `json:"model_list"` // New model-centric provider configuration
+	Gateway    GatewayConfig   `json:"gateway"`
+	Tools      ToolsConfig     `json:"tools"`
+	Heartbeat  HeartbeatConfig `json:"heartbeat"`
+	Devices    DevicesConfig   `json:"devices"`
 	mu         sync.RWMutex
 	rrCounters map[string]*atomic.Uint64 // Round-robin counters for load balancing
 }
@@ -301,12 +301,12 @@ type ModelConfig struct {
 	Proxy   string `json:"proxy,omitempty"`    // HTTP proxy URL
 
 	// Special providers (CLI-based, OAuth, etc.)
-	AuthMethod  string `json:"auth_method,omitempty"`   // Authentication method: oauth, token
-	ConnectMode string `json:"connect_mode,omitempty"`  // Connection mode: stdio, grpc
-	Workspace   string `json:"workspace,omitempty"`     // Workspace path for CLI-based providers
+	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token
+	ConnectMode string `json:"connect_mode,omitempty"` // Connection mode: stdio, grpc
+	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
 
 	// Optional optimizations
-	RPM            int    `json:"rpm,omitempty"`             // Requests per minute limit
+	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
 }
 

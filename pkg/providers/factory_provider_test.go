@@ -13,10 +13,10 @@ import (
 
 func TestExtractProtocol(t *testing.T) {
 	tests := []struct {
-		name          string
-		model         string
-		wantProtocol  string
-		wantModelID   string
+		name         string
+		model        string
+		wantProtocol string
+		wantModelID  string
 	}{
 		{
 			name:         "openai with prefix",
