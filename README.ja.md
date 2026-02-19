@@ -222,6 +222,47 @@ picoclaw agent -m "What is 2+2?"
 
 これだけです！2 分で AI アシスタントが動きます。
 
+
+### 📱 古いAndroid端末で実行
+10年前のスマートフォンに第二の人生を！PicoClawでスマートAIアシスタントに変えましょう。クイックスタート：
+1. **Termuxをインストール**（F-DroidまたはGoogle Playで利用可能）
+2. **コマンドを実行**
+```bash
+# 注: リリースページから最新バージョンに置き換えてください（例: v0.1.1）
+wget https://github.com/sipeed/picoclaw/releases/download/v0.1.1/picoclaw-linux-arm64
+chmod +x picoclaw-linux-arm64
+pkg install proot
+termux-chroot ./picoclaw-linux-arm64 onboard
+```
+その後、「クイックスタート」セクションの手順に従って設定を完了してください！
+<img src="assets/termux.jpg" alt="PicoClaw" width="512">
+
+<details> 
+<summary><b> 発生する可能性のあるエラー:</b> </summary>
+
+
+**1. tls: failed to verify certificate**
+
+```
+Error: LLM call failed: failed to send request: Post "https://<your-provider>/api/v1/chat/completions": tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+このエラーは、アプリケーション（`picoclaw`）がプロバイダーAPIのセキュリティ証明書を検証できないことを示しています。これは**Termux**では非常に一般的な問題です。環境にHTTPS接続を検証するために必要な最新のルート証明書認証局が不足していることが多いためです。
+
+修正方法:
+以下を実行してください
+
+```bash
+pkg update && pkg upgrade
+pkg install ca-certificates openssl
+echo 'export SSL_CERT_FILE=/data/data/com.termux/files/usr/etc/tls/cert.pem' >> ~/.bashrc
+source ~/.bashrc
+```
+
+または、`source ~/.bashrc` を実行したくない場合はTermuxを再起動してください
+
+</details>
+
 ---
 
 ## 💬 チャットアプリ
