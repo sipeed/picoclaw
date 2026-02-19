@@ -29,6 +29,10 @@ func DefaultConfig() *Config {
 				BridgeURL: "ws://localhost:3001",
 				AllowFrom: FlexibleStringSlice{},
 			},
+			Whatsmeow: WhatsmeowConfig{
+				Enabled: false,
+				DBPath:  "~/.picoclaw/whatsmeow.db",
+			},
 			Telegram: TelegramConfig{
 				Enabled:   false,
 				Token:     "",

@@ -164,6 +164,8 @@ func main() {
 			fmt.Printf("Unknown skills command: %s\n", subcommand)
 			skillsHelp()
 		}
+	case "whatsapp":
+		whatsappCmd()
 	case "version", "--version", "-v":
 		printVersion()
 	default:
@@ -186,6 +188,7 @@ func printHelp() {
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
+	fmt.Println("  whatsapp    Manage WhatsApp connection (link, status)")
 	fmt.Println("  version     Show version information")
 }
 
