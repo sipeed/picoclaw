@@ -391,3 +391,101 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 		})
 	}
 }
+
+// Test for backward compatibility: single provider without explicit provider field
+// This matches the legacy config pattern where users only set model, not provider
+
+func TestConvertProvidersToModelList_NoProviderField_SingleProvider(t *testing.T) {
+	// This matches the user's actual config:
+	// - No provider field set
+	// - model = "glm-4.7"
+	// - Only zhipu has API key configured
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "", // Not set
+				Model:    "glm-4.7",
+			},
+		},
+		Providers: ProvidersConfig{
+			Zhipu: ProviderConfig{APIKey: "test-zhipu-key"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// ModelName should be the user's model value for backward compatibility
+	if result[0].ModelName != "glm-4.7" {
+		t.Errorf("ModelName = %q, want %q (user's model for backward compatibility)", result[0].ModelName, "glm-4.7")
+	}
+
+	// Model should use the user's model with protocol prefix
+	if result[0].Model != "openai/glm-4.7" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "openai/glm-4.7")
+	}
+}
+
+func TestConvertProvidersToModelList_NoProviderField_MultipleProviders(t *testing.T) {
+	// When multiple providers are configured but no provider field is set,
+	// the FIRST provider (in migration order) will use userModel as ModelName
+	// for backward compatibility with legacy implicit provider selection
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "", // Not set
+				Model:    "some-model",
+			},
+		},
+		Providers: ProvidersConfig{
+			OpenAI: ProviderConfig{APIKey: "openai-key"},
+			Zhipu:  ProviderConfig{APIKey: "zhipu-key"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+
+	// The first provider (OpenAI in migration order) should use userModel as ModelName
+	// This ensures GetModelConfig("some-model") will find it
+	if result[0].ModelName != "some-model" {
+		t.Errorf("First provider ModelName = %q, want %q", result[0].ModelName, "some-model")
+	}
+
+	// Other providers should use provider name as ModelName
+	if result[1].ModelName != "zhipu" {
+		t.Errorf("Second provider ModelName = %q, want %q", result[1].ModelName, "zhipu")
+	}
+}
+
+func TestConvertProvidersToModelList_NoProviderField_NoModel(t *testing.T) {
+	// Edge case: no provider, no model
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "",
+				Model:    "",
+			},
+		},
+		Providers: ProvidersConfig{
+			Zhipu: ProviderConfig{APIKey: "zhipu-key"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// Should use default provider name since no model is specified
+	if result[0].ModelName != "zhipu" {
+		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "zhipu")
+	}
+}

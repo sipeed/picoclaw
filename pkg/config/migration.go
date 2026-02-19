@@ -32,8 +32,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 	userProvider := strings.ToLower(cfg.Agents.Defaults.Provider)
 	userModel := cfg.Agents.Defaults.Model
 
-	var result []ModelConfig
 	p := cfg.Providers
+
+	var result []ModelConfig
+
+	// Track if we've applied the legacy model name fix (only for first provider)
+	legacyModelNameApplied := false
 
 	// Define migration rules for each provider
 	migrations := []providerMigrationConfig{
@@ -322,6 +326,13 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		if slices.Contains(m.providerNames, userProvider) && userModel != "" {
 			// Use the user's configured model instead of default
 			mc.Model = m.protocol + "/" + userModel
+		} else if userProvider == "" && userModel != "" && !legacyModelNameApplied {
+			// Legacy config: no explicit provider field but model is specified
+			// Use userModel as ModelName for the FIRST provider so GetModelConfig(model) can find it
+			// This maintains backward compatibility with old configs that relied on implicit provider selection
+			mc.ModelName = userModel
+			mc.Model = m.protocol + "/" + userModel
+			legacyModelNameApplied = true
 		}
 
 		result = append(result, mc)
