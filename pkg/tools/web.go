@@ -188,6 +188,7 @@ func (p *OllamaSearchProvider) Search(ctx context.Context, query string, count i
 	// Call Ollama REST API for web search
 	requestBody := map[string]interface{}{
 		p.queryParam: query,
+		"count":      count,
 	}
 
 	bodyJSON, _ := json.Marshal(requestBody)
