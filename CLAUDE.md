@@ -160,3 +160,23 @@ Integration tests (require external APIs) are tagged with `//go:build integratio
 - Error wrapping with `fmt.Errorf("context: %w", err)`
 - Structured logging via `pkg/logger` with component and fields
 - JSON config uses `json:` tags with snake_case
+
+## Reference Documentation
+
+Read these documents when working on specific areas:
+
+| Document | When to Read |
+|----------|--------------|
+| [docs/developer-guide/architecture.md](docs/developer-guide/architecture.md) | Understanding system architecture, components, data flow |
+| [docs/developer-guide/data-flow.md](docs/developer-guide/data-flow.md) | Message bus, event processing, request lifecycle |
+| [docs/developer-guide/building.md](docs/developer-guide/building.md) | Building from source, cross-compilation, dependencies |
+| [docs/developer-guide/testing.md](docs/developer-guide/testing.md) | Running tests, writing new tests, test patterns |
+| [docs/developer-guide/extending/creating-tools.md](docs/developer-guide/extending/creating-tools.md) | Implementing new tools, Tool interface, parameters |
+| [docs/developer-guide/extending/creating-providers.md](docs/developer-guide/extending/creating-providers.md) | Adding LLM providers, LLMProvider interface |
+| [docs/developer-guide/extending/creating-channels.md](docs/developer-guide/extending/creating-channels.md) | Adding chat platforms, message handling |
+| [docs/developer-guide/extending/creating-skills.md](docs/developer-guide/extending/creating-skills.md) | Creating custom skills, skill structure |
+| [docs/configuration/config-file.md](docs/configuration/config-file.md) | Configuration schema, all options, environment variables |
+| [docs/operations/troubleshooting.md](docs/operations/troubleshooting.md) | Common issues, debugging, error resolution |
+| [docs/deployment/docker.md](docs/deployment/docker.md) | Docker setup, compose configuration |
+| [docs/deployment/security.md](docs/deployment/security.md) | Production security, sandbox configuration |
+| [ROADMAP.md](ROADMAP.md) | Project direction, planned features, priorities |
