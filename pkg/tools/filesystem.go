@@ -9,81 +9,6 @@ import (
 	"strings"
 )
 
-// Helper to get a safe relative path for os.Root usage
-func getSafeRelPath(workspace, path string) (string, error) {
-	if workspace == "" {
-		return "", fmt.Errorf("workspace is not defined")
-	}
-
-	// Clean the path first
-	path = filepath.Clean(path)
-
-	// If absolute, make it relative to workspace
-	if filepath.IsAbs(path) {
-		rel, err := filepath.Rel(workspace, path)
-		if err != nil {
-			return "", fmt.Errorf("failed to calculate relative path: %w", err)
-		}
-		path = rel
-	}
-
-	// Check for escape
-	if path == ".." || strings.HasPrefix(path, "../") {
-		return "", fmt.Errorf("path escapes workspace: %s", path)
-	}
-
-	return path, nil
-}
-
-// executeInRoot executes a function within the safety of os.Root
-func executeInRoot(workspace string, path string, fn func(root *os.Root, relPath string) (*ToolResult, error)) *ToolResult {
-	if workspace == "" {
-		return ErrorResult("workspace is not defined")
-	}
-
-	// 1. Open the Root
-	root, err := os.OpenRoot(workspace)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to open workspace root: %v", err))
-	}
-	defer root.Close()
-
-	// 2. Calculate relative path
-	relPath, err := getSafeRelPath(workspace, path)
-	if err != nil {
-		return ErrorResult(err.Error())
-	}
-
-	// 3. Execute the operation
-	result, err := fn(root, relPath)
-	if err != nil {
-		return ErrorResult(err.Error())
-	}
-
-	return result
-}
-
-// mkdirAllInRoot mimics os.MkdirAll but within os.Root
-func mkdirAllInRoot(root *os.Root, relPath string) error {
-	relPath = filepath.Clean(relPath)
-	if relPath == "." || relPath == "/" {
-		return nil
-	}
-
-	dir := filepath.Dir(relPath)
-	if dir != "." && dir != "/" {
-		if err := mkdirAllInRoot(root, dir); err != nil {
-			return err
-		}
-	}
-
-	err := root.Mkdir(relPath, 0755)
-	if err != nil && !os.IsExist(err) {
-		return err
-	}
-	return nil
-}
-
 type ReadFileTool struct {
 	workspace string
 	restrict  bool
@@ -133,7 +58,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{})
 		f, err := root.Open(relPath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("failed to read file:file not found: %s", path)
+				return nil, fmt.Errorf("failed to read file: file not found: %s", path)
 			}
 			return nil, fmt.Errorf("access denied or failed to open: %w", err)
 		}
@@ -221,7 +146,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 		if err != nil {
 			return nil, fmt.Errorf("failed to write file: %w", err)
 		}
-		return &ToolResult{Silent: true}, nil
+		return SilentResult(fmt.Sprintf("File written: %s", path)), nil
 	})
 }
 
@@ -281,26 +206,93 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) 
 			return nil, fmt.Errorf("failed to read directory: %w", err)
 		}
 
-		var result strings.Builder
-		for _, entry := range entries {
-			if entry.IsDir() {
-				result.WriteString("DIR:  " + entry.Name() + "\n")
-			} else {
-				result.WriteString("FILE: " + entry.Name() + "\n")
-			}
-		}
-		return NewToolResult(result.String()), nil
+		return formatDirEntries(entries), nil
 	})
 }
 
 func formatDirEntries(entries []os.DirEntry) *ToolResult {
-	result := ""
+	var result strings.Builder
 	for _, entry := range entries {
 		if entry.IsDir() {
-			result += "DIR:  " + entry.Name() + "\n"
+			result.WriteString("DIR:  " + entry.Name() + "\n")
 		} else {
-			result += "FILE: " + entry.Name() + "\n"
+			result.WriteString("FILE: " + entry.Name() + "\n")
 		}
 	}
-	return NewToolResult(result)
+	return NewToolResult(result.String())
+}
+
+// Helper to get a safe relative path for os.Root usage
+func getSafeRelPath(workspace, path string) (string, error) {
+	if workspace == "" {
+		return "", fmt.Errorf("workspace is empty and not defined")
+	}
+
+	path = filepath.Clean(path)
+
+	// If absolute, make it relative to workspace
+	// os.Root only accepts relative paths
+	if filepath.IsAbs(path) {
+		rel, err := filepath.Rel(workspace, path)
+		if err != nil {
+			return "", fmt.Errorf("failed to calculate relative path: %w", err)
+		}
+		path = rel
+	}
+
+	// Check for escape
+	if path == ".." || strings.HasPrefix(path, "../") {
+		return "", fmt.Errorf("path escapes workspace: %s", path)
+	}
+
+	return path, nil
+}
+
+// executeInRoot executes a function within the safety of os.Root
+func executeInRoot(workspace string, path string, fn func(root *os.Root, relPath string) (*ToolResult, error)) *ToolResult {
+	if workspace == "" {
+		return ErrorResult("workspace is not defined")
+	}
+
+	// 1. Open the Root
+	root, err := os.OpenRoot(workspace)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("failed to open workspace root: %v", err))
+	}
+	defer root.Close()
+
+	// 2. Calculate relative path
+	relPath, err := getSafeRelPath(workspace, path)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+
+	// 3. Execute the operation
+	result, err := fn(root, relPath)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+
+	return result
+}
+
+// mkdirAllInRoot mimics os.MkdirAll but within os.Root
+func mkdirAllInRoot(root *os.Root, relPath string) error {
+	relPath = filepath.Clean(relPath)
+	if relPath == "." || relPath == "/" {
+		return nil
+	}
+
+	dir := filepath.Dir(relPath)
+	if dir != "." && dir != "/" {
+		if err := mkdirAllInRoot(root, dir); err != nil {
+			return err
+		}
+	}
+
+	err := root.Mkdir(relPath, 0755)
+	if err != nil && !os.IsExist(err) {
+		return err
+	}
+	return nil
 }
