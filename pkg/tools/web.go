@@ -306,7 +306,7 @@ type WebSearchTool struct {
 //
 // If Provider is set, it's considered enabled. Use empty Provider to disable.
 // BaseURL is generic and works for any provider (e.g., custom Ollama instances).
-// Model is not needed for web search - results are translated by the main LLM.
+// Search results are returned as raw text/JSON for the main LLM or agent to process.
 //
 // Usage example:
 //
@@ -327,8 +327,17 @@ type WebSearchToolOptions struct {
 }
 
 func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
-	// Priority order: Brave > Ollama > Perplexity > DuckDuckGo
-	priorityOrder := []string{"brave", "ollama", "perplexity", "duckduckgo"}
+	// If no options are provided, default to DuckDuckGo with 5 results.
+	if len(opts) == 0 {
+		opts = []WebSearchToolOptions{
+			{
+				Provider:   "duckduckgo",
+				MaxResults: 5,
+			},
+		}
+	}
+	// Priority order: Brave > Ollama > DuckDuckGo
+	priorityOrder := []string{"brave", "ollama", "duckduckgo"}
 	optMap := make(map[string]WebSearchToolOptions)
 
 	// Build map of enabled providers
