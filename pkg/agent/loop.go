@@ -188,6 +188,13 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			response, err := al.processMessage(ctx, msg)
 			if err != nil {
 				response = fmt.Sprintf("Error processing message: %v", err)
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: msg.Channel,
+					ChatID:  msg.ChatID,
+					Content: response,
+					Type:    "error",
+				})
+				continue
 			}
 
 			if response != "" {
@@ -406,7 +413,17 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	// 3. Save user message to session
 	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 4. Run LLM iteration loop
+	// 4. Emit thinking status
+	if !constants.IsInternalChannel(opts.Channel) {
+		al.bus.PublishOutbound(bus.OutboundMessage{
+			Channel: opts.Channel,
+			ChatID:  opts.ChatID,
+			Content: "思考中...",
+			Type:    "status",
+		})
+	}
+
+	// 5. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, messages, opts)
 	if err != nil {
 		return "", err
@@ -708,6 +725,18 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 							"tool":        tc.Name,
 							"content_len": len(result.ForUser),
 						})
+				}
+			}
+
+			// Emit tool use status indicator
+			if !constants.IsInternalChannel(opts.Channel) {
+				if label := statusLabel(tc.Name, tc.Arguments); label != "" {
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Content: label,
+						Type:    "status",
+					})
 				}
 			}
 

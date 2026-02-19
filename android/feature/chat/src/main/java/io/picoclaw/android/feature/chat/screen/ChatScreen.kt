@@ -32,6 +32,7 @@ import io.picoclaw.android.feature.chat.component.ConnectionBanner
 import io.picoclaw.android.feature.chat.component.ImagePreviewRow
 import io.picoclaw.android.feature.chat.component.MessageInput
 import io.picoclaw.android.feature.chat.component.MessageList
+import io.picoclaw.android.feature.chat.component.StatusIndicator
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
 
@@ -133,6 +134,8 @@ fun ChatScreen(
                 isLoadingMore = uiState.isLoadingMore,
                 modifier = Modifier.weight(1f)
             )
+
+            StatusIndicator(label = uiState.statusLabel)
 
             ImagePreviewRow(
                 images = uiState.pendingImages,

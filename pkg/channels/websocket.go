@@ -24,6 +24,7 @@ type wsIncoming struct {
 // wsOutgoing is the JSON message sent from picoclaw to APK.
 type wsOutgoing struct {
 	Content string `json:"content"`
+	Type    string `json:"type,omitempty"`
 }
 
 // WebSocketChannel is a server-side WebSocket channel that accepts
@@ -132,7 +133,7 @@ func (c *WebSocketChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 		return fmt.Errorf("no connection for chat %s", msg.ChatID)
 	}
 
-	out := wsOutgoing{Content: msg.Content}
+	out := wsOutgoing{Content: msg.Content, Type: msg.Type}
 	data, err := json.Marshal(out)
 	if err != nil {
 		return fmt.Errorf("failed to marshal response: %w", err)

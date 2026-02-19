@@ -11,5 +11,6 @@ data class ChatUiState(
     val pendingImages: List<ImageAttachment> = emptyList(),
     val isLoadingMore: Boolean = false,
     val canLoadMore: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val statusLabel: String? = null
 )

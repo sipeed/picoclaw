@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -27,6 +28,7 @@ class ChatRepositoryImpl(
 ) : ChatRepository {
 
     private val _displayLimit = MutableStateFlow(INITIAL_LOAD_COUNT)
+    private val _statusLabel = MutableStateFlow<String?>(null)
 
     @Suppress("OPT_IN_USAGE")
     override val messages: StateFlow<List<ChatMessage>> =
@@ -38,11 +40,19 @@ class ChatRepositoryImpl(
 
     override val connectionState: StateFlow<ConnectionState> = webSocketClient.connectionState
 
+    override val statusLabel: StateFlow<String?> = _statusLabel.asStateFlow()
+
     init {
         scope.launch {
             webSocketClient.incomingMessages.collect { dto ->
-                val entity = MessageMapper.toEntity(dto)
-                messageDao.insert(entity)
+                when (dto.type) {
+                    "status" -> _statusLabel.value = dto.content
+                    else -> {
+                        _statusLabel.value = null
+                        val entity = MessageMapper.toEntity(dto)
+                        messageDao.insert(entity)
+                    }
+                }
             }
         }
     }

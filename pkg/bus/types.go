@@ -14,6 +14,7 @@ type OutboundMessage struct {
 	Channel string `json:"channel"`
 	ChatID  string `json:"chat_id"`
 	Content string `json:"content"`
+	Type    string `json:"type,omitempty"` // "message" (default when empty), "status", "error"
 }
 
 type MessageHandler func(InboundMessage) error

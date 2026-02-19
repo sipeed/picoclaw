@@ -7,6 +7,7 @@ import io.picoclaw.android.core.domain.usecase.DisconnectChatUseCase
 import io.picoclaw.android.core.domain.usecase.LoadMoreMessagesUseCase
 import io.picoclaw.android.core.domain.usecase.ObserveConnectionUseCase
 import io.picoclaw.android.core.domain.usecase.ObserveMessagesUseCase
+import io.picoclaw.android.core.domain.usecase.ObserveStatusUseCase
 import io.picoclaw.android.core.domain.usecase.SendMessageUseCase
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +21,7 @@ class ChatViewModel(
     private val sendMessage: SendMessageUseCase,
     private val observeMessages: ObserveMessagesUseCase,
     private val observeConnection: ObserveConnectionUseCase,
+    private val observeStatus: ObserveStatusUseCase,
     private val loadMoreMessages: LoadMoreMessagesUseCase,
     private val connectChat: ConnectChatUseCase,
     private val disconnectChat: DisconnectChatUseCase
@@ -43,6 +45,12 @@ class ChatViewModel(
         viewModelScope.launch {
             observeConnection().collect { state ->
                 _uiState.update { it.copy(connectionState = state) }
+            }
+        }
+
+        viewModelScope.launch {
+            observeStatus().collect { label ->
+                _uiState.update { it.copy(statusLabel = label) }
             }
         }
     }

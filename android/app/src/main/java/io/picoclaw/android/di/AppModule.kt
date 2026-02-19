@@ -14,6 +14,7 @@ import io.picoclaw.android.core.domain.usecase.DisconnectChatUseCase
 import io.picoclaw.android.core.domain.usecase.LoadMoreMessagesUseCase
 import io.picoclaw.android.core.domain.usecase.ObserveConnectionUseCase
 import io.picoclaw.android.core.domain.usecase.ObserveMessagesUseCase
+import io.picoclaw.android.core.domain.usecase.ObserveStatusUseCase
 import io.picoclaw.android.core.domain.usecase.SendMessageUseCase
 import io.picoclaw.android.feature.chat.ChatViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -71,10 +72,11 @@ val appModule = module {
     factory { SendMessageUseCase(get()) }
     factory { ObserveMessagesUseCase(get()) }
     factory { ObserveConnectionUseCase(get()) }
+    factory { ObserveStatusUseCase(get()) }
     factory { LoadMoreMessagesUseCase(get()) }
     factory { ConnectChatUseCase(get()) }
     factory { DisconnectChatUseCase(get()) }
 
     // ViewModel
-    viewModel { ChatViewModel(get(), get(), get(), get(), get(), get()) }
+    viewModel { ChatViewModel(get(), get(), get(), get(), get(), get(), get()) }
 }

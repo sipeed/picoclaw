@@ -274,6 +274,11 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				continue
 			}
 
+			// Status events are only supported by WebSocket clients
+			if msg.Type == "status" && msg.Channel != "websocket" {
+				continue
+			}
+
 			m.mu.RLock()
 			channel, exists := m.channels[msg.Channel]
 			m.mu.RUnlock()
