@@ -39,7 +39,9 @@ type AgentLoop struct {
 	blackboards    sync.Map // sessionKey -> *multiagent.Blackboard
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
-	runRegistry    *multiagent.RunRegistry // tracks active handoff/spawn runs for cascade stop
+	runRegistry    *multiagent.RunRegistry    // tracks active handoff/spawn runs for cascade stop
+	announcer      *multiagent.Announcer      // per-session spawn result delivery (Phase 4b)
+	spawnManager   *multiagent.SpawnManager   // async spawn orchestrator (Phase 4a)
 }
 
 // processOptions configures how a message is processed
@@ -57,9 +59,28 @@ type processOptions struct {
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 	runRegistry := multiagent.NewRunRegistry()
+	announcer := multiagent.NewAnnouncer(32)
+
+	// Resolve spawn limits from config (per-agent settings, with defaults).
+	maxChildren := multiagent.DefaultMaxChildren
+	spawnTimeout := multiagent.DefaultSpawnTimeout
+	if len(cfg.Agents.List) > 0 {
+		for _, ac := range cfg.Agents.List {
+			if ac.Subagents != nil {
+				if ac.Subagents.MaxChildrenPerAgent > 0 {
+					maxChildren = ac.Subagents.MaxChildrenPerAgent
+				}
+				if ac.Subagents.SpawnTimeoutSec > 0 {
+					spawnTimeout = time.Duration(ac.Subagents.SpawnTimeoutSec) * time.Second
+				}
+				break // use first configured value as global default
+			}
+		}
+	}
+	spawnManager := multiagent.NewSpawnManager(runRegistry, announcer, maxChildren, spawnTimeout)
 
 	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider, runRegistry)
+	registerSharedTools(cfg, msgBus, registry, provider, runRegistry, spawnManager, announcer)
 
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
@@ -73,13 +94,15 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 
 	return &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		summarizing: sync.Map{},
-		fallback:    fallbackChain,
-		runRegistry: runRegistry,
+		bus:          msgBus,
+		cfg:          cfg,
+		registry:     registry,
+		state:        stateManager,
+		summarizing:  sync.Map{},
+		fallback:     fallbackChain,
+		runRegistry:  runRegistry,
+		announcer:    announcer,
+		spawnManager: spawnManager,
 	}
 }
 
@@ -125,7 +148,7 @@ func (r *registryResolver) ListAgents() []multiagent.AgentInfo {
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
-func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *AgentRegistry, provider providers.LLMProvider, runReg *multiagent.RunRegistry) {
+func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *AgentRegistry, provider providers.LLMProvider, runReg *multiagent.RunRegistry, spawnMgr *multiagent.SpawnManager, announcer *multiagent.Announcer) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {
@@ -205,6 +228,24 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 
 			// List agents tool: discover available agents
 			agent.Tools.Register(multiagent.NewListAgentsTool(resolver))
+
+			// Async spawn tool: fire-and-forget agent invocation (Phase 4a).
+			// Results are auto-announced back to the parent session via the Announcer.
+			if spawnMgr != nil {
+				spawnAgentTool := multiagent.NewSpawnTool(resolver, placeholderBoard, spawnMgr, agentID)
+				currentAgentIDForSpawn := agentID
+				spawnAgentTool.SetAllowlistChecker(multiagent.AllowlistCheckerFunc(func(from, to string) bool {
+					parent, ok := registry.GetAgent(from)
+					if !ok {
+						return false
+					}
+					if parent.Subagents == nil || parent.Subagents.AllowAgents == nil {
+						return true
+					}
+					return registry.CanSpawnSubagent(currentAgentIDForSpawn, to)
+				}))
+				agent.Tools.Register(spawnAgentTool)
+			}
 		}
 
 		// Apply per-agent tool policy (static, startup-time filtering).
@@ -567,6 +608,21 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 	for iteration < agent.MaxIterations {
 		iteration++
 
+		// Drain pending spawn announcements and inject as context (Phase 4b).
+		// Between each LLM iteration, check if any child spawns completed
+		// and inject their results so the LLM can use them.
+		if al.announcer != nil {
+			anns := al.announcer.Drain(opts.SessionKey)
+			for _, ann := range anns {
+				annMsg := providers.Message{
+					Role:    "system",
+					Content: fmt.Sprintf("[Spawn result from agent %q (run: %s)]\n%s", ann.AgentID, ann.RunID, ann.Content),
+				}
+				messages = append(messages, annMsg)
+				agent.Sessions.AddFullMessage(opts.SessionKey, annMsg)
+			}
+		}
+
 		logger.DebugCF("agent", "LLM iteration",
 			map[string]interface{}{
 				"agent_id":  agent.ID,
@@ -854,13 +910,18 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 			ht.SetContext(channel, chatID)
 		}
 	}
+	if tool, ok := agent.Tools.Get("spawn_agent"); ok {
+		if st, ok := tool.(tools.ContextualTool); ok {
+			st.SetContext(channel, chatID)
+		}
+	}
 
 	// Wire the per-session blackboard to board-aware tools (fixes split-brain bug).
-	// This ensures BlackboardTool and HandoffTool operate on the same board that
-	// gets injected into the system prompt via getOrCreateBlackboard.
+	// This ensures BlackboardTool, HandoffTool, and SpawnTool operate on the same
+	// board that gets injected into the system prompt via getOrCreateBlackboard.
 	if sessionKey != "" {
 		bb := al.getOrCreateBlackboard(sessionKey)
-		for _, toolName := range []string{"blackboard", "handoff"} {
+		for _, toolName := range []string{"blackboard", "handoff", "spawn_agent"} {
 			if tool, ok := agent.Tools.Get(toolName); ok {
 				if ba, ok := tool.(multiagent.BoardAware); ok {
 					ba.SetBoard(bb)
