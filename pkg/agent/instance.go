@@ -83,6 +83,11 @@ func NewAgentInstance(
 		maxTokens = 8192
 	}
 
+	temperature := defaults.Temperature
+	if temperature == 0 {
+		temperature = 0.7
+	}
+
 	// Resolve fallback candidates
 	modelCfg := providers.ModelConfig{
 		Primary:   model,
@@ -98,7 +103,7 @@ func NewAgentInstance(
 		Workspace:      workspace,
 		MaxIterations:  maxIter,
 		MaxTokens:      maxTokens,
-		Temperature:    defaults.Temperature,
+		Temperature:    temperature,
 		ContextWindow:  maxTokens,
 		Provider:       provider,
 		Sessions:       sessionsManager,

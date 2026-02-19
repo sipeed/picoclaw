@@ -57,8 +57,6 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 		if llmOpts == nil {
 			llmOpts = map[string]any{}
 		}
-
-
 		// 3. Call LLM
 		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
 		if err != nil {

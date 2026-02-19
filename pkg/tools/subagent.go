@@ -23,19 +23,19 @@ type SubagentTask struct {
 }
 
 type SubagentManager struct {
-	tasks         map[string]*SubagentTask
-	mu            sync.RWMutex
-	provider      providers.LLMProvider
-	defaultModel  string
-	bus           *bus.MessageBus
-	workspace     string
-	tools         *ToolRegistry
-	maxIterations int
-	maxTokens     int
-	temperature   float64
-	hasMaxTokens  bool
+	tasks          map[string]*SubagentTask
+	mu             sync.RWMutex
+	provider       providers.LLMProvider
+	defaultModel   string
+	bus            *bus.MessageBus
+	workspace      string
+	tools          *ToolRegistry
+	maxIterations  int
+	maxTokens      int
+	temperature    float64
+	hasMaxTokens   bool
 	hasTemperature bool
-	nextID        int
+	nextID         int
 }
 
 func NewSubagentManager(provider providers.LLMProvider, defaultModel, workspace string, bus *bus.MessageBus) *SubagentManager {
@@ -333,7 +333,6 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
 	}, messages, t.originChannel, t.originChatID)
-
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)
 	}
