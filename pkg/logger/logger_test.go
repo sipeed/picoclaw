@@ -4,10 +4,18 @@ import (
 	"testing"
 )
 
-func TestLogLevelFiltering(t *testing.T) {
-	initialLevel := GetLevel()
-	defer SetLevel(initialLevel)
+func preserveLogLevel(t *testing.T) {
+	t.Helper()
+	mu.RLock()
+	prev := currentLevel
+	mu.RUnlock()
+	t.Cleanup(func() {
+		SetLevel(prev)
+	})
+}
 
+func TestLogLevelFiltering(t *testing.T) {
+	preserveLogLevel(t)
 	SetLevel(WARN)
 
 	tests := []struct {
@@ -41,13 +49,10 @@ func TestLogLevelFiltering(t *testing.T) {
 		})
 	}
 
-	SetLevel(INFO)
 }
 
 func TestLoggerWithComponent(t *testing.T) {
-	initialLevel := GetLevel()
-	defer SetLevel(initialLevel)
-
+	preserveLogLevel(t)
 	SetLevel(DEBUG)
 
 	tests := []struct {
@@ -77,7 +82,6 @@ func TestLoggerWithComponent(t *testing.T) {
 		})
 	}
 
-	SetLevel(INFO)
 }
 
 func TestLogLevels(t *testing.T) {
@@ -102,24 +106,8 @@ func TestLogLevels(t *testing.T) {
 	}
 }
 
-func TestSetGetLevel(t *testing.T) {
-	initialLevel := GetLevel()
-	defer SetLevel(initialLevel)
-
-	tests := []LogLevel{DEBUG, INFO, WARN, ERROR, FATAL}
-
-	for _, level := range tests {
-		SetLevel(level)
-		if GetLevel() != level {
-			t.Errorf("SetLevel(%v) -> GetLevel() = %v, want %v", level, GetLevel(), level)
-		}
-	}
-}
-
 func TestLoggerHelperFunctions(t *testing.T) {
-	initialLevel := GetLevel()
-	defer SetLevel(initialLevel)
-
+	preserveLogLevel(t)
 	SetLevel(INFO)
 
 	Debug("This should not log")
@@ -136,4 +124,24 @@ func TestLoggerHelperFunctions(t *testing.T) {
 	SetLevel(DEBUG)
 	DebugC("test", "Debug with component")
 	WarnF("Warning with fields", map[string]any{"key": "value"})
+}
+
+func TestSetLevelUpdatesGlobalState(t *testing.T) {
+	preserveLogLevel(t)
+
+	SetLevel(WARN)
+	mu.RLock()
+	gotWarn := currentLevel
+	mu.RUnlock()
+	if gotWarn != WARN {
+		t.Fatalf("currentLevel = %v, want %v", gotWarn, WARN)
+	}
+
+	SetLevel(DEBUG)
+	mu.RLock()
+	gotDebug := currentLevel
+	mu.RUnlock()
+	if gotDebug != DEBUG {
+		t.Fatalf("currentLevel = %v, want %v", gotDebug, DEBUG)
+	}
 }
