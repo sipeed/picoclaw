@@ -3,7 +3,7 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model": "ollama/qwen2.5:14b-instruct ",
+      "model": "",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -119,11 +119,11 @@
   "tools": {
     "web": {
       "search": {
-        "provider": "ollama",
-        "api_key": "Your Ollama API Key",
+        "provider": "ollama/brave/duckduckgo",
+        "api_key": "Your API Key",
         "endpoint": "https://ollama.com/api/web_search",
-        "rest_type": "POST",
-        "query_param": "query",
+        "rest_type": "POST for ollama, GET for others",
+        "query_param": "query for ollama, q for others",
         "max_results": 5
       },
       "perplexity": {

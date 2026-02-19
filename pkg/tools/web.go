@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 const (
@@ -208,8 +210,20 @@ func (p *OllamaSearchProvider) Search(ctx context.Context, query string, count i
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
+
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		logger.ErrorCF("tool", "Ollama web search request failed",
+			map[string]interface{}{
+				"provider":    "ollama",
+				"status_code": resp.StatusCode,
+				"endpoint":    p.baseURL,
+				"response":    strings.TrimSpace(string(body)),
+			})
+		return "", fmt.Errorf("Ollama API error: %s", string(body))
 	}
 
 	// Return the raw JSON string for the agent/tool to process
@@ -283,6 +297,7 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 
 type WebSearchTool struct {
 	provider   SearchProvider
+	fallback   SearchProvider
 	maxResults int
 }
 
@@ -298,11 +313,12 @@ type WebSearchTool struct {
 //	opts := []WebSearchToolOptions{
 //	    {Provider: "brave", APIKey: "key", MaxResults: 5},
 //	    {Provider: "ollama", BaseURL: "http://localhost:11434", MaxResults: 5},
+//	    {Provider: "perplexity", APIKey: "key", MaxResults: 5},
 //	    {Provider: "duckduckgo", MaxResults: 5},
 //	}
 //	tool := NewWebSearchTool(opts...)
 type WebSearchToolOptions struct {
-	Provider   string // "brave", "ollama", "duckduckgo"
+	Provider   string // "brave", "ollama", "perplexity", "duckduckgo"
 	APIKey     string // For Brave API
 	BaseURL    string // For custom providers (e.g., Ollama)
 	MaxResults int    // Default: 5
@@ -311,8 +327,8 @@ type WebSearchToolOptions struct {
 }
 
 func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
-	// Priority order: Brave > Ollama > DuckDuckGo
-	priorityOrder := []string{"brave", "ollama", "duckduckgo"}
+	// Priority order: Brave > Ollama > Perplexity > DuckDuckGo
+	priorityOrder := []string{"brave", "ollama", "perplexity", "duckduckgo"}
 	optMap := make(map[string]WebSearchToolOptions)
 
 	// Build map of enabled providers
@@ -344,6 +360,15 @@ func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
 		return nil
 	}
 
+	var fallbackProvider SearchProvider
+	if selectedOpt != nil && selectedOpt.Provider != "duckduckgo" {
+		if ddgOpt, exists := optMap["duckduckgo"]; exists {
+			if p, err := createProvider(&ddgOpt); err == nil && p != nil {
+				fallbackProvider = p
+			}
+		}
+	}
+
 	maxResults := 5
 	if selectedOpt != nil && selectedOpt.MaxResults > 0 {
 		maxResults = selectedOpt.MaxResults
@@ -351,6 +376,7 @@ func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
 
 	return &WebSearchTool{
 		provider:   provider,
+		fallback:   fallbackProvider,
 		maxResults: maxResults,
 	}
 }
@@ -385,6 +411,12 @@ func createProvider(opt *WebSearchToolOptions) (SearchProvider, error) {
 
 	case "duckduckgo":
 		return &DuckDuckGoSearchProvider{}, nil
+
+	case "perplexity":
+		if opt.APIKey == "" {
+			return nil, fmt.Errorf("Perplexity API key required")
+		}
+		return &PerplexitySearchProvider{apiKey: opt.APIKey}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", opt.Provider)
@@ -433,6 +465,35 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 
 	result, err := t.provider.Search(ctx, query, count)
 	if err != nil {
+		if t.fallback != nil {
+			logger.WarnCF("tool", "Primary web search failed, attempting fallback",
+				map[string]interface{}{
+					"primary_error": err.Error(),
+					"fallback":      "duckduckgo",
+					"query":         query,
+				})
+
+			fallbackResult, fallbackErr := t.fallback.Search(ctx, query, count)
+			if fallbackErr == nil {
+				logger.InfoCF("tool", "Fallback web search succeeded",
+					map[string]interface{}{
+						"provider": "duckduckgo",
+						"query":    query,
+					})
+
+				return &ToolResult{
+					ForLLM:  fmt.Sprintf("Primary search provider failed: %v\nFallback provider (duckduckgo) result:\n%s", err, fallbackResult),
+					ForUser: fallbackResult,
+				}
+			}
+
+			logger.ErrorCF("tool", "Fallback web search failed",
+				map[string]interface{}{
+					"provider": "duckduckgo",
+					"error":    fallbackErr.Error(),
+					"query":    query,
+				})
+		}
 		return ErrorResult(fmt.Sprintf("search failed: %v", err))
 	}
 

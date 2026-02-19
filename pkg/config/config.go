@@ -283,23 +283,6 @@ type GatewayConfig struct {
 	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
 }
 
-type BraveConfig struct {
-	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
-	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
-}
-
-type DuckDuckGoConfig struct {
-	Enabled    bool `json:"enabled" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
-	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
-}
-
-type OllamaConfig struct {
-	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_OLLAMA_ENABLED"`
-	BaseURL    string `json:"base_url" env:"PICOCLAW_TOOLS_WEB_OLLAMA_BASE_URL"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_OLLAMA_MAX_RESULTS"`
-}
-
 // WebSearchConfig defines a single active web search provider
 // Falls back to DuckDuckGo if the primary provider fails
 type WebSearchConfig struct {
@@ -429,7 +412,7 @@ func DefaultConfig() *Config {
 			Web: WebToolsConfig{
 				Search: WebSearchConfig{
 					Provider:   "ollama",
-					APIKey:     "77b893700a1d4c8dad9a7326be9a76d6.7pl0DA9ojPa_6UCMMZ_Sk-Cn",
+					APIKey:     "",
 					Endpoint:   "https://ollama.com/api/web_search",
 					RestType:   "POST",
 					QueryParam: "query",
