@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/providers/toolcall"
 )
 
 // CodexCliProvider implements LLMProvider by wrapping the codex CLI as a subprocess.
@@ -234,12 +236,12 @@ func (p *CodexCliProvider) parseJSONLEvents(output string) (*LLMResponse, error)
 	content := strings.Join(contentParts, "\n")
 
 	// Extract tool calls from response text (same pattern as ClaudeCliProvider)
-	toolCalls := extractToolCallsFromText(content)
+	toolCalls := toolcall.ExtractToolCallsFromText(content)
 
 	finishReason := "stop"
 	if len(toolCalls) > 0 {
 		finishReason = "tool_calls"
-		content = stripToolCallsFromText(content)
+		content = toolcall.StripToolCallsFromText(content)
 	}
 
 	return &LLMResponse{

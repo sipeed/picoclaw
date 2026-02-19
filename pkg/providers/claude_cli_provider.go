@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/providers/toolcall"
 )
 
 // ClaudeCliProvider implements LLMProvider using the claude CLI as a subprocess.
@@ -173,28 +175,12 @@ func (p *ClaudeCliProvider) parseClaudeCliResponse(output string) (*LLMResponse,
 
 // extractToolCalls delegates to the shared extractToolCallsFromText function.
 func (p *ClaudeCliProvider) extractToolCalls(text string) []ToolCall {
-	return extractToolCallsFromText(text)
+	return toolcall.ExtractToolCallsFromText(text)
 }
 
 // stripToolCallsJSON delegates to the shared stripToolCallsFromText function.
 func (p *ClaudeCliProvider) stripToolCallsJSON(text string) string {
-	return stripToolCallsFromText(text)
-}
-
-// findMatchingBrace finds the index after the closing brace matching the opening brace at pos.
-func findMatchingBrace(text string, pos int) int {
-	depth := 0
-	for i := pos; i < len(text); i++ {
-		if text[i] == '{' {
-			depth++
-		} else if text[i] == '}' {
-			depth--
-			if depth == 0 {
-				return i + 1
-			}
-		}
-	}
-	return pos
+	return toolcall.StripToolCallsFromText(text)
 }
 
 // claudeCliJSONResponse represents the JSON output from the claude CLI.
