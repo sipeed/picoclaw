@@ -291,7 +291,7 @@ type WebSearchTool struct {
 //
 // If Provider is set, it's considered enabled. Use empty Provider to disable.
 // BaseURL is generic and works for any provider (e.g., custom Ollama instances).
-// Model is not needed for web search - results are translated by the main LLM.
+// Search results are returned as raw text/JSON for the main LLM or agent to process.
 //
 // Usage example:
 //
