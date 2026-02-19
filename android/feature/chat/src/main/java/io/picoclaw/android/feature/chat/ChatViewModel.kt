@@ -105,6 +105,9 @@ class ChatViewModel(
             is ChatEvent.OnVoiceModeStop -> {
                 voiceModeManager.stop()
             }
+            is ChatEvent.OnVoiceModeInterrupt -> {
+                voiceModeManager.interrupt()
+            }
         }
     }
 

@@ -35,9 +35,11 @@ class VoiceModeManager(
     val state: StateFlow<VoiceModeState> = _state.asStateFlow()
 
     private var loopJob: Job? = null
+    private var parentScope: CoroutineScope? = null
 
     fun start(scope: CoroutineScope) {
         if (loopJob?.isActive == true) return
+        parentScope = scope
         _state.update {
             VoiceModeState(isActive = true, phase = VoicePhase.LISTENING)
         }
@@ -49,8 +51,23 @@ class VoiceModeManager(
     fun stop() {
         loopJob?.cancel()
         loopJob = null
+        parentScope = null
         ttsWrapper.stop()
         _state.value = VoiceModeState()
+    }
+
+    fun interrupt() {
+        val scope = parentScope ?: return
+        if (loopJob?.isActive != true) return
+
+        ttsWrapper.stop()
+        loopJob?.cancel()
+        loopJob = null
+
+        _state.update {
+            VoiceModeState(isActive = true, phase = VoicePhase.LISTENING)
+        }
+        loopJob = scope.launch { voiceLoop() }
     }
 
     fun destroy() {

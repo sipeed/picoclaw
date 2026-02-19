@@ -47,6 +47,13 @@ type AgentLoop struct {
 	channelManager *channels.Manager
 	rateLimiter    *rateLimiter
 	mcpManager     *mcp.Manager
+	activeProcs    map[string]*activeProcess
+	procsMu        sync.Mutex
+}
+
+type activeProcess struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // processOptions configures how a message is processed
@@ -182,6 +189,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		summarizing:    sync.Map{},
 		rateLimiter:    newRateLimiter(cfg.RateLimits.MaxToolCallsPerMinute, cfg.RateLimits.MaxRequestsPerMinute),
 		mcpManager:     mcpManager,
+		activeProcs:    make(map[string]*activeProcess),
 	}
 }
 
@@ -198,36 +206,67 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
-			response, err := al.processMessage(ctx, msg)
-			if err != nil {
-				response = fmt.Sprintf("Error processing message: %v", err)
-				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel: msg.Channel,
-					ChatID:  msg.ChatID,
-					Content: response,
-					Type:    "error",
-				})
-				continue
+			sessionKey := msg.SessionKey
+			if sessionKey == "" {
+				sessionKey = fmt.Sprintf("%s:%s", msg.Channel, msg.ChatID)
 			}
 
-			if response != "" {
-				// Check if the message tool already sent a response during this round.
-				// If so, skip publishing to avoid duplicate messages to the user.
-				alreadySent := false
-				if tool, ok := al.tools.Get("message"); ok {
-					if mt, ok := tool.(*tools.MessageTool); ok {
-						alreadySent = mt.HasSentInRound()
+			// Cancel active process for the same session
+			al.procsMu.Lock()
+			if active, exists := al.activeProcs[sessionKey]; exists {
+				active.cancel()
+				al.procsMu.Unlock()
+				select {
+				case <-active.done:
+				case <-time.After(5 * time.Second):
+					logger.WarnCF("agent", "Timed out waiting for cancelled process",
+						map[string]interface{}{"session_key": sessionKey})
+				}
+				al.procsMu.Lock()
+			}
+
+			procCtx, procCancel := context.WithCancel(ctx)
+			done := make(chan struct{})
+			al.activeProcs[sessionKey] = &activeProcess{cancel: procCancel, done: done}
+			al.procsMu.Unlock()
+
+			go func(m bus.InboundMessage, sk string) {
+				defer func() {
+					close(done)
+					al.procsMu.Lock()
+					if cur, ok := al.activeProcs[sk]; ok && cur.done == done {
+						delete(al.activeProcs, sk)
+					}
+					al.procsMu.Unlock()
+					procCancel()
+				}()
+
+				response, err := al.processMessage(procCtx, m)
+
+				if procCtx.Err() != nil {
+					return
+				}
+				if err != nil {
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel: m.Channel, ChatID: m.ChatID,
+						Content: fmt.Sprintf("Error: %v", err), Type: "error",
+					})
+					return
+				}
+				if response != "" {
+					alreadySent := false
+					if tool, ok := al.tools.Get("message"); ok {
+						if mt, ok := tool.(*tools.MessageTool); ok {
+							alreadySent = mt.HasSentInRound()
+						}
+					}
+					if !alreadySent {
+						al.bus.PublishOutbound(bus.OutboundMessage{
+							Channel: m.Channel, ChatID: m.ChatID, Content: response,
+						})
 					}
 				}
-
-				if !alreadySent {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: msg.Channel,
-						ChatID:  msg.ChatID,
-						Content: response,
-					})
-				}
-			}
+			}(msg, sessionKey)
 		}
 	}
 
@@ -469,6 +508,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 
 	// 5. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, messages, opts, &currentStatus)
+
+	if ctx.Err() != nil {
+		// Processing was cancelled (e.g., new message from same session)
+		al.sessions.AddMessage(opts.SessionKey, "assistant", "[応答は中断されました]")
+		al.sessions.Save(opts.SessionKey)
+		return "", nil
+	}
+
 	if err != nil {
 		return "", err
 	}
@@ -519,6 +566,13 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 
 	for iteration < al.maxIterations {
 		iteration++
+
+		// Cancellation checkpoint at start of each iteration
+		select {
+		case <-ctx.Done():
+			return finalContent, iteration, ctx.Err()
+		default:
+		}
 
 		logger.DebugCF("agent", "LLM iteration",
 			map[string]interface{}{
@@ -816,6 +870,13 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 
 			// Save tool result message to session
 			al.sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
+
+			// Cancellation checkpoint after each tool execution
+			select {
+			case <-ctx.Done():
+				return finalContent, iteration, ctx.Err()
+			default:
+			}
 		}
 	}
 

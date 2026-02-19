@@ -209,7 +209,8 @@ fun ChatScreen(
 
         VoiceModeOverlay(
             state = uiState.voiceModeState,
-            onClose = { viewModel.onEvent(ChatEvent.OnVoiceModeStop) }
+            onClose = { viewModel.onEvent(ChatEvent.OnVoiceModeStop) },
+            onInterrupt = { viewModel.onEvent(ChatEvent.OnVoiceModeInterrupt) }
         )
     }
 }
