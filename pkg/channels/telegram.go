@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	th "github.com/mymmrac/telego/telegohandler"
 
@@ -46,6 +47,8 @@ func (c *thinkingCancel) Cancel() {
 }
 
 const telegramMaxMessageChars = 3900
+const markdownTableMaxWidth = 90
+const markdownTableMinColWidth = 6
 
 var thinkBlockPattern = regexp.MustCompile(`(?is)<think>.*?</think>`)
 
@@ -452,12 +455,17 @@ func markdownToTelegramHTML(text string) string {
 	codeBlocks := extractCodeBlocks(text)
 	text = codeBlocks.text
 
+	tables := extractMarkdownTables(text)
+	text = tables.text
+
 	inlineCodes := extractInlineCodes(text)
 	text = inlineCodes.text
 
-	text = regexp.MustCompile(`^#{1,6}\s+(.+)$`).ReplaceAllString(text, "$1")
+	// Convert headings to bold markdown first, then transform to HTML later.
+	text = regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`).ReplaceAllString(text, "**$1**")
 
-	text = regexp.MustCompile(`^>\s*(.*)$`).ReplaceAllString(text, "$1")
+	// Strip quote markers per line.
+	text = regexp.MustCompile(`(?m)^>\s*(.*)$`).ReplaceAllString(text, "$1")
 
 	text = escapeHTML(text)
 
@@ -478,11 +486,14 @@ func markdownToTelegramHTML(text string) string {
 
 	text = regexp.MustCompile(`~~(.+?)~~`).ReplaceAllString(text, "<s>$1</s>")
 
-	text = regexp.MustCompile(`^[-*]\s+`).ReplaceAllString(text, "• ")
-
 	for i, code := range inlineCodes.codes {
 		escaped := escapeHTML(code)
 		text = strings.ReplaceAll(text, fmt.Sprintf("\x00IC%d\x00", i), fmt.Sprintf("<code>%s</code>", escaped))
+	}
+
+	for i, table := range tables.tables {
+		escaped := escapeHTML(table)
+		text = strings.ReplaceAll(text, fmt.Sprintf("\x00TB%d\x00", i), fmt.Sprintf("<pre><code>%s</code></pre>", escaped))
 	}
 
 	for i, code := range codeBlocks.codes {
@@ -496,6 +507,11 @@ func markdownToTelegramHTML(text string) string {
 type codeBlockMatch struct {
 	text  string
 	codes []string
+}
+
+type tableBlockMatch struct {
+	text   string
+	tables []string
 }
 
 func extractCodeBlocks(text string) codeBlockMatch {
@@ -539,6 +555,278 @@ func extractInlineCodes(text string) inlineCodeMatch {
 	})
 
 	return inlineCodeMatch{text: text, codes: codes}
+}
+
+func extractMarkdownTables(text string) tableBlockMatch {
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	tables := make([]string, 0)
+	placeholderIdx := 0
+
+	for i := 0; i < len(lines); {
+		if i+1 < len(lines) && isTableRowLine(lines[i]) && isTableSeparatorLine(lines[i+1]) {
+			start := i
+			i += 2
+			for i < len(lines) && isTableRowLine(lines[i]) {
+				i++
+			}
+			block := lines[start:i]
+			formatted := formatMarkdownTable(block)
+			placeholder := fmt.Sprintf("\x00TB%d\x00", placeholderIdx)
+			placeholderIdx++
+			tables = append(tables, formatted)
+			out = append(out, placeholder)
+			continue
+		}
+		out = append(out, lines[i])
+		i++
+	}
+
+	return tableBlockMatch{
+		text:   strings.Join(out, "\n"),
+		tables: tables,
+	}
+}
+
+func isTableRowLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.Count(trimmed, "|") >= 2
+}
+
+func isTableSeparatorLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	trimmed = strings.Trim(trimmed, "|")
+	parts := strings.Split(trimmed, "|")
+	if len(parts) == 0 {
+		return false
+	}
+	for _, p := range parts {
+		c := strings.TrimSpace(p)
+		if c == "" {
+			return false
+		}
+		for _, r := range c {
+			if r != '-' && r != ':' && r != ' ' {
+				return false
+			}
+		}
+		if !strings.Contains(c, "-") {
+			return false
+		}
+	}
+	return true
+}
+
+func parseTableCells(line string) []string {
+	trimmed := strings.TrimSpace(line)
+	trimmed = strings.Trim(trimmed, "|")
+	raw := strings.Split(trimmed, "|")
+	cells := make([]string, 0, len(raw))
+	for _, c := range raw {
+		cells = append(cells, strings.TrimSpace(c))
+	}
+	return cells
+}
+
+func formatMarkdownTable(lines []string) string {
+	if len(lines) < 2 {
+		return strings.Join(lines, "\n")
+	}
+
+	rows := make([][]string, 0, len(lines)-1)
+	rows = append(rows, parseTableCells(lines[0])) // header
+	for _, l := range lines[2:] {                  // skip separator
+		rows = append(rows, parseTableCells(l))
+	}
+
+	cols := 0
+	for _, r := range rows {
+		if len(r) > cols {
+			cols = len(r)
+		}
+	}
+	if cols == 0 {
+		return strings.Join(lines, "\n")
+	}
+
+	widths := make([]int, cols)
+	for _, r := range rows {
+		for i := 0; i < cols; i++ {
+			cell := ""
+			if i < len(r) {
+				cell = r[i]
+			}
+			w := displayWidth(cell)
+			if w > widths[i] {
+				widths[i] = w
+			}
+		}
+	}
+
+	// Enforce horizontal width limit by shrinking widest columns first.
+	totalWidth := func(ws []int) int {
+		sum := 0
+		for _, w := range ws {
+			sum += w
+		}
+		if len(ws) == 0 {
+			return 0
+		}
+		// "| " + " | ".join(cols) + " |"
+		return sum + 4 + (len(ws)-1)*3
+	}
+
+	for totalWidth(widths) > markdownTableMaxWidth {
+		maxIdx := -1
+		maxW := 0
+		for i, w := range widths {
+			if w > maxW && w > markdownTableMinColWidth {
+				maxW = w
+				maxIdx = i
+			}
+		}
+		if maxIdx == -1 {
+			break
+		}
+		widths[maxIdx]--
+	}
+
+	padToWidth := func(s string, w int) string {
+		dw := displayWidth(s)
+		if dw >= w {
+			return s
+		}
+		return s + strings.Repeat(" ", w-dw)
+	}
+
+	renderLogicalRow := func(r []string) []string {
+		wrapped := make([][]string, cols)
+		maxLines := 1
+		for c := 0; c < cols; c++ {
+			cell := ""
+			if c < len(r) {
+				cell = r[c]
+			}
+			lines := wrapByDisplayWidth(cell, widths[c])
+			if len(lines) == 0 {
+				lines = []string{""}
+			}
+			wrapped[c] = lines
+			if len(lines) > maxLines {
+				maxLines = len(lines)
+			}
+		}
+
+		out := make([]string, 0, maxLines)
+		for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
+			var rowBuilder strings.Builder
+			rowBuilder.WriteString("| ")
+			for c := 0; c < cols; c++ {
+				cellLine := ""
+				if lineIdx < len(wrapped[c]) {
+					cellLine = wrapped[c][lineIdx]
+				}
+				rowBuilder.WriteString(padToWidth(cellLine, widths[c]))
+				if c == cols-1 {
+					rowBuilder.WriteString(" |")
+				} else {
+					rowBuilder.WriteString(" | ")
+				}
+			}
+			out = append(out, rowBuilder.String())
+		}
+		return out
+	}
+
+	var b strings.Builder
+	for rIdx, r := range rows {
+		rowLines := renderLogicalRow(r)
+		for _, line := range rowLines {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+		if rIdx == 0 {
+			b.WriteString("| ")
+			for c := 0; c < cols; c++ {
+				b.WriteString(strings.Repeat("-", widths[c]))
+				if c == cols-1 {
+					b.WriteString(" |\n")
+				} else {
+					b.WriteString(" | ")
+				}
+			}
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func displayWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		switch {
+		case r == '\u200d' || r == '\u200c' || r == '\ufe0f':
+			continue
+		case unicode.Is(unicode.Mn, r):
+			continue
+		case unicode.In(r,
+			unicode.Han,
+			unicode.Hiragana,
+			unicode.Katakana,
+			unicode.Hangul):
+			w += 2
+		case (r >= 0x3000 && r <= 0x303F) || (r >= 0xFF00 && r <= 0xFFEF):
+			// CJK symbols/punctuation and half/fullwidth forms.
+			w += 2
+		default:
+			w++
+		}
+	}
+	return w
+}
+
+func wrapByDisplayWidth(s string, maxWidth int) []string {
+	if maxWidth <= 0 {
+		return []string{s}
+	}
+	if s == "" {
+		return []string{""}
+	}
+
+	lines := make([]string, 0, 1)
+	var cur strings.Builder
+	curWidth := 0
+
+	flush := func() {
+		lines = append(lines, strings.TrimRight(cur.String(), " "))
+		cur.Reset()
+		curWidth = 0
+	}
+
+	for _, r := range s {
+		if r == '\n' {
+			flush()
+			continue
+		}
+		rw := displayWidth(string(r))
+		if rw == 0 {
+			cur.WriteRune(r)
+			continue
+		}
+		if curWidth+rw > maxWidth && cur.Len() > 0 {
+			flush()
+		}
+		cur.WriteRune(r)
+		curWidth += rw
+	}
+
+	if cur.Len() > 0 || len(lines) == 0 {
+		flush()
+	}
+
+	return lines
 }
 
 func escapeHTML(text string) string {
