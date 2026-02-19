@@ -122,6 +122,14 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 }
 
 func (c *DiscordChannel) sendWithAttachments(ctx context.Context, channelID, content string, attachments []bus.Attachment) error {
+	// Split content to respect Discord's 2000-char limit.
+	// The first chunk is sent together with the files; remaining chunks follow as plain text.
+	chunks := utils.SplitMessage(content, 2000)
+	firstChunk := ""
+	if len(chunks) > 0 {
+		firstChunk = chunks[0]
+	}
+
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
@@ -152,7 +160,7 @@ func (c *DiscordChannel) sendWithAttachments(ctx context.Context, channelID, con
 		}
 
 		messageData := &discordgo.MessageSend{
-			Content: content,
+			Content: firstChunk,
 			Files:   files,
 		}
 
@@ -165,10 +173,18 @@ func (c *DiscordChannel) sendWithAttachments(ctx context.Context, channelID, con
 		if err != nil {
 			return fmt.Errorf("failed to send discord message with attachments: %w", err)
 		}
-		return nil
 	case <-sendCtx.Done():
 		return fmt.Errorf("send message timeout: %w", sendCtx.Err())
 	}
+
+	// Send any remaining chunks as follow-up plain text messages
+	for _, chunk := range chunks[1:] {
+		if err := c.sendChunk(ctx, channelID, chunk); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content string) error {
