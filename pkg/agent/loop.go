@@ -100,6 +100,7 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 			agent.Tools.Register(searchTool)
 		}
 		agent.Tools.Register(tools.NewWebFetchTool(50000))
+			agent.Tools.Register(tools.NewHttpFetchTool(512 * 1024))
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		agent.Tools.Register(tools.NewI2CTool())
@@ -186,6 +187,16 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	for _, agentID := range al.registry.ListAgentIDs() {
 		if agent, ok := al.registry.GetAgent(agentID); ok {
 			agent.Tools.Register(tool)
+		}
+	}
+}
+
+// SetToolObserver registers a ToolObserver on every agent's tool registry.
+// The observer is called after every tool execution with name, args, result, and duration.
+func (al *AgentLoop) SetToolObserver(obs tools.ToolObserver) {
+	for _, agentID := range al.registry.ListAgentIDs() {
+		if agent, ok := al.registry.GetAgent(agentID); ok {
+			agent.Tools.SetObserver(obs)
 		}
 	}
 }
@@ -596,6 +607,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		}
 		for _, tc := range response.ToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
+			// Note: providers.ToolCall.Name was a duplicate of Function.Name and has been removed.
+			// The canonical tool name lives in Function.Name only.
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
 				ID:   tc.ID,
 				Type: "function",
@@ -603,7 +616,6 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 					Name:      tc.Name,
 					Arguments: string(argumentsJSON),
 				},
-				Name: tc.Name,
 			})
 		}
 		messages = append(messages, assistantMsg)

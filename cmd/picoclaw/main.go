@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -407,6 +408,28 @@ func agentCmd() {
 
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+
+	// If observability mode is enabled, emit structured tool events to stderr.
+	// Python gateway reads these lines and logs them to Weave.
+	if os.Getenv("PICOCLAW_WEAVE_OBSERVE") == "1" {
+		agentLoop.SetToolObserver(func(name string, args map[string]interface{}, result *tools.ToolResult, durationMs int64) {
+			evt, err := json.Marshal(struct {
+				Tool       string                 `json:"tool"`
+				DurationMs int64                  `json:"duration_ms"`
+				IsError    bool                   `json:"is_error"`
+				Args       map[string]interface{} `json:"args"`
+			}{
+				Tool:       name,
+				DurationMs: durationMs,
+				IsError:    result.IsError,
+				Args:       args,
+			})
+			if err != nil {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "WEAVE_TOOL_EVENT:%s\n", evt)
+		})
+	}
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
