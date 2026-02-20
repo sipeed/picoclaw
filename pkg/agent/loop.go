@@ -156,47 +156,87 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
 
+	// LLM work is dispatched to a background worker so the main loop
+	// stays free to handle slash commands (/todo, /skills, …) instantly,
+	// even while a long tool-call chain is running.
+	llmQueue := make(chan bus.InboundMessage, 10)
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		al.llmWorker(ctx, llmQueue)
+	}()
+	defer func() {
+		close(llmQueue)
+		<-workerDone
+	}()
+
 	for al.running.Load() {
 		select {
 		case <-ctx.Done():
 			return nil
 		default:
-			msg, ok := al.bus.ConsumeInbound(ctx)
-			if !ok {
-				continue
-			}
+		}
 
-			response, err := al.processMessage(ctx, msg)
-			if err != nil {
-				response = fmt.Sprintf("Error processing message: %v", err)
-			}
+		msg, ok := al.bus.ConsumeInbound(ctx)
+		if !ok {
+			continue
+		}
 
+		// Fast path: handle slash commands immediately without blocking the LLM worker.
+		if response, handled := al.handleCommand(ctx, msg); handled {
 			if response != "" {
-				// Check if the message tool already sent a response during this round.
-				// If so, skip publishing to avoid duplicate messages to the user.
-				// Use default agent's tools to check (message tool is shared).
-				alreadySent := false
-				defaultAgent := al.registry.GetDefaultAgent()
-				if defaultAgent != nil {
-					if tool, ok := defaultAgent.Tools.Get("message"); ok {
-						if mt, ok := tool.(*tools.MessageTool); ok {
-							alreadySent = mt.HasSentInRound()
-						}
-					}
-				}
-
-				if !alreadySent {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: msg.Channel,
-						ChatID:  msg.ChatID,
-						Content: response,
-					})
-				}
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: msg.Channel,
+					ChatID:  msg.ChatID,
+					Content: response,
+				})
 			}
+			continue
+		}
+
+		// Dispatch to LLM worker
+		select {
+		case llmQueue <- msg:
+		case <-ctx.Done():
+			return nil
 		}
 	}
 
 	return nil
+}
+
+// llmWorker processes LLM messages sequentially in a background goroutine.
+func (al *AgentLoop) llmWorker(ctx context.Context, queue <-chan bus.InboundMessage) {
+	for msg := range queue {
+		if ctx.Err() != nil {
+			return
+		}
+
+		response, err := al.processMessage(ctx, msg)
+		if err != nil {
+			response = fmt.Sprintf("Error processing message: %v", err)
+		}
+
+		if response != "" {
+			alreadySent := false
+			defaultAgent := al.registry.GetDefaultAgent()
+			if defaultAgent != nil {
+				if tool, ok := defaultAgent.Tools.Get("message"); ok {
+					if mt, ok := tool.(*tools.MessageTool); ok {
+						alreadySent = mt.HasSentInRound()
+					}
+				}
+			}
+
+			if !alreadySent {
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: msg.Channel,
+					ChatID:  msg.ChatID,
+					Content: response,
+				})
+			}
+		}
+	}
 }
 
 func (al *AgentLoop) Stop() {
