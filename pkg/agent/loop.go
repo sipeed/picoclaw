@@ -55,49 +55,27 @@ type processOptions struct {
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
-	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
-
-	// Set up shared fallback chain
-	cooldown := providers.NewCooldownTracker()
-	fallbackChain := providers.NewFallbackChain(cooldown)
-
-	// Create state manager using default agent's workspace for channel recording
-	defaultAgent := registry.GetDefaultAgent()
-	var stateManager *state.Manager
-	if defaultAgent != nil {
-		stateManager = state.NewManager(defaultAgent.Workspace)
-	}
-
-	return &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		summarizing: sync.Map{},
-		fallback:    fallbackChain,
-	}
-}
-
-// registerSharedTools registers tools that are shared across all agents (web, message, spawn).
-func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *AgentRegistry, provider providers.LLMProvider) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {
 			continue
 		}
 
-		// Web tools
-		if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
-			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
-			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-			DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
-			DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
-			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
-			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
-		}); searchTool != nil {
+		searchOpts := []tools.WebSearchToolOptions{
+			{
+				Provider:   cfg.Tools.Web.Search.Provider,
+				APIKey:     cfg.Tools.Web.Search.APIKey,
+				BaseURL:    cfg.Tools.Web.Search.Endpoint,
+				MaxResults: cfg.Tools.Web.Search.MaxResults,
+				Mode:       cfg.Tools.Web.Search.RestType,
+				Param:      cfg.Tools.Web.Search.QueryParam,
+			},
+			{
+				Provider:   "duckduckgo", // fallback to duckduckgo if not configured
+				MaxResults: 5,
+			},
+		}
+		if searchTool := tools.NewWebSearchTool(searchOpts...); searchTool != nil {
 			agent.Tools.Register(searchTool)
 		}
 		agent.Tools.Register(tools.NewWebFetchTool(50000))
@@ -106,7 +84,6 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		agent.Tools.Register(tools.NewI2CTool())
 		agent.Tools.Register(tools.NewSPITool())
 
-		// Message tool
 		messageTool := tools.NewMessageTool()
 		messageTool.SetSendCallback(func(channel, chatID, content string) error {
 			msgBus.PublishOutbound(bus.OutboundMessage{
@@ -130,6 +107,14 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		// Spawn tool with allowlist checker
 		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
 		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+
+		subagentTools := tools.NewToolRegistry()
+		for _, toolName := range agent.Tools.List() {
+			if tool, exists := agent.Tools.Get(toolName); exists {
+				subagentTools.Register(tool)
+			}
+		}
+		subagentManager.SetTools(subagentTools)
 		spawnTool := tools.NewSpawnTool(subagentManager)
 		currentAgentID := agentID
 		spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
@@ -137,8 +122,19 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		})
 		agent.Tools.Register(spawnTool)
 
-		// Update context builder with the complete tools registry
+		subagentTool := tools.NewSubagentTool(subagentManager)
+		agent.Tools.Register(subagentTool)
+
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
+	}
+
+	return &AgentLoop{
+		bus:         msgBus,
+		cfg:         cfg,
+		registry:    registry,
+		state:       state.NewManager(cfg.WorkspacePath()),
+		fallback:    providers.NewFallbackChain(providers.NewCooldownTracker()),
+		summarizing: sync.Map{},
 	}
 }
 

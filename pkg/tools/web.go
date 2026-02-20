@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 const (
@@ -176,6 +178,62 @@ func stripTags(content string) string {
 	return re.ReplaceAllString(content, "")
 }
 
+type OllamaSearchProvider struct {
+	baseURL    string
+	apiKey     string
+	queryParam string // Parameter name for query (e.g., "query", "q")
+}
+
+func (p *OllamaSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	// Call Ollama REST API for web search
+	requestBody := map[string]interface{}{
+		p.queryParam: query,
+		"count":      count,
+	}
+
+	bodyJSON, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode Ollama web search request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL, strings.NewReader(string(bodyJSON)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", p.apiKey))
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request to Ollama failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		logger.ErrorCF("tool", "Ollama web search request failed",
+			map[string]interface{}{
+				"provider":    "ollama",
+				"status_code": resp.StatusCode,
+				"endpoint":    p.baseURL,
+				"response":    strings.TrimSpace(string(body)),
+			})
+		return "", fmt.Errorf("Ollama API error: %s", string(body))
+	}
+
+	// Return the raw JSON string for the agent/tool to process
+	return string(body), nil
+}
+
 type PerplexitySearchProvider struct {
 	apiKey string
 }
@@ -243,47 +301,159 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 
 type WebSearchTool struct {
 	provider   SearchProvider
+	fallback   SearchProvider
 	maxResults int
 }
 
+// WebSearchToolOptions defines configuration for web search providers.
+// This is the unified API for all search providers.
+//
+// If Provider is set, it's considered enabled. Use empty Provider to disable.
+// BaseURL is generic and works for any provider (e.g., custom Ollama instances).
+// Search results are returned as raw text/JSON for the main LLM or agent to process.
+//
+// Usage example:
+//
+//	opts := []WebSearchToolOptions{
+//	    {Provider: "brave", APIKey: "key", MaxResults: 5},
+//	    {Provider: "ollama", BaseURL: "http://localhost:11434", MaxResults: 5},
+//	    {Provider: "perplexity", APIKey: "key", MaxResults: 5},
+//	    {Provider: "duckduckgo", MaxResults: 5},
+//	}
+//	tool := NewWebSearchTool(opts...)
 type WebSearchToolOptions struct {
-	BraveAPIKey          string
-	BraveMaxResults      int
-	BraveEnabled         bool
-	DuckDuckGoMaxResults int
-	DuckDuckGoEnabled    bool
-	PerplexityAPIKey     string
-	PerplexityMaxResults int
-	PerplexityEnabled    bool
+	Provider   string // "brave", "ollama", "perplexity", "duckduckgo"
+	APIKey     string // For Brave API
+	BaseURL    string // For custom providers (e.g., Ollama)
+	MaxResults int    // Default: 5
+	Mode       string // "GET" or "POST" (reserved for future use)
+	Param      string // Query param name: "q", "query", etc. (reserved for future use)
 }
 
-func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
-	var provider SearchProvider
-	maxResults := 5
+func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
+	// If no options are provided, default to DuckDuckGo with 5 results.
+	if len(opts) == 0 {
+		opts = []WebSearchToolOptions{
+			{
+				Provider:   "duckduckgo",
+				MaxResults: 5,
+			},
+		}
+	}
+	// Priority order: Brave > Ollama > Perplexity > DuckDuckGo
+	priorityOrder := []string{"brave", "ollama", "perplexity", "duckduckgo"}
+	optMap := make(map[string]WebSearchToolOptions)
 
-	// Priority: Perplexity > Brave > DuckDuckGo
-	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
-		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey}
-		if opts.PerplexityMaxResults > 0 {
-			maxResults = opts.PerplexityMaxResults
+	// Build map of enabled providers
+	for _, opt := range opts {
+		if opt.Provider != "" {
+			optMap[opt.Provider] = opt
 		}
-	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
-		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey}
-		if opts.BraveMaxResults > 0 {
-			maxResults = opts.BraveMaxResults
+	}
+
+	var selectedOpt *WebSearchToolOptions
+	var provider SearchProvider
+	var providerErrors []string
+
+	// Try providers in priority order
+	for _, providerName := range priorityOrder {
+		opt, exists := optMap[providerName]
+		if !exists {
+			continue
 		}
-	} else if opts.DuckDuckGoEnabled {
-		provider = &DuckDuckGoSearchProvider{}
-		if opts.DuckDuckGoMaxResults > 0 {
-			maxResults = opts.DuckDuckGoMaxResults
+
+		selectedOpt = &opt
+		var err error
+		provider, err = createProvider(&opt)
+		if err != nil {
+			providerErrors = append(providerErrors, fmt.Sprintf("%s: %v", providerName, err))
+			logger.WarnCF("tool", "Web search provider initialization failed",
+				map[string]interface{}{
+					"provider": providerName,
+					"error":    err.Error(),
+				})
 		}
-	} else {
+		if err == nil && provider != nil {
+			break
+		}
+	}
+
+	if provider == nil {
+		if len(providerErrors) > 0 {
+			logger.ErrorCF("tool", "No usable web search provider after trying configured providers",
+				map[string]interface{}{
+					"errors": strings.Join(providerErrors, "; "),
+				})
+		}
 		return nil
+	}
+
+	var fallbackProvider SearchProvider
+	if selectedOpt != nil && selectedOpt.Provider != "duckduckgo" {
+		if ddgOpt, exists := optMap["duckduckgo"]; exists {
+			if p, err := createProvider(&ddgOpt); err == nil && p != nil {
+				fallbackProvider = p
+			} else if err != nil {
+				logger.WarnCF("tool", "Fallback web search provider initialization failed",
+					map[string]interface{}{
+						"provider": "duckduckgo",
+						"error":    err.Error(),
+					})
+			}
+		}
+	}
+
+	maxResults := 5
+	if selectedOpt != nil && selectedOpt.MaxResults > 0 {
+		maxResults = selectedOpt.MaxResults
 	}
 
 	return &WebSearchTool{
 		provider:   provider,
+		fallback:   fallbackProvider,
 		maxResults: maxResults,
+	}
+}
+
+// createProvider creates a SearchProvider based on configuration
+// Provider is considered enabled if non-empty
+func createProvider(opt *WebSearchToolOptions) (SearchProvider, error) {
+	if opt == nil || opt.Provider == "" {
+		return nil, fmt.Errorf("provider not set")
+	}
+
+	switch opt.Provider {
+	case "brave":
+		if opt.APIKey == "" {
+			return nil, fmt.Errorf("Brave API key required")
+		}
+		return &BraveSearchProvider{apiKey: opt.APIKey}, nil
+
+	case "ollama":
+		if opt.BaseURL == "" {
+			return nil, fmt.Errorf("Ollama BaseURL required")
+		}
+		queryParam := opt.Param
+		if queryParam == "" {
+			queryParam = "query" // Default query parameter
+		}
+		return &OllamaSearchProvider{
+			baseURL:    opt.BaseURL,
+			apiKey:     opt.APIKey, // Bearer token for API authentication
+			queryParam: queryParam,
+		}, nil
+
+	case "duckduckgo":
+		return &DuckDuckGoSearchProvider{}, nil
+
+	case "perplexity":
+		if opt.APIKey == "" {
+			return nil, fmt.Errorf("Perplexity API key required")
+		}
+		return &PerplexitySearchProvider{apiKey: opt.APIKey}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown provider: %s", opt.Provider)
 	}
 }
 
@@ -329,9 +499,102 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 
 	result, err := t.provider.Search(ctx, query, count)
 	if err != nil {
+		if t.fallback != nil {
+			logger.WarnCF("tool", "Primary web search failed, attempting fallback",
+				map[string]interface{}{
+					"primary_error": err.Error(),
+					"fallback":      "duckduckgo",
+					"query":         query,
+				})
+
+			fallbackResult, fallbackErr := t.fallback.Search(ctx, query, count)
+			if fallbackErr == nil {
+				logger.InfoCF("tool", "Fallback web search succeeded",
+					map[string]interface{}{
+						"provider": "duckduckgo",
+						"query":    query,
+					})
+
+				return &ToolResult{
+					ForLLM:  fmt.Sprintf("Primary search provider failed: %v\nFallback provider (duckduckgo) result:\n%s", err, fallbackResult),
+					ForUser: fallbackResult,
+				}
+			}
+
+			logger.ErrorCF("tool", "Fallback web search failed",
+				map[string]interface{}{
+					"provider": "duckduckgo",
+					"error":    fallbackErr.Error(),
+					"query":    query,
+				})
+		}
 		return ErrorResult(fmt.Sprintf("search failed: %v", err))
 	}
 
+	// If Ollama, synthesize a readable answer for the user
+	if _, ok := t.provider.(*OllamaSearchProvider); ok {
+		var parsed struct {
+			Results []struct {
+				Title   string `json:"title"`
+				URL     string `json:"url"`
+				Content string `json:"content"`
+			} `json:"results"`
+		}
+		if err := json.Unmarshal([]byte(result), &parsed); err == nil && len(parsed.Results) > 0 {
+			// Synthesize a readable answer
+			var summary []string
+			summary = append(summary, fmt.Sprintf("Web search summary for: %s", query))
+			maxItems := count
+			if len(parsed.Results) < count {
+				maxItems = len(parsed.Results)
+			}
+			for i := 0; i < maxItems; i++ {
+				r := parsed.Results[i]
+				summary = append(summary, fmt.Sprintf("%d. %s\n   %s", i+1, r.Title, r.URL))
+				if r.Content != "" {
+					summary = append(summary, fmt.Sprintf("   %s", r.Content))
+				}
+			}
+			return &ToolResult{
+				ForLLM:  result, // raw for LLM
+				ForUser: strings.Join(summary, "\n"),
+			}
+		}
+
+		preview := result
+		if len(preview) > 512 {
+			preview = preview[:512] + "..."
+		}
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+			logger.WarnCF("tool", "Failed to parse Ollama web search response",
+				map[string]interface{}{
+					"provider": "ollama",
+					"query":    query,
+					"error":    err.Error(),
+					"preview":  preview,
+				})
+		} else if len(parsed.Results) == 0 {
+			logger.WarnCF("tool", "Ollama web search response has empty results",
+				map[string]interface{}{
+					"provider": "ollama",
+					"query":    query,
+					"preview":  preview,
+				})
+		} else if err := json.Unmarshal([]byte(result), &raw); err == nil {
+			if _, hasResults := raw["results"]; !hasResults {
+				logger.WarnCF("tool", "Ollama web search response missing expected 'results' field",
+					map[string]interface{}{
+						"provider": "ollama",
+						"query":    query,
+						"preview":  preview,
+					})
+			}
+		}
+	}
+
+	// Default: return as-is
 	return &ToolResult{
 		ForLLM:  result,
 		ForUser: result,

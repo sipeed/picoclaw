@@ -174,9 +174,12 @@
   },
   "tools": {
     "web": {
-      "brave": {
-        "enabled": false,
-        "api_key": "YOUR_BRAVE_API_KEY",
+      "search": {
+        "provider": "ollama/brave/duckduckgo",
+        "api_key": "Your API Key",
+        "endpoint": "https://ollama.com/api/web_search",
+        "rest_type": "POST for ollama, GET for others",
+        "query_param": "query for ollama, q for others",
         "max_results": 5
       },
       "duckduckgo": {

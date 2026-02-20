@@ -652,6 +652,13 @@ func TestRunFullMigration(t *testing.T) {
 				"apiKey": "sk-or-migrate-test",
 			},
 		},
+		"tools": map[string]interface{}{
+			"web": map[string]interface{}{
+				"search": map[string]interface{}{
+					"provider": "brave",
+				},
+			},
+		},
 		"channels": map[string]interface{}{
 			"telegram": map[string]interface{}{
 				"enabled": true,

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -401,7 +402,18 @@ type PerplexityConfig struct {
 	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
+// WebSearchConfig is the unified web search provider config.
+type WebSearchConfig struct {
+	Provider   string `json:"provider" env:"PICOCLAW_TOOLS_WEB_SEARCH_PROVIDER"`
+	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_SEARCH_API_KEY"`
+	Endpoint   string `json:"endpoint" env:"PICOCLAW_TOOLS_WEB_SEARCH_ENDPOINT"`
+	RestType   string `json:"rest_type" env:"PICOCLAW_TOOLS_WEB_SEARCH_REST_TYPE"`
+	QueryParam string `json:"query_param" env:"PICOCLAW_TOOLS_WEB_SEARCH_QUERY_PARAM"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_SEARCH_MAX_RESULTS"`
+}
+
 type WebToolsConfig struct {
+	Search     WebSearchConfig  `json:"search"`
 	Brave      BraveConfig      `json:"brave"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 	Perplexity PerplexityConfig `json:"perplexity"`
@@ -467,6 +479,27 @@ func LoadConfig(path string) (*Config, error) {
 
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
+	}
+
+	// Backward compatibility: derive unified search config from legacy sections.
+	if strings.TrimSpace(cfg.Tools.Web.Search.Provider) == "" {
+		switch {
+		case cfg.Tools.Web.Brave.Enabled:
+			cfg.Tools.Web.Search.Provider = "brave"
+			cfg.Tools.Web.Search.APIKey = cfg.Tools.Web.Brave.APIKey
+			cfg.Tools.Web.Search.MaxResults = cfg.Tools.Web.Brave.MaxResults
+		case cfg.Tools.Web.Perplexity.Enabled:
+			cfg.Tools.Web.Search.Provider = "perplexity"
+			cfg.Tools.Web.Search.APIKey = cfg.Tools.Web.Perplexity.APIKey
+			cfg.Tools.Web.Search.MaxResults = cfg.Tools.Web.Perplexity.MaxResults
+		case cfg.Tools.Web.DuckDuckGo.Enabled:
+			cfg.Tools.Web.Search.Provider = "duckduckgo"
+			cfg.Tools.Web.Search.MaxResults = cfg.Tools.Web.DuckDuckGo.MaxResults
+		}
+	}
+
+	if strings.TrimSpace(cfg.Tools.Web.Search.Provider) == "" {
+		return nil, fmt.Errorf("Please check new config for web search as config example")
 	}
 
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
