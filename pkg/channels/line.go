@@ -307,7 +307,7 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 
 	var content string
 	var mediaPaths []string
-	localFiles := []string{}
+	var localFiles []string
 
 	defer func() {
 		for _, file := range localFiles {

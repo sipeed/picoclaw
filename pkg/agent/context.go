@@ -107,7 +107,7 @@ func (cb *ContextBuilder) buildToolsSection() string {
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
-	parts := []string{}
+	var parts []string
 
 	// Core identity section
 	parts = append(parts, cb.getIdentity())
@@ -158,8 +158,6 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 }
 
 func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID string) []providers.Message {
-	messages := []providers.Message{}
-
 	systemPrompt := cb.BuildSystemPrompt()
 
 	// Add Current Session info if provided
@@ -190,6 +188,8 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	}
 
 	history = sanitizeHistoryForProvider(history)
+
+	messages := make([]providers.Message, 0, len(history)+2)
 
 	messages = append(messages, providers.Message{
 		Role:    "system",

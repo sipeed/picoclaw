@@ -283,7 +283,8 @@ func PrintPlan(actions []Action, warnings []string) {
 
 func PrintSummary(result *Result) {
 	fmt.Println()
-	parts := []string{}
+	var parts []string
+
 	if result.FilesCopied > 0 {
 		parts = append(parts, fmt.Sprintf("%d files copied", result.FilesCopied))
 	}

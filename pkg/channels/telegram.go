@@ -219,9 +219,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	chatID := message.Chat.ID
 	c.chatIDs[senderID] = chatID
 
-	content := ""
-	mediaPaths := []string{}
-	localFiles := []string{} // 跟踪需要清理的本地文件
+	var content string
+	var mediaPaths []string
+	var localFiles []string // 跟踪需要清理的本地文件
 
 	// 确保临时文件在函数返回时被清理
 	defer func() {
