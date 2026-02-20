@@ -32,15 +32,15 @@ func (t *FindSkillsTool) Description() string {
 	return "Search for installable skills from skill registries. Returns skill slugs, descriptions, versions, and relevance scores. Use this to discover skills before installing them with install_skill."
 }
 
-func (t *FindSkillsTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *FindSkillsTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
+		"properties": map[string]any{
+			"query": map[string]any{
 				"type":        "string",
 				"description": "Search query describing the desired skill capability (e.g., 'github integration', 'database management')",
 			},
-			"limit": map[string]interface{}{
+			"limit": map[string]any{
 				"type":        "integer",
 				"description": "Maximum number of results to return (1-20, default 5)",
 				"minimum":     1.0,
@@ -51,7 +51,7 @@ func (t *FindSkillsTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	query, ok := args["query"].(string)
 	query = strings.ToLower(strings.TrimSpace(query))
 	if !ok || query == "" {

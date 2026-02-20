@@ -17,14 +17,14 @@ type Channel interface {
 }
 
 type BaseChannel struct {
-	config    interface{}
+	config    any
 	bus       *bus.MessageBus
 	running   bool
 	name      string
 	allowList []string
 }
 
-func NewBaseChannel(name string, config interface{}, bus *bus.MessageBus, allowList []string) *BaseChannel {
+func NewBaseChannel(name string, config any, bus *bus.MessageBus, allowList []string) *BaseChannel {
 	return &BaseChannel{
 		config:    config,
 		bus:       bus,

@@ -214,7 +214,10 @@ func (c *ClawHubRegistry) GetSkillMeta(ctx context.Context, slug string) (*Skill
 // DownloadAndInstall fetches metadata (with fallback), resolves version,
 // downloads the skill ZIP, and extracts it to targetDir.
 // Returns an InstallResult for the caller to use for moderation decisions.
-func (c *ClawHubRegistry) DownloadAndInstall(ctx context.Context, slug, version, targetDir string) (*InstallResult, error) {
+func (c *ClawHubRegistry) DownloadAndInstall(
+	ctx context.Context,
+	slug, version, targetDir string,
+) (*InstallResult, error) {
 	if err := utils.ValidateSkillIdentifier(slug); err != nil {
 		return nil, fmt.Errorf("invalid slug %q: error: %s", slug, err.Error())
 	}
