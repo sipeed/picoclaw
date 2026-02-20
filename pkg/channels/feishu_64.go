@@ -165,6 +165,15 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		metadata["tenant_key"] = *sender.TenantKey
 	}
 
+	chatType := stringValue(message.ChatType)
+	if chatType == "p2p" {
+		metadata["peer_kind"] = "direct"
+		metadata["peer_id"] = senderID
+	} else {
+		metadata["peer_kind"] = "group"
+		metadata["peer_id"] = chatID
+	}
+
 	logger.InfoCF("feishu", "Feishu message received", map[string]interface{}{
 		"sender_id": senderID,
 		"chat_id":   chatID,

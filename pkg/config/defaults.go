@@ -20,7 +20,9 @@ func DefaultConfig() *Config {
 			},
 		},
 		Bindings: []AgentBinding{},
-		Session:  SessionConfig{},
+		Session: SessionConfig{
+			DMScope: "main",
+		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
 				Enabled:   false,
