@@ -272,6 +272,20 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				continue
 			}
 
+			if msg.IsStatus {
+				if sc, ok := channel.(interface {
+					EditStatus(context.Context, bus.OutboundMessage) error
+				}); ok {
+					if err := sc.EditStatus(ctx, msg); err != nil {
+						logger.DebugCF("channels", "EditStatus failed", map[string]interface{}{
+							"channel": msg.Channel,
+							"error":   err.Error(),
+						})
+					}
+				}
+				continue
+			}
+
 			if err := channel.Send(ctx, msg); err != nil {
 				logger.ErrorCF("channels", "Error sending message to channel", map[string]interface{}{
 					"channel": msg.Channel,

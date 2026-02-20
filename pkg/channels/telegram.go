@@ -146,6 +146,23 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
+func (c *TelegramChannel) EditStatus(ctx context.Context, msg bus.OutboundMessage) error {
+	if !c.IsRunning() {
+		return nil
+	}
+	chatID, err := parseChatID(msg.ChatID)
+	if err != nil {
+		return nil
+	}
+	pID, ok := c.placeholders.Load(msg.ChatID)
+	if !ok {
+		return nil // no placeholder → nothing to edit
+	}
+	editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), msg.Content)
+	_, err = c.bot.EditMessageText(ctx, editMsg)
+	return err
+}
+
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return fmt.Errorf("telegram bot not running")

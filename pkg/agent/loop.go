@@ -654,6 +654,16 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				"iteration": iteration,
 			})
 
+		// Publish status update for channels that support placeholder editing
+		if !constants.IsInternalChannel(opts.Channel) {
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel:  opts.Channel,
+				ChatID:   opts.ChatID,
+				Content:  fmt.Sprintf("🔧 %s (%d/%d)", strings.Join(toolNames, ", "), iteration, agent.MaxIterations),
+				IsStatus: true,
+			})
+		}
+
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
 			Role:    "assistant",
