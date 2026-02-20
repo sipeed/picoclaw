@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-type SendCallback func(channel, chatID, content string) error
+type SendCallback func(channel, chatID, content string, media []string) error
 
 type MessageTool struct {
 	sendCallback   SendCallback
@@ -31,8 +31,8 @@ func (t *MessageTool) Parameters() map[string]interface{} {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"content": map[string]interface{}{
-				"type":        "string",
-				"description": "The message content to send",
+				"type": "string",
+				"description": "The message content to send. When using media, this is the textual message that will be sent together with media links if supported by the channel.",
 			},
 			"channel": map[string]interface{}{
 				"type":        "string",
@@ -41,6 +41,13 @@ func (t *MessageTool) Parameters() map[string]interface{} {
 			"chat_id": map[string]interface{}{
 				"type":        "string",
 				"description": "Optional: target chat/user ID",
+			},
+			"media": map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"type": "string",
+				},
+				"description": "Optional: list of local file paths to send as media. Channels that support uploads (for example XMPP with XEP-0363) can upload these files and include download links in the final message.",
 			},
 		},
 		"required": []string{"content"},
@@ -71,6 +78,17 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	channel, _ := args["channel"].(string)
 	chatID, _ := args["chat_id"].(string)
 
+	var media []string
+	if rawMedia, ok := args["media"]; ok {
+		if list, ok := rawMedia.([]interface{}); ok {
+			for _, item := range list {
+				if s, ok := item.(string); ok && s != "" {
+					media = append(media, s)
+				}
+			}
+		}
+	}
+
 	if channel == "" {
 		channel = t.defaultChannel
 	}
@@ -86,7 +104,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 		return &ToolResult{ForLLM: "Message sending not configured", IsError: true}
 	}
 
-	if err := t.sendCallback(channel, chatID, content); err != nil {
+	if err := t.sendCallback(channel, chatID, content, media); err != nil {
 		return &ToolResult{
 			ForLLM:  fmt.Sprintf("sending message: %v", err),
 			IsError: true,

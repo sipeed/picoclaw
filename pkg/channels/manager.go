@@ -17,6 +17,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
+type TypingChannel interface {
+	Channel
+	SendTyping(ctx context.Context, chatID string, composing bool) error
+}
+
 type Manager struct {
 	channels     map[string]Channel
 	bus          *bus.MessageBus
@@ -176,6 +181,16 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.XMPP.Enabled && m.config.Channels.XMPP.JID != "" && m.config.Channels.XMPP.Password != "" {
+		logger.DebugC("channels", "Attempting to initialize XMPP channel")
+		xmppCh, err := NewXMPPChannel(m.config.Channels.XMPP, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize XMPP channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["xmpp"] = xmppCh
+			logger.InfoC("channels", "XMPP channel enabled successfully")
 	if m.config.Channels.WeCom.Enabled && m.config.Channels.WeCom.Token != "" {
 		logger.DebugC("channels", "Attempting to initialize WeCom channel")
 		wecom, err := NewWeComBotChannel(m.config.Channels.WeCom, m.bus)
@@ -350,6 +365,20 @@ func (m *Manager) UnregisterChannel(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.channels, name)
+}
+
+func (m *Manager) NotifyTyping(ctx context.Context, channelName, chatID string, composing bool) {
+	m.mu.RLock()
+	channel, exists := m.channels[channelName]
+	m.mu.RUnlock()
+	if !exists {
+		return
+	}
+	typingChannel, ok := channel.(TypingChannel)
+	if !ok {
+		return
+	}
+	_ = typingChannel.SendTyping(ctx, chatID, composing)
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {

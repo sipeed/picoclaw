@@ -32,6 +32,7 @@ var supportedChannels = map[string]bool{
 	"qq":       true,
 	"dingtalk": true,
 	"maixcam":  true,
+	"xmpp":     true,
 }
 
 func findOpenClawConfig(openclawHome string) (string, error) {
@@ -203,6 +204,21 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 				if v, ok := getFloat(cMap, "port"); ok {
 					cfg.Channels.MaixCam.Port = int(v)
 				}
+			case "xmpp":
+				cfg.Channels.XMPP.Enabled = enabled
+				cfg.Channels.XMPP.AllowFrom = allowFrom
+				if v, ok := getString(cMap, "jid"); ok {
+					cfg.Channels.XMPP.JID = v
+				}
+				if v, ok := getString(cMap, "password"); ok {
+					cfg.Channels.XMPP.Password = v
+				}
+				if v, ok := getString(cMap, "server"); ok {
+					cfg.Channels.XMPP.Server = v
+				}
+				if v, ok := getString(cMap, "upload_domain"); ok {
+					cfg.Channels.XMPP.UploadDomain = v
+				}
 			}
 		}
 	}
@@ -289,6 +305,9 @@ func MergeConfig(existing, incoming *config.Config) *config.Config {
 	}
 	if !existing.Channels.MaixCam.Enabled && incoming.Channels.MaixCam.Enabled {
 		existing.Channels.MaixCam = incoming.Channels.MaixCam
+	}
+	if !existing.Channels.XMPP.Enabled && incoming.Channels.XMPP.Enabled {
+		existing.Channels.XMPP = incoming.Channels.XMPP
 	}
 
 	if existing.Tools.Web.Brave.APIKey == "" {

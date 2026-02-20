@@ -52,6 +52,56 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 }
 
+// createToolRegistry creates a tool registry with common tools.
+// This is shared between main agent and subagents.
+func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msgBus *bus.MessageBus) *tools.ToolRegistry {
+	registry := tools.NewToolRegistry()
+
+	// File system tools
+	registry.Register(tools.NewReadFileTool(workspace, restrict))
+	registry.Register(tools.NewWriteFileTool(workspace, restrict))
+	registry.Register(tools.NewListDirTool(workspace, restrict))
+	registry.Register(tools.NewEditFileTool(workspace, restrict))
+	registry.Register(tools.NewAppendFileTool(workspace, restrict))
+
+	// Shell execution
+	registry.Register(tools.NewExecTool(workspace, restrict))
+
+	if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
+		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
+		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
+		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+		PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+	}); searchTool != nil {
+		registry.Register(searchTool)
+	}
+	registry.Register(tools.NewWebFetchTool(50000))
+
+	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
+	registry.Register(tools.NewI2CTool())
+	registry.Register(tools.NewSPITool())
+
+	// Message tool - available to both agent and subagent
+	// Subagent uses it to communicate directly with user
+	messageTool := tools.NewMessageTool()
+	messageTool.SetSendCallback(func(channel, chatID, content string, media []string) error {
+		msgBus.PublishOutbound(bus.OutboundMessage{
+			Channel: channel,
+			ChatID:  chatID,
+			Content: content,
+			Media:   media,
+		})
+		return nil
+	})
+	registry.Register(messageTool)
+
+	return registry
+}
+
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
@@ -137,9 +187,23 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		})
 		agent.Tools.Register(spawnTool)
 
+	al := &AgentLoop{
+		bus:            msgBus,
+		provider:       provider,
+		workspace:      workspace,
+		model:          cfg.Agents.Defaults.Model,
+		contextWindow:  cfg.Agents.Defaults.MaxTokens, // Restore context window for summarization
+		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
+		sessions:       sessionsManager,
+		state:          stateManager,
+		contextBuilder: contextBuilder,
+		tools:          toolsRegistry,
+		summarizing:    sync.Map{},
 		// Update context builder with the complete tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
 	}
+
+	return al
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
@@ -270,16 +334,21 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"session_key": msg.SessionKey,
 		})
 
-	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
 	}
 
-	// Check for commands
 	if response, handled := al.handleCommand(ctx, msg); handled {
 		return response, nil
 	}
 
+	if al.channelManager != nil && msg.Channel != "" && msg.ChatID != "" && !constants.IsInternalChannel(msg.Channel) {
+		al.channelManager.NotifyTyping(ctx, msg.Channel, msg.ChatID, true)
+		defer al.channelManager.NotifyTyping(ctx, msg.Channel, msg.ChatID, false)
+	}
+
+	return al.runAgentLoop(ctx, processOptions{
+		SessionKey:      msg.SessionKey,
 	// Route to determine agent and session key
 	route := al.registry.ResolveRoute(routing.RouteInput{
 		Channel:    msg.Channel,
