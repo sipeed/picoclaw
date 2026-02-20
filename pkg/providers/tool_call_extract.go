@@ -86,6 +86,11 @@ func extractXMLToolCalls(text string) []ToolCall {
 		ns := remaining[tagStart+1 : idx]
 		closeTag := "</" + ns + ":toolcall>"
 		closeIdx := strings.Index(remaining, closeTag)
+		// Fallback: some models use inconsistent close tags (e.g. tool_call vs toolcall)
+		if closeIdx == -1 {
+			closeTag = "</" + ns + ":tool_call>"
+			closeIdx = strings.Index(remaining, closeTag)
+		}
 		if closeIdx == -1 {
 			break
 		}
@@ -191,6 +196,11 @@ func stripXMLToolCalls(text string) string {
 	ns := text[tagStart+1 : idx]
 	closeTag := "</" + ns + ":toolcall>"
 	closeIdx := strings.Index(text, closeTag)
+	// Fallback: some models use inconsistent close tags (e.g. tool_call vs toolcall)
+	if closeIdx == -1 {
+		closeTag = "</" + ns + ":tool_call>"
+		closeIdx = strings.Index(text, closeTag)
+	}
 	if closeIdx == -1 {
 		return text
 	}

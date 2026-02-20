@@ -1058,6 +1058,43 @@ Done.`
 	}
 }
 
+func TestExtractXMLToolCalls_MismatchedCloseTag(t *testing.T) {
+	// MiniMax uses <minimax:toolcall> but closes with </minimax:tool_call> (underscore)
+	text := `<minimax:toolcall>
+<invoke name="readfile">
+<parameter name="path">/home/user/project/pyproject.toml</parameter>
+</invoke>
+</minimax:tool_call>`
+
+	calls := extractXMLToolCalls(text)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(calls))
+	}
+	if calls[0].Name != "readfile" {
+		t.Errorf("Name = %q, want %q", calls[0].Name, "readfile")
+	}
+	if calls[0].Arguments["path"] != "/home/user/project/pyproject.toml" {
+		t.Errorf("Arguments[path] = %v, want pyproject.toml path", calls[0].Arguments["path"])
+	}
+}
+
+func TestStripXMLToolCalls_MismatchedCloseTag(t *testing.T) {
+	text := `今テスト走らせるね。
+<minimax:toolcall>
+<invoke name="exec">
+<parameter name="command">cd /home/user && pytest</parameter>
+</invoke>
+</minimax:tool_call>`
+
+	got := stripXMLToolCalls(text)
+	if strings.Contains(got, "toolcall") || strings.Contains(got, "tool_call") {
+		t.Errorf("should remove XML block, got %q", got)
+	}
+	if !strings.Contains(got, "今テスト走らせるね。") {
+		t.Errorf("should keep text before, got %q", got)
+	}
+}
+
 func TestStripXMLToolCalls_NoXML(t *testing.T) {
 	text := "Just regular text."
 	got := stripXMLToolCalls(text)
