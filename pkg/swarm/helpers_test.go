@@ -38,6 +38,25 @@ func (m *mockLLMProvider) GetDefaultModel() string {
 	return "test-model"
 }
 
+// mockManager is a minimal implementation of the manager interface used for testing
+type mockManager struct{}
+
+func (m *mockManager) GetNodeInfo() *NodeInfo {
+	return &NodeInfo{
+		ID:     "mock-manager",
+		Role:   RoleCoordinator,
+		Status: StatusOnline,
+	}
+}
+
+func (m *mockManager) PromoteToCoordinator() error {
+	return nil
+}
+
+func (m *mockManager) DemoteToWorker() error {
+	return nil
+}
+
 // startTestNATS starts an embedded NATS server on a random available port.
 // It returns the embedded server, the client URL, and a cleanup function.
 func startTestNATS(t *testing.T) (*EmbeddedNATS, string, func()) {

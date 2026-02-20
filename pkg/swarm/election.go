@@ -631,10 +631,11 @@ func indexOf(s, sep string, start int) int {
 
 // RoleSwitcher handles dynamic role switching based on election results
 type RoleSwitcher struct {
-	electionMgr *ElectionManager
-	nodeInfo    *NodeInfo
-	manager     *Manager
+	electionMgr  *ElectionManager
+	nodeInfo     *NodeInfo
+	manager      *Manager
 	originalRole NodeRole
+	mu           sync.RWMutex
 }
 
 // NewRoleSwitcher creates a new role switcher
@@ -649,6 +650,8 @@ func NewRoleSwitcher(em *ElectionManager, nodeInfo *NodeInfo, manager *Manager) 
 
 // GetCurrentRole returns the current role
 func (rs *RoleSwitcher) GetCurrentRole() NodeRole {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
 	return rs.nodeInfo.Role
 }
 
@@ -659,6 +662,9 @@ func (rs *RoleSwitcher) Start() {
 }
 
 func (rs *RoleSwitcher) onBecameLeader() {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
 	// Promote to coordinator if not already
 	if rs.nodeInfo.Role != RoleCoordinator {
 		logger.InfoCF("swarm", "Promoting to coordinator", map[string]interface{}{
@@ -673,6 +679,9 @@ func (rs *RoleSwitcher) onBecameLeader() {
 }
 
 func (rs *RoleSwitcher) onLostLeadership() {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
 	// Demote back to original role
 	originalRole := rs.nodeInfo.Metadata["original_role"]
 	if originalRole != "" && originalRole != string(rs.nodeInfo.Role) {
