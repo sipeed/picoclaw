@@ -88,6 +88,11 @@ func DefaultConfig() *Config {
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
 			},
+			Pushover: PushoverConfig{
+				Enabled:  false,
+				AppToken: "",
+				UserKey:  "",
+			},
 		},
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{WebSearch: true},

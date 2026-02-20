@@ -176,6 +176,19 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.Pushover.Enabled && m.config.Channels.Pushover.AppToken != "" && m.config.Channels.Pushover.UserKey != "" {
+		logger.DebugC("channels", "Attempting to initialize Pushover channel")
+		pushover, err := NewPushoverChannel(m.config.Channels.Pushover, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize Pushover channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["pushover"] = pushover
+			logger.InfoC("channels", "Pushover channel enabled successfully")
+		}
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]interface{}{
 		"enabled_channels": len(m.channels),
 	})

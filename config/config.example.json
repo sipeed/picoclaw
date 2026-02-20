@@ -112,6 +112,11 @@
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
       "allow_from": []
+    },
+    "pushover": {
+      "enabled": false,
+      "app_token": "YOUR_PUSHOVER_APP_TOKEN",
+      "user_key": "YOUR_PUSHOVER_USER_KEY"
     }
   },
   "providers": {
