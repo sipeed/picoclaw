@@ -79,7 +79,7 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 				cfg.Agents.Defaults.MaxTokens = int(v)
 			}
 			if v, ok := getFloat(defaults, "temperature"); ok {
-				cfg.Agents.Defaults.Temperature = v
+				cfg.Agents.Defaults.Temperature = &v
 			}
 			if v, ok := getFloat(defaults, "max_tool_iterations"); ok {
 				cfg.Agents.Defaults.MaxToolIterations = int(v)
