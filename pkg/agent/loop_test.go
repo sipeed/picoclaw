@@ -14,13 +14,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
-func TestRecordLastChannel(t *testing.T) {
+// setupAgentTest creates common test setup for agent loop tests.
+// Returns config, messageBus, provider, and agentLoop.
+func setupAgentTest(t testing.TB) (*config.Config, *bus.MessageBus, *mockProvider, *AgentLoop) {
 	// Create temp workspace
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		os.RemoveAll(tmpDir)
+	})
 
 	// Create test config
 	cfg := &config.Config{
@@ -39,9 +43,15 @@ func TestRecordLastChannel(t *testing.T) {
 	provider := &mockProvider{}
 	al := NewAgentLoop(cfg, msgBus, provider)
 
+	return cfg, msgBus, provider, al
+}
+
+func TestRecordLastChannel(t *testing.T) {
+	cfg, msgBus, provider, al := setupAgentTest(t)
+
 	// Test RecordLastChannel
 	testChannel := "test-channel"
-	err = al.RecordLastChannel(testChannel)
+	err := al.RecordLastChannel(testChannel)
 	if err != nil {
 		t.Fatalf("RecordLastChannel failed: %v", err)
 	}
@@ -60,33 +70,11 @@ func TestRecordLastChannel(t *testing.T) {
 }
 
 func TestRecordLastChatID(t *testing.T) {
-	// Create temp workspace
-	tmpDir, err := os.MkdirTemp("", "agent-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create test config
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-		},
-	}
-
-	// Create agent loop
-	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	cfg, msgBus, provider, al := setupAgentTest(t)
 
 	// Test RecordLastChatID
 	testChatID := "test-chat-id-123"
-	err = al.RecordLastChatID(testChatID)
+	err := al.RecordLastChatID(testChatID)
 	if err != nil {
 		t.Fatalf("RecordLastChatID failed: %v", err)
 	}

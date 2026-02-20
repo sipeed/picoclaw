@@ -72,7 +72,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	}
 
 	// Only include providers if not empty
-	if !c.Providers.IsEmpty() {
+	if c.Providers.HasProvidersConfig() {
 		aux.Providers = &c.Providers
 	}
 
@@ -326,32 +326,10 @@ type ProvidersConfig struct {
 	Qwen          ProviderConfig       `json:"qwen"`
 }
 
-// IsEmpty checks if all provider configs are empty (no API keys or API bases set)
-// Note: WebSearch is an optimization option and doesn't count as "non-empty"
-func (p ProvidersConfig) IsEmpty() bool {
-	return p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" &&
-		p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" &&
-		p.OpenRouter.APIKey == "" && p.OpenRouter.APIBase == "" &&
-		p.Groq.APIKey == "" && p.Groq.APIBase == "" &&
-		p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" &&
-		p.VLLM.APIKey == "" && p.VLLM.APIBase == "" &&
-		p.Gemini.APIKey == "" && p.Gemini.APIBase == "" &&
-		p.Nvidia.APIKey == "" && p.Nvidia.APIBase == "" &&
-		p.Ollama.APIKey == "" && p.Ollama.APIBase == "" &&
-		p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" &&
-		p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" &&
-		p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" &&
-		p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" &&
-		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
-		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
-		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
-		p.Qwen.APIKey == "" && p.Qwen.APIBase == ""
-}
-
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
 // to omit the entire section when empty
 func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
-	if p.IsEmpty() {
+	if !p.HasProvidersConfig() {
 		return []byte("null"), nil
 	}
 	type Alias ProvidersConfig
@@ -498,7 +476,7 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
-	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
+	if len(cfg.ModelList) == 0 && cfg.Providers.HasProvidersConfig() {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
 	}
 
@@ -618,25 +596,24 @@ func (c *Config) findMatches(modelName string) []ModelConfig {
 }
 
 // HasProvidersConfig checks if any provider in the old providers config has configuration.
-func (c *Config) HasProvidersConfig() bool {
-	v := c.Providers
-	return v.Anthropic.APIKey != "" || v.Anthropic.APIBase != "" ||
-		v.OpenAI.APIKey != "" || v.OpenAI.APIBase != "" ||
-		v.OpenRouter.APIKey != "" || v.OpenRouter.APIBase != "" ||
-		v.Groq.APIKey != "" || v.Groq.APIBase != "" ||
-		v.Zhipu.APIKey != "" || v.Zhipu.APIBase != "" ||
-		v.VLLM.APIKey != "" || v.VLLM.APIBase != "" ||
-		v.Gemini.APIKey != "" || v.Gemini.APIBase != "" ||
-		v.Nvidia.APIKey != "" || v.Nvidia.APIBase != "" ||
-		v.Ollama.APIKey != "" || v.Ollama.APIBase != "" ||
-		v.Moonshot.APIKey != "" || v.Moonshot.APIBase != "" ||
-		v.ShengSuanYun.APIKey != "" || v.ShengSuanYun.APIBase != "" ||
-		v.DeepSeek.APIKey != "" || v.DeepSeek.APIBase != "" ||
-		v.Cerebras.APIKey != "" || v.Cerebras.APIBase != "" ||
-		v.VolcEngine.APIKey != "" || v.VolcEngine.APIBase != "" ||
-		v.GitHubCopilot.APIKey != "" || v.GitHubCopilot.APIBase != "" ||
-		v.Antigravity.APIKey != "" || v.Antigravity.APIBase != "" ||
-		v.Qwen.APIKey != "" || v.Qwen.APIBase != ""
+func (p ProvidersConfig) HasProvidersConfig() bool {
+	return p.Anthropic.APIKey != "" || p.Anthropic.APIBase != "" ||
+		p.OpenAI.APIKey != "" || p.OpenAI.APIBase != "" ||
+		p.OpenRouter.APIKey != "" || p.OpenRouter.APIBase != "" ||
+		p.Groq.APIKey != "" || p.Groq.APIBase != "" ||
+		p.Zhipu.APIKey != "" || p.Zhipu.APIBase != "" ||
+		p.VLLM.APIKey != "" || p.VLLM.APIBase != "" ||
+		p.Gemini.APIKey != "" || p.Gemini.APIBase != "" ||
+		p.Nvidia.APIKey != "" || p.Nvidia.APIBase != "" ||
+		p.Ollama.APIKey != "" || p.Ollama.APIBase != "" ||
+		p.Moonshot.APIKey != "" || p.Moonshot.APIBase != "" ||
+		p.ShengSuanYun.APIKey != "" || p.ShengSuanYun.APIBase != "" ||
+		p.DeepSeek.APIKey != "" || p.DeepSeek.APIBase != "" ||
+		p.Cerebras.APIKey != "" || p.Cerebras.APIBase != "" ||
+		p.VolcEngine.APIKey != "" || p.VolcEngine.APIBase != "" ||
+		p.GitHubCopilot.APIKey != "" || p.GitHubCopilot.APIBase != "" ||
+		p.Antigravity.APIKey != "" || p.Antigravity.APIBase != "" ||
+		p.Qwen.APIKey != "" || p.Qwen.APIBase != ""
 }
 
 // ValidateModelList validates all ModelConfig entries in the model_list.

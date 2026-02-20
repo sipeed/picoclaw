@@ -24,6 +24,38 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
+// testMessageCallback is a helper function to test message callback handling.
+// It encrypts the given JSON message and sends it to the channel's callback handler.
+func testMessageCallback(t *testing.T, ch *WeComBotChannel, jsonMsg, aesKey string) {
+	// Encrypt message
+	encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
+
+	// Create encrypted XML wrapper
+	encryptedWrapper := struct {
+		XMLName xml.Name `xml:"xml"`
+		Encrypt string   `xml:"Encrypt"`
+	}{
+		Encrypt: encrypted,
+	}
+	wrapperData, _ := xml.Marshal(encryptedWrapper)
+
+	timestamp := "1234567890"
+	nonce := "test_nonce"
+	signature := generateSignature("test_token", timestamp, nonce, encrypted)
+
+	req := httptest.NewRequest(http.MethodPost, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce, bytes.NewReader(wrapperData))
+	w := httptest.NewRecorder()
+
+	ch.handleMessageCallback(context.Background(), w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+	if w.Body.String() != "success" {
+		t.Errorf("response body = %q, want %q", w.Body.String(), "success")
+	}
+}
+
 // generateTestAESKey generates a valid test AES key
 func generateTestAESKey() string {
 	// AES key needs to be 32 bytes (256 bits) for AES-256
@@ -287,7 +319,9 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 	})
 }
 
-func TestWeComBotPKCS7Unpad(t *testing.T) {
+// TestWeComPKCS7Unpad tests the PKCS7 unpadding function.
+// This function is shared by both WeComBot and WeComApp channels.
+func TestWeComPKCS7Unpad(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    []byte
@@ -420,34 +454,7 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 			"msgtype": "text",
 			"text": {"content": "Hello World"}
 		}`
-
-		// Encrypt message
-		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
-
-		// Create encrypted XML wrapper
-		encryptedWrapper := struct {
-			XMLName xml.Name `xml:"xml"`
-			Encrypt string   `xml:"Encrypt"`
-		}{
-			Encrypt: encrypted,
-		}
-		wrapperData, _ := xml.Marshal(encryptedWrapper)
-
-		timestamp := "1234567890"
-		nonce := "test_nonce"
-		signature := generateSignature("test_token", timestamp, nonce, encrypted)
-
-		req := httptest.NewRequest(http.MethodPost, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce, bytes.NewReader(wrapperData))
-		w := httptest.NewRecorder()
-
-		ch.handleMessageCallback(context.Background(), w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
-		}
-		if w.Body.String() != "success" {
-			t.Errorf("response body = %q, want %q", w.Body.String(), "success")
-		}
+		testMessageCallback(t, ch, jsonMsg, aesKey)
 	})
 
 	t.Run("valid group message callback", func(t *testing.T) {
@@ -462,34 +469,7 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 			"msgtype": "text",
 			"text": {"content": "Hello Group"}
 		}`
-
-		// Encrypt message
-		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
-
-		// Create encrypted XML wrapper
-		encryptedWrapper := struct {
-			XMLName xml.Name `xml:"xml"`
-			Encrypt string   `xml:"Encrypt"`
-		}{
-			Encrypt: encrypted,
-		}
-		wrapperData, _ := xml.Marshal(encryptedWrapper)
-
-		timestamp := "1234567890"
-		nonce := "test_nonce"
-		signature := generateSignature("test_token", timestamp, nonce, encrypted)
-
-		req := httptest.NewRequest(http.MethodPost, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce, bytes.NewReader(wrapperData))
-		w := httptest.NewRecorder()
-
-		ch.handleMessageCallback(context.Background(), w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
-		}
-		if w.Body.String() != "success" {
-			t.Errorf("response body = %q, want %q", w.Body.String(), "success")
-		}
+		testMessageCallback(t, ch, jsonMsg, aesKey)
 	})
 
 	t.Run("missing parameters", func(t *testing.T) {

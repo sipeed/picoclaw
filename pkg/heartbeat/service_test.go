@@ -9,15 +9,25 @@ import (
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
-func TestExecuteHeartbeat_Async(t *testing.T) {
+// setupHeartbeatTest creates common test setup for heartbeat service tests.
+// Returns tmpDir and heartbeatService.
+func setupHeartbeatTest(t testing.TB) (string, *HeartbeatService) {
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		os.RemoveAll(tmpDir)
+	})
 
 	hs := NewHeartbeatService(tmpDir, 30, true)
 	hs.stopChan = make(chan struct{}) // Enable for testing
+
+	return tmpDir, hs
+}
+
+func TestExecuteHeartbeat_Async(t *testing.T) {
+	tmpDir, hs := setupHeartbeatTest(t)
 
 	asyncCalled := false
 	asyncResult := &tools.ToolResult{
@@ -48,14 +58,7 @@ func TestExecuteHeartbeat_Async(t *testing.T) {
 }
 
 func TestExecuteHeartbeat_Error(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.stopChan = make(chan struct{}) // Enable for testing
+	tmpDir, hs := setupHeartbeatTest(t)
 
 	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
 		return &tools.ToolResult{
@@ -86,14 +89,7 @@ func TestExecuteHeartbeat_Error(t *testing.T) {
 }
 
 func TestExecuteHeartbeat_Silent(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.stopChan = make(chan struct{}) // Enable for testing
+	tmpDir, hs := setupHeartbeatTest(t)
 
 	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
 		return &tools.ToolResult{
