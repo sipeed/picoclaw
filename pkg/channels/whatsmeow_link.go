@@ -110,10 +110,13 @@ func LinkWhatsmeow(dbPath string, mode string) error {
 func WhatsmeowStatus(dbPath string) error {
 	dbPath = expandHomePath(dbPath)
 
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		fmt.Println("No WhatsApp database found.")
-		fmt.Println("Run 'picoclaw whatsapp link' to link a device.")
-		return nil
+	if _, err := os.Stat(dbPath); err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("No WhatsApp database found.")
+			fmt.Println("Run 'picoclaw whatsapp link' to link a device.")
+			return nil
+		}
+		return fmt.Errorf("failed to stat db: %w", err)
 	}
 
 	ctx := context.Background()

@@ -28,6 +28,7 @@ type WhatsmeowChannel struct {
 	config    config.WhatsmeowConfig
 	container *sqlstore.Container
 	mu        sync.Mutex
+	ctx       context.Context
 	cancel    context.CancelFunc
 }
 
@@ -74,16 +75,10 @@ func (c *WhatsmeowChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to connect whatsmeow: %w", err)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	c.cancel = cancel
+	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	c.setRunning(true)
 	logger.InfoC("whatsmeow", "WhatsApp (whatsmeow) channel connected")
-
-	// Keep context alive for cleanup
-	go func() {
-		<-ctx.Done()
-	}()
 
 	return nil
 }
@@ -175,6 +170,11 @@ func (c *WhatsmeowChannel) handleIncomingMessage(msg *events.Message) {
 		content = msg.Message.GetExtendedTextMessage().GetText()
 	}
 
+	// Check allowlist before downloading media
+	if !c.IsAllowed(senderID) {
+		return
+	}
+
 	// Handle media
 	var mediaPaths []string
 
@@ -248,7 +248,7 @@ func (c *WhatsmeowChannel) downloadMedia(msg whatsmeow.DownloadableMessage, ext 
 		return "", fmt.Errorf("client not connected")
 	}
 
-	data, err := client.Download(context.Background(), msg)
+	data, err := client.Download(c.ctx, msg)
 	if err != nil {
 		logger.ErrorCF("whatsmeow", "Failed to download media", map[string]interface{}{
 			"error": err.Error(),
@@ -257,14 +257,14 @@ func (c *WhatsmeowChannel) downloadMedia(msg whatsmeow.DownloadableMessage, ext 
 	}
 
 	dir := filepath.Join(os.TempDir(), "picoclaw_media")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", err
 	}
 
 	filename := fmt.Sprintf("wa_%d%s", time.Now().UnixNano(), ext)
 	path := filepath.Join(dir, filename)
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return "", err
 	}
 
@@ -276,9 +276,16 @@ func stringPtr(s string) *string {
 }
 
 func expandHomePath(path string) string {
+	if path == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+		return path
+	}
 	if strings.HasPrefix(path, "~/") {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, path[2:])
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, path[2:])
+		}
 	}
 	return path
 }
