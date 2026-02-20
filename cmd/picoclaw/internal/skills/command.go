@@ -12,7 +12,7 @@ import (
 func NewSkillsCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "skills",
-		Short: "Manage skills (install, list, remove)",
+		Short: "Manage skills",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},

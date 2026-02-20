@@ -9,24 +9,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-func authHelp() {
-	fmt.Println("\nAuth commands:")
-	fmt.Println("  login       Login via OAuth or paste token")
-	fmt.Println("  logout      Remove stored credentials")
-	fmt.Println("  status      Show current auth status")
-	fmt.Println()
-	fmt.Println("Login options:")
-	fmt.Println("  --provider <name>    Provider to login with (openai, anthropic)")
-	fmt.Println("  --device-code        Use device code flow (for headless environments)")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  picoclaw auth login --provider openai")
-	fmt.Println("  picoclaw auth login --provider openai --device-code")
-	fmt.Println("  picoclaw auth login --provider anthropic")
-	fmt.Println("  picoclaw auth logout --provider openai")
-	fmt.Println("  picoclaw auth status")
-}
-
 func authLoginCmd(provider string, useDeviceCode bool) error {
 	switch provider {
 	case "openai":

@@ -15,10 +15,10 @@ builds:
       - stdjson
     ldflags:
       - -s -w
-      - -X main.version={{ .Version }}
-      - -X main.gitCommit={{ .ShortCommit }}
-      - -X main.buildTime={{ .Date }}
-      - -X main.goVersion={{ .Env.GOVERSION }}
+      - -X github.com/sipeed/picoclaw/cmd/picoclaw/internal.version={{ .Version }}
+      - -X github.com/sipeed/picoclaw/cmd/picoclaw/internal.gitCommit={{ .ShortCommit }}
+      - -X github.com/sipeed/picoclaw/cmd/picoclaw/internal.buildTime={{ .Date }}
+      - -X github.com/sipeed/picoclaw/cmd/picoclaw/internal.goVersion={{ .Env.GOVERSION }}
     goos:
       - linux
       - windows
