@@ -194,7 +194,7 @@ docker compose --profile gateway up -d
 > [!TIP]
 > Set your API key in `~/.picoclaw/config.json`.
 > Get API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web search is **optional** - get free [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
+> Web search is **optional** - [Brave Search API](https://brave.com/search/api) ($5/1000 queries, ~$5-6/month), [SearXNG](https://github.com/searxng/searxng) (free, self-hosted), or use built-in DuckDuckGo fallback.
 
 **1. Initialize**
 
@@ -259,7 +259,7 @@ picoclaw onboard
 
 * **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
 * **Web Search** (optional):
-  * [Brave Search](https://brave.com/search/api) - Free tier (2000 requests/month)
+  * [Brave Search](https://brave.com/search/api) - Paid ($5/1000 queries, ~$5-6/month)
   * [Perplexity](https://www.perplexity.ai) - AI-powered search with chat interface
   * [SearXNG](https://github.com/searxng/searxng) - Self-hosted metasearch engine (free, no API key needed)
   * DuckDuckGo - Built-in fallback (no API key required)
@@ -1062,9 +1062,9 @@ This is normal if you haven't configured a search API key yet. PicoClaw will pro
 
 PicoClaw automatically selects the best available search provider in this order:
 1. **Perplexity** (if enabled and API key configured) - AI-powered search with citations
-2. **Brave Search** (if enabled and API key configured) - Privacy-focused with 2000 free queries/month
-3. **SearXNG** (if enabled and base_url configured) - Self-hosted metasearch aggregating 70+ engines
-4. **DuckDuckGo** (if enabled, default fallback) - No API key required
+2. **Brave Search** (if enabled and API key configured) - Privacy-focused paid API ($5/1000 queries)
+3. **SearXNG** (if enabled and base_url configured) - Self-hosted metasearch aggregating 70+ engines (free)
+4. **DuckDuckGo** (if enabled, default fallback) - No API key required (free)
 
 #### Web Search Configuration Options
 
@@ -1083,7 +1083,7 @@ PicoClaw automatically selects the best available search provider in this order:
 }
 ```
 
-**Option 2 (Free Tier)**: Get a free API key at [https://brave.com/search/api](https://brave.com/search/api) (2000 free queries/month)
+**Option 2 (Paid API)**: Get an API key at [https://brave.com/search/api](https://brave.com/search/api) ($5/1000 queries, ~$5-6/month)
 ```json
 {
   "tools": {
@@ -1168,7 +1168,7 @@ This happens when another instance of the bot is running. Make sure only one `pi
 | ---------------- | ------------------------ | ------------------------------------- |
 | **OpenRouter**   | 200K tokens/month        | Multiple models (Claude, GPT-4, etc.) |
 | **Zhipu**        | 200K tokens/month        | Best for Chinese users                |
-| **Brave Search** | 2000 queries/month       | Web search functionality              |
+| **Brave Search** | Paid ($5/1000 queries)   | Web search functionality              |
 | **SearXNG**      | Unlimited (self-hosted)  | Privacy-focused metasearch (70+ engines) |
 | **Groq**         | Free tier available      | Fast inference (Llama, Mixtral)       |
 | **Cerebras**     | Free tier available      | Fast inference (Llama, Qwen, etc.)    |
