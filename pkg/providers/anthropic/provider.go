@@ -22,10 +22,15 @@ type ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 
 const defaultBaseURL = "https://api.anthropic.com"
 
+// anthropicOAuthBetaHeader is required for Anthropic OAuth tokens (sk-ant-oat01-*).
+// Without this header, the API returns 401: "OAuth authentication is currently not supported."
+const anthropicOAuthBetaHeader = "oauth-2025-04-20"
+
 type Provider struct {
 	client      *anthropic.Client
 	tokenSource func() (string, error)
 	baseURL     string
+	isOAuth     bool
 }
 
 func NewProvider(token string) *Provider {
@@ -58,11 +63,24 @@ func NewProviderWithTokenSource(token string, tokenSource func() (string, error)
 func NewProviderWithTokenSourceAndBaseURL(token string, tokenSource func() (string, error), apiBase string) *Provider {
 	p := NewProviderWithBaseURL(token, apiBase)
 	p.tokenSource = tokenSource
+	p.isOAuth = strings.HasPrefix(token, "sk-ant-oat01-")
 	return p
 }
 
+// oauthOpts returns request options for OAuth token authentication.
+// The anthropic-beta header is only injected when targeting the official Anthropic API,
+// since custom endpoints (Vertex AI, Bedrock, LiteLLM, etc.) do not recognize it.
+func (p *Provider) oauthOpts() []option.RequestOption {
+	if p.isOAuth && p.baseURL == defaultBaseURL {
+		return []option.RequestOption{
+			option.WithHeader("anthropic-beta", anthropicOAuthBetaHeader),
+		}
+	}
+	return nil
+}
+
 func (p *Provider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
-	var opts []option.RequestOption
+	opts := p.oauthOpts()
 	if p.tokenSource != nil {
 		tok, err := p.tokenSource()
 		if err != nil {

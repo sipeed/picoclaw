@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -262,4 +263,105 @@ func createAnthropicTestClient(baseURL, token string) *anthropic.Client {
 		anthropicoption.WithBaseURL(baseURL),
 	)
 	return &c
+}
+
+func TestProvider_OAuthToken_SendsBetaHeader(t *testing.T) {
+	var capturedHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		resp := map[string]interface{}{
+			"id": "msg_test", "type": "message", "role": "assistant",
+			"model": "claude-sonnet-4-5-20250929", "stop_reason": "end_turn",
+			"content": []map[string]interface{}{{"type": "text", "text": "ok"}},
+			"usage":   map[string]interface{}{"input_tokens": 1, "output_tokens": 1},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	// Create OAuth provider via token source constructor, then point client at test server.
+	// We keep baseURL = defaultBaseURL so the apiBase guard allows the header.
+	client := anthropic.NewClient(
+		anthropicoption.WithAuthToken("sk-ant-oat01-initial"),
+		anthropicoption.WithBaseURL(server.URL),
+	)
+	p := &Provider{
+		client:  &client,
+		baseURL: defaultBaseURL,
+		isOAuth: true,
+		tokenSource: func() (string, error) {
+			return "sk-ant-oat01-refreshed", nil
+		},
+	}
+
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+
+	got := capturedHeaders.Get("Anthropic-Beta")
+	if !strings.Contains(got, anthropicOAuthBetaHeader) {
+		t.Errorf("OAuth provider: anthropic-beta header = %q, want to contain %q", got, anthropicOAuthBetaHeader)
+	}
+}
+
+func TestProvider_RegularAPIKey_NoBetaHeader(t *testing.T) {
+	var capturedHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		resp := map[string]interface{}{
+			"id": "msg_test", "type": "message", "role": "assistant",
+			"model": "claude-sonnet-4-5-20250929", "stop_reason": "end_turn",
+			"content": []map[string]interface{}{{"type": "text", "text": "ok"}},
+			"usage":   map[string]interface{}{"input_tokens": 1, "output_tokens": 1},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	// Regular API key provider (not OAuth)
+	p := NewProviderWithClient(createAnthropicTestClient(server.URL, "sk-ant-api03-regular-key"))
+
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+
+	got := capturedHeaders.Get("Anthropic-Beta")
+	if strings.Contains(got, anthropicOAuthBetaHeader) {
+		t.Errorf("Regular API key provider: anthropic-beta header = %q, should NOT contain %q", got, anthropicOAuthBetaHeader)
+	}
+}
+
+func TestProvider_OAuthWithCustomBaseURL_NoBetaHeader(t *testing.T) {
+	var capturedHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		resp := map[string]interface{}{
+			"id": "msg_test", "type": "message", "role": "assistant",
+			"model": "claude-sonnet-4-5-20250929", "stop_reason": "end_turn",
+			"content": []map[string]interface{}{{"type": "text", "text": "ok"}},
+			"usage":   map[string]interface{}{"input_tokens": 1, "output_tokens": 1},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	// OAuth provider but targeting a custom endpoint (e.g., LiteLLM proxy)
+	p := NewProviderWithTokenSourceAndBaseURL("sk-ant-oat01-initial", func() (string, error) {
+		return "sk-ant-oat01-refreshed", nil
+	}, server.URL)
+
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+
+	got := capturedHeaders.Get("Anthropic-Beta")
+	if strings.Contains(got, anthropicOAuthBetaHeader) {
+		t.Errorf("OAuth with custom baseURL: anthropic-beta header = %q, should NOT contain %q", got, anthropicOAuthBetaHeader)
+	}
 }
