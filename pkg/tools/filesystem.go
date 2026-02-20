@@ -19,62 +19,98 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 		return "", fmt.Errorf("failed to resolve workspace path: %w", err)
 	}
 
-	var absPath string
-	if filepath.IsAbs(path) {
-		absPath = filepath.Clean(path)
-	} else {
-		absPath, err = filepath.Abs(filepath.Join(absWorkspace, path))
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve file path: %w", err)
-		}
+	absPath, err := resolveTargetPath(path, absWorkspace)
+	if err != nil {
+		return "", err
 	}
 
-	if restrict {
-		if !isWithinWorkspace(absPath, absWorkspace) {
-			return "", fmt.Errorf("access denied: path is outside the workspace")
-		}
-
-		workspaceReal := absWorkspace
-		if resolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
-			workspaceReal = resolved
-		}
-
-		if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
-			if !isWithinWorkspace(resolved, workspaceReal) {
-				return "", fmt.Errorf("access denied: symlink resolves outside workspace")
-			}
-		} else if os.IsNotExist(err) {
-			if parentResolved, err := resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
-				if !isWithinWorkspace(parentResolved, workspaceReal) {
-					return "", fmt.Errorf("access denied: symlink resolves outside workspace")
-				}
-			} else if !os.IsNotExist(err) {
-				return "", fmt.Errorf("failed to resolve path: %w", err)
-			}
-		} else {
-			return "", fmt.Errorf("failed to resolve path: %w", err)
-		}
+	if !restrict {
+		return absPath, nil
 	}
 
-	return absPath, nil
+	canonicalPath, err := pathWithinWorkspace(absPath, absWorkspace)
+	if err != nil {
+		return "", err
+	}
+
+	return canonicalPath, nil
 }
 
-func resolveExistingAncestor(path string) (string, error) {
-	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
-		if resolved, err := filepath.EvalSymlinks(current); err == nil {
-			return resolved, nil
-		} else if !os.IsNotExist(err) {
+func resolveTargetPath(path, absWorkspace string) (string, error) {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+
+	absPath, err := filepath.Abs(filepath.Join(absWorkspace, path))
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve file path: %w", err)
+	}
+	return filepath.Clean(absPath), nil
+}
+
+func pathWithinWorkspace(target, workspace string) (string, error) {
+	canonicalWorkspace, err := canonicalizeExistingPath(workspace)
+	if err != nil {
+		return "", fmt.Errorf("failed to canonicalize workspace path: %w", err)
+	}
+
+	canonicalTarget, err := canonicalizePathForBoundary(target)
+	if err != nil {
+		return "", fmt.Errorf("failed to canonicalize target path: %w", err)
+	}
+
+	rel, err := filepath.Rel(canonicalWorkspace, canonicalTarget)
+	if err != nil {
+		return "", fmt.Errorf("failed to evaluate workspace boundary: %w", err)
+	}
+
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("access denied: path is outside the workspace")
+	}
+
+	return canonicalTarget, nil
+}
+
+func canonicalizeExistingPath(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
+}
+
+func canonicalizePathForBoundary(path string) (string, error) {
+	cleanPath := filepath.Clean(path)
+	segments := make([]string, 0, 4)
+	current := cleanPath
+
+	for {
+		_, err := os.Lstat(current)
+		if err == nil {
+			resolved, evalErr := filepath.EvalSymlinks(current)
+			if evalErr != nil {
+				return "", evalErr
+			}
+
+			for i := len(segments) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, segments[i])
+			}
+
+			return filepath.Clean(resolved), nil
+		}
+
+		if !os.IsNotExist(err) {
 			return "", err
 		}
-		if filepath.Dir(current) == current {
-			return "", os.ErrNotExist
-		}
-	}
-}
 
-func isWithinWorkspace(candidate, workspace string) bool {
-	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("could not resolve existing parent for %q", path)
+		}
+
+		segments = append(segments, filepath.Base(current))
+		current = parent
+	}
 }
 
 type ReadFileTool struct {
