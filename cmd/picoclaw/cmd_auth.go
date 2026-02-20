@@ -24,6 +24,16 @@ func newAuthCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Manage authentication (login, logout, status)",
+		Long: `Manage authentication (login, logout, status)
+
+Examples:
+  picoclaw auth login --provider openai
+  picoclaw auth login --provider openai --device-code
+  picoclaw auth login --provider anthropic
+  picoclaw auth login --provider google-antigravity
+  picoclaw auth logout --provider openai
+  picoclaw auth status
+  picoclaw auth models`,
 	}
 	cmd.AddCommand(
 		newAuthLoginCmd(),

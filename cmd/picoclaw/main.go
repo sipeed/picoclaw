@@ -119,7 +119,17 @@ func init() {
 		newSkillsCmd(),
 		newVersionCmd(),
 	)
-	rootCmd.Version = formatVersion()
+	// Override cobra's default --version/-v to use printVersion() for full output
+	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {}
+	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		v, _ := cmd.Flags().GetBool("version")
+		if v {
+			printVersion()
+			return nil
+		}
+		return cmd.Help()
+	}
 }
 
 func main() {
