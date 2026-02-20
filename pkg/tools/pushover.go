@@ -52,6 +52,7 @@ func (t *PushoverTool) Execute(ctx context.Context, args map[string]interface{})
 		return &ToolResult{
 			ForLLM:  fmt.Sprintf("failed to send pushover notification: %v", err),
 			IsError: true,
+			Err:     err,
 		}
 	}
 

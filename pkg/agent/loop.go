@@ -117,16 +117,18 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		})
 		agent.Tools.Register(messageTool)
 
-		// Pushover tool - send push notifications
-		pushoverTool := tools.NewPushoverTool()
-		pushoverTool.SetPushoverCallback(func(message string) error {
-			msgBus.PublishOutbound(bus.OutboundMessage{
-				Channel: "pushover",
-				Content: message,
+		// Pushover tool - send push notifications (only if enabled)
+		if cfg.Channels.Pushover.Enabled {
+			pushoverTool := tools.NewPushoverTool()
+			pushoverTool.SetPushoverCallback(func(message string) error {
+				msgBus.PublishOutbound(bus.OutboundMessage{
+					Channel: "pushover",
+					Content: message,
+				})
+				return nil
 			})
-			return nil
-		})
-		agent.Tools.Register(pushoverTool)
+			agent.Tools.Register(pushoverTool)
+		}
 
 		// Spawn tool with allowlist checker
 		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
