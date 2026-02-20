@@ -796,12 +796,16 @@ Các lệnh gạch chéo sau có thể gửi trong bất kỳ kênh chat nào (T
 | `/todo` | Hiển thị danh sách tác vụ (đọc `TODO.md`) |
 | `/session` | Hiển thị thống kê sử dụng token (yêu cầu `--stats`) |
 | `/session reset` | Đặt lại thống kê sử dụng |
+| `/skills` | Liệt kê các kỹ năng khả dụng |
+| `/skill <tên> [tin nhắn]` | Gọi một kỹ năng |
 | `/show model` | Hiển thị mô hình hiện tại |
 | `/list channels` | Liệt kê các kênh đã bật |
 
 > **Lưu ý**: `/todo` hiển thị file `TODO.md` mà AI duy trì qua công cụ `write_file`/`edit_file`. Yêu cầu AI thêm, hoàn thành hoặc sắp xếp tác vụ và nó sẽ tự động cập nhật file.
 >
 > **Lưu ý**: `/session` yêu cầu gateway được khởi động với cờ `--stats`. Không có cờ này, theo dõi thống kê bị tắt để không có overhead.
+>
+> **Lưu ý**: `/skills` phản hồi ngay lập tức không tốn chi phí LLM. `/skill <tên>` chỉ đưa SKILL.md vào ngữ cảnh cho lượt hiện tại, sau đó chỉ giữ lại tên kỹ năng trong lịch sử để tiết kiệm cửa sổ ngữ cảnh.
 
 ### Tác vụ định kỳ / Nhắc nhở
 

@@ -852,12 +852,16 @@ These slash commands can be sent in any chat channel (Telegram, Discord, etc.) a
 | `/todo`           | Show your task list (reads `TODO.md`)            |
 | `/session`        | Show token usage statistics (requires `--stats`) |
 | `/session reset`  | Reset usage statistics                           |
+| `/skills`         | List available skills                            |
+| `/skill <name> [message]` | Invoke a skill with optional message     |
 | `/show model`     | Show current model                               |
 | `/list channels`  | List enabled channels                            |
 
 > **Note**: `/todo` displays the `TODO.md` file that the AI maintains via its `write_file`/`edit_file` tools. Ask the AI to add, complete, or organize tasks and it will update the file automatically.
 >
 > **Note**: `/session` requires the gateway to be started with `--stats` flag. Without it, stats tracking is disabled for zero overhead.
+>
+> **Note**: `/skills` returns instantly without LLM cost. `/skill <name>` injects the skill's SKILL.md into the conversation context for the current turn, then only the skill name is kept in history to save the context window.
 
 ### Scheduled Tasks / Reminders
 
