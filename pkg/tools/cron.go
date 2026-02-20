@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,6 +81,10 @@ func (t *CronTool) Parameters() map[string]interface{} {
 			"cron_expr": map[string]interface{}{
 				"type":        "string",
 				"description": "Cron expression for complex recurring schedules (e.g., '0 9 * * *' for daily at 9am). Use this for complex recurring schedules.",
+			},
+			"timezone": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional IANA timezone (e.g., 'America/Sao_Paulo'). Defaults to server timezone when omitted.",
 			},
 			"job_id": map[string]interface{}{
 				"type":        "string",
@@ -169,6 +174,14 @@ func (t *CronTool) addJob(args map[string]interface{}) *ToolResult {
 		return ErrorResult("one of at_seconds, every_seconds, or cron_expr is required")
 	}
 
+	if tz, ok := args["timezone"].(string); ok && strings.TrimSpace(tz) != "" {
+		tz = strings.TrimSpace(tz)
+		if _, err := time.LoadLocation(tz); err != nil {
+			return ErrorResult(fmt.Sprintf("invalid timezone: %v", err))
+		}
+		schedule.TZ = tz
+	}
+
 	// Read deliver parameter, default to true
 	deliver := true
 	if d, ok := args["deliver"].(bool); ok {
@@ -210,6 +223,21 @@ func (t *CronTool) addJob(args map[string]interface{}) *ToolResult {
 
 func (t *CronTool) listJobs() *ToolResult {
 	jobs := t.cronService.ListJobs(false)
+
+	t.mu.RLock()
+	channel := t.channel
+	chatID := t.chatID
+	t.mu.RUnlock()
+
+	if channel != "" && chatID != "" {
+		filtered := make([]cron.CronJob, 0, len(jobs))
+		for _, j := range jobs {
+			if j.Payload.Channel == channel && j.Payload.To == chatID {
+				filtered = append(filtered, j)
+			}
+		}
+		jobs = filtered
+	}
 
 	if len(jobs) == 0 {
 		return SilentResult("No scheduled jobs")
