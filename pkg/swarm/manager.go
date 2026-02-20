@@ -35,10 +35,13 @@ type Manager struct {
 	checkpointStore *CheckpointStore
 	failoverManager *FailoverManager
 	contextPool     *ContextPool
+	electionMgr     *ElectionManager
+	roleSwitcher    *RoleSwitcher
 	identity        *identity.LoadedIdentity
 	nodeInfo        *NodeInfo
 	agentLoop       *agent.AgentLoop
 	localBus        *bus.MessageBus
+	enableElection  bool // Enable leader election for dynamic role switching
 }
 
 // NewManager creates a new swarm manager
@@ -209,6 +212,30 @@ func (m *Manager) Start(ctx context.Context) error {
 		})
 	}
 
+	// Initialize leader election if enabled
+	if m.enableElection {
+		m.electionMgr = NewElectionManager(m.bridge.nc, m.bridge.js, m.nodeInfo.ID, m.identity.HID, m.identity.SID)
+		m.roleSwitcher = NewRoleSwitcher(m.electionMgr, m.nodeInfo, m)
+
+		electionCfg := &ElectionConfig{
+			ElectionSubject:   fmt.Sprintf("picoclaw.election.%s", m.identity.HID),
+			LeaseDuration:     10 * time.Second,
+			ElectionInterval: 3 * time.Second,
+			PreVoteDelay:      time.Duration(0),
+		}
+
+		if err := m.electionMgr.Start(ctx, electionCfg); err != nil {
+			logger.WarnCF("swarm", "Failed to start election manager", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			logger.InfoCF("swarm", "Leader election enabled", map[string]interface{}{
+				"node_id": m.nodeInfo.ID,
+				"hid":     m.identity.HID,
+			})
+		}
+	}
+
 	// Start role-specific components
 	if m.coordinator != nil {
 		if err := m.coordinator.Start(ctx); err != nil {
@@ -253,6 +280,10 @@ func (m *Manager) Stop() {
 
 	if m.coordinator != nil {
 		m.coordinator.Stop()
+	}
+
+	if m.electionMgr != nil {
+		m.electionMgr.Stop()
 	}
 
 	if m.failoverManager != nil {
@@ -311,4 +342,109 @@ func (m *Manager) GetContextPool() *ContextPool {
 // GetIdentity returns the node's identity
 func (m *Manager) GetIdentity() *identity.LoadedIdentity {
 	return m.identity
+}
+
+// IsLeader returns true if this node is the leader (via election)
+func (m *Manager) IsLeader() bool {
+	if m.electionMgr != nil {
+		return m.electionMgr.IsLeader()
+	}
+	return false
+}
+
+// GetLeaderID returns the current leader's node ID
+func (m *Manager) GetLeaderID() string {
+	if m.electionMgr != nil {
+		return m.electionMgr.GetLeaderID()
+	}
+	return ""
+}
+
+// SetElectionEnabled enables or disables leader election
+func (m *Manager) SetElectionEnabled(enabled bool) {
+	m.enableElection = enabled
+}
+
+// handleRoleChange handles dynamic role changes
+func (m *Manager) handleRoleChange(newRole NodeRole) {
+	logger.InfoCF("swarm", "Handling role change", map[string]interface{}{
+		"node_id":    m.nodeInfo.ID,
+		"new_role":   string(newRole),
+		"old_role":   string(m.nodeInfo.Role),
+	})
+
+	// Stop old role components
+	switch m.nodeInfo.Role {
+	case RoleCoordinator:
+		if m.coordinator != nil {
+			m.coordinator.Stop()
+			m.coordinator = nil
+		}
+	case RoleWorker:
+		if m.worker != nil {
+			m.worker.Stop()
+			m.worker = nil
+		}
+	case RoleSpecialist:
+		if m.specialist != nil {
+			m.specialist.Stop()
+			m.specialist = nil
+		}
+	}
+
+	// Update node role
+	m.nodeInfo.Role = newRole
+
+	// Start new role components
+	swarmCfg := &m.cfg.Swarm
+	switch newRole {
+	case RoleCoordinator:
+		m.coordinator = NewCoordinator(swarmCfg, m.bridge, m.temporal, m.discovery, m.agentLoop, m.provider, m.localBus)
+		if m.coordinator != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := m.coordinator.Start(ctx); err != nil {
+				logger.ErrorCF("swarm", "Failed to start coordinator after role change", map[string]interface{}{
+					"error": err.Error(),
+				})
+			}
+		}
+	case RoleWorker:
+		m.worker = NewWorker(swarmCfg, m.bridge, m.temporal, m.agentLoop, m.provider, m.nodeInfo)
+		if m.worker != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := m.worker.Start(ctx); err != nil {
+				logger.ErrorCF("swarm", "Failed to start worker after role change", map[string]interface{}{
+					"error": err.Error(),
+				})
+			}
+		}
+	case RoleSpecialist:
+		m.worker = NewWorker(swarmCfg, m.bridge, m.temporal, m.agentLoop, m.provider, m.nodeInfo)
+		m.specialist = NewSpecialistNode(swarmCfg, m.bridge, m.temporal, m.agentLoop, m.provider, m.nodeInfo, m.bridge.js, m.bridge.nc, "")
+		if m.worker != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := m.worker.Start(ctx); err != nil {
+				logger.ErrorCF("swarm", "Failed to start worker after role change", map[string]interface{}{
+					"error": err.Error(),
+				})
+			}
+		}
+		if m.specialist != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := m.specialist.Start(ctx); err != nil {
+				logger.ErrorCF("swarm", "Failed to start specialist after role change", map[string]interface{}{
+					"error": err.Error(),
+				})
+			}
+		}
+	}
+
+	logger.InfoCF("swarm", "Role change completed", map[string]interface{}{
+		"node_id": m.nodeInfo.ID,
+		"role":    string(newRole),
+	})
 }
