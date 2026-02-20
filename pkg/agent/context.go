@@ -146,15 +146,15 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 		"IDENTITY.md",
 	}
 
-	var result string
+	var sb strings.Builder
 	for _, filename := range bootstrapFiles {
 		filePath := filepath.Join(cb.workspace, filename)
 		if data, err := os.ReadFile(filePath); err == nil {
-			result += fmt.Sprintf("## %s\n\n%s\n\n", filename, string(data))
+			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
 		}
 	}
 
-	return result
+	return sb.String()
 }
 
 func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID string) []providers.Message {
