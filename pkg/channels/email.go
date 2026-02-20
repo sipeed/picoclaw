@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -30,6 +31,15 @@ func init() {
 	charset.RegisterEncoding("gbk", simplifiedchinese.GBK)
 }
 
+const (
+	// reconnect backoff initial
+	reconnectBackoffInitial = 1 * time.Second
+	// reconnect backoff max
+	reconnectBackoffMax = 10 * time.Minute
+	// default attachment max bytes
+	defaultAttachmentMaxBytes = 25 * 1024 * 1024 // 25MB
+)
+
 type EmailChannel struct {
 	*BaseChannel
 	config      config.EmailConfig
@@ -38,6 +48,10 @@ type EmailChannel struct {
 	mu          sync.Mutex
 	cancel      context.CancelFunc
 	checkTicker *time.Ticker
+
+	// reconnect control
+	reconnectClientVersion int
+	reconnectMutex         sync.Mutex
 }
 
 func NewEmailChannel(cfg config.EmailConfig, bus *bus.MessageBus) (*EmailChannel, error) {
@@ -100,6 +114,12 @@ func (c *EmailChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
+// sanitizeHeaderValue removes CR/LF from s to prevent SMTP header injection.
+// go-message textproto also rejects \r\n in header values when writing; we sanitize so the send succeeds.
+func sanitizeHeaderValue(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
+}
+
 func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return fmt.Errorf("email channel not running")
@@ -108,27 +128,39 @@ func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		return fmt.Errorf("email channel send: SMTP not configured (set smtp_server)")
 	}
 
-	from := c.config.Username
-	to := strings.TrimSpace(msg.ChatID)
-	if to == "" {
+	fromRaw := sanitizeHeaderValue(c.config.Username)
+	toRaw := sanitizeHeaderValue(strings.TrimSpace(msg.ChatID))
+	if toRaw == "" {
 		return fmt.Errorf("email channel send: missing recipient (chat_id)")
 	}
 
-	// Plain-text message: From / To / Subject / Body (OutboundMessage has no Metadata, use fixed subject)
-	subject := "Reply from PicoClaw"
-	header := map[string]string{
-		"From":         from,
-		"To":           to,
-		"Subject":      subject,
-		"Content-Type": "text/plain; charset=utf-8",
+	// Build message with go-message/mail: RFC-compliant headers via textproto (folding, encoded-words, address list format).
+	var h mail.Header
+	if fromAddrs, err := mail.ParseAddressList(fromRaw); err == nil && len(fromAddrs) > 0 {
+		h.SetAddressList("From", fromAddrs)
+	} else {
+		h.Set("From", fromRaw)
 	}
-	var raw strings.Builder
-	for k, v := range header {
-		raw.WriteString(k + ": " + v + "\r\n")
+	if toAddrs, err := mail.ParseAddressList(toRaw); err == nil && len(toAddrs) > 0 {
+		h.SetAddressList("To", toAddrs)
+	} else {
+		h.Set("To", toRaw)
 	}
-	raw.WriteString("\r\n")
-	raw.WriteString(msg.Content)
-	body := raw.String()
+	h.SetSubject(sanitizeHeaderValue("Reply from PicoClaw"))
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	var buf bytes.Buffer
+	bodyWriter, err := mail.CreateSingleInlineWriter(&buf, h)
+	if err != nil {
+		return fmt.Errorf("email build message: %w", err)
+	}
+	if _, err = bodyWriter.Write([]byte(msg.Content)); err != nil {
+		_ = bodyWriter.Close()
+		return fmt.Errorf("email write body: %w", err)
+	}
+	if err = bodyWriter.Close(); err != nil {
+		return fmt.Errorf("email close message: %w", err)
+	}
+	body := buf.Bytes()
 
 	port := c.config.SMTPPort
 	if port <= 0 {
@@ -154,17 +186,17 @@ func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		if err = client.Auth(auth); err != nil {
 			return fmt.Errorf("smtp auth: %w", err)
 		}
-		if err = client.Mail(from); err != nil {
+		if err = client.Mail(fromRaw); err != nil {
 			return fmt.Errorf("smtp mail: %w", err)
 		}
-		if err = client.Rcpt(to); err != nil {
+		if err = client.Rcpt(toRaw); err != nil {
 			return fmt.Errorf("smtp rcpt: %w", err)
 		}
 		w, err := client.Data()
 		if err != nil {
 			return fmt.Errorf("smtp data: %w", err)
 		}
-		if _, err = w.Write([]byte(body)); err != nil {
+		if _, err = w.Write(body); err != nil {
 			_ = w.Close()
 			return fmt.Errorf("smtp write: %w", err)
 		}
@@ -187,23 +219,26 @@ func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 	defer client.Close()
 	if err = client.StartTLS(&tls.Config{ServerName: host}); err != nil {
 		// Some servers on 587 do not require STARTTLS; continue anyway
+		logger.WarnCF("email", "STARTTLS failed, connection may be unencrypted; credentials could be sent in plaintext", map[string]interface{}{
+			"error": err.Error(),
+		})
 		_ = err
 	}
 	auth := smtp.PlainAuth("", c.config.Username, c.config.Password, host)
 	if err = client.Auth(auth); err != nil {
 		return fmt.Errorf("smtp auth: %w", err)
 	}
-	if err = client.Mail(from); err != nil {
+	if err = client.Mail(fromRaw); err != nil {
 		return fmt.Errorf("smtp mail: %w", err)
 	}
-	if err = client.Rcpt(to); err != nil {
+	if err = client.Rcpt(toRaw); err != nil {
 		return fmt.Errorf("smtp rcpt: %w", err)
 	}
 	w, err := client.Data()
 	if err != nil {
 		return fmt.Errorf("smtp data: %w", err)
 	}
-	if _, err = w.Write([]byte(body)); err != nil {
+	if _, err = w.Write(body); err != nil {
 		_ = w.Close()
 		return fmt.Errorf("smtp write: %w", err)
 	}
@@ -256,7 +291,10 @@ func (c *EmailChannel) connect() error {
 	// First connect: init lastUID from Select's UidNext (max current UID = UidNext-1) to avoid full UidSearch
 	if status != nil && status.UidNext > 0 {
 		c.mu.Lock()
-		c.lastUID = status.UidNext - 1
+		// only init lastUID once
+		if c.lastUID == 0 {
+			c.lastUID = status.UidNext - 1
+		}
 		c.mu.Unlock()
 	} else {
 		// Fallback: some servers do not return UidNext, search all to get max UID
@@ -277,6 +315,13 @@ func (c *EmailChannel) connect() error {
 
 // syncLastUID fetches the mailbox max UID and sets lastUID so only mail after connect is processed.
 func (c *EmailChannel) syncLastUID(cl *client.Client) error {
+	c.mu.Lock()
+	//  init lastUID once
+	if c.lastUID != 0 {
+		c.mu.Unlock()
+		return nil
+	}
+	c.mu.Unlock()
 	criteria := imap.NewSearchCriteria()
 	uids, err := cl.UidSearch(criteria)
 	if err != nil {
@@ -296,9 +341,72 @@ func (c *EmailChannel) syncLastUID(cl *client.Client) error {
 		}
 	}
 	c.mu.Lock()
-	c.lastUID = maxUID
+	if c.lastUID == 0 {
+		c.lastUID = maxUID
+	}
 	c.mu.Unlock()
 	return nil
+}
+
+// closeIMAPClient logs out and clears the current IMAP client. Caller must not hold c.mu.
+func (c *EmailChannel) closeIMAPClient() {
+	c.mu.Lock()
+	cl := c.imapClient
+	c.imapClient = nil
+	c.mu.Unlock()
+	if cl != nil {
+		_ = cl.Logout()
+	}
+}
+
+// reconnectWithBackoff closes the current IMAP client and reconnects with exponential backoff until success or ctx is done.
+// when muti goroutine reconnect, only one goroutine can reconnect at a time, other goroutine will wait for the reconnect success.
+func (c *EmailChannel) reconnectWithBackoff(ctx context.Context) error {
+	currentClientVersion := c.reconnectClientVersion
+	// singleflight reconnect, only one goroutine can reconnect at a time
+	c.reconnectMutex.Lock()
+	defer c.reconnectMutex.Unlock()
+	if currentClientVersion != c.reconnectClientVersion {
+		// other goroutine has already reconnect, check state is selected
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		c.mu.Lock()
+		isOk := c.imapClient != nil && c.imapClient.State() == imap.SelectedState
+		c.mu.Unlock()
+		if isOk {
+			return nil
+		}
+	}
+	c.reconnectClientVersion++
+
+	c.closeIMAPClient()
+	backoff := reconnectBackoffInitial
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := c.connect()
+		if err == nil {
+			return nil
+		}
+		logger.ErrorCF("email", "IMAP reconnect failed, retrying with backoff", map[string]interface{}{
+			"error": err.Error(), "backoff": backoff.String(),
+		})
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+			if backoff < reconnectBackoffMax {
+				backoff *= 2
+				if backoff > reconnectBackoffMax {
+					backoff = reconnectBackoffMax
+				}
+			}
+		}
+	}
 }
 
 func (c *EmailChannel) checkLoop(ctx context.Context) {
@@ -308,7 +416,7 @@ func (c *EmailChannel) checkLoop(ctx context.Context) {
 	}
 
 	// Run one check immediately
-	c.checkNewEmails()
+	c.checkNewEmails(ctx)
 
 	if !c.config.ForcedPolling {
 		// support IDLE user idle loop, waiting for server push update
@@ -328,7 +436,7 @@ func (c *EmailChannel) checkLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.checkNewEmails()
+			c.checkNewEmails(ctx)
 		}
 	}
 }
@@ -357,8 +465,8 @@ func (c *EmailChannel) runIdleLoop(ctx context.Context, pollInterval time.Durati
 			return
 		}
 		if cl.State() != imap.SelectedState {
-			if err := c.connect(); err != nil {
-				logger.ErrorCF("email", "Failed to reconnect in IDLE loop", map[string]interface{}{"error": err.Error()})
+			if err := c.reconnectWithBackoff(ctx); err != nil {
+				logger.ErrorCF("email", "Failed to reconnect after IDLE error", map[string]interface{}{"error": err.Error()})
 				return
 			}
 			continue
@@ -369,11 +477,6 @@ func (c *EmailChannel) runIdleLoop(ctx context.Context, pollInterval time.Durati
 		go func() {
 			idleDone <- cl.Idle(stop, opts)
 		}()
-		go func() {
-			<-ctx.Done()
-			close(stop)
-		}()
-
 		select {
 		case <-ctx.Done():
 			close(stop)
@@ -394,9 +497,13 @@ func (c *EmailChannel) runIdleLoop(ctx context.Context, pollInterval time.Durati
 				}
 				c.mu.Unlock()
 				logger.ErrorCF("email", "IDLE ended with error after update", map[string]interface{}{"error": err.Error()})
-				return
+				if err := c.reconnectWithBackoff(ctx); err != nil {
+					// reconnect failed, exit IDLE loop
+					logger.ErrorCF("email", "Failed to reconnect after IDLE error", map[string]interface{}{"error": err.Error()})
+					return
+				}
 			}
-			c.checkNewEmails()
+			c.checkNewEmails(ctx)
 		case err := <-idleDone:
 			// Idle returned (timeout restart or error)
 			if err != nil {
@@ -406,108 +513,121 @@ func (c *EmailChannel) runIdleLoop(ctx context.Context, pollInterval time.Durati
 				}
 				c.mu.Unlock()
 				logger.ErrorCF("email", "IDLE ended with error", map[string]interface{}{"error": err.Error()})
-				return
+				if err := c.reconnectWithBackoff(ctx); err != nil {
+					// reconnect failed , exit IDLE loop
+					logger.ErrorCF("email", "Failed to reconnect after IDLE error", map[string]interface{}{"error": err.Error()})
+					return
+				}
 			}
-			c.checkNewEmails()
+			c.checkNewEmails(ctx)
 		}
 	}
 }
 
-func (c *EmailChannel) checkNewEmails() {
-	c.mu.Lock()
-	cl := c.imapClient
-	lastUID := c.lastUID
-	c.mu.Unlock()
-
-	if cl == nil {
-		return
-	}
-
-	// Check connection state
-	if cl.State() != imap.SelectedState {
-		// Reconnect
-		if err := c.connect(); err != nil {
-			logger.ErrorCF("email", "Failed to reconnect to IMAP server", map[string]interface{}{
-				"error": err.Error(),
-			})
+func (c *EmailChannel) checkNewEmails(ctx context.Context) {
+	for {
+		if err := ctx.Err(); err != nil {
 			return
 		}
 		c.mu.Lock()
-		cl = c.imapClient
+		cl := c.imapClient
+		lastUID := c.lastUID
 		c.mu.Unlock()
-	}
 
-	// Only process mail after recorded lastUID (search by UID range, not by unread)
-	criteria := imap.NewSearchCriteria()
-	if lastUID > 0 {
-		// Build SeqSet for UID range (lastUID+1 to max)
-		seqset := new(imap.SeqSet)
-		seqset.AddRange(lastUID+1, 0)
-		criteria.Uid = seqset
-		criteria.WithoutFlags = []string{imap.SeenFlag}
-	} else {
-		// First run: fetch only unread
-		criteria.WithoutFlags = []string{imap.SeenFlag}
-	}
-
-	uids, err := cl.UidSearch(criteria)
-	if err != nil {
-		logger.ErrorCF("email", "Failed to search emails", map[string]interface{}{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	if len(uids) == 0 {
-		return
-	}
-
-	fetchSet := new(imap.SeqSet)
-	fetchSet.AddNum(uids...)
-
-	messages := make(chan *imap.Message, 10)
-	done := make(chan error, 1)
-
-	go func() {
-		bodySection := &imap.BodySectionName{}
-		done <- cl.UidFetch(fetchSet, []imap.FetchItem{
-			imap.FetchEnvelope,
-			imap.FetchBodyStructure,
-			bodySection.FetchItem(),
-		}, messages)
-	}()
-
-	maxUID := uint32(0)
-	for msg := range messages {
-		if msg.Uid > maxUID {
-			maxUID = msg.Uid
+		if cl == nil {
+			return
 		}
 
-		// Process the message
-		c.processEmail(msg)
+		// Check connection state; reconnect with backoff if needed
+		if cl.State() != imap.SelectedState {
+			if err := c.reconnectWithBackoff(ctx); err != nil {
+				return
+			}
+			continue
+		}
 
-		// Mark as seen after fully read
-		seenSet := new(imap.SeqSet)
-		seenSet.AddNum(msg.Uid)
-		if err := cl.UidStore(seenSet, imap.FormatFlagsOp(imap.AddFlags, true), []interface{}{imap.SeenFlag}, nil); err != nil {
-			logger.DebugCF("email", "Failed to mark email as seen", map[string]interface{}{
-				"uid": msg.Uid, "error": err.Error(),
+		// Only process mail after recorded lastUID (search by UID range, not by unread)
+		criteria := imap.NewSearchCriteria()
+		criteria.WithoutFlags = []string{imap.SeenFlag}
+		if lastUID > 0 {
+			// Build SeqSet for UID range (lastUID+1 to max)
+			seqset := new(imap.SeqSet)
+			seqset.AddRange(lastUID+1, 0)
+			criteria.Uid = seqset
+		}
+
+		uids, err := cl.UidSearch(criteria)
+		if err != nil {
+			logger.ErrorCF("email", "Failed to search emails", map[string]interface{}{
+				"error": err.Error(),
 			})
+			c.closeIMAPClient()
+			if err := c.reconnectWithBackoff(ctx); err != nil {
+				logger.ErrorCF("email", "Failed to reconnect after search emails error", map[string]interface{}{"error": err.Error()})
+				return
+			}
+			continue
 		}
-	}
 
-	if err := <-done; err != nil {
-		logger.ErrorCF("email", "Failed to fetch emails", map[string]interface{}{
-			"error": err.Error(),
-		})
+		if len(uids) == 0 {
+			return
+		}
+
+		fetchSet := new(imap.SeqSet)
+		fetchSet.AddNum(uids...)
+
+		messages := make(chan *imap.Message, 10)
+		done := make(chan error, 1)
+
+		go func() {
+			bodySection := &imap.BodySectionName{}
+			done <- cl.UidFetch(fetchSet, []imap.FetchItem{
+				imap.FetchEnvelope,
+				imap.FetchBodyStructure,
+				bodySection.FetchItem(),
+			}, messages)
+		}()
+
+		maxUID := uint32(0)
+		for msg := range messages {
+			if msg.Uid > maxUID {
+				maxUID = msg.Uid
+			}
+
+			// Process the message
+			c.processEmail(msg)
+
+			// Mark as seen after fully read
+			seenSet := new(imap.SeqSet)
+			seenSet.AddNum(msg.Uid)
+			if err := cl.UidStore(seenSet, imap.FormatFlagsOp(imap.AddFlags, true), []interface{}{imap.SeenFlag}, nil); err != nil {
+				logger.DebugCF("email", "Failed to mark email as seen", map[string]interface{}{
+					"uid": msg.Uid, "error": err.Error(),
+				})
+			}
+		}
+
+		if err := <-done; err != nil {
+			logger.ErrorCF("email", "Failed to fetch emails", map[string]interface{}{
+				"error": err.Error(),
+			})
+			c.closeIMAPClient()
+			if err := c.reconnectWithBackoff(ctx); err != nil {
+				logger.ErrorCF("email", "Failed to reconnect after fetch emails error", map[string]interface{}{"error": err.Error()})
+				return
+			}
+			continue
+		}
+
+		// Update last processed UID
+		if maxUID > 0 {
+			c.mu.Lock()
+			if c.lastUID < maxUID {
+				c.lastUID = maxUID
+			}
+			c.mu.Unlock()
+		}
 		return
-	}
-
-	// Update last processed UID
-	if maxUID > 0 {
-		c.mu.Lock()
-		c.lastUID = maxUID
-		c.mu.Unlock()
 	}
 }
 
@@ -636,7 +756,7 @@ func (c *EmailChannel) extractEmailBodyAndAttachments(msg *imap.Message) (conten
 					mediaPaths = append(mediaPaths, localPath)
 					attachmentRefs = append(attachmentRefs, fmt.Sprintf("[attachment: %s]", filepath.Base(localPath)))
 				} else {
-					attachmentRefs = append(attachmentRefs, fmt.Sprintf("[attachment: %s (save failed)]", filename))
+					attachmentRefs = append(attachmentRefs, fmt.Sprintf("[attachment: %s (save failed, you can check the attachment size limit in the config(attachment_max_bytes))]", filename))
 				}
 			} else {
 				attachmentRefs = append(attachmentRefs, fmt.Sprintf("[attachment: %s]", filename))
@@ -688,7 +808,7 @@ func (c *EmailChannel) extractEmailBodyAndAttachments(msg *imap.Message) (conten
 	return bodyContent, mediaPaths
 }
 
-// saveAttachmentToLocal writes the attachment stream to AttachmentDir; returns local path or empty on failure.
+// saveAttachmentToLocal writes the attachment stream to AttachmentDir with size limit; returns local path or empty on failure or if over limit.
 func (c *EmailChannel) saveAttachmentToLocal(uid uint32, index int, filename string, r io.Reader) string {
 	dir := strings.TrimSpace(c.config.AttachmentDir)
 	if dir == "" {
@@ -698,14 +818,15 @@ func (c *EmailChannel) saveAttachmentToLocal(uid uint32, index int, filename str
 		logger.DebugCF("email", "Failed to create attachment dir", map[string]interface{}{"error": err.Error(), "dir": dir})
 		return ""
 	}
+	limit := int64(c.config.AttachmentMaxBytes)
+	if limit <= 0 {
+		limit = defaultAttachmentMaxBytes
+	}
 	safeName := utils.SanitizeFilename(filename)
 	if safeName == "" {
 		safeName = "attachment"
 	}
 	ext := filepath.Ext(safeName)
-	if ext == "" && filename != "" {
-		ext = filepath.Ext(filename)
-	}
 	localName := fmt.Sprintf("%d_%d_%s%s", uid, index, strings.TrimSuffix(safeName, ext), ext)
 	localPath := filepath.Join(dir, localName)
 	f, err := os.Create(localPath)
@@ -714,9 +835,17 @@ func (c *EmailChannel) saveAttachmentToLocal(uid uint32, index int, filename str
 		return ""
 	}
 	defer f.Close()
-	if _, err := io.Copy(f, r); err != nil {
+	// +1 to detect if the attachment exceeds the limit
+	limited := io.LimitReader(r, limit+1)
+	n, err := io.Copy(f, limited)
+	if err != nil {
 		_ = os.Remove(localPath)
 		logger.DebugCF("email", "Failed to write attachment", map[string]interface{}{"error": err.Error(), "path": localPath})
+		return ""
+	}
+	if n > limit {
+		_ = os.Remove(localPath)
+		logger.DebugCF("email", "Attachment exceeds size limit, skipped", map[string]interface{}{"path": localPath, "limit": limit})
 		return ""
 	}
 	return localPath
@@ -755,6 +884,7 @@ func parseFilenameFromDisposition(disp string) string {
 	if i < 0 {
 		return ""
 	}
+
 	disp = disp[i+len(fn):]
 	disp = strings.TrimLeft(disp, " \t")
 	if len(disp) >= 2 && (disp[0] == '"' || disp[0] == '\'') {

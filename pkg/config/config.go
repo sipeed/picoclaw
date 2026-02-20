@@ -161,6 +161,8 @@ type EmailConfig struct {
 	ForcedPolling bool                `json:"forced_polling" env:"PICOCLAW_CHANNELS_EMAIL_FORCED_POLLING"`
 	AllowFrom     FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_EMAIL_ALLOW_FROM"`
 	AttachmentDir string              `json:"attachment_dir" env:"PICOCLAW_CHANNELS_EMAIL_ATTACHMENT_DIR"`
+	// max size per attachment (default 25*1024*1024(25MB)), 0 = use default
+	AttachmentMaxBytes int `json:"attachment_max_bytes" env:"PICOCLAW_CHANNELS_EMAIL_ATTACHMENT_MAX_BYTES"` // max size per attachment (default 25MB), 0 = use default
 	// SMTP send (optional, if not configured, Send is not available)
 	SMTPServer string `json:"smtp_server" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_SERVER"`
 	SMTPPort   int    `json:"smtp_port" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PORT"`       // 465 或 587
