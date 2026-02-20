@@ -256,27 +256,57 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		// Token-based absolute path detection.
+		// Uses strings.Fields instead of regex to avoid false positives
+		// from slashes in relative paths (e.g., "tests/cold/file.py").
+		// Flags like -I/usr/local/include are naturally skipped because
+		// filepath.IsAbs returns false for tokens starting with "-".
+		for _, token := range strings.Fields(cmd) {
+			token = strings.Trim(token, "\"'")
 
-		for _, raw := range matches {
-			p, err := filepath.Abs(raw)
-			if err != nil {
+			if !filepath.IsAbs(token) {
 				continue
 			}
 
+			p := filepath.Clean(token)
 			rel, err := filepath.Rel(cwdPath, p)
 			if err != nil {
 				continue
 			}
 
 			if strings.HasPrefix(rel, "..") {
+				// Path is outside workspace — allow if it's an executable binary
+				if isExecutable(p) {
+					continue
+				}
 				return "Command blocked by safety guard (path outside working dir)"
 			}
 		}
 	}
 
 	return ""
+}
+
+// isExecutable checks if a path points to an executable file.
+// On Unix, checks the execute permission bits.
+// On Windows, checks for known executable extensions.
+func isExecutable(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	if info.IsDir() {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		ext := strings.ToLower(filepath.Ext(path))
+		switch ext {
+		case ".exe", ".cmd", ".bat", ".ps1", ".com":
+			return true
+		}
+		return false
+	}
+	return info.Mode()&0111 != 0
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

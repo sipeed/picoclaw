@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -206,5 +207,218 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 
 	if !strings.Contains(result.ForLLM, "blocked") && !strings.Contains(result.ForUser, "blocked") {
 		t.Errorf("Expected 'blocked' message for path traversal, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
+	}
+}
+
+// --- guardCommand unit tests ---
+
+// TestGuardCommand_RelativePathWithSlashes verifies that relative paths
+// containing slashes (e.g., tests/cold/test.py, projects/terra-py-form)
+// are NOT falsely blocked. This was a regression caused by the old regex
+// matching "/cold/test.py" from "tests/cold/test.py" as an absolute path.
+func TestGuardCommand_RelativePathWithSlashes(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewExecTool(workspace, true)
+
+	cmds := []string{
+		"pytest tests/cold/test_solver.py -v --tb=short",
+		"cd projects/terra-py-form && pytest",
+		"uv run pytest tests/cold/test_solver.py -v --tb=short",
+		"cat src/terra_py_form/cold/parser.py",
+		"python src/main.py --config config/dev.json",
+	}
+
+	for _, cmd := range cmds {
+		result := tool.guardCommand(cmd, workspace)
+		if result != "" {
+			t.Errorf("Relative path should not be blocked: %q → %s", cmd, result)
+		}
+	}
+}
+
+// TestGuardCommand_VenvBinary verifies that .venv/bin/... paths are allowed
+// (they are relative paths, not absolute).
+func TestGuardCommand_VenvBinary(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewExecTool(workspace, true)
+
+	cmds := []string{
+		".venv/bin/python -m pytest",
+		".venv/bin/pytest tests/ -v",
+		".venv/bin/pip install -e .",
+	}
+
+	for _, cmd := range cmds {
+		result := tool.guardCommand(cmd, workspace)
+		if result != "" {
+			t.Errorf("Venv relative path should not be blocked: %q → %s", cmd, result)
+		}
+	}
+}
+
+// TestGuardCommand_ExecutableBinaryAllowed verifies that absolute paths
+// to executable files outside the workspace are allowed (system binaries).
+func TestGuardCommand_ExecutableBinaryAllowed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix executable permission test not applicable on Windows")
+	}
+
+	workspace := t.TempDir()
+	externalDir := t.TempDir()
+
+	// Create a fake executable outside the workspace
+	execPath := filepath.Join(externalDir, "mybin")
+	os.WriteFile(execPath, []byte("#!/bin/sh\necho ok"), 0755)
+
+	tool := NewExecTool(workspace, true)
+
+	cmd := execPath + " --help"
+	result := tool.guardCommand(cmd, workspace)
+	if result != "" {
+		t.Errorf("Executable binary outside workspace should be allowed: %q → %s", cmd, result)
+	}
+}
+
+// TestGuardCommand_ExecutableBinaryAllowed_Windows verifies that .exe files
+// outside the workspace are allowed on Windows.
+func TestGuardCommand_ExecutableBinaryAllowed_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific test")
+	}
+
+	workspace := t.TempDir()
+	externalDir := t.TempDir()
+
+	// Create a fake .exe outside the workspace
+	execPath := filepath.Join(externalDir, "tool.exe")
+	os.WriteFile(execPath, []byte("MZ"), 0644)
+
+	tool := NewExecTool(workspace, true)
+
+	cmd := execPath + " --version"
+	result := tool.guardCommand(cmd, workspace)
+	if result != "" {
+		t.Errorf("Windows .exe outside workspace should be allowed: %q → %s", cmd, result)
+	}
+}
+
+// TestGuardCommand_NonExecutableOutsideBlocked verifies that non-executable
+// files outside the workspace are blocked (e.g., reading /etc/shadow).
+func TestGuardCommand_NonExecutableOutsideBlocked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission test not applicable on Windows")
+	}
+
+	workspace := t.TempDir()
+	externalDir := t.TempDir()
+
+	// Create a regular (non-executable) file outside workspace
+	dataFile := filepath.Join(externalDir, "secret.txt")
+	os.WriteFile(dataFile, []byte("secret data"), 0644)
+
+	tool := NewExecTool(workspace, true)
+
+	cmd := "cat " + dataFile
+	result := tool.guardCommand(cmd, workspace)
+	if result == "" {
+		t.Errorf("Non-executable file outside workspace should be blocked: %q", cmd)
+	}
+	if !strings.Contains(result, "path outside working dir") {
+		t.Errorf("Expected 'path outside working dir' message, got: %s", result)
+	}
+}
+
+// TestGuardCommand_NonExistentAbsolutePathBlocked verifies that absolute
+// paths that don't exist are blocked (could be file creation outside workspace).
+func TestGuardCommand_NonExistentAbsolutePathBlocked(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewExecTool(workspace, true)
+
+	// Use platform-appropriate absolute path
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "echo hello > C:\\nonexistent_picoclaw_test_output"
+	} else {
+		cmd = "echo hello > /tmp/nonexistent_picoclaw_test_output"
+	}
+	result := tool.guardCommand(cmd, workspace)
+	if result == "" {
+		t.Errorf("Non-existent absolute path outside workspace should be blocked: %q", cmd)
+	}
+}
+
+// TestGuardCommand_FlagEmbeddedPathSkipped verifies that paths embedded in
+// flags (e.g., -I/usr/local/include) are NOT extracted as absolute paths
+// because the token starts with "-", not "/".
+func TestGuardCommand_FlagEmbeddedPathSkipped(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewExecTool(workspace, true)
+
+	cmds := []string{
+		"gcc -I/usr/local/include -L/usr/lib main.c",
+		"g++ -std=c++17 -I/opt/include file.cpp",
+		"python --prefix=/usr/local script.py",
+	}
+
+	for _, cmd := range cmds {
+		result := tool.guardCommand(cmd, workspace)
+		if result != "" {
+			t.Errorf("Flag-embedded path should not be blocked: %q → %s", cmd, result)
+		}
+	}
+}
+
+// TestGuardCommand_AbsolutePathInsideWorkspace verifies that absolute paths
+// within the workspace are always allowed.
+func TestGuardCommand_AbsolutePathInsideWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewExecTool(workspace, true)
+
+	innerDir := filepath.Join(workspace, "projects", "myapp")
+	os.MkdirAll(innerDir, 0755)
+
+	cmd := "ls " + innerDir
+	result := tool.guardCommand(cmd, workspace)
+	if result != "" {
+		t.Errorf("Absolute path inside workspace should be allowed: %q → %s", cmd, result)
+	}
+}
+
+// TestGuardCommand_PathTraversal verifies that various path traversal
+// patterns are blocked.
+func TestGuardCommand_PathTraversal(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewExecTool(workspace, true)
+
+	cmds := []string{
+		"cat ../../etc/passwd",
+		"cat ../../../etc/shadow",
+		"ls projects/../../../../etc",
+	}
+
+	for _, cmd := range cmds {
+		result := tool.guardCommand(cmd, workspace)
+		if result == "" {
+			t.Errorf("Path traversal should be blocked: %q", cmd)
+		}
+		if !strings.Contains(result, "path traversal") {
+			t.Errorf("Expected 'path traversal' message, got: %s", result)
+		}
+	}
+}
+
+// TestGuardCommand_CdWithAbsoluteWorkspacePath verifies that cd to an
+// absolute path within the workspace followed by other commands is allowed.
+func TestGuardCommand_CdWithAbsoluteWorkspacePath(t *testing.T) {
+	workspace := t.TempDir()
+	innerDir := filepath.Join(workspace, "projects", "foo")
+	os.MkdirAll(innerDir, 0755)
+
+	tool := NewExecTool(workspace, true)
+
+	cmd := "cd " + innerDir + " && ls -la"
+	result := tool.guardCommand(cmd, workspace)
+	if result != "" {
+		t.Errorf("cd to workspace subdir should be allowed: %q → %s", cmd, result)
 	}
 }
