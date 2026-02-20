@@ -59,6 +59,12 @@
       "token": "YOUR_DISCORD_BOT_TOKEN",
       "allow_from": []
     },
+    "qq": {
+      "enabled": false,
+      "app_id": "YOUR_QQ_APP_ID",
+      "app_secret": "YOUR_QQ_APP_SECRET",
+      "allow_from": []
+    },
     "maixcam": {
       "enabled": false,
       "host": "0.0.0.0",
@@ -172,6 +178,10 @@
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       },
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
+      },
       "perplexity": {
         "enabled": false,
         "api_key": "pplx-xxx",
@@ -180,6 +190,10 @@
     },
     "cron": {
       "exec_timeout_minutes": 5
+    },
+    "exec": {
+      "enable_deny_patterns": false,
+      "custom_deny_patterns": []
     }
   },
   "heartbeat": {
