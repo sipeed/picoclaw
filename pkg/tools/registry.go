@@ -11,14 +11,18 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-// NormalizeToolName strips underscores and hyphens and lowercases for
-// fuzzy tool name matching. LLMs sometimes call "readfile" instead of
-// "read_file", etc.
+// NormalizeToolName keeps only lowercase ASCII letters.
+// "read_file" → "readfile", "ReadFile" → "readfile", "read-file" → "readfile".
 func NormalizeToolName(s string) string {
-	s = strings.ToLower(s)
-	s = strings.ReplaceAll(s, "_", "")
-	s = strings.ReplaceAll(s, "-", "")
-	return s
+	var b strings.Builder
+	for _, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			b.WriteRune(r + 32)
+		} else if r >= 'a' && r <= 'z' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 type ToolRegistry struct {

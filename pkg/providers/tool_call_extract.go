@@ -3,6 +3,7 @@ package providers
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -57,17 +58,22 @@ func extractToolCallsFromText(text string) []ToolCall {
 	return result
 }
 
-// extractXMLToolCalls parses XML tool call blocks (e.g. <ns:toolcall>)
-// into structured ToolCall objects. Used as a fallback when the provider returns
-// tool calls as XML in Content but not in the structured tool_calls field.
-//
-// Expected format:
-//
-//	<ns:toolcall>
-//	<invoke name="tool_name">
-//	<parameter name="param">value</parameter>
-//	</invoke>
-//	</ns:toolcall>
+// --- Shared helpers for XML tool call extraction ---
+
+// normalizeAlpha keeps only lowercase ASCII letters.
+// "tool_call" → "toolcall", "Tool-Call" → "toolcall", "ReadFile" → "readfile".
+func normalizeAlpha(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			b.WriteRune(r + 32)
+		} else if r >= 'a' && r <= 'z' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // levenshtein computes the edit distance between two strings.
 // O(n*m) where n,m are string lengths — negligible for short tag names.
 func levenshtein(a, b string) int {
@@ -97,97 +103,85 @@ func levenshtein(a, b string) int {
 	return prev[lb]
 }
 
-// isToolCallTag returns true if name is close enough to "toolcall" by edit
-// distance (threshold ≤ 2). Case-insensitive. Catches variants like
-// "tool_call", "Tool-Call", "toolCall", "ToolCall", etc.
+// Known tool call tag patterns (already alpha-normalized).
+// Providers may use different names: tool_call, function_call, tool_use, etc.
+var toolCallPatterns = []string{"toolcall", "functioncall", "tooluse"}
+
+// isToolCallTag returns true if the tag name is close to any known tool call
+// pattern after alpha normalization + edit distance (threshold ≤ 2).
 func isToolCallTag(name string) bool {
 	const threshold = 2
-	return levenshtein(strings.ToLower(name), "toolcall") <= threshold
+	norm := normalizeAlpha(name)
+	for _, pat := range toolCallPatterns {
+		if levenshtein(norm, pat) <= threshold {
+			return true
+		}
+	}
+	return false
 }
 
-// findToolCallOpenTag finds the next opening toolcall tag using fuzzy
-// matching (edit distance). Scans for <ns:name> patterns where name is
-// close to "toolcall". Returns the index of '<', the namespace, and the
-// full tag length, or idx=-1 if not found.
-func findToolCallOpenTag(text string) (idx int, ns string, tagLen int) {
-	search := text
-	offset := 0
-	for {
-		lt := strings.Index(search, "<")
-		if lt == -1 {
-			return -1, "", 0
-		}
-		// Skip closing tags and comments
-		if lt+1 < len(search) && (search[lt+1] == '/' || search[lt+1] == '!') {
-			offset += lt + 2
-			search = search[lt+2:]
+// tagSuffix returns the part after the last ':' (namespace separator),
+// or the whole string if there is no ':'.
+func tagSuffix(tag string) string {
+	if i := strings.LastIndex(tag, ":"); i >= 0 {
+		return tag[i+1:]
+	}
+	return tag
+}
+
+// --- XML block detection via regex ---
+//
+// Strategy: find <TAG>…</TAG> pairs using regex, then check if the tag
+// suffix normalizes to something close to "toolcall" (edit distance ≤ 2).
+// Uses greedy (longest) match for the closing tag to capture the full block.
+
+var (
+	reOpenTag  = regexp.MustCompile(`<([a-zA-Z][\w:.-]*)>`)
+	reCloseTag = regexp.MustCompile(`</([a-zA-Z][\w:.-]*)>`)
+)
+
+// findToolCallBlock finds the first XML block whose tag suffix matches
+// "toolcall" by edit distance. Returns the block boundaries and the inner
+// content, or found=false.
+func findToolCallBlock(text string) (blockStart, blockEnd int, content string, found bool) {
+	for _, om := range reOpenTag.FindAllStringSubmatchIndex(text, -1) {
+		tagName := text[om[2]:om[3]]
+		if !isToolCallTag(tagSuffix(tagName)) {
 			continue
 		}
-		gt := strings.Index(search[lt:], ">")
-		if gt == -1 {
-			return -1, "", 0
-		}
-		tagContent := search[lt+1 : lt+gt] // e.g. "minimax:tool_call"
-		colon := strings.Index(tagContent, ":")
-		if colon != -1 {
-			nsCandidate := tagContent[:colon]
-			nameCandidate := tagContent[colon+1:]
-			if isToolCallTag(nameCandidate) {
-				fullTag := "<" + tagContent + ">"
-				return offset + lt, nsCandidate, len(fullTag)
+		// Found a toolcall opening tag. Search for the last matching close tag (greedy).
+		afterOpen := text[om[1]:]
+		closes := reCloseTag.FindAllStringSubmatchIndex(afterOpen, -1)
+		for i := len(closes) - 1; i >= 0; i-- {
+			closeTagName := afterOpen[closes[i][2]:closes[i][3]]
+			if isToolCallTag(tagSuffix(closeTagName)) {
+				return om[0], om[1] + closes[i][1], afterOpen[:closes[i][0]], true
 			}
 		}
-		offset += lt + gt + 1
-		search = search[lt+gt+1:]
 	}
+	return 0, 0, "", false
 }
 
-// findToolCallCloseTag finds the close tag for a toolcall block using
-// fuzzy matching (edit distance). Returns the index and length of the close tag, or -1.
-func findToolCallCloseTag(text, ns string) (idx int, tagLen int) {
-	// Scan for all </ns: patterns and check if the tag name normalizes to "toolcall"
-	prefix := "</" + ns + ":"
-	search := text
-	offset := 0
-	for {
-		i := strings.Index(search, prefix)
-		if i == -1 {
-			return -1, 0
-		}
-		afterPrefix := search[i+len(prefix):]
-		end := strings.Index(afterPrefix, ">")
-		if end == -1 {
-			return -1, 0
-		}
-		tagName := afterPrefix[:end]
-		if isToolCallTag(tagName) {
-			fullTag := prefix + tagName + ">"
-			return offset + i, len(fullTag)
-		}
-		offset += i + len(prefix)
-		search = search[i+len(prefix):]
-	}
-}
-
+// --- XML tool call extraction ---
+//
+// Expected format:
+//
+//	<ns:toolcall>
+//	<invoke name="tool_name">
+//	<parameter name="param">value</parameter>
+//	</invoke>
+//	</ns:toolcall>
 func extractXMLToolCalls(text string) []ToolCall {
 	var result []ToolCall
 	remaining := text
 	callIdx := 0
 
 	for {
-		// Find next opening toolcall tag using normalized matching
-		openIdx, ns, openLen := findToolCallOpenTag(remaining)
-		if openIdx == -1 {
+		_, blockEnd, block, found := findToolCallBlock(remaining)
+		if !found {
 			break
 		}
-		afterOpen := remaining[openIdx+openLen:]
-		closeIdx, closeLen := findToolCallCloseTag(afterOpen, ns)
-		if closeIdx == -1 {
-			break
-		}
-
-		block := afterOpen[:closeIdx]
-		remaining = afterOpen[closeIdx+closeLen:]
+		remaining = remaining[blockEnd:]
 
 		// Parse <invoke> elements within the block
 		invokeRemaining := block
@@ -234,7 +228,6 @@ func extractXMLToolCalls(text string) []ToolCall {
 				}
 				paramName := paramRemaining[pNameStart : pNameStart+pNameEnd]
 
-				// Find closing > of the <parameter ...> tag
 				tagClose := strings.Index(paramRemaining[pNameStart:], ">")
 				if tagClose == -1 {
 					break
@@ -249,9 +242,7 @@ func extractXMLToolCalls(text string) []ToolCall {
 				paramRemaining = paramRemaining[valueStart+valueEnd+len("</parameter>"):]
 			}
 
-			// Build Arguments JSON string
 			argsJSON, _ := json.Marshal(args)
-
 			callIdx++
 			result = append(result, ToolCall{
 				ID:        fmt.Sprintf("xmltc_%d", callIdx),
@@ -269,24 +260,16 @@ func extractXMLToolCalls(text string) []ToolCall {
 	return result
 }
 
-// stripXMLToolCalls removes XML tool call blocks (e.g. <ns:toolcall>...</ns:toolcall>)
-// from response text. Some providers embed raw XML tool calls in Content alongside
-// structured tool_calls; this prevents them from leaking to users.
-// Uses normalized tag matching so that <ns:toolcall>, <ns:tool_call>, <ns:Tool-Call>
-// etc. are all recognized and stripped.
+// stripXMLToolCalls removes XML tool call blocks from response text.
+// Prevents raw XML tool calls from leaking to users.
 func stripXMLToolCalls(text string) string {
-	openIdx, ns, openLen := findToolCallOpenTag(text)
-	if openIdx == -1 {
+	blockStart, blockEnd, _, found := findToolCallBlock(text)
+	if !found {
 		return text
 	}
-	afterOpen := text[openIdx+openLen:]
-	closeIdx, closeLen := findToolCallCloseTag(afterOpen, ns)
-	if closeIdx == -1 {
-		return text
-	}
-	cleaned := text[:openIdx] + afterOpen[closeIdx+closeLen:]
-	// Recursively strip if there are more blocks
-	if openIdx2, _, _ := findToolCallOpenTag(cleaned); openIdx2 != -1 {
+	cleaned := text[:blockStart] + text[blockEnd:]
+	// Recursively strip remaining blocks
+	if _, _, _, more := findToolCallBlock(cleaned); more {
 		cleaned = stripXMLToolCalls(cleaned)
 	}
 	return strings.TrimSpace(cleaned)

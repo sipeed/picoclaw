@@ -1161,6 +1161,27 @@ func TestStripXMLToolCalls_NoXML(t *testing.T) {
 	}
 }
 
+func TestNormalizeAlpha(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"toolcall", "toolcall"},
+		{"tool_call", "toolcall"},
+		{"Tool-Call", "toolcall"},
+		{"ReadFile", "readfile"},
+		{"read_file", "readfile"},
+		{"EXEC", "exec"},
+		{"web123search", "websearch"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		got := normalizeAlpha(tt.input)
+		if got != tt.want {
+			t.Errorf("normalizeAlpha(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestLevenshtein(t *testing.T) {
 	tests := []struct {
 		a, b string
@@ -1184,14 +1205,26 @@ func TestLevenshtein(t *testing.T) {
 }
 
 func TestIsToolCallTag(t *testing.T) {
-	// Should match
+	// Should match — toolcall variants
 	for _, name := range []string{"toolcall", "tool_call", "tool-call", "ToolCall", "Toolcall", "toolCall", "TOOLCALL"} {
 		if !isToolCallTag(name) {
 			t.Errorf("isToolCallTag(%q) = false, want true", name)
 		}
 	}
+	// Should match — function_call variants
+	for _, name := range []string{"function_call", "FunctionCall", "functioncall", "FUNCTION_CALL"} {
+		if !isToolCallTag(name) {
+			t.Errorf("isToolCallTag(%q) = false, want true", name)
+		}
+	}
+	// Should match — tool_use variants
+	for _, name := range []string{"tool_use", "ToolUse", "tooluse", "TOOL_USE"} {
+		if !isToolCallTag(name) {
+			t.Errorf("isToolCallTag(%q) = false, want true", name)
+		}
+	}
 	// Should NOT match
-	for _, name := range []string{"invoke", "parameter", "function", "result", "hello"} {
+	for _, name := range []string{"invoke", "parameter", "function", "result", "hello", "content"} {
 		if isToolCallTag(name) {
 			t.Errorf("isToolCallTag(%q) = true, want false", name)
 		}
