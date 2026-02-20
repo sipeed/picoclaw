@@ -234,6 +234,80 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}
 }
 
+// TestWebFetchTool_extractText verifies text extraction preserves newlines
+func TestWebFetchTool_extractText(t *testing.T) {
+	tool := &WebFetchTool{}
+
+	tests := []struct {
+		name     string
+		input    string
+		wantFunc func(t *testing.T, got string)
+	}{
+		{
+			name:  "preserves newlines between block elements",
+			input: "<html><body><h1>Title</h1>\n<p>Paragraph 1</p>\n<p>Paragraph 2</p></body></html>",
+			wantFunc: func(t *testing.T, got string) {
+				lines := strings.Split(got, "\n")
+				if len(lines) < 2 {
+					t.Errorf("Expected multiple lines, got %d: %q", len(lines), got)
+				}
+				if !strings.Contains(got, "Title") || !strings.Contains(got, "Paragraph 1") || !strings.Contains(got, "Paragraph 2") {
+					t.Errorf("Missing expected text: %q", got)
+				}
+			},
+		},
+		{
+			name:  "removes script and style tags",
+			input: "<script>alert('x');</script><style>body{}</style><p>Keep this</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if strings.Contains(got, "alert") || strings.Contains(got, "body{}") {
+					t.Errorf("Expected script/style content removed, got: %q", got)
+				}
+				if !strings.Contains(got, "Keep this") {
+					t.Errorf("Expected 'Keep this' to remain, got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "collapses excessive blank lines",
+			input: "<p>A</p>\n\n\n\n\n<p>B</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if strings.Contains(got, "\n\n\n") {
+					t.Errorf("Expected excessive blank lines collapsed, got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "collapses horizontal whitespace",
+			input: "<p>hello     world</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if strings.Contains(got, "     ") {
+					t.Errorf("Expected spaces collapsed, got: %q", got)
+				}
+				if !strings.Contains(got, "hello world") {
+					t.Errorf("Expected 'hello world', got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "empty input",
+			input: "",
+			wantFunc: func(t *testing.T, got string) {
+				if got != "" {
+					t.Errorf("Expected empty string, got: %q", got)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tool.extractText(tt.input)
+			tt.wantFunc(t, got)
+		})
+	}
+}
+
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	tool := NewWebFetchTool(50000)
