@@ -10,5 +10,6 @@ data class MessageEntity(
     val sender: String,
     val imagePathList: String?,
     val timestamp: Long,
-    val status: String
+    val status: String,
+    val messageType: String? = null
 )

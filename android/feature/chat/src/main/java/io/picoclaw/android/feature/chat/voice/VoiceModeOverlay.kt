@@ -144,7 +144,7 @@ fun VoiceModeOverlay(
                     )
                 }
 
-                if (state.responseText.isNotEmpty() && state.phase == VoicePhase.SPEAKING) {
+                if (state.responseText.isNotEmpty() && (state.phase == VoicePhase.SPEAKING || state.phase == VoicePhase.THINKING)) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = state.responseText,

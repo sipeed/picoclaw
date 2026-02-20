@@ -6,7 +6,8 @@ data class ChatMessage(
     val sender: MessageSender,
     val images: List<ImageData> = emptyList(),
     val timestamp: Long,
-    val status: MessageStatus
+    val status: MessageStatus,
+    val messageType: String? = null
 )
 
 enum class MessageSender { USER, AGENT }

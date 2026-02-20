@@ -663,6 +663,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 						Channel: opts.Channel,
 						ChatID:  opts.ChatID,
 						Content: "⚠️ Context window exceeded. Compressing history and retrying...",
+						Type:    "warning",
 					})
 				}
 
@@ -947,6 +948,7 @@ func (al *AgentLoop) maybeSummarize(sessionKey, channel, chatID string) {
 						Channel: channel,
 						ChatID:  chatID,
 						Content: "⚠️ Memory threshold reached. Optimizing conversation history...",
+						Type:    "warning",
 					})
 				}
 				al.summarizeSession(sessionKey)

@@ -36,7 +36,8 @@ object MessageMapper {
             sender = MessageSender.valueOf(entity.sender),
             images = images,
             timestamp = entity.timestamp,
-            status = MessageStatus.valueOf(entity.status)
+            status = MessageStatus.valueOf(entity.status),
+            messageType = entity.messageType
         )
     }
 
@@ -47,7 +48,8 @@ object MessageMapper {
             sender = MessageSender.AGENT.name,
             imagePathList = null,
             timestamp = System.currentTimeMillis(),
-            status = MessageStatus.RECEIVED.name
+            status = MessageStatus.RECEIVED.name,
+            messageType = dto.type
         )
     }
 

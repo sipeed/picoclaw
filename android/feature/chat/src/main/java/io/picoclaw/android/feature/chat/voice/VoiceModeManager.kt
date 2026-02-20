@@ -97,7 +97,11 @@ class VoiceModeManager(
                         msg.status == MessageStatus.RECEIVED
                     ) {
                         spokenIds.add(msg.id)
-                        speechQueue.send(msg.content)
+                        if (msg.messageType == "warning" || msg.messageType == "error") {
+                            _state.update { it.copy(responseText = msg.content) }
+                        } else {
+                            speechQueue.send(msg.content)
+                        }
                     }
                 }
             }
