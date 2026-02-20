@@ -243,7 +243,7 @@ Vậy là xong! Bạn đã có một trợ lý AI hoạt động chỉ trong 2 p
 
 ## 💬 Tích hợp ứng dụng Chat
 
-Trò chuyện với PicoClaw qua Telegram, Discord, DingTalk hoặc LINE.
+Trò chuyện với PicoClaw qua Telegram, Discord, DingTalk, LINE hoặc WeCom.
 
 | Kênh | Mức độ thiết lập |
 | --- | --- |
@@ -252,6 +252,7 @@ Trò chuyện với PicoClaw qua Telegram, Discord, DingTalk hoặc LINE.
 | **QQ** | Dễ (AppID + AppSecret) |
 | **DingTalk** | Trung bình (app credentials) |
 | **LINE** | Trung bình (credentials + webhook URL) |
+| **WeCom** | Trung bình (CorpID + cấu hình webhook) |
 
 <details>
 <summary><b>Telegram</b> (Khuyên dùng)</summary>
@@ -448,6 +449,87 @@ picoclaw gateway
 > Trong nhóm chat, bot chỉ phản hồi khi được @mention. Các câu trả lời sẽ trích dẫn tin nhắn gốc.
 
 > **Docker Compose**: Thêm `ports: ["18791:18791"]` vào service `picoclaw-gateway` để mở port webhook.
+
+</details>
+
+<details>
+<summary><b>WeCom (WeChat Work)</b></summary>
+
+PicoClaw hỗ trợ hai loại tích hợp WeCom:
+
+**Tùy chọn 1: WeCom Bot (Robot Thông minh)** - Thiết lập dễ dàng hơn, hỗ trợ chat nhóm
+**Tùy chọn 2: WeCom App (Ứng dụng Tự xây dựng)** - Nhiều tính năng hơn, nhắn tin chủ động
+
+Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) để biết hướng dẫn chi tiết.
+
+**Thiết lập Nhanh - WeCom Bot:**
+
+**1. Tạo bot**
+
+* Truy cập Bảng điều khiển Quản trị WeCom → Chat Nhóm → Thêm Bot Nhóm
+* Sao chép URL webhook (định dạng: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+
+**2. Cấu hình**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**Thiết lập Nhanh - WeCom App:**
+
+**1. Tạo ứng dụng**
+
+* Truy cập Bảng điều khiển Quản trị WeCom → Quản lý Ứng dụng → Tạo Ứng dụng
+* Sao chép **AgentId** và **Secret**
+* Truy cập trang "Công ty của tôi", sao chép **CorpID**
+
+**2. Cấu hình nhận tin nhắn**
+
+* Trong chi tiết ứng dụng, nhấp vào "Nhận Tin nhắn" → "Thiết lập API"
+* Đặt URL thành `http://your-server:18792/webhook/wecom-app`
+* Tạo **Token** và **EncodingAESKey**
+
+**3. Cấu hình**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. Chạy**
+
+```bash
+picoclaw gateway
+```
+
+> **Lưu ý**: WeCom App yêu cầu mở cổng 18792 cho callback webhook. Sử dụng proxy ngược cho HTTPS trong môi trường sản xuất.
 
 </details>
 

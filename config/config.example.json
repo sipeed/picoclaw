@@ -108,6 +108,7 @@
       "allow_from": []
     },
     "wecom": {
+      "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
       "enabled": false,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
@@ -119,6 +120,7 @@
       "reply_timeout": 5
     },
     "wecom_app": {
+      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only. See docs/wecom-app-configuration.md",
       "enabled": false,
       "corp_id": "YOUR_CORP_ID",
       "corp_secret": "YOUR_CORP_SECRET",
