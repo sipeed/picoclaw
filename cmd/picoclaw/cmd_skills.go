@@ -82,8 +82,8 @@ func newSkillsInstallCmd() *cobra.Command {
 		Short: "Install skill from GitHub",
 		Example: `  picoclaw skills install sipeed/picoclaw-skills/weather
   picoclaw skills install --registry clawhub github`,
-		Args:  cobra.MinimumNArgs(1),
-		RunE:  runSkillsInstall,
+		Args: cobra.MinimumNArgs(1),
+		RunE: runSkillsInstall,
 	}
 	// Add --registry flag support
 	cmd.Flags().String("registry", "", "Install from registry (e.g., clawhub)")
@@ -97,26 +97,26 @@ func newSkillsRemoveCmd() *cobra.Command {
 		Short:   "Remove installed skill",
 		Example: `  picoclaw skills remove weather
   picoclaw skills uninstall weather`,
-		Args:    cobra.ExactArgs(1),
-		RunE:    runSkillsRemove,
+		Args: cobra.ExactArgs(1),
+		RunE: runSkillsRemove,
 	}
 }
 
 func newSkillsInstallBuiltinCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "install-builtin",
-		Short: "Install all builtin skills to workspace",
+		Use:     "install-builtin",
+		Short:   "Install all builtin skills to workspace",
 		Example: `  picoclaw skills install-builtin`,
-		RunE:  runSkillsInstallBuiltin,
+		RunE:    runSkillsInstallBuiltin,
 	}
 }
 
 func newSkillsListBuiltinCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list-builtin",
-		Short: "List available builtin skills",
+		Use:     "list-builtin",
+		Short:   "List available builtin skills",
 		Example: `  picoclaw skills list-builtin`,
-		RunE:  runSkillsListBuiltin,
+		RunE:    runSkillsListBuiltin,
 	}
 }
 
@@ -130,11 +130,11 @@ func newSkillsSearchCmd() *cobra.Command {
 
 func newSkillsShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <name>",
-		Short: "Show skill details",
+		Use:     "show <name>",
+		Short:   "Show skill details",
 		Example: `  picoclaw skills show weather`,
-		Args:  cobra.ExactArgs(1),
-		RunE:  runSkillsShow,
+		Args:    cobra.ExactArgs(1),
+		RunE:    runSkillsShow,
 	}
 }
 
