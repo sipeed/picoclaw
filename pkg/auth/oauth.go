@@ -44,7 +44,9 @@ func OpenAIOAuthConfig() OAuthProviderConfig {
 // Client credentials are the same ones used by OpenCode/pi-ai for Cloud Code Assist access.
 func GoogleAntigravityOAuthConfig() OAuthProviderConfig {
 	// These are the same client credentials used by the OpenCode antigravity plugin.
-	clientID := decodeBase64("MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==")
+	clientID := decodeBase64(
+		"MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
+	)
 	clientSecret := decodeBase64("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=")
 	return OAuthProviderConfig{
 		Issuer:       "https://accounts.google.com/o/oauth2/v2",
@@ -129,8 +131,13 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 		fmt.Printf("Could not open browser automatically.\nPlease open this URL manually:\n\n%s\n\n", authURL)
 	}
 
-	fmt.Printf("Wait! If you are in a headless environment (like Coolify/VPS) and cannot reach localhost:%d,\n", cfg.Port)
-	fmt.Println("please complete the login in your local browser and then PASTE the final redirect URL (or just the code) here.")
+	fmt.Printf(
+		"Wait! If you are in a headless environment (like Coolify/VPS) and cannot reach localhost:%d,\n",
+		cfg.Port,
+	)
+	fmt.Println(
+		"please complete the login in your local browser and then PASTE the final redirect URL (or just the code) here.",
+	)
 	fmt.Println("Waiting for authentication (browser or manual paste)...")
 
 	// Start manual input in a goroutine

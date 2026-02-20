@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/chzyer/readline"
+
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -74,10 +75,10 @@ func agentCmd() {
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
 	logger.InfoCF("agent", "Agent initialized",
-		map[string]interface{}{
-			"tools_count":      startupInfo["tools"].(map[string]interface{})["count"],
-			"skills_total":     startupInfo["skills"].(map[string]interface{})["total"],
-			"skills_available": startupInfo["skills"].(map[string]interface{})["available"],
+		map[string]any{
+			"tools_count":      startupInfo["tools"].(map[string]any)["count"],
+			"skills_total":     startupInfo["skills"].(map[string]any)["total"],
+			"skills_available": startupInfo["skills"].(map[string]any)["available"],
 		})
 
 	if message != "" {
@@ -104,7 +105,6 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
 	})
-
 	if err != nil {
 		fmt.Printf("Error initializing readline: %v\n", err)
 		fmt.Println("Falling back to simple input mode...")

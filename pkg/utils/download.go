@@ -27,7 +27,7 @@ func DownloadToFile(ctx context.Context, client *http.Client, req *http.Request,
 	// Attach context.
 	req = req.WithContext(ctx)
 
-	logger.DebugCF("download", "Starting download", map[string]interface{}{
+	logger.DebugCF("download", "Starting download", map[string]any{
 		"url":       req.URL.String(),
 		"max_bytes": maxBytes,
 	})
@@ -52,7 +52,7 @@ func DownloadToFile(ctx context.Context, client *http.Client, req *http.Request,
 	}
 	tmpPath := tmpFile.Name()
 
-	logger.DebugCF("download", "Streaming to temp file", map[string]interface{}{
+	logger.DebugCF("download", "Streaming to temp file", map[string]any{
 		"path": tmpPath,
 	})
 
@@ -84,7 +84,7 @@ func DownloadToFile(ctx context.Context, client *http.Client, req *http.Request,
 		return "", fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	logger.DebugCF("download", "Download complete", map[string]interface{}{
+	logger.DebugCF("download", "Download complete", map[string]any{
 		"path":          tmpPath,
 		"bytes_written": written,
 	})
