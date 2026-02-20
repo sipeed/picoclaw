@@ -103,3 +103,46 @@ func TestDefaultProfilePath(t *testing.T) {
 	got := DefaultProfilePath("/home/user/workspace")
 	assert.Equal(t, "/home/user/workspace/aieos.json", got)
 }
+
+func TestLoadProfileOCEANOutOfRange(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want string
+	}{
+		{
+			name: "openness too high",
+			json: `{"version":"1.1","identity":{"name":"A"},"psychology":{"openness":1.5}}`,
+			want: "psychology.openness must be in [0.0, 1.0]",
+		},
+		{
+			name: "neuroticism negative",
+			json: `{"version":"1.1","identity":{"name":"A"},"psychology":{"neuroticism":-0.1}}`,
+			want: "psychology.neuroticism must be in [0.0, 1.0]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "aieos.json")
+			require.NoError(t, os.WriteFile(path, []byte(tt.json), 0644))
+
+			_, err := LoadProfile(path)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestLoadProfileOCEANValidBoundary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aieos.json")
+
+	data := `{"version":"1.1","identity":{"name":"A"},"psychology":{"openness":0.0,"conscientiousness":1.0,"extraversion":0.5,"agreeableness":0.0,"neuroticism":1.0}}`
+	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
+
+	p, err := LoadProfile(path)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, p.Psychology.Openness)
+	assert.Equal(t, 1.0, p.Psychology.Conscientiousness)
+}

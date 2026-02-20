@@ -47,5 +47,27 @@ func validate(p *Profile) error {
 	if p.Identity.Name == "" {
 		return fmt.Errorf("aieos: identity.name is required")
 	}
+	if p.Psychology != nil {
+		if err := validateOCEAN(p.Psychology); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateOCEAN checks that all OCEAN trait values are in [0.0, 1.0].
+func validateOCEAN(psy *Psychology) error {
+	traits := map[string]float64{
+		"openness":          psy.Openness,
+		"conscientiousness": psy.Conscientiousness,
+		"extraversion":      psy.Extraversion,
+		"agreeableness":     psy.Agreeableness,
+		"neuroticism":       psy.Neuroticism,
+	}
+	for name, val := range traits {
+		if val < 0.0 || val > 1.0 {
+			return fmt.Errorf("aieos: psychology.%s must be in [0.0, 1.0], got %v", name, val)
+		}
+	}
 	return nil
 }
