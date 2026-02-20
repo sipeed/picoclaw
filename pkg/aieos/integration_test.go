@@ -34,13 +34,13 @@ func TestIntegration_FullPipeline(t *testing.T) {
 
 	require.Contains(t, prompt, "You are **PicoClaw**")
 	require.Contains(t, prompt, "## Personality")
-	require.Contains(t, prompt, "curious and open")           // openness 0.8
-	require.Contains(t, prompt, "organized, thorough")        // conscientiousness 0.9
-	require.Contains(t, prompt, "calm, stable")               // neuroticism 0.1
+	require.Contains(t, prompt, "curious and open")    // openness 0.8
+	require.Contains(t, prompt, "organized, thorough") // conscientiousness 0.9
+	require.Contains(t, prompt, "calm, stable")        // neuroticism 0.1
 	require.Contains(t, prompt, "## Capabilities")
 	require.Contains(t, prompt, "web_search")
 	require.Contains(t, prompt, "## Communication Style")
-	require.Contains(t, prompt, "moderately detailed")         // verbosity 0.3 (mid range)
+	require.Contains(t, prompt, "moderately detailed") // verbosity 0.3 (mid range)
 	require.Contains(t, prompt, "## Values & Goals")
 	require.Contains(t, prompt, "accuracy")
 	require.Contains(t, prompt, "## Boundaries")
