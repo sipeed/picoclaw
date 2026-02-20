@@ -176,7 +176,9 @@ type AgentDefaults struct {
 	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
 	MaxTokens           int      `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         *float64 `json:"temperature,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	MaxToolIterations         int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	SummarizeMessageThreshold int      `json:"summarize_message_threshold" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
+	SummarizeTokenPercentage  int      `json:"summarize_token_percentage" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENTAGE"`
 }
 
 type ChannelsConfig struct {
@@ -476,6 +478,137 @@ type ClawHubRegistryConfig struct {
 	Timeout         int    `json:"timeout" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_TIMEOUT"`
 	MaxZipSize      int    `json:"max_zip_size" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_ZIP_SIZE"`
 	MaxResponseSize int    `json:"max_response_size" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_RESPONSE_SIZE"`
+}
+
+func DefaultConfig() *Config {
+	return &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Workspace:           "~/.picoclaw/workspace",
+				RestrictToWorkspace: true,
+				Provider:            "",
+				Model:               "glm-4.7",
+				MaxTokens:                 8192,
+				MaxToolIterations:         20,
+				SummarizeMessageThreshold: 50,
+				SummarizeTokenPercentage:  85,
+			},
+		},
+		Channels: ChannelsConfig{
+			WhatsApp: WhatsAppConfig{
+				Enabled:   false,
+				BridgeURL: "ws://localhost:3001",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			Telegram: TelegramConfig{
+				Enabled:   false,
+				Token:     "",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			Feishu: FeishuConfig{
+				Enabled:           false,
+				AppID:             "",
+				AppSecret:         "",
+				EncryptKey:        "",
+				VerificationToken: "",
+				AllowFrom:         FlexibleStringSlice{},
+			},
+			Discord: DiscordConfig{
+				Enabled:   false,
+				Token:     "",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			MaixCam: MaixCamConfig{
+				Enabled:   false,
+				Host:      "0.0.0.0",
+				Port:      18790,
+				AllowFrom: FlexibleStringSlice{},
+			},
+			QQ: QQConfig{
+				Enabled:   false,
+				AppID:     "",
+				AppSecret: "",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			DingTalk: DingTalkConfig{
+				Enabled:      false,
+				ClientID:     "",
+				ClientSecret: "",
+				AllowFrom:    FlexibleStringSlice{},
+			},
+			Slack: SlackConfig{
+				Enabled:   false,
+				BotToken:  "",
+				AppToken:  "",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			LINE: LINEConfig{
+				Enabled:            false,
+				ChannelSecret:      "",
+				ChannelAccessToken: "",
+				WebhookHost:        "0.0.0.0",
+				WebhookPort:        18791,
+				WebhookPath:        "/webhook/line",
+				AllowFrom:          FlexibleStringSlice{},
+			},
+			OneBot: OneBotConfig{
+				Enabled:            false,
+				WSUrl:              "ws://127.0.0.1:3001",
+				AccessToken:        "",
+				ReconnectInterval:  5,
+				GroupTriggerPrefix: []string{},
+				AllowFrom:          FlexibleStringSlice{},
+			},
+		},
+		Providers: ProvidersConfig{
+			Anthropic:    ProviderConfig{},
+			OpenAI:       OpenAIProviderConfig{WebSearch: true},
+			OpenRouter:   ProviderConfig{},
+			Groq:         ProviderConfig{},
+			Zhipu:        ProviderConfig{},
+			VLLM:         ProviderConfig{},
+			Gemini:       ProviderConfig{},
+			Nvidia:       ProviderConfig{},
+			Moonshot:     ProviderConfig{},
+			ShengSuanYun: ProviderConfig{},
+		},
+		Gateway: GatewayConfig{
+			Host: "0.0.0.0",
+			Port: 18790,
+		},
+		Tools: ToolsConfig{
+			Web: WebToolsConfig{
+				Brave: BraveConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
+				DuckDuckGo: DuckDuckGoConfig{
+					Enabled:    true,
+					MaxResults: 5,
+				},
+				Perplexity: PerplexityConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
+			},
+			Cron: CronToolsConfig{
+				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
+			},
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
+			},
+		},
+		Heartbeat: HeartbeatConfig{
+			Enabled:  true,
+			Interval: 30, // default 30 minutes
+		},
+		Devices: DevicesConfig{
+			Enabled:    false,
+			MonitorUSB: true,
+		},
+	}
 }
 
 func LoadConfig(path string) (*Config, error) {

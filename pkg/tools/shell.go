@@ -256,11 +256,17 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		// Refined regex to find potential absolute paths while avoiding URLs.
+		// It matches strings starting with / or [A-Z]:\ that are preceded by space, quote, or start of line.
+		pathPattern := regexp.MustCompile(`(^|[\s"'])(/[^\s"']+|[A-Za-z]:\\[^"'\s]+)`)
+		matches := pathPattern.FindAllStringSubmatch(cmd, -1)
 
-		for _, raw := range matches {
-			p, err := filepath.Abs(raw)
+		for _, match := range matches {
+			if len(match) < 3 {
+				continue
+			}
+			rawPath := match[2]
+			p, err := filepath.Abs(rawPath)
 			if err != nil {
 				continue
 			}

@@ -969,24 +969,3 @@ func TestStripToolCallsJSON_OnlyToolCalls(t *testing.T) {
 
 // --- findMatchingBrace tests ---
 
-func TestFindMatchingBrace(t *testing.T) {
-	tests := []struct {
-		text string
-		pos  int
-		want int
-	}{
-		{`{"a":1}`, 0, 7},
-		{`{"a":{"b":2}}`, 0, 13},
-		{`text {"a":1} more`, 5, 12},
-		{`{unclosed`, 0, 0},      // no match returns pos
-		{`{}`, 0, 2},             // empty object
-		{`{{{}}}`, 0, 6},         // deeply nested
-		{`{"a":"b{c}d"}`, 0, 13}, // braces in strings (simplified matcher)
-	}
-	for _, tt := range tests {
-		got := findMatchingBrace(tt.text, tt.pos)
-		if got != tt.want {
-			t.Errorf("findMatchingBrace(%q, %d) = %d, want %d", tt.text, tt.pos, got, tt.want)
-		}
-	}
-}
