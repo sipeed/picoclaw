@@ -418,7 +418,7 @@ picoclaw gateway
 }
 ```
 
-> Set `allow_from` to empty to allow all users, or specify QQ numbers to restrict access.
+> Set `allow_from` to empty to allow all users, or specify DingTalk user IDs to restrict access.
 
 **3. Run**
 
@@ -867,15 +867,15 @@ This design also enables **multi-agent support** with flexible provider selectio
 }
 ```
 
-**Anthropic (with OAuth)**
+**Anthropic (with API key)**
 ```json
 {
   "model_name": "claude-sonnet-4.6",
   "model": "anthropic/claude-sonnet-4.6",
-  "auth_method": "oauth"
+  "api_key": "sk-ant-your-key"
 }
 ```
-> Run `picoclaw auth login --provider anthropic` to set up OAuth credentials.
+> Run `picoclaw auth login --provider anthropic` to paste your API token.
 
 **Ollama (local)**
 ```json
