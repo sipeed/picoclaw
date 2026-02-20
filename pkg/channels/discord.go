@@ -184,7 +184,8 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	// If configured to only respond to mentions, check if bot is mentioned
-	if c.config.MentionOnly {
+	// Skip this check for DMs (GuildID is empty) - DMs should always be responded to
+	if c.config.MentionOnly && m.GuildID != "" {
 		isMentioned := false
 		for _, mention := range m.Mentions {
 			if mention.ID == c.botUserID {
