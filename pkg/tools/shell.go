@@ -3,8 +3,8 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"github.com/sipeed/picoclaw/pkg/config"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 type ExecTool struct {
@@ -176,18 +178,43 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		cmd.Dir = cwd
 	}
 
+	prepareCommandForTermination(cmd)
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-cmdCtx.Done():
+		_ = terminateProcessTree(cmd)
+		select {
+		case err = <-done:
+		case <-time.After(2 * time.Second):
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			err = <-done
+		}
+	}
+
 	output := stdout.String()
 	if stderr.Len() > 0 {
 		output += "\nSTDERR:\n" + stderr.String()
 	}
 
 	if err != nil {
-		if cmdCtx.Err() == context.DeadlineExceeded {
+		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
 			return &ToolResult{
 				ForLLM:  msg,

@@ -492,8 +492,10 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 
 	result = strings.TrimSpace(result)
 
-	re = regexp.MustCompile(`\s+`)
-	result = re.ReplaceAllLiteralString(result, " ")
+	re = regexp.MustCompile(`[^\S\n]+`)
+	result = re.ReplaceAllString(result, " ")
+	re = regexp.MustCompile(`\n{3,}`)
+	result = re.ReplaceAllString(result, "\n\n")
 
 	lines := strings.Split(result, "\n")
 	var cleanLines []string
