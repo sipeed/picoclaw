@@ -186,9 +186,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		if response, handled := al.handleCommand(ctx, msg); handled {
 			if response != "" {
 				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel: msg.Channel,
-					ChatID:  msg.ChatID,
-					Content: response,
+					Channel:         msg.Channel,
+					ChatID:          msg.ChatID,
+					Content:         response,
+					SkipPlaceholder: true,
 				})
 			}
 			continue

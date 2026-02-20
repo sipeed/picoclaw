@@ -201,15 +201,17 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 	// Try to edit placeholder
 	firstChunkSent := false
-	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), markdownToTelegramHTML(chunks[0]))
-		editMsg.ParseMode = telego.ModeHTML
+	if !msg.SkipPlaceholder {
+		if pID, ok := c.placeholders.Load(msg.ChatID); ok {
+			c.placeholders.Delete(msg.ChatID)
+			editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), markdownToTelegramHTML(chunks[0]))
+			editMsg.ParseMode = telego.ModeHTML
 
-		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
-			firstChunkSent = true
+			if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
+				firstChunkSent = true
+			}
+			// Fallback to new message if edit fails
 		}
-		// Fallback to new message if edit fails
 	}
 
 	sendChunk := func(text string) error {

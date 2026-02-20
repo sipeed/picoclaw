@@ -798,6 +798,57 @@ func TestResolveProvider_EmptyNameReturnsFallback(t *testing.T) {
 	}
 }
 
+// TestSlashCommandResponseSkipsPlaceholder verifies that slash command responses
+// are published with SkipPlaceholder=true so they don't overwrite the ongoing task
+// status bubble.
+func TestSlashCommandResponseSkipsPlaceholder(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	go func() {
+		_ = al.Run(ctx)
+	}()
+
+	// Send a slash command
+	msgBus.PublishInbound(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/todo",
+	})
+
+	// Read the outbound message
+	outMsg, ok := msgBus.SubscribeOutbound(ctx)
+	if !ok {
+		t.Fatal("expected outbound message from slash command")
+	}
+
+	if !outMsg.SkipPlaceholder {
+		t.Errorf("expected SkipPlaceholder=true for slash command response, got false")
+	}
+}
+
 func TestBuildTaskReminder_Truncation(t *testing.T) {
 	// Build a long message (1000 runes)
 	longMsg := strings.Repeat("あ", 1000)
