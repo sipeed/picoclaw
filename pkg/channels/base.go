@@ -101,3 +101,7 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 func (c *BaseChannel) setRunning(running bool) {
 	c.running = running
 }
+
+func (c *BaseChannel) SetRunning(running bool) {
+	c.running = running
+}
