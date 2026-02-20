@@ -230,6 +230,14 @@ func (c *WeComAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 func (c *WeComAppChannel) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Log all incoming requests for debugging
+	logger.DebugCF("wecom_app", "Received webhook request", map[string]interface{}{
+		"method": r.Method,
+		"url":    r.URL.String(),
+		"path":   r.URL.Path,
+		"query":  r.URL.RawQuery,
+	})
+
 	if r.Method == http.MethodGet {
 		// Handle verification request
 		c.handleVerification(ctx, w, r)
@@ -242,6 +250,9 @@ func (c *WeComAppChannel) handleWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	logger.WarnCF("wecom_app", "Method not allowed", map[string]interface{}{
+		"method": r.Method,
+	})
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
@@ -253,27 +264,54 @@ func (c *WeComAppChannel) handleVerification(ctx context.Context, w http.Respons
 	nonce := query.Get("nonce")
 	echostr := query.Get("echostr")
 
+	logger.DebugCF("wecom_app", "Handling verification request", map[string]interface{}{
+		"msg_signature": msgSignature,
+		"timestamp":     timestamp,
+		"nonce":         nonce,
+		"echostr":       echostr,
+		"corp_id":       c.config.CorpID,
+	})
+
 	if msgSignature == "" || timestamp == "" || nonce == "" || echostr == "" {
+		logger.ErrorC("wecom_app", "Missing parameters in verification request")
 		http.Error(w, "Missing parameters", http.StatusBadRequest)
 		return
 	}
 
 	// Verify signature
 	if !WeComVerifySignature(c.config.Token, msgSignature, timestamp, nonce, echostr) {
-		logger.WarnC("wecom_app", "Signature verification failed")
+		logger.WarnCF("wecom_app", "Signature verification failed", map[string]interface{}{
+			"token":         c.config.Token,
+			"msg_signature": msgSignature,
+			"timestamp":     timestamp,
+			"nonce":         nonce,
+		})
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
 	}
 
-	// Decrypt echostr
-	decryptedEchoStr, err := WeComDecryptMessage(echostr, c.config.EncodingAESKey)
+	logger.DebugC("wecom_app", "Signature verification passed")
+
+	// Decrypt echostr with CorpID verification
+	// For WeCom App (自建应用), receiveid should be corp_id
+	logger.DebugCF("wecom_app", "Attempting to decrypt echostr", map[string]interface{}{
+		"encoding_aes_key": c.config.EncodingAESKey,
+		"corp_id":          c.config.CorpID,
+	})
+	decryptedEchoStr, err := WeComDecryptMessageWithVerify(echostr, c.config.EncodingAESKey, c.config.CorpID)
 	if err != nil {
 		logger.ErrorCF("wecom_app", "Failed to decrypt echostr", map[string]interface{}{
-			"error": err.Error(),
+			"error":            err.Error(),
+			"encoding_aes_key": c.config.EncodingAESKey,
+			"corp_id":          c.config.CorpID,
 		})
 		http.Error(w, "Decryption failed", http.StatusInternalServerError)
 		return
 	}
+
+	logger.DebugCF("wecom_app", "Successfully decrypted echostr", map[string]interface{}{
+		"decrypted": decryptedEchoStr,
+	})
 
 	// Remove BOM and whitespace as per WeCom documentation
 	// The response must be plain text without quotes, BOM, or newlines
@@ -325,8 +363,9 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		return
 	}
 
-	// Decrypt message
-	decryptedMsg, err := WeComDecryptMessage(encryptedMsg.Encrypt, c.config.EncodingAESKey)
+	// Decrypt message with CorpID verification
+	// For WeCom App (自建应用), receiveid should be corp_id
+	decryptedMsg, err := WeComDecryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey, c.config.CorpID)
 	if err != nil {
 		logger.ErrorCF("wecom_app", "Failed to decrypt message", map[string]interface{}{
 			"error": err.Error(),

@@ -220,7 +220,9 @@ func (c *WeComBotChannel) handleVerification(ctx context.Context, w http.Respons
 	}
 
 	// Decrypt echostr
-	decryptedEchoStr, err := WeComDecryptMessage(echostr, c.config.EncodingAESKey)
+	// For AIBOT (智能机器人), receiveid should be empty string ""
+	// Reference: https://developer.work.weixin.qq.com/document/path/101033
+	decryptedEchoStr, err := WeComDecryptMessageWithVerify(echostr, c.config.EncodingAESKey, "")
 	if err != nil {
 		logger.ErrorCF("wecom", "Failed to decrypt echostr", map[string]interface{}{
 			"error": err.Error(),
@@ -280,7 +282,9 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	}
 
 	// Decrypt message
-	decryptedMsg, err := WeComDecryptMessage(encryptedMsg.Encrypt, c.config.EncodingAESKey)
+	// For AIBOT (智能机器人), receiveid should be empty string ""
+	// Reference: https://developer.work.weixin.qq.com/document/path/101033
+	decryptedMsg, err := WeComDecryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey, "")
 	if err != nil {
 		logger.ErrorCF("wecom", "Failed to decrypt message", map[string]interface{}{
 			"error": err.Error(),
