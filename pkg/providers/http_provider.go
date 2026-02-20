@@ -23,7 +23,14 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 }
 
 func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
-	return p.delegate.Chat(ctx, messages, tools, model, options)
+	resp, err := p.delegate.Chat(ctx, messages, tools, model, options)
+	if err != nil {
+		return nil, err
+	}
+	// Strip provider-specific XML tool call artifacts (e.g. minimax)
+	// that leak into Content alongside structured tool_calls.
+	resp.Content = stripXMLToolCalls(resp.Content)
+	return resp, nil
 }
 
 func (p *HTTPProvider) GetDefaultModel() string {

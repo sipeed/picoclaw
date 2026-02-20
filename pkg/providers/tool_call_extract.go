@@ -56,6 +56,35 @@ func extractToolCallsFromText(text string) []ToolCall {
 	return result
 }
 
+// stripXMLToolCalls removes XML tool call blocks (e.g. <minimax:toolcall>...</minimax:toolcall>)
+// from response text. Some providers embed raw XML tool calls in Content alongside
+// structured tool_calls; this prevents them from leaking to users.
+func stripXMLToolCalls(text string) string {
+	// Match <vendor:toolcall>...</vendor:toolcall> blocks (any namespace prefix)
+	idx := strings.Index(text, ":toolcall>")
+	if idx == -1 {
+		return text
+	}
+	// Find the opening tag start: scan backwards for '<'
+	tagStart := strings.LastIndex(text[:idx], "<")
+	if tagStart == -1 {
+		return text
+	}
+	// Extract namespace (e.g. "minimax" from "<minimax:toolcall>")
+	ns := text[tagStart+1 : idx]
+	closeTag := "</" + ns + ":toolcall>"
+	closeIdx := strings.Index(text, closeTag)
+	if closeIdx == -1 {
+		return text
+	}
+	cleaned := text[:tagStart] + text[closeIdx+len(closeTag):]
+	// Recursively strip if there are more blocks
+	if strings.Contains(cleaned, ":toolcall>") {
+		cleaned = stripXMLToolCalls(cleaned)
+	}
+	return strings.TrimSpace(cleaned)
+}
+
 // stripToolCallsFromText removes tool call JSON from response text.
 func stripToolCallsFromText(text string) string {
 	start := strings.Index(text, `{"tool_calls"`)
