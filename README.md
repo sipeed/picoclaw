@@ -350,7 +350,7 @@ picoclaw gateway
 
 **Optional: Mention-only mode**
 
-Set `mention_only: true` to make the bot respond only when @-mentioned. Useful for shared servers where you want the bot to respond only when explicitly called.
+Set `"mention_only": true` to make the bot respond only when @-mentioned. Useful for shared servers where you want the bot to respond only when explicitly called.
 
 **6. Run**
 
