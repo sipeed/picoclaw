@@ -133,7 +133,6 @@ func (ms *MemoryStore) GetMemoryContext() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("# Memory\n\n")
 
 	if longTerm != "" {
 		sb.WriteString("## Long-term Memory\n\n")
