@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -26,6 +28,9 @@ type DiscordChannel struct {
 	config      config.DiscordConfig
 	transcriber *voice.GroqTranscriber
 	ctx         context.Context
+	typingMu    sync.Mutex
+	typingStop  map[string]chan struct{} // chatID → stop signal
+	botUserID   string                   // stored for mention checking
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -42,6 +47,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		config:      cfg,
 		transcriber: nil,
 		ctx:         context.Background(),
+		typingStop:  make(map[string]chan struct{}),
 	}, nil
 }
 
@@ -60,6 +66,14 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	logger.InfoC("discord", "Starting Discord bot")
 
 	c.ctx = ctx
+
+	// Get bot user ID before opening session to avoid race condition
+	botUser, err := c.session.User("@me")
+	if err != nil {
+		return fmt.Errorf("failed to get bot user: %w", err)
+	}
+	c.botUserID = botUser.ID
+
 	c.session.AddHandler(c.handleMessage)
 
 	if err := c.session.Open(); err != nil {
@@ -68,10 +82,6 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 
 	c.setRunning(true)
 
-	botUser, err := c.session.User("@me")
-	if err != nil {
-		return fmt.Errorf("failed to get bot user: %w", err)
-	}
 	logger.InfoCF("discord", "Discord bot connected", map[string]any{
 		"username": botUser.Username,
 		"user_id":  botUser.ID,
@@ -84,6 +94,14 @@ func (c *DiscordChannel) Stop(ctx context.Context) error {
 	logger.InfoC("discord", "Stopping Discord bot")
 	c.setRunning(false)
 
+	// Stop all typing goroutines before closing session
+	c.typingMu.Lock()
+	for chatID, stop := range c.typingStop {
+		close(stop)
+		delete(c.typingStop, chatID)
+	}
+	c.typingMu.Unlock()
+
 	if err := c.session.Close(); err != nil {
 		return fmt.Errorf("failed to close discord session: %w", err)
 	}
@@ -92,6 +110,8 @@ func (c *DiscordChannel) Stop(ctx context.Context) error {
 }
 
 func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	c.stopTyping(msg.ChatID)
+
 	if !c.IsRunning() {
 		return fmt.Errorf("discord bot not running")
 	}
@@ -106,7 +126,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		return nil
 	}
 
-	chunks := splitMessage(msg.Content, 1500) // Discord has a limit of 2000 characters per message, leave 500 for natural split e.g. code blocks
+	chunks := utils.SplitMessage(msg.Content, 2000) // Split messages into chunks, Discord length limit: 2000 chars
 
 	for _, chunk := range chunks {
 		if err := c.sendChunk(ctx, channelID, chunk); err != nil {
@@ -117,134 +137,8 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	return nil
 }
 
-// splitMessage splits long messages into chunks, preserving code block integrity
-// Uses natural boundaries (newlines, spaces) and extends messages slightly to avoid breaking code blocks
-func splitMessage(content string, limit int) []string {
-	var messages []string
-
-	for len(content) > 0 {
-		if len(content) <= limit {
-			messages = append(messages, content)
-			break
-		}
-
-		msgEnd := limit
-
-		// Find natural split point within the limit
-		msgEnd = findLastNewline(content[:limit], 200)
-		if msgEnd <= 0 {
-			msgEnd = findLastSpace(content[:limit], 100)
-		}
-		if msgEnd <= 0 {
-			msgEnd = limit
-		}
-
-		// Check if this would end with an incomplete code block
-		candidate := content[:msgEnd]
-		unclosedIdx := findLastUnclosedCodeBlock(candidate)
-
-		if unclosedIdx >= 0 {
-			// Message would end with incomplete code block
-			// Try to extend to include the closing ``` (with some buffer)
-			extendedLimit := limit + 500 // Allow 500 char buffer for code blocks
-			if len(content) > extendedLimit {
-				closingIdx := findNextClosingCodeBlock(content, msgEnd)
-				if closingIdx > 0 && closingIdx <= extendedLimit {
-					// Extend to include the closing ```
-					msgEnd = closingIdx
-				} else {
-					// Can't find closing, split before the code block
-					msgEnd = findLastNewline(content[:unclosedIdx], 200)
-					if msgEnd <= 0 {
-						msgEnd = findLastSpace(content[:unclosedIdx], 100)
-					}
-					if msgEnd <= 0 {
-						msgEnd = unclosedIdx
-					}
-				}
-			} else {
-				// Remaining content fits within extended limit
-				msgEnd = len(content)
-			}
-		}
-
-		if msgEnd <= 0 {
-			msgEnd = limit
-		}
-
-		messages = append(messages, content[:msgEnd])
-		content = strings.TrimSpace(content[msgEnd:])
-	}
-
-	return messages
-}
-
-// findLastUnclosedCodeBlock finds the last opening ``` that doesn't have a closing ```
-// Returns the position of the opening ``` or -1 if all code blocks are complete
-func findLastUnclosedCodeBlock(text string) int {
-	count := 0
-	lastOpenIdx := -1
-
-	for i := 0; i < len(text); i++ {
-		if i+2 < len(text) && text[i] == '`' && text[i+1] == '`' && text[i+2] == '`' {
-			if count == 0 {
-				lastOpenIdx = i
-			}
-			count++
-			i += 2
-		}
-	}
-
-	// If odd number of ``` markers, last one is unclosed
-	if count%2 == 1 {
-		return lastOpenIdx
-	}
-	return -1
-}
-
-// findNextClosingCodeBlock finds the next closing ``` starting from a position
-// Returns the position after the closing ``` or -1 if not found
-func findNextClosingCodeBlock(text string, startIdx int) int {
-	for i := startIdx; i < len(text); i++ {
-		if i+2 < len(text) && text[i] == '`' && text[i+1] == '`' && text[i+2] == '`' {
-			return i + 3
-		}
-	}
-	return -1
-}
-
-// findLastNewline finds the last newline character within the last N characters
-// Returns the position of the newline or -1 if not found
-func findLastNewline(s string, searchWindow int) int {
-	searchStart := len(s) - searchWindow
-	if searchStart < 0 {
-		searchStart = 0
-	}
-	for i := len(s) - 1; i >= searchStart; i-- {
-		if s[i] == '\n' {
-			return i
-		}
-	}
-	return -1
-}
-
-// findLastSpace finds the last space character within the last N characters
-// Returns the position of the space or -1 if not found
-func findLastSpace(s string, searchWindow int) int {
-	searchStart := len(s) - searchWindow
-	if searchStart < 0 {
-		searchStart = 0
-	}
-	for i := len(s) - 1; i >= searchStart; i-- {
-		if s[i] == ' ' || s[i] == '\t' {
-			return i
-		}
-	}
-	return -1
-}
-
 func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content string) error {
-	// 使用传入的 ctx 进行超时控制
+	// Use the passed ctx for timeout control
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
@@ -265,7 +159,7 @@ func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content strin
 	}
 }
 
-// appendContent 安全地追加内容到现有文本
+// appendContent safely appends content to existing text
 func appendContent(content, suffix string) string {
 	if content == "" {
 		return suffix
@@ -282,18 +176,30 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
-	if err := c.session.ChannelTyping(m.ChannelID); err != nil {
-		logger.ErrorCF("discord", "Failed to send typing indicator", map[string]any{
-			"error": err.Error(),
-		})
-	}
-
-	// 检查白名单，避免为被拒绝的用户下载附件和转录
+	// Check allowlist first to avoid downloading attachments and transcribing for rejected users
 	if !c.IsAllowed(m.Author.ID) {
 		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
 			"user_id": m.Author.ID,
 		})
 		return
+	}
+
+	// If configured to only respond to mentions, check if bot is mentioned
+	// Skip this check for DMs (GuildID is empty) - DMs should always be responded to
+	if c.config.MentionOnly && m.GuildID != "" {
+		isMentioned := false
+		for _, mention := range m.Mentions {
+			if mention.ID == c.botUserID {
+				isMentioned = true
+				break
+			}
+		}
+		if !isMentioned {
+			logger.DebugCF("discord", "Message ignored - bot not mentioned", map[string]any{
+				"user_id": m.Author.ID,
+			})
+			return
+		}
 	}
 
 	senderID := m.Author.ID
@@ -303,10 +209,11 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	content := m.Content
+	content = c.stripBotMention(content)
 	mediaPaths := make([]string, 0, len(m.Attachments))
 	localFiles := make([]string, 0, len(m.Attachments))
 
-	// 确保临时文件在函数返回时被清理
+	// Ensure temp files are cleaned up when function returns
 	defer func() {
 		for _, file := range localFiles {
 			if err := os.Remove(file); err != nil {
@@ -330,7 +237,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 				if c.transcriber != nil && c.transcriber.IsAvailable() {
 					ctx, cancel := context.WithTimeout(c.getContext(), transcriptionTimeout)
 					result, err := c.transcriber.Transcribe(ctx, localPath)
-					cancel() // 立即释放context资源，避免在for循环中泄漏
+					cancel() // Release context resources immediately to avoid leaks in for loop
 
 					if err != nil {
 						logger.ErrorCF("discord", "Voice transcription failed", map[string]any{
@@ -370,11 +277,21 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		content = "[media only]"
 	}
 
+	// Start typing after all early returns — guaranteed to have a matching Send()
+	c.startTyping(m.ChannelID)
+
 	logger.DebugCF("discord", "Received message", map[string]any{
 		"sender_name": senderName,
 		"sender_id":   senderID,
 		"preview":     utils.Truncate(content, 50),
 	})
+
+	peerKind := "channel"
+	peerID := m.ChannelID
+	if m.GuildID == "" {
+		peerKind = "direct"
+		peerID = senderID
+	}
 
 	metadata := map[string]string{
 		"message_id":   m.ID,
@@ -384,13 +301,73 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"guild_id":     m.GuildID,
 		"channel_id":   m.ChannelID,
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
+		"peer_kind":    peerKind,
+		"peer_id":      peerID,
 	}
 
 	c.HandleMessage(senderID, m.ChannelID, content, mediaPaths, metadata)
+}
+
+// startTyping starts a continuous typing indicator loop for the given chatID.
+// It stops any existing typing loop for that chatID before starting a new one.
+func (c *DiscordChannel) startTyping(chatID string) {
+	c.typingMu.Lock()
+	// Stop existing loop for this chatID if any
+	if stop, ok := c.typingStop[chatID]; ok {
+		close(stop)
+	}
+	stop := make(chan struct{})
+	c.typingStop[chatID] = stop
+	c.typingMu.Unlock()
+
+	go func() {
+		if err := c.session.ChannelTyping(chatID); err != nil {
+			logger.DebugCF("discord", "ChannelTyping error", map[string]any{"chatID": chatID, "err": err})
+		}
+		ticker := time.NewTicker(8 * time.Second)
+		defer ticker.Stop()
+		timeout := time.After(5 * time.Minute)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-timeout:
+				return
+			case <-c.ctx.Done():
+				return
+			case <-ticker.C:
+				if err := c.session.ChannelTyping(chatID); err != nil {
+					logger.DebugCF("discord", "ChannelTyping error", map[string]any{"chatID": chatID, "err": err})
+				}
+			}
+		}
+	}()
+}
+
+// stopTyping stops the typing indicator loop for the given chatID.
+func (c *DiscordChannel) stopTyping(chatID string) {
+	c.typingMu.Lock()
+	defer c.typingMu.Unlock()
+	if stop, ok := c.typingStop[chatID]; ok {
+		close(stop)
+		delete(c.typingStop, chatID)
+	}
 }
 
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "discord",
 	})
+}
+
+// stripBotMention removes the bot mention from the message content.
+// Discord mentions have the format <@USER_ID> or <@!USER_ID> (with nickname).
+func (c *DiscordChannel) stripBotMention(text string) string {
+	if c.botUserID == "" {
+		return text
+	}
+	// Remove both regular mention <@USER_ID> and nickname mention <@!USER_ID>
+	text = strings.ReplaceAll(text, fmt.Sprintf("<@%s>", c.botUserID), "")
+	text = strings.ReplaceAll(text, fmt.Sprintf("<@!%s>", c.botUserID), "")
+	return strings.TrimSpace(text)
 }

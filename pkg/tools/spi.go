@@ -24,41 +24,41 @@ func (t *SPITool) Description() string {
 	return "Interact with SPI bus devices for high-speed peripheral communication. Actions: list (find SPI devices), transfer (full-duplex send/receive), read (receive bytes). Linux only."
 }
 
-func (t *SPITool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *SPITool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
+		"properties": map[string]any{
+			"action": map[string]any{
 				"type":        "string",
 				"enum":        []string{"list", "transfer", "read"},
 				"description": "Action to perform: list (find available SPI devices), transfer (full-duplex send/receive), read (receive bytes by sending zeros)",
 			},
-			"device": map[string]interface{}{
+			"device": map[string]any{
 				"type":        "string",
 				"description": "SPI device identifier (e.g. \"2.0\" for /dev/spidev2.0). Required for transfer/read.",
 			},
-			"speed": map[string]interface{}{
+			"speed": map[string]any{
 				"type":        "integer",
 				"description": "SPI clock speed in Hz. Default: 1000000 (1 MHz).",
 			},
-			"mode": map[string]interface{}{
+			"mode": map[string]any{
 				"type":        "integer",
 				"description": "SPI mode (0-3). Default: 0. Mode sets CPOL and CPHA: 0=0,0 1=0,1 2=1,0 3=1,1.",
 			},
-			"bits": map[string]interface{}{
+			"bits": map[string]any{
 				"type":        "integer",
 				"description": "Bits per word. Default: 8.",
 			},
-			"data": map[string]interface{}{
+			"data": map[string]any{
 				"type":        "array",
-				"items":       map[string]interface{}{"type": "integer"},
+				"items":       map[string]any{"type": "integer"},
 				"description": "Bytes to send (0-255 each). Required for transfer action.",
 			},
-			"length": map[string]interface{}{
+			"length": map[string]any{
 				"type":        "integer",
 				"description": "Number of bytes to read (1-4096). Required for read action.",
 			},
-			"confirm": map[string]interface{}{
+			"confirm": map[string]any{
 				"type":        "boolean",
 				"description": "Must be true for transfer operations. Safety guard to prevent accidental writes.",
 			},
@@ -67,7 +67,7 @@ func (t *SPITool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *SPITool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *SPITool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	if runtime.GOOS != "linux" {
 		return ErrorResult("SPI is only supported on Linux. This tool requires /dev/spidev* device files.")
 	}
@@ -97,7 +97,9 @@ func (t *SPITool) list() *ToolResult {
 	}
 
 	if len(matches) == 0 {
-		return SilentResult("No SPI devices found. You may need to:\n1. Enable SPI in device tree\n2. Configure pinmux for your board (see hardware skill)\n3. Check that spidev module is loaded")
+		return SilentResult(
+			"No SPI devices found. You may need to:\n1. Enable SPI in device tree\n2. Configure pinmux for your board (see hardware skill)\n3. Check that spidev module is loaded",
+		)
 	}
 
 	type devInfo struct {
@@ -118,7 +120,7 @@ func (t *SPITool) list() *ToolResult {
 }
 
 // parseSPIArgs extracts and validates common SPI parameters
-func parseSPIArgs(args map[string]interface{}) (device string, speed uint32, mode uint8, bits uint8, errMsg string) {
+func parseSPIArgs(args map[string]any) (device string, speed uint32, mode uint8, bits uint8, errMsg string) {
 	dev, ok := args["device"].(string)
 	if !ok || dev == "" {
 		return "", 0, 0, 0, "device is required (e.g. \"2.0\" for /dev/spidev2.0)"
