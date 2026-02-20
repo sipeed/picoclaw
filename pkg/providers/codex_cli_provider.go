@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -67,7 +68,7 @@ func (p *CodexCliProvider) Chat(ctx context.Context, messages []Message, tools [
 	}
 
 	if err != nil {
-		if ctx.Err() == context.Canceled {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			return nil, ctx.Err()
 		}
 		if stderrStr := stderr.String(); stderrStr != "" {

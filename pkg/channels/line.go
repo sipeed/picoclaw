@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -104,7 +105,7 @@ func (c *LINEChannel) Start(ctx context.Context) error {
 			"addr": addr,
 			"path": path,
 		})
-		if err := c.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := c.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.ErrorCF("line", "Webhook server error", map[string]interface{}{
 				"error": err.Error(),
 			})

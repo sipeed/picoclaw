@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 )
@@ -102,12 +103,12 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 	}
 
 	// Context cancellation: user abort, never fallback.
-	if err == context.Canceled {
+	if errors.Is(err, context.Canceled) {
 		return nil
 	}
 
 	// Context deadline exceeded: treat as timeout, always fallback.
-	if err == context.DeadlineExceeded {
+	if errors.Is(err, context.DeadlineExceeded) {
 		return &FailoverError{
 			Reason:   FailoverTimeout,
 			Provider: provider,

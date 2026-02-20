@@ -293,7 +293,7 @@ func TestFailoverError_ErrorString(t *testing.T) {
 func TestFailoverError_Unwrap(t *testing.T) {
 	inner := errors.New("inner error")
 	fe := &FailoverError{Reason: FailoverTimeout, Wrapped: inner}
-	if fe.Unwrap() != inner {
+	if !errors.Is(fe.Unwrap(), inner) {
 		t.Error("Unwrap should return wrapped error")
 	}
 }

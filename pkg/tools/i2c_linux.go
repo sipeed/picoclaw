@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"syscall"
 	"unsafe"
@@ -113,7 +114,7 @@ func (t *I2CTool) scan(args map[string]interface{}) *ToolResult {
 		// Set slave address — EBUSY means a kernel driver owns this address
 		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), i2cSlave, uintptr(addr))
 		if errno != 0 {
-			if errno == syscall.EBUSY {
+			if errors.Is(errno, syscall.EBUSY) {
 				found = append(found, deviceEntry{
 					Address: fmt.Sprintf("0x%02x", addr),
 					Status:  "busy (in use by kernel driver)",

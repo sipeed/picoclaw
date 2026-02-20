@@ -126,7 +126,7 @@ func TestMessageTool_Execute_SendFailure(t *testing.T) {
 	if result.Err == nil {
 		t.Error("Expected Err to be set")
 	}
-	if result.Err != sendErr {
+	if !errors.Is(result.Err, sendErr) {
 		t.Errorf("Expected Err to be sendErr, got %v", result.Err)
 	}
 }

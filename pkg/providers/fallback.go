@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -98,7 +99,7 @@ func (fc *FallbackChain) Execute(
 
 	for i, candidate := range candidates {
 		// Check context before each attempt.
-		if ctx.Err() == context.Canceled {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			return nil, context.Canceled
 		}
 
@@ -130,7 +131,7 @@ func (fc *FallbackChain) Execute(
 		}
 
 		// Context cancellation: abort immediately, no fallback.
-		if ctx.Err() == context.Canceled {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			result.Attempts = append(result.Attempts, FallbackAttempt{
 				Provider: candidate.Provider,
 				Model:    candidate.Model,
@@ -204,7 +205,7 @@ func (fc *FallbackChain) ExecuteImage(
 	}
 
 	for i, candidate := range candidates {
-		if ctx.Err() == context.Canceled {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			return nil, context.Canceled
 		}
 
@@ -219,7 +220,7 @@ func (fc *FallbackChain) ExecuteImage(
 			return result, nil
 		}
 
-		if ctx.Err() == context.Canceled {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			result.Attempts = append(result.Attempts, FallbackAttempt{
 				Provider: candidate.Provider,
 				Model:    candidate.Model,

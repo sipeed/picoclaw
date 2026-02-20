@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -188,7 +189,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	}
 
 	if err != nil {
-		if cmdCtx.Err() == context.DeadlineExceeded {
+		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
 			return &ToolResult{
 				ForLLM:  msg,
