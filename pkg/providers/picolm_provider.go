@@ -3,6 +3,7 @@ package providers
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,13 +18,33 @@ type PicoLMProvider struct {
 	model     string
 	maxTokens int
 	threads   int
-	template  string
 }
 
 // NewPicoLMProvider creates a new PicoLM provider from config.
-func NewPicoLMProvider(cfg config.PicoLMProviderConfig) *PicoLMProvider {
-	binary := expandHome(cfg.Binary)
-	model := expandHome(cfg.Model)
+// Returns an error if the binary path does not point to an executable file.
+func NewPicoLMProvider(cfg config.PicoLMProviderConfig) (*PicoLMProvider, error) {
+	binary, err := expandHome(cfg.Binary)
+	if err != nil {
+		return nil, fmt.Errorf("picolm: failed to expand binary path: %w", err)
+	}
+	model, err := expandHome(cfg.Model)
+	if err != nil {
+		return nil, fmt.Errorf("picolm: failed to expand model path: %w", err)
+	}
+
+	if binary != "" {
+		info, err := os.Stat(binary)
+		if err != nil {
+			return nil, fmt.Errorf("picolm: binary not found at %q: %w", binary, err)
+		}
+		if info.IsDir() {
+			return nil, fmt.Errorf("picolm: binary path %q is a directory, not an executable", binary)
+		}
+		if info.Mode()&0111 == 0 {
+			return nil, fmt.Errorf("picolm: binary %q is not executable", binary)
+		}
+	}
+
 	maxTokens := cfg.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = 256
@@ -32,17 +53,12 @@ func NewPicoLMProvider(cfg config.PicoLMProviderConfig) *PicoLMProvider {
 	if threads <= 0 {
 		threads = 4
 	}
-	template := cfg.Template
-	if template == "" {
-		template = "chatml"
-	}
 	return &PicoLMProvider{
 		binary:    binary,
 		model:     model,
 		maxTokens: maxTokens,
 		threads:   threads,
-		template:  template,
-	}
+	}, nil
 }
 
 // Chat implements LLMProvider.Chat by executing the picolm binary.
@@ -74,23 +90,6 @@ func (p *PicoLMProvider) Chat(ctx context.Context, messages []Message, tools []T
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-
-	// Try to parse stdout even on non-zero exit, as picolm may print diagnostics to stderr.
-	if output := strings.TrimSpace(stdout.String()); output != "" {
-		toolCalls := extractToolCallsFromText(output)
-		finishReason := "stop"
-		content := output
-		if len(toolCalls) > 0 {
-			finishReason = "tool_calls"
-			content = stripToolCallsFromText(output)
-		}
-		return &LLMResponse{
-			Content:      strings.TrimSpace(content),
-			ToolCalls:    toolCalls,
-			FinishReason: finishReason,
-		}, nil
-	}
-
 	if err != nil {
 		if ctx.Err() == context.Canceled {
 			return nil, ctx.Err()
@@ -101,9 +100,25 @@ func (p *PicoLMProvider) Chat(ctx context.Context, messages []Message, tools []T
 		return nil, fmt.Errorf("picolm error: %w", err)
 	}
 
+	output := strings.TrimSpace(stdout.String())
+	if output == "" {
+		return &LLMResponse{
+			Content:      "",
+			FinishReason: "stop",
+		}, nil
+	}
+
+	toolCalls := extractToolCallsFromText(output)
+	finishReason := "stop"
+	content := output
+	if len(toolCalls) > 0 {
+		finishReason = "tool_calls"
+		content = stripToolCallsFromText(output)
+	}
 	return &LLMResponse{
-		Content:      "",
-		FinishReason: "stop",
+		Content:      strings.TrimSpace(content),
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
 	}, nil
 }
 
@@ -116,11 +131,15 @@ func (p *PicoLMProvider) GetDefaultModel() string {
 func (p *PicoLMProvider) buildPrompt(messages []Message, tools []ToolDefinition) string {
 	var sb strings.Builder
 
+	// Collect system message parts and append tool definitions.
 	var systemParts []string
 	for _, msg := range messages {
 		if msg.Role == "system" {
 			systemParts = append(systemParts, msg.Content)
 		}
+	}
+	if len(tools) > 0 {
+		systemParts = append(systemParts, buildToolsPrompt(tools))
 	}
 
 	if len(systemParts) > 0 {
@@ -152,17 +171,50 @@ func (p *PicoLMProvider) buildPrompt(messages []Message, tools []ToolDefinition)
 	return sb.String()
 }
 
+// buildToolsPrompt creates the tool definitions section for injection into the system prompt.
+func buildToolsPrompt(tools []ToolDefinition) string {
+	var sb strings.Builder
+
+	sb.WriteString("## Available Tools\n\n")
+	sb.WriteString("When you need to use a tool, respond with ONLY a JSON object:\n\n")
+	sb.WriteString("```json\n")
+	sb.WriteString(`{"tool_calls":[{"id":"call_xxx","type":"function","function":{"name":"tool_name","arguments":"{...}"}}]}`)
+	sb.WriteString("\n```\n\n")
+	sb.WriteString("CRITICAL: The 'arguments' field MUST be a JSON-encoded STRING.\n\n")
+	sb.WriteString("### Tool Definitions:\n\n")
+
+	for _, tool := range tools {
+		if tool.Type != "function" {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("#### %s\n", tool.Function.Name))
+		if tool.Function.Description != "" {
+			sb.WriteString(fmt.Sprintf("Description: %s\n", tool.Function.Description))
+		}
+		if len(tool.Function.Parameters) > 0 {
+			paramsJSON, _ := json.Marshal(tool.Function.Parameters)
+			sb.WriteString(fmt.Sprintf("Parameters:\n```json\n%s\n```\n", string(paramsJSON)))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
 // expandHome expands ~ to the user's home directory.
-func expandHome(path string) string {
+func expandHome(path string) (string, error) {
 	if path == "" {
-		return path
+		return path, nil
 	}
 	if path[0] == '~' {
-		home, _ := os.UserHomeDir()
-		if len(path) > 1 && path[1] == '/' {
-			return home + path[1:]
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve home directory: %w", err)
 		}
-		return home
+		if len(path) > 1 && path[1] == '/' {
+			return home + path[1:], nil
+		}
+		return home, nil
 	}
-	return path
+	return path, nil
 }

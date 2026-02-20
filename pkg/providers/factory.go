@@ -361,7 +361,7 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	case providerTypeGitHubCopilot:
 		return NewGitHubCopilotProvider(sel.apiBase, sel.connectMode, sel.model)
 	case providerTypePicoLM:
-		return NewPicoLMProvider(cfg.Providers.PicoLM), nil
+		return NewPicoLMProvider(cfg.Providers.PicoLM)
 	default:
 		return NewHTTPProvider(sel.apiKey, sel.apiBase, sel.proxy), nil
 	}

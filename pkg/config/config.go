@@ -271,7 +271,6 @@ type PicoLMProviderConfig struct {
 	Model     string `json:"model" env:"PICOCLAW_PROVIDERS_PICOLM_MODEL"`
 	MaxTokens int    `json:"max_tokens" env:"PICOCLAW_PROVIDERS_PICOLM_MAX_TOKENS"`
 	Threads   int    `json:"threads" env:"PICOCLAW_PROVIDERS_PICOLM_THREADS"`
-	Template  string `json:"template" env:"PICOCLAW_PROVIDERS_PICOLM_TEMPLATE"`
 }
 
 type ProviderConfig struct {
