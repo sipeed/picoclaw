@@ -74,9 +74,87 @@ func TestMarkdownToTelegramHTML_TableWrapsLongCell(t *testing.T) {
 	if !strings.Contains(got, "| short") {
 		t.Fatalf("expected data row with short cell, got: %q", got)
 	}
-	// Wrapped content should include a prefix from the long sentence.
-	if !strings.Contains(got, "this is a very") {
-		t.Fatalf("expected wrapped long cell content, got: %q", got)
+	// With markdownTableMaxWidth=42 the long cell MUST be wrapped into
+	// multiple visual lines. Verify the continuation line exists.
+	if !strings.Contains(got, "long cell that should wrap") {
+		t.Fatalf("expected wrapped continuation line, got: %q", got)
+	}
+	// The continuation row must have an empty first column (padding only).
+	if !strings.Contains(got, "|       | long cell") {
+		t.Fatalf("expected continuation row with empty first col, got: %q", got)
+	}
+}
+
+func TestFormatMarkdownTable_Width42(t *testing.T) {
+	lines := []string{
+		"| col1 | col2 |",
+		"| --- | --- |",
+		"| short | this is a very very very very long cell that should wrap |",
+	}
+	got := formatMarkdownTable(lines)
+
+	// Every line must fit within markdownTableMaxWidth (42).
+	for i, line := range strings.Split(got, "\n") {
+		w := displayWidth(line)
+		if w > markdownTableMaxWidth {
+			t.Errorf("line %d width %d > %d: %q", i, w, markdownTableMaxWidth, line)
+		}
+	}
+
+	// Must produce more lines than a non-wrapped table (header + sep + 1 data = 3).
+	// With wrapping the data row becomes 2 visual lines → total 4.
+	lineCount := len(strings.Split(got, "\n"))
+	if lineCount < 4 {
+		t.Errorf("expected at least 4 lines (wrap must occur), got %d:\n%s", lineCount, got)
+	}
+
+	// Verify continuation row has blank first column.
+	if !strings.Contains(got, "|       | long cell that should wrap") {
+		t.Errorf("expected continuation row, got:\n%s", got)
+	}
+}
+
+// TestFormatMarkdownTable_MultiColWrap verifies that a multi-column,
+// multi-row table correctly wraps one long cell while leaving other
+// rows and columns unaffected.
+// With markdownTableMaxWidth=42, col widths shrink to [7, 5, 20].
+// Bob's "Needs more practice in writing" (30 chars) wraps at width 20.
+func TestFormatMarkdownTable_MultiColWrap(t *testing.T) {
+	lines := []string{
+		"| Name | Score | Comment |",
+		"| --- | --- | --- |",
+		"| Alice | 95 | Great job |",
+		"| Bob | 72 | Needs more practice in writing |",
+		"| Charlie | 88 | Good |",
+	}
+	got := formatMarkdownTable(lines)
+	rows := strings.Split(got, "\n")
+
+	wantLines := []string{
+		"| Name    | Score | Comment              |",
+		"| ------- | ----- | -------------------- |",
+		"| Alice   | 95    | Great job            |",
+		"| Bob     | 72    | Needs more practice  |",
+		"|         |       | in writing           |",
+		"| Charlie | 88    | Good                 |",
+	}
+
+	if len(rows) != len(wantLines) {
+		t.Fatalf("line count: got %d, want %d\nactual:\n%s", len(rows), len(wantLines), got)
+	}
+
+	for i, want := range wantLines {
+		if rows[i] != want {
+			t.Errorf("line %d:\n  got:  %q\n  want: %q", i, rows[i], want)
+		}
+	}
+
+	// Every line must be exactly markdownTableMaxWidth.
+	for i, line := range rows {
+		w := displayWidth(line)
+		if w != markdownTableMaxWidth {
+			t.Errorf("line %d: displayWidth=%d, want %d: %q", i, w, markdownTableMaxWidth, line)
+		}
 	}
 }
 

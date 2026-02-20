@@ -47,7 +47,7 @@ func (c *thinkingCancel) Cancel() {
 }
 
 const telegramMaxMessageChars = 3900
-const markdownTableMaxWidth = 90
+const markdownTableMaxWidth = 42
 const markdownTableMinColWidth = 6
 
 var thinkBlockPattern = regexp.MustCompile(`(?is)<think>.*?</think>`)

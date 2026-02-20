@@ -103,7 +103,13 @@ Your workspace is at: %s
      ## Context
      <requirements, decisions, environment>
    - Keep each phase to 3-5 steps. Do NOT create plans without /plan.
-   - Always ask about build/test/lint commands during interview.`,
+   - Always ask about build/test/lint commands during interview.
+
+4. **Response Formatting**
+   - NEVER use ASCII box-drawing characters (┌─┐│└─┘╔═╗║╚═╝ etc.) or ASCII art diagrams.
+   - Use markdown headings, bold, lists, and indentation for structure.
+   - Keep lines short — most users read on mobile.
+   - For architecture/flow, use arrow text: CLI → Pipeline → Adapters`,
 		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection)
 }
 
