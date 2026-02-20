@@ -135,8 +135,10 @@ func (c *WhatsmeowChannel) eventHandler(evt interface{}) {
 		c.handleIncomingMessage(v)
 	case *events.Connected:
 		logger.InfoC("whatsmeow", "WhatsApp connected")
+		c.setRunning(true)
 	case *events.Disconnected:
 		logger.WarnC("whatsmeow", "WhatsApp disconnected")
+		c.setRunning(false)
 	case *events.LoggedOut:
 		logger.ErrorCF("whatsmeow", "WhatsApp logged out", map[string]interface{}{
 			"reason": v.Reason,
@@ -177,6 +179,16 @@ func (c *WhatsmeowChannel) handleIncomingMessage(msg *events.Message) {
 
 	// Handle media
 	var mediaPaths []string
+	defer func() {
+		for _, file := range mediaPaths {
+			if err := os.Remove(file); err != nil {
+				logger.DebugCF("whatsmeow", "Failed to cleanup temp file", map[string]interface{}{
+					"file":  file,
+					"error": err.Error(),
+				})
+			}
+		}
+	}()
 
 	if img := msg.Message.GetImageMessage(); img != nil {
 		if path, err := c.downloadMedia(img, ".jpg"); err == nil {
@@ -225,7 +237,7 @@ func (c *WhatsmeowChannel) handleIncomingMessage(msg *events.Message) {
 		metadata["peer_kind"] = "group"
 		metadata["peer_id"] = msg.Info.Chat.User
 	} else {
-		metadata["peer_kind"] = "dm"
+		metadata["peer_kind"] = "direct"
 		metadata["peer_id"] = msg.Info.Sender.User
 	}
 
