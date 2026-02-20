@@ -176,6 +176,32 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.WeCom.Enabled && m.config.Channels.WeCom.Token != "" {
+		logger.DebugC("channels", "Attempting to initialize WeCom channel")
+		wecom, err := NewWeComBotChannel(m.config.Channels.WeCom, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize WeCom channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["wecom"] = wecom
+			logger.InfoC("channels", "WeCom channel enabled successfully")
+		}
+	}
+
+	if m.config.Channels.WeComApp.Enabled && m.config.Channels.WeComApp.CorpID != "" {
+		logger.DebugC("channels", "Attempting to initialize WeCom App channel")
+		wecomApp, err := NewWeComAppChannel(m.config.Channels.WeComApp, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize WeCom App channel", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["wecom_app"] = wecomApp
+			logger.InfoC("channels", "WeCom App channel enabled successfully")
+		}
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]interface{}{
 		"enabled_channels": len(m.channels),
 	})
