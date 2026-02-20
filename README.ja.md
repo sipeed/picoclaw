@@ -769,8 +769,8 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -786,7 +786,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-4o"
+      "model": "gpt-5.2"
     }
   }
 }
@@ -797,8 +797,8 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 **OpenAI**
 ```json
 {
-  "model_name": "gpt-4o",
-  "model": "openai/gpt-4o",
+  "model_name": "gpt-5.2",
+  "model": "openai/gpt-5.2",
   "api_key": "sk-..."
 }
 ```
@@ -830,14 +830,14 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }

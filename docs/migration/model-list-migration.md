@@ -40,7 +40,7 @@ The new `model_list` configuration offers several advantages:
   "agents": {
     "defaults": {
       "provider": "openai",
-      "model": "gpt-4o"
+      "model": "gpt-5.2"
     }
   }
 }
@@ -53,7 +53,7 @@ The new `model_list` configuration offers several advantages:
   "model_list": [
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
       "api_base": "https://api.openai.com/v1"
     },
@@ -82,7 +82,7 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 
 | Prefix | Description | Example |
 |--------|-------------|---------|
-| `openai/` | OpenAI API (default) | `openai/gpt-4o` |
+| `openai/` | OpenAI API (default) | `openai/gpt-5.2` |
 | `anthropic/` | Anthropic API | `anthropic/claude-3-opus` |
 | `antigravity/` | Google via Antigravity OAuth | `antigravity/gemini-2.0-flash` |
 | `claude-cli/` | Claude CLI (local) | `claude-cli/claude-3-sonnet` |
@@ -101,7 +101,7 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | Field | Required | Description |
 |-------|----------|-------------|
 | `model_name` | Yes | User-facing alias for the model |
-| `model` | Yes | Protocol and model identifier (e.g., `openai/gpt-4o`) |
+| `model` | Yes | Protocol and model identifier (e.g., `openai/gpt-5.2`) |
 | `api_base` | No | API endpoint URL |
 | `api_key` | No* | API authentication key |
 | `proxy` | No | HTTP proxy URL |
@@ -121,19 +121,19 @@ Configure multiple endpoints for the same model to distribute load:
   "model_list": [
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5.2",
       "api_key": "sk-key1",
       "api_base": "https://api1.example.com/v1"
     },
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5.2",
       "api_key": "sk-key2",
       "api_base": "https://api2.example.com/v1"
     },
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5.2",
       "api_key": "sk-key3",
       "api_base": "https://api3.example.com/v1"
     }

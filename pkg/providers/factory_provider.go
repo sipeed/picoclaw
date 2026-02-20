@@ -67,10 +67,29 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	protocol, modelID := ExtractProtocol(cfg.Model)
 
 	switch protocol {
-	case "openai", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+	case "openai":
+		// OpenAI with OAuth/token auth (Codex-style)
+		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
+			provider, err := createCodexAuthProvider()
+			if err != nil {
+				return nil, "", err
+			}
+			return provider, modelID, nil
+		}
+		// OpenAI with API key
+		if cfg.APIKey == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		return NewHTTPProviderWithMaxTokensField(cfg.APIKey, apiBase, cfg.Proxy, cfg.MaxTokensField), modelID, nil
+
+	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"volcengine", "vllm", "qwen":
-		// All OpenAI-compatible HTTP providers
+		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}

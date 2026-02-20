@@ -227,7 +227,7 @@ picoclaw onboard
   "model_list": [
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5.2",
       "api_key": "your-api-key"
     },
     {
@@ -605,8 +605,8 @@ Agent 读取 HEARTBEAT.md
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -622,7 +622,7 @@ Agent 读取 HEARTBEAT.md
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-4o"
+      "model": "gpt-5.2"
     }
   }
 }
@@ -633,8 +633,8 @@ Agent 读取 HEARTBEAT.md
 **OpenAI**
 ```json
 {
-  "model_name": "gpt-4o",
-  "model": "openai/gpt-4o",
+  "model_name": "gpt-5.2",
+  "model": "openai/gpt-5.2",
   "api_key": "sk-..."
 }
 ```
@@ -693,14 +693,14 @@ Agent 读取 HEARTBEAT.md
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }

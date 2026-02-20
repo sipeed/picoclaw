@@ -834,8 +834,8 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -851,7 +851,7 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-4o"
+      "model": "gpt-5.2"
     }
   }
 }
@@ -862,8 +862,8 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 **OpenAI**
 ```json
 {
-  "model_name": "gpt-4o",
-  "model": "openai/gpt-4o",
+  "model_name": "gpt-5.2",
+  "model": "openai/gpt-5.2",
   "api_key": "sk-..."
 }
 ```
@@ -895,14 +895,14 @@ Configure vários endpoints para o mesmo nome de modelo—PicoClaw fará round-r
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }

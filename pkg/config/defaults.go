@@ -105,8 +105,8 @@ func DefaultConfig() *Config {
 
 			// OpenAI - https://platform.openai.com/api-keys
 			{
-				ModelName: "gpt-4o",
-				Model:     "openai/gpt-4o",
+				ModelName: "gpt-5.2",
+				Model:     "openai/gpt-5.2",
 				APIBase:   "https://api.openai.com/v1",
 				APIKey:    "",
 			},
@@ -161,8 +161,8 @@ func DefaultConfig() *Config {
 
 			// OpenRouter (100+ models) - https://openrouter.ai/keys
 			{
-				ModelName: "openrouter-gpt-4o",
-				Model:     "openrouter/openai/gpt-4o",
+				ModelName: "openrouter-gpt-5.2",
+				Model:     "openrouter/openai/gpt-5.2",
 				APIBase:   "https://openrouter.ai/api/v1",
 				APIKey:    "",
 			},
@@ -208,8 +208,8 @@ func DefaultConfig() *Config {
 
 			// GitHub Copilot - https://github.com/settings/tokens
 			{
-				ModelName:  "copilot-gpt-4o",
-				Model:      "github-copilot/gpt-4o",
+				ModelName:  "copilot-gpt-5.2",
+				Model:      "github-copilot/gpt-5.2",
 				APIBase:    "http://localhost:4321",
 				AuthMethod: "oauth",
 			},

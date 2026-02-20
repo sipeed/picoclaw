@@ -811,8 +811,8 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -828,7 +828,7 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-4o"
+      "model": "gpt-5.2"
     }
   }
 }
@@ -839,8 +839,8 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 **OpenAI**
 ```json
 {
-  "model_name": "gpt-4o",
-  "model": "openai/gpt-4o",
+  "model_name": "gpt-5.2",
+  "model": "openai/gpt-5.2",
   "api_key": "sk-..."
 }
 ```
@@ -872,14 +872,14 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }

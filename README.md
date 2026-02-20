@@ -218,7 +218,7 @@ picoclaw onboard
   "model_list": [
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5.2",
       "api_key": "your-api-key"
     },
     {
@@ -728,8 +728,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key"
     },
     {
@@ -745,7 +745,7 @@ This design also enables **multi-agent support** with flexible provider selectio
   ],
   "agents": {
     "defaults": {
-      "model": "gpt-4o"
+      "model": "gpt-5.2"
     }
   }
 }
@@ -756,8 +756,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 **OpenAI**
 ```json
 {
-  "model_name": "gpt-4o",
-  "model": "openai/gpt-4o",
+  "model_name": "gpt-5.2",
+  "model": "openai/gpt-5.2",
   "api_key": "sk-..."
 }
 ```
@@ -816,14 +816,14 @@ Configure multiple endpoints for the same model name—PicoClaw will automatical
 {
   "model_list": [
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api1.example.com/v1",
       "api_key": "sk-key1"
     },
     {
-      "model_name": "gpt-4o",
-      "model": "openai/gpt-4o",
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
       "api_base": "https://api2.example.com/v1",
       "api_key": "sk-key2"
     }

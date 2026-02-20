@@ -31,8 +31,8 @@ func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
 	if result[0].ModelName != "openai" {
 		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "openai")
 	}
-	if result[0].Model != "openai/gpt-4o" {
-		t.Errorf("Model = %q, want %q", result[0].Model, "openai/gpt-4o")
+	if result[0].Model != "openai/gpt-5.2" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "openai/gpt-5.2")
 	}
 	if result[0].APIKey != "sk-test-key" {
 		t.Errorf("APIKey = %q, want %q", result[0].APIKey, "sk-test-key")
@@ -331,8 +331,8 @@ func TestConvertProvidersToModelList_MultipleProviders_PreservesUserModel(t *tes
 	for _, mc := range result {
 		switch mc.ModelName {
 		case "openai":
-			if mc.Model != "openai/gpt-4o" {
-				t.Errorf("OpenAI Model = %q, want %q (default)", mc.Model, "openai/gpt-4o")
+			if mc.Model != "openai/gpt-5.2" {
+				t.Errorf("OpenAI Model = %q, want %q (default)", mc.Model, "openai/gpt-5.2")
 			}
 		case "deepseek":
 			if mc.Model != "deepseek/deepseek-reasoner" {
