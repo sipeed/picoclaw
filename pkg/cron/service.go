@@ -263,15 +263,25 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 			return nil
 		}
 
-		// Use gronx to calculate next run time
-		now := time.UnixMilli(nowMS)
+		loc := time.UTC
+		if schedule.TZ != "" {
+			if tzLoc, err := time.LoadLocation(schedule.TZ); err == nil {
+				loc = tzLoc
+			} else {
+				log.Printf("[cron] invalid timezone '%s', skipping next run: %v", schedule.TZ, err)
+				return nil
+			}
+		}
+
+		// Use gronx to calculate next run time in the provided timezone
+		now := time.UnixMilli(nowMS).In(loc)
 		nextTime, err := gronx.NextTickAfter(schedule.Expr, now, false)
 		if err != nil {
 			log.Printf("[cron] failed to compute next run for expr '%s': %v", schedule.Expr, err)
 			return nil
 		}
 
-		nextMS := nextTime.UnixMilli()
+		nextMS := nextTime.UTC().UnixMilli()
 		return &nextMS
 	}
 

@@ -305,6 +305,16 @@ Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
 picoclaw gateway
 ```
 
+> [!TIP]
+> Agendamentos criados a partir do próprio chat do Telegram usam a ferramenta `cron` e são entregues no mesmo chat ID em que foram criados.
+>
+> **Agendar direto pelo Telegram**
+> 1. Abra a conversa com o bot já configurado.
+> 2. Envie pedidos naturais, ex.: `Me lembre em 10 minutos de reiniciar o Raspberry` ou `Todo dia às 9h, me lembre de verificar os backups`.
+> 3. O bot cria o job com o seu chat automaticamente; confirme enviando `Liste os agendamentos` (ou via CLI: `picoclaw cron list`).
+> 4. O horário segue o fuso configurado no sistema onde o gateway roda (ex.: timezone do seu Raspberry).
+> 5. Se o chat for removido ou o bot perder acesso, o disparo tenta entregar no mesmo chat ID e o Telegram retornará erro. O job continua listado até você removê-lo com `cron remove`.
+
 </details>
 
 <details>
@@ -579,8 +589,21 @@ O PicoClaw armazena dados no workspace configurado (padrão: `~/.picoclaw/worksp
 ├── IDENTITY.md        # Identidade do Agente
 ├── SOUL.md            # Alma do Agente
 ├── TOOLS.md           # Descrição das ferramentas
-└── USER.md            # Preferencias do usuario
+└── USER.md            # Preferências do usuário
 ```
+
+### 🧰 Ferramentas disponíveis nesta versão
+
+> Estas são as ferramentas carregadas por padrão ao iniciar `picoclaw gateway/agent` neste release.
+
+| Ferramenta | Uso principal |
+| --- | --- |
+| `web_search`, `web_fetch` | Busca e leitura de páginas da web |
+| `cron` | Agendar lembretes e tarefas (entregues no mesmo canal da conversa) |
+| `message`, `spawn` | Enviar resposta direta ou criar subagentes assíncronos |
+| `read_file`, `write_file`, `edit_file`, `append_file`, `list_dir` | Operações de arquivos dentro do workspace |
+| `exec` | Executar comandos protegidos no workspace configurado |
+| `i2c`, `spi` | Acessar barramentos I2C/SPI em hardware Linux como Raspberry Pi |
 
 ### 🔒 Sandbox de Segurança
 
