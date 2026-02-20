@@ -983,11 +983,11 @@ func TestFindMatchingBrace(t *testing.T) {
 // --- XML tool call extract/strip tests ---
 
 func TestExtractXMLToolCalls_Single(t *testing.T) {
-	text := `<minimax:toolcall>
+	text := `<vendor:toolcall>
 <invoke name="exec">
 <parameter name="command">echo hello</parameter>
 </invoke>
-</minimax:toolcall>`
+</vendor:toolcall>`
 
 	calls := extractXMLToolCalls(text)
 	if len(calls) != 1 {
@@ -1005,7 +1005,7 @@ func TestExtractXMLToolCalls_Single(t *testing.T) {
 }
 
 func TestExtractXMLToolCalls_Multiple(t *testing.T) {
-	text := `<minimax:toolcall>
+	text := `<vendor:toolcall>
 <invoke name="web_search">
 <parameter name="query">golang testing</parameter>
 </invoke>
@@ -1013,7 +1013,7 @@ func TestExtractXMLToolCalls_Multiple(t *testing.T) {
 <parameter name="command">go test ./...</parameter>
 <parameter name="timeout">30</parameter>
 </invoke>
-</minimax:toolcall>`
+</vendor:toolcall>`
 
 	calls := extractXMLToolCalls(text)
 	if len(calls) != 2 {
@@ -1039,11 +1039,11 @@ func TestExtractXMLToolCalls_NoXML(t *testing.T) {
 
 func TestStripXMLToolCalls(t *testing.T) {
 	text := `Let me run that.
-<minimax:toolcall>
+<vendor:toolcall>
 <invoke name="exec">
 <parameter name="command">echo hello</parameter>
 </invoke>
-</minimax:toolcall>
+</vendor:toolcall>
 Done.`
 
 	got := stripXMLToolCalls(text)

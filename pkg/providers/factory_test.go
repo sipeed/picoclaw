@@ -327,8 +327,8 @@ func TestCreateProviderByName_OpenAI_OAuth(t *testing.T) {
 
 func TestCreateProviderByName_VLLM(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers.VLLM.APIKey = "minimax-key"
-	cfg.Providers.VLLM.APIBase = "https://api.minimax.io/v1"
+	cfg.Providers.VLLM.APIKey = "test-vllm-key"
+	cfg.Providers.VLLM.APIBase = "https://api.example.com/v1"
 
 	provider, err := CreateProviderByName(cfg, "vllm")
 	if err != nil {

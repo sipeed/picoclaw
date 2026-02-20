@@ -698,14 +698,14 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
   "agents": {
     "defaults": {
       "provider": "vllm",
-      "model": "MiniMax-M1-80k",
+      "model": "your-model-name",
       "model_fallbacks": ["openai/gpt-4o", "anthropic/claude-sonnet-4-5-20250929"]
     }
   },
   "providers": {
     "vllm": {
-      "api_key": "minimax-key",
-      "api_base": "https://api.minimax.io/v1"
+      "api_key": "your-vllm-key",
+      "api_base": "https://api.example.com/v1"
     },
     "openai": {
       "auth_method": "oauth"

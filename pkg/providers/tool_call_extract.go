@@ -57,17 +57,17 @@ func extractToolCallsFromText(text string) []ToolCall {
 	return result
 }
 
-// extractXMLToolCalls parses XML tool call blocks (e.g. <minimax:toolcall>)
+// extractXMLToolCalls parses XML tool call blocks (e.g. <ns:toolcall>)
 // into structured ToolCall objects. Used as a fallback when the provider returns
 // tool calls as XML in Content but not in the structured tool_calls field.
 //
 // Expected format:
 //
-//	<vendor:toolcall>
+//	<ns:toolcall>
 //	<invoke name="tool_name">
 //	<parameter name="param">value</parameter>
 //	</invoke>
-//	</vendor:toolcall>
+//	</ns:toolcall>
 func extractXMLToolCalls(text string) []ToolCall {
 	var result []ToolCall
 	remaining := text
@@ -173,7 +173,7 @@ func extractXMLToolCalls(text string) []ToolCall {
 	return result
 }
 
-// stripXMLToolCalls removes XML tool call blocks (e.g. <minimax:toolcall>...</minimax:toolcall>)
+// stripXMLToolCalls removes XML tool call blocks (e.g. <ns:toolcall>...</ns:toolcall>)
 // from response text. Some providers embed raw XML tool calls in Content alongside
 // structured tool_calls; this prevents them from leaking to users.
 func stripXMLToolCalls(text string) string {
@@ -187,7 +187,7 @@ func stripXMLToolCalls(text string) string {
 	if tagStart == -1 {
 		return text
 	}
-	// Extract namespace (e.g. "minimax" from "<minimax:toolcall>")
+	// Extract namespace (e.g. "ns" from "<ns:toolcall>")
 	ns := text[tagStart+1 : idx]
 	closeTag := "</" + ns + ":toolcall>"
 	closeIdx := strings.Index(text, closeTag)

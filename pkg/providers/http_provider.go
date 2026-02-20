@@ -28,7 +28,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		return nil, err
 	}
 	// If provider returned no structured tool_calls but Content has XML
-	// tool call blocks (e.g. minimax), parse them as a fallback.
+	// tool call blocks (e.g. <ns:toolcall>), parse them as a fallback.
 	if len(resp.ToolCalls) == 0 {
 		if xmlCalls := extractXMLToolCalls(resp.Content); len(xmlCalls) > 0 {
 			resp.ToolCalls = xmlCalls
