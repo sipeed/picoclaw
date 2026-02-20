@@ -1584,16 +1584,19 @@ func isPlanPreExecution(status string) bool {
 // isToolAllowedDuringInterview checks whether a tool call is permitted while the
 // plan is in a pre-execution state. Read-type tools are always allowed. Write-type
 // tools (edit_file, append_file, write_file) are only allowed when targeting MEMORY.md.
+// Uses normalized names so "readfile" matches "read_file", etc.
 func isToolAllowedDuringInterview(toolName string, args map[string]interface{}) bool {
+	norm := tools.NormalizeToolName(toolName)
+
 	// Read-type tools: always allowed
-	switch toolName {
-	case "read_file", "list_dir", "web_search", "web_fetch":
+	switch norm {
+	case "readfile", "listdir", "websearch", "webfetch":
 		return true
 	}
 
 	// Write-type tools: allowed only when targeting MEMORY.md
-	switch toolName {
-	case "edit_file", "append_file", "write_file":
+	switch norm {
+	case "editfile", "appendfile", "writefile":
 		path, _ := args["path"].(string)
 		return strings.HasSuffix(path, "MEMORY.md")
 	}

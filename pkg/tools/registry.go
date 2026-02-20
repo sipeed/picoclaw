@@ -3,12 +3,23 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
+
+// NormalizeToolName strips underscores and hyphens and lowercases for
+// fuzzy tool name matching. LLMs sometimes call "readfile" instead of
+// "read_file", etc.
+func NormalizeToolName(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, "_", "")
+	s = strings.ReplaceAll(s, "-", "")
+	return s
+}
 
 type ToolRegistry struct {
 	tools map[string]Tool
@@ -30,8 +41,18 @@ func (r *ToolRegistry) Register(tool Tool) {
 func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	tool, ok := r.tools[name]
-	return tool, ok
+	// Exact match first
+	if tool, ok := r.tools[name]; ok {
+		return tool, true
+	}
+	// Fuzzy fallback: normalize and compare (handles "readfile" → "read_file" etc.)
+	norm := NormalizeToolName(name)
+	for _, tool := range r.tools {
+		if NormalizeToolName(tool.Name()) == norm {
+			return tool, true
+		}
+	}
+	return nil, false
 }
 
 func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) *ToolResult {

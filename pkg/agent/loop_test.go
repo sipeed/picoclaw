@@ -1319,3 +1319,39 @@ Test
 		t.Error("expected plan to be cleared after completion")
 	}
 }
+
+func TestIsToolAllowedDuringInterview_FuzzyNames(t *testing.T) {
+	tests := []struct {
+		name string
+		args map[string]interface{}
+		want bool
+	}{
+		// Exact names — read tools allowed
+		{"read_file", nil, true},
+		{"list_dir", nil, true},
+		{"web_search", nil, true},
+		{"web_fetch", nil, true},
+		// Fuzzy variants — should also be allowed
+		{"readfile", nil, true},
+		{"ReadFile", nil, true},
+		{"listdir", nil, true},
+		{"websearch", nil, true},
+		{"webfetch", nil, true},
+		// Write to MEMORY.md — allowed
+		{"edit_file", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
+		{"editfile", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
+		{"EditFile", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
+		// Write to non-MEMORY.md — blocked
+		{"edit_file", map[string]interface{}{"path": "/ws/main.go"}, false},
+		{"editfile", map[string]interface{}{"path": "/ws/main.go"}, false},
+		// exec — always blocked
+		{"exec", nil, false},
+		{"Exec", nil, false},
+	}
+	for _, tt := range tests {
+		got := isToolAllowedDuringInterview(tt.name, tt.args)
+		if got != tt.want {
+			t.Errorf("isToolAllowedDuringInterview(%q, %v) = %v, want %v", tt.name, tt.args, got, tt.want)
+		}
+	}
+}
