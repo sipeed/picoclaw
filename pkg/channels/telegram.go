@@ -185,31 +185,34 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid chat ID: %w", err)
 	}
 
-	// Stop thinking animation
-	if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
-		if cf, ok := stop.(*thinkingCancel); ok && cf != nil {
-			cf.Cancel()
-		}
-		c.stopThinking.Delete(msg.ChatID)
-	}
-
 	cleanContent := sanitizeTelegramOutgoingContent(msg.Content)
 	chunks := utils.SplitMessage(cleanContent, telegramMaxMessageChars)
 	if len(chunks) == 0 {
 		chunks = []string{cleanContent}
 	}
 
-	// Try to edit placeholder
+	// Slash-command responses (SkipPlaceholder=true) must not touch the
+	// stopThinking/placeholders state that belongs to the ongoing LLM task.
 	firstChunkSent := false
-	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), markdownToTelegramHTML(chunks[0]))
-		editMsg.ParseMode = telego.ModeHTML
-
-		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
-			firstChunkSent = true
+	if !msg.SkipPlaceholder {
+		// Stop thinking animation
+		if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
+			if cf, ok := stop.(*thinkingCancel); ok && cf != nil {
+				cf.Cancel()
+			}
+			c.stopThinking.Delete(msg.ChatID)
 		}
-		// Fallback to new message if edit fails
+
+		if pID, ok := c.placeholders.Load(msg.ChatID); ok {
+			c.placeholders.Delete(msg.ChatID)
+			editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), markdownToTelegramHTML(chunks[0]))
+			editMsg.ParseMode = telego.ModeHTML
+
+			if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
+				firstChunkSent = true
+			}
+			// Fallback to new message if edit fails
+		}
 	}
 
 	sendChunk := func(text string) error {
@@ -472,7 +475,9 @@ func (c *TelegramChannel) handleQuickCommand(ctx context.Context, message telego
 		"peer_id":    peerID,
 	}
 
-	// No "Thinking..." placeholder — send directly via message bus
+	// No "Thinking..." placeholder — send directly via message bus.
+	// SkipPlaceholder=true on the outbound message prevents Send() from
+	// touching the ongoing task's stopThinking/placeholders state.
 	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, nil, metadata)
 	return nil
 }

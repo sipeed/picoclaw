@@ -86,3 +86,13 @@ func TestDisplayWidth_EmojiIsThree(t *testing.T) {
 		t.Fatalf("displayWidth(stars) = %d, want 15", got)
 	}
 }
+
+func TestParseChatID_Plain(t *testing.T) {
+	id, err := parseChatID("123456789")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != 123456789 {
+		t.Errorf("expected 123456789, got %d", id)
+	}
+}
