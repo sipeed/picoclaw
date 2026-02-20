@@ -995,18 +995,60 @@ func TestPlanCommand_Start(t *testing.T) {
 	al, cleanup := newTestAgentLoop(t)
 	defer cleanup()
 
-	// Create interviewing plan
+	agent := al.registry.GetDefaultAgent()
+
+	// Create interviewing plan with phases (start requires phases)
+	plan := "# Active Plan\n\n> Task: Test task\n> Status: interviewing\n> Phase: 1\n\n## Phase 1: Setup\n- [ ] Step one\n\n## Context\n"
+	_ = agent.ContextBuilder.WriteMemory(plan)
+
+	// Transition to executing via /plan start
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
+	if !strings.Contains(response, "approved") {
+		t.Errorf("expected 'approved', got %q", response)
+	}
+
+	if status := agent.ContextBuilder.GetPlanStatus(); status != "executing" {
+		t.Errorf("expected 'executing', got %q", status)
+	}
+}
+
+func TestPlanCommand_StartFromReview(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+
+	// Create a plan in review status
+	plan := "# Active Plan\n\n> Task: Test task\n> Status: review\n> Phase: 1\n\n## Phase 1: Setup\n- [ ] Step one\n\n## Context\n"
+	_ = agent.ContextBuilder.WriteMemory(plan)
+
+	// Approve via /plan start
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
+	if !strings.Contains(response, "approved") {
+		t.Errorf("expected 'approved', got %q", response)
+	}
+
+	if status := agent.ContextBuilder.GetPlanStatus(); status != "executing" {
+		t.Errorf("expected 'executing', got %q", status)
+	}
+}
+
+func TestPlanCommand_StartNoPhases(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	// Create interviewing plan without phases
 	al.expandPlanCommand(bus.InboundMessage{Content: "/plan Test task"})
 
-	// Transition to executing
+	// Should be blocked because no phases exist
 	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
-	if !strings.Contains(response, "executing") {
-		t.Errorf("expected 'executing', got %q", response)
+	if !strings.Contains(response, "no phases") {
+		t.Errorf("expected 'no phases' error, got %q", response)
 	}
 
 	agent := al.registry.GetDefaultAgent()
-	if status := agent.ContextBuilder.GetPlanStatus(); status != "executing" {
-		t.Errorf("expected 'executing', got %q", status)
+	if status := agent.ContextBuilder.GetPlanStatus(); status != "interviewing" {
+		t.Errorf("expected status to remain 'interviewing', got %q", status)
 	}
 }
 
@@ -1014,8 +1056,11 @@ func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
 	al, cleanup := newTestAgentLoop(t)
 	defer cleanup()
 
-	// Create interviewing plan then start
-	al.expandPlanCommand(bus.InboundMessage{Content: "/plan Test task"})
+	agent := al.registry.GetDefaultAgent()
+
+	// Create interviewing plan with phases, then start
+	plan := "# Active Plan\n\n> Task: Test task\n> Status: interviewing\n> Phase: 1\n\n## Phase 1: Setup\n- [ ] Step one\n\n## Context\n"
+	_ = agent.ContextBuilder.WriteMemory(plan)
 	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
 
 	// Try start again

@@ -30,6 +30,10 @@ type AgentInstance struct {
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
 	Candidates     []providers.FallbackCandidate
+
+	// Interview staleness tracking: consecutive turns where MEMORY.md was not updated.
+	interviewStaleCount  int
+	interviewMemoryLen   int
 }
 
 // NewAgentInstance creates an agent instance from config.

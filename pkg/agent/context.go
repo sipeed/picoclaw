@@ -83,8 +83,8 @@ Your workspace is at: %s
 3. **Memory & Plans**
    - Use memory/MEMORY.md for structured plans.
    - If Status is "interviewing": Ask clarifying questions.
-     Update Context with answers via edit_file.
-     When ready, organize into Phases and set Status to "executing".
+     After each answer, use edit_file to save findings to ## Context in memory/MEMORY.md.
+     When you have enough information, write ## Phase and ## Commands sections into MEMORY.md, then set Status to "executing".
    - If Status is "executing": Work through the current Phase's steps.
      Mark each [x] via edit_file. The system will auto-advance phases.
    - Plan format:
@@ -337,6 +337,11 @@ func (cb *ContextBuilder) AdvancePhase() error {
 // GetCurrentPhase returns the current phase number.
 func (cb *ContextBuilder) GetCurrentPhase() int {
 	return cb.memory.GetCurrentPhase()
+}
+
+// GetTotalPhases returns the total number of phases in the plan.
+func (cb *ContextBuilder) GetTotalPhases() int {
+	return cb.memory.GetTotalPhases()
 }
 
 // FormatPlanDisplay returns a user-facing display of the full plan.

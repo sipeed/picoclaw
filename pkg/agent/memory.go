@@ -375,7 +375,11 @@ func (ms *MemoryStore) GetInterviewContext() string {
 	sb.WriteString("- Environment (OS, language, runtime versions)\n")
 	sb.WriteString("- Tooling preferences (test framework, linter, formatter, CI)\n")
 	sb.WriteString("- Key commands the user already runs (build, test, deploy)\n")
-	sb.WriteString("When ready, organize into 2-5 phases with 3-5 steps each.\n")
+	sb.WriteString("\n### Rules\n")
+	sb.WriteString("- After each answer, use edit_file to append findings to the ## Context section of memory/MEMORY.md.\n")
+	sb.WriteString("- When you have enough information, use edit_file to write ## Phase, ## Commands, and ## Context sections into memory/MEMORY.md.\n")
+	sb.WriteString("- Organize into 2-5 phases with 3-5 steps each.\n")
+	sb.WriteString("- After writing Phases, set Status to executing. The system will handle the rest.\n")
 	sb.WriteString("\n### Target Format\n")
 	sb.WriteString("```\n")
 	sb.WriteString("## Phase 1: <title>\n")
@@ -389,6 +393,20 @@ func (ms *MemoryStore) GetInterviewContext() string {
 	sb.WriteString("## Context\n")
 	sb.WriteString("<collected requirements, decisions, environment>\n")
 	sb.WriteString("```\n")
+	return sb.String()
+}
+
+// GetReviewContext returns context for injection during the review phase.
+// Shows the full plan and instructs the AI to wait for user approval.
+func (ms *MemoryStore) GetReviewContext() string {
+	content := ms.ReadLongTerm()
+
+	var sb strings.Builder
+	sb.WriteString("## Active Plan (awaiting approval)\n\n")
+	sb.WriteString(content)
+	sb.WriteString("\n\nThe plan is awaiting user approval.\n")
+	sb.WriteString("- If the user requests changes, update memory/MEMORY.md via edit_file.\n")
+	sb.WriteString("- Do NOT change Status yourself. The user will run /plan start to approve.\n")
 	return sb.String()
 }
 
@@ -572,9 +590,12 @@ func (ms *MemoryStore) GetMemoryContext() string {
 	if longTerm != "" {
 		if ms.HasActivePlan() {
 			status := ms.GetPlanStatus()
-			if status == "interviewing" {
+			switch status {
+			case "interviewing":
 				parts = append(parts, ms.GetInterviewContext())
-			} else {
+			case "review":
+				parts = append(parts, ms.GetReviewContext())
+			default:
 				parts = append(parts, ms.GetPlanContext())
 			}
 		} else {

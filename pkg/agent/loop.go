@@ -492,6 +492,23 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		opts.ChatID,
 	)
 
+	// 2b. Interview staleness nudge: if MEMORY.md hasn't been updated for
+	// several consecutive turns, inject a reminder so the AI writes its findings.
+	const interviewStaleThreshold = 2
+	if agent.ContextBuilder.GetPlanStatus() == "interviewing" && agent.interviewStaleCount >= interviewStaleThreshold {
+		messages = append(messages, providers.Message{
+			Role:    "user",
+			Content: "[System] You have been interviewing for several turns without updating memory/MEMORY.md. Please use edit_file now to save your findings to the ## Context section, or organize the plan into Phases if you have enough information.",
+		})
+	}
+
+	// 2c. Snapshot plan status and MEMORY.md size before LLM iteration.
+	preStatus := agent.ContextBuilder.GetPlanStatus()
+	var preMemoryLen int
+	if preStatus == "interviewing" {
+		preMemoryLen = len(agent.ContextBuilder.ReadMemory())
+	}
+
 	// 3. Save user message to session (use compact form if available)
 	historyMsg := opts.UserMessage
 	if opts.HistoryMessage != "" {
@@ -514,8 +531,33 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// This is controlled by the tool's Silent flag and ForUser content
 
 	// 5a. Auto-advance plan phases after LLM iteration
-	if agent.ContextBuilder.HasActivePlan() && agent.ContextBuilder.GetPlanStatus() == "executing" {
-		if agent.ContextBuilder.IsPlanComplete() {
+	postStatus := agent.ContextBuilder.GetPlanStatus()
+	if agent.ContextBuilder.HasActivePlan() && postStatus == "executing" {
+		// Intercept: if AI changed status from interviewing to executing,
+		// hijack to "review" and show the plan for user approval.
+		if preStatus == "interviewing" {
+			if agent.ContextBuilder.GetTotalPhases() == 0 {
+				_ = agent.ContextBuilder.SetPlanStatus("interviewing")
+				logger.WarnCF("agent", "Reverted plan to interviewing: no phases defined",
+					map[string]interface{}{"agent_id": agent.ID})
+			} else {
+				_ = agent.ContextBuilder.SetPlanStatus("review")
+				if !constants.IsInternalChannel(opts.Channel) {
+					planDisplay := agent.ContextBuilder.FormatPlanDisplay()
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel:         opts.Channel,
+						ChatID:          opts.ChatID,
+						Content:         planDisplay + "\n\nUse /plan start to approve, or continue chatting to refine.",
+						SkipPlaceholder: true,
+					})
+				}
+			}
+		} else if agent.ContextBuilder.GetTotalPhases() == 0 {
+			// Safeguard: executing but no phases (shouldn't happen, but be safe).
+			_ = agent.ContextBuilder.SetPlanStatus("interviewing")
+			logger.WarnCF("agent", "Reverted plan to interviewing: no phases defined",
+				map[string]interface{}{"agent_id": agent.ID})
+		} else if agent.ContextBuilder.IsPlanComplete() {
 			_ = agent.ContextBuilder.ClearMemory()
 			if !constants.IsInternalChannel(opts.Channel) {
 				al.bus.PublishOutbound(bus.OutboundMessage{
@@ -540,7 +582,21 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		}
 	}
 
-	// 5b. Handle empty response
+	// 5b. Interview staleness detection: compare MEMORY.md size after iteration.
+	if agent.ContextBuilder.GetPlanStatus() == "interviewing" {
+		postMemoryLen := len(agent.ContextBuilder.ReadMemory())
+		if postMemoryLen == preMemoryLen {
+			agent.interviewStaleCount++
+		} else {
+			agent.interviewStaleCount = 0
+		}
+		agent.interviewMemoryLen = postMemoryLen
+	} else {
+		// Reset counter when not interviewing.
+		agent.interviewStaleCount = 0
+	}
+
+	// 5c. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
 	}
@@ -616,14 +672,24 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 	var finalContent string
 	lastReminderIdx := -1
 
-	for iteration < agent.MaxIterations {
+	// During pre-execution plan modes (interviewing/review), cap iterations
+	// to prevent runaway tool loops.
+	maxIter := agent.MaxIterations
+	if isPlanPreExecution(agent.ContextBuilder.GetPlanStatus()) {
+		const interviewMaxIter = 3
+		if maxIter > interviewMaxIter {
+			maxIter = interviewMaxIter
+		}
+	}
+
+	for iteration < maxIter {
 		iteration++
 
 		logger.DebugCF("agent", "LLM iteration",
 			map[string]interface{}{
 				"agent_id":  agent.ID,
 				"iteration": iteration,
-				"max":       agent.MaxIterations,
+				"max":       maxIter,
 			})
 
 		// Build tool definitions
@@ -770,7 +836,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			al.bus.PublishOutbound(bus.OutboundMessage{
 				Channel:  opts.Channel,
 				ChatID:   opts.ChatID,
-				Content:  fmt.Sprintf("🔧 %s (%d/%d)", strings.Join(toolNames, ", "), iteration, agent.MaxIterations),
+				Content:  fmt.Sprintf("🔧 %s (%d/%d)", strings.Join(toolNames, ", "), iteration, maxIter),
 				IsStatus: true,
 			})
 		}
@@ -825,7 +891,14 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				}
 			}
 
-			toolResult := agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+			// Block non-allowed tools during plan interview mode.
+			// Only read-type tools and MEMORY.md writes are permitted.
+			var toolResult *tools.ToolResult
+			if isPlanPreExecution(agent.ContextBuilder.GetPlanStatus()) && !isToolAllowedDuringInterview(tc.Name, tc.Arguments) {
+				toolResult = tools.ErrorResult("Interview mode: only read tools and MEMORY.md edits are allowed. Focus on asking questions and updating the plan.")
+			} else {
+				toolResult = agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+			}
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
@@ -884,7 +957,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 
 	// If max iterations exhausted with tool calls still pending,
 	// make one final LLM call without tools to force a text response.
-	if finalContent == "" && iteration >= agent.MaxIterations {
+	if finalContent == "" && iteration >= maxIter {
 		logger.WarnCF("agent", "Max iterations reached, forcing final response without tools",
 			map[string]interface{}{
 				"agent_id":  agent.ID,
@@ -1465,13 +1538,20 @@ func (al *AgentLoop) handlePlanCommand(args []string) (string, bool) {
 		if !agent.ContextBuilder.HasActivePlan() {
 			return "No active plan.", true
 		}
-		if agent.ContextBuilder.GetPlanStatus() != "interviewing" {
+		status := agent.ContextBuilder.GetPlanStatus()
+		if status == "executing" {
 			return "Plan is already executing.", true
+		}
+		if status != "interviewing" && status != "review" {
+			return fmt.Sprintf("Cannot start from status %q.", status), true
+		}
+		if agent.ContextBuilder.GetTotalPhases() == 0 {
+			return "Cannot start: no phases defined yet. Complete the interview first.", true
 		}
 		if err := agent.ContextBuilder.SetPlanStatus("executing"); err != nil {
 			return fmt.Sprintf("Error: %v", err), true
 		}
-		return "Plan status changed to executing.", true
+		return "Plan approved. Executing.", true
 
 	case "next":
 		if !agent.ContextBuilder.HasActivePlan() {
@@ -1493,6 +1573,32 @@ func (al *AgentLoop) handlePlanCommand(args []string) (string, bool) {
 		// expandPlanCommand will write the seed and rewrite the content.
 		return "", false
 	}
+}
+
+// isPlanPreExecution returns true if the plan is in a pre-execution state
+// (interviewing or review) where tool restrictions and iteration caps apply.
+func isPlanPreExecution(status string) bool {
+	return status == "interviewing" || status == "review"
+}
+
+// isToolAllowedDuringInterview checks whether a tool call is permitted while the
+// plan is in a pre-execution state. Read-type tools are always allowed. Write-type
+// tools (edit_file, append_file, write_file) are only allowed when targeting MEMORY.md.
+func isToolAllowedDuringInterview(toolName string, args map[string]interface{}) bool {
+	// Read-type tools: always allowed
+	switch toolName {
+	case "read_file", "list_dir", "web_search", "web_fetch":
+		return true
+	}
+
+	// Write-type tools: allowed only when targeting MEMORY.md
+	switch toolName {
+	case "edit_file", "append_file", "write_file":
+		path, _ := args["path"].(string)
+		return strings.HasSuffix(path, "MEMORY.md")
+	}
+
+	return false
 }
 
 // expandPlanCommand detects "/plan <task>" (new plan start) and:
