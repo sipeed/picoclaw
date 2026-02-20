@@ -131,6 +131,10 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	}, th.CommandEqual("session"))
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.handleQuickCommand(ctx, message)
+	}, th.CommandEqual("skills"))
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
 

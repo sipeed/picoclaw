@@ -42,6 +42,8 @@ func (c *cmd) Help(ctx context.Context, message telego.Message) error {
 /list [models|channels] - List available options
 /todo - Show your task list
 /session - Show usage statistics
+/skills - List available skills
+/skill <name> [message] - Invoke a skill
 	`
 	_, err := c.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: message.Chat.ID},

@@ -261,6 +261,16 @@ func (cb *ContextBuilder) loadSkills() string {
 	return "# Skill Definitions\n\n" + content
 }
 
+// LoadSkill loads a skill by name, returning its content (with frontmatter stripped) and whether it was found.
+func (cb *ContextBuilder) LoadSkill(name string) (string, bool) {
+	return cb.skillsLoader.LoadSkill(name)
+}
+
+// ListSkills returns all available skills from all tiers.
+func (cb *ContextBuilder) ListSkills() []skills.SkillInfo {
+	return cb.skillsLoader.ListSkills()
+}
+
 // GetSkillsInfo returns information about loaded skills.
 func (cb *ContextBuilder) GetSkillsInfo() map[string]interface{} {
 	allSkills := cb.skillsLoader.ListSkills()

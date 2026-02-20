@@ -51,6 +51,7 @@ type processOptions struct {
 	Channel         string // Target channel for tool execution
 	ChatID          string // Target chat ID for tool execution
 	UserMessage     string // User message content (may include prefix)
+	HistoryMessage  string // If set, save this to history instead of UserMessage (for skill compaction)
 	DefaultResponse string // Response when LLM returns empty
 	EnableSummary   bool   // Whether to trigger summarization
 	SendResponse    bool   // Whether to send response via bus
@@ -306,6 +307,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
+	// Expand /skill command: inject SKILL.md content into message, then continue to LLM
+	var skillCompact string
+	if expanded, compact, ok := al.expandSkillCommand(msg); ok {
+		msg.Content = expanded
+		skillCompact = compact
+	}
+
 	// Check for commands
 	if response, handled := al.handleCommand(ctx, msg); handled {
 		return response, nil
@@ -344,6 +352,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
+		HistoryMessage:  skillCompact,
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   true,
 		SendResponse:    false,
@@ -438,8 +447,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		opts.ChatID,
 	)
 
-	// 3. Save user message to session
-	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+	// 3. Save user message to session (use compact form if available)
+	historyMsg := opts.UserMessage
+	if opts.HistoryMessage != "" {
+		historyMsg = opts.HistoryMessage
+	}
+	agent.Sessions.AddMessage(opts.SessionKey, "user", historyMsg)
 
 	// 4. Record user prompt for stats
 	if al.stats != nil {
@@ -1201,6 +1214,9 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 
 	case "/session":
 		return al.handleSessionCommand(args), true
+
+	case "/skills":
+		return al.handleSkillsCommand(), true
 	}
 
 	return "", false
@@ -1251,6 +1267,84 @@ func (al *AgentLoop) handleSessionCommand(args []string) string {
 		stats.FormatTokenCount(s.TotalPromptTokens),
 		stats.FormatTokenCount(s.TotalCompletionTokens),
 	)
+}
+
+// expandSkillCommand detects "/skill <name> [message]" and returns:
+//   - expanded: full content with SKILL.md injected (for LLM)
+//   - compact: skill name tag + user message only (for history)
+//   - ok: whether expansion happened
+func (al *AgentLoop) expandSkillCommand(msg bus.InboundMessage) (expanded string, compact string, ok bool) {
+	content := strings.TrimSpace(msg.Content)
+	if !strings.HasPrefix(content, "/skill ") {
+		return "", "", false
+	}
+
+	// Parse: /skill <name> [message]
+	rest := strings.TrimSpace(content[7:]) // len("/skill ") == 7
+	parts := strings.SplitN(rest, " ", 2)
+	if len(parts) == 0 || parts[0] == "" {
+		return "", "", false
+	}
+
+	skillName := parts[0]
+	userMessage := ""
+	if len(parts) > 1 {
+		userMessage = strings.TrimSpace(parts[1])
+	}
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", "", false
+	}
+
+	skillContent, found := agent.ContextBuilder.LoadSkill(skillName)
+	if !found {
+		return "", "", false
+	}
+
+	tag := fmt.Sprintf("[Skill: %s]", skillName)
+
+	// Build expanded message: skill instructions + user message (for LLM)
+	var sb strings.Builder
+	sb.WriteString(tag)
+	sb.WriteString("\n\n")
+	sb.WriteString(skillContent)
+	if userMessage != "" {
+		sb.WriteString("\n\n---\n\n")
+		sb.WriteString(userMessage)
+	}
+
+	// Build compact form: skill name tag + user message only (for history)
+	compactForm := tag
+	if userMessage != "" {
+		compactForm = tag + "\n" + userMessage
+	}
+
+	return sb.String(), compactForm, true
+}
+
+// handleSkillsCommand lists all available skills.
+func (al *AgentLoop) handleSkillsCommand() string {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "No agent configured."
+	}
+
+	skillsList := agent.ContextBuilder.ListSkills()
+	if len(skillsList) == 0 {
+		return "No skills available.\nAdd skills to your workspace/skills/ directory."
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Available Skills\n\n")
+	for _, s := range skillsList {
+		sb.WriteString(fmt.Sprintf("  %s (%s)\n", s.Name, s.Source))
+		if s.Description != "" {
+			sb.WriteString(fmt.Sprintf("    %s\n", s.Description))
+		}
+	}
+	sb.WriteString(fmt.Sprintf("\nUse: /skill <name> [message]"))
+	return sb.String()
 }
 
 // extractPeer extracts the routing peer from inbound message metadata.
