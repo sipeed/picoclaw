@@ -12,15 +12,16 @@ import (
 )
 
 var supportedProviders = map[string]bool{
-	"anthropic":  true,
-	"openai":     true,
-	"openrouter": true,
-	"groq":       true,
-	"zhipu":      true,
-	"vllm":       true,
-	"gemini":     true,
-	"qwen":       true,
-	"deepseek":   true,
+	"anthropic":      true,
+	"openai":         true,
+	"openrouter":     true,
+	"groq":           true,
+	"zhipu":          true,
+	"vllm":           true,
+	"gemini":         true,
+	"qwen":           true,
+	"deepseek":       true,
+	"github_copilot": true,
 }
 
 var supportedChannels = map[string]bool{
