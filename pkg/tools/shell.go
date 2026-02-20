@@ -256,10 +256,23 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		// Match absolute paths: Unix (starts with / after space/start/quotes) or Windows (X:\)
+		// This regex is careful not to match scoped packages like @mastra/core
+		pathPattern := regexp.MustCompile(`(?:\s|^|["'|&;])(/[^\s\"'|&;]+)|([A-Za-z]:\\[^\\\"'|&;]+)`)
+		matches := pathPattern.FindAllStringSubmatch(cmd, -1)
 
-		for _, raw := range matches {
+		for _, match := range matches {
+			raw := ""
+			if match[1] != "" {
+				raw = match[1] // Unix path
+			} else if match[2] != "" {
+				raw = match[2] // Windows path
+			}
+
+			if raw == "" {
+				continue
+			}
+
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue

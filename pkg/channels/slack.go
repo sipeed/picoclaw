@@ -119,30 +119,44 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
 
-	opts := []slack.MsgOption{
-		slack.MsgOptionText(msg.Content, false),
+	limit := c.config.MaxMessageLength
+	if limit <= 0 {
+		limit = 3000
 	}
 
-	if threadTS != "" {
-		opts = append(opts, slack.MsgOptionTS(threadTS))
-	}
+	chunks := utils.SplitMessage(msg.Content, limit)
 
-	_, _, err := c.api.PostMessageContext(ctx, channelID, opts...)
-	if err != nil {
-		return fmt.Errorf("failed to send slack message: %w", err)
-	}
+	acked := false
+	for i, chunk := range chunks {
+		opts := []slack.MsgOption{
+			slack.MsgOptionText(chunk, false),
+		}
 
-	if ref, ok := c.pendingAcks.LoadAndDelete(msg.ChatID); ok {
-		msgRef := ref.(slackMessageRef)
-		c.api.AddReaction("white_check_mark", slack.ItemRef{
-			Channel:   msgRef.ChannelID,
-			Timestamp: msgRef.Timestamp,
-		})
+		if threadTS != "" {
+			opts = append(opts, slack.MsgOptionTS(threadTS))
+		}
+
+		_, _, err := c.api.PostMessageContext(ctx, channelID, opts...)
+		if err != nil {
+			return fmt.Errorf("failed to send slack chunk %d: %w", i+1, err)
+		}
+
+		if !acked {
+			if ref, ok := c.pendingAcks.LoadAndDelete(msg.ChatID); ok {
+				msgRef := ref.(slackMessageRef)
+				c.api.AddReaction("white_check_mark", slack.ItemRef{
+					Channel:   msgRef.ChannelID,
+					Timestamp: msgRef.Timestamp,
+				})
+			}
+			acked = true
+		}
 	}
 
 	logger.DebugCF("slack", "Message sent", map[string]interface{}{
 		"channel_id": channelID,
 		"thread_ts":  threadTS,
+		"chunks":     len(chunks),
 	})
 
 	return nil

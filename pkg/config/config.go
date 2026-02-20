@@ -10,22 +10,17 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
-// rrCounter is a global counter for round-robin load balancing across models.
 var rrCounter atomic.Uint64
 
-// FlexibleStringSlice is a []string that also accepts JSON numbers,
-// so allow_from can contain both "123" and 123.
 type FlexibleStringSlice []string
 
 func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
-	// Try []string first
 	var ss []string
 	if err := json.Unmarshal(data, &ss); err == nil {
 		*f = ss
 		return nil
 	}
 
-	// Try []interface{} to handle mixed types
 	var raw []interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -52,15 +47,13 @@ type Config struct {
 	Session   SessionConfig   `json:"session,omitempty"`
 	Channels  ChannelsConfig  `json:"channels"`
 	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
+	ModelList []ModelConfig   `json:"model_list"`
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 }
 
-// MarshalJSON implements custom JSON marshaling for Config
-// to omit providers section when empty and session when empty
 func (c Config) MarshalJSON() ([]byte, error) {
 	type Alias Config
 	aux := &struct {
@@ -71,12 +64,10 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		Alias: (*Alias)(&c),
 	}
 
-	// Only include providers if not empty
 	if !c.Providers.IsEmpty() {
 		aux.Providers = &c.Providers
 	}
 
-	// Only include session if not empty
 	if c.Session.DMScope != "" || len(c.Session.IdentityLinks) > 0 {
 		aux.Session = &c.Session
 	}
@@ -89,9 +80,6 @@ type AgentsConfig struct {
 	List     []AgentConfig `json:"list,omitempty"`
 }
 
-// AgentModelConfig supports both string and structured model config.
-// String format: "gpt-4" (just primary, no fallbacks)
-// Object format: {"primary": "gpt-4", "fallbacks": ["claude-haiku"]}
 type AgentModelConfig struct {
 	Primary   string   `json:"primary,omitempty"`
 	Fallbacks []string `json:"fallbacks,omitempty"`
@@ -101,7 +89,6 @@ func (m *AgentModelConfig) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
 		m.Primary = s
-		m.Fallbacks = nil
 		return nil
 	}
 	type raw struct {
@@ -193,16 +180,18 @@ type ChannelsConfig struct {
 }
 
 type WhatsAppConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	Enabled          bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
+	BridgeURL        string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
+	AllowFrom        FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	MaxMessageLength int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_WHATSAPP_MAX_MESSAGE_LENGTH"`
 }
 
 type TelegramConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	Proxy     string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled          bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token            string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	Proxy            string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom        FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	MaxMessageLength int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_MAX_MESSAGE_LENGTH"`
 }
 
 type FeishuConfig struct {
@@ -212,13 +201,15 @@ type FeishuConfig struct {
 	EncryptKey        string              `json:"encrypt_key" env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
 	VerificationToken string              `json:"verification_token" env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
 	AllowFrom         FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
+	MaxMessageLength  int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_FEISHU_MAX_MESSAGE_LENGTH"`
 }
 
 type DiscordConfig struct {
-	Enabled     bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token       string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom   FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
-	MentionOnly bool                `json:"mention_only" env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
+	Enabled          bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	Token            string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	AllowFrom        FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	MentionOnly      bool                `json:"mention_only" env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
+	MaxMessageLength int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_DISCORD_MAX_MESSAGE_LENGTH"`
 }
 
 type MaixCamConfig struct {
@@ -229,24 +220,27 @@ type MaixCamConfig struct {
 }
 
 type QQConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID     string              `json:"app_id" env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret string              `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	Enabled          bool                `json:"enabled" env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID            string              `json:"app_id" env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	AppSecret        string              `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
+	AllowFrom        FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	MaxMessageLength int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
 }
 
 type DingTalkConfig struct {
-	Enabled      bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
-	ClientID     string              `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret string              `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
-	AllowFrom    FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
+	Enabled          bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
+	ClientID         string              `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
+	ClientSecret     string              `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	AllowFrom        FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
+	MaxMessageLength int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_DINGTALK_MAX_MESSAGE_LENGTH"`
 }
 
 type SlackConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
-	BotToken  string              `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken  string              `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
+	Enabled          bool                `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
+	BotToken         string              `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
+	AppToken         string              `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
+	AllowFrom        FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
+	MaxMessageLength int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_SLACK_MAX_MESSAGE_LENGTH"`
 }
 
 type LINEConfig struct {
@@ -257,6 +251,7 @@ type LINEConfig struct {
 	WebhookPort        int                 `json:"webhook_port" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
 	WebhookPath        string              `json:"webhook_path" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
+	MaxMessageLength   int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_LINE_MAX_MESSAGE_LENGTH"`
 }
 
 type OneBotConfig struct {
@@ -266,11 +261,12 @@ type OneBotConfig struct {
 	ReconnectInterval  int                 `json:"reconnect_interval" env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
+	MaxMessageLength   int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_ONEBOT_MAX_MESSAGE_LENGTH"`
 }
 
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled" env:"PICOCLAW_HEARTBEAT_ENABLED"`
-	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
+	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"`
 }
 
 type DevicesConfig struct {
@@ -298,8 +294,6 @@ type ProvidersConfig struct {
 	Qwen          ProviderConfig       `json:"qwen"`
 }
 
-// IsEmpty checks if all provider configs are empty (no API keys or API bases set)
-// Note: WebSearch is an optimization option and doesn't count as "non-empty"
 func (p ProvidersConfig) IsEmpty() bool {
 	return p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" &&
 		p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" &&
@@ -320,8 +314,6 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.Qwen.APIKey == "" && p.Qwen.APIBase == ""
 }
 
-// MarshalJSON implements custom JSON marshaling for ProvidersConfig
-// to omit the entire section when empty
 func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
 	if p.IsEmpty() {
 		return []byte("null"), nil
@@ -335,7 +327,7 @@ type ProviderConfig struct {
 	APIBase     string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
 	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
 	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"`
 }
 
 type OpenAIProviderConfig struct {
@@ -343,32 +335,19 @@ type OpenAIProviderConfig struct {
 	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
 }
 
-// ModelConfig represents a model-centric provider configuration.
-// It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
-// The model field uses protocol prefix format: [protocol/]model-identifier
-// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
-// Default protocol is "openai" if no prefix is specified.
 type ModelConfig struct {
-	// Required fields
-	ModelName string `json:"model_name"` // User-facing alias for the model
-	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
-
-	// HTTP-based providers
-	APIBase string `json:"api_base,omitempty"` // API endpoint URL
-	APIKey  string `json:"api_key"`            // API authentication key
-	Proxy   string `json:"proxy,omitempty"`    // HTTP proxy URL
-
-	// Special providers (CLI-based, OAuth, etc.)
-	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token
-	ConnectMode string `json:"connect_mode,omitempty"` // Connection mode: stdio, grpc
-	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
-
-	// Optional optimizations
-	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
-	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
+	ModelName      string `json:"model_name"`
+	Model          string `json:"model"`
+	APIBase        string `json:"api_base,omitempty"`
+	APIKey         string `json:"api_key"`
+	Proxy          string `json:"proxy,omitempty"`
+	AuthMethod     string `json:"auth_method,omitempty"`
+	ConnectMode    string `json:"connect_mode,omitempty"`
+	Workspace      string `json:"workspace,omitempty"`
+	RPM            int    `json:"rpm,omitempty"`
+	MaxTokensField string `json:"max_tokens_field,omitempty"`
 }
 
-// Validate checks if the ModelConfig has all required fields.
 func (c *ModelConfig) Validate() error {
 	if c.ModelName == "" {
 		return fmt.Errorf("model_name is required")
@@ -408,7 +387,7 @@ type WebToolsConfig struct {
 }
 
 type CronToolsConfig struct {
-	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
+	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"`
 }
 
 type ExecConfig struct {
@@ -451,13 +430,10 @@ type ClawHubRegistryConfig struct {
 }
 
 func LoadConfig(path string) (*Config, error) {
-	cfg := DefaultConfig()
+	cfg := &Config{}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
-		}
 		return nil, err
 	}
 
@@ -466,16 +442,6 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	if err := env.Parse(cfg); err != nil {
-		return nil, err
-	}
-
-	// Auto-migrate: if only legacy providers config exists, convert to model_list
-	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
-		cfg.ModelList = ConvertProvidersToModelList(cfg)
-	}
-
-	// Validate model_list for uniqueness and required fields
-	if err := cfg.ValidateModelList(); err != nil {
 		return nil, err
 	}
 
@@ -561,9 +527,6 @@ func expandHome(path string) string {
 	return path
 }
 
-// GetModelConfig returns the ModelConfig for the given model name.
-// If multiple configs exist with the same model_name, it uses round-robin
-// selection for load balancing. Returns an error if the model is not found.
 func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 	matches := c.findMatches(modelName)
 	if len(matches) == 0 {
@@ -573,12 +536,10 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 		return &matches[0], nil
 	}
 
-	// Multiple configs - use round-robin for load balancing
 	idx := rrCounter.Add(1) % uint64(len(matches))
 	return &matches[idx], nil
 }
 
-// findMatches finds all ModelConfig entries with the given model_name.
 func (c *Config) findMatches(modelName string) []ModelConfig {
 	var matches []ModelConfig
 	for i := range c.ModelList {
@@ -589,7 +550,6 @@ func (c *Config) findMatches(modelName string) []ModelConfig {
 	return matches
 }
 
-// HasProvidersConfig checks if any provider in the old providers config has configuration.
 func (c *Config) HasProvidersConfig() bool {
 	v := c.Providers
 	return v.Anthropic.APIKey != "" || v.Anthropic.APIBase != "" ||
@@ -611,9 +571,6 @@ func (c *Config) HasProvidersConfig() bool {
 		v.Qwen.APIKey != "" || v.Qwen.APIBase != ""
 }
 
-// ValidateModelList validates all ModelConfig entries in the model_list.
-// It checks that each model config is valid.
-// Note: Multiple entries with the same model_name are allowed for load balancing.
 func (c *Config) ValidateModelList() error {
 	for i := range c.ModelList {
 		if err := c.ModelList[i].Validate(); err != nil {

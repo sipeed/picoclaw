@@ -120,12 +120,12 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		return fmt.Errorf("channel ID is empty")
 	}
 
-	runes := []rune(msg.Content)
-	if len(runes) == 0 {
-		return nil
+	limit := c.config.MaxMessageLength
+	if limit <= 0 {
+		limit = 1900
 	}
 
-	chunks := utils.SplitMessage(msg.Content, 2000) // Split messages into chunks, Discord length limit: 2000 chars
+	chunks := utils.SplitMessage(msg.Content, limit)
 
 	for _, chunk := range chunks {
 		if err := c.sendChunk(ctx, channelID, chunk); err != nil {

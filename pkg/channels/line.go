@@ -501,22 +501,47 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	}
 
 	// Try reply token first (free, valid for ~25 seconds)
+	hasReplyToken := false
+	var tokenEntry replyTokenEntry
 	if entry, ok := c.replyTokens.LoadAndDelete(msg.ChatID); ok {
-		tokenEntry := entry.(replyTokenEntry)
+		tokenEntry = entry.(replyTokenEntry)
 		if time.Since(tokenEntry.timestamp) < lineReplyTokenMaxAge {
-			if err := c.sendReply(ctx, tokenEntry.token, msg.Content, quoteToken); err == nil {
-				logger.DebugCF("line", "Message sent via Reply API", map[string]interface{}{
-					"chat_id": msg.ChatID,
-					"quoted":  quoteToken != "",
-				})
-				return nil
-			}
-			logger.DebugC("line", "Reply API failed, falling back to Push API")
+			hasReplyToken = true
 		}
 	}
 
-	// Fall back to Push API
-	return c.sendPush(ctx, msg.ChatID, msg.Content, quoteToken)
+	limit := c.config.MaxMessageLength
+	if limit <= 0 {
+		limit = 4000
+	}
+
+	chunks := utils.SplitMessage(msg.Content, limit)
+
+	for i, chunk := range chunks {
+		currentQuoteToken := ""
+		if i == 0 {
+			currentQuoteToken = quoteToken
+		}
+
+		if i == 0 && hasReplyToken {
+			if err := c.sendReply(ctx, tokenEntry.token, chunk, currentQuoteToken); err == nil {
+				logger.DebugCF("line", "Message chunk sent via Reply API", map[string]interface{}{
+					"chat_id": msg.ChatID,
+					"quoted":  currentQuoteToken != "",
+					"chunk":   i + 1,
+				})
+				continue
+			}
+			logger.DebugC("line", "Reply API failed for chunk, falling back to Push API")
+		}
+
+		// Fall back to Push API
+		if err := c.sendPush(ctx, msg.ChatID, chunk, currentQuoteToken); err != nil {
+			return fmt.Errorf("failed to send chunk %d via push: %w", i+1, err)
+		}
+	}
+
+	return nil
 }
 
 // buildTextMessage creates a text message object, optionally with quoteToken.
