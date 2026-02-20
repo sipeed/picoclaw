@@ -1,13 +1,47 @@
 # PicoClaw Configuration Example - TOML Format
-# This is an alternative to config.json for users who prefer TOML format
+# Equivalent to config.example.json, for users who prefer TOML.
 
 [agents.defaults]
 workspace = "~/.picoclaw/workspace"
 restrict_to_workspace = true
-model = "glm-4.7"
+model = "gpt4"
 max_tokens = 8192
 temperature = 0.7
 max_tool_iterations = 20
+
+[[model_list]]
+model_name = "gpt4"
+model = "openai/gpt-5.2"
+api_key = "sk-your-openai-key"
+api_base = "https://api.openai.com/v1"
+
+[[model_list]]
+model_name = "claude-sonnet-4.6"
+model = "anthropic/claude-sonnet-4.6"
+api_key = "sk-ant-your-key"
+api_base = "https://api.anthropic.com/v1"
+
+[[model_list]]
+model_name = "gemini"
+model = "antigravity/gemini-2.0-flash"
+auth_method = "oauth"
+
+[[model_list]]
+model_name = "deepseek"
+model = "deepseek/deepseek-chat"
+api_key = "sk-your-deepseek-key"
+
+[[model_list]]
+model_name = "loadbalanced-gpt4"
+model = "openai/gpt-5.2"
+api_key = "sk-key1"
+api_base = "https://api1.example.com/v1"
+
+[[model_list]]
+model_name = "loadbalanced-gpt4"
+model = "openai/gpt-5.2"
+api_key = "sk-key2"
+api_base = "https://api2.example.com/v1"
 
 [channels.telegram]
 enabled = false
@@ -20,110 +54,130 @@ enabled = false
 token = "YOUR_DISCORD_BOT_TOKEN"
 allow_from = []
 
-[channels.slack]
-enabled = false
-token = "YOUR_SLACK_BOT_TOKEN"
-allow_from = []
-
-[channels.feishu]
-enabled = false
-token = "YOUR_FEISHU_BOT_TOKEN"
-secret = "YOUR_FEISHU_SECRET"
-allow_from = []
-
-[channels.dingtalk]
-enabled = false
-token = "YOUR_DINGTALK_BOT_TOKEN"
-secret = "YOUR_DINGTALK_SECRET"
-allow_from = []
-
-[channels.qq]
-enabled = false
-account = "YOUR_QQ_ACCOUNT"
-token = "YOUR_QQ_BOT_TOKEN"
-allow_from = []
-
-[channels.whatsapp]
-enabled = false
-phone_number = "YOUR_PHONE_NUMBER"
-allow_from = []
-
-[channels.line]
-enabled = false
-token = "YOUR_LINE_CHANNEL_ACCESS_TOKEN"
-secret = "YOUR_LINE_CHANNEL_SECRET"
-allow_from = []
-
-[channels.onebot]
-enabled = false
-ws_url = ""
-allow_from = []
-
 [channels.maixcam]
 enabled = false
 host = "0.0.0.0"
 port = 18790
 allow_from = []
 
-[providers.anthropic]
+[channels.whatsapp]
 enabled = false
-api_key = "YOUR_ANTHROPIC_API_KEY"
-api_base = "https://api.anthropic.com"
+bridge_url = "ws://localhost:3001"
+allow_from = []
+
+[channels.feishu]
+enabled = false
+app_id = ""
+app_secret = ""
+encrypt_key = ""
+verification_token = ""
+allow_from = []
+
+[channels.dingtalk]
+enabled = false
+client_id = "YOUR_CLIENT_ID"
+client_secret = "YOUR_CLIENT_SECRET"
+allow_from = []
+
+[channels.slack]
+enabled = false
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+app_token = "xapp-YOUR-APP-TOKEN"
+allow_from = []
+
+[channels.line]
+enabled = false
+channel_secret = "YOUR_LINE_CHANNEL_SECRET"
+channel_access_token = "YOUR_LINE_CHANNEL_ACCESS_TOKEN"
+webhook_host = "0.0.0.0"
+webhook_port = 18791
+webhook_path = "/webhook/line"
+allow_from = []
+
+[channels.onebot]
+enabled = false
+ws_url = "ws://127.0.0.1:3001"
+access_token = ""
+reconnect_interval = 5
+group_trigger_prefix = []
+allow_from = []
+
+# DEPRECATED: use model_list instead.
+[providers.anthropic]
+api_key = ""
+api_base = ""
 
 [providers.openai]
-enabled = false
-api_key = "YOUR_OPENAI_API_KEY"
-api_base = "https://api.openai.com/v1"
+api_key = ""
+api_base = ""
+web_search = true
 
 [providers.openrouter]
-enabled = false
-api_key = "YOUR_OPENROUTER_API_KEY"
-api_base = "https://openrouter.ai/api/v1"
-
-[providers.zhipu]
-enabled = false
-api_key = "YOUR_ZHIPU_API_KEY"
-api_base = "https://open.bigmodel.cn/api/paas/v4"
-
-[providers.gemini]
-enabled = false
-api_key = "YOUR_GEMINI_API_KEY"
-api_base = "https://generativelanguage.googleapis.com/v1beta/openai/"
+api_key = "sk-or-v1-xxx"
+api_base = ""
 
 [providers.groq]
-enabled = false
-api_key = "YOUR_GROQ_API_KEY"
-api_base = "https://api.groq.com/openai/v1"
+api_key = "gsk_xxx"
+api_base = ""
+
+[providers.zhipu]
+api_key = "YOUR_ZHIPU_API_KEY"
+api_base = ""
+
+[providers.gemini]
+api_key = ""
+api_base = ""
 
 [providers.vllm]
+api_key = ""
+api_base = ""
+
+[providers.nvidia]
+api_key = "nvapi-xxx"
+api_base = ""
+proxy = "http://127.0.0.1:7890"
+
+[providers.moonshot]
+api_key = "sk-xxx"
+api_base = ""
+
+[providers.qwen]
+api_key = "sk-xxx"
+api_base = ""
+
+[providers.ollama]
+api_key = ""
+api_base = "http://localhost:11434/v1"
+
+[providers.cerebras]
+api_key = ""
+api_base = ""
+
+[providers.volcengine]
+api_key = ""
+api_base = ""
+
+[tools.web.brave]
 enabled = false
-api_key = "YOUR_VLLM_API_KEY"
-api_base = "http://localhost:8000/v1"
+api_key = "YOUR_BRAVE_API_KEY"
+max_results = 5
 
-[providers.shengsuan_yun]
+[tools.web.perplexity]
 enabled = false
-api_key = "YOUR_SHENGSUAN_YUN_API_KEY"
-api_base = "https://api.shengsuan.cloud/v1"
+api_key = "pplx-xxx"
+max_results = 5
 
-[gateway]
-enabled = true
-host = "0.0.0.0"
-port = 8080
-cors_enabled = true
-cors_origins = ["*"]
-
-[tools]
-enabled = true
+[tools.cron]
+exec_timeout_minutes = 5
 
 [heartbeat]
 enabled = true
-interval = 60
-timeout = 5
+interval = 30
 
 [devices]
-enabled = true
+enabled = false
+monitor_usb = true
 
-[session]
-storage = "memory"
-# For persistent storage, set to "sqlite" and provide database_path
-# database_path = "~/.picoclaw/session.db"
+[gateway]
+host = "0.0.0.0"
+port = 18790

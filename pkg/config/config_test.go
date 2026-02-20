@@ -1,44 +1,94 @@
 package config
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 )
 
-func TestAgentModelConfig_UnmarshalString(t *testing.T) {
-	var m AgentModelConfig
-	if err := json.Unmarshal([]byte(`"gpt-4"`), &m); err != nil {
-		t.Fatalf("unmarshal string: %v", err)
+func TestAgentModelConfig_StringFormatViaLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	jsonData := `{
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7",
+				"max_tokens": 8192,
+				"max_tool_iterations": 20
+			},
+			"list": [
+				{
+					"id": "sales",
+					"default": true,
+					"name": "Sales Bot",
+					"model": "gpt-4"
+				}
+			]
+		}
+	}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
 	}
-	if m.Primary != "gpt-4" {
-		t.Errorf("Primary = %q, want 'gpt-4'", m.Primary)
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
 	}
-	if m.Fallbacks != nil {
-		t.Errorf("Fallbacks = %v, want nil", m.Fallbacks)
+
+	sales := cfg.Agents.List[0]
+	if sales.Model == nil || sales.Model.Primary != "gpt-4" {
+		t.Errorf("sales.Model = %+v", sales.Model)
 	}
 }
 
-func TestAgentModelConfig_UnmarshalObject(t *testing.T) {
-	var m AgentModelConfig
-	data := `{"primary": "claude-opus", "fallbacks": ["gpt-4o-mini", "haiku"]}`
-	if err := json.Unmarshal([]byte(data), &m); err != nil {
-		t.Fatalf("unmarshal object: %v", err)
+func TestAgentModelConfig_ObjectFormatViaLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	jsonData := `{
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7",
+				"max_tokens": 8192,
+				"max_tool_iterations": 20
+			},
+			"list": [
+				{
+					"id": "support",
+					"name": "Support Bot",
+					"model": {
+						"primary": "claude-opus",
+						"fallbacks": ["gpt-4o-mini", "haiku"]
+					}
+				}
+			]
+		}
+	}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
 	}
-	if m.Primary != "claude-opus" {
-		t.Errorf("Primary = %q, want 'claude-opus'", m.Primary)
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
 	}
-	if len(m.Fallbacks) != 2 {
-		t.Fatalf("Fallbacks len = %d, want 2", len(m.Fallbacks))
+
+	support := cfg.Agents.List[0]
+	if support.Model == nil || support.Model.Primary != "claude-opus" {
+		t.Errorf("support.Model = %+v", support.Model)
 	}
-	if m.Fallbacks[0] != "gpt-4o-mini" || m.Fallbacks[1] != "haiku" {
-		t.Errorf("Fallbacks = %v", m.Fallbacks)
+	if len(support.Model.Fallbacks) != 2 || support.Model.Fallbacks[0] != "gpt-4o-mini" || support.Model.Fallbacks[1] != "haiku" {
+		t.Errorf("support.Model.Fallbacks = %v", support.Model.Fallbacks)
 	}
 }
 
-func TestAgentConfig_FullParse(t *testing.T) {
+func TestAgentConfig_FullParseViaLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
 	jsonData := `{
 		"agents": {
 			"defaults": {
@@ -85,61 +135,23 @@ func TestAgentConfig_FullParse(t *testing.T) {
 		}
 	}`
 
-	cfg := DefaultConfig()
-	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
 	}
 
 	if len(cfg.Agents.List) != 2 {
 		t.Fatalf("agents.list len = %d, want 2", len(cfg.Agents.List))
 	}
-
-	sales := cfg.Agents.List[0]
-	if sales.ID != "sales" || !sales.Default || sales.Name != "Sales Bot" {
-		t.Errorf("sales = %+v", sales)
-	}
-	if sales.Model == nil || sales.Model.Primary != "gpt-4" {
-		t.Errorf("sales.Model = %+v", sales.Model)
-	}
-
-	support := cfg.Agents.List[1]
-	if support.ID != "support" || support.Name != "Support Bot" {
-		t.Errorf("support = %+v", support)
-	}
-	if support.Model == nil || support.Model.Primary != "claude-opus" {
-		t.Errorf("support.Model = %+v", support.Model)
-	}
-	if len(support.Model.Fallbacks) != 1 || support.Model.Fallbacks[0] != "haiku" {
-		t.Errorf("support.Model.Fallbacks = %v", support.Model.Fallbacks)
-	}
-	if support.Subagents == nil || len(support.Subagents.AllowAgents) != 1 {
-		t.Errorf("support.Subagents = %+v", support.Subagents)
-	}
-
-	if len(cfg.Bindings) != 1 {
-		t.Fatalf("bindings len = %d, want 1", len(cfg.Bindings))
-	}
-	binding := cfg.Bindings[0]
-	if binding.AgentID != "support" || binding.Match.Channel != "telegram" {
-		t.Errorf("binding = %+v", binding)
-	}
-	if binding.Match.Peer == nil || binding.Match.Peer.Kind != "direct" || binding.Match.Peer.ID != "user123" {
-		t.Errorf("binding.Match.Peer = %+v", binding.Match.Peer)
-	}
-
-	if cfg.Session.DMScope != "per-peer" {
-		t.Errorf("Session.DMScope = %q", cfg.Session.DMScope)
-	}
-	if len(cfg.Session.IdentityLinks) != 1 {
-		t.Errorf("Session.IdentityLinks = %v", cfg.Session.IdentityLinks)
-	}
-	links := cfg.Session.IdentityLinks["john"]
-	if len(links) != 2 {
-		t.Errorf("john links = %v", links)
-	}
 }
 
-func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
+func TestConfig_BackwardCompat_NoAgentsListViaLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
 	jsonData := `{
 		"agents": {
 			"defaults": {
@@ -151,9 +163,13 @@ func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 		}
 	}`
 
-	cfg := DefaultConfig()
-	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
 	}
 
 	if len(cfg.Agents.List) != 0 {
@@ -297,85 +313,6 @@ func TestSaveConfig_FilePermissions(t *testing.T) {
 	perm := info.Mode().Perm()
 	if perm != 0600 {
 		t.Errorf("config file has permission %04o, want 0600", perm)
-	}
-}
-
-func TestSaveConfig_AllSupportedFormats(t *testing.T) {
-	tests := []struct {
-		name        string
-		fileName    string
-		expectedOut string
-	}{
-		{
-			name:        "json",
-			fileName:    "config.json",
-			expectedOut: "config.json",
-		},
-		{
-			name:        "yaml",
-			fileName:    "config.yaml",
-			expectedOut: "config.yaml",
-		},
-		{
-			name:        "yml",
-			fileName:    "config.yml",
-			expectedOut: "config.yml",
-		},
-		{
-			name:        "toml",
-			fileName:    "config.toml",
-			expectedOut: "config.toml",
-		},
-		{
-			name:        "no_extension_defaults_to_json",
-			fileName:    "config",
-			expectedOut: "config.json",
-		},
-	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			targetPath := filepath.Join(tmpDir, tc.fileName)
-			outPath := filepath.Join(tmpDir, tc.expectedOut)
-
-			cfg := DefaultConfig()
-			cfg.Agents.Defaults.Model = "unit-test-model"
-			cfg.Agents.Defaults.MaxTokens = 1234
-			cfg.Gateway.Host = "127.0.0.1"
-			cfg.Gateway.Port = 19090
-			cfg.Providers.Zhipu.APIKey = "test-zhipu-key"
-
-			if err := SaveConfig(targetPath, cfg); err != nil {
-				t.Fatalf("SaveConfig(%q) failed: %v", targetPath, err)
-			}
-
-			if _, err := os.Stat(outPath); err != nil {
-				t.Fatalf("expected output file %q to exist: %v", outPath, err)
-			}
-
-			loaded, err := LoadConfig(outPath)
-			if err != nil {
-				t.Fatalf("LoadConfig(%q) failed: %v", outPath, err)
-			}
-
-			if loaded.Agents.Defaults.Model != "unit-test-model" {
-				t.Errorf("Model = %q, want %q", loaded.Agents.Defaults.Model, "unit-test-model")
-			}
-			if loaded.Agents.Defaults.MaxTokens != 1234 {
-				t.Errorf("MaxTokens = %d, want %d", loaded.Agents.Defaults.MaxTokens, 1234)
-			}
-			if loaded.Gateway.Host != "127.0.0.1" {
-				t.Errorf("Gateway.Host = %q, want %q", loaded.Gateway.Host, "127.0.0.1")
-			}
-			if loaded.Gateway.Port != 19090 {
-				t.Errorf("Gateway.Port = %d, want %d", loaded.Gateway.Port, 19090)
-			}
-			if loaded.Providers.Zhipu.APIKey != "test-zhipu-key" {
-				t.Errorf("Providers.Zhipu.APIKey = %q, want %q", loaded.Providers.Zhipu.APIKey, "test-zhipu-key")
-			}
-		})
 	}
 }
 

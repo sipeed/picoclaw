@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -27,46 +28,17 @@ var configFileNames = []string{
 // so allow_from can contain both "123" and 123.
 type FlexibleStringSlice []string
 
-func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
-	// Try []string first
-	var ss []string
-	if err := json.Unmarshal(data, &ss); err == nil {
-		*f = ss
-		return nil
-	}
-
-	// Try []interface{} to handle mixed types
-	var raw []interface{}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-
-	result := make([]string, 0, len(raw))
-	for _, v := range raw {
-		switch val := v.(type) {
-		case string:
-			result = append(result, val)
-		case float64:
-			result = append(result, fmt.Sprintf("%.0f", val))
-		default:
-			result = append(result, fmt.Sprintf("%v", val))
-		}
-	}
-	*f = result
-	return nil
-}
-
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty"`
-	Session   SessionConfig   `json:"session,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
+	Agents    AgentsConfig    `json:"agents" mapstructure:"agents"`
+	Bindings  []AgentBinding  `json:"bindings,omitempty" mapstructure:"bindings"`
+	Session   SessionConfig   `json:"session,omitempty" mapstructure:"session"`
+	Channels  ChannelsConfig  `json:"channels" mapstructure:"channels"`
+	Providers ProvidersConfig `json:"providers,omitempty" mapstructure:"providers"`
+	ModelList []ModelConfig   `json:"model_list" mapstructure:"model_list"` // New model-centric provider configuration
+	Gateway   GatewayConfig   `json:"gateway" mapstructure:"gateway"`
+	Tools     ToolsConfig     `json:"tools" mapstructure:"tools"`
+	Heartbeat HeartbeatConfig `json:"heartbeat" mapstructure:"heartbeat"`
+	Devices   DevicesConfig   `json:"devices" mapstructure:"devices"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -74,8 +46,8 @@ type Config struct {
 func (c Config) MarshalJSON() ([]byte, error) {
 	type Alias Config
 	aux := &struct {
-		Providers *ProvidersConfig `json:"providers,omitempty"`
-		Session   *SessionConfig   `json:"session,omitempty"`
+		Providers *ProvidersConfig `json:"providers,omitempty" mapstructure:"providers"`
+		Session   *SessionConfig   `json:"session,omitempty" mapstructure:"session"`
 		*Alias
 	}{
 		Alias: (*Alias)(&c),
@@ -95,216 +67,185 @@ func (c Config) MarshalJSON() ([]byte, error) {
 }
 
 type AgentsConfig struct {
-	Defaults AgentDefaults `json:"defaults"`
-	List     []AgentConfig `json:"list,omitempty"`
+	Defaults AgentDefaults `json:"defaults" mapstructure:"defaults"`
+	List     []AgentConfig `json:"list,omitempty" mapstructure:"list"`
 }
 
 // AgentModelConfig supports both string and structured model config.
 // String format: "gpt-4" (just primary, no fallbacks)
 // Object format: {"primary": "gpt-4", "fallbacks": ["claude-haiku"]}
 type AgentModelConfig struct {
-	Primary   string   `json:"primary,omitempty"`
-	Fallbacks []string `json:"fallbacks,omitempty"`
-}
-
-func (m *AgentModelConfig) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err == nil {
-		m.Primary = s
-		m.Fallbacks = nil
-		return nil
-	}
-	type raw struct {
-		Primary   string   `json:"primary"`
-		Fallbacks []string `json:"fallbacks"`
-	}
-	var r raw
-	if err := json.Unmarshal(data, &r); err != nil {
-		return err
-	}
-	m.Primary = r.Primary
-	m.Fallbacks = r.Fallbacks
-	return nil
-}
-
-func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
-	if len(m.Fallbacks) == 0 && m.Primary != "" {
-		return json.Marshal(m.Primary)
-	}
-	type raw struct {
-		Primary   string   `json:"primary,omitempty"`
-		Fallbacks []string `json:"fallbacks,omitempty"`
-	}
-	return json.Marshal(raw{Primary: m.Primary, Fallbacks: m.Fallbacks})
+	Primary   string   `json:"primary,omitempty" mapstructure:"primary"`
+	Fallbacks []string `json:"fallbacks,omitempty" mapstructure:"fallbacks"`
 }
 
 type AgentConfig struct {
-	ID        string            `json:"id"`
-	Default   bool              `json:"default,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Model     *AgentModelConfig `json:"model,omitempty"`
-	Skills    []string          `json:"skills,omitempty"`
-	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	ID        string            `json:"id" mapstructure:"id"`
+	Default   bool              `json:"default,omitempty" mapstructure:"default"`
+	Name      string            `json:"name,omitempty" mapstructure:"name"`
+	Workspace string            `json:"workspace,omitempty" mapstructure:"workspace"`
+	Model     *AgentModelConfig `json:"model,omitempty" mapstructure:"model"`
+	Skills    []string          `json:"skills,omitempty" mapstructure:"skills"`
+	Subagents *SubagentsConfig  `json:"subagents,omitempty" mapstructure:"subagents"`
 }
 
 type SubagentsConfig struct {
-	AllowAgents []string          `json:"allow_agents,omitempty"`
-	Model       *AgentModelConfig `json:"model,omitempty"`
+	AllowAgents []string          `json:"allow_agents,omitempty" mapstructure:"allow_agents"`
+	Model       *AgentModelConfig `json:"model,omitempty" mapstructure:"model"`
 }
 
 type PeerMatch struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
+	Kind string `json:"kind" mapstructure:"kind"`
+	ID   string `json:"id" mapstructure:"id"`
 }
 
 type BindingMatch struct {
-	Channel   string     `json:"channel"`
-	AccountID string     `json:"account_id,omitempty"`
-	Peer      *PeerMatch `json:"peer,omitempty"`
-	GuildID   string     `json:"guild_id,omitempty"`
-	TeamID    string     `json:"team_id,omitempty"`
+	Channel   string     `json:"channel" mapstructure:"channel"`
+	AccountID string     `json:"account_id,omitempty" mapstructure:"account_id"`
+	Peer      *PeerMatch `json:"peer,omitempty" mapstructure:"peer"`
+	GuildID   string     `json:"guild_id,omitempty" mapstructure:"guild_id"`
+	TeamID    string     `json:"team_id,omitempty" mapstructure:"team_id"`
 }
 
 type AgentBinding struct {
-	AgentID string       `json:"agent_id"`
-	Match   BindingMatch `json:"match"`
+	AgentID string       `json:"agent_id" mapstructure:"agent_id"`
+	Match   BindingMatch `json:"match" mapstructure:"match"`
 }
 
 type SessionConfig struct {
-	DMScope       string              `json:"dm_scope,omitempty"`
-	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
+	DMScope       string              `json:"dm_scope,omitempty" mapstructure:"dm_scope"`
+	IdentityLinks map[string][]string `json:"identity_links,omitempty" mapstructure:"identity_links"`
 }
 
 type AgentDefaults struct {
-	Workspace           string   `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool     `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string   `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string   `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
-	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
-	ImageModel          string   `json:"image_model,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
-	MaxTokens           int      `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         *float64 `json:"temperature,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace           string   `json:"workspace" mapstructure:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool     `json:"restrict_to_workspace" mapstructure:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Provider            string   `json:"provider" mapstructure:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	Model               string   `json:"model" mapstructure:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	ModelFallbacks      []string `json:"model_fallbacks,omitempty" mapstructure:"model_fallbacks"`
+	ImageModel          string   `json:"image_model,omitempty" mapstructure:"image_model" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty" mapstructure:"image_model_fallbacks"`
+	MaxTokens           int      `json:"max_tokens" mapstructure:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature         *float64 `json:"temperature,omitempty" mapstructure:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int      `json:"max_tool_iterations" mapstructure:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
 type ChannelsConfig struct {
-	WhatsApp WhatsAppConfig `json:"whatsapp"`
-	Telegram TelegramConfig `json:"telegram"`
-	Feishu   FeishuConfig   `json:"feishu"`
-	Discord  DiscordConfig  `json:"discord"`
-	MaixCam  MaixCamConfig  `json:"maixcam"`
-	QQ       QQConfig       `json:"qq"`
-	DingTalk DingTalkConfig `json:"dingtalk"`
-	Slack    SlackConfig    `json:"slack"`
-	LINE     LINEConfig     `json:"line"`
-	OneBot   OneBotConfig   `json:"onebot"`
+	WhatsApp WhatsAppConfig `json:"whatsapp" mapstructure:"whatsapp"`
+	Telegram TelegramConfig `json:"telegram" mapstructure:"telegram"`
+	Feishu   FeishuConfig   `json:"feishu" mapstructure:"feishu"`
+	Discord  DiscordConfig  `json:"discord" mapstructure:"discord"`
+	MaixCam  MaixCamConfig  `json:"maixcam" mapstructure:"maixcam"`
+	QQ       QQConfig       `json:"qq" mapstructure:"qq"`
+	DingTalk DingTalkConfig `json:"dingtalk" mapstructure:"dingtalk"`
+	Slack    SlackConfig    `json:"slack" mapstructure:"slack"`
+	LINE     LINEConfig     `json:"line" mapstructure:"line"`
+	OneBot   OneBotConfig   `json:"onebot" mapstructure:"onebot"`
 }
 
 type WhatsAppConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
+	BridgeURL string              `json:"bridge_url" mapstructure:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
 }
 
 type TelegramConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	Proxy     string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token     string              `json:"token" mapstructure:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	Proxy     string              `json:"proxy" mapstructure:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
 }
 
 type FeishuConfig struct {
-	Enabled           bool                `json:"enabled" env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
-	AppID             string              `json:"app_id" env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
-	AppSecret         string              `json:"app_secret" env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey        string              `json:"encrypt_key" env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken string              `json:"verification_token" env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
-	AllowFrom         FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
+	Enabled           bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
+	AppID             string              `json:"app_id" mapstructure:"app_id" env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
+	AppSecret         string              `json:"app_secret" mapstructure:"app_secret" env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
+	EncryptKey        string              `json:"encrypt_key" mapstructure:"encrypt_key" env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
+	VerificationToken string              `json:"verification_token" mapstructure:"verification_token" env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	AllowFrom         FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
 }
 
 type DiscordConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	Token     string              `json:"token" mapstructure:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
 }
 
 type MaixCamConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
-	Host      string              `json:"host" env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
-	Port      int                 `json:"port" env:"PICOCLAW_CHANNELS_MAIXCAM_PORT"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_MAIXCAM_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
+	Host      string              `json:"host" mapstructure:"host" env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
+	Port      int                 `json:"port" mapstructure:"port" env:"PICOCLAW_CHANNELS_MAIXCAM_PORT"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_MAIXCAM_ALLOW_FROM"`
 }
 
 type QQConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID     string              `json:"app_id" env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret string              `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID     string              `json:"app_id" mapstructure:"app_id" env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	AppSecret string              `json:"app_secret" mapstructure:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
 }
 
 type DingTalkConfig struct {
-	Enabled      bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
-	ClientID     string              `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret string              `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
-	AllowFrom    FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
+	Enabled      bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
+	ClientID     string              `json:"client_id" mapstructure:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
+	ClientSecret string              `json:"client_secret" mapstructure:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	AllowFrom    FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
 type SlackConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
-	BotToken  string              `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken  string              `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
+	BotToken  string              `json:"bot_token" mapstructure:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
+	AppToken  string              `json:"app_token" mapstructure:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
 }
 
 type LINEConfig struct {
-	Enabled            bool                `json:"enabled" env:"PICOCLAW_CHANNELS_LINE_ENABLED"`
-	ChannelSecret      string              `json:"channel_secret" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
-	ChannelAccessToken string              `json:"channel_access_token" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
-	WebhookHost        string              `json:"webhook_host" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_LINE_ENABLED"`
+	ChannelSecret      string              `json:"channel_secret" mapstructure:"channel_secret" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
+	ChannelAccessToken string              `json:"channel_access_token" mapstructure:"channel_access_token" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
+	WebhookHost        string              `json:"webhook_host" mapstructure:"webhook_host" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
+	WebhookPort        int                 `json:"webhook_port" mapstructure:"webhook_port" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
+	WebhookPath        string              `json:"webhook_path" mapstructure:"webhook_path" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
 }
 
 type OneBotConfig struct {
-	Enabled            bool                `json:"enabled" env:"PICOCLAW_CHANNELS_ONEBOT_ENABLED"`
-	WSUrl              string              `json:"ws_url" env:"PICOCLAW_CHANNELS_ONEBOT_WS_URL"`
-	AccessToken        string              `json:"access_token" env:"PICOCLAW_CHANNELS_ONEBOT_ACCESS_TOKEN"`
-	ReconnectInterval  int                 `json:"reconnect_interval" env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
-	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_CHANNELS_ONEBOT_ENABLED"`
+	WSUrl              string              `json:"ws_url" mapstructure:"ws_url" env:"PICOCLAW_CHANNELS_ONEBOT_WS_URL"`
+	AccessToken        string              `json:"access_token" mapstructure:"access_token" env:"PICOCLAW_CHANNELS_ONEBOT_ACCESS_TOKEN"`
+	ReconnectInterval  int                 `json:"reconnect_interval" mapstructure:"reconnect_interval" env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
+	GroupTriggerPrefix []string            `json:"group_trigger_prefix" mapstructure:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from" mapstructure:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {
-	Enabled  bool `json:"enabled" env:"PICOCLAW_HEARTBEAT_ENABLED"`
-	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
+	Enabled  bool `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_HEARTBEAT_ENABLED"`
+	Interval int  `json:"interval" mapstructure:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
 }
 
 type DevicesConfig struct {
-	Enabled    bool `json:"enabled" env:"PICOCLAW_DEVICES_ENABLED"`
-	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
+	Enabled    bool `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_DEVICES_ENABLED"`
+	MonitorUSB bool `json:"monitor_usb" mapstructure:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
 }
 
 type ProvidersConfig struct {
-	Anthropic     ProviderConfig       `json:"anthropic"`
-	OpenAI        OpenAIProviderConfig `json:"openai"`
-	OpenRouter    ProviderConfig       `json:"openrouter"`
-	Groq          ProviderConfig       `json:"groq"`
-	Zhipu         ProviderConfig       `json:"zhipu"`
-	VLLM          ProviderConfig       `json:"vllm"`
-	Gemini        ProviderConfig       `json:"gemini"`
-	Nvidia        ProviderConfig       `json:"nvidia"`
-	Ollama        ProviderConfig       `json:"ollama"`
-	Moonshot      ProviderConfig       `json:"moonshot"`
-	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig       `json:"deepseek"`
-	Cerebras      ProviderConfig       `json:"cerebras"`
-	VolcEngine    ProviderConfig       `json:"volcengine"`
-	GitHubCopilot ProviderConfig       `json:"github_copilot"`
-	Antigravity   ProviderConfig       `json:"antigravity"`
-	Qwen          ProviderConfig       `json:"qwen"`
+	Anthropic     ProviderConfig       `json:"anthropic" mapstructure:"anthropic"`
+	OpenAI        OpenAIProviderConfig `json:"openai" mapstructure:"openai"`
+	OpenRouter    ProviderConfig       `json:"openrouter" mapstructure:"openrouter"`
+	Groq          ProviderConfig       `json:"groq" mapstructure:"groq"`
+	Zhipu         ProviderConfig       `json:"zhipu" mapstructure:"zhipu"`
+	VLLM          ProviderConfig       `json:"vllm" mapstructure:"vllm"`
+	Gemini        ProviderConfig       `json:"gemini" mapstructure:"gemini"`
+	Nvidia        ProviderConfig       `json:"nvidia" mapstructure:"nvidia"`
+	Ollama        ProviderConfig       `json:"ollama" mapstructure:"ollama"`
+	Moonshot      ProviderConfig       `json:"moonshot" mapstructure:"moonshot"`
+	ShengSuanYun  ProviderConfig       `json:"shengsuanyun" mapstructure:"shengsuanyun"`
+	DeepSeek      ProviderConfig       `json:"deepseek" mapstructure:"deepseek"`
+	Cerebras      ProviderConfig       `json:"cerebras" mapstructure:"cerebras"`
+	VolcEngine    ProviderConfig       `json:"volcengine" mapstructure:"volcengine"`
+	GitHubCopilot ProviderConfig       `json:"github_copilot" mapstructure:"github_copilot"`
+	Antigravity   ProviderConfig       `json:"antigravity" mapstructure:"antigravity"`
+	Qwen          ProviderConfig       `json:"qwen" mapstructure:"qwen"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -340,16 +281,16 @@ func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
 }
 
 type ProviderConfig struct {
-	APIKey      string `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase     string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
+	APIKey      string `json:"api_key" mapstructure:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
+	APIBase     string `json:"api_base" mapstructure:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
+	Proxy       string `json:"proxy,omitempty" mapstructure:"proxy" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
+	AuthMethod  string `json:"auth_method,omitempty" mapstructure:"auth_method" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
+	ConnectMode string `json:"connect_mode,omitempty" mapstructure:"connect_mode" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
 }
 
 type OpenAIProviderConfig struct {
 	ProviderConfig
-	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
+	WebSearch bool `json:"web_search" mapstructure:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
@@ -359,22 +300,22 @@ type OpenAIProviderConfig struct {
 // Default protocol is "openai" if no prefix is specified.
 type ModelConfig struct {
 	// Required fields
-	ModelName string `json:"model_name"` // User-facing alias for the model
-	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
+	ModelName string `json:"model_name" mapstructure:"model_name"` // User-facing alias for the model
+	Model     string `json:"model" mapstructure:"model"`           // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
 
 	// HTTP-based providers
-	APIBase string `json:"api_base,omitempty"` // API endpoint URL
-	APIKey  string `json:"api_key"`            // API authentication key
-	Proxy   string `json:"proxy,omitempty"`    // HTTP proxy URL
+	APIBase string `json:"api_base,omitempty" mapstructure:"api_base"` // API endpoint URL
+	APIKey  string `json:"api_key" mapstructure:"api_key"`             // API authentication key
+	Proxy   string `json:"proxy,omitempty" mapstructure:"proxy"`       // HTTP proxy URL
 
 	// Special providers (CLI-based, OAuth, etc.)
-	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token
-	ConnectMode string `json:"connect_mode,omitempty"` // Connection mode: stdio, grpc
-	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
+	AuthMethod  string `json:"auth_method,omitempty" mapstructure:"auth_method"`   // Authentication method: oauth, token
+	ConnectMode string `json:"connect_mode,omitempty" mapstructure:"connect_mode"` // Connection mode: stdio, grpc
+	Workspace   string `json:"workspace,omitempty" mapstructure:"workspace"`       // Workspace path for CLI-based providers
 
 	// Optional optimizations
-	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
-	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
+	RPM            int    `json:"rpm,omitempty" mapstructure:"rpm"`                           // Requests per minute limit
+	MaxTokensField string `json:"max_tokens_field,omitempty" mapstructure:"max_tokens_field"` // Field name for max tokens (e.g., "max_completion_tokens")
 }
 
 // Validate checks if the ModelConfig has all required fields.
@@ -389,46 +330,46 @@ func (c *ModelConfig) Validate() error {
 }
 
 type GatewayConfig struct {
-	Host string `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
-	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
+	Host string `json:"host" mapstructure:"host" env:"PICOCLAW_GATEWAY_HOST"`
+	Port int    `json:"port" mapstructure:"port" env:"PICOCLAW_GATEWAY_PORT"`
 }
 
 type BraveConfig struct {
-	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
-	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
+	Enabled    bool   `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
+	APIKey     string `json:"api_key" mapstructure:"api_key" env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
+	MaxResults int    `json:"max_results" mapstructure:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
 }
 
 type DuckDuckGoConfig struct {
-	Enabled    bool `json:"enabled" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
-	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
+	Enabled    bool `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
+	MaxResults int  `json:"max_results" mapstructure:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
 type PerplexityConfig struct {
-	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
-	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+	Enabled    bool   `json:"enabled" mapstructure:"enabled" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
+	APIKey     string `json:"api_key" mapstructure:"api_key" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
+	MaxResults int    `json:"max_results" mapstructure:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
 type WebToolsConfig struct {
-	Brave      BraveConfig      `json:"brave"`
-	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
-	Perplexity PerplexityConfig `json:"perplexity"`
+	Brave      BraveConfig      `json:"brave" mapstructure:"brave"`
+	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo" mapstructure:"duckduckgo"`
+	Perplexity PerplexityConfig `json:"perplexity" mapstructure:"perplexity"`
 }
 
 type CronToolsConfig struct {
-	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
+	ExecTimeoutMinutes int `json:"exec_timeout_minutes" mapstructure:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
 }
 
 type ExecConfig struct {
-	EnableDenyPatterns bool     `json:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
-	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
+	EnableDenyPatterns bool     `json:"enable_deny_patterns" mapstructure:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
+	CustomDenyPatterns []string `json:"custom_deny_patterns" mapstructure:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 }
 
 type ToolsConfig struct {
-	Web  WebToolsConfig  `json:"web"`
-	Cron CronToolsConfig `json:"cron"`
-	Exec ExecConfig      `json:"exec"`
+	Web  WebToolsConfig  `json:"web" mapstructure:"web"`
+	Cron CronToolsConfig `json:"cron" mapstructure:"cron"`
+	Exec ExecConfig      `json:"exec" mapstructure:"exec"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -449,13 +390,37 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	if err := v.Unmarshal(cfg, func(dc *mapstructure.DecoderConfig) {
-		dc.TagName = "json"
+		dc.TagName = "mapstructure"
 		dc.WeaklyTypedInput = true
 		dc.Squash = true
 		dc.DecodeHook = mapstructure.ComposeDecodeHookFunc(
 			func(_ reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
 				modelCfgPtr := reflect.TypeOf((*AgentModelConfig)(nil))
 				modelCfgVal := reflect.TypeOf(AgentModelConfig{})
+				fssPtr := reflect.TypeOf((*FlexibleStringSlice)(nil))
+				fssVal := reflect.TypeOf(FlexibleStringSlice{})
+				if t == fssPtr || t == fssVal {
+					converted := make(FlexibleStringSlice, 0)
+					switch raw := data.(type) {
+					case []string:
+						converted = append(converted, raw...)
+					case []interface{}:
+						for _, item := range raw {
+							converted = append(converted, fmt.Sprintf("%v", item))
+						}
+					case string:
+						converted = append(converted, raw)
+					default:
+						if data != nil {
+							converted = append(converted, fmt.Sprintf("%v", data))
+						}
+					}
+					if t == fssPtr {
+						return &converted, nil
+					}
+					return converted, nil
+				}
+
 				if t != modelCfgPtr && t != modelCfgVal {
 					return data, nil
 				}
@@ -533,17 +498,8 @@ func SaveConfig(path string, cfg *Config) error {
 	v.SetConfigType(configType)
 	v.SetConfigFile(path)
 
-	settings := map[string]interface{}{}
-	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		TagName:          "json",
-		Result:           &settings,
-		WeaklyTypedInput: true,
-		Squash:           true,
-	})
+	settings, err := structToTaggedMap(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create config encoder: %w", err)
-	}
-	if err := decoder.Decode(cfg); err != nil {
 		return fmt.Errorf("failed to encode config map: %w", err)
 	}
 
@@ -557,8 +513,8 @@ func SaveConfig(path string, cfg *Config) error {
 		delete(settings, "bindings")
 	}
 
-	for key, val := range settings {
-		v.Set(key, val)
+	if err := v.MergeConfigMap(settings); err != nil {
+		return fmt.Errorf("failed to merge config settings: %w", err)
 	}
 
 	dir := filepath.Dir(path)
@@ -574,6 +530,121 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 
 	return nil
+}
+
+func structToTaggedMap(v interface{}) (map[string]interface{}, error) {
+	encoded, err := encodeValueByMapstructureTag(reflect.ValueOf(v))
+	if err != nil {
+		return nil, err
+	}
+	m, ok := encoded.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("encoded value is not a map")
+	}
+	return m, nil
+}
+
+func encodeValueByMapstructureTag(v reflect.Value) (interface{}, error) {
+	if !v.IsValid() {
+		return nil, nil
+	}
+
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return nil, nil
+		}
+		v = v.Elem()
+	}
+
+	switch v.Kind() {
+	case reflect.Struct:
+		t := v.Type()
+		out := make(map[string]interface{})
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			if f.PkgPath != "" {
+				continue
+			}
+
+			name, omitEmpty, skip := parseMapstructureTag(f.Tag.Get("mapstructure"), f.Name)
+			if skip {
+				continue
+			}
+
+			fv := v.Field(i)
+			if omitEmpty && fv.IsZero() {
+				continue
+			}
+
+			encoded, err := encodeValueByMapstructureTag(fv)
+			if err != nil {
+				return nil, err
+			}
+			if omitEmpty && encoded == nil {
+				continue
+			}
+			out[name] = encoded
+		}
+		return out, nil
+
+	case reflect.Map:
+		if v.IsNil() {
+			return nil, nil
+		}
+		out := make(map[string]interface{}, v.Len())
+		iter := v.MapRange()
+		for iter.Next() {
+			k := iter.Key()
+			if k.Kind() != reflect.String {
+				continue
+			}
+			encoded, err := encodeValueByMapstructureTag(iter.Value())
+			if err != nil {
+				return nil, err
+			}
+			out[k.String()] = encoded
+		}
+		return out, nil
+
+	case reflect.Slice, reflect.Array:
+		if v.Kind() == reflect.Slice && v.IsNil() {
+			return nil, nil
+		}
+		out := make([]interface{}, v.Len())
+		for i := 0; i < v.Len(); i++ {
+			encoded, err := encodeValueByMapstructureTag(v.Index(i))
+			if err != nil {
+				return nil, err
+			}
+			out[i] = encoded
+		}
+		return out, nil
+
+	default:
+		return v.Interface(), nil
+	}
+}
+
+func parseMapstructureTag(tag string, fallback string) (name string, omitEmpty bool, skip bool) {
+	if tag == "-" {
+		return "", false, true
+	}
+	if tag == "" {
+		return fallback, false, false
+	}
+
+	parts := strings.Split(tag, ",")
+	name = parts[0]
+	if name == "" {
+		name = fallback
+	}
+	for i := 1; i < len(parts); i++ {
+		if parts[i] == "omitempty" {
+			omitEmpty = true
+			break
+		}
+	}
+	return name, omitEmpty, false
 }
 
 func ResolveConfigPath(home string) string {
