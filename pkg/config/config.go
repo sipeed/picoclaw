@@ -180,6 +180,7 @@ type AgentDefaults struct {
 }
 
 type ChannelsConfig struct {
+<<<<<<< main
 	WhatsApp  WhatsAppConfig  `json:"whatsapp"`
 	Telegram  TelegramConfig  `json:"telegram"`
 	Feishu    FeishuConfig    `json:"feishu"`
@@ -191,6 +192,20 @@ type ChannelsConfig struct {
 	LINE      LINEConfig      `json:"line"`
 	OneBot    OneBotConfig    `json:"onebot"`
 	WebSocket WebSocketConfig `json:"websocket"`
+=======
+	WhatsApp WhatsAppConfig `json:"whatsapp"`
+	Telegram TelegramConfig `json:"telegram"`
+	Feishu   FeishuConfig   `json:"feishu"`
+	Discord  DiscordConfig  `json:"discord"`
+	MaixCam  MaixCamConfig  `json:"maixcam"`
+	QQ       QQConfig       `json:"qq"`
+	DingTalk DingTalkConfig `json:"dingtalk"`
+	Slack    SlackConfig    `json:"slack"`
+	LINE     LINEConfig     `json:"line"`
+	OneBot   OneBotConfig   `json:"onebot"`
+	WeCom    WeComConfig    `json:"wecom"`
+	WeComApp WeComAppConfig `json:"wecom_app"`
+>>>>>>> main
 }
 
 type WhatsAppConfig struct {
@@ -269,11 +284,38 @@ type OneBotConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
 }
 
+<<<<<<< main
 type WebSocketConfig struct {
 	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WEBSOCKET_ENABLED"`
 	Host      string              `json:"host" env:"PICOCLAW_CHANNELS_WEBSOCKET_HOST"`
 	Port      int                 `json:"port" env:"PICOCLAW_CHANNELS_WEBSOCKET_PORT"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WEBSOCKET_ALLOW_FROM"`
+=======
+type WeComConfig struct {
+	Enabled        bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WECOM_ENABLED"`
+	Token          string              `json:"token" env:"PICOCLAW_CHANNELS_WECOM_TOKEN"`
+	EncodingAESKey string              `json:"encoding_aes_key" env:"PICOCLAW_CHANNELS_WECOM_ENCODING_AES_KEY"`
+	WebhookURL     string              `json:"webhook_url" env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_URL"`
+	WebhookHost    string              `json:"webhook_host" env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_HOST"`
+	WebhookPort    int                 `json:"webhook_port" env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PORT"`
+	WebhookPath    string              `json:"webhook_path" env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PATH"`
+	AllowFrom      FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WECOM_ALLOW_FROM"`
+	ReplyTimeout   int                 `json:"reply_timeout" env:"PICOCLAW_CHANNELS_WECOM_REPLY_TIMEOUT"`
+}
+
+type WeComAppConfig struct {
+	Enabled        bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WECOM_APP_ENABLED"`
+	CorpID         string              `json:"corp_id" env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_ID"`
+	CorpSecret     string              `json:"corp_secret" env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_SECRET"`
+	AgentID        int64               `json:"agent_id" env:"PICOCLAW_CHANNELS_WECOM_APP_AGENT_ID"`
+	Token          string              `json:"token" env:"PICOCLAW_CHANNELS_WECOM_APP_TOKEN"`
+	EncodingAESKey string              `json:"encoding_aes_key" env:"PICOCLAW_CHANNELS_WECOM_APP_ENCODING_AES_KEY"`
+	WebhookHost    string              `json:"webhook_host" env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_HOST"`
+	WebhookPort    int                 `json:"webhook_port" env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PORT"`
+	WebhookPath    string              `json:"webhook_path" env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
+	AllowFrom      FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
+	ReplyTimeout   int                 `json:"reply_timeout" env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
+>>>>>>> main
 }
 
 type HeartbeatConfig struct {

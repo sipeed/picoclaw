@@ -264,6 +264,7 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
+<<<<<<< main
 Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WebSocket
 
 | Channel       | Setup                              |
@@ -274,6 +275,18 @@ Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WebSocket
 | **DingTalk**  | Medium (app credentials)           |
 | **LINE**      | Medium (credentials + webhook URL) |
 | **WebSocket** | Easy (local LAN web chat)          |
+=======
+Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
+
+| Channel      | Setup                              |
+| ------------ | ---------------------------------- |
+| **Telegram** | Easy (just a token)                |
+| **Discord**  | Easy (bot token + intents)         |
+| **QQ**       | Easy (AppID + AppSecret)           |
+| **DingTalk** | Medium (app credentials)           |
+| **LINE**     | Medium (credentials + webhook URL) |
+| **WeCom**    | Medium (CorpID + webhook setup)    |
+>>>>>>> main
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -479,25 +492,57 @@ picoclaw gateway
 </details>
 
 <details>
+<<<<<<< main
 <summary><b>WebSocket</b> (Local LAN Web Chat)</summary>
 
 **1. Configure**
 
 WebSocket channel provides a web-based chat interface accessible from your local network:
+=======
+<summary><b>WeCom (企业微信)</b></summary>
+
+PicoClaw supports two types of WeCom integration:
+
+**Option 1: WeCom Bot (智能机器人)** - Easier setup, supports group chats
+**Option 2: WeCom App (自建应用)** - More features, proactive messaging
+
+See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detailed setup instructions.
+
+**Quick Setup - WeCom Bot:**
+
+**1. Create a bot**
+
+* Go to WeCom Admin Console → Group Chat → Add Group Bot
+* Copy the webhook URL (format: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+
+**2. Configure**
+>>>>>>> main
 
 ```json
 {
   "channels": {
+<<<<<<< main
     "websocket": {
       "enabled": true,
       "host": "0.0.0.0",
       "port": 8080,
+=======
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+>>>>>>> main
       "allow_from": []
     }
   }
 }
 ```
 
+<<<<<<< main
 **Configuration Options:**
 
 - `host`: Bind address (use `0.0.0.0` to allow connections from LAN, or `127.0.0.1` for localhost only)
@@ -528,6 +573,50 @@ The chat interface features:
 > **Note**: The WebSocket channel is designed for local LAN use. For internet-facing deployments, consider setting up proper authentication and using HTTPS with a reverse proxy.
 
 > **Docker Compose**: Add `ports: ["8080:8080"]` to the `picoclaw-gateway` service to expose the WebSocket port.
+=======
+**Quick Setup - WeCom App:**
+
+**1. Create an app**
+
+* Go to WeCom Admin Console → App Management → Create App
+* Copy **AgentId** and **Secret**
+* Go to "My Company" page, copy **CorpID**
+
+**2. Configure receive message**
+
+* In App details, click "Receive Message" → "Set API"
+* Set URL to `http://your-server:18792/webhook/wecom-app`
+* Generate **Token** and **EncodingAESKey**
+
+**3. Configure**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. Run**
+
+```bash
+picoclaw gateway
+```
+
+> **Note**: WeCom App requires opening port 18792 for webhook callbacks. Use a reverse proxy for HTTPS.
+>>>>>>> main
 
 </details>
 

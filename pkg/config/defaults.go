@@ -89,11 +89,37 @@ func DefaultConfig() *Config {
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
 			},
+<<<<<<< main
 			WebSocket: WebSocketConfig{
 				Enabled:   false,
 				Host:      "0.0.0.0",
 				Port:      8080,
 				AllowFrom: FlexibleStringSlice{},
+=======
+			WeCom: WeComConfig{
+				Enabled:        false,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookURL:     "",
+				WebhookHost:    "0.0.0.0",
+				WebhookPort:    18793,
+				WebhookPath:    "/webhook/wecom",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
+			},
+			WeComApp: WeComAppConfig{
+				Enabled:        false,
+				CorpID:         "",
+				CorpSecret:     "",
+				AgentID:        0,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookHost:    "0.0.0.0",
+				WebhookPort:    18792,
+				WebhookPath:    "/webhook/wecom-app",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
+>>>>>>> main
 			},
 		},
 		Providers: ProvidersConfig{
