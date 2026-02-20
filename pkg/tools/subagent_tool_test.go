@@ -10,9 +10,12 @@ import (
 )
 
 // MockLLMProvider is a test implementation of LLMProvider
-type MockLLMProvider struct{}
+type MockLLMProvider struct {
+	lastOptions map[string]interface{}
+}
 
 func (m *MockLLMProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, options map[string]interface{}) (*providers.LLMResponse, error) {
+	m.lastOptions = options
 	// Find the last user message to generate a response
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
@@ -34,6 +37,32 @@ func (m *MockLLMProvider) SupportsTools() bool {
 
 func (m *MockLLMProvider) GetContextWindow() int {
 	return 4096
+}
+
+func TestSubagentManager_SetLLMOptions_AppliesToRunToolLoop(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
+	manager.SetLLMOptions(2048, 0.6)
+	tool := NewSubagentTool(manager)
+	tool.SetContext("cli", "direct")
+
+	ctx := context.Background()
+	args := map[string]interface{}{"task": "Do something"}
+	result := tool.Execute(ctx, args)
+
+	if result == nil || result.IsError {
+		t.Fatalf("Expected successful result, got: %+v", result)
+	}
+
+	if provider.lastOptions == nil {
+		t.Fatal("Expected LLM options to be passed, got nil")
+	}
+	if provider.lastOptions["max_tokens"] != 2048 {
+		t.Fatalf("max_tokens = %v, want %d", provider.lastOptions["max_tokens"], 2048)
+	}
+	if provider.lastOptions["temperature"] != 0.6 {
+		t.Fatalf("temperature = %v, want %v", provider.lastOptions["temperature"], 0.6)
+	}
 }
 
 // TestSubagentTool_Name verifies tool name

@@ -59,6 +59,13 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 				Proxy: http.ProxyURL(proxyURL),
 			},
 		}))
+	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
+		// Use environment proxy if configured
+		opts = append(opts, telego.WithHTTPClient(&http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+			},
+		}))
 	}
 
 	bot, err := telego.NewBot(telegramCfg.Token, opts...)
@@ -347,12 +354,21 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		c.placeholders.Store(chatIDStr, pID)
 	}
 
+	peerKind := "direct"
+	peerID := fmt.Sprintf("%d", user.ID)
+	if message.Chat.Type != "private" {
+		peerKind = "group"
+		peerID = fmt.Sprintf("%d", chatID)
+	}
+
 	metadata := map[string]string{
 		"message_id": fmt.Sprintf("%d", message.MessageID),
 		"user_id":    fmt.Sprintf("%d", user.ID),
 		"username":   user.Username,
 		"first_name": user.FirstName,
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
+		"peer_kind":  peerKind,
+		"peer_id":    peerID,
 	}
 
 	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
