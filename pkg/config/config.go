@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync/atomic"
+	"sync"
 
 	"github.com/caarlos0/env/v11"
 )
-
-// rrCounter is a global counter for round-robin load balancing across models.
-var rrCounter atomic.Uint64
 
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
 // so allow_from can contain both "123" and 123.
@@ -51,37 +48,12 @@ type Config struct {
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	Session   SessionConfig   `json:"session,omitempty"`
 	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
+	Providers ProvidersConfig `json:"providers"`
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
-}
-
-// MarshalJSON implements custom JSON marshaling for Config
-// to omit providers section when empty and session when empty
-func (c Config) MarshalJSON() ([]byte, error) {
-	type Alias Config
-	aux := &struct {
-		Providers *ProvidersConfig `json:"providers,omitempty"`
-		Session   *SessionConfig   `json:"session,omitempty"`
-		*Alias
-	}{
-		Alias: (*Alias)(&c),
-	}
-
-	// Only include providers if not empty
-	if !c.Providers.IsEmpty() {
-		aux.Providers = &c.Providers
-	}
-
-	// Only include session if not empty
-	if c.Session.DMScope != "" || len(c.Session.IdentityLinks) > 0 {
-		aux.Session = &c.Session
-	}
-
-	return json.Marshal(aux)
+	mu        sync.RWMutex
 }
 
 type AgentsConfig struct {
@@ -175,7 +147,7 @@ type AgentDefaults struct {
 	ImageModel          string   `json:"image_model,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
 	MaxTokens           int      `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         *float64 `json:"temperature,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	Temperature         float64  `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations   int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
@@ -217,10 +189,9 @@ type FeishuConfig struct {
 }
 
 type DiscordConfig struct {
-	Enabled     bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token       string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom   FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
-	MentionOnly bool                `json:"mention_only" env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
+	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
 }
 
 type MaixCamConfig struct {
@@ -319,43 +290,7 @@ type ProvidersConfig struct {
 	Moonshot      ProviderConfig       `json:"moonshot"`
 	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig       `json:"deepseek"`
-	Cerebras      ProviderConfig       `json:"cerebras"`
-	VolcEngine    ProviderConfig       `json:"volcengine"`
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
-	Antigravity   ProviderConfig       `json:"antigravity"`
-	Qwen          ProviderConfig       `json:"qwen"`
-}
-
-// IsEmpty checks if all provider configs are empty (no API keys or API bases set)
-// Note: WebSearch is an optimization option and doesn't count as "non-empty"
-func (p ProvidersConfig) IsEmpty() bool {
-	return p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" &&
-		p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" &&
-		p.OpenRouter.APIKey == "" && p.OpenRouter.APIBase == "" &&
-		p.Groq.APIKey == "" && p.Groq.APIBase == "" &&
-		p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" &&
-		p.VLLM.APIKey == "" && p.VLLM.APIBase == "" &&
-		p.Gemini.APIKey == "" && p.Gemini.APIBase == "" &&
-		p.Nvidia.APIKey == "" && p.Nvidia.APIBase == "" &&
-		p.Ollama.APIKey == "" && p.Ollama.APIBase == "" &&
-		p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" &&
-		p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" &&
-		p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" &&
-		p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" &&
-		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
-		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
-		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
-		p.Qwen.APIKey == "" && p.Qwen.APIBase == ""
-}
-
-// MarshalJSON implements custom JSON marshaling for ProvidersConfig
-// to omit the entire section when empty
-func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
-	if p.IsEmpty() {
-		return []byte("null"), nil
-	}
-	type Alias ProvidersConfig
-	return json.Marshal((*Alias)(&p))
 }
 
 type ProviderConfig struct {
@@ -369,42 +304,6 @@ type ProviderConfig struct {
 type OpenAIProviderConfig struct {
 	ProviderConfig
 	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
-}
-
-// ModelConfig represents a model-centric provider configuration.
-// It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
-// The model field uses protocol prefix format: [protocol/]model-identifier
-// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
-// Default protocol is "openai" if no prefix is specified.
-type ModelConfig struct {
-	// Required fields
-	ModelName string `json:"model_name"` // User-facing alias for the model
-	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
-
-	// HTTP-based providers
-	APIBase string `json:"api_base,omitempty"` // API endpoint URL
-	APIKey  string `json:"api_key"`            // API authentication key
-	Proxy   string `json:"proxy,omitempty"`    // HTTP proxy URL
-
-	// Special providers (CLI-based, OAuth, etc.)
-	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token
-	ConnectMode string `json:"connect_mode,omitempty"` // Connection mode: stdio, grpc
-	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
-
-	// Optional optimizations
-	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
-	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
-}
-
-// Validate checks if the ModelConfig has all required fields.
-func (c *ModelConfig) Validate() error {
-	if c.ModelName == "" {
-		return fmt.Errorf("model_name is required")
-	}
-	if c.Model == "" {
-		return fmt.Errorf("model is required")
-	}
-	return nil
 }
 
 type GatewayConfig struct {
@@ -444,38 +343,153 @@ type ExecConfig struct {
 	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 }
 
+type VisionToolConfig struct {
+	Enabled bool   `json:"enabled" env:"PICOCLAW_TOOLS_VISION_ENABLED"`
+	ApiKey  string `json:"api_key" env:"PICOCLAW_TOOLS_VISION_API_KEY"`
+	ApiURL  string `json:"api_url" env:"PICOCLAW_TOOLS_VISION_API_URL"`
+	Model   string `json:"model" env:"PICOCLAW_TOOLS_VISION_MODEL"`
+}
+
 type ToolsConfig struct {
-	Web    WebToolsConfig    `json:"web"`
-	Cron   CronToolsConfig   `json:"cron"`
-	Exec   ExecConfig        `json:"exec"`
-	Skills SkillsToolsConfig `json:"skills"`
+	Web    WebToolsConfig   `json:"web"`
+	Cron   CronToolsConfig  `json:"cron"`
+	Exec   ExecConfig       `json:"exec"`
+	Vision VisionToolConfig `json:"vision"`
 }
 
-type SkillsToolsConfig struct {
-	Registries            SkillsRegistriesConfig `json:"registries"`
-	MaxConcurrentSearches int                    `json:"max_concurrent_searches" env:"PICOCLAW_SKILLS_MAX_CONCURRENT_SEARCHES"`
-	SearchCache           SearchCacheConfig      `json:"search_cache"`
-}
-
-type SearchCacheConfig struct {
-	MaxSize    int `json:"max_size" env:"PICOCLAW_SKILLS_SEARCH_CACHE_MAX_SIZE"`
-	TTLSeconds int `json:"ttl_seconds" env:"PICOCLAW_SKILLS_SEARCH_CACHE_TTL_SECONDS"`
-}
-
-type SkillsRegistriesConfig struct {
-	ClawHub ClawHubRegistryConfig `json:"clawhub"`
-}
-
-type ClawHubRegistryConfig struct {
-	Enabled         bool   `json:"enabled" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_ENABLED"`
-	BaseURL         string `json:"base_url" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_BASE_URL"`
-	AuthToken       string `json:"auth_token" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_AUTH_TOKEN"`
-	SearchPath      string `json:"search_path" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SEARCH_PATH"`
-	SkillsPath      string `json:"skills_path" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"`
-	DownloadPath    string `json:"download_path" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_DOWNLOAD_PATH"`
-	Timeout         int    `json:"timeout" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_TIMEOUT"`
-	MaxZipSize      int    `json:"max_zip_size" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_ZIP_SIZE"`
-	MaxResponseSize int    `json:"max_response_size" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_RESPONSE_SIZE"`
+func DefaultConfig() *Config {
+	return &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Workspace:           "~/.picoclaw/workspace",
+				RestrictToWorkspace: true,
+				Provider:            "",
+				Model:               "glm-4.7",
+				MaxTokens:           8192,
+				Temperature:         0.7,
+				MaxToolIterations:   20,
+			},
+		},
+		Channels: ChannelsConfig{
+			WhatsApp: WhatsAppConfig{
+				Enabled:   false,
+				BridgeURL: "ws://localhost:3001",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			Telegram: TelegramConfig{
+				Enabled:   false,
+				Token:     "",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			Feishu: FeishuConfig{
+				Enabled:           false,
+				AppID:             "",
+				AppSecret:         "",
+				EncryptKey:        "",
+				VerificationToken: "",
+				AllowFrom:         FlexibleStringSlice{},
+			},
+			Discord: DiscordConfig{
+				Enabled:   false,
+				Token:     "",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			MaixCam: MaixCamConfig{
+				Enabled:   false,
+				Host:      "0.0.0.0",
+				Port:      18790,
+				AllowFrom: FlexibleStringSlice{},
+			},
+			QQ: QQConfig{
+				Enabled:   false,
+				AppID:     "",
+				AppSecret: "",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			DingTalk: DingTalkConfig{
+				Enabled:      false,
+				ClientID:     "",
+				ClientSecret: "",
+				AllowFrom:    FlexibleStringSlice{},
+			},
+			Slack: SlackConfig{
+				Enabled:   false,
+				BotToken:  "",
+				AppToken:  "",
+				AllowFrom: FlexibleStringSlice{},
+			},
+			LINE: LINEConfig{
+				Enabled:            false,
+				ChannelSecret:      "",
+				ChannelAccessToken: "",
+				WebhookHost:        "0.0.0.0",
+				WebhookPort:        18791,
+				WebhookPath:        "/webhook/line",
+				AllowFrom:          FlexibleStringSlice{},
+			},
+			OneBot: OneBotConfig{
+				Enabled:            false,
+				WSUrl:              "ws://127.0.0.1:3001",
+				AccessToken:        "",
+				ReconnectInterval:  5,
+				GroupTriggerPrefix: []string{},
+				AllowFrom:          FlexibleStringSlice{},
+			},
+		},
+		Providers: ProvidersConfig{
+			Anthropic:    ProviderConfig{},
+			OpenAI:       OpenAIProviderConfig{WebSearch: true},
+			OpenRouter:   ProviderConfig{},
+			Groq:         ProviderConfig{},
+			Zhipu:        ProviderConfig{},
+			VLLM:         ProviderConfig{},
+			Gemini:       ProviderConfig{},
+			Nvidia:       ProviderConfig{},
+			Moonshot:     ProviderConfig{},
+			ShengSuanYun: ProviderConfig{},
+		},
+		Gateway: GatewayConfig{
+			Host: "0.0.0.0",
+			Port: 18790,
+		},
+		Tools: ToolsConfig{
+			Web: WebToolsConfig{
+				Brave: BraveConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
+				DuckDuckGo: DuckDuckGoConfig{
+					Enabled:    true,
+					MaxResults: 5,
+				},
+				Perplexity: PerplexityConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
+			},
+			Cron: CronToolsConfig{
+				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
+			},
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
+			},
+			Vision: VisionToolConfig{
+				Enabled: false,
+				ApiURL:  "",
+				Model:   "gpt-4o-mini",
+			},
+		},
+		Heartbeat: HeartbeatConfig{
+			Enabled:  true,
+			Interval: 30, // default 30 minutes
+		},
+		Devices: DevicesConfig{
+			Enabled:    false,
+			MonitorUSB: true,
+		},
+	}
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -497,20 +511,13 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
-	// Auto-migrate: if only legacy providers config exists, convert to model_list
-	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
-		cfg.ModelList = ConvertProvidersToModelList(cfg)
-	}
-
-	// Validate model_list for uniqueness and required fields
-	if err := cfg.ValidateModelList(); err != nil {
-		return nil, err
-	}
-
 	return cfg, nil
 }
 
 func SaveConfig(path string, cfg *Config) error {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -525,10 +532,14 @@ func SaveConfig(path string, cfg *Config) error {
 }
 
 func (c *Config) WorkspacePath() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return expandHome(c.Agents.Defaults.Workspace)
 }
 
 func (c *Config) GetAPIKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if c.Providers.OpenRouter.APIKey != "" {
 		return c.Providers.OpenRouter.APIKey
 	}
@@ -553,13 +564,12 @@ func (c *Config) GetAPIKey() string {
 	if c.Providers.ShengSuanYun.APIKey != "" {
 		return c.Providers.ShengSuanYun.APIKey
 	}
-	if c.Providers.Cerebras.APIKey != "" {
-		return c.Providers.Cerebras.APIKey
-	}
 	return ""
 }
 
 func (c *Config) GetAPIBase() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if c.Providers.OpenRouter.APIKey != "" {
 		if c.Providers.OpenRouter.APIBase != "" {
 			return c.Providers.OpenRouter.APIBase
@@ -575,6 +585,32 @@ func (c *Config) GetAPIBase() string {
 	return ""
 }
 
+// ModelConfig holds primary model and fallback list.
+type ModelConfig struct {
+	Primary   string
+	Fallbacks []string
+}
+
+// GetModelConfig returns the text model configuration with fallbacks.
+func (c *Config) GetModelConfig() ModelConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return ModelConfig{
+		Primary:   c.Agents.Defaults.Model,
+		Fallbacks: c.Agents.Defaults.ModelFallbacks,
+	}
+}
+
+// GetImageModelConfig returns the image model configuration with fallbacks.
+func (c *Config) GetImageModelConfig() ModelConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return ModelConfig{
+		Primary:   c.Agents.Defaults.ImageModel,
+		Fallbacks: c.Agents.Defaults.ImageModelFallbacks,
+	}
+}
+
 func expandHome(path string) string {
 	if path == "" {
 		return path
@@ -587,66 +623,4 @@ func expandHome(path string) string {
 		return home
 	}
 	return path
-}
-
-// GetModelConfig returns the ModelConfig for the given model name.
-// If multiple configs exist with the same model_name, it uses round-robin
-// selection for load balancing. Returns an error if the model is not found.
-func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
-	matches := c.findMatches(modelName)
-	if len(matches) == 0 {
-		return nil, fmt.Errorf("model %q not found in model_list or providers", modelName)
-	}
-	if len(matches) == 1 {
-		return &matches[0], nil
-	}
-
-	// Multiple configs - use round-robin for load balancing
-	idx := rrCounter.Add(1) % uint64(len(matches))
-	return &matches[idx], nil
-}
-
-// findMatches finds all ModelConfig entries with the given model_name.
-func (c *Config) findMatches(modelName string) []ModelConfig {
-	var matches []ModelConfig
-	for i := range c.ModelList {
-		if c.ModelList[i].ModelName == modelName {
-			matches = append(matches, c.ModelList[i])
-		}
-	}
-	return matches
-}
-
-// HasProvidersConfig checks if any provider in the old providers config has configuration.
-func (c *Config) HasProvidersConfig() bool {
-	v := c.Providers
-	return v.Anthropic.APIKey != "" || v.Anthropic.APIBase != "" ||
-		v.OpenAI.APIKey != "" || v.OpenAI.APIBase != "" ||
-		v.OpenRouter.APIKey != "" || v.OpenRouter.APIBase != "" ||
-		v.Groq.APIKey != "" || v.Groq.APIBase != "" ||
-		v.Zhipu.APIKey != "" || v.Zhipu.APIBase != "" ||
-		v.VLLM.APIKey != "" || v.VLLM.APIBase != "" ||
-		v.Gemini.APIKey != "" || v.Gemini.APIBase != "" ||
-		v.Nvidia.APIKey != "" || v.Nvidia.APIBase != "" ||
-		v.Ollama.APIKey != "" || v.Ollama.APIBase != "" ||
-		v.Moonshot.APIKey != "" || v.Moonshot.APIBase != "" ||
-		v.ShengSuanYun.APIKey != "" || v.ShengSuanYun.APIBase != "" ||
-		v.DeepSeek.APIKey != "" || v.DeepSeek.APIBase != "" ||
-		v.Cerebras.APIKey != "" || v.Cerebras.APIBase != "" ||
-		v.VolcEngine.APIKey != "" || v.VolcEngine.APIBase != "" ||
-		v.GitHubCopilot.APIKey != "" || v.GitHubCopilot.APIBase != "" ||
-		v.Antigravity.APIKey != "" || v.Antigravity.APIBase != "" ||
-		v.Qwen.APIKey != "" || v.Qwen.APIBase != ""
-}
-
-// ValidateModelList validates all ModelConfig entries in the model_list.
-// It checks that each model config is valid.
-// Note: Multiple entries with the same model_name are allowed for load balancing.
-func (c *Config) ValidateModelList() error {
-	for i := range c.ModelList {
-		if err := c.ModelList[i].Validate(); err != nil {
-			return fmt.Errorf("model_list[%d]: %w", i, err)
-		}
-	}
-	return nil
 }
