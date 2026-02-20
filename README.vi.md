@@ -147,7 +147,7 @@ cd picoclaw
 
 # 2. Thiết lập API key
 cp config/config.example.json config/config.json
-vim config/config.json      # Thiết lập DISCORD_BOT_TOKEN, API keys, v.v. (hoặc dùng config.yaml/config.toml/config.ini)
+vim config/config.json      # Thiết lập DISCORD_BOT_TOKEN, API keys, v.v. (hoặc dùng config.yaml/config.toml)
 
 # 3. Build & Khởi động
 docker compose --profile gateway up -d
@@ -180,11 +180,11 @@ docker compose --profile gateway up -d
 
 ### Cấu hình
 
-Bạn có thể cấu hình PicoClaw bằng cách chỉnh sửa file cấu hình ở các định dạng sau: `config.json`, `config.yaml`, `config.toml`, hoặc `config.ini`. Tất cả các định dạng này đều được hỗ trợ.
+Bạn có thể cấu hình PicoClaw bằng cách chỉnh sửa file cấu hình ở các định dạng sau: `config.json`, `config.yaml`, hoặc `config.toml`.
 
 > [!TIP]
-> Thiết lập API key trong `~/.picoclaw/config.json`, `~/.picoclaw/config.yaml`, `~/.picoclaw/config.toml` hoặc `~/.picoclaw/config.ini`.
-> PicoClaw hỗ trợ nhiều định dạng cấu hình: **JSON** (mặc định), **YAML**, **TOML**, **INI** via [spf13/viper](https://github.com/spf13/viper).
+> Thiết lập API key trong `~/.picoclaw/config.json`, `~/.picoclaw/config.yaml` hoặc `~/.picoclaw/config.toml`.
+> PicoClaw hỗ trợ nhiều định dạng cấu hình: **JSON** (mặc định), **YAML**, **TOML** via [spf13/viper](https://github.com/spf13/viper).
 > Lấy API key: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
 > Tìm kiếm web là **tùy chọn** — lấy [Brave Search API](https://brave.com/search/api) miễn phí (2000 truy vấn/tháng) hoặc dùng tính năng auto fallback tích hợp sẵn.
 
@@ -194,13 +194,12 @@ Bạn có thể cấu hình PicoClaw bằng cách chỉnh sửa file cấu hình
 picoclaw onboard
 ```
 
-**2. Cấu hình** (`~/.picoclaw/config.json`, `~/.picoclaw/config.yaml`, `~/.picoclaw/config.toml` hoặc `~/.picoclaw/config.ini`)
+**2. Cấu hình** (`~/.picoclaw/config.json`, `~/.picoclaw/config.yaml` hoặc `~/.picoclaw/config.toml`)
 
 PicoClaw hỗ trợ nhiều định dạng via [spf13/viper](https://github.com/spf13/viper). Chọn bất kỳ một:
 - `config.json` - Định dạng JSON (mặc định)
 - `config.yaml` hoặc `config.yml` - Định dạng YAML
 - `config.toml` - Định dạng TOML
-- `config.ini` - Định dạng INI
 
 ```json
 {

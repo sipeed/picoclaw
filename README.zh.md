@@ -165,7 +165,7 @@ cd picoclaw
 
 # 2. 设置 API Key
 cp config/config.example.json config/config.json
-vim config/config.json      # 或使用 config.yaml/config.toml/config.ini 设置 DISCORD_BOT_TOKEN, API keys 等
+vim config/config.json      # 或使用 config.yaml/config.toml 设置 DISCORD_BOT_TOKEN, API keys 等
 
 # 3. 构建并启动
 docker compose --profile gateway up -d
@@ -200,8 +200,8 @@ docker compose --profile gateway up -d
 ### 🚀 快速开始
 
 > [!TIP]
-> 在 `~/.picoclaw/config.json`、`~/.picoclaw/config.yaml`、`~/.picoclaw/config.toml` 或 `~/.picoclaw/config.ini` 中设置您的 API Key。
-> PicoClaw 支持多种配置格式：**JSON**（默认）、**YAML**、**TOML**、**INI**，通过 [spf13/viper](https://github.com/spf13/viper) 驱动。
+> 在 `~/.picoclaw/config.json`、`~/.picoclaw/config.yaml` 或 `~/.picoclaw/config.toml` 中设置您的 API Key。
+> PicoClaw 支持多种配置格式：**JSON**（默认）、**YAML**、**TOML**，通过 [spf13/viper](https://github.com/spf13/viper) 驱动。
 > 获取 API Key: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu (智谱)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
 > 网络搜索是 **可选的** - 获取免费的 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询)
 
@@ -212,13 +212,12 @@ picoclaw onboard
 
 ```
 
-**2. 配置 (Configure)** (`~/.picoclaw/config.json`、`~/.picoclaw/config.yaml`、`~/.picoclaw/config.toml` 或 `~/.picoclaw/config.ini`)
+**2. 配置 (Configure)** (`~/.picoclaw/config.json`、`~/.picoclaw/config.yaml` 或 `~/.picoclaw/config.toml`)
 
 通过 [spf13/viper](https://github.com/spf13/viper) 支持多种配置格式，选择其中任意一种即可：
 - `config.json` - JSON 格式（默认）
 - `config.yaml` 或 `config.yml` - YAML 格式
 - `config.toml` - TOML 格式
-- `config.ini` - INI 格式
 
 ```json
 {

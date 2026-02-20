@@ -64,7 +64,6 @@ var configFileNames = []string{
 	"config.yaml",
 	"config.yml",
 	"config.toml",
-	"config.ini",
 }
 
 type AgentsConfig struct {
@@ -534,8 +533,6 @@ func SaveConfig(path string, cfg *Config) error {
 		configType = "yaml"
 	case ".toml":
 		configType = "toml"
-	case ".ini":
-		configType = "ini"
 	case ".json", "":
 		configType = "json"
 		if ext == "" {

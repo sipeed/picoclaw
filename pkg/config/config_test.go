@@ -300,6 +300,85 @@ func TestSaveConfig_FilePermissions(t *testing.T) {
 	}
 }
 
+func TestSaveConfig_AllSupportedFormats(t *testing.T) {
+	tests := []struct {
+		name        string
+		fileName    string
+		expectedOut string
+	}{
+		{
+			name:        "json",
+			fileName:    "config.json",
+			expectedOut: "config.json",
+		},
+		{
+			name:        "yaml",
+			fileName:    "config.yaml",
+			expectedOut: "config.yaml",
+		},
+		{
+			name:        "yml",
+			fileName:    "config.yml",
+			expectedOut: "config.yml",
+		},
+		{
+			name:        "toml",
+			fileName:    "config.toml",
+			expectedOut: "config.toml",
+		},
+		{
+			name:        "no_extension_defaults_to_json",
+			fileName:    "config",
+			expectedOut: "config.json",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			targetPath := filepath.Join(tmpDir, tc.fileName)
+			outPath := filepath.Join(tmpDir, tc.expectedOut)
+
+			cfg := DefaultConfig()
+			cfg.Agents.Defaults.Model = "unit-test-model"
+			cfg.Agents.Defaults.MaxTokens = 1234
+			cfg.Gateway.Host = "127.0.0.1"
+			cfg.Gateway.Port = 19090
+			cfg.Providers.Zhipu.APIKey = "test-zhipu-key"
+
+			if err := SaveConfig(targetPath, cfg); err != nil {
+				t.Fatalf("SaveConfig(%q) failed: %v", targetPath, err)
+			}
+
+			if _, err := os.Stat(outPath); err != nil {
+				t.Fatalf("expected output file %q to exist: %v", outPath, err)
+			}
+
+			loaded, err := LoadConfig(outPath)
+			if err != nil {
+				t.Fatalf("LoadConfig(%q) failed: %v", outPath, err)
+			}
+
+			if loaded.Agents.Defaults.Model != "unit-test-model" {
+				t.Errorf("Model = %q, want %q", loaded.Agents.Defaults.Model, "unit-test-model")
+			}
+			if loaded.Agents.Defaults.MaxTokens != 1234 {
+				t.Errorf("MaxTokens = %d, want %d", loaded.Agents.Defaults.MaxTokens, 1234)
+			}
+			if loaded.Gateway.Host != "127.0.0.1" {
+				t.Errorf("Gateway.Host = %q, want %q", loaded.Gateway.Host, "127.0.0.1")
+			}
+			if loaded.Gateway.Port != 19090 {
+				t.Errorf("Gateway.Port = %d, want %d", loaded.Gateway.Port, 19090)
+			}
+			if loaded.Providers.Zhipu.APIKey != "test-zhipu-key" {
+				t.Errorf("Providers.Zhipu.APIKey = %q, want %q", loaded.Providers.Zhipu.APIKey, "test-zhipu-key")
+			}
+		})
+	}
+}
+
 // TestConfig_Complete verifies all config fields are set
 func TestConfig_Complete(t *testing.T) {
 	cfg := DefaultConfig()
