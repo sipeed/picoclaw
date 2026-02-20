@@ -1340,7 +1340,7 @@ func (al *AgentLoop) handleSkillsCommand() string {
 	for _, s := range skillsList {
 		sb.WriteString(fmt.Sprintf("**%s** (%s)\n", s.Name, s.Source))
 		if s.Description != "" {
-			sb.WriteString(fmt.Sprintf("`%s`\n", s.Description))
+			sb.WriteString(fmt.Sprintf("```\n%s\n```\n", s.Description))
 		}
 	}
 	sb.WriteString("\nUse: /skill <name> [message]")
