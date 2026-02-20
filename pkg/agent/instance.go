@@ -83,6 +83,11 @@ func NewAgentInstance(
 		maxTokens = 8192
 	}
 
+	contextWindow := defaults.ContextWindow
+	if contextWindow == 0 {
+		contextWindow = 128000
+	}
+
 	temperature := 0.7
 	if defaults.Temperature != nil {
 		temperature = *defaults.Temperature
@@ -104,7 +109,7 @@ func NewAgentInstance(
 		MaxIterations:  maxIter,
 		MaxTokens:      maxTokens,
 		Temperature:    temperature,
-		ContextWindow:  maxTokens,
+		ContextWindow:  contextWindow,
 		Provider:       provider,
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,
