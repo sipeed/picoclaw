@@ -109,7 +109,7 @@
     }
   },
   "providers": {
-    "_comment": "DEPRECATED: Use model_list instead. This will be removed in v2.0",
+    "_comment": "DEPRECATED: Use model_list instead. This will be removed in a future version",
     "anthropic": {
       "api_key": "",
       "api_base": ""
