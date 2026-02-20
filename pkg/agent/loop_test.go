@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -626,5 +627,95 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+func TestShouldInjectReminder(t *testing.T) {
+	tests := []struct {
+		name      string
+		iteration int
+		interval  int
+		want      bool
+	}{
+		{"first iteration skipped", 1, 5, false},
+		{"iteration 5 interval 5", 5, 5, true},
+		{"iteration 10 interval 5", 10, 5, true},
+		{"iteration 3 interval 5", 3, 5, false},
+		{"interval zero disabled", 5, 0, false},
+		{"interval negative disabled", 5, -1, false},
+		{"iteration 2 interval 1", 2, 1, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldInjectReminder(tt.iteration, tt.interval)
+			if got != tt.want {
+				t.Errorf("shouldInjectReminder(%d, %d) = %v, want %v", tt.iteration, tt.interval, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildTaskReminder_WithoutBlocker(t *testing.T) {
+	msg := buildTaskReminder("implement feature X", "")
+	if msg.Role != "user" {
+		t.Errorf("expected role 'user', got %q", msg.Role)
+	}
+	if !strings.Contains(msg.Content, "[TASK REMINDER]") {
+		t.Error("expected content to contain '[TASK REMINDER]'")
+	}
+	if !strings.Contains(msg.Content, "implement feature X") {
+		t.Error("expected content to contain original message")
+	}
+	if strings.Contains(msg.Content, "blocker") {
+		t.Error("expected content NOT to contain 'blocker' when no blocker provided")
+	}
+	if !strings.Contains(msg.Content, "Continue with the next step") {
+		t.Error("expected content to contain continuation prompt")
+	}
+}
+
+func TestBuildTaskReminder_WithBlocker(t *testing.T) {
+	msg := buildTaskReminder("implement feature X", "ModuleNotFoundError: No module named 'foo'")
+	if msg.Role != "user" {
+		t.Errorf("expected role 'user', got %q", msg.Role)
+	}
+	if !strings.Contains(msg.Content, "[TASK REMINDER]") {
+		t.Error("expected content to contain '[TASK REMINDER]'")
+	}
+	if !strings.Contains(msg.Content, "implement feature X") {
+		t.Error("expected content to contain original message")
+	}
+	if !strings.Contains(msg.Content, "Last blocker") {
+		t.Error("expected content to contain 'Last blocker'")
+	}
+	if !strings.Contains(msg.Content, "ModuleNotFoundError") {
+		t.Error("expected content to contain blocker text")
+	}
+}
+
+func TestBuildTaskReminder_Truncation(t *testing.T) {
+	// Build a long message (1000 runes)
+	longMsg := strings.Repeat("あ", 1000)
+	longBlocker := strings.Repeat("X", 500)
+
+	msg := buildTaskReminder(longMsg, longBlocker)
+
+	// The full message should NOT contain 1000 'あ' characters
+	runeCount := strings.Count(msg.Content, "あ")
+	if runeCount >= 1000 {
+		t.Errorf("expected task message to be truncated, got %d 'あ' runes", runeCount)
+	}
+	// Should be at most taskReminderMaxChars (500) runes for the task part
+	if runeCount > taskReminderMaxChars {
+		t.Errorf("expected at most %d task runes, got %d", taskReminderMaxChars, runeCount)
+	}
+
+	// Blocker should be truncated too
+	xCount := strings.Count(msg.Content, "X")
+	if xCount >= 500 {
+		t.Errorf("expected blocker to be truncated, got %d 'X' chars", xCount)
+	}
+	if xCount > blockerMaxChars {
+		t.Errorf("expected at most %d blocker chars, got %d", blockerMaxChars, xCount)
 	}
 }

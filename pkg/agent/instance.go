@@ -20,8 +20,9 @@ type AgentInstance struct {
 	Model          string
 	Fallbacks      []string
 	Workspace      string
-	MaxIterations  int
-	ContextWindow  int
+	MaxIterations        int
+	TaskReminderInterval int
+	ContextWindow        int
 	Provider       providers.LLMProvider
 	Sessions       *session.SessionManager
 	ContextBuilder *ContextBuilder
@@ -76,6 +77,11 @@ func NewAgentInstance(
 		maxIter = 20
 	}
 
+	reminderInterval := defaults.TaskReminderInterval
+	if reminderInterval == 0 {
+		reminderInterval = 5
+	}
+
 	// Resolve fallback candidates
 	modelCfg := providers.ModelConfig{
 		Primary:   model,
@@ -89,8 +95,9 @@ func NewAgentInstance(
 		Model:          model,
 		Fallbacks:      fallbacks,
 		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		ContextWindow:  defaults.MaxTokens,
+		MaxIterations:        maxIter,
+		TaskReminderInterval: reminderInterval,
+		ContextWindow:        defaults.MaxTokens,
 		Provider:       provider,
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,

@@ -444,6 +444,40 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	return finalContent, nil
 }
 
+// Task reminder constants and helpers.
+const taskReminderMaxChars = 500
+const blockerMaxChars = 200
+
+func shouldInjectReminder(iteration, interval int) bool {
+	if interval <= 0 {
+		return false
+	}
+	return iteration > 1 && iteration%interval == 0
+}
+
+func buildTaskReminder(userMessage string, lastBlocker string) providers.Message {
+	truncatedTask := utils.Truncate(userMessage, taskReminderMaxChars)
+
+	var content string
+	if lastBlocker != "" {
+		truncatedBlocker := utils.Truncate(lastBlocker, blockerMaxChars)
+		content = fmt.Sprintf(
+			"[TASK REMINDER]\nOriginal task:\n---\n%s\n---\nLast blocker:\n---\n%s\n---\nDecide: fix the blocker if it's essential, or find an alternative approach to complete the original task.",
+			truncatedTask, truncatedBlocker,
+		)
+	} else {
+		content = fmt.Sprintf(
+			"[TASK REMINDER]\nOriginal task:\n---\n%s\n---\nContinue with the next step toward completing this task.",
+			truncatedTask,
+		)
+	}
+
+	return providers.Message{
+		Role:    "user",
+		Content: content,
+	}
+}
+
 // runLLMIteration executes the LLM call loop with tool handling.
 func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, messages []providers.Message, opts processOptions) (string, int, error) {
 	iteration := 0
@@ -611,6 +645,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
 		// Execute tool calls
+		var lastBlocker string
 		for _, tc := range response.ToolCalls {
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
@@ -659,6 +694,11 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				contentForLLM = toolResult.Err.Error()
 			}
 
+			// Track blockers for task reminder
+			if toolResult.IsError || toolResult.Err != nil {
+				lastBlocker = contentForLLM
+			}
+
 			toolResultMsg := providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
@@ -668,6 +708,18 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
+		}
+
+		// Inject ephemeral task reminder to prevent focus drift.
+		if shouldInjectReminder(iteration, agent.TaskReminderInterval) && !opts.NoHistory {
+			reminderMsg := buildTaskReminder(opts.UserMessage, lastBlocker)
+			messages = append(messages, reminderMsg)
+			logger.DebugCF("agent", "Injected task reminder",
+				map[string]interface{}{
+					"agent_id":    agent.ID,
+					"iteration":   iteration,
+					"has_blocker": lastBlocker != "",
+				})
 		}
 	}
 
