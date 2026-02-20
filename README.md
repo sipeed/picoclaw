@@ -689,6 +689,36 @@ PicoClaw routes providers by protocol family:
 
 This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
 
+### Model Fallbacks
+
+`model_fallbacks` defines a fallback chain that activates when the primary model returns a retriable error (rate limit, server error, etc.). Fallbacks can target **different providers** — the provider is lazily created and cached on first use.
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "provider": "vllm",
+      "model": "MiniMax-M1-80k",
+      "model_fallbacks": ["openai/gpt-4o", "anthropic/claude-sonnet-4-5-20250929"]
+    }
+  },
+  "providers": {
+    "vllm": {
+      "api_key": "minimax-key",
+      "api_base": "https://api.minimax.io/v1"
+    },
+    "openai": {
+      "auth_method": "oauth"
+    },
+    "anthropic": {
+      "api_key": "sk-ant-xxx"
+    }
+  }
+}
+```
+
+The format is `provider/model`. If no `/` is present, the primary provider is assumed (same-provider fallback). Failed providers enter a cooldown period to avoid repeated timeouts.
+
 <details>
 <summary><b>Zhipu</b></summary>
 

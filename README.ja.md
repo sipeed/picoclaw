@@ -621,6 +621,36 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 - `PICOCLAW_HEARTBEAT_ENABLED=false` で無効化
 - `PICOCLAW_HEARTBEAT_INTERVAL=60` で間隔変更
 
+### モデルフォールバック
+
+`model_fallbacks` はプライマリモデルがリトライ可能なエラー（レート制限、サーバーエラー等）を返した時に起動するフォールバックチェーンです。**異なるプロバイダー**をターゲットにでき、プロバイダーは初回使用時に遅延生成・キャッシュされます。
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "provider": "vllm",
+      "model": "MiniMax-M1-80k",
+      "model_fallbacks": ["openai/gpt-4o", "anthropic/claude-sonnet-4-5-20250929"]
+    }
+  },
+  "providers": {
+    "vllm": {
+      "api_key": "minimax-key",
+      "api_base": "https://api.minimax.io/v1"
+    },
+    "openai": {
+      "auth_method": "oauth"
+    },
+    "anthropic": {
+      "api_key": "sk-ant-xxx"
+    }
+  }
+}
+```
+
+フォーマットは `provider/model`。`/` がない場合はプライマリプロバイダーが使われます（同一プロバイダー内フォールバック）。失敗したプロバイダーはクールダウン期間に入り、連続タイムアウトを防ぎます。
+
 ### 基本設定
 
 1.  **設定ファイルの作成:**
