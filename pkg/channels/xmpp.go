@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,15 +41,19 @@ type XMPPChannel struct {
 
 	uploadMu  sync.Mutex
 	uploadJID jid.JID
+	uploadMax int64
 
-	lastMsgMu    sync.Mutex
-	lastFromBare string
-	lastContent  string
-	lastTime     time.Time
+	lastMsgMu sync.Mutex
+	lastMsg   map[string]xmppLastMessage
 }
 
 const chatStatesNS = "http://jabber.org/protocol/chatstates"
 const receiptsNS = "urn:xmpp:receipts"
+
+type xmppLastMessage struct {
+	content string
+	at      time.Time
+}
 
 func NewXMPPChannel(cfg config.XMPPConfig, messageBus *bus.MessageBus) (*XMPPChannel, error) {
 	if cfg.JID == "" {
@@ -64,6 +69,7 @@ func NewXMPPChannel(cfg config.XMPPConfig, messageBus *bus.MessageBus) (*XMPPCha
 		BaseChannel: base,
 		config:      cfg,
 		httpClient:  newHTTPClient(),
+		lastMsg:     make(map[string]xmppLastMessage),
 	}, nil
 }
 
@@ -343,15 +349,9 @@ func (c *XMPPChannel) handleIncomingMessage(msg stanza.Message, t xmlstream.Toke
 	fromBare := msg.From.Bare().String()
 	chatID := msg.From.String()
 
-	c.lastMsgMu.Lock()
-	if fromBare == c.lastFromBare && content == c.lastContent && time.Since(c.lastTime) < 2*time.Second {
-		c.lastMsgMu.Unlock()
+	if c.shouldDropDuplicate(fromBare, content, time.Now()) {
 		return nil
 	}
-	c.lastFromBare = fromBare
-	c.lastContent = content
-	c.lastTime = time.Now()
-	c.lastMsgMu.Unlock()
 
 	logger.DebugCF("xmpp", "Received message", map[string]interface{}{
 		"from":      chatID,
@@ -365,6 +365,23 @@ func (c *XMPPChannel) handleIncomingMessage(msg stanza.Message, t xmlstream.Toke
 	})
 
 	return nil
+}
+
+func (c *XMPPChannel) shouldDropDuplicate(fromBare, content string, now time.Time) bool {
+	c.lastMsgMu.Lock()
+	defer c.lastMsgMu.Unlock()
+
+	if last, ok := c.lastMsg[fromBare]; ok {
+		if last.content == content && now.Sub(last.at) < 2*time.Second {
+			return true
+		}
+	}
+
+	c.lastMsg[fromBare] = xmppLastMessage{
+		content: content,
+		at:      now,
+	}
+	return false
 }
 
 func (c *XMPPChannel) sendChatState(to jid.JID, state string) error {
@@ -440,14 +457,6 @@ func (c *XMPPChannel) discoverUploadService(ctx context.Context) (jid.JID, error
 		return c.uploadJID, nil
 	}
 
-	if c.config.UploadDomain != "" {
-		j, err := jid.Parse(c.config.UploadDomain)
-		if err == nil {
-			c.uploadJID = j
-			return c.uploadJID, nil
-		}
-	}
-
 	if c.session == nil {
 		return jid.JID{}, fmt.Errorf("xmpp session not initialized")
 	}
@@ -504,6 +513,50 @@ func (c *XMPPChannel) discoverUploadService(ctx context.Context) (jid.JID, error
 	return c.uploadJID, nil
 }
 
+func (c *XMPPChannel) getUploadMaxSize(ctx context.Context, uploadJID jid.JID) int64 {
+	c.uploadMu.Lock()
+	if c.uploadMax > 0 {
+		max := c.uploadMax
+		c.uploadMu.Unlock()
+		return max
+	}
+	c.uploadMu.Unlock()
+
+	if c.session == nil {
+		return 0
+	}
+
+	info, err := disco.GetInfo(ctx, "", uploadJID, c.session)
+	if err != nil {
+		return 0
+	}
+
+	var maxSize int64
+	for _, form := range info.Form {
+		raw, ok := form.GetString("max-file-size")
+		if !ok {
+			continue
+		}
+		parsed, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || parsed <= 0 {
+			continue
+		}
+		maxSize = parsed
+		break
+	}
+
+	if maxSize > 0 {
+		c.uploadMu.Lock()
+		if c.uploadMax == 0 {
+			c.uploadMax = maxSize
+		}
+		maxSize = c.uploadMax
+		c.uploadMu.Unlock()
+	}
+
+	return maxSize
+}
+
 func (c *XMPPChannel) uploadFile(ctx context.Context, uploadJID jid.JID, path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -519,6 +572,11 @@ func (c *XMPPChannel) uploadFile(ctx context.Context, uploadJID jid.JID, path st
 	size := info.Size()
 	if size <= 0 {
 		return "", fmt.Errorf("file is empty")
+	}
+
+	maxSize := c.getUploadMaxSize(ctx, uploadJID)
+	if maxSize > 0 && size > maxSize {
+		return "", fmt.Errorf("file size %d exceeds server limit %d", size, maxSize)
 	}
 
 	buffer := make([]byte, 512)
@@ -575,9 +633,40 @@ func (c *XMPPChannel) uploadFile(ctx context.Context, uploadJID jid.JID, path st
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("http put: %w", err)
+	var resp *http.Response
+	var uploadErr error
+
+	// Retry loop for DNS/connection fallback
+	// If upload.domain fails, try domain
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			// Check if we can fallback
+			host := req.URL.Host
+			if strings.HasPrefix(host, "upload.") {
+				newHost := strings.TrimPrefix(host, "upload.")
+				logger.WarnCF("xmpp", "Upload failed, retrying with fallback host", map[string]interface{}{
+					"old_host": host,
+					"new_host": newHost,
+					"error":    uploadErr.Error(),
+				})
+				req.URL.Host = newHost
+				// Reset body
+				if _, err := f.Seek(0, 0); err != nil {
+					return "", fmt.Errorf("seek file for retry: %w", err)
+				}
+			} else {
+				break // No fallback possible
+			}
+		}
+
+		resp, uploadErr = c.httpClient.Do(req)
+		if uploadErr == nil {
+			break
+		}
+	}
+
+	if uploadErr != nil {
+		return "", fmt.Errorf("http put: %w", uploadErr)
 	}
 	defer resp.Body.Close()
 

@@ -44,7 +44,6 @@ type AgentLoop struct {
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
 	channelManager *channels.Manager
-	channelTTLs    map[string]time.Duration
 }
 
 // processOptions configures how a message is processed
@@ -153,11 +152,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
 		summarizing:    sync.Map{},
-		channelTTLs:    make(map[string]time.Duration),
 	}
-
-	al.initChannelTTLs(cfg)
-	go al.startSessionCleanup()
 
 	return al
 }
@@ -990,108 +985,6 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	}
 	// 2.5 chars per token = totalChars * 2 / 5
 	return totalChars * 2 / 5
-}
-
-func (al *AgentLoop) initChannelTTLs(cfg *config.Config) {
-	parseTTL := func(raw string) (time.Duration, bool) {
-		if raw == "" {
-			return 0, false
-		}
-		lower := strings.ToLower(strings.TrimSpace(raw))
-		if lower == "false" {
-			return 0, false
-		}
-		if strings.HasSuffix(lower, "d") {
-			num := strings.TrimSuffix(lower, "d")
-			days, err := time.ParseDuration(num + "h")
-			if err != nil {
-				return 0, false
-			}
-			return days * 24, true
-		}
-		d, err := time.ParseDuration(lower)
-		if err != nil || d <= 0 {
-			return 0, false
-		}
-		return d, true
-	}
-
-	if ttl, ok := parseTTL(cfg.Channels.WhatsApp.SessionTTL); ok {
-		al.channelTTLs["whatsapp"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.Telegram.SessionTTL); ok {
-		al.channelTTLs["telegram"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.Feishu.SessionTTL); ok {
-		al.channelTTLs["feishu"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.Discord.SessionTTL); ok {
-		al.channelTTLs["discord"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.MaixCam.SessionTTL); ok {
-		al.channelTTLs["maixcam"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.QQ.SessionTTL); ok {
-		al.channelTTLs["qq"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.DingTalk.SessionTTL); ok {
-		al.channelTTLs["dingtalk"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.Slack.SessionTTL); ok {
-		al.channelTTLs["slack"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.LINE.SessionTTL); ok {
-		al.channelTTLs["line"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.OneBot.SessionTTL); ok {
-		al.channelTTLs["onebot"] = ttl
-	}
-	if ttl, ok := parseTTL(cfg.Channels.XMPP.SessionTTL); ok {
-		al.channelTTLs["xmpp"] = ttl
-	}
-}
-
-func (al *AgentLoop) startSessionCleanup() {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-
-	for {
-		<-ticker.C
-		al.cleanupExpiredSessions()
-	}
-}
-
-func (al *AgentLoop) cleanupExpiredSessions() {
-	sessions := al.sessions.ListSessions()
-
-	for _, info := range sessions {
-		colon := strings.Index(info.Key, ":")
-		if colon <= 0 {
-			continue
-		}
-		channel := info.Key[:colon]
-
-		ttl, ok := al.channelTTLs[channel]
-		if !ok || ttl <= 0 {
-			continue
-		}
-
-		cutoff := time.Now().Add(-ttl)
-		if !info.Updated.Before(cutoff) {
-			continue
-		}
-
-		if err := al.sessions.DeleteSession(info.Key); err != nil {
-			logger.WarnCF("agent", "Failed to delete expired session", map[string]interface{}{
-				"session_key": info.Key,
-				"error":       err.Error(),
-			})
-		} else {
-			logger.InfoCF("agent", "Deleted expired session", map[string]interface{}{
-				"session_key": info.Key,
-			})
-		}
-	}
 }
 
 func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
