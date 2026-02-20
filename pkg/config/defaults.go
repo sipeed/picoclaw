@@ -262,6 +262,9 @@ func DefaultConfig() *Config {
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5,
 			},
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
