@@ -16,9 +16,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"os"
-	"path/filepath"
-
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -157,7 +154,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
 
 	// LLM work is dispatched to a background worker so the main loop
-	// stays free to handle slash commands (/todo, /skills, …) instantly,
+	// stays free to handle slash commands (/skills, …) instantly,
 	// even while a long tool-call chain is running.
 	llmQueue := make(chan bus.InboundMessage, 10)
 	workerDone := make(chan struct{})
@@ -1250,9 +1247,6 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 			return fmt.Sprintf("Unknown switch target: %s", target), true
 		}
 
-	case "/todo":
-		return al.handleTodoCommand(), true
-
 	case "/session":
 		return al.handleSessionCommand(args), true
 
@@ -1261,25 +1255,6 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	}
 
 	return "", false
-}
-
-// handleTodoCommand reads TODO.md from the workspace and returns its contents.
-func (al *AgentLoop) handleTodoCommand() string {
-	agent := al.registry.GetDefaultAgent()
-	if agent == nil {
-		return "No agent configured."
-	}
-
-	todoPath := filepath.Join(agent.Workspace, "TODO.md")
-	data, err := os.ReadFile(todoPath)
-	if err != nil || len(strings.TrimSpace(string(data))) == 0 {
-		return "No tasks yet. Ask me to add a task and I'll maintain a TODO list for you."
-	}
-	content := string(data)
-	content = strings.ReplaceAll(content, "- [x] ", "✅ ")
-	content = strings.ReplaceAll(content, "- [X] ", "✅ ")
-	content = strings.ReplaceAll(content, "- [ ] ", "⬜ ")
-	return content
 }
 
 // handleSessionCommand returns usage statistics or resets them.

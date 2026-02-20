@@ -434,7 +434,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	return nil
 }
 
-// handleQuickCommand processes commands that don't need an LLM call (e.g. /todo, /session).
+// handleQuickCommand processes commands that don't need an LLM call (e.g. /session).
 // Unlike handleMessage, it skips the "Thinking..." placeholder for instant response.
 func (c *TelegramChannel) handleQuickCommand(ctx context.Context, message telego.Message) error {
 	if message.From == nil {

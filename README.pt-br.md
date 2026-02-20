@@ -492,7 +492,6 @@ O PicoClaw armazena dados no workspace configurado (padrão: `~/.picoclaw/worksp
 ├── state/             # Estado persistente (ultimo canal, etc.)
 ├── cron/              # Banco de dados de tarefas agendadas
 ├── skills/            # Skills personalizadas
-├── TODO.md            # Lista de tarefas (gerenciada pela IA, veja com /todo)
 ├── AGENTS.md          # Guia de comportamento do Agente
 ├── HEARTBEAT.md       # Prompts de tarefas periodicas (verificado a cada 30 min)
 ├── IDENTITY.md        # Identidade do Agente
@@ -816,7 +815,6 @@ Estes comandos de barra podem ser enviados em qualquer canal de chat (Telegram, 
 | Comando | Descrição |
 | --- | --- |
 | `/help` | Mostrar comandos disponíveis |
-| `/todo` | Mostrar lista de tarefas (lê `TODO.md`) |
 | `/session` | Mostrar estatísticas de uso de tokens (requer `--stats`) |
 | `/session reset` | Resetar estatísticas de uso |
 | `/skills` | Listar habilidades disponíveis |
@@ -824,8 +822,6 @@ Estes comandos de barra podem ser enviados em qualquer canal de chat (Telegram, 
 | `/show model` | Mostrar modelo atual |
 | `/list channels` | Listar canais habilitados |
 
-> **Nota**: `/todo` exibe o arquivo `TODO.md` que a IA mantém via ferramentas `write_file`/`edit_file`. Peça à IA para adicionar, completar ou organizar tarefas e ela atualizará o arquivo automaticamente.
->
 > **Nota**: `/session` requer que o gateway seja iniciado com a flag `--stats`. Sem ela, o rastreamento de estatísticas é desabilitado para zero overhead.
 >
 > **Nota**: `/skills` responde instantaneamente sem custo LLM. `/skill <nome>` injeta o SKILL.md no contexto apenas para o turno atual, depois apenas o nome da habilidade é mantido no histórico para economizar a janela de contexto.

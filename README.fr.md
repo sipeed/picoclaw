@@ -491,7 +491,6 @@ PicoClaw stocke les données dans votre workspace configuré (par défaut : `~/.
 ├── state/            # État persistant (dernier canal, etc.)
 ├── cron/             # Base de données des tâches planifiées
 ├── skills/           # Compétences personnalisées
-├── TODO.md           # Liste de tâches (gérée par l'IA, voir avec /todo)
 ├── AGENTS.md         # Guide de comportement de l'Agent
 ├── HEARTBEAT.md      # Invites de tâches périodiques (vérifiées toutes les 30 min)
 ├── IDENTITY.md       # Identité de l'Agent
@@ -815,7 +814,6 @@ Ces commandes slash peuvent être envoyées dans n'importe quel canal de chat (T
 | Commande | Description |
 | --- | --- |
 | `/help` | Afficher les commandes disponibles |
-| `/todo` | Afficher la liste des tâches (lit `TODO.md`) |
 | `/session` | Afficher les statistiques d'utilisation des tokens (nécessite `--stats`) |
 | `/session reset` | Réinitialiser les statistiques d'utilisation |
 | `/skills` | Lister les compétences disponibles |
@@ -823,8 +821,6 @@ Ces commandes slash peuvent être envoyées dans n'importe quel canal de chat (T
 | `/show model` | Afficher le modèle actuel |
 | `/list channels` | Lister les canaux activés |
 
-> **Note** : `/todo` affiche le fichier `TODO.md` que l'IA maintient via ses outils `write_file`/`edit_file`. Demandez à l'IA d'ajouter, compléter ou organiser des tâches et elle mettra à jour le fichier automatiquement.
->
 > **Note** : `/session` nécessite que la passerelle soit démarrée avec le flag `--stats`. Sans celui-ci, le suivi des statistiques est désactivé pour zéro surcharge.
 >
 > **Note** : `/skills` répond instantanément sans coût LLM. `/skill <nom>` injecte le SKILL.md dans le contexte pour le tour en cours uniquement, puis seul le nom de la compétence est conservé dans l'historique pour économiser la fenêtre de contexte.

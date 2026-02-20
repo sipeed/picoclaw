@@ -485,7 +485,6 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 ├── state/            # Persistent state (last channel, etc.)
 ├── cron/             # Scheduled jobs database
 ├── skills/           # Custom skills
-├── TODO.md           # Task list (managed by AI, view with /todo)
 ├── AGENTS.md         # Agent behavior guide
 ├── HEARTBEAT.md      # Periodic task prompts (checked every 30 min)
 ├── IDENTITY.md       # Agent identity
@@ -849,7 +848,6 @@ These slash commands can be sent in any chat channel (Telegram, Discord, etc.) a
 | Command           | Description                                      |
 | ----------------- | ------------------------------------------------ |
 | `/help`           | Show available commands                          |
-| `/todo`           | Show your task list (reads `TODO.md`)            |
 | `/session`        | Show token usage statistics (requires `--stats`) |
 | `/session reset`  | Reset usage statistics                           |
 | `/skills`         | List available skills                            |
@@ -857,8 +855,6 @@ These slash commands can be sent in any chat channel (Telegram, Discord, etc.) a
 | `/show model`     | Show current model                               |
 | `/list channels`  | List enabled channels                            |
 
-> **Note**: `/todo` displays the `TODO.md` file that the AI maintains via its `write_file`/`edit_file` tools. Ask the AI to add, complete, or organize tasks and it will update the file automatically.
->
 > **Note**: `/session` requires the gateway to be started with `--stats` flag. Without it, stats tracking is disabled for zero overhead.
 >
 > **Note**: `/skills` returns instantly without LLM cost. `/skill <name>` injects the skill's SKILL.md into the conversation context for the current turn, then only the skill name is kept in history to save the context window.

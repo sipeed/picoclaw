@@ -835,7 +835,7 @@ func TestSlashCommandResponseSkipsPlaceholder(t *testing.T) {
 		Channel:  "telegram",
 		SenderID: "user1",
 		ChatID:   "chat1",
-		Content:  "/todo",
+		Content:  "/skills",
 	})
 
 	// Read the outbound message

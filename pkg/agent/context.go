@@ -71,16 +71,8 @@ Your workspace is at: %s
 - Memory: %s/memory/MEMORY.md
 - Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
 - Skills: %s/skills/{skill-name}/SKILL.md
-- Task List: %s/TODO.md
 
 %s
-
-## Task Management
-When users ask you to track tasks, reminders, or to-do items, maintain a TODO.md file in your workspace using write_file or edit_file.
-Use standard markdown checkbox format:
-- [ ] Pending task
-- [x] Completed task
-Group tasks by category when there are many. The user can view this list anytime with /todo.
 
 ## Important Rules
 
@@ -89,7 +81,7 @@ Group tasks by category when there are many. The user can view this list anytime
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
 3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
+		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
