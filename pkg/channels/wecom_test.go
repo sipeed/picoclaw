@@ -11,6 +11,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"net/http"
@@ -34,7 +35,7 @@ func generateTestAESKey() string {
 	return base64.StdEncoding.EncodeToString(key)[:43]
 }
 
-// encryptTestMessage encrypts a message for testing
+// encryptTestMessage encrypts a message for testing (AIBOT JSON format)
 func encryptTestMessage(message, aesKey string) (string, error) {
 	// Decode AES key
 	key, err := base64.StdEncoding.DecodeString(aesKey + "=")
@@ -42,14 +43,14 @@ func encryptTestMessage(message, aesKey string) (string, error) {
 		return "", err
 	}
 
-	// Prepare message: random(16) + msg_len(4) + msg + corp_id
+	// Prepare message: random(16) + msg_len(4) + msg + receiveid
 	random := make([]byte, 0, 16)
 	for i := 0; i < 16; i++ {
 		random = append(random, byte(i))
 	}
 
 	msgBytes := []byte(message)
-	corpID := []byte("test_corp_id")
+	receiveID := []byte("test_aibot_id")
 
 	msgLen := uint32(len(msgBytes))
 	lenBytes := make([]byte, 4)
@@ -57,7 +58,7 @@ func encryptTestMessage(message, aesKey string) (string, error) {
 
 	plainText := append(random, lenBytes...)
 	plainText = append(plainText, msgBytes...)
-	plainText = append(plainText, corpID...)
+	plainText = append(plainText, receiveID...)
 
 	// PKCS7 padding
 	blockSize := aes.BlockSize
@@ -176,7 +177,7 @@ func TestWeComBotVerifySignature(t *testing.T) {
 		msgEncrypt := "test_message"
 		expectedSig := generateSignature("test_token", timestamp, nonce, msgEncrypt)
 
-		if !ch.verifySignature(expectedSig, timestamp, nonce, msgEncrypt) {
+		if !WeComVerifySignature(ch.config.Token, expectedSig, timestamp, nonce, msgEncrypt) {
 			t.Error("valid signature should pass verification")
 		}
 	})
@@ -186,7 +187,7 @@ func TestWeComBotVerifySignature(t *testing.T) {
 		nonce := "test_nonce"
 		msgEncrypt := "test_message"
 
-		if ch.verifySignature("invalid_sig", timestamp, nonce, msgEncrypt) {
+		if WeComVerifySignature(ch.config.Token, "invalid_sig", timestamp, nonce, msgEncrypt) {
 			t.Error("invalid signature should fail verification")
 		}
 	})
@@ -203,7 +204,7 @@ func TestWeComBotVerifySignature(t *testing.T) {
 			config:      cfgEmpty,
 		}
 
-		if !chEmpty.verifySignature("any_sig", "any_ts", "any_nonce", "any_msg") {
+		if !WeComVerifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
 			t.Error("empty token should skip verification and return true")
 		}
 	})
@@ -224,7 +225,7 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 		plainText := "hello world"
 		encoded := base64.StdEncoding.EncodeToString([]byte(plainText))
 
-		result, err := ch.decryptMessage(encoded)
+		result, err := WeComDecryptMessage(encoded, ch.config.EncodingAESKey)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -248,12 +249,12 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 			t.Fatalf("failed to encrypt test message: %v", err)
 		}
 
-		result, err := ch.decryptMessage(encrypted)
+		result, err := WeComDecryptMessage(encrypted, ch.config.EncodingAESKey)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if result != originalMsg {
-			t.Errorf("decryptMessage() = %q, want %q", result, originalMsg)
+			t.Errorf("WeComDecryptMessage() = %q, want %q", result, originalMsg)
 		}
 	})
 
@@ -265,7 +266,7 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 		}
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 
-		_, err := ch.decryptMessage("invalid_base64!!!")
+		_, err := WeComDecryptMessage("invalid_base64!!!", ch.config.EncodingAESKey)
 		if err == nil {
 			t.Error("expected error for invalid base64, got nil")
 		}
@@ -279,7 +280,7 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 		}
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 
-		_, err := ch.decryptMessage(base64.StdEncoding.EncodeToString([]byte("test")))
+		_, err := WeComDecryptMessage(base64.StdEncoding.EncodeToString([]byte("test")), ch.config.EncodingAESKey)
 		if err == nil {
 			t.Error("expected error for invalid AES key, got nil")
 		}
@@ -408,20 +409,62 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 	}
 	ch, _ := NewWeComBotChannel(cfg, msgBus)
 
-	t.Run("valid message callback", func(t *testing.T) {
-		// Create XML message
-		xmlMsg := WeComBotXMLMessage{
-			ToUserName:   "corp_id",
-			FromUserName: "user123",
-			CreateTime:   1234567890,
-			MsgType:      "text",
-			Content:      "Hello World",
-			MsgId:        123456,
-		}
-		xmlData, _ := xml.Marshal(xmlMsg)
+	t.Run("valid direct message callback", func(t *testing.T) {
+		// Create JSON message for direct chat (single)
+		jsonMsg := `{
+			"msgid": "test_msg_id_123",
+			"aibotid": "test_aibot_id",
+			"chattype": "single",
+			"from": {"userid": "user123"},
+			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			"msgtype": "text",
+			"text": {"content": "Hello World"}
+		}`
 
 		// Encrypt message
-		encrypted, _ := encryptTestMessage(string(xmlData), aesKey)
+		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
+
+		// Create encrypted XML wrapper
+		encryptedWrapper := struct {
+			XMLName xml.Name `xml:"xml"`
+			Encrypt string   `xml:"Encrypt"`
+		}{
+			Encrypt: encrypted,
+		}
+		wrapperData, _ := xml.Marshal(encryptedWrapper)
+
+		timestamp := "1234567890"
+		nonce := "test_nonce"
+		signature := generateSignature("test_token", timestamp, nonce, encrypted)
+
+		req := httptest.NewRequest(http.MethodPost, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce, bytes.NewReader(wrapperData))
+		w := httptest.NewRecorder()
+
+		ch.handleMessageCallback(context.Background(), w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
+		}
+		if w.Body.String() != "success" {
+			t.Errorf("response body = %q, want %q", w.Body.String(), "success")
+		}
+	})
+
+	t.Run("valid group message callback", func(t *testing.T) {
+		// Create JSON message for group chat
+		jsonMsg := `{
+			"msgid": "test_msg_id_456",
+			"aibotid": "test_aibot_id",
+			"chatid": "group_chat_id_123",
+			"chattype": "group",
+			"from": {"userid": "user456"},
+			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			"msgtype": "text",
+			"text": {"content": "Hello Group"}
+		}`
+
+		// Encrypt message
+		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
 
 		// Create encrypted XML wrapper
 		encryptedWrapper := struct {
@@ -506,42 +549,61 @@ func TestWeComBotProcessMessage(t *testing.T) {
 	}
 	ch, _ := NewWeComBotChannel(cfg, msgBus)
 
-	t.Run("process text message", func(t *testing.T) {
-		msg := WeComBotXMLMessage{
-			ToUserName:   "corp_id",
-			FromUserName: "user123",
-			CreateTime:   1234567890,
-			MsgType:      "text",
-			Content:      "Hello World",
-			MsgId:        123456,
+	t.Run("process direct text message", func(t *testing.T) {
+		msg := WeComBotMessage{
+			MsgID:       "test_msg_id_123",
+			AIBotID:     "test_aibot_id",
+			ChatType:    "single",
+			ResponseURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			MsgType:     "text",
 		}
+		msg.From.UserID = "user123"
+		msg.Text.Content = "Hello World"
 
 		// Should not panic
 		ch.processMessage(context.Background(), msg)
 	})
 
-	t.Run("process voice message with recognition", func(t *testing.T) {
-		msg := WeComBotXMLMessage{
-			ToUserName:   "corp_id",
-			FromUserName: "user123",
-			CreateTime:   1234567890,
-			MsgType:      "voice",
-			Recognition:  "Voice message text",
-			MsgId:        123456,
+	t.Run("process group text message", func(t *testing.T) {
+		msg := WeComBotMessage{
+			MsgID:       "test_msg_id_456",
+			AIBotID:     "test_aibot_id",
+			ChatID:      "group_chat_id_123",
+			ChatType:    "group",
+			ResponseURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			MsgType:     "text",
 		}
+		msg.From.UserID = "user456"
+		msg.Text.Content = "Hello Group"
+
+		// Should not panic
+		ch.processMessage(context.Background(), msg)
+	})
+
+	t.Run("process voice message", func(t *testing.T) {
+		msg := WeComBotMessage{
+			MsgID:       "test_msg_id_789",
+			AIBotID:     "test_aibot_id",
+			ChatType:    "single",
+			ResponseURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			MsgType:     "voice",
+		}
+		msg.From.UserID = "user123"
+		msg.Voice.Content = "Voice message text"
 
 		// Should not panic
 		ch.processMessage(context.Background(), msg)
 	})
 
 	t.Run("skip unsupported message type", func(t *testing.T) {
-		msg := WeComBotXMLMessage{
-			ToUserName:   "corp_id",
-			FromUserName: "user123",
-			CreateTime:   1234567890,
-			MsgType:      "video",
-			MsgId:        123456,
+		msg := WeComBotMessage{
+			MsgID:       "test_msg_id_000",
+			AIBotID:     "test_aibot_id",
+			ChatType:    "single",
+			ResponseURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			MsgType:     "video",
 		}
+		msg.From.UserID = "user123"
 
 		// Should not panic
 		ch.processMessage(context.Background(), msg)
@@ -637,8 +699,8 @@ func TestWeComBotHandleHealth(t *testing.T) {
 	}
 }
 
-func TestWeComBotWebhookReplyMessage(t *testing.T) {
-	msg := WeComBotWebhookReply{
+func TestWeComBotReplyMessage(t *testing.T) {
+	msg := WeComBotReplyMessage{
 		MsgType: "text",
 	}
 	msg.Text.Content = "Hello World"
@@ -651,39 +713,43 @@ func TestWeComBotWebhookReplyMessage(t *testing.T) {
 	}
 }
 
-func TestWeComBotXMLMessageStructure(t *testing.T) {
-	xmlData := `<?xml version="1.0"?>
-<xml>
-	<ToUserName><![CDATA[corp_id]]></ToUserName>
-	<FromUserName><![CDATA[user123]]></FromUserName>
-	<CreateTime>1234567890</CreateTime>
-	<MsgType><![CDATA[text]]></MsgType>
-	<Content><![CDATA[Hello World]]></Content>
-	<MsgId>1234567890123456</MsgId>
-</xml>`
+func TestWeComBotMessageStructure(t *testing.T) {
+	jsonData := `{
+		"msgid": "test_msg_id_123",
+		"aibotid": "test_aibot_id",
+		"chatid": "group_chat_id_123",
+		"chattype": "group",
+		"from": {"userid": "user123"},
+		"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+		"msgtype": "text",
+		"text": {"content": "Hello World"}
+	}`
 
-	var msg WeComBotXMLMessage
-	err := xml.Unmarshal([]byte(xmlData), &msg)
+	var msg WeComBotMessage
+	err := json.Unmarshal([]byte(jsonData), &msg)
 	if err != nil {
-		t.Fatalf("failed to unmarshal XML: %v", err)
+		t.Fatalf("failed to unmarshal JSON: %v", err)
 	}
 
-	if msg.ToUserName != "corp_id" {
-		t.Errorf("ToUserName = %q, want %q", msg.ToUserName, "corp_id")
+	if msg.MsgID != "test_msg_id_123" {
+		t.Errorf("MsgID = %q, want %q", msg.MsgID, "test_msg_id_123")
 	}
-	if msg.FromUserName != "user123" {
-		t.Errorf("FromUserName = %q, want %q", msg.FromUserName, "user123")
+	if msg.AIBotID != "test_aibot_id" {
+		t.Errorf("AIBotID = %q, want %q", msg.AIBotID, "test_aibot_id")
 	}
-	if msg.CreateTime != 1234567890 {
-		t.Errorf("CreateTime = %d, want %d", msg.CreateTime, 1234567890)
+	if msg.ChatID != "group_chat_id_123" {
+		t.Errorf("ChatID = %q, want %q", msg.ChatID, "group_chat_id_123")
+	}
+	if msg.ChatType != "group" {
+		t.Errorf("ChatType = %q, want %q", msg.ChatType, "group")
+	}
+	if msg.From.UserID != "user123" {
+		t.Errorf("From.UserID = %q, want %q", msg.From.UserID, "user123")
 	}
 	if msg.MsgType != "text" {
 		t.Errorf("MsgType = %q, want %q", msg.MsgType, "text")
 	}
-	if msg.Content != "Hello World" {
-		t.Errorf("Content = %q, want %q", msg.Content, "Hello World")
-	}
-	if msg.MsgId != 1234567890123456 {
-		t.Errorf("MsgId = %d, want %d", msg.MsgId, 1234567890123456)
+	if msg.Text.Content != "Hello World" {
+		t.Errorf("Text.Content = %q, want %q", msg.Text.Content, "Hello World")
 	}
 }

@@ -197,7 +197,7 @@ func TestWeComAppVerifySignature(t *testing.T) {
 		msgEncrypt := "test_message"
 		expectedSig := generateSignatureApp("test_token", timestamp, nonce, msgEncrypt)
 
-		if !ch.verifySignature(expectedSig, timestamp, nonce, msgEncrypt) {
+		if !WeComVerifySignature(ch.config.Token, expectedSig, timestamp, nonce, msgEncrypt) {
 			t.Error("valid signature should pass verification")
 		}
 	})
@@ -207,7 +207,7 @@ func TestWeComAppVerifySignature(t *testing.T) {
 		nonce := "test_nonce"
 		msgEncrypt := "test_message"
 
-		if ch.verifySignature("invalid_sig", timestamp, nonce, msgEncrypt) {
+		if WeComVerifySignature(ch.config.Token, "invalid_sig", timestamp, nonce, msgEncrypt) {
 			t.Error("invalid signature should fail verification")
 		}
 	})
@@ -221,7 +221,7 @@ func TestWeComAppVerifySignature(t *testing.T) {
 		}
 		chEmpty, _ := NewWeComAppChannel(cfgEmpty, msgBus)
 
-		if !chEmpty.verifySignature("any_sig", "any_ts", "any_nonce", "any_msg") {
+		if !WeComVerifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
 			t.Error("empty token should skip verification and return true")
 		}
 	})
@@ -243,7 +243,7 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 		plainText := "hello world"
 		encoded := base64.StdEncoding.EncodeToString([]byte(plainText))
 
-		result, err := ch.decryptMessage(encoded)
+		result, err := WeComDecryptMessage(encoded, ch.config.EncodingAESKey)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -268,12 +268,12 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 			t.Fatalf("failed to encrypt test message: %v", err)
 		}
 
-		result, err := ch.decryptMessage(encrypted)
+		result, err := WeComDecryptMessage(encrypted, ch.config.EncodingAESKey)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if result != originalMsg {
-			t.Errorf("decryptMessage() = %q, want %q", result, originalMsg)
+			t.Errorf("WeComDecryptMessage() = %q, want %q", result, originalMsg)
 		}
 	})
 
@@ -286,7 +286,7 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 		}
 		ch, _ := NewWeComAppChannel(cfg, msgBus)
 
-		_, err := ch.decryptMessage("invalid_base64!!!")
+		_, err := WeComDecryptMessage("invalid_base64!!!", ch.config.EncodingAESKey)
 		if err == nil {
 			t.Error("expected error for invalid base64, got nil")
 		}
@@ -301,7 +301,7 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 		}
 		ch, _ := NewWeComAppChannel(cfg, msgBus)
 
-		_, err := ch.decryptMessage(base64.StdEncoding.EncodeToString([]byte("test")))
+		_, err := WeComDecryptMessage(base64.StdEncoding.EncodeToString([]byte("test")), ch.config.EncodingAESKey)
 		if err == nil {
 			t.Error("expected error for invalid AES key, got nil")
 		}
@@ -319,7 +319,7 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 
 		// Encrypt a very short message that results in ciphertext less than block size
 		shortData := make([]byte, 8)
-		_, err := ch.decryptMessage(base64.StdEncoding.EncodeToString(shortData))
+		_, err := WeComDecryptMessage(base64.StdEncoding.EncodeToString(shortData), ch.config.EncodingAESKey)
 		if err == nil {
 			t.Error("expected error for short ciphertext, got nil")
 		}
@@ -361,7 +361,7 @@ func TestWeComAppPKCS7Unpad(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := pkcs7Unpad(tt.input)
+			result, err := pkcs7UnpadWeCom(tt.input)
 			if tt.expected == nil {
 				// This case should return an error
 				if err == nil {

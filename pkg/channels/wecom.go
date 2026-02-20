@@ -7,17 +7,11 @@ package channels
 import (
 	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha1"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,40 +34,54 @@ type WeComBotChannel struct {
 	msgMu         sync.RWMutex
 }
 
-// WeComBotXMLMessage represents the XML message structure from WeCom Bot
-type WeComBotXMLMessage struct {
-	XMLName      xml.Name `xml:"xml"`
-	ToUserName   string   `xml:"ToUserName"`
-	FromUserName string   `xml:"FromUserName"`
-	CreateTime   int64    `xml:"CreateTime"`
-	MsgType      string   `xml:"MsgType"`
-	Content      string   `xml:"Content"`
-	MsgId        int64    `xml:"MsgId"`
-	PicUrl       string   `xml:"PicUrl"`
-	MediaId      string   `xml:"MediaId"`
-	Format       string   `xml:"Format"`
-	Recognition  string   `xml:"Recognition"` // Voice recognition result
+// WeComBotMessage represents the JSON message structure from WeCom Bot (AIBOT)
+type WeComBotMessage struct {
+	MsgID    string `json:"msgid"`
+	AIBotID  string `json:"aibotid"`
+	ChatID   string `json:"chatid"`   // Session ID, only present for group chats
+	ChatType string `json:"chattype"` // "single" for DM, "group" for group chat
+	From     struct {
+		UserID string `json:"userid"`
+	} `json:"from"`
+	ResponseURL string `json:"response_url"`
+	MsgType     string `json:"msgtype"` // text, image, voice, file, mixed
+	Text        struct {
+		Content string `json:"content"`
+	} `json:"text"`
+	Image struct {
+		URL string `json:"url"`
+	} `json:"image"`
+	Voice struct {
+		Content string `json:"content"` // Voice to text content
+	} `json:"voice"`
+	File struct {
+		URL string `json:"url"`
+	} `json:"file"`
+	Mixed struct {
+		MsgItem []struct {
+			MsgType string `json:"msgtype"`
+			Text    struct {
+				Content string `json:"content"`
+			} `json:"text"`
+			Image struct {
+				URL string `json:"url"`
+			} `json:"image"`
+		} `json:"msg_item"`
+	} `json:"mixed"`
+	Quote struct {
+		MsgType string `json:"msgtype"`
+		Text    struct {
+			Content string `json:"content"`
+		} `json:"text"`
+	} `json:"quote"`
 }
 
 // WeComBotReplyMessage represents the reply message structure
 type WeComBotReplyMessage struct {
-	XMLName      xml.Name `xml:"xml"`
-	ToUserName   string   `xml:"ToUserName"`
-	FromUserName string   `xml:"FromUserName"`
-	CreateTime   int64    `xml:"CreateTime"`
-	MsgType      string   `xml:"MsgType"`
-	Content      string   `xml:"Content"`
-}
-
-// WeComBotWebhookReply represents the webhook API reply
-type WeComBotWebhookReply struct {
 	MsgType string `json:"msgtype"`
 	Text    struct {
 		Content string `json:"content"`
 	} `json:"text,omitempty"`
-	Markdown struct {
-		Content string `json:"content"`
-	} `json:"markdown,omitempty"`
 }
 
 // NewWeComBotChannel creates a new WeCom Bot channel instance
@@ -205,14 +213,14 @@ func (c *WeComBotChannel) handleVerification(ctx context.Context, w http.Respons
 	}
 
 	// Verify signature
-	if !c.verifySignature(msgSignature, timestamp, nonce, echostr) {
+	if !WeComVerifySignature(c.config.Token, msgSignature, timestamp, nonce, echostr) {
 		logger.WarnC("wecom", "Signature verification failed")
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
 	}
 
 	// Decrypt echostr
-	decryptedEchoStr, err := c.decryptMessage(echostr)
+	decryptedEchoStr, err := WeComDecryptMessage(echostr, c.config.EncodingAESKey)
 	if err != nil {
 		logger.ErrorCF("wecom", "Failed to decrypt echostr", map[string]interface{}{
 			"error": err.Error(),
@@ -265,14 +273,14 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	}
 
 	// Verify signature
-	if !c.verifySignature(msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
+	if !WeComVerifySignature(c.config.Token, msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
 		logger.WarnC("wecom", "Message signature verification failed")
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
 	}
 
 	// Decrypt message
-	decryptedMsg, err := c.decryptMessage(encryptedMsg.Encrypt)
+	decryptedMsg, err := WeComDecryptMessage(encryptedMsg.Encrypt, c.config.EncodingAESKey)
 	if err != nil {
 		logger.ErrorCF("wecom", "Failed to decrypt message", map[string]interface{}{
 			"error": err.Error(),
@@ -281,9 +289,9 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		return
 	}
 
-	// Parse decrypted XML message
-	var msg WeComBotXMLMessage
-	if err := xml.Unmarshal([]byte(decryptedMsg), &msg); err != nil {
+	// Parse decrypted JSON message (AIBOT uses JSON format)
+	var msg WeComBotMessage
+	if err := json.Unmarshal([]byte(decryptedMsg), &msg); err != nil {
 		logger.ErrorCF("wecom", "Failed to parse decrypted message", map[string]interface{}{
 			"error": err.Error(),
 		})
@@ -300,9 +308,9 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 }
 
 // processMessage processes the received message
-func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotXMLMessage) {
-	// Skip non-text messages for now (can be extended)
-	if msg.MsgType != "text" && msg.MsgType != "image" && msg.MsgType != "voice" {
+func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessage) {
+	// Skip unsupported message types
+	if msg.MsgType != "text" && msg.MsgType != "image" && msg.MsgType != "voice" && msg.MsgType != "file" && msg.MsgType != "mixed" {
 		logger.DebugCF("wecom", "Skipping non-supported message type", map[string]interface{}{
 			"msg_type": msg.MsgType,
 		})
@@ -310,8 +318,7 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotXMLMes
 	}
 
 	// Message deduplication: Use msg_id to prevent duplicate processing
-	// As per WeCom documentation, use msg_id for deduplication
-	msgID := fmt.Sprintf("%d", msg.MsgId)
+	msgID := msg.MsgID
 	c.msgMu.Lock()
 	if c.processedMsgs[msgID] {
 		c.msgMu.Unlock()
@@ -330,141 +337,73 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotXMLMes
 		c.msgMu.Unlock()
 	}
 
-	senderID := msg.FromUserName
-	chatID := senderID // WeCom Bot uses user ID as chat ID
+	senderID := msg.From.UserID
 
-	// Use voice recognition result if available
-	content := msg.Content
-	if msg.MsgType == "voice" && msg.Recognition != "" {
-		content = msg.Recognition
+	// Determine if this is a group chat or direct message
+	// ChatType: "single" for DM, "group" for group chat
+	isGroupChat := msg.ChatType == "group"
+
+	var chatID, peerKind, peerID string
+	if isGroupChat {
+		// Group chat: use ChatID as chatID and peer_id
+		chatID = msg.ChatID
+		peerKind = "group"
+		peerID = msg.ChatID
+	} else {
+		// Direct message: use senderID as chatID and peer_id
+		chatID = senderID
+		peerKind = "direct"
+		peerID = senderID
+	}
+
+	// Extract content based on message type
+	var content string
+	switch msg.MsgType {
+	case "text":
+		content = msg.Text.Content
+	case "voice":
+		content = msg.Voice.Content // Voice to text content
+	case "mixed":
+		// For mixed messages, concatenate text items
+		for _, item := range msg.Mixed.MsgItem {
+			if item.MsgType == "text" {
+				content += item.Text.Content
+			}
+		}
+	case "image", "file":
+		// For image and file, we don't have text content
+		content = ""
 	}
 
 	// Build metadata
-	// WeCom Bot only supports direct messages (private chat)
 	metadata := map[string]string{
-		"msg_type":    msg.MsgType,
-		"msg_id":      fmt.Sprintf("%d", msg.MsgId),
-		"platform":    "wecom",
-		"media_id":    msg.MediaId,
-		"create_time": fmt.Sprintf("%d", msg.CreateTime),
-		"peer_kind":   "direct",
-		"peer_id":     senderID,
+		"msg_type":     msg.MsgType,
+		"msg_id":       msg.MsgID,
+		"platform":     "wecom",
+		"peer_kind":    peerKind,
+		"peer_id":      peerID,
+		"response_url": msg.ResponseURL,
+	}
+	if isGroupChat {
+		metadata["chat_id"] = msg.ChatID
+		metadata["sender_id"] = senderID
 	}
 
 	logger.DebugCF("wecom", "Received message", map[string]interface{}{
-		"sender_id": senderID,
-		"msg_type":  msg.MsgType,
-		"preview":   utils.Truncate(content, 50),
+		"sender_id":     senderID,
+		"msg_type":      msg.MsgType,
+		"peer_kind":     peerKind,
+		"is_group_chat": isGroupChat,
+		"preview":       utils.Truncate(content, 50),
 	})
 
 	// Handle the message through the base channel
 	c.HandleMessage(senderID, chatID, content, nil, metadata)
 }
 
-// verifySignature verifies the message signature
-func (c *WeComBotChannel) verifySignature(msgSignature, timestamp, nonce, msgEncrypt string) bool {
-	if c.config.Token == "" {
-		return true // Skip verification if token is not set
-	}
-
-	// Sort parameters
-	params := []string{c.config.Token, timestamp, nonce, msgEncrypt}
-	sort.Strings(params)
-
-	// Concatenate
-	str := strings.Join(params, "")
-
-	// SHA1 hash
-	hash := sha1.Sum([]byte(str))
-	expectedSignature := fmt.Sprintf("%x", hash)
-
-	return expectedSignature == msgSignature
-}
-
-// decryptMessage decrypts the encrypted message using AES
-func (c *WeComBotChannel) decryptMessage(encryptedMsg string) (string, error) {
-	if c.config.EncodingAESKey == "" {
-		// No encryption, return as is (base64 decode)
-		decoded, err := base64.StdEncoding.DecodeString(encryptedMsg)
-		if err != nil {
-			return "", err
-		}
-		return string(decoded), nil
-	}
-
-	// Decode AES key (base64)
-	aesKey, err := base64.StdEncoding.DecodeString(c.config.EncodingAESKey + "=")
-	if err != nil {
-		return "", fmt.Errorf("failed to decode AES key: %w", err)
-	}
-
-	// Decode encrypted message
-	cipherText, err := base64.StdEncoding.DecodeString(encryptedMsg)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode message: %w", err)
-	}
-
-	// AES decrypt
-	block, err := aes.NewCipher(aesKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	if len(cipherText) < aes.BlockSize {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-
-	mode := cipher.NewCBCDecrypter(block, aesKey[:aes.BlockSize])
-	plainText := make([]byte, len(cipherText))
-	mode.CryptBlocks(plainText, cipherText)
-
-	// Remove PKCS7 padding
-	plainText, err = pkcs7UnpadWeCom(plainText)
-	if err != nil {
-		return "", fmt.Errorf("failed to unpad: %w", err)
-	}
-
-	// Parse message structure
-	// Format: random(16) + msg_len(4) + msg + corp_id
-	if len(plainText) < 20 {
-		return "", fmt.Errorf("decrypted message too short")
-	}
-
-	msgLen := binary.BigEndian.Uint32(plainText[16:20])
-	if int(msgLen) > len(plainText)-20 {
-		return "", fmt.Errorf("invalid message length")
-	}
-
-	msg := plainText[20 : 20+msgLen]
-	// corpID := plainText[20+msgLen:] // Could be used for verification
-
-	return string(msg), nil
-}
-
-// pkcs7UnpadWeCom removes PKCS7 padding with validation
-func pkcs7UnpadWeCom(data []byte) ([]byte, error) {
-	if len(data) == 0 {
-		return data, nil
-	}
-	padding := int(data[len(data)-1])
-	if padding == 0 || padding > aes.BlockSize {
-		return nil, fmt.Errorf("invalid padding size: %d", padding)
-	}
-	if padding > len(data) {
-		return nil, fmt.Errorf("padding size larger than data")
-	}
-	// Verify all padding bytes
-	for i := 0; i < padding; i++ {
-		if data[len(data)-1-i] != byte(padding) {
-			return nil, fmt.Errorf("invalid padding byte at position %d", i)
-		}
-	}
-	return data[:len(data)-padding], nil
-}
-
 // sendWebhookReply sends a reply using the webhook URL
 func (c *WeComBotChannel) sendWebhookReply(ctx context.Context, userID, content string) error {
-	reply := WeComBotWebhookReply{
+	reply := WeComBotReplyMessage{
 		MsgType: "text",
 	}
 	reply.Text.Content = content

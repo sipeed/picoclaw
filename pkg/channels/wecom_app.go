@@ -7,18 +7,12 @@ package channels
 import (
 	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha1"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -265,14 +259,14 @@ func (c *WeComAppChannel) handleVerification(ctx context.Context, w http.Respons
 	}
 
 	// Verify signature
-	if !c.verifySignature(msgSignature, timestamp, nonce, echostr) {
+	if !WeComVerifySignature(c.config.Token, msgSignature, timestamp, nonce, echostr) {
 		logger.WarnC("wecom_app", "Signature verification failed")
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
 	}
 
 	// Decrypt echostr
-	decryptedEchoStr, err := c.decryptMessage(echostr)
+	decryptedEchoStr, err := WeComDecryptMessage(echostr, c.config.EncodingAESKey)
 	if err != nil {
 		logger.ErrorCF("wecom_app", "Failed to decrypt echostr", map[string]interface{}{
 			"error": err.Error(),
@@ -325,14 +319,14 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	}
 
 	// Verify signature
-	if !c.verifySignature(msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
+	if !WeComVerifySignature(c.config.Token, msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
 		logger.WarnC("wecom_app", "Message signature verification failed")
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
 	}
 
 	// Decrypt message
-	decryptedMsg, err := c.decryptMessage(encryptedMsg.Encrypt)
+	decryptedMsg, err := WeComDecryptMessage(encryptedMsg.Encrypt, c.config.EncodingAESKey)
 	if err != nil {
 		logger.ErrorCF("wecom_app", "Failed to decrypt message", map[string]interface{}{
 			"error": err.Error(),
@@ -416,107 +410,6 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 
 	// Handle the message through the base channel
 	c.HandleMessage(senderID, chatID, content, nil, metadata)
-}
-
-// verifySignature verifies the message signature
-func (c *WeComAppChannel) verifySignature(msgSignature, timestamp, nonce, msgEncrypt string) bool {
-	if c.config.Token == "" {
-		return true // Skip verification if token is not set
-	}
-
-	// Sort parameters
-	params := []string{c.config.Token, timestamp, nonce, msgEncrypt}
-	sort.Strings(params)
-
-	// Concatenate
-	str := strings.Join(params, "")
-
-	// SHA1 hash
-	hash := sha1.Sum([]byte(str))
-	expectedSignature := fmt.Sprintf("%x", hash)
-
-	return expectedSignature == msgSignature
-}
-
-// decryptMessage decrypts the encrypted message using AES
-func (c *WeComAppChannel) decryptMessage(encryptedMsg string) (string, error) {
-	if c.config.EncodingAESKey == "" {
-		// No encryption, return as is (base64 decode)
-		decoded, err := base64.StdEncoding.DecodeString(encryptedMsg)
-		if err != nil {
-			return "", err
-		}
-		return string(decoded), nil
-	}
-
-	// Decode AES key (base64)
-	aesKey, err := base64.StdEncoding.DecodeString(c.config.EncodingAESKey + "=")
-	if err != nil {
-		return "", fmt.Errorf("failed to decode AES key: %w", err)
-	}
-
-	// Decode encrypted message
-	cipherText, err := base64.StdEncoding.DecodeString(encryptedMsg)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode message: %w", err)
-	}
-
-	// AES decrypt
-	block, err := aes.NewCipher(aesKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	if len(cipherText) < aes.BlockSize {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-
-	mode := cipher.NewCBCDecrypter(block, aesKey[:aes.BlockSize])
-	plainText := make([]byte, len(cipherText))
-	mode.CryptBlocks(plainText, cipherText)
-
-	// Remove PKCS7 padding
-	plainText, err = pkcs7Unpad(plainText)
-	if err != nil {
-		return "", fmt.Errorf("failed to unpad: %w", err)
-	}
-
-	// Parse message structure
-	// Format: random(16) + msg_len(4) + msg + corp_id
-	if len(plainText) < 20 {
-		return "", fmt.Errorf("decrypted message too short")
-	}
-
-	msgLen := binary.BigEndian.Uint32(plainText[16:20])
-	if int(msgLen) > len(plainText)-20 {
-		return "", fmt.Errorf("invalid message length")
-	}
-
-	msg := plainText[20 : 20+msgLen]
-	// corpID := plainText[20+msgLen:] // Can be used for verification
-
-	return string(msg), nil
-}
-
-// pkcs7Unpad removes PKCS7 padding with validation
-func pkcs7Unpad(data []byte) ([]byte, error) {
-	if len(data) == 0 {
-		return data, nil
-	}
-	padding := int(data[len(data)-1])
-	if padding == 0 || padding > aes.BlockSize {
-		return nil, fmt.Errorf("invalid padding size: %d", padding)
-	}
-	if padding > len(data) {
-		return nil, fmt.Errorf("padding size larger than data")
-	}
-	// Verify all padding bytes
-	for i := 0; i < padding; i++ {
-		if data[len(data)-1-i] != byte(padding) {
-			return nil, fmt.Errorf("invalid padding byte at position %d", i)
-		}
-	}
-	return data[:len(data)-padding], nil
 }
 
 // tokenRefreshLoop periodically refreshes the access token
