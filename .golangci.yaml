@@ -66,7 +66,6 @@ linters:
     - testifylint
     - thelper
     - unparam
-    # - unused  # Enabled to detect dead code
     - usestdlibvars
     - usetesting
     - wastedassign
