@@ -88,7 +88,9 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	logger.InfoC("telegram", "Starting Telegram bot (polling mode)...")
 
 	if err := c.initBotCommands(ctx); err != nil {
-		return fmt.Errorf("failed to initialize bot commands: %w", err)
+		logger.WarnCF("telegram", "Failed to initialize bot commands", map[string]any{
+			"error": err.Error(),
+		})
 	}
 
 	updates, err := c.bot.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
