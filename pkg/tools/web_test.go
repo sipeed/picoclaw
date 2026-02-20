@@ -173,19 +173,23 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}
 }
 
-// TestWebTool_WebSearch_NoApiKey verifies that nil is returned when no provider is configured
+// TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
-	tool := NewWebSearchTool(WebSearchToolOptions{BraveAPIKey: "", BraveMaxResults: 5})
-
-	// Should return nil when no provider is enabled
+	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: ""})
 	if tool != nil {
-		t.Errorf("Expected nil when no search provider is configured")
+		t.Errorf("Expected nil tool when Brave API key is empty")
+	}
+
+	// Also nil when nothing is enabled
+	tool = NewWebSearchTool(WebSearchToolOptions{})
+	if tool != nil {
+		t.Errorf("Expected nil tool when no provider is enabled")
 	}
 }
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool := NewWebSearchTool(WebSearchToolOptions{BraveAPIKey: "test-key", BraveMaxResults: 5, BraveEnabled: true})
+	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
 	ctx := context.Background()
 	args := map[string]interface{}{}
 
@@ -227,6 +231,80 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	// Should NOT contain script or style tags
 	if strings.Contains(result.ForUser, "<script>") || strings.Contains(result.ForUser, "<style>") {
 		t.Errorf("Expected script/style tags to be removed, got: %s", result.ForUser)
+	}
+}
+
+// TestWebFetchTool_extractText verifies text extraction preserves newlines
+func TestWebFetchTool_extractText(t *testing.T) {
+	tool := &WebFetchTool{}
+
+	tests := []struct {
+		name     string
+		input    string
+		wantFunc func(t *testing.T, got string)
+	}{
+		{
+			name:  "preserves newlines between block elements",
+			input: "<html><body><h1>Title</h1>\n<p>Paragraph 1</p>\n<p>Paragraph 2</p></body></html>",
+			wantFunc: func(t *testing.T, got string) {
+				lines := strings.Split(got, "\n")
+				if len(lines) < 2 {
+					t.Errorf("Expected multiple lines, got %d: %q", len(lines), got)
+				}
+				if !strings.Contains(got, "Title") || !strings.Contains(got, "Paragraph 1") || !strings.Contains(got, "Paragraph 2") {
+					t.Errorf("Missing expected text: %q", got)
+				}
+			},
+		},
+		{
+			name:  "removes script and style tags",
+			input: "<script>alert('x');</script><style>body{}</style><p>Keep this</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if strings.Contains(got, "alert") || strings.Contains(got, "body{}") {
+					t.Errorf("Expected script/style content removed, got: %q", got)
+				}
+				if !strings.Contains(got, "Keep this") {
+					t.Errorf("Expected 'Keep this' to remain, got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "collapses excessive blank lines",
+			input: "<p>A</p>\n\n\n\n\n<p>B</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if strings.Contains(got, "\n\n\n") {
+					t.Errorf("Expected excessive blank lines collapsed, got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "collapses horizontal whitespace",
+			input: "<p>hello     world</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if strings.Contains(got, "     ") {
+					t.Errorf("Expected spaces collapsed, got: %q", got)
+				}
+				if !strings.Contains(got, "hello world") {
+					t.Errorf("Expected 'hello world', got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "empty input",
+			input: "",
+			wantFunc: func(t *testing.T, got string) {
+				if got != "" {
+					t.Errorf("Expected empty string, got: %q", got)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tool.extractText(tt.input)
+			tt.wantFunc(t, got)
+		})
 	}
 }
 
