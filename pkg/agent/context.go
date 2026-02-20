@@ -198,10 +198,11 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	messages = append(messages, history...)
 
-	if strings.TrimSpace(currentMessage) != "" {
+	if strings.TrimSpace(currentMessage) != "" || len(media) > 0 {
 		messages = append(messages, providers.Message{
 			Role:    "user",
 			Content: currentMessage,
+			Media:   media,
 		})
 	}
 
