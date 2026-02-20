@@ -68,7 +68,7 @@ func (t *ScheduleTool) Parameters() map[string]interface{} {
 					},
 					"every_seconds": map[string]interface{}{
 						"type":        "integer",
-						"description": "Interval in seconds for 'every' kind. Example: 3600 for every hour.",
+						"description": "Interval in seconds for 'every' kind. Example: 3600 for every hour. Must be a positive integer.",
 					},
 					"expr": map[string]interface{}{
 						"type":        "string",
@@ -76,7 +76,7 @@ func (t *ScheduleTool) Parameters() map[string]interface{} {
 					},
 					"timezone": map[string]interface{}{
 						"type":        "string",
-						"description": "Timezone for the schedule (e.g., 'Asia/Shanghai', 'UTC'). If not specified, uses system timezone.",
+						"description": "Timezone for interpreting 'at' times without explicit offset (e.g., 'Asia/Shanghai', 'UTC'). Only applies to 'at' kind. If not specified, uses system timezone.",
 					},
 				},
 				"required": []string{"kind"},
@@ -202,22 +202,32 @@ func (t *ScheduleTool) parseSchedule(scheduleMap map[string]interface{}) (cron.C
 			return cron.CronSchedule{}, fmt.Errorf("at field is required for 'at' kind")
 		}
 
-		// Parse ISO datetime
-		atTime, err := time.Parse(time.RFC3339, atStr)
-		if err != nil {
-			// Try other common formats
-			atTime, err = time.Parse("2006-01-02T15:04:05", atStr)
-			if err != nil {
-				return cron.CronSchedule{}, fmt.Errorf("invalid at datetime format: use ISO format like '2024-01-01T12:00:00'")
-			}
-		}
-
-		// Apply timezone if specified
+		// Determine location to use for parsing times without explicit offset
+		var loc *time.Location
 		if tz != "" {
-			loc, err := time.LoadLocation(tz)
+			var err error
+			loc, err = time.LoadLocation(tz)
 			if err != nil {
 				return cron.CronSchedule{}, fmt.Errorf("invalid timezone: %v", err)
 			}
+		} else {
+			loc = time.Local
+		}
+
+		// Parse ISO datetime (with explicit offset)
+		atTime, err := time.Parse(time.RFC3339, atStr)
+		usedNaiveLayout := false
+		if err != nil {
+			// Try other common formats (without timezone, interpret in loc)
+			atTime, err = time.ParseInLocation("2006-01-02T15:04:05", atStr, loc)
+			if err != nil {
+				return cron.CronSchedule{}, fmt.Errorf("invalid at datetime format: use ISO format like '2024-01-01T12:00:00'")
+			}
+			usedNaiveLayout = true
+		}
+
+		// Apply timezone only for offset-aware inputs (naive inputs already parsed in loc)
+		if tz != "" && !usedNaiveLayout {
 			atTime = atTime.In(loc)
 		}
 
@@ -231,6 +241,10 @@ func (t *ScheduleTool) parseSchedule(scheduleMap map[string]interface{}) (cron.C
 		}
 		if everySeconds <= 0 {
 			return cron.CronSchedule{}, fmt.Errorf("every_seconds must be positive")
+		}
+		// Reject non-integer values to avoid surprising schedules
+		if everySeconds != float64(int64(everySeconds)) {
+			return cron.CronSchedule{}, fmt.Errorf("every_seconds must be an integer value, got %.2f", everySeconds)
 		}
 		everyMS := int64(everySeconds) * 1000
 		schedule.EveryMS = &everyMS
