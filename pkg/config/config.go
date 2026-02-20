@@ -13,6 +13,16 @@ import (
 	"github.com/spf13/viper"
 )
 
+// rrCounter is a global counter for round-robin load balancing across models.
+var rrCounter atomic.Uint64
+
+var configFileNames = []string{
+	"config.json",
+	"config.yaml",
+	"config.yml",
+	"config.toml",
+}
+
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
 // so allow_from can contain both "123" and 123.
 type FlexibleStringSlice []string
@@ -51,21 +61,37 @@ type Config struct {
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	Session   SessionConfig   `json:"session,omitempty"`
 	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers"`
+	Providers ProvidersConfig `json:"providers,omitempty"`
+	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 }
 
-// rrCounter is reserved for round-robin model selection compatibility.
-var rrCounter atomic.Uint64
+// MarshalJSON implements custom JSON marshaling for Config
+// to omit providers section when empty and session when empty
+func (c Config) MarshalJSON() ([]byte, error) {
+	type Alias Config
+	aux := &struct {
+		Providers *ProvidersConfig `json:"providers,omitempty"`
+		Session   *SessionConfig   `json:"session,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(&c),
+	}
 
-var configFileNames = []string{
-	"config.json",
-	"config.yaml",
-	"config.yml",
-	"config.toml",
+	// Only include providers if not empty
+	if !c.Providers.IsEmpty() {
+		aux.Providers = &c.Providers
+	}
+
+	// Only include session if not empty
+	if c.Session.DMScope != "" || len(c.Session.IdentityLinks) > 0 {
+		aux.Session = &c.Session
+	}
+
+	return json.Marshal(aux)
 }
 
 type AgentsConfig struct {
@@ -77,8 +103,8 @@ type AgentsConfig struct {
 // String format: "gpt-4" (just primary, no fallbacks)
 // Object format: {"primary": "gpt-4", "fallbacks": ["claude-haiku"]}
 type AgentModelConfig struct {
-	Primary   string   `json:"primary" mapstructure:"primary"`
-	Fallbacks []string `json:"fallbacks,omitempty" mapstructure:"fallbacks"`
+	Primary   string   `json:"primary,omitempty"`
+	Fallbacks []string `json:"fallbacks,omitempty"`
 }
 
 func (m *AgentModelConfig) UnmarshalJSON(data []byte) error {
@@ -88,18 +114,28 @@ func (m *AgentModelConfig) UnmarshalJSON(data []byte) error {
 		m.Fallbacks = nil
 		return nil
 	}
-
-	type Alias struct {
+	type raw struct {
 		Primary   string   `json:"primary"`
 		Fallbacks []string `json:"fallbacks"`
 	}
-	aux := &Alias{}
-	if err := json.Unmarshal(data, aux); err != nil {
+	var r raw
+	if err := json.Unmarshal(data, &r); err != nil {
 		return err
 	}
-	m.Primary = aux.Primary
-	m.Fallbacks = aux.Fallbacks
+	m.Primary = r.Primary
+	m.Fallbacks = r.Fallbacks
 	return nil
+}
+
+func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
+	if len(m.Fallbacks) == 0 && m.Primary != "" {
+		return json.Marshal(m.Primary)
+	}
+	type raw struct {
+		Primary   string   `json:"primary,omitempty"`
+		Fallbacks []string `json:"fallbacks,omitempty"`
+	}
+	return json.Marshal(raw{Primary: m.Primary, Fallbacks: m.Fallbacks})
 }
 
 type AgentConfig struct {
@@ -141,16 +177,16 @@ type SessionConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace           string   `json:"workspace" mapstructure:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool     `json:"restrict_to_workspace" mapstructure:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string   `json:"provider" mapstructure:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string   `json:"model" mapstructure:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
-	ModelFallbacks      []string `json:"model_fallbacks,omitempty" mapstructure:"model_fallbacks,omitempty"`
-	ImageModel          string   `json:"image_model,omitempty" mapstructure:"image_model" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty" mapstructure:"image_model_fallbacks,omitempty"`
-	MaxTokens           int      `json:"max_tokens" mapstructure:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         float64  `json:"temperature" mapstructure:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int      `json:"max_tool_iterations" mapstructure:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace           string   `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool     `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Provider            string   `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	Model               string   `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
+	ImageModel          string   `json:"image_model,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
+	MaxTokens           int      `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature         *float64 `json:"temperature,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
 type ChannelsConfig struct {
@@ -264,7 +300,43 @@ type ProvidersConfig struct {
 	Moonshot      ProviderConfig       `json:"moonshot"`
 	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig       `json:"deepseek"`
+	Cerebras      ProviderConfig       `json:"cerebras"`
+	VolcEngine    ProviderConfig       `json:"volcengine"`
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
+	Antigravity   ProviderConfig       `json:"antigravity"`
+	Qwen          ProviderConfig       `json:"qwen"`
+}
+
+// IsEmpty checks if all provider configs are empty (no API keys or API bases set)
+// Note: WebSearch is an optimization option and doesn't count as "non-empty"
+func (p ProvidersConfig) IsEmpty() bool {
+	return p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" &&
+		p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" &&
+		p.OpenRouter.APIKey == "" && p.OpenRouter.APIBase == "" &&
+		p.Groq.APIKey == "" && p.Groq.APIBase == "" &&
+		p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" &&
+		p.VLLM.APIKey == "" && p.VLLM.APIBase == "" &&
+		p.Gemini.APIKey == "" && p.Gemini.APIBase == "" &&
+		p.Nvidia.APIKey == "" && p.Nvidia.APIBase == "" &&
+		p.Ollama.APIKey == "" && p.Ollama.APIBase == "" &&
+		p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" &&
+		p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" &&
+		p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" &&
+		p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" &&
+		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
+		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
+		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
+		p.Qwen.APIKey == "" && p.Qwen.APIBase == ""
+}
+
+// MarshalJSON implements custom JSON marshaling for ProvidersConfig
+// to omit the entire section when empty
+func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
+	if p.IsEmpty() {
+		return []byte("null"), nil
+	}
+	type Alias ProvidersConfig
+	return json.Marshal((*Alias)(&p))
 }
 
 type ProviderConfig struct {
@@ -277,7 +349,43 @@ type ProviderConfig struct {
 
 type OpenAIProviderConfig struct {
 	ProviderConfig
-	WebSearch bool `json:"web_search" mapstructure:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
+	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
+}
+
+// ModelConfig represents a model-centric provider configuration.
+// It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
+// The model field uses protocol prefix format: [protocol/]model-identifier
+// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
+// Default protocol is "openai" if no prefix is specified.
+type ModelConfig struct {
+	// Required fields
+	ModelName string `json:"model_name"` // User-facing alias for the model
+	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
+
+	// HTTP-based providers
+	APIBase string `json:"api_base,omitempty"` // API endpoint URL
+	APIKey  string `json:"api_key"`            // API authentication key
+	Proxy   string `json:"proxy,omitempty"`    // HTTP proxy URL
+
+	// Special providers (CLI-based, OAuth, etc.)
+	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token
+	ConnectMode string `json:"connect_mode,omitempty"` // Connection mode: stdio, grpc
+	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
+
+	// Optional optimizations
+	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
+	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
+}
+
+// Validate checks if the ModelConfig has all required fields.
+func (c *ModelConfig) Validate() error {
+	if c.ModelName == "" {
+		return fmt.Errorf("model_name is required")
+	}
+	if c.Model == "" {
+		return fmt.Errorf("model is required")
+	}
+	return nil
 }
 
 type GatewayConfig struct {
@@ -321,136 +429,6 @@ type ToolsConfig struct {
 	Web  WebToolsConfig  `json:"web"`
 	Cron CronToolsConfig `json:"cron"`
 	Exec ExecConfig      `json:"exec"`
-}
-
-func DefaultConfig() *Config {
-	return &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
-				Workspace:           "~/.picoclaw/workspace",
-				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "glm-4.7",
-				MaxTokens:           8192,
-				Temperature:         0.7,
-				MaxToolIterations:   20,
-			},
-		},
-		Channels: ChannelsConfig{
-			WhatsApp: WhatsAppConfig{
-				Enabled:   false,
-				BridgeURL: "ws://localhost:3001",
-				AllowFrom: FlexibleStringSlice{},
-			},
-			Telegram: TelegramConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
-			},
-			Feishu: FeishuConfig{
-				Enabled:           false,
-				AppID:             "",
-				AppSecret:         "",
-				EncryptKey:        "",
-				VerificationToken: "",
-				AllowFrom:         FlexibleStringSlice{},
-			},
-			Discord: DiscordConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
-			},
-			MaixCam: MaixCamConfig{
-				Enabled:   false,
-				Host:      "0.0.0.0",
-				Port:      18790,
-				AllowFrom: FlexibleStringSlice{},
-			},
-			QQ: QQConfig{
-				Enabled:   false,
-				AppID:     "",
-				AppSecret: "",
-				AllowFrom: FlexibleStringSlice{},
-			},
-			DingTalk: DingTalkConfig{
-				Enabled:      false,
-				ClientID:     "",
-				ClientSecret: "",
-				AllowFrom:    FlexibleStringSlice{},
-			},
-			Slack: SlackConfig{
-				Enabled:   false,
-				BotToken:  "",
-				AppToken:  "",
-				AllowFrom: FlexibleStringSlice{},
-			},
-			LINE: LINEConfig{
-				Enabled:            false,
-				ChannelSecret:      "",
-				ChannelAccessToken: "",
-				WebhookHost:        "0.0.0.0",
-				WebhookPort:        18791,
-				WebhookPath:        "/webhook/line",
-				AllowFrom:          FlexibleStringSlice{},
-			},
-			OneBot: OneBotConfig{
-				Enabled:            false,
-				WSUrl:              "ws://127.0.0.1:3001",
-				AccessToken:        "",
-				ReconnectInterval:  5,
-				GroupTriggerPrefix: []string{},
-				AllowFrom:          FlexibleStringSlice{},
-			},
-		},
-		Providers: ProvidersConfig{
-			Anthropic:    ProviderConfig{},
-			OpenAI:       OpenAIProviderConfig{WebSearch: true},
-			OpenRouter:   ProviderConfig{},
-			Groq:         ProviderConfig{},
-			Zhipu:        ProviderConfig{},
-			VLLM:         ProviderConfig{},
-			Gemini:       ProviderConfig{},
-			Nvidia:       ProviderConfig{},
-			Moonshot:     ProviderConfig{},
-			ShengSuanYun: ProviderConfig{},
-		},
-		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
-			Port: 18790,
-		},
-		Tools: ToolsConfig{
-			Web: WebToolsConfig{
-				Brave: BraveConfig{
-					Enabled:    false,
-					APIKey:     "",
-					MaxResults: 5,
-				},
-				DuckDuckGo: DuckDuckGoConfig{
-					Enabled:    true,
-					MaxResults: 5,
-				},
-				Perplexity: PerplexityConfig{
-					Enabled:    false,
-					APIKey:     "",
-					MaxResults: 5,
-				},
-			},
-			Cron: CronToolsConfig{
-				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
-			},
-			Exec: ExecConfig{
-				EnableDenyPatterns: true,
-			},
-		},
-		Heartbeat: HeartbeatConfig{
-			Enabled:  true,
-			Interval: 30, // default 30 minutes
-		},
-		Devices: DevicesConfig{
-			Enabled:    false,
-			MonitorUSB: true,
-		},
-	}
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -521,6 +499,16 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse env overrides: %w", err)
 	}
 
+	// Auto-migrate: if only legacy providers config exists, convert to model_list
+	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
+		cfg.ModelList = ConvertProvidersToModelList(cfg)
+	}
+
+	// Validate model_list for uniqueness and required fields
+	if err := cfg.ValidateModelList(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 
@@ -535,7 +523,7 @@ func SaveConfig(path string, cfg *Config) error {
 	case ".json", "":
 		configType = "json"
 		if ext == "" {
-			path = path + ".json"
+			path += ".json"
 		}
 	default:
 		configType = "json"
@@ -545,17 +533,31 @@ func SaveConfig(path string, cfg *Config) error {
 	v.SetConfigType(configType)
 	v.SetConfigFile(path)
 
-	data, err := json.Marshal(cfg)
+	settings := map[string]interface{}{}
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		TagName:          "json",
+		Result:           &settings,
+		WeaklyTypedInput: true,
+		Squash:           true,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+		return fmt.Errorf("failed to create config encoder: %w", err)
+	}
+	if err := decoder.Decode(cfg); err != nil {
+		return fmt.Errorf("failed to encode config map: %w", err)
 	}
 
-	var dataMap map[string]interface{}
-	if err := json.Unmarshal(data, &dataMap); err != nil {
-		return fmt.Errorf("failed to unmarshal config map: %w", err)
+	if cfg.Providers.IsEmpty() {
+		delete(settings, "providers")
+	}
+	if cfg.Session.DMScope == "" && len(cfg.Session.IdentityLinks) == 0 {
+		delete(settings, "session")
+	}
+	if len(cfg.Bindings) == 0 {
+		delete(settings, "bindings")
 	}
 
-	for key, val := range dataMap {
+	for key, val := range settings {
 		v.Set(key, val)
 	}
 
@@ -614,6 +616,9 @@ func (c *Config) GetAPIKey() string {
 	if c.Providers.ShengSuanYun.APIKey != "" {
 		return c.Providers.ShengSuanYun.APIKey
 	}
+	if c.Providers.Cerebras.APIKey != "" {
+		return c.Providers.Cerebras.APIKey
+	}
 	return ""
 }
 
@@ -633,28 +638,6 @@ func (c *Config) GetAPIBase() string {
 	return ""
 }
 
-// ModelConfig holds primary model and fallback list.
-type ModelConfig struct {
-	Primary   string
-	Fallbacks []string
-}
-
-// GetModelConfig returns the text model configuration with fallbacks.
-func (c *Config) GetModelConfig() ModelConfig {
-	return ModelConfig{
-		Primary:   c.Agents.Defaults.Model,
-		Fallbacks: c.Agents.Defaults.ModelFallbacks,
-	}
-}
-
-// GetImageModelConfig returns the image model configuration with fallbacks.
-func (c *Config) GetImageModelConfig() ModelConfig {
-	return ModelConfig{
-		Primary:   c.Agents.Defaults.ImageModel,
-		Fallbacks: c.Agents.Defaults.ImageModelFallbacks,
-	}
-}
-
 func expandHome(path string) string {
 	if path == "" {
 		return path
@@ -667,4 +650,66 @@ func expandHome(path string) string {
 		return home
 	}
 	return path
+}
+
+// GetModelConfig returns the ModelConfig for the given model name.
+// If multiple configs exist with the same model_name, it uses round-robin
+// selection for load balancing. Returns an error if the model is not found.
+func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
+	matches := c.findMatches(modelName)
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("model %q not found in model_list or providers", modelName)
+	}
+	if len(matches) == 1 {
+		return &matches[0], nil
+	}
+
+	// Multiple configs - use round-robin for load balancing
+	idx := rrCounter.Add(1) % uint64(len(matches))
+	return &matches[idx], nil
+}
+
+// findMatches finds all ModelConfig entries with the given model_name.
+func (c *Config) findMatches(modelName string) []ModelConfig {
+	var matches []ModelConfig
+	for i := range c.ModelList {
+		if c.ModelList[i].ModelName == modelName {
+			matches = append(matches, c.ModelList[i])
+		}
+	}
+	return matches
+}
+
+// HasProvidersConfig checks if any provider in the old providers config has configuration.
+func (c *Config) HasProvidersConfig() bool {
+	v := c.Providers
+	return v.Anthropic.APIKey != "" || v.Anthropic.APIBase != "" ||
+		v.OpenAI.APIKey != "" || v.OpenAI.APIBase != "" ||
+		v.OpenRouter.APIKey != "" || v.OpenRouter.APIBase != "" ||
+		v.Groq.APIKey != "" || v.Groq.APIBase != "" ||
+		v.Zhipu.APIKey != "" || v.Zhipu.APIBase != "" ||
+		v.VLLM.APIKey != "" || v.VLLM.APIBase != "" ||
+		v.Gemini.APIKey != "" || v.Gemini.APIBase != "" ||
+		v.Nvidia.APIKey != "" || v.Nvidia.APIBase != "" ||
+		v.Ollama.APIKey != "" || v.Ollama.APIBase != "" ||
+		v.Moonshot.APIKey != "" || v.Moonshot.APIBase != "" ||
+		v.ShengSuanYun.APIKey != "" || v.ShengSuanYun.APIBase != "" ||
+		v.DeepSeek.APIKey != "" || v.DeepSeek.APIBase != "" ||
+		v.Cerebras.APIKey != "" || v.Cerebras.APIBase != "" ||
+		v.VolcEngine.APIKey != "" || v.VolcEngine.APIBase != "" ||
+		v.GitHubCopilot.APIKey != "" || v.GitHubCopilot.APIBase != "" ||
+		v.Antigravity.APIKey != "" || v.Antigravity.APIBase != "" ||
+		v.Qwen.APIKey != "" || v.Qwen.APIBase != ""
+}
+
+// ValidateModelList validates all ModelConfig entries in the model_list.
+// It checks that each model config is valid.
+// Note: Multiple entries with the same model_name are allowed for load balancing.
+func (c *Config) ValidateModelList() error {
+	for i := range c.ModelList {
+		if err := c.ModelList[i].Validate(); err != nil {
+			return fmt.Errorf("model_list[%d]: %w", i, err)
+		}
+	}
+	return nil
 }
