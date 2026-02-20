@@ -237,6 +237,16 @@ picoclaw onboard
       "duckduckgo": {
         "enabled": true,
         "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "YOUR_PERPLEXITY_API_KEY",
+        "max_results": 5
+      },
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://your-searxng-instance:8888",
+        "max_results": 5
       }
     }
   }
@@ -248,7 +258,11 @@ picoclaw onboard
 **3. Get API Keys**
 
 * **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-* **Web Search** (optional): [Brave Search](https://brave.com/search/api) - Free tier available (2000 requests/month)
+* **Web Search** (optional):
+  * [Brave Search](https://brave.com/search/api) - Free tier (2000 requests/month)
+  * [Perplexity](https://www.perplexity.ai) - AI-powered search with chat interface
+  * [SearXNG](https://github.com/searxng/searxng) - Self-hosted metasearch engine (free, no API key needed)
+  * DuckDuckGo - Built-in fallback (no API key required)
 
 > **Note**: See `config.example.json` for a complete configuration template.
 
@@ -977,6 +991,16 @@ picoclaw agent -m "Hello"
       "duckduckgo": {
         "enabled": true,
         "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "",
+        "max_results": 5
+      },
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://localhost:8888",
+        "max_results": 5
       }
     },
     "cron": {
@@ -1034,10 +1058,69 @@ discord:  <https://discord.gg/V4sAZ9XWpN>
 
 This is normal if you haven't configured a search API key yet. PicoClaw will provide helpful links for manual searching.
 
-To enable web search:
+#### Search Provider Priority
 
-1. **Option 1 (Recommended)**: Get a free API key at [https://brave.com/search/api](https://brave.com/search/api) (2000 free queries/month) for the best results.
-2. **Option 2 (No Credit Card)**: If you don't have a key, we automatically fall back to **DuckDuckGo** (no key required).
+PicoClaw automatically selects the best available search provider in this order:
+1. **Perplexity** (if enabled and API key configured) - AI-powered search with citations
+2. **Brave Search** (if enabled and API key configured) - Privacy-focused with 2000 free queries/month
+3. **SearXNG** (if enabled and base_url configured) - Self-hosted metasearch aggregating 70+ engines
+4. **DuckDuckGo** (if enabled, default fallback) - No API key required
+
+#### Web Search Configuration Options
+
+**Option 1 (Best Results)**: Perplexity AI Search
+```json
+{
+  "tools": {
+    "web": {
+      "perplexity": {
+        "enabled": true,
+        "api_key": "YOUR_PERPLEXITY_API_KEY",
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
+**Option 2 (Free Tier)**: Get a free API key at [https://brave.com/search/api](https://brave.com/search/api) (2000 free queries/month)
+```json
+{
+  "tools": {
+    "web": {
+      "brave": {
+        "enabled": true,
+        "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
+**Option 3 (Self-Hosted)**: Deploy your own [SearXNG](https://github.com/searxng/searxng) instance
+```json
+{
+  "tools": {
+    "web": {
+      "searxng": {
+        "enabled": true,
+        "base_url": "http://your-server:8888",
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
+Benefits of SearXNG:
+- **Zero cost**: No API fees or rate limits
+- **Privacy-focused**: Self-hosted, no tracking
+- **Aggregate results**: Queries 70+ search engines simultaneously
+- **Perfect for cloud VMs**: Solves datacenter IP blocking issues (Oracle Cloud, GCP, AWS, Azure)
+- **No API key needed**: Just deploy and configure the base URL
+
+**Option 4 (No Setup Required)**: DuckDuckGo is enabled by default as fallback (no API key needed)
 
 Add the key to `~/.picoclaw/config.json` if using Brave:
 
@@ -1052,6 +1135,16 @@ Add the key to `~/.picoclaw/config.json` if using Brave:
       },
       "duckduckgo": {
         "enabled": true,
+        "max_results": 5
+      },
+      "perplexity": {
+        "enabled": false,
+        "api_key": "YOUR_PERPLEXITY_API_KEY",
+        "max_results": 5
+      },
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://your-searxng-instance:8888",
         "max_results": 5
       }
     }
@@ -1071,10 +1164,11 @@ This happens when another instance of the bot is running. Make sure only one `pi
 
 ## 📝 API Key Comparison
 
-| Service          | Free Tier           | Use Case                              |
-| ---------------- | ------------------- | ------------------------------------- |
-| **OpenRouter**   | 200K tokens/month   | Multiple models (Claude, GPT-4, etc.) |
-| **Zhipu**        | 200K tokens/month   | Best for Chinese users                |
-| **Brave Search** | 2000 queries/month  | Web search functionality              |
-| **Groq**         | Free tier available | Fast inference (Llama, Mixtral)       |
-| **Cerebras**     | Free tier available | Fast inference (Llama, Qwen, etc.)    |
+| Service          | Free Tier                | Use Case                              |
+| ---------------- | ------------------------ | ------------------------------------- |
+| **OpenRouter**   | 200K tokens/month        | Multiple models (Claude, GPT-4, etc.) |
+| **Zhipu**        | 200K tokens/month        | Best for Chinese users                |
+| **Brave Search** | 2000 queries/month       | Web search functionality              |
+| **SearXNG**      | Unlimited (self-hosted)  | Privacy-focused metasearch (70+ engines) |
+| **Groq**         | Free tier available      | Fast inference (Llama, Mixtral)       |
+| **Cerebras**     | Free tier available      | Fast inference (Llama, Qwen, etc.)    |
