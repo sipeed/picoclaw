@@ -481,6 +481,23 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Backward compatibility: derive unified search config from legacy sections.
+	if strings.TrimSpace(cfg.Tools.Web.Search.Provider) == "" {
+		switch {
+		case cfg.Tools.Web.Brave.Enabled:
+			cfg.Tools.Web.Search.Provider = "brave"
+			cfg.Tools.Web.Search.APIKey = cfg.Tools.Web.Brave.APIKey
+			cfg.Tools.Web.Search.MaxResults = cfg.Tools.Web.Brave.MaxResults
+		case cfg.Tools.Web.Perplexity.Enabled:
+			cfg.Tools.Web.Search.Provider = "perplexity"
+			cfg.Tools.Web.Search.APIKey = cfg.Tools.Web.Perplexity.APIKey
+			cfg.Tools.Web.Search.MaxResults = cfg.Tools.Web.Perplexity.MaxResults
+		case cfg.Tools.Web.DuckDuckGo.Enabled:
+			cfg.Tools.Web.Search.Provider = "duckduckgo"
+			cfg.Tools.Web.Search.MaxResults = cfg.Tools.Web.DuckDuckGo.MaxResults
+		}
+	}
+
 	if strings.TrimSpace(cfg.Tools.Web.Search.Provider) == "" {
 		return nil, fmt.Errorf("Please check new config for web search as config example")
 	}
