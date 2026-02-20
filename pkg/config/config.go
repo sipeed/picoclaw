@@ -49,7 +49,7 @@ type Config struct {
 	Bindings   []AgentBinding  `json:"bindings,omitempty"`
 	Session    SessionConfig   `json:"session,omitempty"`
 	Channels   ChannelsConfig  `json:"channels"`
-	Providers  ProvidersConfig `json:"providers"`
+	Providers  ProvidersConfig `json:"providers,omitempty"`
 	ModelList  []ModelConfig   `json:"model_list"` // New model-centric provider configuration
 	Gateway    GatewayConfig   `json:"gateway"`
 	Tools      ToolsConfig     `json:"tools"`
@@ -57,6 +57,31 @@ type Config struct {
 	Devices    DevicesConfig   `json:"devices"`
 	mu         sync.RWMutex
 	rrCounters map[string]*atomic.Uint64 // Round-robin counters for load balancing
+}
+
+// MarshalJSON implements custom JSON marshaling for Config
+// to omit providers section when empty and session when empty
+func (c Config) MarshalJSON() ([]byte, error) {
+	type Alias Config
+	aux := &struct {
+		Providers *ProvidersConfig `json:"providers,omitempty"`
+		Session   *SessionConfig   `json:"session,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(&c),
+	}
+
+	// Only include providers if not empty
+	if !c.Providers.IsEmpty() {
+		aux.Providers = &c.Providers
+	}
+
+	// Only include session if not empty
+	if c.Session.DMScope != "" || len(c.Session.IdentityLinks) > 0 {
+		aux.Session = &c.Session
+	}
+
+	return json.Marshal(aux)
 }
 
 type AgentsConfig struct {
@@ -272,6 +297,38 @@ type ProvidersConfig struct {
 	Qwen          ProviderConfig       `json:"qwen"`
 }
 
+// IsEmpty checks if all provider configs are empty (no API keys or API bases set)
+// Note: WebSearch is an optimization option and doesn't count as "non-empty"
+func (p ProvidersConfig) IsEmpty() bool {
+	return p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" &&
+		p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" &&
+		p.OpenRouter.APIKey == "" && p.OpenRouter.APIBase == "" &&
+		p.Groq.APIKey == "" && p.Groq.APIBase == "" &&
+		p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" &&
+		p.VLLM.APIKey == "" && p.VLLM.APIBase == "" &&
+		p.Gemini.APIKey == "" && p.Gemini.APIBase == "" &&
+		p.Nvidia.APIKey == "" && p.Nvidia.APIBase == "" &&
+		p.Ollama.APIKey == "" && p.Ollama.APIBase == "" &&
+		p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" &&
+		p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" &&
+		p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" &&
+		p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" &&
+		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
+		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
+		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
+		p.Qwen.APIKey == "" && p.Qwen.APIBase == ""
+}
+
+// MarshalJSON implements custom JSON marshaling for ProvidersConfig
+// to omit the entire section when empty
+func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
+	if p.IsEmpty() {
+		return []byte("null"), nil
+	}
+	type Alias ProvidersConfig
+	return json.Marshal((*Alias)(&p))
+}
+
 type ProviderConfig struct {
 	APIKey      string `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
 	APIBase     string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
@@ -297,7 +354,7 @@ type ModelConfig struct {
 
 	// HTTP-based providers
 	APIBase string `json:"api_base,omitempty"` // API endpoint URL
-	APIKey  string `json:"api_key,omitempty"`  // API authentication key
+	APIKey  string `json:"api_key"`            // API authentication key
 	Proxy   string `json:"proxy,omitempty"`    // HTTP proxy URL
 
 	// Special providers (CLI-based, OAuth, etc.)

@@ -43,7 +43,13 @@ func onboard() {
 	fmt.Printf("%s picoclaw is ready!\n", logo)
 	fmt.Println("\nNext steps:")
 	fmt.Println("  1. Add your API key to", configPath)
-	fmt.Println("     Get one at: https://openrouter.ai/keys")
+	fmt.Println("")
+	fmt.Println("     Recommended:")
+	fmt.Println("     - OpenRouter: https://openrouter.ai/keys (access 100+ models)")
+	fmt.Println("     - Ollama:     https://ollama.com (local, free)")
+	fmt.Println("")
+	fmt.Println("     See README.md for 17+ supported providers.")
+	fmt.Println("")
 	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
 }
 
