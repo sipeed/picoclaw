@@ -2,9 +2,8 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-
-	json "encoding/json"
 
 	copilot "github.com/github/copilot-sdk/go"
 )
@@ -17,7 +16,6 @@ type GitHubCopilotProvider struct {
 }
 
 func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*GitHubCopilotProvider, error) {
-
 	var session *copilot.Session
 	if connectMode == "" {
 		connectMode = "grpc"
@@ -25,13 +23,15 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 	switch connectMode {
 
 	case "stdio":
-		//todo
+		// todo
 	case "grpc":
 		client := copilot.NewClient(&copilot.ClientOptions{
 			CLIUrl: uri,
 		})
 		if err := client.Start(context.Background()); err != nil {
-			return nil, fmt.Errorf("Can't connect to Github Copilot, https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md#connecting-to-an-external-cli-server for details")
+			return nil, fmt.Errorf(
+				"Can't connect to Github Copilot, https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md#connecting-to-an-external-cli-server for details",
+			)
 		}
 		defer client.Stop()
 		session, _ = client.CreateSession(context.Background(), &copilot.SessionConfig{
@@ -49,7 +49,9 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 }
 
 // Chat sends a chat request to GitHub Copilot
-func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *GitHubCopilotProvider) Chat(
+	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
+) (*LLMResponse, error) {
 	type tempMessage struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -73,10 +75,8 @@ func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, to
 		FinishReason: "stop",
 		Content:      content,
 	}, nil
-
 }
 
 func (p *GitHubCopilotProvider) GetDefaultModel() string {
-
 	return "gpt-4.1"
 }

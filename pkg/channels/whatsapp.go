@@ -86,7 +86,7 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("whatsapp connection not established")
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"type":    "message",
 		"to":      msg.ChatID,
 		"content": msg.Content,
@@ -126,7 +126,7 @@ func (c *WhatsAppChannel) listen(ctx context.Context) {
 				continue
 			}
 
-			var msg map[string]interface{}
+			var msg map[string]any
 			if err := json.Unmarshal(message, &msg); err != nil {
 				log.Printf("Failed to unmarshal WhatsApp message: %v", err)
 				continue
@@ -144,7 +144,7 @@ func (c *WhatsAppChannel) listen(ctx context.Context) {
 	}
 }
 
-func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]interface{}) {
+func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]any) {
 	senderID, ok := msg["from"].(string)
 	if !ok {
 		return
@@ -161,7 +161,7 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]interface{}) {
 	}
 
 	var mediaPaths []string
-	if mediaData, ok := msg["media"].([]interface{}); ok {
+	if mediaData, ok := msg["media"].([]any); ok {
 		mediaPaths = make([]string, 0, len(mediaData))
 		for _, m := range mediaData {
 			if path, ok := m.(string); ok {
@@ -176,6 +176,14 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]interface{}) {
 	}
 	if userName, ok := msg["from_name"].(string); ok {
 		metadata["user_name"] = userName
+	}
+
+	if chatID == senderID {
+		metadata["peer_kind"] = "direct"
+		metadata["peer_id"] = senderID
+	} else {
+		metadata["peer_kind"] = "group"
+		metadata["peer_id"] = chatID
 	}
 
 	log.Printf("WhatsApp message from %s: %s...", senderID, utils.Truncate(content, 50))
