@@ -327,14 +327,16 @@ func TestConvertProvidersToModelList_MultipleProviders_PreservesUserModel(t *tes
 		t.Fatalf("len(result) = %d, want 2", len(result))
 	}
 
-	// Find each provider and verify model
+	// Find each provider and verify model.
+	// After migration, user-selected provider ModelName becomes the user's model name.
 	for _, mc := range result {
 		switch mc.ModelName {
 		case "openai":
 			if mc.Model != "openai/gpt-5.2" {
 				t.Errorf("OpenAI Model = %q, want %q (default)", mc.Model, "openai/gpt-5.2")
 			}
-		case "deepseek":
+		case "deepseek-reasoner":
+			// The user's explicit provider (deepseek) now uses the user's model as ModelName
 			if mc.Model != "deepseek/deepseek-reasoner" {
 				t.Errorf("DeepSeek Model = %q, want %q (user's)", mc.Model, "deepseek/deepseek-reasoner")
 			}
@@ -547,5 +549,100 @@ func TestConvertProvidersToModelList_LegacyModelWithProtocolPrefix(t *testing.T)
 	// Model should NOT have duplicated prefix
 	if result[0].Model != "openrouter/auto" {
 		t.Errorf("Model = %q, want %q (should not duplicate prefix)", result[0].Model, "openrouter/auto")
+	}
+}
+
+// Tests for nvidia provider with custom (third-party) model names.
+// Nvidia's API hosts models from various vendors using identifiers like "moonshotai/kimi-k2.5".
+
+func TestConvertProvidersToModelList_Nvidia_SimpleModel(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "nvidia",
+				Model:    "kimi-k2.5",
+			},
+		},
+		Providers: ProvidersConfig{
+			Nvidia: ProviderConfig{APIKey: "nvapi-xxx", APIBase: "https://integrate.api.nvidia.com/v1"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// ModelName must match the user's model so GetModelConfig("kimi-k2.5") can find it
+	if result[0].ModelName != "kimi-k2.5" {
+		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "kimi-k2.5")
+	}
+
+	// Model should be prefixed with the nvidia protocol
+	if result[0].Model != "nvidia/kimi-k2.5" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "nvidia/kimi-k2.5")
+	}
+}
+
+func TestConvertProvidersToModelList_Nvidia_VendorPrefixedModel(t *testing.T) {
+	// Nvidia hosts third-party models like "moonshotai/kimi-k2.5".
+	// The "/" is part of the model ID, not a protocol separator.
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "nvidia",
+				Model:    "moonshotai/kimi-k2.5",
+			},
+		},
+		Providers: ProvidersConfig{
+			Nvidia: ProviderConfig{APIKey: "nvapi-xxx", APIBase: "https://integrate.api.nvidia.com/v1"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// ModelName must match the user's model so GetModelConfig("moonshotai/kimi-k2.5") can find it
+	if result[0].ModelName != "moonshotai/kimi-k2.5" {
+		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "moonshotai/kimi-k2.5")
+	}
+
+	// Model should be wrapped with nvidia/ protocol prefix so the provider is resolved correctly
+	if result[0].Model != "nvidia/moonshotai/kimi-k2.5" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "nvidia/moonshotai/kimi-k2.5")
+	}
+}
+
+func TestConvertProvidersToModelList_Nvidia_ExplicitNvidiaPrefix(t *testing.T) {
+	// User specifies nvidia/kimi-k2.5 - should not double-prefix.
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "nvidia",
+				Model:    "nvidia/kimi-k2.5",
+			},
+		},
+		Providers: ProvidersConfig{
+			Nvidia: ProviderConfig{APIKey: "nvapi-xxx"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	if result[0].ModelName != "nvidia/kimi-k2.5" {
+		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "nvidia/kimi-k2.5")
+	}
+
+	// Should NOT produce nvidia/nvidia/kimi-k2.5
+	if result[0].Model != "nvidia/kimi-k2.5" {
+		t.Errorf("Model = %q, want %q (should not double-prefix)", result[0].Model, "nvidia/kimi-k2.5")
 	}
 }
