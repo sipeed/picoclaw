@@ -19,7 +19,7 @@ import (
 // ServerInstance manages a connected MCP server session.
 type ServerInstance struct {
 	session  *sdkmcp.ClientSession
-	done     chan struct{}   // closed when session ends; created once per session
+	done     chan struct{} // closed when session ends; created once per session
 	tools    []*sdkmcp.Tool
 	lastUsed time.Time
 	crashes  []time.Time // track crash times for rate limiting

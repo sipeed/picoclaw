@@ -263,4 +263,3 @@ func (c *WebSocketChannel) readPump(conn *websocket.Conn, clientID, chatID strin
 		c.HandleMessage(senderID, chatID, content, media, metadata)
 	}
 }
-

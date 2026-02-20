@@ -11,9 +11,9 @@ type rateLimiter struct {
 	maxToolCallsPerMinute int
 	maxRequestsPerMinute  int
 
-	mu             sync.Mutex
-	toolCallTimes  []time.Time
-	requestTimes   []time.Time
+	mu            sync.Mutex
+	toolCallTimes []time.Time
+	requestTimes  []time.Time
 }
 
 func newRateLimiter(maxToolCalls, maxRequests int) *rateLimiter {

@@ -48,9 +48,9 @@ func EncodeFileToDataURL(path string) string {
 	}
 	if info.Size() > maxImageFileSize {
 		logger.WarnCF("media", "Image file too large, skipping", map[string]interface{}{
-			"path":     path,
-			"size_mb":  info.Size() / (1024 * 1024),
-			"max_mb":   maxImageFileSize / (1024 * 1024),
+			"path":    path,
+			"size_mb": info.Size() / (1024 * 1024),
+			"max_mb":  maxImageFileSize / (1024 * 1024),
 		})
 		return ""
 	}
