@@ -208,7 +208,7 @@ func runAuthModels(cmd *cobra.Command, args []string) error {
 	if err != nil || cred == nil {
 		fmt.Println("Not logged in to Google Antigravity.")
 		fmt.Println("Run: picoclaw auth login --provider google-antigravity")
-		return nil
+		os.Exit(1)
 	}
 
 	if cred.NeedsRefresh() && cred.RefreshToken != "" {
