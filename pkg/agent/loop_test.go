@@ -613,3 +613,118 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
 	}
 }
+
+func tc(id string) providers.ToolCall { return providers.ToolCall{ID: id} }
+
+func TestSanitizeToolPairs(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []providers.Message
+		want []providers.Message
+	}{
+		{
+			name: "empty input",
+			in:   []providers.Message{},
+			want: []providers.Message{},
+		},
+		{
+			name: "all tool calls matched - no-op",
+			in: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", ToolCalls: []providers.ToolCall{tc("a"), tc("b")}},
+				{Role: "tool", ToolCallID: "a"},
+				{Role: "tool", ToolCallID: "b"},
+			},
+			want: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", ToolCalls: []providers.ToolCall{tc("a"), tc("b")}},
+				{Role: "tool", ToolCallID: "a"},
+				{Role: "tool", ToolCallID: "b"},
+			},
+		},
+		{
+			name: "orphaned tool result is dropped",
+			in: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "tool", ToolCallID: "orphan"},
+				{Role: "assistant", Content: "ok"},
+			},
+			want: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "ok"},
+			},
+		},
+		{
+			name: "orphaned tool call with text content - call stripped, text preserved",
+			in: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "thinking...", ToolCalls: []providers.ToolCall{tc("x")}},
+			},
+			want: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "thinking..."},
+			},
+		},
+		{
+			name: "orphaned tool call with no content - message dropped",
+			in: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", ToolCalls: []providers.ToolCall{tc("x")}},
+			},
+			want: []providers.Message{
+				{Role: "user", Content: "hi"},
+			},
+		},
+		{
+			name: "partial match - unmatched calls stripped, matched calls and text preserved",
+			in: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "let me check", ToolCalls: []providers.ToolCall{tc("a"), tc("b"), tc("c")}},
+				{Role: "tool", ToolCallID: "a"},
+				{Role: "tool", ToolCallID: "c"},
+			},
+			want: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "let me check", ToolCalls: []providers.ToolCall{tc("a"), tc("c")}},
+				{Role: "tool", ToolCallID: "a"},
+				{Role: "tool", ToolCallID: "c"},
+			},
+		},
+		{
+			name: "user messages pass through unchanged",
+			in: []providers.Message{
+				{Role: "user", Content: "hello"},
+				{Role: "assistant", Content: "world"},
+			},
+			want: []providers.Message{
+				{Role: "user", Content: "hello"},
+				{Role: "assistant", Content: "world"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeToolPairs(tt.in)
+			if len(got) != len(tt.want) {
+				t.Fatalf("len(got) = %d, len(want) = %d\ngot:  %+v\nwant: %+v", len(got), len(tt.want), got, tt.want)
+			}
+			for i := range got {
+				g, w := got[i], tt.want[i]
+				if g.Role != w.Role || g.Content != w.Content || g.ToolCallID != w.ToolCallID {
+					t.Errorf("msg[%d]: got {Role:%q Content:%q ToolCallID:%q}, want {Role:%q Content:%q ToolCallID:%q}",
+						i, g.Role, g.Content, g.ToolCallID, w.Role, w.Content, w.ToolCallID)
+				}
+				if len(g.ToolCalls) != len(w.ToolCalls) {
+					t.Errorf("msg[%d] ToolCalls len: got %d, want %d", i, len(g.ToolCalls), len(w.ToolCalls))
+					continue
+				}
+				for j := range g.ToolCalls {
+					if g.ToolCalls[j].ID != w.ToolCalls[j].ID {
+						t.Errorf("msg[%d].ToolCalls[%d].ID: got %q, want %q", i, j, g.ToolCalls[j].ID, w.ToolCalls[j].ID)
+					}
+				}
+			}
+		})
+	}
+}

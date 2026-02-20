@@ -217,6 +217,10 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 	// Index (into sanitized) of the last assistant message that carried ToolCalls.
 	// -1 means no such message has been seen yet.
 	lastCallAssistantIdx := -1
+	// hasInterveningTurn is true when a user or non-tool-call assistant message
+	// has been appended since lastCallAssistantIdx was last set. Maintained
+	// incrementally (O(1) per message) to avoid an O(n) scan for each tool result.
+	hasInterveningTurn := false
 
 	for _, msg := range history {
 		switch msg.Role {
@@ -229,14 +233,7 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 			// Any user message or any assistant message between the tool-call
 			// assistant and the current position means this result belongs to a
 			// now-lost turn and should be dropped.
-			interveningTurn := false
-			for i := lastCallAssistantIdx + 1; i < len(sanitized); i++ {
-				if r := sanitized[i].Role; r == "user" || r == "assistant" {
-					interveningTurn = true
-					break
-				}
-			}
-			if interveningTurn {
+			if hasInterveningTurn {
 				logger.DebugCF("agent", "Dropping orphaned tool message: intervening turn",
 					map[string]interface{}{"tool_call_id": msg.ToolCallID})
 				continue
@@ -245,6 +242,9 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 			// the associated assistant message. This catches the case where a
 			// mid-compression cut left a result whose parent call was dropped but
 			// another assistant-with-calls happened to precede it in the kept half.
+			// An empty ToolCallID skips this check — some providers omit the ID for
+			// synthetic or legacy tool messages; the intervening-turn check above is
+			// sufficient in those cases.
 			if msg.ToolCallID != "" {
 				found := false
 				for _, tc := range sanitized[lastCallAssistantIdx].ToolCalls {
@@ -277,10 +277,18 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				// Record where this assistant lands so tool-result validation can
 				// reference it. len(sanitized) is the index after append.
 				lastCallAssistantIdx = len(sanitized)
+				hasInterveningTurn = false
+			} else if lastCallAssistantIdx >= 0 {
+				// An assistant without tool calls is an intervening turn relative
+				// to the last tool-call assistant.
+				hasInterveningTurn = true
 			}
 			sanitized = append(sanitized, msg)
 
-		default:
+		default: // user (and any future roles)
+			if lastCallAssistantIdx >= 0 {
+				hasInterveningTurn = true
+			}
 			sanitized = append(sanitized, msg)
 		}
 	}
