@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 func TestFindSkillsToolName(t *testing.T) {

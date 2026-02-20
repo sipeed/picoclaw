@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/chzyer/readline"
+
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"

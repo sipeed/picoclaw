@@ -11,10 +11,8 @@ import (
 	"sync"
 	"time"
 
-	th "github.com/mymmrac/telego/telegohandler"
-
 	"github.com/mymmrac/telego"
-	"github.com/mymmrac/telego/telegohandler"
+	th "github.com/mymmrac/telego/telegohandler"
 	tu "github.com/mymmrac/telego/telegoutil"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -101,7 +99,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start long polling: %w", err)
 	}
 
-	bh, err := telegohandler.NewBotHandler(c.bot, updates)
+	bh, err := th.NewBotHandler(c.bot, updates)
 	if err != nil {
 		return fmt.Errorf("failed to create bot handler: %w", err)
 	}

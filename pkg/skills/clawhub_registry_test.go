@@ -11,9 +11,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 func newTestRegistry(serverURL, authToken string) *ClawHubRegistry {

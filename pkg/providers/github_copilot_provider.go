@@ -2,9 +2,8 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-
-	json "encoding/json"
 
 	copilot "github.com/github/copilot-sdk/go"
 )
