@@ -397,7 +397,7 @@
       "id": "PHASE7-EDGE-001",
       "milestone": "Phase 7 - 边缘部署",
       "subject": "边缘部署支持",
-      "status": "pending",
+      "status": "completed",
       "priority": "P1",
       "assignee": null,
       "description": "支持在资源受限的边缘设备（RISC-V、移动设备）上部署 Worker 节点",
@@ -415,7 +415,7 @@
       "id": "PHASE8-DOCS-001",
       "milestone": "Phase 8 - 文档与示例",
       "subject": "完善文档与示例",
-      "status": "pending",
+      "status": "completed",
       "priority": "P1",
       "assignee": null,
       "description": "完善用户文档、API 文档、部署示例",
@@ -490,8 +490,8 @@
   "summary": {
     "total": 26,
     "by_status": {
-      "completed": 22,
-      "pending": 4,
+      "completed": 24,
+      "pending": 2,
       "in_progress": 0,
       "blocked": 0
     },
