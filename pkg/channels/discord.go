@@ -3,7 +3,6 @@ package channels
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -210,19 +209,10 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	content := m.Content
 	content = c.stripBotMention(content)
 	mediaPaths := make([]string, 0, len(m.Attachments))
-	localFiles := make([]string, 0, len(m.Attachments))
-
-	// Ensure temp files are cleaned up when function returns
-	defer func() {
-		for _, file := range localFiles {
-			if err := os.Remove(file); err != nil {
-				logger.DebugCF("discord", "Failed to cleanup temp file", map[string]any{
-					"file":  file,
-					"error": err.Error(),
-				})
-			}
-		}
-	}()
+	// Note: media files in os.TempDir()/picoclaw_media/ are not cleaned up here
+	// because HandleMessage publishes to an async message bus. The consumer
+	// goroutine may still need these files after this function returns.
+	// Temp files are managed by OS temp directory lifecycle.
 
 	for _, attachment := range m.Attachments {
 		isAudio := utils.IsAudioFile(attachment.Filename, attachment.ContentType)
@@ -230,8 +220,6 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		if isAudio {
 			localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
 			if localPath != "" {
-				localFiles = append(localFiles, localPath)
-
 				transcribedText := ""
 				if c.transcriber != nil && c.transcriber.IsAvailable() {
 					ctx, cancel := context.WithTimeout(c.getContext(), transcriptionTimeout)
