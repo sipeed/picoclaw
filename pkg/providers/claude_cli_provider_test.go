@@ -336,7 +336,7 @@ func TestChat_PassesModelFlag(t *testing.T) {
 
 	_, err := p.Chat(context.Background(), []Message{
 		{Role: "user", Content: "Hi"},
-	}, nil, "claude-sonnet-4-5-20250929", nil)
+	}, nil, "claude-sonnet-4.6", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -346,7 +346,7 @@ func TestChat_PassesModelFlag(t *testing.T) {
 	if !strings.Contains(args, "--model") {
 		t.Errorf("CLI args missing --model, got: %s", args)
 	}
-	if !strings.Contains(args, "claude-sonnet-4-5-20250929") {
+	if !strings.Contains(args, "claude-sonnet-4.6") {
 		t.Errorf("CLI args missing model name, got: %s", args)
 	}
 }
@@ -417,9 +417,9 @@ func TestChat_EmptyWorkspaceDoesNotSetDir(t *testing.T) {
 func TestCreateProvider_ClaudeCli(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ModelList = []config.ModelConfig{
-		{ModelName: "claude-sonnet-4", Model: "claude-cli/claude-sonnet-4-20250514", Workspace: "/test/ws"},
+		{ModelName: "claude-sonnet-4.6", Model: "claude-cli/claude-sonnet-4.6", Workspace: "/test/ws"},
 	}
-	cfg.Agents.Defaults.Model = "claude-sonnet-4"
+	cfg.Agents.Defaults.Model = "claude-sonnet-4.6"
 
 	provider, _, err := CreateProvider(cfg)
 	if err != nil {

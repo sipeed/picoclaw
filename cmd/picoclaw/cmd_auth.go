@@ -284,13 +284,13 @@ func authLoginPasteToken(provider string) {
 			}
 			if !found {
 				appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
-					ModelName:  "claude-sonnet-4",
-					Model:      "anthropic/claude-sonnet-4-20250514",
+					ModelName:  "claude-sonnet-4.6",
+					Model:      "anthropic/claude-sonnet-4.6",
 					AuthMethod: "token",
 				})
 			}
 			// Update default model
-			appCfg.Agents.Defaults.Model = "claude-sonnet-4"
+			appCfg.Agents.Defaults.Model = "claude-sonnet-4.6"
 		case "openai":
 			appCfg.Providers.OpenAI.AuthMethod = "token"
 			// Update ModelList

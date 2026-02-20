@@ -231,8 +231,8 @@ picoclaw onboard
       "api_key": "your-api-key"
     },
     {
-      "model_name": "claude-sonnet-4",
-      "model": "anthropic/claude-sonnet-4",
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
       "api_key": "your-anthropic-key"
     }
   ],
@@ -610,8 +610,8 @@ Agent 读取 HEARTBEAT.md
       "api_key": "sk-your-openai-key"
     },
     {
-      "model_name": "claude-sonnet-4",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
       "api_key": "sk-ant-your-key"
     },
     {
@@ -660,8 +660,8 @@ Agent 读取 HEARTBEAT.md
 **Anthropic (使用 OAuth)**
 ```json
 {
-  "model_name": "claude-sonnet-4",
-  "model": "anthropic/claude-sonnet-4-20250514",
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
   "auth_method": "oauth"
 }
 ```

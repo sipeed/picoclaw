@@ -816,8 +816,8 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
       "api_key": "sk-your-openai-key"
     },
     {
-      "model_name": "claude-sonnet-4",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
       "api_key": "sk-ant-your-key"
     },
     {
@@ -857,8 +857,8 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 **Anthropic (với OAuth)**
 ```json
 {
-  "model_name": "claude-sonnet-4",
-  "model": "anthropic/claude-sonnet-4-20250514",
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
   "auth_method": "oauth"
 }
 ```

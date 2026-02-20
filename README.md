@@ -222,8 +222,8 @@ picoclaw onboard
       "api_key": "your-api-key"
     },
     {
-      "model_name": "claude-sonnet-4",
-      "model": "anthropic/claude-sonnet-4",
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
       "api_key": "your-anthropic-key"
     }
   ],
@@ -733,8 +733,8 @@ This design also enables **multi-agent support** with flexible provider selectio
       "api_key": "sk-your-openai-key"
     },
     {
-      "model_name": "claude-sonnet-4",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
       "api_key": "sk-ant-your-key"
     },
     {
@@ -783,8 +783,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 **Anthropic (with OAuth)**
 ```json
 {
-  "model_name": "claude-sonnet-4",
-  "model": "anthropic/claude-sonnet-4-20250514",
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
   "auth_method": "oauth"
 }
 ```

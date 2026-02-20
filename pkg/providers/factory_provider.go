@@ -40,7 +40,7 @@ func createCodexAuthProvider() (LLMProvider, error) {
 // If no prefix is specified, it defaults to "openai".
 // Examples:
 //   - "openai/gpt-4o" -> ("openai", "gpt-4o")
-//   - "anthropic/claude-3" -> ("anthropic", "claude-3")
+//   - "anthropic/claude-sonnet-4.6" -> ("anthropic", "claude-sonnet-4.6")
 //   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
 func ExtractProtocol(model string) (protocol, modelID string) {
 	model = strings.TrimSpace(model)

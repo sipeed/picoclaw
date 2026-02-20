@@ -66,7 +66,7 @@ Problem: Agent needs to know both `provider` and `model`, adding complexity.
 Inspired by [LiteLLM](https://docs.litellm.ai/docs/proxy/configs) design:
 
 1. **Model-centric**: Users care about models, not providers
-2. **Protocol prefix**: Use `protocol/model_name` format, e.g., `openai/gpt-5.2`, `anthropic/claude-sonnet-4`
+2. **Protocol prefix**: Use `protocol/model_name` format, e.g., `openai/gpt-5.2`, `anthropic/claude-sonnet-4.6`
 3. **Configuration-driven**: Adding new Providers only requires config changes, no code changes
 
 ### 2.2 New Configuration Structure
@@ -86,8 +86,8 @@ Inspired by [LiteLLM](https://docs.litellm.ai/docs/proxy/configs) design:
       "api_key": "sk-xxx"
     },
     {
-      "model_name": "claude-sonnet-4",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
       "api_key": "sk-xxx"
     },
     {
@@ -184,7 +184,7 @@ Identify protocol via prefix in `model` field:
       "system_prompt": "You are a coding assistant..."
     },
     "translator": {
-      "model": "claude-sonnet-4"
+      "model": "claude-sonnet-4.6"
     }
   }
 }

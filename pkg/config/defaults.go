@@ -113,8 +113,8 @@ func DefaultConfig() *Config {
 
 			// Anthropic Claude - https://console.anthropic.com/settings/keys
 			{
-				ModelName: "claude-sonnet-4",
-				Model:     "anthropic/claude-sonnet-4-20250514",
+				ModelName: "claude-sonnet-4.6",
+				Model:     "anthropic/claude-sonnet-4.6",
 				APIBase:   "https://api.anthropic.com/v1",
 				APIKey:    "",
 			},

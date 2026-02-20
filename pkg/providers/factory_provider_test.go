@@ -26,9 +26,9 @@ func TestExtractProtocol(t *testing.T) {
 		},
 		{
 			name:         "anthropic with prefix",
-			model:        "anthropic/claude-3-sonnet",
+			model:        "anthropic/claude-sonnet-4.6",
 			wantProtocol: "anthropic",
-			wantModelID:  "claude-3-sonnet",
+			wantModelID:  "claude-sonnet-4.6",
 		},
 		{
 			name:         "no prefix - defaults to openai",
@@ -134,7 +134,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-anthropic",
-		Model:     "anthropic/claude-3-sonnet",
+		Model:     "anthropic/claude-sonnet-4.6",
 		APIKey:    "test-key",
 	}
 
@@ -145,8 +145,8 @@ func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
 	if provider == nil {
 		t.Fatal("CreateProviderFromConfig() returned nil provider")
 	}
-	if modelID != "claude-3-sonnet" {
-		t.Errorf("modelID = %q, want %q", modelID, "claude-3-sonnet")
+	if modelID != "claude-sonnet-4.6" {
+		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4.6")
 	}
 }
 
@@ -171,7 +171,7 @@ func TestCreateProviderFromConfig_Antigravity(t *testing.T) {
 func TestCreateProviderFromConfig_ClaudeCLI(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-claude-cli",
-		Model:     "claude-cli/claude-sonnet-4-20250514",
+		Model:     "claude-cli/claude-sonnet-4.6",
 	}
 
 	provider, modelID, err := CreateProviderFromConfig(cfg)
@@ -181,8 +181,8 @@ func TestCreateProviderFromConfig_ClaudeCLI(t *testing.T) {
 	if provider == nil {
 		t.Fatal("CreateProviderFromConfig() returned nil provider")
 	}
-	if modelID != "claude-sonnet-4-20250514" {
-		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4-20250514")
+	if modelID != "claude-sonnet-4.6" {
+		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4.6")
 	}
 }
 

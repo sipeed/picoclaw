@@ -774,8 +774,8 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
       "api_key": "sk-your-openai-key"
     },
     {
-      "model_name": "claude-sonnet-4",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
       "api_key": "sk-ant-your-key"
     },
     {
@@ -815,8 +815,8 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 **Anthropic (OAuth使用)**
 ```json
 {
-  "model_name": "claude-sonnet-4",
-  "model": "anthropic/claude-sonnet-4-20250514",
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
   "auth_method": "oauth"
 }
 ```

@@ -58,8 +58,8 @@ The new `model_list` configuration offers several advantages:
       "api_base": "https://api.openai.com/v1"
     },
     {
-      "model_name": "claude-sonnet-4",
-      "model": "anthropic/claude-sonnet-4",
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
       "api_key": "sk-ant-your-key"
     },
     {
@@ -85,10 +85,10 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | `openai/` | OpenAI API (default) | `openai/gpt-5.2` |
 | `anthropic/` | Anthropic API | `anthropic/claude-opus-4` |
 | `antigravity/` | Google via Antigravity OAuth | `antigravity/gemini-2.0-flash` |
-| `claude-cli/` | Claude CLI (local) | `claude-cli/claude-sonnet-4` |
+| `claude-cli/` | Claude CLI (local) | `claude-cli/claude-sonnet-4.6` |
 | `codex-cli/` | Codex CLI (local) | `codex-cli/codex-4` |
 | `github-copilot/` | GitHub Copilot | `github-copilot/gpt-4o` |
-| `openrouter/` | OpenRouter | `openrouter/anthropic/claude-sonnet-4` |
+| `openrouter/` | OpenRouter | `openrouter/anthropic/claude-sonnet-4.6` |
 | `groq/` | Groq API | `groq/llama-3.1-70b` |
 | `deepseek/` | DeepSeek API | `deepseek/deepseek-chat` |
 | `cerebras/` | Cerebras API | `cerebras/llama-3.3-70b` |

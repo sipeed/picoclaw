@@ -58,8 +58,8 @@ func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
 	if result[0].ModelName != "anthropic" {
 		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "anthropic")
 	}
-	if result[0].Model != "anthropic/claude-sonnet-4" {
-		t.Errorf("Model = %q, want %q", result[0].Model, "anthropic/claude-sonnet-4")
+	if result[0].Model != "anthropic/claude-sonnet-4.6" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "anthropic/claude-sonnet-4.6")
 	}
 }
 
@@ -513,9 +513,9 @@ func TestBuildModelWithProtocol_AlreadyHasPrefix(t *testing.T) {
 }
 
 func TestBuildModelWithProtocol_DifferentPrefix(t *testing.T) {
-	result := buildModelWithProtocol("anthropic", "openrouter/claude-sonnet-4")
-	if result != "openrouter/claude-sonnet-4" {
-		t.Errorf("buildModelWithProtocol(anthropic, openrouter/claude-sonnet-4) = %q, want %q", result, "openrouter/claude-sonnet-4")
+	result := buildModelWithProtocol("anthropic", "openrouter/claude-sonnet-4.6")
+	if result != "openrouter/claude-sonnet-4.6" {
+		t.Errorf("buildModelWithProtocol(anthropic, openrouter/claude-sonnet-4.6) = %q, want %q", result, "openrouter/claude-sonnet-4.6")
 	}
 }
 
