@@ -100,3 +100,43 @@ jobs:
           gh release edit "${{ inputs.tag }}" \
             --draft=${{ inputs.draft }} \
             --prerelease=${{ inputs.prerelease }}
+
+  release-darwin-legacy:
+    name: Build darwin/amd64 (macOS 10.15+ / Catalina)
+    needs: [create-tag, release]
+    runs-on: macos-13
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Go from go.mod
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build darwin/amd64 legacy binary
+        env:
+          CGO_ENABLED: "1"
+          CGO_CFLAGS: "-mmacosx-version-min=10.15"
+          CGO_LDFLAGS: "-mmacosx-version-min=10.15"
+          MACOSX_DEPLOYMENT_TARGET: "10.15"
+        run: make build-darwin-legacy
+
+      - name: Create archive
+        run: |
+          cd build
+          tar -czf picoclaw_Darwin_x86_64_catalina.tar.gz picoclaw-darwin-amd64-catalina
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ inputs.tag }}" \
+            build/picoclaw_Darwin_x86_64_catalina.tar.gz \
+            --clobber

@@ -335,8 +335,16 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 
 		// Check if this is the user's configured provider
 		if slices.Contains(m.providerNames, userProvider) && userModel != "" {
-			// Use the user's configured model instead of default
-			mc.Model = buildModelWithProtocol(m.protocol, userModel)
+			// Use the user's configured model instead of default.
+			// Add protocol prefix unless the model already starts with it.
+			// This handles API-specific model IDs that contain "/" (e.g. "moonshotai/kimi-k2.5" on Nvidia).
+			if strings.HasPrefix(strings.ToLower(userModel), m.protocol+"/") {
+				mc.Model = userModel
+			} else {
+				mc.Model = m.protocol + "/" + userModel
+			}
+			// Update ModelName so GetModelConfig(userModel) can find this entry.
+			mc.ModelName = userModel
 		} else if userProvider == "" && userModel != "" && !legacyModelNameApplied {
 			// Legacy config: no explicit provider field but model is specified
 			// Use userModel as ModelName for the FIRST provider so GetModelConfig(model) can find it
