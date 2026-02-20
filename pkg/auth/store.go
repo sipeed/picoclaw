@@ -14,6 +14,8 @@ type AuthCredential struct {
 	ExpiresAt    time.Time `json:"expires_at,omitempty"`
 	Provider     string    `json:"provider"`
 	AuthMethod   string    `json:"auth_method"`
+	Email        string    `json:"email,omitempty"`
+	ProjectID    string    `json:"project_id,omitempty"`
 }
 
 type AuthStore struct {
