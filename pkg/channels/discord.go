@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +65,14 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	logger.InfoC("discord", "Starting Discord bot")
 
 	c.ctx = ctx
+
+	// Get bot user ID before opening session to avoid race condition
+	botUser, err := c.session.User("@me")
+	if err != nil {
+		return fmt.Errorf("failed to get bot user: %w", err)
+	}
+	c.botUserID = botUser.ID
+
 	c.session.AddHandler(c.handleMessage)
 
 	if err := c.session.Open(); err != nil {
@@ -72,11 +81,6 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 
 	c.setRunning(true)
 
-	botUser, err := c.session.User("@me")
-	if err != nil {
-		return fmt.Errorf("failed to get bot user: %w", err)
-	}
-	c.botUserID = botUser.ID
 	logger.InfoCF("discord", "Discord bot connected", map[string]any{
 		"username": botUser.Username,
 		"user_id":  botUser.ID,
@@ -203,6 +207,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	content := m.Content
+	content = c.stripBotMention(content)
 	mediaPaths := make([]string, 0, len(m.Attachments))
 	localFiles := make([]string, 0, len(m.Attachments))
 
@@ -351,4 +356,16 @@ func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "discord",
 	})
+}
+
+// stripBotMention removes the bot mention from the message content.
+// Discord mentions have the format <@USER_ID> or <@!USER_ID> (with nickname).
+func (c *DiscordChannel) stripBotMention(text string) string {
+	if c.botUserID == "" {
+		return text
+	}
+	// Remove both regular mention <@USER_ID> and nickname mention <@!USER_ID>
+	text = strings.ReplaceAll(text, fmt.Sprintf("<@%s>", c.botUserID), "")
+	text = strings.ReplaceAll(text, fmt.Sprintf("<@!%s>", c.botUserID), "")
+	return strings.TrimSpace(text)
 }
