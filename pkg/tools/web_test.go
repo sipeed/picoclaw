@@ -36,9 +36,14 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 		t.Errorf("Expected ForUser to contain 'Test Page', got: %s", result.ForUser)
 	}
 
-	// ForLLM should contain summary
-	if !strings.Contains(result.ForLLM, "bytes") && !strings.Contains(result.ForLLM, "extractor") {
-		t.Errorf("Expected ForLLM to contain summary, got: %s", result.ForLLM)
+	// ForLLM should contain summary metadata
+	if !strings.Contains(result.ForLLM, "bytes") || !strings.Contains(result.ForLLM, "extractor") {
+		t.Errorf("Expected ForLLM to contain summary metadata, got: %s", result.ForLLM)
+	}
+
+	// ForLLM should contain the actual fetched page content
+	if !strings.Contains(result.ForLLM, "Test Page") {
+		t.Errorf("Expected ForLLM to contain actual page content 'Test Page', got: %s", result.ForLLM)
 	}
 }
 
@@ -68,8 +73,13 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}
 
 	// ForUser should contain formatted JSON
-	if !strings.Contains(result.ForUser, "key") && !strings.Contains(result.ForUser, "value") {
+	if !strings.Contains(result.ForUser, "key") || !strings.Contains(result.ForUser, "value") {
 		t.Errorf("Expected ForUser to contain JSON data, got: %s", result.ForUser)
+	}
+
+	// ForLLM should contain the actual JSON content, not just metadata
+	if !strings.Contains(result.ForLLM, "key") || !strings.Contains(result.ForLLM, "value") {
+		t.Errorf("Expected ForLLM to contain actual JSON content, got: %s", result.ForLLM)
 	}
 }
 
@@ -224,13 +234,18 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}
 
 	// ForUser should contain extracted text (without script/style tags)
-	if !strings.Contains(result.ForUser, "Title") && !strings.Contains(result.ForUser, "Content") {
+	if !strings.Contains(result.ForUser, "Title") || !strings.Contains(result.ForUser, "Content") {
 		t.Errorf("Expected ForUser to contain extracted text, got: %s", result.ForUser)
 	}
 
 	// Should NOT contain script or style tags
 	if strings.Contains(result.ForUser, "<script>") || strings.Contains(result.ForUser, "<style>") {
 		t.Errorf("Expected script/style tags to be removed, got: %s", result.ForUser)
+	}
+
+	// ForLLM should also contain the extracted text content
+	if !strings.Contains(result.ForLLM, "Title") || !strings.Contains(result.ForLLM, "Content") {
+		t.Errorf("Expected ForLLM to contain extracted text content, got: %s", result.ForLLM)
 	}
 }
 
