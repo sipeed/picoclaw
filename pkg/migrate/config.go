@@ -22,6 +22,7 @@ var supportedProviders = map[string]bool{
 	"qwen":           true,
 	"deepseek":       true,
 	"github_copilot": true,
+	"mistral":        true,
 }
 
 var supportedChannels = map[string]bool{
