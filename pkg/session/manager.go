@@ -264,3 +264,19 @@ func (sm *SessionManager) loadSessions() error {
 
 	return nil
 }
+
+// SetHistory updates the messages of a session.
+func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, ok := sm.sessions[key]
+	if ok {
+		// Create a deep copy to strictly isolate internal state
+		// from the caller's slice.
+		msgs := make([]providers.Message, len(history))
+		copy(msgs, history)
+		session.Messages = msgs
+		session.Updated = time.Now()
+	}
+}
