@@ -195,18 +195,19 @@ func TestConfig_ValidateModelList(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "duplicate model_name",
+			// Load balancing: multiple entries with same model_name are allowed
+			name: "duplicate model_name for load balancing",
 			config: &Config{
 				ModelList: []ModelConfig{
 					{ModelName: "gpt-4", Model: "openai/gpt-4o", APIKey: "key1"},
 					{ModelName: "gpt-4", Model: "openai/gpt-4-turbo", APIKey: "key2"},
 				},
 			},
-			wantErr: true,
-			errMsg:  "duplicate model_name",
+			wantErr: false, // Changed: duplicates are allowed for load balancing
 		},
 		{
-			name: "duplicate model_name non-adjacent",
+			// Load balancing: non-adjacent entries with same model_name are also allowed
+			name: "duplicate model_name non-adjacent for load balancing",
 			config: &Config{
 				ModelList: []ModelConfig{
 					{ModelName: "model-a", Model: "openai/gpt-4o"},
@@ -214,8 +215,7 @@ func TestConfig_ValidateModelList(t *testing.T) {
 					{ModelName: "model-a", Model: "openai/gpt-4-turbo"},
 				},
 			},
-			wantErr: true,
-			errMsg:  "duplicate model_name \"model-a\"",
+			wantErr: false, // Changed: duplicates are allowed for load balancing
 		},
 	}
 
