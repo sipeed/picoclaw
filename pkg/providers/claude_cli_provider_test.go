@@ -1095,10 +1095,105 @@ func TestStripXMLToolCalls_MismatchedCloseTag(t *testing.T) {
 	}
 }
 
+func TestExtractXMLToolCalls_UnderscoreOpenTag(t *testing.T) {
+	// Opening tag also uses underscore: <minimax:tool_call>
+	text := `<minimax:tool_call>
+<invoke name="exec">
+<parameter name="command">ls -la</parameter>
+</invoke>
+</minimax:tool_call>`
+
+	calls := extractXMLToolCalls(text)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(calls))
+	}
+	if calls[0].Name != "exec" {
+		t.Errorf("Name = %q, want %q", calls[0].Name, "exec")
+	}
+	if calls[0].Arguments["command"] != "ls -la" {
+		t.Errorf("Arguments[command] = %v, want %q", calls[0].Arguments["command"], "ls -la")
+	}
+}
+
+func TestExtractXMLToolCalls_HyphenTag(t *testing.T) {
+	// Hypothetical: <vendor:Tool-Call>
+	text := `<vendor:Tool-Call>
+<invoke name="read_file">
+<parameter name="path">/etc/hosts</parameter>
+</invoke>
+</vendor:tool-call>`
+
+	calls := extractXMLToolCalls(text)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(calls))
+	}
+	if calls[0].Name != "read_file" {
+		t.Errorf("Name = %q, want %q", calls[0].Name, "read_file")
+	}
+}
+
+func TestStripXMLToolCalls_UnderscoreOpenTag(t *testing.T) {
+	text := `Here is the result.
+<minimax:tool_call>
+<invoke name="exec">
+<parameter name="command">ls</parameter>
+</invoke>
+</minimax:toolcall>
+Finished.`
+
+	got := stripXMLToolCalls(text)
+	if strings.Contains(got, "tool_call") || strings.Contains(got, "toolcall") {
+		t.Errorf("should remove XML block, got %q", got)
+	}
+	if !strings.Contains(got, "Here is the result.") {
+		t.Errorf("should keep text before, got %q", got)
+	}
+	if !strings.Contains(got, "Finished.") {
+		t.Errorf("should keep text after, got %q", got)
+	}
+}
+
 func TestStripXMLToolCalls_NoXML(t *testing.T) {
 	text := "Just regular text."
 	got := stripXMLToolCalls(text)
 	if got != text {
 		t.Errorf("stripXMLToolCalls() = %q, want %q", got, text)
+	}
+}
+
+func TestLevenshtein(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"", "", 0},
+		{"abc", "", 3},
+		{"", "abc", 3},
+		{"toolcall", "toolcall", 0},
+		{"toolcall", "tool_call", 1},
+		{"toolcall", "tool-call", 1},
+		{"toolcall", "ToolCall", 2}, // T and C
+		{"kitten", "sitting", 3},
+	}
+	for _, tt := range tests {
+		got := levenshtein(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("levenshtein(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+func TestIsToolCallTag(t *testing.T) {
+	// Should match
+	for _, name := range []string{"toolcall", "tool_call", "tool-call", "ToolCall", "Toolcall", "toolCall", "TOOLCALL"} {
+		if !isToolCallTag(name) {
+			t.Errorf("isToolCallTag(%q) = false, want true", name)
+		}
+	}
+	// Should NOT match
+	for _, name := range []string{"invoke", "parameter", "function", "result", "hello"} {
+		if isToolCallTag(name) {
+			t.Errorf("isToolCallTag(%q) = true, want false", name)
+		}
 	}
 }
