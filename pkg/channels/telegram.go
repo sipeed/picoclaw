@@ -185,23 +185,24 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid chat ID: %w", err)
 	}
 
-	// Stop thinking animation
-	if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
-		if cf, ok := stop.(*thinkingCancel); ok && cf != nil {
-			cf.Cancel()
-		}
-		c.stopThinking.Delete(msg.ChatID)
-	}
-
 	cleanContent := sanitizeTelegramOutgoingContent(msg.Content)
 	chunks := utils.SplitMessage(cleanContent, telegramMaxMessageChars)
 	if len(chunks) == 0 {
 		chunks = []string{cleanContent}
 	}
 
-	// Try to edit placeholder
+	// Slash-command responses (SkipPlaceholder=true) must not touch the
+	// stopThinking/placeholders state that belongs to the ongoing LLM task.
 	firstChunkSent := false
 	if !msg.SkipPlaceholder {
+		// Stop thinking animation
+		if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
+			if cf, ok := stop.(*thinkingCancel); ok && cf != nil {
+				cf.Cancel()
+			}
+			c.stopThinking.Delete(msg.ChatID)
+		}
+
 		if pID, ok := c.placeholders.Load(msg.ChatID); ok {
 			c.placeholders.Delete(msg.ChatID)
 			editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), markdownToTelegramHTML(chunks[0]))
