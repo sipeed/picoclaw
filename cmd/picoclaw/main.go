@@ -12,16 +12,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 var (
-	version   = "dev"
-	gitCommit string
-	buildTime string
-	goVersion string
+	version            = "dev"
+	gitCommit          string
+	buildTime          string
+	goVersion          string
+	configPathOverride string
 )
 
 const logo = "🦞"
@@ -97,6 +99,13 @@ func main() {
 		printHelp()
 		os.Exit(1)
 	}
+
+	args, err := parseConfigPathArg(os.Args)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	os.Args = args
 
 	command := os.Args[1]
 
@@ -190,8 +199,32 @@ func printHelp() {
 }
 
 func getConfigPath() string {
+	if configPathOverride != "" {
+		return configPathOverride
+	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "config.json")
+	return config.ResolveConfigPath(home)
+}
+
+func parseConfigPathArg(args []string) ([]string, error) {
+	for i := 2; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--config" || arg == "-c" {
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("%s requires a path", arg)
+			}
+			configPathOverride = args[i+1]
+			args = append(args[:i], args[i+2:]...)
+			i--
+			continue
+		}
+		if strings.HasPrefix(arg, "--config=") {
+			configPathOverride = strings.TrimPrefix(arg, "--config=")
+			args = append(args[:i], args[i+1:]...)
+			i--
+		}
+	}
+	return args, nil
 }
 
 func loadConfig() (*config.Config, error) {

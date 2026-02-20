@@ -145,9 +145,9 @@ Bạn cũng có thể chạy PicoClaw bằng Docker Compose mà không cần cà
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Thiết lập API Key
+# 2. Thiết lập API key
 cp config/config.example.json config/config.json
-vim config/config.json      # Thiết lập DISCORD_BOT_TOKEN, API keys, v.v.
+vim config/config.json      # Thiết lập DISCORD_BOT_TOKEN, API keys, v.v. (hoặc dùng config.yaml/config.toml)
 
 # 3. Build & Khởi động
 docker compose --profile gateway up -d
@@ -178,8 +178,13 @@ docker compose --profile gateway up -d
 
 ### 🚀 Bắt đầu nhanh
 
+### Cấu hình
+
+Bạn có thể cấu hình PicoClaw bằng cách chỉnh sửa file cấu hình ở các định dạng sau: `config.json`, `config.yaml`, hoặc `config.toml`.
+
 > [!TIP]
-> Thiết lập API key trong `~/.picoclaw/config.json`.
+> Thiết lập API key trong `~/.picoclaw/config.json`, `~/.picoclaw/config.yaml` hoặc `~/.picoclaw/config.toml`.
+> PicoClaw hỗ trợ nhiều định dạng cấu hình: **JSON** (mặc định), **YAML**, **TOML** via [spf13/viper](https://github.com/spf13/viper).
 > Lấy API key: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
 > Tìm kiếm web là **tùy chọn** — lấy [Brave Search API](https://brave.com/search/api) miễn phí (2000 truy vấn/tháng) hoặc dùng tính năng auto fallback tích hợp sẵn.
 
@@ -189,7 +194,12 @@ docker compose --profile gateway up -d
 picoclaw onboard
 ```
 
-**2. Cấu hình** (`~/.picoclaw/config.json`)
+**2. Cấu hình** (`~/.picoclaw/config.json`, `~/.picoclaw/config.yaml` hoặc `~/.picoclaw/config.toml`)
+
+PicoClaw hỗ trợ nhiều định dạng via [spf13/viper](https://github.com/spf13/viper). Chọn bất kỳ một:
+- `config.json` - Định dạng JSON (mặc định)
+- `config.yaml` hoặc `config.yml` - Định dạng YAML
+- `config.toml` - Định dạng TOML
 
 ```json
 {
