@@ -27,8 +27,14 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	if err != nil {
 		return nil, err
 	}
-	// Strip provider-specific XML tool call artifacts (e.g. minimax)
-	// that leak into Content alongside structured tool_calls.
+	// If provider returned no structured tool_calls but Content has XML
+	// tool call blocks (e.g. minimax), parse them as a fallback.
+	if len(resp.ToolCalls) == 0 {
+		if xmlCalls := extractXMLToolCalls(resp.Content); len(xmlCalls) > 0 {
+			resp.ToolCalls = xmlCalls
+		}
+	}
+	// Strip XML tool call artifacts from Content regardless.
 	resp.Content = stripXMLToolCalls(resp.Content)
 	return resp, nil
 }

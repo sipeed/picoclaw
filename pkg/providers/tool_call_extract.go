@@ -2,6 +2,7 @@ package providers
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -51,6 +52,122 @@ func extractToolCallsFromText(text string) []ToolCall {
 				Arguments: tc.Function.Arguments,
 			},
 		})
+	}
+
+	return result
+}
+
+// extractXMLToolCalls parses XML tool call blocks (e.g. <minimax:toolcall>)
+// into structured ToolCall objects. Used as a fallback when the provider returns
+// tool calls as XML in Content but not in the structured tool_calls field.
+//
+// Expected format:
+//
+//	<vendor:toolcall>
+//	<invoke name="tool_name">
+//	<parameter name="param">value</parameter>
+//	</invoke>
+//	</vendor:toolcall>
+func extractXMLToolCalls(text string) []ToolCall {
+	var result []ToolCall
+	remaining := text
+	callIdx := 0
+
+	for {
+		// Find next :toolcall> block
+		idx := strings.Index(remaining, ":toolcall>")
+		if idx == -1 {
+			break
+		}
+		tagStart := strings.LastIndex(remaining[:idx], "<")
+		if tagStart == -1 {
+			break
+		}
+		ns := remaining[tagStart+1 : idx]
+		closeTag := "</" + ns + ":toolcall>"
+		closeIdx := strings.Index(remaining, closeTag)
+		if closeIdx == -1 {
+			break
+		}
+
+		block := remaining[idx+len(":toolcall>") : closeIdx]
+		remaining = remaining[closeIdx+len(closeTag):]
+
+		// Parse <invoke> elements within the block
+		invokeRemaining := block
+		for {
+			invokeStart := strings.Index(invokeRemaining, "<invoke")
+			if invokeStart == -1 {
+				break
+			}
+			invokeEnd := strings.Index(invokeRemaining[invokeStart:], "</invoke>")
+			if invokeEnd == -1 {
+				break
+			}
+			invokeBody := invokeRemaining[invokeStart : invokeStart+invokeEnd+len("</invoke>")]
+			invokeRemaining = invokeRemaining[invokeStart+invokeEnd+len("</invoke>"):]
+
+			// Extract tool name from <invoke name="...">
+			nameStart := strings.Index(invokeBody, `name="`)
+			if nameStart == -1 {
+				continue
+			}
+			nameStart += len(`name="`)
+			nameEnd := strings.Index(invokeBody[nameStart:], `"`)
+			if nameEnd == -1 {
+				continue
+			}
+			toolName := invokeBody[nameStart : nameStart+nameEnd]
+
+			// Extract parameters
+			args := make(map[string]interface{})
+			paramRemaining := invokeBody
+			for {
+				pStart := strings.Index(paramRemaining, "<parameter")
+				if pStart == -1 {
+					break
+				}
+				pNameStart := strings.Index(paramRemaining[pStart:], `name="`)
+				if pNameStart == -1 {
+					break
+				}
+				pNameStart += pStart + len(`name="`)
+				pNameEnd := strings.Index(paramRemaining[pNameStart:], `"`)
+				if pNameEnd == -1 {
+					break
+				}
+				paramName := paramRemaining[pNameStart : pNameStart+pNameEnd]
+
+				// Find closing > of the <parameter ...> tag
+				tagClose := strings.Index(paramRemaining[pNameStart:], ">")
+				if tagClose == -1 {
+					break
+				}
+				valueStart := pNameStart + tagClose + 1
+				valueEnd := strings.Index(paramRemaining[valueStart:], "</parameter>")
+				if valueEnd == -1 {
+					break
+				}
+				paramValue := paramRemaining[valueStart : valueStart+valueEnd]
+				args[paramName] = paramValue
+				paramRemaining = paramRemaining[valueStart+valueEnd+len("</parameter>"):]
+			}
+
+			// Build Arguments JSON string
+			argsJSON, _ := json.Marshal(args)
+
+			callIdx++
+			result = append(result, ToolCall{
+				ID:        fmt.Sprintf("xmltc_%d", callIdx),
+				Type:      "function",
+				Name:      toolName,
+				Arguments: args,
+				Function: &FunctionCall{
+					Name:      toolName,
+					Arguments: string(argsJSON),
+				},
+			})
+		}
 	}
 
 	return result

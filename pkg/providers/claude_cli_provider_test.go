@@ -979,3 +979,89 @@ func TestFindMatchingBrace(t *testing.T) {
 		}
 	}
 }
+
+// --- XML tool call extract/strip tests ---
+
+func TestExtractXMLToolCalls_Single(t *testing.T) {
+	text := `<minimax:toolcall>
+<invoke name="exec">
+<parameter name="command">echo hello</parameter>
+</invoke>
+</minimax:toolcall>`
+
+	calls := extractXMLToolCalls(text)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(calls))
+	}
+	if calls[0].Name != "exec" {
+		t.Errorf("Name = %q, want %q", calls[0].Name, "exec")
+	}
+	if calls[0].Arguments["command"] != "echo hello" {
+		t.Errorf("Arguments[command] = %v, want %q", calls[0].Arguments["command"], "echo hello")
+	}
+	if calls[0].Function == nil || calls[0].Function.Name != "exec" {
+		t.Errorf("Function.Name should be exec")
+	}
+}
+
+func TestExtractXMLToolCalls_Multiple(t *testing.T) {
+	text := `<minimax:toolcall>
+<invoke name="web_search">
+<parameter name="query">golang testing</parameter>
+</invoke>
+<invoke name="exec">
+<parameter name="command">go test ./...</parameter>
+<parameter name="timeout">30</parameter>
+</invoke>
+</minimax:toolcall>`
+
+	calls := extractXMLToolCalls(text)
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(calls))
+	}
+	if calls[0].Name != "web_search" {
+		t.Errorf("[0].Name = %q, want %q", calls[0].Name, "web_search")
+	}
+	if calls[1].Name != "exec" {
+		t.Errorf("[1].Name = %q, want %q", calls[1].Name, "exec")
+	}
+	if calls[1].Arguments["timeout"] != "30" {
+		t.Errorf("[1].Arguments[timeout] = %v, want %q", calls[1].Arguments["timeout"], "30")
+	}
+}
+
+func TestExtractXMLToolCalls_NoXML(t *testing.T) {
+	calls := extractXMLToolCalls("just regular text")
+	if len(calls) != 0 {
+		t.Errorf("expected 0 tool calls, got %d", len(calls))
+	}
+}
+
+func TestStripXMLToolCalls(t *testing.T) {
+	text := `Let me run that.
+<minimax:toolcall>
+<invoke name="exec">
+<parameter name="command">echo hello</parameter>
+</invoke>
+</minimax:toolcall>
+Done.`
+
+	got := stripXMLToolCalls(text)
+	if strings.Contains(got, "toolcall") {
+		t.Errorf("should remove XML block, got %q", got)
+	}
+	if !strings.Contains(got, "Let me run that.") {
+		t.Errorf("should keep text before, got %q", got)
+	}
+	if !strings.Contains(got, "Done.") {
+		t.Errorf("should keep text after, got %q", got)
+	}
+}
+
+func TestStripXMLToolCalls_NoXML(t *testing.T) {
+	text := "Just regular text."
+	got := stripXMLToolCalls(text)
+	if got != text {
+		t.Errorf("stripXMLToolCalls() = %q, want %q", got, text)
+	}
+}
