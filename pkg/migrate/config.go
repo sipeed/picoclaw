@@ -207,6 +207,42 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 			case "email":
 				cfg.Channels.Email.Enabled = enabled
 				cfg.Channels.Email.AllowFrom = allowFrom
+				if v, ok := getString(cMap, "imap_server"); ok {
+					cfg.Channels.Email.IMAPServer = v
+				}
+				if v, ok := getFloat(cMap, "imap_port"); ok {
+					cfg.Channels.Email.IMAPPort = int(v)
+				}
+				if v, ok := getString(cMap, "username"); ok {
+					cfg.Channels.Email.Username = v
+				}
+				if v, ok := getString(cMap, "password"); ok {
+					cfg.Channels.Email.Password = v
+				}
+				if v, ok := getString(cMap, "mailbox"); ok {
+					cfg.Channels.Email.Mailbox = v
+				}
+				if v, ok := getFloat(cMap, "check_interval"); ok {
+					cfg.Channels.Email.CheckInterval = int(v)
+				}
+				cfg.Channels.Email.UseTLS = getBoolOrDefault(cMap, "use_tls", true)
+				cfg.Channels.Email.ForcedPolling = getBoolOrDefault(cMap, "forced_polling", false)
+				if v, ok := getString(cMap, "attachment_dir"); ok {
+					cfg.Channels.Email.AttachmentDir = v
+				}
+				if v, ok := getFloat(cMap, "attachment_max_bytes"); ok {
+					cfg.Channels.Email.AttachmentMaxBytes = int(v)
+				}
+				if v, ok := getFloat(cMap, "body_part_max_bytes"); ok {
+					cfg.Channels.Email.BodyPartMaxBytes = int(v)
+				}
+				if v, ok := getString(cMap, "smtp_server"); ok {
+					cfg.Channels.Email.SMTPServer = v
+				}
+				if v, ok := getFloat(cMap, "smtp_port"); ok {
+					cfg.Channels.Email.SMTPPort = int(v)
+				}
+				cfg.Channels.Email.SMTPUseTLS = getBoolOrDefault(cMap, "smtp_use_tls", true)
 			}
 		}
 	}
