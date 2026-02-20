@@ -13,7 +13,6 @@ import (
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
-
 	_ "modernc.org/sqlite"
 )
 
@@ -23,12 +22,17 @@ func LinkWhatsmeow(dbPath string, mode string) error {
 	dbPath = expandHomePath(dbPath)
 	ctx := context.Background()
 
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create db directory: %w", err)
 	}
 
 	dbLog := waLog.Noop
-	container, err := sqlstore.New(ctx, "sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)", dbPath), dbLog)
+	container, err := sqlstore.New(
+		ctx,
+		"sqlite",
+		fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)", dbPath),
+		dbLog,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to open whatsmeow db: %w", err)
 	}
@@ -49,7 +53,7 @@ func LinkWhatsmeow(dbPath string, mode string) error {
 
 	// Listen for Connected event to know when initial sync is done
 	connected := make(chan struct{}, 1)
-	client.AddEventHandler(func(evt interface{}) {
+	client.AddEventHandler(func(evt any) {
 		switch evt.(type) {
 		case *events.Connected:
 			select {
@@ -120,7 +124,12 @@ func WhatsmeowStatus(dbPath string) error {
 	}
 
 	ctx := context.Background()
-	container, err := sqlstore.New(ctx, "sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)", dbPath), waLog.Noop)
+	container, err := sqlstore.New(
+		ctx,
+		"sqlite",
+		fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)", dbPath),
+		waLog.Noop,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to open db: %w", err)
 	}

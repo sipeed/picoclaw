@@ -202,8 +202,8 @@ type WhatsAppConfig struct {
 }
 
 type WhatsmeowConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSMEOW_ENABLED"`
-	DBPath    string              `json:"db_path" env:"PICOCLAW_CHANNELS_WHATSMEOW_DB_PATH"`
+	Enabled   bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_WHATSMEOW_ENABLED"`
+	DBPath    string              `json:"db_path"    env:"PICOCLAW_CHANNELS_WHATSMEOW_DB_PATH"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSMEOW_ALLOW_FROM"`
 }
 

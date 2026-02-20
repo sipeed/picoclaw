@@ -45,12 +45,17 @@ func (c *WhatsmeowChannel) Start(ctx context.Context) error {
 	dbPath := expandHomePath(c.config.DBPath)
 
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create db directory: %w", err)
 	}
 
 	dbLog := waLog.Noop
-	container, err := sqlstore.New(ctx, "sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)", dbPath), dbLog)
+	container, err := sqlstore.New(
+		ctx,
+		"sqlite",
+		fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)", dbPath),
+		dbLog,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to open whatsmeow db: %w", err)
 	}
@@ -129,16 +134,18 @@ func (c *WhatsmeowChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 	return nil
 }
 
-func (c *WhatsmeowChannel) eventHandler(evt interface{}) {
+func (c *WhatsmeowChannel) eventHandler(evt any) {
 	switch v := evt.(type) {
 	case *events.Message:
 		c.handleIncomingMessage(v)
 	case *events.Connected:
 		logger.InfoC("whatsmeow", "WhatsApp connected")
+		c.setRunning(true)
 	case *events.Disconnected:
 		logger.WarnC("whatsmeow", "WhatsApp disconnected")
+		c.setRunning(false)
 	case *events.LoggedOut:
-		logger.ErrorCF("whatsmeow", "WhatsApp logged out", map[string]interface{}{
+		logger.ErrorCF("whatsmeow", "WhatsApp logged out", map[string]any{
 			"reason": v.Reason,
 		})
 		c.setRunning(false)
@@ -177,6 +184,16 @@ func (c *WhatsmeowChannel) handleIncomingMessage(msg *events.Message) {
 
 	// Handle media
 	var mediaPaths []string
+	defer func() {
+		for _, file := range mediaPaths {
+			if err := os.Remove(file); err != nil {
+				logger.DebugCF("whatsmeow", "Failed to cleanup temp file", map[string]any{
+					"file":  file,
+					"error": err.Error(),
+				})
+			}
+		}
+	}()
 
 	if img := msg.Message.GetImageMessage(); img != nil {
 		if path, err := c.downloadMedia(img, ".jpg"); err == nil {
@@ -225,11 +242,11 @@ func (c *WhatsmeowChannel) handleIncomingMessage(msg *events.Message) {
 		metadata["peer_kind"] = "group"
 		metadata["peer_id"] = msg.Info.Chat.User
 	} else {
-		metadata["peer_kind"] = "dm"
+		metadata["peer_kind"] = "direct"
 		metadata["peer_id"] = msg.Info.Sender.User
 	}
 
-	logger.InfoCF("whatsmeow", "Message received", map[string]interface{}{
+	logger.InfoCF("whatsmeow", "Message received", map[string]any{
 		"sender": senderID,
 		"chat":   chatID,
 		"len":    len(content),
@@ -250,21 +267,21 @@ func (c *WhatsmeowChannel) downloadMedia(msg whatsmeow.DownloadableMessage, ext 
 
 	data, err := client.Download(c.ctx, msg)
 	if err != nil {
-		logger.ErrorCF("whatsmeow", "Failed to download media", map[string]interface{}{
+		logger.ErrorCF("whatsmeow", "Failed to download media", map[string]any{
 			"error": err.Error(),
 		})
 		return "", err
 	}
 
 	dir := filepath.Join(os.TempDir(), "picoclaw_media")
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 
 	filename := fmt.Sprintf("wa_%d%s", time.Now().UnixNano(), ext)
 	path := filepath.Join(dir, filename)
 
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return "", err
 	}
 
