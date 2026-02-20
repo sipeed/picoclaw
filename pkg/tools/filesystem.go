@@ -3,10 +3,10 @@ package tools
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type ReadFileTool struct {
@@ -45,31 +45,21 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult("path is required")
 	}
 
-	// If restriction is disabled, fall back to standard os interactions (insecure but intended)
-	if !t.restrict {
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
-		}
-		return NewToolResult(string(content))
+	if t.restrict {
+		return executeInRoot(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
+			content, err := (&rootRW{root: root}).Read(relPath)
+			if err != nil {
+				return nil, err
+			}
+			return NewToolResult(string(content)), nil
+		})
 	}
 
-	return executeInRoot(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
-		f, err := root.Open(relPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("failed to read file: file not found: %s", path)
-			}
-			return nil, fmt.Errorf("access denied or failed to open: %w", err)
-		}
-		defer f.Close()
-
-		content, err := io.ReadAll(f)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file: %v", err)
-		}
-		return NewToolResult(string(content)), nil
-	})
+	content, err := (&hostRW{}).Read(path)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	return NewToolResult(string(content))
 }
 
 type WriteFileTool struct {
@@ -117,37 +107,20 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 		return ErrorResult("content is required")
 	}
 
-	if !t.restrict {
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			return ErrorResult(fmt.Sprintf("failed to create directory: %v", err))
-		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
-		}
-		return SilentResult(fmt.Sprintf("File written: %s", path))
+	if t.restrict {
+		return executeInRoot(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
+			if err := (&rootRW{root: root}).Write(relPath, []byte(content)); err != nil {
+				return nil, err
+			}
+			return SilentResult(fmt.Sprintf("File written: %s", path)), nil
+		})
 	}
 
-	return executeInRoot(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
-		// Ensure parent directory exists within root using recursive creation
-		dir := filepath.Dir(relPath)
-		if dir != "." && dir != "/" {
-			if err := mkdirAllInRoot(root, dir); err != nil {
-				return nil, fmt.Errorf("failed to create parent directories: %w", err)
-			}
-		}
+	if err := (&hostRW{}).Write(path, []byte(content)); err != nil {
+		return ErrorResult(err.Error())
+	}
 
-		f, err := root.Create(relPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create file: %w", err)
-		}
-		defer f.Close()
-
-		_, err = f.WriteString(content)
-		if err != nil {
-			return nil, fmt.Errorf("failed to write file: %w", err)
-		}
-		return SilentResult(fmt.Sprintf("File written: %s", path)), nil
-	})
+	return SilentResult(fmt.Sprintf("File written: %s", path))
 }
 
 type ListDirTool struct {
@@ -222,6 +195,102 @@ func formatDirEntries(entries []os.DirEntry) *ToolResult {
 	return NewToolResult(result.String())
 }
 
+// fileReadWriter abstracts reading and writing files, allowing both unrestricted
+// (host filesystem) and sandbox (os.Root) implementations to share the same logic.
+type fileReadWriter interface {
+	Read(path string) ([]byte, error)
+	Write(path string, data []byte) error
+}
+
+// hostRW is an unrestricted fileReadWriter that operates directly on the host filesystem.
+type hostRW struct{}
+
+func (h *hostRW) Read(path string) ([]byte, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read file: file not found: %w", err)
+		}
+		if os.IsPermission(err) {
+			return nil, fmt.Errorf("failed to read file: access denied: %w", err)
+		}
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+	return content, nil
+}
+
+func (h *hostRW) Write(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent directories: %w", err)
+	}
+
+	tmpPath := fmt.Sprintf("%s.%d.tmp", path, time.Now().UnixNano())
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to replace original file: %w", err)
+	}
+	return nil
+}
+
+// rootRW is a sandboxed fileReadWriter that operates within an os.Root boundary.
+// All paths passed to Read/Write must be relative to the root.
+type rootRW struct {
+	root *os.Root
+}
+
+func (r *rootRW) Read(path string) ([]byte, error) {
+	content, err := r.root.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read file: file not found: %w", err)
+		}
+		// os.Root returns "escapes from parent" for paths outside the root
+		if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") || strings.Contains(err.Error(), "permission denied") {
+			return nil, fmt.Errorf("failed to read file: access denied: %w", err)
+		}
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+	return content, nil
+}
+
+func (r *rootRW) Write(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if dir != "." && dir != "/" {
+		// Use native root.MkdirAll which handles the "file exists at path" check internally.
+		if err := r.root.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create parent directories: %w", err)
+		}
+	}
+
+	tmpRelPath := fmt.Sprintf("%s.%d.tmp", path, time.Now().UnixNano())
+	fw, err := r.root.Create(tmpRelPath)
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for writing: %w", err)
+	}
+
+	if _, err := fw.Write(data); err != nil {
+		fw.Close()
+		r.root.Remove(tmpRelPath)
+		return fmt.Errorf("failed to write to temp file: %w", err)
+	}
+
+	if err := fw.Close(); err != nil {
+		r.root.Remove(tmpRelPath)
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	if err := r.root.Rename(tmpRelPath, path); err != nil {
+		r.root.Remove(tmpRelPath)
+		return fmt.Errorf("failed to rename temp file over target: %w", err)
+	}
+	return nil
+}
+
 // Helper to get a safe relative path for os.Root usage
 func getSafeRelPath(workspace, path string) (string, error) {
 	if workspace == "" {
@@ -240,7 +309,7 @@ func getSafeRelPath(workspace, path string) (string, error) {
 		path = rel
 	}
 
-	// Check for escape
+	// Check for escape manually (defense-in-depth, as os.Root also rejects paths that escape the root)
 	if path == ".." || strings.HasPrefix(path, "../") {
 		return "", fmt.Errorf("path escapes workspace: %s", path)
 	}
@@ -274,36 +343,4 @@ func executeInRoot(workspace string, path string, fn func(root *os.Root, relPath
 	}
 
 	return result
-}
-
-// mkdirAllInRoot mimics os.MkdirAll but within os.Root
-func mkdirAllInRoot(root *os.Root, relPath string) error {
-	relPath = filepath.Clean(relPath)
-	if relPath == "." || relPath == "/" {
-		return nil
-	}
-
-	dir := filepath.Dir(relPath)
-	if dir != "." && dir != "/" {
-		if err := mkdirAllInRoot(root, dir); err != nil {
-			return err
-		}
-	}
-
-	err := root.Mkdir(relPath, 0755)
-	if err != nil {
-		if os.IsExist(err) {
-			// Check if it's a directory
-			st, statErr := root.Stat(relPath)
-			if statErr != nil {
-				return statErr
-			}
-			if !st.IsDir() {
-				return fmt.Errorf("%s: not a directory", relPath)
-			}
-			return nil
-		}
-		return err
-	}
-	return nil
 }
