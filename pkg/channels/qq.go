@@ -165,6 +165,8 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		// 转发到消息总线
 		metadata := map[string]string{
 			"message_id": data.ID,
+			"peer_kind":  "direct",
+			"peer_id":    senderID,
 		}
 
 		c.HandleMessage(senderID, senderID, content, []string{}, metadata)
@@ -207,6 +209,8 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		metadata := map[string]string{
 			"message_id": data.ID,
 			"group_id":   data.GroupID,
+			"peer_kind":  "group",
+			"peer_id":    data.GroupID,
 		}
 
 		c.HandleMessage(senderID, data.GroupID, content, []string{}, metadata)

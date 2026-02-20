@@ -170,6 +170,8 @@ func (c *MaixCamChannel) handlePersonDetection(msg MaixCamMessage) {
 		"y":         fmt.Sprintf("%.0f", y),
 		"w":         fmt.Sprintf("%.0f", w),
 		"h":         fmt.Sprintf("%.0f", h),
+		"peer_kind": "channel",
+		"peer_id":   "default",
 	}
 
 	c.HandleMessage(senderID, chatID, content, []string{}, metadata)

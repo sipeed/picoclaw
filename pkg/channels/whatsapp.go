@@ -178,6 +178,14 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]any) {
 		metadata["user_name"] = userName
 	}
 
+	if chatID == senderID {
+		metadata["peer_kind"] = "direct"
+		metadata["peer_id"] = senderID
+	} else {
+		metadata["peer_kind"] = "group"
+		metadata["peer_id"] = chatID
+	}
+
 	log.Printf("WhatsApp message from %s: %s...", senderID, utils.Truncate(content, 50))
 
 	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)

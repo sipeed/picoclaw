@@ -3,12 +3,48 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model": "glm-4.7",
+      "model": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
     }
   },
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key",
+      "api_base": "https://api.openai.com/v1"
+    },
+    {
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
+      "api_key": "sk-ant-your-key",
+      "api_base": "https://api.anthropic.com/v1"
+    },
+    {
+      "model_name": "gemini",
+      "model": "antigravity/gemini-2.0-flash",
+      "auth_method": "oauth"
+    },
+    {
+      "model_name": "deepseek",
+      "model": "deepseek/deepseek-chat",
+      "api_key": "sk-your-deepseek-key"
+    },
+    {
+      "model_name": "loadbalanced-gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-key1",
+      "api_base": "https://api1.example.com/v1"
+    },
+    {
+      "model_name": "loadbalanced-gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-key2",
+      "api_base": "https://api2.example.com/v1"
+    }
+  ],
   "channels": {
     "telegram": {
       "enabled": false,
@@ -21,6 +57,13 @@
     "discord": {
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",
+      "allow_from": [],
+      "mention_only": false
+    },
+    "qq": {
+      "enabled": false,
+      "app_id": "YOUR_QQ_APP_ID",
+      "app_secret": "YOUR_QQ_APP_SECRET",
       "allow_from": []
     },
     "maixcam": {
@@ -70,9 +113,36 @@
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
       "allow_from": []
+    },
+    "wecom": {
+      "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
+      "enabled": false,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": [],
+      "reply_timeout": 5
+    },
+    "wecom_app": {
+      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only. See docs/wecom-app-configuration.md",
+      "enabled": false,
+      "corp_id": "YOUR_CORP_ID",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": [],
+      "reply_timeout": 5
     }
   },
   "providers": {
+    "_comment": "DEPRECATED: Use model_list instead. This will be removed in a future version",
     "anthropic": {
       "api_key": "",
       "api_base": ""
@@ -111,9 +181,21 @@
       "api_key": "sk-xxx",
       "api_base": ""
     },
+    "qwen": {
+      "api_key": "sk-xxx",
+      "api_base": ""
+    },
     "ollama": {
       "api_key": "",
       "api_base": "http://localhost:11434/v1"
+    },
+    "cerebras": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "volcengine": {
+      "api_key": "",
+      "api_base": ""
     }
   },
   "tools": {
@@ -121,6 +203,10 @@
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
         "max_results": 5
       },
       "perplexity": {
@@ -131,6 +217,21 @@
     },
     "cron": {
       "exec_timeout_minutes": 5
+    },
+    "exec": {
+      "enable_deny_patterns": false,
+      "custom_deny_patterns": []
+    },
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "enabled": true,
+          "base_url": "https://clawhub.ai",
+          "search_path": "/api/v1/search",
+          "skills_path": "/api/v1/skills",
+          "download_path": "/api/v1/download"
+        }
+      }
     }
   },
   "heartbeat": {

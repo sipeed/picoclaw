@@ -94,7 +94,7 @@ func (p *Provider) Chat(
 }
 
 func (p *Provider) GetDefaultModel() string {
-	return "claude-sonnet-4-5-20250929"
+	return "claude-sonnet-4.6"
 }
 
 func (p *Provider) BaseURL() string {

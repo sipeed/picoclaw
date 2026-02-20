@@ -10,7 +10,6 @@ import (
 
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
-
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -109,7 +108,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
 	}
 
-	logger.DebugCF("dingtalk", "Sending message", map[string]any{
+	logger.DebugCF("dingtalk", "Sending message", map[string]interface{}{
 		"chat_id": msg.ChatID,
 		"preview": utils.Truncate(msg.Content, 100),
 	})
@@ -121,14 +120,12 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 // onChatBotMessageReceived implements the IChatBotMessageHandler function signature
 // This is called by the Stream SDK when a new message arrives
 // IChatBotMessageHandler is: func(c context.Context, data *chatbot.BotCallbackDataModel) ([]byte, error)
-func (c *DingTalkChannel) onChatBotMessageReceived(
-	ctx context.Context, data *chatbot.BotCallbackDataModel,
-) ([]byte, error) {
+func (c *DingTalkChannel) onChatBotMessageReceived(ctx context.Context, data *chatbot.BotCallbackDataModel) ([]byte, error) {
 	// Extract message content from Text field
 	content := data.Text.Content
 	if content == "" {
 		// Try to extract from Content interface{} if Text is empty
-		if contentMap, ok := data.Content.(map[string]any); ok {
+		if contentMap, ok := data.Content.(map[string]interface{}); ok {
 			if textContent, ok := contentMap["content"].(string); ok {
 				content = textContent
 			}
@@ -158,7 +155,15 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		"session_webhook":   data.SessionWebhook,
 	}
 
-	logger.DebugCF("dingtalk", "Received message", map[string]any{
+	if data.ConversationType == "1" {
+		metadata["peer_kind"] = "direct"
+		metadata["peer_id"] = senderID
+	} else {
+		metadata["peer_kind"] = "group"
+		metadata["peer_id"] = data.ConversationId
+	}
+
+	logger.DebugCF("dingtalk", "Received message", map[string]interface{}{
 		"sender_nick": senderNick,
 		"sender_id":   senderID,
 		"preview":     utils.Truncate(content, 50),
@@ -187,6 +192,7 @@ func (c *DingTalkChannel) SendDirectReply(ctx context.Context, sessionWebhook, c
 		titleBytes,
 		contentBytes,
 	)
+
 	if err != nil {
 		return fmt.Errorf("failed to send reply: %w", err)
 	}
