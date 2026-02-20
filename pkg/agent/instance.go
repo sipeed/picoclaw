@@ -15,22 +15,24 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID             string
-	Name           string
-	Model          string
-	Fallbacks      []string
-	Workspace      string
-	MaxIterations  int
-	MaxTokens      int
-	Temperature    float64
-	ContextWindow  int
-	Provider       providers.LLMProvider
-	Sessions       *session.SessionManager
-	ContextBuilder *ContextBuilder
-	Tools          *tools.ToolRegistry
-	Subagents      *config.SubagentsConfig
-	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
+	ID                 string
+	Name               string
+	Model              string
+	Fallbacks          []string
+	Workspace          string
+	MaxIterations      int
+	ContextWindow      int // Token limit used for summarization threshold and message-size guard (not the LLM response limit).
+	MaxTokens          int // Max tokens allowed in a single LLM response (passed to provider Chat).
+	Temperature        float64
+	SummaryMaxTokens   int
+	SummaryTemperature float64
+	Provider           providers.LLMProvider
+	Sessions           *session.SessionManager
+	ContextBuilder     *ContextBuilder
+	Tools              *tools.ToolRegistry
+	Subagents          *config.SubagentsConfig
+	SkillsFilter       []string
+	Candidates         []providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -78,9 +80,24 @@ func NewAgentInstance(
 		maxIter = 20
 	}
 
+	contextWindow := defaults.ContextWindow
+	if contextWindow <= 0 {
+		contextWindow = 8192
+	}
+
 	maxTokens := defaults.MaxTokens
-	if maxTokens == 0 {
+	if maxTokens <= 0 {
 		maxTokens = 8192
+	}
+
+	sumMaxTok := defaults.SummaryMaxTokens
+	if sumMaxTok <= 0 {
+		sumMaxTok = 1024
+	}
+
+	sumTemp := defaults.SummaryTemperature
+	if sumTemp <= 0 {
+		sumTemp = 0.3
 	}
 
 	temperature := 0.7
@@ -96,22 +113,24 @@ func NewAgentInstance(
 	candidates := providers.ResolveCandidates(modelCfg, defaults.Provider)
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		MaxTokens:      maxTokens,
-		Temperature:    temperature,
-		ContextWindow:  maxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
+		ID:                 agentID,
+		Name:               agentName,
+		Model:              model,
+		Fallbacks:          fallbacks,
+		Workspace:          workspace,
+		MaxIterations:      maxIter,
+		ContextWindow:      contextWindow,
+		MaxTokens:          maxTokens,
+		Temperature:        temperature,
+		SummaryMaxTokens:   sumMaxTok,
+		SummaryTemperature: sumTemp,
+		Provider:           provider,
+		Sessions:           sessionsManager,
+		ContextBuilder:     contextBuilder,
+		Tools:              toolsRegistry,
+		Subagents:          subagents,
+		SkillsFilter:       skillsFilter,
+		Candidates:         candidates,
 	}
 }
 

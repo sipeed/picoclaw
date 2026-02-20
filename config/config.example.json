@@ -4,10 +4,18 @@
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
       "model": "glm-4.7",
+      "context_window": 8192,
       "max_tokens": 8192,
       "temperature": 0.7,
+      "summary_max_tokens": 1024,
+      "summary_temperature": 0.3,
       "max_tool_iterations": 20
     }
+  },
+  "session": {
+    "memory_message_limit": 20,
+    "memory_token_percent": 75,
+    "memory_notify_user": false
   },
   "channels": {
     "telegram": {

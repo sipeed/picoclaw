@@ -24,6 +24,7 @@ func testCfg(agents []config.AgentConfig) *config.Config {
 			Defaults: config.AgentDefaults{
 				Workspace:         "/tmp/picoclaw-test-registry",
 				Model:             "gpt-4",
+				ContextWindow:     8192,
 				MaxTokens:         8192,
 				MaxToolIterations: 10,
 			},

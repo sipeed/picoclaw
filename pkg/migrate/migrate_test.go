@@ -272,6 +272,9 @@ func TestConvertConfig(t *testing.T) {
 		if cfg.Agents.Defaults.Model != "claude-3-opus" {
 			t.Errorf("Model = %q, want %q", cfg.Agents.Defaults.Model, "claude-3-opus")
 		}
+		if cfg.Agents.Defaults.ContextWindow != 4096 {
+			t.Errorf("ContextWindow = %d, want 4096 (backward compat from max_tokens)", cfg.Agents.Defaults.ContextWindow)
+		}
 		if cfg.Agents.Defaults.MaxTokens != 4096 {
 			t.Errorf("MaxTokens = %d, want %d", cfg.Agents.Defaults.MaxTokens, 4096)
 		}

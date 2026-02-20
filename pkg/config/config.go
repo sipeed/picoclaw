@@ -136,6 +136,10 @@ type AgentBinding struct {
 type SessionConfig struct {
 	DMScope       string              `json:"dm_scope,omitempty"`
 	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
+	// Memory summarization: trigger when history exceeds message count or token percent of context window
+	MemoryMessageLimit int  `json:"memory_message_limit,omitempty"` // default 20
+	MemoryTokenPercent int  `json:"memory_token_percent,omitempty"` // default 75
+	MemoryNotifyUser   bool `json:"memory_notify_user,omitempty"`   // if true, send "Memory threshold reached..." to user; default false
 }
 
 type AgentDefaults struct {
@@ -146,8 +150,11 @@ type AgentDefaults struct {
 	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
 	ImageModel          string   `json:"image_model,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
+	ContextWindow       int      `json:"context_window" env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
 	MaxTokens           int      `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         *float64 `json:"temperature,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	SummaryMaxTokens    int      `json:"summary_max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARY_MAX_TOKENS"`
+	SummaryTemperature  float64  `json:"summary_temperature" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARY_TEMPERATURE"`
 	MaxToolIterations   int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
@@ -329,7 +336,10 @@ func DefaultConfig() *Config {
 				RestrictToWorkspace: true,
 				Provider:            "",
 				Model:               "glm-4.7",
+				ContextWindow:       8192,
 				MaxTokens:           8192,
+				SummaryMaxTokens:    1024,
+				SummaryTemperature:  0.3,
 				MaxToolIterations:   20,
 			},
 		},

@@ -72,11 +72,23 @@ func ConvertConfig(data map[string]interface{}) (*config.Config, []string, error
 			if v, ok := getString(defaults, "model"); ok {
 				cfg.Agents.Defaults.Model = v
 			}
+			if v, ok := getFloat(defaults, "context_window"); ok {
+				cfg.Agents.Defaults.ContextWindow = int(v)
+			} else if v, ok := getFloat(defaults, "max_tokens"); ok {
+				// Backward compat: old configs used max_tokens for both; set context_window from it.
+				cfg.Agents.Defaults.ContextWindow = int(v)
+			}
 			if v, ok := getFloat(defaults, "max_tokens"); ok {
 				cfg.Agents.Defaults.MaxTokens = int(v)
 			}
 			if v, ok := getFloat(defaults, "temperature"); ok {
 				cfg.Agents.Defaults.Temperature = &v
+			}
+			if v, ok := getFloat(defaults, "summary_max_tokens"); ok {
+				cfg.Agents.Defaults.SummaryMaxTokens = int(v)
+			}
+			if v, ok := getFloat(defaults, "summary_temperature"); ok {
+				cfg.Agents.Defaults.SummaryTemperature = v
 			}
 			if v, ok := getFloat(defaults, "max_tool_iterations"); ok {
 				cfg.Agents.Defaults.MaxToolIterations = int(v)

@@ -28,6 +28,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+const (
+	defaultMemoryMessageLimit = 20
+	defaultMemoryTokenPercent = 75
+)
+
 type AgentLoop struct {
 	bus            *bus.MessageBus
 	cfg            *config.Config
@@ -699,19 +704,35 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, chatID string) {
 	newHistory := agent.Sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
-	threshold := agent.ContextWindow * 75 / 100
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	msgLimit := defaultMemoryMessageLimit
+	tokenPercent := defaultMemoryTokenPercent
+	notifyUser := false
+	if al.cfg != nil {
+		if al.cfg.Session.MemoryMessageLimit > 0 {
+			msgLimit = al.cfg.Session.MemoryMessageLimit
+		}
+		if al.cfg.Session.MemoryTokenPercent > 0 {
+			tokenPercent = al.cfg.Session.MemoryTokenPercent
+		}
+		notifyUser = al.cfg.Session.MemoryNotifyUser
+	}
+	threshold := agent.ContextWindow * tokenPercent / 100
+
+	if len(newHistory) > msgLimit || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
-				if !constants.IsInternalChannel(channel) {
+				if notifyUser && !constants.IsInternalChannel(channel) {
 					al.bus.PublishOutbound(bus.OutboundMessage{
 						Channel: channel,
 						ChatID:  chatID,
 						Content: "Memory threshold reached. Optimizing conversation history...",
 					})
+				} else if !constants.IsInternalChannel(channel) {
+					logger.InfoCF("agent", "Memory threshold reached, optimizing conversation history",
+						map[string]interface{}{"session_key": sessionKey})
 				}
 				al.summarizeSession(agent, sessionKey)
 			}()
@@ -906,8 +927,8 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 
 		mergePrompt := fmt.Sprintf("Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s", s1, s2)
 		resp, err := agent.Provider.Chat(ctx, []providers.Message{{Role: "user", Content: mergePrompt}}, nil, agent.Model, map[string]interface{}{
-			"max_tokens":  1024,
-			"temperature": 0.3,
+			"max_tokens":  agent.SummaryMaxTokens,
+			"temperature": agent.SummaryTemperature,
 		})
 		if err == nil {
 			finalSummary = resp.Content
@@ -941,8 +962,8 @@ func (al *AgentLoop) summarizeBatch(ctx context.Context, agent *AgentInstance, b
 	}
 
 	response, err := agent.Provider.Chat(ctx, []providers.Message{{Role: "user", Content: prompt}}, nil, agent.Model, map[string]interface{}{
-		"max_tokens":  1024,
-		"temperature": 0.3,
+		"max_tokens":  agent.SummaryMaxTokens,
+		"temperature": agent.SummaryTemperature,
 	})
 	if err != nil {
 		return "", err
