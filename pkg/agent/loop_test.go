@@ -917,21 +917,30 @@ func TestPlanCommand_StartNewPlan(t *testing.T) {
 	al, cleanup := newTestAgentLoop(t)
 	defer cleanup()
 
-	response, handled := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Set up monitoring"})
-	if !handled {
-		t.Fatal("expected /plan to be handled")
+	// /plan <task> should NOT be handled by handleCommand — it falls through
+	// to the LLM queue via expandPlanCommand.
+	_, handled := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Set up monitoring"})
+	if handled {
+		t.Fatal("expected /plan <task> NOT to be handled (should fall through to LLM)")
 	}
-	if !strings.Contains(response, "Plan started") {
-		t.Errorf("expected 'Plan started', got %q", response)
+
+	// expandPlanCommand writes the seed and rewrites the message
+	msg := bus.InboundMessage{Content: "/plan Set up monitoring"}
+	expanded, compact, ok := al.expandPlanCommand(msg)
+	if !ok {
+		t.Fatal("expected expandPlanCommand to succeed")
 	}
-	if !strings.Contains(response, "Set up monitoring") {
-		t.Errorf("expected task in response, got %q", response)
+	if expanded != "Set up monitoring" {
+		t.Errorf("expected expanded = 'Set up monitoring', got %q", expanded)
+	}
+	if !strings.Contains(compact, "Set up monitoring") {
+		t.Errorf("expected compact to contain task, got %q", compact)
 	}
 
 	// Verify plan was created
 	agent := al.registry.GetDefaultAgent()
 	if !agent.ContextBuilder.HasActivePlan() {
-		t.Error("expected active plan after /plan start")
+		t.Error("expected active plan after expandPlanCommand")
 	}
 	if status := agent.ContextBuilder.GetPlanStatus(); status != "interviewing" {
 		t.Errorf("expected 'interviewing', got %q", status)
@@ -942,11 +951,14 @@ func TestPlanCommand_StartBlockedByExisting(t *testing.T) {
 	al, cleanup := newTestAgentLoop(t)
 	defer cleanup()
 
-	// Start first plan
-	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan First task"})
+	// Start first plan via expandPlanCommand
+	al.expandPlanCommand(bus.InboundMessage{Content: "/plan First task"})
 
-	// Try to start another
-	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Second task"})
+	// Try to start another — handleCommand should block it on the fast path
+	response, handled := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Second task"})
+	if !handled {
+		t.Fatal("expected second /plan to be handled (blocked)")
+	}
 	if !strings.Contains(response, "already active") {
 		t.Errorf("expected 'already active', got %q", response)
 	}
@@ -957,7 +969,7 @@ func TestPlanCommand_Clear(t *testing.T) {
 	defer cleanup()
 
 	// Start plan then clear
-	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Test task"})
+	al.expandPlanCommand(bus.InboundMessage{Content: "/plan Test task"})
 	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan clear"})
 	if !strings.Contains(response, "Plan cleared") {
 		t.Errorf("expected 'Plan cleared', got %q", response)
@@ -984,7 +996,7 @@ func TestPlanCommand_Start(t *testing.T) {
 	defer cleanup()
 
 	// Create interviewing plan
-	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Test task"})
+	al.expandPlanCommand(bus.InboundMessage{Content: "/plan Test task"})
 
 	// Transition to executing
 	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
@@ -1003,7 +1015,7 @@ func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
 	defer cleanup()
 
 	// Create interviewing plan then start
-	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Test task"})
+	al.expandPlanCommand(bus.InboundMessage{Content: "/plan Test task"})
 	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
 
 	// Try start again
@@ -1044,7 +1056,7 @@ func TestPlanCommand_DoneInvalidStep(t *testing.T) {
 	al, cleanup := newTestAgentLoop(t)
 	defer cleanup()
 
-	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Test task"})
+	al.expandPlanCommand(bus.InboundMessage{Content: "/plan Test task"})
 	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan done abc"})
 	if !strings.Contains(response, "positive integer") {
 		t.Errorf("expected step validation error, got %q", response)

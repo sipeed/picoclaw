@@ -347,10 +347,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	// Expand /skill command: inject SKILL.md content into message, then continue to LLM
-	var skillCompact string
+	var expansionCompact string
 	if expanded, compact, ok := al.expandSkillCommand(msg); ok {
 		msg.Content = expanded
-		skillCompact = compact
+		expansionCompact = compact
+	}
+
+	// Expand /plan <task>: write interview seed, rewrite for LLM interview
+	if expanded, compact, ok := al.expandPlanCommand(msg); ok {
+		msg.Content = expanded
+		expansionCompact = compact
 	}
 
 	// Check for commands
@@ -391,7 +397,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
-		HistoryMessage:  skillCompact,
+		HistoryMessage:  expansionCompact,
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   true,
 		SendResponse:    false,
@@ -1285,7 +1291,8 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 		return al.handleSkillsCommand(), true
 
 	case "/plan":
-		return al.handlePlanCommand(args), true
+		resp, handled := al.handlePlanCommand(args)
+		return resp, handled
 	}
 
 	return "", false
@@ -1397,94 +1404,145 @@ func (al *AgentLoop) handleSkillsCommand() string {
 	return sb.String()
 }
 
-// handlePlanCommand handles /plan subcommands.
-func (al *AgentLoop) handlePlanCommand(args []string) string {
+// handlePlanCommand handles /plan subcommands that can be resolved instantly.
+// Returns (response, handled). For "/plan <task>" (new plan), it returns
+// ("", false) so the message falls through to the LLM queue, where
+// expandPlanCommand writes the seed and rewrites the content.
+func (al *AgentLoop) handlePlanCommand(args []string) (string, bool) {
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
-		return "No agent configured."
+		return "No agent configured.", true
 	}
 
 	if len(args) == 0 {
 		// /plan — show current plan
-		return agent.ContextBuilder.FormatPlanDisplay()
+		return agent.ContextBuilder.FormatPlanDisplay(), true
 	}
 
 	sub := args[0]
 	switch sub {
 	case "clear":
 		if !agent.ContextBuilder.HasActivePlan() {
-			return "No active plan to clear."
+			return "No active plan to clear.", true
 		}
 		if err := agent.ContextBuilder.ClearMemory(); err != nil {
-			return fmt.Sprintf("Error clearing plan: %v", err)
+			return fmt.Sprintf("Error clearing plan: %v", err), true
 		}
-		return "Plan cleared."
+		return "Plan cleared.", true
 
 	case "done":
 		if !agent.ContextBuilder.HasActivePlan() {
-			return "No active plan."
+			return "No active plan.", true
 		}
 		if len(args) < 2 {
-			return "Usage: /plan done <step number>"
+			return "Usage: /plan done <step number>", true
 		}
 		stepNum, err := strconv.Atoi(args[1])
 		if err != nil || stepNum < 1 {
-			return "Step number must be a positive integer."
+			return "Step number must be a positive integer.", true
 		}
 		phase := agent.ContextBuilder.GetCurrentPhase()
 		if err := agent.ContextBuilder.MarkStep(phase, stepNum); err != nil {
-			return fmt.Sprintf("Error: %v", err)
+			return fmt.Sprintf("Error: %v", err), true
 		}
-		return fmt.Sprintf("Marked step %d in phase %d as done.", stepNum, phase)
+		return fmt.Sprintf("Marked step %d in phase %d as done.", stepNum, phase), true
 
 	case "add":
 		if !agent.ContextBuilder.HasActivePlan() {
-			return "No active plan."
+			return "No active plan.", true
 		}
 		if len(args) < 2 {
-			return "Usage: /plan add <step description>"
+			return "Usage: /plan add <step description>", true
 		}
 		desc := strings.Join(args[1:], " ")
 		phase := agent.ContextBuilder.GetCurrentPhase()
 		if err := agent.ContextBuilder.AddStep(phase, desc); err != nil {
-			return fmt.Sprintf("Error: %v", err)
+			return fmt.Sprintf("Error: %v", err), true
 		}
-		return fmt.Sprintf("Added step to phase %d: %s", phase, desc)
+		return fmt.Sprintf("Added step to phase %d: %s", phase, desc), true
 
 	case "start":
 		if !agent.ContextBuilder.HasActivePlan() {
-			return "No active plan."
+			return "No active plan.", true
 		}
 		if agent.ContextBuilder.GetPlanStatus() != "interviewing" {
-			return "Plan is already executing."
+			return "Plan is already executing.", true
 		}
 		if err := agent.ContextBuilder.SetPlanStatus("executing"); err != nil {
-			return fmt.Sprintf("Error: %v", err)
+			return fmt.Sprintf("Error: %v", err), true
 		}
-		return "Plan status changed to executing."
+		return "Plan status changed to executing.", true
 
 	case "next":
 		if !agent.ContextBuilder.HasActivePlan() {
-			return "No active plan."
+			return "No active plan.", true
 		}
 		if err := agent.ContextBuilder.AdvancePhase(); err != nil {
-			return fmt.Sprintf("Error: %v", err)
+			return fmt.Sprintf("Error: %v", err), true
 		}
 		phase := agent.ContextBuilder.GetCurrentPhase()
-		return fmt.Sprintf("Advanced to phase %d.", phase)
+		return fmt.Sprintf("Advanced to phase %d.", phase), true
 
 	default:
 		// /plan <task description> — start new plan
+		// Block if a plan is already active (fast-path error).
 		if agent.ContextBuilder.HasActivePlan() {
-			return "A plan is already active. Use /plan clear first."
+			return "A plan is already active. Use /plan clear first.", true
 		}
-		task := strings.Join(args, " ")
-		seed := BuildInterviewSeed(task)
-		if err := agent.ContextBuilder.WriteMemory(seed); err != nil {
-			return fmt.Sprintf("Error creating plan: %v", err)
-		}
-		return fmt.Sprintf("Plan started: %s\nStatus: interviewing\n\nI'll ask you some questions to build a detailed plan.", task)
+		// Not handled here — let the message flow to the LLM queue.
+		// expandPlanCommand will write the seed and rewrite the content.
+		return "", false
 	}
+}
+
+// expandPlanCommand detects "/plan <task>" (new plan start) and:
+//   - writes the interview seed to MEMORY.md
+//   - rewrites the message content for the LLM
+//   - returns a compact form for session history
+//
+// This follows the same pattern as expandSkillCommand: the message is
+// rewritten before reaching the LLM, so the AI sees the task description
+// while the system prompt contains the interview guide.
+func (al *AgentLoop) expandPlanCommand(msg bus.InboundMessage) (expanded string, compact string, ok bool) {
+	content := strings.TrimSpace(msg.Content)
+	if !strings.HasPrefix(content, "/plan ") {
+		return "", "", false
+	}
+
+	task := strings.TrimSpace(content[6:]) // len("/plan ") == 6
+	if task == "" {
+		return "", "", false
+	}
+
+	// Known subcommands are handled by handlePlanCommand (fast path).
+	firstWord := strings.Fields(task)[0]
+	switch firstWord {
+	case "clear", "done", "add", "start", "next":
+		return "", "", false
+	}
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", "", false
+	}
+
+	// If a plan is already active, don't expand — handleCommand will
+	// catch it and return the error on the fast path.
+	if agent.ContextBuilder.HasActivePlan() {
+		return "", "", false
+	}
+
+	// Write the interview seed
+	seed := BuildInterviewSeed(task)
+	if err := agent.ContextBuilder.WriteMemory(seed); err != nil {
+		return "", "", false
+	}
+
+	// Expanded: the task description goes to LLM.
+	// The system prompt already contains the interview guide.
+	expanded = task
+	compact = fmt.Sprintf("[Plan: %s]", utils.Truncate(task, 80))
+	return expanded, compact, true
 }
 
 // extractPeer extracts the routing peer from inbound message metadata.
