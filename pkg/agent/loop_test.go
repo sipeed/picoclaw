@@ -669,8 +669,8 @@ func TestBuildTaskReminder_WithoutBlocker(t *testing.T) {
 	if strings.Contains(msg.Content, "blocker") {
 		t.Error("expected content NOT to contain 'blocker' when no blocker provided")
 	}
-	if !strings.Contains(msg.Content, "Continue with the next step") {
-		t.Error("expected content to contain continuation prompt")
+	if !strings.Contains(msg.Content, "move on") {
+		t.Error("expected content to contain completion prompt")
 	}
 }
 

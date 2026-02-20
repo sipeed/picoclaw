@@ -462,12 +462,12 @@ func buildTaskReminder(userMessage string, lastBlocker string) providers.Message
 	if lastBlocker != "" {
 		truncatedBlocker := utils.Truncate(lastBlocker, blockerMaxChars)
 		content = fmt.Sprintf(
-			"[TASK REMINDER]\nOriginal task:\n---\n%s\n---\nLast blocker:\n---\n%s\n---\nDecide: fix the blocker if it's essential, or find an alternative approach to complete the original task.",
+			"[TASK REMINDER]\nOriginal task:\n---\n%s\n---\nLast blocker:\n---\n%s\n---\nFix the blocker if essential, or find an alternative. If all steps are complete, move on.",
 			truncatedTask, truncatedBlocker,
 		)
 	} else {
 		content = fmt.Sprintf(
-			"[TASK REMINDER]\nOriginal task:\n---\n%s\n---\nContinue with the next step toward completing this task.",
+			"[TASK REMINDER]\nOriginal task:\n---\n%s\n---\nIf all steps of the original task are complete, move on. Otherwise, continue with the next step.",
 			truncatedTask,
 		)
 	}
@@ -482,6 +482,7 @@ func buildTaskReminder(userMessage string, lastBlocker string) providers.Message
 func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, messages []providers.Message, opts processOptions) (string, int, error) {
 	iteration := 0
 	var finalContent string
+	lastReminderIdx := -1
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -711,9 +712,15 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		}
 
 		// Inject ephemeral task reminder to prevent focus drift.
+		// Remove previous reminder and re-append at the tail so it stays
+		// close to the LLM's attention window.
 		if shouldInjectReminder(iteration, agent.TaskReminderInterval) && !opts.NoHistory {
+			if lastReminderIdx >= 0 && lastReminderIdx < len(messages) {
+				messages = append(messages[:lastReminderIdx], messages[lastReminderIdx+1:]...)
+			}
 			reminderMsg := buildTaskReminder(opts.UserMessage, lastBlocker)
 			messages = append(messages, reminderMsg)
+			lastReminderIdx = len(messages) - 1
 			logger.DebugCF("agent", "Injected task reminder",
 				map[string]interface{}{
 					"agent_id":    agent.ID,
