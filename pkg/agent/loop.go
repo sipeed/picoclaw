@@ -761,6 +761,23 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		}
 	}
 
+	// If max iterations exhausted with tool calls still pending,
+	// make one final LLM call without tools to force a text response.
+	if finalContent == "" && iteration >= agent.MaxIterations {
+		logger.WarnCF("agent", "Max iterations reached, forcing final response without tools",
+			map[string]interface{}{
+				"agent_id":  agent.ID,
+				"iteration": iteration,
+			})
+		forceResp, forceErr := agent.Provider.Chat(ctx, messages, nil, agent.Model, map[string]interface{}{
+			"max_tokens":  8192,
+			"temperature": 0.7,
+		})
+		if forceErr == nil && forceResp.Content != "" {
+			finalContent = forceResp.Content
+		}
+	}
+
 	return finalContent, iteration, nil
 }
 
@@ -795,13 +812,12 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
-				if !constants.IsInternalChannel(channel) {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: channel,
-						ChatID:  chatID,
-						Content: "Memory threshold reached. Optimizing conversation history...",
+				logger.InfoCF("agent", "Memory threshold reached, optimizing conversation history",
+					map[string]interface{}{
+						"session_key":    sessionKey,
+						"history_len":    len(newHistory),
+						"token_estimate": tokenEstimate,
 					})
-				}
 				al.summarizeSession(agent, sessionKey)
 			}()
 		}
