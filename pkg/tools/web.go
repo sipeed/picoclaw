@@ -476,8 +476,10 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 
 	resultJSON, _ := json.MarshalIndent(result, "", "  ")
 
+	forLLM := fmt.Sprintf("Fetched %d bytes from %s (extractor: %s, truncated: %v)\n\n%s", len(text), urlStr, extractor, truncated, text)
+
 	return &ToolResult{
-		ForLLM:  fmt.Sprintf("Fetched %d bytes from %s (extractor: %s, truncated: %v)", len(text), urlStr, extractor, truncated),
+		ForLLM:  forLLM,
 		ForUser: string(resultJSON),
 	}
 }
