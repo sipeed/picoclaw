@@ -256,7 +256,7 @@ picoclaw onboard
 
 ```
 
-> **新功能**: `model_list` 配置格式支持零代码添加 provider。详见[模型配置](#-模型配置-model_list)章节。
+> **新功能**: `model_list` 配置格式支持零代码添加 provider。详见[模型配置](#模型配置-model_list)章节。
 
 **3. 获取 API Key**
 

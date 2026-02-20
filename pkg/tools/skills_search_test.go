@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 func TestFindSkillsToolName(t *testing.T) {
@@ -15,14 +16,14 @@ func TestFindSkillsToolName(t *testing.T) {
 
 func TestFindSkillsToolMissingQuery(t *testing.T) {
 	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil)
-	result := tool.Execute(context.Background(), map[string]interface{}{})
+	result := tool.Execute(context.Background(), map[string]any{})
 	assert.True(t, result.IsError)
 	assert.Contains(t, result.ForLLM, "query is required")
 }
 
 func TestFindSkillsToolEmptyQuery(t *testing.T) {
 	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil)
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"query": "   ",
 	})
 	assert.True(t, result.IsError)
@@ -35,7 +36,7 @@ func TestFindSkillsToolCacheHit(t *testing.T) {
 	})
 
 	tool := NewFindSkillsTool(skills.NewRegistryManager(), cache)
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"query": "github",
 	})
 
@@ -48,7 +49,7 @@ func TestFindSkillsToolParameters(t *testing.T) {
 	tool := NewFindSkillsTool(skills.NewRegistryManager(), nil)
 	params := tool.Parameters()
 
-	props, ok := params["properties"].(map[string]interface{})
+	props, ok := params["properties"].(map[string]any)
 	assert.True(t, ok)
 	assert.Contains(t, props, "query")
 	assert.Contains(t, props, "limit")
@@ -71,7 +72,14 @@ func TestFormatSearchResultsEmpty(t *testing.T) {
 
 func TestFormatSearchResultsWithData(t *testing.T) {
 	results := []skills.SearchResult{
-		{Slug: "github", Score: 0.95, DisplayName: "GitHub", Summary: "GitHub API integration", Version: "1.0.0", RegistryName: "clawhub"},
+		{
+			Slug:         "github",
+			Score:        0.95,
+			DisplayName:  "GitHub",
+			Summary:      "GitHub API integration",
+			Version:      "1.0.0",
+			RegistryName: "clawhub",
+		},
 	}
 	output := formatSearchResults("github", results, false)
 	assert.Contains(t, output, "github")

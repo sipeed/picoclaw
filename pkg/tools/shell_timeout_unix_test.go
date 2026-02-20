@@ -25,7 +25,7 @@ func TestShellTool_TimeoutKillsChildProcess(t *testing.T) {
 	tool := NewExecTool(t.TempDir(), false)
 	tool.SetTimeout(500 * time.Millisecond)
 
-	args := map[string]interface{}{
+	args := map[string]any{
 		// Spawn a child process that would outlive the shell unless process-group kill is used.
 		"command": "sleep 60 & echo $! > child.pid; wait",
 	}
