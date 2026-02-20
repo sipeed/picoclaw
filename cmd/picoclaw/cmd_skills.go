@@ -11,15 +11,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 func skillsHelp() {
 	fmt.Println("\nSkills commands:")
 	fmt.Println("  list                    List installed skills")
 	fmt.Println("  install <repo>          Install skill from GitHub")
-	fmt.Println("  install-builtin          Install all builtin skills to workspace")
-	fmt.Println("  list-builtin             List available builtin skills")
+	fmt.Println("  install-builtin         Install all builtin skills to workspace")
+	fmt.Println("  list-builtin            List available builtin skills")
 	fmt.Println("  remove <name>           Remove installed skill")
 	fmt.Println("  search                  Search available skills")
 	fmt.Println("  show <name>             Show skill details")
@@ -30,6 +32,7 @@ func skillsHelp() {
 	fmt.Println("  picoclaw skills install-builtin")
 	fmt.Println("  picoclaw skills list-builtin")
 	fmt.Println("  picoclaw skills remove weather")
+	fmt.Println("  picoclaw skills install --registry clawhub github")
 }
 
 func skillsListCmd(loader *skills.SkillsLoader) {
@@ -50,13 +53,27 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 	}
 }
 
-func skillsInstallCmd(installer *skills.SkillInstaller) {
+func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config) {
 	if len(os.Args) < 4 {
 		fmt.Println("Usage: picoclaw skills install <github-repo>")
-		fmt.Println("Example: picoclaw skills install sipeed/picoclaw-skills/weather")
+		fmt.Println("       picoclaw skills install --registry <name> <slug>")
 		return
 	}
 
+	// Check for --registry flag.
+	if os.Args[3] == "--registry" {
+		if len(os.Args) < 6 {
+			fmt.Println("Usage: picoclaw skills install --registry <name> <slug>")
+			fmt.Println("Example: picoclaw skills install --registry clawhub github")
+			return
+		}
+		registryName := os.Args[4]
+		slug := os.Args[5]
+		skillsInstallFromRegistry(cfg, registryName, slug)
+		return
+	}
+
+	// Default: install from GitHub (backward compatible).
 	repo := os.Args[3]
 	fmt.Printf("Installing skill from %s...\n", repo)
 
@@ -64,11 +81,83 @@ func skillsInstallCmd(installer *skills.SkillInstaller) {
 	defer cancel()
 
 	if err := installer.InstallFromGitHub(ctx, repo); err != nil {
-		fmt.Printf("✗ Failed to install skill: %v\n", err)
+		fmt.Printf("\u2717 Failed to install skill: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("✓ Skill '%s' installed successfully!\n", filepath.Base(repo))
+	fmt.Printf("\u2713 Skill '%s' installed successfully!\n", filepath.Base(repo))
+}
+
+// skillsInstallFromRegistry installs a skill from a named registry (e.g. clawhub).
+func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
+	err := utils.ValidateSkillIdentifier(registryName)
+	if err != nil {
+		fmt.Printf("\u2717 Invalid registry name: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = utils.ValidateSkillIdentifier(slug)
+	if err != nil {
+		fmt.Printf("\u2717 Invalid slug: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Installing skill '%s' from %s registry...\n", slug, registryName)
+
+	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
+		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
+		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+	})
+
+	registry := registryMgr.GetRegistry(registryName)
+	if registry == nil {
+		fmt.Printf("\u2717 Registry '%s' not found or not enabled. Check your config.json.\n", registryName)
+		os.Exit(1)
+	}
+
+	workspace := cfg.WorkspacePath()
+	targetDir := filepath.Join(workspace, "skills", slug)
+
+	if _, err := os.Stat(targetDir); err == nil {
+		fmt.Printf("\u2717 Skill '%s' already installed at %s\n", slug, targetDir)
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	if err := os.MkdirAll(filepath.Join(workspace, "skills"), 0755); err != nil {
+		fmt.Printf("\u2717 Failed to create skills directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	result, err := registry.DownloadAndInstall(ctx, slug, "", targetDir)
+	if err != nil {
+		rmErr := os.RemoveAll(targetDir)
+		if rmErr != nil {
+			fmt.Printf("\u2717 Failed to remove partial install: %v\n", rmErr)
+		}
+		fmt.Printf("\u2717 Failed to install skill: %v\n", err)
+		os.Exit(1)
+	}
+
+	if result.IsMalwareBlocked {
+		rmErr := os.RemoveAll(targetDir)
+		if rmErr != nil {
+			fmt.Printf("\u2717 Failed to remove partial install: %v\n", rmErr)
+		}
+		fmt.Printf("\u2717 Skill '%s' is flagged as malicious and cannot be installed.\n", slug)
+		os.Exit(1)
+	}
+
+	if result.IsSuspicious {
+		fmt.Printf("\u26a0\ufe0f  Warning: skill '%s' is flagged as suspicious.\n", slug)
+	}
+
+	fmt.Printf("\u2713 Skill '%s' v%s installed successfully!\n", slug, result.Version)
+	if result.Summary != "" {
+		fmt.Printf("  %s\n", result.Summary)
+	}
 }
 
 func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {

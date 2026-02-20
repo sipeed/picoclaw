@@ -262,6 +262,19 @@ func DefaultConfig() *Config {
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5,
 			},
+			Skills: SkillsToolsConfig{
+				Registries: SkillsRegistriesConfig{
+					ClawHub: ClawHubRegistryConfig{
+						Enabled: true,
+						BaseURL: "https://clawhub.ai",
+					},
+				},
+				MaxConcurrentSearches: 2,
+				SearchCache: SearchCacheConfig{
+					MaxSize:    50,
+					TTLSeconds: 300,
+				},
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
