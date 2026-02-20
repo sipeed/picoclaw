@@ -79,6 +79,12 @@ build: generate
 	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
+	@if [ "$(PLATFORM)" = "linux" ] || [ "$(PLATFORM)" = "darwin" ]; then \
+		echo "Install to /usr/local/bin:"; \
+		echo "  sudo install -m 755 $(BINARY_PATH) /usr/local/bin/$(BINARY_NAME)"; \
+	else \
+		echo "Install hint skipped: /usr/local/bin command is for Linux/macOS (current: $(PLATFORM))."; \
+	fi
 
 ## build-all: Build picoclaw for all platforms
 build-all: generate
