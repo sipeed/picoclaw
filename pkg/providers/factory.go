@@ -63,8 +63,11 @@ func createCodexAuthProvider(enableWebSearch bool) (LLMProvider, error) {
 }
 
 func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
+	return resolveProviderSelectionByName(cfg, strings.ToLower(cfg.Agents.Defaults.Provider))
+}
+
+func resolveProviderSelectionByName(cfg *config.Config, providerName string) (providerSelection, error) {
 	model := cfg.Agents.Defaults.Model
-	providerName := strings.ToLower(cfg.Agents.Defaults.Provider)
 	lowerModel := strings.ToLower(model)
 
 	sel := providerSelection{
@@ -335,6 +338,34 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 
 func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	sel, err := resolveProviderSelection(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	switch sel.providerType {
+	case providerTypeClaudeAuth:
+		return createClaudeAuthProvider(sel.apiBase)
+	case providerTypeCodexAuth:
+		return createCodexAuthProvider(sel.enableWebSearch)
+	case providerTypeCodexCLIToken:
+		c := NewCodexProviderWithTokenSource("", "", CreateCodexCliTokenSource())
+		c.enableWebSearch = sel.enableWebSearch
+		return c, nil
+	case providerTypeClaudeCLI:
+		return NewClaudeCliProvider(sel.workspace), nil
+	case providerTypeCodexCLI:
+		return NewCodexCliProvider(sel.workspace), nil
+	case providerTypeGitHubCopilot:
+		return NewGitHubCopilotProvider(sel.apiBase, sel.connectMode, sel.model)
+	default:
+		return NewHTTPProvider(sel.apiKey, sel.apiBase, sel.proxy), nil
+	}
+}
+
+// CreateProviderByName creates a provider for the given explicit provider name.
+// Used by the fallback chain to resolve cross-provider candidates.
+func CreateProviderByName(cfg *config.Config, providerName string) (LLMProvider, error) {
+	sel, err := resolveProviderSelectionByName(cfg, strings.ToLower(providerName))
 	if err != nil {
 		return nil, err
 	}

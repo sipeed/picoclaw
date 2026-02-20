@@ -693,6 +693,111 @@ func TestBuildTaskReminder_WithBlocker(t *testing.T) {
 	}
 }
 
+func TestResolveProvider_CachesProviders(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				Provider:          "vllm",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Providers: config.ProvidersConfig{
+			VLLM: config.ProviderConfig{
+				APIKey:  "test-key",
+				APIBase: "https://example.com/v1",
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	primary := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, primary)
+
+	// Primary provider should be cached under "vllm"
+	p1 := al.resolveProvider("vllm", primary)
+	if p1 != primary {
+		t.Fatal("expected primary provider for 'vllm'")
+	}
+
+	// Calling again should return the same instance (cached)
+	p2 := al.resolveProvider("vllm", primary)
+	if p1 != p2 {
+		t.Fatal("expected same cached instance on second call")
+	}
+}
+
+func TestResolveProvider_FallsBackOnError(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				Provider:          "vllm",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	primary := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, primary)
+
+	// Request a provider that can't be created (no config for "nonexistent")
+	p := al.resolveProvider("nonexistent", primary)
+	if p != primary {
+		t.Fatal("expected fallback to primary provider on creation error")
+	}
+
+	// Ensure the failed provider is NOT cached
+	if _, ok := al.providerCache["nonexistent"]; ok {
+		t.Fatal("failed provider should not be cached")
+	}
+}
+
+func TestResolveProvider_EmptyNameReturnsFallback(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	primary := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, primary)
+
+	p := al.resolveProvider("", primary)
+	if p != primary {
+		t.Fatal("expected fallback provider for empty name")
+	}
+}
+
 func TestBuildTaskReminder_Truncation(t *testing.T) {
 	// Build a long message (1000 runes)
 	longMsg := strings.Repeat("あ", 1000)

@@ -37,6 +37,7 @@ type AgentLoop struct {
 	summarizing    sync.Map
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
+	providerCache  map[string]providers.LLMProvider
 }
 
 // processOptions configures how a message is processed
@@ -68,13 +69,21 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
+	// Initialize provider cache and seed with primary provider
+	providerCache := make(map[string]providers.LLMProvider)
+	primaryName := strings.ToLower(cfg.Agents.Defaults.Provider)
+	if primaryName != "" {
+		providerCache[primaryName] = provider
+	}
+
 	return &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		summarizing: sync.Map{},
-		fallback:    fallbackChain,
+		bus:           msgBus,
+		cfg:           cfg,
+		registry:      registry,
+		state:         stateManager,
+		summarizing:   sync.Map{},
+		fallback:      fallbackChain,
+		providerCache: providerCache,
 	}
 }
 
@@ -191,6 +200,27 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+}
+
+// resolveProvider returns the LLMProvider for the given provider name.
+// It caches created providers so each name is only resolved once.
+// On creation failure, it logs a warning and returns the fallback provider.
+func (al *AgentLoop) resolveProvider(providerName string, fallback providers.LLMProvider) providers.LLMProvider {
+	name := strings.ToLower(providerName)
+	if name == "" {
+		return fallback
+	}
+	if p, ok := al.providerCache[name]; ok {
+		return p
+	}
+	p, err := providers.CreateProviderByName(al.cfg, name)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to create provider for fallback, using primary",
+			map[string]interface{}{"provider": name, "error": err.Error()})
+		return fallback
+	}
+	al.providerCache[name] = p
+	return p
 }
 
 // RecordLastChannel records the last active channel for this workspace.
@@ -526,7 +556,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]interface{}{
+						p := al.resolveProvider(provider, agent.Provider)
+						return p.Chat(ctx, messages, providerToolDefs, model, map[string]interface{}{
 							"max_tokens":  8192,
 							"temperature": 0.7,
 						})
