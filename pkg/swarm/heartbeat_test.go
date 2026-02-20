@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,8 +27,8 @@ func TestHeartbeatPublisher_StartStop(t *testing.T) {
 	RunTestWithNATS(t, func(tn *TestNATS) {
 		nodeInfo := CreateTestNodeInfo("hb-pub-test", string(RoleWorker), []string{"test"})
 
-		bridge := NewNATSBridge(newTestSwarmConfig(0), nil, nodeInfo)
-		require.NoError(t, bridge.Connect(context.Background()))
+		// Use connectTestBridge which properly configures the URL
+		bridge := connectTestBridge(t, tn.url, nodeInfo)
 		defer bridge.Stop()
 
 		pub := NewHeartbeatPublisher(bridge, nodeInfo, nil)
@@ -48,8 +49,8 @@ func TestHeartbeatPublisher_SendHeartbeat(t *testing.T) {
 	RunTestWithNATS(t, func(tn *TestNATS) {
 		nodeInfo := CreateTestNodeInfo("hb-send-test", string(RoleWorker), []string{"test"})
 
-		bridge := NewNATSBridge(newTestSwarmConfig(0), nil, nodeInfo)
-		require.NoError(t, bridge.Connect(context.Background()))
+		// Use connectTestBridge which properly configures the URL
+		bridge := connectTestBridge(t, tn.url, nodeInfo)
 		defer bridge.Stop()
 
 		pub := NewHeartbeatPublisher(bridge, nodeInfo, nil)
@@ -86,7 +87,23 @@ func TestHeartbeatPublisher_SendHeartbeat(t *testing.T) {
 }
 
 func TestHeartbeatMonitor_TrackHeartbeats(t *testing.T) {
-	monitor := NewHeartbeatMonitor(nil, nil)
+	// Create a simple discovery for the monitor
+	nodeInfo := CreateTestNodeInfo("monitor-test", string(RoleCoordinator), nil)
+	swarmCfg := &config.SwarmConfig{
+		Enabled:       true,
+		MaxConcurrent: 2,
+		NATS:          config.NATSConfig{HeartbeatInterval: "50ms", NodeTimeout: "200ms"},
+	}
+
+	// Create a mock discovery - we need a real one but can use nil bridge
+	bridge := NewNATSBridge(swarmCfg, nil, nodeInfo)
+	discovery := NewDiscovery(bridge, nodeInfo, swarmCfg)
+
+	// Add the test node to discovery
+	testNode := CreateTestNodeInfo("test-node", string(RoleWorker), []string{"test"})
+	discovery.handleNodeJoin(testNode)
+
+	monitor := NewHeartbeatMonitor(discovery, nil)
 
 	hb := &Heartbeat{
 		NodeID:    "test-node",
@@ -109,11 +126,17 @@ func TestHeartbeatMonitor_TrackHeartbeats(t *testing.T) {
 func TestHeartbeatMonitor_OfflineDetection(t *testing.T) {
 	RunTestWithNATS(t, func(tn *TestNATS) {
 		nodeInfo := CreateTestNodeInfo("coord-main", string(RoleCoordinator), nil)
-		bridge := NewNATSBridge(newTestSwarmConfig(0), nil, nodeInfo)
-		require.NoError(t, bridge.Connect(context.Background()))
+
+		// Use connectTestBridge which properly configures the URL
+		bridge := connectTestBridge(t, tn.url, nodeInfo)
 		defer bridge.Stop()
 
-		swarmCfg := newTestSwarmConfig(0)
+		// Create a minimal swarm config for discovery
+		swarmCfg := &config.SwarmConfig{
+			Enabled:           true,
+			MaxConcurrent:     2,
+			NATS:              config.NATSConfig{HeartbeatInterval: "50ms", NodeTimeout: "200ms"},
+		}
 		discovery := NewDiscovery(bridge, nodeInfo, swarmCfg)
 
 		// Short timeout for testing
@@ -189,8 +212,9 @@ func TestHeartbeat_MessageFields(t *testing.T) {
 func TestHeartbeatPublisher_IsRunning(t *testing.T) {
 	RunTestWithNATS(t, func(tn *TestNATS) {
 		nodeInfo := CreateTestNodeInfo("hb-running-test", string(RoleWorker), []string{"test"})
-		bridge := NewNATSBridge(newTestSwarmConfig(0), nil, nodeInfo)
-		require.NoError(t, bridge.Connect(context.Background()))
+
+		// Use connectTestBridge which properly configures the URL
+		bridge := connectTestBridge(t, tn.url, nodeInfo)
 		defer bridge.Stop()
 
 		pub := NewHeartbeatPublisher(bridge, nodeInfo, nil)

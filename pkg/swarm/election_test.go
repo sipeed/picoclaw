@@ -215,6 +215,7 @@ func TestRoleSwitcher_PromotionToCoordinator(t *testing.T) {
 		}
 
 		rs := NewRoleSwitcher(em, nodeInfo, manager)
+		rs.Start() // Start the role switcher to register callbacks
 
 		require.NoError(t, em.Start(ctx, cfg))
 
