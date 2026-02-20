@@ -35,9 +35,8 @@ var usbClassToCapability = map[string]string{
 }
 
 type USBMonitor struct {
-	cmd    *exec.Cmd
-	cancel context.CancelFunc
-	mu     sync.Mutex
+	cmd *exec.Cmd
+	mu  sync.Mutex
 }
 
 func NewUSBMonitor() *USBMonitor {
