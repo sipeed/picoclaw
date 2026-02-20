@@ -14,7 +14,7 @@ import (
 	"runtime"
 
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -92,101 +92,50 @@ func copyDirectory(src, dst string) error {
 	})
 }
 
-func main() {
-	if len(os.Args) < 2 {
-		printHelp()
-		os.Exit(1)
-	}
+var rootCmd = &cobra.Command{
+	Use:   "picoclaw",
+	Short: fmt.Sprintf("%s picoclaw - Personal AI Assistant", logo),
+}
 
-	command := os.Args[1]
-
-	switch command {
-	case "onboard":
-		onboard()
-	case "agent":
-		agentCmd()
-	case "gateway":
-		gatewayCmd()
-	case "status":
-		statusCmd()
-	case "migrate":
-		migrateCmd()
-	case "auth":
-		authCmd()
-	case "cron":
-		cronCmd()
-	case "skills":
-		if len(os.Args) < 3 {
-			skillsHelp()
-			return
-		}
-
-		subcommand := os.Args[2]
-
-		cfg, err := loadConfig()
-		if err != nil {
-			fmt.Printf("Error loading config: %v\n", err)
-			os.Exit(1)
-		}
-
-		workspace := cfg.WorkspacePath()
-		installer := skills.NewSkillInstaller(workspace)
-		// 获取全局配置目录和内置 skills 目录
-		globalDir := filepath.Dir(getConfigPath())
-		globalSkillsDir := filepath.Join(globalDir, "skills")
-		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
-		skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
-
-		switch subcommand {
-		case "list":
-			skillsListCmd(skillsLoader)
-		case "install":
-			skillsInstallCmd(installer, cfg)
-		case "remove", "uninstall":
-			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills remove <skill-name>")
-				return
-			}
-			skillsRemoveCmd(installer, os.Args[3])
-		case "install-builtin":
-			skillsInstallBuiltinCmd(workspace)
-		case "list-builtin":
-			skillsListBuiltinCmd()
-		case "search":
-			skillsSearchCmd(installer)
-		case "show":
-			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills show <skill-name>")
-				return
-			}
-			skillsShowCmd(skillsLoader, os.Args[3])
-		default:
-			fmt.Printf("Unknown skills command: %s\n", subcommand)
-			skillsHelp()
-		}
-	case "version", "--version", "-v":
-		printVersion()
-	default:
-		fmt.Printf("Unknown command: %s\n", command)
-		printHelp()
-		os.Exit(1)
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Show version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			printVersion()
+		},
 	}
 }
 
-func printHelp() {
-	fmt.Printf("%s picoclaw - Personal AI Assistant v%s\n\n", logo, version)
-	fmt.Println("Usage: picoclaw <command>")
-	fmt.Println()
-	fmt.Println("Commands:")
-	fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
-	fmt.Println("  agent       Interact with the agent directly")
-	fmt.Println("  auth        Manage authentication (login, logout, status)")
-	fmt.Println("  gateway     Start picoclaw gateway")
-	fmt.Println("  status      Show picoclaw status")
-	fmt.Println("  cron        Manage scheduled tasks")
-	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
-	fmt.Println("  skills      Manage skills (install, list, remove)")
-	fmt.Println("  version     Show version information")
+func init() {
+	rootCmd.AddCommand(
+		newOnboardCmd(),
+		newAgentCmd(),
+		newGatewayCmd(),
+		newStatusCmd(),
+		newMigrateCmd(),
+		newAuthCmd(),
+		newCronCmd(),
+		newSkillsCmd(),
+		newVersionCmd(),
+	)
+	// Override cobra's default --version/-v to use printVersion() for full output
+	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {}
+	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		v, _ := cmd.Flags().GetBool("version")
+		if v {
+			printVersion()
+			return nil
+		}
+		return cmd.Help()
+	}
+}
+
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
 
 func getConfigPath() string {

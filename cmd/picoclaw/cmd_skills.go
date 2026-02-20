@@ -14,33 +14,142 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/spf13/cobra"
 )
 
-func skillsHelp() {
-	fmt.Println("\nSkills commands:")
-	fmt.Println("  list                    List installed skills")
-	fmt.Println("  install <repo>          Install skill from GitHub")
-	fmt.Println("  install-builtin         Install all builtin skills to workspace")
-	fmt.Println("  list-builtin            List available builtin skills")
-	fmt.Println("  remove <name>           Remove installed skill")
-	fmt.Println("  search                  Search available skills")
-	fmt.Println("  show <name>             Show skill details")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  picoclaw skills list")
-	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills/weather")
-	fmt.Println("  picoclaw skills install-builtin")
-	fmt.Println("  picoclaw skills list-builtin")
-	fmt.Println("  picoclaw skills remove weather")
-	fmt.Println("  picoclaw skills install --registry clawhub github")
+type skillsContext struct {
+	installer *skills.SkillInstaller
+	loader    *skills.SkillsLoader
+	workspace string
+	cfg       *config.Config
 }
 
-func skillsListCmd(loader *skills.SkillsLoader) {
-	allSkills := loader.ListSkills()
+func loadSkillsContext() (*skillsContext, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("Error loading config: %w", err)
+	}
+
+	workspace := cfg.WorkspacePath()
+	installer := skills.NewSkillInstaller(workspace)
+	globalDir := filepath.Dir(getConfigPath())
+	globalSkillsDir := filepath.Join(globalDir, "skills")
+	builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
+	loader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
+
+	return &skillsContext{
+		installer: installer,
+		loader:    loader,
+		workspace: workspace,
+		cfg:       cfg,
+	}, nil
+}
+
+func newSkillsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "skills",
+		Short: "Manage skills (install, list, remove)",
+		Example: `  picoclaw skills list
+  picoclaw skills install sipeed/picoclaw-skills/weather
+  picoclaw skills install --registry clawhub github
+  picoclaw skills install-builtin
+  picoclaw skills list-builtin
+  picoclaw skills remove weather`,
+	}
+	cmd.AddCommand(
+		newSkillsListCmd(),
+		newSkillsInstallCmd(),
+		newSkillsRemoveCmd(),
+		newSkillsInstallBuiltinCmd(),
+		newSkillsListBuiltinCmd(),
+		newSkillsSearchCmd(),
+		newSkillsShowCmd(),
+	)
+	return cmd
+}
+
+func newSkillsListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List installed skills",
+		RunE:  runSkillsList,
+	}
+}
+
+func newSkillsInstallCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "install <repo>",
+		Short: "Install skill from GitHub",
+		Example: `  picoclaw skills install sipeed/picoclaw-skills/weather
+  picoclaw skills install --registry clawhub github`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: runSkillsInstall,
+	}
+	// Add --registry flag support
+	cmd.Flags().String("registry", "", "Install from registry (e.g., clawhub)")
+	return cmd
+}
+
+func newSkillsRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "remove <name>",
+		Aliases: []string{"uninstall"},
+		Short:   "Remove installed skill",
+		Example: `  picoclaw skills remove weather
+  picoclaw skills uninstall weather`,
+		Args: cobra.ExactArgs(1),
+		RunE: runSkillsRemove,
+	}
+}
+
+func newSkillsInstallBuiltinCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "install-builtin",
+		Short:   "Install all builtin skills to workspace",
+		Example: `  picoclaw skills install-builtin`,
+		RunE:    runSkillsInstallBuiltin,
+	}
+}
+
+func newSkillsListBuiltinCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list-builtin",
+		Short:   "List available builtin skills",
+		Example: `  picoclaw skills list-builtin`,
+		RunE:    runSkillsListBuiltin,
+	}
+}
+
+func newSkillsSearchCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "search",
+		Short: "Search available skills",
+		RunE:  runSkillsSearch,
+	}
+}
+
+func newSkillsShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "show <name>",
+		Short:   "Show skill details",
+		Example: `  picoclaw skills show weather`,
+		Args:    cobra.ExactArgs(1),
+		RunE:    runSkillsShow,
+	}
+}
+
+func runSkillsList(cmd *cobra.Command, args []string) error {
+	sc, err := loadSkillsContext()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
+	allSkills := sc.loader.ListSkills()
 
 	if len(allSkills) == 0 {
 		fmt.Println("No skills installed.")
-		return
+		return nil
 	}
 
 	fmt.Println("\nInstalled Skills:")
@@ -51,54 +160,60 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 			fmt.Printf("    %s\n", skill.Description)
 		}
 	}
+	return nil
 }
 
-func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config) {
-	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw skills install <github-repo>")
-		fmt.Println("       picoclaw skills install --registry <name> <slug>")
-		return
+func runSkillsInstall(cmd *cobra.Command, args []string) error {
+	sc, err := loadSkillsContext()
+	if err != nil {
+		fmt.Println(err)
+		return nil
 	}
 
-	// Check for --registry flag.
-	if os.Args[3] == "--registry" {
-		if len(os.Args) < 6 {
+	// Check for --registry flag
+	registry, _ := cmd.Flags().GetString("registry")
+	if registry != "" {
+		if len(args) < 1 {
 			fmt.Println("Usage: picoclaw skills install --registry <name> <slug>")
 			fmt.Println("Example: picoclaw skills install --registry clawhub github")
-			return
+			return nil
 		}
-		registryName := os.Args[4]
-		slug := os.Args[5]
-		skillsInstallFromRegistry(cfg, registryName, slug)
-		return
+		slug := args[0]
+		return skillsInstallFromRegistry(sc.cfg, registry, slug)
 	}
 
-	// Default: install from GitHub (backward compatible).
-	repo := os.Args[3]
+	// Default: install from GitHub
+	if len(args) < 1 {
+		fmt.Println("Usage: picoclaw skills install <github-repo>")
+		fmt.Println("       picoclaw skills install --registry <name> <slug>")
+		return nil
+	}
+	repo := args[0]
 	fmt.Printf("Installing skill from %s...\n", repo)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := installer.InstallFromGitHub(ctx, repo); err != nil {
-		fmt.Printf("\u2717 Failed to install skill: %v\n", err)
+	if err := sc.installer.InstallFromGitHub(ctx, repo); err != nil {
+		fmt.Printf("✗ Failed to install skill: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\u2713 Skill '%s' installed successfully!\n", filepath.Base(repo))
+	fmt.Printf("✓ Skill '%s' installed successfully!\n", filepath.Base(repo))
+	return nil
 }
 
 // skillsInstallFromRegistry installs a skill from a named registry (e.g. clawhub).
-func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
+func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) error {
 	err := utils.ValidateSkillIdentifier(registryName)
 	if err != nil {
-		fmt.Printf("\u2717 Invalid registry name: %v\n", err)
+		fmt.Printf("✗ Invalid registry name: %v\n", err)
 		os.Exit(1)
 	}
 
 	err = utils.ValidateSkillIdentifier(slug)
 	if err != nil {
-		fmt.Printf("\u2717 Invalid slug: %v\n", err)
+		fmt.Printf("✗ Invalid slug: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -111,7 +226,7 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
 
 	registry := registryMgr.GetRegistry(registryName)
 	if registry == nil {
-		fmt.Printf("\u2717 Registry '%s' not found or not enabled. Check your config.json.\n", registryName)
+		fmt.Printf("✗ Registry '%s' not found or not enabled. Check your config.json.\n", registryName)
 		os.Exit(1)
 	}
 
@@ -119,7 +234,7 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
 	targetDir := filepath.Join(workspace, "skills", slug)
 
 	if _, err := os.Stat(targetDir); err == nil {
-		fmt.Printf("\u2717 Skill '%s' already installed at %s\n", slug, targetDir)
+		fmt.Printf("✗ Skill '%s' already installed at %s\n", slug, targetDir)
 		os.Exit(1)
 	}
 
@@ -127,7 +242,7 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
 	defer cancel()
 
 	if err := os.MkdirAll(filepath.Join(workspace, "skills"), 0755); err != nil {
-		fmt.Printf("\u2717 Failed to create skills directory: %v\n", err)
+		fmt.Printf("✗ Failed to create skills directory: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -135,45 +250,60 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
 	if err != nil {
 		rmErr := os.RemoveAll(targetDir)
 		if rmErr != nil {
-			fmt.Printf("\u2717 Failed to remove partial install: %v\n", rmErr)
+			fmt.Printf("✗ Failed to remove partial install: %v\n", rmErr)
 		}
-		fmt.Printf("\u2717 Failed to install skill: %v\n", err)
+		fmt.Printf("✗ Failed to install skill: %v\n", err)
 		os.Exit(1)
 	}
 
 	if result.IsMalwareBlocked {
 		rmErr := os.RemoveAll(targetDir)
 		if rmErr != nil {
-			fmt.Printf("\u2717 Failed to remove partial install: %v\n", rmErr)
+			fmt.Printf("✗ Failed to remove partial install: %v\n", rmErr)
 		}
-		fmt.Printf("\u2717 Skill '%s' is flagged as malicious and cannot be installed.\n", slug)
+		fmt.Printf("✗ Skill '%s' is flagged as malicious and cannot be installed.\n", slug)
 		os.Exit(1)
 	}
 
 	if result.IsSuspicious {
-		fmt.Printf("\u26a0\ufe0f  Warning: skill '%s' is flagged as suspicious.\n", slug)
+		fmt.Printf("⚠️  Warning: skill '%s' is flagged as suspicious.\n", slug)
 	}
 
-	fmt.Printf("\u2713 Skill '%s' v%s installed successfully!\n", slug, result.Version)
+	fmt.Printf("✓ Skill '%s' v%s installed successfully!\n", slug, result.Version)
 	if result.Summary != "" {
 		fmt.Printf("  %s\n", result.Summary)
 	}
+	return nil
 }
 
-func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
+func runSkillsRemove(cmd *cobra.Command, args []string) error {
+	sc, err := loadSkillsContext()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
+	skillName := args[0]
 	fmt.Printf("Removing skill '%s'...\n", skillName)
 
-	if err := installer.Uninstall(skillName); err != nil {
+	if err := sc.installer.Uninstall(skillName); err != nil {
 		fmt.Printf("✗ Failed to remove skill: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("✓ Skill '%s' removed successfully!\n", skillName)
+	return nil
 }
 
-func skillsInstallBuiltinCmd(workspace string) {
+func runSkillsInstallBuiltin(cmd *cobra.Command, args []string) error {
+	sc, err := loadSkillsContext()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
 	builtinSkillsDir := "./picoclaw/skills"
-	workspaceSkillsDir := filepath.Join(workspace, "skills")
+	workspaceSkillsDir := filepath.Join(sc.workspace, "skills")
 
 	fmt.Printf("Copying builtin skills to workspace...\n")
 
@@ -205,13 +335,14 @@ func skillsInstallBuiltinCmd(workspace string) {
 
 	fmt.Println("\n✓ All builtin skills installed!")
 	fmt.Println("Now you can use them in your workspace.")
+	return nil
 }
 
-func skillsListBuiltinCmd() {
+func runSkillsListBuiltin(cmd *cobra.Command, args []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
-		return
+		return nil
 	}
 	builtinSkillsDir := filepath.Join(filepath.Dir(cfg.WorkspacePath()), "picoclaw", "skills")
 
@@ -221,12 +352,12 @@ func skillsListBuiltinCmd() {
 	entries, err := os.ReadDir(builtinSkillsDir)
 	if err != nil {
 		fmt.Printf("Error reading builtin skills: %v\n", err)
-		return
+		return nil
 	}
 
 	if len(entries) == 0 {
 		fmt.Println("No builtin skills available.")
-		return
+		return nil
 	}
 
 	for _, entry := range entries {
@@ -257,23 +388,30 @@ func skillsListBuiltinCmd() {
 			}
 		}
 	}
+	return nil
 }
 
-func skillsSearchCmd(installer *skills.SkillInstaller) {
+func runSkillsSearch(cmd *cobra.Command, args []string) error {
+	sc, err := loadSkillsContext()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
 	fmt.Println("Searching for available skills...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	availableSkills, err := installer.ListAvailableSkills(ctx)
+	availableSkills, err := sc.installer.ListAvailableSkills(ctx)
 	if err != nil {
 		fmt.Printf("✗ Failed to fetch skills list: %v\n", err)
-		return
+		return nil
 	}
 
 	if len(availableSkills) == 0 {
 		fmt.Println("No skills available.")
-		return
+		return nil
 	}
 
 	fmt.Printf("\nAvailable Skills (%d):\n", len(availableSkills))
@@ -290,16 +428,25 @@ func skillsSearchCmd(installer *skills.SkillInstaller) {
 		}
 		fmt.Println()
 	}
+	return nil
 }
 
-func skillsShowCmd(loader *skills.SkillsLoader, skillName string) {
-	content, ok := loader.LoadSkill(skillName)
+func runSkillsShow(cmd *cobra.Command, args []string) error {
+	sc, err := loadSkillsContext()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
+	skillName := args[0]
+	content, ok := sc.loader.LoadSkill(skillName)
 	if !ok {
 		fmt.Printf("✗ Skill '%s' not found\n", skillName)
-		return
+		return nil
 	}
 
 	fmt.Printf("\n📦 Skill: %s\n", skillName)
 	fmt.Println("----------------------")
 	fmt.Println(content)
+	return nil
 }

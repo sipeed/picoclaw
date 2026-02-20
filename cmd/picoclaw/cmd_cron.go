@@ -5,76 +5,102 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/cron"
+	"github.com/spf13/cobra"
 )
 
-func cronCmd() {
-	if len(os.Args) < 3 {
-		cronHelp()
-		return
+func newCronCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cron",
+		Short: "Manage scheduled tasks",
 	}
+	cmd.AddCommand(
+		newCronListCmd(),
+		newCronAddCmd(),
+		newCronRemoveCmd(),
+		newCronEnableCmd(),
+		newCronDisableCmd(),
+	)
+	return cmd
+}
 
-	subcommand := os.Args[2]
+func newCronListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all scheduled jobs",
+		RunE:  runCronList,
+	}
+}
 
-	// Load config to get workspace path
+func newCronAddCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "add",
+		Short: "Add a new scheduled job",
+		RunE:  runCronAdd,
+	}
+	cmd.Flags().StringP("name", "n", "", "Job name")
+	cmd.MarkFlagRequired("name")
+	cmd.Flags().StringP("message", "m", "", "Message for agent")
+	cmd.MarkFlagRequired("message")
+	cmd.Flags().Int64P("every", "e", 0, "Run every N seconds")
+	cmd.Flags().StringP("cron", "c", "", "Cron expression (e.g. '0 9 * * *')")
+	cmd.Flags().BoolP("deliver", "d", false, "Deliver response to channel")
+	cmd.Flags().String("to", "", "Recipient for delivery")
+	cmd.Flags().String("channel", "", "Channel for delivery")
+	return cmd
+}
+
+func newCronRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove <job_id>",
+		Short: "Remove a job by ID",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runCronRemove,
+	}
+}
+
+func newCronEnableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "enable <job_id>",
+		Short: "Enable a job",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runCronEnable,
+	}
+}
+
+func newCronDisableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable <job_id>",
+		Short: "Disable a job",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runCronDisable,
+	}
+}
+
+func getCronStorePath() (string, error) {
 	cfg, err := loadConfig()
 	if err != nil {
-		fmt.Printf("Error loading config: %v\n", err)
-		return
+		return "", fmt.Errorf("Error loading config: %w", err)
 	}
-
-	cronStorePath := filepath.Join(cfg.WorkspacePath(), "cron", "jobs.json")
-
-	switch subcommand {
-	case "list":
-		cronListCmd(cronStorePath)
-	case "add":
-		cronAddCmd(cronStorePath)
-	case "remove":
-		if len(os.Args) < 4 {
-			fmt.Println("Usage: picoclaw cron remove <job_id>")
-			return
-		}
-		cronRemoveCmd(cronStorePath, os.Args[3])
-	case "enable":
-		cronEnableCmd(cronStorePath, false)
-	case "disable":
-		cronEnableCmd(cronStorePath, true)
-	default:
-		fmt.Printf("Unknown cron command: %s\n", subcommand)
-		cronHelp()
-	}
+	return filepath.Join(cfg.WorkspacePath(), "cron", "jobs.json"), nil
 }
 
-func cronHelp() {
-	fmt.Println("\nCron commands:")
-	fmt.Println("  list              List all scheduled jobs")
-	fmt.Println("  add              Add a new scheduled job")
-	fmt.Println("  remove <id>       Remove a job by ID")
-	fmt.Println("  enable <id>      Enable a job")
-	fmt.Println("  disable <id>     Disable a job")
-	fmt.Println()
-	fmt.Println("Add options:")
-	fmt.Println("  -n, --name       Job name")
-	fmt.Println("  -m, --message    Message for agent")
-	fmt.Println("  -e, --every      Run every N seconds")
-	fmt.Println("  -c, --cron       Cron expression (e.g. '0 9 * * *')")
-	fmt.Println("  -d, --deliver     Deliver response to channel")
-	fmt.Println("  --to             Recipient for delivery")
-	fmt.Println("  --channel        Channel for delivery")
-}
+func runCronList(cmd *cobra.Command, args []string) error {
+	storePath, err := getCronStorePath()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
 
-func cronListCmd(storePath string) {
 	cs := cron.NewCronService(storePath, nil)
-	jobs := cs.ListJobs(true) // Show all jobs, including disabled
+	jobs := cs.ListJobs(true)
 
 	if len(jobs) == 0 {
 		fmt.Println("No scheduled jobs.")
-		return
+		return nil
 	}
 
 	fmt.Println("\nScheduled Jobs:")
@@ -105,75 +131,32 @@ func cronListCmd(storePath string) {
 		fmt.Printf("    Status: %s\n", status)
 		fmt.Printf("    Next run: %s\n", nextRun)
 	}
+	return nil
 }
 
-func cronAddCmd(storePath string) {
-	name := ""
-	message := ""
-	var everySec *int64
-	cronExpr := ""
-	deliver := false
-	channel := ""
-	to := ""
-
-	args := os.Args[3:]
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "-n", "--name":
-			if i+1 < len(args) {
-				name = args[i+1]
-				i++
-			}
-		case "-m", "--message":
-			if i+1 < len(args) {
-				message = args[i+1]
-				i++
-			}
-		case "-e", "--every":
-			if i+1 < len(args) {
-				var sec int64
-				fmt.Sscanf(args[i+1], "%d", &sec)
-				everySec = &sec
-				i++
-			}
-		case "-c", "--cron":
-			if i+1 < len(args) {
-				cronExpr = args[i+1]
-				i++
-			}
-		case "-d", "--deliver":
-			deliver = true
-		case "--to":
-			if i+1 < len(args) {
-				to = args[i+1]
-				i++
-			}
-		case "--channel":
-			if i+1 < len(args) {
-				channel = args[i+1]
-				i++
-			}
-		}
+func runCronAdd(cmd *cobra.Command, args []string) error {
+	storePath, err := getCronStorePath()
+	if err != nil {
+		fmt.Println(err)
+		return nil
 	}
 
-	if name == "" {
-		fmt.Println("Error: --name is required")
-		return
-	}
+	name, _ := cmd.Flags().GetString("name")
+	message, _ := cmd.Flags().GetString("message")
+	everySec, _ := cmd.Flags().GetInt64("every")
+	cronExpr, _ := cmd.Flags().GetString("cron")
+	deliver, _ := cmd.Flags().GetBool("deliver")
+	to, _ := cmd.Flags().GetString("to")
+	channel, _ := cmd.Flags().GetString("channel")
 
-	if message == "" {
-		fmt.Println("Error: --message is required")
-		return
-	}
-
-	if everySec == nil && cronExpr == "" {
+	if everySec == 0 && cronExpr == "" {
 		fmt.Println("Error: Either --every or --cron must be specified")
-		return
+		return nil
 	}
 
 	var schedule cron.CronSchedule
-	if everySec != nil {
-		everyMS := *everySec * 1000
+	if everySec != 0 {
+		everyMS := everySec * 1000
 		schedule = cron.CronSchedule{
 			Kind:    "every",
 			EveryMS: &everyMS,
@@ -189,39 +172,62 @@ func cronAddCmd(storePath string) {
 	job, err := cs.AddJob(name, schedule, message, deliver, channel, to)
 	if err != nil {
 		fmt.Printf("Error adding job: %v\n", err)
-		return
+		return nil
 	}
 
-	fmt.Printf("✓ Added job '%s' (%s)\n", job.Name, job.ID)
+	fmt.Printf("\u2713 Added job '%s' (%s)\n", job.Name, job.ID)
+	return nil
 }
 
-func cronRemoveCmd(storePath, jobID string) {
+func runCronRemove(cmd *cobra.Command, args []string) error {
+	storePath, err := getCronStorePath()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
+	jobID := args[0]
 	cs := cron.NewCronService(storePath, nil)
 	if cs.RemoveJob(jobID) {
-		fmt.Printf("✓ Removed job %s\n", jobID)
+		fmt.Printf("\u2713 Removed job %s\n", jobID)
 	} else {
-		fmt.Printf("✗ Job %s not found\n", jobID)
+		fmt.Printf("\u2717 Job %s not found\n", jobID)
 	}
+	return nil
 }
 
-func cronEnableCmd(storePath string, disable bool) {
-	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw cron enable/disable <job_id>")
-		return
+func runCronEnable(cmd *cobra.Command, args []string) error {
+	storePath, err := getCronStorePath()
+	if err != nil {
+		fmt.Println(err)
+		return nil
 	}
 
-	jobID := os.Args[3]
+	jobID := args[0]
 	cs := cron.NewCronService(storePath, nil)
-	enabled := !disable
-
-	job := cs.EnableJob(jobID, enabled)
+	job := cs.EnableJob(jobID, true)
 	if job != nil {
-		status := "enabled"
-		if disable {
-			status = "disabled"
-		}
-		fmt.Printf("✓ Job '%s' %s\n", job.Name, status)
+		fmt.Printf("\u2713 Job '%s' enabled\n", job.Name)
 	} else {
-		fmt.Printf("✗ Job %s not found\n", jobID)
+		fmt.Printf("\u2717 Job %s not found\n", jobID)
 	}
+	return nil
+}
+
+func runCronDisable(cmd *cobra.Command, args []string) error {
+	storePath, err := getCronStorePath()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
+	jobID := args[0]
+	cs := cron.NewCronService(storePath, nil)
+	job := cs.EnableJob(jobID, false)
+	if job != nil {
+		fmt.Printf("\u2713 Job '%s' disabled\n", job.Name)
+	} else {
+		fmt.Printf("\u2717 Job %s not found\n", jobID)
+	}
+	return nil
 }

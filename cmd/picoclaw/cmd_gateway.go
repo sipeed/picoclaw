@@ -25,17 +25,24 @@ import (
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/voice"
+	"github.com/spf13/cobra"
 )
 
-func gatewayCmd() {
-	// Check for --debug flag
-	args := os.Args[2:]
-	for _, arg := range args {
-		if arg == "--debug" || arg == "-d" {
-			logger.SetLevel(logger.DEBUG)
-			fmt.Println("🔍 Debug mode enabled")
-			break
-		}
+func newGatewayCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "gateway",
+		Short: "Start picoclaw gateway",
+		RunE:  runGateway,
+	}
+	cmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
+	return cmd
+}
+
+func runGateway(cmd *cobra.Command, args []string) error {
+	debug, _ := cmd.Flags().GetBool("debug")
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+		fmt.Println("\U0001f50d Debug mode enabled")
 	}
 
 	cfg, err := loadConfig()
@@ -49,7 +56,6 @@ func gatewayCmd() {
 		fmt.Printf("Error creating provider: %v\n", err)
 		os.Exit(1)
 	}
-	// Use the resolved model ID from provider creation
 	if modelID != "" {
 		cfg.Agents.Defaults.Model = modelID
 	}
@@ -57,17 +63,15 @@ func gatewayCmd() {
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
-	// Print agent startup info
-	fmt.Println("\n📦 Agent Status:")
+	fmt.Println("\n\U0001f4e6 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]interface{})
 	skillsInfo := startupInfo["skills"].(map[string]interface{})
-	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
-	fmt.Printf("  • Skills: %d/%d available\n",
+	fmt.Printf("  \u2022 Tools: %d loaded\n", toolsInfo["count"])
+	fmt.Printf("  \u2022 Skills: %d/%d available\n",
 		skillsInfo["available"],
 		skillsInfo["total"])
 
-	// Log to file as well
 	logger.InfoCF("agent", "Agent initialized",
 		map[string]interface{}{
 			"tools_count":      toolsInfo["count"],
@@ -75,7 +79,6 @@ func gatewayCmd() {
 			"skills_available": skillsInfo["available"],
 		})
 
-	// Setup cron tool and service
 	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
 	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.Agents.Defaults.RestrictToWorkspace, execTimeout, cfg)
 
@@ -86,11 +89,9 @@ func gatewayCmd() {
 	)
 	heartbeatService.SetBus(msgBus)
 	heartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
-		// Use cli:direct as fallback if no valid channel
 		if channel == "" || chatID == "" {
 			channel, chatID = "cli", "direct"
 		}
-		// Use ProcessHeartbeat - no session history, each heartbeat is independent
 		response, err := agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
 		if err != nil {
 			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
@@ -98,8 +99,6 @@ func gatewayCmd() {
 		if response == "HEARTBEAT_OK" {
 			return tools.SilentResult("Heartbeat OK")
 		}
-		// For heartbeat, always return silent - the subagent result will be
-		// sent to user via processSystemMessage when the async task completes
 		return tools.SilentResult(response)
 	})
 
@@ -109,7 +108,6 @@ func gatewayCmd() {
 		os.Exit(1)
 	}
 
-	// Inject channel manager into agent loop for command handling
 	agentLoop.SetChannelManager(channelManager)
 
 	var transcriber *voice.GroqTranscriber
@@ -141,12 +139,12 @@ func gatewayCmd() {
 
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
-		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
+		fmt.Printf("\u2713 Channels enabled: %s\n", enabledChannels)
 	} else {
-		fmt.Println("⚠ Warning: No channels enabled")
+		fmt.Println("\u26a0 Warning: No channels enabled")
 	}
 
-	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf("\u2713 Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -155,12 +153,12 @@ func gatewayCmd() {
 	if err := cronService.Start(); err != nil {
 		fmt.Printf("Error starting cron service: %v\n", err)
 	}
-	fmt.Println("✓ Cron service started")
+	fmt.Println("\u2713 Cron service started")
 
 	if err := heartbeatService.Start(); err != nil {
 		fmt.Printf("Error starting heartbeat service: %v\n", err)
 	}
-	fmt.Println("✓ Heartbeat service started")
+	fmt.Println("\u2713 Heartbeat service started")
 
 	stateManager := state.NewManager(cfg.WorkspacePath())
 	deviceService := devices.NewService(devices.Config{
@@ -171,7 +169,7 @@ func gatewayCmd() {
 	if err := deviceService.Start(ctx); err != nil {
 		fmt.Printf("Error starting device service: %v\n", err)
 	} else if cfg.Devices.Enabled {
-		fmt.Println("✓ Device event service started")
+		fmt.Println("\u2713 Device event service started")
 	}
 
 	if err := channelManager.StartAll(ctx); err != nil {
@@ -184,7 +182,7 @@ func gatewayCmd() {
 			logger.ErrorCF("health", "Health server error", map[string]interface{}{"error": err.Error()})
 		}
 	}()
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf("\u2713 Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	go agentLoop.Run(ctx)
 
@@ -200,20 +198,18 @@ func gatewayCmd() {
 	cronService.Stop()
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
-	fmt.Println("✓ Gateway stopped")
+	fmt.Println("\u2713 Gateway stopped")
+	return nil
 }
 
 func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration, cfg *config.Config) *cron.CronService {
 	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
 
-	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
 
-	// Create and register CronTool
 	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
 	agentLoop.RegisterTool(cronTool)
 
-	// Set the onJob handler
 	cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
 		result := cronTool.ExecuteJob(context.Background(), job)
 		return result, nil

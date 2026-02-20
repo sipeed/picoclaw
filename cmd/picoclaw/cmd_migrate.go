@@ -8,45 +8,41 @@ import (
 	"os"
 
 	"github.com/sipeed/picoclaw/pkg/migrate"
+	"github.com/spf13/cobra"
 )
 
-func migrateCmd() {
-	if len(os.Args) > 2 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
-		migrateHelp()
-		return
-	}
+func newMigrateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Migrate from OpenClaw to PicoClaw",
+		Long: `Migrate from OpenClaw to PicoClaw
 
+Examples:
+  picoclaw migrate
+  picoclaw migrate --dry-run
+  picoclaw migrate --refresh
+  picoclaw migrate --force`,
+		RunE: runMigrate,
+	}
+	cmd.Flags().Bool("dry-run", false, "Show what would be migrated without making changes")
+	cmd.Flags().Bool("config-only", false, "Only migrate config, skip workspace files")
+	cmd.Flags().Bool("workspace-only", false, "Only migrate workspace files, skip config")
+	cmd.Flags().Bool("force", false, "Skip confirmation prompts")
+	cmd.Flags().Bool("refresh", false, "Re-sync workspace files from OpenClaw (repeatable)")
+	cmd.Flags().String("openclaw-home", "", "Override OpenClaw home directory (default: ~/.openclaw)")
+	cmd.Flags().String("picoclaw-home", "", "Override PicoClaw home directory (default: ~/.picoclaw)")
+	return cmd
+}
+
+func runMigrate(cmd *cobra.Command, args []string) error {
 	opts := migrate.Options{}
-
-	args := os.Args[2:]
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--dry-run":
-			opts.DryRun = true
-		case "--config-only":
-			opts.ConfigOnly = true
-		case "--workspace-only":
-			opts.WorkspaceOnly = true
-		case "--force":
-			opts.Force = true
-		case "--refresh":
-			opts.Refresh = true
-		case "--openclaw-home":
-			if i+1 < len(args) {
-				opts.OpenClawHome = args[i+1]
-				i++
-			}
-		case "--picoclaw-home":
-			if i+1 < len(args) {
-				opts.PicoClawHome = args[i+1]
-				i++
-			}
-		default:
-			fmt.Printf("Unknown flag: %s\n", args[i])
-			migrateHelp()
-			os.Exit(1)
-		}
-	}
+	opts.DryRun, _ = cmd.Flags().GetBool("dry-run")
+	opts.ConfigOnly, _ = cmd.Flags().GetBool("config-only")
+	opts.WorkspaceOnly, _ = cmd.Flags().GetBool("workspace-only")
+	opts.Force, _ = cmd.Flags().GetBool("force")
+	opts.Refresh, _ = cmd.Flags().GetBool("refresh")
+	opts.OpenClawHome, _ = cmd.Flags().GetString("openclaw-home")
+	opts.PicoClawHome, _ = cmd.Flags().GetString("picoclaw-home")
 
 	result, err := migrate.Run(opts)
 	if err != nil {
@@ -57,25 +53,5 @@ func migrateCmd() {
 	if !opts.DryRun {
 		migrate.PrintSummary(result)
 	}
-}
-
-func migrateHelp() {
-	fmt.Println("\nMigrate from OpenClaw to PicoClaw")
-	fmt.Println()
-	fmt.Println("Usage: picoclaw migrate [options]")
-	fmt.Println()
-	fmt.Println("Options:")
-	fmt.Println("  --dry-run          Show what would be migrated without making changes")
-	fmt.Println("  --refresh          Re-sync workspace files from OpenClaw (repeatable)")
-	fmt.Println("  --config-only      Only migrate config, skip workspace files")
-	fmt.Println("  --workspace-only   Only migrate workspace files, skip config")
-	fmt.Println("  --force            Skip confirmation prompts")
-	fmt.Println("  --openclaw-home    Override OpenClaw home directory (default: ~/.openclaw)")
-	fmt.Println("  --picoclaw-home    Override PicoClaw home directory (default: ~/.picoclaw)")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  picoclaw migrate              Detect and migrate from OpenClaw")
-	fmt.Println("  picoclaw migrate --dry-run    Show what would be migrated")
-	fmt.Println("  picoclaw migrate --refresh    Re-sync workspace files")
-	fmt.Println("  picoclaw migrate --force      Migrate without confirmation")
+	return nil
 }
