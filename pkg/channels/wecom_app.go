@@ -348,7 +348,7 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		AgentID    string   `xml:"AgentID"`
 	}
 
-	if err := xml.Unmarshal(body, &encryptedMsg); err != nil {
+	if err = xml.Unmarshal(body, &encryptedMsg); err != nil {
 		logger.ErrorCF("wecom_app", "Failed to parse XML", map[string]any{
 			"error": err.Error(),
 		})

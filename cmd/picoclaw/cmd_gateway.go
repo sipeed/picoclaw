@@ -98,7 +98,8 @@ func gatewayCmd() {
 			channel, chatID = "cli", "direct"
 		}
 		// Use ProcessHeartbeat - no session history, each heartbeat is independent
-		response, err := agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
+		var response string
+		response, err = agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
 		if err != nil {
 			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
 		}

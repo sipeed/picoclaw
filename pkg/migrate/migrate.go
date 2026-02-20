@@ -67,7 +67,7 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	if _, err := os.Stat(openclawHome); os.IsNotExist(err) {
+	if _, err = os.Stat(openclawHome); os.IsNotExist(err) {
 		return nil, fmt.Errorf("OpenClaw installation not found at %s", openclawHome)
 	}
 
