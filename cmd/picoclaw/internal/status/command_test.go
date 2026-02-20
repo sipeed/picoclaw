@@ -1,47 +1,29 @@
 package status
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewStatusCommand(t *testing.T) {
 	cmd := NewStatusCommand()
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "status" {
-		t.Errorf("expected command name 'status', got %q", cmd.Use)
-	}
+	assert.Equal(t, "status", cmd.Use)
 
-	if len(cmd.Aliases) != 1 {
-		t.Errorf("expected command to have 1 alias, got %d", len(cmd.Aliases))
-	}
+	assert.Len(t, cmd.Aliases, 1)
+	assert.True(t, cmd.HasAlias("s"))
 
-	if !cmd.HasAlias("s") {
-		t.Errorf("expected command to have alias 's'")
-	}
+	assert.Equal(t, "Show picoclaw status", cmd.Short)
 
-	if cmd.Short != "Show picoclaw status" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.False(t, cmd.HasSubCommands())
 
-	if cmd.HasSubCommands() {
-		t.Error("expected command to have no subcommands")
-	}
+	assert.NotNil(t, cmd.Run)
+	assert.Nil(t, cmd.RunE)
 
-	if cmd.Run == nil {
-		t.Error("expected command to have non-nil Run()")
-	}
-
-	if cmd.RunE != nil {
-		t.Error("expected command to have nil RunE()")
-	}
-
-	if cmd.PersistentPreRun != nil {
-		t.Error("expected command to have nil PersistentPreRun()")
-	}
-
-	if cmd.PersistentPostRun != nil {
-		t.Error("expected command to have nil PersistentPostRun()")
-	}
+	assert.Nil(t, cmd.PersistentPreRun)
+	assert.Nil(t, cmd.PersistentPostRun)
 }

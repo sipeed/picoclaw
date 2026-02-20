@@ -1,23 +1,19 @@
 package auth
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewModelsCommand(t *testing.T) {
 	cmd := newModelsCommand()
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "models" {
-		t.Errorf("expected command name 'models', got %q", cmd.Use)
-	}
+	assert.Equal(t, "models", cmd.Use)
+	assert.Equal(t, "Show available models", cmd.Short)
 
-	if cmd.Short != "Show available models" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
-
-	if cmd.HasFlags() {
-		t.Error("expected command to have no flags")
-	}
+	assert.False(t, cmd.HasFlags())
 }

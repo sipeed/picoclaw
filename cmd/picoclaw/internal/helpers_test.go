@@ -5,6 +5,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetConfigPath(t *testing.T) {
@@ -13,107 +16,66 @@ func TestGetConfigPath(t *testing.T) {
 	got := GetConfigPath()
 	want := filepath.Join("/tmp/home", ".picoclaw", "config.json")
 
-	if got != want {
-		t.Fatalf("GetConfigPath() = %q, want %q", got, want)
-	}
+	assert.Equal(t, want, got)
 }
 
 func TestFormatVersion_NoGitCommit(t *testing.T) {
 	oldVersion, oldGit := version, gitCommit
-
-	t.Cleanup(func() {
-		version, gitCommit = oldVersion, oldGit
-	})
+	t.Cleanup(func() { version, gitCommit = oldVersion, oldGit })
 
 	version = "1.2.3"
 	gitCommit = ""
 
-	got := FormatVersion()
-	want := "1.2.3"
-
-	if got != want {
-		t.Fatalf("FormatVersion() = %q, want %q", got, want)
-	}
+	assert.Equal(t, "1.2.3", FormatVersion())
 }
 
 func TestFormatVersion_WithGitCommit(t *testing.T) {
 	oldVersion, oldGit := version, gitCommit
-
-	t.Cleanup(func() {
-		version, gitCommit = oldVersion, oldGit
-	})
+	t.Cleanup(func() { version, gitCommit = oldVersion, oldGit })
 
 	version = "1.2.3"
 	gitCommit = "abc123"
 
-	got := FormatVersion()
-	want := "1.2.3 (git: abc123)"
-
-	if got != want {
-		t.Fatalf("FormatVersion() = %q, want %q", got, want)
-	}
+	assert.Equal(t, "1.2.3 (git: abc123)", FormatVersion())
 }
 
 func TestFormatBuildInfo_UsesBuildTimeAndGoVersion_WhenSet(t *testing.T) {
 	oldBuildTime, oldGoVersion := buildTime, goVersion
-
-	t.Cleanup(func() {
-		buildTime, goVersion = oldBuildTime, oldGoVersion
-	})
+	t.Cleanup(func() { buildTime, goVersion = oldBuildTime, oldGoVersion })
 
 	buildTime = "2026-02-20T00:00:00Z"
 	goVersion = "go1.23.0"
 
 	build, goVer := FormatBuildInfo()
 
-	if build != buildTime {
-		t.Fatalf("FormatBuildInfo().build = %q, want %q", build, buildTime)
-	}
-
-	if goVer != goVersion {
-		t.Fatalf("FormatBuildInfo().goVer = %q, want %q", goVer, goVersion)
-	}
+	assert.Equal(t, buildTime, build)
+	assert.Equal(t, goVersion, goVer)
 }
 
 func TestFormatBuildInfo_EmptyBuildTime_ReturnsEmptyBuild(t *testing.T) {
 	oldBuildTime, oldGoVersion := buildTime, goVersion
-
-	t.Cleanup(func() {
-		buildTime, goVersion = oldBuildTime, oldGoVersion
-	})
+	t.Cleanup(func() { buildTime, goVersion = oldBuildTime, oldGoVersion })
 
 	buildTime = ""
 	goVersion = "go1.23.0"
 
 	build, goVer := FormatBuildInfo()
 
-	if build != "" {
-		t.Fatalf("FormatBuildInfo().build = %q, want empty", build)
-	}
-
-	if goVer != goVersion {
-		t.Fatalf("FormatBuildInfo().goVer = %q, want %q", goVer, goVersion)
-	}
+	assert.Empty(t, build)
+	assert.Equal(t, goVersion, goVer)
 }
 
 func TestFormatBuildInfo_EmptyGoVersion_FallsBackToRuntimeVersion(t *testing.T) {
 	oldBuildTime, oldGoVersion := buildTime, goVersion
-
-	t.Cleanup(func() {
-		buildTime, goVersion = oldBuildTime, oldGoVersion
-	})
+	t.Cleanup(func() { buildTime, goVersion = oldBuildTime, oldGoVersion })
 
 	buildTime = "x"
 	goVersion = ""
 
 	build, goVer := FormatBuildInfo()
-	if build != "x" {
-		t.Fatalf("FormatBuildInfo().build = %q, want %q", build, "x")
-	}
 
-	if goVer != runtime.Version() {
-		t.Fatalf("FormatBuildInfo().goVer = %q, want runtime.Version()=%q", goVer, runtime.Version())
-	}
+	assert.Equal(t, "x", build)
+	assert.Equal(t, runtime.Version(), goVer)
 }
 
 func TestGetConfigPath_Windows(t *testing.T) {
@@ -126,7 +88,5 @@ func TestGetConfigPath_Windows(t *testing.T) {
 	got := GetConfigPath()
 	want := filepath.Join(`C:\Users\Test`, ".picoclaw", "config.json")
 
-	if !strings.EqualFold(got, want) {
-		t.Fatalf("GetConfigPath() = %q, want %q", got, want)
-	}
+	require.True(t, strings.EqualFold(got, want), "GetConfigPath() = %q, want %q", got, want)
 }

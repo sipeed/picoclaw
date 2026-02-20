@@ -1,39 +1,26 @@
 package skills
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewInstallbuiltinSubcommand(t *testing.T) {
 	cmd := newInstallBuiltinCommand("")
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "install-builtin" {
-		t.Errorf("expected command name 'install-builtin', got %q", cmd.Use)
-	}
+	assert.Equal(t, "install-builtin", cmd.Use)
+	assert.Equal(t, "Install all builtin skills to workspace", cmd.Short)
 
-	if cmd.Short != "Install all builtin skills to workspace" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.NotNil(t, cmd.Run)
 
-	if cmd.Run == nil {
-		t.Error("expected command to have non-nil Run()")
-	}
+	assert.True(t, cmd.HasExample())
+	assert.False(t, cmd.HasSubCommands())
 
-	if !cmd.HasExample() {
-		t.Error("expected command to have example")
-	}
+	assert.False(t, cmd.HasFlags())
 
-	if cmd.HasSubCommands() {
-		t.Error("expected command to have no subcommands")
-	}
-
-	if cmd.HasFlags() {
-		t.Error("expected command to have no flags")
-	}
-
-	if len(cmd.Aliases) > 0 {
-		t.Errorf("expected command to have no aliases, got %d", len(cmd.Aliases))
-	}
+	assert.Len(t, cmd.Aliases, 0)
 }

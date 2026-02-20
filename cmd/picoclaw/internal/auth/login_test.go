@@ -4,39 +4,26 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewLoginSubCommand(t *testing.T) {
 	cmd := newLoginCommand()
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Short != "Login via OAuth or paste token" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.Equal(t, "Login via OAuth or paste token", cmd.Short)
 
-	if !cmd.HasFlags() {
-		t.Error("expected command to have flags")
-	}
+	assert.True(t, cmd.HasFlags())
 
-	if cmd.Flags().Lookup("device-code") == nil {
-		t.Error("expected command to have device-code flag")
-	}
+	assert.NotNil(t, cmd.Flags().Lookup("device-code"))
 
-	hasProviderFlag := cmd.Flags().Lookup("provider") != nil
-	if !hasProviderFlag {
-		t.Error("expected command to have provider flag")
-	} else {
-		var val []string
-		var found bool
-		providerFlag := cmd.Flag("provider")
+	providerFlag := cmd.Flags().Lookup("provider")
+	require.NotNil(t, providerFlag)
 
-		val, found = providerFlag.Annotations[cobra.BashCompOneRequiredFlag]
-
-		if !found || val[0] != "true" {
-			t.Errorf("expected provider flag to be required, got %v", val)
-		}
-	}
+	val, found := providerFlag.Annotations[cobra.BashCompOneRequiredFlag]
+	require.True(t, found)
+	require.NotEmpty(t, val)
+	assert.Equal(t, "true", val[0])
 }

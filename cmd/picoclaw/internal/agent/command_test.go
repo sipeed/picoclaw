@@ -1,63 +1,33 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewAgentCommand(t *testing.T) {
 	cmd := NewAgentCommand()
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "agent" {
-		t.Errorf("expected command name 'agent', got %q", cmd.Use)
-	}
+	assert.Equal(t, "agent", cmd.Use)
+	assert.Equal(t, "Interact with the agent directly", cmd.Short)
 
-	if cmd.Short != "Interact with the agent directly" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.Len(t, cmd.Aliases, 0)
+	assert.False(t, cmd.HasSubCommands())
 
-	if len(cmd.Aliases) > 0 {
-		t.Errorf("expected command to have no aliases, got %d", len(cmd.Aliases))
-	}
+	assert.Nil(t, cmd.Run)
+	assert.NotNil(t, cmd.RunE)
 
-	if cmd.HasSubCommands() {
-		t.Error("expected command to have no subcommands")
-	}
+	assert.Nil(t, cmd.PersistentPreRun)
+	assert.Nil(t, cmd.PersistentPostRun)
 
-	if cmd.Run != nil {
-		t.Error("expected command to have nil Run()")
-	}
+	assert.True(t, cmd.HasFlags())
 
-	if cmd.RunE == nil {
-		t.Error("expected command to have non-nil RunE()")
-	}
-
-	if cmd.PersistentPreRun != nil {
-		t.Error("expected command to have nil PersistentPreRun()")
-	}
-
-	if cmd.PersistentPostRun != nil {
-		t.Error("expected command to have nil PersistentPostRun()")
-	}
-
-	if !cmd.HasFlags() {
-		t.Error("expected command to have flags")
-	}
-
-	if cmd.Flags().Lookup("debug") == nil {
-		t.Error("expected command to have debug flag")
-	}
-
-	if cmd.Flags().Lookup("message") == nil {
-		t.Error("expected command to have message flag")
-	}
-
-	if cmd.Flags().Lookup("session") == nil {
-		t.Error("expected command to have session flag")
-	}
-
-	if cmd.Flags().Lookup("model") == nil {
-		t.Error("expected command to have model flag")
-	}
+	assert.NotNil(t, cmd.Flags().Lookup("debug"))
+	assert.NotNil(t, cmd.Flags().Lookup("message"))
+	assert.NotNil(t, cmd.Flags().Lookup("session"))
+	assert.NotNil(t, cmd.Flags().Lookup("model"))
 }

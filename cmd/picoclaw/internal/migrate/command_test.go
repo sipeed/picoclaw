@@ -1,79 +1,38 @@
 package migrate
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewMigrateCommand(t *testing.T) {
 	cmd := NewMigrateCommand()
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "migrate" {
-		t.Errorf("expected command name 'migrate', got %q", cmd.Use)
-	}
+	assert.Equal(t, "migrate", cmd.Use)
+	assert.Equal(t, "Migrate from OpenClaw to PicoClaw", cmd.Short)
 
-	if cmd.Short != "Migrate from OpenClaw to PicoClaw" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.Len(t, cmd.Aliases, 0)
 
-	if len(cmd.Aliases) > 0 {
-		t.Errorf("expected command to have no aliases, got %d", len(cmd.Aliases))
-	}
+	assert.True(t, cmd.HasExample())
+	assert.False(t, cmd.HasSubCommands())
 
-	if !cmd.HasExample() {
-		t.Error("expected command to have example")
-	}
+	assert.Nil(t, cmd.Run)
+	assert.NotNil(t, cmd.RunE)
 
-	if cmd.HasSubCommands() {
-		t.Error("expected command to have no subcommands")
-	}
+	assert.Nil(t, cmd.PersistentPreRun)
+	assert.Nil(t, cmd.PersistentPostRun)
 
-	if cmd.Run != nil {
-		t.Error("expected command to have nil Run()")
-	}
+	assert.True(t, cmd.HasFlags())
 
-	if cmd.RunE == nil {
-		t.Error("expected command to have non-nil RunE()")
-	}
-
-	if cmd.PersistentPreRun != nil {
-		t.Error("expected command to have nil PersistentPreRun()")
-	}
-
-	if cmd.PersistentPostRun != nil {
-		t.Error("expected command to have nil PersistentPostRun()")
-	}
-
-	if !cmd.HasFlags() {
-		t.Error("expected command to have flags")
-	}
-
-	if cmd.Flags().Lookup("dry-run") == nil {
-		t.Error("expected command to have dry-run flag")
-	}
-
-	if cmd.Flags().Lookup("refresh") == nil {
-		t.Error("expected command to have refresh flag")
-	}
-
-	if cmd.Flags().Lookup("config-only") == nil {
-		t.Error("expected command to have config-only flag")
-	}
-
-	if cmd.Flags().Lookup("workspace-only") == nil {
-		t.Error("expected command to have workspace-only flag")
-	}
-
-	if cmd.Flags().Lookup("force") == nil {
-		t.Error("expected command to have force flag")
-	}
-
-	if cmd.Flags().Lookup("openclaw-home") == nil {
-		t.Error("expected command to have openclaw-home flag")
-	}
-
-	if cmd.Flags().Lookup("picoclaw-home") == nil {
-		t.Error("expected command to have picoclaw-home flag")
-	}
+	assert.NotNil(t, cmd.Flags().Lookup("dry-run"))
+	assert.NotNil(t, cmd.Flags().Lookup("refresh"))
+	assert.NotNil(t, cmd.Flags().Lookup("config-only"))
+	assert.NotNil(t, cmd.Flags().Lookup("workspace-only"))
+	assert.NotNil(t, cmd.Flags().Lookup("force"))
+	assert.NotNil(t, cmd.Flags().Lookup("openclaw-home"))
+	assert.NotNil(t, cmd.Flags().Lookup("picoclaw-home"))
 }

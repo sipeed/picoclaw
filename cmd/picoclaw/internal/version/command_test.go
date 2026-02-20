@@ -1,51 +1,31 @@
 package version
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewVersionCommand(t *testing.T) {
 	cmd := NewVersionCommand()
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "version" {
-		t.Errorf("expected command name 'version', got %q", cmd.Use)
-	}
+	assert.Equal(t, "version", cmd.Use)
 
-	if len(cmd.Aliases) != 1 {
-		t.Errorf("expected command to have 1 alias, got %d", len(cmd.Aliases))
-	}
+	assert.Len(t, cmd.Aliases, 1)
+	assert.True(t, cmd.HasAlias("v"))
 
-	if !cmd.HasAlias("v") {
-		t.Errorf("expected command to have alias 'v'")
-	}
+	assert.False(t, cmd.HasFlags())
 
-	if cmd.HasFlags() {
-		t.Error("expected command to have no flags")
-	}
+	assert.Equal(t, "Show version information", cmd.Short)
 
-	if cmd.Short != "Show version information" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.False(t, cmd.HasSubCommands())
 
-	if cmd.HasSubCommands() {
-		t.Error("expected command to have no subcommands")
-	}
+	assert.NotNil(t, cmd.Run)
+	assert.Nil(t, cmd.RunE)
 
-	if cmd.Run == nil {
-		t.Error("expected command to have non-nil Run()")
-	}
-
-	if cmd.RunE != nil {
-		t.Error("expected command to have nil RunE()")
-	}
-
-	if cmd.PersistentPreRun != nil {
-		t.Error("expected command to have nil PersistentPreRun()")
-	}
-
-	if cmd.PersistentPostRun != nil {
-		t.Error("expected command to have nil PersistentPostRun()")
-	}
+	assert.Nil(t, cmd.PersistentPreRun)
+	assert.Nil(t, cmd.PersistentPostRun)
 }

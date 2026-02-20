@@ -1,20 +1,19 @@
 package cron
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewRemoveSubcommand(t *testing.T) {
 	fn := func() string { return "" }
 	cmd := newRemoveCommand(fn)
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Short != "Remove a job by ID" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.Equal(t, "Remove a job by ID", cmd.Short)
 
-	if !cmd.HasExample() {
-		t.Error("expected command to have example")
-	}
+	assert.True(t, cmd.HasExample())
 }

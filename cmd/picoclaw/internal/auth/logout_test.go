@@ -1,23 +1,20 @@
 package auth
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewLogoutSubcommand(t *testing.T) {
 	cmd := newLogoutCommand()
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Short != "Remove stored credentials" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.Equal(t, "Remove stored credentials", cmd.Short)
 
-	if !cmd.HasFlags() {
-		t.Error("expected command to have flags")
-	}
+	assert.True(t, cmd.HasFlags())
 
-	if cmd.Flags().Lookup("provider") == nil {
-		t.Error("expected command to have provider flag")
-	}
+	assert.NotNil(t, cmd.Flags().Lookup("provider"))
 }

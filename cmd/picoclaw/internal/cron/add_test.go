@@ -4,80 +4,40 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewAddSubcommand(t *testing.T) {
 	fn := func() string { return "" }
 	cmd := newAddCommand(fn)
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "add" {
-		t.Errorf("expected command name 'add', got %q", cmd.Use)
-	}
+	assert.Equal(t, "add", cmd.Use)
+	assert.Equal(t, "Add a new scheduled job", cmd.Short)
 
-	if cmd.Short != "Add a new scheduled job" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.True(t, cmd.HasFlags())
 
-	if !cmd.HasFlags() {
-		t.Error("expected command to have flags")
-	}
+	assert.NotNil(t, cmd.Flags().Lookup("every"))
+	assert.NotNil(t, cmd.Flags().Lookup("cron"))
+	assert.NotNil(t, cmd.Flags().Lookup("deliver"))
+	assert.NotNil(t, cmd.Flags().Lookup("to"))
+	assert.NotNil(t, cmd.Flags().Lookup("channel"))
 
-	if cmd.Flags().Lookup("every") == nil {
-		t.Error("expected command to have every flag")
-	}
+	nameFlag := cmd.Flags().Lookup("name")
+	require.NotNil(t, nameFlag)
 
-	if cmd.Flags().Lookup("cron") == nil {
-		t.Error("expected command to have cron flag")
-	}
+	messageFlag := cmd.Flags().Lookup("message")
+	require.NotNil(t, messageFlag)
 
-	if cmd.Flags().Lookup("deliver") == nil {
-		t.Error("expected command to have deliver flag")
-	}
+	val, found := nameFlag.Annotations[cobra.BashCompOneRequiredFlag]
+	require.True(t, found)
+	require.NotEmpty(t, val)
+	assert.Equal(t, "true", val[0])
 
-	if cmd.Flags().Lookup("to") == nil {
-		t.Error("expected command to have to flag")
-	}
-
-	if cmd.Flags().Lookup("channel") == nil {
-		t.Error("expected command to have channel flag")
-	}
-
-	hasNameFlag := cmd.Flags().Lookup("name") != nil
-	hasMessageFlag := cmd.Flags().Lookup("message") != nil
-
-	if !hasNameFlag {
-		t.Error("expected command to have name flag")
-	}
-
-	if !hasMessageFlag {
-		t.Error("expected command to have message flag")
-	}
-
-	if hasNameFlag {
-		var val []string
-		var found bool
-		nameFlag := cmd.Flag("name")
-
-		val, found = nameFlag.Annotations[cobra.BashCompOneRequiredFlag]
-
-		if !found || val[0] != "true" {
-			t.Errorf("expected name flag to be required, got %v", val)
-		}
-	}
-
-	if hasMessageFlag {
-		var val []string
-		var found bool
-		messageFlag := cmd.Flag("message")
-
-		val, found = messageFlag.Annotations[cobra.BashCompOneRequiredFlag]
-
-		if !found || val[0] != "true" {
-			t.Errorf("expected message flag to be required, got %v", val)
-		}
-	}
+	val, found = messageFlag.Annotations[cobra.BashCompOneRequiredFlag]
+	require.True(t, found)
+	require.NotEmpty(t, val)
+	assert.Equal(t, "true", val[0])
 }

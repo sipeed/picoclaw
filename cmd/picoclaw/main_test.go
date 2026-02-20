@@ -2,50 +2,29 @@ package main
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewPicoclawCommand(t *testing.T) {
 	cmd := NewPicoclawCommand()
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "picoclaw" {
-		t.Errorf("expected command name 'picoclaw', got %q", cmd.Use)
-	}
+	assert.Equal(t, "picoclaw", cmd.Use)
+	assert.Equal(t, "picoclaw — Personal AI Assistant", cmd.Short)
 
-	if cmd.Short != "picoclaw — Personal AI Assistant" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.True(t, cmd.HasSubCommands())
+	assert.True(t, cmd.HasAvailableSubCommands())
 
-	if !cmd.HasSubCommands() {
-		t.Error("expected command to have subcommands")
-	}
+	assert.False(t, cmd.HasFlags())
 
-	if !cmd.HasAvailableSubCommands() {
-		t.Error("expected command to have available subcommands")
-	}
+	assert.Nil(t, cmd.Run)
+	assert.Nil(t, cmd.RunE)
 
-	if cmd.HasFlags() {
-		t.Error("expected command to have no flags")
-	}
-
-	if cmd.Run != nil {
-		t.Error("expected command to have nil Run()")
-	}
-
-	if cmd.RunE != nil {
-		t.Error("expected command to have nil RunE()")
-	}
-
-	if cmd.PersistentPreRun != nil {
-		t.Error("expected command to have nil PersistentPreRun()")
-	}
-
-	if cmd.PersistentPostRun != nil {
-		t.Error("expected command to have nil PersistentPostRun()")
-	}
+	assert.Nil(t, cmd.PersistentPreRun)
+	assert.Nil(t, cmd.PersistentPostRun)
 
 	allowedCommands := map[string]struct{}{
 		"agent":   {},
@@ -59,13 +38,13 @@ func TestNewPicoclawCommand(t *testing.T) {
 		"version": {},
 	}
 
-	for _, subcmd := range cmd.Commands() {
-		if _, found := allowedCommands[subcmd.Name()]; !found {
-			t.Errorf("unexpected subcommand %q", subcmd.Name())
-		}
+	subcommands := cmd.Commands()
+	assert.Len(t, subcommands, len(allowedCommands))
 
-		if cmd.Hidden {
-			t.Errorf("expected subcommand %q to be visible", subcmd.Name())
-		}
+	for _, subcmd := range subcommands {
+		_, found := allowedCommands[subcmd.Name()]
+		assert.True(t, found, "unexpected subcommand %q", subcmd.Name())
+
+		assert.False(t, subcmd.Hidden)
 	}
 }

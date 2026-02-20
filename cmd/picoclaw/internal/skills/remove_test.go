@@ -1,47 +1,28 @@
 package skills
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewRemoveSubcommand(t *testing.T) {
 	cmd := newRemoveCommand(nil)
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "remove" {
-		t.Errorf("expected command name 'remove', got %q", cmd.Use)
-	}
+	assert.Equal(t, "remove", cmd.Use)
+	assert.Equal(t, "Remove installed skill", cmd.Short)
 
-	if cmd.Short != "Remove installed skill" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.NotNil(t, cmd.Run)
 
-	if cmd.Run == nil {
-		t.Error("expected command to have non-nil Run()")
-	}
+	assert.True(t, cmd.HasExample())
+	assert.False(t, cmd.HasSubCommands())
 
-	if !cmd.HasExample() {
-		t.Error("expected command to have example")
-	}
+	assert.False(t, cmd.HasFlags())
 
-	if cmd.HasSubCommands() {
-		t.Error("expected command to have no subcommands")
-	}
-
-	if cmd.HasFlags() {
-		t.Error("expected command to have no flags")
-	}
-
-	if len(cmd.Aliases) != 2 {
-		t.Errorf("expected command to have 2 aliases, got %d", len(cmd.Aliases))
-	}
-
-	if !cmd.HasAlias("rm") {
-		t.Errorf("expected command to have alias 'rm'")
-	}
-
-	if !cmd.HasAlias("uninstall") {
-		t.Errorf("expected command to have alias 'uninstall'")
-	}
+	assert.Len(t, cmd.Aliases, 2)
+	assert.True(t, cmd.HasAlias("rm"))
+	assert.True(t, cmd.HasAlias("uninstall"))
 }

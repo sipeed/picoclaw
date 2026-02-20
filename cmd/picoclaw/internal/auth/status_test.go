@@ -1,19 +1,18 @@
 package auth
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewStatusSubcommand(t *testing.T) {
 	cmd := newStatusCommand()
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Short != "Show current auth status" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.Equal(t, "Show current auth status", cmd.Short)
 
-	if cmd.HasFlags() {
-		t.Error("expected command to have no flags")
-	}
+	assert.False(t, cmd.HasFlags())
 }

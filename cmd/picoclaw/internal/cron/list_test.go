@@ -1,16 +1,17 @@
 package cron
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewListSubcommand(t *testing.T) {
 	fn := func() string { return "" }
 	cmd := newListCommand(fn)
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Short != "List all scheduled jobs" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.Equal(t, "List all scheduled jobs", cmd.Short)
 }

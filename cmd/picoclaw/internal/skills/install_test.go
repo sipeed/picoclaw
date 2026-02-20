@@ -1,47 +1,28 @@
 package skills
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewInstallSubcommand(t *testing.T) {
 	cmd := newInstallCommand(nil)
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "install" {
-		t.Errorf("expected command name 'install', got %q", cmd.Use)
-	}
+	assert.Equal(t, "install", cmd.Use)
+	assert.Equal(t, "Install skill from GitHub", cmd.Short)
 
-	if cmd.Short != "Install skill from GitHub" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.Nil(t, cmd.Run)
+	assert.NotNil(t, cmd.RunE)
 
-	if cmd.Run != nil {
-		t.Error("expected command to have nil RunE()")
-	}
+	assert.True(t, cmd.HasExample())
+	assert.False(t, cmd.HasSubCommands())
 
-	if cmd.RunE == nil {
-		t.Error("expected command to have non-nil Run()")
-	}
+	assert.True(t, cmd.HasFlags())
+	assert.NotNil(t, cmd.Flags().Lookup("registry"))
 
-	if !cmd.HasExample() {
-		t.Error("expected command to have example")
-	}
-
-	if cmd.HasSubCommands() {
-		t.Error("expected command to have no subcommands")
-	}
-
-	if !cmd.HasFlags() {
-		t.Error("expected command to have no flags")
-	}
-
-	if cmd.Flags().Lookup("registry") == nil {
-		t.Error("expected command to have registry flag")
-	}
-
-	if len(cmd.Aliases) > 0 {
-		t.Errorf("expected command to have no aliases, got %d", len(cmd.Aliases))
-	}
+	assert.Len(t, cmd.Aliases, 0)
 }

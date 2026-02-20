@@ -1,39 +1,26 @@
 package skills
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNewListSubcommand(t *testing.T) {
 	cmd := newListCommand(nil)
 
-	if cmd == nil {
-		t.Fatalf("expected non-nil command")
-	}
+	require.NotNil(t, cmd)
 
-	if cmd.Use != "list" {
-		t.Errorf("expected command name 'list', got %q", cmd.Use)
-	}
+	assert.Equal(t, "list", cmd.Use)
+	assert.Equal(t, "List installed skills", cmd.Short)
 
-	if cmd.Short != "List installed skills" {
-		t.Errorf("expected command short description, got %q", cmd.Short)
-	}
+	assert.NotNil(t, cmd.Run)
 
-	if cmd.Run == nil {
-		t.Error("expected command to have non-nil Run()")
-	}
+	assert.True(t, cmd.HasExample())
+	assert.False(t, cmd.HasSubCommands())
 
-	if !cmd.HasExample() {
-		t.Error("expected command to have example")
-	}
+	assert.False(t, cmd.HasFlags())
 
-	if cmd.HasSubCommands() {
-		t.Error("expected command to have no subcommands")
-	}
-
-	if cmd.HasFlags() {
-		t.Error("expected command to have no flags")
-	}
-
-	if len(cmd.Aliases) > 0 {
-		t.Errorf("expected command to have no aliases, got %d", len(cmd.Aliases))
-	}
+	assert.Len(t, cmd.Aliases, 0)
 }
