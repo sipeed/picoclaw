@@ -77,9 +77,10 @@ func DefaultConfig() *Config {
 				AllowFrom:         FlexibleStringSlice{},
 			},
 			Discord: DiscordConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:     false,
+				Token:       "",
+				AllowFrom:   FlexibleStringSlice{},
+				MentionOnly: false,
 			},
 			MaixCam: MaixCamConfig{
 				Enabled:   false,
@@ -121,6 +122,30 @@ func DefaultConfig() *Config {
 				ReconnectInterval:  5,
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
+			},
+			WeCom: WeComConfig{
+				Enabled:        false,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookURL:     "",
+				WebhookHost:    "0.0.0.0",
+				WebhookPort:    18793,
+				WebhookPath:    "/webhook/wecom",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
+			},
+			WeComApp: WeComAppConfig{
+				Enabled:        false,
+				CorpID:         "",
+				CorpSecret:     "",
+				AgentID:        0,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookHost:    "0.0.0.0",
+				WebhookPort:    18792,
+				WebhookPath:    "/webhook/wecom-app",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
 			},
 		},
 		Providers: ProvidersConfig{
@@ -295,6 +320,22 @@ func DefaultConfig() *Config {
 			},
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5,
+			},
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
+			},
+			Skills: SkillsToolsConfig{
+				Registries: SkillsRegistriesConfig{
+					ClawHub: ClawHubRegistryConfig{
+						Enabled: true,
+						BaseURL: "https://clawhub.ai",
+					},
+				},
+				MaxConcurrentSearches: 2,
+				SearchCache: SearchCacheConfig{
+					MaxSize:    50,
+					TTLSeconds: 300,
+				},
 			},
 			Sandbox: SandboxToolsConfig{
 				Tools: SandboxToolPolicyConfig{

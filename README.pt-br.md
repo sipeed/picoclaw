@@ -263,7 +263,7 @@ Pronto! Você tem um assistente de IA funcionando em 2 minutos.
 
 ## 💬 Integração com Apps de Chat
 
-Converse com seu PicoClaw via Telegram, Discord, DingTalk ou LINE.
+Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
 
 | Canal | Nível de Configuração |
 | --- | --- |
@@ -272,6 +272,7 @@ Converse com seu PicoClaw via Telegram, Discord, DingTalk ou LINE.
 | **QQ** | Fácil (AppID + AppSecret) |
 | **DingTalk** | Médio (credenciais do app) |
 | **LINE** | Médio (credenciais + webhook URL) |
+| **WeCom** | Médio (CorpID + configuração webhook) |
 
 <details>
 <summary><b>Telegram</b> (Recomendado)</summary>
@@ -468,6 +469,87 @@ picoclaw gateway
 > Em chats de grupo, o bot responde apenas quando mencionado com @. As respostas citam a mensagem original.
 
 > **Docker Compose**: Adicione `ports: ["18791:18791"]` ao serviço `picoclaw-gateway` para expor a porta do webhook.
+
+</details>
+
+<details>
+<summary><b>WeCom (WeChat Work)</b></summary>
+
+O PicoClaw suporta dois tipos de integração WeCom:
+
+**Opção 1: WeCom Bot (Robô Inteligente)** - Configuração mais fácil, suporta chats em grupo
+**Opção 2: WeCom App (Aplicativo Personalizado)** - Mais recursos, mensagens proativas
+
+Veja o [Guia de Configuração WeCom App](docs/wecom-app-configuration.md) para instruções detalhadas.
+
+**Configuração Rápida - WeCom Bot:**
+
+**1. Criar um bot**
+
+* Acesse o Console de Administração WeCom → Chat em Grupo → Adicionar Bot de Grupo
+* Copie a URL do webhook (formato: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+
+**2. Configurar**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**Configuração Rápida - WeCom App:**
+
+**1. Criar um aplicativo**
+
+* Acesse o Console de Administração WeCom → Gerenciamento de Aplicativos → Criar Aplicativo
+* Copie o **AgentId** e o **Secret**
+* Acesse a página "Minha Empresa", copie o **CorpID**
+
+**2. Configurar recebimento de mensagens**
+
+* Nos detalhes do aplicativo, clique em "Receber Mensagens" → "Configurar API"
+* Defina a URL como `http://your-server:18792/webhook/wecom-app`
+* Gere o **Token** e o **EncodingAESKey**
+
+**3. Configurar**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. Executar**
+
+```bash
+picoclaw gateway
+```
+
+> **Nota**: O WeCom App requer a abertura da porta 18792 para callbacks de webhook. Use um proxy reverso para HTTPS em produção.
 
 </details>
 

@@ -226,7 +226,7 @@ picoclaw agent -m "What is 2+2?"
 
 ## 💬 チャットアプリ
 
-Telegram、Discord、QQ、DingTalk、LINE で PicoClaw と会話できます
+Telegram、Discord、QQ、DingTalk、LINE、WeCom で PicoClaw と会話できます
 
 | チャネル | セットアップ |
 |---------|------------|
@@ -235,6 +235,7 @@ Telegram、Discord、QQ、DingTalk、LINE で PicoClaw と会話できます
 | **QQ** | 簡単（AppID + AppSecret） |
 | **DingTalk** | 普通（アプリ認証情報） |
 | **LINE** | 普通（認証情報 + Webhook URL） |
+| **WeCom** | 普通（CorpID + Webhook設定） |
 
 <details>
 <summary><b>Telegram</b>（推奨）</summary>
@@ -427,6 +428,87 @@ picoclaw gateway
 > グループチャットでは @メンション時のみ応答します。返信は元メッセージを引用する形式です。
 
 > **Docker Compose**: `picoclaw-gateway` サービスに `ports: ["18791:18791"]` を追加して Webhook ポートを公開してください。
+
+</details>
+
+<details>
+<summary><b>WeCom (企業微信)</b></summary>
+
+PicoClaw は2種類の WeCom 統合をサポートしています：
+
+**オプション1: WeCom Bot (智能ロボット)** - 簡単な設定、グループチャット対応
+**オプション2: WeCom App (自作アプリ)** - より多機能、アクティブメッセージング対応
+
+詳細な設定手順は [WeCom App Configuration Guide](docs/wecom-app-configuration.md) を参照してください。
+
+**クイックセットアップ - WeCom Bot:**
+
+**1. ボットを作成**
+
+* WeCom 管理コンソール → グループチャット → グループボットを追加
+* Webhook URL をコピー（形式: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`）
+
+**2. 設定**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**クイックセットアップ - WeCom App:**
+
+**1. アプリを作成**
+
+* WeCom 管理コンソール → アプリ管理 → アプリを作成
+* **AgentId** と **Secret** をコピー
+* "マイ会社" ページで **CorpID** をコピー
+
+**2. メッセージ受信を設定**
+
+* アプリ詳細で "メッセージを受信" → "APIを設定" をクリック
+* URL を `http://your-server:18792/webhook/wecom-app` に設定
+* **Token** と **EncodingAESKey** を生成
+
+**3. 設定**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. 起動**
+
+```bash
+picoclaw gateway
+```
+
+> **注意**: WeCom App は Webhook コールバック用にポート 18792 を開放する必要があります。本番環境では HTTPS 用のリバースプロキシを使用してください。
 
 </details>
 
