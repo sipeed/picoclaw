@@ -191,7 +191,10 @@ func (p *OllamaSearchProvider) Search(ctx context.Context, query string, count i
 		"count":      count,
 	}
 
-	bodyJSON, _ := json.Marshal(requestBody)
+	bodyJSON, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode Ollama web search request: %w", err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL, strings.NewReader(string(bodyJSON)))
 	if err != nil {
@@ -337,8 +340,8 @@ func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
 			},
 		}
 	}
-	// Priority order: Brave > Ollama > DuckDuckGo
-	priorityOrder := []string{"brave", "ollama", "duckduckgo"}
+	// Priority order: Brave > Ollama > Perplexity > DuckDuckGo
+	priorityOrder := []string{"brave", "ollama", "perplexity", "duckduckgo"}
 	optMap := make(map[string]WebSearchToolOptions)
 
 	// Build map of enabled providers
@@ -350,6 +353,7 @@ func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
 
 	var selectedOpt *WebSearchToolOptions
 	var provider SearchProvider
+	var providerErrors []string
 
 	// Try providers in priority order
 	for _, providerName := range priorityOrder {
@@ -361,12 +365,26 @@ func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
 		selectedOpt = &opt
 		var err error
 		provider, err = createProvider(&opt)
+		if err != nil {
+			providerErrors = append(providerErrors, fmt.Sprintf("%s: %v", providerName, err))
+			logger.WarnCF("tool", "Web search provider initialization failed",
+				map[string]interface{}{
+					"provider": providerName,
+					"error":    err.Error(),
+				})
+		}
 		if err == nil && provider != nil {
 			break
 		}
 	}
 
 	if provider == nil {
+		if len(providerErrors) > 0 {
+			logger.ErrorCF("tool", "No usable web search provider after trying configured providers",
+				map[string]interface{}{
+					"errors": strings.Join(providerErrors, "; "),
+				})
+		}
 		return nil
 	}
 
@@ -375,6 +393,12 @@ func NewWebSearchTool(opts ...WebSearchToolOptions) *WebSearchTool {
 		if ddgOpt, exists := optMap["duckduckgo"]; exists {
 			if p, err := createProvider(&ddgOpt); err == nil && p != nil {
 				fallbackProvider = p
+			} else if err != nil {
+				logger.WarnCF("tool", "Fallback web search provider initialization failed",
+					map[string]interface{}{
+						"provider": "duckduckgo",
+						"error":    err.Error(),
+					})
 			}
 		}
 	}
@@ -534,6 +558,38 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 			return &ToolResult{
 				ForLLM:  result, // raw for LLM
 				ForUser: strings.Join(summary, "\n"),
+			}
+		}
+
+		preview := result
+		if len(preview) > 512 {
+			preview = preview[:512] + "..."
+		}
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+			logger.WarnCF("tool", "Failed to parse Ollama web search response",
+				map[string]interface{}{
+					"provider": "ollama",
+					"query":    query,
+					"error":    err.Error(),
+					"preview":  preview,
+				})
+		} else if len(parsed.Results) == 0 {
+			logger.WarnCF("tool", "Ollama web search response has empty results",
+				map[string]interface{}{
+					"provider": "ollama",
+					"query":    query,
+					"preview":  preview,
+				})
+		} else if err := json.Unmarshal([]byte(result), &raw); err == nil {
+			if _, hasResults := raw["results"]; !hasResults {
+				logger.WarnCF("tool", "Ollama web search response missing expected 'results' field",
+					map[string]interface{}{
+						"provider": "ollama",
+						"query":    query,
+						"preview":  preview,
+					})
 			}
 		}
 	}

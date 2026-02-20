@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/caarlos0/env/v11"
@@ -304,7 +305,7 @@ type CronToolsConfig struct {
 
 type ExecConfig struct {
 	EnableDenyPatterns bool     `json:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
-	CustomDenyPatterns []string `json:"custom_deny_patterns,omitempty"`
+	CustomDenyPatterns []string `json:"custom_deny_patterns,omitempty" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 }
 
 type ToolsConfig struct {
@@ -411,12 +412,12 @@ func DefaultConfig() *Config {
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{
 				Search: WebSearchConfig{
-					Provider:   "ollama",
+					Provider:   "",
 					APIKey:     "",
-					Endpoint:   "https://ollama.com/api/web_search",
-					RestType:   "POST",
-					QueryParam: "query",
-					MaxResults: 5,
+					Endpoint:   "",
+					RestType:   "",
+					QueryParam: "",
+					MaxResults: 0,
 				},
 			},
 			Cron: CronToolsConfig{
@@ -455,6 +456,10 @@ func LoadConfig(path string) (*Config, error) {
 
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
+	}
+
+	if strings.TrimSpace(cfg.Tools.Web.Search.Provider) == "" {
+		return nil, fmt.Errorf("Please check new config for web search as config example")
 	}
 
 	return cfg, nil

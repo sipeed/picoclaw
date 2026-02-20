@@ -70,7 +70,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 				Param:      cfg.Tools.Web.Search.QueryParam,
 			},
 			{
-				Provider:   "duckduckgo", //fallback to duckduckgo if not configured
+				Provider:   "duckduckgo", // fallback to duckduckgo if not configured
 				MaxResults: 5,
 			},
 		}

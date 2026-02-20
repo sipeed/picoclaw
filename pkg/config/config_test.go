@@ -284,19 +284,24 @@ func TestDefaultConfig_Channels(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_WebTools verifies web tools config
-func TestDefaultConfig_WebTools(t *testing.T) {
+// TestDefaultConfig_WebTools_EmptyDefaults verifies web search defaults are intentionally empty.
+func TestDefaultConfig_WebTools_EmptyDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 
-	// Verify web tools defaults
-	if cfg.Tools.Web.Search.MaxResults != 5 {
-		t.Error("Expected Search MaxResults 5, got ", cfg.Tools.Web.Search.MaxResults)
+	if cfg.Tools.Web.Search.MaxResults != 0 {
+		t.Error("Expected Search MaxResults 0, got ", cfg.Tools.Web.Search.MaxResults)
 	}
-	if cfg.Tools.Web.Search.Provider == "" {
-		t.Error("Search provider should not be empty by default")
+	if cfg.Tools.Web.Search.Provider != "" {
+		t.Error("Search provider should be empty by default")
 	}
-	if cfg.Tools.Web.Search.QueryParam == "" {
-		t.Error("Search query param should not be empty by default")
+	if cfg.Tools.Web.Search.Endpoint != "" {
+		t.Error("Search endpoint should be empty by default")
+	}
+	if cfg.Tools.Web.Search.RestType != "" {
+		t.Error("Search rest_type should be empty by default")
+	}
+	if cfg.Tools.Web.Search.QueryParam != "" {
+		t.Error("Search query param should be empty by default")
 	}
 }
 
@@ -364,7 +369,7 @@ func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
 func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_base":""}}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_base":""}},"tools":{"web":{"search":{"provider":"brave"}}}}`), 0o600); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -380,7 +385,7 @@ func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}},"tools":{"web":{"search":{"provider":"brave"}}}}`), 0o600); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -390,5 +395,21 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	}
 	if cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
+	}
+}
+
+func TestLoadConfig_WebSearchProviderRequired(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"tools":{"web":{"search":{"provider":""}}}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatal("expected error when web search provider is not set")
+	}
+	if err.Error() != "Please check new config for web search as config example" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

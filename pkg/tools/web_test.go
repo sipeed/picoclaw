@@ -3,11 +3,28 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+type failingSearchProvider struct {
+	err error
+}
+
+func (p *failingSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	return "", p.err
+}
+
+type staticSearchProvider struct {
+	result string
+}
+
+func (p *staticSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	return p.result, nil
+}
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
@@ -181,10 +198,24 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 		t.Errorf("Expected nil tool when Brave API key is empty")
 	}
 
-	// No providers should return nil
-	tool = NewWebSearchTool()
+	// Perplexity without API key should return nil
+	tool = NewWebSearchTool(WebSearchToolOptions{Provider: "perplexity", APIKey: ""})
 	if tool != nil {
-		t.Errorf("Expected nil tool when no providers are provided")
+		t.Errorf("Expected nil tool when Perplexity API key is empty")
+	}
+
+	// No providers should default to DuckDuckGo
+	tool = NewWebSearchTool()
+	if tool == nil {
+		t.Errorf("Expected non-nil tool when no providers are provided (DuckDuckGo default)")
+	}
+}
+
+// TestWebTool_WebSearch_PerplexityProvider verifies Perplexity provider can be selected
+func TestWebTool_WebSearch_PerplexityProvider(t *testing.T) {
+	tool := NewWebSearchTool(WebSearchToolOptions{Provider: "perplexity", APIKey: "test-key", MaxResults: 3})
+	if tool == nil {
+		t.Fatal("Expected non-nil tool for Perplexity provider")
 	}
 }
 
@@ -199,6 +230,101 @@ func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
 	// Should return error result
 	if !result.IsError {
 		t.Errorf("Expected error when query is missing")
+	}
+}
+
+// TestWebTool_WebSearch_FallbackOnPrimaryError verifies fallback to duckduckgo when primary provider fails.
+func TestWebTool_WebSearch_FallbackOnPrimaryError(t *testing.T) {
+	tool := &WebSearchTool{
+		provider:   &failingSearchProvider{err: fmt.Errorf("Ollama API error: {\"error\": \"unauthorized\"}")},
+		fallback:   &staticSearchProvider{result: "Results for: test query (via DuckDuckGo)\n1. Example\n   https://example.com"},
+		maxResults: 5,
+	}
+
+	ctx := context.Background()
+	result := tool.Execute(ctx, map[string]interface{}{"query": "test query"})
+
+	if result.IsError {
+		t.Fatalf("Expected successful fallback result, got error: %s", result.ForLLM)
+	}
+
+	if !strings.Contains(result.ForUser, "DuckDuckGo") {
+		t.Errorf("Expected ForUser to contain fallback provider result, got: %s", result.ForUser)
+	}
+
+	if !strings.Contains(result.ForLLM, "Primary search provider failed") {
+		t.Errorf("Expected ForLLM to mention primary provider failure, got: %s", result.ForLLM)
+	}
+}
+
+func TestWebTool_WebSearch_OllamaSummaryFormatting(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want %s", r.Method, http.MethodPost)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{
+			"results": [
+				{"title":"Result One","url":"https://example.com/1","content":"Snippet one"},
+				{"title":"Result Two","url":"https://example.com/2","content":"Snippet two"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		Provider:   "ollama",
+		BaseURL:    server.URL,
+		Param:      "query",
+		MaxResults: 5,
+	})
+	if tool == nil {
+		t.Fatal("Expected non-nil tool for Ollama provider")
+	}
+
+	result := tool.Execute(context.Background(), map[string]interface{}{"query": "golang"})
+	if result.IsError {
+		t.Fatalf("Expected successful result, got error: %s", result.ForLLM)
+	}
+
+	if !strings.Contains(result.ForUser, "Web search summary for: golang") {
+		t.Errorf("Expected summary header in ForUser, got: %s", result.ForUser)
+	}
+	if !strings.Contains(result.ForUser, "1. Result One") || !strings.Contains(result.ForUser, "https://example.com/1") {
+		t.Errorf("Expected first formatted result in ForUser, got: %s", result.ForUser)
+	}
+	if !strings.Contains(result.ForUser, "Snippet one") {
+		t.Errorf("Expected snippet content in ForUser, got: %s", result.ForUser)
+	}
+	if !strings.Contains(result.ForLLM, `"results"`) {
+		t.Errorf("Expected raw JSON in ForLLM, got: %s", result.ForLLM)
+	}
+}
+
+func TestWebTool_WebSearch_OllamaNon2xxReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"unauthorized"}`))
+	}))
+	defer server.Close()
+
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		Provider:   "ollama",
+		BaseURL:    server.URL,
+		Param:      "query",
+		MaxResults: 5,
+	})
+	if tool == nil {
+		t.Fatal("Expected non-nil tool for Ollama provider")
+	}
+
+	result := tool.Execute(context.Background(), map[string]interface{}{"query": "golang"})
+	if !result.IsError {
+		t.Fatalf("Expected error result on non-2xx response, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "Ollama API error") {
+		t.Errorf("Expected Ollama API error in ForLLM, got: %s", result.ForLLM)
 	}
 }
 
