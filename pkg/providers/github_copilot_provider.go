@@ -2,10 +2,9 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
-
-	json "encoding/json"
 
 	copilot "github.com/github/copilot-sdk/go"
 )
@@ -19,16 +18,15 @@ type GitHubCopilotProvider struct {
 }
 
 func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*GitHubCopilotProvider, error) {
-
 	var session *copilot.Session
 	var client *copilot.Client
 	if connectMode == "" {
 		connectMode = "grpc"
 	}
 	switch connectMode {
-
 	case "stdio":
-		//todo
+		// TODO: implement stdio connect mode
+		return nil, fmt.Errorf("stdio connect mode is not yet implemented")
 	case "grpc":
 		client = copilot.NewClient(&copilot.ClientOptions{
 			CLIUrl: uri,
@@ -36,7 +34,7 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 		connectCtx, connectCancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer connectCancel()
 		if err := client.Start(connectCtx); err != nil {
-			return nil, fmt.Errorf("can't connect to Github Copilot: %w", err)
+			return nil, fmt.Errorf("can't connect to GitHub Copilot: %w", err)
 		}
 		var err error
 		session, err = client.CreateSession(connectCtx, &copilot.SessionConfig{
@@ -47,7 +45,8 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 			client.Stop()
 			return nil, fmt.Errorf("failed to create Copilot session: %w", err)
 		}
-
+	default:
+		return nil, fmt.Errorf("unsupported connect mode %q", connectMode)
 	}
 
 	return &GitHubCopilotProvider{
@@ -58,10 +57,11 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 	}, nil
 }
 
-func (p *GitHubCopilotProvider) Close() {
+func (p *GitHubCopilotProvider) Close() error {
 	if p.client != nil {
 		p.client.Stop()
 	}
+	return nil
 }
 
 // Chat sends a chat request to GitHub Copilot
@@ -79,7 +79,14 @@ func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, to
 		})
 	}
 
-	fullcontent, _ := json.Marshal(out)
+	if p.session == nil {
+		return nil, fmt.Errorf("copilot session is not initialized")
+	}
+
+	fullcontent, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal messages: %w", err)
+	}
 
 	event, err := p.session.SendAndWait(ctx, copilot.MessageOptions{
 		Prompt: string(fullcontent),
@@ -96,10 +103,8 @@ func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, to
 		FinishReason: "stop",
 		Content:      *event.Data.Content,
 	}, nil
-
 }
 
 func (p *GitHubCopilotProvider) GetDefaultModel() string {
-
 	return "gpt-4.1"
 }
