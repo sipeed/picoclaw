@@ -215,9 +215,10 @@ type FeishuConfig struct {
 }
 
 type DiscordConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	Enabled     bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	Token       string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	AllowFrom   FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	MentionOnly bool                `json:"mention_only" env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
 }
 
 type MaixCamConfig struct {

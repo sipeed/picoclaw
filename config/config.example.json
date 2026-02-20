@@ -57,7 +57,8 @@
     "discord": {
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",
-      "allow_from": []
+      "allow_from": [],
+      "mention_only": false
     },
     "qq": {
       "enabled": false,

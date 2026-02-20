@@ -43,9 +43,10 @@ func DefaultConfig() *Config {
 				AllowFrom:         FlexibleStringSlice{},
 			},
 			Discord: DiscordConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:     false,
+				Token:       "",
+				AllowFrom:   FlexibleStringSlice{},
+				MentionOnly: false,
 			},
 			MaixCam: MaixCamConfig{
 				Enabled:   false,

@@ -334,7 +334,8 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"],
+      "mention_only": false
     }
   }
 }
@@ -346,6 +347,10 @@ picoclaw gateway
 * Scopes: `bot`
 * Bot Permissions: `Send Messages`, `Read Message History`
 * Open the generated invite URL and add the bot to your server
+
+**Optional: Mention-only mode**
+
+Set `"mention_only": true` to make the bot respond only when @-mentioned. Useful for shared servers where you want the bot to respond only when explicitly called.
 
 **6. Run**
 
