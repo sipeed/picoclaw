@@ -494,6 +494,8 @@ Use an inbox as a channel: PicoClaw connects via IMAP to read new mail and (opti
       "use_tls": true,
       "allow_from": ["allowed-sender@example.com"],
       "attachment_dir": "/path/to/save/attachments",
+      "attachment_max_bytes": 26214400,
+      "body_part_max_bytes": 1048576,
       "smtp_server": "smtp.qq.com",
       "smtp_port": 465,
       "smtp_use_tls": true
@@ -511,6 +513,8 @@ Use an inbox as a channel: PicoClaw connects via IMAP to read new mail and (opti
 | `check_interval` | Polling interval in seconds when using forced polling or when IDLE is unsupported (default 30). |
 | `allow_from` | Allowed sender addresses; only their mails trigger the agent. |
 | `attachment_dir` | Directory to save attachments; leave empty to skip saving. |
+| `attachment_max_bytes` | Max size per attachment in bytes (default 25MB); `0` = use default. |
+| `body_part_max_bytes` | Max size per body part (text/plain, text/html) in bytes (default 1MB); `0` = use default. Avoids unbounded memory use. |
 | `smtp_server`, `smtp_port`, `smtp_use_tls` | Optional; if set, the agent can send replies. |
 
 **3. Run**
