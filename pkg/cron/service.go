@@ -263,7 +263,7 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 			return nil
 		}
 
-		loc := time.Local
+		loc := time.UTC
 		if schedule.TZ != "" {
 			if tzLoc, err := time.LoadLocation(schedule.TZ); err == nil {
 				loc = tzLoc
