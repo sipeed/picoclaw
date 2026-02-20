@@ -17,7 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-func agentCmd(message, sessionKey string, debug bool) error {
+func agentCmd(message, sessionKey, model string, debug bool) error {
 	if sessionKey == "" {
 		sessionKey = "cli:default"
 	}
@@ -32,9 +32,18 @@ func agentCmd(message, sessionKey string, debug bool) error {
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
-	provider, err := providers.CreateProvider(cfg)
+	if model != "" {
+		cfg.Agents.Defaults.Model = model
+	}
+
+	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
+	}
+
+	// Use the resolved model ID from provider creation
+	if modelID != "" {
+		cfg.Agents.Defaults.Model = modelID
 	}
 
 	msgBus := bus.NewMessageBus()

@@ -49,6 +49,7 @@ func TestNewAuthCommand(t *testing.T) {
 		"login":  {},
 		"logout": {},
 		"status": {},
+		"models": {},
 	}
 
 	for _, subcmd := range cmd.Commands() {

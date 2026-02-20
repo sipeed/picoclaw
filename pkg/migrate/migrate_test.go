@@ -180,8 +180,8 @@ func TestConvertConfig(t *testing.T) {
 	t.Run("unsupported provider warning", func(t *testing.T) {
 		data := map[string]interface{}{
 			"providers": map[string]interface{}{
-				"deepseek": map[string]interface{}{
-					"api_key": "sk-deep-test",
+				"unknown_provider": map[string]interface{}{
+					"api_key": "sk-test",
 				},
 			},
 		}
@@ -193,7 +193,7 @@ func TestConvertConfig(t *testing.T) {
 		if len(warnings) != 1 {
 			t.Fatalf("expected 1 warning, got %d", len(warnings))
 		}
-		if warnings[0] != "Provider 'deepseek' not supported in PicoClaw, skipping" {
+		if warnings[0] != "Provider 'unknown_provider' not supported in PicoClaw, skipping" {
 			t.Errorf("unexpected warning: %s", warnings[0])
 		}
 	})
@@ -275,8 +275,11 @@ func TestConvertConfig(t *testing.T) {
 		if cfg.Agents.Defaults.MaxTokens != 4096 {
 			t.Errorf("MaxTokens = %d, want %d", cfg.Agents.Defaults.MaxTokens, 4096)
 		}
-		if cfg.Agents.Defaults.Temperature != 0.5 {
-			t.Errorf("Temperature = %f, want %f", cfg.Agents.Defaults.Temperature, 0.5)
+		if cfg.Agents.Defaults.Temperature == nil {
+			t.Fatalf("Temperature is nil, want %f", 0.5)
+		}
+		if *cfg.Agents.Defaults.Temperature != 0.5 {
+			t.Errorf("Temperature = %f, want %f", *cfg.Agents.Defaults.Temperature, 0.5)
 		}
 		if cfg.Agents.Defaults.Workspace != "~/.picoclaw/workspace" {
 			t.Errorf("Workspace = %q, want %q", cfg.Agents.Defaults.Workspace, "~/.picoclaw/workspace")

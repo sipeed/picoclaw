@@ -46,8 +46,14 @@ func statusCmd() {
 		hasOpenAI := cfg.Providers.OpenAI.APIKey != ""
 		hasGemini := cfg.Providers.Gemini.APIKey != ""
 		hasZhipu := cfg.Providers.Zhipu.APIKey != ""
+		hasQwen := cfg.Providers.Qwen.APIKey != ""
 		hasGroq := cfg.Providers.Groq.APIKey != ""
 		hasVLLM := cfg.Providers.VLLM.APIBase != ""
+		hasMoonshot := cfg.Providers.Moonshot.APIKey != ""
+		hasDeepSeek := cfg.Providers.DeepSeek.APIKey != ""
+		hasVolcEngine := cfg.Providers.VolcEngine.APIKey != ""
+		hasNvidia := cfg.Providers.Nvidia.APIKey != ""
+		hasOllama := cfg.Providers.Ollama.APIBase != ""
 
 		status := func(enabled bool) string {
 			if enabled {
@@ -60,11 +66,21 @@ func statusCmd() {
 		fmt.Println("OpenAI API:", status(hasOpenAI))
 		fmt.Println("Gemini API:", status(hasGemini))
 		fmt.Println("Zhipu API:", status(hasZhipu))
+		fmt.Println("Qwen API:", status(hasQwen))
 		fmt.Println("Groq API:", status(hasGroq))
+		fmt.Println("Moonshot API:", status(hasMoonshot))
+		fmt.Println("DeepSeek API:", status(hasDeepSeek))
+		fmt.Println("VolcEngine API:", status(hasVolcEngine))
+		fmt.Println("Nvidia API:", status(hasNvidia))
 		if hasVLLM {
 			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)
 		} else {
 			fmt.Println("vLLM/Local: not set")
+		}
+		if hasOllama {
+			fmt.Printf("Ollama: ✓ %s\n", cfg.Providers.Ollama.APIBase)
+		} else {
+			fmt.Println("Ollama: not set")
 		}
 
 		store, _ := auth.LoadStore()

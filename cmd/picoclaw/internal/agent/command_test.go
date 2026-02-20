@@ -56,4 +56,8 @@ func TestNewAgentCommand(t *testing.T) {
 	if cmd.Flags().Lookup("session") == nil {
 		t.Error("expected command to have session flag")
 	}
+
+	if cmd.Flags().Lookup("model") == nil {
+		t.Error("expected command to have model flag")
+	}
 }
