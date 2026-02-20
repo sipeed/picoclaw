@@ -295,7 +295,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 	}
 
 	if sel.providerType == providerTypeHTTPCompat {
-		if sel.apiKey == "" && !strings.HasPrefix(model, "bedrock/") {
+		if sel.apiKey == "" && !strings.HasPrefix(model, "bedrock/") && providerName != "vllm" {
 			return providerSelection{}, fmt.Errorf("no API key configured for provider (model: %s)", model)
 		}
 		if sel.apiBase == "" {
