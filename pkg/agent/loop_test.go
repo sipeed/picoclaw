@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -843,6 +844,7 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 
 	// Inject some history to simulate a full context
 	sessionKey := "test-session-context"
+	al.sessions.GetOrCreate(sessionKey)
 	// Create dummy history
 	history := []providers.Message{
 		{Role: "system", Content: "System prompt"},
@@ -880,5 +882,430 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+// cancelDuringChatProvider cancels the given context inside Chat() and returns
+// a "context canceled" error, simulating an HTTP request aborted mid-flight.
+type cancelDuringChatProvider struct {
+	cancelFn    context.CancelFunc // called inside Chat to simulate cancellation
+	currentCall int
+}
+
+func (m *cancelDuringChatProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]interface{}) (*providers.LLMResponse, error) {
+	m.currentCall++
+	// Cancel the context from within Chat, then return the error the HTTP
+	// client would produce when its request context is cancelled.
+	m.cancelFn()
+	return nil, fmt.Errorf("Post \"https://api.example.com\": context canceled")
+}
+
+func (m *cancelDuringChatProvider) GetDefaultModel() string {
+	return "mock-cancel-model"
+}
+
+// TestRetryLoop_CancelledContextSkipsCompression verifies that when
+// provider.Chat() returns "context canceled" because the request was aborted,
+// the retry loop detects ctx.Err() and breaks WITHOUT triggering forceCompression.
+func TestRetryLoop_CancelledContextSkipsCompression(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				DataDir:           tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+
+	// Create a cancellable context — the provider will cancel it during Chat()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	provider := &cancelDuringChatProvider{cancelFn: cancel}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	// Set up session with enough history for forceCompression to act on
+	sessionKey := "test-cancel-session"
+	al.sessions.GetOrCreate(sessionKey)
+	history := []providers.Message{
+		{Role: "system", Content: "System prompt"},
+		{Role: "user", Content: "Old message 1"},
+		{Role: "assistant", Content: "Old response 1"},
+		{Role: "user", Content: "Old message 2"},
+		{Role: "assistant", Content: "Old response 2"},
+		{Role: "user", Content: "Old message 3"},
+		{Role: "assistant", Content: "Old response 3"},
+		{Role: "user", Content: "Trigger message"},
+	}
+	al.sessions.SetHistory(sessionKey, history)
+
+	_, _ = al.ProcessDirectWithChannel(ctx, "Trigger message", sessionKey, "test", "test-chat")
+
+	// History must NOT contain a compression note — forceCompression should not have run
+	finalHistory := al.sessions.GetHistory(sessionKey)
+	for _, msg := range finalHistory {
+		if strings.Contains(msg.Content, "Emergency compression") {
+			t.Error("Context cancellation must NOT trigger forceCompression")
+		}
+	}
+
+	// Provider.Chat() should have been called exactly once (no retry)
+	if provider.currentCall != 1 {
+		t.Errorf("Expected exactly 1 provider call (no retry), got %d", provider.currentCall)
+	}
+}
+
+// TestForceCompression_ToolGroupBoundary verifies forceCompression adjusts the
+// split point to avoid breaking tool_calls/tool response groups.
+func TestForceCompression_ToolGroupBoundary(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				DataDir:           tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	sessionKey := "test-compression-boundary"
+	al.sessions.GetOrCreate(sessionKey)
+
+	// Build history where naive mid would land on a tool message.
+	// Layout: [system, user, assistant+tool_calls, tool, tool, user, assistant, user]
+	// mid of conversation (indices 1-6, len=7) = 3, which is a "tool" message.
+	history := []providers.Message{
+		{Role: "system", Content: "System prompt"},
+		{Role: "user", Content: "msg 1"},
+		{Role: "assistant", Content: "thinking", ToolCalls: []providers.ToolCall{
+			{ID: "tc1", Type: "function", Function: &providers.FunctionCall{Name: "read", Arguments: "{}"}},
+			{ID: "tc2", Type: "function", Function: &providers.FunctionCall{Name: "write", Arguments: "{}"}},
+		}},
+		{Role: "tool", Content: "result1", ToolCallID: "tc1"},
+		{Role: "tool", Content: "result2", ToolCallID: "tc2"},
+		{Role: "user", Content: "msg 2"},
+		{Role: "assistant", Content: "response 2"},
+		{Role: "user", Content: "msg 3"},
+	}
+
+	al.sessions.SetHistory(sessionKey, history)
+	al.forceCompression(sessionKey)
+
+	result := al.sessions.GetHistory(sessionKey)
+
+	// Verify no orphaned tool messages remain
+	toolCallIDs := make(map[string]bool)
+	for _, msg := range result {
+		if msg.Role == "assistant" {
+			for _, tc := range msg.ToolCalls {
+				toolCallIDs[tc.ID] = true
+			}
+		}
+	}
+	for _, msg := range result {
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			if !toolCallIDs[msg.ToolCallID] {
+				t.Errorf("Orphaned tool message found: ToolCallID=%s", msg.ToolCallID)
+			}
+		}
+	}
+
+	// Verify no assistant with tool_calls has missing tool responses
+	toolRespIDs := make(map[string]bool)
+	for _, msg := range result {
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			toolRespIDs[msg.ToolCallID] = true
+		}
+	}
+	for _, msg := range result {
+		if msg.Role == "assistant" {
+			for _, tc := range msg.ToolCalls {
+				if !toolRespIDs[tc.ID] {
+					t.Errorf("Assistant has tool_call %s but no tool response found", tc.ID)
+				}
+			}
+		}
+	}
+}
+
+// TestForceCompression_MidOnAssistantWithToolCalls verifies that when mid lands
+// on an assistant message with tool_calls, the subsequent tool responses are
+// also dropped together.
+func TestForceCompression_MidOnAssistantWithToolCalls(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				DataDir:           tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	sessionKey := "test-compression-assistant-mid"
+	al.sessions.GetOrCreate(sessionKey)
+
+	// Layout: [system, user, assistant, user, assistant+tool_calls, tool, user, assistant, user, assistant, user]
+	// conversation (indices 1-9, len=10), mid=5 which is "tool"
+	// Actually let's make mid land on assistant+tool_calls:
+	// conversation len=8, mid=4 → assistant+tool_calls
+	history := []providers.Message{
+		{Role: "system", Content: "System prompt"},
+		{Role: "user", Content: "msg 1"},
+		{Role: "assistant", Content: "resp 1"},
+		{Role: "user", Content: "msg 2"},
+		{Role: "assistant", Content: "resp 2"},
+		// mid=4 of conversation lands here:
+		{Role: "assistant", Content: "thinking", ToolCalls: []providers.ToolCall{
+			{ID: "tc1", Type: "function", Function: &providers.FunctionCall{Name: "read", Arguments: "{}"}},
+		}},
+		{Role: "tool", Content: "file contents", ToolCallID: "tc1"},
+		{Role: "user", Content: "msg 3"},
+		{Role: "assistant", Content: "resp 3"},
+		{Role: "user", Content: "final msg"},
+	}
+
+	al.sessions.SetHistory(sessionKey, history)
+	al.forceCompression(sessionKey)
+
+	result := al.sessions.GetHistory(sessionKey)
+
+	// Verify integrity
+	toolCallIDs := make(map[string]bool)
+	toolRespIDs := make(map[string]bool)
+	for _, msg := range result {
+		if msg.Role == "assistant" {
+			for _, tc := range msg.ToolCalls {
+				toolCallIDs[tc.ID] = true
+			}
+		}
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			toolRespIDs[msg.ToolCallID] = true
+		}
+	}
+
+	// Every tool response must have a matching tool_call
+	for _, msg := range result {
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			if !toolCallIDs[msg.ToolCallID] {
+				t.Errorf("Orphaned tool message: ToolCallID=%s", msg.ToolCallID)
+			}
+		}
+	}
+
+	// Every tool_call must have a matching response
+	for _, msg := range result {
+		if msg.Role == "assistant" {
+			for _, tc := range msg.ToolCalls {
+				if !toolRespIDs[tc.ID] {
+					t.Errorf("Missing tool response for tool_call %s", tc.ID)
+				}
+			}
+		}
+	}
+}
+
+// TestForceCompression_NoteUsesUserRole verifies the compression note uses "user" role
+func TestForceCompression_NoteUsesUserRole(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				DataDir:           tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	sessionKey := "test-compression-role"
+	al.sessions.GetOrCreate(sessionKey)
+	history := []providers.Message{
+		{Role: "system", Content: "System prompt"},
+		{Role: "user", Content: "msg 1"},
+		{Role: "assistant", Content: "resp 1"},
+		{Role: "user", Content: "msg 2"},
+		{Role: "assistant", Content: "resp 2"},
+		{Role: "user", Content: "msg 3"},
+		{Role: "assistant", Content: "resp 3"},
+		{Role: "user", Content: "final"},
+	}
+
+	al.sessions.SetHistory(sessionKey, history)
+	al.forceCompression(sessionKey)
+
+	result := al.sessions.GetHistory(sessionKey)
+
+	// Find the compression note and verify it uses "user" role
+	found := false
+	for _, msg := range result {
+		if strings.Contains(msg.Content, "Emergency compression") {
+			found = true
+			if msg.Role != "user" {
+				t.Errorf("Compression note should use 'user' role, got '%s'", msg.Role)
+			}
+		}
+	}
+	if !found {
+		t.Error("Expected to find compression note in history")
+	}
+}
+
+// TestSanitizeToolMessages_OrphanedToolRemoval verifies orphaned tool messages are removed
+func TestSanitizeToolMessages_OrphanedToolRemoval(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "hello"},
+		// Orphaned tool message — no preceding assistant with tool_calls
+		{Role: "tool", Content: "orphaned result", ToolCallID: "tc-orphan"},
+		{Role: "assistant", Content: "response"},
+	}
+
+	result := sanitizeToolMessages(history)
+
+	for _, msg := range result {
+		if msg.Role == "tool" {
+			t.Error("Orphaned tool message should have been removed")
+		}
+	}
+
+	if len(result) != 2 {
+		t.Errorf("Expected 2 messages after sanitization, got %d", len(result))
+	}
+}
+
+// TestSanitizeToolMessages_MissingResponseStripped verifies tool_calls with missing
+// responses are stripped from assistant messages
+func TestSanitizeToolMessages_MissingResponseStripped(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "do something"},
+		{Role: "assistant", Content: "calling tools", ToolCalls: []providers.ToolCall{
+			{ID: "tc1", Type: "function", Function: &providers.FunctionCall{Name: "read", Arguments: "{}"}},
+			{ID: "tc2", Type: "function", Function: &providers.FunctionCall{Name: "write", Arguments: "{}"}},
+			{ID: "tc3", Type: "function", Function: &providers.FunctionCall{Name: "exec", Arguments: "{}"}},
+		}},
+		// Only tc1 has a response — tc2 and tc3 were cancelled mid-execution
+		{Role: "tool", Content: "read result", ToolCallID: "tc1"},
+		{Role: "assistant", Content: "done"},
+	}
+
+	result := sanitizeToolMessages(history)
+
+	// Find the assistant message and verify only tc1 remains
+	for _, msg := range result {
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			if len(msg.ToolCalls) != 1 {
+				t.Errorf("Expected 1 tool_call after sanitization, got %d", len(msg.ToolCalls))
+			}
+			if msg.ToolCalls[0].ID != "tc1" {
+				t.Errorf("Expected remaining tool_call to be tc1, got %s", msg.ToolCalls[0].ID)
+			}
+			// Content should be preserved
+			if msg.Content != "calling tools" {
+				t.Errorf("Assistant content should be preserved, got '%s'", msg.Content)
+			}
+		}
+	}
+}
+
+// TestSanitizeToolMessages_CompleteGroupPreserved verifies that complete
+// tool_calls/tool groups are kept intact
+func TestSanitizeToolMessages_CompleteGroupPreserved(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "do something"},
+		{Role: "assistant", Content: "calling tools", ToolCalls: []providers.ToolCall{
+			{ID: "tc1", Type: "function", Function: &providers.FunctionCall{Name: "read", Arguments: "{}"}},
+			{ID: "tc2", Type: "function", Function: &providers.FunctionCall{Name: "write", Arguments: "{}"}},
+		}},
+		{Role: "tool", Content: "read result", ToolCallID: "tc1"},
+		{Role: "tool", Content: "write result", ToolCallID: "tc2"},
+		{Role: "assistant", Content: "done"},
+	}
+
+	result := sanitizeToolMessages(history)
+
+	// Everything should be preserved
+	if len(result) != len(history) {
+		t.Errorf("Complete group should be preserved; expected %d messages, got %d",
+			len(history), len(result))
+	}
+
+	// Verify tool_calls are intact
+	for _, msg := range result {
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			if len(msg.ToolCalls) != 2 {
+				t.Errorf("Expected 2 tool_calls preserved, got %d", len(msg.ToolCalls))
+			}
+		}
+	}
+}
+
+// TestSanitizeToolMessages_AllToolCallsMissing verifies that when ALL tool_calls
+// have missing responses, the ToolCalls slice becomes empty
+func TestSanitizeToolMessages_AllToolCallsMissing(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "do something"},
+		{Role: "assistant", Content: "calling tools", ToolCalls: []providers.ToolCall{
+			{ID: "tc1", Type: "function", Function: &providers.FunctionCall{Name: "read", Arguments: "{}"}},
+		}},
+		// No tool response at all — cancelled immediately
+		{Role: "assistant", Content: "never mind"},
+	}
+
+	result := sanitizeToolMessages(history)
+
+	// The assistant message should have empty ToolCalls
+	for _, msg := range result {
+		if msg.Role == "assistant" && msg.Content == "calling tools" {
+			if len(msg.ToolCalls) != 0 {
+				t.Errorf("Expected 0 tool_calls after sanitization, got %d", len(msg.ToolCalls))
+			}
+		}
 	}
 }

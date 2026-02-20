@@ -228,16 +228,10 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
 	}
 
-	//This fix prevents the session memory from LLM failure due to elimination of toolu_IDs required from LLM
-	// --- INICIO DEL FIX ---
-	//Diegox-17
-	for len(history) > 0 && (history[0].Role == "tool") {
-		logger.DebugCF("agent", "Removing orphaned tool message from history to prevent LLM error",
-			map[string]interface{}{"role": history[0].Role})
-		history = history[1:]
-	}
-	//Diegox-17
-	// --- FIN DEL FIX ---
+	// Sanitize tool messages: remove orphaned tool responses and strip
+	// tool_calls whose responses are missing. This prevents API errors
+	// after context compression or mid-execution cancellation.
+	history = sanitizeToolMessages(history)
 
 	messages = append(messages, providers.Message{
 		Role:    "system",
@@ -308,4 +302,68 @@ func (cb *ContextBuilder) GetSkillsInfo() map[string]interface{} {
 		"available": len(allSkills),
 		"names":     skillNames,
 	}
+}
+
+// sanitizeToolMessages ensures tool_calls and tool responses are consistent.
+// It performs two passes:
+//  1. Remove orphaned tool messages whose matching tool_calls assistant is missing.
+//  2. Strip individual tool_calls entries from assistant messages when the
+//     corresponding tool response is missing (e.g. cancelled mid-execution).
+//
+// This prevents API errors like "messages with role 'tool' must be a response
+// to a preceding message with 'tool_calls'" after compression or cancellation.
+func sanitizeToolMessages(history []providers.Message) []providers.Message {
+	// Pass 1: collect IDs present in each direction
+	toolCallIDs := make(map[string]bool)  // IDs declared by assistant tool_calls
+	toolRespIDs := make(map[string]bool)  // IDs present as tool responses
+
+	for _, msg := range history {
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			for _, tc := range msg.ToolCalls {
+				toolCallIDs[tc.ID] = true
+			}
+		}
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			toolRespIDs[msg.ToolCallID] = true
+		}
+	}
+
+	// Pass 2: rebuild history with fixes
+	result := make([]providers.Message, 0, len(history))
+	for _, msg := range history {
+		// Remove orphaned tool responses (no matching tool_calls)
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			if !toolCallIDs[msg.ToolCallID] {
+				logger.DebugCF("agent", "Removing orphaned tool message", map[string]interface{}{
+					"tool_call_id": msg.ToolCallID,
+				})
+				continue
+			}
+		}
+
+		// Strip tool_calls entries that have no corresponding tool response
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			kept := make([]providers.ToolCall, 0, len(msg.ToolCalls))
+			for _, tc := range msg.ToolCalls {
+				if toolRespIDs[tc.ID] {
+					kept = append(kept, tc)
+				} else {
+					logger.DebugCF("agent", "Removing tool_call with missing response", map[string]interface{}{
+						"tool_call_id": tc.ID,
+					})
+				}
+			}
+			if len(kept) != len(msg.ToolCalls) {
+				// Create a copy so we don't mutate the original slice
+				fixed := msg
+				fixed.ToolCalls = kept
+				result = append(result, fixed)
+				continue
+			}
+		}
+
+		result = append(result, msg)
+	}
+
+	return result
 }

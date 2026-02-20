@@ -637,6 +637,14 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 			}
 
 			errMsg := strings.ToLower(err.Error())
+
+			// Request cancellation (e.g. user sent a new message) is not a context
+			// window error — break out of the retry loop immediately.
+			// The caller's ctx.Err() check (line ~530) will handle the cancel gracefully.
+			if ctx.Err() != nil {
+				break
+			}
+
 			// Check for context window errors (provider specific, but usually contain "token" or "invalid")
 			isContextError := strings.Contains(errMsg, "token") ||
 				strings.Contains(errMsg, "context") ||
@@ -966,14 +974,33 @@ func (al *AgentLoop) forceCompression(sessionKey string) {
 	// Helper to find the mid-point of the conversation
 	mid := len(conversation) / 2
 
-	// New history structure:
-	// 1. System Prompt
-	// 2. [Summary of dropped part] - synthesized
-	// 3. Second half of conversation
-	// 4. Last message
+	// Adjust mid so we don't split in the middle of a tool_calls/tool group.
+	// Both cases move mid forward to include the entire group in the dropped
+	// portion, which maximises context freed by forceCompression.
+	//
+	// Case 1: mid lands on a "tool" message — advance past all consecutive
+	//         tool messages so the group is dropped together with its
+	//         preceding assistant (already in the dropped half).
+	// Case 2: mid lands on an "assistant" with tool_calls — advance past
+	//         the subsequent tool responses so the whole group is dropped.
+	if mid < len(conversation) && conversation[mid].Role == "tool" {
+		for mid < len(conversation) && conversation[mid].Role == "tool" {
+			mid++
+		}
+	} else if mid < len(conversation) && conversation[mid].Role == "assistant" && len(conversation[mid].ToolCalls) > 0 {
+		mid++
+		for mid < len(conversation) && conversation[mid].Role == "tool" {
+			mid++
+		}
+	}
 
-	// Simplified approach for emergency: Drop first half of conversation
-	// and rely on existing summary if present, or create a placeholder.
+	// Clamp: ensure we keep at least something and drop at least something
+	if mid <= 0 {
+		mid = 1
+	}
+	if mid >= len(conversation) {
+		mid = len(conversation) - 1
+	}
 
 	droppedCount := mid
 	keptConversation := conversation[mid:]
@@ -987,9 +1014,10 @@ func (al *AgentLoop) forceCompression(sessionKey string) {
 	// The summary is stored separately in session.Summary, so it persists!
 	// We just need to ensure the user knows there's a gap.
 
-	// We only modify the messages list here
+	// Use "user" role for the compression note because some providers reject
+	// "system" messages that appear after the initial system prompt.
 	newHistory = append(newHistory, providers.Message{
-		Role:    "system",
+		Role:    "user",
 		Content: compressionNote,
 	})
 
