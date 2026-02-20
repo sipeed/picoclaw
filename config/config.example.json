@@ -106,6 +106,30 @@
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
       "allow_from": []
+    },
+    "wecom": {
+      "enabled": false,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": [],
+      "reply_timeout": 5
+    },
+    "wecom_app": {
+      "enabled": false,
+      "corp_id": "YOUR_CORP_ID",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": [],
+      "reply_timeout": 5
     }
   },
   "providers": {
