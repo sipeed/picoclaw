@@ -7,12 +7,12 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mymmrac/telego"
-	"github.com/mymmrac/telego/telegohandler"
 	th "github.com/mymmrac/telego/telegohandler"
 	tu "github.com/mymmrac/telego/telegoutil"
 
@@ -26,6 +26,7 @@ import (
 type TelegramChannel struct {
 	*BaseChannel
 	bot          *telego.Bot
+	botHandler   *th.BotHandler
 	commands     TelegramCommander
 	config       *config.Config
 	chatIDs      map[string]int64
@@ -93,6 +94,12 @@ func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 func (c *TelegramChannel) Start(ctx context.Context) error {
 	logger.InfoC("telegram", "Starting Telegram bot (polling mode)...")
 
+	if err := c.initBotCommands(ctx); err != nil {
+		logger.WarnCF("telegram", "Failed to initialize bot commands", map[string]any{
+			"error": err.Error(),
+		})
+	}
+
 	updates, err := c.bot.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
 		Timeout: 30,
 	})
@@ -100,18 +107,18 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start long polling: %w", err)
 	}
 
-	bh, err := telegohandler.NewBotHandler(c.bot, updates)
+	bh, err := th.NewBotHandler(c.bot, updates)
 	if err != nil {
 		return fmt.Errorf("failed to create bot handler: %w", err)
 	}
+	c.botHandler = bh
 
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		c.commands.Help(ctx, message)
-		return nil
-	}, th.CommandEqual("help"))
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.commands.Start(ctx, message)
 	}, th.CommandEqual("start"))
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.commands.Help(ctx, message)
+	}, th.CommandEqual("help"))
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.commands.Show(ctx, message)
@@ -130,11 +137,12 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		"username": c.bot.Username(),
 	})
 
-	go bh.Start()
-
 	go func() {
-		<-ctx.Done()
-		bh.Stop()
+		if err = bh.Start(); err != nil {
+			logger.ErrorCF("telegram", "Bot handler failed", map[string]any{
+				"error": err.Error(),
+			})
+		}
 	}()
 
 	return nil
@@ -143,6 +151,54 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
 	c.setRunning(false)
+	if c.botHandler != nil {
+		_ = c.botHandler.StopWithContext(ctx)
+	}
+	return nil
+}
+
+func (c *TelegramChannel) initBotCommands(ctx context.Context) error {
+	currentCommands, err := c.bot.GetMyCommands(ctx, &telego.GetMyCommandsParams{
+		Scope: tu.ScopeDefault(),
+	})
+	if err != nil {
+		return fmt.Errorf("get commands: %w", err)
+	}
+
+	commands := []telego.BotCommand{
+		{
+			Command:     "start",
+			Description: "Start the bot",
+		},
+		{
+			Command:     "help",
+			Description: "Show a help message",
+		},
+		{
+			Command:     "show",
+			Description: "Show current configuration",
+		},
+		{
+			Command:     "list",
+			Description: "List available options",
+		},
+	}
+
+	// Setting commands on each start will hit the rate limit very quickly, that's why we check if an update is needed
+	if !slices.Equal(currentCommands, commands) {
+		logger.InfoC("telegram", "Updating bot commands")
+
+		err = c.bot.SetMyCommands(ctx, &telego.SetMyCommandsParams{
+			Commands: commands,
+			Scope:    tu.ScopeDefault(),
+		})
+		if err != nil {
+			return fmt.Errorf("set commands: %w", err)
+		}
+	} else {
+		logger.DebugC("telegram", "Bot commands are up to date")
+	}
+
 	return nil
 }
 
