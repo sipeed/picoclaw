@@ -8,13 +8,22 @@ import (
 	"os"
 
 	"github.com/sipeed/picoclaw/pkg/auth"
+	"github.com/spf13/cobra"
 )
 
-func statusCmd() {
+func newStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show picoclaw status",
+		RunE:  runStatus,
+	}
+}
+
+func runStatus(cmd *cobra.Command, args []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
-		return
+		return nil
 	}
 
 	configPath := getConfigPath()
@@ -28,16 +37,16 @@ func statusCmd() {
 	fmt.Println()
 
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Println("Config:", configPath, "✓")
+		fmt.Println("Config:", configPath, "\u2713")
 	} else {
-		fmt.Println("Config:", configPath, "✗")
+		fmt.Println("Config:", configPath, "\u2717")
 	}
 
 	workspace := cfg.WorkspacePath()
 	if _, err := os.Stat(workspace); err == nil {
-		fmt.Println("Workspace:", workspace, "✓")
+		fmt.Println("Workspace:", workspace, "\u2713")
 	} else {
-		fmt.Println("Workspace:", workspace, "✗")
+		fmt.Println("Workspace:", workspace, "\u2717")
 	}
 
 	if _, err := os.Stat(configPath); err == nil {
@@ -59,7 +68,7 @@ func statusCmd() {
 
 		status := func(enabled bool) string {
 			if enabled {
-				return "✓"
+				return "\u2713"
 			}
 			return "not set"
 		}
@@ -75,12 +84,12 @@ func statusCmd() {
 		fmt.Println("VolcEngine API:", status(hasVolcEngine))
 		fmt.Println("Nvidia API:", status(hasNvidia))
 		if hasVLLM {
-			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)
+			fmt.Printf("vLLM/Local: \u2713 %s\n", cfg.Providers.VLLM.APIBase)
 		} else {
 			fmt.Println("vLLM/Local: not set")
 		}
 		if hasOllama {
-			fmt.Printf("Ollama: ✓ %s\n", cfg.Providers.Ollama.APIBase)
+			fmt.Printf("Ollama: \u2713 %s\n", cfg.Providers.Ollama.APIBase)
 		} else {
 			fmt.Println("Ollama: not set")
 		}
@@ -99,4 +108,5 @@ func statusCmd() {
 			}
 		}
 	}
+	return nil
 }

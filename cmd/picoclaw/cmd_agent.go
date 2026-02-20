@@ -17,35 +17,31 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/spf13/cobra"
 )
 
-func agentCmd() {
-	message := ""
-	sessionKey := "cli:default"
-	modelOverride := ""
+func newAgentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "agent",
+		Short: "Interact with the agent directly",
+		RunE:  runAgent,
+	}
+	cmd.Flags().BoolP("debug", "d", false, "Enable debug mode")
+	cmd.Flags().StringP("message", "m", "", "Send a single message")
+	cmd.Flags().StringP("session", "s", "cli:default", "Session key")
+	cmd.Flags().String("model", "", "Override model")
+	return cmd
+}
 
-	args := os.Args[2:]
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--debug", "-d":
-			logger.SetLevel(logger.DEBUG)
-			fmt.Println("🔍 Debug mode enabled")
-		case "-m", "--message":
-			if i+1 < len(args) {
-				message = args[i+1]
-				i++
-			}
-		case "-s", "--session":
-			if i+1 < len(args) {
-				sessionKey = args[i+1]
-				i++
-			}
-		case "--model", "-model":
-			if i+1 < len(args) {
-				modelOverride = args[i+1]
-				i++
-			}
-		}
+func runAgent(cmd *cobra.Command, args []string) error {
+	debug, _ := cmd.Flags().GetBool("debug")
+	message, _ := cmd.Flags().GetString("message")
+	sessionKey, _ := cmd.Flags().GetString("session")
+	modelOverride, _ := cmd.Flags().GetString("model")
+
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+		fmt.Println("\U0001f50d Debug mode enabled")
 	}
 
 	cfg, err := loadConfig()
@@ -63,7 +59,6 @@ func agentCmd() {
 		fmt.Printf("Error creating provider: %v\n", err)
 		os.Exit(1)
 	}
-	// Use the resolved model ID from provider creation
 	if modelID != "" {
 		cfg.Agents.Defaults.Model = modelID
 	}
@@ -71,7 +66,6 @@ func agentCmd() {
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
-	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
 	logger.InfoCF("agent", "Agent initialized",
 		map[string]interface{}{
@@ -92,6 +86,7 @@ func agentCmd() {
 		fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n\n", logo)
 		interactiveMode(agentLoop, sessionKey)
 	}
+	return nil
 }
 
 func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
