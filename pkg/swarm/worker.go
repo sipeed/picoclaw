@@ -7,6 +7,7 @@ package swarm
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -167,20 +168,51 @@ func (w *Worker) executeTask(ctx context.Context, task *SwarmTask) {
 	}
 }
 
+// sendProgressUpdates sends periodic progress updates for a running task
+// The progress is estimated based on elapsed time relative to the task timeout
 func (w *Worker) sendProgressUpdates(ctx context.Context, task *SwarmTask, done chan struct{}) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
+	startTime := time.Now()
+
+	// Determine timeout for progress estimation
+	timeout := time.Duration(task.Timeout) * time.Millisecond
+	if timeout == 0 {
+		timeout = 10 * time.Minute
+	}
+
 	for {
 		select {
 		case <-ticker.C:
-			progress := &TaskProgress{
+			// Estimate progress based on elapsed time
+			elapsed := time.Since(startTime)
+			progress := float64(elapsed.Milliseconds()) / float64(timeout.Milliseconds())
+
+			// Clamp progress between 0.1 and 0.9 (we don't know actual LLM progress)
+			if progress < 0.1 {
+				progress = 0.1
+			} else if progress > 0.9 {
+				progress = 0.9
+			}
+
+			// Generate contextual message based on progress
+			message := "processing"
+			if progress < 0.3 {
+				message = "initializing"
+			} else if progress < 0.6 {
+				message = "processing"
+			} else if progress < 0.9 {
+				message = "finalizing"
+			}
+
+			progressUpdate := &TaskProgress{
 				TaskID:   task.ID,
 				NodeID:   w.nodeInfo.ID,
-				Progress: 0.5, // TODO: track actual progress
-				Message:  "processing",
+				Progress: progress,
+				Message:  message,
 			}
-			if err := w.bridge.PublishTaskProgress(progress); err != nil {
+			if err := w.bridge.PublishTaskProgress(progressUpdate); err != nil {
 				logger.DebugCF("swarm", "Failed to publish progress", map[string]interface{}{
 					"error": err.Error(),
 				})
@@ -214,4 +246,58 @@ func (w *Worker) ActiveTaskCount() int {
 		return true
 	})
 	return count
+}
+
+// RecoverFromCheckpoint resumes task execution from a saved checkpoint
+func (w *Worker) RecoverFromCheckpoint(ctx context.Context, task *SwarmTask, checkpoint *TaskCheckpoint) (string, error) {
+	logger.InfoCF("swarm", "Recovering task from checkpoint", map[string]interface{}{
+		"task_id":       task.ID,
+		"checkpoint_id": checkpoint.CheckpointID,
+		"progress":      checkpoint.Progress,
+	})
+
+	// Build recovery prompt with checkpoint context
+	recoveryPrompt := fmt.Sprintf(`[TASK RECOVERY MODE]
+
+You are resuming execution of a task that was interrupted.
+
+Original Task: %s
+
+Checkpoint Progress: %.0f%%
+
+Partial Work Completed:
+%s
+
+Previous Context:
+- Last checkpoint was taken by node: %s
+- Checkpoint type: %s
+- Timestamp: %s
+
+Continue from where the previous execution left off. Use the partial result as context and complete the remaining work.`,
+		task.Prompt,
+		checkpoint.Progress*100,
+		checkpoint.PartialResult,
+		checkpoint.NodeID,
+		string(checkpoint.Type),
+		time.UnixMilli(checkpoint.Timestamp).Format(time.RFC3339),
+	)
+
+	// Execute with the recovery prompt
+	result, err := w.agentLoop.ProcessDirect(ctx, recoveryPrompt, "swarm:recovery:"+task.ID)
+	if err != nil {
+		logger.WarnCF("swarm", "Checkpoint recovery failed", map[string]interface{}{
+			"task_id":       task.ID,
+			"checkpoint_id": checkpoint.CheckpointID,
+			"error":         err.Error(),
+		})
+		return "", err
+	}
+
+	logger.InfoCF("swarm", "Task recovery completed", map[string]interface{}{
+		"task_id":       task.ID,
+		"checkpoint_id": checkpoint.CheckpointID,
+		"result_length": len(result),
+	})
+
+	return result, nil
 }

@@ -63,11 +63,14 @@ func (tc *TemporalClient) IsConnected() bool {
 }
 
 // StartWorker starts a Temporal worker that processes workflows and activities
-func (tc *TemporalClient) StartWorker(ctx context.Context, workflows []interface{}, activities []interface{}) error {
+func (tc *TemporalClient) StartWorker(ctx context.Context, workflows []interface{}, activities *Activities) error {
 	if !tc.connected {
 		logger.WarnC("swarm", "Temporal not connected, skipping worker start")
 		return nil
 	}
+
+	// Register activities globally for workflow access
+	RegisterActivities(activities)
 
 	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
 
@@ -76,10 +79,11 @@ func (tc *TemporalClient) StartWorker(ctx context.Context, workflows []interface
 		w.RegisterWorkflow(wf)
 	}
 
-	// Register activities
-	for _, act := range activities {
-		w.RegisterActivity(act)
-	}
+	// Register activity functions
+	w.RegisterActivity(DecomposeTaskActivity)
+	w.RegisterActivity(ExecuteDirectActivity)
+	w.RegisterActivity(ExecuteSubtaskActivity)
+	w.RegisterActivity(SynthesizeResultsActivity)
 
 	tc.worker = w
 

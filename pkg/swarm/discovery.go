@@ -109,6 +109,17 @@ func (d *Discovery) GetNode(nodeID string) (*NodeInfo, bool) {
 	return node, ok
 }
 
+// GetAllNodes returns all known nodes including offline ones
+func (d *Discovery) GetAllNodes() []*NodeInfo {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	nodes := make([]*NodeInfo, 0, len(d.registry))
+	for _, node := range d.registry {
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
 // NodeCount returns the total number of known online nodes
 func (d *Discovery) NodeCount() int {
 	d.mu.RLock()
@@ -124,6 +135,13 @@ func (d *Discovery) NodeCount() int {
 
 // SelectWorker selects the best worker for a capability using load balancing
 func (d *Discovery) SelectWorker(capability string) *NodeInfo {
+	return d.SelectWorkerWithPriority(capability, 1) // Default to normal priority
+}
+
+// SelectWorkerWithPriority selects the best worker considering task priority
+// Priority levels: 0=low, 1=normal, 2=high, 3=critical
+// Higher priority tasks prefer nodes with lower current load and more available capacity
+func (d *Discovery) SelectWorkerWithPriority(capability string, priority int) *NodeInfo {
 	workers := d.GetNodes(RoleWorker, capability)
 	if len(workers) == 0 {
 		// Try specialists
@@ -133,16 +151,70 @@ func (d *Discovery) SelectWorker(capability string) *NodeInfo {
 		return nil
 	}
 
-	// Simple load-based selection: pick the one with lowest load
+	// Calculate selection score based on priority
+	// For high priority tasks, prefer nodes with:
+	// 1. Lower current load
+	// 2. More available capacity (maxTasks - tasksRunning)
+	// 3. Online status
 	var best *NodeInfo
-	var bestLoad float64 = 2.0 // > 1.0 so any node is better
+	var bestScore float64 = -1
+
 	for _, w := range workers {
-		if w.Load < bestLoad && w.TasksRunning < w.MaxTasks {
+		if w.Status == StatusOffline {
+			continue
+		}
+		if w.TasksRunning >= w.MaxTasks {
+			continue // Skip full nodes
+		}
+
+		score := d.calculateNodeScore(w, priority)
+		if score > bestScore {
 			best = w
-			bestLoad = w.Load
+			bestScore = score
 		}
 	}
+
 	return best
+}
+
+// calculateNodeScore calculates a node's suitability score for a given priority
+// Higher score = better candidate
+func (d *Discovery) calculateNodeScore(node *NodeInfo, priority int) float64 {
+	// Base score: inverse of load (0-1 range, where 1 = idle)
+	loadScore := 1.0 - node.Load
+
+	// Capacity score: ratio of available tasks
+	capacityScore := float64(node.MaxTasks-node.TasksRunning) / float64(node.MaxTasks)
+
+	// Priority multiplier:
+	// - Low priority (0): Prefer busy nodes (0.5x), spread load
+	// - Normal priority (1): Standard selection (1.0x)
+	// - High priority (2): Prefer idle nodes (1.5x)
+	// - Critical priority (3): Strongly prefer idle nodes (2.0x)
+	var priorityMult float64
+	switch priority {
+	case 0:
+		priorityMult = 0.5
+	case 1:
+		priorityMult = 1.0
+	case 2:
+		priorityMult = 1.5
+	case 3:
+		priorityMult = 2.0
+	default:
+		priorityMult = 1.0
+	}
+
+	// Final score combines load and capacity, weighted by priority
+	// For high priority, idle nodes get much higher scores
+	score := (loadScore*0.6 + capacityScore*0.4) * priorityMult
+
+	// Bonus for completely idle nodes for high+ priority
+	if node.Load == 0 && priority >= 2 {
+		score *= 1.5
+	}
+
+	return score
 }
 
 func (d *Discovery) heartbeatLoop(ctx context.Context) {

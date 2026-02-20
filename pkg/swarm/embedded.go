@@ -35,10 +35,13 @@ func (e *EmbeddedNATS) Start() error {
 	opts := &server.Options{
 		Host:           "127.0.0.1",
 		Port:           port,
-		NoLog:          true,
+		NoLog:          false,
 		NoSigs:         true,
 		MaxControlLine: 2048,
 		MaxPayload:     4 * 1024 * 1024, // 4MB
+		JetStream:      true,             // Enable JetStream
+		// Use memory storage for JetStream (no persistence)
+		StoreDir: "memory://",
 	}
 
 	ns, err := server.NewServer(opts)

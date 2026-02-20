@@ -19,6 +19,8 @@ type ContextBuilder struct {
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
 	tools        *tools.ToolRegistry // Direct reference to tool registry
+	hid          string                // H-id (tenant/cluster identity)
+	sid          string                // S-id (instance identity)
 }
 
 func getGlobalConfigDir() string {
@@ -48,6 +50,12 @@ func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
 	cb.tools = registry
 }
 
+// SetIdentity sets the swarm identity (H-id and S-id)
+func (cb *ContextBuilder) SetIdentity(hid, sid string) {
+	cb.hid = hid
+	cb.sid = sid
+}
+
 func (cb *ContextBuilder) getIdentity() string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
@@ -55,6 +63,18 @@ func (cb *ContextBuilder) getIdentity() string {
 
 	// Build tools section dynamically
 	toolsSection := cb.buildToolsSection()
+
+	// Build identity section if set
+	identitySection := ""
+	if cb.hid != "" || cb.sid != "" {
+		identitySection = "\n## Swarm Identity\n"
+		if cb.hid != "" {
+			identitySection += fmt.Sprintf("- **H-id (Tenant)**: %s\n", cb.hid)
+		}
+		if cb.sid != "" {
+			identitySection += fmt.Sprintf("- **S-id (Instance)**: %s\n", cb.sid)
+		}
+	}
 
 	return fmt.Sprintf(`# picoclaw 🦞
 
@@ -73,6 +93,7 @@ Your workspace is at: %s
 - Skills: %s/skills/{skill-name}/SKILL.md
 
 %s
+%s
 
 ## Important Rules
 
@@ -81,7 +102,7 @@ Your workspace is at: %s
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
 3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
+		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, identitySection, workspacePath)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {

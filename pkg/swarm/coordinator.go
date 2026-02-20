@@ -139,15 +139,22 @@ func (c *Coordinator) dispatchWorkflow(ctx context.Context, task *SwarmTask) (*T
 }
 
 func (c *Coordinator) dispatchDirect(ctx context.Context, task *SwarmTask) (*TaskResult, error) {
-	// Find best worker
+	// Find best worker with priority consideration
 	if task.AssignedTo == "" {
-		worker := c.discovery.SelectWorker(task.Capability)
+		worker := c.discovery.SelectWorkerWithPriority(task.Capability, task.Priority)
 		if worker == nil {
 			// No remote worker available, execute locally
 			logger.InfoC("swarm", "No remote workers, executing locally")
 			return c.executeLocally(ctx, task)
 		}
 		task.AssignedTo = worker.ID
+
+		logger.DebugCF("swarm", "Selected worker for task", map[string]interface{}{
+			"task_id":   task.ID,
+			"worker_id": worker.ID,
+			"priority":  task.Priority,
+			"load":      worker.Load,
+		})
 	}
 
 	// Create result channel

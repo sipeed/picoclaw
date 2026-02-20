@@ -375,6 +375,7 @@ func migrateHelp() {
 func agentCmd() {
 	message := ""
 	sessionKey := "cli:default"
+	var hid, sid string
 
 	args := os.Args[2:]
 	for i := 0; i < len(args); i++ {
@@ -390,6 +391,26 @@ func agentCmd() {
 		case "-s", "--session":
 			if i+1 < len(args) {
 				sessionKey = args[i+1]
+				i++
+			}
+		case "--hid", "--identity-hid":
+			if i+1 < len(args) {
+				hid = args[i+1]
+				i++
+			}
+		case "--sid", "--identity-sid":
+			if i+1 < len(args) {
+				sid = args[i+1]
+				i++
+			}
+		case "--identity":
+			if i+1 < len(args) {
+				// Parse "hid/sid" format
+				identityParts := strings.SplitN(args[i+1], "/", 2)
+				hid = identityParts[0]
+				if len(identityParts) > 1 {
+					sid = identityParts[1]
+				}
 				i++
 			}
 		}
@@ -409,6 +430,16 @@ func agentCmd() {
 
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+
+	// Set identity if provided
+	if hid != "" || sid != "" {
+		agentLoop.SetIdentity(hid, sid)
+		if sid != "" {
+			logger.Info(fmt.Sprintf("Identity set: hid=%s, sid=%s", hid, sid))
+		} else {
+			logger.Info(fmt.Sprintf("Identity set: hid=%s", hid))
+		}
+	}
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()

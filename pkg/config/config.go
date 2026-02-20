@@ -223,6 +223,8 @@ type SwarmConfig struct {
 	Role          string         `json:"role" env:"PICOCLAW_SWARM_ROLE"` // coordinator/worker/specialist
 	Capabilities  []string       `json:"capabilities" env:"PICOCLAW_SWARM_CAPABILITIES"`
 	MaxConcurrent int            `json:"max_concurrent_tasks" env:"PICOCLAW_SWARM_MAX_CONCURRENT"`
+	HID           string         `json:"hid" env:"PICOCLAW_SWARM_HID"` // Host/tenant ID (multi-tenancy)
+	SID           string         `json:"sid" env:"PICOCLAW_SWARM_SID"` // Service/instance ID
 	NATS          NATSConfig     `json:"nats"`
 	Temporal      TemporalConfig `json:"temporal"`
 }

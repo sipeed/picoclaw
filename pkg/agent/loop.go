@@ -42,6 +42,10 @@ type AgentLoop struct {
 	tools          *tools.ToolRegistry
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
+
+	// Swarm identity fields
+	hid            string // H-id (tenant/cluster identity)
+	sid            string // S-id (instance identity)
 }
 
 // processOptions configures how a message is processed
@@ -605,6 +609,13 @@ func (al *AgentLoop) maybeSummarize(sessionKey string) {
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
+func (al *AgentLoop) SetIdentity(hid, sid string) {
+	al.hid = hid
+	al.sid = sid
+	// Update context builder with identity
+	al.contextBuilder.SetIdentity(hid, sid)
+}
+
 func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	info := make(map[string]interface{})
 

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"time"
 
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -88,42 +87,49 @@ func SwarmWorkflow(ctx workflow.Context, task *SwarmTask) (string, error) {
 	return finalResult, nil
 }
 
-// Activities - these are executed by workers
+// Note: Activity implementations are in activities.go as methods on the Activities struct.
+// These global functions are retained for Temporal registration but delegate to the Activities struct.
 
-// DecomposeTaskActivity breaks down a complex task into subtasks.
-// The actual LLM-based decomposition logic will be injected via the Activities struct.
+// Global activity wrappers for Temporal registration
+// These are registered by the Temporal worker and dispatch to the Activities struct
+
+// ActivitiesRegistry holds the global activities instance for Temporal workflow execution
+// This is set before starting the Temporal worker and accessed by the activity functions
+var ActivitiesRegistry *Activities
+
+// RegisterActivities registers the activities instance for workflow use
+func RegisterActivities(activities *Activities) {
+	ActivitiesRegistry = activities
+}
+
+// DecomposeTaskActivity is a wrapper for the Activities method
 func DecomposeTaskActivity(ctx context.Context, task *SwarmTask) ([]*SwarmTask, error) {
-	activity.RecordHeartbeat(ctx, "decomposing task")
-	// Default behavior: no decomposition, execute directly
-	// In production, the coordinator will register a custom activity that uses
-	// the LLM to analyze and decompose the task
-	return nil, nil
-}
-
-// ExecuteDirectActivity executes a simple task directly on the local agent
-func ExecuteDirectActivity(ctx context.Context, task *SwarmTask) (string, error) {
-	activity.RecordHeartbeat(ctx, "executing task directly")
-	// This will use the local agent loop to process
-	// The actual implementation is injected when registering activities
-	return fmt.Sprintf("Executed task: %s", task.Prompt), nil
-}
-
-// ExecuteSubtaskActivity executes a subtask on a worker node
-func ExecuteSubtaskActivity(ctx context.Context, task *SwarmTask) (string, error) {
-	activity.RecordHeartbeat(ctx, "processing subtask")
-	// This will dispatch to appropriate worker via NATS
-	// The actual implementation is injected when registering activities
-	return fmt.Sprintf("Subtask result: %s", task.Prompt), nil
-}
-
-// SynthesizeResultsActivity combines subtask results into final output
-func SynthesizeResultsActivity(ctx context.Context, task *SwarmTask, results []string) (string, error) {
-	activity.RecordHeartbeat(ctx, "synthesizing results")
-	// Default: concatenate results
-	// In production, uses coordinator's LLM to create coherent response
-	combined := ""
-	for i, r := range results {
-		combined += fmt.Sprintf("=== Result %d ===\n%s\n\n", i+1, r)
+	if ActivitiesRegistry == nil {
+		return nil, fmt.Errorf("activities not initialized")
 	}
-	return combined, nil
+	return ActivitiesRegistry.DecomposeTaskActivity(ctx, task)
+}
+
+// ExecuteDirectActivity is a wrapper for the Activities method
+func ExecuteDirectActivity(ctx context.Context, task *SwarmTask) (string, error) {
+	if ActivitiesRegistry == nil {
+		return "", fmt.Errorf("activities not initialized")
+	}
+	return ActivitiesRegistry.ExecuteDirectActivity(ctx, task)
+}
+
+// ExecuteSubtaskActivity is a wrapper for the Activities method
+func ExecuteSubtaskActivity(ctx context.Context, task *SwarmTask) (string, error) {
+	if ActivitiesRegistry == nil {
+		return "", fmt.Errorf("activities not initialized")
+	}
+	return ActivitiesRegistry.ExecuteSubtaskActivity(ctx, task)
+}
+
+// SynthesizeResultsActivity is a wrapper for the Activities method
+func SynthesizeResultsActivity(ctx context.Context, task *SwarmTask, results []string) (string, error) {
+	if ActivitiesRegistry == nil {
+		return "", fmt.Errorf("activities not initialized")
+	}
+	return ActivitiesRegistry.SynthesizeResultsActivity(ctx, task, results)
 }

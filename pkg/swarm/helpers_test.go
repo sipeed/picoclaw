@@ -8,7 +8,6 @@ package swarm
 import (
 	"context"
 	"fmt"
-	"net"
 	"testing"
 	"time"
 
@@ -37,18 +36,6 @@ func (m *mockLLMProvider) GetDefaultModel() string {
 		return m.model
 	}
 	return "test-model"
-}
-
-// freePort finds and returns an available TCP port.
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("freePort: %v", err)
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
-	return port
 }
 
 // startTestNATS starts an embedded NATS server on a random available port.

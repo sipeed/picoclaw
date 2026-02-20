@@ -34,6 +34,8 @@ const (
 // NATSBridge connects local MessageBus to NATS for swarm communication
 type NATSBridge struct {
 	conn     *nats.Conn
+	js       nats.JetStreamContext
+	nc       *nats.Conn
 	localBus *bus.MessageBus
 	nodeInfo *NodeInfo
 	cfg      *config.SwarmConfig
@@ -90,6 +92,14 @@ func (nb *NATSBridge) Connect(ctx context.Context) error {
 	}
 
 	nb.conn = conn
+	nb.nc = conn
+
+	// Create JetStream context
+	js, err := conn.JetStream()
+	if err != nil {
+		return fmt.Errorf("failed to create JetStream context: %w", err)
+	}
+	nb.js = js
 	logger.InfoCF("swarm", "Connected to NATS", map[string]interface{}{
 		"url": conn.ConnectedUrl(),
 	})
