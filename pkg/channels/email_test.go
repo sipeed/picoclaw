@@ -112,36 +112,37 @@ func TestEmailChannel_extractEmailBodyAndAttachments(t *testing.T) {
 		assert.Empty(t, paths)
 	})
 
+	attachmentwithText := []byte(
+		"From: a@b.com\r\n" +
+			"To: c@d.com\r\n" +
+			"Subject: test-file-and-body\r\n" +
+			"Content-Type: multipart/mixed; boundary=\"outer\"\r\n" +
+			"MIME-Version: 1.0\r\n" +
+			"\r\n" +
+			"--outer\r\n" +
+			"Content-Type: multipart/alternative; boundary=\"alt\"\r\n" +
+			"\r\n" +
+			"--alt\r\n" +
+			"Content-Type: text/plain; charset=GBK\r\n" +
+			"Content-Transfer-Encoding: 7bit\r\n" +
+			"\r\n" +
+			"this body\r\n" +
+			"--alt\r\n" +
+			"Content-Type: text/html; charset=GBK\r\n" +
+			"Content-Transfer-Encoding: 7bit\r\n" +
+			"\r\n" +
+			"<div>this body</div>\r\n" +
+			"--alt--\r\n" +
+			"\r\n" +
+			"--outer\r\n" +
+			"Content-Type: text/plain; name=test.txt\r\n" +
+			"Content-Transfer-Encoding: base64\r\n" +
+			"Content-Disposition: attachment; filename=\"test.txt\"\r\n" +
+			"\r\n" +
+			"VGVzdC0xMTEx\r\n" +
+			"--outer--\r\n")
 	t.Run("attachment and text body", func(t *testing.T) {
-		mimeBytes := []byte(
-			"From: a@b.com\r\n" +
-				"To: c@d.com\r\n" +
-				"Subject: test-file-and-body\r\n" +
-				"Content-Type: multipart/mixed; boundary=\"outer\"\r\n" +
-				"MIME-Version: 1.0\r\n" +
-				"\r\n" +
-				"--outer\r\n" +
-				"Content-Type: multipart/alternative; boundary=\"alt\"\r\n" +
-				"\r\n" +
-				"--alt\r\n" +
-				"Content-Type: text/plain; charset=GBK\r\n" +
-				"Content-Transfer-Encoding: 7bit\r\n" +
-				"\r\n" +
-				"this body\r\n" +
-				"--alt\r\n" +
-				"Content-Type: text/html; charset=GBK\r\n" +
-				"Content-Transfer-Encoding: 7bit\r\n" +
-				"\r\n" +
-				"<div>this body</div>\r\n" +
-				"--alt--\r\n" +
-				"\r\n" +
-				"--outer\r\n" +
-				"Content-Type: text/plain; name=test.txt\r\n" +
-				"Content-Transfer-Encoding: base64\r\n" +
-				"Content-Disposition: attachment; filename=\"test.txt\"\r\n" +
-				"\r\n" +
-				"VGVzdC0xMTEx\r\n" +
-				"--outer--\r\n")
+		mimeBytes := attachmentwithText
 		section := &imap.BodySectionName{}
 		msg := &imap.Message{
 			Uid:      1,
@@ -155,6 +156,28 @@ func TestEmailChannel_extractEmailBodyAndAttachments(t *testing.T) {
 		assert.Contains(t, paths[0], filepath.Base(paths[0]))
 	})
 
+	newLimitClient := &EmailChannel{
+		config: config.EmailConfig{
+			BodyPartMaxBytes:   1,
+			AttachmentDir:      t.TempDir(),
+			AttachmentMaxBytes: 1024,
+		},
+	}
+	t.Run("body part max bytes", func(t *testing.T) {
+
+		mimeBytes := attachmentwithText
+		section := &imap.BodySectionName{}
+		msg := &imap.Message{
+			Uid:      1,
+			Envelope: &imap.Envelope{Subject: "Test"},
+			Body:     map[*imap.BodySectionName]imap.Literal{section: bytes.NewReader(mimeBytes)},
+		}
+		content, paths := newLimitClient.extractEmailBodyAndAttachments(msg)
+		assert.Contains(t, content, "[body part exceeds size limit (max 1 bytes), you can check body_part_max_bytes in config]")
+		assert.NotEmpty(t, paths)
+		assert.Equal(t, 1, len(paths))
+		assert.Contains(t, paths[0], filepath.Base(paths[0]))
+	})
 }
 
 func TestEmailChannel_extractTextFromHTML(t *testing.T) {

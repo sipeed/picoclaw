@@ -38,6 +38,8 @@ const (
 	reconnectBackoffMax = 10 * time.Minute
 	// default attachment max bytes
 	defaultAttachmentMaxBytes = 25 * 1024 * 1024 // 25MB
+	// max bytes to read per body part (text/plain, text/html) to avoid unbounded io.ReadAll
+	defaultBodyPartMaxBytes = 1 * 1024 * 1024 // 1MB
 )
 
 type EmailChannel struct {
@@ -764,8 +766,17 @@ func (c *EmailChannel) extractEmailBodyAndAttachments(msg *imap.Message) (conten
 			continue
 		}
 
-		body, err := io.ReadAll(p.Body)
+		limit := int64(c.config.BodyPartMaxBytes)
+		if limit <= 0 {
+			limit = int64(defaultBodyPartMaxBytes)
+		}
+		limitedBody := io.LimitReader(p.Body, limit+1)
+		body, err := io.ReadAll(limitedBody)
 		if err != nil || len(body) == 0 {
+			continue
+		}
+		if len(body) > int(limit) {
+			textParts = append(textParts, fmt.Sprintf("[body part exceeds size limit (max %d bytes), you can check body_part_max_bytes in config]", limit))
 			continue
 		}
 		bodyStr := strings.TrimSpace(string(body))

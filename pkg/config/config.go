@@ -163,6 +163,7 @@ type EmailConfig struct {
 	AttachmentDir string              `json:"attachment_dir" env:"PICOCLAW_CHANNELS_EMAIL_ATTACHMENT_DIR"`
 	// max size per attachment (default 25*1024*1024(25MB)), 0 = use default
 	AttachmentMaxBytes int `json:"attachment_max_bytes" env:"PICOCLAW_CHANNELS_EMAIL_ATTACHMENT_MAX_BYTES"` // max size per attachment (default 25MB), 0 = use default
+	BodyPartMaxBytes   int `json:"body_part_max_bytes" env:"PICOCLAW_CHANNELS_EMAIL_BODY_PART_MAX_BYTES"`   // max size per body part (text/plain, text/html) to avoid unbounded io.ReadAll (default 1MB), 0 = use default
 	// SMTP send (optional, if not configured, Send is not available)
 	SMTPServer string `json:"smtp_server" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_SERVER"`
 	SMTPPort   int    `json:"smtp_port" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PORT"`       // 465 或 587
