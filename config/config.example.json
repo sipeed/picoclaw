@@ -186,6 +186,11 @@
         "enabled": false,
         "api_key": "pplx-xxx",
         "max_results": 5
+      },
+      "searxng": {
+        "enabled": false,
+        "base_url": "http://localhost:8888",
+        "max_results": 5
       }
     },
     "cron": {
