@@ -84,6 +84,11 @@ func statusCmd() {
 		} else {
 			fmt.Println("Ollama: not set")
 		}
+		if cfg.Observability.Enabled {
+			fmt.Printf("Observability: ✓ OTLP=%s sample_ratio=%.2f\n", cfg.Observability.OTLPEndpoint, cfg.Observability.SampleRatio)
+		} else {
+			fmt.Println("Observability: not set")
+		}
 
 		store, _ := auth.LoadStore()
 		if store != nil && len(store.Credentials) > 0 {
