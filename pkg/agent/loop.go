@@ -773,6 +773,9 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	newHistory = append(newHistory, keptConversation...)
 	newHistory = append(newHistory, history[len(history)-1]) // Last message
 
+	// Sanitize tool pairs in case the mid-point cut landed inside a paired turn.
+	newHistory = sanitizeToolPairs(newHistory)
+
 	// Update session
 	agent.Sessions.SetHistory(sessionKey, newHistory)
 	agent.Sessions.Save(sessionKey)
@@ -930,8 +933,103 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	if finalSummary != "" {
 		agent.Sessions.SetSummary(sessionKey, finalSummary)
 		agent.Sessions.TruncateHistory(sessionKey, 4)
+
+		// The truncation window boundary may have landed inside a tool-call/result
+		// pair. Sanitize now so the persisted history is clean for every subsequent
+		// request and does not trigger provider API errors.
+		remaining := agent.Sessions.GetHistory(sessionKey)
+		if sanitized := sanitizeToolPairs(remaining); len(sanitized) != len(remaining) {
+			agent.Sessions.SetHistory(sessionKey, sanitized)
+		}
+
 		agent.Sessions.Save(sessionKey)
 	}
+}
+
+// sanitizeToolPairs ensures every assistant message with ToolCalls has matching
+// tool results, and every tool result has a corresponding tool_call in an
+// assistant message. Orphaned messages are removed to prevent provider API
+// errors (e.g. "tool_use ids were provided that do not have a tool_use block")
+// that arise when history compression cuts in the middle of a paired turn.
+//
+// For assistant messages where only SOME tool calls have results, the unmatched
+// calls are stripped from the ToolCalls slice while the rest of the message
+// (including any text content) is preserved.
+func sanitizeToolPairs(messages []providers.Message) []providers.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+
+	// Pass 1: collect all tool_call IDs and tool_result IDs present.
+	toolCallIDs := make(map[string]bool)
+	toolResultIDs := make(map[string]bool)
+	for _, m := range messages {
+		for _, tc := range m.ToolCalls {
+			if tc.ID != "" {
+				toolCallIDs[tc.ID] = true
+			}
+		}
+		if m.Role == "tool" && m.ToolCallID != "" {
+			toolResultIDs[m.ToolCallID] = true
+		}
+	}
+
+	// Pass 2: filter and repair.
+	result := make([]providers.Message, 0, len(messages))
+	dropped := 0
+	for _, m := range messages {
+		switch m.Role {
+		case "tool":
+			// Drop tool results whose tool_call is not present in any assistant message.
+			if m.ToolCallID != "" && !toolCallIDs[m.ToolCallID] {
+				dropped++
+				continue
+			}
+			result = append(result, m)
+
+		case "assistant":
+			if len(m.ToolCalls) == 0 {
+				result = append(result, m)
+				continue
+			}
+			// Partition ToolCalls by whether their result exists.
+			matched := make([]providers.ToolCall, 0, len(m.ToolCalls))
+			for _, tc := range m.ToolCalls {
+				if toolResultIDs[tc.ID] {
+					matched = append(matched, tc)
+				}
+			}
+			switch {
+			case len(matched) == len(m.ToolCalls):
+				result = append(result, m) // all matched: keep as-is
+			case len(matched) > 0:
+				// Partial match: keep message with only the matched calls.
+				stripped := m
+				stripped.ToolCalls = matched
+				result = append(result, stripped)
+				dropped += len(m.ToolCalls) - len(matched)
+			case m.Content != "":
+				// No matched calls but has text: keep text only.
+				result = append(result, providers.Message{Role: "assistant", Content: m.Content})
+				dropped += len(m.ToolCalls)
+			default:
+				// No content, no matched calls: drop entirely.
+				dropped++
+			}
+
+		default:
+			result = append(result, m)
+		}
+	}
+
+	if dropped > 0 {
+		logger.WarnCF("agent", "Sanitized orphaned tool pairs from history", map[string]interface{}{
+			"dropped_items": dropped,
+			"before":        len(messages),
+			"after":         len(result),
+		})
+	}
+	return result
 }
 
 // summarizeBatch summarizes a batch of messages.

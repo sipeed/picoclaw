@@ -149,6 +149,39 @@ make build-all
 make install
 ```
 
+### macOS 10.15 (Catalina) Compatibility
+
+> [!NOTE]
+> Official precompiled Darwin x86_64 binaries target macOS 12.0+. A separate
+> **`picoclaw_Darwin_x86_64_catalina.tar.gz`** asset is published with every
+> release specifically for macOS 10.15 (Catalina) and later.
+
+**Requirements for a local Catalina-compatible build:**
+
+| Requirement | Version |
+|---|---|
+| macOS host | 10.15 or later (Intel or Rosetta) |
+| Xcode Command Line Tools | any recent version |
+| Go toolchain | bundled via `go.mod` (`go install`) |
+
+```bash
+git clone https://github.com/sipeed/picoclaw.git
+cd picoclaw
+make deps
+
+# Produces build/picoclaw-darwin-amd64-catalina
+make build-darwin-legacy
+```
+
+This target sets `CGO_ENABLED=1`, `CGO_CFLAGS=-mmacosx-version-min=10.15`, and
+`MACOSX_DEPLOYMENT_TARGET=10.15` so that any macOS 12+ symbols are weak-linked
+and the binary loads correctly on macOS 10.15.
+
+> [!IMPORTANT]
+> `make build-darwin-legacy` must be run on a **macOS host** (Intel or Apple
+> Silicon with Rosetta). Cross-compiling this target from Linux is not supported
+> because it requires Clang/Apple's linker.
+
 ## 🐳 Docker Compose
 
 You can also run PicoClaw using Docker Compose without installing anything locally.

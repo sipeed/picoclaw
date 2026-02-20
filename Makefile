@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test
+.PHONY: all build build-all build-darwin-legacy install uninstall clean help test
 
 # Build variables
 BINARY_NAME=picoclaw
@@ -86,11 +86,29 @@ build-all: generate
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=arm GOARM=7 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-armv7 ./$(CMD_DIR)
 	GOOS=linux GOARCH=loong64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-loong64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
+	GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./$(CMD_DIR)
 	GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
 	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 	@echo "All builds complete"
+
+## build-darwin-legacy: Build darwin/amd64 binary compatible with macOS 10.15 (Catalina)+
+## Requires building natively on a macOS host (Intel or Rosetta). Uses CGO with
+## -mmacosx-version-min=10.15 so that macOS 12+ symbols are weak-linked and the
+## binary runs on macOS 10.15 and later.
+build-darwin-legacy: generate
+	@echo "Building $(BINARY_NAME) for darwin/amd64 (macOS 10.15+ compatible)..."
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=1 \
+		CGO_CFLAGS="-mmacosx-version-min=10.15" \
+		CGO_LDFLAGS="-mmacosx-version-min=10.15" \
+		MACOSX_DEPLOYMENT_TARGET=10.15 \
+		GOOS=darwin GOARCH=amd64 \
+		$(GO) build $(GOFLAGS) $(LDFLAGS) \
+		-o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64-catalina ./$(CMD_DIR)
+	@echo "Legacy darwin build complete: $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64-catalina"
 
 ## install: Install picoclaw to system and copy builtin skills
 install: build
