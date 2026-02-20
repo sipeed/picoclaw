@@ -17,6 +17,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+const supportedProvidersMsg = "Supported providers: openai, anthropic, google-antigravity"
+
 func authCmd() {
 	if len(os.Args) < 3 {
 		authHelp()
@@ -78,7 +80,7 @@ func authLoginCmd() {
 
 	if provider == "" {
 		fmt.Println("Error: --provider is required")
-		fmt.Println("Supported providers: openai, anthropic, google-antigravity")
+		fmt.Println(supportedProvidersMsg)
 		return
 	}
 
@@ -91,7 +93,7 @@ func authLoginCmd() {
 		authLoginGoogleAntigravity()
 	default:
 		fmt.Printf("Unsupported provider: %s\n", provider)
-		fmt.Println("Supported providers: openai, anthropic, google-antigravity")
+		fmt.Println(supportedProvidersMsg)
 	}
 }
 
