@@ -114,3 +114,42 @@ func (t *I2CTool) detect() *ToolResult {
 	result, _ := json.MarshalIndent(buses, "", "  ")
 	return SilentResult(fmt.Sprintf("Found %d I2C bus(es):\n%s", len(buses), string(result)))
 }
+
+// Helper functions for I2C operations (used by platform-specific implementations)
+
+// isValidBusID checks that a bus identifier is a simple number (prevents path injection)
+//
+//nolint:unused // Used by i2c_linux.go
+func isValidBusID(id string) bool {
+	matched, _ := regexp.MatchString(`^\d+$`, id)
+	return matched
+}
+
+// parseI2CAddress extracts and validates an I2C address from args
+//
+//nolint:unused // Used by i2c_linux.go
+func parseI2CAddress(args map[string]interface{}) (int, *ToolResult) {
+	addrFloat, ok := args["address"].(float64)
+	if !ok {
+		return 0, ErrorResult("address is required (e.g. 0x38 for AHT20)")
+	}
+	addr := int(addrFloat)
+	if addr < 0x03 || addr > 0x77 {
+		return 0, ErrorResult("address must be in valid 7-bit range (0x03-0x77)")
+	}
+	return addr, nil
+}
+
+// parseI2CBus extracts and validates an I2C bus from args
+//
+//nolint:unused // Used by i2c_linux.go
+func parseI2CBus(args map[string]interface{}) (string, *ToolResult) {
+	bus, ok := args["bus"].(string)
+	if !ok || bus == "" {
+		return "", ErrorResult("bus is required (e.g. \"1\" for /dev/i2c-1)")
+	}
+	if !isValidBusID(bus) {
+		return "", ErrorResult("invalid bus identifier: must be a number (e.g. \"1\")")
+	}
+	return bus, nil
+}

@@ -116,3 +116,45 @@ func (t *SPITool) list() *ToolResult {
 	result, _ := json.MarshalIndent(devices, "", "  ")
 	return SilentResult(fmt.Sprintf("Found %d SPI device(s):\n%s", len(devices), string(result)))
 }
+
+// Helper function for SPI operations (used by platform-specific implementations)
+
+// parseSPIArgs extracts and validates common SPI parameters
+//
+//nolint:unused // Used by spi_linux.go
+func parseSPIArgs(args map[string]interface{}) (device string, speed uint32, mode uint8, bits uint8, errMsg string) {
+	dev, ok := args["device"].(string)
+	if !ok || dev == "" {
+		return "", 0, 0, 0, "device is required (e.g. \"2.0\" for /dev/spidev2.0)"
+	}
+	matched, _ := regexp.MatchString(`^\d+\.\d+$`, dev)
+	if !matched {
+		return "", 0, 0, 0, "invalid device identifier: must be in format \"X.Y\" (e.g. \"2.0\")"
+	}
+
+	speed = 1000000 // default 1 MHz
+	if s, ok := args["speed"].(float64); ok {
+		if s < 1 || s > 125000000 {
+			return "", 0, 0, 0, "speed must be between 1 Hz and 125 MHz"
+		}
+		speed = uint32(s)
+	}
+
+	mode = 0
+	if m, ok := args["mode"].(float64); ok {
+		if int(m) < 0 || int(m) > 3 {
+			return "", 0, 0, 0, "mode must be 0-3"
+		}
+		mode = uint8(m)
+	}
+
+	bits = 8
+	if b, ok := args["bits"].(float64); ok {
+		if int(b) < 1 || int(b) > 32 {
+			return "", 0, 0, 0, "bits must be between 1 and 32"
+		}
+		bits = uint8(b)
+	}
+
+	return dev, speed, mode, bits, ""
+}
