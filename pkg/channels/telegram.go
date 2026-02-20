@@ -195,7 +195,7 @@ func (c *TelegramChannel) initBotCommands(ctx context.Context) error {
 			return fmt.Errorf("set commands: %w", err)
 		}
 	} else {
-		logger.InfoC("telegram", "Bot commands up to date")
+		logger.DebugC("telegram", "Bot commands are up to date")
 	}
 
 	return nil
