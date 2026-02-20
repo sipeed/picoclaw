@@ -58,8 +58,8 @@ func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
 	if result[0].ModelName != "anthropic" {
 		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "anthropic")
 	}
-	if result[0].Model != "anthropic/claude-3-sonnet" {
-		t.Errorf("Model = %q, want %q", result[0].Model, "anthropic/claude-3-sonnet")
+	if result[0].Model != "anthropic/claude-sonnet-4" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "anthropic/claude-sonnet-4")
 	}
 }
 
@@ -239,7 +239,7 @@ func TestConvertProvidersToModelList_PreservesUserModel_Anthropic(t *testing.T) 
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Provider: "claude", // alternative name
-				Model:    "claude-3-opus-20240229",
+				Model:    "claude-opus-4-20250514",
 			},
 		},
 		Providers: ProvidersConfig{
@@ -253,8 +253,8 @@ func TestConvertProvidersToModelList_PreservesUserModel_Anthropic(t *testing.T) 
 		t.Fatalf("len(result) = %d, want 1", len(result))
 	}
 
-	if result[0].Model != "anthropic/claude-3-opus-20240229" {
-		t.Errorf("Model = %q, want %q", result[0].Model, "anthropic/claude-3-opus-20240229")
+	if result[0].Model != "anthropic/claude-opus-4-20250514" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "anthropic/claude-opus-4-20250514")
 	}
 }
 
@@ -493,5 +493,59 @@ func TestConvertProvidersToModelList_NoProviderField_NoModel(t *testing.T) {
 	// Should use default provider name since no model is specified
 	if result[0].ModelName != "zhipu" {
 		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "zhipu")
+	}
+}
+
+// Tests for buildModelWithProtocol helper function
+
+func TestBuildModelWithProtocol_NoPrefix(t *testing.T) {
+	result := buildModelWithProtocol("openai", "gpt-5.2")
+	if result != "openai/gpt-5.2" {
+		t.Errorf("buildModelWithProtocol(openai, gpt-5.2) = %q, want %q", result, "openai/gpt-5.2")
+	}
+}
+
+func TestBuildModelWithProtocol_AlreadyHasPrefix(t *testing.T) {
+	result := buildModelWithProtocol("openrouter", "openrouter/auto")
+	if result != "openrouter/auto" {
+		t.Errorf("buildModelWithProtocol(openrouter, openrouter/auto) = %q, want %q", result, "openrouter/auto")
+	}
+}
+
+func TestBuildModelWithProtocol_DifferentPrefix(t *testing.T) {
+	result := buildModelWithProtocol("anthropic", "openrouter/claude-sonnet-4")
+	if result != "openrouter/claude-sonnet-4" {
+		t.Errorf("buildModelWithProtocol(anthropic, openrouter/claude-sonnet-4) = %q, want %q", result, "openrouter/claude-sonnet-4")
+	}
+}
+
+// Test for legacy config with protocol prefix in model name
+func TestConvertProvidersToModelList_LegacyModelWithProtocolPrefix(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "",                // No explicit provider
+				Model:    "openrouter/auto", // Model already has protocol prefix
+			},
+		},
+		Providers: ProvidersConfig{
+			OpenRouter: ProviderConfig{APIKey: "sk-or-test"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) < 1 {
+		t.Fatalf("len(result) = %d, want at least 1", len(result))
+	}
+
+	// First provider should use userModel as ModelName for backward compatibility
+	if result[0].ModelName != "openrouter/auto" {
+		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "openrouter/auto")
+	}
+
+	// Model should NOT have duplicated prefix
+	if result[0].Model != "openrouter/auto" {
+		t.Errorf("Model = %q, want %q (should not duplicate prefix)", result[0].Model, "openrouter/auto")
 	}
 }

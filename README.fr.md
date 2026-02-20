@@ -838,8 +838,8 @@ Cette conception permet également le **support multi-agent** avec une sélectio
       "api_key": "sk-your-openai-key"
     },
     {
-      "model_name": "claude-3-sonnet",
-      "model": "anthropic/claude-3-5-sonnet-20241022",
+      "model_name": "claude-sonnet-4",
+      "model": "anthropic/claude-sonnet-4-20250514",
       "api_key": "sk-ant-your-key"
     },
     {

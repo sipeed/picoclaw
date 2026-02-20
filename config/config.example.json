@@ -17,8 +17,8 @@
       "api_base": "https://api.openai.com/v1"
     },
     {
-      "model_name": "claude3",
-      "model": "anthropic/claude-3-sonnet",
+      "model_name": "claude-sonnet-4",
+      "model": "anthropic/claude-sonnet-4",
       "api_key": "sk-ant-your-key",
       "api_base": "https://api.anthropic.com/v1"
     },

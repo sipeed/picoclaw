@@ -10,6 +10,17 @@ import (
 	"strings"
 )
 
+// buildModelWithProtocol constructs a model string with protocol prefix.
+// If the model already contains a "/" (indicating it has a protocol prefix), it is returned as-is.
+// Otherwise, the protocol prefix is added.
+func buildModelWithProtocol(protocol, model string) string {
+	if strings.Contains(model, "/") {
+		// Model already has a protocol prefix, return as-is
+		return model
+	}
+	return protocol + "/" + model
+}
+
 // providerMigrationConfig defines how to migrate a provider from old config to new format.
 type providerMigrationConfig struct {
 	// providerNames are the possible names used in agents.defaults.provider
@@ -67,7 +78,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}
 				return ModelConfig{
 					ModelName:  "anthropic",
-					Model:      "anthropic/claude-3-sonnet",
+					Model:      "anthropic/claude-sonnet-4",
 					APIKey:     p.Anthropic.APIKey,
 					APIBase:    p.Anthropic.APIBase,
 					Proxy:      p.Anthropic.Proxy,
@@ -325,13 +336,13 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 		// Check if this is the user's configured provider
 		if slices.Contains(m.providerNames, userProvider) && userModel != "" {
 			// Use the user's configured model instead of default
-			mc.Model = m.protocol + "/" + userModel
+			mc.Model = buildModelWithProtocol(m.protocol, userModel)
 		} else if userProvider == "" && userModel != "" && !legacyModelNameApplied {
 			// Legacy config: no explicit provider field but model is specified
 			// Use userModel as ModelName for the FIRST provider so GetModelConfig(model) can find it
 			// This maintains backward compatibility with old configs that relied on implicit provider selection
 			mc.ModelName = userModel
-			mc.Model = m.protocol + "/" + userModel
+			mc.Model = buildModelWithProtocol(m.protocol, userModel)
 			legacyModelNameApplied = true
 		}
 

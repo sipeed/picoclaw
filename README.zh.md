@@ -231,8 +231,8 @@ picoclaw onboard
       "api_key": "your-api-key"
     },
     {
-      "model_name": "claude3",
-      "model": "anthropic/claude-3-sonnet",
+      "model_name": "claude-sonnet-4",
+      "model": "anthropic/claude-sonnet-4",
       "api_key": "your-anthropic-key"
     }
   ],
@@ -610,8 +610,8 @@ Agent 读取 HEARTBEAT.md
       "api_key": "sk-your-openai-key"
     },
     {
-      "model_name": "claude-3-sonnet",
-      "model": "anthropic/claude-3-5-sonnet-20241022",
+      "model_name": "claude-sonnet-4",
+      "model": "anthropic/claude-sonnet-4-20250514",
       "api_key": "sk-ant-your-key"
     },
     {

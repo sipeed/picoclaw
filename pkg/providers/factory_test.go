@@ -196,8 +196,15 @@ func TestResolveProviderSelection(t *testing.T) {
 
 func TestCreateProviderReturnsHTTPProviderForOpenRouter(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Model = "openrouter/auto"
-	cfg.Providers.OpenRouter.APIKey = "sk-or-test"
+	cfg.Agents.Defaults.Model = "test-openrouter"
+	cfg.ModelList = []config.ModelConfig{
+		{
+			ModelName: "test-openrouter",
+			Model:     "openrouter/auto",
+			APIKey:    "sk-or-test",
+			APIBase:   "https://openrouter.ai/api/v1",
+		},
+	}
 
 	provider, _, err := CreateProvider(cfg)
 	if err != nil {

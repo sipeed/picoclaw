@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
 )
+
+// rrCounter is a global counter for round-robin load balancing across models.
+var rrCounter atomic.Uint64
 
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
 // so allow_from can contain both "123" and 123.
@@ -45,18 +47,16 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Agents     AgentsConfig    `json:"agents"`
-	Bindings   []AgentBinding  `json:"bindings,omitempty"`
-	Session    SessionConfig   `json:"session,omitempty"`
-	Channels   ChannelsConfig  `json:"channels"`
-	Providers  ProvidersConfig `json:"providers,omitempty"`
-	ModelList  []ModelConfig   `json:"model_list"` // New model-centric provider configuration
-	Gateway    GatewayConfig   `json:"gateway"`
-	Tools      ToolsConfig     `json:"tools"`
-	Heartbeat  HeartbeatConfig `json:"heartbeat"`
-	Devices    DevicesConfig   `json:"devices"`
-	mu         sync.RWMutex
-	rrCounters map[string]*atomic.Uint64 // Round-robin counters for load balancing
+	Agents    AgentsConfig    `json:"agents"`
+	Bindings  []AgentBinding  `json:"bindings,omitempty"`
+	Session   SessionConfig   `json:"session,omitempty"`
+	Channels  ChannelsConfig  `json:"channels"`
+	Providers ProvidersConfig `json:"providers,omitempty"`
+	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
+	Gateway   GatewayConfig   `json:"gateway"`
+	Tools     ToolsConfig     `json:"tools"`
+	Heartbeat HeartbeatConfig `json:"heartbeat"`
+	Devices   DevicesConfig   `json:"devices"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -350,7 +350,7 @@ type OpenAIProviderConfig struct {
 type ModelConfig struct {
 	// Required fields
 	ModelName string `json:"model_name"` // User-facing alias for the model
-	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-3")
+	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4")
 
 	// HTTP-based providers
 	APIBase string `json:"api_base,omitempty"` // API endpoint URL
@@ -454,9 +454,6 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 func SaveConfig(path string, cfg *Config) error {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -471,14 +468,10 @@ func SaveConfig(path string, cfg *Config) error {
 }
 
 func (c *Config) WorkspacePath() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return expandHome(c.Agents.Defaults.Workspace)
 }
 
 func (c *Config) GetAPIKey() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Providers.OpenRouter.APIKey != "" {
 		return c.Providers.OpenRouter.APIKey
 	}
@@ -510,8 +503,6 @@ func (c *Config) GetAPIKey() string {
 }
 
 func (c *Config) GetAPIBase() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Providers.OpenRouter.APIKey != "" {
 		if c.Providers.OpenRouter.APIBase != "" {
 			return c.Providers.OpenRouter.APIBase
@@ -544,54 +535,22 @@ func expandHome(path string) string {
 // GetModelConfig returns the ModelConfig for the given model name.
 // If multiple configs exist with the same model_name, it uses round-robin
 // selection for load balancing. Returns an error if the model is not found.
-// Uses double-check locking for optimal read performance.
 func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
-	// First pass: use read lock to find matches
-	c.mu.RLock()
-	matches := c.findMatchesLocked(modelName)
+	matches := c.findMatches(modelName)
 	if len(matches) == 0 {
-		c.mu.RUnlock()
 		return nil, fmt.Errorf("model %q not found in model_list or providers", modelName)
 	}
 	if len(matches) == 1 {
-		c.mu.RUnlock()
 		return &matches[0], nil
 	}
 
-	// Multiple configs - check if counter exists
-	counter, ok := c.rrCounters[modelName]
-	c.mu.RUnlock()
-
-	// Double-check locking: only acquire write lock if counter needs initialization
-	if !ok {
-		c.mu.Lock()
-		// Re-check after acquiring write lock
-		if c.rrCounters == nil {
-			c.rrCounters = make(map[string]*atomic.Uint64)
-		}
-		if c.rrCounters[modelName] == nil {
-			c.rrCounters[modelName] = &atomic.Uint64{}
-		}
-		counter = c.rrCounters[modelName]
-		c.mu.Unlock()
-	}
-
-	// Re-fetch matches to ensure consistency (ModelList could have changed)
-	c.mu.RLock()
-	matches = c.findMatchesLocked(modelName)
-	c.mu.RUnlock()
-
-	if len(matches) == 0 {
-		return nil, fmt.Errorf("model %q not found in model_list or providers", modelName)
-	}
-
-	idx := counter.Add(1) % uint64(len(matches))
+	// Multiple configs - use round-robin for load balancing
+	idx := rrCounter.Add(1) % uint64(len(matches))
 	return &matches[idx], nil
 }
 
-// findMatchesLocked finds all ModelConfig entries with the given model_name.
-// Must be called with c.mu locked (read or write).
-func (c *Config) findMatchesLocked(modelName string) []ModelConfig {
+// findMatches finds all ModelConfig entries with the given model_name.
+func (c *Config) findMatches(modelName string) []ModelConfig {
 	var matches []ModelConfig
 	for i := range c.ModelList {
 		if c.ModelList[i].ModelName == modelName {
@@ -603,9 +562,6 @@ func (c *Config) findMatchesLocked(modelName string) []ModelConfig {
 
 // HasProvidersConfig checks if any provider in the old providers config has configuration.
 func (c *Config) HasProvidersConfig() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	v := c.Providers
 	return v.Anthropic.APIKey != "" || v.Anthropic.APIBase != "" ||
 		v.OpenAI.APIKey != "" || v.OpenAI.APIBase != "" ||

@@ -161,6 +161,12 @@ func DefaultConfig() *Config {
 
 			// OpenRouter (100+ models) - https://openrouter.ai/keys
 			{
+				ModelName: "openrouter-auto",
+				Model:     "openrouter/auto",
+				APIBase:   "https://openrouter.ai/api/v1",
+				APIKey:    "",
+			},
+			{
 				ModelName: "openrouter-gpt-5.2",
 				Model:     "openrouter/openai/gpt-5.2",
 				APIBase:   "https://openrouter.ai/api/v1",
