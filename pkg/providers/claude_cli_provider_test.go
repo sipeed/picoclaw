@@ -336,7 +336,7 @@ func TestChat_PassesModelFlag(t *testing.T) {
 
 	_, err := p.Chat(context.Background(), []Message{
 		{Role: "user", Content: "Hi"},
-	}, nil, "claude-sonnet-4-5-20250929", nil)
+	}, nil, "claude-sonnet-4.6", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -346,7 +346,7 @@ func TestChat_PassesModelFlag(t *testing.T) {
 	if !strings.Contains(args, "--model") {
 		t.Errorf("CLI args missing --model, got: %s", args)
 	}
-	if !strings.Contains(args, "claude-sonnet-4-5-20250929") {
+	if !strings.Contains(args, "claude-sonnet-4.6") {
 		t.Errorf("CLI args missing model name, got: %s", args)
 	}
 }
@@ -416,10 +416,12 @@ func TestChat_EmptyWorkspaceDoesNotSetDir(t *testing.T) {
 
 func TestCreateProvider_ClaudeCli(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claude-cli"
-	cfg.Agents.Defaults.Workspace = "/test/ws"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claude-sonnet-4.6", Model: "claude-cli/claude-sonnet-4.6", Workspace: "/test/ws"},
+	}
+	cfg.Agents.Defaults.Model = "claude-sonnet-4.6"
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider(claude-cli) error = %v", err)
 	}
@@ -435,9 +437,12 @@ func TestCreateProvider_ClaudeCli(t *testing.T) {
 
 func TestCreateProvider_ClaudeCode(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claude-code"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claude-code", Model: "claude-cli/claude-code"},
+	}
+	cfg.Agents.Defaults.Model = "claude-code"
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider(claude-code) error = %v", err)
 	}
@@ -448,9 +453,12 @@ func TestCreateProvider_ClaudeCode(t *testing.T) {
 
 func TestCreateProvider_ClaudeCodec(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claudecode"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claudecode", Model: "claude-cli/claudecode"},
+	}
+	cfg.Agents.Defaults.Model = "claudecode"
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider(claudecode) error = %v", err)
 	}
@@ -461,10 +469,13 @@ func TestCreateProvider_ClaudeCodec(t *testing.T) {
 
 func TestCreateProvider_ClaudeCliDefaultWorkspace(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claude-cli"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claude-cli", Model: "claude-cli/claude-sonnet"},
+	}
+	cfg.Agents.Defaults.Model = "claude-cli"
 	cfg.Agents.Defaults.Workspace = ""
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider error = %v", err)
 	}

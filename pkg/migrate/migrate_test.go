@@ -180,8 +180,8 @@ func TestConvertConfig(t *testing.T) {
 	t.Run("unsupported provider warning", func(t *testing.T) {
 		data := map[string]interface{}{
 			"providers": map[string]interface{}{
-				"deepseek": map[string]interface{}{
-					"api_key": "sk-deep-test",
+				"unknown_provider": map[string]interface{}{
+					"api_key": "sk-test",
 				},
 			},
 		}
@@ -193,7 +193,7 @@ func TestConvertConfig(t *testing.T) {
 		if len(warnings) != 1 {
 			t.Fatalf("expected 1 warning, got %d", len(warnings))
 		}
-		if warnings[0] != "Provider 'deepseek' not supported in PicoClaw, skipping" {
+		if warnings[0] != "Provider 'unknown_provider' not supported in PicoClaw, skipping" {
 			t.Errorf("unexpected warning: %s", warnings[0])
 		}
 	})

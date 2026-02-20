@@ -576,16 +576,21 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			break
 		}
 
-		// Log tool calls
-		toolNames := make([]string, 0, len(response.ToolCalls))
+		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
 		for _, tc := range response.ToolCalls {
+			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
+		}
+
+		// Log tool calls
+		toolNames := make([]string, 0, len(normalizedToolCalls))
+		for _, tc := range normalizedToolCalls {
 			toolNames = append(toolNames, tc.Name)
 		}
 		logger.InfoCF("agent", "LLM requested tool calls",
 			map[string]interface{}{
 				"agent_id":  agent.ID,
 				"tools":     toolNames,
-				"count":     len(response.ToolCalls),
+				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
 
@@ -594,16 +599,26 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			Role:    "assistant",
 			Content: response.Content,
 		}
-		for _, tc := range response.ToolCalls {
+		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
+			// Copy ExtraContent to ensure thought_signature is persisted for Gemini 3
+			extraContent := tc.ExtraContent
+			thoughtSignature := ""
+			if tc.Function != nil {
+				thoughtSignature = tc.Function.ThoughtSignature
+			}
+
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
 				ID:   tc.ID,
 				Type: "function",
-				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
-				},
 				Name: tc.Name,
+				Function: &providers.FunctionCall{
+					Name:             tc.Name,
+					Arguments:        string(argumentsJSON),
+					ThoughtSignature: thoughtSignature,
+				},
+				ExtraContent:     extraContent,
+				ThoughtSignature: thoughtSignature,
 			})
 		}
 		messages = append(messages, assistantMsg)
@@ -612,7 +627,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
 		// Execute tool calls
-		for _, tc := range response.ToolCalls {
+		for _, tc := range normalizedToolCalls {
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
 			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
@@ -739,31 +754,21 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	mid := len(conversation) / 2
 
 	// New history structure:
-	// 1. System Prompt
-	// 2. [Summary of dropped part] - synthesized
-	// 3. Second half of conversation
-	// 4. Last message
-
-	// Simplified approach for emergency: Drop first half of conversation
-	// and rely on existing summary if present, or create a placeholder.
+	// 1. System Prompt (with compression note appended)
+	// 2. Second half of conversation
+	// 3. Last message
 
 	droppedCount := mid
 	keptConversation := conversation[mid:]
 
 	newHistory := make([]providers.Message, 0)
-	newHistory = append(newHistory, history[0]) // System prompt
 
-	// Add a note about compression
-	compressionNote := fmt.Sprintf("[System: Emergency compression dropped %d oldest messages due to context limit]", droppedCount)
-	// If there was an existing summary, we might lose it if it was in the dropped part (which is just messages).
-	// The summary is stored separately in session.Summary, so it persists!
-	// We just need to ensure the user knows there's a gap.
-
-	// We only modify the messages list here
-	newHistory = append(newHistory, providers.Message{
-		Role:    "system",
-		Content: compressionNote,
-	})
+	// Append compression note to the original system prompt instead of adding a new system message
+	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
+	compressionNote := fmt.Sprintf("\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]", droppedCount)
+	enhancedSystemPrompt := history[0]
+	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
+	newHistory = append(newHistory, enhancedSystemPrompt)
 
 	newHistory = append(newHistory, keptConversation...)
 	newHistory = append(newHistory, history[len(history)-1]) // Last message

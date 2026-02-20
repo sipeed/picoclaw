@@ -85,7 +85,7 @@ func (p *Provider) Chat(ctx context.Context, messages []Message, tools []ToolDef
 }
 
 func (p *Provider) GetDefaultModel() string {
-	return "claude-sonnet-4-5-20250929"
+	return "claude-sonnet-4.6"
 }
 
 func (p *Provider) BaseURL() string {
