@@ -303,7 +303,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
-		DefaultResponse: "I've completed processing but have no response to give.",
+		DefaultResponse: "Task completed, but no final summary was generated.",
 		EnableSummary:   true,
 		SendResponse:    false,
 	})
@@ -638,7 +638,16 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				}
 			}
 
-			toolResult := agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+			// Check if tool call arguments were malformed (fallback to "raw")
+			var contentForLLM string
+			var toolResult *tools.ToolResult
+			if rawArgs, ok := tc.Arguments["raw"].(string); ok && len(tc.Arguments) == 1 {
+				errorMsg := fmt.Sprintf("Malformed tool call: The arguments were not valid JSON. Received raw string: %q. Please retry with a valid JSON object matching the tool's schema.", rawArgs)
+				contentForLLM = fmt.Sprintf("Error: %s\n\nReflection: Your previous tool call failed due to syntax errors. Ensure you are providing a valid JSON object for the arguments, without any trailing tokens or text outside the braces.", errorMsg)
+				goto addMessage
+			}
+
+			toolResult = agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
@@ -655,10 +664,17 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			}
 
 			// Determine content for LLM based on tool result
-			contentForLLM := toolResult.ForLLM
-			if contentForLLM == "" && toolResult.Err != nil {
-				contentForLLM = toolResult.Err.Error()
+			contentForLLM = toolResult.ForLLM
+			if toolResult.Err != nil {
+				errorMsg := toolResult.Err.Error()
+				if contentForLLM == "" {
+					contentForLLM = fmt.Sprintf("Error: %s\n\nReflection: The previous tool call failed. Analyze why it failed and adjust your plan if necessary. If you need to retry with different parameters, do so now.", errorMsg)
+				} else {
+					contentForLLM = fmt.Sprintf("%s\n\nError: %s\n\nReflection: The tool execution encountered an issue. Review the output and error above, then decide on the next steps.", contentForLLM, errorMsg)
+				}
 			}
+
+		addMessage:
 
 			toolResultMsg := providers.Message{
 				Role:       "tool",
@@ -669,6 +685,31 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
+		}
+	}
+
+	// Final Summary Nudge: If we finished but have no content to show the user,
+	// and we actually did some work (iteration > 1), ask for a summary.
+	if finalContent == "" && iteration > 1 {
+		logger.InfoCF("agent", "Empty response detected after tool calls, nudging for summary",
+			map[string]interface{}{"agent_id": agent.ID, "session_key": opts.SessionKey})
+
+		nudgeMsg := providers.Message{
+			Role:    "user",
+			Content: "You have completed the tool calls. Please provide a concise summary of what you did and the final result for the user.",
+		}
+		// Don't append to persistent messages, just for this final call
+		nudgeMessages := append(messages, nudgeMsg)
+
+		// Call LLM one last time without tools
+		summaryResp, err := agent.Provider.Chat(ctx, nudgeMessages, nil, agent.Model, map[string]interface{}{
+			"max_tokens":  agent.MaxTokens * 2, // Allow a bit more for summary
+			"temperature": 0.5,
+		})
+		if err == nil && summaryResp.Content != "" {
+			finalContent = summaryResp.Content
+			// Save the nudge response to session so it's in history
+			agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 		}
 	}
 
@@ -699,9 +740,20 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, chatID string) {
 	newHistory := agent.Sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
-	threshold := agent.ContextWindow * 75 / 100
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	// Use configurable thresholds with defaults
+	tokenPercent := agent.SummarizeTokenPercentage
+	if tokenPercent == 0 {
+		tokenPercent = 75
+	}
+	msgThreshold := agent.SummarizeMessageThreshold
+	if msgThreshold == 0 {
+		msgThreshold = 20
+	}
+
+	threshold := agent.ContextWindow * tokenPercent / 100
+
+	if len(newHistory) > msgThreshold || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {

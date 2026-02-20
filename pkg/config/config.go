@@ -148,7 +148,9 @@ type AgentDefaults struct {
 	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
 	MaxTokens           int      `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         *float64 `json:"temperature,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	MaxToolIterations         int      `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	SummarizeMessageThreshold int      `json:"summarize_message_threshold" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
+	SummarizeTokenPercentage  int      `json:"summarize_token_percentage" env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENTAGE"`
 }
 
 type ChannelsConfig struct {
@@ -329,8 +331,10 @@ func DefaultConfig() *Config {
 				RestrictToWorkspace: true,
 				Provider:            "",
 				Model:               "glm-4.7",
-				MaxTokens:           8192,
-				MaxToolIterations:   20,
+				MaxTokens:                 8192,
+				MaxToolIterations:         20,
+				SummarizeMessageThreshold: 50,
+				SummarizeTokenPercentage:  85,
 			},
 		},
 		Channels: ChannelsConfig{

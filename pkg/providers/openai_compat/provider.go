@@ -160,10 +160,20 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		if tc.Function != nil {
 			name = tc.Function.Name
 			if tc.Function.Arguments != "" {
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
+				argData := []byte(tc.Function.Arguments)
+				if err := json.Unmarshal(argData, &arguments); err != nil {
+					// Attempt to extract the first valid JSON object if it contains junk (e.g. <|call|>)
+					extracted := extractJSON(tc.Function.Arguments)
+					if extracted != "" {
+						if err2 := json.Unmarshal([]byte(extracted), &arguments); err2 == nil {
+							goto decoded
+						}
+					}
+
 					log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
 					arguments["raw"] = tc.Function.Arguments
 				}
+			decoded:
 			}
 		}
 
@@ -229,4 +239,49 @@ func asFloat(v interface{}) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// extractJSON finds the first valid JSON object in a string.
+// This is useful when LLMs append junk tokens like <|call|> after the JSON.
+func extractJSON(s string) string {
+	start := strings.Index(s, "{")
+	if start == -1 {
+		return ""
+	}
+
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i := start; i < len(s); i++ {
+		char := s[i]
+
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if char == '\\' {
+			escaped = true
+			continue
+		}
+
+		if char == '"' {
+			inString = !inString
+			continue
+		}
+
+		if !inString {
+			if char == '{' {
+				depth++
+			} else if char == '}' {
+				depth--
+				if depth == 0 {
+					return s[start : i+1]
+				}
+			}
+		}
+	}
+
+	return ""
 }
