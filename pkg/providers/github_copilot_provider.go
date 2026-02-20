@@ -57,13 +57,6 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 	}, nil
 }
 
-func (p *GitHubCopilotProvider) Close() error {
-	if p.client != nil {
-		p.client.Stop()
-	}
-	return nil
-}
-
 // Chat sends a chat request to GitHub Copilot
 func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
 	type tempMessage struct {
