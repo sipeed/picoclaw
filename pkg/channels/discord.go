@@ -28,6 +28,7 @@ type DiscordChannel struct {
 	ctx         context.Context
 	typingMu    sync.Mutex
 	typingStop  map[string]chan struct{} // chatID → stop signal
+	botUserID   string                   // stored for mention checking
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -75,6 +76,7 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get bot user: %w", err)
 	}
+	c.botUserID = botUser.ID
 	logger.InfoCF("discord", "Discord bot connected", map[string]any{
 		"username": botUser.Username,
 		"user_id":  botUser.ID,
@@ -131,7 +133,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 }
 
 func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content string) error {
-	// 使用传入的 ctx 进行超时控制
+	// Use the passed ctx for timeout control
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
@@ -152,7 +154,7 @@ func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content strin
 	}
 }
 
-// appendContent 安全地追加内容到现有文本
+// appendContent safely appends content to existing text
 func appendContent(content, suffix string) string {
 	if content == "" {
 		return suffix
@@ -169,12 +171,29 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
-	// 检查白名单，避免为被拒绝的用户下载附件和转录
+	// Check allowlist first to avoid downloading attachments and transcribing for rejected users
 	if !c.IsAllowed(m.Author.ID) {
 		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
 			"user_id": m.Author.ID,
 		})
 		return
+	}
+
+	// If configured to only respond to mentions, check if bot is mentioned
+	if c.config.MentionOnly {
+		isMentioned := false
+		for _, mention := range m.Mentions {
+			if mention.ID == c.botUserID {
+				isMentioned = true
+				break
+			}
+		}
+		if !isMentioned {
+			logger.DebugCF("discord", "Message ignored - bot not mentioned", map[string]any{
+				"user_id": m.Author.ID,
+			})
+			return
+		}
 	}
 
 	senderID := m.Author.ID
@@ -187,7 +206,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	mediaPaths := make([]string, 0, len(m.Attachments))
 	localFiles := make([]string, 0, len(m.Attachments))
 
-	// 确保临时文件在函数返回时被清理
+	// Ensure temp files are cleaned up when function returns
 	defer func() {
 		for _, file := range localFiles {
 			if err := os.Remove(file); err != nil {
@@ -211,7 +230,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 				if c.transcriber != nil && c.transcriber.IsAvailable() {
 					ctx, cancel := context.WithTimeout(c.getContext(), transcriptionTimeout)
 					result, err := c.transcriber.Transcribe(ctx, localPath)
-					cancel() // 立即释放context资源，避免在for循环中泄漏
+					cancel() // Release context resources immediately to avoid leaks in for loop
 
 					if err != nil {
 						logger.ErrorCF("discord", "Voice transcription failed", map[string]any{
