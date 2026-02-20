@@ -14,7 +14,6 @@ import (
 
 	"github.com/mymmrac/telego"
 	th "github.com/mymmrac/telego/telegohandler"
-	th "github.com/mymmrac/telego/telegohandler"
 	tu "github.com/mymmrac/telego/telegoutil"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -140,7 +139,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 	go func() {
 		if err = bh.Start(); err != nil {
-			logger.ErrorCF("telegram", "Bot handler failed", map[string]interface{}{
+			logger.ErrorCF("telegram", "Bot handler failed", map[string]any{
 				"error": err.Error(),
 			})
 		}
