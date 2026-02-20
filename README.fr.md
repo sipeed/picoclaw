@@ -491,6 +491,7 @@ PicoClaw stocke les données dans votre workspace configuré (par défaut : `~/.
 ├── state/            # État persistant (dernier canal, etc.)
 ├── cron/             # Base de données des tâches planifiées
 ├── skills/           # Compétences personnalisées
+├── TODO.md           # Liste de tâches (gérée par l'IA, voir avec /todo)
 ├── AGENTS.md         # Guide de comportement de l'Agent
 ├── HEARTBEAT.md      # Invites de tâches périodiques (vérifiées toutes les 30 min)
 ├── IDENTITY.md       # Identité de l'Agent
@@ -802,9 +803,27 @@ picoclaw agent -m "Bonjour, comment ça va ?"
 | `picoclaw agent -m "..."` | Discuter avec l'agent                 |
 | `picoclaw agent`          | Mode de discussion interactif         |
 | `picoclaw gateway`        | Démarrer la passerelle                |
+| `picoclaw gateway --stats`| Démarrer avec suivi d'utilisation     |
 | `picoclaw status`         | Afficher le statut                    |
 | `picoclaw cron list`      | Lister toutes les tâches planifiées   |
 | `picoclaw cron add ...`   | Ajouter une tâche planifiée           |
+
+### Commandes de Chat
+
+Ces commandes slash peuvent être envoyées dans n'importe quel canal de chat (Telegram, Discord, etc.) et répondent instantanément sans consommer de tokens LLM :
+
+| Commande | Description |
+| --- | --- |
+| `/help` | Afficher les commandes disponibles |
+| `/todo` | Afficher la liste des tâches (lit `TODO.md`) |
+| `/session` | Afficher les statistiques d'utilisation des tokens (nécessite `--stats`) |
+| `/session reset` | Réinitialiser les statistiques d'utilisation |
+| `/show model` | Afficher le modèle actuel |
+| `/list channels` | Lister les canaux activés |
+
+> **Note** : `/todo` affiche le fichier `TODO.md` que l'IA maintient via ses outils `write_file`/`edit_file`. Demandez à l'IA d'ajouter, compléter ou organiser des tâches et elle mettra à jour le fichier automatiquement.
+>
+> **Note** : `/session` nécessite que la passerelle soit démarrée avec le flag `--stats`. Sans celui-ci, le suivi des statistiques est désactivé pour zéro surcharge.
 
 ### Tâches Planifiées / Rappels
 

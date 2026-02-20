@@ -485,6 +485,7 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 ├── state/            # Persistent state (last channel, etc.)
 ├── cron/             # Scheduled jobs database
 ├── skills/           # Custom skills
+├── TODO.md           # Task list (managed by AI, view with /todo)
 ├── AGENTS.md         # Agent behavior guide
 ├── HEARTBEAT.md      # Periodic task prompts (checked every 30 min)
 ├── IDENTITY.md       # Agent identity
@@ -836,9 +837,27 @@ picoclaw agent -m "Hello"
 | `picoclaw agent -m "..."` | Chat with the agent           |
 | `picoclaw agent`          | Interactive chat mode         |
 | `picoclaw gateway`        | Start the gateway             |
+| `picoclaw gateway --stats`| Start with usage tracking     |
 | `picoclaw status`         | Show status                   |
 | `picoclaw cron list`      | List all scheduled jobs       |
 | `picoclaw cron add ...`   | Add a scheduled job           |
+
+### Chat Commands
+
+These slash commands can be sent in any chat channel (Telegram, Discord, etc.) and return instantly without consuming LLM tokens:
+
+| Command           | Description                                      |
+| ----------------- | ------------------------------------------------ |
+| `/help`           | Show available commands                          |
+| `/todo`           | Show your task list (reads `TODO.md`)            |
+| `/session`        | Show token usage statistics (requires `--stats`) |
+| `/session reset`  | Reset usage statistics                           |
+| `/show model`     | Show current model                               |
+| `/list channels`  | List enabled channels                            |
+
+> **Note**: `/todo` displays the `TODO.md` file that the AI maintains via its `write_file`/`edit_file` tools. Ask the AI to add, complete, or organize tasks and it will update the file automatically.
+>
+> **Note**: `/session` requires the gateway to be started with `--stats` flag. Without it, stats tracking is disabled for zero overhead.
 
 ### Scheduled Tasks / Reminders
 

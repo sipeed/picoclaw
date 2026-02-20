@@ -123,6 +123,14 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	}, th.CommandEqual("list"))
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.handleQuickCommand(ctx, message)
+	}, th.CommandEqual("todo"))
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.handleQuickCommand(ctx, message)
+	}, th.CommandEqual("session"))
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
 
@@ -416,6 +424,52 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	}
 
 	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+	return nil
+}
+
+// handleQuickCommand processes commands that don't need an LLM call (e.g. /todo, /session).
+// Unlike handleMessage, it skips the "Thinking..." placeholder for instant response.
+func (c *TelegramChannel) handleQuickCommand(ctx context.Context, message telego.Message) error {
+	if message.From == nil {
+		return nil
+	}
+
+	user := message.From
+	senderID := fmt.Sprintf("%d", user.ID)
+	if user.Username != "" {
+		senderID = fmt.Sprintf("%d|%s", user.ID, user.Username)
+	}
+
+	if !c.IsAllowed(senderID) {
+		return nil
+	}
+
+	chatID := message.Chat.ID
+
+	content := message.Text
+	if content == "" {
+		return nil
+	}
+
+	peerKind := "direct"
+	peerID := fmt.Sprintf("%d", user.ID)
+	if message.Chat.Type != "private" {
+		peerKind = "group"
+		peerID = fmt.Sprintf("%d", chatID)
+	}
+
+	metadata := map[string]string{
+		"message_id": fmt.Sprintf("%d", message.MessageID),
+		"user_id":    fmt.Sprintf("%d", user.ID),
+		"username":   user.Username,
+		"first_name": user.FirstName,
+		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
+		"peer_kind":  peerKind,
+		"peer_id":    peerID,
+	}
+
+	// No "Thinking..." placeholder — send directly via message bus
+	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, nil, metadata)
 	return nil
 }
 

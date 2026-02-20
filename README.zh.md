@@ -451,6 +451,7 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 ├── state/            # 持久化状态 (最后一次频道等)
 ├── cron/             # 定时任务数据库
 ├── skills/           # 自定义技能
+├── TODO.md           # 任务列表（AI 管理，/todo 查看）
 ├── AGENTS.md         # Agent 行为指南
 ├── HEARTBEAT.md      # 周期性任务提示词 (每 30 分钟检查一次)
 ├── IDENTITY.md       # Agent 身份设定
@@ -670,9 +671,27 @@ picoclaw agent -m "你好"
 | `picoclaw agent -m "..."` | 与 Agent 对话 |
 | `picoclaw agent` | 交互式聊天模式 |
 | `picoclaw gateway` | 启动网关 (Gateway) |
+| `picoclaw gateway --stats` | 启用使用量统计 |
 | `picoclaw status` | 显示状态 |
 | `picoclaw cron list` | 列出所有定时任务 |
 | `picoclaw cron add ...` | 添加定时任务 |
+
+### 聊天命令
+
+以下斜杠命令可在任何聊天频道（Telegram、Discord 等）中发送，即时响应且不消耗 LLM Token：
+
+| 命令 | 描述 |
+| --- | --- |
+| `/help` | 显示可用命令 |
+| `/todo` | 显示任务列表（读取 `TODO.md`） |
+| `/session` | 显示 Token 使用统计（需要 `--stats`） |
+| `/session reset` | 重置使用统计 |
+| `/show model` | 显示当前模型 |
+| `/list channels` | 列出已启用的频道 |
+
+> **注意**: `/todo` 显示 AI 通过 `write_file`/`edit_file` 工具维护的 `TODO.md` 文件。让 AI 添加、完成或整理任务，它会自动更新文件。
+>
+> **注意**: `/session` 需要使用 `--stats` 标志启动网关。未启用时统计跟踪被禁用，零开销。
 
 ### 定时任务 / 提醒 (Scheduled Tasks)
 

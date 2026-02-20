@@ -16,6 +16,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"os"
+	"path/filepath"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -24,6 +27,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/state"
+	"github.com/sipeed/picoclaw/pkg/stats"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -33,6 +37,7 @@ type AgentLoop struct {
 	cfg            *config.Config
 	registry       *AgentRegistry
 	state          *state.Manager
+	stats          *stats.Tracker // nil when --stats not passed
 	running        atomic.Bool
 	summarizing    sync.Map
 	fallback       *providers.FallbackChain
@@ -52,7 +57,7 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 }
 
-func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
+func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, enableStats ...bool) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
 	// Register shared tools to all agents
@@ -76,11 +81,18 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		providerCache[primaryName] = provider
 	}
 
+	// Create stats tracker if enabled
+	var statsTracker *stats.Tracker
+	if len(enableStats) > 0 && enableStats[0] && defaultAgent != nil {
+		statsTracker = stats.NewTracker(defaultAgent.Workspace)
+	}
+
 	return &AgentLoop{
 		bus:           msgBus,
 		cfg:           cfg,
 		registry:      registry,
 		state:         stateManager,
+		stats:         statsTracker,
 		summarizing:   sync.Map{},
 		fallback:      fallbackChain,
 		providerCache: providerCache,
@@ -429,7 +441,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 4. Run LLM iteration loop
+	// 4. Record user prompt for stats
+	if al.stats != nil {
+		al.stats.RecordPrompt()
+	}
+
+	// 5. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
 		return "", err
@@ -629,6 +646,15 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
+		// Record token usage
+		if response.Usage != nil && al.stats != nil {
+			al.stats.RecordUsage(
+				response.Usage.PromptTokens,
+				response.Usage.CompletionTokens,
+				response.Usage.TotalTokens,
+			)
+		}
+
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
@@ -785,6 +811,13 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		})
 		if forceErr == nil && forceResp.Content != "" {
 			finalContent = forceResp.Content
+			if forceResp.Usage != nil && al.stats != nil {
+				al.stats.RecordUsage(
+					forceResp.Usage.PromptTokens,
+					forceResp.Usage.CompletionTokens,
+					forceResp.Usage.TotalTokens,
+				)
+			}
 		}
 	}
 
@@ -1162,9 +1195,62 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 		default:
 			return fmt.Sprintf("Unknown switch target: %s", target), true
 		}
+
+	case "/todo":
+		return al.handleTodoCommand(), true
+
+	case "/session":
+		return al.handleSessionCommand(args), true
 	}
 
 	return "", false
+}
+
+// handleTodoCommand reads TODO.md from the workspace and returns its contents.
+func (al *AgentLoop) handleTodoCommand() string {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "No agent configured."
+	}
+
+	todoPath := filepath.Join(agent.Workspace, "TODO.md")
+	data, err := os.ReadFile(todoPath)
+	if err != nil || len(strings.TrimSpace(string(data))) == 0 {
+		return "No tasks yet. Ask me to add a task and I'll maintain a TODO list for you."
+	}
+	content := string(data)
+	content = strings.ReplaceAll(content, "- [x] ", "✅ ")
+	content = strings.ReplaceAll(content, "- [X] ", "✅ ")
+	content = strings.ReplaceAll(content, "- [ ] ", "⬜ ")
+	return content
+}
+
+// handleSessionCommand returns usage statistics or resets them.
+func (al *AgentLoop) handleSessionCommand(args []string) string {
+	if al.stats == nil {
+		return "Stats tracking is disabled. Start with --stats flag to enable.\nUsage: picoclaw gateway --stats"
+	}
+
+	if len(args) > 0 && args[0] == "reset" {
+		al.stats.Reset()
+		return "Session statistics have been reset."
+	}
+
+	s := al.stats.GetStats()
+	return fmt.Sprintf("Session Statistics\n\nToday (%s):\n  Prompts: %d\n  LLM calls: %d\n  Tokens: %s (in: %s, out: %s)\n\nAll time (since %s):\n  Prompts: %d\n  LLM calls: %d\n  Tokens: %s (in: %s, out: %s)",
+		s.Today.Date,
+		s.Today.Prompts,
+		s.Today.Requests,
+		stats.FormatTokenCount(s.Today.TotalTokens),
+		stats.FormatTokenCount(s.Today.PromptTokens),
+		stats.FormatTokenCount(s.Today.CompletionTokens),
+		s.Since.Format("2006-01-02"),
+		s.TotalPrompts,
+		s.TotalRequests,
+		stats.FormatTokenCount(s.TotalTokens),
+		stats.FormatTokenCount(s.TotalPromptTokens),
+		stats.FormatTokenCount(s.TotalCompletionTokens),
+	)
 }
 
 // extractPeer extracts the routing peer from inbound message metadata.

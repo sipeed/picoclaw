@@ -472,6 +472,7 @@ PicoClaw lưu trữ dữ liệu trong workspace đã cấu hình (mặc định:
 ├── state/            # Trạng thái lưu trữ (kênh cuối cùng, v.v.)
 ├── cron/             # Cơ sở dữ liệu tác vụ định kỳ
 ├── skills/           # Kỹ năng tùy chỉnh
+├── TODO.md           # Danh sách tác vụ (AI quản lý, xem với /todo)
 ├── AGENTS.md         # Hướng dẫn hành vi Agent
 ├── HEARTBEAT.md      # Prompt tác vụ định kỳ (kiểm tra mỗi 30 phút)
 ├── IDENTITY.md       # Danh tính Agent
@@ -780,9 +781,27 @@ picoclaw agent -m "Xin chào"
 | `picoclaw agent -m "..."` | Trò chuyện với agent |
 | `picoclaw agent` | Chế độ chat tương tác |
 | `picoclaw gateway` | Khởi động gateway (cho bot chat) |
+| `picoclaw gateway --stats` | Khởi động với theo dõi sử dụng |
 | `picoclaw status` | Hiển thị trạng thái |
 | `picoclaw cron list` | Liệt kê tất cả tác vụ định kỳ |
 | `picoclaw cron add ...` | Thêm tác vụ định kỳ |
+
+### Lệnh Chat
+
+Các lệnh gạch chéo sau có thể gửi trong bất kỳ kênh chat nào (Telegram, Discord, v.v.) và phản hồi ngay lập tức mà không tiêu tốn token LLM:
+
+| Lệnh | Mô tả |
+| --- | --- |
+| `/help` | Hiển thị các lệnh khả dụng |
+| `/todo` | Hiển thị danh sách tác vụ (đọc `TODO.md`) |
+| `/session` | Hiển thị thống kê sử dụng token (yêu cầu `--stats`) |
+| `/session reset` | Đặt lại thống kê sử dụng |
+| `/show model` | Hiển thị mô hình hiện tại |
+| `/list channels` | Liệt kê các kênh đã bật |
+
+> **Lưu ý**: `/todo` hiển thị file `TODO.md` mà AI duy trì qua công cụ `write_file`/`edit_file`. Yêu cầu AI thêm, hoàn thành hoặc sắp xếp tác vụ và nó sẽ tự động cập nhật file.
+>
+> **Lưu ý**: `/session` yêu cầu gateway được khởi động với cờ `--stats`. Không có cờ này, theo dõi thống kê bị tắt để không có overhead.
 
 ### Tác vụ định kỳ / Nhắc nhở
 

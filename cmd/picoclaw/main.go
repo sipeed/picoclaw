@@ -208,7 +208,7 @@ func printHelp() {
 	fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
 	fmt.Println("  agent       Interact with the agent directly")
 	fmt.Println("  auth        Manage authentication (login, logout, status)")
-	fmt.Println("  gateway     Start picoclaw gateway")
+	fmt.Println("  gateway     Start picoclaw gateway (--stats to enable usage tracking)")
 	fmt.Println("  status      Show picoclaw status")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
@@ -373,6 +373,7 @@ func migrateHelp() {
 func agentCmd() {
 	message := ""
 	sessionKey := "cli:default"
+	enableStats := false
 
 	args := os.Args[2:]
 	for i := 0; i < len(args); i++ {
@@ -380,6 +381,8 @@ func agentCmd() {
 		case "--debug", "-d":
 			logger.SetLevel(logger.DEBUG)
 			fmt.Println("🔍 Debug mode enabled")
+		case "--stats":
+			enableStats = true
 		case "-m", "--message":
 			if i+1 < len(args) {
 				message = args[i+1]
@@ -406,7 +409,7 @@ func agentCmd() {
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, enableStats)
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
@@ -518,13 +521,15 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 }
 
 func gatewayCmd() {
-	// Check for --debug flag
+	enableStats := false
 	args := os.Args[2:]
 	for _, arg := range args {
-		if arg == "--debug" || arg == "-d" {
+		switch arg {
+		case "--debug", "-d":
 			logger.SetLevel(logger.DEBUG)
 			fmt.Println("🔍 Debug mode enabled")
-			break
+		case "--stats":
+			enableStats = true
 		}
 	}
 
@@ -541,7 +546,11 @@ func gatewayCmd() {
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, enableStats)
+
+	if enableStats {
+		fmt.Println("✓ Stats tracking enabled")
+	}
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
