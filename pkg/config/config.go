@@ -190,8 +190,10 @@ type ChannelsConfig struct {
 	Slack    SlackConfig    `json:"slack"`
 	LINE     LINEConfig     `json:"line"`
 	OneBot   OneBotConfig   `json:"onebot"`
+
 	WeCom    WeComConfig    `json:"wecom"`
 	WeComApp WeComAppConfig `json:"wecom_app"`
+	Email    EmailConfig    `json:"email"`
 }
 
 type WhatsAppConfig struct {
@@ -259,6 +261,28 @@ type LINEConfig struct {
 	WebhookPort        int                 `json:"webhook_port"         env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
 	WebhookPath        string              `json:"webhook_path"         env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
+}
+
+type EmailConfig struct {
+	Enabled       bool   `json:"enabled" env:"PICOCLAW_CHANNELS_EMAIL_ENABLED"`
+	IMAPServer    string `json:"imap_server" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_SERVER"`
+	IMAPPort      int    `json:"imap_port" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PORT"`
+	Username      string `json:"username" env:"PICOCLAW_CHANNELS_EMAIL_USERNAME"`
+	Password      string `json:"password" env:"PICOCLAW_CHANNELS_EMAIL_PASSWORD"`
+	Mailbox       string `json:"mailbox" env:"PICOCLAW_CHANNELS_EMAIL_MAILBOX"`               // 默认 "INBOX"
+	CheckInterval int    `json:"check_interval" env:"PICOCLAW_CHANNELS_EMAIL_CHECK_INTERVAL"` // seconds, default 30; used for polling when IDLE disabled or unsupported
+	UseTLS        bool   `json:"use_tls" env:"PICOCLAW_CHANNELS_EMAIL_USE_TLS"`
+	// ForcedPolling: when the mail server does not implement IDLE/NOOP per spec (e.g. NOOP does not return * EXISTS), set true to use application-level polling (check new mail at CheckInterval). Leave false under normal conditions.
+	ForcedPolling bool                `json:"forced_polling" env:"PICOCLAW_CHANNELS_EMAIL_FORCED_POLLING"`
+	AllowFrom     FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_EMAIL_ALLOW_FROM"`
+	AttachmentDir string              `json:"attachment_dir" env:"PICOCLAW_CHANNELS_EMAIL_ATTACHMENT_DIR"`
+	// max size per attachment (default 25*1024*1024(25MB)), 0 = use default
+	AttachmentMaxBytes int `json:"attachment_max_bytes" env:"PICOCLAW_CHANNELS_EMAIL_ATTACHMENT_MAX_BYTES"` // max size per attachment (default 25MB), 0 = use default
+	BodyPartMaxBytes   int `json:"body_part_max_bytes" env:"PICOCLAW_CHANNELS_EMAIL_BODY_PART_MAX_BYTES"`   // max size per body part (text/plain, text/html) to avoid unbounded io.ReadAll (default 1MB), 0 = use default
+	// SMTP send (optional, if not configured, Send is not available)
+	SMTPServer string `json:"smtp_server" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_SERVER"`
+	SMTPPort   int    `json:"smtp_port" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PORT"`       // 465 或 587
+	SMTPUseTLS bool   `json:"smtp_use_tls" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_USE_TLS"` // 465 用 true，587 可用 false+STARTTLS
 }
 
 type OneBotConfig struct {
@@ -443,6 +467,7 @@ type ExecConfig struct {
 	EnableDenyPatterns bool     `json:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
 	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 }
+
 
 type ToolsConfig struct {
 	Web    WebToolsConfig    `json:"web"`

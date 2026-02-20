@@ -264,6 +264,7 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
+
 Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
 
 | Channel      | Setup                              |
@@ -274,6 +275,8 @@ Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
 | **WeCom**    | Medium (CorpID + webhook setup)    |
+| **Email**    | Medium (IMAP + optional SMTP, allow list)   |
+	
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -479,6 +482,7 @@ picoclaw gateway
 </details>
 
 <details>
+
 <summary><b>WeCom (企业微信)</b></summary>
 
 PicoClaw supports two types of WeCom integration:
@@ -500,6 +504,7 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 ```json
 {
   "channels": {
+
     "wecom": {
       "enabled": true,
       "token": "YOUR_TOKEN",
@@ -513,6 +518,7 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
   }
 }
 ```
+
 
 **Quick Setup - WeCom App:**
 
@@ -555,7 +561,69 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 picoclaw gateway
 ```
 
+
 > **Note**: WeCom App requires opening port 18792 for webhook callbacks. Use a reverse proxy for HTTPS.
+
+</details>
+<details>
+<summary><b>Email</b></summary>
+
+Use an inbox as a channel: PicoClaw connects via IMAP to read new mail and (optionally) sends replies via SMTP. Sender address is used as chat identity; only senders in `allow_from` are accepted.
+
+**1. Prepare mailbox**
+
+* Use a mailbox that supports IMAP (e.g. 163, QQ, Gmail). Use an **app password / authorization code**, not the account password:
+  * **QQ mail**： [qq mail](https://wx.mail.qq.com/list/readtemplate?name=app_intro.html#/agreement/authorizationCode)
+  * **163 mail**： [163 FAQ](https://help.mail.163.com/faq.do?m=list&categoryID=90)
+* Optional: configure SMTP on the same or another server to let the agent send replies.
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "email": {
+      "enabled": true,
+      "imap_server": "imap.qq.com",
+      "imap_port": 993,
+      "username": "your@qq.com",
+      "password": "YOUR_APP_PASSWORD",
+      "mailbox": "INBOX",
+      "check_interval": 30,
+      "forced_polling": false,
+      "use_tls": true,
+      "allow_from": ["allowed-sender@example.com"],
+      "attachment_dir": "/path/to/save/attachments",
+      "attachment_max_bytes": 26214400,
+      "body_part_max_bytes": 1048576,
+      "smtp_server": "smtp.qq.com",
+      "smtp_port": 465,
+      "smtp_use_tls": true
+    }
+  }
+}
+```
+
+| Field | Description |
+| ----- | ----------- |
+| `imap_server`, `imap_port` | IMAP server (e.g. 993 with TLS). |
+| `username`, `password` | Mailbox login; 163/QQ require app password. |
+| `mailbox` | Folder to watch (default `INBOX`). |
+| `forced_polling` | When the server does not implement IDLE/NOOP per spec, set `true` to use application-level polling; leave `false` normally. |
+| `check_interval` | Polling interval in seconds when using forced polling or when IDLE is unsupported (default 30). |
+| `allow_from` | Allowed sender addresses; only their mails trigger the agent. |
+| `attachment_dir` | Directory to save attachments; leave empty to skip saving. |
+| `attachment_max_bytes` | Max size per attachment in bytes (default 25MB); `0` = use default. |
+| `body_part_max_bytes` | Max size per body part (text/plain, text/html) in bytes (default 1MB); `0` = use default. Avoids unbounded memory use. |
+| `smtp_server`, `smtp_port`, `smtp_use_tls` | Optional; if set, the agent can send replies. |
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+> Incoming mail is processed as user messages; replies are sent to the sender. Session is keyed by sender email address.
 
 </details>
 

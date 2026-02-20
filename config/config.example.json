@@ -114,6 +114,7 @@
       "group_trigger_prefix": [],
       "allow_from": []
     },
+
     "wecom": {
       "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
       "enabled": false,
@@ -139,6 +140,24 @@
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
       "reply_timeout": 5
+    },
+    "email": {
+      "enabled": false,
+      "imap_server": "imap.example.com--eg:imap.qq.com",
+      "imap_port": 993,
+      "username": "your_email@example.com",
+      "password": "your_password",
+      "mailbox": "INBOX",
+      "check_interval": 30,
+      "forced_polling": false,
+      "use_tls": true,
+      "allow_from": ["allowed_email@example.com"],
+      "attachment_dir": "~/.picoclaw/workspace/attachments",
+      "smtp_server": "smtp.example.com--eg:smtp.qq.com",
+      "smtp_port": 465,
+      "smtp_use_tls": true,
+      "attachment_max_bytes": 26214400,
+      "body_part_max_bytes": 1048576
     }
   },
   "providers": {

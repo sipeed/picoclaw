@@ -234,7 +234,7 @@ func TestConvertConfig(t *testing.T) {
 	t.Run("unsupported channel warning", func(t *testing.T) {
 		data := map[string]any{
 			"channels": map[string]any{
-				"email": map[string]any{
+				"unknown_channel": map[string]any{
 					"enabled": true,
 				},
 			},
@@ -247,7 +247,7 @@ func TestConvertConfig(t *testing.T) {
 		if len(warnings) != 1 {
 			t.Fatalf("expected 1 warning, got %d", len(warnings))
 		}
-		if warnings[0] != "Channel 'email' not supported in PicoClaw, skipping" {
+		if warnings[0] != "Channel 'unknown_channel' not supported in PicoClaw, skipping" {
 			t.Errorf("unexpected warning: %s", warnings[0])
 		}
 	})
