@@ -821,10 +821,15 @@ Estes comandos de barra podem ser enviados em qualquer canal de chat (Telegram, 
 | `/skill <nome> [mensagem]` | Invocar uma habilidade |
 | `/show model` | Mostrar modelo atual |
 | `/list channels` | Listar canais habilitados |
+| `/plan` | Mostrar progresso do plano atual |
+| `/plan <tarefa>` | Iniciar um novo plano com fluxo de entrevista |
+| `/plan clear` | Descartar o plano atual |
 
 > **Nota**: `/session` requer que o gateway seja iniciado com a flag `--stats`. Sem ela, o rastreamento de estatísticas é desabilitado para zero overhead.
 >
 > **Nota**: `/skills` responde instantaneamente sem custo LLM. `/skill <nome>` injeta o SKILL.md no contexto apenas para o turno atual, depois apenas o nome da habilidade é mantido no histórico para economizar a janela de contexto.
+>
+> **Nota**: `/plan` permite planejamento estruturado de tarefas com avanço automático de fases. A IA entrevista você para entender os requisitos, organiza o trabalho em fases e acompanha o progresso via MEMORY.md.
 
 ### Tarefas Agendadas / Lembretes
 

@@ -798,10 +798,15 @@ Các lệnh gạch chéo sau có thể gửi trong bất kỳ kênh chat nào (T
 | `/skill <tên> [tin nhắn]` | Gọi một kỹ năng |
 | `/show model` | Hiển thị mô hình hiện tại |
 | `/list channels` | Liệt kê các kênh đã bật |
+| `/plan` | Hiển thị tiến độ kế hoạch hiện tại |
+| `/plan <nhiệm vụ>` | Bắt đầu kế hoạch mới với phỏng vấn |
+| `/plan clear` | Hủy bỏ kế hoạch hiện tại |
 
 > **Lưu ý**: `/session` yêu cầu gateway được khởi động với cờ `--stats`. Không có cờ này, theo dõi thống kê bị tắt để không có overhead.
 >
 > **Lưu ý**: `/skills` phản hồi ngay lập tức không tốn chi phí LLM. `/skill <tên>` chỉ đưa SKILL.md vào ngữ cảnh cho lượt hiện tại, sau đó chỉ giữ lại tên kỹ năng trong lịch sử để tiết kiệm cửa sổ ngữ cảnh.
+>
+> **Lưu ý**: `/plan` cho phép lập kế hoạch nhiệm vụ có cấu trúc với tự động chuyển giai đoạn. AI phỏng vấn bạn để hiểu yêu cầu, tổ chức công việc thành các giai đoạn và theo dõi tiến độ qua MEMORY.md.
 
 ### Tác vụ định kỳ / Nhắc nhở
 

@@ -875,3 +875,390 @@ func TestBuildTaskReminder_Truncation(t *testing.T) {
 		t.Errorf("expected at most %d blocker chars, got %d", blockerMaxChars, xCount)
 	}
 }
+
+// ---------- /plan command tests ----------
+
+func newTestAgentLoop(t *testing.T) (*AgentLoop, func()) {
+	t.Helper()
+	tmpDir, err := os.MkdirTemp("", "agent-plan-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	return al, func() { os.RemoveAll(tmpDir) }
+}
+
+func TestPlanCommand_ShowNoPlan(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	response, handled := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan"})
+	if !handled {
+		t.Fatal("expected /plan to be handled")
+	}
+	if !strings.Contains(response, "No active plan") {
+		t.Errorf("expected 'No active plan', got %q", response)
+	}
+}
+
+func TestPlanCommand_StartNewPlan(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	response, handled := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Set up monitoring"})
+	if !handled {
+		t.Fatal("expected /plan to be handled")
+	}
+	if !strings.Contains(response, "Plan started") {
+		t.Errorf("expected 'Plan started', got %q", response)
+	}
+	if !strings.Contains(response, "Set up monitoring") {
+		t.Errorf("expected task in response, got %q", response)
+	}
+
+	// Verify plan was created
+	agent := al.registry.GetDefaultAgent()
+	if !agent.ContextBuilder.HasActivePlan() {
+		t.Error("expected active plan after /plan start")
+	}
+	if status := agent.ContextBuilder.GetPlanStatus(); status != "interviewing" {
+		t.Errorf("expected 'interviewing', got %q", status)
+	}
+}
+
+func TestPlanCommand_StartBlockedByExisting(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	// Start first plan
+	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan First task"})
+
+	// Try to start another
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Second task"})
+	if !strings.Contains(response, "already active") {
+		t.Errorf("expected 'already active', got %q", response)
+	}
+}
+
+func TestPlanCommand_Clear(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	// Start plan then clear
+	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Test task"})
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan clear"})
+	if !strings.Contains(response, "Plan cleared") {
+		t.Errorf("expected 'Plan cleared', got %q", response)
+	}
+
+	agent := al.registry.GetDefaultAgent()
+	if agent.ContextBuilder.HasActivePlan() {
+		t.Error("expected no plan after clear")
+	}
+}
+
+func TestPlanCommand_ClearNoPlan(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan clear"})
+	if !strings.Contains(response, "No active plan") {
+		t.Errorf("expected 'No active plan', got %q", response)
+	}
+}
+
+func TestPlanCommand_Start(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	// Create interviewing plan
+	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Test task"})
+
+	// Transition to executing
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
+	if !strings.Contains(response, "executing") {
+		t.Errorf("expected 'executing', got %q", response)
+	}
+
+	agent := al.registry.GetDefaultAgent()
+	if status := agent.ContextBuilder.GetPlanStatus(); status != "executing" {
+		t.Errorf("expected 'executing', got %q", status)
+	}
+}
+
+func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	// Create interviewing plan then start
+	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Test task"})
+	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
+
+	// Try start again
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
+	if !strings.Contains(response, "already executing") {
+		t.Errorf("expected 'already executing', got %q", response)
+	}
+}
+
+func TestPlanCommand_Done(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+	// Write a plan directly with phases
+	plan := `# Active Plan
+
+> Task: Test task
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+- [ ] Step one
+- [ ] Step two
+
+## Context
+Test context
+`
+	agent.ContextBuilder.WriteMemory(plan)
+
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan done 1"})
+	if !strings.Contains(response, "Marked step 1") {
+		t.Errorf("expected confirmation, got %q", response)
+	}
+}
+
+func TestPlanCommand_DoneInvalidStep(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan Test task"})
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan done abc"})
+	if !strings.Contains(response, "positive integer") {
+		t.Errorf("expected step validation error, got %q", response)
+	}
+}
+
+func TestPlanCommand_Add(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+	plan := `# Active Plan
+
+> Task: Test task
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+- [ ] Step one
+
+## Context
+Test context
+`
+	agent.ContextBuilder.WriteMemory(plan)
+
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan add New step here"})
+	if !strings.Contains(response, "Added step") {
+		t.Errorf("expected 'Added step', got %q", response)
+	}
+
+	content := agent.ContextBuilder.ReadMemory()
+	if !strings.Contains(content, "New step here") {
+		t.Error("expected new step in plan content")
+	}
+}
+
+func TestPlanCommand_Next(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+	plan := `# Active Plan
+
+> Task: Test task
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+- [x] Step one
+
+## Phase 2: Deploy
+- [ ] Step two
+
+## Context
+Test
+`
+	agent.ContextBuilder.WriteMemory(plan)
+
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan next"})
+	if !strings.Contains(response, "phase 2") {
+		t.Errorf("expected 'phase 2', got %q", response)
+	}
+
+	if phase := agent.ContextBuilder.GetCurrentPhase(); phase != 2 {
+		t.Errorf("expected phase 2, got %d", phase)
+	}
+}
+
+func TestPlanCommand_ShowActivePlan(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+	plan := `# Active Plan
+
+> Task: Deploy app
+> Status: executing
+> Phase: 1
+
+## Phase 1: Build
+- [x] Compile code
+- [ ] Run tests
+
+## Context
+Production server
+`
+	agent.ContextBuilder.WriteMemory(plan)
+
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan"})
+	if !strings.Contains(response, "Deploy app") {
+		t.Errorf("expected task name in display, got %q", response)
+	}
+	if !strings.Contains(response, "Phase 1") {
+		t.Errorf("expected phase info in display, got %q", response)
+	}
+}
+
+// TestAutoPhaseAdvance verifies that auto-advance sends notification after LLM iteration
+// when current phase is complete.
+func TestAutoPhaseAdvance(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-auto-advance-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "OK"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent")
+	}
+
+	// Write plan with phase 1 complete
+	plan := `# Active Plan
+
+> Task: Test auto advance
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+- [x] Step one
+- [x] Step two
+
+## Phase 2: Deploy
+- [ ] Step three
+
+## Context
+Test
+`
+	agent.ContextBuilder.WriteMemory(plan)
+
+	// Process a message which triggers runAgentLoop
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = al.ProcessDirectWithChannel(ctx, "continue", "auto-advance-test", "test", "chat1")
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+
+	// After processing, phase should be auto-advanced
+	if phase := agent.ContextBuilder.GetCurrentPhase(); phase != 2 {
+		t.Errorf("expected phase auto-advanced to 2, got %d", phase)
+	}
+}
+
+// TestAutoCompleteClears verifies that plan is cleared when all phases are complete.
+func TestAutoCompleteClears(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-auto-complete-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "All done"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent")
+	}
+
+	// Write fully complete plan
+	plan := `# Active Plan
+
+> Task: Test auto complete
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+- [x] Step one
+- [x] Step two
+
+## Context
+Test
+`
+	agent.ContextBuilder.WriteMemory(plan)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = al.ProcessDirectWithChannel(ctx, "finish up", "auto-complete-test", "test", "chat1")
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+
+	// Plan should be cleared
+	if agent.ContextBuilder.HasActivePlan() {
+		t.Error("expected plan to be cleared after completion")
+	}
+}

@@ -854,10 +854,15 @@ These slash commands can be sent in any chat channel (Telegram, Discord, etc.) a
 | `/skill <name> [message]` | Invoke a skill with optional message     |
 | `/show model`     | Show current model                               |
 | `/list channels`  | List enabled channels                            |
+| `/plan`           | Show current plan progress                       |
+| `/plan <task>`    | Start a new plan with interview flow             |
+| `/plan clear`     | Discard the current plan                         |
 
 > **Note**: `/session` requires the gateway to be started with `--stats` flag. Without it, stats tracking is disabled for zero overhead.
 >
 > **Note**: `/skills` returns instantly without LLM cost. `/skill <name>` injects the skill's SKILL.md into the conversation context for the current turn, then only the skill name is kept in history to save the context window.
+>
+> **Note**: `/plan` enables structured task planning with automatic phase advancement. The AI interviews you to understand requirements, organizes work into phases, and tracks progress through MEMORY.md.
 
 ### Scheduled Tasks / Reminders
 

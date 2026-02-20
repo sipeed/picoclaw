@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -506,7 +507,34 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// If last tool had ForUser content and we already sent it, we might not need to send final response
 	// This is controlled by the tool's Silent flag and ForUser content
 
-	// 5. Handle empty response
+	// 5a. Auto-advance plan phases after LLM iteration
+	if agent.ContextBuilder.HasActivePlan() && agent.ContextBuilder.GetPlanStatus() == "executing" {
+		if agent.ContextBuilder.IsPlanComplete() {
+			_ = agent.ContextBuilder.ClearMemory()
+			if !constants.IsInternalChannel(opts.Channel) {
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel:         opts.Channel,
+					ChatID:          opts.ChatID,
+					Content:         "\u2705 Plan completed!",
+					SkipPlaceholder: true,
+				})
+			}
+		} else if agent.ContextBuilder.IsCurrentPhaseComplete() {
+			prev := agent.ContextBuilder.GetCurrentPhase()
+			_ = agent.ContextBuilder.AdvancePhase()
+			next := agent.ContextBuilder.GetCurrentPhase()
+			if !constants.IsInternalChannel(opts.Channel) {
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel:         opts.Channel,
+					ChatID:          opts.ChatID,
+					Content:         fmt.Sprintf("Phase %d complete. Moving to Phase %d.", prev, next),
+					SkipPlaceholder: true,
+				})
+			}
+		}
+	}
+
+	// 5b. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
 	}
@@ -1131,6 +1159,9 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 // summarizeBatch summarizes a batch of messages.
 func (al *AgentLoop) summarizeBatch(ctx context.Context, agent *AgentInstance, batch []providers.Message, existingSummary string) (string, error) {
 	prompt := "Provide a concise summary of this conversation segment, preserving core context and key points.\n"
+	if agent.ContextBuilder.HasActivePlan() {
+		prompt += "Note: Active plan in MEMORY.md. Preserve plan progress references.\n"
+	}
 	if existingSummary != "" {
 		prompt += "Existing context: " + existingSummary + "\n"
 	}
@@ -1252,6 +1283,9 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 
 	case "/skills":
 		return al.handleSkillsCommand(), true
+
+	case "/plan":
+		return al.handlePlanCommand(args), true
 	}
 
 	return "", false
@@ -1361,6 +1395,96 @@ func (al *AgentLoop) handleSkillsCommand() string {
 	}
 	sb.WriteString("\nUse: /skill <name> [message]")
 	return sb.String()
+}
+
+// handlePlanCommand handles /plan subcommands.
+func (al *AgentLoop) handlePlanCommand(args []string) string {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "No agent configured."
+	}
+
+	if len(args) == 0 {
+		// /plan — show current plan
+		return agent.ContextBuilder.FormatPlanDisplay()
+	}
+
+	sub := args[0]
+	switch sub {
+	case "clear":
+		if !agent.ContextBuilder.HasActivePlan() {
+			return "No active plan to clear."
+		}
+		if err := agent.ContextBuilder.ClearMemory(); err != nil {
+			return fmt.Sprintf("Error clearing plan: %v", err)
+		}
+		return "Plan cleared."
+
+	case "done":
+		if !agent.ContextBuilder.HasActivePlan() {
+			return "No active plan."
+		}
+		if len(args) < 2 {
+			return "Usage: /plan done <step number>"
+		}
+		stepNum, err := strconv.Atoi(args[1])
+		if err != nil || stepNum < 1 {
+			return "Step number must be a positive integer."
+		}
+		phase := agent.ContextBuilder.GetCurrentPhase()
+		if err := agent.ContextBuilder.MarkStep(phase, stepNum); err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+		return fmt.Sprintf("Marked step %d in phase %d as done.", stepNum, phase)
+
+	case "add":
+		if !agent.ContextBuilder.HasActivePlan() {
+			return "No active plan."
+		}
+		if len(args) < 2 {
+			return "Usage: /plan add <step description>"
+		}
+		desc := strings.Join(args[1:], " ")
+		phase := agent.ContextBuilder.GetCurrentPhase()
+		if err := agent.ContextBuilder.AddStep(phase, desc); err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+		return fmt.Sprintf("Added step to phase %d: %s", phase, desc)
+
+	case "start":
+		if !agent.ContextBuilder.HasActivePlan() {
+			return "No active plan."
+		}
+		if agent.ContextBuilder.GetPlanStatus() != "interviewing" {
+			return "Plan is already executing."
+		}
+		if err := agent.ContextBuilder.SetPlanStatus("executing"); err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+		return "Plan status changed to executing."
+
+	case "next":
+		if !agent.ContextBuilder.HasActivePlan() {
+			return "No active plan."
+		}
+		if err := agent.ContextBuilder.AdvancePhase(); err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+		phase := agent.ContextBuilder.GetCurrentPhase()
+		return fmt.Sprintf("Advanced to phase %d.", phase)
+
+	default:
+		// /plan <task description> — start new plan
+		if agent.ContextBuilder.HasActivePlan() {
+			return "A plan is already active. Use /plan clear first."
+		}
+		task := strings.Join(args, " ")
+		seed := BuildInterviewSeed(task)
+		if err := agent.ContextBuilder.WriteMemory(seed); err != nil {
+			return fmt.Sprintf("Error creating plan: %v", err)
+		}
+		return fmt.Sprintf("Plan started: %s\nStatus: interviewing\n\nI'll ask you some questions to build a detailed plan.", task)
+	}
 }
 
 // extractPeer extracts the routing peer from inbound message metadata.

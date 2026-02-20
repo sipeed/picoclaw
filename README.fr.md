@@ -820,10 +820,15 @@ Ces commandes slash peuvent être envoyées dans n'importe quel canal de chat (T
 | `/skill <nom> [message]` | Invoquer une compétence |
 | `/show model` | Afficher le modèle actuel |
 | `/list channels` | Lister les canaux activés |
+| `/plan` | Afficher la progression du plan actuel |
+| `/plan <tâche>` | Démarrer un nouveau plan avec entretien |
+| `/plan clear` | Abandonner le plan actuel |
 
 > **Note** : `/session` nécessite que la passerelle soit démarrée avec le flag `--stats`. Sans celui-ci, le suivi des statistiques est désactivé pour zéro surcharge.
 >
 > **Note** : `/skills` répond instantanément sans coût LLM. `/skill <nom>` injecte le SKILL.md dans le contexte pour le tour en cours uniquement, puis seul le nom de la compétence est conservé dans l'historique pour économiser la fenêtre de contexte.
+>
+> **Note** : `/plan` permet la planification structurée des tâches avec avancement automatique des phases. L'IA vous interview pour comprendre les exigences, organise le travail en phases et suit la progression via MEMORY.md.
 
 ### Tâches Planifiées / Rappels
 

@@ -80,8 +80,31 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
+3. **Memory & Plans**
+   - Use memory/MEMORY.md for structured plans.
+   - If Status is "interviewing": Ask clarifying questions.
+     Update Context with answers via edit_file.
+     When ready, organize into Phases and set Status to "executing".
+   - If Status is "executing": Work through the current Phase's steps.
+     Mark each [x] via edit_file. The system will auto-advance phases.
+   - Plan format:
+     # Active Plan
+     > Task: <description>
+     > Status: interviewing | executing
+     > Phase: <current phase number>
+     ## Phase 1: <title>
+     - [ ] Step 1
+     ## Phase 2: <title>
+     - [ ] Step 2
+     ## Commands
+     build: <build command>
+     test: <test command>
+     lint: <lint command>
+     ## Context
+     <requirements, decisions, environment>
+   - Keep each phase to 3-5 steps. Do NOT create plans without /plan.
+   - Always ask about build/test/lint commands during interview.`,
+		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
@@ -261,6 +284,73 @@ func (cb *ContextBuilder) LoadSkill(name string) (string, bool) {
 // ListSkills returns all available skills from all tiers.
 func (cb *ContextBuilder) ListSkills() []skills.SkillInfo {
 	return cb.skillsLoader.ListSkills()
+}
+
+// ---------- Plan passthrough methods ----------
+
+// ReadMemory reads the long-term memory (MEMORY.md).
+func (cb *ContextBuilder) ReadMemory() string {
+	return cb.memory.ReadLongTerm()
+}
+
+// WriteMemory writes content to the long-term memory file.
+func (cb *ContextBuilder) WriteMemory(content string) error {
+	return cb.memory.WriteLongTerm(content)
+}
+
+// ClearMemory removes the long-term memory file.
+func (cb *ContextBuilder) ClearMemory() error {
+	return cb.memory.ClearLongTerm()
+}
+
+// HasActivePlan returns true if MEMORY.md contains an active plan.
+func (cb *ContextBuilder) HasActivePlan() bool {
+	return cb.memory.HasActivePlan()
+}
+
+// GetPlanStatus returns the plan status: "interviewing", "executing", or "".
+func (cb *ContextBuilder) GetPlanStatus() string {
+	return cb.memory.GetPlanStatus()
+}
+
+// IsPlanComplete returns true if all steps in all phases are [x].
+func (cb *ContextBuilder) IsPlanComplete() bool {
+	return cb.memory.IsPlanComplete()
+}
+
+// IsCurrentPhaseComplete returns true if all steps in the current phase are [x].
+func (cb *ContextBuilder) IsCurrentPhaseComplete() bool {
+	return cb.memory.IsCurrentPhaseComplete()
+}
+
+// AdvancePhase increments the current phase number by 1.
+func (cb *ContextBuilder) AdvancePhase() error {
+	return cb.memory.AdvancePhase()
+}
+
+// GetCurrentPhase returns the current phase number.
+func (cb *ContextBuilder) GetCurrentPhase() int {
+	return cb.memory.GetCurrentPhase()
+}
+
+// FormatPlanDisplay returns a user-facing display of the full plan.
+func (cb *ContextBuilder) FormatPlanDisplay() string {
+	return cb.memory.FormatPlanDisplay()
+}
+
+// MarkStep marks a step as done in the specified phase.
+func (cb *ContextBuilder) MarkStep(phase, step int) error {
+	return cb.memory.MarkStep(phase, step)
+}
+
+// AddStep appends a new step to the given phase.
+func (cb *ContextBuilder) AddStep(phase int, desc string) error {
+	return cb.memory.AddStep(phase, desc)
+}
+
+// SetPlanStatus sets the plan status.
+func (cb *ContextBuilder) SetPlanStatus(status string) error {
+	return cb.memory.SetStatus(status)
 }
 
 // GetSkillsInfo returns information about loaded skills.
