@@ -141,7 +141,7 @@ func main() {
 		case "list":
 			skillsListCmd(skillsLoader)
 		case "install":
-			skillsInstallCmd(installer)
+			skillsInstallCmd(installer, cfg)
 		case "remove", "uninstall":
 			if len(os.Args) < 4 {
 				fmt.Println("Usage: picoclaw skills remove <skill-name>")

@@ -194,6 +194,17 @@
     "exec": {
       "enable_deny_patterns": false,
       "custom_deny_patterns": []
+    },
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "enabled": true,
+          "base_url": "https://clawhub.ai",
+          "search_path": "/api/v1/search",
+          "skills_path": "/api/v1/skills",
+          "download_path": "/api/v1/download"
+        }
+      }
     }
   },
   "heartbeat": {
