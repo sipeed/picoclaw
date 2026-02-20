@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sync"
+	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/go-viper/mapstructure/v2"
@@ -56,8 +56,10 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
-	mu        sync.RWMutex
 }
+
+// rrCounter is reserved for round-robin model selection compatibility.
+var rrCounter atomic.Uint64
 
 var configFileNames = []string{
 	"config.json",
@@ -523,9 +525,6 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 func SaveConfig(path string, cfg *Config) error {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-
 	ext := filepath.Ext(path)
 	var configType string
 	switch ext {
@@ -587,14 +586,10 @@ func ResolveConfigPath(home string) string {
 }
 
 func (c *Config) WorkspacePath() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return expandHome(c.Agents.Defaults.Workspace)
 }
 
 func (c *Config) GetAPIKey() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Providers.OpenRouter.APIKey != "" {
 		return c.Providers.OpenRouter.APIKey
 	}
@@ -623,8 +618,6 @@ func (c *Config) GetAPIKey() string {
 }
 
 func (c *Config) GetAPIBase() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Providers.OpenRouter.APIKey != "" {
 		if c.Providers.OpenRouter.APIBase != "" {
 			return c.Providers.OpenRouter.APIBase
@@ -648,8 +641,6 @@ type ModelConfig struct {
 
 // GetModelConfig returns the text model configuration with fallbacks.
 func (c *Config) GetModelConfig() ModelConfig {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return ModelConfig{
 		Primary:   c.Agents.Defaults.Model,
 		Fallbacks: c.Agents.Defaults.ModelFallbacks,
@@ -658,8 +649,6 @@ func (c *Config) GetModelConfig() ModelConfig {
 
 // GetImageModelConfig returns the image model configuration with fallbacks.
 func (c *Config) GetImageModelConfig() ModelConfig {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return ModelConfig{
 		Primary:   c.Agents.Defaults.ImageModel,
 		Fallbacks: c.Agents.Defaults.ImageModelFallbacks,

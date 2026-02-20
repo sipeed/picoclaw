@@ -748,3 +748,4 @@ Discord:  [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 | **智谱 (Zhipu)** | 200K tokens/月 | 最适合中国用户 |
 | **Brave Search** | 2000 次查询/月 | 网络搜索功能 |
 | **Groq** | 提供免费层级 | 极速推理 (Llama, Mixtral) |
+| **Cerebras** | 提供免费层级 | 极速推理 (Llama, Qwen 等) |
