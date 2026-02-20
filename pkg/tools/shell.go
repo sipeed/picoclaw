@@ -144,29 +144,14 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
 		if t.restrictToWorkspace && t.workingDir != "" {
-			absWD, err := filepath.Abs(wd)
+			resolvedWD, err := validatePath(wd, t.workingDir, true)
 			if err != nil {
-				return ErrorResult("invalid working_dir path")
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
 			}
-			absWorkspace, err := filepath.Abs(t.workingDir)
-			if err != nil {
-				return ErrorResult("failed to resolve workspace path")
-			}
-			if !isWithinWorkspace(absWD, absWorkspace) {
-				return ErrorResult("Command blocked by safety guard (working_dir outside workspace)")
-			}
-			// Also check symlink resolution
-			if resolved, err := filepath.EvalSymlinks(absWD); err == nil {
-				workspaceReal := absWorkspace
-				if r, err := filepath.EvalSymlinks(absWorkspace); err == nil {
-					workspaceReal = r
-				}
-				if !isWithinWorkspace(resolved, workspaceReal) {
-					return ErrorResult("Command blocked by safety guard (working_dir symlink resolves outside workspace)")
-				}
-			}
+			cwd = resolvedWD
+		} else {
+			cwd = wd
 		}
-		cwd = wd
 	}
 
 	if cwd == "" {
