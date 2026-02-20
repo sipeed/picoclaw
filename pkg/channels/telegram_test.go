@@ -86,3 +86,25 @@ func TestDisplayWidth_EmojiIsThree(t *testing.T) {
 		t.Fatalf("displayWidth(stars) = %d, want 15", got)
 	}
 }
+
+func TestParseChatID_Plain(t *testing.T) {
+	id, err := parseChatID("123456789")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != 123456789 {
+		t.Errorf("expected 123456789, got %d", id)
+	}
+}
+
+func TestParseChatID_MessageScopedSuffix(t *testing.T) {
+	// Quick-command responses use "chatID#messageID" to ensure uniqueness.
+	// parseChatID must strip the suffix so delivery still works.
+	id, err := parseChatID("123456789#42")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != 123456789 {
+		t.Errorf("expected 123456789, got %d", id)
+	}
+}

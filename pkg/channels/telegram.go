@@ -475,8 +475,10 @@ func (c *TelegramChannel) handleQuickCommand(ctx context.Context, message telego
 		"peer_id":    peerID,
 	}
 
-	// No "Thinking..." placeholder — send directly via message bus
-	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, nil, metadata)
+	// Use a message-scoped chatID so this response never matches the ongoing
+	// LLM task's placeholder or stopThinking entry for this chat.
+	chatIDStr := fmt.Sprintf("%d#%d", chatID, message.MessageID)
+	c.HandleMessage(fmt.Sprintf("%d", user.ID), chatIDStr, content, nil, metadata)
 	return nil
 }
 
@@ -520,6 +522,11 @@ func (c *TelegramChannel) downloadFile(ctx context.Context, fileID, ext string) 
 }
 
 func parseChatID(chatIDStr string) (int64, error) {
+	// Strip message-scoped suffix used by quick-command responses.
+	// e.g. "123456789#42" → parse as "123456789"
+	if idx := strings.IndexByte(chatIDStr, '#'); idx >= 0 {
+		chatIDStr = chatIDStr[:idx]
+	}
 	var id int64
 	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
 	return id, err
