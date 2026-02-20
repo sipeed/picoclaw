@@ -9,29 +9,31 @@ import (
 
 type ToolCall = protocoltypes.ToolCall
 type FunctionCall = protocoltypes.FunctionCall
+type ExtraContent = protocoltypes.ExtraContent
+type GoogleExtra = protocoltypes.GoogleExtra
 type LLMResponse = protocoltypes.LLMResponse
 type UsageInfo = protocoltypes.UsageInfo
 type Message = protocoltypes.Message
 type ToolDefinition = protocoltypes.ToolDefinition
 type ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
-type ExtraContent = protocoltypes.ExtraContent
-type GoogleExtra = protocoltypes.GoogleExtra
 
 type LLMProvider interface {
 	Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error)
 	GetDefaultModel() string
 }
 
-// FailoverReason classifies why an LLM request failed for fallback decisions.
 type FailoverReason string
 
 const (
-	FailoverAuth       FailoverReason = "auth"
-	FailoverRateLimit  FailoverReason = "rate_limit"
-	FailoverBilling    FailoverReason = "billing"
 	FailoverTimeout    FailoverReason = "timeout"
+	FailoverStatus     FailoverReason = "status"
+	FailoverEmpty      FailoverReason = "empty"
 	FailoverFormat     FailoverReason = "format"
 	FailoverOverloaded FailoverReason = "overloaded"
+	FailoverAuth       FailoverReason = "auth"
+	FailoverBilling    FailoverReason = "billing"
+	FailoverRateLimit  FailoverReason = "rate_limit"
+	FailoverContextWindow FailoverReason = "context_window"
 	FailoverUnknown    FailoverReason = "unknown"
 )
 

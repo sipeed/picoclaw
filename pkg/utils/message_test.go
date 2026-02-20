@@ -79,7 +79,7 @@ func TestSplitMessage(t *testing.T) {
 		},
 		{
 			name:         "Preserve Unicode characters",
-			content:      strings.Repeat("\u4e16", 1000), // 3000 bytes
+			content:      strings.Repeat("\u4e16", 2500), // 2500 runes
 			maxLen:       2000,
 			expectChunks: 2,
 			checkContent: func(t *testing.T, chunks []string) {

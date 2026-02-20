@@ -164,30 +164,44 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		c.stopThinking.Delete(msg.ChatID)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
-
-	// Try to edit placeholder
-	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
-		editMsg.ParseMode = telego.ModeHTML
-
-		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
-			return nil
-		}
-		// Fallback to new message if edit fails
+	limit := c.config.Channels.Telegram.MaxMessageLength
+	if limit <= 0 {
+		limit = 3500 // Leave space for HTML tags
 	}
 
-	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
-	tgMsg.ParseMode = telego.ModeHTML
+	chunks := utils.SplitMessage(msg.Content, limit)
 
-	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]interface{}{
-			"error": err.Error(),
-		})
-		tgMsg.ParseMode = ""
-		_, err = c.bot.SendMessage(ctx, tgMsg)
-		return err
+	for i, chunk := range chunks {
+		htmlContent := markdownToTelegramHTML(chunk)
+
+		// Try to edit placeholder only for the first chunk
+		if i == 0 {
+			if pID, ok := c.placeholders.Load(msg.ChatID); ok {
+				c.placeholders.Delete(msg.ChatID)
+				editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
+				editMsg.ParseMode = telego.ModeHTML
+
+				if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
+					continue
+				}
+				// Fallback to new message if edit fails
+			}
+		}
+
+		tgMsg := tu.Message(tu.ID(chatID), htmlContent)
+		tgMsg.ParseMode = telego.ModeHTML
+
+		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+			logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]interface{}{
+				"error": err.Error(),
+			})
+			tgMsg.ParseMode = ""
+			tgMsg.Text = chunk // Use raw chunk if HTML fails
+			_, err = c.bot.SendMessage(ctx, tgMsg)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
