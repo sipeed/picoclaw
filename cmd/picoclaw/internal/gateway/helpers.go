@@ -1,10 +1,8 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// License: MIT
-
-package main
+package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -27,28 +26,22 @@ import (
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
-func gatewayCmd() {
-	// Check for --debug flag
-	args := os.Args[2:]
-	for _, arg := range args {
-		if arg == "--debug" || arg == "-d" {
-			logger.SetLevel(logger.DEBUG)
-			fmt.Println("🔍 Debug mode enabled")
-			break
-		}
+func gatewayCmd(debug bool) error {
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+		fmt.Println("🔍 Debug mode enabled")
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := internal.LoadConfig()
 	if err != nil {
-		fmt.Printf("Error loading config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error loading config: %w", err)
 	}
 
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {
-		fmt.Printf("Error creating provider: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error creating provider: %w", err)
 	}
+
 	// Use the resolved model ID from provider creation
 	if modelID != "" {
 		cfg.Agents.Defaults.Model = modelID
@@ -105,8 +98,7 @@ func gatewayCmd() {
 
 	channelManager, err := channels.NewManager(cfg, msgBus)
 	if err != nil {
-		fmt.Printf("Error creating channel manager: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error creating channel manager: %w", err)
 	}
 
 	// Inject channel manager into agent loop for command handling
@@ -180,7 +172,7 @@ func gatewayCmd() {
 
 	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
 	go func() {
-		if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
+		if err := healthServer.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.ErrorCF("health", "Health server error", map[string]interface{}{"error": err.Error()})
 		}
 	}()
@@ -201,6 +193,8 @@ func gatewayCmd() {
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
+
+	return nil
 }
 
 func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration, cfg *config.Config) *cron.CronService {
