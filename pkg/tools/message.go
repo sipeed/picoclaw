@@ -26,19 +26,19 @@ func (t *MessageTool) Description() string {
 	return "Send a message to user on a chat channel. Use this when you want to communicate something."
 }
 
-func (t *MessageTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *MessageTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"content": map[string]interface{}{
+		"properties": map[string]any{
+			"content": map[string]any{
 				"type":        "string",
 				"description": "The message content to send",
 			},
-			"channel": map[string]interface{}{
+			"channel": map[string]any{
 				"type":        "string",
 				"description": "Optional: target channel (telegram, whatsapp, etc.)",
 			},
-			"chat_id": map[string]interface{}{
+			"chat_id": map[string]any{
 				"type":        "string",
 				"description": "Optional: target chat/user ID",
 			},
@@ -62,7 +62,7 @@ func (t *MessageTool) SetSendCallback(callback SendCallback) {
 	t.sendCallback = callback
 }
 
-func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	content, ok := args["content"].(string)
 	if !ok {
 		return &ToolResult{ForLLM: "content is required", IsError: true}

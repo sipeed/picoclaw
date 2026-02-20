@@ -22,13 +22,13 @@ func ExtractZipFile(zipPath string, targetDir string) error {
 	}
 	defer reader.Close()
 
-	logger.DebugCF("zip", "Extracting ZIP", map[string]interface{}{
+	logger.DebugCF("zip", "Extracting ZIP", map[string]any{
 		"zip_path":   zipPath,
 		"target_dir": targetDir,
 		"entries":    len(reader.File),
 	})
 
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create target dir: %w", err)
 	}
 
@@ -43,7 +43,8 @@ func ExtractZipFile(zipPath string, targetDir string) error {
 
 		// Double-check the resolved path is within target directory (defense-in-depth).
 		targetDirClean := filepath.Clean(targetDir)
-		if !strings.HasPrefix(filepath.Clean(destPath), targetDirClean+string(filepath.Separator)) && filepath.Clean(destPath) != targetDirClean {
+		if !strings.HasPrefix(filepath.Clean(destPath), targetDirClean+string(filepath.Separator)) &&
+			filepath.Clean(destPath) != targetDirClean {
 			return fmt.Errorf("zip entry escapes target dir: %q", f.Name)
 		}
 
@@ -55,14 +56,14 @@ func ExtractZipFile(zipPath string, targetDir string) error {
 		}
 
 		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(destPath, 0755); err != nil {
+			if err := os.MkdirAll(destPath, 0o755); err != nil {
 				return err
 			}
 			continue
 		}
 
 		// Ensure parent directory exists.
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 			return err
 		}
 
@@ -98,7 +99,7 @@ func extractSingleFile(f *zip.File, destPath string) error {
 	defer func() {
 		if cerr := outFile.Close(); cerr != nil {
 			_ = os.Remove(destPath)
-			logger.ErrorCF("zip", "Failed to close file", map[string]interface{}{
+			logger.ErrorCF("zip", "Failed to close file", map[string]any{
 				"dest_path": destPath,
 				"error":     cerr.Error(),
 			})

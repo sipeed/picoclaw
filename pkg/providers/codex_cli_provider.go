@@ -25,7 +25,9 @@ func NewCodexCliProvider(workspace string) *CodexCliProvider {
 }
 
 // Chat implements LLMProvider.Chat by executing the codex CLI in non-interactive mode.
-func (p *CodexCliProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *CodexCliProvider) Chat(
+	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
+) (*LLMResponse, error) {
 	if p.command == "" {
 		return nil, fmt.Errorf("codex command not configured")
 	}
@@ -133,7 +135,9 @@ func (p *CodexCliProvider) buildToolsPrompt(tools []ToolDefinition) string {
 	sb.WriteString("## Available Tools\n\n")
 	sb.WriteString("When you need to use a tool, respond with ONLY a JSON object:\n\n")
 	sb.WriteString("```json\n")
-	sb.WriteString(`{"tool_calls":[{"id":"call_xxx","type":"function","function":{"name":"tool_name","arguments":"{...}"}}]}`)
+	sb.WriteString(
+		`{"tool_calls":[{"id":"call_xxx","type":"function","function":{"name":"tool_name","arguments":"{...}"}}]}`,
+	)
 	sb.WriteString("\n```\n\n")
 	sb.WriteString("CRITICAL: The 'arguments' field MUST be a JSON-encoded STRING.\n\n")
 	sb.WriteString("### Tool Definitions:\n\n")

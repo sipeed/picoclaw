@@ -32,7 +32,7 @@ func NewSessionManager(storage string) *SessionManager {
 	}
 
 	if storage != "" {
-		os.MkdirAll(storage, 0755)
+		os.MkdirAll(storage, 0o755)
 		sm.loadSessions()
 	}
 
@@ -214,7 +214,7 @@ func (sm *SessionManager) Save(key string) error {
 		_ = tmpFile.Close()
 		return err
 	}
-	if err := tmpFile.Chmod(0644); err != nil {
+	if err := tmpFile.Chmod(0o644); err != nil {
 		_ = tmpFile.Close()
 		return err
 	}

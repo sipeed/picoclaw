@@ -12,11 +12,11 @@ import (
 func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
-	os.WriteFile(testFile, []byte("test content"), 0644)
+	os.WriteFile(testFile, []byte("test content"), 0o644)
 
 	tool := &ReadFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": testFile,
 	}
 
@@ -43,7 +43,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 	tool := &ReadFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
 	}
 
@@ -64,7 +64,7 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 func TestFilesystemTool_ReadFile_MissingPath(t *testing.T) {
 	tool := &ReadFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{}
+	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
 
@@ -86,7 +86,7 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 
 	tool := &WriteFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path":    testFile,
 		"content": "hello world",
 	}
@@ -125,7 +125,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 
 	tool := &WriteFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path":    testFile,
 		"content": "test",
 	}
@@ -151,7 +151,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 	tool := &WriteFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"content": "test",
 	}
 
@@ -167,7 +167,7 @@ func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 	tool := &WriteFileTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": "/tmp/test.txt",
 	}
 
@@ -179,7 +179,8 @@ func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 	}
 
 	// Should mention required parameter
-	if !strings.Contains(result.ForLLM, "content is required") && !strings.Contains(result.ForUser, "content is required") {
+	if !strings.Contains(result.ForLLM, "content is required") &&
+		!strings.Contains(result.ForUser, "content is required") {
 		t.Errorf("Expected 'content is required' message, got ForLLM: %s", result.ForLLM)
 	}
 }
@@ -187,13 +188,13 @@ func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 // TestFilesystemTool_ListDir_Success verifies successful directory listing
 func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("content"), 0644)
-	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content"), 0o644)
+	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("content"), 0o644)
+	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0o755)
 
 	tool := &ListDirTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": tmpDir,
 	}
 
@@ -217,7 +218,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 	tool := &ListDirTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"path": "/nonexistent_directory_12345",
 	}
 
@@ -238,7 +239,7 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 	tool := &ListDirTool{}
 	ctx := context.Background()
-	args := map[string]interface{}{}
+	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
 
@@ -250,15 +251,14 @@ func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 
 // Block paths that look inside workspace but point outside via symlink.
 func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
-
 	root := t.TempDir()
 	workspace := filepath.Join(root, "workspace")
-	if err := os.MkdirAll(workspace, 0755); err != nil {
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatalf("failed to create workspace: %v", err)
 	}
 
 	secret := filepath.Join(root, "secret.txt")
-	if err := os.WriteFile(secret, []byte("top secret"), 0644); err != nil {
+	if err := os.WriteFile(secret, []byte("top secret"), 0o644); err != nil {
 		t.Fatalf("failed to write secret file: %v", err)
 	}
 
@@ -268,7 +268,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 	}
 
 	tool := NewReadFileTool(workspace, true)
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"path": link,
 	})
 

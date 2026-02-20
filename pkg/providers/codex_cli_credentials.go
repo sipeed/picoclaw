@@ -59,7 +59,9 @@ func CreateCodexCliTokenSource() func() (string, string, error) {
 		}
 
 		if time.Now().After(expiresAt) {
-			return "", "", fmt.Errorf("codex cli credentials expired (auth.json last modified > 1h ago). Run: codex login")
+			return "", "", fmt.Errorf(
+				"codex cli credentials expired (auth.json last modified > 1h ago). Run: codex login",
+			)
 		}
 
 		return token, accountID, nil
