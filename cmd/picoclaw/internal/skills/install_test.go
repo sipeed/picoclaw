@@ -17,7 +17,11 @@ func TestNewInstallSubcommand(t *testing.T) {
 		t.Errorf("expected command short description, got %q", cmd.Short)
 	}
 
-	if cmd.Run == nil {
+	if cmd.Run != nil {
+		t.Error("expected command to have nil RunE()")
+	}
+
+	if cmd.RunE == nil {
 		t.Error("expected command to have non-nil Run()")
 	}
 
@@ -29,8 +33,12 @@ func TestNewInstallSubcommand(t *testing.T) {
 		t.Error("expected command to have no subcommands")
 	}
 
-	if cmd.HasFlags() {
+	if !cmd.HasFlags() {
 		t.Error("expected command to have no flags")
+	}
+
+	if cmd.Flags().Lookup("registry") == nil {
+		t.Error("expected command to have registry flag")
 	}
 
 	if len(cmd.Aliases) > 0 {

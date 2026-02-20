@@ -23,6 +23,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -116,6 +117,15 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 			return nil
 		})
 		agent.Tools.Register(messageTool)
+
+		// Skill discovery and installation tools
+		registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
+			MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
+			ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+		})
+		searchCache := skills.NewSearchCache(cfg.Tools.Skills.SearchCache.MaxSize, time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second)
+		agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
+		agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
 
 		// Spawn tool with allowlist checker
 		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
