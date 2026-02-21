@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/stats"
@@ -712,6 +713,20 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	if !opts.NoHistory {
 		history = agent.Sessions.GetHistory(opts.SessionKey)
 		summary = agent.Sessions.GetSummary(opts.SessionKey)
+
+		// Sanitize history to remove orphaned tool calls (from crashes/session collisions)
+		var removedCount int
+		history, removedCount = session.SanitizeHistory(history)
+		if removedCount > 0 {
+			logger.WarnCF("agent", "Sanitized session history: removed orphaned messages",
+				map[string]any{
+					"session_key":    opts.SessionKey,
+					"removed_count":  removedCount,
+				})
+			// Persist the sanitized history
+			agent.Sessions.SetHistory(opts.SessionKey, history)
+			_ = agent.Sessions.Save(opts.SessionKey)
+		}
 	}
 	messages := agent.ContextBuilder.BuildMessages(
 		history,

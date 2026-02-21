@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func TestSanitizeFilename(t *testing.T) {
@@ -57,6 +59,55 @@ func TestSave_WithColonInKey(t *testing.T) {
 	}
 	if history[0].Content != "hello" {
 		t.Errorf("expected message content %q, got %q", "hello", history[0].Content)
+	}
+}
+
+func TestSanitizeHistory_OrphanedToolCall(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "sure", ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "exec"},
+			{ID: "call_2", Name: "list_dir"},
+		}},
+		{Role: "tool", Content: "ok", ToolCallID: "call_1"},
+		// Missing tool result for call_2 → orphaned
+	}
+
+	sanitized, removed := SanitizeHistory(history)
+	// The orphaned assistant msg (with call_2 missing) and the trailing tool result
+	// should both be removed, leaving just the user message
+	if removed == 0 {
+		t.Fatal("expected orphaned messages to be removed")
+	}
+	// After sanitization, only the user message should remain
+	if len(sanitized) != 1 || sanitized[0].Role != "user" {
+		t.Errorf("expected [user], got %d messages: %v", len(sanitized), sanitized)
+	}
+}
+
+func TestSanitizeHistory_CleanHistory(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "sure", ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "exec"},
+		}},
+		{Role: "tool", Content: "ok", ToolCallID: "call_1"},
+		{Role: "assistant", Content: "done"},
+	}
+
+	sanitized, removed := SanitizeHistory(history)
+	if removed != 0 {
+		t.Errorf("expected 0 removed, got %d", removed)
+	}
+	if len(sanitized) != 4 {
+		t.Errorf("expected 4 messages, got %d", len(sanitized))
+	}
+}
+
+func TestSanitizeHistory_Empty(t *testing.T) {
+	sanitized, removed := SanitizeHistory(nil)
+	if removed != 0 || sanitized != nil {
+		t.Errorf("expected nil/0, got %v/%d", sanitized, removed)
 	}
 }
 

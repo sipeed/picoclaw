@@ -265,6 +265,77 @@ func (sm *SessionManager) loadSessions() error {
 	return nil
 }
 
+// SanitizeHistory removes orphaned tool calls from session history.
+// An orphaned tool call is an assistant message containing ToolCalls where
+// one or more call IDs have no matching tool-result message (role="tool")
+// following it. This can happen if the process crashed mid-execution.
+// The function trims incomplete assistant+tool-result groups from the tail.
+// Returns the sanitized history and the number of messages removed.
+func SanitizeHistory(history []providers.Message) ([]providers.Message, int) {
+	if len(history) == 0 {
+		return history, 0
+	}
+
+	original := len(history)
+
+	// Walk backwards from the tail, trimming incomplete tool-call groups.
+	for len(history) > 0 {
+		last := history[len(history)-1]
+
+		// If tail is a tool result, find its parent assistant message and check completeness
+		if last.Role == "tool" {
+			// Find the nearest preceding assistant message with tool calls
+			assistantIdx := -1
+			for i := len(history) - 2; i >= 0; i-- {
+				if history[i].Role == "assistant" && len(history[i].ToolCalls) > 0 {
+					assistantIdx = i
+					break
+				}
+			}
+
+			if assistantIdx < 0 {
+				// Orphaned tool result with no assistant — remove it
+				history = history[:len(history)-1]
+				continue
+			}
+
+			// Collect all expected tool call IDs from the assistant message
+			expected := make(map[string]bool)
+			for _, tc := range history[assistantIdx].ToolCalls {
+				expected[tc.ID] = true
+			}
+
+			// Check how many results exist between assistant and end of history
+			for i := assistantIdx + 1; i < len(history); i++ {
+				if history[i].Role == "tool" && expected[history[i].ToolCallID] {
+					delete(expected, history[i].ToolCallID)
+				}
+			}
+
+			if len(expected) > 0 {
+				// Incomplete group — remove everything from assistantIdx onward
+				history = history[:assistantIdx]
+				continue
+			}
+
+			// Group is complete, we're done
+			break
+		}
+
+		// If tail is an assistant with tool calls, check if ALL results follow
+		if last.Role == "assistant" && len(last.ToolCalls) > 0 {
+			// No tool results follow at all — orphaned
+			history = history[:len(history)-1]
+			continue
+		}
+
+		// Tail is a normal message (user, assistant without tools) — we're done
+		break
+	}
+
+	return history, original - len(history)
+}
+
 // SetHistory updates the messages of a session.
 func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 	sm.mu.Lock()
