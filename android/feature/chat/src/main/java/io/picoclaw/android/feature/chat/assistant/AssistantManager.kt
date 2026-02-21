@@ -208,17 +208,20 @@ class AssistantManager(
     }
 
     private suspend fun speakAndDrain(firstContent: String, speechQueue: Channel<String>) {
-        _state.update { it.copy(phase = VoicePhase.SPEAKING, responseText = firstContent) }
-        ttsWrapper.speak(firstContent)
         val chunks = mutableListOf(firstContent)
-        while (true) {
-            val next = speechQueue.tryReceive().getOrNull() ?: break
-            _state.update { it.copy(responseText = next) }
-            ttsWrapper.speak(next)
-            chunks.add(next)
+        try {
+            _state.update { it.copy(phase = VoicePhase.SPEAKING, responseText = firstContent) }
+            ttsWrapper.speak(firstContent)
+            while (true) {
+                val next = speechQueue.tryReceive().getOrNull() ?: break
+                chunks.add(next)
+                _state.update { it.copy(responseText = next) }
+                ttsWrapper.speak(next)
+            }
+        } finally {
+            val fullResponse = chunks.joinToString("\n")
+            _state.update { it.copy(chatHistory = it.chatHistory + ChatTurn("assistant", fullResponse)) }
         }
-        val fullResponse = chunks.joinToString("\n")
-        _state.update { it.copy(chatHistory = it.chatHistory + ChatTurn("assistant", fullResponse)) }
     }
 
     private suspend fun drainSpeechQueue(speechQueue: Channel<String>) {
