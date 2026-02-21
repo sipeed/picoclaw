@@ -364,7 +364,11 @@ func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
 func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_base":""}}}`), 0o600); err != nil {
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"providers":{"openai":{"api_base":""}},"model_list":[{"model_name":"gpt-5","model":"openai/gpt-5"}]}`),
+		0o600,
+	); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -380,7 +384,13 @@ func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}}}`), 0o600); err != nil {
+	if err := os.WriteFile(
+		configPath,
+		[]byte(
+			`{"providers":{"openai":{"web_search":false}},"model_list":[{"model_name":"gpt-5","model":"openai/gpt-5"}]}`,
+		),
+		0o600,
+	); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -390,5 +400,58 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	}
 	if cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
+	}
+}
+
+func TestLoadConfig_NoErrorsWhenModelListMissing(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+
+	data := `{
+		"providers": {
+			"zhipu": {
+				"api_key": "abc"
+			}
+		}
+	}`
+
+	if err := os.WriteFile(configPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("expected LoadConfig to pass even when model_list is missing, got: %v", err)
+	}
+}
+
+func TestLoadConfig_AllowsModelListWithoutAPIBaseField(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+
+	data := `{
+		"model_list": [
+			{
+				"model_name": "gpt-5.3-codex",
+				"model": "openai/gpt-5.3-codex",
+				"api_key": ""
+			}
+		]
+	}`
+
+	if err := os.WriteFile(configPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() should allow model_list entries without explicit api_base field, got error: %v", err)
+	}
+
+	if len(cfg.ModelList) != 1 {
+		t.Fatalf("expected one model_list entry, got %d", len(cfg.ModelList))
+	}
+	if cfg.ModelList[0].APIBase != "" {
+		t.Fatalf("expected api_base to remain empty when omitted, got %q", cfg.ModelList[0].APIBase)
 	}
 }

@@ -32,6 +32,7 @@ func onboard() {
 	}
 
 	cfg := config.DefaultConfig()
+	cfg.ModelList = config.DefaultModelList() // Populate default model list
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		fmt.Printf("Error saving config: %v\n", err)
 		os.Exit(1)
