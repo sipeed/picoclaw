@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -175,13 +176,7 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
-	found := false
-	for _, name := range toolsList {
-		if name == "mock_custom" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(toolsList, "mock_custom")
 	if !found {
 		t.Error("Expected custom tool to be registered")
 	}
@@ -250,13 +245,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
-	found := false
-	for _, name := range toolsList {
-		if name == "mock_custom" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(toolsList, "mock_custom")
 	if !found {
 		t.Error("Expected custom tool to be registered")
 	}

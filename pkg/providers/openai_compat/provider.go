@@ -229,8 +229,8 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 }
 
 func normalizeModel(model, apiBase string) string {
-	idx := strings.Index(model, "/")
-	if idx == -1 {
+	before, after, ok := strings.Cut(model, "/")
+	if !ok {
 		return model
 	}
 
@@ -238,10 +238,10 @@ func normalizeModel(model, apiBase string) string {
 		return model
 	}
 
-	prefix := strings.ToLower(model[:idx])
+	prefix := strings.ToLower(before)
 	switch prefix {
 	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu":
-		return model[idx+1:]
+		return after
 	default:
 		return model
 	}

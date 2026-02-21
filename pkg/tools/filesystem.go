@@ -236,14 +236,14 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		return ErrorResult(fmt.Sprintf("failed to read directory: %v", err))
 	}
 
-	result := ""
+	var result strings.Builder
 	for _, entry := range entries {
 		if entry.IsDir() {
-			result += "DIR:  " + entry.Name() + "\n"
+			result.WriteString("DIR:  " + entry.Name() + "\n")
 		} else {
-			result += "FILE: " + entry.Name() + "\n"
+			result.WriteString("FILE: " + entry.Name() + "\n")
 		}
 	}
 
-	return NewToolResult(result)
+	return NewToolResult(result.String())
 }
