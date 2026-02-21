@@ -24,8 +24,10 @@ const (
 	headerHeight       = 1
 	statusBarHeight    = 1
 	textareaHeight     = 3
-	// chromeHeight accounts for header, status bar, textarea, and separators
-	chromeHeight     = headerHeight + statusBarHeight + textareaHeight + 2
+	separatorHeight    = 1
+	// chromeHeight accounts for header, separator, textarea, status bar, and
+	// the extra newlines between sections in View().
+	chromeHeight     = headerHeight + separatorHeight + textareaHeight + statusBarHeight + 1
 	maxSessionKeyLen = 15
 )
 
@@ -204,14 +206,10 @@ func (m Model) View() string {
 		return "Initializing...\n"
 	}
 
-	header := m.renderHeader()
-	sep := separatorStyle.Render(strings.Repeat("─", m.width))
-
-	return fmt.Sprintf(
-		"%s\n%s\n%s\n%s\n%s",
-		header,
+	return lipgloss.JoinVertical(lipgloss.Left,
+		m.renderHeader(),
 		m.viewport.View(),
-		sep,
+		separatorStyle.Render(strings.Repeat("─", m.width)),
 		m.textarea.View(),
 		m.renderStatusBar(),
 	)
@@ -268,6 +266,11 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 	if !m.ready {
 		m.viewport = viewport.New(msg.Width, vpHeight)
+		// Disable viewport's built-in key/mouse handling — we handle
+		// PgUp/PgDown in handleKeyMsg and don't want the viewport
+		// intercepting input meant for the textarea.
+		m.viewport.KeyMap = viewport.KeyMap{}
+		m.viewport.MouseWheelEnabled = false
 		m.ready = true
 	} else {
 		m.viewport.Width = msg.Width

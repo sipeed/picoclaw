@@ -6,6 +6,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -137,6 +139,13 @@ func agentCmd() {
 		printUpdateHint()
 	} else {
 		printUpdateHint()
+
+		// Suppress Go's default log output during TUI mode.
+		// The logger package uses log.Println which writes to stderr,
+		// corrupting the bubbletea alt-screen rendering.
+		log.SetOutput(io.Discard)
+		defer log.SetOutput(os.Stderr)
+
 		modelName := cfg.Agents.Defaults.Model
 		p := tea.NewProgram(
 			tui.NewModel(agentLoop, sessionKey, modelName),
