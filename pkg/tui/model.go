@@ -441,15 +441,23 @@ func (m Model) renderHeader() string {
 
 // renderStatusBar returns the status bar at the bottom
 func (m Model) renderStatusBar() string {
-	left := "Ctrl+C: quit | PgUp/PgDn: scroll | Alt+Enter: newline"
-	pct := fmt.Sprintf("%3.0f%%", m.viewport.ScrollPercent()*100)
+	left := m.modelName
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(pct) - 2 // padding
+	// Count user and assistant messages
+	msgCount := 0
+	for _, msg := range m.messages {
+		if msg.role == "user" || msg.role == "assistant" {
+			msgCount++
+		}
+	}
+	right := fmt.Sprintf("messages: %d | session: %s", msgCount, truncateSessionKey(m.sessionKey))
+
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2 // padding
 	if gap < 1 {
 		gap = 1
 	}
 
-	bar := left + strings.Repeat(" ", gap) + pct
+	bar := left + strings.Repeat(" ", gap) + right
 	return statusBarStyle.Render(bar)
 }
 
