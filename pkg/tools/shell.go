@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 type ExecTool struct {
@@ -21,16 +24,82 @@ type ExecTool struct {
 	restrictToWorkspace bool
 }
 
+var defaultDenyPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
+	regexp.MustCompile(`\bdel\s+/[fq]\b`),
+	regexp.MustCompile(`\brmdir\s+/s\b`),
+	regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`), // Match disk wiping commands (must be followed by space/args)
+	regexp.MustCompile(`\bdd\s+if=`),
+	regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
+	regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
+	regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
+	regexp.MustCompile(`\$\([^)]+\)`),
+	regexp.MustCompile(`\$\{[^}]+\}`),
+	regexp.MustCompile("`[^`]+`"),
+	regexp.MustCompile(`\|\s*sh\b`),
+	regexp.MustCompile(`\|\s*bash\b`),
+	regexp.MustCompile(`;\s*rm\s+-[rf]`),
+	regexp.MustCompile(`&&\s*rm\s+-[rf]`),
+	regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
+	regexp.MustCompile(`>\s*/dev/null\s*>&?\s*\d?`),
+	regexp.MustCompile(`<<\s*EOF`),
+	regexp.MustCompile(`\$\(\s*cat\s+`),
+	regexp.MustCompile(`\$\(\s*curl\s+`),
+	regexp.MustCompile(`\$\(\s*wget\s+`),
+	regexp.MustCompile(`\$\(\s*which\s+`),
+	regexp.MustCompile(`\bsudo\b`),
+	regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
+	regexp.MustCompile(`\bchown\b`),
+	regexp.MustCompile(`\bpkill\b`),
+	regexp.MustCompile(`\bkillall\b`),
+	regexp.MustCompile(`\bkill\s+-[9]\b`),
+	regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
+	regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
+	regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
+	regexp.MustCompile(`\bpip\s+install\s+--user\b`),
+	regexp.MustCompile(`\bapt\s+(install|remove|purge)\b`),
+	regexp.MustCompile(`\byum\s+(install|remove)\b`),
+	regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
+	regexp.MustCompile(`\bdocker\s+run\b`),
+	regexp.MustCompile(`\bdocker\s+exec\b`),
+	regexp.MustCompile(`\bgit\s+push\b`),
+	regexp.MustCompile(`\bgit\s+force\b`),
+	regexp.MustCompile(`\bssh\b.*@`),
+	regexp.MustCompile(`\beval\b`),
+	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
+}
+
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
-	denyPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
-		regexp.MustCompile(`\bdel\s+/[fq]\b`),
-		regexp.MustCompile(`\brmdir\s+/s\b`),
-		regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`), // Match disk wiping commands (must be followed by space/args)
-		regexp.MustCompile(`\bdd\s+if=`),
-		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
-		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
-		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
+	return NewExecToolWithConfig(workingDir, restrict, nil)
+}
+
+func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
+	denyPatterns := make([]*regexp.Regexp, 0)
+
+	enableDenyPatterns := true
+	if config != nil {
+		execConfig := config.Tools.Exec
+		enableDenyPatterns = execConfig.EnableDenyPatterns
+		if enableDenyPatterns {
+			if len(execConfig.CustomDenyPatterns) > 0 {
+				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
+				for _, pattern := range execConfig.CustomDenyPatterns {
+					re, err := regexp.Compile(pattern)
+					if err != nil {
+						fmt.Printf("Invalid custom deny pattern %q: %v\n", pattern, err)
+						continue
+					}
+					denyPatterns = append(denyPatterns, re)
+				}
+			} else {
+				denyPatterns = append(denyPatterns, defaultDenyPatterns...)
+			}
+		} else {
+			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
+			fmt.Println("Warning: deny patterns are disabled. All commands will be allowed.")
+		}
+	} else {
+		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}
 
 	return &ExecTool{
@@ -50,15 +119,15 @@ func (t *ExecTool) Description() string {
 	return "Execute a shell command and return its output. Use with caution."
 }
 
-func (t *ExecTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *ExecTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"command": map[string]interface{}{
+		"properties": map[string]any{
+			"command": map[string]any{
 				"type":        "string",
 				"description": "The shell command to execute",
 			},
-			"working_dir": map[string]interface{}{
+			"working_dir": map[string]any{
 				"type":        "string",
 				"description": "Optional working directory for the command",
 			},
@@ -67,7 +136,7 @@ func (t *ExecTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	command, ok := args["command"].(string)
 	if !ok {
 		return ErrorResult("command is required")
@@ -75,7 +144,15 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		cwd = wd
+		if t.restrictToWorkspace && t.workingDir != "" {
+			resolvedWD, err := validatePath(wd, t.workingDir, true)
+			if err != nil {
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
+			}
+			cwd = resolvedWD
+		} else {
+			cwd = wd
+		}
 	}
 
 	if cwd == "" {
@@ -89,7 +166,14 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult(guardError)
 	}
 
-	cmdCtx, cancel := context.WithTimeout(ctx, t.timeout)
+	// timeout == 0 means no timeout
+	var cmdCtx context.Context
+	var cancel context.CancelFunc
+	if t.timeout > 0 {
+		cmdCtx, cancel = context.WithTimeout(ctx, t.timeout)
+	} else {
+		cmdCtx, cancel = context.WithCancel(ctx)
+	}
 	defer cancel()
 
 	var cmd *exec.Cmd
@@ -102,18 +186,43 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		cmd.Dir = cwd
 	}
 
+	prepareCommandForTermination(cmd)
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-cmdCtx.Done():
+		_ = terminateProcessTree(cmd)
+		select {
+		case err = <-done:
+		case <-time.After(2 * time.Second):
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			err = <-done
+		}
+	}
+
 	output := stdout.String()
 	if stderr.Len() > 0 {
 		output += "\nSTDERR:\n" + stderr.String()
 	}
 
 	if err != nil {
-		if cmdCtx.Err() == context.DeadlineExceeded {
+		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
 			return &ToolResult{
 				ForLLM:  msg,

@@ -3,7 +3,7 @@
 
 <h1>PicoClaw: Go で書かれた超効率 AI アシスタント</h1>
 
-<h3>$10 ハードウェア · 10MB RAM · 1秒起動 · 皮皮虾，我们走！</h3>
+<h3>$10 ハードウェア · 10MB RAM · 1秒起動 · 行くぜ、シャコ！</h3>
 <h3></h3>
 
 <p>
@@ -12,7 +12,7 @@
 <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
-**日本語** | [English](README.md)
+[中文](README.zh.md) | **日本語** | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [English](README.md)
 
 </div>
 
@@ -39,7 +39,7 @@
 </table>
 
 ## 📢 ニュース
-2026-02-09 🎉 PicoClaw リリース！$10 ハードウェアで 10MB 未満の RAM で動く AI エージェントを 1 日で構築。🦐 皮皮虾，我们走！
+2026-02-09 🎉 PicoClaw リリース！$10 ハードウェアで 10MB 未満の RAM で動く AI エージェントを 1 日で構築。🦐 行くぜ、シャコ！
 
 ## ✨ 特徴
 
@@ -174,44 +174,37 @@ picoclaw onboard
 
 ```json
 {
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key",
+      "api_base": "https://api.openai.com/v1"
+    }
+  ],
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
-      "max_tokens": 8192,
-      "temperature": 0.7,
-      "max_tool_iterations": 20
+      "model": "gpt4"
     }
   },
-  "providers": {
-    "openrouter": {
-      "api_key": "xxx",
-      "api_base": "https://openrouter.ai/api/v1"
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "allow_from": []
     }
-  },
-  "tools": {
-    "web": {
-      "search": {
-        "api_key": "YOUR_BRAVE_API_KEY",
-        "max_results": 5
-      }
-    }
-  },
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
   }
 }
 ```
 
 **3. API キーの取得**
 
-- **LLM プロバイダー**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+- **LLM プロバイダー**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys) · [Qwen](https://dashscope.console.aliyun.com)
 - **Web 検索**（任意）: [Brave Search](https://brave.com/search/api) - 無料枠あり（月 2000 リクエスト）
 
 > **注意**: 完全な設定テンプレートは `config.example.json` を参照してください。
 
-**3. チャット**
+**4. チャット**
 
 ```bash
 picoclaw agent -m "What is 2+2?"
@@ -223,7 +216,7 @@ picoclaw agent -m "What is 2+2?"
 
 ## 💬 チャットアプリ
 
-Telegram、Discord、QQ、DingTalk、LINE で PicoClaw と会話できます
+Telegram、Discord、QQ、DingTalk、LINE、WeCom で PicoClaw と会話できます
 
 | チャネル | セットアップ |
 |---------|------------|
@@ -232,6 +225,7 @@ Telegram、Discord、QQ、DingTalk、LINE で PicoClaw と会話できます
 | **QQ** | 簡単（AppID + AppSecret） |
 | **DingTalk** | 普通（アプリ認証情報） |
 | **LINE** | 普通（認証情報 + Webhook URL） |
+| **WeCom** | 普通（CorpID + Webhook設定） |
 
 <details>
 <summary><b>Telegram</b>（推奨）</summary>
@@ -250,7 +244,7 @@ Telegram、Discord、QQ、DingTalk、LINE で PicoClaw と会話できます
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -290,7 +284,7 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -424,6 +418,87 @@ picoclaw gateway
 > グループチャットでは @メンション時のみ応答します。返信は元メッセージを引用する形式です。
 
 > **Docker Compose**: `picoclaw-gateway` サービスに `ports: ["18791:18791"]` を追加して Webhook ポートを公開してください。
+
+</details>
+
+<details>
+<summary><b>WeCom (企業微信)</b></summary>
+
+PicoClaw は2種類の WeCom 統合をサポートしています：
+
+**オプション1: WeCom Bot (智能ロボット)** - 簡単な設定、グループチャット対応
+**オプション2: WeCom App (自作アプリ)** - より多機能、アクティブメッセージング対応
+
+詳細な設定手順は [WeCom App Configuration Guide](docs/wecom-app-configuration.md) を参照してください。
+
+**クイックセットアップ - WeCom Bot:**
+
+**1. ボットを作成**
+
+* WeCom 管理コンソール → グループチャット → グループボットを追加
+* Webhook URL をコピー（形式: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`）
+
+**2. 設定**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**クイックセットアップ - WeCom App:**
+
+**1. アプリを作成**
+
+* WeCom 管理コンソール → アプリ管理 → アプリを作成
+* **AgentId** と **Secret** をコピー
+* "マイ会社" ページで **CorpID** をコピー
+
+**2. メッセージ受信を設定**
+
+* アプリ詳細で "メッセージを受信" → "APIを設定" をクリック
+* URL を `http://your-server:18792/webhook/wecom-app` に設定
+* **Token** と **EncodingAESKey** を生成
+
+**3. 設定**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. 起動**
+
+```bash
+picoclaw gateway
+```
+
+> **注意**: WeCom App は Webhook コールバック用にポート 18792 を開放する必要があります。本番環境では HTTPS 用のリバースプロキシを使用してください。
 
 </details>
 
@@ -618,6 +693,22 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 - `PICOCLAW_HEARTBEAT_ENABLED=false` で無効化
 - `PICOCLAW_HEARTBEAT_INTERVAL=60` で間隔変更
 
+### プロバイダー
+
+> [!NOTE]
+> Groq は Whisper による無料の音声文字起こしを提供しています。設定すると、Telegram の音声メッセージが自動的に文字起こしされます。
+
+| プロバイダー | 用途 | API キー取得先 |
+| --- | --- | --- |
+| `gemini` | LLM（Gemini 直接） | [aistudio.google.com](https://aistudio.google.com) |
+| `zhipu` | LLM（Zhipu 直接） | [bigmodel.cn](https://bigmodel.cn) |
+| `openrouter`（要テスト） | LLM（推奨、全モデルにアクセス可能） | [openrouter.ai](https://openrouter.ai) |
+| `anthropic`（要テスト） | LLM（Claude 直接） | [console.anthropic.com](https://console.anthropic.com) |
+| `openai`（要テスト） | LLM（GPT 直接） | [platform.openai.com](https://platform.openai.com) |
+| `deepseek`（要テスト） | LLM（DeepSeek 直接） | [platform.deepseek.com](https://platform.deepseek.com) |
+| `groq` | LLM + **音声文字起こし**（Whisper） | [console.groq.com](https://console.groq.com) |
+| `cerebras` | LLM（Cerebras 直接） | [cerebras.ai](https://cerebras.ai) |
+
 ### 基本設定
 
 1.  **設定ファイルの作成:**
@@ -663,17 +754,17 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
   },
   "providers": {
     "openrouter": {
-      "apiKey": "sk-or-v1-xxx"
+      "api_key": "sk-or-v1-xxx"
     },
     "groq": {
-      "apiKey": "gsk_xxx"
+      "api_key": "gsk_xxx"
     }
   },
   "channels": {
     "telegram": {
       "enabled": true,
       "token": "123456:ABC...",
-      "allowFrom": ["123456789"]
+      "allow_from": ["123456789"]
     },
     "discord": {
       "enabled": true,
@@ -685,18 +776,21 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
     },
     "feishu": {
       "enabled": false,
-      "appId": "cli_xxx",
-      "appSecret": "xxx",
-      "encryptKey": "",
-      "verificationToken": "",
-      "allowFrom": []
+      "app_id": "cli_xxx",
+      "app_secret": "xxx",
+      "encrypt_key": "",
+      "verification_token": "",
+      "allow_from": []
     }
   },
   "tools": {
     "web": {
       "search": {
-        "apiKey": "BSA..."
+        "api_key": "BSA..."
       }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
     }
   },
   "heartbeat": {
@@ -707,6 +801,163 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 ```
 
 </details>
+
+### モデル設定 (model_list)
+
+> **新機能！** PicoClaw は現在 **モデル中心** の設定アプローチを採用しています。`ベンダー/モデル` 形式（例: `zhipu/glm-4.7`）を指定するだけで、新しいプロバイダーを追加できます—**コードの変更は一切不要！**
+
+この設計は、柔軟なプロバイダー選択による **マルチエージェントサポート** も可能にします：
+
+- **異なるエージェント、異なるプロバイダー** : 各エージェントは独自の LLM プロバイダーを使用可能
+- **フォールバックモデル** : 耐障性のため、プライマリモデルとフォールバックモデルを設定可能
+- **ロードバランシング** : 複数のエンドポイントにリクエストを分散
+- **集中設定管理** : すべてのプロバイダーを一箇所で管理
+
+#### 📋 サポートされているすべてのベンダー
+
+| ベンダー | `model` プレフィックス | デフォルト API Base | プロトコル | API キー |
+|-------------|-----------------|---------------------|----------|---------|
+| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [キーを取得](https://platform.openai.com) |
+| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [キーを取得](https://console.anthropic.com) |
+| **Zhipu AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [キーを取得](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [キーを取得](https://platform.deepseek.com) |
+| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [キーを取得](https://aistudio.google.com/api-keys) |
+| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [キーを取得](https://console.groq.com) |
+| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [キーを取得](https://platform.moonshot.cn) |
+| **Qwen (Alibaba)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [キーを取得](https://dashscope.console.aliyun.com) |
+| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [キーを取得](https://build.nvidia.com) |
+| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | ローカル（キー不要） |
+| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [キーを取得](https://openrouter.ai/keys) |
+| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | ローカル |
+| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [キーを取得](https://cerebras.ai) |
+| **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [キーを取得](https://console.volcengine.com) |
+| **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ |
+| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
+
+#### 基本設定
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key"
+    },
+    {
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
+      "api_key": "sk-ant-your-key"
+    },
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt-5.2"
+    }
+  }
+}
+```
+
+#### ベンダー別の例
+
+**OpenAI**
+```json
+{
+  "model_name": "gpt-5.2",
+  "model": "openai/gpt-5.2",
+  "api_key": "sk-..."
+}
+```
+
+**Zhipu AI (GLM)**
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**Anthropic (OAuth使用)**
+```json
+{
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
+  "auth_method": "oauth"
+}
+```
+> OAuth認証を設定するには、`picoclaw auth login --provider anthropic` を実行してください。
+
+#### ロードバランシング
+
+同じモデル名で複数のエンドポイントを設定すると、PicoClaw が自動的にラウンドロビンで分散します：
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
+  ]
+}
+```
+
+#### 従来の `providers` 設定からの移行
+
+古い `providers` 設定は**非推奨**ですが、後方互換性のためにサポートされています。
+
+**旧設定（非推奨）:**
+```json
+{
+  "providers": {
+    "zhipu": {
+      "api_key": "your-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "zhipu",
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+**新設定（推奨）:**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+詳細な移行ガイドは、[docs/migration/model-list-migration.md](docs/migration/model-list-migration.md) を参照してください。
 
 ## CLI リファレンス
 
@@ -729,7 +980,7 @@ Discord: https://discord.gg/V4sAZ9XWpN
 
 ## 🐛 トラブルシューティング
 
-### Web 検索で「API 配置问题」と表示される
+### Web 検索で「API 設定の問題」と表示される
 
 検索 API キーをまだ設定していない場合、これは正常です。PicoClaw は手動検索用の便利なリンクを提供します。
 
@@ -740,8 +991,13 @@ Web 検索を有効にするには：
    {
      "tools": {
        "web": {
-         "search": {
+         "brave": {
+           "enabled": true,
            "api_key": "YOUR_BRAVE_API_KEY",
+           "max_results": 5
+         },
+         "duckduckgo": {
+           "enabled": true,
            "max_results": 5
          }
        }
@@ -765,5 +1021,7 @@ Web 検索を有効にするには：
 |---------|--------|------------|
 | **OpenRouter** | 月 200K トークン | 複数モデル（Claude, GPT-4 など） |
 | **Zhipu** | 月 200K トークン | 中国ユーザー向け最適 |
+| **Qwen** | 無料枠あり | 通義千問 (Qwen) |
 | **Brave Search** | 月 2000 クエリ | Web 検索機能 |
 | **Groq** | 無料枠あり | 高速推論（Llama, Mixtral） |
+| **Cerebras** | 無料枠あり | 高速推論（Llama, Qwen など） |

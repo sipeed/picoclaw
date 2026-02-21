@@ -10,17 +10,21 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
+
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-const codexDefaultModel = "gpt-5.2"
-const codexDefaultInstructions = "You are Codex, a coding assistant."
+const (
+	codexDefaultModel        = "gpt-5.2"
+	codexDefaultInstructions = "You are Codex, a coding assistant."
+)
 
 type CodexProvider struct {
-	client      *openai.Client
-	accountID   string
-	tokenSource func() (string, string, error)
+	client          *openai.Client
+	accountID       string
+	tokenSource     func() (string, string, error)
+	enableWebSearch bool
 }
 
 const defaultCodexInstructions = "You are Codex, a coding assistant."
@@ -37,27 +41,36 @@ func NewCodexProvider(token, accountID string) *CodexProvider {
 	}
 	client := openai.NewClient(opts...)
 	return &CodexProvider{
-		client:    &client,
-		accountID: accountID,
+		client:          &client,
+		accountID:       accountID,
+		enableWebSearch: true,
 	}
 }
 
-func NewCodexProviderWithTokenSource(token, accountID string, tokenSource func() (string, string, error)) *CodexProvider {
+func NewCodexProviderWithTokenSource(
+	token, accountID string, tokenSource func() (string, string, error),
+) *CodexProvider {
 	p := NewCodexProvider(token, accountID)
 	p.tokenSource = tokenSource
 	return p
 }
 
-func (p *CodexProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *CodexProvider) Chat(
+	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
+) (*LLMResponse, error) {
 	var opts []option.RequestOption
 	accountID := p.accountID
 	resolvedModel, fallbackReason := resolveCodexModel(model)
 	if fallbackReason != "" {
-		logger.WarnCF("provider.codex", "Requested model is not compatible with Codex backend, using fallback", map[string]interface{}{
-			"requested_model": model,
-			"resolved_model":  resolvedModel,
-			"reason":          fallbackReason,
-		})
+		logger.WarnCF(
+			"provider.codex",
+			"Requested model is not compatible with Codex backend, using fallback",
+			map[string]any{
+				"requested_model": model,
+				"resolved_model":  resolvedModel,
+				"reason":          fallbackReason,
+			},
+		)
 	}
 	if p.tokenSource != nil {
 		tok, accID, err := p.tokenSource()
@@ -72,13 +85,17 @@ func (p *CodexProvider) Chat(ctx context.Context, messages []Message, tools []To
 	if accountID != "" {
 		opts = append(opts, option.WithHeader("Chatgpt-Account-Id", accountID))
 	} else {
-		logger.WarnCF("provider.codex", "No account id found for Codex request; backend may reject with 400", map[string]interface{}{
-			"requested_model": model,
-			"resolved_model":  resolvedModel,
-		})
+		logger.WarnCF(
+			"provider.codex",
+			"No account id found for Codex request; backend may reject with 400",
+			map[string]any{
+				"requested_model": model,
+				"resolved_model":  resolvedModel,
+			},
+		)
 	}
 
-	params := buildCodexParams(messages, tools, resolvedModel, options)
+	params := buildCodexParams(messages, tools, resolvedModel, options, p.enableWebSearch)
 
 	stream := p.client.Responses.NewStreaming(ctx, params, opts...)
 	defer stream.Close()
@@ -96,7 +113,7 @@ func (p *CodexProvider) Chat(ctx context.Context, messages []Message, tools []To
 	}
 	err := stream.Err()
 	if err != nil {
-		fields := map[string]interface{}{
+		fields := map[string]any{
 			"requested_model":    model,
 			"resolved_model":     resolvedModel,
 			"messages_count":     len(messages),
@@ -122,7 +139,7 @@ func (p *CodexProvider) Chat(ctx context.Context, messages []Message, tools []To
 		return nil, fmt.Errorf("codex API call: %w", err)
 	}
 	if resp == nil {
-		fields := map[string]interface{}{
+		fields := map[string]any{
 			"requested_model":    model,
 			"resolved_model":     resolvedModel,
 			"messages_count":     len(messages),
@@ -182,7 +199,9 @@ func resolveCodexModel(model string) (string, string) {
 	return codexDefaultModel, "unsupported model family"
 }
 
-func buildCodexParams(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) responses.ResponseNewParams {
+func buildCodexParams(
+	messages []Message, tools []ToolDefinition, model string, options map[string]any, enableWebSearch bool,
+) responses.ResponseNewParams {
 	var inputItems responses.ResponseInputParam
 	var instructions string
 
@@ -195,7 +214,9 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
 						CallID: msg.ToolCallID,
-						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: openai.Opt(msg.Content)},
+						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+							OfString: openai.Opt(msg.Content),
+						},
 					},
 				})
 			} else {
@@ -217,12 +238,18 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 					})
 				}
 				for _, tc := range msg.ToolCalls {
-					argsJSON, _ := json.Marshal(tc.Arguments)
+					name, args, ok := resolveCodexToolCall(tc)
+					if !ok {
+						logger.WarnCF("provider.codex", "Skipping invalid tool call in history", map[string]any{
+							"call_id": tc.ID,
+						})
+						continue
+					}
 					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 						OfFunctionCall: &responses.ResponseFunctionToolCallParam{
 							CallID:    tc.ID,
-							Name:      tc.Name,
-							Arguments: string(argsJSON),
+							Name:      name,
+							Arguments: args,
 						},
 					})
 				}
@@ -238,7 +265,9 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 			inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 				OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
 					CallID: msg.ToolCallID,
-					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: openai.Opt(msg.Content)},
+					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+						OfString: openai.Opt(msg.Content),
+					},
 				},
 			})
 		}
@@ -260,20 +289,50 @@ func buildCodexParams(messages []Message, tools []ToolDefinition, model string, 
 		params.Instructions = openai.Opt(defaultCodexInstructions)
 	}
 
-	if maxTokens, ok := options["max_tokens"].(int); ok {
-		params.MaxOutputTokens = openai.Opt(int64(maxTokens))
-	}
-
-	if len(tools) > 0 {
-		params.Tools = translateToolsForCodex(tools)
+	if len(tools) > 0 || enableWebSearch {
+		params.Tools = translateToolsForCodex(tools, enableWebSearch)
 	}
 
 	return params
 }
 
-func translateToolsForCodex(tools []ToolDefinition) []responses.ToolUnionParam {
-	result := make([]responses.ToolUnionParam, 0, len(tools))
+func resolveCodexToolCall(tc ToolCall) (name string, arguments string, ok bool) {
+	name = tc.Name
+	if name == "" && tc.Function != nil {
+		name = tc.Function.Name
+	}
+	if name == "" {
+		return "", "", false
+	}
+
+	if len(tc.Arguments) > 0 {
+		argsJSON, err := json.Marshal(tc.Arguments)
+		if err != nil {
+			return "", "", false
+		}
+		return name, string(argsJSON), true
+	}
+
+	if tc.Function != nil && tc.Function.Arguments != "" {
+		return name, tc.Function.Arguments, true
+	}
+
+	return name, "{}", true
+}
+
+func translateToolsForCodex(tools []ToolDefinition, enableWebSearch bool) []responses.ToolUnionParam {
+	capHint := len(tools)
+	if enableWebSearch {
+		capHint++
+	}
+	result := make([]responses.ToolUnionParam, 0, capHint)
 	for _, t := range tools {
+		if t.Type != "function" {
+			continue
+		}
+		if enableWebSearch && strings.EqualFold(t.Function.Name, "web_search") {
+			continue
+		}
 		ft := responses.FunctionToolParam{
 			Name:       t.Function.Name,
 			Parameters: t.Function.Parameters,
@@ -283,6 +342,9 @@ func translateToolsForCodex(tools []ToolDefinition) []responses.ToolUnionParam {
 			ft.Description = openai.Opt(t.Function.Description)
 		}
 		result = append(result, responses.ToolUnionParam{OfFunction: &ft})
+	}
+	if enableWebSearch {
+		result = append(result, responses.ToolParamOfWebSearch(responses.WebSearchToolTypeWebSearch))
 	}
 	return result
 }
@@ -300,9 +362,9 @@ func parseCodexResponse(resp *responses.Response) *LLMResponse {
 				}
 			}
 		case "function_call":
-			var args map[string]interface{}
+			var args map[string]any
 			if err := json.Unmarshal([]byte(item.Arguments), &args); err != nil {
-				args = map[string]interface{}{"raw": item.Arguments}
+				args = map[string]any{"raw": item.Arguments}
 			}
 			toolCalls = append(toolCalls, ToolCall{
 				ID:        item.CallID,
