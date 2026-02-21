@@ -418,6 +418,13 @@ function sendSkillCommand() {
   sendCommand(cmd);
 }
 
+function startPlan() {
+  const input = document.getElementById('plan-task');
+  const task = input.value.trim();
+  if (!task) return;
+  sendCommand('/plan ' + task);
+}
+
 async function apiFetch(path) {
   const sep = path.includes('?') ? '&' : '?';
   const res = await fetch(API_BASE + path + sep + 'initData=' + encodeURIComponent(initData));
@@ -439,7 +446,15 @@ async function loadPlan() {
     el.style.display = 'block';
 
     if (!data.has_plan) {
-      el.innerHTML = '<div class="empty-state">No active plan.<br><br>Start one with /plan &lt;task&gt;</div>';
+      el.innerHTML =
+        '<div class="empty-state">No active plan.</div>' +
+        '<div class="card" style="margin-top:16px">' +
+          '<div class="card-title">Start a Plan</div>' +
+          '<div style="display:flex;gap:8px;margin-top:8px">' +
+            '<input id="plan-task" class="send-input" placeholder="Describe your task...">' +
+            '<button class="send-btn" onclick="startPlan()">Start</button>' +
+          '</div>' +
+        '</div>';
       return;
     }
 

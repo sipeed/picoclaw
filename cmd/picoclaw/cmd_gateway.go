@@ -32,13 +32,16 @@ import (
 )
 
 func gatewayCmd() {
-	// Check for --debug flag
+	// Check for --debug and --stats flags
 	args := os.Args[2:]
+	enableStats := false
 	for _, arg := range args {
 		if arg == "--debug" || arg == "-d" {
 			logger.SetLevel(logger.DEBUG)
 			fmt.Println("🔍 Debug mode enabled")
-			break
+		}
+		if arg == "--stats" {
+			enableStats = true
 		}
 	}
 
@@ -59,7 +62,7 @@ func gatewayCmd() {
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, enableStats)
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
