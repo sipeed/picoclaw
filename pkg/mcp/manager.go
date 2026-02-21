@@ -73,6 +73,10 @@ func loadEnvFile(path string) (map[string]string, error) {
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
 
+		if key == "" {
+			return nil, fmt.Errorf("invalid format at line %d: empty key", lineNum)
+		}
+
 		// Remove surrounding quotes if present
 		if len(value) >= 2 {
 			if (value[0] == '"' && value[len(value)-1] == '"') ||
