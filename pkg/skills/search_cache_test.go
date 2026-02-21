@@ -153,7 +153,7 @@ func TestSearchCacheConcurrency(t *testing.T) {
 
 	// Concurrent writes
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			cache.Put("query-write-"+string(rune('a'+i%26)), []SearchResult{{Slug: "x"}})
 		}
 		done <- struct{}{}
@@ -161,7 +161,7 @@ func TestSearchCacheConcurrency(t *testing.T) {
 
 	// Concurrent reads
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			cache.Get("query-write-a")
 		}
 		done <- struct{}{}

@@ -138,7 +138,7 @@ func TestCooldown_FailureWindowReset(t *testing.T) {
 	ct, current := newTestTracker(now)
 
 	// 4 errors → 1h cooldown
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		ct.MarkFailure("openai", FailoverRateLimit)
 		*current = current.Add(2 * time.Second) // small advance between errors
 	}
@@ -230,7 +230,7 @@ func TestCooldown_ConcurrentAccess(t *testing.T) {
 	ct := NewCooldownTracker()
 	var wg sync.WaitGroup
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		wg.Add(3)
 		go func() {
 			defer wg.Done()

@@ -135,7 +135,7 @@ func TestConcurrentAccess(t *testing.T) {
 
 	// Test concurrent writes
 	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		go func(idx int) {
 			channel := fmt.Sprintf("channel-%d", idx)
 			sm.SetLastChannel(channel)
@@ -144,7 +144,7 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 
