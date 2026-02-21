@@ -203,10 +203,11 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled   bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token     string              `json:"token"      env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	Proxy     string              `json:"proxy"      env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled"      env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token     string              `json:"token"        env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	Proxy     string              `json:"proxy"        env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	WebAppURL string              `json:"web_app_url"  env:"PICOCLAW_CHANNELS_TELEGRAM_WEB_APP_URL"`
+	AllowFrom FlexibleStringSlice `json:"allow_from"   env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
 }
 
 type FeishuConfig struct {

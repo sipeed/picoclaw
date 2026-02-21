@@ -142,6 +142,13 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		return c.handleQuickCommand(ctx, message)
 	}, th.CommandEqual("skills"))
 
+	// WebAppData handler: intercept messages from Mini App before AnyMessage
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.handleWebAppData(ctx, message)
+	}, func(_ context.Context, update telego.Update) bool {
+		return update.Message != nil && update.Message.WebAppData != nil
+	})
+
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
@@ -150,6 +157,28 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
 		"username": c.bot.Username(),
 	})
+
+	// Set Menu Button for Mini App (if WebAppURL is configured)
+	if webAppURL := c.config.Channels.Telegram.WebAppURL; webAppURL != "" {
+		menuErr := c.bot.SetChatMenuButton(ctx, &telego.SetChatMenuButtonParams{
+			MenuButton: &telego.MenuButtonWebApp{
+				Type: telego.ButtonTypeWebApp,
+				Text: "Dashboard",
+				WebApp: telego.WebAppInfo{
+					URL: webAppURL,
+				},
+			},
+		})
+		if menuErr != nil {
+			logger.ErrorCF("telegram", "Failed to set menu button", map[string]any{
+				"error": menuErr.Error(),
+			})
+		} else {
+			logger.InfoCF("telegram", "Menu button set", map[string]any{
+				"url": webAppURL,
+			})
+		}
+	}
 
 	go bh.Start()
 
@@ -541,6 +570,63 @@ func (c *TelegramChannel) handleQuickCommand(ctx context.Context, message telego
 	// No "Thinking..." placeholder — send directly via message bus.
 	// SkipPlaceholder=true on the outbound message prevents Send() from
 	// touching the ongoing task's stopThinking/placeholders state.
+	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, nil, metadata)
+	return nil
+}
+
+// handleWebAppData processes messages sent via Telegram Mini App's sendData().
+// The data is treated as a slash command and routed through the normal message bus.
+func (c *TelegramChannel) handleWebAppData(ctx context.Context, message telego.Message) error {
+	if message.From == nil || message.WebAppData == nil {
+		return nil
+	}
+
+	user := message.From
+	senderID := fmt.Sprintf("%d", user.ID)
+	if user.Username != "" {
+		senderID = fmt.Sprintf("%d|%s", user.ID, user.Username)
+	}
+
+	if !c.IsAllowed(senderID) {
+		logger.DebugCF("telegram", "WebAppData rejected by allowlist", map[string]any{
+			"user_id": senderID,
+		})
+		return nil
+	}
+
+	content := message.WebAppData.Data
+	if !strings.HasPrefix(content, "/") {
+		logger.DebugCF("telegram", "WebAppData ignored (not a command)", map[string]any{
+			"data": utils.Truncate(content, 50),
+		})
+		return nil
+	}
+
+	chatID := message.Chat.ID
+
+	logger.InfoCF("telegram", "WebAppData command received", map[string]any{
+		"user_id": senderID,
+		"command": utils.Truncate(content, 80),
+	})
+
+	peerKind := "direct"
+	peerID := fmt.Sprintf("%d", user.ID)
+	if message.Chat.Type != "private" {
+		peerKind = "group"
+		peerID = fmt.Sprintf("%d", chatID)
+	}
+
+	metadata := map[string]string{
+		"message_id": fmt.Sprintf("%d", message.MessageID),
+		"user_id":    fmt.Sprintf("%d", user.ID),
+		"username":   user.Username,
+		"first_name": user.FirstName,
+		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
+		"peer_kind":  peerKind,
+		"peer_id":    peerID,
+		"source":     "webapp",
+	}
+
 	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, nil, metadata)
 	return nil
 }

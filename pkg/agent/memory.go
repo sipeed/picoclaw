@@ -188,34 +188,43 @@ func (ms *MemoryStore) GetTotalPhases() int {
 
 // IsPlanComplete returns true if all steps in all phases are [x].
 func (ms *MemoryStore) IsPlanComplete() bool {
-	content := ms.ReadLongTerm()
-	if !reActivePlan.MatchString(content) {
+	phases := ms.GetPlanPhases()
+	if len(phases) == 0 {
 		return false
 	}
-	// Must have at least one step
-	if !reStepDone.MatchString(content) && !reStepTodo.MatchString(content) {
-		return false
+	hasSteps := false
+	for _, p := range phases {
+		for _, s := range p.Steps {
+			hasSteps = true
+			if !s.Done {
+				return false
+			}
+		}
 	}
-	// No unchecked steps
-	return !reStepTodo.MatchString(content)
+	return hasSteps
 }
 
 // IsCurrentPhaseComplete returns true if all steps in the current phase are [x].
 func (ms *MemoryStore) IsCurrentPhaseComplete() bool {
-	content := ms.ReadLongTerm()
-	phase := ms.GetCurrentPhase()
-	if phase == 0 {
+	current := ms.GetCurrentPhase()
+	if current == 0 {
 		return false
 	}
-	phaseContent := ms.extractPhaseContent(content, phase)
-	if phaseContent == "" {
-		return false
+	phases := ms.GetPlanPhases()
+	for _, p := range phases {
+		if p.Number == current {
+			if len(p.Steps) == 0 {
+				return false
+			}
+			for _, s := range p.Steps {
+				if !s.Done {
+					return false
+				}
+			}
+			return true
+		}
 	}
-	// Must have at least one step
-	if !reStepDone.MatchString(phaseContent) && !reStepTodo.MatchString(phaseContent) {
-		return false
-	}
-	return !reStepTodo.MatchString(phaseContent)
+	return false
 }
 
 // extractPhaseContent returns the content of a specific phase section.
@@ -240,6 +249,65 @@ func (ms *MemoryStore) extractPhaseContent(content string, phase int) string {
 		}
 	}
 	return strings.Join(result, "\n")
+}
+
+// PlanPhase represents a phase with its steps, for structured API output.
+type PlanPhase struct {
+	Number int        `json:"number"`
+	Title  string     `json:"title"`
+	Steps  []PlanStep `json:"steps"`
+}
+
+// PlanStep represents a single step within a phase.
+type PlanStep struct {
+	Index       int    `json:"index"` // 1-based within the phase
+	Description string `json:"description"`
+	Done        bool   `json:"done"`
+}
+
+// GetPlanPhases parses MEMORY.md and returns all phases with their steps.
+func (ms *MemoryStore) GetPlanPhases() []PlanPhase {
+	content := ms.ReadLongTerm()
+	if !reActivePlan.MatchString(content) {
+		return nil
+	}
+
+	totalPhases := ms.GetTotalPhases()
+	phases := make([]PlanPhase, 0, totalPhases)
+
+	for p := 1; p <= totalPhases; p++ {
+		title := ms.getPhaseTitle(content, p)
+		phaseContent := ms.extractPhaseContent(content, p)
+
+		var steps []PlanStep
+		stepIdx := 0
+		for _, line := range strings.Split(phaseContent, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "- [x] ") {
+				stepIdx++
+				steps = append(steps, PlanStep{
+					Index:       stepIdx,
+					Description: line[6:],
+					Done:        true,
+				})
+			} else if strings.HasPrefix(line, "- [ ] ") {
+				stepIdx++
+				steps = append(steps, PlanStep{
+					Index:       stepIdx,
+					Description: line[6:],
+					Done:        false,
+				})
+			}
+		}
+
+		phases = append(phases, PlanPhase{
+			Number: p,
+			Title:  title,
+			Steps:  steps,
+		})
+	}
+
+	return phases
 }
 
 // ---------- Plan mutation methods ----------
@@ -514,37 +582,32 @@ func (ms *MemoryStore) FormatPlanDisplay() string {
 	}
 	status := ms.GetPlanStatus()
 	currentPhase := ms.GetCurrentPhase()
-	totalPhases := ms.GetTotalPhases()
+	phases := ms.GetPlanPhases()
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Plan: %s\n", taskLine))
-	sb.WriteString(fmt.Sprintf("Status: %s | Phase %d/%d\n\n", status, currentPhase, totalPhases))
+	sb.WriteString(fmt.Sprintf("Status: %s | Phase %d/%d\n\n", status, currentPhase, len(phases)))
 
-	for p := 1; p <= totalPhases; p++ {
-		title := ms.getPhaseTitle(content, p)
-		phaseContent := ms.extractPhaseContent(content, p)
-
+	for _, p := range phases {
 		// Determine phase emoji
 		var emoji string
-		if p < currentPhase {
+		if p.Number < currentPhase {
 			emoji = "\u2705" // checkmark
-		} else if p == currentPhase {
+		} else if p.Number == currentPhase {
 			emoji = "\u25B6\uFE0F" // play button
 		} else {
 			emoji = "\u23F3" // hourglass
 		}
 
-		sb.WriteString(fmt.Sprintf("%s Phase %d: %s\n", emoji, p, title))
+		sb.WriteString(fmt.Sprintf("%s Phase %d: %s\n", emoji, p.Number, p.Title))
 
 		// Show steps for current and completed phases
-		if p <= currentPhase {
-			lines := strings.Split(phaseContent, "\n")
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "- [x] ") {
-					sb.WriteString("  \u2611 " + line[6:] + "\n")
-				} else if strings.HasPrefix(line, "- [ ] ") {
-					sb.WriteString("  \u2610 " + line[6:] + "\n")
+		if p.Number <= currentPhase {
+			for _, s := range p.Steps {
+				if s.Done {
+					sb.WriteString("  \u2611 " + s.Description + "\n")
+				} else {
+					sb.WriteString("  \u2610 " + s.Description + "\n")
 				}
 			}
 		}

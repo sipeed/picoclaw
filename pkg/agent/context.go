@@ -347,6 +347,11 @@ func (cb *ContextBuilder) ListSkills() []skills.SkillInfo {
 	return cb.skillsLoader.ListSkills()
 }
 
+// Memory returns the underlying MemoryStore for direct plan queries.
+func (cb *ContextBuilder) Memory() *MemoryStore {
+	return cb.memory
+}
+
 // ---------- Plan passthrough methods ----------
 
 // ReadMemory reads the long-term memory (MEMORY.md).

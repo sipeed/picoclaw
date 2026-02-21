@@ -53,6 +53,7 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
+      "web_app_url": "",
       "allow_from": [
         "YOUR_USER_ID"
       ]

@@ -1948,6 +1948,55 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 	return info
 }
 
+// ListSkills returns all available skills from the default agent.
+func (al *AgentLoop) ListSkills() []skills.SkillInfo {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return nil
+	}
+	return agent.ContextBuilder.ListSkills()
+}
+
+// GetPlanInfo returns plan state from the default agent's memory store.
+func (al *AgentLoop) GetPlanInfo() (hasPlan bool, status string, currentPhase, totalPhases int, display string) {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return false, "", 0, 0, "No agent available."
+	}
+	mem := agent.ContextBuilder.Memory()
+	if mem == nil {
+		return false, "", 0, 0, "No memory store."
+	}
+	hasPlan = mem.HasActivePlan()
+	status = mem.GetPlanStatus()
+	currentPhase = mem.GetCurrentPhase()
+	totalPhases = mem.GetTotalPhases()
+	display = mem.FormatPlanDisplay()
+	return
+}
+
+// GetPlanPhases returns structured phase/step data from the default agent's plan.
+func (al *AgentLoop) GetPlanPhases() []PlanPhase {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return nil
+	}
+	mem := agent.ContextBuilder.Memory()
+	if mem == nil {
+		return nil
+	}
+	return mem.GetPlanPhases()
+}
+
+// GetSessionStats returns the current session statistics snapshot, or nil if stats tracking is disabled.
+func (al *AgentLoop) GetSessionStats() *stats.Stats {
+	if al.stats == nil {
+		return nil
+	}
+	s := al.stats.GetStats()
+	return &s
+}
+
 // formatMessagesForLog formats messages for logging
 func formatMessagesForLog(messages []providers.Message) string {
 	if len(messages) == 0 {
