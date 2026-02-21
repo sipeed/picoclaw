@@ -392,3 +392,24 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
 	}
 }
+
+func TestLoadConfig_WebToolsProxy(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "agents": {"defaults":{"workspace":"./workspace","model":"gpt4","max_tokens":8192,"max_tool_iterations":20}},
+  "model_list": [{"model_name":"gpt4","model":"openai/gpt-5.2","api_key":"x"}],
+  "tools": {"web":{"proxy":"http://127.0.0.1:7890"}}
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Tools.Web.Proxy != "http://127.0.0.1:7890" {
+		t.Fatalf("Tools.Web.Proxy = %q, want %q", cfg.Tools.Web.Proxy, "http://127.0.0.1:7890")
+	}
+}
