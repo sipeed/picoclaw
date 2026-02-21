@@ -11,7 +11,6 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
-	github.com/chzyer/readline v1.5.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
