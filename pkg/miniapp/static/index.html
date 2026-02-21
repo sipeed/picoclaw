@@ -121,14 +121,15 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    padding: 8px 0 8px 30px;
-    border-bottom: 1px solid var(--secondary-bg);
+    padding: 10px 12px 10px 30px;
+    margin-bottom: 4px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: opacity 0.15s;
+    transition: all 0.15s;
   }
 
-  .step:last-child { border-bottom: none; }
-  .step:active { opacity: 0.6; }
+  .step:active { transform: scale(0.97); }
+  .step:not(.step-done) { background: var(--secondary-bg); }
 
   .step-check {
     width: 20px;
@@ -172,15 +173,20 @@
   .skill-item {
     background: var(--secondary-bg);
     border-radius: 12px;
-    padding: 14px;
+    padding: 14px 14px 14px 16px;
     margin-bottom: 8px;
     cursor: pointer;
-    transition: opacity 0.2s;
-    border-left: 3px solid transparent;
+    transition: all 0.15s;
+    border-left: 3px solid var(--hint);
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 
-  .skill-item:active { opacity: 0.7; }
-  .skill-item.selected { border-left-color: var(--btn); }
+  .skill-item:active { transform: scale(0.97); }
+  .skill-item.selected { border-left-color: var(--btn); background: color-mix(in srgb, var(--btn) 10%, var(--secondary-bg)); }
+
+  .skill-body { flex: 1; min-width: 0; }
 
   .skill-name {
     font-weight: 600;
@@ -203,6 +209,14 @@
     color: var(--btn-text);
     margin-top: 6px;
   }
+
+  .skill-arrow {
+    color: var(--hint);
+    font-size: 18px;
+    flex-shrink: 0;
+    transition: color 0.15s;
+  }
+  .skill-item.selected .skill-arrow { color: var(--btn); }
 
   /* Stats */
   .stat-row {
@@ -270,46 +284,48 @@
     padding: 40px 20px;
   }
 
-  .cmd-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 12px;
+  .cmd-tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
 
-  .cmd-chip {
-    padding: 6px 14px;
-    border-radius: 16px;
-    border: 1px solid var(--hint);
-    background: var(--bg);
+  .cmd-tile {
+    padding: 16px 14px;
+    border-radius: 12px;
+    border: none;
+    background: var(--secondary-bg);
     color: var(--text);
-    font-size: 13px;
+    font-size: 15px;
+    font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.15s;
+    text-align: center;
   }
 
-  .cmd-chip:active { transform: scale(0.93); }
+  .cmd-tile:active { transform: scale(0.95); }
 
-  .cmd-chip.sent {
+  .cmd-tile.sent {
     background: var(--btn);
     color: var(--btn-text);
-    border-color: var(--btn);
     transition: all 0.15s;
   }
 
   .refresh-btn {
-    padding: 8px 16px;
-    border-radius: 8px;
-    border: 1px solid var(--hint);
-    background: var(--bg);
-    color: var(--text);
-    font-size: 13px;
+    display: block;
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: none;
+    background: var(--secondary-bg);
+    color: var(--hint);
+    font-size: 14px;
     cursor: pointer;
-    float: right;
-    margin-bottom: 8px;
+    margin-top: 8px;
+    transition: all 0.15s;
   }
 
-  .refresh-btn:active { opacity: 0.7; }
+  .refresh-btn:active { transform: scale(0.97); }
 </style>
 </head>
 <body>
@@ -339,10 +355,10 @@
 <div id="config" class="panel">
   <div class="card">
     <div class="card-title">Quick Commands</div>
-    <div class="cmd-chips">
-      <button class="cmd-chip" data-cmd="/session">/session</button>
-      <button class="cmd-chip" data-cmd="/skills">/skills</button>
-      <button class="cmd-chip" data-cmd="/plan clear">/plan clear</button>
+    <div class="cmd-tiles">
+      <button class="cmd-tile" data-cmd="/session">/session</button>
+      <button class="cmd-tile" data-cmd="/skills">/skills</button>
+      <button class="cmd-tile" data-cmd="/plan clear">/plan clear</button>
     </div>
   </div>
   <div class="card">
@@ -385,11 +401,11 @@ document.querySelectorAll('.tab').forEach(tab => {
   });
 });
 
-// Quick command chips
-document.querySelectorAll('.cmd-chip').forEach(chip => {
-  chip.addEventListener('click', async () => {
-    const ok = await sendCommand(chip.dataset.cmd);
-    if (ok) flashSent(chip);
+// Quick command tiles
+document.querySelectorAll('.cmd-tile').forEach(tile => {
+  tile.addEventListener('click', async () => {
+    const ok = await sendCommand(tile.dataset.cmd);
+    if (ok) flashSent(tile);
   });
 });
 
@@ -536,7 +552,8 @@ function renderPhases(phases, currentPhase) {
     for (const step of phase.steps) {
       const checkClass = step.done ? 'done' : '';
       const textClass = step.done ? 'done' : '';
-      html += '<div class="step" data-phase="' + phase.number + '" data-step="' + step.index + '" data-done="' + step.done + '">';
+      const stepClass = step.done ? 'step step-done' : 'step';
+      html += '<div class="' + stepClass + '" data-phase="' + phase.number + '" data-step="' + step.index + '" data-done="' + step.done + '">';
       html += '<div class="step-check ' + checkClass + '"></div>';
       html += '<div class="step-text ' + textClass + '">' + escapeHtml(step.description) + '</div>';
       html += '</div>';
@@ -579,9 +596,12 @@ async function loadSkills() {
 
     el.innerHTML = data.map(s =>
       '<div class="skill-item" data-skill="' + escapeAttr(s.name) + '">' +
-        '<div class="skill-name">' + escapeHtml(s.name) + '</div>' +
-        '<div class="skill-desc">' + escapeHtml(s.description || 'No description') + '</div>' +
-        '<span class="skill-source">' + escapeHtml(s.source) + '</span>' +
+        '<div class="skill-body">' +
+          '<div class="skill-name">' + escapeHtml(s.name) + '</div>' +
+          '<div class="skill-desc">' + escapeHtml(s.description || 'No description') + '</div>' +
+          '<span class="skill-source">' + escapeHtml(s.source) + '</span>' +
+        '</div>' +
+        '<span class="skill-arrow">\u203A</span>' +
       '</div>'
     ).join('');
 
