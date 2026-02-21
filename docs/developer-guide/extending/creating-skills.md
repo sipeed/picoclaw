@@ -85,7 +85,7 @@ mkdir -p ~/.picoclaw/skills/my-skill
 
 ### Step 2: Create SKILL.md
 
-Create `~/.picoclaw/skills/my-skill/SILL.md`:
+Create `~/.picoclaw/skills/my-skill/SKILL.md`:
 
 ```markdown
 ---
