@@ -242,6 +242,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			continue
 		}
 
+		// Echo commands sent from the Mini App so the user can see what was sent.
+		if msg.Metadata["source"] == "webapp" && msg.Content != "" {
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel:         msg.Channel,
+				ChatID:          msg.ChatID,
+				Content:         "via MiniApp: " + msg.Content,
+				SkipPlaceholder: true,
+			})
+		}
+
 		// Fast path: handle slash commands immediately without blocking the LLM worker.
 		if response, handled := al.handleCommand(ctx, msg); handled {
 			if response != "" {
