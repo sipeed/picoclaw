@@ -1152,11 +1152,11 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	// Workspace: always emit for fixed height (show project name only)
 	sb.WriteString("\U0001F4C1 ")
 	if workspace != "" {
-		project := workspace
-		if idx := strings.LastIndex(workspace, "/"); idx >= 0 {
-			project = workspace[idx+1:]
-		} else if idx := strings.LastIndex(workspace, "\\"); idx >= 0 {
-			project = workspace[idx+1:]
+		project := strings.TrimRight(workspace, "/\\")
+		if idx := strings.LastIndex(project, "/"); idx >= 0 {
+			project = project[idx+1:]
+		} else if idx := strings.LastIndex(project, "\\"); idx >= 0 {
+			project = project[idx+1:]
 		}
 		sb.WriteString(project)
 	}

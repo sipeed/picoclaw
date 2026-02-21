@@ -1569,6 +1569,23 @@ func TestBuildRichStatus(t *testing.T) {
 	}
 }
 
+func TestBuildRichStatus_TrailingSlash(t *testing.T) {
+	task := &activeTask{
+		Iteration: 1,
+		MaxIter:   10,
+		toolLog: []toolLogEntry{
+			{Name: "exec", ArgsSnip: "ls", Result: "✓ 0.1s"},
+		},
+	}
+	// Trailing slash should not break project name extraction
+	for _, ws := range []string{"/home/user/terra-py-form/", "/home/user/terra-py-form", "C:\\Users\\dev\\terra-py-form\\"} {
+		got := buildRichStatus(task, false, ws)
+		if !strings.Contains(got, "terra-py-form") {
+			t.Errorf("workspace %q: expected 'terra-py-form' in output, got:\n%s", ws, got)
+		}
+	}
+}
+
 func TestBuildRichStatus_FixedHeight(t *testing.T) {
 	// Test that output has the same number of lines regardless of entry count
 	countLines := func(s string) int {
