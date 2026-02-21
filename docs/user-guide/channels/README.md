@@ -12,6 +12,7 @@ PicoClaw supports multiple chat platforms, allowing you to interact with your AI
 | [LINE](line.md) | Medium | Full support, webhooks |
 | [QQ](qq.md) | Easy | Basic support |
 | [DingTalk](dingtalk.md) | Medium | Basic support |
+| [WeCom](wecom.md) | Medium | Enterprise, bot + app modes |
 | [WhatsApp](whatsapp.md) | Medium | Requires bridge |
 | [Feishu/Lark](feishu-lark.md) | Medium | Enterprise features |
 | [OneBot](onebot.md) | Medium | Universal protocol |
@@ -131,6 +132,7 @@ You can enable multiple channels simultaneously:
 - [LINE Setup](line.md)
 - [QQ Setup](qq.md)
 - [DingTalk Setup](dingtalk.md)
+- [WeCom Setup](wecom.md)
 - [WhatsApp Setup](whatsapp.md)
 - [Feishu/Lark Setup](feishu-lark.md)
 - [OneBot Setup](onebot.md)

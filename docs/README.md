@@ -53,6 +53,7 @@ Complete guide to using PicoClaw features.
   - [LINE](user-guide/channels/line.md) - LINE bot setup
   - [QQ](user-guide/channels/qq.md) - QQ bot setup
   - [DingTalk](user-guide/channels/dingtalk.md) - DingTalk setup
+  - [WeCom](user-guide/channels/wecom.md) - WeCom (Enterprise WeChat)
   - [OneBot](user-guide/channels/onebot.md) - OneBot protocol
   - [MaixCam](user-guide/channels/maixcam.md) - MaixCam device
 

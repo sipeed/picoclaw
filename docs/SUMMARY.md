@@ -38,6 +38,7 @@
 - [LINE](user-guide/channels/line.md)
 - [QQ](user-guide/channels/qq.md)
 - [DingTalk](user-guide/channels/dingtalk.md)
+- [WeCom](user-guide/channels/wecom.md)
 - [OneBot](user-guide/channels/onebot.md)
 - [MaixCam](user-guide/channels/maixcam.md)
 
