@@ -19,6 +19,18 @@
     --pending-phase: var(--hint);
   }
 
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: var(--tg-theme-bg-color, #1c1c1e);
+      --text: var(--tg-theme-text-color, #ffffff);
+      --hint: var(--tg-theme-hint-color, #8e8e93);
+      --link: var(--tg-theme-link-color, #5ac8fa);
+      --btn: var(--tg-theme-button-color, #5ac8fa);
+      --btn-text: var(--tg-theme-button-text-color, #ffffff);
+      --secondary-bg: var(--tg-theme-secondary-bg-color, #2c2c2e);
+    }
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
@@ -184,7 +196,7 @@
   }
 
   .skill-item:active { transform: scale(0.97); }
-  .skill-item.selected { border-color: var(--btn); background: color-mix(in srgb, var(--btn) 8%, var(--bg)); }
+  .skill-item.selected { border-color: var(--btn); }
 
   .skill-body { flex: 1; min-width: 0; }
 
