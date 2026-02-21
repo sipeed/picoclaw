@@ -17,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
+	"github.com/sipeed/picoclaw/pkg/dashboard"
 	"github.com/sipeed/picoclaw/pkg/devices"
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
@@ -187,12 +188,37 @@ func gatewayCmd() {
 	}
 
 	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	if cfg.Dashboard.Enabled {
+		if cfg.Dashboard.Password == "" {
+			cfg.Dashboard.Password = dashboard.GeneratePassword()
+			configPath := getConfigPath()
+			if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+				logger.ErrorCF(
+					"dashboard",
+					"Failed to save generated password",
+					map[string]any{"error": saveErr.Error()},
+				)
+			}
+			fmt.Printf("🔑 Dashboard password generated: %s\n", cfg.Dashboard.Password)
+		}
+		dashConfigPath := getConfigPath()
+		dashboard.Mount(healthServer, cfg, agentLoop, channelManager, dashConfigPath)
+		fmt.Printf(
+			"✓ Dashboard available at http://%s:%d/dashboard\n",
+			cfg.Gateway.Host,
+			cfg.Gateway.Port,
+		)
+	}
 	go func() {
 		if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
 			logger.ErrorCF("health", "Health server error", map[string]any{"error": err.Error()})
 		}
 	}()
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf(
+		"✓ Health endpoints available at http://%s:%d/health and /ready\n",
+		cfg.Gateway.Host,
+		cfg.Gateway.Port,
+	)
 
 	go agentLoop.Run(ctx)
 
@@ -225,7 +251,15 @@ func setupCronTool(
 	cronService := cron.NewCronService(cronStorePath, nil)
 
 	// Create and register CronTool
-	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
+	cronTool := tools.NewCronTool(
+		cronService,
+		agentLoop,
+		msgBus,
+		workspace,
+		restrict,
+		execTimeout,
+		cfg,
+	)
 	agentLoop.RegisterTool(cronTool)
 
 	// Set the onJob handler
