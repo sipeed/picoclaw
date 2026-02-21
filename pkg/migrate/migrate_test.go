@@ -40,43 +40,43 @@ func TestCamelToSnake(t *testing.T) {
 }
 
 func TestConvertKeysToSnake(t *testing.T) {
-	input := map[string]interface{}{
+	input := map[string]any{
 		"apiKey":  "test-key",
 		"apiBase": "https://example.com",
-		"nested": map[string]interface{}{
+		"nested": map[string]any{
 			"maxTokens": float64(8192),
-			"allowFrom": []interface{}{"user1", "user2"},
-			"deeperLevel": map[string]interface{}{
+			"allowFrom": []any{"user1", "user2"},
+			"deeperLevel": map[string]any{
 				"clientId": "abc",
 			},
 		},
 	}
 
 	result := convertKeysToSnake(input)
-	m, ok := result.(map[string]interface{})
+	m, ok := result.(map[string]any)
 	if !ok {
 		t.Fatal("expected map[string]interface{}")
 	}
 
-	if _, ok := m["api_key"]; !ok {
+	if _, ok = m["api_key"]; !ok {
 		t.Error("expected key 'api_key' after conversion")
 	}
-	if _, ok := m["api_base"]; !ok {
+	if _, ok = m["api_base"]; !ok {
 		t.Error("expected key 'api_base' after conversion")
 	}
 
-	nested, ok := m["nested"].(map[string]interface{})
+	nested, ok := m["nested"].(map[string]any)
 	if !ok {
 		t.Fatal("expected nested map")
 	}
-	if _, ok := nested["max_tokens"]; !ok {
+	if _, ok = nested["max_tokens"]; !ok {
 		t.Error("expected key 'max_tokens' in nested map")
 	}
-	if _, ok := nested["allow_from"]; !ok {
+	if _, ok = nested["allow_from"]; !ok {
 		t.Error("expected key 'allow_from' in nested map")
 	}
 
-	deeper, ok := nested["deeper_level"].(map[string]interface{})
+	deeper, ok := nested["deeper_level"].(map[string]any)
 	if !ok {
 		t.Fatal("expected deeper_level map")
 	}
@@ -89,15 +89,15 @@ func TestLoadOpenClawConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "openclaw.json")
 
-	openclawConfig := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	openclawConfig := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey":  "sk-ant-test123",
 				"apiBase": "https://api.anthropic.com",
 			},
 		},
-		"agents": map[string]interface{}{
-			"defaults": map[string]interface{}{
+		"agents": map[string]any{
+			"defaults": map[string]any{
 				"maxTokens": float64(4096),
 				"model":     "claude-3-opus",
 			},
@@ -108,7 +108,7 @@ func TestLoadOpenClawConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err = os.WriteFile(configPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -117,11 +117,11 @@ func TestLoadOpenClawConfig(t *testing.T) {
 		t.Fatalf("LoadOpenClawConfig: %v", err)
 	}
 
-	providers, ok := result["providers"].(map[string]interface{})
+	providers, ok := result["providers"].(map[string]any)
 	if !ok {
 		t.Fatal("expected providers map")
 	}
-	anthropic, ok := providers["anthropic"].(map[string]interface{})
+	anthropic, ok := providers["anthropic"].(map[string]any)
 	if !ok {
 		t.Fatal("expected anthropic map")
 	}
@@ -129,11 +129,11 @@ func TestLoadOpenClawConfig(t *testing.T) {
 		t.Errorf("api_key = %v, want sk-ant-test123", anthropic["api_key"])
 	}
 
-	agents, ok := result["agents"].(map[string]interface{})
+	agents, ok := result["agents"].(map[string]any)
 	if !ok {
 		t.Fatal("expected agents map")
 	}
-	defaults, ok := agents["defaults"].(map[string]interface{})
+	defaults, ok := agents["defaults"].(map[string]any)
 	if !ok {
 		t.Fatal("expected defaults map")
 	}
@@ -144,16 +144,16 @@ func TestLoadOpenClawConfig(t *testing.T) {
 
 func TestConvertConfig(t *testing.T) {
 	t.Run("providers mapping", func(t *testing.T) {
-		data := map[string]interface{}{
-			"providers": map[string]interface{}{
-				"anthropic": map[string]interface{}{
+		data := map[string]any{
+			"providers": map[string]any{
+				"anthropic": map[string]any{
 					"api_key":  "sk-ant-test",
 					"api_base": "https://api.anthropic.com",
 				},
-				"openrouter": map[string]interface{}{
+				"openrouter": map[string]any{
 					"api_key": "sk-or-test",
 				},
-				"groq": map[string]interface{}{
+				"groq": map[string]any{
 					"api_key": "gsk-test",
 				},
 			},
@@ -178,10 +178,10 @@ func TestConvertConfig(t *testing.T) {
 	})
 
 	t.Run("unsupported provider warning", func(t *testing.T) {
-		data := map[string]interface{}{
-			"providers": map[string]interface{}{
-				"deepseek": map[string]interface{}{
-					"api_key": "sk-deep-test",
+		data := map[string]any{
+			"providers": map[string]any{
+				"unknown_provider": map[string]any{
+					"api_key": "sk-test",
 				},
 			},
 		}
@@ -193,20 +193,20 @@ func TestConvertConfig(t *testing.T) {
 		if len(warnings) != 1 {
 			t.Fatalf("expected 1 warning, got %d", len(warnings))
 		}
-		if warnings[0] != "Provider 'deepseek' not supported in PicoClaw, skipping" {
+		if warnings[0] != "Provider 'unknown_provider' not supported in PicoClaw, skipping" {
 			t.Errorf("unexpected warning: %s", warnings[0])
 		}
 	})
 
 	t.Run("channels mapping", func(t *testing.T) {
-		data := map[string]interface{}{
-			"channels": map[string]interface{}{
-				"telegram": map[string]interface{}{
+		data := map[string]any{
+			"channels": map[string]any{
+				"telegram": map[string]any{
 					"enabled":    true,
 					"token":      "tg-token-123",
-					"allow_from": []interface{}{"user1"},
+					"allow_from": []any{"user1"},
 				},
-				"discord": map[string]interface{}{
+				"discord": map[string]any{
 					"enabled": true,
 					"token":   "disc-token-456",
 				},
@@ -232,9 +232,9 @@ func TestConvertConfig(t *testing.T) {
 	})
 
 	t.Run("unsupported channel warning", func(t *testing.T) {
-		data := map[string]interface{}{
-			"channels": map[string]interface{}{
-				"email": map[string]interface{}{
+		data := map[string]any{
+			"channels": map[string]any{
+				"email": map[string]any{
 					"enabled": true,
 				},
 			},
@@ -253,9 +253,9 @@ func TestConvertConfig(t *testing.T) {
 	})
 
 	t.Run("agent defaults", func(t *testing.T) {
-		data := map[string]interface{}{
-			"agents": map[string]interface{}{
-				"defaults": map[string]interface{}{
+		data := map[string]any{
+			"agents": map[string]any{
+				"defaults": map[string]any{
 					"model":               "claude-3-opus",
 					"max_tokens":          float64(4096),
 					"temperature":         0.5,
@@ -275,8 +275,11 @@ func TestConvertConfig(t *testing.T) {
 		if cfg.Agents.Defaults.MaxTokens != 4096 {
 			t.Errorf("MaxTokens = %d, want %d", cfg.Agents.Defaults.MaxTokens, 4096)
 		}
-		if cfg.Agents.Defaults.Temperature != 0.5 {
-			t.Errorf("Temperature = %f, want %f", cfg.Agents.Defaults.Temperature, 0.5)
+		if cfg.Agents.Defaults.Temperature == nil {
+			t.Fatalf("Temperature is nil, want %f", 0.5)
+		}
+		if *cfg.Agents.Defaults.Temperature != 0.5 {
+			t.Errorf("Temperature = %f, want %f", *cfg.Agents.Defaults.Temperature, 0.5)
 		}
 		if cfg.Agents.Defaults.Workspace != "~/.picoclaw/workspace" {
 			t.Errorf("Workspace = %q, want %q", cfg.Agents.Defaults.Workspace, "~/.picoclaw/workspace")
@@ -284,7 +287,7 @@ func TestConvertConfig(t *testing.T) {
 	})
 
 	t.Run("empty config", func(t *testing.T) {
-		data := map[string]interface{}{}
+		data := map[string]any{}
 
 		cfg, warnings, err := ConvertConfig(data)
 		if err != nil {
@@ -386,9 +389,9 @@ func TestPlanWorkspaceMigration(t *testing.T) {
 		srcDir := t.TempDir()
 		dstDir := t.TempDir()
 
-		os.WriteFile(filepath.Join(srcDir, "AGENTS.md"), []byte("# Agents"), 0644)
-		os.WriteFile(filepath.Join(srcDir, "SOUL.md"), []byte("# Soul"), 0644)
-		os.WriteFile(filepath.Join(srcDir, "USER.md"), []byte("# User"), 0644)
+		os.WriteFile(filepath.Join(srcDir, "AGENTS.md"), []byte("# Agents"), 0o644)
+		os.WriteFile(filepath.Join(srcDir, "SOUL.md"), []byte("# Soul"), 0o644)
+		os.WriteFile(filepath.Join(srcDir, "USER.md"), []byte("# User"), 0o644)
 
 		actions, err := PlanWorkspaceMigration(srcDir, dstDir, false)
 		if err != nil {
@@ -417,8 +420,8 @@ func TestPlanWorkspaceMigration(t *testing.T) {
 		srcDir := t.TempDir()
 		dstDir := t.TempDir()
 
-		os.WriteFile(filepath.Join(srcDir, "AGENTS.md"), []byte("# Agents from OpenClaw"), 0644)
-		os.WriteFile(filepath.Join(dstDir, "AGENTS.md"), []byte("# Existing Agents"), 0644)
+		os.WriteFile(filepath.Join(srcDir, "AGENTS.md"), []byte("# Agents from OpenClaw"), 0o644)
+		os.WriteFile(filepath.Join(dstDir, "AGENTS.md"), []byte("# Existing Agents"), 0o644)
 
 		actions, err := PlanWorkspaceMigration(srcDir, dstDir, false)
 		if err != nil {
@@ -440,8 +443,8 @@ func TestPlanWorkspaceMigration(t *testing.T) {
 		srcDir := t.TempDir()
 		dstDir := t.TempDir()
 
-		os.WriteFile(filepath.Join(srcDir, "AGENTS.md"), []byte("# Agents"), 0644)
-		os.WriteFile(filepath.Join(dstDir, "AGENTS.md"), []byte("# Existing"), 0644)
+		os.WriteFile(filepath.Join(srcDir, "AGENTS.md"), []byte("# Agents"), 0o644)
+		os.WriteFile(filepath.Join(dstDir, "AGENTS.md"), []byte("# Existing"), 0o644)
 
 		actions, err := PlanWorkspaceMigration(srcDir, dstDir, true)
 		if err != nil {
@@ -460,8 +463,8 @@ func TestPlanWorkspaceMigration(t *testing.T) {
 		dstDir := t.TempDir()
 
 		memDir := filepath.Join(srcDir, "memory")
-		os.MkdirAll(memDir, 0755)
-		os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("# Memory"), 0644)
+		os.MkdirAll(memDir, 0o755)
+		os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("# Memory"), 0o644)
 
 		actions, err := PlanWorkspaceMigration(srcDir, dstDir, false)
 		if err != nil {
@@ -491,8 +494,8 @@ func TestPlanWorkspaceMigration(t *testing.T) {
 		dstDir := t.TempDir()
 
 		skillDir := filepath.Join(srcDir, "skills", "weather")
-		os.MkdirAll(skillDir, 0755)
-		os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# Weather"), 0644)
+		os.MkdirAll(skillDir, 0o755)
+		os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# Weather"), 0o644)
 
 		actions, err := PlanWorkspaceMigration(srcDir, dstDir, false)
 		if err != nil {
@@ -515,7 +518,7 @@ func TestFindOpenClawConfig(t *testing.T) {
 	t.Run("finds openclaw.json", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "openclaw.json")
-		os.WriteFile(configPath, []byte("{}"), 0644)
+		os.WriteFile(configPath, []byte("{}"), 0o644)
 
 		found, err := findOpenClawConfig(tmpDir)
 		if err != nil {
@@ -529,7 +532,7 @@ func TestFindOpenClawConfig(t *testing.T) {
 	t.Run("falls back to config.json", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "config.json")
-		os.WriteFile(configPath, []byte("{}"), 0644)
+		os.WriteFile(configPath, []byte("{}"), 0o644)
 
 		found, err := findOpenClawConfig(tmpDir)
 		if err != nil {
@@ -543,8 +546,8 @@ func TestFindOpenClawConfig(t *testing.T) {
 	t.Run("prefers openclaw.json over config.json", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		openclawPath := filepath.Join(tmpDir, "openclaw.json")
-		os.WriteFile(openclawPath, []byte("{}"), 0644)
-		os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte("{}"), 0644)
+		os.WriteFile(openclawPath, []byte("{}"), 0o644)
+		os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte("{}"), 0o644)
 
 		found, err := findOpenClawConfig(tmpDir)
 		if err != nil {
@@ -590,19 +593,19 @@ func TestRunDryRun(t *testing.T) {
 	picoClawHome := t.TempDir()
 
 	wsDir := filepath.Join(openclawHome, "workspace")
-	os.MkdirAll(wsDir, 0755)
-	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0644)
-	os.WriteFile(filepath.Join(wsDir, "AGENTS.md"), []byte("# Agents"), 0644)
+	os.MkdirAll(wsDir, 0o755)
+	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0o644)
+	os.WriteFile(filepath.Join(wsDir, "AGENTS.md"), []byte("# Agents"), 0o644)
 
-	configData := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	configData := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey": "test-key",
 			},
 		},
 	}
 	data, _ := json.Marshal(configData)
-	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
+	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0o644)
 
 	opts := Options{
 		DryRun:       true,
@@ -631,33 +634,33 @@ func TestRunFullMigration(t *testing.T) {
 	picoClawHome := t.TempDir()
 
 	wsDir := filepath.Join(openclawHome, "workspace")
-	os.MkdirAll(wsDir, 0755)
-	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul from OpenClaw"), 0644)
-	os.WriteFile(filepath.Join(wsDir, "AGENTS.md"), []byte("# Agents from OpenClaw"), 0644)
-	os.WriteFile(filepath.Join(wsDir, "USER.md"), []byte("# User from OpenClaw"), 0644)
+	os.MkdirAll(wsDir, 0o755)
+	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul from OpenClaw"), 0o644)
+	os.WriteFile(filepath.Join(wsDir, "AGENTS.md"), []byte("# Agents from OpenClaw"), 0o644)
+	os.WriteFile(filepath.Join(wsDir, "USER.md"), []byte("# User from OpenClaw"), 0o644)
 
 	memDir := filepath.Join(wsDir, "memory")
-	os.MkdirAll(memDir, 0755)
-	os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("# Memory notes"), 0644)
+	os.MkdirAll(memDir, 0o755)
+	os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("# Memory notes"), 0o644)
 
-	configData := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	configData := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey": "sk-ant-migrate-test",
 			},
-			"openrouter": map[string]interface{}{
+			"openrouter": map[string]any{
 				"apiKey": "sk-or-migrate-test",
 			},
 		},
-		"channels": map[string]interface{}{
-			"telegram": map[string]interface{}{
+		"channels": map[string]any{
+			"telegram": map[string]any{
 				"enabled": true,
 				"token":   "tg-migrate-test",
 			},
 		},
 	}
 	data, _ := json.Marshal(configData)
-	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
+	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0o644)
 
 	opts := Options{
 		Force:        true,
@@ -751,7 +754,7 @@ func TestRunMutuallyExclusiveFlags(t *testing.T) {
 func TestBackupFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.md")
-	os.WriteFile(filePath, []byte("original content"), 0644)
+	os.WriteFile(filePath, []byte("original content"), 0o644)
 
 	if err := backupFile(filePath); err != nil {
 		t.Fatalf("backupFile: %v", err)
@@ -772,7 +775,7 @@ func TestCopyFile(t *testing.T) {
 	srcPath := filepath.Join(tmpDir, "src.md")
 	dstPath := filepath.Join(tmpDir, "dst.md")
 
-	os.WriteFile(srcPath, []byte("file content"), 0644)
+	os.WriteFile(srcPath, []byte("file content"), 0o644)
 
 	if err := copyFile(srcPath, dstPath); err != nil {
 		t.Fatalf("copyFile: %v", err)
@@ -792,18 +795,18 @@ func TestRunConfigOnly(t *testing.T) {
 	picoClawHome := t.TempDir()
 
 	wsDir := filepath.Join(openclawHome, "workspace")
-	os.MkdirAll(wsDir, 0755)
-	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0644)
+	os.MkdirAll(wsDir, 0o755)
+	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0o644)
 
-	configData := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	configData := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey": "sk-config-only",
 			},
 		},
 	}
 	data, _ := json.Marshal(configData)
-	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
+	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0o644)
 
 	opts := Options{
 		Force:        true,
@@ -832,18 +835,18 @@ func TestRunWorkspaceOnly(t *testing.T) {
 	picoClawHome := t.TempDir()
 
 	wsDir := filepath.Join(openclawHome, "workspace")
-	os.MkdirAll(wsDir, 0755)
-	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0644)
+	os.MkdirAll(wsDir, 0o755)
+	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0o644)
 
-	configData := map[string]interface{}{
-		"providers": map[string]interface{}{
-			"anthropic": map[string]interface{}{
+	configData := map[string]any{
+		"providers": map[string]any{
+			"anthropic": map[string]any{
 				"apiKey": "sk-ws-only",
 			},
 		},
 	}
 	data, _ := json.Marshal(configData)
-	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
+	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0o644)
 
 	opts := Options{
 		Force:         true,

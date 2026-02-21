@@ -1,16 +1,27 @@
 package protocoltypes
 
 type ToolCall struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type,omitempty"`
-	Function  *FunctionCall          `json:"function,omitempty"`
-	Name      string                 `json:"name,omitempty"`
-	Arguments map[string]interface{} `json:"arguments,omitempty"`
+	ID               string         `json:"id"`
+	Type             string         `json:"type,omitempty"`
+	Function         *FunctionCall  `json:"function,omitempty"`
+	Name             string         `json:"name,omitempty"`
+	Arguments        map[string]any `json:"arguments,omitempty"`
+	ThoughtSignature string         `json:"-"` // Internal use only
+	ExtraContent     *ExtraContent  `json:"extra_content,omitempty"`
+}
+
+type ExtraContent struct {
+	Google *GoogleExtra `json:"google,omitempty"`
+}
+
+type GoogleExtra struct {
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 type FunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	Name             string `json:"name"`
+	Arguments        string `json:"arguments"`
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 type LLMResponse struct {
@@ -39,7 +50,7 @@ type ToolDefinition struct {
 }
 
 type ToolFunctionDefinition struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
 }

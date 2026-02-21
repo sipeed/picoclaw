@@ -14,3 +14,12 @@ func Truncate(s string, maxLen int) string {
 	}
 	return string(runes[:maxLen-3]) + "..."
 }
+
+// DerefStr dereferences a pointer to a string and
+// returns the value or a fallback if the pointer is nil.
+func DerefStr(s *string, fallback string) string {
+	if s == nil {
+		return fallback
+	}
+	return *s
+}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -29,7 +30,7 @@ func NewMemoryStore(workspace string) *MemoryStore {
 	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
 
 	// Ensure memory directory exists
-	os.MkdirAll(memoryDir, 0755)
+	os.MkdirAll(memoryDir, 0o755)
 
 	return &MemoryStore{
 		workspace:  workspace,
@@ -57,7 +58,7 @@ func (ms *MemoryStore) ReadLongTerm() string {
 
 // WriteLongTerm writes content to the long-term memory file (MEMORY.md).
 func (ms *MemoryStore) WriteLongTerm(content string) error {
-	return os.WriteFile(ms.memoryFile, []byte(content), 0644)
+	return os.WriteFile(ms.memoryFile, []byte(content), 0o644)
 }
 
 // ReadToday reads today's daily note.
@@ -77,7 +78,7 @@ func (ms *MemoryStore) AppendToday(content string) error {
 
 	// Ensure month directory exists
 	monthDir := filepath.Dir(todayFile)
-	os.MkdirAll(monthDir, 0755)
+	os.MkdirAll(monthDir, 0o755)
 
 	var existingContent string
 	if data, err := os.ReadFile(todayFile); err == nil {
@@ -94,13 +95,14 @@ func (ms *MemoryStore) AppendToday(content string) error {
 		newContent = existingContent + "\n" + content
 	}
 
-	return os.WriteFile(todayFile, []byte(newContent), 0644)
+	return os.WriteFile(todayFile, []byte(newContent), 0o644)
 }
 
 // GetRecentDailyNotes returns daily notes from the last N days.
 // Contents are joined with "---" separator.
 func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
-	var notes []string
+	var sb strings.Builder
+	first := true
 
 	for i := 0; i < days; i++ {
 		date := time.Now().AddDate(0, 0, -i)
@@ -109,53 +111,41 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 		filePath := filepath.Join(ms.memoryDir, monthDir, dateStr+".md")
 
 		if data, err := os.ReadFile(filePath); err == nil {
-			notes = append(notes, string(data))
+			if !first {
+				sb.WriteString("\n\n---\n\n")
+			}
+			sb.Write(data)
+			first = false
 		}
 	}
 
-	if len(notes) == 0 {
-		return ""
-	}
-
-	// Join with separator
-	var result string
-	for i, note := range notes {
-		if i > 0 {
-			result += "\n\n---\n\n"
-		}
-		result += note
-	}
-	return result
+	return sb.String()
 }
 
 // GetMemoryContext returns formatted memory context for the agent prompt.
 // Includes long-term memory and recent daily notes.
 func (ms *MemoryStore) GetMemoryContext() string {
-	var parts []string
-
-	// Long-term memory
 	longTerm := ms.ReadLongTerm()
-	if longTerm != "" {
-		parts = append(parts, "## Long-term Memory\n\n"+longTerm)
-	}
-
-	// Recent daily notes (last 3 days)
 	recentNotes := ms.GetRecentDailyNotes(3)
-	if recentNotes != "" {
-		parts = append(parts, "## Recent Daily Notes\n\n"+recentNotes)
-	}
 
-	if len(parts) == 0 {
+	if longTerm == "" && recentNotes == "" {
 		return ""
 	}
 
-	// Join parts with separator
-	var result string
-	for i, part := range parts {
-		if i > 0 {
-			result += "\n\n---\n\n"
-		}
-		result += part
+	var sb strings.Builder
+
+	if longTerm != "" {
+		sb.WriteString("## Long-term Memory\n\n")
+		sb.WriteString(longTerm)
 	}
-	return fmt.Sprintf("# Memory\n\n%s", result)
+
+	if recentNotes != "" {
+		if longTerm != "" {
+			sb.WriteString("\n\n---\n\n")
+		}
+		sb.WriteString("## Recent Daily Notes\n\n")
+		sb.WriteString(recentNotes)
+	}
+
+	return sb.String()
 }
