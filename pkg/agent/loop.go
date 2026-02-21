@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -948,6 +949,11 @@ func buildPlanReminder(planStatus string) (providers.Message, bool) {
 // cdPrefixPattern matches "cd /some/path && " at the start of a shell command.
 var cdPrefixPattern = regexp.MustCompile(`^cd\s+\S+\s*&&\s*`)
 
+// optFlagPattern matches option flags like --verbose, -v, --timeout=60, -q.
+// Only standalone flags are removed; flags whose value is the next positional
+// argument (e.g. "-A 20") are kept because removing them would lose context.
+var optFlagPattern = regexp.MustCompile(`\s+--?\w[\w-]*(=\S*)?`)
+
 // buildArgsSnippet produces a human-friendly snippet for the tool log.
 // For exec: extracts the command and strips the leading "cd <workspace> && ".
 // For file tools: extracts the path and strips the workspace prefix.
@@ -960,6 +966,7 @@ func buildArgsSnippet(toolName string, args map[string]interface{}, workspace st
 			break
 		}
 		cmd = cdPrefixPattern.ReplaceAllString(cmd, "")
+		cmd = optFlagPattern.ReplaceAllString(cmd, "")
 		return utils.Truncate(cmd, 80)
 
 	case "read_file", "write_file", "edit_file", "append_file", "list_dir":
@@ -1000,9 +1007,8 @@ func buildArgsSnippet(toolName string, args map[string]interface{}, workspace st
 }
 
 // maxEntryLineWidth is the max rune count for a single-line log entry.
-// Telegram chat bubbles on mobile are roughly 35-40 chars wide; keeping
-// entries under this avoids line-wrapping that causes height jitter.
-const maxEntryLineWidth = 36
+// Telegram chat bubbles on mobile are roughly 40-45 chars wide.
+const maxEntryLineWidth = 42
 
 // isFileToolEntry returns true if the entry name contains a file-operation tool.
 func isFileToolEntry(name string) bool {
@@ -1055,11 +1061,61 @@ func formatCompactEntry(entry toolLogEntry) string {
 	return entry.Name + " " + result
 }
 
+// formatLatestEntry formats the latest entry command without its result marker.
+// Since the result goes on the next line, the full width is available for the command.
+func formatLatestEntry(entry toolLogEntry) string {
+	nameLen := utf8.RuneCountInString(entry.Name)
+	argsBudget := maxEntryLineWidth - nameLen - 1 // name + space + args (no result)
+
+	args := entry.ArgsSnip
+	if args != "" && argsBudget > 3 {
+		argsRunes := []rune(args)
+		if len(argsRunes) > argsBudget {
+			if strings.Contains(args, "/") {
+				args = "\u2026" + string(argsRunes[len(argsRunes)-argsBudget+1:])
+			} else {
+				args = string(argsRunes[:argsBudget-1]) + "\u2026"
+			}
+		}
+		return entry.Name + " " + args
+	}
+	return entry.Name
+}
+
+// compressRepeats reduces runs of 3+ identical non-alphanumeric, non-space
+// characters to just 2. e.g. "======" → "==", "---" → "--".
+func compressRepeats(s string) string {
+	runes := []rune(s)
+	if len(runes) < 3 {
+		return s
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	i := 0
+	for i < len(runes) {
+		r := runes[i]
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsSpace(r) {
+			j := i + 1
+			for j < len(runes) && runes[j] == r {
+				j++
+			}
+			if j-i >= 3 {
+				sb.WriteRune(r)
+				sb.WriteRune(r)
+				i = j
+				continue
+			}
+		}
+		sb.WriteRune(r)
+		i++
+	}
+	return sb.String()
+}
+
 // Display layout constants.
 const (
-	displayPastEntries = 3  // number of compact 1-line past entries
-	displayErrorLines  = 3  // content lines inside the error code block
-	maxLatestWidth     = 70 // rune limit for the latest entry command (~2 Telegram lines)
+	displayPastEntries = 4  // number of compact 1-line past entries
+	displayErrorLines  = 5  // content lines inside the error code block
 	statusSeparator    = "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
 )
 
@@ -1068,20 +1124,17 @@ const (
 // Layout (always the same number of lines):
 //
 //	🔄 Task in progress (N/M)          header
-//	📂 project-name                     header
+//	📁 workspace-path                   header
 //	━━━━━━━━━━                          separator
-//	compact-past-1                      past (1 line each)
-//	compact-past-2                      past
-//	compact-past-3                      past
-//	latest-command…                     latest line 1 (command, up to ~70 chars)
-//	  ⏳                                latest line 2 (result)
-//	                                    latest line 3 (reserved)
-//	                                    latest line 4 (reserved)
-//	━━━━━━━━━━                          separator
+//	[N] compact-past-1 ✓ Xs            past (1 line each)
+//	[N] compact-past-2 ✗ Xs            past
+//	[N] compact-past-3 ✓ Xs            past
+//	[N] compact-past-4 ✓ Xs            past
+//	[N] latest-command                  latest (no result, wider args)
+//	  ⏳                                latest result
+//	                                    reserved
 //	```                                 error fence
-//	err-line / placeholder              error body
-//	err-line / placeholder              error body
-//	err-line / placeholder              error body
+//	err-line / placeholder              error body (5 lines)
 //	```                                 error fence
 //	↩️ Reply to intervene               footer (background only)
 func buildRichStatus(task *activeTask, isBackground bool, workspace string) string {
@@ -1089,33 +1142,27 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	defer task.mu.Unlock()
 
 	var sb strings.Builder
+
+	// --- Header ---
 	sb.WriteString("\U0001F504 Task in progress (")
 	sb.WriteString(strconv.Itoa(task.Iteration))
 	sb.WriteByte('/')
 	sb.WriteString(strconv.Itoa(task.MaxIter))
 	sb.WriteString(")\n")
+	// Workspace: always emit for fixed height
+	sb.WriteString("\U0001F4C1 ")
 	if workspace != "" {
-		project := workspace
-		if idx := strings.LastIndex(workspace, "/"); idx >= 0 {
-			project = workspace[idx+1:]
-		} else if idx := strings.LastIndex(workspace, "\\"); idx >= 0 {
-			project = workspace[idx+1:]
-		}
-		if project != "" {
-			sb.WriteString("\U0001F4C2 ")
-			sb.WriteString(project)
-			sb.WriteByte('\n')
-		}
+		sb.WriteString(workspace)
 	}
+	sb.WriteByte('\n')
 	sb.WriteString(statusSeparator)
 
-	// --- Task entries region (displayPastEntries + 4 lines) ---
+	// --- Task entries (displayPastEntries + 2 lines for latest) ---
 	entries := task.toolLog
 	if len(entries) > maxToolLogEntries {
 		entries = entries[len(entries)-maxToolLogEntries:]
 	}
 
-	// Split into past entries and latest entry
 	var pastEntries []toolLogEntry
 	var latest *toolLogEntry
 	if len(entries) > 0 {
@@ -1129,68 +1176,61 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 		}
 	}
 
-	// Past entries: always exactly displayPastEntries lines (pad if fewer)
+	// Past entries: exactly displayPastEntries lines (pad if fewer)
 	for i := 0; i < displayPastEntries; i++ {
 		if i < len(pastEntries) {
 			sb.WriteString(formatCompactEntry(pastEntries[i]))
 		} else {
-			sb.WriteString("\u2800") // braille blank — invisible but holds the line
+			sb.WriteString("\u2800")
 		}
-		sb.WriteString("\n")
+		sb.WriteByte('\n')
 	}
 
-	// Latest entry: always exactly 4 lines
+	// Latest entry: command on one line, result on next
 	if latest != nil {
-		// Line 1-2: command (truncated to ~2 Telegram lines)
-		prefix := latest.Name
-		if latest.ArgsSnip != "" {
-			prefix += " " + latest.ArgsSnip
-		}
-		if runes := []rune(prefix); len(runes) > maxLatestWidth {
-			sb.WriteString(string(runes[:maxLatestWidth-1]))
-			sb.WriteString("\u2026\n")
-		} else {
-			sb.WriteString(prefix)
-			sb.WriteByte('\n')
-		}
-		// Line 3: result
+		sb.WriteString(formatLatestEntry(*latest))
+		sb.WriteByte('\n')
 		sb.WriteString("  ")
-		sb.WriteString(latest.Result)
+		if latest.Result != "" {
+			sb.WriteString(latest.Result)
+		} else {
+			sb.WriteString("\u23F3")
+		}
 		sb.WriteByte('\n')
 	} else {
 		sb.WriteString("\u23F3 waiting...\n")
 		sb.WriteString("\u2800\n")
 	}
-	// Lines 3-4: reserved (keep bubble height stable when result wraps or error appears)
-	sb.WriteString("\u2800\n")
+
+	// Reserved (1 line)
 	sb.WriteString("\u2800\n")
 
-	// --- Error region (separator + code fence with displayErrorLines) ---
-	sb.WriteString(statusSeparator)
+	// --- Error region (code fence, no separator) ---
 	sb.WriteString("```\n")
 
 	errEntry := task.lastError
 	if errEntry != nil {
-		// Header: tool name + result marker
 		sb.WriteString("\u274C ")
 		sb.WriteString(formatCompactEntry(*errEntry))
 		sb.WriteByte('\n')
 
-		// Detail lines
 		var detailLines []string
 		if errEntry.ErrDetail != "" {
 			detailLines = strings.Split(errEntry.ErrDetail, "\n")
 		}
 		for i := 0; i < displayErrorLines-1; i++ {
 			if i < len(detailLines) {
-				sb.WriteString(detailLines[i])
+				line := compressRepeats(detailLines[i])
+				if runes := []rune(line); len(runes) > maxEntryLineWidth {
+					line = string(runes[:maxEntryLineWidth-1]) + "\u2026"
+				}
+				sb.WriteString(line)
 			} else {
 				sb.WriteString("\u2800")
 			}
-			sb.WriteString("\n")
+			sb.WriteByte('\n')
 		}
 	} else {
-		// No error: placeholder lines
 		sb.WriteString("\u2714 No errors\n")
 		for i := 0; i < displayErrorLines-1; i++ {
 			sb.WriteString("\u2800\n")
@@ -1546,7 +1586,7 @@ func (al *AgentLoop) runLLMIteration(
 						task.toolLog[logIdx].Result = fmt.Sprintf("\u2717 %.1fs", toolDuration.Seconds())
 						// Extract error detail for block display
 						if toolResult.Err != nil {
-							task.toolLog[logIdx].ErrDetail = utils.Truncate(toolResult.Err.Error(), 120)
+							task.toolLog[logIdx].ErrDetail = utils.Truncate(toolResult.Err.Error(), 300)
 						} else if toolResult.ForLLM != "" {
 							// exec returns IsError with exit info in ForLLM, not Err
 							// Show last few lines (stderr / exit code)
@@ -1556,7 +1596,7 @@ func (al *AgentLoop) runLLMIteration(
 								start = 0
 							}
 							task.toolLog[logIdx].ErrDetail = utils.Truncate(
-								strings.Join(lines[start:], "\n"), 200)
+								strings.Join(lines[start:], "\n"), 300)
 						}
 						// Sticky error: remember most recent error for persistent display
 						entry := task.toolLog[logIdx]

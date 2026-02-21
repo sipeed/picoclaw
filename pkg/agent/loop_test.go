@@ -1426,11 +1426,11 @@ func TestBuildArgsSnippet_ExecStripsCD(t *testing.T) {
 			wantSnip:  "pytest tests/test_integration.py",
 		},
 		{
-			name:      "exec no cd prefix",
+			name:      "exec no cd prefix, flags stripped",
 			tool:      "exec",
 			args:      map[string]interface{}{"command": "ls -la"},
 			workspace: "/ws",
-			wantSnip:  "ls -la",
+			wantSnip:  "ls",
 		},
 		{
 			name:      "exec empty command",
@@ -1642,25 +1642,40 @@ func TestBuildRichStatus_StickyError(t *testing.T) {
 	}
 }
 
-func TestBuildRichStatus_LastEntryShowsMoreCommand(t *testing.T) {
-	longCmd := "uv run pytest tests/hot/test_state_backend_integration.py -v --timeout=60"
+func TestBuildRichStatus_LatestEntryNoInlineResult(t *testing.T) {
+	longCmd := "uv run pytest tests/hot/test_state_backend_integration.py"
 	task := &activeTask{
 		Iteration: 2,
 		MaxIter:   10,
 		toolLog: []toolLogEntry{
-			{Name: "exec", ArgsSnip: "ls -la", Result: "✓ 0.5s"},
-			{Name: "exec", ArgsSnip: longCmd, Result: "⏳"},
+			{Name: "exec", ArgsSnip: "ls -la", Result: "\u2713 0.5s"},
+			{Name: "exec", ArgsSnip: longCmd, Result: "\u23F3"},
 		},
 	}
 
 	got := buildRichStatus(task, false, "/ws/my-project")
 
-	// Shows more than compact 36 chars
-	if !strings.Contains(got, "test_state_backend") {
-		t.Errorf("latest entry should show more than compact format, got:\n%s", got)
+	// Latest entry shows command (possibly truncated) with filename visible
+	if !strings.Contains(got, "integration.py") {
+		t.Errorf("latest entry should show filename, got:\n%s", got)
 	}
 	// Result on separate indented line
-	if !strings.Contains(got, "  ⏳") {
+	if !strings.Contains(got, "  \u23F3") {
 		t.Errorf("latest entry result should be on indented line, got:\n%s", got)
+	}
+	// Full workspace path shown (not just project name)
+	if !strings.Contains(got, "/ws/my-project") {
+		t.Errorf("should show full workspace path, got:\n%s", got)
+	}
+	// No second separator before error section
+	lines := strings.Split(got, "\n")
+	sepCount := 0
+	for _, l := range lines {
+		if strings.HasPrefix(l, "\u2501") {
+			sepCount++
+		}
+	}
+	if sepCount != 1 {
+		t.Errorf("expected exactly 1 separator, got %d in:\n%s", sepCount, got)
 	}
 }
