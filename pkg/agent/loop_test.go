@@ -1612,25 +1612,25 @@ func TestExtractProjectDir(t *testing.T) {
 		workspace string
 		want      string
 	}{
-		// exec: cd prefix
+		// exec: basename of cd target
 		{
-			name:      "exec cd into projects subdir",
+			name:      "exec cd deep path",
 			toolName:  "exec",
 			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/projects/terra-py-form && pytest"},
 			workspace: ws,
 			want:      "terra-py-form",
 		},
 		{
-			name:      "exec cd with trailing slash workspace",
-			toolName:  "exec",
-			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/projects/terra-py-form && ls"},
-			workspace: ws + "/",
-			want:      "terra-py-form",
-		},
-		{
-			name:      "exec cd into direct subdir",
+			name:      "exec cd direct subdir",
 			toolName:  "exec",
 			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/my-app && make build"},
+			workspace: ws,
+			want:      "my-app",
+		},
+		{
+			name:      "exec cd trailing slash target",
+			toolName:  "exec",
+			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/my-app/ && ls"},
 			workspace: ws,
 			want:      "my-app",
 		},
@@ -1639,7 +1639,7 @@ func TestExtractProjectDir(t *testing.T) {
 			toolName:  "exec",
 			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace && ls"},
 			workspace: ws,
-			want:      "",
+			want:      "workspace",
 		},
 		{
 			name:      "exec no cd prefix",
@@ -1648,16 +1648,16 @@ func TestExtractProjectDir(t *testing.T) {
 			workspace: ws,
 			want:      "",
 		},
-		// file tools
+		// file tools: first component after workspace
 		{
-			name:      "read_file in projects subdir",
+			name:      "read_file first component is projects",
 			toolName:  "read_file",
 			args:      map[string]interface{}{"path": "/home/user/.picoclaw/workspace/projects/terra-py-form/src/main.py"},
 			workspace: ws,
-			want:      "terra-py-form",
+			want:      "projects",
 		},
 		{
-			name:      "edit_file in direct subdir",
+			name:      "edit_file direct subdir",
 			toolName:  "edit_file",
 			args:      map[string]interface{}{"path": "/home/user/.picoclaw/workspace/my-app/README.md"},
 			workspace: ws,
@@ -1671,7 +1671,14 @@ func TestExtractProjectDir(t *testing.T) {
 			want:      "notes.txt",
 		},
 		{
-			name:      "unknown tool returns empty",
+			name:      "file outside workspace",
+			toolName:  "read_file",
+			args:      map[string]interface{}{"path": "/tmp/foo.txt"},
+			workspace: ws,
+			want:      "",
+		},
+		{
+			name:      "unknown tool",
 			toolName:  "web_search",
 			args:      map[string]interface{}{"query": "test"},
 			workspace: ws,
