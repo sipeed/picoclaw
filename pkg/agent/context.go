@@ -259,11 +259,12 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				continue
 			}
 			last := sanitized[len(sanitized)-1]
-			if last.Role != "assistant" || len(last.ToolCalls) == 0 {
+			// Allow tool results after their assistant or after sibling tool results
+			if last.Role == "tool" || (last.Role == "assistant" && len(last.ToolCalls) > 0) {
+				sanitized = append(sanitized, msg)
+			} else {
 				logger.DebugCF("agent", "Dropping orphaned tool message", map[string]any{})
-				continue
 			}
-			sanitized = append(sanitized, msg)
 
 		case "assistant":
 			if len(msg.ToolCalls) > 0 {
