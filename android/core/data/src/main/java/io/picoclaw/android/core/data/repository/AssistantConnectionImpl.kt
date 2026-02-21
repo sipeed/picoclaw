@@ -1,7 +1,9 @@
 package io.picoclaw.android.core.data.repository
 
+import android.util.Log
 import io.ktor.client.HttpClient
 import io.picoclaw.android.core.data.remote.WebSocketClient
+import io.picoclaw.android.core.data.remote.dto.ToolRequest
 import io.picoclaw.android.core.data.remote.dto.WsIncoming
 import io.picoclaw.android.core.domain.model.AssistantMessage
 import io.picoclaw.android.core.domain.model.ConnectionState
@@ -17,7 +19,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import java.util.UUID
+
+typealias ToolRequestCallback = suspend (ToolRequest) -> String
 
 class AssistantConnectionImpl(
     private val httpClient: HttpClient
@@ -26,6 +31,7 @@ class AssistantConnectionImpl(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val clientId = UUID.randomUUID().toString()
     private val wsClient = WebSocketClient(httpClient, scope, clientId, "assistant")
+    private val json = Json { ignoreUnknownKeys = true }
 
     private val _messages = MutableSharedFlow<AssistantMessage>(extraBufferCapacity = 64)
     override val messages: SharedFlow<AssistantMessage> = _messages.asSharedFlow()
@@ -35,17 +41,43 @@ class AssistantConnectionImpl(
 
     override val connectionState: StateFlow<ConnectionState> = wsClient.connectionState
 
+    var onToolRequest: ToolRequestCallback? = null
+
     init {
         scope.launch {
             wsClient.incomingMessages.collect { dto ->
                 when (dto.type) {
                     "status" -> _statusText.value = dto.content
                     "status_end" -> _statusText.value = null
+                    "tool_request" -> handleToolRequest(dto.content)
                     else -> {
                         _statusText.value = null
                         _messages.emit(AssistantMessage(content = dto.content, type = dto.type))
                     }
                 }
+            }
+        }
+    }
+
+    private fun handleToolRequest(content: String) {
+        scope.launch {
+            try {
+                val request = json.decodeFromString<ToolRequest>(content)
+                val callback = onToolRequest
+                val resultContent = if (callback != null) {
+                    callback(request)
+                } else {
+                    "error: tool request handler not configured"
+                }
+
+                val response = WsIncoming(
+                    content = resultContent,
+                    type = "tool_response",
+                    requestId = request.requestId
+                )
+                wsClient.send(response)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to handle tool request", e)
             }
         }
     }
@@ -67,5 +99,9 @@ class AssistantConnectionImpl(
             inputMode = inputMode
         )
         wsClient.send(dto)
+    }
+
+    companion object {
+        private const val TAG = "AssistantConnectionImpl"
     }
 }

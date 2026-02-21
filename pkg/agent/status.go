@@ -56,6 +56,8 @@ func statusLabel(toolName string, args map[string]interface{}) string {
 			return fmt.Sprintf("サブタスク実行中...（%s）", truncLabel(l, 20))
 		}
 		return "サブタスク実行中..."
+	case "android":
+		return androidStatusLabel(args)
 	case "mcp":
 		return mcpStatusLabel(args)
 	case "i2c":
@@ -113,6 +115,42 @@ func cronStatusLabel(args map[string]interface{}) string {
 		return "スケジュール削除中..."
 	default:
 		return "スケジュール変更中..."
+	}
+}
+
+func androidStatusLabel(args map[string]interface{}) string {
+	switch strArg(args, "action") {
+	case "list_apps":
+		return "アプリ一覧取得中..."
+	case "app_info":
+		if p := strArg(args, "package_name"); p != "" {
+			return fmt.Sprintf("アプリ情報取得中...（%s）", truncLabel(p, 25))
+		}
+		return "アプリ情報取得中..."
+	case "launch_app":
+		if p := strArg(args, "package_name"); p != "" {
+			return fmt.Sprintf("アプリ起動中...（%s）", truncLabel(p, 25))
+		}
+		return "アプリ起動中..."
+	case "current_activity":
+		return "画面情報取得中..."
+	case "tap":
+		return "タップ中..."
+	case "swipe":
+		return "スワイプ中..."
+	case "text":
+		return "テキスト入力中..."
+	case "keyevent":
+		if k := strArg(args, "key"); k != "" {
+			return fmt.Sprintf("キー操作中...（%s）", k)
+		}
+		return "キー操作中..."
+	case "broadcast":
+		return "ブロードキャスト送信中..."
+	case "intent":
+		return "インテント送信中..."
+	default:
+		return "デバイス操作中..."
 	}
 }
 

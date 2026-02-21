@@ -13,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 // wsIncoming is the JSON message sent from APK to picoclaw.
@@ -21,6 +22,8 @@ type wsIncoming struct {
 	SenderID  string   `json:"sender_id,omitempty"`
 	Images    []string `json:"images,omitempty"`
 	InputMode string   `json:"input_mode,omitempty"`
+	Type      string   `json:"type,omitempty"`       // "tool_response" for device tool responses
+	RequestID string   `json:"request_id,omitempty"` // correlates with tool_request
 }
 
 // wsOutgoing is the JSON message sent from picoclaw to APK.
@@ -280,6 +283,12 @@ func (c *WebSocketChannel) readPump(conn *websocket.Conn, clientID, chatID, clie
 				"client_id": clientID,
 				"error":     err.Error(),
 			})
+			continue
+		}
+
+		// Intercept tool_response messages: deliver to ResponseWaiter, skip inbound bus.
+		if incoming.Type == "tool_response" && incoming.RequestID != "" {
+			tools.DeviceResponseWaiter.Deliver(incoming.RequestID, incoming.Content)
 			continue
 		}
 

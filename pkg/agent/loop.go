@@ -107,6 +107,21 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 		registry.Register(tools.NewSPITool())
 	}
 
+	// Android device control tool (assistant mode only)
+	if cfg.Tools.Android.Enabled {
+		androidTool := tools.NewAndroidTool()
+		androidTool.SetSendCallback(func(channel, chatID, content, msgType string) error {
+			msgBus.PublishOutbound(bus.OutboundMessage{
+				Channel: channel,
+				ChatID:  chatID,
+				Content: content,
+				Type:    msgType,
+			})
+			return nil
+		})
+		registry.Register(androidTool)
+	}
+
 	// Message tool - available to both agent and subagent
 	// Subagent uses it to communicate directly with user
 	messageTool := tools.NewMessageTool()
@@ -510,7 +525,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	}
 
 	// 1. Update tool contexts
-	al.updateToolContexts(opts.Channel, opts.ChatID)
+	al.updateToolContexts(opts.Channel, opts.ChatID, opts.Metadata)
 
 	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message
@@ -959,7 +974,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 }
 
 // updateToolContexts updates the context for tools that need channel/chatID info.
-func (al *AgentLoop) updateToolContexts(channel, chatID string) {
+func (al *AgentLoop) updateToolContexts(channel, chatID string, metadata map[string]string) {
 	// Use ContextualTool interface instead of type assertions
 	if tool, ok := al.tools.Get("message"); ok {
 		if mt, ok := tool.(tools.ContextualTool); ok {
@@ -974,6 +989,14 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string) {
 	if tool, ok := al.tools.Get("subagent"); ok {
 		if st, ok := tool.(tools.ContextualTool); ok {
 			st.SetContext(channel, chatID)
+		}
+	}
+	if tool, ok := al.tools.Get("android"); ok {
+		if at, ok := tool.(*tools.AndroidTool); ok {
+			at.SetContext(channel, chatID)
+			if metadata != nil {
+				at.SetClientType(metadata["client_type"])
+			}
 		}
 	}
 }

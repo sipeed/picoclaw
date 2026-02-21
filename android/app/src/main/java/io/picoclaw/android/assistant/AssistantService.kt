@@ -75,10 +75,12 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
     private val httpClient: HttpClient by inject()
     private val ttsSettingsRepo: TtsSettingsRepository by inject()
     private val screenshotSource: ScreenshotSource by inject()
+    private val deviceController: DeviceController by inject()
 
     private lateinit var serviceScope: CoroutineScope
     private lateinit var connection: AssistantConnection
     private lateinit var assistantManager: AssistantManager
+    private lateinit var toolRequestHandler: ToolRequestHandler
     private lateinit var ttsWrapper: TextToSpeechWrapper
     private lateinit var sttWrapper: SpeechRecognizerWrapper
     private lateinit var cameraCaptureManager: CameraCaptureManager
@@ -111,6 +113,20 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
         serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
         connection = AssistantConnectionImpl(httpClient)
+
+        toolRequestHandler = ToolRequestHandler(
+            context = applicationContext,
+            deviceController = deviceController,
+            onAccessibilityNeeded = { showAccessibilityGuide = true }
+        )
+        (connection as AssistantConnectionImpl).onToolRequest = { request ->
+            val response = toolRequestHandler.handle(request)
+            if (response.success) {
+                response.result ?: ""
+            } else {
+                response.error ?: "unknown error"
+            }
+        }
 
         sttWrapper = SpeechRecognizerWrapper(this)
         ttsWrapper = TextToSpeechWrapper(this, ttsSettingsRepo.ttsConfig)

@@ -6,6 +6,7 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.websocket.WebSockets
 import io.picoclaw.android.core.data.local.AppDatabase
 import io.picoclaw.android.assistant.AccessibilityScreenshotSource
+import io.picoclaw.android.assistant.DeviceController
 import io.picoclaw.android.core.data.local.ImageFileStorage
 import io.picoclaw.android.feature.chat.voice.ScreenshotSource
 import io.picoclaw.android.core.data.remote.WebSocketClient
@@ -95,6 +96,9 @@ val appModule = module {
     // Screenshot
     single { AccessibilityScreenshotSource() }
     single<ScreenshotSource> { get<AccessibilityScreenshotSource>() }
+
+    // Device Controller (for Android tool)
+    single { DeviceController() }
 
     // Voice
     factory { SpeechRecognizerWrapper(androidContext()) }

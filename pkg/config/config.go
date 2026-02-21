@@ -253,12 +253,17 @@ type MCPServerConfig struct {
 	IdleTimeout int    `json:"idle_timeout,omitempty"` // seconds, default 300
 }
 
+type AndroidToolsConfig struct {
+	Enabled bool `json:"enabled" env:"PICOCLAW_TOOLS_ANDROID_ENABLED"`
+}
+
 type ToolsConfig struct {
-	Web  WebToolsConfig             `json:"web"`
-	Exec ExecToolsConfig            `json:"exec"`
-	I2C  I2CToolsConfig             `json:"i2c"`
-	SPI  SPIToolsConfig             `json:"spi"`
-	MCP  map[string]MCPServerConfig `json:"mcp,omitempty"`
+	Web     WebToolsConfig             `json:"web"`
+	Exec    ExecToolsConfig            `json:"exec"`
+	I2C     I2CToolsConfig             `json:"i2c"`
+	SPI     SPIToolsConfig             `json:"spi"`
+	Android AndroidToolsConfig         `json:"android"`
+	MCP     map[string]MCPServerConfig `json:"mcp,omitempty"`
 }
 
 func DefaultConfig() *Config {
@@ -372,6 +377,9 @@ func DefaultConfig() *Config {
 				Enabled: false,
 			},
 			SPI: SPIToolsConfig{
+				Enabled: false,
+			},
+			Android: AndroidToolsConfig{
 				Enabled: false,
 			},
 			Web: WebToolsConfig{
