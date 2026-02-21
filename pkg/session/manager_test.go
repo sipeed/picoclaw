@@ -74,14 +74,39 @@ func TestSanitizeHistory_OrphanedToolCall(t *testing.T) {
 	}
 
 	sanitized, removed := SanitizeHistory(history)
-	// The orphaned assistant msg (with call_2 missing) and the trailing tool result
-	// should both be removed, leaving just the user message
 	if removed == 0 {
 		t.Fatal("expected orphaned messages to be removed")
 	}
 	// After sanitization, only the user message should remain
 	if len(sanitized) != 1 || sanitized[0].Role != "user" {
-		t.Errorf("expected [user], got %d messages: %v", len(sanitized), sanitized)
+		t.Errorf("expected [user], got %d messages", len(sanitized))
+	}
+}
+
+func TestSanitizeHistory_InterleavedMessages(t *testing.T) {
+	// Simulates session collision: a user message got interleaved between
+	// an assistant tool call and its tool result
+	history := []providers.Message{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "ok", ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "exec"},
+		}},
+		{Role: "user", Content: "collision!"},  // ← interleaved from other session
+		{Role: "tool", Content: "ok", ToolCallID: "call_1"}, // ← out of order
+		{Role: "assistant", Content: "done"},
+	}
+
+	sanitized, removed := SanitizeHistory(history)
+	if removed == 0 {
+		t.Fatal("expected interleaved messages to be removed")
+	}
+	// Should keep: user("first"), user("collision!"), assistant("done")
+	// Should remove: assistant(call_1), tool(call_1)
+	if len(sanitized) != 3 {
+		t.Errorf("expected 3 messages, got %d", len(sanitized))
+		for i, m := range sanitized {
+			t.Logf("  [%d] role=%s content=%q", i, m.Role, m.Content)
+		}
 	}
 }
 
@@ -101,6 +126,27 @@ func TestSanitizeHistory_CleanHistory(t *testing.T) {
 	}
 	if len(sanitized) != 4 {
 		t.Errorf("expected 4 messages, got %d", len(sanitized))
+	}
+}
+
+func TestSanitizeHistory_MultipleToolCalls(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "exec"},
+			{ID: "call_2", Name: "read_file"},
+		}},
+		{Role: "tool", Content: "ok", ToolCallID: "call_1"},
+		{Role: "tool", Content: "content", ToolCallID: "call_2"},
+		{Role: "assistant", Content: "all done"},
+	}
+
+	sanitized, removed := SanitizeHistory(history)
+	if removed != 0 {
+		t.Errorf("expected 0 removed, got %d", removed)
+	}
+	if len(sanitized) != 5 {
+		t.Errorf("expected 5 messages, got %d", len(sanitized))
 	}
 }
 

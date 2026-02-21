@@ -265,75 +265,78 @@ func (sm *SessionManager) loadSessions() error {
 	return nil
 }
 
-// SanitizeHistory removes orphaned tool calls from session history.
-// An orphaned tool call is an assistant message containing ToolCalls where
-// one or more call IDs have no matching tool-result message (role="tool")
-// following it. This can happen if the process crashed mid-execution.
-// The function trims incomplete assistant+tool-result groups from the tail.
+// SanitizeHistory rebuilds session history to ensure valid tool-call ordering.
+// LLM APIs require that every assistant message with ToolCalls is immediately
+// followed by exactly the matching tool-result messages (role="tool"), with no
+// other messages in between. Violations can happen from session collisions or
+// mid-execution crashes.
+//
+// The function walks the full history and copies only well-formed groups:
+//   - user/system messages are always kept
+//   - assistant messages without tool calls are always kept
+//   - assistant messages WITH tool calls are kept only if the immediately
+//     following messages are the complete set of matching tool results
+//
 // Returns the sanitized history and the number of messages removed.
 func SanitizeHistory(history []providers.Message) ([]providers.Message, int) {
 	if len(history) == 0 {
 		return history, 0
 	}
 
-	original := len(history)
+	result := make([]providers.Message, 0, len(history))
+	i := 0
 
-	// Walk backwards from the tail, trimming incomplete tool-call groups.
-	for len(history) > 0 {
-		last := history[len(history)-1]
+	for i < len(history) {
+		msg := history[i]
 
-		// If tail is a tool result, find its parent assistant message and check completeness
-		if last.Role == "tool" {
-			// Find the nearest preceding assistant message with tool calls
-			assistantIdx := -1
-			for i := len(history) - 2; i >= 0; i-- {
-				if history[i].Role == "assistant" && len(history[i].ToolCalls) > 0 {
-					assistantIdx = i
-					break
-				}
-			}
-
-			if assistantIdx < 0 {
-				// Orphaned tool result with no assistant — remove it
-				history = history[:len(history)-1]
+		// Non-assistant messages or assistant without tool calls: keep
+		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
+			// Skip stray tool results not preceded by their assistant
+			if msg.Role == "tool" {
+				i++
 				continue
 			}
-
-			// Collect all expected tool call IDs from the assistant message
-			expected := make(map[string]bool)
-			for _, tc := range history[assistantIdx].ToolCalls {
-				expected[tc.ID] = true
-			}
-
-			// Check how many results exist between assistant and end of history
-			for i := assistantIdx + 1; i < len(history); i++ {
-				if history[i].Role == "tool" && expected[history[i].ToolCallID] {
-					delete(expected, history[i].ToolCallID)
-				}
-			}
-
-			if len(expected) > 0 {
-				// Incomplete group — remove everything from assistantIdx onward
-				history = history[:assistantIdx]
-				continue
-			}
-
-			// Group is complete, we're done
-			break
-		}
-
-		// If tail is an assistant with tool calls, check if ALL results follow
-		if last.Role == "assistant" && len(last.ToolCalls) > 0 {
-			// No tool results follow at all — orphaned
-			history = history[:len(history)-1]
+			result = append(result, msg)
+			i++
 			continue
 		}
 
-		// Tail is a normal message (user, assistant without tools) — we're done
-		break
+		// Assistant with tool calls: validate the immediately following messages
+		expectedIDs := make(map[string]bool, len(msg.ToolCalls))
+		for _, tc := range msg.ToolCalls {
+			expectedIDs[tc.ID] = true
+		}
+		needed := len(expectedIDs)
+
+		// Peek ahead: the next `needed` messages must all be tool results with matching IDs
+		groupOK := true
+		if i+needed >= len(history) {
+			groupOK = false
+		} else {
+			for j := 0; j < needed; j++ {
+				next := history[i+1+j]
+				if next.Role != "tool" || !expectedIDs[next.ToolCallID] {
+					groupOK = false
+					break
+				}
+			}
+		}
+
+		if groupOK {
+			// Copy assistant + all tool results
+			result = append(result, msg)
+			for j := 0; j < needed; j++ {
+				result = append(result, history[i+1+j])
+			}
+			i += 1 + needed
+		} else {
+			// Skip the broken assistant message; tool results will be skipped
+			// individually when encountered (the "stray tool result" check above)
+			i++
+		}
 	}
 
-	return history, original - len(history)
+	return result, len(history) - len(result)
 }
 
 // SetHistory updates the messages of a session.
