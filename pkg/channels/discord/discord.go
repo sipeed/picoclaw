@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -322,7 +323,7 @@ func (c *DiscordChannel) startTyping(chatID string) {
 
 	go func() {
 		if err := c.session.ChannelTyping(chatID); err != nil {
-			logger.DebugCF("discord", "ChannelTyping error", map[string]interface{}{"chatID": chatID, "err": err})
+			logger.DebugCF("discord", "ChannelTyping error", map[string]any{"chatID": chatID, "err": err})
 		}
 		ticker := time.NewTicker(8 * time.Second)
 		defer ticker.Stop()
@@ -337,7 +338,7 @@ func (c *DiscordChannel) startTyping(chatID string) {
 				return
 			case <-ticker.C:
 				if err := c.session.ChannelTyping(chatID); err != nil {
-					logger.DebugCF("discord", "ChannelTyping error", map[string]interface{}{"chatID": chatID, "err": err})
+					logger.DebugCF("discord", "ChannelTyping error", map[string]any{"chatID": chatID, "err": err})
 				}
 			}
 		}

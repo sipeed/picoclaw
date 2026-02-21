@@ -76,11 +76,11 @@ func (c *LINEChannel) Start(ctx context.Context) error {
 
 	// Fetch bot profile to get bot's userId for mention detection
 	if err := c.fetchBotInfo(); err != nil {
-		logger.WarnCF("line", "Failed to fetch bot info (mention detection disabled)", map[string]interface{}{
+		logger.WarnCF("line", "Failed to fetch bot info (mention detection disabled)", map[string]any{
 			"error": err.Error(),
 		})
 	} else {
-		logger.InfoCF("line", "Bot info fetched", map[string]interface{}{
+		logger.InfoCF("line", "Bot info fetched", map[string]any{
 			"bot_user_id":  c.botUserID,
 			"basic_id":     c.botBasicID,
 			"display_name": c.botDisplayName,
@@ -101,12 +101,12 @@ func (c *LINEChannel) Start(ctx context.Context) error {
 	}
 
 	go func() {
-		logger.InfoCF("line", "LINE webhook server listening", map[string]interface{}{
+		logger.InfoCF("line", "LINE webhook server listening", map[string]any{
 			"addr": addr,
 			"path": path,
 		})
 		if err := c.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("line", "Webhook server error", map[string]interface{}{
+			logger.ErrorCF("line", "Webhook server error", map[string]any{
 				"error": err.Error(),
 			})
 		}
@@ -163,7 +163,7 @@ func (c *LINEChannel) Stop(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		if err := c.httpServer.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorCF("line", "Webhook server shutdown error", map[string]interface{}{
+			logger.ErrorCF("line", "Webhook server shutdown error", map[string]any{
 				"error": err.Error(),
 			})
 		}
@@ -183,7 +183,7 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		logger.ErrorCF("line", "Failed to read request body", map[string]interface{}{
+		logger.ErrorCF("line", "Failed to read request body", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Bad request", http.StatusBadRequest)
@@ -201,7 +201,7 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		Events []lineEvent `json:"events"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		logger.ErrorCF("line", "Failed to parse webhook payload", map[string]interface{}{
+		logger.ErrorCF("line", "Failed to parse webhook payload", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Bad request", http.StatusBadRequest)
@@ -267,7 +267,7 @@ type lineMentionee struct {
 
 func (c *LINEChannel) processEvent(event lineEvent) {
 	if event.Type != "message" {
-		logger.DebugCF("line", "Ignoring non-message event", map[string]interface{}{
+		logger.DebugCF("line", "Ignoring non-message event", map[string]any{
 			"type": event.Type,
 		})
 		return
@@ -279,7 +279,7 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 
 	var msg lineMessage
 	if err := json.Unmarshal(event.Message, &msg); err != nil {
-		logger.ErrorCF("line", "Failed to parse message", map[string]interface{}{
+		logger.ErrorCF("line", "Failed to parse message", map[string]any{
 			"error": err.Error(),
 		})
 		return
@@ -287,7 +287,7 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 
 	// In group chats, only respond when the bot is mentioned
 	if isGroup && !c.isBotMentioned(msg) {
-		logger.DebugCF("line", "Ignoring group message without mention", map[string]interface{}{
+		logger.DebugCF("line", "Ignoring group message without mention", map[string]any{
 			"chat_id": chatID,
 		})
 		return
@@ -313,7 +313,7 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	defer func() {
 		for _, file := range localFiles {
 			if err := os.Remove(file); err != nil {
-				logger.DebugCF("line", "Failed to cleanup temp file", map[string]interface{}{
+				logger.DebugCF("line", "Failed to cleanup temp file", map[string]any{
 					"file":  file,
 					"error": err.Error(),
 				})
@@ -375,7 +375,7 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 		metadata["peer_id"] = senderID
 	}
 
-	logger.DebugCF("line", "Received message", map[string]interface{}{
+	logger.DebugCF("line", "Received message", map[string]any{
 		"sender_id":    senderID,
 		"chat_id":      chatID,
 		"message_type": msg.Type,
@@ -506,7 +506,7 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		tokenEntry := entry.(replyTokenEntry)
 		if time.Since(tokenEntry.timestamp) < lineReplyTokenMaxAge {
 			if err := c.sendReply(ctx, tokenEntry.token, msg.Content, quoteToken); err == nil {
-				logger.DebugCF("line", "Message sent via Reply API", map[string]interface{}{
+				logger.DebugCF("line", "Message sent via Reply API", map[string]any{
 					"chat_id": msg.ChatID,
 					"quoted":  quoteToken != "",
 				})
@@ -534,7 +534,7 @@ func buildTextMessage(content, quoteToken string) map[string]string {
 
 // sendReply sends a message using the LINE Reply API.
 func (c *LINEChannel) sendReply(ctx context.Context, replyToken, content, quoteToken string) error {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"replyToken": replyToken,
 		"messages":   []map[string]string{buildTextMessage(content, quoteToken)},
 	}
@@ -544,7 +544,7 @@ func (c *LINEChannel) sendReply(ctx context.Context, replyToken, content, quoteT
 
 // sendPush sends a message using the LINE Push API.
 func (c *LINEChannel) sendPush(ctx context.Context, to, content, quoteToken string) error {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"to":       to,
 		"messages": []map[string]string{buildTextMessage(content, quoteToken)},
 	}
@@ -554,19 +554,19 @@ func (c *LINEChannel) sendPush(ctx context.Context, to, content, quoteToken stri
 
 // sendLoading sends a loading animation indicator to the chat.
 func (c *LINEChannel) sendLoading(chatID string) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"chatId":         chatID,
 		"loadingSeconds": 60,
 	}
 	if err := c.callAPI(c.ctx, lineLoadingEndpoint, payload); err != nil {
-		logger.DebugCF("line", "Failed to send loading indicator", map[string]interface{}{
+		logger.DebugCF("line", "Failed to send loading indicator", map[string]any{
 			"error": err.Error(),
 		})
 	}
 }
 
 // callAPI makes an authenticated POST request to the LINE API.
-func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload interface{}) error {
+func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)

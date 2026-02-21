@@ -125,7 +125,7 @@ func (c *WeComBotChannel) Start(ctx context.Context) error {
 	}
 
 	c.SetRunning(true)
-	logger.InfoCF("wecom", "WeCom Bot channel started", map[string]interface{}{
+	logger.InfoCF("wecom", "WeCom Bot channel started", map[string]any{
 		"address": addr,
 		"path":    webhookPath,
 	})
@@ -133,7 +133,7 @@ func (c *WeComBotChannel) Start(ctx context.Context) error {
 	// Start server in goroutine
 	go func() {
 		if err := c.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("wecom", "HTTP server error", map[string]interface{}{
+			logger.ErrorCF("wecom", "HTTP server error", map[string]any{
 				"error": err.Error(),
 			})
 		}
@@ -169,7 +169,7 @@ func (c *WeComBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("wecom channel not running")
 	}
 
-	logger.DebugCF("wecom", "Sending message via webhook", map[string]interface{}{
+	logger.DebugCF("wecom", "Sending message via webhook", map[string]any{
 		"chat_id": msg.ChatID,
 		"preview": utils.Truncate(msg.Content, 100),
 	})
@@ -221,7 +221,7 @@ func (c *WeComBotChannel) handleVerification(ctx context.Context, w http.Respons
 	// Reference: https://developer.work.weixin.qq.com/document/path/101033
 	decryptedEchoStr, err := decryptMessageWithVerify(echostr, c.config.EncodingAESKey, "")
 	if err != nil {
-		logger.ErrorCF("wecom", "Failed to decrypt echostr", map[string]interface{}{
+		logger.ErrorCF("wecom", "Failed to decrypt echostr", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Decryption failed", http.StatusInternalServerError)
@@ -263,8 +263,8 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		AgentID    string   `xml:"AgentID"`
 	}
 
-	if err := xml.Unmarshal(body, &encryptedMsg); err != nil {
-		logger.ErrorCF("wecom", "Failed to parse XML", map[string]interface{}{
+	if err = xml.Unmarshal(body, &encryptedMsg); err != nil {
+		logger.ErrorCF("wecom", "Failed to parse XML", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Invalid XML", http.StatusBadRequest)
@@ -283,7 +283,7 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	// Reference: https://developer.work.weixin.qq.com/document/path/101033
 	decryptedMsg, err := decryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey, "")
 	if err != nil {
-		logger.ErrorCF("wecom", "Failed to decrypt message", map[string]interface{}{
+		logger.ErrorCF("wecom", "Failed to decrypt message", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Decryption failed", http.StatusInternalServerError)
@@ -293,7 +293,7 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	// Parse decrypted JSON message (AIBOT uses JSON format)
 	var msg WeComBotMessage
 	if err := json.Unmarshal([]byte(decryptedMsg), &msg); err != nil {
-		logger.ErrorCF("wecom", "Failed to parse decrypted message", map[string]interface{}{
+		logger.ErrorCF("wecom", "Failed to parse decrypted message", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Invalid message format", http.StatusBadRequest)
@@ -311,8 +311,9 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 // processMessage processes the received message
 func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessage) {
 	// Skip unsupported message types
-	if msg.MsgType != "text" && msg.MsgType != "image" && msg.MsgType != "voice" && msg.MsgType != "file" && msg.MsgType != "mixed" {
-		logger.DebugCF("wecom", "Skipping non-supported message type", map[string]interface{}{
+	if msg.MsgType != "text" && msg.MsgType != "image" && msg.MsgType != "voice" && msg.MsgType != "file" &&
+		msg.MsgType != "mixed" {
+		logger.DebugCF("wecom", "Skipping non-supported message type", map[string]any{
 			"msg_type": msg.MsgType,
 		})
 		return
@@ -323,7 +324,7 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 	c.msgMu.Lock()
 	if c.processedMsgs[msgID] {
 		c.msgMu.Unlock()
-		logger.DebugCF("wecom", "Skipping duplicate message", map[string]interface{}{
+		logger.DebugCF("wecom", "Skipping duplicate message", map[string]any{
 			"msg_id": msgID,
 		})
 		return
@@ -390,7 +391,7 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 		metadata["sender_id"] = senderID
 	}
 
-	logger.DebugCF("wecom", "Received message", map[string]interface{}{
+	logger.DebugCF("wecom", "Received message", map[string]any{
 		"sender_id":     senderID,
 		"msg_type":      msg.MsgType,
 		"peer_kind":     peerKind,
@@ -459,7 +460,7 @@ func (c *WeComBotChannel) sendWebhookReply(ctx context.Context, userID, content 
 
 // handleHealth handles health check requests
 func (c *WeComBotChannel) handleHealth(w http.ResponseWriter, r *http.Request) {
-	status := map[string]interface{}{
+	status := map[string]any{
 		"status":  "ok",
 		"running": c.IsRunning(),
 	}

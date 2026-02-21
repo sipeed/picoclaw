@@ -142,7 +142,7 @@ func (c *WeComAppChannel) Start(ctx context.Context) error {
 
 	// Get initial access token
 	if err := c.refreshAccessToken(); err != nil {
-		logger.WarnCF("wecom_app", "Failed to get initial access token", map[string]interface{}{
+		logger.WarnCF("wecom_app", "Failed to get initial access token", map[string]any{
 			"error": err.Error(),
 		})
 	}
@@ -168,7 +168,7 @@ func (c *WeComAppChannel) Start(ctx context.Context) error {
 	}
 
 	c.SetRunning(true)
-	logger.InfoCF("wecom_app", "WeCom App channel started", map[string]interface{}{
+	logger.InfoCF("wecom_app", "WeCom App channel started", map[string]any{
 		"address": addr,
 		"path":    webhookPath,
 	})
@@ -176,7 +176,7 @@ func (c *WeComAppChannel) Start(ctx context.Context) error {
 	// Start server in goroutine
 	go func() {
 		if err := c.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("wecom_app", "HTTP server error", map[string]interface{}{
+			logger.ErrorCF("wecom_app", "HTTP server error", map[string]any{
 				"error": err.Error(),
 			})
 		}
@@ -215,7 +215,7 @@ func (c *WeComAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("no valid access token available")
 	}
 
-	logger.DebugCF("wecom_app", "Sending message", map[string]interface{}{
+	logger.DebugCF("wecom_app", "Sending message", map[string]any{
 		"chat_id": msg.ChatID,
 		"preview": utils.Truncate(msg.Content, 100),
 	})
@@ -228,7 +228,7 @@ func (c *WeComAppChannel) handleWebhook(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 
 	// Log all incoming requests for debugging
-	logger.DebugCF("wecom_app", "Received webhook request", map[string]interface{}{
+	logger.DebugCF("wecom_app", "Received webhook request", map[string]any{
 		"method": r.Method,
 		"url":    r.URL.String(),
 		"path":   r.URL.Path,
@@ -247,7 +247,7 @@ func (c *WeComAppChannel) handleWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	logger.WarnCF("wecom_app", "Method not allowed", map[string]interface{}{
+	logger.WarnCF("wecom_app", "Method not allowed", map[string]any{
 		"method": r.Method,
 	})
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -261,7 +261,7 @@ func (c *WeComAppChannel) handleVerification(ctx context.Context, w http.Respons
 	nonce := query.Get("nonce")
 	echostr := query.Get("echostr")
 
-	logger.DebugCF("wecom_app", "Handling verification request", map[string]interface{}{
+	logger.DebugCF("wecom_app", "Handling verification request", map[string]any{
 		"msg_signature": msgSignature,
 		"timestamp":     timestamp,
 		"nonce":         nonce,
@@ -277,7 +277,7 @@ func (c *WeComAppChannel) handleVerification(ctx context.Context, w http.Respons
 
 	// Verify signature
 	if !verifySignature(c.config.Token, msgSignature, timestamp, nonce, echostr) {
-		logger.WarnCF("wecom_app", "Signature verification failed", map[string]interface{}{
+		logger.WarnCF("wecom_app", "Signature verification failed", map[string]any{
 			"token":         c.config.Token,
 			"msg_signature": msgSignature,
 			"timestamp":     timestamp,
@@ -291,13 +291,13 @@ func (c *WeComAppChannel) handleVerification(ctx context.Context, w http.Respons
 
 	// Decrypt echostr with CorpID verification
 	// For WeCom App (自建应用), receiveid should be corp_id
-	logger.DebugCF("wecom_app", "Attempting to decrypt echostr", map[string]interface{}{
+	logger.DebugCF("wecom_app", "Attempting to decrypt echostr", map[string]any{
 		"encoding_aes_key": c.config.EncodingAESKey,
 		"corp_id":          c.config.CorpID,
 	})
 	decryptedEchoStr, err := decryptMessageWithVerify(echostr, c.config.EncodingAESKey, c.config.CorpID)
 	if err != nil {
-		logger.ErrorCF("wecom_app", "Failed to decrypt echostr", map[string]interface{}{
+		logger.ErrorCF("wecom_app", "Failed to decrypt echostr", map[string]any{
 			"error":            err.Error(),
 			"encoding_aes_key": c.config.EncodingAESKey,
 			"corp_id":          c.config.CorpID,
@@ -306,7 +306,7 @@ func (c *WeComAppChannel) handleVerification(ctx context.Context, w http.Respons
 		return
 	}
 
-	logger.DebugCF("wecom_app", "Successfully decrypted echostr", map[string]interface{}{
+	logger.DebugCF("wecom_app", "Successfully decrypted echostr", map[string]any{
 		"decrypted": decryptedEchoStr,
 	})
 
@@ -345,8 +345,8 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		AgentID    string   `xml:"AgentID"`
 	}
 
-	if err := xml.Unmarshal(body, &encryptedMsg); err != nil {
-		logger.ErrorCF("wecom_app", "Failed to parse XML", map[string]interface{}{
+	if err = xml.Unmarshal(body, &encryptedMsg); err != nil {
+		logger.ErrorCF("wecom_app", "Failed to parse XML", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Invalid XML", http.StatusBadRequest)
@@ -364,7 +364,7 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	// For WeCom App (自建应用), receiveid should be corp_id
 	decryptedMsg, err := decryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey, c.config.CorpID)
 	if err != nil {
-		logger.ErrorCF("wecom_app", "Failed to decrypt message", map[string]interface{}{
+		logger.ErrorCF("wecom_app", "Failed to decrypt message", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Decryption failed", http.StatusInternalServerError)
@@ -374,7 +374,7 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	// Parse decrypted XML message
 	var msg WeComXMLMessage
 	if err := xml.Unmarshal([]byte(decryptedMsg), &msg); err != nil {
-		logger.ErrorCF("wecom_app", "Failed to parse decrypted message", map[string]interface{}{
+		logger.ErrorCF("wecom_app", "Failed to parse decrypted message", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Invalid message format", http.StatusBadRequest)
@@ -393,7 +393,7 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessage) {
 	// Skip non-text messages for now (can be extended)
 	if msg.MsgType != "text" && msg.MsgType != "image" && msg.MsgType != "voice" {
-		logger.DebugCF("wecom_app", "Skipping non-supported message type", map[string]interface{}{
+		logger.DebugCF("wecom_app", "Skipping non-supported message type", map[string]any{
 			"msg_type": msg.MsgType,
 		})
 		return
@@ -405,7 +405,7 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 	c.msgMu.Lock()
 	if c.processedMsgs[msgID] {
 		c.msgMu.Unlock()
-		logger.DebugCF("wecom_app", "Skipping duplicate message", map[string]interface{}{
+		logger.DebugCF("wecom_app", "Skipping duplicate message", map[string]any{
 			"msg_id": msgID,
 		})
 		return
@@ -438,7 +438,7 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 
 	content := msg.Content
 
-	logger.DebugCF("wecom_app", "Received message", map[string]interface{}{
+	logger.DebugCF("wecom_app", "Received message", map[string]any{
 		"sender_id": senderID,
 		"msg_type":  msg.MsgType,
 		"preview":   utils.Truncate(content, 50),
@@ -459,7 +459,7 @@ func (c *WeComAppChannel) tokenRefreshLoop() {
 			return
 		case <-ticker.C:
 			if err := c.refreshAccessToken(); err != nil {
-				logger.ErrorCF("wecom_app", "Failed to refresh access token", map[string]interface{}{
+				logger.ErrorCF("wecom_app", "Failed to refresh access token", map[string]any{
 					"error": err.Error(),
 				})
 			}
@@ -625,7 +625,7 @@ func (c *WeComAppChannel) sendMarkdownMessage(ctx context.Context, accessToken, 
 
 // handleHealth handles health check requests
 func (c *WeComAppChannel) handleHealth(w http.ResponseWriter, r *http.Request) {
-	status := map[string]interface{}{
+	status := map[string]any{
 		"status":    "ok",
 		"running":   c.IsRunning(),
 		"has_token": c.getAccessToken() != "",
