@@ -114,8 +114,30 @@ termux-chroot ./picoclaw-linux-arm64 onboard
 然后跟随下面的“快速开始”章节继续配置picoclaw即可使用！   
 <img src="assets/termux.jpg" alt="PicoClaw" width="512">
 
+<details> 
+<summary><b> 可能遇到的错误：</b> </summary>
 
+**1. tls: failed to verify certificate**
 
+```
+Error: LLM call failed: failed to send request: Post "https://<your-provider>/api/v1/chat/completions": tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+此错误表明应用程序（`picoclaw`）无法验证您的提供商 API 的安全证书。这在 **Termux** 中是一个非常常见的问题，因为该环境通常缺乏验证 HTTPS 连接所需的最新根证书颁发机构。
+
+解决方法：
+运行以下命令
+
+```bash
+pkg update && pkg upgrade
+pkg install ca-certificates openssl
+echo 'export SSL_CERT_FILE=/data/data/com.termux/files/usr/etc/tls/cert.pem' >> ~/.bashrc
+source ~/.bashrc
+```
+
+或者，如果您不想运行 `source ~/.bashrc`，可以重启 Termux
+
+</details>
 
 ### 🐜 创新的低占用部署
 
