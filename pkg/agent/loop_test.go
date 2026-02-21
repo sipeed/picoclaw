@@ -1041,6 +1041,11 @@ func TestPlanCommand_Start(t *testing.T) {
 	if status := agent.ContextBuilder.GetPlanStatus(); status != "executing" {
 		t.Errorf("expected 'executing', got %q", status)
 	}
+
+	// planStartPending must be set so Run() enqueues an LLM trigger
+	if !al.planStartPending {
+		t.Error("expected planStartPending to be true after /plan start")
+	}
 }
 
 func TestPlanCommand_StartFromReview(t *testing.T) {
@@ -1062,6 +1067,10 @@ func TestPlanCommand_StartFromReview(t *testing.T) {
 	if status := agent.ContextBuilder.GetPlanStatus(); status != "executing" {
 		t.Errorf("expected 'executing', got %q", status)
 	}
+
+	if !al.planStartPending {
+		t.Error("expected planStartPending to be true after /plan start from review")
+	}
 }
 
 func TestPlanCommand_StartNoPhases(t *testing.T) {
@@ -1081,6 +1090,10 @@ func TestPlanCommand_StartNoPhases(t *testing.T) {
 	if status := agent.ContextBuilder.GetPlanStatus(); status != "interviewing" {
 		t.Errorf("expected status to remain 'interviewing', got %q", status)
 	}
+
+	if al.planStartPending {
+		t.Error("planStartPending must not be set when start is rejected (no phases)")
+	}
 }
 
 func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
@@ -1094,10 +1107,17 @@ func TestPlanCommand_StartAlreadyExecuting(t *testing.T) {
 	_ = agent.ContextBuilder.WriteMemory(plan)
 	al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
 
-	// Try start again
+	// Clear the flag from the first call (simulating Run() consuming it)
+	al.planStartPending = false
+
+	// Try start again — should be rejected
 	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{Content: "/plan start"})
 	if !strings.Contains(response, "already executing") {
 		t.Errorf("expected 'already executing', got %q", response)
+	}
+
+	if al.planStartPending {
+		t.Error("planStartPending must not be set when plan is already executing")
 	}
 }
 

@@ -38,9 +38,10 @@ type AgentLoop struct {
 	stats          *stats.Tracker // nil when --stats not passed
 	running        atomic.Bool
 	summarizing    sync.Map
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
-	providerCache  map[string]providers.LLMProvider
+	fallback         *providers.FallbackChain
+	channelManager   *channels.Manager
+	providerCache    map[string]providers.LLMProvider
+	planStartPending bool // set by /plan start to trigger LLM execution
 }
 
 // processOptions configures how a message is processed
@@ -189,6 +190,23 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					Content:         response,
 					SkipPlaceholder: true,
 				})
+			}
+			// /plan start sets the flag — enqueue a synthetic message so
+			// the LLM worker actually begins executing the plan.
+			if al.planStartPending {
+				al.planStartPending = false
+				select {
+				case llmQueue <- bus.InboundMessage{
+					Channel:    msg.Channel,
+					ChatID:     msg.ChatID,
+					SenderID:   msg.SenderID,
+					SessionKey: msg.SessionKey,
+					Content:    "The plan has been approved. Begin executing.",
+					Metadata:   msg.Metadata,
+				}:
+				case <-ctx.Done():
+					return nil
+				}
 			}
 			continue
 		}
@@ -1575,6 +1593,7 @@ func (al *AgentLoop) handlePlanCommand(args []string) (string, bool) {
 		if err := agent.ContextBuilder.SetPlanStatus("executing"); err != nil {
 			return fmt.Sprintf("Error: %v", err), true
 		}
+		al.planStartPending = true
 		return "Plan approved. Executing.", true
 
 	case "next":
