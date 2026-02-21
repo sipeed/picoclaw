@@ -104,9 +104,9 @@
 
 PicoClaw có thể triển khai trên hầu hết mọi thiết bị Linux!
 
-* $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) phiên bản E (Ethernet) hoặc W (WiFi6), dùng làm Trợ lý Gia đình tối giản.
-* $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), hoặc $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html), dùng cho quản trị Server tự động.
-* $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) hoặc $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera), dùng cho Giám sát thông minh.
+* \$9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) phiên bản E (Ethernet) hoặc W (WiFi6), dùng làm Trợ lý Gia đình tối giản.
+* \$30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), hoặc \$100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html), dùng cho quản trị Server tự động.
+* \$50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) hoặc \$100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera), dùng cho Giám sát thông minh.
 
 https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4
 
@@ -1038,6 +1038,7 @@ Các tác vụ được lưu trong `~/.picoclaw/workspace/cron/` và được x�
 - **[Hướng dẫn Nhà phát triển](docs/developer-guide/README.md)** - Kiến trúc và đóng góp
 - **[Triển khai](docs/deployment/README.md)** - Hướng dẫn Docker, systemd, SBC
 - **[Tham khảo Cấu hình](docs/configuration/README.md)** - Tài liệu tham khảo đầy đủ về cấu hình
+- **[Cộng đồng](docs/community/README.md)** - Lộ trình, đóng góp, hỗ trợ
 
 ## 🤝 Đóng góp & Lộ trình
 

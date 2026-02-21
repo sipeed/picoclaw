@@ -1073,6 +1073,7 @@ Pour des guides et références complets, consultez le répertoire [docs/](docs/
 - **[Guide Développeur](docs/developer-guide/README.md)** - Architecture et contribution
 - **[Déploiement](docs/deployment/README.md)** - Docker, systemd, guides SBC
 - **[Référence Configuration](docs/configuration/README.md)** - Référence complète des options
+- **[Communauté](docs/community/README.md)** - Feuille de route, contribution, support
 
 ## 🤝 Contribuer & Feuille de Route
 

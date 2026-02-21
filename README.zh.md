@@ -121,9 +121,9 @@ termux-chroot ./picoclaw-linux-arm64 onboard
 
 PicoClaw 几乎可以部署在任何 Linux 设备上！
 
-* $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(网口) 或 W(WiFi6) 版本，用于极简家庭助手。
-* $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html)，或 $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html)，用于自动化服务器运维。
-* $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) 或 $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera)，用于智能监控。
+* \$9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(网口) 或 W(WiFi6) 版本，用于极简家庭助手。
+* \$30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html)，或 \$100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html)，用于自动化服务器运维。
+* \$50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) 或 \$100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera)，用于智能监控。
 
 [https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4](https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4)
 
@@ -984,6 +984,7 @@ PicoClaw 通过 `cron` 工具支持定时提醒和重复任务：
 - **[开发者指南](docs/developer-guide/README.md)** - 架构和贡献
 - **[部署指南](docs/deployment/README.md)** - Docker、systemd、SBC 指南
 - **[配置参考](docs/configuration/README.md)** - 完整配置选项参考
+- **[社区](docs/community/README.md)** - 路线图、贡献、支持
 
 ## 🤝 贡献与路线图 (Roadmap)
 

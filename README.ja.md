@@ -85,9 +85,9 @@
 ### 🐜 革新的な省フットプリントデプロイ
 PicoClaw はほぼすべての Linux デバイスにデプロイできます！
 
-- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) または W(WiFi6) バージョン、最小ホームアシスタントに
-- $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html) または $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) サーバー自動メンテナンスに
-- $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) または $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) スマート監視に
+- \$9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) または W(WiFi6) バージョン、最小ホームアシスタントに
+- \$30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html) または \$100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) サーバー自動メンテナンスに
+- \$50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) または \$100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) スマート監視に
 
 https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4
 
@@ -980,6 +980,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 - **[開発者ガイド](docs/developer-guide/README.md)** - アーキテクチャとコントリビューション
 - **[デプロイ](docs/deployment/README.md)** - Docker、systemd、SBC ガイド
 - **[設定リファレンス](docs/configuration/README.md)** - 設定オプションの完全なリファレンス
+- **[コミュニティ](docs/community/README.md)** - ロードマップ、コントリビュート、サポート
 
 ## 🤝 コントリビュート＆ロードマップ
 
