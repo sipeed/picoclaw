@@ -306,6 +306,59 @@ Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
 picoclaw gateway
 ```
 
+#### Mini App (Dashboard)
+
+PicoClaw includes a Telegram Mini App that provides a GUI dashboard directly inside Telegram. It shows plan progress, available skills, session stats, and lets you send commands without typing.
+
+**How it works:**
+
+When Telegram is enabled, PicoClaw automatically registers a "Dashboard" menu button in the chat. Tapping it opens the Mini App inside Telegram's WebView.
+
+| Tab | Description |
+|-----|-------------|
+| **Plan** | View plan phases/steps as a checklist, tap to mark done, start new plans |
+| **Skills** | Browse and invoke skills with a message input |
+| **Session** | View token usage stats (requires `--stats` flag) |
+| **Config** | Quick command buttons and custom command input |
+
+**Setup — Tailscale (recommended for self-hosting):**
+
+Telegram requires HTTPS for Mini Apps. The easiest way is to use [Tailscale](https://tailscale.com/) which provides automatic TLS certificates via MagicDNS.
+
+1. Install Tailscale on both your server and phone
+2. Allow cert provisioning (run once on the server):
+   ```bash
+   sudo tailscale set --operator=$USER
+   ```
+3. Start the gateway — PicoClaw auto-detects the Tailscale hostname and fetches a TLS certificate:
+   ```bash
+   picoclaw gateway --stats
+   ```
+   You should see:
+   ```
+   ✓ Mini App registered at https://<machine>.<tailnet>.ts.net:18790/miniapp
+   ```
+
+> Your phone must also be connected to the same Tailnet to access the Mini App.
+
+**Setup — Custom URL:**
+
+If you already have an HTTPS endpoint (e.g., reverse proxy, Cloudflare Tunnel), set `web_app_url` manually:
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_BOT_TOKEN",
+      "web_app_url": "https://your-domain.com/miniapp"
+    }
+  }
+}
+```
+
+When `web_app_url` is set, PicoClaw skips Tailscale auto-detection and serves the Mini App over HTTP (your reverse proxy handles TLS).
+
 </details>
 
 <details>
