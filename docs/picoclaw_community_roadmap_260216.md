@@ -71,14 +71,14 @@ Interested in a specific feature? You can "claim" these tasks and start building
   * Support for OneBot, additional platforms
   * attachments (images, audio, video, files).
 * **Skills:** 
-  * Implementing `find_skill` to discover tools via [openclaw/skills](https://github.com/openclaw/skills) and other platforms.
+  * Implementing `find_skill` to discover tools via [ClawhHub](https://clawhub.ai) and other platforms.
 * **Operations:** * MCP Support.
   * Android operations (e.g., botdrop).
   * Browser automation via CDP or ActionBook.
 
 
 * **Multi-Agent Ecosystem:**
-  * **Basic Model-Agnet** S
+  * **Basic Model-Agent**
   * **Model Routing:** Small models for easy tasks, large models for hard ones (to save tokens).
   * **Swarm Mode.**
   * **AIEOS Integration.**
