@@ -338,7 +338,6 @@
     <div class="cmd-chips">
       <button class="cmd-chip" data-cmd="/session">/session</button>
       <button class="cmd-chip" data-cmd="/skills">/skills</button>
-      <button class="cmd-chip" data-cmd="/todo">/todo</button>
       <button class="cmd-chip" data-cmd="/plan status">/plan status</button>
     </div>
   </div>
@@ -389,13 +388,19 @@ document.querySelectorAll('.cmd-chip').forEach(chip => {
   });
 });
 
-function sendCommand(cmd) {
+async function sendCommand(cmd) {
   if (!cmd.startsWith('/')) return;
   try {
-    tg.sendData(cmd);
+    const sep = '/miniapp/api/command'.includes('?') ? '&' : '?';
+    const res = await fetch(API_BASE + '/miniapp/api/command' + sep + 'initData=' + encodeURIComponent(initData), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: cmd }),
+    });
+    if (!res.ok) throw new Error('API error: ' + res.status);
+    tg.showAlert('Sent: ' + cmd);
   } catch (e) {
-    console.log('sendData:', cmd);
-    tg.showAlert('Command sent: ' + cmd);
+    tg.showAlert('Failed to send command');
   }
 }
 

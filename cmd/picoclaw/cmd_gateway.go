@@ -221,7 +221,8 @@ func gatewayCmd() {
 
 		if webAppURL != "" {
 			provider := &agentLoopDataProvider{loop: agentLoop}
-			handler := miniapp.NewHandler(provider, cfg.Channels.Telegram.Token)
+			sender := &telegramCommandSender{bus: msgBus}
+			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token)
 			handler.RegisterRoutes(healthServer.Mux())
 			fmt.Printf("✓ Mini App registered at %s\n", webAppURL)
 		}
@@ -330,4 +331,21 @@ func (p *agentLoopDataProvider) GetPlanInfo() miniapp.PlanInfo {
 
 func (p *agentLoopDataProvider) GetSessionStats() *stats.Stats {
 	return p.loop.GetSessionStats()
+}
+
+// telegramCommandSender injects Mini App commands into the message bus.
+type telegramCommandSender struct {
+	bus *bus.MessageBus
+}
+
+func (s *telegramCommandSender) SendCommand(senderID, chatID, command string) {
+	s.bus.PublishInbound(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: senderID,
+		ChatID:   chatID,
+		Content:  command,
+		Metadata: map[string]string{
+			"source": "webapp",
+		},
+	})
 }

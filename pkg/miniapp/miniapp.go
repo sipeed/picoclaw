@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -50,16 +51,23 @@ type DataProvider interface {
 	GetSessionStats() *stats.Stats
 }
 
+// CommandSender injects a command into the message bus on behalf of a user.
+type CommandSender interface {
+	SendCommand(senderID, chatID, command string)
+}
+
 // Handler serves the Mini App HTML and API endpoints.
 type Handler struct {
 	provider DataProvider
+	sender   CommandSender
 	botToken string
 }
 
 // NewHandler creates a new Mini App handler.
-func NewHandler(provider DataProvider, botToken string) *Handler {
+func NewHandler(provider DataProvider, sender CommandSender, botToken string) *Handler {
 	return &Handler{
 		provider: provider,
+		sender:   sender,
 		botToken: botToken,
 	}
 }
@@ -70,6 +78,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/skills", h.requireAuth(h.apiSkills))
 	mux.HandleFunc("/miniapp/api/plan", h.requireAuth(h.apiPlan))
 	mux.HandleFunc("/miniapp/api/session", h.requireAuth(h.apiSession))
+	mux.HandleFunc("/miniapp/api/command", h.requireAuth(h.apiCommand))
 }
 
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +123,65 @@ func (h *Handler) apiSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s)
+}
+
+func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil || req.Command == "" {
+		http.Error(w, `{"error":"missing command"}`, http.StatusBadRequest)
+		return
+	}
+
+	if !strings.HasPrefix(req.Command, "/") {
+		http.Error(w, `{"error":"command must start with /"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Extract user ID from initData to identify the sender
+	initData := r.URL.Query().Get("initData")
+	userID, chatID := extractUserFromInitData(initData)
+	if userID == "" {
+		http.Error(w, `{"error":"cannot identify user"}`, http.StatusBadRequest)
+		return
+	}
+
+	h.sender.SendCommand(userID, chatID, req.Command)
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+// extractUserFromInitData parses user.id from the initData query string.
+// initData contains a "user" param with JSON like {"id":123456,...}.
+func extractUserFromInitData(initData string) (userID, chatID string) {
+	values, err := url.ParseQuery(initData)
+	if err != nil {
+		return "", ""
+	}
+	userJSON := values.Get("user")
+	if userJSON == "" {
+		return "", ""
+	}
+	var user struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(userJSON), &user); err != nil || user.ID == 0 {
+		return "", ""
+	}
+	id := fmt.Sprintf("%d", user.ID)
+	// For Mini App commands, chatID = userID (private chat)
+	return id, id
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
