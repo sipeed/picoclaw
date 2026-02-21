@@ -67,6 +67,9 @@ Complete guide to using PicoClaw features.
   - [Ollama](user-guide/providers/ollama.md) - Local models
   - [vLLM](user-guide/providers/vllm.md) - Self-hosted models
 
+- [IDE Setup](user-guide/ide-setup/README.md) - IDE integrations
+  - [Antigravity](user-guide/ide-setup/antigravity.md) - Google Cloud Code Assist (free Claude/Gemini)
+
 - [Workspace](user-guide/workspace/README.md) - Customizing behavior
   - [Structure](user-guide/workspace/structure.md) - Directory layout
   - [AGENT.md](user-guide/workspace/agent-md.md) - Agent behavior

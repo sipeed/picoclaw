@@ -54,6 +54,11 @@
 - [Ollama](user-guide/providers/ollama.md)
 - [vLLM](user-guide/providers/vllm.md)
 
+## IDE Setup
+
+- [IDE Setup Overview](user-guide/ide-setup/README.md)
+- [Antigravity (Google Cloud Code Assist)](user-guide/ide-setup/antigravity.md)
+
 ## Workspace
 
 - [Workspace Overview](user-guide/workspace/README.md)
