@@ -14,7 +14,6 @@ import (
 	"runtime"
 
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 var (
@@ -95,7 +94,7 @@ func copyDirectory(src, dst string) error {
 func main() {
 	if len(os.Args) < 2 {
 		printHelp()
-		os.Exit(1)
+		os.Exit(0)
 	}
 
 	command := os.Args[1]
@@ -115,57 +114,18 @@ func main() {
 		authCmd()
 	case "cron":
 		cronCmd()
+	case "doctor":
+		doctorCmd()
+	case "sessions":
+		sessionsCmd()
 	case "skills":
-		if len(os.Args) < 3 {
-			skillsHelp()
-			return
-		}
-
-		subcommand := os.Args[2]
-
-		cfg, err := loadConfig()
-		if err != nil {
-			fmt.Printf("Error loading config: %v\n", err)
-			os.Exit(1)
-		}
-
-		workspace := cfg.WorkspacePath()
-		installer := skills.NewSkillInstaller(workspace)
-		// 获取全局配置目录和内置 skills 目录
-		globalDir := filepath.Dir(getConfigPath())
-		globalSkillsDir := filepath.Join(globalDir, "skills")
-		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
-		skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
-
-		switch subcommand {
-		case "list":
-			skillsListCmd(skillsLoader)
-		case "install":
-			skillsInstallCmd(installer, cfg)
-		case "remove", "uninstall":
-			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills remove <skill-name>")
-				return
-			}
-			skillsRemoveCmd(installer, os.Args[3])
-		case "install-builtin":
-			skillsInstallBuiltinCmd(workspace)
-		case "list-builtin":
-			skillsListBuiltinCmd()
-		case "search":
-			skillsSearchCmd(installer)
-		case "show":
-			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills show <skill-name>")
-				return
-			}
-			skillsShowCmd(skillsLoader, os.Args[3])
-		default:
-			fmt.Printf("Unknown skills command: %s\n", subcommand)
-			skillsHelp()
-		}
+		skillsCmd()
+	case "update":
+		updateCmd()
 	case "version", "--version", "-v":
 		printVersion()
+	case "--help", "-h":
+		printHelp()
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printHelp()
@@ -186,6 +146,9 @@ func printHelp() {
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
+	fmt.Println("  sessions    Manage sessions (list, show, delete, clear)")
+	fmt.Println("  doctor      Diagnose and fix common problems (--fix to auto-repair)")
+	fmt.Println("  update      Check for updates and self-update")
 	fmt.Println("  version     Show version information")
 }
 

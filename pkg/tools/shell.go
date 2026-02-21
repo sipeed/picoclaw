@@ -22,6 +22,13 @@ type ExecTool struct {
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
 	restrictToWorkspace bool
+	permStore           *PermissionStore
+	permFn              PermissionFunc
+}
+
+func (t *ExecTool) SetPermission(store *PermissionStore, fn PermissionFunc) {
+	t.permStore = store
+	t.permFn = fn
 }
 
 var defaultDenyPatterns = []*regexp.Regexp{
@@ -162,7 +169,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		}
 	}
 
-	if guardError := t.guardCommand(command, cwd); guardError != "" {
+	if guardError := t.guardCommandWithPermission(ctx, command, cwd); guardError != "" {
 		return ErrorResult(guardError)
 	}
 
@@ -306,6 +313,89 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 
 			if strings.HasPrefix(rel, "..") {
 				return "Command blocked by safety guard (path outside working dir)"
+			}
+		}
+	}
+
+	return ""
+}
+
+// guardCommandWithPermission is like guardCommand but instead of blocking
+// absolute paths outside the workspace, it checks the PermissionStore and
+// optionally calls PermissionFunc to request access.
+func (t *ExecTool) guardCommandWithPermission(ctx context.Context, command, cwd string) string {
+	cmd := strings.TrimSpace(command)
+	lower := strings.ToLower(cmd)
+
+	// 1. Deny pattern checks — no bypass
+	for _, pattern := range t.denyPatterns {
+		if pattern.MatchString(lower) {
+			return "Command blocked by safety guard (dangerous pattern detected)"
+		}
+	}
+
+	// 2. Allowlist checks — no bypass
+	if len(t.allowPatterns) > 0 {
+		allowed := false
+		for _, pattern := range t.allowPatterns {
+			if pattern.MatchString(lower) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return "Command blocked by safety guard (not in allowlist)"
+		}
+	}
+
+	if t.restrictToWorkspace {
+		// 3. Path traversal check — no bypass, security critical
+		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
+			return "Command blocked by safety guard (path traversal detected)"
+		}
+
+		cwdPath, err := filepath.Abs(cwd)
+		if err != nil {
+			return ""
+		}
+
+		// 4. Absolute path outside workspace — check permission
+		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+		matches := pathPattern.FindAllString(cmd, -1)
+
+		for _, raw := range matches {
+			p, err := filepath.Abs(raw)
+			if err != nil {
+				continue
+			}
+
+			rel, err := filepath.Rel(cwdPath, p)
+			if err != nil {
+				continue
+			}
+
+			if strings.HasPrefix(rel, "..") {
+				dir := filepath.Dir(p)
+
+				if t.permStore != nil && t.permStore.IsApproved(dir) {
+					continue
+				}
+
+				if t.permFn == nil {
+					return "Command blocked by safety guard (path outside working dir)"
+				}
+
+				approved, err := t.permFn(ctx, dir)
+				if err != nil {
+					return fmt.Sprintf("permission check failed: %v", err)
+				}
+				if !approved {
+					return fmt.Sprintf("access denied: user denied permission to access %s", dir)
+				}
+
+				if t.permStore != nil {
+					t.permStore.Approve(dir)
+				}
 			}
 		}
 	}

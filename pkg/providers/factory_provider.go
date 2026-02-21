@@ -21,6 +21,24 @@ func createClaudeAuthProvider() (LLMProvider, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("no credentials for anthropic. Run: picoclaw auth login --provider anthropic")
 	}
+
+	if isAnthropicMaxOAuth(cred) {
+		return NewClaudeProviderWithOAuthMiddleware(createClaudeOAuthTokenSource()), nil
+	}
+
+	if cred.APIKey != "" {
+		return NewClaudeProviderWithTokenSource(cred.APIKey, func() (string, error) {
+			c, err := getCredential("anthropic")
+			if err != nil {
+				return "", err
+			}
+			if c != nil && c.APIKey != "" {
+				return c.APIKey, nil
+			}
+			return c.AccessToken, nil
+		}), nil
+	}
+
 	return NewClaudeProviderWithTokenSource(cred.AccessToken, createClaudeTokenSource()), nil
 }
 

@@ -221,6 +221,9 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		return history
 	}
 
+	// Repair orphaned tool_use/tool_result pairs before further sanitization.
+	history = repairOrphanedToolPairs(history)
+
 	sanitized := make([]providers.Message, 0, len(history))
 	for _, msg := range history {
 		switch msg.Role {
@@ -229,8 +232,21 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				logger.DebugCF("agent", "Dropping orphaned leading tool message", map[string]any{})
 				continue
 			}
-			last := sanitized[len(sanitized)-1]
-			if last.Role != "assistant" || len(last.ToolCalls) == 0 {
+			// Look back past other tool messages to find the assistant that
+			// initiated these tool calls. An assistant with 2+ tool_calls
+			// produces consecutive tool results — the 2nd+ tool results have
+			// another tool message as their predecessor, not the assistant.
+			hasMatchingAssistant := false
+			for i := len(sanitized) - 1; i >= 0; i-- {
+				if sanitized[i].Role == "tool" {
+					continue // skip past earlier tool results in same batch
+				}
+				if sanitized[i].Role == "assistant" && len(sanitized[i].ToolCalls) > 0 {
+					hasMatchingAssistant = true
+				}
+				break // stop at first non-tool message
+			}
+			if !hasMatchingAssistant {
 				logger.DebugCF("agent", "Dropping orphaned tool message", map[string]any{})
 				continue
 			}

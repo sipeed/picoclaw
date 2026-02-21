@@ -141,7 +141,17 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 		return
 	}
 
-	session.Messages = session.Messages[len(session.Messages)-keepLast:]
+	// Start with the naive cut point
+	cutIdx := len(session.Messages) - keepLast
+
+	// Snap the cut point backward: if the message at cutIdx is a "tool"
+	// (tool_result), walk backward to include the preceding assistant
+	// message that owns the tool_call group.
+	for cutIdx > 0 && session.Messages[cutIdx].Role == "tool" {
+		cutIdx--
+	}
+
+	session.Messages = session.Messages[cutIdx:]
 	session.Updated = time.Now()
 }
 
@@ -257,6 +267,14 @@ func (sm *SessionManager) loadSessions() error {
 		var session Session
 		if err := json.Unmarshal(data, &session); err != nil {
 			continue
+		}
+
+		// Normalize tool calls to ensure Arguments map is populated
+		// from Function.Arguments for sessions saved before this fix.
+		for i, msg := range session.Messages {
+			for j, tc := range msg.ToolCalls {
+				session.Messages[i].ToolCalls[j] = providers.NormalizeToolCall(tc)
+			}
 		}
 
 		sm.sessions[session.Key] = &session

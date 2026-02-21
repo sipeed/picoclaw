@@ -28,25 +28,40 @@ import (
 )
 
 func gatewayCmd() {
-	// Check for --debug flag
+	// Check for flags
 	args := os.Args[2:]
 	for _, arg := range args {
-		if arg == "--debug" || arg == "-d" {
+		switch arg {
+		case "--help", "-h":
+			fmt.Println("Start the picoclaw gateway server")
+			fmt.Println()
+			fmt.Println("Usage: picoclaw gateway [options]")
+			fmt.Println()
+			fmt.Println("Options:")
+			fmt.Println("  -d, --debug   Enable debug logging")
+			fmt.Println("  -h, --help    Show this help message")
+			return
+		case "--debug", "-d":
 			logger.SetLevel(logger.DEBUG)
 			fmt.Println("🔍 Debug mode enabled")
-			break
+		default:
+			fmt.Printf("Unknown flag: %s\n", arg)
+			fmt.Println("Run 'picoclaw gateway --help' for usage.")
+			os.Exit(1)
 		}
 	}
 
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		os.Exit(1)
 	}
 
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		os.Exit(1)
 	}
 	// Use the resolved model ID from provider creation
@@ -114,6 +129,7 @@ func gatewayCmd() {
 	channelManager, err := channels.NewManager(cfg, msgBus)
 	if err != nil {
 		fmt.Printf("Error creating channel manager: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		os.Exit(1)
 	}
 
@@ -146,6 +162,21 @@ func gatewayCmd() {
 			}
 		}
 	}
+
+	// Set up permission factory for channel-specific permission prompts
+	var telegramPermManager *channels.TelegramPermissionManager
+	if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
+		if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
+			telegramPermManager = tc.PermissionManager()
+		}
+	}
+
+	agentLoop.SetPermissionFuncFactory(func(channel, chatID string) tools.PermissionFunc {
+		if channel == "telegram" && telegramPermManager != nil {
+			return telegramPermManager.NewPermissionFunc(chatID)
+		}
+		return nil // Other channels fall back to LLM-driven flow
+	})
 
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {

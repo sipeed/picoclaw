@@ -11,6 +11,8 @@ import (
 const defaultAnthropicAPIBase = "https://api.anthropic.com/v1"
 
 var getCredential = auth.GetCredential
+var getAnthropicAccessToken = auth.GetAnthropicAccessToken
+var isAnthropicMaxOAuth = auth.IsAnthropicMaxOAuth
 
 type providerType int
 

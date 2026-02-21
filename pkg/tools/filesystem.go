@@ -8,6 +8,82 @@ import (
 	"strings"
 )
 
+// validatePathWithPermission is like validatePath but instead of immediately
+// erroring on outside-workspace paths, it checks the PermissionStore and
+// optionally calls PermissionFunc to request access.
+func validatePathWithPermission(ctx context.Context, path, workspace string, restrict bool, store *PermissionStore, permFn PermissionFunc) (string, error) {
+	if workspace == "" {
+		return path, nil
+	}
+
+	absWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve workspace path: %w", err)
+	}
+
+	var absPath string
+	if filepath.IsAbs(path) {
+		absPath = filepath.Clean(path)
+	} else {
+		absPath, err = filepath.Abs(filepath.Join(absWorkspace, path))
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve file path: %w", err)
+		}
+	}
+
+	if restrict {
+		if isWithinWorkspace(absPath, absWorkspace) {
+			// Path is inside workspace — do symlink checks
+			workspaceReal := absWorkspace
+			if resolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
+				workspaceReal = resolved
+			}
+
+			if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+				if !isWithinWorkspace(resolved, workspaceReal) {
+					return "", fmt.Errorf("access denied: symlink resolves outside workspace")
+				}
+			} else if os.IsNotExist(err) {
+				if parentResolved, err := resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
+					if !isWithinWorkspace(parentResolved, workspaceReal) {
+						return "", fmt.Errorf("access denied: symlink resolves outside workspace")
+					}
+				} else if !os.IsNotExist(err) {
+					return "", fmt.Errorf("failed to resolve path: %w", err)
+				}
+			} else {
+				return "", fmt.Errorf("failed to resolve path: %w", err)
+			}
+			return absPath, nil
+		}
+
+		// Path is outside workspace — check permission store then ask
+		dir := filepath.Dir(absPath)
+		if store != nil && store.IsApproved(dir) {
+			return absPath, nil
+		}
+
+		if permFn == nil {
+			return "", fmt.Errorf("access denied: path %s is outside the workspace. Ask the user for permission to access directory %s, then retry", absPath, dir)
+		}
+
+		approved, err := permFn(ctx, dir)
+		if err != nil {
+			return "", fmt.Errorf("permission check failed: %w", err)
+		}
+		if !approved {
+			return "", fmt.Errorf("access denied: user denied permission to access %s", dir)
+		}
+
+		if store != nil {
+			store.Approve(dir)
+		}
+		return absPath, nil
+	}
+
+	return absPath, nil
+}
+
 // validatePath ensures the given path is within the workspace if restrict is true.
 func validatePath(path, workspace string, restrict bool) (string, error) {
 	if workspace == "" {
@@ -82,6 +158,13 @@ func isWithinWorkspace(candidate, workspace string) bool {
 type ReadFileTool struct {
 	workspace string
 	restrict  bool
+	permStore *PermissionStore
+	permFn    PermissionFunc
+}
+
+func (t *ReadFileTool) SetPermission(store *PermissionStore, fn PermissionFunc) {
+	t.permStore = store
+	t.permFn = fn
 }
 
 func NewReadFileTool(workspace string, restrict bool) *ReadFileTool {
@@ -115,7 +198,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("path is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
+	resolvedPath, err := validatePathWithPermission(ctx, path, t.workspace, t.restrict, t.permStore, t.permFn)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -131,6 +214,13 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 type WriteFileTool struct {
 	workspace string
 	restrict  bool
+	permStore *PermissionStore
+	permFn    PermissionFunc
+}
+
+func (t *WriteFileTool) SetPermission(store *PermissionStore, fn PermissionFunc) {
+	t.permStore = store
+	t.permFn = fn
 }
 
 func NewWriteFileTool(workspace string, restrict bool) *WriteFileTool {
@@ -173,7 +263,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 		return ErrorResult("content is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
+	resolvedPath, err := validatePathWithPermission(ctx, path, t.workspace, t.restrict, t.permStore, t.permFn)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -193,6 +283,13 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 type ListDirTool struct {
 	workspace string
 	restrict  bool
+	permStore *PermissionStore
+	permFn    PermissionFunc
+}
+
+func (t *ListDirTool) SetPermission(store *PermissionStore, fn PermissionFunc) {
+	t.permStore = store
+	t.permFn = fn
 }
 
 func NewListDirTool(workspace string, restrict bool) *ListDirTool {
@@ -226,7 +323,7 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		path = "."
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
+	resolvedPath, err := validatePathWithPermission(ctx, path, t.workspace, t.restrict, t.permStore, t.permFn)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}

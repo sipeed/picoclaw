@@ -28,6 +28,7 @@ type AgentInstance struct {
 	Sessions       *session.SessionManager
 	ContextBuilder *ContextBuilder
 	Tools          *tools.ToolRegistry
+	PermStore      *tools.PermissionStore
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
 	Candidates     []providers.FallbackCandidate
@@ -88,6 +89,16 @@ func NewAgentInstance(
 		temperature = *defaults.Temperature
 	}
 
+	// Set up permission store and wire into permissible tools
+	permStore := tools.NewPermissionStore()
+	for _, name := range toolsRegistry.List() {
+		if tool, ok := toolsRegistry.Get(name); ok {
+			if pt, ok := tool.(tools.PermissibleTool); ok {
+				pt.SetPermission(permStore, nil)
+			}
+		}
+	}
+
 	// Resolve fallback candidates
 	modelCfg := providers.ModelConfig{
 		Primary:   model,
@@ -109,6 +120,7 @@ func NewAgentInstance(
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,
 		Tools:          toolsRegistry,
+		PermStore:      permStore,
 		Subagents:      subagents,
 		SkillsFilter:   skillsFilter,
 		Candidates:     candidates,

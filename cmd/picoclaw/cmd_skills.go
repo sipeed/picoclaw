@@ -16,8 +16,69 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+func skillsCmd() {
+	if len(os.Args) < 3 {
+		skillsHelp()
+		return
+	}
+
+	subcommand := os.Args[2]
+
+	if subcommand == "--help" || subcommand == "-h" {
+		skillsHelp()
+		return
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
+		os.Exit(1)
+	}
+
+	workspace := cfg.WorkspacePath()
+	installer := skills.NewSkillInstaller(workspace)
+	// Get global config dir and builtin skills dir
+	globalDir := filepath.Dir(getConfigPath())
+	globalSkillsDir := filepath.Join(globalDir, "skills")
+	builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
+	skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
+
+	switch subcommand {
+	case "list":
+		skillsListCmd(skillsLoader)
+	case "install":
+		skillsInstallCmd(installer, cfg)
+	case "remove", "uninstall":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: picoclaw skills remove <skill-name>")
+			return
+		}
+		skillsRemoveCmd(installer, os.Args[3])
+	case "install-builtin":
+		skillsInstallBuiltinCmd(workspace)
+	case "list-builtin":
+		skillsListBuiltinCmd()
+	case "search":
+		skillsSearchCmd(installer)
+	case "show":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: picoclaw skills show <skill-name>")
+			return
+		}
+		skillsShowCmd(skillsLoader, os.Args[3])
+	default:
+		fmt.Printf("Unknown skills command: %s\n", subcommand)
+		skillsHelp()
+	}
+}
+
 func skillsHelp() {
-	fmt.Println("\nSkills commands:")
+	fmt.Println("Usage: picoclaw skills <command>")
+	fmt.Println()
+	fmt.Println("Manage skills (install, list, remove).")
+	fmt.Println()
+	fmt.Println("Commands:")
 	fmt.Println("  list                    List installed skills")
 	fmt.Println("  install <repo>          Install skill from GitHub")
 	fmt.Println("  install-builtin         Install all builtin skills to workspace")
@@ -33,6 +94,9 @@ func skillsHelp() {
 	fmt.Println("  picoclaw skills list-builtin")
 	fmt.Println("  picoclaw skills remove weather")
 	fmt.Println("  picoclaw skills install --registry clawhub github")
+	fmt.Println()
+	fmt.Println("Flags:")
+	fmt.Println("  -h, --help    Show this help")
 }
 
 func skillsListCmd(loader *skills.SkillsLoader) {

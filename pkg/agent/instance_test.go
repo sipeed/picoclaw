@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 func TestNewAgentInstance_UsesDefaultsTemperatureAndMaxTokens(t *testing.T) {
@@ -91,5 +92,31 @@ func TestNewAgentInstance_DefaultsTemperatureWhenUnset(t *testing.T) {
 
 	if agent.Temperature != 0.7 {
 		t.Fatalf("Temperature = %f, want %f", agent.Temperature, 0.7)
+	}
+}
+
+func TestAgentInstance_ToolsImplementPermissibleTool(t *testing.T) {
+	defaults := &config.AgentDefaults{
+		Model:               "test-model",
+		Workspace:           t.TempDir(),
+		RestrictToWorkspace: true,
+	}
+	cfg := config.DefaultConfig()
+	instance := NewAgentInstance(nil, defaults, cfg, nil)
+
+	permissibleTools := []string{"read_file", "write_file", "list_dir", "edit_file", "append_file", "exec"}
+	for _, name := range permissibleTools {
+		tool, ok := instance.Tools.Get(name)
+		if !ok {
+			t.Errorf("tool %q not registered", name)
+			continue
+		}
+		if _, ok := tool.(tools.PermissibleTool); !ok {
+			t.Errorf("tool %q does not implement PermissibleTool", name)
+		}
+	}
+
+	if instance.PermStore == nil {
+		t.Error("expected PermStore to be non-nil")
 	}
 }

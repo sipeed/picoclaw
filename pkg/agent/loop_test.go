@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -629,5 +630,366 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+func TestHandleCommand_Help(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	ctx := context.Background()
+	msg := bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/help",
+	}
+
+	response, handled := al.handleCommand(ctx, msg)
+	if !handled {
+		t.Fatal("Expected /help to be handled")
+	}
+	if response == "" {
+		t.Fatal("Expected non-empty help response")
+	}
+
+	// Verify key commands are mentioned in the help text
+	expectedCommands := []string{
+		"/help",
+		"/show model",
+		"/show channel",
+		"/show agents",
+		"/list models",
+		"/list channels",
+		"/list agents",
+		"/switch model to",
+		"/switch channel to",
+	}
+	for _, cmd := range expectedCommands {
+		if !strings.Contains(response, cmd) {
+			t.Errorf("Help response missing command %q", cmd)
+		}
+	}
+}
+
+func TestHandleCommand_ListModels(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "gpt-4",
+				ModelFallbacks:    []string{"gpt-3.5-turbo"},
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	ctx := context.Background()
+	msg := bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/list models",
+	}
+
+	response, handled := al.handleCommand(ctx, msg)
+	if !handled {
+		t.Fatal("Expected /list models to be handled")
+	}
+
+	// Should contain the model name
+	if !strings.Contains(response, "gpt-4") {
+		t.Errorf("Expected response to contain model name 'gpt-4', got: %s", response)
+	}
+
+	// Should contain fallback info
+	if !strings.Contains(response, "gpt-3.5-turbo") {
+		t.Errorf("Expected response to contain fallback model 'gpt-3.5-turbo', got: %s", response)
+	}
+
+	// Should contain "Configured models" header
+	if !strings.Contains(response, "Configured models:") {
+		t.Errorf("Expected response to contain 'Configured models:', got: %s", response)
+	}
+}
+
+func TestHandleCommand_NotACommand(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "plain text", content: "hello world"},
+		{name: "unknown command", content: "/unknown"},
+		{name: "empty", content: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := bus.InboundMessage{
+				Channel:  "test",
+				SenderID: "user1",
+				ChatID:   "chat1",
+				Content:  tt.content,
+			}
+			_, handled := al.handleCommand(ctx, msg)
+			if handled {
+				t.Errorf("Expected %q to not be handled as a command", tt.content)
+			}
+		})
+	}
+}
+
+func TestHandleCommand_New(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	// Add some messages to the session so we can verify they get cleared
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	sessionKey := "agent:main:main"
+	defaultAgent.Sessions.AddMessage(sessionKey, "user", "hello")
+	defaultAgent.Sessions.AddMessage(sessionKey, "assistant", "hi there")
+
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 2 {
+		t.Fatalf("Expected 2 messages before /new, got %d", len(history))
+	}
+
+	ctx := context.Background()
+	msg := bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/new",
+	}
+
+	response, handled := al.handleCommand(ctx, msg)
+	if !handled {
+		t.Fatal("Expected /new to be handled")
+	}
+	if !strings.Contains(response, "Started a new conversation") {
+		t.Errorf("Expected confirmation message, got: %s", response)
+	}
+	if !strings.Contains(response, "Previous session saved") {
+		t.Errorf("Expected 'Previous session saved' in response, got: %s", response)
+	}
+
+	// Verify history was cleared
+	history = defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 0 {
+		t.Errorf("Expected 0 messages after /new, got %d", len(history))
+	}
+
+	// Verify summary was cleared
+	summary := defaultAgent.Sessions.GetSummary(sessionKey)
+	if summary != "" {
+		t.Errorf("Expected empty summary after /new, got: %s", summary)
+	}
+}
+
+func TestForceCompression_PreservesToolPairs(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+	sessionKey := "agent:main:test-compression"
+	agent.Sessions.GetOrCreate(sessionKey)
+
+	// Build: system, user, assistant+tool, tool_result, tool_result, user, assistant, user
+	// = 8 messages. Conversation (indices 1-6) has 6 msgs, mid=3 lands on
+	// the second tool_result, splitting it from its assistant+tool_calls.
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "system", Content: "sys"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "q1"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{
+		Role: "assistant", Content: "a1",
+		ToolCalls: []providers.ToolCall{{ID: "c1", Name: "exec"}, {ID: "c2", Name: "read"}},
+	})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "tool", Content: "r1", ToolCallID: "c1"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "tool", Content: "r2", ToolCallID: "c2"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "q2"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "assistant", Content: "a2"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "q3"})
+
+	al.forceCompression(agent, sessionKey)
+
+	history := agent.Sessions.GetHistory(sessionKey)
+
+	toolCallIDs := map[string]bool{}
+	toolResultIDs := map[string]bool{}
+	for _, m := range history {
+		for _, tc := range m.ToolCalls {
+			if tc.ID != "" {
+				toolCallIDs[tc.ID] = true
+			}
+		}
+		if m.Role == "tool" && m.ToolCallID != "" {
+			toolResultIDs[m.ToolCallID] = true
+		}
+	}
+
+	for id := range toolResultIDs {
+		if !toolCallIDs[id] {
+			t.Errorf("orphaned tool_result %q after forceCompression", id)
+		}
+	}
+	for id := range toolCallIDs {
+		if !toolResultIDs[id] {
+			t.Errorf("orphaned tool_call %q after forceCompression", id)
+		}
+	}
+}
+
+func TestHandleCommand_Status(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "claude-3-opus",
+				MaxTokens:         4096,
+				MaxToolIterations: 15,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	// Add some messages so the count is nonzero
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	sessionKey := "agent:main:main"
+	defaultAgent.Sessions.AddMessage(sessionKey, "user", "hello")
+	defaultAgent.Sessions.AddMessage(sessionKey, "assistant", "hi")
+	defaultAgent.Sessions.AddMessage(sessionKey, "user", "how are you?")
+
+	ctx := context.Background()
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/status",
+	}
+
+	response, handled := al.handleCommand(ctx, msg)
+	if !handled {
+		t.Fatal("Expected /status to be handled")
+	}
+
+	// Verify key fields are present
+	expectedFields := []struct {
+		label string
+		value string
+	}{
+		{"Model", "claude-3-opus"},
+		{"Agent", "main"},
+		{"Channel", "telegram"},
+		{"Messages", "3 in current session"},
+		{"Max iterations", "15"},
+	}
+	for _, f := range expectedFields {
+		expected := fmt.Sprintf("%s: %s", f.label, f.value)
+		if !strings.Contains(response, expected) {
+			t.Errorf("Expected status to contain %q, got:\n%s", expected, response)
+		}
 	}
 }

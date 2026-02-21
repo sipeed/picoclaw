@@ -26,6 +26,8 @@ func authCmd() {
 	}
 
 	switch os.Args[2] {
+	case "--help", "-h":
+		authHelp()
 	case "login":
 		authLoginCmd()
 	case "logout":
@@ -41,7 +43,11 @@ func authCmd() {
 }
 
 func authHelp() {
-	fmt.Println("\nAuth commands:")
+	fmt.Println("Usage: picoclaw auth <command>")
+	fmt.Println()
+	fmt.Println("Manage authentication credentials.")
+	fmt.Println()
+	fmt.Println("Commands:")
 	fmt.Println("  login       Login via OAuth or paste token")
 	fmt.Println("  logout      Remove stored credentials")
 	fmt.Println("  status      Show current auth status")
@@ -51,6 +57,11 @@ func authHelp() {
 	fmt.Println("  --provider <name>    Provider to login with (openai, anthropic, google-antigravity)")
 	fmt.Println("  --device-code        Use device code flow (for headless environments)")
 	fmt.Println()
+	fmt.Println("Anthropic login modes:")
+	fmt.Println("  1. Claude Max/Pro (OAuth) - Free inference with your subscription")
+	fmt.Println("  2. Create API Key (OAuth) - Browser-based API key creation")
+	fmt.Println("  3. Paste API Key          - Manual API key entry")
+	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  picoclaw auth login --provider openai")
 	fmt.Println("  picoclaw auth login --provider openai --device-code")
@@ -59,6 +70,9 @@ func authHelp() {
 	fmt.Println("  picoclaw auth models")
 	fmt.Println("  picoclaw auth logout --provider openai")
 	fmt.Println("  picoclaw auth status")
+	fmt.Println()
+	fmt.Println("Flags:")
+	fmt.Println("  -h, --help    Show this help")
 }
 
 func authLoginCmd() {
@@ -88,7 +102,7 @@ func authLoginCmd() {
 	case "openai":
 		authLoginOpenAI(useDeviceCode)
 	case "anthropic":
-		authLoginPasteToken(provider)
+		authLoginAnthropic()
 	case "google-antigravity", "antigravity":
 		authLoginGoogleAntigravity()
 	default:
@@ -256,6 +270,81 @@ func fetchGoogleUserEmail(accessToken string) (string, error) {
 		return "", err
 	}
 	return userInfo.Email, nil
+}
+
+func authLoginAnthropic() {
+	fmt.Println("\nAnthropic Login Methods:")
+	fmt.Println("  1. Claude Max/Pro (OAuth) - Use your Claude subscription for free inference")
+	fmt.Println("  2. Create API Key (OAuth) - Authenticate via browser to create an API key")
+	fmt.Println("  3. Paste API Key          - Manually enter an existing API key")
+	fmt.Print("\nChoose [1/2/3]: ")
+
+	var choice string
+	fmt.Scanln(&choice)
+
+	switch strings.TrimSpace(choice) {
+	case "1":
+		authLoginAnthropicOAuth(auth.AnthropicOAuthMax)
+	case "2":
+		authLoginAnthropicOAuth(auth.AnthropicOAuthConsole)
+	case "3":
+		authLoginPasteToken("anthropic")
+	default:
+		fmt.Println("Invalid choice. Please enter 1, 2, or 3.")
+	}
+}
+
+func authLoginAnthropicOAuth(mode auth.AnthropicOAuthMode) {
+	cred, err := auth.LoginAnthropicOAuth(mode)
+	if err != nil {
+		fmt.Printf("Login failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := auth.SetCredential("anthropic", cred); err != nil {
+		fmt.Printf("Failed to save credentials: %v\n", err)
+		os.Exit(1)
+	}
+
+	appCfg, err := loadConfig()
+	if err == nil {
+		appCfg.Providers.Anthropic.AuthMethod = "oauth"
+
+		found := false
+		for i := range appCfg.ModelList {
+			if isAnthropicModel(appCfg.ModelList[i].Model) {
+				appCfg.ModelList[i].AuthMethod = "oauth"
+				found = true
+				break
+			}
+		}
+		if !found {
+			appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
+				ModelName:  "claude-sonnet-4.6",
+				Model:      "anthropic/claude-sonnet-4.6",
+				AuthMethod: "oauth",
+			})
+		}
+
+		appCfg.Agents.Defaults.Model = "claude-sonnet-4.6"
+
+		if err := config.SaveConfig(getConfigPath(), appCfg); err != nil {
+			fmt.Printf("Warning: could not update config: %v\n", err)
+		}
+	}
+
+	modeStr := "Claude Max/Pro OAuth"
+	if mode == auth.AnthropicOAuthConsole {
+		modeStr = "API Key (via OAuth)"
+	}
+	fmt.Printf("\nAnthropic login successful! (%s)\n", modeStr)
+	if cred.Email != "" {
+		fmt.Printf("Account: %s\n", cred.Email)
+	}
+	if cred.SubscriptionType != "" {
+		fmt.Printf("Plan: %s\n", cred.SubscriptionType)
+	}
+	fmt.Println("Default model set to: claude-sonnet-4.6")
 }
 
 func authLoginPasteToken(provider string) {
@@ -432,6 +521,12 @@ func authStatusCmd() {
 		}
 		if cred.ProjectID != "" {
 			fmt.Printf("    Project: %s\n", cred.ProjectID)
+		}
+		if cred.SubscriptionType != "" {
+			fmt.Printf("    Plan: %s\n", cred.SubscriptionType)
+		}
+		if cred.APIKey != "" {
+			fmt.Printf("    API Key: %s...%s\n", cred.APIKey[:4], cred.APIKey[len(cred.APIKey)-4:])
 		}
 		if !cred.ExpiresAt.IsZero() {
 			fmt.Printf("    Expires: %s\n", cred.ExpiresAt.Format("2006-01-02 15:04"))

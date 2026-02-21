@@ -82,6 +82,7 @@ build: generate
 	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
+	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/pico
 
 ## build-all: Build picoclaw for all platforms
 build-all: generate
@@ -95,20 +96,24 @@ build-all: generate
 	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 	@echo "All builds complete"
 
-## install: Install picoclaw to system and copy builtin skills
+## install: Install picoclaw to system and create pico shorthand
 install: build
 	@echo "Installing $(BINARY_NAME)..."
 	@mkdir -p $(INSTALL_BIN_DIR)
 	@cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_BIN_DIR)/$(BINARY_NAME)
 	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)
+	@ln -sf $(BINARY_NAME) $(INSTALL_BIN_DIR)/pico
 	@echo "Installed binary to $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
+	@echo "Shorthand 'pico' -> $(INSTALL_BIN_DIR)/pico"
 	@echo "Installation complete!"
 
 ## uninstall: Remove picoclaw from system
 uninstall:
 	@echo "Uninstalling $(BINARY_NAME)..."
 	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)
+	@rm -f $(INSTALL_BIN_DIR)/pico
 	@echo "Removed binary from $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
+	@echo "Removed shorthand $(INSTALL_BIN_DIR)/pico"
 	@echo "Note: Only the executable file has been deleted."
 	@echo "If you need to delete all configurations (config.json, workspace, etc.), run 'make uninstall-all'"
 

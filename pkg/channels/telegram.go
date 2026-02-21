@@ -30,6 +30,7 @@ type TelegramChannel struct {
 	config       *config.Config
 	chatIDs      map[string]int64
 	transcriber  *voice.GroqTranscriber
+	permManager  *TelegramPermissionManager
 	placeholders sync.Map // chatID -> messageID
 	stopThinking sync.Map // chatID -> thinkingCancel
 }
@@ -81,6 +82,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		config:       cfg,
 		chatIDs:      make(map[string]int64),
 		transcriber:  nil,
+		permManager:  NewTelegramPermissionManager(bot),
 		placeholders: sync.Map{},
 		stopThinking: sync.Map{},
 	}, nil
@@ -88,6 +90,11 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 
 func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 	c.transcriber = transcriber
+}
+
+// PermissionManager returns the Telegram permission manager for inline keyboard prompts.
+func (c *TelegramChannel) PermissionManager() *TelegramPermissionManager {
+	return c.permManager
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -106,8 +113,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	}
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		c.commands.Help(ctx, message)
-		return nil
+		return c.commands.Help(ctx, message)
 	}, th.CommandEqual("help"))
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.commands.Start(ctx, message)
@@ -122,8 +128,17 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	}, th.CommandEqual("list"))
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.commands.Switch(ctx, message)
+	}, th.CommandEqual("switch"))
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
+
+	bh.HandleCallbackQuery(func(ctx *th.Context, query telego.CallbackQuery) error {
+		c.permManager.HandleCallback(ctx, query)
+		return nil
+	}, telegohandler.CallbackDataContains("perm_"))
 
 	c.setRunning(true)
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{

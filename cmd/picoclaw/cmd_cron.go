@@ -18,12 +18,18 @@ func cronCmd() {
 		return
 	}
 
+	if os.Args[2] == "--help" || os.Args[2] == "-h" {
+		cronHelp()
+		return
+	}
+
 	subcommand := os.Args[2]
 
 	// Load config to get workspace path
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		return
 	}
 
@@ -66,6 +72,9 @@ func cronHelp() {
 	fmt.Println("  -d, --deliver     Deliver response to channel")
 	fmt.Println("  --to             Recipient for delivery")
 	fmt.Println("  --channel        Channel for delivery")
+	fmt.Println()
+	fmt.Println("Flags:")
+	fmt.Println("  -h, --help       Show this help")
 }
 
 func cronListCmd(storePath string) {

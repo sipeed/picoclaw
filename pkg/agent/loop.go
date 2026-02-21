@@ -30,14 +30,16 @@ import (
 )
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	cfg            *config.Config
-	registry       *AgentRegistry
-	state          *state.Manager
-	running        atomic.Bool
-	summarizing    sync.Map
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
+	bus             *bus.MessageBus
+	cfg             *config.Config
+	registry        *AgentRegistry
+	state           *state.Manager
+	running         atomic.Bool
+	summarizing     sync.Map
+	fallback        *providers.FallbackChain
+	channelManager  *channels.Manager
+	permFuncFactory tools.PermissionFuncFactory
+	eventListener   AgentEventListener
 }
 
 // processOptions configures how a message is processed
@@ -165,7 +167,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 			response, err := al.processMessage(ctx, msg)
 			if err != nil {
-				response = fmt.Sprintf("Error processing message: %v", err)
+				logger.ErrorCF("agent", "error processing message", map[string]interface{}{
+					"channel": msg.Channel,
+					"chat_id": msg.ChatID,
+					"error":   err.Error(),
+				})
+				response = friendlyError(err)
 			}
 
 			if response != "" {
@@ -210,6 +217,25 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+}
+
+// SetPermissionFuncFactory sets the factory that creates PermissionFunc instances
+// for each channel/chatID pair. This allows channel-specific permission prompts.
+func (al *AgentLoop) SetPermissionFuncFactory(factory tools.PermissionFuncFactory) {
+	al.permFuncFactory = factory
+}
+
+// SetEventListener sets the listener that receives agent lifecycle events.
+// The listener must be safe for concurrent use.
+func (al *AgentLoop) SetEventListener(listener AgentEventListener) {
+	al.eventListener = listener
+}
+
+// fireEvent dispatches an event to the listener if one is set
+func (al *AgentLoop) fireEvent(event AgentEvent) {
+	if al.eventListener != nil {
+		al.eventListener.OnEvent(event)
+	}
 }
 
 // RecordLastChannel records the last active channel for this workspace.
@@ -424,6 +450,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 4. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
+		al.fireEvent(AgentEvent{
+			Type: EventError,
+			Data: ErrorData{Err: err},
+		})
 		return "", err
 	}
 
@@ -540,6 +570,9 @@ func (al *AgentLoop) runLLMIteration(
 			})
 		}
 
+		// Notify listener that we're about to call the LLM
+		al.fireEvent(AgentEvent{Type: EventThinkingStarted})
+
 		// Retry loop for context/token errors
 		maxRetries := 2
 		for retry := 0; retry <= maxRetries; retry++ {
@@ -564,7 +597,7 @@ func (al *AgentLoop) runLLMIteration(
 					al.bus.PublishOutbound(bus.OutboundMessage{
 						Channel: opts.Channel,
 						ChatID:  opts.ChatID,
-						Content: "Context window exceeded. Compressing history and retrying...",
+						Content: "Context window exceeded. Compressing conversation history and retrying...",
 					})
 				}
 
@@ -599,6 +632,10 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration":     iteration,
 					"content_chars": len(finalContent),
 				})
+			al.fireEvent(AgentEvent{
+				Type: EventResponseComplete,
+				Data: ResponseCompleteData{Content: finalContent},
+			})
 			break
 		}
 
@@ -635,9 +672,10 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
-				Name: tc.Name,
+				ID:        tc.ID,
+				Type:      "function",
+				Name:      tc.Name,
+				Arguments: tc.Arguments,
 				Function: &providers.FunctionCall{
 					Name:             tc.Name,
 					Arguments:        string(argumentsJSON),
@@ -679,6 +717,15 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}
 
+			al.fireEvent(AgentEvent{
+				Type: EventToolCallStarted,
+				Data: ToolCallStartedData{
+					ID:   tc.ID,
+					Name: tc.Name,
+					Args: string(argsJSON),
+				},
+			})
+
 			toolResult := agent.Tools.ExecuteWithContext(
 				ctx,
 				tc.Name,
@@ -687,6 +734,16 @@ func (al *AgentLoop) runLLMIteration(
 				opts.ChatID,
 				asyncCallback,
 			)
+
+			al.fireEvent(AgentEvent{
+				Type: EventToolCallCompleted,
+				Data: ToolCallCompletedData{
+					ID:      tc.ID,
+					Name:    tc.Name,
+					Result:  toolResult.ForLLM,
+					IsError: toolResult.Err != nil,
+				},
+			})
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
@@ -741,6 +798,18 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 			st.SetContext(channel, chatID)
 		}
 	}
+
+	// Set permission function for this request's channel
+	if al.permFuncFactory != nil {
+		permFn := al.permFuncFactory(channel, chatID)
+		for _, name := range agent.Tools.List() {
+			if tool, ok := agent.Tools.Get(name); ok {
+				if pt, ok := tool.(tools.PermissibleTool); ok {
+					pt.SetPermission(agent.PermStore, permFn)
+				}
+			}
+		}
+	}
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
@@ -758,7 +827,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 					al.bus.PublishOutbound(bus.OutboundMessage{
 						Channel: channel,
 						ChatID:  chatID,
-						Content: "Memory threshold reached. Optimizing conversation history...",
+						Content: "Conversation getting long — summarizing earlier messages to free up space...",
 					})
 				}
 				al.summarizeSession(agent, sessionKey)
@@ -785,6 +854,16 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 
 	// Helper to find the mid-point of the conversation
 	mid := len(conversation) / 2
+
+	// Snap the cut point forward past any tool_result messages so we don't
+	// separate them from their assistant+tool_calls header.
+	for mid < len(conversation) && conversation[mid].Role == "tool" {
+		mid++
+	}
+	// Safety: if we walked past the end, step back to keep at least 1 message
+	if mid >= len(conversation) {
+		mid = len(conversation) - 1
+	}
 
 	// New history structure:
 	// 1. System Prompt (with compression note appended)
@@ -1043,6 +1122,21 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	args := parts[1:]
 
 	switch cmd {
+	case "/help":
+		return `Available commands:
+  /help                     Show this help message
+  /new                      Start a new conversation
+  /status                   Show current session info
+  /doctor                   Diagnose and repair current session
+  /show model               Show current model
+  /show channel             Show current channel
+  /show agents              Show registered agents
+  /list models              List available models
+  /list channels            List enabled channels
+  /list agents              List registered agents
+  /switch model to <name>   Switch to a different model
+  /switch channel to <name> Switch target channel`, true
+
 	case "/show":
 		if len(args) < 1 {
 			return "Usage: /show [model|channel|agents]", true
@@ -1069,7 +1163,23 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 		}
 		switch args[0] {
 		case "models":
-			return "Available models: configured in config.json per agent", true
+			var lines []string
+			agentIDs := al.registry.ListAgentIDs()
+			for _, id := range agentIDs {
+				agent, ok := al.registry.GetAgent(id)
+				if !ok {
+					continue
+				}
+				entry := fmt.Sprintf("  %s: %s", id, agent.Model)
+				if len(agent.Fallbacks) > 0 {
+					entry += fmt.Sprintf(" (fallbacks: %s)", strings.Join(agent.Fallbacks, ", "))
+				}
+				lines = append(lines, entry)
+			}
+			if len(lines) == 0 {
+				return "No models configured", true
+			}
+			return fmt.Sprintf("Configured models:\n%s", strings.Join(lines, "\n")), true
 		case "channels":
 			if al.channelManager == nil {
 				return "Channel manager not initialized", true
@@ -1085,6 +1195,126 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 		default:
 			return fmt.Sprintf("Unknown list target: %s", args[0]), true
 		}
+
+	case "/new":
+		// Resolve the route to find the correct agent and session key
+		route := al.registry.ResolveRoute(routing.RouteInput{
+			Channel:   msg.Channel,
+			AccountID: msg.Metadata["account_id"],
+			Peer:      extractPeer(msg),
+			GuildID:   msg.Metadata["guild_id"],
+			TeamID:    msg.Metadata["team_id"],
+		})
+
+		agent, ok := al.registry.GetAgent(route.AgentID)
+		if !ok {
+			agent = al.registry.GetDefaultAgent()
+		}
+		if agent == nil {
+			return "No agent configured", true
+		}
+
+		// Save current session before clearing
+		sessionKey := route.SessionKey
+		agent.Sessions.Save(sessionKey)
+
+		// Clear the in-memory conversation history and summary
+		agent.Sessions.TruncateHistory(sessionKey, 0)
+		agent.Sessions.SetSummary(sessionKey, "")
+		agent.Sessions.Save(sessionKey)
+
+		return "Started a new conversation. Previous session saved.", true
+
+	case "/status":
+		// Resolve the route to find the correct agent and session key
+		route := al.registry.ResolveRoute(routing.RouteInput{
+			Channel:   msg.Channel,
+			AccountID: msg.Metadata["account_id"],
+			Peer:      extractPeer(msg),
+			GuildID:   msg.Metadata["guild_id"],
+			TeamID:    msg.Metadata["team_id"],
+		})
+
+		agent, ok := al.registry.GetAgent(route.AgentID)
+		if !ok {
+			agent = al.registry.GetDefaultAgent()
+		}
+		if agent == nil {
+			return "No agent configured", true
+		}
+
+		sessionKey := route.SessionKey
+		history := agent.Sessions.GetHistory(sessionKey)
+
+		return fmt.Sprintf(`Status:
+  Model: %s
+  Agent: %s
+  Channel: %s
+  Messages: %d in current session
+  Max iterations: %d`, agent.Model, agent.ID, msg.Channel, len(history), agent.MaxIterations), true
+
+	case "/doctor":
+		// Diagnose and repair the current session in-place
+		route := al.registry.ResolveRoute(routing.RouteInput{
+			Channel:   msg.Channel,
+			AccountID: msg.Metadata["account_id"],
+			Peer:      extractPeer(msg),
+			GuildID:   msg.Metadata["guild_id"],
+			TeamID:    msg.Metadata["team_id"],
+		})
+
+		agent, ok := al.registry.GetAgent(route.AgentID)
+		if !ok {
+			agent = al.registry.GetDefaultAgent()
+		}
+		if agent == nil {
+			return "No agent configured", true
+		}
+
+		sessionKey := route.SessionKey
+		history := agent.Sessions.GetHistory(sessionKey)
+		if len(history) == 0 {
+			return "Session is empty — nothing to repair.", true
+		}
+
+		repaired := repairOrphanedToolPairs(history)
+
+		injected := len(repaired) - len(history)
+		if injected == 0 {
+			// Check if any messages were dropped (orphan tool_results removed)
+			// by comparing lengths — repairOrphanedToolPairs may drop AND inject
+			dropped := 0
+			toolCallIDs := map[string]bool{}
+			for _, m := range history {
+				for _, tc := range m.ToolCalls {
+					if tc.ID != "" {
+						toolCallIDs[tc.ID] = true
+					}
+				}
+			}
+			for _, m := range history {
+				if m.Role == "tool" && m.ToolCallID != "" && !toolCallIDs[m.ToolCallID] {
+					dropped++
+				}
+			}
+			if dropped == 0 {
+				return fmt.Sprintf("Session OK — %d messages, no issues found.", len(history)), true
+			}
+		}
+
+		agent.Sessions.SetHistory(sessionKey, repaired)
+		agent.Sessions.Save(sessionKey)
+
+		var parts []string
+		if len(repaired) > len(history) {
+			parts = append(parts, fmt.Sprintf("injected %d synthetic tool result(s)", len(repaired)-len(history)))
+		}
+		if len(repaired) < len(history) {
+			parts = append(parts, fmt.Sprintf("dropped %d orphaned tool result(s)", len(history)-len(repaired)))
+		}
+
+		return fmt.Sprintf("Session repaired: %s. Messages: %d -> %d.",
+			strings.Join(parts, ", "), len(history), len(repaired)), true
 
 	case "/switch":
 		if len(args) < 3 || args[1] != "to" {

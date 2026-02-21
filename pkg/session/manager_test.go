@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func TestSanitizeFilename(t *testing.T) {
@@ -69,6 +71,57 @@ func TestSave_RejectsPathTraversal(t *testing.T) {
 		sm.GetOrCreate(key)
 		if err := sm.Save(key); err == nil {
 			t.Errorf("Save(%q) should have failed but didn't", key)
+		}
+	}
+}
+
+func TestTruncateHistory_PreservesToolPairs(t *testing.T) {
+	tmpDir := t.TempDir()
+	sm := NewSessionManager(tmpDir)
+
+	key := "test-truncate"
+	sm.GetOrCreate(key)
+
+	// Build: user, assistant+2tools, tool1, tool2, user, assistant = 6 messages
+	sm.AddFullMessage(key, providers.Message{Role: "user", Content: "q1"})
+	sm.AddFullMessage(key, providers.Message{
+		Role:    "assistant",
+		Content: "checking",
+		ToolCalls: []providers.ToolCall{
+			{ID: "c1", Name: "exec"},
+			{ID: "c2", Name: "web"},
+		},
+	})
+	sm.AddFullMessage(key, providers.Message{Role: "tool", Content: "r1", ToolCallID: "c1"})
+	sm.AddFullMessage(key, providers.Message{Role: "tool", Content: "r2", ToolCallID: "c2"})
+	sm.AddFullMessage(key, providers.Message{Role: "user", Content: "q2"})
+	sm.AddFullMessage(key, providers.Message{Role: "assistant", Content: "done"})
+
+	// keepLast=4 naively keeps: [tool2, user, assistant_done] or similar
+	// which orphans tool messages. Should snap to include/exclude full group.
+	sm.TruncateHistory(key, 4)
+	history := sm.GetHistory(key)
+
+	// Verify no orphaned tool messages
+	toolCallIDs := map[string]bool{}
+	toolResultIDs := map[string]bool{}
+	for _, m := range history {
+		for _, tc := range m.ToolCalls {
+			toolCallIDs[tc.ID] = true
+		}
+		if m.Role == "tool" && m.ToolCallID != "" {
+			toolResultIDs[m.ToolCallID] = true
+		}
+	}
+
+	for id := range toolResultIDs {
+		if !toolCallIDs[id] {
+			t.Errorf("orphaned tool_result %q after truncation", id)
+		}
+	}
+	for id := range toolCallIDs {
+		if !toolResultIDs[id] {
+			t.Errorf("orphaned tool_call %q after truncation", id)
 		}
 	}
 }

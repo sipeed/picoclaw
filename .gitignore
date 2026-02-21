@@ -42,5 +42,8 @@ tasks/
 .vscode/
 .idea/
 
+# Worktrees
+.worktrees/
+
 # Added by goreleaser init:
 dist/

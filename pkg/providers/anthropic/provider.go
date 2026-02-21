@@ -64,13 +64,28 @@ func NewProviderWithTokenSourceAndBaseURL(token string, tokenSource func() (stri
 	return p
 }
 
-func (p *Provider) Chat(
-	ctx context.Context,
-	messages []Message,
-	tools []ToolDefinition,
-	model string,
-	options map[string]any,
-) (*LLMResponse, error) {
+func NewProviderWithOAuthMiddleware(tokenSource func() (string, error), apiBase string) *Provider {
+	baseURL := normalizeBaseURL(apiBase)
+	middlewareOpts := NewOAuthMiddleware(OAuthMiddlewareConfig{
+		TokenSource:     tokenSource,
+		SanitizePrompts: true,
+		RenameTools:     true,
+	})
+
+	clientOpts := []option.RequestOption{
+		option.WithBaseURL(baseURL),
+		option.WithAuthToken("oauth-managed"),
+	}
+	clientOpts = append(clientOpts, middlewareOpts...)
+
+	client := anthropic.NewClient(clientOpts...)
+	return &Provider{
+		client:  &client,
+		baseURL: baseURL,
+	}
+}
+
+func (p *Provider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
 	var opts []option.RequestOption
 	if p.tokenSource != nil {
 		tok, err := p.tokenSource()
@@ -131,7 +146,20 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
+					input := tc.Arguments
+					if input == nil {
+						// Recover from nil Arguments (e.g. loaded from older sessions)
+						if tc.Function != nil && tc.Function.Arguments != "" {
+							var parsed map[string]interface{}
+							if err := json.Unmarshal([]byte(tc.Function.Arguments), &parsed); err == nil {
+								input = parsed
+							}
+						}
+						if input == nil {
+							input = map[string]interface{}{}
+						}
+					}
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
