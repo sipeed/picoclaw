@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>PicoClaw Dashboard</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #000000);
+    --hint: var(--tg-theme-hint-color, #999999);
+    --link: var(--tg-theme-link-color, #2481cc);
+    --btn: var(--tg-theme-button-color, #2481cc);
+    --btn-text: var(--tg-theme-button-text-color, #ffffff);
+    --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+    --done: #34c759;
+    --current: var(--btn);
+    --pending-phase: var(--hint);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    padding-bottom: 80px;
+  }
+
+  .tabs {
+    display: flex;
+    background: var(--secondary-bg);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 12px 4px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--hint);
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+
+  .tab.active {
+    color: var(--btn);
+    border-bottom-color: var(--btn);
+  }
+
+  .panel { display: none; padding: 16px; }
+  .panel.active { display: block; }
+
+  .card {
+    background: var(--secondary-bg);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+
+  .card-title {
+    font-size: 13px;
+    color: var(--hint);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .card-value {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  /* Plan - phase/step list */
+  .phase {
+    margin-bottom: 16px;
+  }
+
+  .phase-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 0 6px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .phase-indicator {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+  }
+
+  .phase-indicator.done { background: var(--done); }
+  .phase-indicator.current { background: var(--current); }
+  .phase-indicator.pending { background: var(--pending-phase); }
+
+  .phase-title { flex: 1; }
+  .phase-progress {
+    font-size: 12px;
+    color: var(--hint);
+    font-weight: 400;
+  }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0 8px 30px;
+    border-bottom: 1px solid var(--secondary-bg);
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .step:last-child { border-bottom: none; }
+  .step:active { opacity: 0.6; }
+
+  .step-check {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    border: 2px solid var(--hint);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+  }
+
+  .step-check.done {
+    background: var(--done);
+    border-color: var(--done);
+  }
+
+  .step-check.done::after {
+    content: '';
+    width: 6px;
+    height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+    margin-top: -2px;
+  }
+
+  .step-text {
+    flex: 1;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  .step-text.done {
+    color: var(--hint);
+    text-decoration: line-through;
+  }
+
+  /* Skills */
+  .skill-item {
+    background: var(--secondary-bg);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    border-left: 3px solid transparent;
+  }
+
+  .skill-item:active { opacity: 0.7; }
+  .skill-item.selected { border-left-color: var(--btn); }
+
+  .skill-name {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+
+  .skill-desc {
+    font-size: 13px;
+    color: var(--hint);
+    line-height: 1.4;
+  }
+
+  .skill-source {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--btn);
+    color: var(--btn-text);
+    margin-top: 6px;
+  }
+
+  /* Stats */
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--secondary-bg);
+  }
+
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { color: var(--hint); }
+  .stat-value { font-weight: 600; }
+
+  /* Send bar */
+  .send-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg);
+    padding: 12px 16px;
+    display: flex;
+    gap: 8px;
+    border-top: 1px solid var(--secondary-bg);
+  }
+
+  .send-input {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--hint);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+  }
+
+  .send-input:focus { border-color: var(--btn); }
+
+  .send-btn {
+    padding: 10px 20px;
+    border-radius: 20px;
+    border: none;
+    background: var(--btn);
+    color: var(--btn-text);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .send-btn:active { opacity: 0.8; }
+  .send-btn:disabled { opacity: 0.5; }
+
+  .empty-state {
+    text-align: center;
+    color: var(--hint);
+    padding: 40px 20px;
+    font-size: 14px;
+  }
+
+  .loading {
+    text-align: center;
+    color: var(--hint);
+    padding: 40px 20px;
+  }
+
+  .cmd-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .cmd-chip {
+    padding: 6px 14px;
+    border-radius: 16px;
+    border: 1px solid var(--hint);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .cmd-chip:active {
+    background: var(--btn);
+    color: var(--btn-text);
+    border-color: var(--btn);
+  }
+
+  .refresh-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--hint);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    float: right;
+    margin-bottom: 8px;
+  }
+
+  .refresh-btn:active { opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<div class="tabs">
+  <button class="tab active" data-panel="plan">Plan</button>
+  <button class="tab" data-panel="skills">Skills</button>
+  <button class="tab" data-panel="session">Session</button>
+  <button class="tab" data-panel="config">Config</button>
+</div>
+
+<div id="plan" class="panel active">
+  <div class="loading" id="plan-loading">Loading plan...</div>
+  <div id="plan-content" style="display:none"></div>
+</div>
+
+<div id="skills" class="panel">
+  <div class="loading" id="skills-loading">Loading skills...</div>
+  <div id="skills-list" style="display:none"></div>
+</div>
+
+<div id="session" class="panel">
+  <div class="loading" id="session-loading">Loading session...</div>
+  <div id="session-content" style="display:none"></div>
+</div>
+
+<div id="config" class="panel">
+  <div class="card">
+    <div class="card-title">Quick Commands</div>
+    <div class="cmd-chips">
+      <button class="cmd-chip" data-cmd="/session">/session</button>
+      <button class="cmd-chip" data-cmd="/skills">/skills</button>
+      <button class="cmd-chip" data-cmd="/todo">/todo</button>
+      <button class="cmd-chip" data-cmd="/plan status">/plan status</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Custom Command</div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input id="custom-cmd" class="send-input" placeholder="/command args..." style="flex:1">
+      <button class="send-btn" onclick="sendCustomCmd()">Send</button>
+    </div>
+  </div>
+</div>
+
+<div class="send-bar" id="send-bar" style="display:none">
+  <input id="skill-msg" class="send-input" placeholder="Message for skill...">
+  <button class="send-btn" id="send-skill-btn" onclick="sendSkillCommand()">Send</button>
+</div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+const API_BASE = location.origin;
+let initData = tg.initData || '';
+let selectedSkill = null;
+
+// Tab switching — always re-fetch data on tab switch
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.panel).classList.add('active');
+
+    document.getElementById('send-bar').style.display =
+      tab.dataset.panel === 'skills' && selectedSkill ? 'flex' : 'none';
+
+    if (tab.dataset.panel === 'plan') loadPlan();
+    if (tab.dataset.panel === 'skills') loadSkills();
+    if (tab.dataset.panel === 'session') loadSession();
+  });
+});
+
+// Quick command chips
+document.querySelectorAll('.cmd-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    sendCommand(chip.dataset.cmd);
+  });
+});
+
+function sendCommand(cmd) {
+  if (!cmd.startsWith('/')) return;
+  try {
+    tg.sendData(cmd);
+  } catch (e) {
+    console.log('sendData:', cmd);
+    tg.showAlert('Command sent: ' + cmd);
+  }
+}
+
+function sendCustomCmd() {
+  const input = document.getElementById('custom-cmd');
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  if (!cmd.startsWith('/')) {
+    tg.showAlert('Command must start with /');
+    return;
+  }
+  sendCommand(cmd);
+  input.value = '';
+}
+
+function sendSkillCommand() {
+  if (!selectedSkill) return;
+  const msg = document.getElementById('skill-msg').value.trim();
+  const cmd = msg ? '/skill ' + selectedSkill + ' ' + msg : '/skill ' + selectedSkill;
+  sendCommand(cmd);
+}
+
+async function apiFetch(path) {
+  const sep = path.includes('?') ? '&' : '?';
+  const res = await fetch(API_BASE + path + sep + 'initData=' + encodeURIComponent(initData));
+  if (!res.ok) throw new Error('API error: ' + res.status);
+  return res.json();
+}
+
+// ── Plan tab ──
+async function loadPlan() {
+  const loading = document.getElementById('plan-loading');
+  const el = document.getElementById('plan-content');
+  loading.style.display = 'block';
+  loading.textContent = 'Loading plan...';
+  el.style.display = 'none';
+
+  try {
+    const data = await apiFetch('/miniapp/api/plan');
+    loading.style.display = 'none';
+    el.style.display = 'block';
+
+    if (!data.has_plan) {
+      el.innerHTML = '<div class="empty-state">No active plan.<br><br>Start one with /plan &lt;task&gt;</div>';
+      return;
+    }
+
+    let html = '';
+
+    // Status header card
+    html += '<div class="card">' +
+      '<div class="card-title">Status</div>' +
+      '<div class="card-value">' + escapeHtml(data.status) + '</div>' +
+      '<div style="color:var(--hint);margin-top:4px">Phase ' + data.current_phase + ' / ' + data.total_phases + '</div>' +
+    '</div>';
+
+    // Phase/step list
+    if (data.phases && data.phases.length > 0) {
+      html += renderPhases(data.phases, data.current_phase);
+    }
+
+    // Refresh button (in-app, not sendData)
+    html += '<button class="refresh-btn" onclick="loadPlan()">Refresh</button>';
+
+    el.innerHTML = html;
+  } catch (e) {
+    loading.textContent = 'Failed to load plan.';
+    loading.style.display = 'block';
+    el.style.display = 'none';
+  }
+}
+
+function renderPhases(phases, currentPhase) {
+  let html = '';
+  for (const phase of phases) {
+    const doneCount = phase.steps.filter(s => s.done).length;
+    const total = phase.steps.length;
+
+    let indicatorClass, indicator;
+    if (phase.number < currentPhase || (total > 0 && doneCount === total)) {
+      indicatorClass = 'done';
+      indicator = '\u2713';
+    } else if (phase.number === currentPhase) {
+      indicatorClass = 'current';
+      indicator = String(phase.number);
+    } else {
+      indicatorClass = 'pending';
+      indicator = String(phase.number);
+    }
+
+    html += '<div class="phase">';
+    html += '<div class="phase-header">';
+    html += '<div class="phase-indicator ' + indicatorClass + '">' + indicator + '</div>';
+    html += '<span class="phase-title">' + escapeHtml(phase.title || 'Phase ' + phase.number) + '</span>';
+    if (total > 0) {
+      html += '<span class="phase-progress">' + doneCount + '/' + total + '</span>';
+    }
+    html += '</div>';
+
+    // Steps
+    for (const step of phase.steps) {
+      const checkClass = step.done ? 'done' : '';
+      const textClass = step.done ? 'done' : '';
+      html += '<div class="step" data-phase="' + phase.number + '" data-step="' + step.index + '" data-done="' + step.done + '">';
+      html += '<div class="step-check ' + checkClass + '"></div>';
+      html += '<div class="step-text ' + textClass + '">' + escapeHtml(step.description) + '</div>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+  }
+
+  return html;
+}
+
+// Delegate click on steps — tap to mark done (sends command, closes app)
+document.getElementById('plan-content').addEventListener('click', function(e) {
+  const step = e.target.closest('.step');
+  if (!step) return;
+  if (step.dataset.done === 'true') return; // already done
+
+  const phase = step.dataset.phase;
+  const stepIdx = step.dataset.step;
+  sendCommand('/plan done ' + stepIdx);
+});
+
+// ── Skills tab ──
+async function loadSkills() {
+  const loading = document.getElementById('skills-loading');
+  const el = document.getElementById('skills-list');
+  loading.style.display = 'block';
+  loading.textContent = 'Loading skills...';
+  el.style.display = 'none';
+
+  try {
+    const data = await apiFetch('/miniapp/api/skills');
+    loading.style.display = 'none';
+    el.style.display = 'block';
+
+    if (!data || data.length === 0) {
+      el.innerHTML = '<div class="empty-state">No skills installed.</div>';
+      return;
+    }
+
+    el.innerHTML = data.map(s =>
+      '<div class="skill-item" data-skill="' + escapeAttr(s.name) + '">' +
+        '<div class="skill-name">' + escapeHtml(s.name) + '</div>' +
+        '<div class="skill-desc">' + escapeHtml(s.description || 'No description') + '</div>' +
+        '<span class="skill-source">' + escapeHtml(s.source) + '</span>' +
+      '</div>'
+    ).join('');
+
+    // Restore selection if still valid
+    if (selectedSkill) {
+      const prev = el.querySelector('[data-skill="' + CSS.escape(selectedSkill) + '"]');
+      if (prev) prev.classList.add('selected');
+    }
+
+    el.querySelectorAll('.skill-item').forEach(item => {
+      item.addEventListener('click', () => {
+        el.querySelectorAll('.skill-item').forEach(i => i.classList.remove('selected'));
+        item.classList.add('selected');
+        selectedSkill = item.dataset.skill;
+        document.getElementById('send-bar').style.display = 'flex';
+        document.getElementById('skill-msg').placeholder =
+          'Message for /' + selectedSkill + '...';
+        document.getElementById('skill-msg').focus();
+      });
+    });
+  } catch (e) {
+    loading.textContent = 'Failed to load skills.';
+    loading.style.display = 'block';
+    el.style.display = 'none';
+  }
+}
+
+// ── Session tab ──
+async function loadSession() {
+  const loading = document.getElementById('session-loading');
+  const el = document.getElementById('session-content');
+  loading.style.display = 'block';
+  loading.textContent = 'Loading session...';
+  el.style.display = 'none';
+
+  try {
+    const data = await apiFetch('/miniapp/api/session');
+    loading.style.display = 'none';
+    el.style.display = 'block';
+
+    if (data.status === 'stats not enabled') {
+      el.innerHTML = '<div class="empty-state">Stats tracking not enabled.<br>Start gateway with --stats flag.</div>';
+      return;
+    }
+
+    const since = data.since ? new Date(data.since).toLocaleDateString() : 'N/A';
+    el.innerHTML =
+      '<div class="card">' +
+        '<div class="card-title">Today</div>' +
+        '<div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">' + (data.today?.prompts || 0) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">' + (data.today?.requests || 0) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Tokens</span><span class="stat-value">' + formatTokens(data.today?.total_tokens || 0) + '</span></div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<div class="card-title">All Time (since ' + escapeHtml(since) + ')</div>' +
+        '<div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">' + (data.total_prompts || 0) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">' + (data.total_requests || 0) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Total Tokens</span><span class="stat-value">' + formatTokens(data.total_tokens || 0) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Prompt Tokens</span><span class="stat-value">' + formatTokens(data.total_prompt_tokens || 0) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Completion Tokens</span><span class="stat-value">' + formatTokens(data.total_completion_tokens || 0) + '</span></div>' +
+      '</div>';
+  } catch (e) {
+    loading.textContent = 'Failed to load session.';
+    loading.style.display = 'block';
+    el.style.display = 'none';
+  }
+}
+
+function formatTokens(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function escapeAttr(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Initial load
+loadPlan();
+</script>
+</body>
+</html>

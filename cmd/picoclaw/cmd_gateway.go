@@ -21,8 +21,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/miniapp"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
+	"github.com/sipeed/picoclaw/pkg/stats"
+	"github.com/sipeed/picoclaw/pkg/tailscale"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
@@ -187,12 +191,55 @@ func gatewayCmd() {
 	}
 
 	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+
+	// Mini App setup: register routes and determine TLS mode
+	useTLS := false
+	var tlsCert, tlsKey string
+	if cfg.Channels.Telegram.Enabled {
+		webAppURL := cfg.Channels.Telegram.WebAppURL
+		if webAppURL == "" {
+			// Auto-detect Tailscale hostname and fetch TLS cert
+			hostname, tsErr := tailscale.DetectHostname()
+			if tsErr != nil {
+				logger.InfoCF("miniapp", "Tailscale not available, Mini App disabled", map[string]any{"error": tsErr.Error()})
+			} else {
+				certDir := filepath.Join(cfg.WorkspacePath(), "state", "certs")
+				certFile, keyFile, certErr := tailscale.FetchCert(hostname, certDir)
+				if certErr != nil {
+					logger.ErrorCF("miniapp", "Failed to fetch TLS cert", map[string]any{"error": certErr.Error()})
+				} else {
+					webAppURL = fmt.Sprintf("https://%s:%d/miniapp", hostname, cfg.Gateway.Port)
+					cfg.Channels.Telegram.WebAppURL = webAppURL
+					tlsCert, tlsKey = certFile, keyFile
+					useTLS = true
+				}
+			}
+		}
+
+		if webAppURL != "" {
+			provider := &agentLoopDataProvider{loop: agentLoop}
+			handler := miniapp.NewHandler(provider, cfg.Channels.Telegram.Token)
+			handler.RegisterRoutes(healthServer.Mux())
+			fmt.Printf("✓ Mini App registered at %s\n", webAppURL)
+		}
+	}
+
 	go func() {
-		if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("health", "Health server error", map[string]any{"error": err.Error()})
+		var serverErr error
+		if useTLS {
+			serverErr = healthServer.StartTLS(tlsCert, tlsKey)
+		} else {
+			serverErr = healthServer.Start()
+		}
+		if serverErr != nil && serverErr != http.ErrServerClosed {
+			logger.ErrorCF("health", "Health server error", map[string]any{"error": serverErr.Error()})
 		}
 	}()
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	if useTLS {
+		fmt.Printf("✓ Health endpoints available at https://%s:%d/health and /ready (TLS)\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	} else {
+		fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	}
 
 	go agentLoop.Run(ctx)
 
@@ -235,4 +282,49 @@ func setupCronTool(
 	})
 
 	return cronService
+}
+
+// agentLoopDataProvider adapts AgentLoop to the miniapp.DataProvider interface.
+type agentLoopDataProvider struct {
+	loop *agent.AgentLoop
+}
+
+func (p *agentLoopDataProvider) ListSkills() []skills.SkillInfo {
+	return p.loop.ListSkills()
+}
+
+func (p *agentLoopDataProvider) GetPlanInfo() miniapp.PlanInfo {
+	hasPlan, status, currentPhase, totalPhases, display := p.loop.GetPlanInfo()
+
+	// Convert agent.PlanPhase → miniapp.PlanPhase
+	agentPhases := p.loop.GetPlanPhases()
+	phases := make([]miniapp.PlanPhase, 0, len(agentPhases))
+	for _, ap := range agentPhases {
+		steps := make([]miniapp.PlanStep, 0, len(ap.Steps))
+		for _, as := range ap.Steps {
+			steps = append(steps, miniapp.PlanStep{
+				Index:       as.Index,
+				Description: as.Description,
+				Done:        as.Done,
+			})
+		}
+		phases = append(phases, miniapp.PlanPhase{
+			Number: ap.Number,
+			Title:  ap.Title,
+			Steps:  steps,
+		})
+	}
+
+	return miniapp.PlanInfo{
+		HasPlan:      hasPlan,
+		Status:       status,
+		CurrentPhase: currentPhase,
+		TotalPhases:  totalPhases,
+		Display:      display,
+		Phases:       phases,
+	}
+}
+
+func (p *agentLoopDataProvider) GetSessionStats() *stats.Stats {
+	return p.loop.GetSessionStats()
 }
