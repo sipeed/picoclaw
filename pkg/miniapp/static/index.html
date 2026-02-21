@@ -183,20 +183,24 @@
 
   /* Skills */
   .skill-item {
-    background: var(--bg);
+    background: linear-gradient(to bottom, var(--bg), var(--secondary-bg));
     border-radius: 12px;
     padding: 14px 14px 14px 16px;
     margin-bottom: 10px;
     cursor: pointer;
-    transition: all 0.15s;
-    border: 1.5px solid var(--hint);
+    transition: all 0.12s;
+    border: 1px solid var(--hint);
     display: flex;
     align-items: center;
     gap: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08), 0 1px 0 rgba(255,255,255,0.06) inset;
   }
 
-  .skill-item:active { transform: scale(0.97); }
-  .skill-item.selected { border-color: var(--btn); }
+  .skill-item:active {
+    transform: scale(0.98) translateY(1px);
+    box-shadow: 0 0 2px rgba(0,0,0,0.06);
+  }
+  .skill-item.selected { border-color: var(--btn); box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
 
   .skill-body { flex: 1; min-width: 0; }
 
@@ -305,22 +309,28 @@
   .cmd-tile {
     padding: 16px 14px;
     border-radius: 12px;
-    border: 1.5px solid var(--hint);
-    background: var(--bg);
+    border: 1px solid var(--hint);
+    background: linear-gradient(to bottom, var(--bg), var(--secondary-bg));
     color: var(--text);
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.12s;
     text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 1px 0 rgba(255,255,255,0.06) inset;
   }
 
-  .cmd-tile:active { transform: scale(0.95); background: var(--secondary-bg); }
+  .cmd-tile:active {
+    transform: scale(0.96) translateY(1px);
+    box-shadow: 0 0 2px rgba(0,0,0,0.08);
+    background: var(--secondary-bg);
+  }
 
   .cmd-tile.sent {
     background: var(--btn);
     color: var(--btn-text);
     border-color: var(--btn);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
     transition: all 0.15s;
   }
 
@@ -329,16 +339,20 @@
     width: 100%;
     padding: 12px 16px;
     border-radius: 12px;
-    border: none;
-    background: var(--secondary-bg);
+    border: 1px solid var(--hint);
+    background: linear-gradient(to bottom, var(--bg), var(--secondary-bg));
     color: var(--hint);
     font-size: 14px;
     cursor: pointer;
     margin-top: 8px;
-    transition: all 0.15s;
+    transition: all 0.12s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
   }
 
-  .refresh-btn:active { transform: scale(0.97); }
+  .refresh-btn:active {
+    transform: scale(0.98) translateY(1px);
+    box-shadow: 0 0 2px rgba(0,0,0,0.06);
+  }
 </style>
 </head>
 <body>
