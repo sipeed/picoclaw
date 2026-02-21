@@ -47,7 +47,6 @@ linters:
     - godox
     - goprintffuncname
     - gosec
-    - govet
     - ineffassign
     - lll
     - maintidx
@@ -160,12 +159,11 @@ issues:
 
 formatters:
   enable:
+    - gci
+    - gofmt
+    - gofumpt
     - goimports
-  # TODO: Disabled, because they are failing at the moment, we should fix them and enable (step by step)
-  #    - gci
-  #    - gofmt
-  #    - gofumpt
-  #    - golines
+    - golines
   settings:
     gci:
       sections:

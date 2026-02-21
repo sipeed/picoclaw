@@ -33,19 +33,19 @@ func (t *EditFileTool) Description() string {
 	return "Edit a file by replacing old_text with new_text. The old_text must exist exactly in the file."
 }
 
-func (t *EditFileTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *EditFileTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
+		"properties": map[string]any{
+			"path": map[string]any{
 				"type":        "string",
 				"description": "The file path to edit",
 			},
-			"old_text": map[string]interface{}{
+			"old_text": map[string]any{
 				"type":        "string",
 				"description": "The exact text to find and replace",
 			},
-			"new_text": map[string]interface{}{
+			"new_text": map[string]any{
 				"type":        "string",
 				"description": "The text to replace with",
 			},
@@ -54,7 +54,7 @@ func (t *EditFileTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
 		return ErrorResult("path is required")
@@ -102,15 +102,15 @@ func (t *AppendFileTool) Description() string {
 	return "Append content to the end of a file"
 }
 
-func (t *AppendFileTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *AppendFileTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
+		"properties": map[string]any{
+			"path": map[string]any{
 				"type":        "string",
 				"description": "The file path to append to",
 			},
-			"content": map[string]interface{}{
+			"content": map[string]any{
 				"type":        "string",
 				"description": "The content to append",
 			},
@@ -119,7 +119,7 @@ func (t *AppendFileTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *AppendFileTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
 		return ErrorResult("path is required")

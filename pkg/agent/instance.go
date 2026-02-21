@@ -22,6 +22,8 @@ type AgentInstance struct {
 	Workspace      string
 	MaxIterations        int
 	TaskReminderInterval int
+	MaxTokens            int
+	Temperature          float64
 	ContextWindow        int
 	Provider       providers.LLMProvider
 	Sessions       *session.SessionManager
@@ -44,7 +46,7 @@ func NewAgentInstance(
 	provider providers.LLMProvider,
 ) *AgentInstance {
 	workspace := resolveAgentWorkspace(agentCfg, defaults)
-	os.MkdirAll(workspace, 0755)
+	os.MkdirAll(workspace, 0o755)
 
 	model := resolveAgentModel(agentCfg, defaults)
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
@@ -86,6 +88,16 @@ func NewAgentInstance(
 		reminderInterval = 5
 	}
 
+	maxTokens := defaults.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = 8192
+	}
+
+	temperature := 0.7
+	if defaults.Temperature != nil {
+		temperature = *defaults.Temperature
+	}
+
 	// Resolve fallback candidates
 	modelCfg := providers.ModelConfig{
 		Primary:   model,
@@ -101,7 +113,9 @@ func NewAgentInstance(
 		Workspace:      workspace,
 		MaxIterations:        maxIter,
 		TaskReminderInterval: reminderInterval,
-		ContextWindow:        defaults.MaxTokens,
+		MaxTokens:            maxTokens,
+		Temperature:          temperature,
+		ContextWindow:        maxTokens,
 		Provider:       provider,
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,

@@ -35,33 +35,6 @@ type providerSelection struct {
 	enableWebSearch bool
 }
 
-func createClaudeAuthProvider(apiBase string) (LLMProvider, error) {
-	if apiBase == "" {
-		apiBase = defaultAnthropicAPIBase
-	}
-	cred, err := getCredential("anthropic")
-	if err != nil {
-		return nil, fmt.Errorf("loading auth credentials: %w", err)
-	}
-	if cred == nil {
-		return nil, fmt.Errorf("no credentials for anthropic. Run: picoclaw auth login --provider anthropic")
-	}
-	return NewClaudeProviderWithTokenSourceAndBaseURL(cred.AccessToken, createClaudeTokenSource(), apiBase), nil
-}
-
-func createCodexAuthProvider(enableWebSearch bool) (LLMProvider, error) {
-	cred, err := getCredential("openai")
-	if err != nil {
-		return nil, fmt.Errorf("loading auth credentials: %w", err)
-	}
-	if cred == nil {
-		return nil, fmt.Errorf("no credentials for openai. Run: picoclaw auth login --provider openai")
-	}
-	p := NewCodexProviderWithTokenSource(cred.AccessToken, cred.AccountID, createCodexTokenSource())
-	p.enableWebSearch = enableWebSearch
-	return p, nil
-}
-
 func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 	return resolveProviderSelectionByName(cfg, strings.ToLower(cfg.Agents.Defaults.Provider))
 }
@@ -336,32 +309,6 @@ func resolveProviderSelectionByName(cfg *config.Config, providerName string) (pr
 	return sel, nil
 }
 
-func CreateProvider(cfg *config.Config) (LLMProvider, error) {
-	sel, err := resolveProviderSelection(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	switch sel.providerType {
-	case providerTypeClaudeAuth:
-		return createClaudeAuthProvider(sel.apiBase)
-	case providerTypeCodexAuth:
-		return createCodexAuthProvider(sel.enableWebSearch)
-	case providerTypeCodexCLIToken:
-		c := NewCodexProviderWithTokenSource("", "", CreateCodexCliTokenSource())
-		c.enableWebSearch = sel.enableWebSearch
-		return c, nil
-	case providerTypeClaudeCLI:
-		return NewClaudeCliProvider(sel.workspace), nil
-	case providerTypeCodexCLI:
-		return NewCodexCliProvider(sel.workspace), nil
-	case providerTypeGitHubCopilot:
-		return NewGitHubCopilotProvider(sel.apiBase, sel.connectMode, sel.model)
-	default:
-		return NewHTTPProvider(sel.apiKey, sel.apiBase, sel.proxy), nil
-	}
-}
-
 // CreateProviderByName creates a provider for the given explicit provider name.
 // Used by the fallback chain to resolve cross-provider candidates.
 func CreateProviderByName(cfg *config.Config, providerName string) (LLMProvider, error) {
@@ -372,9 +319,9 @@ func CreateProviderByName(cfg *config.Config, providerName string) (LLMProvider,
 
 	switch sel.providerType {
 	case providerTypeClaudeAuth:
-		return createClaudeAuthProvider(sel.apiBase)
+		return createClaudeAuthProvider()
 	case providerTypeCodexAuth:
-		return createCodexAuthProvider(sel.enableWebSearch)
+		return createCodexAuthProvider()
 	case providerTypeCodexCLIToken:
 		c := NewCodexProviderWithTokenSource("", "", CreateCodexCliTokenSource())
 		c.enableWebSearch = sel.enableWebSearch

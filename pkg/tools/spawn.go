@@ -34,19 +34,19 @@ func (t *SpawnTool) Description() string {
 	return "Spawn a subagent to handle a task in the background. Use this for complex or time-consuming tasks that can run independently. The subagent will complete the task and report back when done."
 }
 
-func (t *SpawnTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *SpawnTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"task": map[string]interface{}{
+		"properties": map[string]any{
+			"task": map[string]any{
 				"type":        "string",
 				"description": "The task for subagent to complete",
 			},
-			"label": map[string]interface{}{
+			"label": map[string]any{
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
-			"agent_id": map[string]interface{}{
+			"agent_id": map[string]any{
 				"type":        "string",
 				"description": "Optional target agent ID to delegate the task to",
 			},
@@ -64,7 +64,7 @@ func (t *SpawnTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 	t.allowlistCheck = check
 }
 
-func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok {
 		return ErrorResult("task is required")

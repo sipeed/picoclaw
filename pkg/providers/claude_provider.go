@@ -29,7 +29,9 @@ func NewClaudeProviderWithTokenSource(token string, tokenSource func() (string, 
 	}
 }
 
-func NewClaudeProviderWithTokenSourceAndBaseURL(token string, tokenSource func() (string, error), apiBase string) *ClaudeProvider {
+func NewClaudeProviderWithTokenSourceAndBaseURL(
+	token string, tokenSource func() (string, error), apiBase string,
+) *ClaudeProvider {
 	return &ClaudeProvider{
 		delegate: anthropicprovider.NewProviderWithTokenSourceAndBaseURL(token, tokenSource, apiBase),
 	}
@@ -39,7 +41,9 @@ func newClaudeProviderWithDelegate(delegate *anthropicprovider.Provider) *Claude
 	return &ClaudeProvider{delegate: delegate}
 }
 
-func (p *ClaudeProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *ClaudeProvider) Chat(
+	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
+) (*LLMResponse, error) {
 	resp, err := p.delegate.Chat(ctx, messages, tools, model, options)
 	if err != nil {
 		return nil, err

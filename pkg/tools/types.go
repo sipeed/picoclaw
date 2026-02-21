@@ -10,11 +10,11 @@ type Message struct {
 }
 
 type ToolCall struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type"`
-	Function  *FunctionCall          `json:"function,omitempty"`
-	Name      string                 `json:"name,omitempty"`
-	Arguments map[string]interface{} `json:"arguments,omitempty"`
+	ID        string         `json:"id"`
+	Type      string         `json:"type"`
+	Function  *FunctionCall  `json:"function,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Arguments map[string]any `json:"arguments,omitempty"`
 }
 
 type FunctionCall struct {
@@ -36,7 +36,13 @@ type UsageInfo struct {
 }
 
 type LLMProvider interface {
-	Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error)
+	Chat(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDefinition,
+		model string,
+		options map[string]any,
+	) (*LLMResponse, error)
 	GetDefaultModel() string
 }
 
@@ -46,7 +52,7 @@ type ToolDefinition struct {
 }
 
 type ToolFunctionDefinition struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
 }
