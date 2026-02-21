@@ -119,13 +119,15 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 	if logger.file != nil {
 		jsonData, err := json.Marshal(entry)
 		if err == nil {
-			logger.file.WriteString(string(jsonData) + "\n")
+			logger.file.Write(append(jsonData, '\n'))
 		}
 	}
 
 	var fieldStr string
 	if len(fields) > 0 {
 		fieldStr = " " + formatFields(fields)
+	} else {
+		fieldStr = ""
 	}
 
 	logLine := fmt.Sprintf("[%s] [%s]%s %s%s",
