@@ -956,49 +956,10 @@ var cdPrefixPattern = regexp.MustCompile(`^cd\s+(\S+)\s*&&\s*`)
 // argument (e.g. "-A 20") are kept because removing them would lose context.
 var optFlagPattern = regexp.MustCompile(`\s+--?\w[\w-]*(=\S*)?`)
 
-// projectDirFromPath extracts the project directory name from an absolute path
-// by stripping the workspace prefix and returning the first meaningful component.
-// Generic directory names like "projects" or "repos" are skipped.
-// Returns "" if the path doesn't extend beyond workspace.
-func projectDirFromPath(absPath, workspace string) string {
-	absPath = strings.TrimRight(absPath, "/\\")
-	if absPath == "" {
-		return ""
-	}
-	if workspace == "" {
-		if idx := strings.LastIndex(absPath, "/"); idx >= 0 {
-			return absPath[idx+1:]
-		}
-		return absPath
-	}
-	ws := strings.TrimRight(workspace, "/\\")
-	rest := strings.TrimPrefix(absPath, ws)
-	if rest == absPath {
-		// workspace not a prefix — fall back to last component
-		if idx := strings.LastIndex(absPath, "/"); idx >= 0 {
-			return absPath[idx+1:]
-		}
-		return absPath
-	}
-	rest = strings.TrimLeft(rest, "/\\")
-	if rest == "" {
-		return ""
-	}
-	// Take first path component, skipping generic directory names
-	parts := strings.SplitN(rest, "/", 3)
-	if len(parts) >= 2 {
-		first := strings.ToLower(parts[0])
-		if first == "projects" || first == "repos" || first == "src" {
-			return parts[1]
-		}
-	}
-	return parts[0]
-}
-
-// extractProjectDir extracts the project directory name from a tool call.
-// For exec: parses the "cd <path> && ..." prefix.
-// For file tools: uses the file path directly.
-// Returns "" if no project directory can be determined.
+// extractProjectDir extracts a working directory name from a tool call.
+// For exec: uses the basename of the cd target (the directory AI actually works in).
+// For file tools: strips the workspace prefix and takes the first path component.
+// No assumptions are made about directory naming conventions.
 func extractProjectDir(toolName string, args map[string]interface{}, workspace string) string {
 	switch toolName {
 	case "exec":
@@ -1010,14 +971,38 @@ func extractProjectDir(toolName string, args map[string]interface{}, workspace s
 		if len(m) < 2 {
 			return ""
 		}
-		return projectDirFromPath(m[1], workspace)
+		// basename of cd target — the directory the AI actually cd's into
+		cdPath := strings.TrimRight(m[1], "/\\")
+		if idx := strings.LastIndex(cdPath, "/"); idx >= 0 {
+			return cdPath[idx+1:]
+		}
+		if idx := strings.LastIndex(cdPath, "\\"); idx >= 0 {
+			return cdPath[idx+1:]
+		}
+		return cdPath
 
 	case "read_file", "write_file", "edit_file", "append_file", "list_dir":
 		path, _ := args["path"].(string)
 		if path == "" {
 			return ""
 		}
-		return projectDirFromPath(path, workspace)
+		ws := strings.TrimRight(workspace, "/\\")
+		if ws == "" {
+			return ""
+		}
+		rest := strings.TrimPrefix(path, ws)
+		if rest == path {
+			return "" // path not under workspace
+		}
+		rest = strings.TrimLeft(rest, "/\\")
+		if rest == "" {
+			return ""
+		}
+		// first component after workspace
+		if idx := strings.IndexAny(rest, "/\\"); idx >= 0 {
+			return rest[:idx]
+		}
+		return rest
 	}
 	return ""
 }
