@@ -30,14 +30,15 @@ import (
 )
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	cfg            *config.Config
-	registry       *AgentRegistry
-	state          *state.Manager
-	running        atomic.Bool
-	summarizing    sync.Map
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
+	bus             *bus.MessageBus
+	cfg             *config.Config
+	registry        *AgentRegistry
+	state           *state.Manager
+	running         atomic.Bool
+	summarizing     sync.Map
+	fallback        *providers.FallbackChain
+	channelManager  *channels.Manager
+	permFuncFactory tools.PermissionFuncFactory
 }
 
 // processOptions configures how a message is processed
@@ -210,6 +211,12 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+}
+
+// SetPermissionFuncFactory sets the factory that creates PermissionFunc instances
+// for each channel/chatID pair. This allows channel-specific permission prompts.
+func (al *AgentLoop) SetPermissionFuncFactory(factory tools.PermissionFuncFactory) {
+	al.permFuncFactory = factory
 }
 
 // RecordLastChannel records the last active channel for this workspace.
@@ -740,6 +747,18 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 	if tool, ok := agent.Tools.Get("subagent"); ok {
 		if st, ok := tool.(tools.ContextualTool); ok {
 			st.SetContext(channel, chatID)
+		}
+	}
+
+	// Set permission function for this request's channel
+	if al.permFuncFactory != nil {
+		permFn := al.permFuncFactory(channel, chatID)
+		for _, name := range agent.Tools.List() {
+			if tool, ok := agent.Tools.Get(name); ok {
+				if pt, ok := tool.(tools.PermissibleTool); ok {
+					pt.SetPermission(agent.PermStore, permFn)
+				}
+			}
 		}
 	}
 }

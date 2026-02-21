@@ -18,6 +18,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 func agentCmd() {
@@ -71,6 +72,15 @@ func agentCmd() {
 
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+
+	// Set up CLI permission prompt for workspace access
+	cliPermFn := tools.NewCLIPermissionFunc(os.Stdin, os.Stdout)
+	agentLoop.SetPermissionFuncFactory(func(channel, chatID string) tools.PermissionFunc {
+		if channel == "cli" {
+			return cliPermFn
+		}
+		return nil // Other channels fall back to LLM-driven flow
+	})
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
