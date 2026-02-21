@@ -1053,7 +1053,7 @@ Chào đón mọi PR! Mã nguồn được thiết kế nhỏ gọn và dễ đ�
 | **Multi-Agent** | Định tuyến mô hình, chế độ swarm, tích hợp AIEOS |
 | **Trải nghiệm Dev** | Trợ lý CLI tương tác, tài liệu đầy đủ |
 
-Xem [Lộ trình Đầy đủ](ROADMAP.md) và [Lộ trình Cộng đồng](docs/picoclaw_community_roadmap_260216.md) để biết chi tiết.
+Xem [Lộ trình Đầy đủ](docs/community/roadmap.md) và [Lộ trình Cộng đồng](docs/picoclaw_community_roadmap_260216.md) để biết chi tiết.
 
 ### Vai trò Tình nguyện viên
 

@@ -1006,7 +1006,7 @@ PR を歓迎します！コードベースは意図的に小さく読みやす�
 - **Twitter**: #picoclaw で @SipeedIO をメンション
 - **Bilibili**: @Sipeed矽速科技
 
-詳細なロードマップについては [ROADMAP.md](ROADMAP.md) をご覧ください。
+詳細なロードマップについては [docs/community/roadmap.md](docs/community/roadmap.md) をご覧ください。
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 

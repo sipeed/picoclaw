@@ -1082,7 +1082,7 @@ PRs são bem-vindos! O código-fonte é intencionalmente pequeno e legível. �
 | **Multi-Agentes** | Roteamento de modelos, modo swarm, integração AIEOS |
 | **Experiência do Desenvolvedor** | Assistente CLI interativo, documentação completa |
 
-Veja o [Roadmap Completo](ROADMAP.md) e [Roadmap da Comunidade](docs/picoclaw_community_roadmap_260216.md) para detalhes.
+Veja o [Roadmap Completo](docs/community/roadmap.md) e [Roadmap da Comunidade](docs/picoclaw_community_roadmap_260216.md) para detalhes.
 
 ### Funções de Voluntário
 

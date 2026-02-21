@@ -999,7 +999,7 @@ PicoClaw 通过 `cron` 工具支持定时提醒和重复任务：
 | **多智能体** | 模型路由、集群模式、AIEOS 集成 |
 | **开发者体验** | 交互式 CLI 向导、完善文档 |
 
-详见 [完整路线图](ROADMAP.md) 和 [社区路线图](docs/picoclaw_community_roadmap_260216.md)。
+详见 [完整路线图](docs/community/roadmap.md) 和 [社区路线图](docs/picoclaw_community_roadmap_260216.md)。
 
 ### 志愿者角色
 

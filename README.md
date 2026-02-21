@@ -1133,7 +1133,7 @@ PRs welcome! The codebase is intentionally small and readable. 🤗
 | **Multi-Agent** | Model routing, swarm mode, AIEOS integration |
 | **DevEx** | Interactive CLI wizard, comprehensive docs |
 
-See [Full Roadmap](ROADMAP.md) and [Community Roadmap](docs/picoclaw_community_roadmap_260216.md) for details.
+See [Full Roadmap](docs/community/roadmap.md) and [Community Roadmap](docs/picoclaw_community_roadmap_260216.md) for details.
 
 ### Volunteer Roles
 

@@ -179,4 +179,4 @@ Read these documents when working on specific areas:
 | [docs/operations/troubleshooting.md](docs/operations/troubleshooting.md) | Common issues, debugging, error resolution |
 | [docs/deployment/docker.md](docs/deployment/docker.md) | Docker setup, compose configuration |
 | [docs/deployment/security.md](docs/deployment/security.md) | Production security, sandbox configuration |
-| [ROADMAP.md](ROADMAP.md) | Project direction, planned features, priorities |
+| [docs/community/roadmap.md](docs/community/roadmap.md) | Project direction, planned features, priorities |
