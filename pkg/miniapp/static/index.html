@@ -255,6 +255,7 @@
 
   .send-btn:active { opacity: 0.8; }
   .send-btn:disabled { opacity: 0.5; }
+  .send-btn.sent { background: var(--done); transition: background 0.15s; }
 
   .empty-state {
     text-align: center;
@@ -287,10 +288,13 @@
     transition: all 0.2s;
   }
 
-  .cmd-chip:active {
+  .cmd-chip:active { transform: scale(0.93); }
+
+  .cmd-chip.sent {
     background: var(--btn);
     color: var(--btn-text);
     border-color: var(--btn);
+    transition: all 0.15s;
   }
 
   .refresh-btn {
@@ -383,51 +387,67 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 // Quick command chips
 document.querySelectorAll('.cmd-chip').forEach(chip => {
-  chip.addEventListener('click', () => {
-    sendCommand(chip.dataset.cmd);
+  chip.addEventListener('click', async () => {
+    const ok = await sendCommand(chip.dataset.cmd);
+    if (ok) flashSent(chip);
   });
 });
 
 async function sendCommand(cmd) {
-  if (!cmd.startsWith('/')) return;
+  if (!cmd.startsWith('/')) return false;
   try {
-    const sep = '/miniapp/api/command'.includes('?') ? '&' : '?';
-    const res = await fetch(API_BASE + '/miniapp/api/command' + sep + 'initData=' + encodeURIComponent(initData), {
+    const res = await fetch(API_BASE + '/miniapp/api/command?initData=' + encodeURIComponent(initData), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: cmd }),
     });
     if (!res.ok) throw new Error('API error: ' + res.status);
-    tg.showAlert('Sent: ' + cmd);
+    return true;
   } catch (e) {
     tg.showAlert('Failed to send command');
+    return false;
   }
 }
 
-function sendCustomCmd() {
+async function sendCustomCmd() {
   const input = document.getElementById('custom-cmd');
+  const btn = input.nextElementSibling;
   const cmd = input.value.trim();
   if (!cmd) return;
   if (!cmd.startsWith('/')) {
     tg.showAlert('Command must start with /');
     return;
   }
-  sendCommand(cmd);
-  input.value = '';
+  const ok = await sendCommand(cmd);
+  if (ok) {
+    input.value = '';
+    flashSent(btn);
+  }
 }
 
-function sendSkillCommand() {
+async function sendSkillCommand() {
   if (!selectedSkill) return;
   const msg = document.getElementById('skill-msg').value.trim();
   const cmd = msg ? '/skill ' + selectedSkill + ' ' + msg : '/skill ' + selectedSkill;
-  sendCommand(cmd);
+  const btn = document.getElementById('send-skill-btn');
+  const ok = await sendCommand(cmd);
+  if (ok) flashSent(btn);
 }
 
-function startPlan() {
+async function startPlan() {
   const input = document.getElementById('plan-task');
   const task = input.value.trim();
   if (!task) return;
-  sendCommand('/plan ' + task);
+  const ok = await sendCommand('/plan ' + task);
+  if (ok) {
+    input.value = '';
+    tg.showAlert('Plan started!');
+  }
+}
+
+function flashSent(el) {
+  el.classList.add('sent');
+  setTimeout(() => el.classList.remove('sent'), 600);
 }
 
 async function apiFetch(path) {
