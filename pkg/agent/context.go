@@ -16,12 +16,13 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace    string
-	dataDir      string
-	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore
-	tools        *tools.ToolRegistry // Direct reference to tool registry
-	mcpManager   *mcp.Manager        // MCP server manager
+	workspace       string
+	dataDir         string
+	skillsLoader    *skills.SkillsLoader
+	memory          *MemoryStore
+	tools           *tools.ToolRegistry // Direct reference to tool registry
+	mcpManager      *mcp.Manager        // MCP server manager
+	enabledChannels []string            // Active communication channels
 }
 
 func getGlobalConfigDir() string {
@@ -67,6 +68,11 @@ func (cb *ContextBuilder) SetMCPManager(manager *mcp.Manager) {
 	cb.mcpManager = manager
 }
 
+// SetEnabledChannels sets the list of active communication channels for system prompt.
+func (cb *ContextBuilder) SetEnabledChannels(channels []string) {
+	cb.enabledChannels = channels
+}
+
 func (cb *ContextBuilder) getIdentity() string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
@@ -102,6 +108,21 @@ Your workspace is at: %s
    - read_long_term: Read long-term memory
    - read_daily: Read today's daily notes`,
 		now, runtime, workspacePath, toolsSection)
+}
+
+func (cb *ContextBuilder) buildChannelsSection() string {
+	if len(cb.enabledChannels) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Connected Channels\n\n")
+	sb.WriteString("You can send messages to any of these channels using the message tool:\n")
+	for _, ch := range cb.enabledChannels {
+		sb.WriteString(fmt.Sprintf("- %s\n", ch))
+	}
+	sb.WriteString("- app (alias for the current Android app WebSocket session)\n")
+	return sb.String()
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
@@ -159,6 +180,12 @@ Use the mcp tool to discover and call server tools.
 
 %s`, mcpSummary))
 		}
+	}
+
+	// Connected channels
+	channelsSection := cb.buildChannelsSection()
+	if channelsSection != "" {
+		parts = append(parts, channelsSection)
 	}
 
 	// Memory context

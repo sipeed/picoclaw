@@ -118,6 +118,7 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 		})
 		return nil
 	})
+	// StateResolver is injected later in NewAgentLoop after stateManager is created
 	registry.Register(messageTool)
 
 	return registry
@@ -153,6 +154,18 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	// Create state manager for atomic state persistence
 	stateManager := state.NewManager(dataDir)
+
+	// Inject state resolver into message tools for cross-channel "app" alias
+	if tool, ok := toolsRegistry.Get("message"); ok {
+		if mt, ok := tool.(*tools.MessageTool); ok {
+			mt.SetStateResolver(stateManager)
+		}
+	}
+	if tool, ok := subagentTools.Get("message"); ok {
+		if mt, ok := tool.(*tools.MessageTool); ok {
+			mt.SetStateResolver(stateManager)
+		}
+	}
 
 	// Create context builder and set tools registry
 	contextBuilder := NewContextBuilder(workspace, dataDir)
@@ -295,6 +308,17 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+
+	// Propagate enabled channels to context builder and message tools
+	if cm != nil {
+		channels := cm.GetEnabledChannels()
+		al.contextBuilder.SetEnabledChannels(channels)
+		if tool, ok := al.tools.Get("message"); ok {
+			if mt, ok := tool.(*tools.MessageTool); ok {
+				mt.SetEnabledChannels(channels)
+			}
+		}
+	}
 }
 
 // StateManager returns the state manager used by this agent loop.
@@ -477,6 +501,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 				if err := al.RecordLastChannel(channelKey); err != nil {
 					logger.WarnCF("agent", "Failed to record last channel: %v", map[string]interface{}{"error": err.Error()})
 				}
+			}
+			// Record per-channel chatID for cross-channel messaging
+			if err := al.state.SetChannelChatID(opts.Channel, opts.ChatID); err != nil {
+				logger.WarnCF("agent", "Failed to record channel chatID", map[string]interface{}{"error": err.Error()})
 			}
 		}
 	}

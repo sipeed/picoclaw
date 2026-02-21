@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,6 +23,10 @@ type State struct {
 	// LastMainChannel is the last channel used by a "main" client type.
 	// Used by heartbeat to always target the main (Android app) session.
 	LastMainChannel string `json:"last_main_channel,omitempty"`
+
+	// ChannelChatIDs maps each channel name to the last known chatID.
+	// Used for cross-channel messaging (e.g. WS user sending to Discord).
+	ChannelChatIDs map[string]string `json:"channel_chat_ids,omitempty"`
 
 	// Timestamp is the last time this state was updated
 	Timestamp time.Time `json:"timestamp"`
@@ -79,6 +84,9 @@ func (sm *Manager) SetLastChannel(channel string) error {
 	sm.state.LastChannel = channel
 	sm.state.Timestamp = time.Now()
 
+	// Also update per-channel chatID mapping (channel format: "name:chatID")
+	sm.updateChannelChatID(channel)
+
 	// Atomic save using temp file + rename
 	if err := sm.saveAtomic(); err != nil {
 		return fmt.Errorf("failed to save state atomically: %w", err)
@@ -132,6 +140,9 @@ func (sm *Manager) SetLastChannelWithType(channel, clientType string) error {
 		sm.state.LastMainChannel = channel
 	}
 
+	// Also update per-channel chatID mapping (channel format: "name:chatID")
+	sm.updateChannelChatID(channel)
+
 	if err := sm.saveAtomic(); err != nil {
 		return fmt.Errorf("failed to save state atomically: %w", err)
 	}
@@ -144,6 +155,46 @@ func (sm *Manager) GetLastMainChannel() string {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return sm.state.LastMainChannel
+}
+
+// updateChannelChatID parses "name:chatID" and updates ChannelChatIDs.
+// Must be called with the lock held.
+func (sm *Manager) updateChannelChatID(channelKey string) {
+	if parts := strings.SplitN(channelKey, ":", 2); len(parts) == 2 {
+		if sm.state.ChannelChatIDs == nil {
+			sm.state.ChannelChatIDs = make(map[string]string)
+		}
+		sm.state.ChannelChatIDs[parts[0]] = parts[1]
+	}
+}
+
+// SetChannelChatID records the last known chatID for a given channel name.
+// This enables cross-channel messaging by resolving the target chatID
+// when the AI specifies a channel but no chatID.
+func (sm *Manager) SetChannelChatID(channel, chatID string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.state.ChannelChatIDs == nil {
+		sm.state.ChannelChatIDs = make(map[string]string)
+	}
+	sm.state.ChannelChatIDs[channel] = chatID
+	sm.state.Timestamp = time.Now()
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+	return nil
+}
+
+// GetChannelChatID returns the last known chatID for the given channel name.
+func (sm *Manager) GetChannelChatID(channel string) string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if sm.state.ChannelChatIDs == nil {
+		return ""
+	}
+	return sm.state.ChannelChatIDs[channel]
 }
 
 // GetTimestamp returns the timestamp of the last state update.
