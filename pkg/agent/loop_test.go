@@ -876,6 +876,37 @@ func TestBuildTaskReminder_Truncation(t *testing.T) {
 	}
 }
 
+func TestBuildPlanReminder(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     string
+		wantOK     bool
+		wantSubstr string
+	}{
+		{"interviewing", "interviewing", true, "interviewing the user"},
+		{"review", "review", true, "under review"},
+		{"executing returns false", "executing", false, ""},
+		{"empty returns false", "", false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, ok := buildPlanReminder(tt.status)
+			if ok != tt.wantOK {
+				t.Fatalf("buildPlanReminder(%q) ok = %v, want %v", tt.status, ok, tt.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if msg.Role != "user" {
+				t.Errorf("expected role 'user', got %q", msg.Role)
+			}
+			if !strings.Contains(msg.Content, tt.wantSubstr) {
+				t.Errorf("expected content to contain %q, got %q", tt.wantSubstr, msg.Content)
+			}
+		})
+	}
+}
+
 // ---------- /plan command tests ----------
 
 func newTestAgentLoop(t *testing.T) (*AgentLoop, func()) {

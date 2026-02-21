@@ -666,21 +666,32 @@ func buildTaskReminder(userMessage string, lastBlocker string) providers.Message
 	}
 }
 
+// buildPlanReminder returns a reminder message for plan pre-execution states
+// (interviewing / review) to keep the AI focused on the interview workflow
+// during tool-call iterations.
+func buildPlanReminder(planStatus string) (providers.Message, bool) {
+	var content string
+	switch planStatus {
+	case "interviewing":
+		content = "[System] You are interviewing the user to build a plan. " +
+			"Ask clarifying questions and save findings to ## Context in memory/MEMORY.md using edit_file. " +
+			"When you have enough information, write ## Phases and ## Commands sections."
+	case "review":
+		content = "[System] The plan is under review. " +
+			"Wait for the user to approve or request changes. Do not proceed with execution."
+	default:
+		return providers.Message{}, false
+	}
+	return providers.Message{Role: "user", Content: content}, true
+}
+
 // runLLMIteration executes the LLM call loop with tool handling.
 func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, messages []providers.Message, opts processOptions) (string, int, error) {
 	iteration := 0
 	var finalContent string
 	lastReminderIdx := -1
 
-	// During pre-execution plan modes (interviewing/review), cap iterations
-	// to prevent runaway tool loops.
 	maxIter := agent.MaxIterations
-	if isPlanPreExecution(agent.ContextBuilder.GetPlanStatus()) {
-		const interviewMaxIter = 3
-		if maxIter > interviewMaxIter {
-			maxIter = interviewMaxIter
-		}
-	}
 
 	for iteration < maxIter {
 		iteration++
@@ -952,6 +963,19 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 					"iteration":   iteration,
 					"has_blocker": lastBlocker != "",
 				})
+		}
+
+		// Inject plan-mode reminder to keep AI focused on interview/review workflow.
+		if iteration > 1 && isPlanPreExecution(agent.ContextBuilder.GetPlanStatus()) {
+			if reminder, ok := buildPlanReminder(agent.ContextBuilder.GetPlanStatus()); ok {
+				messages = append(messages, reminder)
+				logger.DebugCF("agent", "Injected plan reminder",
+					map[string]interface{}{
+						"agent_id":    agent.ID,
+						"iteration":   iteration,
+						"plan_status": agent.ContextBuilder.GetPlanStatus(),
+					})
+			}
 		}
 	}
 
