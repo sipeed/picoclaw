@@ -44,6 +44,7 @@ type activeTask struct {
 	interrupt   chan string // buffered 1, for user message injection
 	toolLog     []toolLogEntry
 	lastError   *toolLogEntry // sticky: most recent error, persists across iterations
+	projectDir  string        // detected project directory name (from cd prefix)
 	mu          sync.Mutex
 }
 
@@ -947,12 +948,54 @@ func buildPlanReminder(planStatus string) (providers.Message, bool) {
 }
 
 // cdPrefixPattern matches "cd /some/path && " at the start of a shell command.
-var cdPrefixPattern = regexp.MustCompile(`^cd\s+\S+\s*&&\s*`)
+// Group 1 captures the target directory path.
+var cdPrefixPattern = regexp.MustCompile(`^cd\s+(\S+)\s*&&\s*`)
 
 // optFlagPattern matches option flags like --verbose, -v, --timeout=60, -q.
 // Only standalone flags are removed; flags whose value is the next positional
 // argument (e.g. "-A 20") are kept because removing them would lose context.
 var optFlagPattern = regexp.MustCompile(`\s+--?\w[\w-]*(=\S*)?`)
+
+// extractProjectDir extracts the project directory name from an exec command's
+// "cd <path> && ..." prefix by stripping the workspace prefix and taking the
+// first remaining path component.
+// Returns "" if no cd prefix or no deeper directory exists.
+func extractProjectDir(cmd, workspace string) string {
+	m := cdPrefixPattern.FindStringSubmatch(cmd)
+	if len(m) < 2 {
+		return ""
+	}
+	cdPath := strings.TrimRight(m[1], "/\\")
+	if workspace == "" {
+		if idx := strings.LastIndex(cdPath, "/"); idx >= 0 {
+			return cdPath[idx+1:]
+		}
+		return cdPath
+	}
+	ws := strings.TrimRight(workspace, "/\\")
+	rest := strings.TrimPrefix(cdPath, ws)
+	if rest == cdPath {
+		// workspace not a prefix — fall back to last component
+		if idx := strings.LastIndex(cdPath, "/"); idx >= 0 {
+			return cdPath[idx+1:]
+		}
+		return cdPath
+	}
+	rest = strings.TrimLeft(rest, "/\\")
+	if rest == "" {
+		return ""
+	}
+	// Take first path component (e.g. "projects/my-app" → "projects")
+	// But if it looks like a generic dir (projects, src, workspace), go deeper
+	parts := strings.SplitN(rest, "/", 3)
+	if len(parts) >= 2 {
+		first := strings.ToLower(parts[0])
+		if first == "projects" || first == "repos" || first == "src" {
+			return parts[1]
+		}
+	}
+	return parts[0]
+}
 
 // buildArgsSnippet produces a human-friendly snippet for the tool log.
 // For exec: extracts the command and strips the leading "cd <workspace> && ".
@@ -1149,9 +1192,11 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	sb.WriteByte('/')
 	sb.WriteString(strconv.Itoa(task.MaxIter))
 	sb.WriteString(")\n")
-	// Workspace: always emit for fixed height (show project name only)
+	// Workspace: prefer detected project dir, fall back to workspace basename
 	sb.WriteString("\U0001F4C1 ")
-	if workspace != "" {
+	if task.projectDir != "" {
+		sb.WriteString(task.projectDir)
+	} else if workspace != "" {
 		project := strings.TrimRight(workspace, "/\\")
 		if idx := strings.LastIndex(project, "/"); idx >= 0 {
 			project = project[idx+1:]
@@ -1489,6 +1534,12 @@ func (al *AgentLoop) runLLMIteration(
 					ArgsSnip: buildArgsSnippet(tc.Name, tc.Arguments, agent.Workspace),
 					Result:   "\u23F3",
 				})
+				// Detect project directory from exec cd prefix (once)
+				if task.projectDir == "" && tc.Name == "exec" {
+					if cmd, _ := tc.Arguments["command"].(string); cmd != "" {
+						task.projectDir = extractProjectDir(cmd, agent.Workspace)
+					}
+				}
 			}
 			task.mu.Unlock()
 

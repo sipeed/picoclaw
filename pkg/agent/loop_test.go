@@ -1569,20 +1569,91 @@ func TestBuildRichStatus(t *testing.T) {
 	}
 }
 
-func TestBuildRichStatus_TrailingSlash(t *testing.T) {
+func TestBuildRichStatus_ProjectDir(t *testing.T) {
+	// projectDir takes priority over workspace basename
 	task := &activeTask{
+		Iteration:  1,
+		MaxIter:    10,
+		projectDir: "terra-py-form",
+		toolLog: []toolLogEntry{
+			{Name: "exec", ArgsSnip: "ls", Result: "✓ 0.1s"},
+		},
+	}
+	got := buildRichStatus(task, false, "/home/user/.picoclaw/workspace")
+	if !strings.Contains(got, "terra-py-form") {
+		t.Errorf("expected projectDir 'terra-py-form' in output, got:\n%s", got)
+	}
+	if strings.Contains(got, "\U0001F4C1 workspace") {
+		t.Error("should not show workspace basename when projectDir is set")
+	}
+
+	// Fallback: no projectDir, trailing slash should still work
+	task2 := &activeTask{
 		Iteration: 1,
 		MaxIter:   10,
 		toolLog: []toolLogEntry{
 			{Name: "exec", ArgsSnip: "ls", Result: "✓ 0.1s"},
 		},
 	}
-	// Trailing slash should not break project name extraction
-	for _, ws := range []string{"/home/user/terra-py-form/", "/home/user/terra-py-form", "C:\\Users\\dev\\terra-py-form\\"} {
-		got := buildRichStatus(task, false, ws)
-		if !strings.Contains(got, "terra-py-form") {
-			t.Errorf("workspace %q: expected 'terra-py-form' in output, got:\n%s", ws, got)
+	for _, ws := range []string{"/home/user/my-project/", "/home/user/my-project"} {
+		got := buildRichStatus(task2, false, ws)
+		if !strings.Contains(got, "my-project") {
+			t.Errorf("workspace %q: expected 'my-project' in output, got:\n%s", ws, got)
 		}
+	}
+}
+
+func TestExtractProjectDir(t *testing.T) {
+	tests := []struct {
+		name      string
+		cmd       string
+		workspace string
+		want      string
+	}{
+		{
+			name:      "cd into projects subdir",
+			cmd:       "cd /home/user/.picoclaw/workspace/projects/terra-py-form && pytest",
+			workspace: "/home/user/.picoclaw/workspace",
+			want:      "terra-py-form",
+		},
+		{
+			name:      "cd into projects subdir with trailing slash",
+			cmd:       "cd /home/user/.picoclaw/workspace/projects/terra-py-form && ls",
+			workspace: "/home/user/.picoclaw/workspace/",
+			want:      "terra-py-form",
+		},
+		{
+			name:      "cd into direct subdir",
+			cmd:       "cd /home/user/.picoclaw/workspace/my-app && make build",
+			workspace: "/home/user/.picoclaw/workspace",
+			want:      "my-app",
+		},
+		{
+			name:      "cd to workspace itself",
+			cmd:       "cd /home/user/.picoclaw/workspace && ls",
+			workspace: "/home/user/.picoclaw/workspace",
+			want:      "",
+		},
+		{
+			name:      "no cd prefix",
+			cmd:       "pytest tests/",
+			workspace: "/home/user/.picoclaw/workspace",
+			want:      "",
+		},
+		{
+			name:      "cd to unrelated path",
+			cmd:       "cd /tmp/build && make",
+			workspace: "/home/user/.picoclaw/workspace",
+			want:      "build",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractProjectDir(tt.cmd, tt.workspace)
+			if got != tt.want {
+				t.Errorf("extractProjectDir(%q, %q) = %q, want %q", tt.cmd, tt.workspace, got, tt.want)
+			}
+		})
 	}
 }
 
