@@ -196,6 +196,10 @@
     "volcengine": {
       "api_key": "",
       "api_base": ""
+    },
+    "mistral": {
+      "api_key": "",
+      "api_base": "https://api.mistral.ai/v1"
     }
   },
   "tools": {
