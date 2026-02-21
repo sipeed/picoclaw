@@ -185,21 +185,6 @@ func (p *ClaudeCliProvider) stripToolCallsJSON(text string) string {
 	return stripToolCallsFromText(text)
 }
 
-// findMatchingBrace finds the index after the closing brace matching the opening brace at pos.
-func findMatchingBrace(text string, pos int) int {
-	depth := 0
-	for i := pos; i < len(text); i++ {
-		if text[i] == '{' {
-			depth++
-		} else if text[i] == '}' {
-			depth--
-			if depth == 0 {
-				return i + 1
-			}
-		}
-	}
-	return pos
-}
 
 // claudeCliJSONResponse represents the JSON output from the claude CLI.
 // Matches the real claude CLI v2.x output format.
