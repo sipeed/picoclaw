@@ -136,13 +136,8 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 
 			// Determine content for LLM
 			contentForLLM := toolResult.ForLLM
-			if toolResult.Err != nil {
-				errorMsg := toolResult.Err.Error()
-				if contentForLLM == "" {
-					contentForLLM = fmt.Sprintf("Error: %s\n\nReflection: The tool execution failed. Analyze the cause, adjust your approach, and try again if necessary.", errorMsg)
-				} else {
-					contentForLLM = fmt.Sprintf("%s\n\nError: %s\n\nReflection: The tool call encountered an issue. Review the output and error, then decide on the next best step.", contentForLLM, errorMsg)
-				}
+			if contentForLLM == "" && toolResult.Err != nil {
+				contentForLLM = toolResult.Err.Error()
 			}
 
 			// Add tool result message

@@ -30,9 +30,7 @@ type AgentInstance struct {
 	Tools          *tools.ToolRegistry
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
-	Candidates                 []providers.FallbackCandidate
-	SummarizeMessageThreshold  int
-	SummarizeTokenPercentage   int
+	Candidates     []providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -56,7 +54,6 @@ func NewAgentInstance(
 	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
 	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewVerifyTool(workspace, restrict))
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
@@ -112,11 +109,9 @@ func NewAgentInstance(
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,
 		Tools:          toolsRegistry,
-		Subagents:                 subagents,
-		SkillsFilter:              skillsFilter,
-		Candidates:                candidates,
-		SummarizeMessageThreshold: defaults.SummarizeMessageThreshold,
-		SummarizeTokenPercentage:  defaults.SummarizeTokenPercentage,
+		Subagents:      subagents,
+		SkillsFilter:   skillsFilter,
+		Candidates:     candidates,
 	}
 }
 
