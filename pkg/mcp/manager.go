@@ -456,14 +456,14 @@ func (m *Manager) Close() error {
 					"server": name,
 					"error":  err.Error(),
 				})
-			errs = append(errs, err)
+			errs = append(errs, fmt.Errorf("server %s: %w", name, err))
 		}
 	}
 
 	m.servers = make(map[string]*ServerConnection)
 
 	if len(errs) > 0 {
-		return fmt.Errorf("failed to close %d server(s)", len(errs))
+		return fmt.Errorf("failed to close %d server(s): %w", len(errs), errors.Join(errs...))
 	}
 
 	return nil
