@@ -12,6 +12,7 @@ func DefaultConfig() *Config {
 			Defaults: AgentDefaults{
 				Workspace:           "~/.picoclaw/workspace",
 				RestrictToWorkspace: true,
+				AllowPatterns:       []string{},
 				Provider:            "",
 				Model:               "glm-4.7",
 				MaxTokens:           8192,
