@@ -33,11 +33,14 @@ type AntigravityProvider struct {
 }
 
 // NewAntigravityProvider creates a new Antigravity provider using stored auth credentials.
-func NewAntigravityProvider() *AntigravityProvider {
+func NewAntigravityProvider(timeoutSeconds int) *AntigravityProvider {
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 120
+	}
 	return &AntigravityProvider{
 		tokenSource: createAntigravityTokenSource(),
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: time.Duration(timeoutSeconds) * time.Second,
 		},
 	}
 }
