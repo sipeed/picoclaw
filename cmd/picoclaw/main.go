@@ -194,6 +194,28 @@ func getConfigPath() string {
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
 
+func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool) *cron.CronService {
+	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
+
+	// Create cron service
+	cronService := cron.NewCronService(cronStorePath, nil)
+
+	// Create and register CronTool
+	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict)
+	agentLoop.RegisterTool(cronTool)
+
+	// Create and register ScheduleTool for agent use
+	scheduleTool := tools.NewScheduleTool(cronService)
+	agentLoop.RegisterTool(scheduleTool)
+
+	// Set the onJob handler
+	cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
+		result := cronTool.ExecuteJob(context.Background(), job)
+		return result, nil
+	})
+
+	return cronService
+}
 func loadConfig() (*config.Config, error) {
 	return config.LoadConfig(getConfigPath())
 }
