@@ -74,12 +74,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
-	// Initialize provider cache and seed with primary provider
 	providerCache := make(map[string]providers.LLMProvider)
-	primaryName := strings.ToLower(cfg.Agents.Defaults.Provider)
-	if primaryName != "" {
-		providerCache[primaryName] = provider
-	}
 
 	// Create stats tracker if enabled
 	var statsTracker *stats.Tracker
@@ -273,24 +268,38 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
-// resolveProvider returns the LLMProvider for the given provider name.
-// It caches created providers so each name is only resolved once.
-// On creation failure, it logs a warning and returns the fallback provider.
-func (al *AgentLoop) resolveProvider(providerName string, fallback providers.LLMProvider) providers.LLMProvider {
-	name := strings.ToLower(providerName)
-	if name == "" {
+// resolveProvider returns the LLMProvider for the given provider/model pair.
+// It caches created providers by "provider/model" key so each combination is
+// only resolved once. Looks up model_list first (new format), then falls back
+// to the legacy providers section via CreateProviderByName.
+func (al *AgentLoop) resolveProvider(providerName, modelName string, fallback providers.LLMProvider) providers.LLMProvider {
+	key := strings.ToLower(providerName + "/" + modelName)
+	if key == "/" {
 		return fallback
 	}
-	if p, ok := al.providerCache[name]; ok {
+	if p, ok := al.providerCache[key]; ok {
 		return p
 	}
-	p, err := providers.CreateProviderByName(al.cfg, name)
+
+	// Try model_list first (new config format).
+	if mc := al.cfg.FindModelConfigByRef(providerName, modelName); mc != nil {
+		p, _, err := providers.CreateProviderFromConfig(mc)
+		if err == nil {
+			al.providerCache[key] = p
+			return p
+		}
+		logger.WarnCF("agent", "Failed to create provider from model_list, trying legacy",
+			map[string]interface{}{"provider": providerName, "model": modelName, "error": err.Error()})
+	}
+
+	// Fall back to legacy providers section.
+	p, err := providers.CreateProviderByName(al.cfg, providerName)
 	if err != nil {
 		logger.WarnCF("agent", "Failed to create provider for fallback, using primary",
-			map[string]interface{}{"provider": name, "error": err.Error()})
+			map[string]interface{}{"provider": providerName, "error": err.Error()})
 		return fallback
 	}
-	al.providerCache[name] = p
+	al.providerCache[key] = p
 	return p
 }
 
@@ -762,7 +771,7 @@ func (al *AgentLoop) runLLMIteration(
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						p := al.resolveProvider(provider, agent.Provider)
+						p := al.resolveProvider(provider, model, agent.Provider)
 						return p.Chat(ctx, messages, providerToolDefs, model, map[string]interface{}{
 							"max_tokens":  agent.MaxTokens,
 							"temperature": agent.Temperature,

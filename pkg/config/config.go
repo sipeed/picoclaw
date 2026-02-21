@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -616,6 +617,19 @@ func (c *Config) findMatches(modelName string) []ModelConfig {
 		}
 	}
 	return matches
+}
+
+// FindModelConfigByRef finds a ModelConfig entry whose Model field matches
+// "protocol/modelID" (case-insensitive). Used by the fallback chain to look up
+// cross-provider candidates in model_list.
+func (c *Config) FindModelConfigByRef(protocol, modelID string) *ModelConfig {
+	target := strings.ToLower(protocol + "/" + modelID)
+	for i := range c.ModelList {
+		if strings.ToLower(c.ModelList[i].Model) == target {
+			return &c.ModelList[i]
+		}
+	}
+	return nil
 }
 
 // HasProvidersConfig checks if any provider in the old providers config has configuration.

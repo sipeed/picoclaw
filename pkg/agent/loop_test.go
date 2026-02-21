@@ -725,14 +725,14 @@ func TestResolveProvider_CachesProviders(t *testing.T) {
 	primary := &mockProvider{}
 	al := NewAgentLoop(cfg, msgBus, primary)
 
-	// Primary provider should be cached under "vllm"
-	p1 := al.resolveProvider("vllm", primary)
-	if p1 != primary {
-		t.Fatal("expected primary provider for 'vllm'")
+	// First call creates and caches a provider for "vllm/test-model"
+	p1 := al.resolveProvider("vllm", "test-model", primary)
+	if p1 == primary {
+		t.Fatal("expected a new provider from legacy providers config, not the fallback")
 	}
 
 	// Calling again should return the same instance (cached)
-	p2 := al.resolveProvider("vllm", primary)
+	p2 := al.resolveProvider("vllm", "test-model", primary)
 	if p1 != p2 {
 		t.Fatal("expected same cached instance on second call")
 	}
@@ -762,7 +762,7 @@ func TestResolveProvider_FallsBackOnError(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, primary)
 
 	// Request a provider that can't be created (no config for "nonexistent")
-	p := al.resolveProvider("nonexistent", primary)
+	p := al.resolveProvider("nonexistent", "unknown-model", primary)
 	if p != primary {
 		t.Fatal("expected fallback to primary provider on creation error")
 	}
@@ -795,7 +795,7 @@ func TestResolveProvider_EmptyNameReturnsFallback(t *testing.T) {
 	primary := &mockProvider{}
 	al := NewAgentLoop(cfg, msgBus, primary)
 
-	p := al.resolveProvider("", primary)
+	p := al.resolveProvider("", "", primary)
 	if p != primary {
 		t.Fatal("expected fallback provider for empty name")
 	}
