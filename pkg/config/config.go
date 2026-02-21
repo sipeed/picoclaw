@@ -134,6 +134,7 @@ type AgentConfig struct {
 	Name      string            `json:"name,omitempty"`
 	Workspace string            `json:"workspace,omitempty"`
 	Model     *AgentModelConfig `json:"model,omitempty"`
+	Profile   string            `json:"profile,omitempty"` // Path to aieos.json profile
 	Skills    []string          `json:"skills,omitempty"`
 	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
 }
