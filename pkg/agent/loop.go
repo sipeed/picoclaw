@@ -1060,6 +1060,7 @@ const (
 	displayPastEntries = 3  // number of compact 1-line past entries
 	displayErrorLines  = 3  // content lines inside the error code block
 	maxLatestWidth     = 70 // rune limit for the latest entry command (~2 Telegram lines)
+	statusSeparator    = "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
 )
 
 // buildRichStatus builds a fixed-height terminal-like status display.
@@ -1088,7 +1089,11 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	defer task.mu.Unlock()
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "\U0001F504 Task in progress (%d/%d)\n", task.Iteration, task.MaxIter)
+	sb.WriteString("\U0001F504 Task in progress (")
+	sb.WriteString(strconv.Itoa(task.Iteration))
+	sb.WriteByte('/')
+	sb.WriteString(strconv.Itoa(task.MaxIter))
+	sb.WriteString(")\n")
 	if workspace != "" {
 		project := workspace
 		if idx := strings.LastIndex(workspace, "/"); idx >= 0 {
@@ -1097,10 +1102,12 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 			project = workspace[idx+1:]
 		}
 		if project != "" {
-			fmt.Fprintf(&sb, "\U0001F4C2 %s\n", project)
+			sb.WriteString("\U0001F4C2 ")
+			sb.WriteString(project)
+			sb.WriteByte('\n')
 		}
 	}
-	sb.WriteString("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n")
+	sb.WriteString(statusSeparator)
 
 	// --- Task entries region (displayPastEntries + 4 lines) ---
 	entries := task.toolLog
@@ -1135,13 +1142,10 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	// Latest entry: always exactly 4 lines
 	if latest != nil {
 		// Line 1-2: command (truncated to ~2 Telegram lines)
-		var lb strings.Builder
-		lb.WriteString(latest.Name)
+		prefix := latest.Name
 		if latest.ArgsSnip != "" {
-			lb.WriteByte(' ')
-			lb.WriteString(latest.ArgsSnip)
+			prefix += " " + latest.ArgsSnip
 		}
-		prefix := lb.String()
 		if runes := []rune(prefix); len(runes) > maxLatestWidth {
 			sb.WriteString(string(runes[:maxLatestWidth-1]))
 			sb.WriteString("\u2026\n")
@@ -1150,7 +1154,9 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 			sb.WriteByte('\n')
 		}
 		// Line 3: result
-		fmt.Fprintf(&sb, "  %s\n", latest.Result)
+		sb.WriteString("  ")
+		sb.WriteString(latest.Result)
+		sb.WriteByte('\n')
 	} else {
 		sb.WriteString("\u23F3 waiting...\n")
 		sb.WriteString("\u2800\n")
@@ -1160,7 +1166,7 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	sb.WriteString("\u2800\n")
 
 	// --- Error region (separator + code fence with displayErrorLines) ---
-	sb.WriteString("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n")
+	sb.WriteString(statusSeparator)
 	sb.WriteString("```\n")
 
 	errEntry := task.lastError
