@@ -191,10 +191,10 @@ func TestShellTool_WorkingDir_OutsideWorkspace(t *testing.T) {
 	root := t.TempDir()
 	workspace := filepath.Join(root, "workspace")
 	outsideDir := filepath.Join(root, "outside")
-	if err := os.MkdirAll(workspace, 0755); err != nil {
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatalf("failed to create workspace: %v", err)
 	}
-	if err := os.MkdirAll(outsideDir, 0755); err != nil {
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
 		t.Fatalf("failed to create outside dir: %v", err)
 	}
 
@@ -218,13 +218,13 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 	root := t.TempDir()
 	workspace := filepath.Join(root, "workspace")
 	secretDir := filepath.Join(root, "secret")
-	if err := os.MkdirAll(workspace, 0755); err != nil {
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatalf("failed to create workspace: %v", err)
 	}
-	if err := os.MkdirAll(secretDir, 0755); err != nil {
+	if err := os.MkdirAll(secretDir, 0o755); err != nil {
 		t.Fatalf("failed to create secret dir: %v", err)
 	}
-	os.WriteFile(filepath.Join(secretDir, "secret.txt"), []byte("top secret"), 0644)
+	os.WriteFile(filepath.Join(secretDir, "secret.txt"), []byte("top secret"), 0o644)
 
 	// symlink lives inside the workspace but resolves to secretDir outside it
 	link := filepath.Join(workspace, "escape")
