@@ -97,7 +97,46 @@ https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6
 
 ### コンパイル済みバイナリでインストール
 
-[リリースページ](https://github.com/sipeed/picoclaw/releases) からお使いのプラットフォーム用のファームウェアをダウンロードしてください。
+[リリースページ](https://github.com/sipeed/picoclaw/releases) からお使いのプラットフォーム用のバイナリをダウンロードしてください。
+
+**クイックインストール（推奨）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**または wget で：**
+
+```bash
+wget -qO- https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**手動ダウンロード：**
+
+```bash
+# スクリプトをダウンロード
+wget https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh
+chmod +x install.sh
+
+# 最新版をインストール
+./install.sh
+
+# またはバージョンを指定
+./install.sh v0.1.2
+
+# オプションを確認
+./install.sh -h
+```
+
+**インストールスクリプトのオプション：**
+
+| オプション | 説明 |
+|-----------|------|
+| `-l, --list-versions` | 利用可能なバージョン一覧を表示 |
+| `-a, --list-assets` | ダウンロード資産一覧を表示 |
+| `-i, --install-dir` | カスタムインストール先 |
+| `-d, --download` | ダウンロードのみ（インストールしない） |
+| `-y, --yes` | 確認プロンプトをスキップ |
 
 ### ソースからインストール（最新機能、開発向け推奨）
 

@@ -137,6 +137,45 @@ PicoClaw peut être déployé sur pratiquement n'importe quel appareil Linux !
 
 Téléchargez le binaire pour votre plateforme depuis la page des [releases](https://github.com/sipeed/picoclaw/releases).
 
+**Installation rapide (recommandé) :**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**Ou avec wget :**
+
+```bash
+wget -qO- https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**Téléchargement manuel :**
+
+```bash
+# Télécharger le script
+wget https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh
+chmod +x install.sh
+
+# Installer la dernière version
+./install.sh
+
+# Ou spécifier une version
+./install.sh v0.1.2
+
+# Voir toutes les options
+./install.sh -h
+```
+
+**Options du script d'installation :**
+
+| Option | Description |
+|--------|-------------|
+| `-l, --list-versions` | Lister toutes les versions disponibles |
+| `-a, --list-assets` | Lister les ressources téléchargeables |
+| `-i, --install-dir` | Répertoire d'installation personnalisé |
+| `-d, --download` | Télécharger uniquement (sans installation) |
+| `-y, --yes` | Ignorer les confirmations |
+
 ### Installer depuis les sources (dernières fonctionnalités, recommandé pour le développement)
 
 ```bash

@@ -133,7 +133,46 @@ PicoClaw 几乎可以部署在任何 Linux 设备上！
 
 ### 使用预编译二进制文件安装
 
-从 [Release 页面](https://github.com/sipeed/picoclaw/releases) 下载适用于您平台的固件。
+从 [Release 页面](https://github.com/sipeed/picoclaw/releases) 下载适用于您平台的二进制文件。
+
+**快速安装（推荐）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**或使用 wget：**
+
+```bash
+wget -qO- https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**手动下载：**
+
+```bash
+# 下载安装脚本
+wget https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh
+chmod +x install.sh
+
+# 安装最新版本
+./install.sh
+
+# 或指定版本
+./install.sh v0.1.2
+
+# 查看所有选项
+./install.sh -h
+```
+
+**安装脚本选项：**
+
+| 选项 | 说明 |
+|------|------|
+| `-l, --list-versions` | 列出所有可用版本 |
+| `-a, --list-assets` | 列出下载资源 |
+| `-i, --install-dir` | 自定义安装目录 |
+| `-d, --download` | 仅下载（不安装） |
+| `-y, --yes` | 跳过确认提示 |
 
 ### 从源码安装（获取最新特性，开发推荐）
 

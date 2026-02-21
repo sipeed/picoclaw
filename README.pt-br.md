@@ -138,6 +138,45 @@ https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6
 
 Baixe o binário para sua plataforma na página de [releases](https://github.com/sipeed/picoclaw/releases).
 
+**Instalação rápida (recomendado):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**Ou com wget:**
+
+```bash
+wget -qO- https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**Download manual:**
+
+```bash
+# Baixar o script
+wget https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh
+chmod +x install.sh
+
+# Instalar a versão mais recente
+./install.sh
+
+# Ou especificar uma versão
+./install.sh v0.1.2
+
+# Ver todas as opções
+./install.sh -h
+```
+
+**Opções do script de instalação:**
+
+| Opção | Descrição |
+|-------|-----------|
+| `-l, --list-versions` | Listar todas as versões disponíveis |
+| `-a, --list-assets` | Listar recursos para download |
+| `-i, --install-dir` | Diretório de instalação personalizado |
+| `-d, --download` | Apenas baixar (sem instalar) |
+| `-y, --yes` | Pular confirmações |
+
 ### Instalar a partir do código-fonte (funcionalidades mais recentes, recomendado para desenvolvimento)
 
 ```bash

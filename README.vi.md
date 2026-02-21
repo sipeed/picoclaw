@@ -118,6 +118,45 @@ https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6
 
 Tải file binary cho nền tảng của bạn từ [trang Release](https://github.com/sipeed/picoclaw/releases).
 
+**Cài đặt nhanh (khuyên dùng):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**Hoặc dùng wget:**
+
+```bash
+wget -qO- https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**Tải thủ công:**
+
+```bash
+# Tải script cài đặt
+wget https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh
+chmod +x install.sh
+
+# Cài đặt phiên bản mới nhất
+./install.sh
+
+# Hoặc chỉ định phiên bản
+./install.sh v0.1.2
+
+# Xem tất cả tùy chọn
+./install.sh -h
+```
+
+**Các tùy chọn của script cài đặt:**
+
+| Tùy chọn | Mô tả |
+|----------|-------|
+| `-l, --list-versions` | Liệt kê tất cả phiên bản |
+| `-a, --list-assets` | Liệt kê các tệp tải xuống |
+| `-i, --install-dir` | Thư mục cài đặt tùy chỉnh |
+| `-d, --download` | Chỉ tải xuống (không cài đặt) |
+| `-y, --yes` | Bỏ qua xác nhận |
+
 ### Cài đặt từ mã nguồn (có tính năng mới nhất, khuyên dùng cho phát triển)
 
 ```bash
