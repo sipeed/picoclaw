@@ -569,8 +569,8 @@ func parseJSONString(raw json.RawMessage) string {
 type parseMessageResult struct {
 	Text           string
 	IsBotMentioned bool
-	Media   []string
-	ReplyTo string
+	Media          []string
+	ReplyTo        string
 }
 
 func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) parseMessageResult {
@@ -697,8 +697,8 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 	return parseMessageResult{
 		Text:           strings.TrimSpace(strings.Join(textParts, "")),
 		IsBotMentioned: mentioned,
-		Media:   media,
-		ReplyTo: replyTo,
+		Media:          media,
+		ReplyTo:        replyTo,
 	}
 }
 
