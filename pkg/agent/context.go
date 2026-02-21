@@ -424,6 +424,11 @@ func (cb *ContextBuilder) SetPlanStatus(status string) error {
 	return cb.memory.SetStatus(status)
 }
 
+// GetPlanWorkDir returns the WorkDir from the plan metadata, or "".
+func (cb *ContextBuilder) GetPlanWorkDir() string {
+	return cb.memory.GetPlanWorkDir()
+}
+
 // GetSkillsInfo returns information about loaded skills.
 func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 	allSkills := cb.skillsLoader.ListSkills()

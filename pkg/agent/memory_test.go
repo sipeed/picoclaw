@@ -458,7 +458,7 @@ func TestGetMemoryContext_RegularMemory(t *testing.T) {
 }
 
 func TestBuildInterviewSeed(t *testing.T) {
-	seed := BuildInterviewSeed("Deploy monitoring stack")
+	seed := BuildInterviewSeed("Deploy monitoring stack", "/home/user/project")
 
 	if !strings.Contains(seed, "# Active Plan") {
 		t.Error("expected '# Active Plan' header")

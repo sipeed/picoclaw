@@ -308,7 +308,7 @@ picoclaw gateway
 
 #### Mini App (Dashboard)
 
-PicoClaw includes a Telegram Mini App that provides a GUI dashboard directly inside Telegram. It shows plan progress, available skills, session stats, and lets you send commands without typing.
+PicoClaw includes a Telegram Mini App that provides a GUI dashboard directly inside Telegram. It shows plan progress, available skills, active sessions, session stats, and lets you send commands without typing.
 
 **How it works:**
 
@@ -318,7 +318,7 @@ When Telegram is enabled, PicoClaw automatically registers a "Dashboard" menu bu
 |-----|-------------|
 | **Plan** | View plan phases/steps as a checklist, tap to mark done, start new plans |
 | **Skills** | Browse and invoke skills with a message input |
-| **Session** | View token usage stats (requires `--stats` flag) |
+| **Session** | View active sessions and token usage stats (requires `--stats` flag for stats) |
 | **Config** | Quick command buttons and custom command input |
 
 **Setup — Tailscale (recommended for self-hosting):**

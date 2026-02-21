@@ -44,11 +44,22 @@ type PlanInfo struct {
 	Phases       []PlanPhase `json:"phases"`
 }
 
+// SessionInfo represents an active session entry for the API response.
+type SessionInfo struct {
+	SessionKey string `json:"session_key"`
+	Channel    string `json:"channel"`
+	ChatID     string `json:"chat_id"`
+	TouchDir   string `json:"touch_dir"`
+	LastSeenAt string `json:"last_seen_at"`
+	AgeSec     int    `json:"age_sec"`
+}
+
 // DataProvider is the read-only interface to agent state for the Mini App API.
 type DataProvider interface {
 	ListSkills() []skills.SkillInfo
 	GetPlanInfo() PlanInfo
 	GetSessionStats() *stats.Stats
+	GetActiveSessions() []SessionInfo
 }
 
 // CommandSender injects a command into the message bus on behalf of a user.
@@ -78,6 +89,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/skills", h.requireAuth(h.apiSkills))
 	mux.HandleFunc("/miniapp/api/plan", h.requireAuth(h.apiPlan))
 	mux.HandleFunc("/miniapp/api/session", h.requireAuth(h.apiSession))
+	mux.HandleFunc("/miniapp/api/sessions", h.requireAuth(h.apiSessions))
 	mux.HandleFunc("/miniapp/api/command", h.requireAuth(h.apiCommand))
 }
 
@@ -114,6 +126,14 @@ func (h *Handler) apiSkills(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiPlan(w http.ResponseWriter, r *http.Request) {
 	info := h.provider.GetPlanInfo()
 	writeJSON(w, info)
+}
+
+func (h *Handler) apiSessions(w http.ResponseWriter, r *http.Request) {
+	sessions := h.provider.GetActiveSessions()
+	if sessions == nil {
+		sessions = []SessionInfo{}
+	}
+	writeJSON(w, sessions)
 }
 
 func (h *Handler) apiSession(w http.ResponseWriter, r *http.Request) {

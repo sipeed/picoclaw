@@ -86,6 +86,7 @@ type AgentLoop struct {
 	planStartPending bool // set by /plan start to trigger LLM execution
 	sessionLocks     sync.Map // sessionKey → *sessionSemaphore
 	activeTasks      sync.Map // sessionKey → *activeTask
+	sessions         *SessionTracker
 }
 
 // processOptions configures how a message is processed
@@ -137,6 +138,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		summarizing:   sync.Map{},
 		fallback:      fallbackChain,
 		providerCache: providerCache,
+		sessions:      NewSessionTracker(),
 	}
 }
 
@@ -753,8 +755,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 2c. Background plan preamble: append to system prompt (high attention)
 	// so the LLM knows from the start that it must mark steps [x].
+	// Skip if a chat session is actively working on the plan directory.
 	if opts.Background && agent.ContextBuilder.HasActivePlan() && agent.ContextBuilder.GetPlanStatus() == "executing" {
-		if len(messages) > 0 && messages[0].Role == "system" {
+		planDir := agent.ContextBuilder.GetPlanWorkDir()
+		skipPreamble := planDir != "" && al.sessions.IsActiveInDir(planDir, "heartbeat")
+		if !skipPreamble && len(messages) > 0 && messages[0].Role == "system" {
 			var sb strings.Builder
 			sb.WriteString(messages[0].Content)
 			sb.WriteString("\n\n## Background Execution\n")
@@ -1616,6 +1621,25 @@ func (al *AgentLoop) runLLMIteration(
 			}
 		}
 
+		// Record session activity for heartbeat/plan coordination
+		for _, tc := range normalizedToolCalls {
+			var detectedDir string
+			if tc.Name == "exec" {
+				detectedDir = extractExecProjectDir(tc.Arguments)
+			}
+			if detectedDir == "" {
+				switch tc.Name {
+				case "read_file", "write_file", "edit_file", "append_file", "list_dir":
+					if p, _ := tc.Arguments["path"].(string); p != "" {
+						detectedDir = fileParentRelDir(p, agent.Workspace)
+					}
+				}
+			}
+			if detectedDir != "" {
+				al.sessions.Touch(opts.SessionKey, opts.Channel, opts.ChatID, detectedDir)
+			}
+		}
+
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
 			Role:    "assistant",
@@ -1986,6 +2010,11 @@ func (al *AgentLoop) GetPlanPhases() []PlanPhase {
 		return nil
 	}
 	return mem.GetPlanPhases()
+}
+
+// GetActiveSessions returns currently active sessions for the mini app API.
+func (al *AgentLoop) GetActiveSessions() []SessionEntry {
+	return al.sessions.ListActive()
 }
 
 // GetSessionStats returns the current session statistics snapshot, or nil if stats tracking is disabled.
@@ -2552,7 +2581,7 @@ func (al *AgentLoop) expandPlanCommand(msg bus.InboundMessage) (expanded string,
 	}
 
 	// Write the interview seed
-	seed := BuildInterviewSeed(task)
+	seed := BuildInterviewSeed(task, agent.Workspace)
 	if err := agent.ContextBuilder.WriteMemory(seed); err != nil {
 		return "", "", false
 	}

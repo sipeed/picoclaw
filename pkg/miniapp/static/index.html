@@ -657,6 +657,44 @@ async function loadSkills() {
 }
 
 // ── Session tab ──
+function formatAge(sec) {
+  if (sec < 60) return sec + 's ago';
+  if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+  return Math.floor(sec / 3600) + 'h ago';
+}
+
+function shortSessionKey(key) {
+  // "agent:default:telegram:123" → "telegram:123"
+  var parts = key.split(':');
+  if (parts.length > 2) return parts.slice(2).join(':');
+  return key;
+}
+
+function renderActiveSessions(sessions) {
+  if (!sessions || sessions.length === 0) {
+    return '<div class="card">' +
+      '<div class="card-title">Active Sessions</div>' +
+      '<div style="color:var(--hint);font-size:13px">No active sessions</div>' +
+    '</div>';
+  }
+  var html = '<div class="card"><div class="card-title">Active Sessions</div>';
+  for (var i = 0; i < sessions.length; i++) {
+    var s = sessions[i];
+    var touchDir = s.touch_dir || '\u2014';
+    html += '<div style="padding:6px 0;border-bottom:1px solid var(--secondary-bg)">' +
+      '<div style="display:flex;align-items:center;gap:6px">' +
+        '<span style="color:var(--done);font-size:10px">\u25CF</span>' +
+        '<span style="font-weight:600;font-size:13px">' + escapeHtml(shortSessionKey(s.session_key)) + '</span>' +
+        '<span style="margin-left:auto;color:var(--hint);font-size:12px">' + formatAge(s.age_sec) + '</span>' +
+      '</div>' +
+      '<div style="color:var(--hint);font-size:12px;padding-left:16px">touch: ' + escapeHtml(touchDir) + '</div>' +
+    '</div>';
+  }
+  html += '<button class="refresh-btn" onclick="loadSession()" style="margin-top:8px">Refresh</button>';
+  html += '</div>';
+  return html;
+}
+
 async function loadSession() {
   const loading = document.getElementById('session-loading');
   const el = document.getElementById('session-content');
@@ -665,17 +703,23 @@ async function loadSession() {
   el.style.display = 'none';
 
   try {
-    const data = await apiFetch('/miniapp/api/session');
+    const [data, sessions] = await Promise.all([
+      apiFetch('/miniapp/api/session'),
+      apiFetch('/miniapp/api/sessions').catch(function() { return []; }),
+    ]);
     loading.style.display = 'none';
     el.style.display = 'block';
 
+    var html = renderActiveSessions(sessions);
+
     if (data.status === 'stats not enabled') {
-      el.innerHTML = '<div class="empty-state">Stats tracking not enabled.<br>Start gateway with --stats flag.</div>';
+      html += '<div class="empty-state">Stats tracking not enabled.<br>Start gateway with --stats flag.</div>';
+      el.innerHTML = html;
       return;
     }
 
     const since = data.since ? new Date(data.since).toLocaleDateString() : 'N/A';
-    el.innerHTML =
+    html +=
       '<div class="card">' +
         '<div class="card-title">Today</div>' +
         '<div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">' + (data.today?.prompts || 0) + '</span></div>' +
@@ -690,6 +734,8 @@ async function loadSession() {
         '<div class="stat-row"><span class="stat-label">Prompt Tokens</span><span class="stat-value">' + formatTokens(data.total_prompt_tokens || 0) + '</span></div>' +
         '<div class="stat-row"><span class="stat-label">Completion Tokens</span><span class="stat-value">' + formatTokens(data.total_completion_tokens || 0) + '</span></div>' +
       '</div>';
+
+    el.innerHTML = html;
   } catch (e) {
     loading.textContent = 'Failed to load session.';
     loading.style.display = 'block';
