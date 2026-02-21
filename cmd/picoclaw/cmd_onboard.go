@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -22,7 +23,9 @@ import (
 //go:embed workspace
 var embeddedFiles embed.FS
 
-// providerChoice holds the details for a user-selected provider
+// providerChoice holds the details for a user-selected provider.
+// If onboardFunc is set, it handles the entire provider setup (auth + config)
+// and needsAPIKey/keyPrompt/validateFunc are ignored.
 type providerChoice struct {
 	name         string
 	modelName    string
@@ -30,6 +33,7 @@ type providerChoice struct {
 	keyPrompt    string
 	validateURL  string
 	validateFunc func(apiKey string) *http.Request
+	onboardFunc  func(reader *bufio.Reader, cfg *config.Config) (verified bool)
 }
 
 var providerChoices = []providerChoice{
@@ -52,15 +56,7 @@ var providerChoices = []providerChoice{
 	{
 		name:        "Anthropic",
 		modelName:   "claude-sonnet-4.6",
-		needsAPIKey: true,
-		keyPrompt:   "Enter your Anthropic API key: ",
-		validateURL: "https://api.anthropic.com/v1/models",
-		validateFunc: func(apiKey string) *http.Request {
-			req, _ := http.NewRequest("GET", "https://api.anthropic.com/v1/models", nil)
-			req.Header.Set("x-api-key", apiKey)
-			req.Header.Set("anthropic-version", "2023-06-01")
-			return req
-		},
+		onboardFunc: onboardAnthropic,
 	},
 	{
 		name:        "OpenAI",
@@ -86,6 +82,97 @@ var providerChoices = []providerChoice{
 			return req
 		},
 	},
+}
+
+// onboardAnthropic handles Anthropic provider setup during onboarding,
+// offering Claude Max/Pro subscription (OAuth) or manual API key entry.
+func onboardAnthropic(reader *bufio.Reader, cfg *config.Config) (verified bool) {
+	fmt.Println("\nHow would you like to authenticate with Anthropic?")
+	fmt.Println("  1. Claude Max/Pro subscription (OAuth — free inference) [default]")
+	fmt.Println("  2. API key (pay-per-use)")
+	fmt.Print("\nEnter choice [1]: ")
+
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	if input == "" {
+		input = "1"
+	}
+
+	switch input {
+	case "1":
+		return onboardAnthropicOAuth(cfg)
+	case "2":
+		return onboardAnthropicAPIKey(reader, cfg)
+	default:
+		fmt.Printf("Unknown choice %q, using subscription login.\n", input)
+		return onboardAnthropicOAuth(cfg)
+	}
+}
+
+// onboardAnthropicOAuth performs the Claude Max/Pro OAuth flow during onboarding.
+func onboardAnthropicOAuth(cfg *config.Config) bool {
+	cred, err := auth.LoginAnthropicOAuth(auth.AnthropicOAuthMax)
+	if err != nil {
+		fmt.Printf("  [!] OAuth login failed: %v\n", err)
+		fmt.Println("      You can try again later with: picoclaw auth login --provider anthropic")
+		return false
+	}
+
+	if err := auth.SetCredential("anthropic", cred); err != nil {
+		fmt.Printf("  [!] Failed to save credentials: %v\n", err)
+		return false
+	}
+
+	// Update config to use OAuth
+	for i := range cfg.ModelList {
+		if isAnthropicModel(cfg.ModelList[i].Model) {
+			cfg.ModelList[i].AuthMethod = "oauth"
+			break
+		}
+	}
+
+	fmt.Printf("  [\u2713] Anthropic login successful")
+	if cred.Email != "" {
+		fmt.Printf(" (%s)", cred.Email)
+	}
+	if cred.SubscriptionType != "" {
+		fmt.Printf(" [%s]", cred.SubscriptionType)
+	}
+	fmt.Println()
+	return true
+}
+
+// onboardAnthropicAPIKey collects and validates an Anthropic API key during onboarding.
+func onboardAnthropicAPIKey(reader *bufio.Reader, cfg *config.Config) bool {
+	fmt.Print("Enter your Anthropic API key: ")
+	apiKey, _ := reader.ReadString('\n')
+	apiKey = strings.TrimSpace(apiKey)
+
+	if apiKey == "" {
+		fmt.Println("  [!] No API key provided")
+		return false
+	}
+
+	// Set the API key on the matching model entry
+	for i := range cfg.ModelList {
+		if cfg.ModelList[i].ModelName == "claude-sonnet-4.6" {
+			cfg.ModelList[i].APIKey = apiKey
+			break
+		}
+	}
+
+	// Validate the key
+	choice := providerChoice{
+		name: "Anthropic",
+		validateFunc: func(key string) *http.Request {
+			req, _ := http.NewRequest("GET", "https://api.anthropic.com/v1/models", nil)
+			req.Header.Set("x-api-key", key)
+			req.Header.Set("anthropic-version", "2023-06-01")
+			return req
+		},
+	}
+	verifyAPIKey(choice, apiKey)
+	return true
 }
 
 func onboard() {
@@ -122,7 +209,7 @@ func onboard() {
 	fmt.Println("Choose your AI provider:")
 	fmt.Println("  1. Ollama (local, free — no API key needed) [default]")
 	fmt.Println("  2. OpenRouter (100+ models, one API key)")
-	fmt.Println("  3. Anthropic (Claude)")
+	fmt.Println("  3. Anthropic (Claude — subscription or API key)")
 	fmt.Println("  4. OpenAI (GPT)")
 	fmt.Println("  5. DeepSeek")
 	fmt.Println("  6. Skip — I'll configure manually")
@@ -159,11 +246,15 @@ func onboard() {
 		choiceIdx = 0
 	}
 
+	var customOnboard bool
 	if choiceIdx >= 0 {
 		choice := providerChoices[choiceIdx]
 		cfg.Agents.Defaults.Model = choice.modelName
 
-		if choice.needsAPIKey {
+		if choice.onboardFunc != nil {
+			customOnboard = true
+			choice.onboardFunc(reader, cfg)
+		} else if choice.needsAPIKey {
 			fmt.Print(choice.keyPrompt)
 			apiKey, _ = reader.ReadString('\n')
 			apiKey = strings.TrimSpace(apiKey)
@@ -193,7 +284,7 @@ func onboard() {
 	fmt.Printf("  [\u2713] Config written to %s\n", configPath)
 	fmt.Printf("  [\u2713] Workspace initialized\n")
 
-	if choiceIdx >= 0 {
+	if choiceIdx >= 0 && !customOnboard {
 		choice := providerChoices[choiceIdx]
 		if choiceIdx == 0 {
 			// Ollama: check if running
