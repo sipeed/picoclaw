@@ -170,6 +170,7 @@
 - [Creating Providers](developer-guide/extending/creating-providers.md)
 - [Creating Channels](developer-guide/extending/creating-channels.md)
 - [Creating Skills](developer-guide/extending/creating-skills.md)
+- [Antigravity Implementation](developer-guide/extending/antigravity-implementation.md)
 
 ## API Reference
 
