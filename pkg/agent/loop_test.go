@@ -1409,3 +1409,171 @@ func TestIsToolAllowedDuringInterview_FuzzyNames(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildArgsSnippet_ExecStripsCD(t *testing.T) {
+	tests := []struct {
+		name      string
+		tool      string
+		args      map[string]interface{}
+		workspace string
+		wantSnip  string
+	}{
+		{
+			name:      "exec strips cd prefix",
+			tool:      "exec",
+			args:      map[string]interface{}{"command": "cd /home/user/workspace/project/my-projects && pytest tests/test_integration.py"},
+			workspace: "/home/user/workspace",
+			wantSnip:  "pytest tests/test_integration.py",
+		},
+		{
+			name:      "exec no cd prefix",
+			tool:      "exec",
+			args:      map[string]interface{}{"command": "ls -la"},
+			workspace: "/ws",
+			wantSnip:  "ls -la",
+		},
+		{
+			name:      "exec empty command",
+			tool:      "exec",
+			args:      map[string]interface{}{},
+			workspace: "/ws",
+			wantSnip:  "{}",
+		},
+		{
+			name:      "read_file strips workspace",
+			tool:      "read_file",
+			args:      map[string]interface{}{"path": "/home/user/workspace/src/main.go"},
+			workspace: "/home/user/workspace",
+			wantSnip:  "src/main.go",
+		},
+		{
+			name:      "edit_file with old_text",
+			tool:      "edit_file",
+			args:      map[string]interface{}{"path": "/ws/config.json", "old_text": "old value here"},
+			workspace: "/ws",
+			wantSnip:  "config.json  old:old value here",
+		},
+		{
+			name:      "unknown tool shows raw JSON",
+			tool:      "web_search",
+			args:      map[string]interface{}{"query": "hello"},
+			workspace: "/ws",
+			wantSnip:  `{"query":"hello"}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildArgsSnippet(tt.tool, tt.args, tt.workspace)
+			if got != tt.wantSnip {
+				t.Errorf("buildArgsSnippet(%q) = %q, want %q", tt.tool, got, tt.wantSnip)
+			}
+		})
+	}
+}
+
+func TestBuildRichStatus(t *testing.T) {
+	task := &activeTask{
+		Iteration: 3,
+		MaxIter:   20,
+		toolLog: []toolLogEntry{
+			{Name: "[1] exec", ArgsSnip: "ls -la", Result: "✓ 1.2s"},
+			{Name: "[2] exec", ArgsSnip: "pytest tests/", Result: "✓ 5.0s"},
+			{Name: "[3] read_file", ArgsSnip: "src/main.go", Result: "⏳"},
+		},
+	}
+
+	got := buildRichStatus(task, false, "/home/user/my-projects")
+
+	mustContain := []string{
+		"Task in progress (3/20)",
+		"my-projects",
+		"[1] exec",
+		"pytest tests/",
+		"[3] read_file",
+		"src/main.go",
+	}
+	for _, s := range mustContain {
+		if !strings.Contains(got, s) {
+			t.Errorf("expected output to contain %q, got:\n%s", s, got)
+		}
+	}
+
+	// Non-background: should NOT have reply prompt
+	if strings.Contains(got, "Reply to intervene") {
+		t.Error("non-background task should not have reply prompt")
+	}
+
+	// Background: should have reply prompt
+	bgGot := buildRichStatus(task, true, "/home/user/my-projects")
+	if !strings.Contains(bgGot, "Reply to intervene") {
+		t.Error("background task should have reply prompt")
+	}
+}
+
+func TestBuildRichStatus_ShowsLast5(t *testing.T) {
+	task := &activeTask{
+		Iteration: 8,
+		MaxIter:   20,
+	}
+	for i := 1; i <= 8; i++ {
+		task.toolLog = append(task.toolLog, toolLogEntry{
+			Name:   fmt.Sprintf("[%d] exec", i),
+			Result: "✓ 1.0s",
+		})
+	}
+
+	got := buildRichStatus(task, false, "/home/user/my-projects")
+
+	// Should contain entries 4-8 but not 1-3
+	if strings.Contains(got, "[3] exec") {
+		t.Error("should not contain entry [3] (only last 5)")
+	}
+	if !strings.Contains(got, "[4] exec") {
+		t.Error("should contain entry [4]")
+	}
+	if !strings.Contains(got, "[8] exec") {
+		t.Error("should contain entry [8]")
+	}
+}
+
+func TestBuildRichStatus_ErrorBlock(t *testing.T) {
+	task := &activeTask{
+		Iteration: 3,
+		MaxIter:   10,
+		toolLog: []toolLogEntry{
+			{Name: "[1] exec", ArgsSnip: "ls -la", Result: "✓ 0.5s"},
+			{
+				Name:      "[2] exec",
+				ArgsSnip:  "pytest tests/test_auth.py",
+				Result:    "✗ 3.2s",
+				ErrDetail: "FAILED tests/test_auth.py::test_login\nExit code: exit status 1",
+			},
+			{Name: "[3] read_file", ArgsSnip: "src/auth.py", Result: "⏳"},
+		},
+	}
+
+	got := buildRichStatus(task, false, "/ws/my-project")
+
+	// Success entry: compact one-liner
+	if !strings.Contains(got, "[1] exec ls -la ✓ 0.5s") {
+		t.Errorf("expected compact success line, got:\n%s", got)
+	}
+
+	// Error entry: command + mark on first line
+	if !strings.Contains(got, "[2] exec pytest tests/test_auth.py ✗ 3.2s") {
+		t.Errorf("expected error header line, got:\n%s", got)
+	}
+
+	// Error detail: │-prefixed lines
+	if !strings.Contains(got, "│ FAILED tests/test_auth.py::test_login") {
+		t.Errorf("expected │-prefixed error detail, got:\n%s", got)
+	}
+	if !strings.Contains(got, "│ Exit code: exit status 1") {
+		t.Errorf("expected │-prefixed exit code line, got:\n%s", got)
+	}
+
+	// Pending entry: compact
+	if !strings.Contains(got, "[3] read_file src/auth.py ⏳") {
+		t.Errorf("expected compact pending line, got:\n%s", got)
+	}
+}

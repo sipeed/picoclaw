@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +32,41 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// activeTask tracks a running agent task for live status and intervention.
+type activeTask struct {
+	Description string
+	Iteration   int
+	MaxIter     int
+	StartedAt   time.Time
+	cancel      context.CancelFunc
+	interrupt   chan string // buffered 1, for user message injection
+	toolLog     []toolLogEntry
+	mu          sync.Mutex
+}
+
+// toolLogEntry records a single tool call for the live terminal view.
+type toolLogEntry struct {
+	Name     string
+	ArgsSnip string // first ~80 chars of args
+	Result   string // "✓ 4.9s" or "✗ 3.2s"
+	ErrDetail string // non-empty on error — e.g. "Exit code: exit status 1"
+}
+
+// maxToolLogEntries limits the sliding window of tool log entries
+// kept in memory and displayed in status messages.
+const maxToolLogEntries = 5
+
+// sessionSemaphore is a per-session mutex using a buffered channel.
+type sessionSemaphore struct {
+	ch chan struct{}
+}
+
+func newSessionSemaphore() *sessionSemaphore {
+	s := &sessionSemaphore{ch: make(chan struct{}, 1)}
+	s.ch <- struct{}{} // initially unlocked
+	return s
+}
+
 type AgentLoop struct {
 	bus            *bus.MessageBus
 	cfg            *config.Config
@@ -43,6 +79,8 @@ type AgentLoop struct {
 	channelManager   *channels.Manager
 	providerCache    map[string]providers.LLMProvider
 	planStartPending bool // set by /plan start to trigger LLM execution
+	sessionLocks     sync.Map // sessionKey → *sessionSemaphore
+	activeTasks      sync.Map // sessionKey → *activeTask
 }
 
 // processOptions configures how a message is processed
@@ -56,6 +94,7 @@ type processOptions struct {
 	EnableSummary   bool   // Whether to trigger summarization
 	SendResponse    bool   // Whether to send response via bus
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
+	TaskID          string // Unique task ID for background task status tracking
 }
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, enableStats ...bool) *AgentLoop {
@@ -353,6 +392,9 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		ChatID:     chatID,
 		Content:    content,
 		SessionKey: sessionKey,
+		Metadata: map[string]string{
+			"background": "true",
+		},
 	}
 
 	return al.processMessage(ctx, msg)
@@ -389,6 +431,44 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"sender_id":   msg.SenderID,
 			"session_key": msg.SessionKey,
 		})
+
+	// Handle reply-based intervention for active tasks
+	if taskID, ok := msg.Metadata["task_id"]; ok && taskID != "" {
+		if val, found := al.activeTasks.Load(taskID); found {
+			task := val.(*activeTask)
+			content := strings.TrimSpace(msg.Content)
+			lower := strings.ToLower(content)
+
+			// Check for stop keywords
+			stopKeywords := []string{"stop", "cancel", "abort", "停止", "中止", "やめて"}
+			isStop := false
+			for _, kw := range stopKeywords {
+				if lower == kw {
+					isStop = true
+					break
+				}
+			}
+
+			if isStop {
+				task.cancel()
+				logger.InfoCF("agent", "Task cancelled by user intervention",
+					map[string]any{"task_id": taskID})
+				return "Task cancelled.", nil
+			}
+
+			// Inject message into interrupt channel for the tool loop
+			select {
+			case task.interrupt <- content:
+				logger.InfoCF("agent", "User intervention queued",
+					map[string]any{"task_id": taskID, "content": utils.Truncate(content, 80)})
+			default:
+				logger.WarnCF("agent", "Interrupt channel full, message dropped",
+					map[string]any{"task_id": taskID})
+			}
+			return "Intervention sent to running task.", nil
+		}
+		// Task not found — fall through to normal processing
+	}
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
@@ -428,9 +508,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		agent = al.registry.GetDefaultAgent()
 	}
 
-	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
+	// Use routed session key, but honor ANY pre-set session key (for ProcessDirect/cron)
 	sessionKey := route.SessionKey
-	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
+	if msg.SessionKey != "" {
 		sessionKey = msg.SessionKey
 	}
 
@@ -509,8 +589,100 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	})
 }
 
+// acquireSessionLock gets or creates a per-session semaphore and acquires it.
+// Returns false if the context is cancelled before the lock is acquired.
+func (al *AgentLoop) acquireSessionLock(ctx context.Context, sessionKey string) bool {
+	val, _ := al.sessionLocks.LoadOrStore(sessionKey, newSessionSemaphore())
+	sem := val.(*sessionSemaphore)
+	select {
+	case <-sem.ch:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// releaseSessionLock releases the per-session semaphore.
+func (al *AgentLoop) releaseSessionLock(sessionKey string) {
+	if val, ok := al.sessionLocks.Load(sessionKey); ok {
+		sem := val.(*sessionSemaphore)
+		sem.ch <- struct{}{}
+	}
+}
+
 // runAgentLoop is the core message processing logic.
 func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
+	// -1. Acquire per-session lock to prevent concurrent access on the same session
+	if !al.acquireSessionLock(ctx, opts.SessionKey) {
+		return "", fmt.Errorf("context cancelled while waiting for session lock")
+	}
+	defer al.releaseSessionLock(opts.SessionKey)
+
+	// -0. Create cancellable child context and register active task
+	taskCtx, taskCancel := context.WithCancel(ctx)
+	defer taskCancel()
+
+	task := &activeTask{
+		Description: utils.Truncate(opts.UserMessage, 80),
+		MaxIter:     agent.MaxIterations,
+		StartedAt:   time.Now(),
+		cancel:      taskCancel,
+		interrupt:   make(chan string, 1),
+	}
+
+	// For background tasks (cron/cli), generate a TaskID and resolve notification channel
+	isBackgroundTask := constants.IsInternalChannel(opts.Channel) && al.state != nil
+	if isBackgroundTask && opts.TaskID == "" {
+		opts.TaskID = fmt.Sprintf("task-%s-%d", opts.SessionKey, time.Now().UnixMilli())
+
+		// Resolve user's last active channel for notifications
+		if lastChannel := al.state.GetLastChannel(); lastChannel != "" {
+			// lastChannel format: "channel:chatID"
+			if idx := strings.Index(lastChannel, ":"); idx > 0 {
+				notifyChannel := lastChannel[:idx]
+				notifyChatID := lastChannel[idx+1:]
+
+				// Override opts channel/chatID for status updates
+				opts.Channel = notifyChannel
+				opts.ChatID = notifyChatID
+
+				// Send initial task notification
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel:      notifyChannel,
+					ChatID:       notifyChatID,
+					Content:      fmt.Sprintf("\U0001F916 Background task started\n%s", task.Description),
+					IsTaskStatus: true,
+					TaskID:       opts.TaskID,
+				})
+			}
+		}
+	}
+
+	// Use TaskID as key if available (for background tasks), else sessionKey
+	taskKey := opts.SessionKey
+	if opts.TaskID != "" {
+		taskKey = opts.TaskID
+	}
+	al.activeTasks.Store(taskKey, task)
+	defer func() {
+		al.activeTasks.Delete(taskKey)
+
+		// Publish final task status on completion for background tasks
+		if opts.TaskID != "" && !constants.IsInternalChannel(opts.Channel) {
+			elapsed := time.Since(task.StartedAt)
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel:      opts.Channel,
+				ChatID:       opts.ChatID,
+				Content:      fmt.Sprintf("\u2705 Task completed (%.1fs)\n%s", elapsed.Seconds(), task.Description),
+				IsTaskStatus: true,
+				TaskID:       opts.TaskID,
+			})
+		}
+	}()
+
+	// Replace ctx with the cancellable child context
+	ctx = taskCtx
+
 	// 0. Record last channel for heartbeat notifications (skip internal channels)
 	if opts.Channel != "" && opts.ChatID != "" {
 		// Don't record internal channels (cli, system, subagent)
@@ -571,7 +743,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	}
 
 	// 5. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
+	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts, task)
 	if err != nil {
 		return "", err
 	}
@@ -734,12 +906,111 @@ func buildPlanReminder(planStatus string) (providers.Message, bool) {
 	return providers.Message{Role: "user", Content: content}, true
 }
 
+// cdPrefixPattern matches "cd /some/path && " at the start of a shell command.
+var cdPrefixPattern = regexp.MustCompile(`^cd\s+\S+\s*&&\s*`)
+
+// buildArgsSnippet produces a human-friendly snippet for the tool log.
+// For exec: extracts the command and strips the leading "cd <workspace> && ".
+// For file tools: extracts the path and strips the workspace prefix.
+// Falls back to raw JSON truncation.
+func buildArgsSnippet(toolName string, args map[string]interface{}, workspace string) string {
+	switch toolName {
+	case "exec":
+		cmd, _ := args["command"].(string)
+		if cmd == "" {
+			break
+		}
+		cmd = cdPrefixPattern.ReplaceAllString(cmd, "")
+		return utils.Truncate(cmd, 80)
+
+	case "read_file", "write_file", "edit_file", "append_file", "list_dir":
+		path, _ := args["path"].(string)
+		if path == "" {
+			break
+		}
+		if workspace != "" {
+			path = strings.TrimPrefix(path, workspace)
+			path = strings.TrimPrefix(path, "/")
+		}
+		extra := ""
+		if toolName == "edit_file" {
+			if old, ok := args["old_text"].(string); ok && old != "" {
+				extra = "  old:" + utils.Truncate(old, 30)
+			}
+		}
+		return utils.Truncate(path, 60) + extra
+	}
+
+	// Default: raw JSON truncated
+	argsJSON, _ := json.Marshal(args)
+	return utils.Truncate(string(argsJSON), 80)
+}
+
+// buildRichStatus builds a terminal-like status display from the active task's tool log.
+func buildRichStatus(task *activeTask, isBackground bool, workspace string) string {
+	task.mu.Lock()
+	defer task.mu.Unlock()
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "\U0001F504 Task in progress (%d/%d)\n", task.Iteration, task.MaxIter)
+	// Show project directory name so user knows which workspace is active
+	if workspace != "" {
+		// Extract last path component as project name
+		project := workspace
+		if idx := strings.LastIndex(workspace, "/"); idx >= 0 {
+			project = workspace[idx+1:]
+		} else if idx := strings.LastIndex(workspace, "\\"); idx >= 0 {
+			project = workspace[idx+1:]
+		}
+		if project != "" {
+			fmt.Fprintf(&sb, "\U0001F4C2 %s\n", project)
+		}
+	}
+	sb.WriteString("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n")
+
+	// Sliding window: show only the last maxToolLogEntries entries
+	entries := task.toolLog
+	if len(entries) > maxToolLogEntries {
+		entries = entries[len(entries)-maxToolLogEntries:]
+	}
+	for _, entry := range entries {
+		isErr := strings.HasPrefix(entry.Result, "\u2717")
+		if isErr {
+			// Error: multi-line block with decoration
+			if entry.ArgsSnip != "" {
+				fmt.Fprintf(&sb, "%s %s %s\n", entry.Name, entry.ArgsSnip, entry.Result)
+			} else {
+				fmt.Fprintf(&sb, "%s %s\n", entry.Name, entry.Result)
+			}
+			if entry.ErrDetail != "" {
+				for _, line := range strings.Split(entry.ErrDetail, "\n") {
+					fmt.Fprintf(&sb, "\u2502 %s\n", line)
+				}
+			}
+		} else {
+			// Success/pending: compact one-liner
+			if entry.ArgsSnip != "" {
+				fmt.Fprintf(&sb, "%s %s %s\n", entry.Name, utils.Truncate(entry.ArgsSnip, 40), entry.Result)
+			} else {
+				fmt.Fprintf(&sb, "%s %s\n", entry.Name, entry.Result)
+			}
+		}
+	}
+
+	sb.WriteString("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n")
+	if isBackground {
+		sb.WriteString("\u21A9\uFE0F Reply to intervene")
+	}
+	return sb.String()
+}
+
 // runLLMIteration executes the LLM call loop with tool handling.
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
 	agent *AgentInstance,
 	messages []providers.Message,
 	opts processOptions,
+	task *activeTask,
 ) (string, int, error) {
 	iteration := 0
 	var finalContent string
@@ -747,8 +1018,32 @@ func (al *AgentLoop) runLLMIteration(
 
 	maxIter := agent.MaxIterations
 
+	// Determine if this is a background task (cron, heartbeat, etc.)
+	isBackground := opts.TaskID != ""
+
 	for iteration < maxIter {
 		iteration++
+
+		// Update active task iteration
+		if task != nil {
+			task.mu.Lock()
+			task.Iteration = iteration
+			task.mu.Unlock()
+		}
+
+		// Check for user intervention via interrupt channel
+		if task != nil {
+			select {
+			case msg := <-task.interrupt:
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: "[User Intervention] " + msg,
+				})
+				logger.InfoCF("agent", "User intervention injected",
+					map[string]any{"agent_id": agent.ID, "iteration": iteration})
+			default:
+			}
+		}
 
 		logger.DebugCF("agent", "LLM iteration",
 			map[string]any{
@@ -901,14 +1196,36 @@ func (al *AgentLoop) runLLMIteration(
 				"iteration": iteration,
 			})
 
-		// Publish status update for channels that support placeholder editing
-		if !constants.IsInternalChannel(opts.Channel) {
-			al.bus.PublishOutbound(bus.OutboundMessage{
-				Channel:  opts.Channel,
-				ChatID:   opts.ChatID,
-				Content:  fmt.Sprintf("🔧 %s (%d/%d)", strings.Join(toolNames, ", "), iteration, maxIter),
-				IsStatus: true,
-			})
+		// Publish rich status update
+		if !constants.IsInternalChannel(opts.Channel) && task != nil {
+			// Add pending entries to tool log for the current tool calls
+			task.mu.Lock()
+			for _, tc := range normalizedToolCalls {
+				task.toolLog = append(task.toolLog, toolLogEntry{
+					Name:     fmt.Sprintf("[%d] %s", iteration, tc.Name),
+					ArgsSnip: buildArgsSnippet(tc.Name, tc.Arguments, agent.Workspace),
+					Result:   "\u23F3",
+				})
+			}
+			task.mu.Unlock()
+
+			statusContent := buildRichStatus(task, isBackground, agent.Workspace)
+			if isBackground {
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel:      opts.Channel,
+					ChatID:       opts.ChatID,
+					Content:      statusContent,
+					IsTaskStatus: true,
+					TaskID:       opts.TaskID,
+				})
+			} else {
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel:  opts.Channel,
+					ChatID:   opts.ChatID,
+					Content:  statusContent,
+					IsStatus: true,
+				})
+			}
 		}
 
 		// Build assistant message with tool calls
@@ -945,7 +1262,7 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Execute tool calls
 		var lastBlocker string
-		for _, tc := range normalizedToolCalls {
+		for tcIdx, tc := range normalizedToolCalls {
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
 			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
@@ -973,11 +1290,42 @@ func (al *AgentLoop) runLLMIteration(
 
 			// Block non-allowed tools during plan interview mode.
 			// Only read-type tools and MEMORY.md writes are permitted.
+			toolStart := time.Now()
 			var toolResult *tools.ToolResult
 			if isPlanPreExecution(agent.ContextBuilder.GetPlanStatus()) && !isToolAllowedDuringInterview(tc.Name, tc.Arguments) {
 				toolResult = tools.ErrorResult("Interview mode: only read tools and MEMORY.md edits are allowed. Focus on asking questions and updating the plan.")
 			} else {
 				toolResult = agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+			}
+			toolDuration := time.Since(toolStart)
+
+			// Update tool log entry with result
+			if task != nil {
+				task.mu.Lock()
+				// Find the matching pending entry (added earlier in this iteration)
+				logIdx := len(task.toolLog) - len(normalizedToolCalls) + tcIdx
+				if logIdx >= 0 && logIdx < len(task.toolLog) {
+					if toolResult.IsError || toolResult.Err != nil {
+						task.toolLog[logIdx].Result = fmt.Sprintf("\u2717 %.1fs", toolDuration.Seconds())
+						// Extract error detail for block display
+						if toolResult.Err != nil {
+							task.toolLog[logIdx].ErrDetail = utils.Truncate(toolResult.Err.Error(), 120)
+						} else if toolResult.ForLLM != "" {
+							// exec returns IsError with exit info in ForLLM, not Err
+							// Show last few lines (stderr / exit code)
+							lines := strings.Split(strings.TrimSpace(toolResult.ForLLM), "\n")
+							start := len(lines) - 3
+							if start < 0 {
+								start = 0
+							}
+							task.toolLog[logIdx].ErrDetail = utils.Truncate(
+								strings.Join(lines[start:], "\n"), 200)
+						}
+					} else {
+						task.toolLog[logIdx].Result = fmt.Sprintf("\u2713 %.1fs", toolDuration.Seconds())
+					}
+				}
+				task.mu.Unlock()
 			}
 
 			// Send ForUser content to user immediately if not Silent
@@ -1014,6 +1362,15 @@ func (al *AgentLoop) runLLMIteration(
 
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
+		}
+
+		// Trim tool log sliding window to prevent unbounded growth
+		if task != nil {
+			task.mu.Lock()
+			if len(task.toolLog) > maxToolLogEntries {
+				task.toolLog = task.toolLog[len(task.toolLog)-maxToolLogEntries:]
+			}
+			task.mu.Unlock()
 		}
 
 		// Inject ephemeral task reminder to prevent focus drift.

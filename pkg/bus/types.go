@@ -15,6 +15,8 @@ type OutboundMessage struct {
 	ChatID          string `json:"chat_id"`
 	Content         string `json:"content"`
 	IsStatus        bool   `json:"is_status,omitempty"`
+	IsTaskStatus    bool   `json:"is_task_status,omitempty"`
+	TaskID          string `json:"task_id,omitempty"`
 	SkipPlaceholder bool   `json:"skip_placeholder,omitempty"`
 }
 

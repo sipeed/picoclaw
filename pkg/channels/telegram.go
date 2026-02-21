@@ -26,13 +26,15 @@ import (
 
 type TelegramChannel struct {
 	*BaseChannel
-	bot          *telego.Bot
-	commands     TelegramCommander
-	config       *config.Config
-	chatIDs      map[string]int64
-	transcriber  *voice.GroqTranscriber
-	placeholders sync.Map // chatID -> messageID
-	stopThinking sync.Map // chatID -> thinkingCancel
+	bot               *telego.Bot
+	commands          TelegramCommander
+	config            *config.Config
+	chatIDs           map[string]int64
+	transcriber       *voice.GroqTranscriber
+	placeholders      sync.Map // chatID -> messageID
+	stopThinking      sync.Map // chatID -> thinkingCancel
+	taskStatuses      sync.Map // taskID -> messageID (int)
+	taskStatusReverse sync.Map // messageID (int) -> taskID (string)
 }
 
 type thinkingCancel struct {
@@ -180,6 +182,47 @@ func (c *TelegramChannel) EditStatus(ctx context.Context, msg bus.OutboundMessag
 	editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), msg.Content)
 	_, err = c.bot.EditMessageText(ctx, editMsg)
 	return err
+}
+
+func (c *TelegramChannel) EditTaskStatus(ctx context.Context, msg bus.OutboundMessage) error {
+	if !c.IsRunning() || msg.TaskID == "" {
+		return nil
+	}
+	chatID, err := parseChatID(msg.ChatID)
+	if err != nil {
+		return nil
+	}
+
+	// Check if we already have a message for this task
+	if existingMsgID, ok := c.taskStatuses.Load(msg.TaskID); ok {
+		// Edit existing task status message
+		editMsg := tu.EditMessageText(tu.ID(chatID), existingMsgID.(int), msg.Content)
+		_, err = c.bot.EditMessageText(ctx, editMsg)
+		if err != nil {
+			logger.DebugCF("telegram", "EditTaskStatus edit failed", map[string]interface{}{
+				"error":   err.Error(),
+				"task_id": msg.TaskID,
+			})
+		}
+		return err
+	}
+
+	// First task status message: send a new message and track it
+	tgMsg := tu.Message(tu.ID(chatID), msg.Content)
+	sent, err := c.bot.SendMessage(ctx, tgMsg)
+	if err != nil {
+		return err
+	}
+	c.taskStatuses.Store(msg.TaskID, sent.MessageID)
+	c.taskStatusReverse.Store(sent.MessageID, msg.TaskID)
+	return nil
+}
+
+// CleanupTaskStatus removes tracking entries for a completed task.
+func (c *TelegramChannel) CleanupTaskStatus(taskID string) {
+	if msgID, ok := c.taskStatuses.LoadAndDelete(taskID); ok {
+		c.taskStatusReverse.Delete(msgID)
+	}
 }
 
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
@@ -435,6 +478,16 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 		"peer_kind":  peerKind,
 		"peer_id":    peerID,
+	}
+
+	// Detect reply-to messages for task intervention
+	if message.ReplyToMessage != nil {
+		replyToID := message.ReplyToMessage.MessageID
+		metadata["reply_to_message_id"] = fmt.Sprintf("%d", replyToID)
+		// Check if replying to a task status message
+		if taskID, ok := c.taskStatusReverse.Load(replyToID); ok {
+			metadata["task_id"] = taskID.(string)
+		}
 	}
 
 	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
