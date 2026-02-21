@@ -129,7 +129,46 @@ PicoClaw can be deployed on almost any Linux device!
 
 ### Install with precompiled binary
 
-Download the firmware for your platform from the [release](https://github.com/sipeed/picoclaw/releases) page.
+Download the binary for your platform from the [releases](https://github.com/sipeed/picoclaw/releases) page.
+
+**Quick install (recommended):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**Or with wget:**
+
+```bash
+wget -qO- https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh | bash
+```
+
+**Manual download:**
+
+```bash
+# Download the script
+wget https://raw.githubusercontent.com/sipeed/picoclaw/main/install.sh
+chmod +x install.sh
+
+# Install latest version
+./install.sh
+
+# Or specify a version
+./install.sh v0.1.2
+
+# See all options
+./install.sh -h
+```
+
+**Install script options:**
+
+| Option | Description |
+|--------|-------------|
+| `-l, --list-versions` | List all available versions |
+| `-a, --list-assets` | List download assets |
+| `-i, --install-dir` | Custom installation directory |
+| `-d, --download` | Download only (don't install) |
+| `-y, --yes` | Skip confirmation prompts |
 
 ### Install from source (latest features, recommended for development)
 
