@@ -35,9 +35,19 @@ var thinkingFrames = [thinkingFrameCount]string{"⠋", "⠙", "⠹", "⠸"}
 // tickMsg drives the thinking animation and event polling
 type tickMsg time.Time
 
+// chatRole is a typed constant for message roles
+type chatRole string
+
+const (
+	roleUser      chatRole = "user"
+	roleAssistant chatRole = "assistant"
+	roleTool      chatRole = "tool"
+	roleSystem    chatRole = "system"
+)
+
 // chatMessage represents a single message in the chat history
 type chatMessage struct {
-	role     string // "user", "assistant", "tool", "system"
+	role     chatRole
 	content  string
 	toolName string
 	toolID   string
@@ -121,7 +131,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ToolCallStartedMsg:
 		m.messages = append(m.messages, chatMessage{
-			role:     "tool",
+			role:     roleTool,
 			content:  fmt.Sprintf("Running %s...", msg.Name),
 			toolName: msg.Name,
 			toolID:   msg.ID,
@@ -131,7 +141,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ToolCallCompletedMsg:
 		for i := len(m.messages) - 1; i >= 0; i-- {
-			if m.messages[i].role == "tool" && m.messages[i].toolID == msg.ID {
+			if m.messages[i].role == roleTool && m.messages[i].toolID == msg.ID {
 				m.messages[i].toolDone = true
 				m.messages[i].toolErr = msg.IsError
 				if msg.IsError {
@@ -147,7 +157,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ResponseMsg:
 		m.messages = append(m.messages, chatMessage{
-			role:    "assistant",
+			role:    roleAssistant,
 			content: msg.Content,
 		})
 		m.thinking = false
@@ -156,7 +166,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ErrorMsg:
 		m.messages = append(m.messages, chatMessage{
-			role:    "system",
+			role:    roleSystem,
 			content: fmt.Sprintf("Error: %v", msg.Err),
 		})
 		m.thinking = false
@@ -165,7 +175,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SlashCommandResultMsg:
 		m.messages = append(m.messages, chatMessage{
-			role:    "system",
+			role:    roleSystem,
 			content: msg.Result,
 		})
 		m.thinking = false
@@ -229,7 +239,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Add user message to chat
 		m.messages = append(m.messages, chatMessage{
-			role:    "user",
+			role:    roleUser,
 			content: input,
 		})
 		m.thinking = true
@@ -298,7 +308,13 @@ func (m Model) processMessage(input string) tea.Cmd {
 	agentLoop := m.agentLoop
 	sessionKey := m.sessionKey
 
-	return func() tea.Msg {
+	return func() (result tea.Msg) {
+		defer func() {
+			if r := recover(); r != nil {
+				result = ErrorMsg{Err: fmt.Errorf("agent panic: %v", r)}
+			}
+		}()
+
 		ctx := context.Background()
 		response, err := agentLoop.ProcessDirect(ctx, input, sessionKey)
 		if err != nil {
@@ -377,11 +393,11 @@ func (m *Model) updateViewport() {
 
 	for _, msg := range m.messages {
 		switch msg.role {
-		case "user":
+		case roleUser:
 			label := userLabelStyle.Render("You:")
 			sb.WriteString(label + " " + msg.content + "\n\n")
 
-		case "assistant":
+		case roleAssistant:
 			label := assistantLabelStyle.Render("Assistant:")
 			rendered := msg.content
 			if m.renderer != nil {
@@ -391,7 +407,7 @@ func (m *Model) updateViewport() {
 			}
 			sb.WriteString(label + "\n" + rendered + "\n\n")
 
-		case "tool":
+		case roleTool:
 			var styled string
 			switch {
 			case msg.toolErr:
@@ -403,7 +419,7 @@ func (m *Model) updateViewport() {
 			}
 			sb.WriteString("  " + styled + "\n")
 
-		case "system":
+		case roleSystem:
 			sb.WriteString(msg.content + "\n\n")
 		}
 	}
@@ -446,7 +462,7 @@ func (m Model) renderStatusBar() string {
 	// Count user and assistant messages
 	msgCount := 0
 	for _, msg := range m.messages {
-		if msg.role == "user" || msg.role == "assistant" {
+		if msg.role == roleUser || msg.role == roleAssistant {
 			msgCount++
 		}
 	}

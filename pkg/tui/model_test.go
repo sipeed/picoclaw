@@ -128,7 +128,7 @@ func TestModel_Update_ResponseMsg_AddsAssistantMessage(t *testing.T) {
 
 	found := false
 	for _, msg := range model.messages {
-		if msg.role == "assistant" && msg.content == "Hello, world!" {
+		if msg.role == roleAssistant && msg.content == "Hello, world!" {
 			found = true
 			break
 		}
@@ -156,7 +156,7 @@ func TestModel_Update_ToolCallStarted_AddsToolMessage(t *testing.T) {
 	}
 
 	msg := model.messages[0]
-	if msg.role != "tool" {
+	if msg.role != roleTool {
 		t.Errorf("expected role 'tool', got %q", msg.role)
 	}
 	if msg.toolName != "web_search" {
@@ -244,7 +244,7 @@ func TestModel_Update_ErrorMsg_AddsSystemMessage(t *testing.T) {
 
 	found := false
 	for _, msg := range model.messages {
-		if msg.role == "system" && strings.Contains(msg.content, "connection refused") {
+		if msg.role == roleSystem && strings.Contains(msg.content, "connection refused") {
 			found = true
 			break
 		}
@@ -262,7 +262,7 @@ func TestModel_Update_SlashCommandResult(t *testing.T) {
 
 	found := false
 	for _, msg := range model.messages {
-		if msg.role == "system" && msg.content == "Session: default" {
+		if msg.role == roleSystem && msg.content == "Session: default" {
 			found = true
 			break
 		}
