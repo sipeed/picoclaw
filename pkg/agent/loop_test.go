@@ -1484,23 +1484,32 @@ func TestFormatCompactEntry(t *testing.T) {
 		entry    toolLogEntry
 		wantSub  string // must be a substring
 		wantMark string // result marker must appear
+		noTime   bool   // if true, duration should NOT appear
 	}{
 		{
-			name:     "short entry",
-			entry:    toolLogEntry{Name: "exec", ArgsSnip: "ls", Result: "✓ 1.0s"},
+			name:     "exec short entry",
+			entry:    toolLogEntry{Name: "[1] exec", ArgsSnip: "ls", Result: "✓ 1.0s"},
 			wantSub:  "exec ls",
-			wantMark: "✓",
+			wantMark: "✓ 1.0s", // exec keeps duration
 		},
 		{
-			name:     "long entry is truncated with marker preserved",
-			entry:    toolLogEntry{Name: "exec", ArgsSnip: "pytest tests/integration/test_very_long_name_that_exceeds_width.py", Result: "✗ 3.0s"},
+			name:     "exec long entry truncated from end",
+			entry:    toolLogEntry{Name: "[2] exec", ArgsSnip: "pytest tests/integration/test_very_long_name.py", Result: "✗ 3.0s"},
 			wantMark: "✗",
 		},
 		{
-			name:     "no args",
-			entry:    toolLogEntry{Name: "list_dir", Result: "✓ 0.1s"},
-			wantSub:  "list_dir",
+			name:     "file tool omits duration, shows filename",
+			entry:    toolLogEntry{Name: "[3] edit_file", ArgsSnip: "projects/terra/src/deep/nested/backend.py", Result: "✓ 0.0s"},
+			wantSub:  "backend.py",
 			wantMark: "✓",
+			noTime:   true,
+		},
+		{
+			name:     "file tool path truncates from start",
+			entry:    toolLogEntry{Name: "[4] read_file", ArgsSnip: "projects/terra-py-form/src/terra_py_form/hot/state/backend.py", Result: "✓ 0.1s"},
+			wantSub:  "backend.py",
+			wantMark: "✓",
+			noTime:   true,
 		},
 	}
 	for _, tt := range tests {
@@ -1511,6 +1520,9 @@ func TestFormatCompactEntry(t *testing.T) {
 			}
 			if !strings.Contains(got, tt.wantMark) {
 				t.Errorf("result marker %q missing from: %q", tt.wantMark, got)
+			}
+			if tt.noTime && strings.Contains(got, "0s") {
+				t.Errorf("file tool should omit duration, got: %q", got)
 			}
 			// Must not exceed maxEntryLineWidth
 			if runeLen := len([]rune(got)); runeLen > maxEntryLineWidth {

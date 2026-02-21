@@ -990,32 +990,55 @@ func buildArgsSnippet(toolName string, args map[string]interface{}, workspace st
 // entries under this avoids line-wrapping that causes height jitter.
 const maxEntryLineWidth = 36
 
+// isFileToolEntry returns true if the entry name contains a file-operation tool.
+func isFileToolEntry(name string) bool {
+	for _, t := range []string{"read_file", "write_file", "edit_file", "append_file", "list_dir"} {
+		if strings.Contains(name, t) {
+			return true
+		}
+	}
+	return false
+}
+
 // formatCompactEntry formats a finished tool log entry as a fixed single line.
 // The result marker (✓/✗) is always shown at the end regardless of truncation.
+// File tools omit duration (always near-instant); paths truncate from the
+// start so the filename is always visible.
 func formatCompactEntry(entry toolLogEntry) string {
-	// result is e.g. "✓ 1.2s" or "✗ 3.0s" — always 6-8 chars
 	result := entry.Result
 	if result == "" {
 		result = "\u23F3" // ⏳
 	}
 
-	prefix := entry.Name
-	if entry.ArgsSnip != "" {
-		prefix += " " + entry.ArgsSnip
+	// File tools: strip duration, keep only marker (✓/✗/⏳)
+	isFile := isFileToolEntry(entry.Name)
+	if isFile {
+		if r := []rune(result); len(r) > 0 {
+			result = string(r[0:1]) // just the symbol
+		}
 	}
 
-	// Budget: total ≤ maxEntryLineWidth, need space for " " + result
-	budget := maxEntryLineWidth - 1 - utf8.RuneCountInString(result)
-	if budget < 4 {
-		budget = 4
+	// Budget for ArgsSnip: total - name - " " - " " - result
+	nameLen := utf8.RuneCountInString(entry.Name)
+	resultLen := utf8.RuneCountInString(result)
+	argsBudget := maxEntryLineWidth - nameLen - 1 - 1 - resultLen
+
+	args := entry.ArgsSnip
+	if args != "" && argsBudget > 3 {
+		argsRunes := []rune(args)
+		if len(argsRunes) > argsBudget {
+			// Paths: truncate from the start, keeping the filename visible
+			if strings.Contains(args, "/") {
+				args = "\u2026" + string(argsRunes[len(argsRunes)-argsBudget+1:])
+			} else {
+				args = string(argsRunes[:argsBudget-1]) + "\u2026"
+			}
+		}
+		return entry.Name + " " + args + " " + result
 	}
 
-	prefixRunes := []rune(prefix)
-	if len(prefixRunes) > budget {
-		prefix = string(prefixRunes[:budget-1]) + "\u2026" // …
-	}
-
-	return prefix + " " + result
+	// No room for args or args empty
+	return entry.Name + " " + result
 }
 
 // Display layout constants.
