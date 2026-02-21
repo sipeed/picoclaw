@@ -120,6 +120,8 @@ func main() {
 		sessionsCmd()
 	case "skills":
 		skillsCmd()
+	case "update":
+		updateCmd()
 	case "version", "--version", "-v":
 		printVersion()
 	case "--help", "-h":
@@ -146,6 +148,7 @@ func printHelp() {
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  sessions    Manage sessions (list, show, delete, clear)")
 	fmt.Println("  doctor      Diagnose and fix common problems (--fix to auto-repair)")
+	fmt.Println("  update      Check for updates and self-update")
 	fmt.Println("  version     Show version information")
 }
 

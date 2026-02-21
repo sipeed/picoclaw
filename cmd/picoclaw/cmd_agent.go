@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/update"
 )
 
 func agentCmd() {
@@ -66,6 +67,12 @@ func agentCmd() {
 		}
 	}
 
+	// Check for updates in the background (non-blocking, at most once per 24h)
+	updateHint := make(chan string, 1)
+	go func() {
+		updateHint <- update.CheckHint(version)
+	}()
+
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
@@ -109,6 +116,17 @@ func agentCmd() {
 			"skills_available": startupInfo["skills"].(map[string]any)["available"],
 		})
 
+	// Print update hint if available (non-blocking select)
+	printUpdateHint := func() {
+		select {
+		case v := <-updateHint:
+			if v != "" {
+				fmt.Printf("\nA new version (%s) is available. Run 'picoclaw update' to upgrade.\n\n", v)
+			}
+		default:
+		}
+	}
+
 	if message != "" {
 		ctx := context.Background()
 		spin := newSpinner("Thinking...")
@@ -120,7 +138,9 @@ func agentCmd() {
 			os.Exit(1)
 		}
 		fmt.Printf("\n%s %s\n", logo, response)
+		printUpdateHint()
 	} else {
+		printUpdateHint()
 		fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n\n", logo)
 		interactiveMode(agentLoop, sessionKey)
 	}
