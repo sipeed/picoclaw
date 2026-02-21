@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -146,7 +147,7 @@ func (c *Channel) Start(ctx context.Context) error {
 	}
 
 	c.setRunning(true)
-	logger.InfoCF("websocket", "WebSocket channel starting", map[string]interface{}{
+	logger.InfoCF("websocket", "WebSocket channel starting", map[string]any{
 		"address": addr,
 	})
 
@@ -164,7 +165,7 @@ func (c *Channel) Start(ctx context.Context) error {
 		c.setRunning(false)
 		return fmt.Errorf("failed to start WebSocket server: %w", err)
 	case <-time.After(100 * time.Millisecond):
-		logger.InfoCF("websocket", "WebSocket channel started successfully", map[string]interface{}{
+		logger.InfoCF("websocket", "WebSocket channel started successfully", map[string]any{
 			"address": addr,
 		})
 		return nil
@@ -180,7 +181,7 @@ func (c *Channel) Stop(ctx context.Context) error {
 	}
 
 	// Close all client connections
-	c.clients.Range(func(key, value interface{}) bool {
+	c.clients.Range(func(key, value any) bool {
 		if conn, ok := value.(*websocket.Conn); ok {
 			conn.Close()
 		}
@@ -193,7 +194,7 @@ func (c *Channel) Stop(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := c.server.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorCF("websocket", "Error shutting down server", map[string]interface{}{
+			logger.ErrorCF("websocket", "Error shutting down server", map[string]any{
 				"error": err.Error(),
 			})
 		}
@@ -224,7 +225,7 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 
 	// Ensure UTF-8 validity
 	if !json.Valid(data) {
-		logger.ErrorCF("websocket", "Invalid JSON data", map[string]interface{}{
+		logger.ErrorCF("websocket", "Invalid JSON data", map[string]any{
 			"content_preview": msg.Content[:min(len(msg.Content), 100)],
 		})
 		return fmt.Errorf("invalid JSON message")
@@ -238,7 +239,7 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 				err := wsConn.WriteMessage(websocket.TextMessage, data)
 				if err != nil {
 					// Connection may be dead, clean it up
-					logger.WarnCF("websocket", "Failed to send to client, removing connection", map[string]interface{}{
+					logger.WarnCF("websocket", "Failed to send to client, removing connection", map[string]any{
 						"client": msg.ChatID,
 						"error":  err.Error(),
 					})
@@ -253,11 +254,11 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 
 	// Broadcast to all connected clients
 	var lastErr error
-	deadClients := make([]interface{}, 0)
-	c.clients.Range(func(key, value interface{}) bool {
+	deadClients := make([]any, 0)
+	c.clients.Range(func(key, value any) bool {
 		if conn, ok := value.(*websocket.Conn); ok {
 			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				logger.WarnCF("websocket", "Failed to send to client", map[string]interface{}{
+				logger.WarnCF("websocket", "Failed to send to client", map[string]any{
 					"client": key,
 					"error":  err.Error(),
 				})
@@ -271,7 +272,7 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	// Clean up dead connections
 	for _, key := range deadClients {
 		c.clients.Delete(key)
-		logger.InfoCF("websocket", "Removed dead client connection", map[string]interface{}{
+		logger.InfoCF("websocket", "Removed dead client connection", map[string]any{
 			"client": key,
 		})
 	}
@@ -291,7 +292,7 @@ func min(a, b int) int {
 func (c *Channel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := c.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		logger.ErrorCF("websocket", "Failed to upgrade connection", map[string]interface{}{
+		logger.ErrorCF("websocket", "Failed to upgrade connection", map[string]any{
 			"error": err.Error(),
 		})
 		return
@@ -301,7 +302,7 @@ func (c *Channel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	clientID := r.RemoteAddr
 	c.clients.Store(clientID, conn)
 
-	logger.InfoCF("websocket", "New client connected", map[string]interface{}{
+	logger.InfoCF("websocket", "New client connected", map[string]any{
 		"client_id": clientID,
 	})
 
@@ -314,7 +315,7 @@ func (c *Channel) handleClient(clientID string, conn *websocket.Conn) {
 	defer func() {
 		conn.Close()
 		c.clients.Delete(clientID)
-		logger.InfoCF("websocket", "Client disconnected", map[string]interface{}{
+		logger.InfoCF("websocket", "Client disconnected", map[string]any{
 			"client_id": clientID,
 		})
 	}()
@@ -340,7 +341,7 @@ func (c *Channel) handleClient(clientID string, conn *websocket.Conn) {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					logger.ErrorCF("websocket", "WebSocket error", map[string]interface{}{
+					logger.ErrorCF("websocket", "WebSocket error", map[string]any{
 						"client_id": clientID,
 						"error":     err.Error(),
 					})
@@ -358,7 +359,7 @@ func (c *Channel) handleClient(clientID string, conn *websocket.Conn) {
 		case <-pingTicker.C:
 			// Send ping to check connection health
 			if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
-				logger.WarnCF("websocket", "Failed to send ping", map[string]interface{}{
+				logger.WarnCF("websocket", "Failed to send ping", map[string]any{
 					"client_id": clientID,
 					"error":     err.Error(),
 				})
@@ -371,7 +372,7 @@ func (c *Channel) handleClient(clientID string, conn *websocket.Conn) {
 
 			var wsMsg WebSocketMessage
 			if err := json.Unmarshal(message, &wsMsg); err != nil {
-				logger.WarnCF("websocket", "Failed to parse message", map[string]interface{}{
+				logger.WarnCF("websocket", "Failed to parse message", map[string]any{
 					"client_id": clientID,
 					"error":     err.Error(),
 				})
@@ -382,13 +383,13 @@ func (c *Channel) handleClient(clientID string, conn *websocket.Conn) {
 			if wsMsg.Type == "chat" {
 				// Check allowlist
 				if !c.IsAllowed(clientID) {
-					logger.WarnCF("websocket", "Unauthorized client", map[string]interface{}{
+					logger.WarnCF("websocket", "Unauthorized client", map[string]any{
 						"client_id": clientID,
 					})
 					continue
 				}
 
-				logger.DebugCF("websocket", "Received message", map[string]interface{}{
+				logger.DebugCF("websocket", "Received message", map[string]any{
 					"client_id": clientID,
 					"content":   wsMsg.Content,
 				})

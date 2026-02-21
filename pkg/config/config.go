@@ -298,9 +298,9 @@ type WeComAppConfig struct {
 }
 
 type WebSocketConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WEBSOCKET_ENABLED"`
-	Host      string              `json:"host" env:"PICOCLAW_CHANNELS_WEBSOCKET_HOST"`
-	Port      int                 `json:"port" env:"PICOCLAW_CHANNELS_WEBSOCKET_PORT"`
+	Enabled   bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_WEBSOCKET_ENABLED"`
+	Host      string              `json:"host"       env:"PICOCLAW_CHANNELS_WEBSOCKET_HOST"`
+	Port      int                 `json:"port"       env:"PICOCLAW_CHANNELS_WEBSOCKET_PORT"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WEBSOCKET_ALLOW_FROM"`
 }
 
