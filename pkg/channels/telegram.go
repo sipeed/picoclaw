@@ -179,7 +179,8 @@ func (c *TelegramChannel) EditStatus(ctx context.Context, msg bus.OutboundMessag
 	if !ok {
 		return nil // no placeholder → nothing to edit
 	}
-	editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), msg.Content)
+	editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), statusToHTML(msg.Content))
+	editMsg.ParseMode = telego.ModeHTML
 	_, err = c.bot.EditMessageText(ctx, editMsg)
 	return err
 }
@@ -196,7 +197,8 @@ func (c *TelegramChannel) EditTaskStatus(ctx context.Context, msg bus.OutboundMe
 	// Check if we already have a message for this task
 	if existingMsgID, ok := c.taskStatuses.Load(msg.TaskID); ok {
 		// Edit existing task status message
-		editMsg := tu.EditMessageText(tu.ID(chatID), existingMsgID.(int), msg.Content)
+		editMsg := tu.EditMessageText(tu.ID(chatID), existingMsgID.(int), statusToHTML(msg.Content))
+		editMsg.ParseMode = telego.ModeHTML
 		_, err = c.bot.EditMessageText(ctx, editMsg)
 		if err != nil {
 			logger.DebugCF("telegram", "EditTaskStatus edit failed", map[string]interface{}{
@@ -208,7 +210,8 @@ func (c *TelegramChannel) EditTaskStatus(ctx context.Context, msg bus.OutboundMe
 	}
 
 	// First task status message: send a new message and track it
-	tgMsg := tu.Message(tu.ID(chatID), msg.Content)
+	tgMsg := tu.Message(tu.ID(chatID), statusToHTML(msg.Content))
+	tgMsg.ParseMode = telego.ModeHTML
 	sent, err := c.bot.SendMessage(ctx, tgMsg)
 	if err != nil {
 		return err
@@ -982,9 +985,36 @@ func wrapByDisplayWidth(s string, maxWidth int) []string {
 	return lines
 }
 
+var htmlEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
 func escapeHTML(text string) string {
-	text = strings.ReplaceAll(text, "&", "&amp;")
-	text = strings.ReplaceAll(text, "<", "&lt;")
-	text = strings.ReplaceAll(text, ">", "&gt;")
-	return text
+	return htmlEscaper.Replace(text)
+}
+
+// statusToHTML converts status message content to Telegram HTML.
+// It HTML-escapes the text and converts backtick code fences to <pre> blocks.
+func statusToHTML(content string) string {
+	parts := strings.Split(content, "```")
+	if len(parts) < 3 {
+		return escapeHTML(content)
+	}
+	var sb strings.Builder
+	for i, part := range parts {
+		if i%2 == 0 {
+			sb.WriteString(escapeHTML(part))
+		} else {
+			// Strip optional language tag on the opening line
+			body := part
+			if nl := strings.Index(body, "\n"); nl >= 0 {
+				tag := strings.TrimSpace(body[:nl])
+				if tag == "" || !strings.ContainsAny(tag, " \t") {
+					body = body[nl+1:]
+				}
+			}
+			sb.WriteString("<pre>")
+			sb.WriteString(escapeHTML(body))
+			sb.WriteString("</pre>")
+		}
+	}
+	return sb.String()
 }
