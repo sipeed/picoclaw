@@ -17,6 +17,10 @@
     --done: #34c759;
     --current: var(--btn);
     --pending-phase: var(--hint);
+    /* Liquid Glass */
+    --tab-bar-bg: rgba(255, 255, 255, 0.72);
+    --tab-track-bg: rgba(0, 0, 0, 0.06);
+    --tab-pill-bg: rgba(255, 255, 255, 0.9);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -28,6 +32,10 @@
       --btn: var(--tg-theme-button-color, #5ac8fa);
       --btn-text: var(--tg-theme-button-text-color, #ffffff);
       --secondary-bg: var(--tg-theme-secondary-bg-color, #2c2c2e);
+      /* Liquid Glass — dark */
+      --tab-bar-bg: rgba(28, 28, 30, 0.72);
+      --tab-track-bg: rgba(255, 255, 255, 0.1);
+      --tab-pill-bg: rgba(255, 255, 255, 0.16);
     }
   }
 
@@ -43,15 +51,40 @@
 
   .tabs {
     display: flex;
-    background: var(--secondary-bg);
     position: sticky;
     top: 0;
     z-index: 10;
+    padding: 8px 12px;
+    background: var(--tab-bar-bg);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  .tabs-inner {
+    display: flex;
+    position: relative;
+    width: 100%;
+    background: var(--tab-track-bg);
+    border-radius: 10px;
+    padding: 2px;
+  }
+
+  .tab-indicator {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    left: 2px;
+    width: calc(25% - 2px);
+    border-radius: 8px;
+    background: var(--tab-pill-bg);
+    box-shadow: 0 0.5px 2px rgba(0,0,0,0.12), 0 0.5px 1px rgba(0,0,0,0.08);
+    transition: transform 0.38s cubic-bezier(0.25, 1, 0.5, 1);
+    z-index: 0;
   }
 
   .tab {
     flex: 1;
-    padding: 12px 4px;
+    padding: 7px 4px;
     text-align: center;
     font-size: 13px;
     font-weight: 500;
@@ -59,13 +92,15 @@
     border: none;
     background: none;
     cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s;
+    transition: color 0.25s ease;
+    position: relative;
+    z-index: 1;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .tab.active {
-    color: var(--btn);
-    border-bottom-color: var(--btn);
+    color: var(--text);
+    font-weight: 600;
   }
 
   .panel { display: none; padding: 16px; }
@@ -358,10 +393,13 @@
 <body>
 
 <div class="tabs">
-  <button class="tab active" data-panel="plan">Plan</button>
-  <button class="tab" data-panel="skills">Skills</button>
-  <button class="tab" data-panel="session">Session</button>
-  <button class="tab" data-panel="config">Config</button>
+  <div class="tabs-inner">
+    <div class="tab-indicator"></div>
+    <button class="tab active" data-panel="plan">Plan</button>
+    <button class="tab" data-panel="skills">Skills</button>
+    <button class="tab" data-panel="session">Session</button>
+    <button class="tab" data-panel="config">Config</button>
+  </div>
 </div>
 
 <div id="plan" class="panel active">
@@ -412,12 +450,20 @@ let initData = tg.initData || '';
 let selectedSkill = null;
 
 // Tab switching — always re-fetch data on tab switch
-document.querySelectorAll('.tab').forEach(tab => {
+const tabs = document.querySelectorAll('.tab');
+const tabIndicator = document.querySelector('.tab-indicator');
+
+function moveIndicator(index) {
+  tabIndicator.style.transform = 'translateX(' + (index * 100) + '%)';
+}
+
+tabs.forEach((tab, index) => {
   tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tabs.forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(tab.dataset.panel).classList.add('active');
+    moveIndicator(index);
 
     document.getElementById('send-bar').style.display =
       tab.dataset.panel === 'skills' && selectedSkill ? 'flex' : 'none';
