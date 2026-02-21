@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
@@ -332,4 +333,105 @@ func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	if !strings.Contains(result.ForLLM, "domain") && !strings.Contains(result.ForUser, "domain") {
 		t.Errorf("Expected domain error message, got ForLLM: %s", result.ForLLM)
 	}
+}
+
+func TestCreateHTTPClient_ProxyConfigured(t *testing.T) {
+	client, err := createHTTPClient("http://127.0.0.1:7890", 12*time.Second)
+	if err != nil {
+		t.Fatalf("createHTTPClient() error: %v", err)
+	}
+	if client.Timeout != 12*time.Second {
+		t.Fatalf("client.Timeout = %v, want %v", client.Timeout, 12*time.Second)
+	}
+
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+	}
+	if tr.Proxy == nil {
+		t.Fatal("transport.Proxy is nil, want non-nil")
+	}
+
+	req, err := http.NewRequest("GET", "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest() error: %v", err)
+	}
+	proxyURL, err := tr.Proxy(req)
+	if err != nil {
+		t.Fatalf("transport.Proxy(req) error: %v", err)
+	}
+	if proxyURL == nil || proxyURL.String() != "http://127.0.0.1:7890" {
+		t.Fatalf("proxy URL = %v, want %q", proxyURL, "http://127.0.0.1:7890")
+	}
+}
+
+func TestCreateHTTPClient_InvalidProxy(t *testing.T) {
+	_, err := createHTTPClient("://bad-proxy", 10*time.Second)
+	if err == nil {
+		t.Fatal("createHTTPClient() expected error for invalid proxy URL, got nil")
+	}
+}
+
+func TestNewWebFetchToolWithProxy(t *testing.T) {
+	tool := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890")
+	if tool.maxChars != 1024 {
+		t.Fatalf("maxChars = %d, want %d", tool.maxChars, 1024)
+	}
+	if tool.proxy != "http://127.0.0.1:7890" {
+		t.Fatalf("proxy = %q, want %q", tool.proxy, "http://127.0.0.1:7890")
+	}
+
+	tool = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890")
+	if tool.maxChars != 50000 {
+		t.Fatalf("default maxChars = %d, want %d", tool.maxChars, 50000)
+	}
+}
+
+func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
+	t.Run("perplexity", func(t *testing.T) {
+		tool := NewWebSearchTool(WebSearchToolOptions{
+			PerplexityEnabled:    true,
+			PerplexityAPIKey:     "k",
+			PerplexityMaxResults: 3,
+			Proxy:                "http://127.0.0.1:7890",
+		})
+		p, ok := tool.provider.(*PerplexitySearchProvider)
+		if !ok {
+			t.Fatalf("provider type = %T, want *PerplexitySearchProvider", tool.provider)
+		}
+		if p.proxy != "http://127.0.0.1:7890" {
+			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+	})
+
+	t.Run("brave", func(t *testing.T) {
+		tool := NewWebSearchTool(WebSearchToolOptions{
+			BraveEnabled:    true,
+			BraveAPIKey:     "k",
+			BraveMaxResults: 3,
+			Proxy:           "http://127.0.0.1:7890",
+		})
+		p, ok := tool.provider.(*BraveSearchProvider)
+		if !ok {
+			t.Fatalf("provider type = %T, want *BraveSearchProvider", tool.provider)
+		}
+		if p.proxy != "http://127.0.0.1:7890" {
+			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+	})
+
+	t.Run("duckduckgo", func(t *testing.T) {
+		tool := NewWebSearchTool(WebSearchToolOptions{
+			DuckDuckGoEnabled:    true,
+			DuckDuckGoMaxResults: 3,
+			Proxy:                "http://127.0.0.1:7890",
+		})
+		p, ok := tool.provider.(*DuckDuckGoSearchProvider)
+		if !ok {
+			t.Fatalf("provider type = %T, want *DuckDuckGoSearchProvider", tool.provider)
+		}
+		if p.proxy != "http://127.0.0.1:7890" {
+			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+	})
 }
