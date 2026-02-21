@@ -184,6 +184,7 @@ picoclaw onboard
   ],
   "agents": {
     "defaults": {
+      "allow_patterns": [],
       "model": "gpt4"
     }
   },
@@ -536,7 +537,8 @@ PicoClaw はデフォルトでサンドボックス環境で実行されます�
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "restrict_to_workspace": true
+      "restrict_to_workspace": true,
+      "allow_patterns": []
     }
   }
 }
@@ -546,6 +548,25 @@ PicoClaw はデフォルトでサンドボックス環境で実行されます�
 |-----------|-----------|------|
 | `workspace` | `~/.picoclaw/workspace` | エージェントの作業ディレクトリ |
 | `restrict_to_workspace` | `true` | ファイル/コマンドアクセスをワークスペースに制限 |
+| `allow_patterns` | `[]` | `exec` コマンド文字列に対する任意の正規表現 allowlist。設定時は少なくとも1つに一致する必要があります |
+
+`allow_patterns` はコマンド全体に対して（大文字小文字を区別せず）評価されます。空配列なら allowlist フィルタは無効です。
+
+例:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "allow_patterns": [
+        "^ls(\\s|$)",
+        "^pwd$",
+        "^cat\\s+README\\.md$"
+      ]
+    }
+  }
+}
+```
 
 #### 保護対象ツール
 

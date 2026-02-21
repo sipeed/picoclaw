@@ -223,6 +223,7 @@ picoclaw onboard
   ],
   "agents": {
     "defaults": {
+      "allow_patterns": [],
       "model": "gpt4"
     }
   },
@@ -591,7 +592,8 @@ O PicoClaw roda em um ambiente sandbox por padrão. O agente so pode acessar arq
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "restrict_to_workspace": true
+      "restrict_to_workspace": true,
+      "allow_patterns": []
     }
   }
 }
@@ -601,6 +603,25 @@ O PicoClaw roda em um ambiente sandbox por padrão. O agente so pode acessar arq
 |-------|--------|-----------|
 | `workspace` | `~/.picoclaw/workspace` | Diretório de trabalho do agente |
 | `restrict_to_workspace` | `true` | Restringir acesso de arquivos/comandos ao workspace |
+| `allow_patterns` | `[]` | Allowlist regex opcional para o conteúdo do comando `exec`. Se definido, o comando deve corresponder a pelo menos um padrão |
+
+`allow_patterns` é aplicado ao comando completo (sem diferenciar maiúsculas/minúsculas). Deixe vazio para desativar o filtro de allowlist.
+
+Exemplo:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "allow_patterns": [
+        "^ls(\\s|$)",
+        "^pwd$",
+        "^cat\\s+README\\.md$"
+      ]
+    }
+  }
+}
+```
 
 #### Ferramentas Protegidas
 

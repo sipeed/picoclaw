@@ -102,11 +102,28 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}
 
+	var allowPatterns []string
+	if config != nil {
+		allowPatterns = config.Agents.Defaults.AllowPatterns
+	}
+	var allowRegex []*regexp.Regexp
+	if len(allowPatterns) > 0 {
+		allowRegex = make([]*regexp.Regexp, 0, len(allowPatterns))
+		for _, p := range allowPatterns {
+			re, err := regexp.Compile(p)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "NewExecTool: invalid allow pattern %q: %v\n", p, err)
+				continue
+			}
+			allowRegex = append(allowRegex, re)
+		}
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             60 * time.Second,
 		denyPatterns:        denyPatterns,
-		allowPatterns:       nil,
+		allowPatterns:       allowRegex,
 		restrictToWorkspace: restrict,
 	}
 }

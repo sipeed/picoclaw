@@ -87,6 +87,9 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 			if v, ok := getString(defaults, "workspace"); ok {
 				cfg.Agents.Defaults.Workspace = rewriteWorkspacePath(v)
 			}
+			if v := getStringSlice(defaults, "allow_patterns"); len(v) > 0 {
+				cfg.Agents.Defaults.AllowPatterns = v
+			}
 		}
 	}
 
@@ -293,6 +296,10 @@ func MergeConfig(existing, incoming *config.Config) *config.Config {
 
 	if existing.Tools.Web.Brave.APIKey == "" {
 		existing.Tools.Web.Brave = incoming.Tools.Web.Brave
+	}
+
+	if len(existing.Agents.Defaults.AllowPatterns) == 0 && len(incoming.Agents.Defaults.AllowPatterns) > 0 {
+		existing.Agents.Defaults.AllowPatterns = incoming.Agents.Defaults.AllowPatterns
 	}
 
 	return existing

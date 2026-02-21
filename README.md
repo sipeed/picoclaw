@@ -209,6 +209,7 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
+      "allow_patterns": [],
       "model": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
@@ -599,7 +600,8 @@ PicoClaw runs in a sandboxed environment by default. The agent can only access f
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "restrict_to_workspace": true
+      "restrict_to_workspace": true,
+      "allow_patterns": []
     }
   }
 }
@@ -609,6 +611,25 @@ PicoClaw runs in a sandboxed environment by default. The agent can only access f
 |--------|---------|-------------|
 | `workspace` | `~/.picoclaw/workspace` | Working directory for the agent |
 | `restrict_to_workspace` | `true` | Restrict file/command access to workspace |
+| `allow_patterns` | `[]` | Optional regex allowlist for `exec` command content. If set, commands must match at least one pattern |
+
+`allow_patterns` is matched against the full command (case-insensitive). Keep it empty to disable allowlist filtering.
+
+Example:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "allow_patterns": [
+        "^ls(\\s|$)",
+        "^pwd$",
+        "^cat\\s+README\\.md$"
+      ]
+    }
+  }
+}
+```
 
 #### Protected Tools
 
@@ -984,6 +1005,7 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
+      "allow_patterns": [],
       "model": "glm-4.7",
       "max_tokens": 8192,
       "temperature": 0.7,
