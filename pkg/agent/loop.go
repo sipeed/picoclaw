@@ -1071,6 +1071,8 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	case "/help":
 		return `Available commands:
   /help                     Show this help message
+  /new                      Start a new conversation
+  /status                   Show current session info
   /show model               Show current model
   /show channel             Show current channel
   /show agents              Show registered agents
@@ -1138,6 +1140,63 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 		default:
 			return fmt.Sprintf("Unknown list target: %s", args[0]), true
 		}
+
+	case "/new":
+		// Resolve the route to find the correct agent and session key
+		route := al.registry.ResolveRoute(routing.RouteInput{
+			Channel:   msg.Channel,
+			AccountID: msg.Metadata["account_id"],
+			Peer:      extractPeer(msg),
+			GuildID:   msg.Metadata["guild_id"],
+			TeamID:    msg.Metadata["team_id"],
+		})
+
+		agent, ok := al.registry.GetAgent(route.AgentID)
+		if !ok {
+			agent = al.registry.GetDefaultAgent()
+		}
+		if agent == nil {
+			return "No agent configured", true
+		}
+
+		// Save current session before clearing
+		sessionKey := route.SessionKey
+		agent.Sessions.Save(sessionKey)
+
+		// Clear the in-memory conversation history and summary
+		agent.Sessions.TruncateHistory(sessionKey, 0)
+		agent.Sessions.SetSummary(sessionKey, "")
+		agent.Sessions.Save(sessionKey)
+
+		return "Started a new conversation. Previous session saved.", true
+
+	case "/status":
+		// Resolve the route to find the correct agent and session key
+		route := al.registry.ResolveRoute(routing.RouteInput{
+			Channel:   msg.Channel,
+			AccountID: msg.Metadata["account_id"],
+			Peer:      extractPeer(msg),
+			GuildID:   msg.Metadata["guild_id"],
+			TeamID:    msg.Metadata["team_id"],
+		})
+
+		agent, ok := al.registry.GetAgent(route.AgentID)
+		if !ok {
+			agent = al.registry.GetDefaultAgent()
+		}
+		if agent == nil {
+			return "No agent configured", true
+		}
+
+		sessionKey := route.SessionKey
+		history := agent.Sessions.GetHistory(sessionKey)
+
+		return fmt.Sprintf(`Status:
+  Model: %s
+  Agent: %s
+  Channel: %s
+  Messages: %d in current session
+  Max iterations: %d`, agent.Model, agent.ID, msg.Channel, len(history), agent.MaxIterations), true
 
 	case "/switch":
 		if len(args) < 3 || args[1] != "to" {

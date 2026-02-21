@@ -789,3 +789,135 @@ func TestHandleCommand_NotACommand(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleCommand_New(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	// Add some messages to the session so we can verify they get cleared
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	sessionKey := "agent:main:main"
+	defaultAgent.Sessions.AddMessage(sessionKey, "user", "hello")
+	defaultAgent.Sessions.AddMessage(sessionKey, "assistant", "hi there")
+
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 2 {
+		t.Fatalf("Expected 2 messages before /new, got %d", len(history))
+	}
+
+	ctx := context.Background()
+	msg := bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/new",
+	}
+
+	response, handled := al.handleCommand(ctx, msg)
+	if !handled {
+		t.Fatal("Expected /new to be handled")
+	}
+	if !strings.Contains(response, "Started a new conversation") {
+		t.Errorf("Expected confirmation message, got: %s", response)
+	}
+	if !strings.Contains(response, "Previous session saved") {
+		t.Errorf("Expected 'Previous session saved' in response, got: %s", response)
+	}
+
+	// Verify history was cleared
+	history = defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 0 {
+		t.Errorf("Expected 0 messages after /new, got %d", len(history))
+	}
+
+	// Verify summary was cleared
+	summary := defaultAgent.Sessions.GetSummary(sessionKey)
+	if summary != "" {
+		t.Errorf("Expected empty summary after /new, got: %s", summary)
+	}
+}
+
+func TestHandleCommand_Status(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "claude-3-opus",
+				MaxTokens:         4096,
+				MaxToolIterations: 15,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	// Add some messages so the count is nonzero
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	sessionKey := "agent:main:main"
+	defaultAgent.Sessions.AddMessage(sessionKey, "user", "hello")
+	defaultAgent.Sessions.AddMessage(sessionKey, "assistant", "hi")
+	defaultAgent.Sessions.AddMessage(sessionKey, "user", "how are you?")
+
+	ctx := context.Background()
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/status",
+	}
+
+	response, handled := al.handleCommand(ctx, msg)
+	if !handled {
+		t.Fatal("Expected /status to be handled")
+	}
+
+	// Verify key fields are present
+	expectedFields := []struct {
+		label string
+		value string
+	}{
+		{"Model", "claude-3-opus"},
+		{"Agent", "main"},
+		{"Channel", "telegram"},
+		{"Messages", "3 in current session"},
+		{"Max iterations", "15"},
+	}
+	for _, f := range expectedFields {
+		expected := fmt.Sprintf("%s: %s", f.label, f.value)
+		if !strings.Contains(response, expected) {
+			t.Errorf("Expected status to contain %q, got:\n%s", expected, response)
+		}
+	}
+}
