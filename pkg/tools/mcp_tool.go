@@ -119,6 +119,11 @@ func (t *MCPTool) Execute(ctx context.Context, args map[string]interface{}) *Too
 		return ErrorResult(fmt.Sprintf("MCP tool execution failed: %v", err)).WithError(err)
 	}
 
+	if result == nil {
+		nilErr := fmt.Errorf("MCP tool returned nil result without error")
+		return ErrorResult("MCP tool execution failed: nil result").WithError(nilErr)
+	}
+
 	// Handle error result from server
 	if result.IsError {
 		errMsg := extractContentText(result.Content)
