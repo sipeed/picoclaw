@@ -462,7 +462,41 @@ func (al *AgentLoop) startNewSessionForMessage(msg bus.InboundMessage) (string, 
 	overrideKey := buildSessionOverrideKey(msg.Channel, msg.ChatID, agent.ID)
 	al.sessionOverride.Set(overrideKey, newSessionKey)
 
-	return "Starting a new conversation...", nil
+	return formatNewSessionResponse(al.cfg, agent), nil
+}
+
+func formatNewSessionResponse(cfg *config.Config, agent *AgentInstance) string {
+	provider, model := resolveAgentModelDisplay(cfg, agent)
+	if model == "" {
+		return "Starting a new conversation..."
+	}
+	if provider == "" {
+		return fmt.Sprintf("Starting a new conversation... (model: %s)", model)
+	}
+	return fmt.Sprintf("Starting a new conversation... (provider: %s, model: %s)", provider, model)
+}
+
+func resolveAgentModelDisplay(cfg *config.Config, agent *AgentInstance) (string, string) {
+	if agent == nil {
+		return "", ""
+	}
+	modelName := strings.TrimSpace(agent.Model)
+	if modelName == "" {
+		return "", ""
+	}
+	if cfg != nil {
+		if modelCfg, err := cfg.GetModelConfig(modelName); err == nil && modelCfg != nil {
+			if ref := providers.ParseModelRef(modelCfg.Model, ""); ref != nil {
+				return ref.Provider, ref.Model
+			}
+			return "", strings.TrimSpace(modelCfg.Model)
+		}
+	}
+	ref := providers.ParseModelRef(modelName, "")
+	if ref == nil {
+		return "", modelName
+	}
+	return ref.Provider, ref.Model
 }
 
 // runAgentLoop is the core message processing logic.

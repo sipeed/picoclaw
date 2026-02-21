@@ -401,7 +401,7 @@ func TestNewSessionCommand_SuccessAndIsolation(t *testing.T) {
 		ChatID:   "chat1",
 		Content:  "/new",
 	})
-	if response != "Starting a new conversation..." {
+	if response != "Starting a new conversation... (model: test-model)" {
 		t.Fatalf("Expected confirmation response, got %q", response)
 	}
 
@@ -432,6 +432,44 @@ func TestNewSessionCommand_SuccessAndIsolation(t *testing.T) {
 	oldHistoryAfter := agent.Sessions.GetHistory(oldKey)
 	if len(oldHistoryAfter) != len(oldHistory) {
 		t.Fatalf("Expected old session history to remain unchanged")
+	}
+}
+
+func TestNewSessionCommand_IncludesProviderWhenPrefixed(t *testing.T) {
+	provider := &simpleMockProvider{response: "OK"}
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "openai/gpt-5.2",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+	if al.registry.GetDefaultAgent() == nil {
+		t.Fatal("No default agent found")
+	}
+
+	helper := testHelper{al: al}
+	ctx := context.Background()
+	response := helper.executeAndGetResponse(t, ctx, bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/new",
+	})
+	if response != "Starting a new conversation... (provider: openai, model: gpt-5.2)" {
+		t.Fatalf("Expected confirmation response, got %q", response)
 	}
 }
 
@@ -526,7 +564,7 @@ func TestNewSessionCommand_NoCrossChatImpact(t *testing.T) {
 			"peer_id":   "group1",
 		},
 	})
-	if response != "Starting a new conversation..." {
+	if response != "Starting a new conversation... (model: test-model)" {
 		t.Fatalf("Expected confirmation response, got %q", response)
 	}
 
