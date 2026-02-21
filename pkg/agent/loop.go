@@ -970,7 +970,42 @@ func buildArgsSnippet(toolName string, args map[string]interface{}, workspace st
 	return utils.Truncate(string(argsJSON), 80)
 }
 
+// maxEntryLineWidth is the max rune count for a single-line log entry.
+// Telegram chat bubbles on mobile are roughly 35-40 chars wide; keeping
+// entries under this avoids line-wrapping that causes height jitter.
+const maxEntryLineWidth = 36
+
+// formatCompactEntry formats a finished tool log entry as a fixed single line.
+// The result marker (✓/✗) is always shown at the end regardless of truncation.
+func formatCompactEntry(entry toolLogEntry) string {
+	// result is e.g. "✓ 1.2s" or "✗ 3.0s" — always 6-8 chars
+	result := entry.Result
+	if result == "" {
+		result = "\u23F3" // ⏳
+	}
+
+	prefix := entry.Name
+	if entry.ArgsSnip != "" {
+		prefix += " " + entry.ArgsSnip
+	}
+
+	// Budget: total ≤ maxEntryLineWidth, need space for " " + result
+	budget := maxEntryLineWidth - 1 - utf8.RuneCountInString(result)
+	if budget < 4 {
+		budget = 4
+	}
+
+	prefixRunes := []rune(prefix)
+	if len(prefixRunes) > budget {
+		prefix = string(prefixRunes[:budget-1]) + "\u2026" // …
+	}
+
+	return prefix + " " + result
+}
+
 // buildRichStatus builds a terminal-like status display from the active task's tool log.
+// Layout is designed for fixed height: past entries are always 1 line,
+// and the latest entry has reserved space for potential error detail.
 func buildRichStatus(task *activeTask, isBackground bool, workspace string) string {
 	task.mu.Lock()
 	defer task.mu.Unlock()
@@ -979,7 +1014,6 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	fmt.Fprintf(&sb, "\U0001F504 Task in progress (%d/%d)\n", task.Iteration, task.MaxIter)
 	// Show project directory name so user knows which workspace is active
 	if workspace != "" {
-		// Extract last path component as project name
 		project := workspace
 		if idx := strings.LastIndex(workspace, "/"); idx >= 0 {
 			project = workspace[idx+1:]
@@ -997,28 +1031,39 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	if len(entries) > maxToolLogEntries {
 		entries = entries[len(entries)-maxToolLogEntries:]
 	}
-	for _, entry := range entries {
+
+	for i, entry := range entries {
+		isLast := i == len(entries)-1
 		isErr := strings.HasPrefix(entry.Result, "\u2717")
-		if isErr {
-			// Error: multi-line block with decoration
-			if entry.ArgsSnip != "" {
-				fmt.Fprintf(&sb, "%s %s %s\n", entry.Name, entry.ArgsSnip, entry.Result)
-			} else {
-				fmt.Fprintf(&sb, "%s %s\n", entry.Name, entry.Result)
-			}
-			if entry.ErrDetail != "" {
-				for _, line := range strings.Split(entry.ErrDetail, "\n") {
-					fmt.Fprintf(&sb, "\u2502 %s\n", line)
-				}
-			}
+
+		if !isLast {
+			// Past entries: always exactly 1 compact line
+			sb.WriteString(formatCompactEntry(entry))
+			sb.WriteString("\n")
 		} else {
-			// Success/pending: compact one-liner
-			if entry.ArgsSnip != "" {
-				fmt.Fprintf(&sb, "%s %s %s\n", entry.Name, utils.Truncate(entry.ArgsSnip, 40), entry.Result)
+			// Latest entry: reserved area for detail
+			sb.WriteString(formatCompactEntry(entry))
+			sb.WriteString("\n")
+
+			if isErr && entry.ErrDetail != "" {
+				// Error block in code-fence style
+				sb.WriteString("```\n")
+				for _, line := range strings.Split(entry.ErrDetail, "\n") {
+					sb.WriteString(line)
+					sb.WriteString("\n")
+				}
+				sb.WriteString("```\n")
 			} else {
-				fmt.Fprintf(&sb, "%s %s\n", entry.Name, entry.Result)
+				// Reserve height: blank line so bubble doesn't shrink
+				// when the next update adds error detail
+				sb.WriteString("\n")
 			}
 		}
+	}
+
+	// If no entries yet, still reserve the space
+	if len(entries) == 0 {
+		sb.WriteString("\u23F3 waiting...\n\n")
 	}
 
 	sb.WriteString("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n")

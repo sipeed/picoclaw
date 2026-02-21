@@ -1471,14 +1471,56 @@ func TestBuildArgsSnippet_ExecStripsCD(t *testing.T) {
 	}
 }
 
+func TestFormatCompactEntry(t *testing.T) {
+	tests := []struct {
+		name     string
+		entry    toolLogEntry
+		wantSub  string // must be a substring
+		wantMark string // result marker must appear
+	}{
+		{
+			name:     "short entry",
+			entry:    toolLogEntry{Name: "exec", ArgsSnip: "ls", Result: "✓ 1.0s"},
+			wantSub:  "exec ls",
+			wantMark: "✓",
+		},
+		{
+			name:     "long entry is truncated with marker preserved",
+			entry:    toolLogEntry{Name: "exec", ArgsSnip: "pytest tests/integration/test_very_long_name_that_exceeds_width.py", Result: "✗ 3.0s"},
+			wantMark: "✗",
+		},
+		{
+			name:     "no args",
+			entry:    toolLogEntry{Name: "list_dir", Result: "✓ 0.1s"},
+			wantSub:  "list_dir",
+			wantMark: "✓",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatCompactEntry(tt.entry)
+			if tt.wantSub != "" && !strings.Contains(got, tt.wantSub) {
+				t.Errorf("expected to contain %q, got: %q", tt.wantSub, got)
+			}
+			if !strings.Contains(got, tt.wantMark) {
+				t.Errorf("result marker %q missing from: %q", tt.wantMark, got)
+			}
+			// Must not exceed maxEntryLineWidth
+			if runeLen := len([]rune(got)); runeLen > maxEntryLineWidth {
+				t.Errorf("entry too wide: %d runes (max %d): %q", runeLen, maxEntryLineWidth, got)
+			}
+		})
+	}
+}
+
 func TestBuildRichStatus(t *testing.T) {
 	task := &activeTask{
 		Iteration: 3,
 		MaxIter:   20,
 		toolLog: []toolLogEntry{
-			{Name: "[1] exec", ArgsSnip: "ls -la", Result: "✓ 1.2s"},
-			{Name: "[2] exec", ArgsSnip: "pytest tests/", Result: "✓ 5.0s"},
-			{Name: "[3] read_file", ArgsSnip: "src/main.go", Result: "⏳"},
+			{Name: "exec", ArgsSnip: "ls -la", Result: "✓ 1.2s"},
+			{Name: "exec", ArgsSnip: "pytest tests/", Result: "✓ 5.0s"},
+			{Name: "read_file", ArgsSnip: "src/main.go", Result: "⏳"},
 		},
 	}
 
@@ -1487,10 +1529,8 @@ func TestBuildRichStatus(t *testing.T) {
 	mustContain := []string{
 		"Task in progress (3/20)",
 		"my-projects",
-		"[1] exec",
-		"pytest tests/",
-		"[3] read_file",
-		"src/main.go",
+		"exec",
+		"read_file",
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(got, s) {
@@ -1536,44 +1576,58 @@ func TestBuildRichStatus_ShowsLast5(t *testing.T) {
 	}
 }
 
-func TestBuildRichStatus_ErrorBlock(t *testing.T) {
+func TestBuildRichStatus_ErrorAsLastEntry(t *testing.T) {
 	task := &activeTask{
-		Iteration: 3,
+		Iteration: 2,
 		MaxIter:   10,
 		toolLog: []toolLogEntry{
-			{Name: "[1] exec", ArgsSnip: "ls -la", Result: "✓ 0.5s"},
+			{Name: "exec", ArgsSnip: "ls -la", Result: "✓ 0.5s"},
 			{
-				Name:      "[2] exec",
+				Name:      "exec",
 				ArgsSnip:  "pytest tests/test_auth.py",
 				Result:    "✗ 3.2s",
-				ErrDetail: "FAILED tests/test_auth.py::test_login\nExit code: exit status 1",
+				ErrDetail: "FAILED test_login\nExit code: 1",
 			},
-			{Name: "[3] read_file", ArgsSnip: "src/auth.py", Result: "⏳"},
 		},
 	}
 
 	got := buildRichStatus(task, false, "/ws/my-project")
 
-	// Success entry: compact one-liner
-	if !strings.Contains(got, "[1] exec ls -la ✓ 0.5s") {
-		t.Errorf("expected compact success line, got:\n%s", got)
+	// First entry (past): compact one-liner, result marker present
+	if !strings.Contains(got, "✓ 0.5s") {
+		t.Errorf("expected success marker in past entry, got:\n%s", got)
 	}
 
-	// Error entry: command + mark on first line
-	if !strings.Contains(got, "[2] exec pytest tests/test_auth.py ✗ 3.2s") {
-		t.Errorf("expected error header line, got:\n%s", got)
+	// Last entry: error with code fence detail
+	if !strings.Contains(got, "✗ 3.2s") {
+		t.Errorf("expected error marker, got:\n%s", got)
+	}
+	if !strings.Contains(got, "```\nFAILED test_login\n") {
+		t.Errorf("expected code-fenced error detail, got:\n%s", got)
+	}
+}
+
+func TestBuildRichStatus_ErrorNotLastEntry(t *testing.T) {
+	// When error is a past entry (not the last), it should be 1 line
+	task := &activeTask{
+		Iteration: 3,
+		MaxIter:   10,
+		toolLog: []toolLogEntry{
+			{Name: "exec", ArgsSnip: "pytest", Result: "✗ 3.2s",
+				ErrDetail: "FAILED\nExit code: 1"},
+			{Name: "read_file", ArgsSnip: "src/auth.py", Result: "✓ 0.1s"},
+			{Name: "exec", ArgsSnip: "pytest", Result: "⏳"},
+		},
 	}
 
-	// Error detail: │-prefixed lines
-	if !strings.Contains(got, "│ FAILED tests/test_auth.py::test_login") {
-		t.Errorf("expected │-prefixed error detail, got:\n%s", got)
-	}
-	if !strings.Contains(got, "│ Exit code: exit status 1") {
-		t.Errorf("expected │-prefixed exit code line, got:\n%s", got)
-	}
+	got := buildRichStatus(task, false, "/ws/p")
 
-	// Pending entry: compact
-	if !strings.Contains(got, "[3] read_file src/auth.py ⏳") {
-		t.Errorf("expected compact pending line, got:\n%s", got)
+	// Past error entry should NOT have code fence
+	if strings.Contains(got, "```") && strings.Contains(got, "FAILED") {
+		t.Errorf("past error entry should not have code fence detail, got:\n%s", got)
+	}
+	// But the error marker should still be visible
+	if !strings.Contains(got, "✗ 3.2s") {
+		t.Errorf("expected error marker in past entry, got:\n%s", got)
 	}
 }
