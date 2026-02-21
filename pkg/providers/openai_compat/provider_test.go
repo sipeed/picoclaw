@@ -280,4 +280,7 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
 	}
+	if got := normalizeModel("nvidia/nvidia/nemotron-3-8b", "https://integrate.api.nvidia.com/v1"); got != "nvidia/nvidia/nemotron-3-8b" {
+		t.Fatalf("normalizeModel(nvidia) = %q, want %q", got, "nvidia/nvidia/nemotron-3-8b")
+	}
 }
