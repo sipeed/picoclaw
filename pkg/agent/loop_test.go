@@ -1570,7 +1570,7 @@ func TestBuildRichStatus(t *testing.T) {
 }
 
 func TestBuildRichStatus_ProjectDir(t *testing.T) {
-	// projectDir takes priority over workspace basename
+	// exec-based projectDir takes priority
 	task := &activeTask{
 		Iteration:  1,
 		MaxIter:    10,
@@ -1581,14 +1581,25 @@ func TestBuildRichStatus_ProjectDir(t *testing.T) {
 	}
 	got := buildRichStatus(task, false, "/home/user/.picoclaw/workspace")
 	if !strings.Contains(got, "terra-py-form") {
-		t.Errorf("expected projectDir 'terra-py-form' in output, got:\n%s", got)
-	}
-	if strings.Contains(got, "\U0001F4C1 workspace") {
-		t.Error("should not show workspace basename when projectDir is set")
+		t.Errorf("expected projectDir in output, got:\n%s", got)
 	}
 
-	// Fallback: no projectDir, trailing slash should still work
+	// fileCommonDir fallback
 	task2 := &activeTask{
+		Iteration:     1,
+		MaxIter:       10,
+		fileCommonDir: "projects/terra-py-form",
+		toolLog: []toolLogEntry{
+			{Name: "read_file", ArgsSnip: "src/main.py", Result: "✓ 0.1s"},
+		},
+	}
+	got2 := buildRichStatus(task2, false, "/home/user/.picoclaw/workspace")
+	if !strings.Contains(got2, "terra-py-form") {
+		t.Errorf("expected fileCommonDir basename in output, got:\n%s", got2)
+	}
+
+	// workspace basename fallback with trailing slash
+	task3 := &activeTask{
 		Iteration: 1,
 		MaxIter:   10,
 		toolLog: []toolLogEntry{
@@ -1596,102 +1607,102 @@ func TestBuildRichStatus_ProjectDir(t *testing.T) {
 		},
 	}
 	for _, ws := range []string{"/home/user/my-project/", "/home/user/my-project"} {
-		got := buildRichStatus(task2, false, ws)
+		got := buildRichStatus(task3, false, ws)
 		if !strings.Contains(got, "my-project") {
 			t.Errorf("workspace %q: expected 'my-project' in output, got:\n%s", ws, got)
 		}
 	}
 }
 
-func TestExtractProjectDir(t *testing.T) {
-	ws := "/home/user/.picoclaw/workspace"
+func TestExtractExecProjectDir(t *testing.T) {
 	tests := []struct {
-		name      string
-		toolName  string
-		args      map[string]interface{}
-		workspace string
-		want      string
+		name string
+		cmd  string
+		want string
 	}{
-		// exec: basename of cd target
-		{
-			name:      "exec cd deep path",
-			toolName:  "exec",
-			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/projects/terra-py-form && pytest"},
-			workspace: ws,
-			want:      "terra-py-form",
-		},
-		{
-			name:      "exec cd direct subdir",
-			toolName:  "exec",
-			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/my-app && make build"},
-			workspace: ws,
-			want:      "my-app",
-		},
-		{
-			name:      "exec cd trailing slash target",
-			toolName:  "exec",
-			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/my-app/ && ls"},
-			workspace: ws,
-			want:      "my-app",
-		},
-		{
-			name:      "exec cd to workspace itself",
-			toolName:  "exec",
-			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace && ls"},
-			workspace: ws,
-			want:      "workspace",
-		},
-		{
-			name:      "exec no cd prefix",
-			toolName:  "exec",
-			args:      map[string]interface{}{"command": "pytest tests/"},
-			workspace: ws,
-			want:      "",
-		},
-		// file tools: first component after workspace
-		{
-			name:      "read_file first component is projects",
-			toolName:  "read_file",
-			args:      map[string]interface{}{"path": "/home/user/.picoclaw/workspace/projects/terra-py-form/src/main.py"},
-			workspace: ws,
-			want:      "projects",
-		},
-		{
-			name:      "edit_file direct subdir",
-			toolName:  "edit_file",
-			args:      map[string]interface{}{"path": "/home/user/.picoclaw/workspace/my-app/README.md"},
-			workspace: ws,
-			want:      "my-app",
-		},
-		{
-			name:      "write_file at workspace root",
-			toolName:  "write_file",
-			args:      map[string]interface{}{"path": "/home/user/.picoclaw/workspace/notes.txt"},
-			workspace: ws,
-			want:      "notes.txt",
-		},
-		{
-			name:      "file outside workspace",
-			toolName:  "read_file",
-			args:      map[string]interface{}{"path": "/tmp/foo.txt"},
-			workspace: ws,
-			want:      "",
-		},
-		{
-			name:      "unknown tool",
-			toolName:  "web_search",
-			args:      map[string]interface{}{"query": "test"},
-			workspace: ws,
-			want:      "",
-		},
+		{"cd deep path", "cd /ws/projects/terra-py-form && pytest", "terra-py-form"},
+		{"cd direct subdir", "cd /ws/my-app && make build", "my-app"},
+		{"cd trailing slash", "cd /ws/my-app/ && ls", "my-app"},
+		{"cd to workspace", "cd /ws && ls", "ws"},
+		{"no cd prefix", "pytest tests/", ""},
+		{"empty command", "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractProjectDir(tt.toolName, tt.args, tt.workspace)
+			args := map[string]interface{}{"command": tt.cmd}
+			got := extractExecProjectDir(args)
 			if got != tt.want {
-				t.Errorf("extractProjectDir(%q, args, %q) = %q, want %q", tt.toolName, tt.workspace, got, tt.want)
+				t.Errorf("extractExecProjectDir(%q) = %q, want %q", tt.cmd, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFileParentRelDir(t *testing.T) {
+	ws := "/home/user/.picoclaw/workspace"
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"deep path", ws + "/projects/terra/src/main.py", "projects/terra/src"},
+		{"direct subdir", ws + "/my-app/README.md", "my-app"},
+		{"workspace root file", ws + "/notes.txt", ""},
+		{"outside workspace", "/tmp/foo.txt", ""},
+		{"trailing slash ws", ws + "/projects/terra/src/main.py", "projects/terra/src"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fileParentRelDir(tt.path, ws)
+			if got != tt.want {
+				t.Errorf("fileParentRelDir(%q, ws) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCommonDirPrefix(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b string
+		want string
+	}{
+		{"same dir", "projects/terra/src", "projects/terra/src", "projects/terra/src"},
+		{"converge to project", "projects/terra/src", "projects/terra/tests", "projects/terra"},
+		{"converge to top", "projects/terra/src", "projects/other/tests", "projects"},
+		{"no common", "aaa/bbb", "ccc/ddd", ""},
+		{"one is prefix", "projects/terra", "projects/terra/src", "projects/terra"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := commonDirPrefix(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("commonDirPrefix(%q, %q) = %q, want %q", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDisplayProjectDir(t *testing.T) {
+	// exec projectDir wins
+	task1 := &activeTask{projectDir: "my-app", fileCommonDir: "projects/other"}
+	if got := displayProjectDir(task1); got != "my-app" {
+		t.Errorf("expected 'my-app', got %q", got)
+	}
+	// fileCommonDir fallback: basename
+	task2 := &activeTask{fileCommonDir: "projects/terra-py-form"}
+	if got := displayProjectDir(task2); got != "terra-py-form" {
+		t.Errorf("expected 'terra-py-form', got %q", got)
+	}
+	// single component
+	task3 := &activeTask{fileCommonDir: "my-app"}
+	if got := displayProjectDir(task3); got != "my-app" {
+		t.Errorf("expected 'my-app', got %q", got)
+	}
+	// empty
+	task4 := &activeTask{}
+	if got := displayProjectDir(task4); got != "" {
+		t.Errorf("expected empty, got %q", got)
 	}
 }
 

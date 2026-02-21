@@ -44,8 +44,9 @@ type activeTask struct {
 	interrupt   chan string // buffered 1, for user message injection
 	toolLog     []toolLogEntry
 	lastError   *toolLogEntry // sticky: most recent error, persists across iterations
-	projectDir  string        // detected project directory name (from cd prefix)
-	mu          sync.Mutex
+	projectDir    string // detected from exec cd target (authoritative)
+	fileCommonDir string // LCP of file paths relative to workspace (fallback)
+	mu            sync.Mutex
 }
 
 // toolLogEntry records a single tool call for the live terminal view.
@@ -956,53 +957,81 @@ var cdPrefixPattern = regexp.MustCompile(`^cd\s+(\S+)\s*&&\s*`)
 // argument (e.g. "-A 20") are kept because removing them would lose context.
 var optFlagPattern = regexp.MustCompile(`\s+--?\w[\w-]*(=\S*)?`)
 
-// extractProjectDir extracts a working directory name from a tool call.
-// For exec: uses the basename of the cd target (the directory AI actually works in).
-// For file tools: strips the workspace prefix and takes the first path component.
-// No assumptions are made about directory naming conventions.
-func extractProjectDir(toolName string, args map[string]interface{}, workspace string) string {
-	switch toolName {
-	case "exec":
-		cmd, _ := args["command"].(string)
-		if cmd == "" {
-			return ""
-		}
-		m := cdPrefixPattern.FindStringSubmatch(cmd)
-		if len(m) < 2 {
-			return ""
-		}
-		// basename of cd target — the directory the AI actually cd's into
-		cdPath := strings.TrimRight(m[1], "/\\")
-		if idx := strings.LastIndex(cdPath, "/"); idx >= 0 {
-			return cdPath[idx+1:]
-		}
-		if idx := strings.LastIndex(cdPath, "\\"); idx >= 0 {
-			return cdPath[idx+1:]
-		}
-		return cdPath
+// extractExecProjectDir extracts the basename of an exec cd target.
+// Returns "" if the command has no cd prefix.
+func extractExecProjectDir(args map[string]interface{}) string {
+	cmd, _ := args["command"].(string)
+	if cmd == "" {
+		return ""
+	}
+	m := cdPrefixPattern.FindStringSubmatch(cmd)
+	if len(m) < 2 {
+		return ""
+	}
+	cdPath := strings.TrimRight(m[1], "/\\")
+	if idx := strings.LastIndex(cdPath, "/"); idx >= 0 {
+		return cdPath[idx+1:]
+	}
+	if idx := strings.LastIndex(cdPath, "\\"); idx >= 0 {
+		return cdPath[idx+1:]
+	}
+	return cdPath
+}
 
-	case "read_file", "write_file", "edit_file", "append_file", "list_dir":
-		path, _ := args["path"].(string)
-		if path == "" {
-			return ""
+// fileParentRelDir returns the parent directory of a file path, relative to
+// workspace. Returns "" if the path is not under workspace or has no parent.
+func fileParentRelDir(filePath, workspace string) string {
+	ws := strings.TrimRight(workspace, "/\\")
+	if ws == "" {
+		return ""
+	}
+	rest := strings.TrimPrefix(filePath, ws)
+	if rest == filePath {
+		return "" // not under workspace
+	}
+	rest = strings.TrimLeft(rest, "/\\")
+	// Remove the filename — keep only the directory part
+	if idx := strings.LastIndexAny(rest, "/\\"); idx >= 0 {
+		return rest[:idx]
+	}
+	return "" // file is directly under workspace, no meaningful dir
+}
+
+// commonDirPrefix computes the longest common directory prefix of two
+// slash-separated paths. Returns "" if there is no common component.
+func commonDirPrefix(a, b string) string {
+	partsA := strings.Split(a, "/")
+	partsB := strings.Split(b, "/")
+	n := len(partsA)
+	if len(partsB) < n {
+		n = len(partsB)
+	}
+	common := 0
+	for i := 0; i < n; i++ {
+		if partsA[i] != partsB[i] {
+			break
 		}
-		ws := strings.TrimRight(workspace, "/\\")
-		if ws == "" {
-			return ""
+		common = i + 1
+	}
+	if common == 0 {
+		return ""
+	}
+	return strings.Join(partsA[:common], "/")
+}
+
+// displayProjectDir returns the project directory name for status display.
+// Prefers the authoritative exec-based projectDir; falls back to the
+// basename of the file-based common directory.
+func displayProjectDir(task *activeTask) string {
+	if task.projectDir != "" {
+		return task.projectDir
+	}
+	if task.fileCommonDir != "" {
+		dir := task.fileCommonDir
+		if idx := strings.LastIndex(dir, "/"); idx >= 0 {
+			return dir[idx+1:]
 		}
-		rest := strings.TrimPrefix(path, ws)
-		if rest == path {
-			return "" // path not under workspace
-		}
-		rest = strings.TrimLeft(rest, "/\\")
-		if rest == "" {
-			return ""
-		}
-		// first component after workspace
-		if idx := strings.IndexAny(rest, "/\\"); idx >= 0 {
-			return rest[:idx]
-		}
-		return rest
+		return dir
 	}
 	return ""
 }
@@ -1202,10 +1231,10 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	sb.WriteByte('/')
 	sb.WriteString(strconv.Itoa(task.MaxIter))
 	sb.WriteString(")\n")
-	// Workspace: prefer detected project dir, fall back to workspace basename
+	// Project directory: exec cd (authoritative) → file LCP → workspace basename
 	sb.WriteString("\U0001F4C1 ")
-	if task.projectDir != "" {
-		sb.WriteString(task.projectDir)
+	if dir := displayProjectDir(task); dir != "" {
+		sb.WriteString(dir)
 	} else if workspace != "" {
 		project := strings.TrimRight(workspace, "/\\")
 		if idx := strings.LastIndex(project, "/"); idx >= 0 {
@@ -1544,9 +1573,21 @@ func (al *AgentLoop) runLLMIteration(
 					ArgsSnip: buildArgsSnippet(tc.Name, tc.Arguments, agent.Workspace),
 					Result:   "\u23F3",
 				})
-				// Detect project directory from tool call args (once)
-				if task.projectDir == "" {
-					task.projectDir = extractProjectDir(tc.Name, tc.Arguments, agent.Workspace)
+				// Detect project directory
+				if task.projectDir == "" && tc.Name == "exec" {
+					task.projectDir = extractExecProjectDir(tc.Arguments)
+				}
+				switch tc.Name {
+				case "read_file", "write_file", "edit_file", "append_file", "list_dir":
+					if p, _ := tc.Arguments["path"].(string); p != "" {
+						if rel := fileParentRelDir(p, agent.Workspace); rel != "" {
+							if task.fileCommonDir == "" {
+								task.fileCommonDir = rel
+							} else {
+								task.fileCommonDir = commonDirPrefix(task.fileCommonDir, rel)
+							}
+						}
+					}
 				}
 			}
 			task.mu.Unlock()
