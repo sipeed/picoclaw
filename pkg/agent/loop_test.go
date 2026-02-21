@@ -1604,54 +1604,85 @@ func TestBuildRichStatus_ProjectDir(t *testing.T) {
 }
 
 func TestExtractProjectDir(t *testing.T) {
+	ws := "/home/user/.picoclaw/workspace"
 	tests := []struct {
 		name      string
-		cmd       string
+		toolName  string
+		args      map[string]interface{}
 		workspace string
 		want      string
 	}{
+		// exec: cd prefix
 		{
-			name:      "cd into projects subdir",
-			cmd:       "cd /home/user/.picoclaw/workspace/projects/terra-py-form && pytest",
-			workspace: "/home/user/.picoclaw/workspace",
+			name:      "exec cd into projects subdir",
+			toolName:  "exec",
+			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/projects/terra-py-form && pytest"},
+			workspace: ws,
 			want:      "terra-py-form",
 		},
 		{
-			name:      "cd into projects subdir with trailing slash",
-			cmd:       "cd /home/user/.picoclaw/workspace/projects/terra-py-form && ls",
-			workspace: "/home/user/.picoclaw/workspace/",
+			name:      "exec cd with trailing slash workspace",
+			toolName:  "exec",
+			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/projects/terra-py-form && ls"},
+			workspace: ws + "/",
 			want:      "terra-py-form",
 		},
 		{
-			name:      "cd into direct subdir",
-			cmd:       "cd /home/user/.picoclaw/workspace/my-app && make build",
-			workspace: "/home/user/.picoclaw/workspace",
+			name:      "exec cd into direct subdir",
+			toolName:  "exec",
+			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace/my-app && make build"},
+			workspace: ws,
 			want:      "my-app",
 		},
 		{
-			name:      "cd to workspace itself",
-			cmd:       "cd /home/user/.picoclaw/workspace && ls",
-			workspace: "/home/user/.picoclaw/workspace",
+			name:      "exec cd to workspace itself",
+			toolName:  "exec",
+			args:      map[string]interface{}{"command": "cd /home/user/.picoclaw/workspace && ls"},
+			workspace: ws,
 			want:      "",
 		},
 		{
-			name:      "no cd prefix",
-			cmd:       "pytest tests/",
-			workspace: "/home/user/.picoclaw/workspace",
+			name:      "exec no cd prefix",
+			toolName:  "exec",
+			args:      map[string]interface{}{"command": "pytest tests/"},
+			workspace: ws,
 			want:      "",
 		},
+		// file tools
 		{
-			name:      "cd to unrelated path",
-			cmd:       "cd /tmp/build && make",
-			workspace: "/home/user/.picoclaw/workspace",
-			want:      "build",
+			name:      "read_file in projects subdir",
+			toolName:  "read_file",
+			args:      map[string]interface{}{"path": "/home/user/.picoclaw/workspace/projects/terra-py-form/src/main.py"},
+			workspace: ws,
+			want:      "terra-py-form",
+		},
+		{
+			name:      "edit_file in direct subdir",
+			toolName:  "edit_file",
+			args:      map[string]interface{}{"path": "/home/user/.picoclaw/workspace/my-app/README.md"},
+			workspace: ws,
+			want:      "my-app",
+		},
+		{
+			name:      "write_file at workspace root",
+			toolName:  "write_file",
+			args:      map[string]interface{}{"path": "/home/user/.picoclaw/workspace/notes.txt"},
+			workspace: ws,
+			want:      "notes.txt",
+		},
+		{
+			name:      "unknown tool returns empty",
+			toolName:  "web_search",
+			args:      map[string]interface{}{"query": "test"},
+			workspace: ws,
+			want:      "",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractProjectDir(tt.cmd, tt.workspace)
+			got := extractProjectDir(tt.toolName, tt.args, tt.workspace)
 			if got != tt.want {
-				t.Errorf("extractProjectDir(%q, %q) = %q, want %q", tt.cmd, tt.workspace, got, tt.want)
+				t.Errorf("extractProjectDir(%q, args, %q) = %q, want %q", tt.toolName, tt.workspace, got, tt.want)
 			}
 		})
 	}
