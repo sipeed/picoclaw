@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mymmrac/telego"
+
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -35,6 +36,7 @@ func commandArgs(text string) string {
 	}
 	return strings.TrimSpace(parts[1])
 }
+
 func (c *cmd) Help(ctx context.Context, message telego.Message) error {
 	msg := `/start - Start the bot
 /help - Show this help message
@@ -96,6 +98,7 @@ func (c *cmd) Show(ctx context.Context, message telego.Message) error {
 	})
 	return err
 }
+
 func (c *cmd) List(ctx context.Context, message telego.Message) error {
 	args := commandArgs(message.Text)
 	if args == "" {

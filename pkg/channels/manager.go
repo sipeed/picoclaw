@@ -47,23 +47,23 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus) (*Manager, error
 func (m *Manager) initChannel(name, displayName string) {
 	f, ok := getFactory(name)
 	if !ok {
-		logger.WarnCF("channels", "Factory not registered", map[string]interface{}{
+		logger.WarnCF("channels", "Factory not registered", map[string]any{
 			"channel": displayName,
 		})
 		return
 	}
-	logger.DebugCF("channels", "Attempting to initialize channel", map[string]interface{}{
+	logger.DebugCF("channels", "Attempting to initialize channel", map[string]any{
 		"channel": displayName,
 	})
 	ch, err := f(m.config, m.bus)
 	if err != nil {
-		logger.ErrorCF("channels", "Failed to initialize channel", map[string]interface{}{
+		logger.ErrorCF("channels", "Failed to initialize channel", map[string]any{
 			"channel": displayName,
 			"error":   err.Error(),
 		})
 	} else {
 		m.channels[name] = ch
-		logger.InfoCF("channels", "Channel enabled successfully", map[string]interface{}{
+		logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
 			"channel": displayName,
 		})
 	}
@@ -120,7 +120,7 @@ func (m *Manager) initChannels() error {
 		m.initChannel("wecom_app", "WeCom App")
 	}
 
-	logger.InfoCF("channels", "Channel initialization completed", map[string]interface{}{
+	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})
 
@@ -144,11 +144,11 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	go m.dispatchOutbound(dispatchCtx)
 
 	for name, channel := range m.channels {
-		logger.InfoCF("channels", "Starting channel", map[string]interface{}{
+		logger.InfoCF("channels", "Starting channel", map[string]any{
 			"channel": name,
 		})
 		if err := channel.Start(ctx); err != nil {
-			logger.ErrorCF("channels", "Failed to start channel", map[string]interface{}{
+			logger.ErrorCF("channels", "Failed to start channel", map[string]any{
 				"channel": name,
 				"error":   err.Error(),
 			})
@@ -171,11 +171,11 @@ func (m *Manager) StopAll(ctx context.Context) error {
 	}
 
 	for name, channel := range m.channels {
-		logger.InfoCF("channels", "Stopping channel", map[string]interface{}{
+		logger.InfoCF("channels", "Stopping channel", map[string]any{
 			"channel": name,
 		})
 		if err := channel.Stop(ctx); err != nil {
-			logger.ErrorCF("channels", "Error stopping channel", map[string]interface{}{
+			logger.ErrorCF("channels", "Error stopping channel", map[string]any{
 				"channel": name,
 				"error":   err.Error(),
 			})
@@ -210,14 +210,14 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 			m.mu.RUnlock()
 
 			if !exists {
-				logger.WarnCF("channels", "Unknown channel for outbound message", map[string]interface{}{
+				logger.WarnCF("channels", "Unknown channel for outbound message", map[string]any{
 					"channel": msg.Channel,
 				})
 				continue
 			}
 
 			if err := channel.Send(ctx, msg); err != nil {
-				logger.ErrorCF("channels", "Error sending message to channel", map[string]interface{}{
+				logger.ErrorCF("channels", "Error sending message to channel", map[string]any{
 					"channel": msg.Channel,
 					"error":   err.Error(),
 				})
@@ -233,13 +233,13 @@ func (m *Manager) GetChannel(name string) (Channel, bool) {
 	return channel, ok
 }
 
-func (m *Manager) GetStatus() map[string]interface{} {
+func (m *Manager) GetStatus() map[string]any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	status := make(map[string]interface{})
+	status := make(map[string]any)
 	for name, channel := range m.channels {
-		status[name] = map[string]interface{}{
+		status[name] = map[string]any{
 			"enabled": true,
 			"running": channel.IsRunning(),
 		}

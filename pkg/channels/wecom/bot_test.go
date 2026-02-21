@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -196,10 +195,8 @@ func TestWeComBotVerifySignature(t *testing.T) {
 			Token:      "",
 			WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
 		}
-		base := channels.NewBaseChannel("wecom", cfgEmpty, msgBus, cfgEmpty.AllowFrom)
 		chEmpty := &WeComBotChannel{
-			BaseChannel: base,
-			config:      cfgEmpty,
+			config: cfgEmpty,
 		}
 
 		if !verifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
@@ -356,7 +353,11 @@ func TestWeComBotHandleVerification(t *testing.T) {
 		nonce := "test_nonce"
 		signature := generateSignature("test_token", timestamp, nonce, encryptedEchostr)
 
-		req := httptest.NewRequest(http.MethodGet, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce+"&echostr="+encryptedEchostr, nil)
+		req := httptest.NewRequest(
+			http.MethodGet,
+			"/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce+"&echostr="+encryptedEchostr,
+			nil,
+		)
 		w := httptest.NewRecorder()
 
 		ch.handleVerification(context.Background(), w, req)
@@ -386,7 +387,11 @@ func TestWeComBotHandleVerification(t *testing.T) {
 		timestamp := "1234567890"
 		nonce := "test_nonce"
 
-		req := httptest.NewRequest(http.MethodGet, "/webhook/wecom?msg_signature=invalid_sig&timestamp="+timestamp+"&nonce="+nonce+"&echostr="+encryptedEchostr, nil)
+		req := httptest.NewRequest(
+			http.MethodGet,
+			"/webhook/wecom?msg_signature=invalid_sig&timestamp="+timestamp+"&nonce="+nonce+"&echostr="+encryptedEchostr,
+			nil,
+		)
 		w := httptest.NewRecorder()
 
 		ch.handleVerification(context.Background(), w, req)
@@ -410,14 +415,14 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 	t.Run("valid direct message callback", func(t *testing.T) {
 		// Create JSON message for direct chat (single)
 		jsonMsg := `{
-					"msgid": "test_msg_id_123",
-					"aibotid": "test_aibot_id",
-					"chattype": "single",
-					"from": {"userid": "user123"},
-					"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-					"msgtype": "text",
-					"text": {"content": "Hello World"}
-				}`
+			"msgid": "test_msg_id_123",
+			"aibotid": "test_aibot_id",
+			"chattype": "single",
+			"from": {"userid": "user123"},
+			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			"msgtype": "text",
+			"text": {"content": "Hello World"}
+		}`
 
 		// Encrypt message
 		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
@@ -435,7 +440,11 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 		nonce := "test_nonce"
 		signature := generateSignature("test_token", timestamp, nonce, encrypted)
 
-		req := httptest.NewRequest(http.MethodPost, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce, bytes.NewReader(wrapperData))
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce,
+			bytes.NewReader(wrapperData),
+		)
 		w := httptest.NewRecorder()
 
 		ch.handleMessageCallback(context.Background(), w, req)
@@ -451,15 +460,15 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 	t.Run("valid group message callback", func(t *testing.T) {
 		// Create JSON message for group chat
 		jsonMsg := `{
-					"msgid": "test_msg_id_456",
-					"aibotid": "test_aibot_id",
-					"chatid": "group_chat_id_123",
-					"chattype": "group",
-					"from": {"userid": "user456"},
-					"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-					"msgtype": "text",
-					"text": {"content": "Hello Group"}
-				}`
+			"msgid": "test_msg_id_456",
+			"aibotid": "test_aibot_id",
+			"chatid": "group_chat_id_123",
+			"chattype": "group",
+			"from": {"userid": "user456"},
+			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			"msgtype": "text",
+			"text": {"content": "Hello Group"}
+		}`
 
 		// Encrypt message
 		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
@@ -477,7 +486,11 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 		nonce := "test_nonce"
 		signature := generateSignature("test_token", timestamp, nonce, encrypted)
 
-		req := httptest.NewRequest(http.MethodPost, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce, bytes.NewReader(wrapperData))
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce,
+			bytes.NewReader(wrapperData),
+		)
 		w := httptest.NewRecorder()
 
 		ch.handleMessageCallback(context.Background(), w, req)
@@ -506,7 +519,11 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 		nonce := "test_nonce"
 		signature := generateSignature("test_token", timestamp, nonce, "")
 
-		req := httptest.NewRequest(http.MethodPost, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce, strings.NewReader("invalid xml"))
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce,
+			strings.NewReader("invalid xml"),
+		)
 		w := httptest.NewRecorder()
 
 		ch.handleMessageCallback(context.Background(), w, req)
@@ -528,7 +545,11 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 		timestamp := "1234567890"
 		nonce := "test_nonce"
 
-		req := httptest.NewRequest(http.MethodPost, "/webhook/wecom?msg_signature=invalid_sig&timestamp="+timestamp+"&nonce="+nonce, bytes.NewReader(wrapperData))
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/webhook/wecom?msg_signature=invalid_sig&timestamp="+timestamp+"&nonce="+nonce,
+			bytes.NewReader(wrapperData),
+		)
 		w := httptest.NewRecorder()
 
 		ch.handleMessageCallback(context.Background(), w, req)
@@ -623,7 +644,11 @@ func TestWeComBotHandleWebhook(t *testing.T) {
 		nonce := "test_nonce"
 		signature := generateSignature("test_token", timestamp, nonce, encoded)
 
-		req := httptest.NewRequest(http.MethodGet, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce+"&echostr="+encoded, nil)
+		req := httptest.NewRequest(
+			http.MethodGet,
+			"/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce+"&echostr="+encoded,
+			nil,
+		)
 		w := httptest.NewRecorder()
 
 		ch.handleWebhook(w, req)
@@ -646,7 +671,11 @@ func TestWeComBotHandleWebhook(t *testing.T) {
 		nonce := "test_nonce"
 		signature := generateSignature("test_token", timestamp, nonce, encryptedWrapper.Encrypt)
 
-		req := httptest.NewRequest(http.MethodPost, "/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce, bytes.NewReader(wrapperData))
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce,
+			bytes.NewReader(wrapperData),
+		)
 		w := httptest.NewRecorder()
 
 		ch.handleWebhook(w, req)
@@ -713,15 +742,15 @@ func TestWeComBotReplyMessage(t *testing.T) {
 
 func TestWeComBotMessageStructure(t *testing.T) {
 	jsonData := `{
-			"msgid": "test_msg_id_123",
-			"aibotid": "test_aibot_id",
-			"chatid": "group_chat_id_123",
-			"chattype": "group",
-			"from": {"userid": "user123"},
-			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			"msgtype": "text",
-			"text": {"content": "Hello World"}
-		}`
+		"msgid": "test_msg_id_123",
+		"aibotid": "test_aibot_id",
+		"chatid": "group_chat_id_123",
+		"chattype": "group",
+		"from": {"userid": "user123"},
+		"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+		"msgtype": "text",
+		"text": {"content": "Hello World"}
+	}`
 
 	var msg WeComBotMessage
 	err := json.Unmarshal([]byte(jsonData), &msg)
