@@ -19,7 +19,8 @@
     --pending-phase: var(--hint);
     /* Liquid Glass */
     --glass-bg: rgba(255, 255, 255, 0.55);
-    --glass-border: rgba(255, 255, 255, 0.7);
+    --glass-border: rgba(0, 0, 0, 0.08);
+    --glass-border-interactive: rgba(0, 0, 0, 0.15);
     --glass-shadow: rgba(0, 0, 0, 0.06);
     --glass-divider: rgba(0, 0, 0, 0.06);
     --tab-bar-bg: rgba(255, 255, 255, 0.72);
@@ -38,7 +39,8 @@
       --secondary-bg: var(--tg-theme-secondary-bg-color, #2c2c2e);
       /* Liquid Glass — dark */
       --glass-bg: rgba(255, 255, 255, 0.08);
-      --glass-border: rgba(255, 255, 255, 0.12);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --glass-border-interactive: rgba(255, 255, 255, 0.22);
       --glass-shadow: rgba(0, 0, 0, 0.2);
       --glass-divider: rgba(255, 255, 255, 0.08);
       --tab-bar-bg: rgba(28, 28, 30, 0.72);
@@ -192,7 +194,7 @@
   .step:active { transform: scale(0.97); }
   .step:not(.step-done) {
     background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--glass-border-interactive);
     box-shadow: 0 0.5px 2px var(--glass-shadow);
   }
 
@@ -243,7 +245,7 @@
     margin-bottom: 10px;
     cursor: pointer;
     transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.2s, border-color 0.2s;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--glass-border-interactive);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -325,7 +327,7 @@
     flex: 1;
     padding: 10px 16px;
     border-radius: 20px;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--glass-border-interactive);
     background: var(--glass-bg);
     color: var(--text);
     font-size: 14px;
@@ -377,7 +379,7 @@
   .cmd-tile {
     padding: 16px 14px;
     border-radius: 14px;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--glass-border-interactive);
     background: var(--glass-bg);
     color: var(--text);
     font-size: 15px;
@@ -406,7 +408,7 @@
     width: 100%;
     padding: 12px 16px;
     border-radius: 14px;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--glass-border-interactive);
     background: var(--glass-bg);
     color: var(--text);
     font-size: 14px;
