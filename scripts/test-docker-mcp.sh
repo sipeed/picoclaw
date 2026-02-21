@@ -11,7 +11,7 @@ echo ""
 
 # Build the image
 echo "📦 Building Docker image..."
-docker compose -f "$COMPOSE_FILE" build
+docker compose -f "$COMPOSE_FILE" build "$SERVICE"
 
 # Test npx
 echo "✅ Testing npx..."
