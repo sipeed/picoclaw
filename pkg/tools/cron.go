@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
@@ -22,25 +23,26 @@ type CronTool struct {
 	cronService *cron.CronService
 	executor    JobExecutor
 	msgBus      *bus.MessageBus
-	execTool    *ExecTool
+	sandbox     sandbox.Sandbox
+	execGuard   *ExecTool
+	execTimeout time.Duration
 	channel     string
 	chatID      string
 	mu          sync.RWMutex
 }
 
-// NewCronTool creates a new CronTool
-// execTimeout: 0 means no timeout, >0 sets the timeout duration
-func NewCronTool(
-	cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool,
-	execTimeout time.Duration, config *config.Config,
-) *CronTool {
-	execTool := NewExecToolWithConfig(workspace, restrict, config)
-	execTool.SetTimeout(execTimeout)
+// NewCronTool creates a new CronTool.
+// execTimeout: 0 means no timeout, >0 sets the timeout duration.
+func NewCronTool(cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration, config *config.Config) *CronTool {
+	sb := sandbox.NewFromConfig(workspace, restrict, config)
+	guard := NewExecToolWithSandbox(workspace, restrict, config, nil)
 	return &CronTool{
 		cronService: cronService,
 		executor:    executor,
 		msgBus:      msgBus,
-		execTool:    execTool,
+		sandbox:     sb,
+		execGuard:   guard,
+		execTimeout: execTimeout,
 	}
 }
 
@@ -282,16 +284,42 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 
 	// Execute command if present
 	if job.Payload.Command != "" {
-		args := map[string]any{
-			"command": job.Payload.Command,
-		}
-
-		result := t.execTool.Execute(ctx, args)
 		var output string
-		if result.IsError {
-			output = fmt.Sprintf("Error executing scheduled command: %s", result.ForLLM)
+		cwd := ""
+		if t.execGuard != nil {
+			cwd = t.execGuard.workingDir
+			if guardError := t.execGuard.guardCommand(job.Payload.Command, cwd); guardError != "" {
+				output = fmt.Sprintf("Error executing scheduled command: %s", guardError)
+				t.msgBus.PublishOutbound(bus.OutboundMessage{
+					Channel: channel,
+					ChatID:  chatID,
+					Content: output,
+				})
+				return "ok"
+			}
+		}
+		res, err := t.sandbox.Exec(ctx, sandbox.ExecRequest{
+			Command: job.Payload.Command,
+			WorkingDir: func() string {
+				if t.execGuard == nil {
+					return "."
+				}
+				return t.execGuard.resolveSandboxWorkingDir(cwd)
+			}(),
+			TimeoutMs: t.execTimeout.Milliseconds(),
+		})
+		if err != nil {
+			output = fmt.Sprintf("Error executing scheduled command: %v", err)
 		} else {
-			output = fmt.Sprintf("Scheduled command '%s' executed:\n%s", job.Payload.Command, result.ForLLM)
+			cmdOutput := res.Stdout
+			if res.Stderr != "" {
+				cmdOutput += "\nSTDERR:\n" + res.Stderr
+			}
+			if res.ExitCode != 0 {
+				output = fmt.Sprintf("Error executing scheduled command: %s\nExit code: %d", cmdOutput, res.ExitCode)
+			} else {
+				output = fmt.Sprintf("Scheduled command '%s' executed:\n%s", job.Payload.Command, cmdOutput)
+			}
 		}
 
 		t.msgBus.PublishOutbound(bus.OutboundMessage{

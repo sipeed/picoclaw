@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -45,33 +46,49 @@ func NewAgentInstance(
 
 	model := resolveAgentModel(agentCfg, defaults)
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
-
-	restrict := defaults.RestrictToWorkspace
-	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
-	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
-
-	sessionsDir := filepath.Join(workspace, "sessions")
-	sessionsManager := session.NewSessionManager(sessionsDir)
-
-	contextBuilder := NewContextBuilder(workspace)
-	contextBuilder.SetToolsRegistry(toolsRegistry)
-
 	agentID := routing.DefaultAgentID
 	agentName := ""
 	var subagents *config.SubagentsConfig
 	var skillsFilter []string
-
 	if agentCfg != nil {
 		agentID = routing.NormalizeAgentID(agentCfg.ID)
 		agentName = agentCfg.Name
 		subagents = agentCfg.Subagents
 		skillsFilter = agentCfg.Skills
 	}
+
+	restrict := defaults.RestrictToWorkspace
+	sb := sandbox.NewFromConfigWithAgent(workspace, restrict, cfg, agentID)
+	readSb := sb
+	if !sandbox.IsToolSandboxEnabled(cfg, "read_file") {
+		readSb = nil
+	}
+	writeSb := sb
+	if !sandbox.IsToolSandboxEnabled(cfg, "write_file") {
+		writeSb = nil
+	}
+	execSb := sb
+	if !sandbox.IsToolSandboxEnabled(cfg, "exec") {
+		execSb = nil
+	}
+	roContainer := isContainerReadOnlySandbox(cfg)
+	toolsRegistry := tools.NewToolRegistry()
+	toolsRegistry.Register(tools.NewReadFileToolWithSandbox(workspace, restrict, readSb))
+	if !roContainer {
+		toolsRegistry.Register(tools.NewWriteFileToolWithSandbox(workspace, restrict, writeSb))
+	}
+	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
+	toolsRegistry.Register(tools.NewExecToolWithSandbox(workspace, restrict, cfg, execSb))
+	if !roContainer {
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
+	}
+
+	sessionsDir := filepath.Join(workspace, "sessions")
+	sessionsManager := session.NewSessionManager(sessionsDir)
+
+	contextBuilder := NewContextBuilder(workspace)
+	contextBuilder.SetToolsRegistry(toolsRegistry)
 
 	maxIter := defaults.MaxToolIterations
 	if maxIter == 0 {
@@ -142,6 +159,14 @@ func resolveAgentFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentD
 		return agentCfg.Model.Fallbacks
 	}
 	return defaults.ModelFallbacks
+}
+
+func isContainerReadOnlySandbox(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(cfg.Agents.Defaults.Sandbox.Mode), "all") &&
+		strings.EqualFold(strings.TrimSpace(cfg.Agents.Defaults.Sandbox.WorkspaceAccess), "ro")
 }
 
 func expandHome(path string) string {

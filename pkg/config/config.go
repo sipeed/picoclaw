@@ -167,16 +167,17 @@ type SessionConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace           string   `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool     `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string   `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string   `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
-	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
-	ImageModel          string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
-	MaxTokens           int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace           string             `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool               `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Provider            string             `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	Model               string             `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	ModelFallbacks      []string           `json:"model_fallbacks,omitempty"`
+	ImageModel          string             `json:"image_model,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks []string           `json:"image_model_fallbacks,omitempty"`
+	MaxTokens           int                `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature         *float64           `json:"temperature,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int                `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Sandbox             AgentSandboxConfig `json:"sandbox"`
 }
 
 type ChannelsConfig struct {
@@ -444,11 +445,101 @@ type ExecConfig struct {
 	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 }
 
+type AgentSandboxPruneConfig struct {
+	IdleHours  int `json:"idle_hours" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_IDLE_HOURS"`
+	MaxAgeDays int `json:"max_age_days" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_MAX_AGE_DAYS"`
+}
+
+type AgentSandboxDockerUlimitValue struct {
+	Value *int64 `json:"-"`
+	Soft  *int64 `json:"soft,omitempty"`
+	Hard  *int64 `json:"hard,omitempty"`
+}
+
+func (v *AgentSandboxDockerUlimitValue) UnmarshalJSON(data []byte) error {
+	var num int64
+	if err := json.Unmarshal(data, &num); err == nil {
+		v.Value = &num
+		v.Soft = nil
+		v.Hard = nil
+		return nil
+	}
+
+	type raw struct {
+		Soft *int64 `json:"soft"`
+		Hard *int64 `json:"hard"`
+	}
+	var r raw
+	if err := json.Unmarshal(data, &r); err != nil {
+		return err
+	}
+	v.Value = nil
+	v.Soft = r.Soft
+	v.Hard = r.Hard
+	return nil
+}
+
+func (v AgentSandboxDockerUlimitValue) MarshalJSON() ([]byte, error) {
+	if v.Value != nil {
+		return json.Marshal(*v.Value)
+	}
+	type raw struct {
+		Soft *int64 `json:"soft,omitempty"`
+		Hard *int64 `json:"hard,omitempty"`
+	}
+	return json.Marshal(raw{
+		Soft: v.Soft,
+		Hard: v.Hard,
+	})
+}
+
+type AgentSandboxDockerConfig struct {
+	Image           string                                   `json:"image" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_IMAGE"`
+	ContainerPrefix string                                   `json:"container_prefix" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_CONTAINER_PREFIX"`
+	Workdir         string                                   `json:"workdir" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_WORKDIR"`
+	ReadOnlyRoot    bool                                     `json:"read_only_root" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_READ_ONLY_ROOT"`
+	Tmpfs           []string                                 `json:"tmpfs"`
+	Network         string                                   `json:"network" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_NETWORK"`
+	User            string                                   `json:"user" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_USER"`
+	CapDrop         []string                                 `json:"cap_drop"`
+	Env             map[string]string                        `json:"env"`
+	SetupCommand    string                                   `json:"setup_command" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_SETUP_COMMAND"`
+	PidsLimit       int64                                    `json:"pids_limit" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_PIDS_LIMIT"`
+	Memory          string                                   `json:"memory" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_MEMORY"`
+	MemorySwap      string                                   `json:"memory_swap" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_MEMORY_SWAP"`
+	Cpus            float64                                  `json:"cpus" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_CPUS"`
+	Ulimits         map[string]AgentSandboxDockerUlimitValue `json:"ulimits"`
+	SeccompProfile  string                                   `json:"seccomp_profile" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_SECCOMP_PROFILE"`
+	ApparmorProfile string                                   `json:"apparmor_profile" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_APPARMOR_PROFILE"`
+	DNS             []string                                 `json:"dns"`
+	ExtraHosts      []string                                 `json:"extra_hosts"`
+	Binds           []string                                 `json:"binds"`
+}
+
+type AgentSandboxConfig struct {
+	Mode            string                   `json:"mode" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_MODE"`
+	Scope           string                   `json:"scope" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_SCOPE"`
+	WorkspaceAccess string                   `json:"workspace_access" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ACCESS"`
+	WorkspaceRoot   string                   `json:"workspace_root" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ROOT"`
+	Docker          AgentSandboxDockerConfig `json:"docker"`
+	Prune           AgentSandboxPruneConfig  `json:"prune"`
+}
+
+type SandboxToolPolicyConfig struct {
+	Allow []string `json:"allow"`
+	Deny  []string `json:"deny"`
+}
+
+type SandboxToolsConfig struct {
+	Tools SandboxToolPolicyConfig `json:"tools"`
+}
+
 type ToolsConfig struct {
-	Web    WebToolsConfig    `json:"web"`
-	Cron   CronToolsConfig   `json:"cron"`
-	Exec   ExecConfig        `json:"exec"`
-	Skills SkillsToolsConfig `json:"skills"`
+	Web     WebToolsConfig     `json:"web"`
+	Cron    CronToolsConfig    `json:"cron"`
+	Exec    ExecConfig         `json:"exec"`
+	Skills  SkillsToolsConfig  `json:"skills"`
+	Sandbox SandboxToolsConfig `json:"sandbox"`
 }
 
 type SkillsToolsConfig struct {

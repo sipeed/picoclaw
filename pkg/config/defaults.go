@@ -17,6 +17,40 @@ func DefaultConfig() *Config {
 				MaxTokens:           8192,
 				Temperature:         nil, // nil means use provider default
 				MaxToolIterations:   20,
+				Sandbox: AgentSandboxConfig{
+					Mode:            "off",
+					Scope:           "agent",
+					WorkspaceAccess: "none",
+					WorkspaceRoot:   "~/.picoclaw/sandboxes",
+					Docker: AgentSandboxDockerConfig{
+						Image:           "debian:bookworm-slim",
+						ContainerPrefix: "picoclaw-sandbox-",
+						Workdir:         "/workspace",
+						ReadOnlyRoot:    true,
+						Tmpfs:           []string{"/tmp", "/var/tmp", "/run"},
+						Network:         "none",
+						User:            "",
+						CapDrop:         []string{"ALL"},
+						Env: map[string]string{
+							"LANG": "C.UTF-8",
+						},
+						SetupCommand: "",
+						PidsLimit:    0,
+						Memory:       "",
+						MemorySwap:   "",
+						Cpus:         0,
+						Ulimits:         map[string]AgentSandboxDockerUlimitValue{},
+						SeccompProfile:  "",
+						ApparmorProfile: "",
+						DNS:             []string{},
+						ExtraHosts:      []string{},
+						Binds:           []string{},
+					},
+					Prune: AgentSandboxPruneConfig{
+						IdleHours:  24,
+						MaxAgeDays: 7,
+					},
+				},
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -303,6 +337,12 @@ func DefaultConfig() *Config {
 					TTLSeconds: 300,
 				},
 			},
+			Sandbox: SandboxToolsConfig{
+				Tools: SandboxToolPolicyConfig{
+					Allow: []string{"exec", "read_file", "write_file"},
+					Deny:  []string{"cron"},
+				},
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
@@ -313,4 +353,8 @@ func DefaultConfig() *Config {
 			MonitorUSB: true,
 		},
 	}
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
 }

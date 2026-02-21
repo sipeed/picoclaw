@@ -188,6 +188,43 @@ func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 	}
 }
 
+func TestAgentSandboxConfig_ParseWorkspaceAccessRoot(t *testing.T) {
+	jsonData := `{
+		"agents": {
+			"defaults": {
+				"sandbox": {
+					"mode": "all",
+					"scope": "session",
+					"workspace_access": "ro",
+					"workspace_root": "~/.picoclaw/sandboxes",
+					"docker": {
+						"image": "debian:bookworm-slim",
+						"workdir": "/workspace"
+					}
+				}
+			}
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if cfg.Agents.Defaults.Sandbox.Mode != "all" {
+		t.Fatalf("sandbox.mode = %q, want all", cfg.Agents.Defaults.Sandbox.Mode)
+	}
+	if cfg.Agents.Defaults.Sandbox.Scope != "session" {
+		t.Fatalf("sandbox.scope = %q, want session", cfg.Agents.Defaults.Sandbox.Scope)
+	}
+	if cfg.Agents.Defaults.Sandbox.WorkspaceAccess != "ro" {
+		t.Fatalf("sandbox.workspace_access = %q, want ro", cfg.Agents.Defaults.Sandbox.WorkspaceAccess)
+	}
+	if cfg.Agents.Defaults.Sandbox.WorkspaceRoot != "~/.picoclaw/sandboxes" {
+		t.Fatalf("sandbox.workspace_root = %q, want ~/.picoclaw/sandboxes", cfg.Agents.Defaults.Sandbox.WorkspaceRoot)
+	}
+}
+
 // TestDefaultConfig_HeartbeatEnabled verifies heartbeat is enabled by default
 func TestDefaultConfig_HeartbeatEnabled(t *testing.T) {
 	cfg := DefaultConfig()
@@ -297,6 +334,56 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	}
 	if cfg.Tools.Web.DuckDuckGo.MaxResults != 5 {
 		t.Error("Expected DuckDuckGo MaxResults 5, got ", cfg.Tools.Web.DuckDuckGo.MaxResults)
+	}
+}
+
+func TestDefaultConfig_SandboxTools(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Agents.Defaults.Sandbox.Mode != "off" {
+		t.Fatalf("Expected sandbox mode off, got %q", cfg.Agents.Defaults.Sandbox.Mode)
+	}
+	if cfg.Agents.Defaults.Sandbox.Scope != "agent" {
+		t.Fatalf("Expected sandbox scope agent, got %q", cfg.Agents.Defaults.Sandbox.Scope)
+	}
+	if cfg.Agents.Defaults.Sandbox.WorkspaceAccess != "none" {
+		t.Fatalf("Expected sandbox workspace_access none, got %q", cfg.Agents.Defaults.Sandbox.WorkspaceAccess)
+	}
+	if cfg.Agents.Defaults.Sandbox.WorkspaceRoot == "" {
+		t.Fatal("Expected sandbox workspace_root to be configured")
+	}
+	if cfg.Agents.Defaults.Sandbox.Docker.Image == "" {
+		t.Fatal("Expected sandbox image to be configured")
+	}
+	if cfg.Agents.Defaults.Sandbox.Docker.ContainerPrefix == "" {
+		t.Fatal("Expected sandbox container prefix to be configured")
+	}
+	if cfg.Agents.Defaults.Sandbox.Docker.Workdir == "" {
+		t.Fatal("Expected sandbox workdir to be configured")
+	}
+	if !cfg.Agents.Defaults.Sandbox.Docker.ReadOnlyRoot {
+		t.Fatal("Expected sandbox read_only_root default to true")
+	}
+	if cfg.Agents.Defaults.Sandbox.Docker.Env["LANG"] == "" {
+		t.Fatal("Expected sandbox docker env LANG to be configured")
+	}
+	if len(cfg.Agents.Defaults.Sandbox.Docker.CapDrop) == 0 {
+		t.Fatal("Expected sandbox cap_drop to be configured")
+	}
+	if len(cfg.Agents.Defaults.Sandbox.Docker.Ulimits) != 0 {
+		t.Fatal("Expected sandbox docker ulimits to be empty by default (use Docker defaults)")
+	}
+	if len(cfg.Tools.Sandbox.Tools.Allow) == 0 {
+		t.Fatal("Expected sandbox allow tools to be configured")
+	}
+	if cfg.Agents.Defaults.Sandbox.Prune.IdleHours <= 0 {
+		t.Fatal("Expected sandbox prune idle hours > 0")
+	}
+	if cfg.Agents.Defaults.Sandbox.Prune.MaxAgeDays <= 0 {
+		t.Fatal("Expected sandbox prune max age days > 0")
+	}
+	if cfg.Tools.Sandbox.Tools.Deny == nil {
+		t.Fatal("Expected sandbox deny tools to be configured")
 	}
 }
 

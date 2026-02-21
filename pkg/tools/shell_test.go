@@ -2,12 +2,90 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 )
+
+type stubSandbox struct {
+	lastReq sandbox.ExecRequest
+	err     error
+	res     *sandbox.ExecResult
+}
+
+func (s *stubSandbox) Start(ctx context.Context) error { return nil }
+func (s *stubSandbox) Prune(ctx context.Context) error { return nil }
+func (s *stubSandbox) Fs() sandbox.FsBridge            { return nil }
+func (s *stubSandbox) Exec(ctx context.Context, req sandbox.ExecRequest) (*sandbox.ExecResult, error) {
+	return sandboxAggregateFromStub(ctx, req, s.ExecStream)
+}
+
+func (s *stubSandbox) ExecStream(ctx context.Context, req sandbox.ExecRequest, onEvent func(sandbox.ExecEvent) error) (*sandbox.ExecResult, error) {
+	s.lastReq = req
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.res != nil {
+		if onEvent != nil {
+			if s.res.Stdout != "" {
+				if err := onEvent(sandbox.ExecEvent{Type: sandbox.ExecEventStdout, Chunk: []byte(s.res.Stdout)}); err != nil {
+					return nil, err
+				}
+			}
+			if s.res.Stderr != "" {
+				if err := onEvent(sandbox.ExecEvent{Type: sandbox.ExecEventStderr, Chunk: []byte(s.res.Stderr)}); err != nil {
+					return nil, err
+				}
+			}
+			if err := onEvent(sandbox.ExecEvent{Type: sandbox.ExecEventExit, ExitCode: s.res.ExitCode}); err != nil {
+				return nil, err
+			}
+		}
+		return s.res, nil
+	}
+	if onEvent != nil {
+		if err := onEvent(sandbox.ExecEvent{Type: sandbox.ExecEventStdout, Chunk: []byte("ok")}); err != nil {
+			return nil, err
+		}
+		if err := onEvent(sandbox.ExecEvent{Type: sandbox.ExecEventExit, ExitCode: 0}); err != nil {
+			return nil, err
+		}
+	}
+	return &sandbox.ExecResult{Stdout: "ok", ExitCode: 0}, nil
+}
+
+func sandboxAggregateFromStub(
+	ctx context.Context,
+	req sandbox.ExecRequest,
+	streamFn func(context.Context, sandbox.ExecRequest, func(sandbox.ExecEvent) error) (*sandbox.ExecResult, error),
+) (*sandbox.ExecResult, error) {
+	var stdout strings.Builder
+	var stderr strings.Builder
+	exitCode := 0
+	res, err := streamFn(ctx, req, func(event sandbox.ExecEvent) error {
+		switch event.Type {
+		case sandbox.ExecEventStdout:
+			_, _ = stdout.Write(event.Chunk)
+		case sandbox.ExecEventStderr:
+			_, _ = stderr.Write(event.Chunk)
+		case sandbox.ExecEventExit:
+			exitCode = event.ExitCode
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if res != nil {
+		return res, nil
+	}
+	return &sandbox.ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: exitCode}, nil
+}
 
 // TestShellTool_Success verifies successful command execution
 func TestShellTool_Success(t *testing.T) {
@@ -270,5 +348,76 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 			result.ForLLM,
 			result.ForUser,
 		)
+	}
+}
+
+func TestShellTool_SandboxMapsHostWorkingDirToRelative(t *testing.T) {
+	workspace := t.TempDir()
+	sb := &stubSandbox{}
+	tool := NewExecToolWithSandbox(workspace, true, nil, sb)
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"command":     "echo test",
+		"working_dir": filepath.Join(workspace, "subdir"),
+	}
+	result := tool.Execute(ctx, args)
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if sb.lastReq.WorkingDir != "subdir" {
+		t.Fatalf("sandbox working_dir = %q, want subdir", sb.lastReq.WorkingDir)
+	}
+}
+
+func TestShellTool_SandboxAllowsAbsoluteWorkspaceWorkingDir(t *testing.T) {
+	workspace := t.TempDir()
+	sb := &stubSandbox{}
+	tool := NewExecToolWithSandbox(workspace, true, nil, sb)
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"command":     "echo test",
+		"working_dir": "/workspace/subdir",
+	}
+	result := tool.Execute(ctx, args)
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if sb.lastReq.WorkingDir != "/workspace/subdir" {
+		t.Fatalf("sandbox working_dir = %q, want /workspace/subdir", sb.lastReq.WorkingDir)
+	}
+}
+
+func TestShellTool_SandboxBlocksAbsoluteNonWorkspaceWorkingDirWhenRestricted(t *testing.T) {
+	workspace := t.TempDir()
+	sb := &stubSandbox{}
+	tool := NewExecToolWithSandbox(workspace, true, nil, sb)
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"command":     "echo test",
+		"working_dir": "/tmp/logs",
+	}
+	result := tool.Execute(ctx, args)
+	if !result.IsError {
+		t.Fatalf("expected error for /tmp/logs with restrict_to_workspace=true, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "blocked") {
+		t.Fatalf("expected blocked error, got: %s", result.ForLLM)
+	}
+}
+
+func TestShellTool_SandboxExecError(t *testing.T) {
+	workspace := t.TempDir()
+	sb := &stubSandbox{err: fmt.Errorf("sandbox down")}
+	tool := NewExecToolWithSandbox(workspace, true, nil, sb)
+
+	result := tool.Execute(context.Background(), map[string]interface{}{"command": "echo test"})
+	if !result.IsError {
+		t.Fatal("expected sandbox error result")
+	}
+	if !strings.Contains(result.ForLLM, "sandbox exec failed") {
+		t.Fatalf("unexpected error message: %s", result.ForLLM)
 	}
 }

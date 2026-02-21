@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 )
 
 // validatePath ensures the given path is within the workspace if restrict is true.
@@ -82,10 +84,23 @@ func isWithinWorkspace(candidate, workspace string) bool {
 type ReadFileTool struct {
 	workspace string
 	restrict  bool
+	fsBridge  sandbox.FsBridge
 }
 
 func NewReadFileTool(workspace string, restrict bool) *ReadFileTool {
 	return &ReadFileTool{workspace: workspace, restrict: restrict}
+}
+
+func NewReadFileToolWithSandbox(workspace string, restrict bool, sb sandbox.Sandbox) *ReadFileTool {
+	var fsBridge sandbox.FsBridge
+	if sb != nil {
+		fsBridge = sb.Fs()
+	}
+	return &ReadFileTool{workspace: workspace, restrict: restrict, fsBridge: fsBridge}
+}
+
+func NewReadFileToolWithFsBridge(workspace string, restrict bool, fsBridge sandbox.FsBridge) *ReadFileTool {
+	return &ReadFileTool{workspace: workspace, restrict: restrict, fsBridge: fsBridge}
 }
 
 func (t *ReadFileTool) Name() string {
@@ -115,12 +130,19 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("path is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
-	if err != nil {
-		return ErrorResult(err.Error())
+	var (
+		content []byte
+		err     error
+	)
+	if t.fsBridge != nil {
+		content, err = t.fsBridge.ReadFile(ctx, path)
+	} else {
+		var resolvedPath string
+		resolvedPath, err = validatePath(path, t.workspace, t.restrict)
+		if err == nil {
+			content, err = os.ReadFile(resolvedPath)
+		}
 	}
-
-	content, err := os.ReadFile(resolvedPath)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
@@ -131,10 +153,23 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 type WriteFileTool struct {
 	workspace string
 	restrict  bool
+	fsBridge  sandbox.FsBridge
 }
 
 func NewWriteFileTool(workspace string, restrict bool) *WriteFileTool {
 	return &WriteFileTool{workspace: workspace, restrict: restrict}
+}
+
+func NewWriteFileToolWithSandbox(workspace string, restrict bool, sb sandbox.Sandbox) *WriteFileTool {
+	var fsBridge sandbox.FsBridge
+	if sb != nil {
+		fsBridge = sb.Fs()
+	}
+	return &WriteFileTool{workspace: workspace, restrict: restrict, fsBridge: fsBridge}
+}
+
+func NewWriteFileToolWithFsBridge(workspace string, restrict bool, fsBridge sandbox.FsBridge) *WriteFileTool {
+	return &WriteFileTool{workspace: workspace, restrict: restrict, fsBridge: fsBridge}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -171,6 +206,13 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	content, ok := args["content"].(string)
 	if !ok {
 		return ErrorResult("content is required")
+	}
+
+	if t.fsBridge != nil {
+		if err := t.fsBridge.WriteFile(ctx, path, []byte(content), true); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
+		}
+		return SilentResult(fmt.Sprintf("File written: %s", path))
 	}
 
 	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
