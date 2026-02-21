@@ -114,6 +114,12 @@
       "group_trigger_prefix": [],
       "allow_from": []
     },
+    "websocket": {
+      "enabled": false,
+      "host": "0.0.0.0",
+      "port": 8080,
+      "allow_from": []
+    },
     "wecom": {
       "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
       "enabled": false,

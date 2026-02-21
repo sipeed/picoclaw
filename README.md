@@ -264,16 +264,17 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, WeCom or WebSocket
 
-| Channel      | Setup                              |
-| ------------ | ---------------------------------- |
-| **Telegram** | Easy (just a token)                |
-| **Discord**  | Easy (bot token + intents)         |
-| **QQ**       | Easy (AppID + AppSecret)           |
-| **DingTalk** | Medium (app credentials)           |
-| **LINE**     | Medium (credentials + webhook URL) |
-| **WeCom**    | Medium (CorpID + webhook setup)    |
+| Channel       | Setup                              |
+| ------------- | ---------------------------------- |
+| **Telegram**  | Easy (just a token)                |
+| **Discord**   | Easy (bot token + intents)         |
+| **QQ**        | Easy (AppID + AppSecret)           |
+| **DingTalk**  | Medium (app credentials)           |
+| **LINE**      | Medium (credentials + webhook URL) |
+| **WebSocket** | Easy (local LAN web chat)          |
+| **WeCom**     | Medium (CorpID + webhook setup)    |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -556,6 +557,59 @@ picoclaw gateway
 ```
 
 > **Note**: WeCom App requires opening port 18792 for webhook callbacks. Use a reverse proxy for HTTPS.
+
+</details>
+
+<details>
+<summary><b>WebSocket</b> (Local LAN Web Chat)</summary>
+
+**1. Configure**
+
+WebSocket channel provides a web-based chat interface accessible from your local network:
+
+```json
+{
+  "channels": {
+    "websocket": {
+      "enabled": true,
+      "host": "0.0.0.0",
+      "port": 8080,
+      "allow_from": []
+    }
+  }
+}
+```
+
+**Configuration Options:**
+
+- `host`: Bind address (use `0.0.0.0` to allow connections from LAN, or `127.0.0.1` for localhost only)
+- `port`: HTTP server port (default: 8080)
+- `allow_from`: List of allowed client IPs (empty list = allow all)
+
+**2. Run**
+
+```bash
+picoclaw gateway
+```
+
+**3. Access the Web Interface**
+
+Open your browser and navigate to:
+
+- Local: `http://localhost:8080`
+- LAN: `http://YOUR_SERVER_IP:8080`
+
+The chat interface features:
+
+- Modern, responsive design with dark mode
+- Real-time messaging via WebSocket
+- Automatic reconnection on connection loss
+- Connection status indicator
+- Multi-language support (English/中文)
+
+> **Note**: The WebSocket channel is designed for local LAN use. For internet-facing deployments, consider setting up proper authentication and using HTTPS with a reverse proxy.
+
+> **Docker Compose**: Add `ports: ["8080:8080"]` to the `picoclaw-gateway` service to expose the WebSocket port.
 
 </details>
 

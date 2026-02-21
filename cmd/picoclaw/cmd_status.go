@@ -5,7 +5,10 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 )
@@ -43,19 +46,49 @@ func statusCmd() {
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("Model: %s\n", cfg.Agents.Defaults.Model)
 
-		hasOpenRouter := cfg.Providers.OpenRouter.APIKey != ""
-		hasAnthropic := cfg.Providers.Anthropic.APIKey != ""
-		hasOpenAI := cfg.Providers.OpenAI.APIKey != ""
-		hasGemini := cfg.Providers.Gemini.APIKey != ""
-		hasZhipu := cfg.Providers.Zhipu.APIKey != ""
-		hasQwen := cfg.Providers.Qwen.APIKey != ""
-		hasGroq := cfg.Providers.Groq.APIKey != ""
-		hasVLLM := cfg.Providers.VLLM.APIBase != ""
-		hasMoonshot := cfg.Providers.Moonshot.APIKey != ""
-		hasDeepSeek := cfg.Providers.DeepSeek.APIKey != ""
-		hasVolcEngine := cfg.Providers.VolcEngine.APIKey != ""
-		hasNvidia := cfg.Providers.Nvidia.APIKey != ""
-		hasOllama := cfg.Providers.Ollama.APIBase != ""
+		// Build a map of providers from model_list
+		modelProviders := make(map[string]bool)
+		for _, model := range cfg.ModelList {
+			if model.APIKey == "" {
+				continue
+			}
+			modelStr := strings.ToLower(model.Model)
+			// Extract provider name (before "/")
+			if idx := strings.Index(modelStr, "/"); idx > 0 {
+				provider := modelStr[:idx]
+				modelProviders[provider] = true
+				// Add aliases
+				switch provider {
+				case "doubao":
+					modelProviders["volcengine"] = true
+				case "claude":
+					modelProviders["anthropic"] = true
+				case "gpt":
+					modelProviders["openai"] = true
+				case "tongyi":
+					modelProviders["qwen"] = true
+				case "kimi":
+					modelProviders["moonshot"] = true
+				case "glm":
+					modelProviders["zhipu"] = true
+				}
+			}
+		}
+
+		// Check providers (legacy) or model_list (new)
+		hasOpenRouter := cfg.Providers.OpenRouter.APIKey != "" || modelProviders["openrouter"]
+		hasAnthropic := cfg.Providers.Anthropic.APIKey != "" || modelProviders["anthropic"]
+		hasOpenAI := cfg.Providers.OpenAI.APIKey != "" || modelProviders["openai"]
+		hasGemini := cfg.Providers.Gemini.APIKey != "" || modelProviders["gemini"]
+		hasZhipu := cfg.Providers.Zhipu.APIKey != "" || modelProviders["zhipu"]
+		hasQwen := cfg.Providers.Qwen.APIKey != "" || modelProviders["qwen"]
+		hasGroq := cfg.Providers.Groq.APIKey != "" || modelProviders["groq"]
+		hasVLLM := cfg.Providers.VLLM.APIBase != "" || modelProviders["vllm"]
+		hasMoonshot := cfg.Providers.Moonshot.APIKey != "" || modelProviders["moonshot"]
+		hasDeepSeek := cfg.Providers.DeepSeek.APIKey != "" || modelProviders["deepseek"]
+		hasVolcEngine := cfg.Providers.VolcEngine.APIKey != "" || modelProviders["volcengine"]
+		hasNvidia := cfg.Providers.Nvidia.APIKey != "" || modelProviders["nvidia"]
+		hasOllama := cfg.Providers.Ollama.APIBase != "" || modelProviders["ollama"]
 
 		status := func(enabled bool) string {
 			if enabled {
@@ -97,6 +130,38 @@ func statusCmd() {
 				}
 				fmt.Printf("  %s (%s): %s\n", provider, cred.AuthMethod, status)
 			}
+		}
+
+		// Display channel status
+		fmt.Println("\nChannels:")
+		channelStatus := func(enabled bool, name string, details ...string) {
+			if enabled {
+				if len(details) > 0 {
+					fmt.Printf("  %s: ✓ %s\n", name, details[0])
+				} else {
+					fmt.Printf("  %s: ✓\n", name)
+				}
+			} else {
+				fmt.Printf("  %s: disabled\n", name)
+			}
+		}
+
+		channelStatus(cfg.Channels.Telegram.Enabled, "Telegram")
+		channelStatus(cfg.Channels.Discord.Enabled, "Discord")
+		channelStatus(cfg.Channels.Feishu.Enabled, "Feishu")
+		channelStatus(cfg.Channels.DingTalk.Enabled, "DingTalk")
+		channelStatus(cfg.Channels.Slack.Enabled, "Slack")
+		channelStatus(cfg.Channels.WhatsApp.Enabled, "WhatsApp")
+		channelStatus(cfg.Channels.QQ.Enabled, "QQ")
+		channelStatus(cfg.Channels.LINE.Enabled, "LINE")
+		channelStatus(cfg.Channels.OneBot.Enabled, "OneBot")
+		channelStatus(cfg.Channels.MaixCam.Enabled, "MaixCam")
+		if cfg.Channels.WebSocket.Enabled {
+			hostPort := net.JoinHostPort(cfg.Channels.WebSocket.Host, strconv.Itoa(cfg.Channels.WebSocket.Port))
+			addr := "http://" + hostPort
+			channelStatus(true, "WebSocket", addr)
+		} else {
+			channelStatus(false, "WebSocket")
 		}
 	}
 }

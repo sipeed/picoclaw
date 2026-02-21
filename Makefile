@@ -119,6 +119,12 @@ uninstall-all:
 	@echo "Removed workspace: $(PICOCLAW_HOME)"
 	@echo "Complete uninstallation done!"
 
+## build-riscv64: Build picoclaw for RISC-V 64-bit
+build-riscv64: generate  
+	@mkdir -p $(BUILD_DIR)  
+	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)  
+	@echo "RISC-V build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64"
+
 ## clean: Remove build artifacts
 clean:
 	@echo "Cleaning build artifacts..."

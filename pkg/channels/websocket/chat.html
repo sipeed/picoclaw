@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicoClaw · Intelligent Conversation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        :root {
+            --bg-primary: #0f0f0f;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #252525;
+            --accent-primary: #3b82f6;
+            --accent-secondary: #8b5cf6;
+            --text-primary: #ffffff;
+            --text-secondary: #a1a1a1;
+            --text-tertiary: #737373;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --glass-bg: rgba(26, 26, 26, 0.8);
+            --hover-bg: rgba(255, 255, 255, 0.05);
+            --success: #10b981;
+            --error: #ef4444;
+        }
+        
+        [data-theme="light"] {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-tertiary: #e9ecef;
+            --accent-primary: #2563eb;
+            --accent-secondary: #7c3aed;
+            --text-primary: #0f0f0f;
+            --text-secondary: #525252;
+            --text-tertiary: #737373;
+            --border-color: rgba(0, 0, 0, 0.08);
+            --glass-bg: rgba(255, 255, 255, 0.8);
+            --hover-bg: rgba(0, 0, 0, 0.03);
+            --success: #059669;
+            --error: #dc2626;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+            transition: background-color 0.2s ease;
+        }
+        
+        /* 移除动画背景和装饰性元素 */
+        
+        .container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 1100px;
+            height: 100vh;
+            margin: 0 auto;
+            padding: 40px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .header {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s ease;
+        }
+        
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .lang-toggle {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            background: transparent;
+            border: 1px solid transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            user-select: none;
+            margin-left: 12px;
+        }
+        
+        .lang-toggle:hover {
+            background: var(--hover-bg);
+            color: var(--text-primary);
+        }
+        
+        .theme-toggle {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            background: transparent;
+            border: 1px solid transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .theme-toggle:hover {
+            background: var(--hover-bg);
+            color: var(--text-primary);
+        }
+        
+        .logo {
+            height: 32px;
+            width: auto;
+            object-fit: contain;
+        }
+        
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: -0.3px;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 6px 12px;
+            border-radius: 6px;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            transition: all 0.2s ease;
+        }
+        
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+        
+        .status.connected {
+            color: var(--text-primary);
+        }
+        
+        .status.connected .status-dot {
+            background: var(--success);
+        }
+        
+        .status.disconnected .status-dot {
+            background: var(--error);
+        }
+        
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 24px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            position: relative;
+        }
+        
+        /* Custom scrollbar styles */
+        .messages::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .messages::-webkit-scrollbar-track {
+            background: transparent;
+            margin: 12px 0;
+        }
+        
+        .messages::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+        
+        .messages::-webkit-scrollbar-thumb:hover {
+            background: var(--text-tertiary);
+        }
+        
+        .message-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-bottom: 16px;
+        }
+        
+        .message-timestamp {
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin: 12px 0 8px 0;
+            user-select: none;
+        }
+        
+        .message {
+            display: flex;
+            gap: 12px;
+            opacity: 0;
+            animation: fadeIn 0.3s ease forwards;
+        }
+        
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+        
+        .message.user {
+            flex-direction: row-reverse;
+        }
+        
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+        }
+        
+        .message-content {
+            max-width: 65%;
+            padding: 8px 14px;
+            border-radius: 12px;
+            word-wrap: break-word;
+            line-height: 1.5;
+            font-size: 14px;
+        }
+        
+        .message.user .message-content {
+            background: var(--accent-primary);
+            color: #ffffff;
+        }
+        
+        .message.assistant .message-content {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        
+        /* Markdown 样式 */
+        .message-content h1,
+        .message-content h2,
+        .message-content h3 {
+            margin-top: 16px;
+            margin-bottom: 8px;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+        
+        .message.user .message-content h1,
+        .message.user .message-content h2,
+        .message.user .message-content h3 {
+            color: #ffffff;
+        }
+        
+        .message.assistant .message-content h1,
+        .message.assistant .message-content h2,
+        .message.assistant .message-content h3 {
+            color: var(--text-primary);
+        }
+        
+        .message-content h1 { font-size: 1.4em; }
+        .message-content h2 { font-size: 1.2em; }
+        .message-content h3 { font-size: 1.1em; }
+        
+        .message-content p {
+            margin-bottom: 10px;
+        }
+        
+        .message-content p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .message-content code {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 0.9em;
+        }
+        
+        .message.user .message-content code {
+            background: rgba(0, 0, 0, 0.2);
+            color: #ffffff;
+        }
+        
+        .message.assistant .message-content code {
+            background: var(--bg-secondary);
+            color: var(--accent-primary);
+        }
+        
+        .message-content pre {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+        
+        .message-content pre code {
+            background: transparent;
+            padding: 0;
+            font-size: 0.85em;
+            line-height: 1.5;
+        }
+        
+        .message-content ul,
+        .message-content ol {
+            margin: 12px 0;
+            padding-left: 28px;
+        }
+        
+        .message-content li {
+            margin: 8px 0;
+            line-height: 1.7;
+        }
+        
+        .message-content li::marker {
+            color: var(--accent-cyan);
+        }
+        
+        .message-content blockquote {
+            border-left: 4px solid var(--accent-cyan);
+            padding-left: 16px;
+            margin: 16px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+            background: rgba(6, 182, 212, 0.05);
+            padding: 12px 16px;
+            border-radius: 0 6px 6px 0;
+        }
+        
+        .message-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 16px 0;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .message-content th,
+        .message-content td {
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        .message-content th {
+            background: rgba(6, 182, 212, 0.1);
+            font-weight: 600;
+            color: var(--accent-cyan);
+        }
+        
+        .message-content td {
+            background: var(--table-bg);
+        }
+        
+        .message-content a {
+            color: var(--accent-primary);
+            text-decoration: underline;
+            text-decoration-thickness: 1px;
+            text-underline-offset: 2px;
+        }
+        
+        .message-content hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 16px 0;
+        }
+        
+        .message-content img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        
+        .message.system {
+            justify-content: center;
+        }
+        
+        .message.system .message-content {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            text-align: center;
+            font-size: 12px;
+            max-width: 90%;
+            padding: 8px 14px;
+        }
+        
+        .message.system .message-content p {
+            margin-bottom: 0;
+        }
+        
+        .input-area {
+            padding: 0;
+            background: transparent;
+        }
+        
+        .input-form {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 14px 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            transition: all 0.2s ease;
+        }
+        
+        .input-bottom {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .input-form:focus-within {
+            border-color: var(--accent-primary);
+        }
+        
+        .input-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .action-button {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 16px;
+        }
+        
+        .action-button:hover {
+            background: var(--hover-bg);
+            color: var(--text-primary);
+        }
+        
+        #messageInput {
+            flex: 1;
+            padding: 2px 8px;
+            background: transparent;
+            border: none;
+            font-size: 14px;
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            outline: none;
+            resize: none;
+            line-height: 1.5;
+            min-height: 84px;
+            max-height: 200px;
+        }
+        
+        #messageInput::placeholder {
+            color: var(--text-tertiary);
+        }
+        
+        #sendButton {
+            padding: 8px 16px;
+            background: var(--accent-primary);
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        
+        #sendButton:hover:not(:disabled) {
+            opacity: 0.9;
+        }
+        
+        #sendButton:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+        
+        #sendButton:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        /* Scrollbar styling */
+        .messages::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        .messages::-webkit-scrollbar-thumb {
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+        }
+        
+        .messages::-webkit-scrollbar-thumb:hover {
+            background: var(--border-color);
+        }
+        
+        /* Typing Indicator */
+        .typing-indicator {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            max-width: fit-content;
+        }
+        
+        .typing-indicator.active {
+            display: flex;
+        }
+        
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-tertiary);
+            animation: typingBounce 1.2s infinite;
+        }
+        
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes typingBounce {
+            0%, 60%, 100% {
+                transform: translateY(0);
+                opacity: 0.3;
+            }
+            30% {
+                transform: translateY(-6px);
+                opacity: 1;
+            }
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .container {
+                padding: 16px;
+            }
+            
+            .header {
+                padding: 20px 24px;
+            }
+            
+            .header h1 {
+                font-size: 22px;
+            }
+            
+            .messages {
+                padding: 20px;
+            }
+            
+            .message-content {
+                max-width: 85%;
+            }
+            
+            #sendButton {
+                padding: 16px 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <img src="/assets/logo.jpg" alt="PicoClaw" class="logo">
+                <h1 id="pageTitle">PicoClaw WebSocket Chat</h1>
+            </div>
+            <div class="header-right">
+                <div class="status disconnected" id="status">
+                    <div class="status-dot"></div>
+                    <span>Connecting...</span>
+                </div>
+                <div class="lang-toggle" id="langToggle" title="切换语言">
+                    <span id="langText">EN</span>
+                </div>
+                <div class="theme-toggle" id="themeToggle" title="切换主题">
+                    <span id="themeIcon"><i class="fas fa-moon"></i></span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="messages" id="messages">
+            <div class="typing-indicator" id="typingIndicator">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <form class="input-form" id="messageForm">
+                <textarea
+                    id="messageInput" 
+                    placeholder="请输入，Enter键发送，Shift+Enter键换行，\"/\" 打开自定义技能"
+                    autocomplete="off"
+                    rows="4"
+                    disabled
+                ></textarea>
+                <div class="input-bottom">
+                    <div class="input-actions">
+                        <button type="button" class="action-button" id="mentionButton" title="提及">
+                            <i class="fas fa-at"></i>
+                        </button>
+                        <button type="button" class="action-button" id="imageButton" title="图片">
+                            <i class="fas fa-image"></i>
+                        </button>
+                        <button type="button" class="action-button" id="attachButton" title="附件">
+                            <i class="fas fa-paperclip"></i>
+                        </button>
+                    </div>
+                    <button type="submit" id="sendButton" disabled>发送</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
+    <script>
+        // 配置 marked
+        marked.setOptions({
+            breaks: true,
+            gfm: true,
+            headerIds: true,
+            mangle: false
+        });
+
+        let ws;
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const statusDiv = document.getElementById('status');
+        const messageForm = document.getElementById('messageForm');
+        const typingIndicator = document.getElementById('typingIndicator');
+        const themeToggle = document.getElementById('themeToggle');
+        const themeIcon = document.getElementById('themeIcon');
+        const langToggle = document.getElementById('langToggle');
+        const langText = document.getElementById('langText');
+
+        // Language Management
+        const savedLang = localStorage.getItem('picoclaw-lang') || 'zh';
+        let currentLang = savedLang;
+        updateLangText(currentLang);
+
+        langToggle.addEventListener('click', () => {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            localStorage.setItem('picoclaw-lang', currentLang);
+            updateLangText(currentLang);
+            updateUILanguage(currentLang);
+        });
+
+        function updateLangText(lang) {
+            langText.textContent = lang === 'zh' ? 'EN' : '中';
+            langToggle.title = lang === 'zh' ? 'Switch to English' : '切换到中文';
+        }
+
+        function updateUILanguage(lang) {
+            const translations = {
+                zh: {
+                    pageTitle: 'PicoClaw WebSocket 对话',
+                    connecting: '连接中...',
+                    connected: '已连接',
+                    disconnected: '已断开',
+                    send: '发送',
+                    placeholder: '请输入，Enter键发送，Shift+Enter键换行，"/" 打开自定义技能',
+                    themeToggle: currentTheme === 'dark' ? '切换到亮色模式' : '切换到暗色模式',
+                    welcome: '欢迎使用 PicoClaw — 极致轻量的个人 AI 助手',
+                    sendFailed: '发送失败，请重试',
+                    mention: '提及',
+                    image: '图片',
+                    attach: '附件'
+                },
+                en: {
+                    pageTitle: 'PicoClaw WebSocket Chat',
+                    connecting: 'Connecting...',
+                    connected: 'Connected',
+                    disconnected: 'Disconnected',
+                    send: 'Send',
+                    placeholder: 'Type a message, Enter to send, Shift+Enter for new line, "/" for skills',
+                    themeToggle: currentTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
+                    welcome: 'Welcome to PicoClaw — Ultra-lightweight personal AI assistant',
+                    sendFailed: 'Send failed, please retry',
+                    mention: 'Mention',
+                    image: 'Image',
+                    attach: 'Attach'
+                }
+            };
+
+            const t = translations[lang];
+            document.getElementById('pageTitle').textContent = t.pageTitle;
+            sendButton.textContent = t.send;
+            messageInput.placeholder = t.placeholder;
+            themeToggle.title = t.themeToggle;
+            
+            // Update action buttons
+            document.getElementById('mentionButton').title = t.mention;
+            document.getElementById('imageButton').title = t.image;
+            document.getElementById('attachButton').title = t.attach;
+            
+            // Update status text based on current connection state
+            const statusSpan = statusDiv.querySelector('span');
+            if (statusDiv.classList.contains('connected')) {
+                statusSpan.textContent = t.connected;
+            } else {
+                statusSpan.textContent = statusDiv.classList.contains('disconnected') ? t.disconnected : t.connecting;
+            }
+            
+            // Update system messages
+            const systemMessages = document.querySelectorAll('.message.system .message-content');
+            systemMessages.forEach(msg => {
+                const content = msg.textContent.trim();
+                if (content.includes('Connected to PicoClaw') || content.includes('欢迎使用') || content.includes('Welcome to')) {
+                    msg.textContent = t.welcome;
+                }
+            });
+        }
+
+        // Theme Management
+        const savedTheme = localStorage.getItem('picoclaw-theme') || 'dark';
+        let currentTheme = savedTheme;
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        updateThemeIcon(savedTheme);
+        updateUILanguage(currentLang);
+
+        themeToggle.addEventListener('click', () => {
+            currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            currentTheme = newTheme;
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('picoclaw-theme', newTheme);
+            updateThemeIcon(newTheme);
+            updateUILanguage(currentLang);
+        });
+
+        function updateThemeIcon(theme) {
+            themeIcon.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+            updateUILanguage(currentLang);
+        }
+
+        let reconnectCount = 0;
+        let reconnectMessageElement = null;
+        let lastMessageTime = null;
+
+        // Scroll to bottom helper
+        function scrollToBottom() {
+            requestAnimationFrame(() => {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            });
+        }
+
+        // Format relative time
+        function getRelativeTime(timestamp) {
+            const now = Date.now();
+            const diff = Math.floor((now - timestamp) / 1000); // seconds
+            
+            const translations = {
+                zh: {
+                    justNow: '刚刚',
+                    minutesAgo: (n) => `${n}分钟前`,
+                    hoursAgo: (n) => `${n}小时前`,
+                    today: '今天',
+                    yesterday: '昨天'
+                },
+                en: {
+                    justNow: 'Just now',
+                    minutesAgo: (n) => `${n} min${n > 1 ? 's' : ''} ago`,
+                    hoursAgo: (n) => `${n} hour${n > 1 ? 's' : ''} ago`,
+                    today: 'Today',
+                    yesterday: 'Yesterday'
+                }
+            };
+            
+            const t = translations[currentLang];
+            const date = new Date(timestamp);
+            const dateStr = date.toLocaleTimeString(currentLang === 'zh' ? 'zh-CN' : 'en-US', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            if (diff < 60) {
+                return t.justNow;
+            } else if (diff < 3600) {
+                const minutes = Math.floor(diff / 60);
+                return t.minutesAgo(minutes);
+            } else if (diff < 86400) {
+                const hours = Math.floor(diff / 3600);
+                if (hours < 3) {
+                    return t.hoursAgo(hours);
+                }
+                return `${t.today} ${dateStr}`;
+            } else if (diff < 172800) {
+                return `${t.yesterday} ${dateStr}`;
+            } else {
+                return date.toLocaleDateString(currentLang === 'zh' ? 'zh-CN' : 'en-US', {
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+        }
+
+        // Check if should show timestamp (5 minutes threshold)
+        function shouldShowTimestamp(currentTime) {
+            if (!lastMessageTime) return true;
+            return (currentTime - lastMessageTime) > 300000; // 5 minutes
+        }
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = protocol + '//' + window.location.host + '/ws';
+            
+            // Close existing connection if any
+            if (ws && ws.readyState !== WebSocket.CLOSED) {
+                ws.close();
+            }
+            
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('Connected to PicoClaw');
+                
+                // Reset reconnect count on successful connection
+                reconnectCount = 0;
+                
+                const t = currentLang === 'zh' 
+                    ? { connected: '已连接', welcome: '欢迎使用 PicoClaw — 极致轻量的个人 AI 助手', reconnected: '连接已恢复' }
+                    : { connected: 'Connected', welcome: 'Welcome to PicoClaw — Ultra-lightweight personal AI assistant', reconnected: 'Connection restored' };
+                statusDiv.innerHTML = '<div class="status-dot"></div><span>' + t.connected + '</span>';
+                statusDiv.className = 'status connected';
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                messageInput.focus();
+                
+                // Show welcome message only on first connection
+                if (!window.hasConnected) {
+                    addMessage('system', t.welcome, 'system');
+                    window.hasConnected = true;
+                } else if (reconnectMessageElement) {
+                    // Update reconnection message to show success
+                    updateReconnectMessage(t.reconnected);
+                    reconnectMessageElement = null;
+                }
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    typingIndicator.classList.remove('active');
+                    addMessage(msg.type, msg.content, msg.sender, msg.timestamp);
+                } catch (error) {
+                    console.error('Failed to parse message:', error);
+                }
+            };
+
+            ws.onclose = (event) => {
+                console.log('Disconnected from PicoClaw', event.code, event.reason);
+                
+                // Increment reconnect count
+                reconnectCount++;
+                
+                const t = currentLang === 'zh' 
+                    ? { 
+                        disconnected: '已断开', 
+                        connectionLost: `连接已中断，正在尝试第 ${reconnectCount} 次重连...` 
+                      }
+                    : { 
+                        disconnected: 'Disconnected', 
+                        connectionLost: `Connection lost, attempting reconnection #${reconnectCount}...` 
+                      };
+                statusDiv.innerHTML = '<div class="status-dot"></div><span>' + t.disconnected + '</span>';
+                statusDiv.className = 'status disconnected';
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+                typingIndicator.classList.remove('active');
+                
+                // Show or update disconnection message
+                if (!reconnectMessageElement) {
+                    reconnectMessageElement = addMessage('system', t.connectionLost, 'system');
+                } else {
+                    updateReconnectMessage(t.connectionLost);
+                }
+                
+                // Attempt to reconnect after 3 seconds
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        function addMessage(type, content, sender, timestamp) {
+            const currentTime = timestamp || Date.now();
+            
+            // Add timestamp if needed
+            if (shouldShowTimestamp(currentTime)) {
+                const timestampDiv = document.createElement('div');
+                timestampDiv.className = 'message-timestamp';
+                timestampDiv.textContent = getRelativeTime(currentTime);
+                messagesDiv.insertBefore(timestampDiv, typingIndicator);
+            }
+            
+            lastMessageTime = currentTime;
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + sender;
+            messageDiv.dataset.timestamp = currentTime;
+            
+            // Add avatar
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'message-avatar';
+            if (sender === 'user') {
+                avatarDiv.innerHTML = '<i class="fas fa-mitten"></i>';
+            } else if (sender === 'assistant') {
+                avatarDiv.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i>';
+            } else {
+                avatarDiv.innerHTML = '<i class="fas fa-tower-broadcast"></i>';
+            }
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            
+            // 根据发送者类型决定是否渲染 Markdown
+            if (sender === 'assistant' || sender === 'system') {
+                // AI 回复和系统消息渲染 Markdown
+                const rawHtml = marked.parse(content);
+                const cleanHtml = DOMPurify.sanitize(rawHtml);
+                contentDiv.innerHTML = cleanHtml;
+            } else {
+                // 用户消息保持纯文本
+                contentDiv.textContent = content;
+            }
+            
+            messageDiv.appendChild(avatarDiv);
+            messageDiv.appendChild(contentDiv);
+            messagesDiv.insertBefore(messageDiv, typingIndicator);
+            
+            // Scroll to bottom after DOM update
+            scrollToBottom();
+            
+            return messageDiv;  // Return the element for later updates
+        }
+        
+        function updateReconnectMessage(newContent) {
+            if (reconnectMessageElement) {
+                const contentDiv = reconnectMessageElement.querySelector('.message-content');
+                if (contentDiv) {
+                    // Render Markdown for system messages
+                    const rawHtml = marked.parse(newContent);
+                    const cleanHtml = DOMPurify.sanitize(rawHtml);
+                    contentDiv.innerHTML = cleanHtml;
+                }
+            }
+        }
+
+        function sendMessage(content) {
+            if (!content.trim() || !ws || ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            const msg = {
+                type: 'chat',
+                content: content,
+                sender: 'user',
+                timestamp: Date.now()
+            };
+
+            try {
+                ws.send(JSON.stringify(msg));
+                addMessage('chat', content, 'user');
+                messageInput.value = '';
+                
+                // Show typing indicator
+                typingIndicator.classList.add('active');
+                scrollToBottom();
+            } catch (error) {
+                console.error('Failed to send message:', error);
+                const t = currentLang === 'zh' ? { sendFailed: '发送失败，请重试' } : { sendFailed: 'Send failed, please retry' };
+                addMessage('system', t.sendFailed, 'system');
+            }
+        }
+
+        messageForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            sendMessage(messageInput.value);
+        });
+
+        // Handle Enter key in textarea
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (messageInput.value.trim()) {
+                    sendMessage(messageInput.value);
+                }
+            }
+        });
+
+        // Connect on page load
+        connect();
+    </script>
+</body>
+</html>
