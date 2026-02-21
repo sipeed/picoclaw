@@ -77,7 +77,7 @@ func (p *Provider) Chat(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": messages,
+		"messages": serializeMessages(messages),
 	}
 
 	if len(tools) > 0 {
@@ -142,6 +142,47 @@ func (p *Provider) Chat(
 	}
 
 	return parseResponse(body)
+}
+
+func serializeMessages(messages []Message) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(messages))
+	for _, m := range messages {
+		if len(m.Media) == 0 {
+			msg := map[string]interface{}{
+				"role":    m.Role,
+				"content": m.Content,
+			}
+			if m.ToolCallID != "" {
+				msg["tool_call_id"] = m.ToolCallID
+			}
+			if len(m.ToolCalls) > 0 {
+				msg["tool_calls"] = m.ToolCalls
+			}
+			result = append(result, msg)
+			continue
+		}
+
+		parts := make([]map[string]interface{}, 0, 1+len(m.Media))
+		if m.Content != "" {
+			parts = append(parts, map[string]interface{}{
+				"type": "text",
+				"text": m.Content,
+			})
+		}
+		for _, mediaURL := range m.Media {
+			parts = append(parts, map[string]interface{}{
+				"type": "image_url",
+				"image_url": map[string]interface{}{
+					"url": mediaURL,
+				},
+			})
+		}
+		result = append(result, map[string]interface{}{
+			"role":    m.Role,
+			"content": parts,
+		})
+	}
+	return result
 }
 
 func parseResponse(body []byte) (*LLMResponse, error) {
