@@ -267,10 +267,10 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 
 			transcribedText := ""
 			if c.transcriber != nil && c.transcriber.IsAvailable() {
-				ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				transcriberCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 				defer cancel()
 
-				result, err := c.transcriber.Transcribe(ctx, voicePath)
+				result, err := c.transcriber.Transcribe(transcriberCtx, voicePath)
 				if err != nil {
 					logger.ErrorCF("telegram", "Voice transcription failed", map[string]any{
 						"error": err.Error(),

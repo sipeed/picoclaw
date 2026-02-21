@@ -182,7 +182,7 @@ func (t *I2CTool) readDevice(args map[string]any) *ToolResult {
 		if reg < 0 || reg > 255 {
 			return ErrorResult("register must be between 0x00 and 0xFF")
 		}
-		_, err := syscall.Write(fd, []byte{byte(reg)})
+		_, err = syscall.Write(fd, []byte{byte(reg)})
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to write register 0x%02x: %v", reg, err))
 		}

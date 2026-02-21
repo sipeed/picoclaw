@@ -47,7 +47,6 @@ linters:
     - godox
     - goprintffuncname
     - gosec
-    - govet
     - ineffassign
     - lll
     - maintidx

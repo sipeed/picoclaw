@@ -72,7 +72,7 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult(err.Error())
 	}
 
-	if _, err := os.Stat(resolvedPath); os.IsNotExist(err) {
+	if _, err = os.Stat(resolvedPath); os.IsNotExist(err) {
 		return ErrorResult(fmt.Sprintf("file not found: %s", path))
 	}
 

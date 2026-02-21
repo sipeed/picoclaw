@@ -34,17 +34,19 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 			return "", fmt.Errorf("access denied: path is outside the workspace")
 		}
 
+		var resolved string
 		workspaceReal := absWorkspace
-		if resolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
+		if resolved, err = filepath.EvalSymlinks(absWorkspace); err == nil {
 			workspaceReal = resolved
 		}
 
-		if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		if resolved, err = filepath.EvalSymlinks(absPath); err == nil {
 			if !isWithinWorkspace(resolved, workspaceReal) {
 				return "", fmt.Errorf("access denied: symlink resolves outside workspace")
 			}
 		} else if os.IsNotExist(err) {
-			if parentResolved, err := resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
+			var parentResolved string
+			if parentResolved, err = resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
 				if !isWithinWorkspace(parentResolved, workspaceReal) {
 					return "", fmt.Errorf("access denied: symlink resolves outside workspace")
 				}

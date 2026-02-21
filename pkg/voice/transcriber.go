@@ -79,17 +79,17 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 
 	logger.DebugCF("voice", "File copied to request", map[string]any{"bytes_copied": copied})
 
-	if err := writer.WriteField("model", "whisper-large-v3"); err != nil {
+	if err = writer.WriteField("model", "whisper-large-v3"); err != nil {
 		logger.ErrorCF("voice", "Failed to write model field", map[string]any{"error": err})
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
-	if err := writer.WriteField("response_format", "json"); err != nil {
+	if err = writer.WriteField("response_format", "json"); err != nil {
 		logger.ErrorCF("voice", "Failed to write response_format field", map[string]any{"error": err})
 		return nil, fmt.Errorf("failed to write response_format field: %w", err)
 	}
 
-	if err := writer.Close(); err != nil {
+	if err = writer.Close(); err != nil {
 		logger.ErrorCF("voice", "Failed to close multipart writer", map[string]any{"error": err})
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
