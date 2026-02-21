@@ -142,7 +142,8 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		return ErrorResult("command is required")
 	}
 
-	cwd := t.workingDir
+	workspaceRoot := t.workingDir
+	cwd := workspaceRoot
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
 		if t.restrictToWorkspace && t.workingDir != "" {
 			resolvedWD, err := validatePath(wd, t.workingDir, true)
@@ -150,6 +151,10 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
 			}
 			cwd = resolvedWD
+		} else if filepath.IsAbs(wd) {
+			cwd = wd
+		} else if workspaceRoot != "" {
+			cwd = filepath.Join(workspaceRoot, wd)
 		} else {
 			cwd = wd
 		}
@@ -159,6 +164,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		wd, err := os.Getwd()
 		if err == nil {
 			cwd = wd
+		}
+	}
+
+	if absCwd, err := filepath.Abs(cwd); err == nil {
+		cwd = absCwd
+	}
+
+	if t.restrictToWorkspace && workspaceRoot != "" {
+		absWorkspace, err := filepath.Abs(workspaceRoot)
+		if err == nil {
+			rel, err := filepath.Rel(absWorkspace, cwd)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return ErrorResult("working_dir must be within workspace")
+			}
 		}
 	}
 
@@ -285,7 +304,12 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return "Command blocked by safety guard (path traversal detected)"
 		}
 
-		cwdPath, err := filepath.Abs(cwd)
+		basePath := cwd
+		if t.workingDir != "" {
+			basePath = t.workingDir
+		}
+
+		basePath, err := filepath.Abs(basePath)
 		if err != nil {
 			return ""
 		}
@@ -299,7 +323,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				continue
 			}
 
-			rel, err := filepath.Rel(cwdPath, p)
+			rel, err := filepath.Rel(basePath, p)
 			if err != nil {
 				continue
 			}

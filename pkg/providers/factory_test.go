@@ -136,6 +136,24 @@ func TestResolveProviderSelection(t *testing.T) {
 			wantAPIBase: "http://localhost:11434/v1",
 		},
 		{
+			name: "explicit ollama provider allows empty key and uses default base",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Provider = "ollama"
+				cfg.Agents.Defaults.Model = "qwen2.5:14b"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "http://localhost:11434/v1",
+		},
+		{
+			name: "ollama model allows api base without key",
+			setup: func(cfg *config.Config) {
+				cfg.Agents.Defaults.Model = "ollama/qwen2.5:14b"
+				cfg.Providers.Ollama.APIBase = "http://localhost:11434/v1"
+			},
+			wantType:    providerTypeHTTPCompat,
+			wantAPIBase: "http://localhost:11434/v1",
+		},
+		{
 			name: "moonshot model keeps proxy and default base",
 			setup: func(cfg *config.Config) {
 				cfg.Agents.Defaults.Model = "moonshot/kimi-k2.5"
