@@ -133,6 +133,7 @@ func main() {
 		cfg, err := loadConfig()
 		if err != nil {
 			fmt.Printf("Error loading config: %v\n", err)
+			fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 			os.Exit(1)
 		}
 
@@ -195,7 +196,7 @@ func printHelp() {
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
-	fmt.Println("  doctor      Check for common problems (--fix to auto-repair)")
+	fmt.Println("  doctor      Diagnose and fix common problems (--fix to auto-repair)")
 	fmt.Println("  version     Show version information")
 }
 

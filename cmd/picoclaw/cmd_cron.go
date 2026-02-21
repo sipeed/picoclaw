@@ -29,6 +29,7 @@ func cronCmd() {
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		return
 	}
 

@@ -64,6 +64,10 @@ func onboard() {
 	fmt.Println("     See README.md for 17+ supported providers.")
 	fmt.Println("")
 	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
+	fmt.Println("")
+	fmt.Println("If something isn't working:")
+	fmt.Println("  picoclaw doctor        Check for common problems")
+	fmt.Println("  picoclaw doctor --fix  Auto-fix what it can")
 }
 
 func copyEmbeddedToTarget(targetDir string) error {

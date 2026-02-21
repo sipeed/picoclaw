@@ -50,12 +50,14 @@ func gatewayCmd() {
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		os.Exit(1)
 	}
 
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		os.Exit(1)
 	}
 	// Use the resolved model ID from provider creation
@@ -123,6 +125,7 @@ func gatewayCmd() {
 	channelManager, err := channels.NewManager(cfg, msgBus)
 	if err != nil {
 		fmt.Printf("Error creating channel manager: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		os.Exit(1)
 	}
 
