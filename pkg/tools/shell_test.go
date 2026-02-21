@@ -272,3 +272,158 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 		)
 	}
 }
+
+func TestGuardCommand_WithPermission(t *testing.T) {
+	tmpDir := t.TempDir()
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "data.txt")
+
+	t.Run("nil permFn blocks outside path", func(t *testing.T) {
+		tool := NewExecTool(tmpDir, true)
+		// no SetPermission — permFn is nil
+
+		result := tool.guardCommandWithPermission(
+			context.Background(),
+			"cat "+outsideFile,
+			tmpDir,
+		)
+		if result == "" {
+			t.Fatalf("expected block, got empty string (allowed)")
+		}
+		if !strings.Contains(result, "path outside working dir") {
+			t.Errorf("expected 'path outside working dir' message, got: %s", result)
+		}
+	})
+
+	t.Run("permFn approves outside path", func(t *testing.T) {
+		tool := NewExecTool(tmpDir, true)
+		store := NewPermissionStore()
+		tool.SetPermission(store, func(_ context.Context, _ string) (bool, error) {
+			return true, nil
+		})
+
+		result := tool.guardCommandWithPermission(
+			context.Background(),
+			"cat "+outsideFile,
+			tmpDir,
+		)
+		if result != "" {
+			t.Fatalf("expected allowed, got: %s", result)
+		}
+		// Verify cached
+		if !store.IsApproved(outsideDir) {
+			t.Errorf("expected directory to be cached in store")
+		}
+	})
+
+	t.Run("permFn denies outside path", func(t *testing.T) {
+		tool := NewExecTool(tmpDir, true)
+		store := NewPermissionStore()
+		tool.SetPermission(store, func(_ context.Context, _ string) (bool, error) {
+			return false, nil
+		})
+
+		result := tool.guardCommandWithPermission(
+			context.Background(),
+			"cat "+outsideFile,
+			tmpDir,
+		)
+		if result == "" {
+			t.Fatalf("expected denial, got allowed")
+		}
+		if !strings.Contains(result, "denied permission") {
+			t.Errorf("expected 'denied permission' message, got: %s", result)
+		}
+	})
+
+	t.Run("cached approval skips permFn", func(t *testing.T) {
+		tool := NewExecTool(tmpDir, true)
+		store := NewPermissionStore()
+		callCount := 0
+		tool.SetPermission(store, func(_ context.Context, _ string) (bool, error) {
+			callCount++
+			return true, nil
+		})
+
+		// First call
+		result := tool.guardCommandWithPermission(
+			context.Background(),
+			"cat "+outsideFile,
+			tmpDir,
+		)
+		if result != "" {
+			t.Fatalf("first call: expected allowed, got: %s", result)
+		}
+		if callCount != 1 {
+			t.Fatalf("expected permFn called once, got %d", callCount)
+		}
+
+		// Second call — should use cache
+		result = tool.guardCommandWithPermission(
+			context.Background(),
+			"cat "+outsideFile,
+			tmpDir,
+		)
+		if result != "" {
+			t.Fatalf("second call: expected allowed, got: %s", result)
+		}
+		if callCount != 1 {
+			t.Errorf("expected permFn still called once (cached), got %d", callCount)
+		}
+	})
+
+	t.Run("path traversal still blocked with permission", func(t *testing.T) {
+		tool := NewExecTool(tmpDir, true)
+		store := NewPermissionStore()
+		tool.SetPermission(store, func(_ context.Context, _ string) (bool, error) {
+			return true, nil
+		})
+
+		result := tool.guardCommandWithPermission(
+			context.Background(),
+			"cat ../../etc/passwd",
+			tmpDir,
+		)
+		if result == "" {
+			t.Fatalf("expected path traversal to be blocked even with permission")
+		}
+		if !strings.Contains(result, "path traversal") {
+			t.Errorf("expected 'path traversal' message, got: %s", result)
+		}
+	})
+
+	t.Run("deny pattern still blocked with permission", func(t *testing.T) {
+		tool := NewExecTool(tmpDir, true)
+		store := NewPermissionStore()
+		tool.SetPermission(store, func(_ context.Context, _ string) (bool, error) {
+			return true, nil
+		})
+
+		result := tool.guardCommandWithPermission(
+			context.Background(),
+			"rm -rf /",
+			tmpDir,
+		)
+		if result == "" {
+			t.Fatalf("expected deny pattern to be blocked even with permission")
+		}
+		if !strings.Contains(result, "dangerous pattern") {
+			t.Errorf("expected 'dangerous pattern' message, got: %s", result)
+		}
+	})
+
+	t.Run("inside workspace still allowed", func(t *testing.T) {
+		tool := NewExecTool(tmpDir, true)
+		// No permission set — inside workspace should still work
+		insideFile := filepath.Join(tmpDir, "hello.txt")
+
+		result := tool.guardCommandWithPermission(
+			context.Background(),
+			"cat "+insideFile,
+			tmpDir,
+		)
+		if result != "" {
+			t.Errorf("expected inside-workspace path to be allowed, got: %s", result)
+		}
+	})
+}
