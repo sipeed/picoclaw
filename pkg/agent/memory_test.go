@@ -336,11 +336,11 @@ func TestGetInterviewContext(t *testing.T) {
 	if !strings.Contains(ctx, "## Commands") {
 		t.Error("expected target format to include ## Commands section")
 	}
-	if !strings.Contains(ctx, "go test") {
-		t.Error("expected target format Commands to include test command example")
+	if !strings.Contains(ctx, "project-specific test command") {
+		t.Error("expected target format Commands to include test command placeholder")
 	}
-	if !strings.Contains(ctx, "golangci-lint") {
-		t.Error("expected target format Commands to include lint command example")
+	if !strings.Contains(ctx, "project-specific lint command") {
+		t.Error("expected target format Commands to include lint command placeholder")
 	}
 }
 
