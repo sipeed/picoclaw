@@ -1576,6 +1576,34 @@ func TestBuildRichStatus_ShowsLast5(t *testing.T) {
 	}
 }
 
+func TestBuildRichStatus_LastEntryShowsMoreCommand(t *testing.T) {
+	longCmd := "uv run pytest tests/hot/test_state_backend_integration.py -v --timeout=60"
+	task := &activeTask{
+		Iteration: 2,
+		MaxIter:   10,
+		toolLog: []toolLogEntry{
+			{Name: "exec", ArgsSnip: "ls -la", Result: "✓ 0.5s"},
+			{Name: "exec", ArgsSnip: longCmd, Result: "⏳"},
+		},
+	}
+
+	got := buildRichStatus(task, false, "/ws/my-project")
+
+	// Last entry: shows more than compact (36) but truncated at ~70
+	// "exec " + longCmd = 79 chars → should be truncated
+	if strings.Contains(got, "--timeout=60") {
+		t.Errorf("last entry should be truncated at ~70 chars, got:\n%s", got)
+	}
+	// But shows more than the compact 36
+	if !strings.Contains(got, "test_state_backend") {
+		t.Errorf("last entry should show more than compact format, got:\n%s", got)
+	}
+	// Result on separate indented line
+	if !strings.Contains(got, "  ⏳") {
+		t.Errorf("last entry result should be on indented line, got:\n%s", got)
+	}
+}
+
 func TestBuildRichStatus_ErrorAsLastEntry(t *testing.T) {
 	task := &activeTask{
 		Iteration: 2,
@@ -1593,12 +1621,10 @@ func TestBuildRichStatus_ErrorAsLastEntry(t *testing.T) {
 
 	got := buildRichStatus(task, false, "/ws/my-project")
 
-	// First entry (past): compact one-liner, result marker present
-	if !strings.Contains(got, "✓ 0.5s") {
-		t.Errorf("expected success marker in past entry, got:\n%s", got)
+	// Last entry: full command + error with code fence detail
+	if !strings.Contains(got, "pytest tests/test_auth.py") {
+		t.Errorf("expected full command in last entry, got:\n%s", got)
 	}
-
-	// Last entry: error with code fence detail
 	if !strings.Contains(got, "✗ 3.2s") {
 		t.Errorf("expected error marker, got:\n%s", got)
 	}
@@ -1608,7 +1634,7 @@ func TestBuildRichStatus_ErrorAsLastEntry(t *testing.T) {
 }
 
 func TestBuildRichStatus_ErrorNotLastEntry(t *testing.T) {
-	// When error is a past entry (not the last), it should be 1 line
+	// When error is a past entry (not the last), it should be 1 compact line
 	task := &activeTask{
 		Iteration: 3,
 		MaxIter:   10,

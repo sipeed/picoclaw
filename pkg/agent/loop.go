@@ -1041,22 +1041,25 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 			sb.WriteString(formatCompactEntry(entry))
 			sb.WriteString("\n")
 		} else {
-			// Latest entry: reserved area for detail
-			sb.WriteString(formatCompactEntry(entry))
-			sb.WriteString("\n")
+			// Latest entry: show command up to ~2 lines worth, then result on next line
+			const maxLatestWidth = 70
+			prefix := entry.Name
+			if entry.ArgsSnip != "" {
+				prefix += " " + entry.ArgsSnip
+			}
+			if runes := []rune(prefix); len(runes) > maxLatestWidth {
+				prefix = string(runes[:maxLatestWidth-1]) + "\u2026"
+			}
+			fmt.Fprintf(&sb, "%s\n", prefix)
+			fmt.Fprintf(&sb, "  %s\n", entry.Result)
 
 			if isErr && entry.ErrDetail != "" {
-				// Error block in code-fence style
 				sb.WriteString("```\n")
 				for _, line := range strings.Split(entry.ErrDetail, "\n") {
 					sb.WriteString(line)
 					sb.WriteString("\n")
 				}
 				sb.WriteString("```\n")
-			} else {
-				// Reserve height: blank line so bubble doesn't shrink
-				// when the next update adds error detail
-				sb.WriteString("\n")
 			}
 		}
 	}
