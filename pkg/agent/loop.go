@@ -748,7 +748,21 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		})
 	}
 
-	// 2c. Snapshot plan status and MEMORY.md size before LLM iteration.
+	// 2c. Background plan preamble: append to system prompt (high attention)
+	// so the LLM knows from the start that it must mark steps [x].
+	if opts.Background && agent.ContextBuilder.HasActivePlan() && agent.ContextBuilder.GetPlanStatus() == "executing" {
+		if len(messages) > 0 && messages[0].Role == "system" {
+			var sb strings.Builder
+			sb.WriteString(messages[0].Content)
+			sb.WriteString("\n\n## Background Execution\n")
+			sb.WriteString("You are running as a background heartbeat with no conversation history. ")
+			sb.WriteString("MEMORY.md is the only shared state between heartbeats. ")
+			sb.WriteString("After completing each plan step, immediately use edit_file to mark it [x] in memory/MEMORY.md.")
+			messages[0].Content = sb.String()
+		}
+	}
+
+	// 2d. Snapshot plan status and MEMORY.md size before LLM iteration.
 	preStatus := agent.ContextBuilder.GetPlanStatus()
 	var preMemoryLen int
 	if preStatus == "interviewing" {
@@ -1121,14 +1135,20 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	// Latest entry: always exactly 4 lines
 	if latest != nil {
 		// Line 1-2: command (truncated to ~2 Telegram lines)
-		prefix := latest.Name
+		var lb strings.Builder
+		lb.WriteString(latest.Name)
 		if latest.ArgsSnip != "" {
-			prefix += " " + latest.ArgsSnip
+			lb.WriteByte(' ')
+			lb.WriteString(latest.ArgsSnip)
 		}
+		prefix := lb.String()
 		if runes := []rune(prefix); len(runes) > maxLatestWidth {
-			prefix = string(runes[:maxLatestWidth-1]) + "\u2026"
+			sb.WriteString(string(runes[:maxLatestWidth-1]))
+			sb.WriteString("\u2026\n")
+		} else {
+			sb.WriteString(prefix)
+			sb.WriteByte('\n')
 		}
-		fmt.Fprintf(&sb, "%s\n", prefix)
 		// Line 3: result
 		fmt.Fprintf(&sb, "  %s\n", latest.Result)
 	} else {
@@ -1146,8 +1166,9 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 	errEntry := task.lastError
 	if errEntry != nil {
 		// Header: tool name + result marker
-		header := formatCompactEntry(*errEntry)
-		sb.WriteString("\u274C " + header + "\n")
+		sb.WriteString("\u274C ")
+		sb.WriteString(formatCompactEntry(*errEntry))
+		sb.WriteByte('\n')
 
 		// Detail lines
 		var detailLines []string
@@ -1189,8 +1210,15 @@ func (al *AgentLoop) runLLMIteration(
 	iteration := 0
 	var finalContent string
 	lastReminderIdx := -1
+	planMarkNudged := false // true after we've already nudged once for [x] marking
 
 	maxIter := agent.MaxIterations
+
+	// Snapshot unchecked step count before tool loop so we can detect progress.
+	preUnchecked := -1 // -1 = not tracking
+	if opts.Background && agent.ContextBuilder.GetPlanStatus() == "executing" {
+		preUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
+	}
 
 	// Determine if this is a background task (cron, heartbeat, etc.)
 	isBackground := opts.TaskID != ""
@@ -1342,6 +1370,35 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
+			// Background plan continuation: if unchecked steps remain and
+			// none were marked during this heartbeat, nudge the LLM to
+			// either mark completed steps or continue working on them.
+			// This serves as both a marking reminder and a continuation trigger
+			// (otherwise remaining steps wait until the next heartbeat).
+			curUnchecked := 0
+			if preUnchecked > 0 {
+				curUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
+			}
+			if preUnchecked > 0 && !planMarkNudged &&
+				agent.ContextBuilder.GetPlanStatus() == "executing" &&
+				curUnchecked == preUnchecked {
+				planMarkNudged = true
+				messages = append(messages, providers.Message{
+					Role:    "assistant",
+					Content: response.Content,
+				})
+				messages = append(messages, providers.Message{
+					Role: "user",
+					Content: fmt.Sprintf("[System] %d unchecked steps remain in MEMORY.md and none were marked [x] during this session. "+
+						"If you completed any steps, use edit_file to mark them [x] now. "+
+						"If steps are still in progress, continue working on them.",
+						curUnchecked),
+				})
+				logger.InfoCF("agent", "Nudging background task: mark or continue plan steps",
+					map[string]any{"agent_id": agent.ID, "iteration": iteration, "unchecked": curUnchecked})
+				continue
+			}
+
 			finalContent = response.Content
 			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
 				map[string]any{
@@ -1580,6 +1637,7 @@ func (al *AgentLoop) runLLMIteration(
 					})
 			}
 		}
+
 	}
 
 	// If max iterations exhausted with tool calls still pending,
@@ -2113,9 +2171,9 @@ func (al *AgentLoop) handleSkillsCommand() string {
 	var sb strings.Builder
 	sb.WriteString("Available Skills\n\n")
 	for _, s := range skillsList {
-		sb.WriteString(fmt.Sprintf("**%s** (%s)\n", s.Name, s.Source))
+		fmt.Fprintf(&sb, "**%s** (%s)\n", s.Name, s.Source)
 		if s.Description != "" {
-			sb.WriteString(fmt.Sprintf("```\n%s\n```\n", s.Description))
+			fmt.Fprintf(&sb, "```\n%s\n```\n", s.Description)
 		}
 	}
 	sb.WriteString("\nUse: /skill <name> [message]")
