@@ -199,7 +199,7 @@ func TestShellTool_WorkingDir_OutsideWorkspace(t *testing.T) {
 	}
 
 	tool := NewExecTool(workspace, true)
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"command":     "pwd",
 		"working_dir": outsideDir,
 	})
@@ -233,7 +233,7 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 	}
 
 	tool := NewExecTool(workspace, true)
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(context.Background(), map[string]any{
 		"command":     "cat secret.txt",
 		"working_dir": link,
 	})
