@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <queries>
         <intent>
@@ -38,6 +39,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".receiver.AgentMessageReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.picoclaw.android.AGENT_MESSAGE" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

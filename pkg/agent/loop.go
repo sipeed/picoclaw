@@ -58,16 +58,17 @@ type activeProcess struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string   // Session identifier for history/context
-	Channel         string   // Target channel for tool execution
-	ChatID          string   // Target chat ID for tool execution
-	UserMessage     string   // User message content (may include prefix)
-	Media           []string // Base64 data URLs for images
-	DefaultResponse string   // Response when LLM returns empty
-	EnableSummary   bool     // Whether to trigger summarization
-	SendResponse    bool     // Whether to send response via bus
-	NoHistory       bool     // If true, don't load session history (for heartbeat)
-	InputMode       string   // "voice" or "text"
+	SessionKey      string            // Session identifier for history/context
+	Channel         string            // Target channel for tool execution
+	ChatID          string            // Target chat ID for tool execution
+	UserMessage     string            // User message content (may include prefix)
+	Media           []string          // Base64 data URLs for images
+	DefaultResponse string            // Response when LLM returns empty
+	EnableSummary   bool              // Whether to trigger summarization
+	SendResponse    bool              // Whether to send response via bus
+	NoHistory       bool              // If true, don't load session history (for heartbeat)
+	InputMode       string            // "voice" or "text"
+	Metadata        map[string]string // Channel metadata (e.g. client_type)
 }
 
 // createToolRegistry creates a tool registry with common tools.
@@ -296,6 +297,12 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
+// StateManager returns the state manager used by this agent loop.
+// This allows sharing the same instance with other services (e.g. heartbeat).
+func (al *AgentLoop) StateManager() *state.Manager {
+	return al.state
+}
+
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
 func (al *AgentLoop) RecordLastChannel(channel string) error {
@@ -394,6 +401,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:   true,
 		SendResponse:    false,
 		InputMode:       inputMode,
+		Metadata:        msg.Metadata,
 	})
 }
 
@@ -457,8 +465,18 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		// Don't record internal channels (cli, system, subagent)
 		if !constants.IsInternalChannel(opts.Channel) {
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
-			if err := al.RecordLastChannel(channelKey); err != nil {
-				logger.WarnCF("agent", "Failed to record last channel: %v", map[string]interface{}{"error": err.Error()})
+			clientType := ""
+			if opts.Metadata != nil {
+				clientType = opts.Metadata["client_type"]
+			}
+			if clientType != "" {
+				if err := al.state.SetLastChannelWithType(channelKey, clientType); err != nil {
+					logger.WarnCF("agent", "Failed to record last channel: %v", map[string]interface{}{"error": err.Error()})
+				}
+			} else {
+				if err := al.RecordLastChannel(channelKey); err != nil {
+					logger.WarnCF("agent", "Failed to record last channel: %v", map[string]interface{}{"error": err.Error()})
+				}
 			}
 		}
 	}

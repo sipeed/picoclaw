@@ -48,7 +48,7 @@ class WebSocketClient(
             while (isActive) {
                 try {
                     _connectionState.value = ConnectionState.CONNECTING
-                    val url = "$wsUrl?client_id=$clientId"
+                    val url = "$wsUrl?client_id=$clientId&client_type=main"
                     client.webSocket(url) {
                         session = this
                         _connectionState.value = ConnectionState.CONNECTED

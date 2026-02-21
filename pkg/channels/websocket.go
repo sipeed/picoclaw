@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/sipeed/picoclaw/pkg/broadcast"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -32,14 +33,15 @@ type wsOutgoing struct {
 // connections from clients (e.g. a Google Assistant replacement APK).
 type WebSocketChannel struct {
 	*BaseChannel
-	config    config.WebSocketConfig
-	server    *http.Server
-	upgrader  websocket.Upgrader
-	clients   map[*websocket.Conn]string // conn → clientID
-	chatConns map[string]*websocket.Conn // chatID → conn
-	mu        sync.RWMutex
-	ctx       context.Context
-	cancel    context.CancelFunc
+	config      config.WebSocketConfig
+	server      *http.Server
+	upgrader    websocket.Upgrader
+	clients     map[*websocket.Conn]string // conn → clientID
+	chatConns   map[string]*websocket.Conn // chatID → conn
+	clientTypes map[string]string          // chatID → clientType (retained after disconnect)
+	mu          sync.RWMutex
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 func NewWebSocketChannel(cfg config.WebSocketConfig, msgBus *bus.MessageBus) (*WebSocketChannel, error) {
@@ -51,8 +53,9 @@ func NewWebSocketChannel(cfg config.WebSocketConfig, msgBus *bus.MessageBus) (*W
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
-		clients:   make(map[*websocket.Conn]string),
-		chatConns: make(map[string]*websocket.Conn),
+		clients:     make(map[*websocket.Conn]string),
+		chatConns:   make(map[string]*websocket.Conn),
+		clientTypes: make(map[string]string),
 	}, nil
 }
 
@@ -106,6 +109,7 @@ func (c *WebSocketChannel) Stop(ctx context.Context) error {
 	}
 	c.clients = make(map[*websocket.Conn]string)
 	c.chatConns = make(map[string]*websocket.Conn)
+	c.clientTypes = make(map[string]string)
 	c.mu.Unlock()
 
 	if c.server != nil {
@@ -128,10 +132,12 @@ func (c *WebSocketChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 
 	c.mu.RLock()
 	conn, ok := c.chatConns[msg.ChatID]
+	clientType := c.clientTypes[msg.ChatID] // Read under lock to avoid data race
 	c.mu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("no connection for chat %s", msg.ChatID)
+		// Connection not found — try broadcast fallback for "main" clients.
+		return c.maybeBroadcast(msg, clientType, fmt.Errorf("no connection for chat %s", msg.ChatID))
 	}
 
 	out := wsOutgoing{Content: msg.Content, Type: msg.Type}
@@ -145,7 +151,7 @@ func (c *WebSocketChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 
 	// Verify connection still exists (may have been removed during cleanup).
 	if _, exists := c.clients[conn]; !exists {
-		return fmt.Errorf("connection for chat %s no longer active", msg.ChatID)
+		return c.maybeBroadcast(msg, c.clientTypes[msg.ChatID], fmt.Errorf("connection for chat %s no longer active", msg.ChatID))
 	}
 
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -153,9 +159,38 @@ func (c *WebSocketChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 			"chat_id": msg.ChatID,
 			"error":   err.Error(),
 		})
-		return err
+		return c.maybeBroadcast(msg, c.clientTypes[msg.ChatID], err)
 	}
 
+	return nil
+}
+
+// maybeBroadcast sends a message via Android broadcast if the disconnected
+// client is of type "main". Status/status_end messages are ephemeral and
+// skipped. Returns the original error if broadcast is not applicable.
+// clientType must be read under lock by the caller to avoid data races.
+func (c *WebSocketChannel) maybeBroadcast(msg bus.OutboundMessage, clientType string, originalErr error) error {
+	// Status messages are ephemeral — don't broadcast.
+	if msg.Type == "status" || msg.Type == "status_end" {
+		return originalErr
+	}
+
+	// Only broadcast for "main" type clients.
+	if clientType != "main" {
+		return originalErr
+	}
+
+	logger.InfoCF("websocket", "Using broadcast fallback for disconnected main client", map[string]interface{}{
+		"chat_id":     msg.ChatID,
+		"content_len": len(msg.Content),
+	})
+
+	if err := broadcast.Send(broadcast.Message{
+		Content: msg.Content,
+		Type:    msg.Type,
+	}); err != nil {
+		return fmt.Errorf("ws send failed and broadcast fallback also failed: %w", err)
+	}
 	return nil
 }
 
@@ -173,8 +208,14 @@ func (c *WebSocketChannel) handleWS(w http.ResponseWriter, r *http.Request) {
 		clientID = uuid.New().String()
 	}
 
+	clientType := r.URL.Query().Get("client_type")
+	if clientType == "" {
+		clientType = "main" // Default for backward compatibility
+	}
+
 	logger.InfoCF("websocket", "New WebSocket connection", map[string]interface{}{
 		"client_id":   clientID,
+		"client_type": clientType,
 		"remote_addr": r.RemoteAddr,
 	})
 
@@ -187,12 +228,22 @@ func (c *WebSocketChannel) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	c.clients[conn] = clientID
 	c.chatConns[chatID] = conn
+	c.clientTypes[chatID] = clientType
 	c.mu.Unlock()
 
-	go c.readPump(conn, clientID, chatID)
+	go c.readPump(conn, clientID, chatID, clientType)
 }
 
-func (c *WebSocketChannel) readPump(conn *websocket.Conn, clientID, chatID string) {
+// GetClientType returns the client type for a given chatID.
+// Returns empty string if unknown. The value is retained after disconnect
+// so that the broadcast fallback can check the type.
+func (c *WebSocketChannel) GetClientType(chatID string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.clientTypes[chatID]
+}
+
+func (c *WebSocketChannel) readPump(conn *websocket.Conn, clientID, chatID, clientType string) {
 	defer func() {
 		c.mu.Lock()
 		delete(c.clients, conn)
@@ -258,7 +309,8 @@ func (c *WebSocketChannel) readPump(conn *websocket.Conn, clientID, chatID strin
 			inputMode = "text"
 		}
 		metadata := map[string]string{
-			"input_mode": inputMode,
+			"input_mode":  inputMode,
+			"client_type": clientType,
 		}
 		c.HandleMessage(senderID, chatID, content, media, metadata)
 	}

@@ -566,6 +566,7 @@ func gatewayCmd() {
 		cfg.DataPath(),
 		cfg.Heartbeat.Interval,
 		cfg.Heartbeat.Enabled,
+		agentLoop.StateManager(),
 	)
 	heartbeatService.SetBus(msgBus)
 	heartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {

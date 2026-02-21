@@ -19,6 +19,10 @@ type State struct {
 	// LastChatID is the last chat ID used for communication
 	LastChatID string `json:"last_chat_id,omitempty"`
 
+	// LastMainChannel is the last channel used by a "main" client type.
+	// Used by heartbeat to always target the main (Android app) session.
+	LastMainChannel string `json:"last_main_channel,omitempty"`
+
 	// Timestamp is the last time this state was updated
 	Timestamp time.Time `json:"timestamp"`
 }
@@ -112,6 +116,34 @@ func (sm *Manager) GetLastChatID() string {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return sm.state.LastChatID
+}
+
+// SetLastChannelWithType atomically updates the last channel and, if the
+// client type is "main", also updates LastMainChannel. Both fields are
+// persisted in a single atomic write.
+func (sm *Manager) SetLastChannelWithType(channel, clientType string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.state.LastChannel = channel
+	sm.state.Timestamp = time.Now()
+
+	if clientType == "main" {
+		sm.state.LastMainChannel = channel
+	}
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
+// GetLastMainChannel returns the last channel used by a "main" client type.
+func (sm *Manager) GetLastMainChannel() string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.state.LastMainChannel
 }
 
 // GetTimestamp returns the timestamp of the last state update.

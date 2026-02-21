@@ -44,8 +44,9 @@ type HeartbeatService struct {
 	stopChan  chan struct{}
 }
 
-// NewHeartbeatService creates a new heartbeat service
-func NewHeartbeatService(workspace string, dataDir string, intervalMinutes int, enabled bool) *HeartbeatService {
+// NewHeartbeatService creates a new heartbeat service.
+// If stateManager is nil, a new state.Manager is created internally (for tests).
+func NewHeartbeatService(workspace string, dataDir string, intervalMinutes int, enabled bool, stateManager *state.Manager) *HeartbeatService {
 	// Apply minimum interval
 	if intervalMinutes < minIntervalMinutes && intervalMinutes != 0 {
 		intervalMinutes = minIntervalMinutes
@@ -55,12 +56,16 @@ func NewHeartbeatService(workspace string, dataDir string, intervalMinutes int, 
 		intervalMinutes = defaultIntervalMinutes
 	}
 
+	if stateManager == nil {
+		stateManager = state.NewManager(dataDir)
+	}
+
 	return &HeartbeatService{
 		workspace: workspace,
 		dataDir:   dataDir,
 		interval:  time.Duration(intervalMinutes) * time.Minute,
 		enabled:   enabled,
-		state:     state.NewManager(dataDir),
+		state:     stateManager,
 	}
 }
 
@@ -172,8 +177,13 @@ func (hs *HeartbeatService) executeHeartbeat() {
 		return
 	}
 
-	// Get last channel info for context
-	lastChannel := hs.state.GetLastChannel()
+	// Get last channel info for context.
+	// Prefer the last "main" client session so heartbeat always targets the
+	// primary Android app, even if a non-main client was active more recently.
+	lastChannel := hs.state.GetLastMainChannel()
+	if lastChannel == "" {
+		lastChannel = hs.state.GetLastChannel() // Backward-compat fallback
+	}
 	channel, chatID := hs.parseLastChannel(lastChannel)
 
 	// Debug log for channel resolution
@@ -295,8 +305,11 @@ func (hs *HeartbeatService) sendResponse(response string) {
 		return
 	}
 
-	// Get last channel from state
-	lastChannel := hs.state.GetLastChannel()
+	// Get last channel from state (prefer "main" client session)
+	lastChannel := hs.state.GetLastMainChannel()
+	if lastChannel == "" {
+		lastChannel = hs.state.GetLastChannel() // Backward-compat fallback
+	}
 	if lastChannel == "" {
 		hs.logInfo("No last channel recorded, heartbeat result not sent")
 		return
