@@ -445,11 +445,8 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		// Call LLM
-		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
-			"max_tokens":  8192,
-			"temperature": 0.7,
-		})
+		// Call LLM (with bounded retries on timeouts and server errors)
+		response, err := al.chatWithRetry(ctx, messages, providerToolDefs, opts)
 
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed",
@@ -568,6 +565,34 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 	return finalContent, iteration, nil
 }
 
+func (al *AgentLoop) chatWithRetry(ctx context.Context, messages []providers.Message, toolDefs []providers.ToolDefinition, opts processOptions) (*providers.LLMResponse, error) {
+	llmOpts := map[string]interface{}{
+		"max_tokens":  8192,
+		"temperature": 0.7,
+	}
+
+	// 3 attempts total: 45s, 90s, 120s
+	retryCfg := utils.RetryConfig{
+		Timeouts: []time.Duration{45 * time.Second, 90 * time.Second, 120 * time.Second},
+		Backoffs: []time.Duration{2 * time.Second, 5 * time.Second},
+		Notify: func(attempt, total int, decision utils.RetryDecision) {
+			if opts.Channel == "" || opts.ChatID == "" {
+				return
+			}
+			notice := utils.FormatLLMRetryNotice(attempt, total, decision)
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel: opts.Channel,
+				ChatID:  opts.ChatID,
+				Content: notice,
+			})
+		},
+	}
+
+	return utils.DoWithRetry(ctx, retryCfg, func(attemptCtx context.Context) (*providers.LLMResponse, error) {
+		return al.provider.Chat(attemptCtx, messages, toolDefs, al.model, llmOpts)
+	})
+}
+
 // updateToolContexts updates the context for tools that need channel/chatID info.
 func (al *AgentLoop) updateToolContexts(channel, chatID string) {
 	// Use ContextualTool interface instead of type assertions
@@ -631,7 +656,7 @@ func formatMessagesForLog(messages []providers.Message) string {
 	result += "[\n"
 	for i, msg := range messages {
 		result += fmt.Sprintf("  [%d] Role: %s\n", i, msg.Role)
-		if msg.ToolCalls != nil && len(msg.ToolCalls) > 0 {
+		if len(msg.ToolCalls) > 0 {
 			result += "  ToolCalls:\n"
 			for _, tc := range msg.ToolCalls {
 				result += fmt.Sprintf("    - ID: %s, Type: %s, Name: %s\n", tc.ID, tc.Type, tc.Name)

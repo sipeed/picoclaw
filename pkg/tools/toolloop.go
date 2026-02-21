@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -37,6 +38,10 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 	iteration := 0
 	var finalContent string
 
+	// 3 attempts total: 45s, 90s, 120s
+	perAttemptTimeouts := []time.Duration{45 * time.Second, 90 * time.Second, 120 * time.Second}
+	backoffs := []time.Duration{2 * time.Second, 5 * time.Second}
+
 	for iteration < config.MaxIterations {
 		iteration++
 
@@ -61,8 +66,17 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 			}
 		}
 
-		// 3. Call LLM
-		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
+		// 3. Call LLM (with bounded retries on timeouts and server errors)
+		retryCfg := utils.RetryConfig{
+			Timeouts: perAttemptTimeouts,
+			Backoffs: backoffs,
+			Notify: func(attempt, total int, decision utils.RetryDecision) {
+				sendRetryNotice(ctx, config.Tools, channel, chatID, attempt, total, decision)
+			},
+		}
+		response, err := utils.DoWithRetry(ctx, retryCfg, func(attemptCtx context.Context) (*providers.LLMResponse, error) {
+			return config.Provider.Chat(attemptCtx, messages, providerToolDefs, config.Model, llmOpts)
+		})
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
 				map[string]any{
@@ -151,4 +165,21 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 		Content:    finalContent,
 		Iterations: iteration,
 	}, nil
+}
+
+func sendRetryNotice(ctx context.Context, tools *ToolRegistry, channel, chatID string, attempt, total int, decision utils.RetryDecision) {
+	if tools == nil || channel == "" || chatID == "" {
+		return
+	}
+
+	notice := utils.FormatLLMRetryNotice(attempt, total, utils.RetryDecision{
+		Retryable: decision.Retryable,
+		Status:    decision.Status,
+		Reason:    utils.RetryReason(decision.Reason),
+	})
+
+	args := map[string]interface{}{
+		"content": notice,
+	}
+	_ = tools.ExecuteWithContext(ctx, "message", args, channel, chatID, nil)
 }
