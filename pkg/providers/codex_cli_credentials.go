@@ -31,7 +31,7 @@ func ReadCodexCliCredentials() (accessToken, accountID string, expiresAt time.Ti
 	}
 
 	var auth CodexCliAuth
-	if err := json.Unmarshal(data, &auth); err != nil {
+	if err = json.Unmarshal(data, &auth); err != nil {
 		return "", "", time.Time{}, fmt.Errorf("parsing %s: %w", authPath, err)
 	}
 
@@ -59,7 +59,9 @@ func CreateCodexCliTokenSource() func() (string, string, error) {
 		}
 
 		if time.Now().After(expiresAt) {
-			return "", "", fmt.Errorf("codex cli credentials expired (auth.json last modified > 1h ago). Run: codex login")
+			return "", "", fmt.Errorf(
+				"codex cli credentials expired (auth.json last modified > 1h ago). Run: codex login",
+			)
 		}
 
 		return token, accountID, nil

@@ -10,6 +10,9 @@ services:
     container_name: picoclaw-agent
     profiles:
       - agent
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
     volumes:
       - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
       - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
@@ -29,6 +32,9 @@ services:
     restart: unless-stopped
     profiles:
       - gateway
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
     volumes:
       # Configuration file
       - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro

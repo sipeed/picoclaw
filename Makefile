@@ -17,6 +17,9 @@ LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X 
 GO?=go
 GOFLAGS?=-v -tags stdjson
 
+# Golangci-lint
+GOLANGCI_LINT?=golangci-lint
+
 # Installation
 INSTALL_PREFIX?=$(HOME)/.local
 INSTALL_BIN_DIR=$(INSTALL_PREFIX)/bin
@@ -126,13 +129,17 @@ clean:
 vet:
 	@$(GO) vet ./...
 
-## fmt: Format Go code
+## test: Test Go code
 test:
 	@$(GO) test ./...
 
 ## fmt: Format Go code
 fmt:
-	@$(GO) fmt ./...
+	@$(GOLANGCI_LINT) fmt
+
+## lint: Run linters
+lint:
+	@$(GOLANGCI_LINT) run
 
 ## deps: Download dependencies
 deps:

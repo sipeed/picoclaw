@@ -30,12 +30,12 @@ func createMockCLI(t *testing.T, stdout, stderr string, exitCode int) string {
 	dir := t.TempDir()
 
 	if stdout != "" {
-		if err := os.WriteFile(filepath.Join(dir, "stdout.txt"), []byte(stdout), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "stdout.txt"), []byte(stdout), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if stderr != "" {
-		if err := os.WriteFile(filepath.Join(dir, "stderr.txt"), []byte(stderr), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "stderr.txt"), []byte(stderr), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -51,7 +51,7 @@ func createMockCLI(t *testing.T, stdout, stderr string, exitCode int) string {
 	sb.WriteString(fmt.Sprintf("exit %d\n", exitCode))
 
 	script := filepath.Join(dir, "claude")
-	if err := os.WriteFile(script, []byte(sb.String()), 0755); err != nil {
+	if err := os.WriteFile(script, []byte(sb.String()), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return script
@@ -67,7 +67,7 @@ func createSlowMockCLI(t *testing.T, sleepSeconds int) string {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "claude")
 	content := fmt.Sprintf("#!/bin/sh\nsleep %d\necho '{\"type\":\"result\",\"result\":\"late\"}'\n", sleepSeconds)
-	if err := os.WriteFile(script, []byte(content), 0755); err != nil {
+	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return script
@@ -88,7 +88,7 @@ cat <<'EOFMOCK'
 {"type":"result","result":"ok","session_id":"test"}
 EOFMOCK
 `, argsFile)
-	if err := os.WriteFile(script, []byte(content), 0755); err != nil {
+	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return script
@@ -137,7 +137,6 @@ func TestChat_Success(t *testing.T) {
 	resp, err := p.Chat(context.Background(), []Message{
 		{Role: "user", Content: "Hello"},
 	}, nil, "", nil)
-
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -193,7 +192,6 @@ func TestChat_WithToolCallsInResponse(t *testing.T) {
 	resp, err := p.Chat(context.Background(), []Message{
 		{Role: "user", Content: "What's the weather?"},
 	}, nil, "", nil)
-
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -336,7 +334,7 @@ func TestChat_PassesModelFlag(t *testing.T) {
 
 	_, err := p.Chat(context.Background(), []Message{
 		{Role: "user", Content: "Hi"},
-	}, nil, "claude-sonnet-4-5-20250929", nil)
+	}, nil, "claude-sonnet-4.6", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -346,7 +344,7 @@ func TestChat_PassesModelFlag(t *testing.T) {
 	if !strings.Contains(args, "--model") {
 		t.Errorf("CLI args missing --model, got: %s", args)
 	}
-	if !strings.Contains(args, "claude-sonnet-4-5-20250929") {
+	if !strings.Contains(args, "claude-sonnet-4.6") {
 		t.Errorf("CLI args missing model name, got: %s", args)
 	}
 }
@@ -403,7 +401,6 @@ func TestChat_EmptyWorkspaceDoesNotSetDir(t *testing.T) {
 	resp, err := p.Chat(context.Background(), []Message{
 		{Role: "user", Content: "Hello"},
 	}, nil, "", nil)
-
 	if err != nil {
 		t.Fatalf("Chat() with empty workspace error = %v", err)
 	}
@@ -416,10 +413,12 @@ func TestChat_EmptyWorkspaceDoesNotSetDir(t *testing.T) {
 
 func TestCreateProvider_ClaudeCli(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claude-cli"
-	cfg.Agents.Defaults.Workspace = "/test/ws"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claude-sonnet-4.6", Model: "claude-cli/claude-sonnet-4.6", Workspace: "/test/ws"},
+	}
+	cfg.Agents.Defaults.Model = "claude-sonnet-4.6"
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider(claude-cli) error = %v", err)
 	}
@@ -435,9 +434,12 @@ func TestCreateProvider_ClaudeCli(t *testing.T) {
 
 func TestCreateProvider_ClaudeCode(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claude-code"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claude-code", Model: "claude-cli/claude-code"},
+	}
+	cfg.Agents.Defaults.Model = "claude-code"
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider(claude-code) error = %v", err)
 	}
@@ -448,9 +450,12 @@ func TestCreateProvider_ClaudeCode(t *testing.T) {
 
 func TestCreateProvider_ClaudeCodec(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claudecode"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claudecode", Model: "claude-cli/claudecode"},
+	}
+	cfg.Agents.Defaults.Model = "claudecode"
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider(claudecode) error = %v", err)
 	}
@@ -461,10 +466,13 @@ func TestCreateProvider_ClaudeCodec(t *testing.T) {
 
 func TestCreateProvider_ClaudeCliDefaultWorkspace(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Provider = "claude-cli"
+	cfg.ModelList = []config.ModelConfig{
+		{ModelName: "claude-cli", Model: "claude-cli/claude-sonnet"},
+	}
+	cfg.Agents.Defaults.Model = "claude-cli"
 	cfg.Agents.Defaults.Workspace = ""
 
-	provider, err := CreateProvider(cfg)
+	provider, _, err := CreateProvider(cfg)
 	if err != nil {
 		t.Fatalf("CreateProvider error = %v", err)
 	}
@@ -611,10 +619,10 @@ func TestBuildSystemPrompt_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather for a location",
-				Parameters: map[string]interface{}{
+				Parameters: map[string]any{
 					"type": "object",
-					"properties": map[string]interface{}{
-						"location": map[string]interface{}{"type": "string"},
+					"properties": map[string]any{
+						"location": map[string]any{"type": "string"},
 					},
 				},
 			},

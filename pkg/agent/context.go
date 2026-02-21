@@ -80,7 +80,7 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
+3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md`,
 		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
 }
 
@@ -96,7 +96,9 @@ func (cb *ContextBuilder) buildToolsSection() string {
 
 	var sb strings.Builder
 	sb.WriteString("## Available Tools\n\n")
-	sb.WriteString("**CRITICAL**: You MUST use tools to perform actions. Do NOT pretend to execute commands or schedule tasks.\n\n")
+	sb.WriteString(
+		"**CRITICAL**: You MUST use tools to perform actions. Do NOT pretend to execute commands or schedule tasks.\n\n",
+	)
 	sb.WriteString("You have access to the following tools:\n\n")
 	for _, s := range summaries {
 		sb.WriteString(s)
@@ -146,18 +148,24 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 		"IDENTITY.md",
 	}
 
-	var result string
+	var sb strings.Builder
 	for _, filename := range bootstrapFiles {
 		filePath := filepath.Join(cb.workspace, filename)
 		if data, err := os.ReadFile(filePath); err == nil {
-			result += fmt.Sprintf("## %s\n\n%s\n\n", filename, string(data))
+			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
 		}
 	}
 
-	return result
+	return sb.String()
 }
 
-func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID string) []providers.Message {
+func (cb *ContextBuilder) BuildMessages(
+	history []providers.Message,
+	summary string,
+	currentMessage string,
+	media []string,
+	channel, chatID string,
+) []providers.Message {
 	messages := []providers.Message{}
 
 	systemPrompt := cb.BuildSystemPrompt()
@@ -169,7 +177,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	// Log system prompt summary for debugging (debug mode only)
 	logger.DebugCF("agent", "System prompt built",
-		map[string]interface{}{
+		map[string]any{
 			"total_chars":   len(systemPrompt),
 			"total_lines":   strings.Count(systemPrompt, "\n") + 1,
 			"section_count": strings.Count(systemPrompt, "\n\n---\n\n") + 1,
@@ -181,7 +189,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		preview = preview[:500] + "... (truncated)"
 	}
 	logger.DebugCF("agent", "System prompt preview",
-		map[string]interface{}{
+		map[string]any{
 			"preview": preview,
 		})
 
@@ -189,16 +197,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
 	}
 
-	//This fix prevents the session memory from LLM failure due to elimination of toolu_IDs required from LLM
-	// --- INICIO DEL FIX ---
-	//Diegox-17
-	for len(history) > 0 && (history[0].Role == "tool") {
-		logger.DebugCF("agent", "Removing orphaned tool message from history to prevent LLM error",
-			map[string]interface{}{"role": history[0].Role})
-		history = history[1:]
-	}
-	//Diegox-17
-	// --- FIN DEL FIX ---
+	history = sanitizeHistoryForProvider(history)
 
 	messages = append(messages, providers.Message{
 		Role:    "system",
@@ -207,15 +206,66 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	messages = append(messages, history...)
 
-	messages = append(messages, providers.Message{
-		Role:    "user",
-		Content: currentMessage,
-	})
+	if strings.TrimSpace(currentMessage) != "" {
+		messages = append(messages, providers.Message{
+			Role:    "user",
+			Content: currentMessage,
+		})
+	}
 
 	return messages
 }
 
-func (cb *ContextBuilder) AddToolResult(messages []providers.Message, toolCallID, toolName, result string) []providers.Message {
+func sanitizeHistoryForProvider(history []providers.Message) []providers.Message {
+	if len(history) == 0 {
+		return history
+	}
+
+	sanitized := make([]providers.Message, 0, len(history))
+	for _, msg := range history {
+		switch msg.Role {
+		case "tool":
+			if len(sanitized) == 0 {
+				logger.DebugCF("agent", "Dropping orphaned leading tool message", map[string]any{})
+				continue
+			}
+			last := sanitized[len(sanitized)-1]
+			if last.Role != "assistant" || len(last.ToolCalls) == 0 {
+				logger.DebugCF("agent", "Dropping orphaned tool message", map[string]any{})
+				continue
+			}
+			sanitized = append(sanitized, msg)
+
+		case "assistant":
+			if len(msg.ToolCalls) > 0 {
+				if len(sanitized) == 0 {
+					logger.DebugCF("agent", "Dropping assistant tool-call turn at history start", map[string]any{})
+					continue
+				}
+				prev := sanitized[len(sanitized)-1]
+				if prev.Role != "user" && prev.Role != "tool" {
+					logger.DebugCF(
+						"agent",
+						"Dropping assistant tool-call turn with invalid predecessor",
+						map[string]any{"prev_role": prev.Role},
+					)
+					continue
+				}
+			}
+			sanitized = append(sanitized, msg)
+
+		default:
+			sanitized = append(sanitized, msg)
+		}
+	}
+
+	return sanitized
+}
+
+func (cb *ContextBuilder) AddToolResult(
+	messages []providers.Message,
+	toolCallID, toolName, result string,
+) []providers.Message {
 	messages = append(messages, providers.Message{
 		Role:       "tool",
 		Content:    result,
@@ -224,7 +274,11 @@ func (cb *ContextBuilder) AddToolResult(messages []providers.Message, toolCallID
 	return messages
 }
 
-func (cb *ContextBuilder) AddAssistantMessage(messages []providers.Message, content string, toolCalls []map[string]interface{}) []providers.Message {
+func (cb *ContextBuilder) AddAssistantMessage(
+	messages []providers.Message,
+	content string,
+	toolCalls []map[string]any,
+) []providers.Message {
 	msg := providers.Message{
 		Role:    "assistant",
 		Content: content,
@@ -254,13 +308,13 @@ func (cb *ContextBuilder) loadSkills() string {
 }
 
 // GetSkillsInfo returns information about loaded skills.
-func (cb *ContextBuilder) GetSkillsInfo() map[string]interface{} {
+func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 	allSkills := cb.skillsLoader.ListSkills()
 	skillNames := make([]string, 0, len(allSkills))
 	for _, s := range allSkills {
 		skillNames = append(skillNames, s.Name)
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"total":     len(allSkills),
 		"available": len(allSkills),
 		"names":     skillNames,

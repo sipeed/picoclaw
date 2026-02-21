@@ -14,6 +14,8 @@ type AuthCredential struct {
 	ExpiresAt    time.Time `json:"expires_at,omitempty"`
 	Provider     string    `json:"provider"`
 	AuthMethod   string    `json:"auth_method"`
+	Email        string    `json:"email,omitempty"`
+	ProjectID    string    `json:"project_id,omitempty"`
 }
 
 type AuthStore struct {
@@ -62,7 +64,7 @@ func LoadStore() (*AuthStore, error) {
 func SaveStore(store *AuthStore) error {
 	path := authFilePath()
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
@@ -70,7 +72,7 @@ func SaveStore(store *AuthStore) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return os.WriteFile(path, data, 0o600)
 }
 
 func GetCredential(provider string) (*AuthCredential, error) {

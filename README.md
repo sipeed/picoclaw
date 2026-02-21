@@ -14,7 +14,7 @@
     <a href="https://x.com/SipeedIO"><img src="https://img.shields.io/badge/X_(Twitter)-SipeedIO-black?style=flat&logo=x&logoColor=white" alt="Twitter"></a>
   </p>
 
- [中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | **English**
+ [中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | **English**
 </div>
 
 ---
@@ -209,18 +209,24 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
+      "model": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
     }
   },
-  "providers": {
-    "openrouter": {
-      "api_key": "xxx",
-      "api_base": "https://openrouter.ai/api/v1"
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "your-api-key"
+    },
+    {
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
+      "api_key": "your-anthropic-key"
     }
-  },
+  ],
   "tools": {
     "web": {
       "brave": {
@@ -236,6 +242,8 @@ picoclaw onboard
   }
 }
 ```
+
+> **New**: The `model_list` configuration format allows zero-code provider addition. See [Model Configuration](#model-configuration-model_list) for details.
 
 **3. Get API Keys**
 
@@ -256,7 +264,7 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, DingTalk, or LINE
+Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
 
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
@@ -265,6 +273,7 @@ Talk to your picoclaw through Telegram, Discord, DingTalk, or LINE
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
+| **WeCom**    | Medium (CorpID + webhook setup)    |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -326,7 +335,8 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"],
+      "mention_only": false
     }
   }
 }
@@ -338,6 +348,10 @@ picoclaw gateway
 * Scopes: `bot`
 * Bot Permissions: `Send Messages`, `Read Message History`
 * Open the generated invite URL and add the bot to your server
+
+**Optional: Mention-only mode**
+
+Set `"mention_only": true` to make the bot respond only when @-mentioned. Useful for shared servers where you want the bot to respond only when explicitly called.
 
 **6. Run**
 
@@ -404,7 +418,7 @@ picoclaw gateway
 }
 ```
 
-> Set `allow_from` to empty to allow all users, or specify QQ numbers to restrict access.
+> Set `allow_from` to empty to allow all users, or specify DingTalk user IDs to restrict access.
 
 **3. Run**
 
@@ -461,6 +475,87 @@ picoclaw gateway
 > In group chats, the bot responds only when @mentioned. Replies quote the original message.
 
 > **Docker Compose**: Add `ports: ["18791:18791"]` to the `picoclaw-gateway` service to expose the webhook port.
+
+</details>
+
+<details>
+<summary><b>WeCom (企业微信)</b></summary>
+
+PicoClaw supports two types of WeCom integration:
+
+**Option 1: WeCom Bot (智能机器人)** - Easier setup, supports group chats
+**Option 2: WeCom App (自建应用)** - More features, proactive messaging
+
+See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detailed setup instructions.
+
+**Quick Setup - WeCom Bot:**
+
+**1. Create a bot**
+
+* Go to WeCom Admin Console → Group Chat → Add Group Bot
+* Copy the webhook URL (format: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**Quick Setup - WeCom App:**
+
+**1. Create an app**
+
+* Go to WeCom Admin Console → App Management → Create App
+* Copy **AgentId** and **Secret**
+* Go to "My Company" page, copy **CorpID**
+
+**2. Configure receive message**
+
+* In App details, click "Receive Message" → "Set API"
+* Set URL to `http://your-server:18792/webhook/wecom-app`
+* Generate **Token** and **EncodingAESKey**
+
+**3. Configure**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. Run**
+
+```bash
+picoclaw gateway
+```
+
+> **Note**: WeCom App requires opening port 18792 for webhook callbacks. Use a reverse proxy for HTTPS.
 
 </details>
 
@@ -677,7 +772,193 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 | `anthropic(To be tested)`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com) |
 | `openai(To be tested)`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)     |
 | `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com) |
+| `qwen`                     | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)           |
+| `cerebras`                 | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                     |
+
+### Model Configuration (model_list)
+
+> **What's New?** PicoClaw now uses a **model-centric** configuration approach. Simply specify `vendor/model` format (e.g., `zhipu/glm-4.7`) to add new providers—**zero code changes required!**
+
+This design also enables **multi-agent support** with flexible provider selection:
+
+- **Different agents, different providers**: Each agent can use its own LLM provider
+- **Model fallbacks**: Configure primary and fallback models for resilience
+- **Load balancing**: Distribute requests across multiple endpoints
+- **Centralized configuration**: Manage all providers in one place
+
+#### 📋 All Supported Vendors
+
+| Vendor | `model` Prefix | Default API Base | Protocol | API Key |
+|--------|----------------|------------------|----------|---------|
+| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [Get Key](https://platform.openai.com) |
+| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [Get Key](https://console.anthropic.com) |
+| **智谱 AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [Get Key](https://platform.deepseek.com) |
+| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [Get Key](https://aistudio.google.com/api-keys) |
+| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [Get Key](https://console.groq.com) |
+| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [Get Key](https://platform.moonshot.cn) |
+| **通义千问 (Qwen)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [Get Key](https://dashscope.console.aliyun.com) |
+| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [Get Key](https://build.nvidia.com) |
+| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | Local (no key needed) |
+| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [Get Key](https://openrouter.ai/keys) |
+| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | Local |
+| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Get Key](https://cerebras.ai) |
+| **火山引擎** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Get Key](https://console.volcengine.com) |
+| **神算云** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **Antigravity** | `antigravity/` | Google Cloud | Custom | OAuth only |
+| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
+
+#### Basic Configuration
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key"
+    },
+    {
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
+      "api_key": "sk-ant-your-key"
+    },
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt-5.2"
+    }
+  }
+}
+```
+
+#### Vendor-Specific Examples
+
+**OpenAI**
+```json
+{
+  "model_name": "gpt-5.2",
+  "model": "openai/gpt-5.2",
+  "api_key": "sk-..."
+}
+```
+
+**智谱 AI (GLM)**
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**DeepSeek**
+```json
+{
+  "model_name": "deepseek-chat",
+  "model": "deepseek/deepseek-chat",
+  "api_key": "sk-..."
+}
+```
+
+**Anthropic (with API key)**
+```json
+{
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
+  "api_key": "sk-ant-your-key"
+}
+```
+> Run `picoclaw auth login --provider anthropic` to paste your API token.
+
+**Ollama (local)**
+```json
+{
+  "model_name": "llama3",
+  "model": "ollama/llama3"
+}
+```
+
+**Custom Proxy/API**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-..."
+}
+```
+
+#### Load Balancing
+
+Configure multiple endpoints for the same model name—PicoClaw will automatically round-robin between them:
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
+  ]
+}
+```
+
+#### Migration from Legacy `providers` Config
+
+The old `providers` configuration is **deprecated** but still supported for backward compatibility.
+
+**Old Config (deprecated):**
+```json
+{
+  "providers": {
+    "zhipu": {
+      "api_key": "your-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "zhipu",
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+**New Config (recommended):**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+For detailed migration guide, see [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md).
 
 ### Provider Architecture
 
@@ -883,3 +1164,4 @@ This happens when another instance of the bot is running. Make sure only one `pi
 | **Zhipu**        | 200K tokens/month   | Best for Chinese users                |
 | **Brave Search** | 2000 queries/month  | Web search functionality              |
 | **Groq**         | Free tier available | Fast inference (Llama, Mixtral)       |
+| **Cerebras**     | Free tier available | Fast inference (Llama, Qwen, etc.)    |
