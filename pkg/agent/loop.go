@@ -52,55 +52,6 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 }
 
-// createToolRegistry creates a tool registry with common tools.
-// This is shared between main agent and subagents.
-func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msgBus *bus.MessageBus) *tools.ToolRegistry {
-	registry := tools.NewToolRegistry()
-
-	// File system tools
-	registry.Register(tools.NewReadFileTool(workspace, restrict))
-	registry.Register(tools.NewWriteFileTool(workspace, restrict))
-	registry.Register(tools.NewListDirTool(workspace, restrict))
-	registry.Register(tools.NewEditFileTool(workspace, restrict))
-	registry.Register(tools.NewAppendFileTool(workspace, restrict))
-
-	// Shell execution
-	registry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
-
-	if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
-		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
-		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
-		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-		PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
-		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
-		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
-	}); searchTool != nil {
-		registry.Register(searchTool)
-	}
-	registry.Register(tools.NewWebFetchTool(50000))
-
-	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
-	registry.Register(tools.NewI2CTool())
-	registry.Register(tools.NewSPITool())
-
-	// Message tool - available to both agent and subagent
-	// Subagent uses it to communicate directly with user
-	messageTool := tools.NewMessageTool()
-	messageTool.SetSendCallback(func(channel, chatID, content string) error {
-		msgBus.PublishOutbound(bus.OutboundMessage{
-			Channel: channel,
-			ChatID:  chatID,
-			Content: content,
-		})
-		return nil
-	})
-	registry.Register(messageTool)
-
-	return registry
-}
-
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
