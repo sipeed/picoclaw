@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -629,5 +630,162 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+func TestHandleCommand_Help(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	ctx := context.Background()
+	msg := bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/help",
+	}
+
+	response, handled := al.handleCommand(ctx, msg)
+	if !handled {
+		t.Fatal("Expected /help to be handled")
+	}
+	if response == "" {
+		t.Fatal("Expected non-empty help response")
+	}
+
+	// Verify key commands are mentioned in the help text
+	expectedCommands := []string{
+		"/help",
+		"/show model",
+		"/show channel",
+		"/show agents",
+		"/list models",
+		"/list channels",
+		"/list agents",
+		"/switch model to",
+		"/switch channel to",
+	}
+	for _, cmd := range expectedCommands {
+		if !strings.Contains(response, cmd) {
+			t.Errorf("Help response missing command %q", cmd)
+		}
+	}
+}
+
+func TestHandleCommand_ListModels(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "gpt-4",
+				ModelFallbacks:    []string{"gpt-3.5-turbo"},
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	ctx := context.Background()
+	msg := bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/list models",
+	}
+
+	response, handled := al.handleCommand(ctx, msg)
+	if !handled {
+		t.Fatal("Expected /list models to be handled")
+	}
+
+	// Should contain the model name
+	if !strings.Contains(response, "gpt-4") {
+		t.Errorf("Expected response to contain model name 'gpt-4', got: %s", response)
+	}
+
+	// Should contain fallback info
+	if !strings.Contains(response, "gpt-3.5-turbo") {
+		t.Errorf("Expected response to contain fallback model 'gpt-3.5-turbo', got: %s", response)
+	}
+
+	// Should contain "Configured models" header
+	if !strings.Contains(response, "Configured models:") {
+		t.Errorf("Expected response to contain 'Configured models:', got: %s", response)
+	}
+}
+
+func TestHandleCommand_NotACommand(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "plain text", content: "hello world"},
+		{name: "unknown command", content: "/unknown"},
+		{name: "empty", content: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := bus.InboundMessage{
+				Channel:  "test",
+				SenderID: "user1",
+				ChatID:   "chat1",
+				Content:  tt.content,
+			}
+			_, handled := al.handleCommand(ctx, msg)
+			if handled {
+				t.Errorf("Expected %q to not be handled as a command", tt.content)
+			}
+		})
 	}
 }
