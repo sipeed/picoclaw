@@ -858,6 +858,78 @@ func TestHandleCommand_New(t *testing.T) {
 	}
 }
 
+func TestForceCompression_PreservesToolPairs(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+	sessionKey := "agent:main:test-compression"
+	agent.Sessions.GetOrCreate(sessionKey)
+
+	// Build: system, user, assistant+tool, tool_result, tool_result, user, assistant, user
+	// = 8 messages. Conversation (indices 1-6) has 6 msgs, mid=3 lands on
+	// the second tool_result, splitting it from its assistant+tool_calls.
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "system", Content: "sys"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "q1"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{
+		Role: "assistant", Content: "a1",
+		ToolCalls: []providers.ToolCall{{ID: "c1", Name: "exec"}, {ID: "c2", Name: "read"}},
+	})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "tool", Content: "r1", ToolCallID: "c1"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "tool", Content: "r2", ToolCallID: "c2"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "q2"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "assistant", Content: "a2"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "q3"})
+
+	al.forceCompression(agent, sessionKey)
+
+	history := agent.Sessions.GetHistory(sessionKey)
+
+	toolCallIDs := map[string]bool{}
+	toolResultIDs := map[string]bool{}
+	for _, m := range history {
+		for _, tc := range m.ToolCalls {
+			if tc.ID != "" {
+				toolCallIDs[tc.ID] = true
+			}
+		}
+		if m.Role == "tool" && m.ToolCallID != "" {
+			toolResultIDs[m.ToolCallID] = true
+		}
+	}
+
+	for id := range toolResultIDs {
+		if !toolCallIDs[id] {
+			t.Errorf("orphaned tool_result %q after forceCompression", id)
+		}
+	}
+	for id := range toolCallIDs {
+		if !toolResultIDs[id] {
+			t.Errorf("orphaned tool_call %q after forceCompression", id)
+		}
+	}
+}
+
 func TestHandleCommand_Status(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {

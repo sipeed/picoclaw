@@ -811,6 +811,16 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	// Helper to find the mid-point of the conversation
 	mid := len(conversation) / 2
 
+	// Snap the cut point forward past any tool_result messages so we don't
+	// separate them from their assistant+tool_calls header.
+	for mid < len(conversation) && conversation[mid].Role == "tool" {
+		mid++
+	}
+	// Safety: if we walked past the end, step back to keep at least 1 message
+	if mid >= len(conversation) {
+		mid = len(conversation) - 1
+	}
+
 	// New history structure:
 	// 1. System Prompt (with compression note appended)
 	// 2. Second half of conversation
