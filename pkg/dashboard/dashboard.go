@@ -15,7 +15,13 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-func Mount(srv *health.Server, cfg *config.Config, al *agent.AgentLoop, cm *channels.Manager, configPath ...string) {
+func Mount(
+	srv *health.Server,
+	cfg *config.Config,
+	al *agent.AgentLoop,
+	cm *channels.Manager,
+	configPath ...string,
+) {
 	startTime := time.Now()
 	broker := NewBroker()
 	password := cfg.Dashboard.Password
@@ -34,7 +40,10 @@ func Mount(srv *health.Server, cfg *config.Config, al *agent.AgentLoop, cm *chan
 		logger.ErrorCF("dashboard", "Failed to create sub FS", map[string]any{"error": err.Error()})
 		return
 	}
-	srv.Handle("/dashboard/static/", http.StripPrefix("/dashboard/static/", http.FileServer(http.FS(staticFS))))
+	srv.Handle(
+		"/dashboard/static/",
+		http.StripPrefix("/dashboard/static/", http.FileServer(http.FS(staticFS))),
+	)
 
 	// Auth routes (public)
 	srv.HandleFunc("/dashboard/login", func(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +124,12 @@ var funcMap = template.FuncMap{
 	"extractProvider": extractProvider,
 }
 
-func fragmentStatus(cfg *config.Config, al *agent.AgentLoop, cm *channels.Manager, startTime time.Time) http.HandlerFunc {
+func fragmentStatus(
+	cfg *config.Config,
+	al *agent.AgentLoop,
+	cm *channels.Manager,
+	startTime time.Time,
+) http.HandlerFunc {
 	const tmpl = `<div id="status-bar" class="status-bar">
   <span class="indicator {{if .Running}}running{{else}}stopped{{end}}"></span>
   <span>{{.Model}}</span>
@@ -252,7 +266,11 @@ func fragmentAgentDetail(cfg *config.Config) http.HandlerFunc {
 			}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<div><h3>Agent not found</h3><p>No agent with ID "%s"</p></div>`, template.HTMLEscapeString(agentID))
+		fmt.Fprintf(
+			w,
+			`<div><h3>Agent not found</h3><p>No agent with ID "%s"</p></div>`,
+			template.HTMLEscapeString(agentID),
+		)
 	}
 }
 

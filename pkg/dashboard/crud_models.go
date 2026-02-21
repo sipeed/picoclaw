@@ -10,7 +10,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 )
 
-func registerModelsCRUD(srv *health.Server, cfg *config.Config, configPath string, auth func(http.HandlerFunc) http.HandlerFunc) {
+func registerModelsCRUD(
+	srv *health.Server,
+	cfg *config.Config,
+	configPath string,
+	auth func(http.HandlerFunc) http.HandlerFunc,
+) {
 	srv.HandleFunc("/dashboard/fragments/model-edit", auth(fragmentModelEdit(cfg)))
 	srv.HandleFunc("/dashboard/fragments/model-add", auth(fragmentModelAdd()))
 	srv.HandleFunc("/dashboard/crud/models/create", auth(modelCreateHandler(cfg, configPath)))
@@ -159,7 +164,11 @@ func modelCreateHandler(cfg *config.Config, configPath string) http.HandlerFunc 
 			if err := saveConfig(configPath, cfg); err != nil {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, `<p class="error">Failed to save: %s</p>`, template.HTMLEscapeString(err.Error()))
+				fmt.Fprintf(
+					w,
+					`<p class="error">Failed to save: %s</p>`,
+					template.HTMLEscapeString(err.Error()),
+				)
 				return
 			}
 		}
@@ -200,7 +209,11 @@ func modelUpdateHandler(cfg *config.Config, configPath string) http.HandlerFunc 
 			if err := saveConfig(configPath, cfg); err != nil {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, `<p class="error">Failed to save: %s</p>`, template.HTMLEscapeString(err.Error()))
+				fmt.Fprintf(
+					w,
+					`<p class="error">Failed to save: %s</p>`,
+					template.HTMLEscapeString(err.Error()),
+				)
 				return
 			}
 		}
@@ -237,7 +250,11 @@ func modelDeleteHandler(cfg *config.Config, configPath string) http.HandlerFunc 
 			if err := saveConfig(configPath, cfg); err != nil {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, `<p class="error">Failed to save: %s</p>`, template.HTMLEscapeString(err.Error()))
+				fmt.Fprintf(
+					w,
+					`<p class="error">Failed to save: %s</p>`,
+					template.HTMLEscapeString(err.Error()),
+				)
 				return
 			}
 		}

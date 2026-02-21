@@ -11,7 +11,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-func statusHandler(cfg *config.Config, al *agent.AgentLoop, cm *channels.Manager, startTime time.Time) http.HandlerFunc {
+func statusHandler(
+	cfg *config.Config,
+	al *agent.AgentLoop,
+	cm *channels.Manager,
+	startTime time.Time,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		info := al.GetStartupInfo()
 		channelStatus := cm.GetStatus()

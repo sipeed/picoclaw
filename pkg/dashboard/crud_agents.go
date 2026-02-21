@@ -13,7 +13,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 )
 
-func registerAgentsCRUD(srv *health.Server, cfg *config.Config, configPath string, auth func(http.HandlerFunc) http.HandlerFunc) {
+func registerAgentsCRUD(
+	srv *health.Server,
+	cfg *config.Config,
+	configPath string,
+	auth func(http.HandlerFunc) http.HandlerFunc,
+) {
 	srv.HandleFunc("/dashboard/fragments/agent-edit", auth(fragmentAgentEdit(cfg)))
 	srv.HandleFunc("/dashboard/fragments/agent-add", auth(fragmentAgentAdd()))
 	srv.HandleFunc("/dashboard/crud/agents/create", auth(agentCreateHandler(cfg, configPath)))
@@ -256,7 +261,11 @@ func agentCreateHandler(cfg *config.Config, configPath string) http.HandlerFunc 
 		if instructions := r.FormValue("instructions"); strings.TrimSpace(instructions) != "" {
 			ws := resolveAgentWorkspace(cfg, &agent)
 			if err := writeAgentInstructions(ws, instructions); err != nil {
-				jsonError(w, "agent created but failed to write AGENT.md: "+err.Error(), http.StatusInternalServerError)
+				jsonError(
+					w,
+					"agent created but failed to write AGENT.md: "+err.Error(),
+					http.StatusInternalServerError,
+				)
 				return
 			}
 		}
@@ -318,7 +327,11 @@ func agentUpdateHandler(cfg *config.Config, configPath string) http.HandlerFunc 
 		instructions := r.FormValue("instructions")
 		ws := resolveAgentWorkspace(cfg, found)
 		if err := writeAgentInstructions(ws, instructions); err != nil {
-			jsonError(w, "agent updated but failed to write AGENT.md: "+err.Error(), http.StatusInternalServerError)
+			jsonError(
+				w,
+				"agent updated but failed to write AGENT.md: "+err.Error(),
+				http.StatusInternalServerError,
+			)
 			return
 		}
 

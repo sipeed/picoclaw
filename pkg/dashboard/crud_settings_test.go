@@ -22,7 +22,11 @@ func TestPasswordChange(t *testing.T) {
 	form.Set("current_password", "oldpassword")
 	form.Set("new_password", "newpassword123")
 
-	req := httptest.NewRequest(http.MethodPost, "/dashboard/crud/settings/password", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/dashboard/crud/settings/password",
+		strings.NewReader(form.Encode()),
+	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -68,7 +72,11 @@ func TestPasswordChangeWrongCurrent(t *testing.T) {
 	form.Set("current_password", "wrongpassword")
 	form.Set("new_password", "newpassword123")
 
-	req := httptest.NewRequest(http.MethodPost, "/dashboard/crud/settings/password", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/dashboard/crud/settings/password",
+		strings.NewReader(form.Encode()),
+	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -99,7 +107,11 @@ func TestPasswordChangeTooShort(t *testing.T) {
 	form.Set("current_password", "oldpassword")
 	form.Set("new_password", "short")
 
-	req := httptest.NewRequest(http.MethodPost, "/dashboard/crud/settings/password", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/dashboard/crud/settings/password",
+		strings.NewReader(form.Encode()),
+	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -129,7 +141,11 @@ func TestGatewayUpdate(t *testing.T) {
 	form.Set("host", "127.0.0.1")
 	form.Set("port", "9090")
 
-	req := httptest.NewRequest(http.MethodPost, "/dashboard/crud/settings/gateway", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/dashboard/crud/settings/gateway",
+		strings.NewReader(form.Encode()),
+	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -174,7 +190,11 @@ func TestGatewayUpdateBadPort(t *testing.T) {
 			form.Set("host", "localhost")
 			form.Set("port", tt.port)
 
-			req := httptest.NewRequest(http.MethodPost, "/dashboard/crud/settings/gateway", strings.NewReader(form.Encode()))
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/dashboard/crud/settings/gateway",
+				strings.NewReader(form.Encode()),
+			)
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			w := httptest.NewRecorder()
 
@@ -197,7 +217,11 @@ func TestHeartbeatUpdate(t *testing.T) {
 	form.Set("enabled", "on")
 	form.Set("interval", "15")
 
-	req := httptest.NewRequest(http.MethodPost, "/dashboard/crud/settings/heartbeat", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/dashboard/crud/settings/heartbeat",
+		strings.NewReader(form.Encode()),
+	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 
@@ -230,7 +254,11 @@ func TestDevicesUpdate(t *testing.T) {
 	form.Set("enabled", "on")
 	form.Set("monitor_usb", "on")
 
-	req := httptest.NewRequest(http.MethodPost, "/dashboard/crud/settings/devices", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/dashboard/crud/settings/devices",
+		strings.NewReader(form.Encode()),
+	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 

@@ -11,7 +11,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 )
 
-func registerChannelsCRUD(srv *health.Server, cfg *config.Config, configPath string, auth func(http.HandlerFunc) http.HandlerFunc) {
+func registerChannelsCRUD(
+	srv *health.Server,
+	cfg *config.Config,
+	configPath string,
+	auth func(http.HandlerFunc) http.HandlerFunc,
+) {
 	srv.HandleFunc("/dashboard/fragments/channel-edit", auth(fragmentChannelEdit(cfg)))
 	srv.HandleFunc("/dashboard/crud/channels/update", auth(channelUpdateHandler(cfg, configPath)))
 	srv.HandleFunc("/dashboard/crud/channels/toggle", auth(channelToggleHandler(cfg, configPath)))
@@ -100,7 +105,11 @@ func channelEditFormHTML(name string, cfg *config.Config) string {
 		allowFrom = ch.AllowFrom
 		fields = textField("ws_url", "WebSocket URL", ch.WSUrl) +
 			textField("access_token", "Access Token", ch.AccessToken) +
-			textField("reconnect_interval", "Reconnect Interval", strconv.Itoa(ch.ReconnectInterval))
+			textField(
+				"reconnect_interval",
+				"Reconnect Interval",
+				strconv.Itoa(ch.ReconnectInterval),
+			)
 	default:
 		return ""
 	}
@@ -160,7 +169,11 @@ func fragmentChannelEdit(cfg *config.Config) http.HandlerFunc {
 		if html == "" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, `<p class="error">Unknown channel: %s</p>`, template.HTMLEscapeString(name))
+			fmt.Fprintf(
+				w,
+				`<p class="error">Unknown channel: %s</p>`,
+				template.HTMLEscapeString(name),
+			)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -263,7 +276,11 @@ func channelUpdateHandler(cfg *config.Config, configPath string) http.HandlerFun
 			configMu.Unlock()
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, `<p class="error">Unknown channel: %s</p>`, template.HTMLEscapeString(name))
+			fmt.Fprintf(
+				w,
+				`<p class="error">Unknown channel: %s</p>`,
+				template.HTMLEscapeString(name),
+			)
 			return
 		}
 		configMu.Unlock()
@@ -272,7 +289,11 @@ func channelUpdateHandler(cfg *config.Config, configPath string) http.HandlerFun
 			if err := saveConfig(configPath, cfg); err != nil {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, `<p class="error">Failed to save: %s</p>`, template.HTMLEscapeString(err.Error()))
+				fmt.Fprintf(
+					w,
+					`<p class="error">Failed to save: %s</p>`,
+					template.HTMLEscapeString(err.Error()),
+				)
 				return
 			}
 		}
@@ -321,7 +342,11 @@ func channelToggleHandler(cfg *config.Config, configPath string) http.HandlerFun
 			configMu.Unlock()
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, `<p class="error">Unknown channel: %s</p>`, template.HTMLEscapeString(name))
+			fmt.Fprintf(
+				w,
+				`<p class="error">Unknown channel: %s</p>`,
+				template.HTMLEscapeString(name),
+			)
 			return
 		}
 		configMu.Unlock()
@@ -330,7 +355,11 @@ func channelToggleHandler(cfg *config.Config, configPath string) http.HandlerFun
 			if err := saveConfig(configPath, cfg); err != nil {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, `<p class="error">Failed to save: %s</p>`, template.HTMLEscapeString(err.Error()))
+				fmt.Fprintf(
+					w,
+					`<p class="error">Failed to save: %s</p>`,
+					template.HTMLEscapeString(err.Error()),
+				)
 				return
 			}
 		}

@@ -10,11 +10,23 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 )
 
-func registerSettingsCRUD(srv *health.Server, cfg *config.Config, configPath string, currentPassword string, auth func(http.HandlerFunc) http.HandlerFunc) {
+func registerSettingsCRUD(
+	srv *health.Server,
+	cfg *config.Config,
+	configPath string,
+	currentPassword string,
+	auth func(http.HandlerFunc) http.HandlerFunc,
+) {
 	srv.HandleFunc("/dashboard/fragments/settings", auth(fragmentSettings(cfg, currentPassword)))
-	srv.HandleFunc("/dashboard/crud/settings/password", auth(passwordChangeHandler(cfg, configPath)))
+	srv.HandleFunc(
+		"/dashboard/crud/settings/password",
+		auth(passwordChangeHandler(cfg, configPath)),
+	)
 	srv.HandleFunc("/dashboard/crud/settings/gateway", auth(gatewayUpdateHandler(cfg, configPath)))
-	srv.HandleFunc("/dashboard/crud/settings/heartbeat", auth(heartbeatUpdateHandler(cfg, configPath)))
+	srv.HandleFunc(
+		"/dashboard/crud/settings/heartbeat",
+		auth(heartbeatUpdateHandler(cfg, configPath)),
+	)
 	srv.HandleFunc("/dashboard/crud/settings/devices", auth(devicesUpdateHandler(cfg, configPath)))
 }
 
