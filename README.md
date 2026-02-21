@@ -266,6 +266,13 @@ That's it! You have a working AI assistant in 2 minutes.
 
 Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
 
+### Slash Commands
+
+| Command | Description |
+| --- | --- |
+| `/new` | Start a fresh conversation/session (clears context for the assistant) |
+| `/clear` | Clear the current conversation history/context |
+
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
 | **Telegram** | Easy (just a token)                |
