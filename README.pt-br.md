@@ -50,7 +50,7 @@
 
 ## 📢 Novidades
 
-2026-02-16 🎉 PicoClaw atingiu 12K stars em uma semana! Obrigado a todos pelo apoio! O PicoClaw está crescendo mais rápido do que jamais imaginamos. Dado o alto volume de PRs, precisamos urgentemente de maintainers da comunidade. Nossos papéis de voluntários e roadmap foram publicados oficialmente [aqui](docs/picoclaw_community_roadmap_260216.md) — estamos ansiosos para ter você a bordo!
+2026-02-16 🎉 PicoClaw atingiu 12K stars em uma semana! Obrigado a todos pelo apoio! O PicoClaw está crescendo mais rápido do que jamais imaginamos. Dado o alto volume de PRs, precisamos urgentemente de maintainers da comunidade. Nossos papéis de voluntários e roadmap foram publicados oficialmente [aqui](docs/community/roadmap.md) — estamos ansiosos para ter você a bordo!
 
 2026-02-13 🎉 PicoClaw atingiu 5000 stars em 4 dias! Obrigado à comunidade! Estamos finalizando o **Roadmap do Projeto** e configurando o **Grupo de Desenvolvedores** para acelerar o desenvolvimento do PicoClaw.
 
@@ -1082,7 +1082,7 @@ PRs são bem-vindos! O código-fonte é intencionalmente pequeno e legível. �
 | **Multi-Agentes** | Roteamento de modelos, modo swarm, integração AIEOS |
 | **Experiência do Desenvolvedor** | Assistente CLI interativo, documentação completa |
 
-Veja o [Roadmap Completo](docs/community/roadmap.md) e [Roadmap da Comunidade](docs/picoclaw_community_roadmap_260216.md) para detalhes.
+Veja o [Roadmap Completo](docs/community/roadmap.md) e [Roadmap da Comunidade](docs/community/roadmap.md) para detalhes.
 
 ### Funções de Voluntário
 
