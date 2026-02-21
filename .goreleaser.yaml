@@ -31,9 +31,15 @@ builds:
       - s390x
       - mips64
       - arm
+    goarm:
+      - 7
     main: ./cmd/picoclaw
     ignore:
       - goos: windows
+        goarch: arm
+      - goos: darwin
+        goarch: arm
+      - goos: freebsd
         goarch: arm
 
 dockers_v2:
