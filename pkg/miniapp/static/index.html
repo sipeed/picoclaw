@@ -171,20 +171,20 @@
 
   /* Skills */
   .skill-item {
-    background: var(--secondary-bg);
+    background: var(--bg);
     border-radius: 12px;
     padding: 14px 14px 14px 16px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     cursor: pointer;
     transition: all 0.15s;
-    border-left: 3px solid var(--hint);
+    border: 1.5px solid var(--hint);
     display: flex;
     align-items: center;
     gap: 12px;
   }
 
   .skill-item:active { transform: scale(0.97); }
-  .skill-item.selected { border-left-color: var(--btn); background: color-mix(in srgb, var(--btn) 10%, var(--secondary-bg)); }
+  .skill-item.selected { border-color: var(--btn); background: color-mix(in srgb, var(--btn) 8%, var(--bg)); }
 
   .skill-body { flex: 1; min-width: 0; }
 
@@ -212,7 +212,7 @@
 
   .skill-arrow {
     color: var(--hint);
-    font-size: 18px;
+    font-size: 22px;
     flex-shrink: 0;
     transition: color 0.15s;
   }
@@ -293,21 +293,22 @@
   .cmd-tile {
     padding: 16px 14px;
     border-radius: 12px;
-    border: none;
-    background: var(--secondary-bg);
+    border: 1.5px solid var(--hint);
+    background: var(--bg);
     color: var(--text);
     font-size: 15px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.15s;
     text-align: center;
   }
 
-  .cmd-tile:active { transform: scale(0.95); }
+  .cmd-tile:active { transform: scale(0.95); background: var(--secondary-bg); }
 
   .cmd-tile.sent {
     background: var(--btn);
     color: var(--btn-text);
+    border-color: var(--btn);
     transition: all 0.15s;
   }
 
