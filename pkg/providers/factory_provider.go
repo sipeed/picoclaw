@@ -150,6 +150,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
+	case "picolm":
+		provider, err := NewPicoLMProvider(cfg.PicoLM)
+		if err != nil {
+			return nil, "", err
+		}
+		return provider, modelID, nil
+
 	default:
 		return nil, "", fmt.Errorf("unknown protocol %q in model %q", protocol, cfg.Model)
 	}

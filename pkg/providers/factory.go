@@ -22,6 +22,7 @@ const (
 	providerTypeClaudeCLI
 	providerTypeCodexCLI
 	providerTypeGitHubCopilot
+	providerTypePicoLM
 )
 
 type providerSelection struct {
@@ -160,6 +161,11 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.providerType = providerTypeCodexCLI
 			sel.workspace = workspace
 			return sel, nil
+		case "picolm":
+			if cfg.Providers.PicoLM.Binary != "" || cfg.Providers.PicoLM.Model != "" {
+				sel.providerType = providerTypePicoLM
+				return sel, nil
+			}
 		case "deepseek":
 			if cfg.Providers.DeepSeek.APIKey != "" {
 				sel.apiKey = cfg.Providers.DeepSeek.APIKey

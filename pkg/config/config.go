@@ -324,6 +324,14 @@ type ProvidersConfig struct {
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
 	Antigravity   ProviderConfig       `json:"antigravity"`
 	Qwen          ProviderConfig       `json:"qwen"`
+	PicoLM        PicoLMProviderConfig `json:"picolm"`
+}
+
+type PicoLMProviderConfig struct {
+	Binary    string `json:"binary" env:"PICOCLAW_PROVIDERS_PICOLM_BINARY"`
+	Model     string `json:"model" env:"PICOCLAW_PROVIDERS_PICOLM_MODEL"`
+	MaxTokens int    `json:"max_tokens" env:"PICOCLAW_PROVIDERS_PICOLM_MAX_TOKENS"`
+	Threads   int    `json:"threads" env:"PICOCLAW_PROVIDERS_PICOLM_THREADS"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -345,7 +353,8 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
 		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
 		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
-		p.Qwen.APIKey == "" && p.Qwen.APIBase == ""
+		p.Qwen.APIKey == "" && p.Qwen.APIBase == "" &&
+		p.PicoLM.Binary == "" && p.PicoLM.Model == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
@@ -394,6 +403,9 @@ type ModelConfig struct {
 	// Optional optimizations
 	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
+
+	// PicoLM-specific fields (for picolm protocol)
+	PicoLM PicoLMProviderConfig `json:"picolm,omitempty"` // PicoLM subprocess config
 }
 
 // Validate checks if the ModelConfig has all required fields.
