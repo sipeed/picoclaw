@@ -85,9 +85,9 @@
 ### 🐜 革新的な省フットプリントデプロイ
 PicoClaw はほぼすべての Linux デバイスにデプロイできます！
 
-- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) または W(WiFi6) バージョン、最小ホームアシスタントに
-- $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html) または $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) サーバー自動メンテナンスに
-- $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) または $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) スマート監視に
+- \$9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) または W(WiFi6) バージョン、最小ホームアシスタントに
+- \$30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html) または \$100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) サーバー自動メンテナンスに
+- \$50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) または \$100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) スマート監視に
 
 https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4
 
@@ -832,7 +832,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [キーを取得](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [キーを取得](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
-| **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ |
+| **Antigravity** | `antigravity/` | Google Cloud | カスタム | [OAuthのみ](docs/user-guide/ide-setup/antigravity.md) |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
 #### 基本設定
@@ -969,11 +969,45 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | `picoclaw gateway` | ゲートウェイを起動 |
 | `picoclaw status` | ステータスを表示 |
 
+---
+
+## 📚 完全なドキュメント
+
+包括的なガイドとリファレンスについては、[docs/](docs/) ディレクトリをご覧ください：
+
+- **[はじめに](docs/getting-started/README.md)** - インストールとクイックスタート
+- **[ユーザーガイド](docs/user-guide/README.md)** - 完全な機能ドキュメント
+- **[開発者ガイド](docs/developer-guide/README.md)** - アーキテクチャとコントリビューション
+- **[デプロイ](docs/deployment/README.md)** - Docker、systemd、SBC ガイド
+- **[設定リファレンス](docs/configuration/README.md)** - 設定オプションの完全なリファレンス
+- **[コミュニティ](docs/community/README.md)** - ロードマップ、コントリビュート、サポート
+
 ## 🤝 コントリビュート＆ロードマップ
 
-PR 歓迎！コードベースは意図的に小さく読みやすくしています。🤗
+### ロードマップハイライト
 
-Discord: https://discord.gg/V4sAZ9XWpN
+| 重点分野 | 目標 |
+|----------|------|
+| **コア最適化** | 64MB RAM デバイスで <20MB メモリで動作 |
+| **セキュリティ強化** | プロンプトインジェクション対策、SSRF 保護、サンドボックス |
+| **接続性** | プロトコルファーストアーキテクチャ、OneBot 標準対応 |
+| **高度機能** | MCP 対応、ブラウザ自動化、マルチエージェント協調 |
+| **開発者体験** | ゼロ設定スタート、包括的なドキュメント |
+
+### コントリビュート
+
+PR を歓迎します！コードベースは意図的に小さく読みやすくしています。🤗
+
+- **高速トラック**: 1 つのマージされた PR で開発者 Discord に参加可能
+- **アプリケーショントラック**: `support@sipeed.com` にメール（件名: `[Apply Join PicoClaw Dev Group] + GitHub アカウント`）
+
+### コミュニティ
+
+- **Discord**: https://discord.gg/V4sAZ9XWpN
+- **Twitter**: #picoclaw で @SipeedIO をメンション
+- **Bilibili**: @Sipeed矽速科技
+
+詳細なロードマップについては [docs/community/roadmap.md](docs/community/roadmap.md) をご覧ください。
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 

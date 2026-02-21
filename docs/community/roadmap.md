@@ -9,7 +9,7 @@
 
 *Our defining characteristic. We fight software bloat to ensure PicoClaw runs smoothly on the smallest embedded devices.*
 
-* [**Memory Footprint Reduction**](https://github.com/sipeed/picoclaw/issues/346) 
+* [**Memory Footprint Reduction**](https://github.com/sipeed/picoclaw/issues/346)
   * **Goal**: Run smoothly on 64MB RAM embedded boards (e.g., low-end RISC-V SBCs) with the core process consuming < 20MB.
   * **Context**: RAM is expensive and scarce on edge devices. Memory optimization takes precedence over storage size.
   * **Action**: Analyze memory growth between releases, remove redundant dependencies, and optimize data structures.

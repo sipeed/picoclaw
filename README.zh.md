@@ -51,8 +51,7 @@
 > - **注意:** picoclaw最近合并了大量PRs，近期版本可能内存占用较大(10~20MB)，我们将在功能较为收敛后进行资源占用优化.
 
 ## 📢 新闻 (News)
-
-2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](docs/picoclaw_community_roadmap_260216.md), 期待你的参与！
+2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](docs/community/roadmap.md), 期待你的参与！
 
 2026-02-13 🎉 **PicoClaw 在 4 天内突破 5000 Stars！** 感谢社区的支持！由于正值中国春节假期，PR 和 Issue 涌入较多，我们正在利用这段时间敲定 **项目路线图 (Roadmap)** 并组建 **开发者群组**，以便加速 PicoClaw 的开发。
 🚀 **行动号召：** 请在 GitHub Discussions 中提交您的功能请求 (Feature Requests)。我们将在接下来的周会上进行审查和优先级排序。
@@ -124,9 +123,9 @@ termux-chroot ./picoclaw-linux-arm64 onboard
 
 PicoClaw 几乎可以部署在任何 Linux 设备上！
 
-- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(网口) 或 W(WiFi6) 版本，用于极简家庭助手。
-- $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html)，或 $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html)，用于自动化服务器运维。
-- $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) 或 $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera)，用于智能监控。
+* \$9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(网口) 或 W(WiFi6) 版本，用于极简家庭助手。
+* \$30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html)，或 \$100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html)，用于自动化服务器运维。
+* \$50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) 或 \$100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera)，用于智能监控。
 
 [https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4](https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4)
 
@@ -437,25 +436,25 @@ Agent 读取 HEARTBEAT.md
 
 #### 📋 所有支持的厂商
 
-| 厂商                | `model` 前缀      | 默认 API Base                                       | 协议      | 获取 API Key                                                      |
-| ------------------- | ----------------- | --------------------------------------------------- | --------- | ----------------------------------------------------------------- |
-| **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [获取密钥](https://platform.openai.com)                           |
-| **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [获取密钥](https://console.anthropic.com)                         |
-| **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [获取密钥](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
-| **DeepSeek**        | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [获取密钥](https://platform.deepseek.com)                         |
-| **Google Gemini**   | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [获取密钥](https://aistudio.google.com/api-keys)                  |
-| **Groq**            | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [获取密钥](https://console.groq.com)                              |
-| **Moonshot**        | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [获取密钥](https://platform.moonshot.cn)                          |
-| **通义千问 (Qwen)** | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取密钥](https://dashscope.console.aliyun.com)                  |
-| **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [获取密钥](https://build.nvidia.com)                              |
-| **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | 本地（无需密钥）                                                  |
-| **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取密钥](https://openrouter.ai/keys)                            |
-| **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                              |
-| **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [获取密钥](https://cerebras.ai)                                   |
-| **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [获取密钥](https://console.volcengine.com)                        |
-| **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                 |
-| **Antigravity**     | `antigravity/`    | Google Cloud                                        | 自定义    | 仅 OAuth                                                          |
-| **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                 |
+| 厂商 | `model` 前缀 | 默认 API Base | 协议 | 获取 API Key |
+|------|-------------|---------------|------|--------------|
+| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [获取密钥](https://platform.openai.com) |
+| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [获取密钥](https://console.anthropic.com) |
+| **智谱 AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [获取密钥](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [获取密钥](https://platform.deepseek.com) |
+| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [获取密钥](https://aistudio.google.com/api-keys) |
+| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [获取密钥](https://console.groq.com) |
+| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [获取密钥](https://platform.moonshot.cn) |
+| **通义千问 (Qwen)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [获取密钥](https://dashscope.console.aliyun.com) |
+| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [获取密钥](https://build.nvidia.com) |
+| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | 本地（无需密钥） |
+| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [获取密钥](https://openrouter.ai/keys) |
+| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | 本地 |
+| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [获取密钥](https://cerebras.ai) |
+| **火山引擎** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [获取密钥](https://console.volcengine.com) |
+| **神算云** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **Antigravity** | `antigravity/` | Google Cloud | 自定义 | [仅 OAuth](docs/user-guide/ide-setup/antigravity.md) |
+| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
 #### 基础配置示例
 
@@ -749,17 +748,55 @@ PicoClaw 通过 `cron` 工具支持定时提醒和重复任务：
 
 任务存储在 `~/.picoclaw/workspace/cron/` 中并自动处理。
 
+---
+
+## 📚 完整文档
+
+如需完整的指南和参考，请查看 [docs/](docs/) 目录：
+
+- **[入门指南](docs/getting-started/README.md)** - 安装和快速开始
+- **[用户指南](docs/user-guide/README.md)** - 完整功能文档
+- **[开发者指南](docs/developer-guide/README.md)** - 架构和贡献
+- **[部署指南](docs/deployment/README.md)** - Docker、systemd、SBC 指南
+- **[配置参考](docs/configuration/README.md)** - 完整配置选项参考
+- **[社区](docs/community/README.md)** - 路线图、贡献、支持
+
 ## 🤝 贡献与路线图 (Roadmap)
 
 欢迎提交 PR！代码库刻意保持小巧和可读。🤗
 
-路线图即将发布...
+### 路线图概要
 
-开发者群组正在组建中，入群门槛：至少合并过 1 个 PR。
+| 重点领域 | 目标 |
+|---------|------|
+| **核心优化** | 在 64MB 内存设备上运行，占用 <20MB |
+| **安全加固** | 沙盒、OAuth 2.0、提示注入防御 |
+| **连接性** | 更多频道、MCP 支持、技能市场 |
+| **多智能体** | 模型路由、集群模式、AIEOS 集成 |
+| **开发者体验** | 交互式 CLI 向导、完善文档 |
 
-用户群组：
+详见 [完整路线图](docs/community/roadmap.md) 和 [社区路线图](docs/community/roadmap.md)。
 
-Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
+### 志愿者角色
+
+我们正在寻找以下领域的贡献者：
+- **Issue/PR 审核者** - 协助分类和合并 PR
+- **资源优化** - 保持 PicoClaw 轻量级
+- **安全审计** - 审查和加固安全性
+- **文档** - 改进指南和教程
+- **CI/CD 自动化** - AI 驱动的构建和问题分流
+
+**福利：** 专属 AI 硬件、Token 折扣等！
+
+### 如何加入
+
+1. **快速通道**：合并 1+ PR → 加入开发者 Discord
+2. **申请**：发送邮件至 support@sipeed.com，标题 `[Apply: PicoClaw Expert Volunteer]`
+
+### 社区
+
+- **Discord**: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
+- **GitHub Discussions**: 分享想法和功能请求
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 

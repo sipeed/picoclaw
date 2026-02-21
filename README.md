@@ -49,7 +49,7 @@
 
 
 ## 📢 News
-2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](docs/picoclaw_community_roadmap_260216.md) —we can’t wait to have you on board!
+2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](docs/community/roadmap.md) —we can’t wait to have you on board!
 
 2026-02-13 🎉 PicoClaw hit 5000 stars in 4days! Thank you for the community! There are so many PRs&issues come in (during Chinese New Year holidays), we are finalizing the Project Roadmap and setting up the Developer Group to accelerate PicoClaw's development.  
 🚀 Call to Action: Please submit your feature requests in GitHub Discussions. We will review and prioritize them during our upcoming weekly meeting.
@@ -117,13 +117,30 @@ And then follow the instructions in the "Quick Start" section to complete the co
 
 PicoClaw can be deployed on almost any Linux device!
 
-- $9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) or W(WiFi6) version, for Minimal Home Assistant
-- $30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), or $100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) for Automated Server Maintenance
-- $50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) or $100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) for Smart Monitoring
+- \$9.9 [LicheeRV-Nano](https://www.aliexpress.com/item/1005006519668532.html) E(Ethernet) or W(WiFi6) version, for Minimal Home Assistant
+- \$30~50 [NanoKVM](https://www.aliexpress.com/item/1005007369816019.html), or \$100 [NanoKVM-Pro](https://www.aliexpress.com/item/1005010048471263.html) for Automated Server Maintenance
+- \$50 [MaixCAM](https://www.aliexpress.com/item/1005008053333693.html) or \$100 [MaixCAM2](https://www.kickstarter.com/projects/zepan/maixcam2-build-your-next-gen-4k-ai-camera) for Smart Monitoring
 
 <https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4>
 
 🌟 More Deployment Cases Await！
+
+---
+## 📚 Full Documentation
+
+For comprehensive guides and references, see the [docs/](docs/) directory:
+
+- **[Getting Started](docs/getting-started/README.md)** - Installation and quick start
+- **[User Guide](docs/user-guide/README.md)** - Complete feature documentation
+- **[Developer Guide](docs/developer-guide/README.md)** - Building and extending PicoClaw
+- **[Deployment](docs/deployment/README.md)** - Docker, systemd, SBC guides
+- **[Configuration Reference](docs/configuration/config-file.md)** - All config options
+- **[Troubleshooting](docs/operations/troubleshooting.md)** - Common issues and solutions
+- **[Community](docs/community/README.md)** - Roadmap, contributing, support
+
+
+---
+
 
 ## 📦 Install
 
@@ -806,7 +823,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Get Key](https://cerebras.ai) |
 | **火山引擎** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Get Key](https://console.volcengine.com) |
 | **神算云** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
-| **Antigravity** | `antigravity/` | Google Cloud | Custom | OAuth only |
+| **Antigravity** | `antigravity/` | Google Cloud | Custom | [OAuth only](docs/user-guide/ide-setup/antigravity.md) |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
 #### Basic Configuration
@@ -1101,19 +1118,48 @@ PicoClaw supports scheduled reminders and recurring tasks through the `cron` too
 
 Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
 
+---
+
 ## 🤝 Contribute & Roadmap
 
 PRs welcome! The codebase is intentionally small and readable. 🤗
 
-Roadmap coming soon...
+### Roadmap Highlights
 
-Developer group building, Entry Requirement: At least 1 Merged PR.
+| Focus Area | Goals |
+|------------|-------|
+| **Core Optimization** | Run on 64MB RAM devices with <20MB memory |
+| **Security Hardening** | Sandbox, OAuth 2.0, prompt injection defense |
+| **Connectivity** | More channels, MCP support, skill marketplace |
+| **Multi-Agent** | Model routing, swarm mode, AIEOS integration |
+| **DevEx** | Interactive CLI wizard, comprehensive docs |
 
-User Groups:
+See [Full Roadmap](docs/community/roadmap.md) and [Community Roadmap](docs/community/roadmap.md) for details.
 
-discord:  <https://discord.gg/V4sAZ9XWpN>
+### Volunteer Roles
 
-<img src="assets/wechat.png" alt="PicoClaw" width="512">
+We're looking for contributors in:
+- **Issue/PR Reviewers** - Help triage and merge PRs
+- **Resource Optimization** - Keep PicoClaw lightweight
+- **Security Audit** - Review and harden security
+- **Documentation** - Improve guides and tutorials
+- **CI/CD Automation** - AI-powered builds and issue triage
+
+**Perks:** Exclusive AI hardware, token discounts, and more!
+
+### How to Join
+
+1. **Fast Track**: Merge 1+ PR → Join Developer Discord
+2. **Apply**: Email support@sipeed.com with `[Apply: PicoClaw Expert Volunteer]`
+
+### Community
+
+- **Discord**: <https://discord.gg/V4sAZ9XWpN>
+- **GitHub Discussions**: Share ideas and feature requests
+
+<img src="assets/wechat.png" alt="PicoClaw WeChat" width="512">
+
+---
 
 ## 🐛 Troubleshooting
 

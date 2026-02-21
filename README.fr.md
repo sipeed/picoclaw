@@ -50,7 +50,7 @@
 
 ## 📢 Actualités
 
-2026-02-16 🎉 PicoClaw a atteint 12K étoiles en une semaine ! Merci à tous pour votre soutien ! PicoClaw grandit plus vite que nous ne l'avions jamais imaginé. Vu le volume élevé de PR, nous avons un besoin urgent de mainteneurs communautaires. Nos rôles de bénévoles et notre feuille de route sont officiellement publiés [ici](docs/picoclaw_community_roadmap_260216.md) — nous avons hâte de vous accueillir !
+2026-02-16 🎉 PicoClaw a atteint 12K étoiles en une semaine ! Merci à tous pour votre soutien ! PicoClaw grandit plus vite que nous ne l'avions jamais imaginé. Vu le volume élevé de PR, nous avons un besoin urgent de mainteneurs communautaires. Nos rôles de bénévoles et notre feuille de route sont officiellement publiés [ici](docs/community/roadmap.md) — nous avons hâte de vous accueillir !
 
 2026-02-13 🎉 PicoClaw a atteint 5000 étoiles en 4 jours ! Merci à la communauté ! Nous finalisons la **Feuille de Route du Projet** et mettons en place le **Groupe de Développeurs** pour accélérer le développement de PicoClaw.
 🚀 **Appel à l'action :** Soumettez vos demandes de fonctionnalités dans les GitHub Discussions. Nous les examinerons et les prioriserons lors de notre prochaine réunion hebdomadaire.
@@ -913,7 +913,7 @@ Cette conception permet également le **support multi-agent** avec une sélectio
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Obtenir Clé](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obtenir Clé](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
-| **Antigravity** | `antigravity/` | Google Cloud | Custom | OAuth uniquement |
+| **Antigravity** | `antigravity/` | Google Cloud | Custom | [OAuth uniquement](docs/user-guide/ide-setup/antigravity.md) |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
 #### Configuration de Base
@@ -1062,17 +1062,45 @@ PicoClaw prend en charge les rappels planifiés et les tâches récurrentes via 
 
 Les tâches sont stockées dans `~/.picoclaw/workspace/cron/` et traitées automatiquement.
 
+---
+
+## 📚 Documentation Complète
+
+Pour des guides et références complets, consultez le répertoire [docs/](docs/) :
+
+- **[Démarrage](docs/getting-started/README.md)** - Installation et guide rapide
+- **[Guide Utilisateur](docs/user-guide/README.md)** - Documentation complète des fonctionnalités
+- **[Guide Développeur](docs/developer-guide/README.md)** - Architecture et contribution
+- **[Déploiement](docs/deployment/README.md)** - Docker, systemd, guides SBC
+- **[Référence Configuration](docs/configuration/README.md)** - Référence complète des options
+- **[Communauté](docs/community/README.md)** - Feuille de route, contribution, support
+
 ## 🤝 Contribuer & Feuille de Route
+
+### Points Forts de la Feuille de Route
+
+| Domaine Clé | Objectif |
+|-------------|----------|
+| **Optimisation Core** | Fonctionner sur appareils 64MB RAM avec <20MB mémoire |
+| **Sécurité Renforcée** | Défense injection prompt, protection SSRF, sandbox |
+| **Connectivité** | Architecture protocole-first, standard OneBot |
+| **Fonctionnalités Avancées** | Support MCP, automatisation navigateur, multi-agents |
+| **Expérience Développeur** | Démarrage zéro-config, documentation complète |
+
+### Contribuer
 
 Les PR sont les bienvenues ! Le code source est volontairement petit et lisible. 🤗
 
-Feuille de route à venir...
+- **Voie Rapide** : 1 PR fusionnée = accès au Discord développeurs
+- **Voie Candidature** : Email à `support@sipeed.com` avec sujet `[Apply Join PicoClaw Dev Group] + compte GitHub`
 
-Groupe de développeurs en construction. Condition d'entrée : au moins 1 PR fusionnée.
+### Communauté
 
-Groupes d'utilisateurs :
+- **Discord** : https://discord.gg/V4sAZ9XWpN
+- **Twitter** : Mentionnez @SipeedIO avec #picoclaw
+- **Bilibili** : @Sipeed矽速科技
 
-Discord : <https://discord.gg/V4sAZ9XWpN>
+Consultez [docs/community/roadmap.md](docs/community/roadmap.md) pour la feuille de route détaillée.
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 
