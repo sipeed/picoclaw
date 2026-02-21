@@ -404,7 +404,6 @@ async function sendCommand(cmd) {
     if (!res.ok) throw new Error('API error: ' + res.status);
     return true;
   } catch (e) {
-    tg.showAlert('Failed to send command');
     return false;
   }
 }
@@ -414,10 +413,7 @@ async function sendCustomCmd() {
   const btn = input.nextElementSibling;
   const cmd = input.value.trim();
   if (!cmd) return;
-  if (!cmd.startsWith('/')) {
-    tg.showAlert('Command must start with /');
-    return;
-  }
+  if (!cmd.startsWith('/')) return;
   const ok = await sendCommand(cmd);
   if (ok) {
     input.value = '';
@@ -436,12 +432,13 @@ async function sendSkillCommand() {
 
 async function startPlan() {
   const input = document.getElementById('plan-task');
+  const btn = input.nextElementSibling;
   const task = input.value.trim();
   if (!task) return;
   const ok = await sendCommand('/plan ' + task);
   if (ok) {
     input.value = '';
-    tg.showAlert('Plan started!');
+    flashSent(btn);
   }
 }
 
