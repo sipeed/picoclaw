@@ -1,4 +1,4 @@
-package channels
+package whatsapp
 
 import (
 	"context"
@@ -11,12 +11,13 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type WhatsAppChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	conn      *websocket.Conn
 	config    config.WhatsAppConfig
 	url       string
@@ -25,7 +26,7 @@ type WhatsAppChannel struct {
 }
 
 func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsAppChannel, error) {
-	base := NewBaseChannel("whatsapp", cfg, bus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("whatsapp", cfg, bus, cfg.AllowFrom)
 
 	return &WhatsAppChannel{
 		BaseChannel: base,
@@ -51,7 +52,7 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 	c.connected = true
 	c.mu.Unlock()
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	log.Println("WhatsApp channel connected")
 
 	go c.listen(ctx)
@@ -73,7 +74,7 @@ func (c *WhatsAppChannel) Stop(ctx context.Context) error {
 	}
 
 	c.connected = false
-	c.setRunning(false)
+	c.SetRunning(false)
 
 	return nil
 }

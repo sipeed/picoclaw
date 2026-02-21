@@ -15,6 +15,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
+	dch "github.com/sipeed/picoclaw/pkg/channels/discord"
+	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
+	_ "github.com/sipeed/picoclaw/pkg/channels/line"
+	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
+	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
+	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
+	slackch "github.com/sipeed/picoclaw/pkg/channels/slack"
+	tgram "github.com/sipeed/picoclaw/pkg/channels/telegram"
+	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
+	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/devices"
@@ -128,19 +139,19 @@ func gatewayCmd() {
 
 	if transcriber != nil {
 		if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
-			if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
+			if tc, ok := telegramChannel.(*tgram.TelegramChannel); ok {
 				tc.SetTranscriber(transcriber)
 				logger.InfoC("voice", "Groq transcription attached to Telegram channel")
 			}
 		}
 		if discordChannel, ok := channelManager.GetChannel("discord"); ok {
-			if dc, ok := discordChannel.(*channels.DiscordChannel); ok {
+			if dc, ok := discordChannel.(*dch.DiscordChannel); ok {
 				dc.SetTranscriber(transcriber)
 				logger.InfoC("voice", "Groq transcription attached to Discord channel")
 			}
 		}
 		if slackChannel, ok := channelManager.GetChannel("slack"); ok {
-			if sc, ok := slackChannel.(*channels.SlackChannel); ok {
+			if sc, ok := slackChannel.(*slackch.SlackChannel); ok {
 				sc.SetTranscriber(transcriber)
 				logger.InfoC("voice", "Groq transcription attached to Slack channel")
 			}

@@ -1,7 +1,4 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// WeCom Bot (企业微信智能机器人) channel tests
-
-package channels
+package wecom
 
 import (
 	"bytes"
@@ -177,7 +174,7 @@ func TestWeComBotVerifySignature(t *testing.T) {
 		msgEncrypt := "test_message"
 		expectedSig := generateSignature("test_token", timestamp, nonce, msgEncrypt)
 
-		if !WeComVerifySignature(ch.config.Token, expectedSig, timestamp, nonce, msgEncrypt) {
+		if !verifySignature(ch.config.Token, expectedSig, timestamp, nonce, msgEncrypt) {
 			t.Error("valid signature should pass verification")
 		}
 	})
@@ -187,7 +184,7 @@ func TestWeComBotVerifySignature(t *testing.T) {
 		nonce := "test_nonce"
 		msgEncrypt := "test_message"
 
-		if WeComVerifySignature(ch.config.Token, "invalid_sig", timestamp, nonce, msgEncrypt) {
+		if verifySignature(ch.config.Token, "invalid_sig", timestamp, nonce, msgEncrypt) {
 			t.Error("invalid signature should fail verification")
 		}
 	})
@@ -202,7 +199,7 @@ func TestWeComBotVerifySignature(t *testing.T) {
 			config: cfgEmpty,
 		}
 
-		if !WeComVerifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
+		if !verifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {
 			t.Error("empty token should skip verification and return true")
 		}
 	})
@@ -223,7 +220,7 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 		plainText := "hello world"
 		encoded := base64.StdEncoding.EncodeToString([]byte(plainText))
 
-		result, err := WeComDecryptMessage(encoded, ch.config.EncodingAESKey)
+		result, err := decryptMessage(encoded, ch.config.EncodingAESKey)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -247,7 +244,7 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 			t.Fatalf("failed to encrypt test message: %v", err)
 		}
 
-		result, err := WeComDecryptMessage(encrypted, ch.config.EncodingAESKey)
+		result, err := decryptMessage(encrypted, ch.config.EncodingAESKey)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -264,7 +261,7 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 		}
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 
-		_, err := WeComDecryptMessage("invalid_base64!!!", ch.config.EncodingAESKey)
+		_, err := decryptMessage("invalid_base64!!!", ch.config.EncodingAESKey)
 		if err == nil {
 			t.Error("expected error for invalid base64, got nil")
 		}
@@ -278,7 +275,7 @@ func TestWeComBotDecryptMessage(t *testing.T) {
 		}
 		ch, _ := NewWeComBotChannel(cfg, msgBus)
 
-		_, err := WeComDecryptMessage(base64.StdEncoding.EncodeToString([]byte("test")), ch.config.EncodingAESKey)
+		_, err := decryptMessage(base64.StdEncoding.EncodeToString([]byte("test")), ch.config.EncodingAESKey)
 		if err == nil {
 			t.Error("expected error for invalid AES key, got nil")
 		}
@@ -320,20 +317,20 @@ func TestWeComBotPKCS7Unpad(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := pkcs7UnpadWeCom(tt.input)
+			result, err := pkcs7Unpad(tt.input)
 			if tt.expected == nil {
 				// This case should return an error
 				if err == nil {
-					t.Errorf("pkcs7UnpadWeCom() expected error for invalid padding, got result: %v", result)
+					t.Errorf("pkcs7Unpad() expected error for invalid padding, got result: %v", result)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("pkcs7UnpadWeCom() unexpected error: %v", err)
+				t.Errorf("pkcs7Unpad() unexpected error: %v", err)
 				return
 			}
 			if !bytes.Equal(result, tt.expected) {
-				t.Errorf("pkcs7UnpadWeCom() = %v, want %v", result, tt.expected)
+				t.Errorf("pkcs7Unpad() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
@@ -418,14 +415,14 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 	t.Run("valid direct message callback", func(t *testing.T) {
 		// Create JSON message for direct chat (single)
 		jsonMsg := `{
-			"msgid": "test_msg_id_123",
-			"aibotid": "test_aibot_id",
-			"chattype": "single",
-			"from": {"userid": "user123"},
-			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			"msgtype": "text",
-			"text": {"content": "Hello World"}
-		}`
+					"msgid": "test_msg_id_123",
+					"aibotid": "test_aibot_id",
+					"chattype": "single",
+					"from": {"userid": "user123"},
+					"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+					"msgtype": "text",
+					"text": {"content": "Hello World"}
+				}`
 
 		// Encrypt message
 		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
@@ -463,15 +460,15 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 	t.Run("valid group message callback", func(t *testing.T) {
 		// Create JSON message for group chat
 		jsonMsg := `{
-			"msgid": "test_msg_id_456",
-			"aibotid": "test_aibot_id",
-			"chatid": "group_chat_id_123",
-			"chattype": "group",
-			"from": {"userid": "user456"},
-			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			"msgtype": "text",
-			"text": {"content": "Hello Group"}
-		}`
+					"msgid": "test_msg_id_456",
+					"aibotid": "test_aibot_id",
+					"chatid": "group_chat_id_123",
+					"chattype": "group",
+					"from": {"userid": "user456"},
+					"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+					"msgtype": "text",
+					"text": {"content": "Hello Group"}
+				}`
 
 		// Encrypt message
 		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
@@ -745,15 +742,15 @@ func TestWeComBotReplyMessage(t *testing.T) {
 
 func TestWeComBotMessageStructure(t *testing.T) {
 	jsonData := `{
-		"msgid": "test_msg_id_123",
-		"aibotid": "test_aibot_id",
-		"chatid": "group_chat_id_123",
-		"chattype": "group",
-		"from": {"userid": "user123"},
-		"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-		"msgtype": "text",
-		"text": {"content": "Hello World"}
-	}`
+			"msgid": "test_msg_id_123",
+			"aibotid": "test_aibot_id",
+			"chatid": "group_chat_id_123",
+			"chattype": "group",
+			"from": {"userid": "user123"},
+			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			"msgtype": "text",
+			"text": {"content": "Hello World"}
+		}`
 
 	var msg WeComBotMessage
 	err := json.Unmarshal([]byte(jsonData), &msg)

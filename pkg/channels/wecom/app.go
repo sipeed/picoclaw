@@ -1,8 +1,4 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// WeCom App (企业微信自建应用) channel implementation
-// Supports receiving messages via webhook callback and sending messages proactively
-
-package channels
+package wecom
 
 import (
 	"bytes"
@@ -18,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -29,7 +26,7 @@ const (
 
 // WeComAppChannel implements the Channel interface for WeCom App (企业微信自建应用)
 type WeComAppChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	config        config.WeComAppConfig
 	server        *http.Server
 	accessToken   string
@@ -123,7 +120,7 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 		return nil, fmt.Errorf("wecom_app corp_id, corp_secret and agent_id are required")
 	}
 
-	base := NewBaseChannel("wecom_app", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("wecom_app", cfg, messageBus, cfg.AllowFrom)
 
 	return &WeComAppChannel{
 		BaseChannel:   base,
@@ -170,7 +167,7 @@ func (c *WeComAppChannel) Start(ctx context.Context) error {
 		Handler: mux,
 	}
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoCF("wecom_app", "WeCom App channel started", map[string]any{
 		"address": addr,
 		"path":    webhookPath,
@@ -202,7 +199,7 @@ func (c *WeComAppChannel) Stop(ctx context.Context) error {
 		c.server.Shutdown(shutdownCtx)
 	}
 
-	c.setRunning(false)
+	c.SetRunning(false)
 	logger.InfoC("wecom_app", "WeCom App channel stopped")
 	return nil
 }
@@ -279,7 +276,7 @@ func (c *WeComAppChannel) handleVerification(ctx context.Context, w http.Respons
 	}
 
 	// Verify signature
-	if !WeComVerifySignature(c.config.Token, msgSignature, timestamp, nonce, echostr) {
+	if !verifySignature(c.config.Token, msgSignature, timestamp, nonce, echostr) {
 		logger.WarnCF("wecom_app", "Signature verification failed", map[string]any{
 			"token":         c.config.Token,
 			"msg_signature": msgSignature,
@@ -298,7 +295,7 @@ func (c *WeComAppChannel) handleVerification(ctx context.Context, w http.Respons
 		"encoding_aes_key": c.config.EncodingAESKey,
 		"corp_id":          c.config.CorpID,
 	})
-	decryptedEchoStr, err := WeComDecryptMessageWithVerify(echostr, c.config.EncodingAESKey, c.config.CorpID)
+	decryptedEchoStr, err := decryptMessageWithVerify(echostr, c.config.EncodingAESKey, c.config.CorpID)
 	if err != nil {
 		logger.ErrorCF("wecom_app", "Failed to decrypt echostr", map[string]any{
 			"error":            err.Error(),
@@ -357,7 +354,7 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	}
 
 	// Verify signature
-	if !WeComVerifySignature(c.config.Token, msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
+	if !verifySignature(c.config.Token, msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
 		logger.WarnC("wecom_app", "Message signature verification failed")
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
@@ -365,7 +362,7 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 
 	// Decrypt message with CorpID verification
 	// For WeCom App (自建应用), receiveid should be corp_id
-	decryptedMsg, err := WeComDecryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey, c.config.CorpID)
+	decryptedMsg, err := decryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey, c.config.CorpID)
 	if err != nil {
 		logger.ErrorCF("wecom_app", "Failed to decrypt message", map[string]any{
 			"error": err.Error(),

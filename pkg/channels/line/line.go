@@ -1,4 +1,4 @@
-package channels
+package line
 
 import (
 	"bytes"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -41,7 +42,7 @@ type replyTokenEntry struct {
 // using the LINE Messaging API with HTTP webhook for receiving messages
 // and REST API for sending messages.
 type LINEChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	config         config.LINEConfig
 	httpServer     *http.Server
 	botUserID      string   // Bot's user ID
@@ -59,7 +60,7 @@ func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINECha
 		return nil, fmt.Errorf("line channel_secret and channel_access_token are required")
 	}
 
-	base := NewBaseChannel("line", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("line", cfg, messageBus, cfg.AllowFrom)
 
 	return &LINEChannel{
 		BaseChannel: base,
@@ -111,7 +112,7 @@ func (c *LINEChannel) Start(ctx context.Context) error {
 		}
 	}()
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoC("line", "LINE channel started (Webhook Mode)")
 	return nil
 }
@@ -168,7 +169,7 @@ func (c *LINEChannel) Stop(ctx context.Context) error {
 		}
 	}
 
-	c.setRunning(false)
+	c.SetRunning(false)
 	logger.InfoC("line", "LINE channel stopped")
 	return nil
 }

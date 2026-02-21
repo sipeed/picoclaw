@@ -1,4 +1,4 @@
-package channels
+package maixcam
 
 import (
 	"context"
@@ -8,12 +8,13 @@ import (
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 type MaixCamChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	config     config.MaixCamConfig
 	listener   net.Listener
 	clients    map[net.Conn]bool
@@ -28,7 +29,7 @@ type MaixCamMessage struct {
 }
 
 func NewMaixCamChannel(cfg config.MaixCamConfig, bus *bus.MessageBus) (*MaixCamChannel, error) {
-	base := NewBaseChannel("maixcam", cfg, bus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("maixcam", cfg, bus, cfg.AllowFrom)
 
 	return &MaixCamChannel{
 		BaseChannel: base,
@@ -47,7 +48,7 @@ func (c *MaixCamChannel) Start(ctx context.Context) error {
 	}
 
 	c.listener = listener
-	c.setRunning(true)
+	c.SetRunning(true)
 
 	logger.InfoCF("maixcam", "MaixCam server listening", map[string]any{
 		"host": c.config.Host,
@@ -70,7 +71,7 @@ func (c *MaixCamChannel) acceptConnections(ctx context.Context) {
 		default:
 			conn, err := c.listener.Accept()
 			if err != nil {
-				if c.running {
+				if c.IsRunning() {
 					logger.ErrorCF("maixcam", "Failed to accept connection", map[string]any{
 						"error": err.Error(),
 					})
@@ -185,7 +186,7 @@ func (c *MaixCamChannel) handleStatusUpdate(msg MaixCamMessage) {
 
 func (c *MaixCamChannel) Stop(ctx context.Context) error {
 	logger.InfoC("maixcam", "Stopping MaixCam channel")
-	c.setRunning(false)
+	c.SetRunning(false)
 
 	if c.listener != nil {
 		c.listener.Close()

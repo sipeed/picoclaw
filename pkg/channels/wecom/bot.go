@@ -1,28 +1,19 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// WeCom Bot (企业微信智能机器人) channel implementation
-// Uses webhook callback mode for receiving messages and webhook API for sending replies
-
-package channels
+package wecom
 
 import (
 	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha1"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -31,7 +22,7 @@ import (
 // WeComBotChannel implements the Channel interface for WeCom Bot (企业微信智能机器人)
 // Uses webhook callback mode - simpler than WeCom App but only supports passive replies
 type WeComBotChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	config        config.WeComConfig
 	server        *http.Server
 	ctx           context.Context
@@ -96,7 +87,7 @@ func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*We
 		return nil, fmt.Errorf("wecom token and webhook_url are required")
 	}
 
-	base := NewBaseChannel("wecom", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("wecom", cfg, messageBus, cfg.AllowFrom)
 
 	return &WeComBotChannel{
 		BaseChannel:   base,
@@ -133,7 +124,7 @@ func (c *WeComBotChannel) Start(ctx context.Context) error {
 		Handler: mux,
 	}
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoCF("wecom", "WeCom Bot channel started", map[string]any{
 		"address": addr,
 		"path":    webhookPath,
@@ -165,7 +156,7 @@ func (c *WeComBotChannel) Stop(ctx context.Context) error {
 		c.server.Shutdown(shutdownCtx)
 	}
 
-	c.setRunning(false)
+	c.SetRunning(false)
 	logger.InfoC("wecom", "WeCom Bot channel stopped")
 	return nil
 }
@@ -219,7 +210,7 @@ func (c *WeComBotChannel) handleVerification(ctx context.Context, w http.Respons
 	}
 
 	// Verify signature
-	if !WeComVerifySignature(c.config.Token, msgSignature, timestamp, nonce, echostr) {
+	if !verifySignature(c.config.Token, msgSignature, timestamp, nonce, echostr) {
 		logger.WarnC("wecom", "Signature verification failed")
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
@@ -228,7 +219,7 @@ func (c *WeComBotChannel) handleVerification(ctx context.Context, w http.Respons
 	// Decrypt echostr
 	// For AIBOT (智能机器人), receiveid should be empty string ""
 	// Reference: https://developer.work.weixin.qq.com/document/path/101033
-	decryptedEchoStr, err := WeComDecryptMessageWithVerify(echostr, c.config.EncodingAESKey, "")
+	decryptedEchoStr, err := decryptMessageWithVerify(echostr, c.config.EncodingAESKey, "")
 	if err != nil {
 		logger.ErrorCF("wecom", "Failed to decrypt echostr", map[string]any{
 			"error": err.Error(),
@@ -281,7 +272,7 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	}
 
 	// Verify signature
-	if !WeComVerifySignature(c.config.Token, msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
+	if !verifySignature(c.config.Token, msgSignature, timestamp, nonce, encryptedMsg.Encrypt) {
 		logger.WarnC("wecom", "Message signature verification failed")
 		http.Error(w, "Invalid signature", http.StatusForbidden)
 		return
@@ -290,7 +281,7 @@ func (c *WeComBotChannel) handleMessageCallback(ctx context.Context, w http.Resp
 	// Decrypt message
 	// For AIBOT (智能机器人), receiveid should be empty string ""
 	// Reference: https://developer.work.weixin.qq.com/document/path/101033
-	decryptedMsg, err := WeComDecryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey, "")
+	decryptedMsg, err := decryptMessageWithVerify(encryptedMsg.Encrypt, c.config.EncodingAESKey, "")
 	if err != nil {
 		logger.ErrorCF("wecom", "Failed to decrypt message", map[string]any{
 			"error": err.Error(),
@@ -476,130 +467,4 @@ func (c *WeComBotChannel) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
-}
-
-// WeCom common utilities for both WeCom Bot and WeCom App
-// The following functions were moved from wecom_common.go
-
-// WeComVerifySignature verifies the message signature for WeCom
-// This is a common function used by both WeCom Bot and WeCom App
-func WeComVerifySignature(token, msgSignature, timestamp, nonce, msgEncrypt string) bool {
-	if token == "" {
-		return true // Skip verification if token is not set
-	}
-
-	// Sort parameters
-	params := []string{token, timestamp, nonce, msgEncrypt}
-	sort.Strings(params)
-
-	// Concatenate
-	str := strings.Join(params, "")
-
-	// SHA1 hash
-	hash := sha1.Sum([]byte(str))
-	expectedSignature := fmt.Sprintf("%x", hash)
-
-	return expectedSignature == msgSignature
-}
-
-// WeComDecryptMessage decrypts the encrypted message using AES
-// This is a common function used by both WeCom Bot and WeCom App
-// For AIBOT, receiveid should be the aibotid; for other apps, it should be corp_id
-func WeComDecryptMessage(encryptedMsg, encodingAESKey string) (string, error) {
-	return WeComDecryptMessageWithVerify(encryptedMsg, encodingAESKey, "")
-}
-
-// WeComDecryptMessageWithVerify decrypts the encrypted message and optionally verifies receiveid
-// receiveid: for AIBOT use aibotid, for WeCom App use corp_id. If empty, skip verification.
-func WeComDecryptMessageWithVerify(encryptedMsg, encodingAESKey, receiveid string) (string, error) {
-	if encodingAESKey == "" {
-		// No encryption, return as is (base64 decode)
-		decoded, err := base64.StdEncoding.DecodeString(encryptedMsg)
-		if err != nil {
-			return "", err
-		}
-		return string(decoded), nil
-	}
-
-	// Decode AES key (base64)
-	aesKey, err := base64.StdEncoding.DecodeString(encodingAESKey + "=")
-	if err != nil {
-		return "", fmt.Errorf("failed to decode AES key: %w", err)
-	}
-
-	// Decode encrypted message
-	cipherText, err := base64.StdEncoding.DecodeString(encryptedMsg)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode message: %w", err)
-	}
-
-	// AES decrypt
-	block, err := aes.NewCipher(aesKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	if len(cipherText) < aes.BlockSize {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-
-	// IV is the first 16 bytes of AESKey
-	iv := aesKey[:aes.BlockSize]
-	mode := cipher.NewCBCDecrypter(block, iv)
-	plainText := make([]byte, len(cipherText))
-	mode.CryptBlocks(plainText, cipherText)
-
-	// Remove PKCS7 padding
-	plainText, err = pkcs7UnpadWeCom(plainText)
-	if err != nil {
-		return "", fmt.Errorf("failed to unpad: %w", err)
-	}
-
-	// Parse message structure
-	// Format: random(16) + msg_len(4) + msg + receiveid
-	if len(plainText) < 20 {
-		return "", fmt.Errorf("decrypted message too short")
-	}
-
-	msgLen := binary.BigEndian.Uint32(plainText[16:20])
-	if int(msgLen) > len(plainText)-20 {
-		return "", fmt.Errorf("invalid message length")
-	}
-
-	msg := plainText[20 : 20+msgLen]
-
-	// Verify receiveid if provided
-	if receiveid != "" && len(plainText) > 20+int(msgLen) {
-		actualReceiveID := string(plainText[20+msgLen:])
-		if actualReceiveID != receiveid {
-			return "", fmt.Errorf("receiveid mismatch: expected %s, got %s", receiveid, actualReceiveID)
-		}
-	}
-
-	return string(msg), nil
-}
-
-// pkcs7UnpadWeCom removes PKCS7 padding with validation
-// WeCom uses block size of 32 (not standard AES block size of 16)
-const wecomBlockSize = 32
-
-func pkcs7UnpadWeCom(data []byte) ([]byte, error) {
-	if len(data) == 0 {
-		return data, nil
-	}
-	padding := int(data[len(data)-1])
-	// WeCom uses 32-byte block size for PKCS7 padding
-	if padding == 0 || padding > wecomBlockSize {
-		return nil, fmt.Errorf("invalid padding size: %d", padding)
-	}
-	if padding > len(data) {
-		return nil, fmt.Errorf("padding size larger than data")
-	}
-	// Verify all padding bytes
-	for i := 0; i < padding; i++ {
-		if data[len(data)-1-i] != byte(padding) {
-			return nil, fmt.Errorf("invalid padding byte at position %d", i)
-		}
-	}
-	return data[:len(data)-padding], nil
 }

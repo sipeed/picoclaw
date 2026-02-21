@@ -1,6 +1,6 @@
 //go:build amd64 || arm64 || riscv64 || mips64 || ppc64
 
-package channels
+package feishu
 
 import (
 	"context"
@@ -15,13 +15,14 @@ import (
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type FeishuChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	config   config.FeishuConfig
 	client   *lark.Client
 	wsClient *larkws.Client
@@ -31,7 +32,7 @@ type FeishuChannel struct {
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
-	base := NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom)
 
 	return &FeishuChannel{
 		BaseChannel: base,
@@ -60,7 +61,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	wsClient := c.wsClient
 	c.mu.Unlock()
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoC("feishu", "Feishu channel started (websocket mode)")
 
 	go func() {
@@ -83,7 +84,7 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 	c.wsClient = nil
 	c.mu.Unlock()
 
-	c.setRunning(false)
+	c.SetRunning(false)
 	logger.InfoC("feishu", "Feishu channel stopped")
 	return nil
 }
@@ -217,11 +218,4 @@ func extractFeishuMessageContent(message *larkim.EventMessage) string {
 	}
 
 	return *message.Content
-}
-
-func stringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
 }

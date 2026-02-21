@@ -1,4 +1,4 @@
-package channels
+package onebot
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -21,7 +22,7 @@ import (
 )
 
 type OneBotChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	config          config.OneBotConfig
 	conn            *websocket.Conn
 	ctx             context.Context
@@ -98,7 +99,7 @@ type oneBotMessageSegment struct {
 }
 
 func NewOneBotChannel(cfg config.OneBotConfig, messageBus *bus.MessageBus) (*OneBotChannel, error) {
-	base := NewBaseChannel("onebot", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("onebot", cfg, messageBus, cfg.AllowFrom)
 
 	const dedupSize = 1024
 	return &OneBotChannel{
@@ -159,7 +160,7 @@ func (c *OneBotChannel) Start(ctx context.Context) error {
 		}
 	}
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoC("onebot", "OneBot channel started successfully")
 
 	return nil
@@ -346,7 +347,7 @@ func (c *OneBotChannel) reconnectLoop() {
 
 func (c *OneBotChannel) Stop(ctx context.Context) error {
 	logger.InfoC("onebot", "Stopping OneBot channel")
-	c.setRunning(false)
+	c.SetRunning(false)
 
 	if c.cancel != nil {
 		c.cancel()

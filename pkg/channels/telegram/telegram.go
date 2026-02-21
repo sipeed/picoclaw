@@ -1,4 +1,4 @@
-package channels
+package telegram
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	tu "github.com/mymmrac/telego/telegoutil"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -24,7 +25,7 @@ import (
 )
 
 type TelegramChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	bot          *telego.Bot
 	commands     TelegramCommander
 	config       *config.Config
@@ -72,7 +73,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
 
-	base := NewBaseChannel("telegram", telegramCfg, bus, telegramCfg.AllowFrom)
+	base := channels.NewBaseChannel("telegram", telegramCfg, bus, telegramCfg.AllowFrom)
 
 	return &TelegramChannel{
 		BaseChannel:  base,
@@ -125,7 +126,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
 		"username": c.bot.Username(),
 	})
@@ -142,7 +143,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
-	c.setRunning(false)
+	c.SetRunning(false)
 	return nil
 }
 

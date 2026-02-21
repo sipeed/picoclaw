@@ -1,7 +1,7 @@
 // PicoClaw - Ultra-lightweight personal AI agent
 // DingTalk channel implementation using Stream Mode
 
-package channels
+package dingtalk
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -20,7 +21,7 @@ import (
 // DingTalkChannel implements the Channel interface for DingTalk (钉钉)
 // It uses WebSocket for receiving messages via stream mode and API for sending
 type DingTalkChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	config       config.DingTalkConfig
 	clientID     string
 	clientSecret string
@@ -37,7 +38,7 @@ func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (
 		return nil, fmt.Errorf("dingtalk client_id and client_secret are required")
 	}
 
-	base := NewBaseChannel("dingtalk", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("dingtalk", cfg, messageBus, cfg.AllowFrom)
 
 	return &DingTalkChannel{
 		BaseChannel:  base,
@@ -70,7 +71,7 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start stream client: %w", err)
 	}
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoC("dingtalk", "DingTalk channel started (Stream Mode)")
 	return nil
 }
@@ -87,7 +88,7 @@ func (c *DingTalkChannel) Stop(ctx context.Context) error {
 		c.streamClient.Close()
 	}
 
-	c.setRunning(false)
+	c.SetRunning(false)
 	logger.InfoC("dingtalk", "DingTalk channel stopped")
 	return nil
 }

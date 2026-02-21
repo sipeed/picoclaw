@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 )
@@ -19,7 +20,7 @@ type Channel interface {
 type BaseChannel struct {
 	config    any
 	bus       *bus.MessageBus
-	running   bool
+	running   atomic.Bool
 	name      string
 	allowList []string
 }
@@ -30,7 +31,6 @@ func NewBaseChannel(name string, config any, bus *bus.MessageBus, allowList []st
 		bus:       bus,
 		name:      name,
 		allowList: allowList,
-		running:   false,
 	}
 }
 
@@ -39,7 +39,7 @@ func (c *BaseChannel) Name() string {
 }
 
 func (c *BaseChannel) IsRunning() bool {
-	return c.running
+	return c.running.Load()
 }
 
 func (c *BaseChannel) IsAllowed(senderID string) bool {
@@ -98,6 +98,6 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 	c.bus.PublishInbound(msg)
 }
 
-func (c *BaseChannel) setRunning(running bool) {
-	c.running = running
+func (c *BaseChannel) SetRunning(running bool) {
+	c.running.Store(running)
 }

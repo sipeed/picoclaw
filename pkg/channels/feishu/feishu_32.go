@@ -1,18 +1,19 @@
 //go:build !amd64 && !arm64 && !riscv64 && !mips64 && !ppc64
 
-package channels
+package feishu
 
 import (
 	"context"
 	"errors"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // FeishuChannel is a stub implementation for 32-bit architectures
 type FeishuChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 }
 
 // NewFeishuChannel returns an error on 32-bit architectures where the Feishu SDK is not supported

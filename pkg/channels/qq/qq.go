@@ -1,4 +1,4 @@
-package channels
+package qq
 
 import (
 	"context"
@@ -14,12 +14,13 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 type QQChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	config         config.QQConfig
 	api            openapi.OpenAPI
 	tokenSource    oauth2.TokenSource
@@ -31,7 +32,7 @@ type QQChannel struct {
 }
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
-	base := NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom)
 
 	return &QQChannel{
 		BaseChannel:  base,
@@ -90,11 +91,11 @@ func (c *QQChannel) Start(ctx context.Context) error {
 			logger.ErrorCF("qq", "WebSocket session error", map[string]any{
 				"error": err.Error(),
 			})
-			c.setRunning(false)
+			c.SetRunning(false)
 		}
 	}()
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoC("qq", "QQ bot started successfully")
 
 	return nil
@@ -102,7 +103,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 
 func (c *QQChannel) Stop(ctx context.Context) error {
 	logger.InfoC("qq", "Stopping QQ bot")
-	c.setRunning(false)
+	c.SetRunning(false)
 
 	if c.cancel != nil {
 		c.cancel()
