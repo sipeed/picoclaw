@@ -5,9 +5,18 @@ import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.IBinder
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
@@ -46,7 +55,7 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
     private lateinit var sttWrapper: SpeechRecognizerWrapper
     private lateinit var cameraCaptureManager: CameraCaptureManager
 
-    private var overlayView: ComposeView? = null
+    private var overlayView: View? = null
     private val windowManager by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
 
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
@@ -112,9 +121,12 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
     private fun addOverlay() {
         if (overlayView != null) return
 
+        val density = resources.displayMetrics.density
+        val fixedHeightPx = (350 * density).toInt()
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            fixedHeightPx,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -123,26 +135,50 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
             gravity = Gravity.BOTTOM
         }
 
-        val view = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@AssistantService)
-            setViewTreeSavedStateRegistryOwner(this@AssistantService)
-
-            setContent {
-                PicoClawTheme {
-                    val state by assistantManager.state.collectAsState()
-                    AssistantPillBar(
-                        state = state,
-                        onClose = { shutdown() },
-                        onInterrupt = { assistantManager.interrupt() },
-                        onCameraToggle = { assistantManager.toggleCamera() },
-                        cameraCaptureManager = cameraCaptureManager
-                    )
+        val wrapper = object : FrameLayout(this@AssistantService) {
+            @Volatile var contentTop = fixedHeightPx
+            private var gestureInContent = false
+            override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+                if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                    gestureInContent = ev.y >= contentTop
                 }
+                if (!gestureInContent) return false
+                return super.dispatchTouchEvent(ev)
             }
         }
 
-        windowManager.addView(view, params)
-        overlayView = view
+        wrapper.setViewTreeLifecycleOwner(this)
+        wrapper.setViewTreeSavedStateRegistryOwner(this)
+
+        ComposeView(this).apply {
+            setContent {
+                PicoClawTheme {
+                    val state by assistantManager.state.collectAsState()
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        AssistantPillBar(
+                            state = state,
+                            onClose = { shutdown() },
+                            onInterrupt = { assistantManager.interrupt() },
+                            onCameraToggle = { assistantManager.toggleCamera() },
+                            cameraCaptureManager = cameraCaptureManager,
+                            modifier = Modifier.onGloballyPositioned { coordinates ->
+                                wrapper.contentTop = coordinates.positionInWindow().y.toInt()
+                            }
+                        )
+                    }
+                }
+            }
+            wrapper.addView(this, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+        }
+
+        windowManager.addView(wrapper, params)
+        overlayView = wrapper
     }
 
     private fun removeOverlay() {
