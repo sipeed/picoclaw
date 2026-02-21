@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -19,9 +20,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chzyer/readline"
+	"github.com/nats-io/nats.go"
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -598,6 +601,9 @@ func gatewayCmd() {
 	// Setup cron tool and service
 	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath())
 
+	// Setup swarm info tool
+	setupSwarmInfoTool(agentLoop, cfg)
+
 	heartbeatService := heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
 		cfg.Heartbeat.Interval,
@@ -1033,6 +1039,21 @@ func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace
 	})
 
 	return cronService
+}
+
+func setupSwarmInfoTool(agentLoop *agent.AgentLoop, cfg *config.Config) {
+	// Create and register the swarm info tool
+	swarmInfoTool := tools.NewSwarmInfoTool()
+
+	// Add known workers
+	swarmInfoTool.AddWorker("coordinator", "coordinator", []string{"orchestration", "scheduling"}, "/Users/dev/service/coordinator")
+	swarmInfoTool.AddWorker("worker-a", "worker", []string{"code", "macos"}, "/Users/dev/service/worker-a")
+	swarmInfoTool.AddWorker("worker-b", "worker", []string{"search", "windows"}, "/Users/dev/service/worker-b")
+
+	// Register the tool
+	agentLoop.RegisterTool(swarmInfoTool)
+
+	logger.InfoC("swarm", "Swarm info tool registered")
 }
 
 func loadConfig() (*config.Config, error) {
@@ -1475,6 +1496,8 @@ func swarmCmd() {
 		swarmStatusCmd()
 	case "nodes":
 		swarmNodesCmd()
+	case "result":
+		swarmResultCmd()
 	default:
 		fmt.Printf("Unknown swarm command: %s\n", subcommand)
 		swarmHelp()
@@ -1593,6 +1616,14 @@ func swarmStartCmd() {
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
+	// Register swarm info tool for worker/coordinator agents
+	swarmInfoTool := tools.NewSwarmInfoTool()
+	swarmInfoTool.AddWorker("coordinator", "coordinator", []string{"orchestration", "scheduling"}, "/Users/dev/service/coordinator")
+	swarmInfoTool.AddWorker("worker-a", "worker", []string{"code", "macos"}, "/Users/dev/service/worker-a")
+	swarmInfoTool.AddWorker("worker-b", "worker", []string{"search", "windows"}, "/Users/dev/service/worker-b")
+	agentLoop.RegisterTool(swarmInfoTool)
+	logger.InfoC("swarm", "Swarm info tool registered for worker")
+
 	// Create and start swarm manager
 	manager := swarm.NewManager(cfg, agentLoop, provider, msgBus)
 	if manager == nil {
@@ -1622,6 +1653,28 @@ func swarmStartCmd() {
 
 	// Start agent loop in background
 	go agentLoop.Run(ctx)
+
+	// For coordinator role, also start channel manager (Telegram, etc.)
+	if role == "coordinator" {
+		channelManager, err := channels.NewManager(cfg, msgBus)
+		if err != nil {
+			fmt.Printf("Error creating channel manager: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Start channels in background
+		if err := channelManager.StartAll(ctx); err != nil {
+			fmt.Printf("Error starting channel manager: %v\n", err)
+			os.Exit(1)
+		}
+		defer func() {
+			channelManager.StopAll(ctx)
+		}()
+
+		// Get enabled channels
+		enabledChannels := channelManager.GetEnabledChannels()
+		fmt.Printf("  Channels: %v\n", enabledChannels)
+	}
 
 	// Wait for interrupt
 	sigChan := make(chan os.Signal, 1)
@@ -1667,21 +1720,23 @@ func swarmDispatchCmd() {
 		fmt.Println("Usage: picoclaw swarm dispatch <prompt> [options]")
 		fmt.Println()
 		fmt.Println("Options:")
-		fmt.Println("  --type <type>         Task type: direct, workflow, broadcast (default: direct)")
+		fmt.Println("  --type <type>         Task type: direct, workflow, broadcast (default: workflow)")
 		fmt.Println("  --capability <cap>    Required capability for routing")
 		fmt.Println("  --timeout <ms>        Task timeout in milliseconds (default: 300000)")
+		fmt.Println("  --wait, -w            Wait for result and display it")
 		fmt.Println()
 		fmt.Println("Examples:")
-		fmt.Println("  picoclaw swarm dispatch 'Analyze this code' --capability code")
-		fmt.Println("  picoclaw swarm dispatch 'Search for info' --type direct --capability search")
+		fmt.Println("  picoclaw swarm dispatch 'Analyze all node files' --type workflow")
+		fmt.Println("  picoclaw swarm dispatch 'Read coordinator-info.txt and worker-a-info.txt in parallel' --wait")
 		return
 	}
 
 	// Parse arguments
-	taskType := "direct"
+	taskType := "workflow"  // 默认使用 workflow 来启用任务拆分
 	capability := "general"
-	timeout := 300000 // 5 minutes (in milliseconds)
+	timeout := 600000 // 10 minutes (默认超时)
 	prompt := ""
+	waitForResult := false
 
 	args := os.Args[3:]
 	for i := 0; i < len(args); i++ {
@@ -1703,6 +1758,8 @@ func swarmDispatchCmd() {
 				timeout = ms
 				i++
 			}
+		case "--wait", "-w":
+			waitForResult = true
 		default:
 			if prompt == "" {
 				prompt = args[i]
@@ -1722,6 +1779,119 @@ func swarmDispatchCmd() {
 		return
 	}
 
+	// For workflow type, use Temporal
+	if taskType == "workflow" {
+		dispatchWorkflowTask(cfg, prompt, capability, timeout, waitForResult)
+		return
+	}
+
+	// For direct type, execute locally (fallback)
+	dispatchLocalTask(cfg, prompt, capability, timeout)
+}
+
+func dispatchWorkflowTask(cfg *config.Config, prompt, capability string, timeout int, waitForResult bool) {
+	fmt.Printf("%s Dispatching workflow task...\n", logo)
+	fmt.Printf("  Type: workflow (with decomposition)")
+	fmt.Printf("  Capability: %s\n", capability)
+	fmt.Printf("  Timeout: %d ms\n", timeout)
+	fmt.Printf("  Prompt: %s\n", truncateForDisplay(prompt, 60))
+	fmt.Println()
+
+	// Import temporal client packages
+	// We'll use go-temporal client to start workflow
+	workflowID := fmt.Sprintf("task-%d", time.Now().UnixNano())
+
+	// Create task JSON
+	taskJSON := fmt.Sprintf(`{"id":"%s","prompt":"%s","capability":"%s","type":"workflow"}`,
+		workflowID, escapeJSON(prompt), capability)
+
+	// Use temporal CLI to start workflow
+	cmd := exec.Command("temporal", "workflow", "start",
+		"--address", cfg.Swarm.Temporal.Host,
+		"--namespace", cfg.Swarm.Temporal.Namespace,
+		"--task-queue", cfg.Swarm.Temporal.TaskQueue,
+		"--type", "SwarmWorkflow",
+		"--input", taskJSON,
+		"--workflow-id", workflowID)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("Error starting workflow: %v\n", err)
+		fmt.Printf("Output: %s\n", string(output))
+		return
+	}
+
+	fmt.Printf("\n✓ Workflow started\n")
+	fmt.Printf("  Workflow ID: %s\n", workflowID)
+	fmt.Printf("  Temporal UI: http://localhost:8088/namespaces/%s/workflows/%s\n",
+		cfg.Swarm.Temporal.Namespace, workflowID)
+
+	if waitForResult {
+		fmt.Printf("\n⏳ Waiting for result...\n")
+		waitForWorkflowCompletion(cfg, workflowID, timeout*2) // Double timeout for wait mode
+	} else {
+		fmt.Printf("\n💡 Use 'temporal workflow describe %s' to check status\n", workflowID)
+		fmt.Printf("💡 Use 'picoclaw swarm result %s' to get result\n", workflowID)
+	}
+}
+
+func waitForWorkflowCompletion(cfg *config.Config, workflowID string, timeout int) {
+	start := time.Now()
+	timeoutDuration := time.Duration(timeout) * time.Millisecond
+
+	for time.Since(start) < timeoutDuration {
+		cmd := exec.Command("temporal", "workflow", "describe",
+			"--address", cfg.Swarm.Temporal.Host,
+			"--namespace", cfg.Swarm.Temporal.Namespace,
+			"--workflow-id", workflowID,
+			"--output", "json")
+
+		output, err := cmd.Output()
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		// Parse JSON to check status
+		var result map[string]interface{}
+		if err := json.Unmarshal(output, &result); err == nil {
+			if status, ok := result["workflowExecutionInfo"].(map[string]interface{})["status"].(string); ok {
+				if status == "COMPLETED" {
+					// Try multiple ways to extract result
+					if rawResult, ok := result["result"].(map[string]interface{}); ok {
+						if value, ok := rawResult["value"].(string); ok {
+							fmt.Printf("\n%s Result:\n", logo)
+							fmt.Println(value)
+							return
+						}
+						if data, ok := rawResult["data"].(string); ok {
+							fmt.Printf("\n%s Result:\n", logo)
+							fmt.Println(data)
+							return
+						}
+					}
+					fmt.Printf("\n%s Result:\n", logo)
+					fmt.Printf("  (Completed - use Temporal UI for full output)\n")
+					return
+				} else if status == "FAILED" {
+					fmt.Printf("\n❌ Workflow failed\n")
+					return
+				} else if status == "CANCELED" {
+					fmt.Printf("\n❌ Workflow canceled\n")
+					return
+				}
+				// Still running
+				fmt.Printf(".")
+				time.Sleep(2 * time.Second)
+			}
+		}
+	}
+	fmt.Printf("\n⏱ Timeout waiting for result\n")
+	fmt.Printf("💡 Check status: temporal workflow describe --namespace %s %s\n",
+		cfg.Swarm.Temporal.Namespace, workflowID)
+}
+
+func dispatchLocalTask(cfg *config.Config, prompt, capability string, timeout int) {
 	// Create provider and agent loop
 	provider, err := providers.CreateProvider(cfg)
 	if err != nil {
@@ -1732,9 +1902,8 @@ func swarmDispatchCmd() {
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
-	// Execute task locally (simplified dispatch)
-	fmt.Printf("%s Dispatching task...\n", logo)
-	fmt.Printf("  Type: %s\n", taskType)
+	// Execute task locally
+	fmt.Printf("%s Executing task locally...\n", logo)
 	fmt.Printf("  Capability: %s\n", capability)
 	fmt.Printf("  Timeout: %d ms\n", timeout)
 	fmt.Printf("  Prompt: %s\n", prompt)
@@ -1752,6 +1921,102 @@ func swarmDispatchCmd() {
 
 	fmt.Printf("\n%s Result:\n", logo)
 	fmt.Println(response)
+}
+
+func escapeJSON(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	return s
+}
+
+func truncateForDisplay(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+func swarmResultCmd() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: picoclaw swarm result <workflow-id>")
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  picoclaw swarm result task-1234567890")
+		return
+	}
+
+	workflowID := os.Args[3]
+
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		return
+	}
+
+	cmd := exec.Command("temporal", "workflow", "describe",
+		"--address", cfg.Swarm.Temporal.Host,
+		"--namespace", cfg.Swarm.Temporal.Namespace,
+		"--workflow-id", workflowID,
+		"--output", "json")
+
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("Error fetching workflow: %v\n", err)
+		fmt.Printf("Make sure the workflow ID is correct.\n")
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		fmt.Printf("Error parsing result: %v\n", err)
+		return
+	}
+
+	info, ok := result["workflowExecutionInfo"].(map[string]interface{})
+	if !ok {
+		fmt.Printf("Error: invalid response format\n")
+		return
+	}
+
+	status, _ := info["status"].(string)
+
+	fmt.Printf("%s Workflow Result\n\n", logo)
+	fmt.Printf("Workflow ID: %s\n", workflowID)
+	fmt.Printf("Status: %s\n", status)
+
+	if startTime, ok := info["startTime"].(string); ok {
+		fmt.Printf("Started: %s\n", startTime)
+	}
+
+	if status == "COMPLETED" {
+		if res, ok := result["result"].(map[string]interface{}); ok {
+			if rawValue, ok := res["raw"].(string); ok {
+				// Try to decode base64 if present
+				fmt.Printf("\n--- Result ---\n%s\n--- End ---\n", rawValue)
+			} else if value, ok := res["value"].(string); ok {
+				fmt.Printf("\n--- Result ---\n%s\n--- End ---\n", value)
+			} else if data, ok := res["data"].(string); ok {
+				fmt.Printf("\n--- Result ---\n%s\n--- End ---\n", data)
+			} else {
+				fmt.Printf("\n--- Result ---\n%+v\n--- End ---\n", res)
+			}
+		}
+	} else if status == "FAILED" {
+		if res, ok := result["result"].(map[string]interface{}); ok {
+			if value, ok := res["value"].(string); ok {
+				fmt.Printf("\n--- Error ---\n%s\n--- End ---\n", value)
+			}
+		}
+	} else if status == "RUNNING" {
+		fmt.Printf("\n⏳ Workflow is still running...\n")
+		fmt.Printf("Use --wait flag to wait for completion:\n")
+		fmt.Printf("  picoclaw swarm result %s --wait\n", workflowID)
+	}
+
+	fmt.Printf("\nMore info:\n")
+	fmt.Printf("  temporal workflow describe --namespace %s %s\n", cfg.Swarm.Temporal.Namespace, workflowID)
+	fmt.Printf("  http://localhost:8088/namespaces/%s/workflows/%s\n", cfg.Swarm.Temporal.Namespace, workflowID)
 }
 
 // Helper functions for process management
@@ -1811,9 +2076,356 @@ func swarmStatusCmd() {
 }
 
 func swarmNodesCmd() {
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		return
+	}
+
+	// Get NATS URL from config or use default
+	natsURL := "nats://localhost:4222"
+	if len(cfg.Swarm.NATS.URLs) > 0 {
+		natsURL = cfg.Swarm.NATS.URLs[0]
+	}
+
+	// Get HID for filtering
+	hid := cfg.Swarm.HID
+
+	// Connect to NATS
+	nc, err := nats.Connect(natsURL,
+		nats.Timeout(5*time.Second),
+		nats.ReconnectWait(100*time.Millisecond),
+		nats.MaxReconnects(2),
+	)
+	if err != nil {
+		fmt.Printf("%s Swarm Nodes\n\n", logo)
+		fmt.Printf("Failed to connect to NATS at %s\n", natsURL)
+		fmt.Printf("Error: %v\n\n", err)
+		fmt.Println("Make sure swarm nodes are running:")
+		fmt.Println("  pm2 status")
+		return
+	}
+	defer nc.Close()
+
+	// Wait a bit for connection to be fully established
+	time.Sleep(100 * time.Millisecond)
+
+	// Node info structures matching the swarm package
+	type Heartbeat struct {
+		NodeID       string   `json:"node_id"`
+		Timestamp    int64    `json:"timestamp"`
+		Load         float64  `json:"load"`
+		TasksRunning int      `json:"tasks_running"`
+		Status       string   `json:"status"`
+		Capabilities []string `json:"capabilities"`
+	}
+
+	type NodeInfo struct {
+		ID           string   `json:"id"`
+		NodeID       string   `json:"node_id"`
+		Role         string   `json:"role"`
+		Capabilities []string `json:"capabilities"`
+		Status       string   `json:"status"`
+		Load         float64  `json:"load"`
+		TasksRunning int      `json:"tasks_running"`
+		MaxTasks     int      `json:"max_tasks"`
+		Model        string   `json:"model"`
+		HID          string   `json:"hid"`
+		SID          string   `json:"sid"`
+	}
+
+	type DiscoveryAnnounce struct {
+		Node      NodeInfo `json:"node"`
+		Timestamp int64    `json:"timestamp"`
+	}
+
+	nodes := make(map[string]NodeInfo)
+	var mu sync.Mutex
+
+	// Subscribe to heartbeat messages (picoclaw.swarm.heartbeat.>)
+	sub1, err := nc.Subscribe("picoclaw.swarm.heartbeat.>", func(msg *nats.Msg) {
+		var hb Heartbeat
+		if err := json.Unmarshal(msg.Data, &hb); err != nil {
+			return
+		}
+		mu.Lock()
+		// Update existing node or add new one
+		if node, ok := nodes[hb.NodeID]; ok {
+			node.Load = hb.Load
+			node.TasksRunning = hb.TasksRunning
+			node.Status = hb.Status
+			if len(hb.Capabilities) > 0 {
+				node.Capabilities = hb.Capabilities
+			}
+			nodes[hb.NodeID] = node
+		}
+		mu.Unlock()
+	})
+	if err == nil {
+		defer sub1.Unsubscribe()
+	}
+
+	// Subscribe to discovery announce messages (picoclaw.swarm.discovery.announce)
+	sub2, err := nc.Subscribe("picoclaw.swarm.discovery.announce", func(msg *nats.Msg) {
+		var announce DiscoveryAnnounce
+		if err := json.Unmarshal(msg.Data, &announce); err != nil {
+			return
+		}
+		node := announce.Node
+
+		// Use ID or NodeID field
+		nodeID := node.ID
+		if nodeID == "" {
+			nodeID = node.NodeID
+		}
+
+		// Filter by HID if specified
+		if hid != "" && node.HID != hid {
+			return
+		}
+
+		// Ensure NodeID is set for lookup
+		if node.NodeID == "" {
+			node.NodeID = nodeID
+		}
+
+		mu.Lock()
+		// Merge with existing node info if any
+		if existing, ok := nodes[nodeID]; ok {
+			// Keep heartbeat-updated fields
+			if existing.Load > 0 {
+				node.Load = existing.Load
+			}
+			if existing.TasksRunning > 0 {
+				node.TasksRunning = existing.TasksRunning
+			}
+		}
+		nodes[nodeID] = node
+		mu.Unlock()
+	})
+	if err == nil {
+		defer sub2.Unsubscribe()
+	}
+
+	// Also subscribe to discovery response (reply to query)
+	sub3, err := nc.Subscribe("picoclaw.swarm.discovery.>", func(msg *nats.Msg) {
+		var announce DiscoveryAnnounce
+		if err := json.Unmarshal(msg.Data, &announce); err != nil {
+			// Try direct NodeInfo
+			var node NodeInfo
+			if err2 := json.Unmarshal(msg.Data, &node); err2 == nil {
+				mu.Lock()
+				nodeID := node.ID
+				if nodeID == "" {
+					nodeID = node.NodeID
+				}
+				if node.NodeID == "" {
+					node.NodeID = nodeID
+				}
+				if hid == "" || node.HID == hid {
+					nodes[nodeID] = node
+				}
+				mu.Unlock()
+			}
+			return
+		}
+		node := announce.Node
+		nodeID := node.ID
+		if nodeID == "" {
+			nodeID = node.NodeID
+		}
+		if node.NodeID == "" {
+			node.NodeID = nodeID
+		}
+		mu.Lock()
+		if hid == "" || node.HID == hid {
+			nodes[nodeID] = node
+		}
+		mu.Unlock()
+	})
+	if err == nil {
+		defer sub3.Unsubscribe()
+	}
+
+	// Publish a discovery query to prompt nodes to respond
+	queryMsg := map[string]interface{}{
+		"requester_id": "picoclaw-cli-query",
+		"timestamp":    time.Now().UnixMilli(),
+	}
+	queryData, _ := json.Marshal(queryMsg)
+
+	// Use PublishRequest to allow nodes to respond via msg.Respond()
+	inbox := nats.NewInbox()
+	responseSub, _ := nc.Subscribe(inbox, func(msg *nats.Msg) {
+		var node NodeInfo
+		if err := json.Unmarshal(msg.Data, &node); err == nil {
+			nodeID := node.ID
+			if nodeID == "" {
+				nodeID = node.NodeID
+			}
+			if nodeID != "" {
+				mu.Lock()
+				if hid == "" || node.HID == hid {
+					if existing, ok := nodes[nodeID]; ok {
+						// Update with more complete info
+						if node.Role != "" && existing.Role == "" {
+							existing.Role = node.Role
+						}
+						if node.Status != "" && existing.Status == "" {
+							existing.Status = node.Status
+						}
+						if len(node.Capabilities) > 0 && len(existing.Capabilities) == 0 {
+							existing.Capabilities = node.Capabilities
+						}
+						if node.MaxTasks > 0 && existing.MaxTasks == 0 {
+							existing.MaxTasks = node.MaxTasks
+						}
+						if node.Model != "" && existing.Model == "" {
+							existing.Model = node.Model
+						}
+						if node.HID != "" {
+							existing.HID = node.HID
+						}
+						if node.SID != "" {
+							existing.SID = node.SID
+						}
+						nodes[nodeID] = existing
+					} else {
+						// Ensure NodeID is set
+						if node.NodeID == "" {
+							node.NodeID = nodeID
+						}
+						nodes[nodeID] = node
+					}
+				}
+				mu.Unlock()
+			}
+		}
+	})
+	defer responseSub.Unsubscribe()
+
+	nc.PublishRequest("picoclaw.swarm.discovery.query", inbox, queryData)
+
+	// Also try wildcard subscription to catch heartbeat messages
+	debugSub, _ := nc.Subscribe("picoclaw.swarm.heartbeat.>", func(msg *nats.Msg) {
+		var raw map[string]interface{}
+		if err := json.Unmarshal(msg.Data, &raw); err == nil {
+			if nodeID, ok := raw["node_id"].(string); ok {
+				mu.Lock()
+				if existing, ok := nodes[nodeID]; ok {
+					// Update heartbeat fields
+					if load, ok := raw["load"].(float64); ok {
+						existing.Load = load
+					}
+					if tasksRunning, ok := raw["tasks_running"].(float64); ok {
+						existing.TasksRunning = int(tasksRunning)
+					}
+					if status, ok := raw["status"].(string); ok {
+						existing.Status = status
+					}
+					if caps, ok := raw["capabilities"].([]interface{}); ok && len(existing.Capabilities) == 0 {
+						for _, c := range caps {
+							if cs, ok := c.(string); ok {
+								existing.Capabilities = append(existing.Capabilities, cs)
+							}
+						}
+					}
+					nodes[nodeID] = existing
+				}
+				mu.Unlock()
+			}
+		}
+	})
+	defer debugSub.Unsubscribe()
+
+	// Wait longer for responses (nodes may be on embedded NATS with delays)
+	time.Sleep(1500 * time.Millisecond)
+
+	mu.Lock()
+	nodeList := make([]NodeInfo, 0, len(nodes))
+	for _, node := range nodes {
+		// Only include nodes with valid IDs
+		nodeID := node.ID
+		if nodeID == "" {
+			nodeID = node.NodeID
+		}
+		if nodeID != "" {
+			nodeList = append(nodeList, node)
+		}
+	}
+	mu.Unlock()
+
+	// Display results
 	fmt.Printf("%s Swarm Nodes\n\n", logo)
-	fmt.Println("Note: To discover nodes, run 'picoclaw swarm start' first.")
-	fmt.Println("This command requires an active swarm connection to query the network.")
-	fmt.Println()
-	fmt.Println("In a running swarm node, nodes are discovered automatically via NATS.")
+
+	if len(nodeList) == 0 {
+		fmt.Println("No nodes discovered.")
+		fmt.Println("\nMake sure swarm nodes are running:")
+		fmt.Println("  pm2 status")
+		fmt.Println("\nOr start a swarm node:")
+		fmt.Println("  picoclaw swarm start --role coordinator --embedded")
+		return
+	}
+
+	// Count by role
+	coordinators := 0
+	workers := 0
+	specialists := 0
+
+	for _, node := range nodeList {
+		switch node.Role {
+		case "coordinator":
+			coordinators++
+		case "worker":
+			workers++
+		case "specialist":
+			specialists++
+		}
+	}
+
+	fmt.Printf("Total: %d node(s) found\n\n", len(nodeList))
+	fmt.Printf("  • Coordinators: %d\n", coordinators)
+	fmt.Printf("  • Workers: %d\n", workers)
+	fmt.Printf("  • Specialists: %d\n", specialists)
+	fmt.Println("\nNodes:")
+
+	for _, node := range nodeList {
+		statusIcon := "●"
+		if node.Status != "online" {
+			statusIcon = "○"
+		}
+		roleIcon := "C"
+		if node.Role == "worker" {
+			roleIcon = "W"
+		} else if node.Role == "specialist" {
+			roleIcon = "S"
+		}
+
+		loadPercent := int(node.Load * 100)
+
+		// Use ID or NodeID for display
+		displayID := node.ID
+		if displayID == "" {
+			displayID = node.NodeID
+		}
+		if len(displayID) > 20 {
+			displayID = displayID[:17] + "..."
+		}
+
+		fmt.Printf("  %s %s %-20s [%2s] %s (load: %d%%, tasks: %d/%d)\n",
+			statusIcon, roleIcon, displayID, node.Role,
+			node.Status, loadPercent, node.TasksRunning, node.MaxTasks)
+
+		if len(node.Capabilities) > 0 {
+			fmt.Printf("      Capabilities: %s\n", strings.Join(node.Capabilities, ", "))
+		}
+		if node.SID != "" {
+			fmt.Printf("      SID: %s\n", node.SID)
+		}
+	}
+
+	fmt.Printf("\nNATS: %s\n", natsURL)
+	if hid != "" {
+		fmt.Printf("HID: %s (filtered)\n", hid)
+	}
 }

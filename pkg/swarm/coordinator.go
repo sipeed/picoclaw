@@ -275,9 +275,76 @@ func (c *Coordinator) processInboundMessages(ctx context.Context) {
 
 // analyzeAndCreateTask uses heuristics to decide if a task should be distributed
 func (c *Coordinator) analyzeAndCreateTask(ctx context.Context, msg bus.InboundMessage) *SwarmTask {
-	// For now, return nil to process locally
-	// In production, use LLM analysis to determine task complexity and routing
-	// Tasks mentioning "parallel", "analyze", "compare", "comprehensive"
-	// could be considered complex and suitable for distribution
-	return nil
+	content := msg.Content
+
+	// Check for keywords that indicate workflow/decomposition is needed
+	workflowKeywords := []string{
+		"PARALLEL:", "parallel", "concurrent",
+		"同时", "分别", "一起",
+		"analyze all", "compare", "summarize",
+		"汇总", "分别", "列出",
+	}
+
+	shouldUseWorkflow := false
+	for _, keyword := range workflowKeywords {
+		if contains(content, keyword) {
+			shouldUseWorkflow = true
+			break
+		}
+	}
+
+	if !shouldUseWorkflow {
+		// Simple task - process locally
+		return nil
+	}
+
+	// Create workflow task for decomposition
+	task := &SwarmTask{
+		ID:         fmt.Sprintf("task-%d", time.Now().UnixNano()),
+		Prompt:     content,
+		Type:       TaskTypeWorkflow,
+		Capability: "general",
+		Priority:   5,
+		Status:     TaskPending,
+		CreatedAt:  time.Now().UnixMilli(),
+		Timeout:    300000, // 5 minutes
+	}
+
+	logger.InfoCF("swarm", "Created workflow task from message", map[string]interface{}{
+		"task_id": task.ID,
+		"prompt":  truncateString(content, 50),
+	})
+
+	return task
+}
+
+// contains checks if a string contains a substring (case-insensitive)
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (
+		// Simple case-insensitive contains
+		toLower(s) == toLower(substr) ||
+		findSubstring(toLower(s), toLower(substr))))
+}
+
+func toLower(s string) string {
+	// Simple ASCII lowercase
+	result := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			result[i] = c + 32
+		} else {
+			result[i] = c
+		}
+	}
+	return string(result)
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

@@ -41,12 +41,71 @@ func (a *Activities) DecomposeTaskActivity(ctx context.Context, task *SwarmTask)
 		"prompt":  truncateString(task.Prompt, 100),
 	})
 
+	// Test mode: force decomposition for test tasks
+	if strings.HasPrefix(task.Prompt, "PARALLEL") || strings.HasPrefix(task.Prompt, "TEST PARALLEL") {
+		logger.InfoCF("swarm", "Test mode: forcing decomposition", map[string]interface{}{
+			"task_id": task.ID,
+		})
+		// Extract the actual task from PARALLEL: prefix
+		actualTask := strings.TrimPrefix(task.Prompt, "PARALLEL:")
+		actualTask = strings.TrimPrefix(actualTask, "TEST PARALLEL:")
+		actualTask = strings.TrimSpace(actualTask)
+
+		// If no specific task given, use a default one
+		if actualTask == "" {
+			actualTask = "list current directory structure"
+		}
+
+		// Create test subtasks - each worker will report its own directory
+		return []*SwarmTask{
+			{
+				ID:         task.ID + "-sub-1",
+				ParentID:   task.ID,
+				Type:       TaskTypeDirect,
+				Priority:   task.Priority,
+				Capability: "general",
+				Prompt:     fmt.Sprintf(`IMPORTANT: First identify yourself by calling swarm_info tool to find your node ID and role. Then:
+1. Use 'pwd' to show your current working directory
+2. Use 'ls' to list your current directory contents
+3. Report in format: "I am [node-id] ([role]), current directory: [path], contents: [directory listing]"
+
+Task: %s`, actualTask),
+				Context:    task.Context,
+				Status:     TaskPending,
+				CreatedAt:  time.Now().UnixMilli(),
+				Timeout:    task.Timeout,
+			},
+			{
+				ID:         task.ID + "-sub-2",
+				ParentID:   task.ID,
+				Type:       TaskTypeDirect,
+				Priority:   task.Priority,
+				Capability: "general",
+				Prompt:     fmt.Sprintf(`IMPORTANT: First identify yourself by calling swarm_info tool to find your node ID and role. Then:
+1. Use 'pwd' to show your current working directory
+2. Use 'ls' to list your current directory contents
+3. Report in format: "I am [node-id] ([role]), current directory: [path], contents: [directory listing]"
+
+Task: %s`, actualTask),
+				Context:    task.Context,
+				Status:     TaskPending,
+				CreatedAt:  time.Now().UnixMilli(),
+				Timeout:    task.Timeout,
+			},
+		}, nil
+	}
+
 	// Build decomposition prompt
-	decomposePrompt := fmt.Sprintf(`Analyze the following task and determine if it should be decomposed into parallel subtasks.
+	decomposePrompt := fmt.Sprintf(`You are a task decomposition expert. Analyze the following task and determine if it should be decomposed into parallel subtasks.
 
 TASK: %s
 
 CAPABILITY REQUIRED: %s
+
+IMPORTANT DECOMPOSITION RULES:
+1. If the task mentions multiple files, multiple operations, or explicitly asks for parallel execution - ALWAYS DECOMPOSE
+2. If the task contains the words "parallel", "concurrent", "together", or "simultaneously" - ALWAYS DECOMPOSE
+3. Simple single-file operations can be executed directly
 
 Respond with a JSON object. If the task is simple and can be executed directly, return:
 {"decompose": false, "reason": "explanation"}
@@ -61,7 +120,7 @@ If the task should be decomposed, return:
   ]
 }
 
-Keep subtasks focused and independently executable. Each subtask should produce a partial result that can be synthesized.`,
+Keep subtasks focused and independently executable. Each subtask should produce a partial result that can be synthesized later.`,
 		task.Prompt, task.Capability)
 
 	// Call LLM for decomposition decision
