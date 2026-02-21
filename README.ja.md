@@ -832,7 +832,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [キーを取得](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [キーを取得](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
-| **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ](docs/user-guide/ide-setup/antigravity.md) |
+| **Antigravity** | `antigravity/` | Google Cloud | カスタム | [OAuthのみ](docs/user-guide/ide-setup/antigravity.md) |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
 #### 基本設定

@@ -907,7 +907,7 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Obter Chave](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obter Chave](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
-| **Antigravity** | `antigravity/` | Google Cloud | Custom | Apenas OAuth](docs/user-guide/ide-setup/antigravity.md) |
+| **Antigravity** | `antigravity/` | Google Cloud | Custom | [Apenas OAuth](docs/user-guide/ide-setup/antigravity.md) |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
 #### Configuração Básica
