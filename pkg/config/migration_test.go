@@ -361,7 +361,10 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 				Agents: AgentsConfig{
 					Defaults: AgentDefaults{
 						Provider: tt.providerAlias,
-						Model:    strings.TrimPrefix(tt.expectedModel, tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1]),
+						Model: strings.TrimPrefix(
+							tt.expectedModel,
+							tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1],
+						),
 					},
 				},
 				Providers: ProvidersConfig{},
@@ -382,7 +385,10 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 			}
 
 			// Need to fix the model name in config
-			cfg.Agents.Defaults.Model = strings.TrimPrefix(tt.expectedModel, tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1])
+			cfg.Agents.Defaults.Model = strings.TrimPrefix(
+				tt.expectedModel,
+				tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1],
+			)
 
 			result := ConvertProvidersToModelList(cfg)
 			if len(result) != 1 {
@@ -515,7 +521,11 @@ func TestBuildModelWithProtocol_AlreadyHasPrefix(t *testing.T) {
 func TestBuildModelWithProtocol_DifferentPrefix(t *testing.T) {
 	result := buildModelWithProtocol("anthropic", "openrouter/claude-sonnet-4.6")
 	if result != "openrouter/claude-sonnet-4.6" {
-		t.Errorf("buildModelWithProtocol(anthropic, openrouter/claude-sonnet-4.6) = %q, want %q", result, "openrouter/claude-sonnet-4.6")
+		t.Errorf(
+			"buildModelWithProtocol(anthropic, openrouter/claude-sonnet-4.6) = %q, want %q",
+			result,
+			"openrouter/claude-sonnet-4.6",
+		)
 	}
 }
 

@@ -54,11 +54,11 @@ func TestLoggerWithComponent(t *testing.T) {
 		name      string
 		component string
 		message   string
-		fields    map[string]interface{}
+		fields    map[string]any
 	}{
 		{"Simple message", "test", "Hello, world!", nil},
 		{"Message with component", "discord", "Discord message", nil},
-		{"Message with fields", "telegram", "Telegram message", map[string]interface{}{
+		{"Message with fields", "telegram", "Telegram message", map[string]any{
 			"user_id": "12345",
 			"count":   42,
 		}},
@@ -128,12 +128,12 @@ func TestLoggerHelperFunctions(t *testing.T) {
 	Error("This should log")
 
 	InfoC("test", "Component message")
-	InfoF("Fields message", map[string]interface{}{"key": "value"})
+	InfoF("Fields message", map[string]any{"key": "value"})
 
 	WarnC("test", "Warning with component")
-	ErrorF("Error with fields", map[string]interface{}{"error": "test"})
+	ErrorF("Error with fields", map[string]any{"error": "test"})
 
 	SetLevel(DEBUG)
 	DebugC("test", "Debug with component")
-	WarnF("Warning with fields", map[string]interface{}{"key": "value"})
+	WarnF("Warning with fields", map[string]any{"key": "value"})
 }

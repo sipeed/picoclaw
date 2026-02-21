@@ -110,7 +110,11 @@ func (fc *FallbackChain) Execute(
 				Model:    candidate.Model,
 				Skipped:  true,
 				Reason:   FailoverRateLimit,
-				Error:    fmt.Errorf("provider %s in cooldown (%s remaining)", candidate.Provider, remaining.Round(time.Second)),
+				Error: fmt.Errorf(
+					"provider %s in cooldown (%s remaining)",
+					candidate.Provider,
+					remaining.Round(time.Second),
+				),
 			})
 			continue
 		}

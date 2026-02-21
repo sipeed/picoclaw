@@ -212,19 +212,24 @@ picoclaw onboard
 
 ```json
 {
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key",
+      "api_base": "https://api.openai.com/v1"
+    }
+  ],
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
-      "max_tokens": 8192,
-      "temperature": 0.7,
-      "max_tool_iterations": 20
+      "model": "gpt4"
     }
   },
-  "providers": {
-    "openrouter": {
-      "api_key": "xxx",
-      "api_base": "https://openrouter.ai/api/v1"
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "VOTRE_TOKEN_BOT",
+      "allow_from": ["VOTRE_USER_ID"]
     }
   },
   "tools": {
@@ -290,7 +295,7 @@ Discutez avec votre PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom
     "telegram": {
       "enabled": true,
       "token": "VOTRE_TOKEN_BOT",
-      "allowFrom": ["VOTRE_USER_ID"]
+      "allow_from": ["VOTRE_USER_ID"]
     }
   }
 }
@@ -333,7 +338,7 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "VOTRE_TOKEN_BOT",
-      "allowFrom": ["VOTRE_USER_ID"]
+      "allow_from": ["VOTRE_USER_ID"]
     }
   }
 }
@@ -765,6 +770,8 @@ Le sous-agent a accès aux outils (message, web_search, etc.) et peut communique
 | `anthropic` (À tester)   | LLM (Claude direct)                      | [console.anthropic.com](https://console.anthropic.com) |
 | `openai` (À tester)      | LLM (GPT direct)                         | [platform.openai.com](https://platform.openai.com)     |
 | `deepseek` (À tester)    | LLM (DeepSeek direct)                    | [platform.deepseek.com](https://platform.deepseek.com) |
+| `qwen`                   | LLM (Alibaba Qwen)                      | [dashscope.aliyuncs.com](https://dashscope.aliyuncs.com/compatible-mode/v1) |
+| `cerebras`               | LLM (Cerebras)                           | [cerebras.ai](https://api.cerebras.ai/v1)              |
 | `groq`                   | LLM + **Transcription vocale** (Whisper) | [console.groq.com](https://console.groq.com)           |
 
 <details>
@@ -1087,7 +1094,7 @@ Ajoutez la clé dans `~/.picoclaw/config.json` si vous utilisez Brave :
   "tools": {
     "web": {
       "brave": {
-        "enabled": true,
+        "enabled": false,
         "api_key": "VOTRE_CLE_API_BRAVE",
         "max_results": 5
       },

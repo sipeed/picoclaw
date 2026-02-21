@@ -85,6 +85,7 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | `openai/` | OpenAI API (default) | `openai/gpt-5.2` |
 | `anthropic/` | Anthropic API | `anthropic/claude-opus-4` |
 | `antigravity/` | Google via Antigravity OAuth | `antigravity/gemini-2.0-flash` |
+| `gemini/` | Google Gemini API | `gemini/gemini-2.0-flash-exp` |
 | `claude-cli/` | Claude CLI (local) | `claude-cli/claude-sonnet-4.6` |
 | `codex-cli/` | Codex CLI (local) | `codex-cli/codex-4` |
 | `github-copilot/` | GitHub Copilot | `github-copilot/gpt-4o` |
@@ -93,6 +94,13 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | `deepseek/` | DeepSeek API | `deepseek/deepseek-chat` |
 | `cerebras/` | Cerebras API | `cerebras/llama-3.3-70b` |
 | `qwen/` | Alibaba Qwen | `qwen/qwen-max` |
+| `zhipu/` | Zhipu AI | `zhipu/glm-4` |
+| `nvidia/` | NVIDIA NIM | `nvidia/llama-3.1-nemotron-70b` |
+| `ollama/` | Ollama (local) | `ollama/llama3` |
+| `vllm/` | vLLM (local) | `vllm/my-model` |
+| `moonshot/` | Moonshot AI | `moonshot/moonshot-v1-8k` |
+| `shengsuanyun/` | ShengSuanYun | `shengsuanyun/deepseek-v3` |
+| `volcengine/` | Volcengine | `volcengine/doubao-pro-32k` |
 
 **Note**: If no prefix is specified, `openai/` is used as the default.
 
