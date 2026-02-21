@@ -95,6 +95,7 @@ type processOptions struct {
 	SendResponse    bool   // Whether to send response via bus
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 	TaskID          string // Unique task ID for background task status tracking
+	Background      bool   // If true, this is a background task (cron/heartbeat) — enables live task notifications
 }
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, enableStats ...bool) *AgentLoop {
@@ -412,7 +413,8 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   false,
 		SendResponse:    false,
-		NoHistory:       true, // Don't load session history for heartbeat
+		NoHistory:       true,  // Don't load session history for heartbeat
+		Background:      true,  // Enable live task notifications on Telegram
 	})
 }
 
@@ -530,6 +532,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   true,
 		SendResponse:    false,
+		Background:      msg.Metadata["background"] == "true",
 	})
 }
 
@@ -630,31 +633,37 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		interrupt:   make(chan string, 1),
 	}
 
-	// For background tasks (cron/cli), generate a TaskID and resolve notification channel
-	isBackgroundTask := constants.IsInternalChannel(opts.Channel) && al.state != nil
+	// For background tasks (cron/heartbeat), generate a TaskID and send notification
+	isBackgroundTask := opts.Background && al.state != nil
 	if isBackgroundTask && opts.TaskID == "" {
 		opts.TaskID = fmt.Sprintf("task-%s-%d", opts.SessionKey, time.Now().UnixMilli())
 
-		// Resolve user's last active channel for notifications
-		if lastChannel := al.state.GetLastChannel(); lastChannel != "" {
-			// lastChannel format: "channel:chatID"
-			if idx := strings.Index(lastChannel, ":"); idx > 0 {
-				notifyChannel := lastChannel[:idx]
-				notifyChatID := lastChannel[idx+1:]
-
-				// Override opts channel/chatID for status updates
-				opts.Channel = notifyChannel
-				opts.ChatID = notifyChatID
-
-				// Send initial task notification
-				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel:      notifyChannel,
-					ChatID:       notifyChatID,
-					Content:      fmt.Sprintf("\U0001F916 Background task started\n%s", task.Description),
-					IsTaskStatus: true,
-					TaskID:       opts.TaskID,
-				})
+		// Determine notification channel: use opts.Channel if already a real channel,
+		// otherwise resolve from last active channel
+		notifyChannel := opts.Channel
+		notifyChatID := opts.ChatID
+		if constants.IsInternalChannel(notifyChannel) || notifyChannel == "" {
+			if lastChannel := al.state.GetLastChannel(); lastChannel != "" {
+				if idx := strings.Index(lastChannel, ":"); idx > 0 {
+					notifyChannel = lastChannel[:idx]
+					notifyChatID = lastChannel[idx+1:]
+				}
 			}
+		}
+
+		if notifyChannel != "" && notifyChatID != "" && !constants.IsInternalChannel(notifyChannel) {
+			// Override opts channel/chatID for status updates
+			opts.Channel = notifyChannel
+			opts.ChatID = notifyChatID
+
+			// Send initial task notification
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel:      notifyChannel,
+				ChatID:       notifyChatID,
+				Content:      fmt.Sprintf("\U0001F916 Background task started\n%s", task.Description),
+				IsTaskStatus: true,
+				TaskID:       opts.TaskID,
+			})
 		}
 	}
 
@@ -668,7 +677,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		al.activeTasks.Delete(taskKey)
 
 		// Publish final task status on completion for background tasks
-		if opts.TaskID != "" && !constants.IsInternalChannel(opts.Channel) {
+		if opts.TaskID != "" {
 			elapsed := time.Since(task.StartedAt)
 			al.bus.PublishOutbound(bus.OutboundMessage{
 				Channel:      opts.Channel,
