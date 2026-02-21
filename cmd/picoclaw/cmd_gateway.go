@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/agent"
@@ -121,8 +122,17 @@ func gatewayCmd() {
 	agentLoop.SetChannelManager(channelManager)
 
 	var transcriber *voice.GroqTranscriber
-	if cfg.Providers.Groq.APIKey != "" {
-		transcriber = voice.NewGroqTranscriber(cfg.Providers.Groq.APIKey)
+	groqAPIKey := cfg.Providers.Groq.APIKey
+	if groqAPIKey == "" {
+		for _, mc := range cfg.ModelList {
+			if strings.HasPrefix(mc.Model, "groq/") && mc.APIKey != "" {
+				groqAPIKey = mc.APIKey
+				break
+			}
+		}
+	}
+	if groqAPIKey != "" {
+		transcriber = voice.NewGroqTranscriber(groqAPIKey)
 		logger.InfoC("voice", "Groq voice transcription enabled")
 	}
 
