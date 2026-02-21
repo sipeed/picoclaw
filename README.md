@@ -255,7 +255,8 @@ picoclaw onboard
 **4. Chat**
 
 ```bash
-picoclaw agent -m "What is 2+2?"
+picoclaw agent -m "What is 2+2?"   # one-shot mode
+picoclaw agent                      # interactive TUI
 ```
 
 That's it! You have a working AI assistant in 2 minutes.
@@ -1081,15 +1082,26 @@ picoclaw agent -m "Hello"
 
 ## CLI Reference
 
-| Command                   | Description                   |
-| ------------------------- | ----------------------------- |
-| `picoclaw onboard`        | Initialize config & workspace |
-| `picoclaw agent -m "..."` | Chat with the agent           |
-| `picoclaw agent`          | Interactive chat mode         |
-| `picoclaw gateway`        | Start the gateway             |
-| `picoclaw status`         | Show status                   |
-| `picoclaw cron list`      | List all scheduled jobs       |
-| `picoclaw cron add ...`   | Add a scheduled job           |
+| Command                   | Description                                       |
+| ------------------------- | ------------------------------------------------- |
+| `picoclaw onboard`        | Initialize config & workspace                     |
+| `picoclaw agent -m "..."` | Send a single message (one-shot mode)              |
+| `picoclaw agent`          | Interactive TUI chat (scrollable, markdown, tools) |
+| `picoclaw gateway`        | Start the gateway                                  |
+| `picoclaw status`         | Show status                                        |
+| `picoclaw cron list`      | List all scheduled jobs                            |
+| `picoclaw cron add ...`   | Add a scheduled job                                |
+
+### Interactive TUI
+
+Running `picoclaw agent` launches a full terminal UI powered by [Bubbletea](https://github.com/charmbracelet/bubbletea):
+
+- **Scrollable chat** — PgUp/PgDown to scroll through conversation history
+- **Markdown rendering** — Assistant responses are rendered with syntax highlighting
+- **Tool call indicators** — See real-time status as the agent reads files, runs commands, etc.
+- **Status bar** — Shows current model, message count, and session
+- **Slash commands** — Type `/help` for available commands (`/new`, `/status`, `/switch model to ...`)
+- **Multi-line input** — Shift+Enter to insert newlines, Enter to send
 
 ### Scheduled Tasks / Reminders
 

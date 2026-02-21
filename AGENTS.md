@@ -43,6 +43,7 @@ pkg/
     openai_compat/  OpenAI-compatible HTTP provider
   session/          Session persistence (~/.picoclaw/workspace/sessions/*.json)
   tools/            Tool system — one file per tool (exec, web, edit, filesystem, etc.)
+  tui/              Bubbletea terminal UI (chat viewport, markdown, tool indicators)
 ```
 
 ## Code Style
