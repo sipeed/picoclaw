@@ -147,6 +147,21 @@ func gatewayCmd() {
 		}
 	}
 
+	// Set up permission factory for channel-specific permission prompts
+	var telegramPermManager *channels.TelegramPermissionManager
+	if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
+		if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
+			telegramPermManager = tc.PermissionManager()
+		}
+	}
+
+	agentLoop.SetPermissionFuncFactory(func(channel, chatID string) tools.PermissionFunc {
+		if channel == "telegram" && telegramPermManager != nil {
+			return telegramPermManager.NewPermissionFunc(chatID)
+		}
+		return nil // Other channels fall back to LLM-driven flow
+	})
+
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
 		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
