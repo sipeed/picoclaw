@@ -333,6 +333,22 @@ func (p *agentLoopDataProvider) GetSessionStats() *stats.Stats {
 	return p.loop.GetSessionStats()
 }
 
+func (p *agentLoopDataProvider) GetActiveSessions() []miniapp.SessionInfo {
+	entries := p.loop.GetActiveSessions()
+	result := make([]miniapp.SessionInfo, len(entries))
+	for i, e := range entries {
+		result[i] = miniapp.SessionInfo{
+			SessionKey: e.SessionKey,
+			Channel:    e.Channel,
+			ChatID:     e.ChatID,
+			TouchDir:   e.TouchDir,
+			LastSeenAt: e.LastSeenAt.Format(time.RFC3339),
+			AgeSec:     int(time.Since(e.LastSeenAt).Seconds()),
+		}
+	}
+	return result
+}
+
 // telegramCommandSender injects Mini App commands into the message bus.
 type telegramCommandSender struct {
 	bus *bus.MessageBus

@@ -141,6 +141,7 @@ var (
 	rePhaseHeader = regexp.MustCompile(`(?m)^## Phase (\d+):\s*(.*)`)
 	reStepDone    = regexp.MustCompile(`(?m)^- \[x\] `)
 	reStepTodo    = regexp.MustCompile(`(?m)^- \[ \] `)
+	reWorkDir     = regexp.MustCompile(`(?m)^> WorkDir:\s*(.+)`)
 )
 
 // HasActivePlan returns true if MEMORY.md contains an active plan.
@@ -408,17 +409,28 @@ func (ms *MemoryStore) AddStep(phase int, desc string) error {
 
 // ---------- Selective injection methods ----------
 
+// GetPlanWorkDir returns the WorkDir from the plan metadata, or "".
+func (ms *MemoryStore) GetPlanWorkDir() string {
+	content := ms.ReadLongTerm()
+	m := reWorkDir.FindStringSubmatch(content)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
+}
+
 // interviewSeed is the initial content written to MEMORY.md when /plan starts.
 const interviewSeedTemplate = `# Active Plan
 
 > Task: %s
+> WorkDir: %s
 > Status: interviewing
 > Phase: 1
 `
 
 // BuildInterviewSeed creates the initial plan seed for a given task description.
-func BuildInterviewSeed(task string) string {
-	return fmt.Sprintf(interviewSeedTemplate, task)
+func BuildInterviewSeed(task, workDir string) string {
+	return fmt.Sprintf(interviewSeedTemplate, task, workDir)
 }
 
 // GetInterviewContext returns context for injection during the interviewing phase.
