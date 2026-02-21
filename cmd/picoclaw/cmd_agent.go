@@ -65,6 +65,7 @@ func agentCmd() {
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		os.Exit(1)
 	}
 
@@ -75,6 +76,7 @@ func agentCmd() {
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
+		fmt.Println("Run 'picoclaw doctor' to check for common problems.")
 		os.Exit(1)
 	}
 	// Use the resolved model ID from provider creation
@@ -105,7 +107,10 @@ func agentCmd() {
 
 	if message != "" {
 		ctx := context.Background()
+		spin := newSpinner("Thinking...")
+		spin.Start()
 		response, err := agentLoop.ProcessDirect(ctx, message, sessionKey)
+		spin.Stop()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
@@ -157,7 +162,10 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 		}
 
 		ctx := context.Background()
+		spin := newSpinner("Thinking...")
+		spin.Start()
 		response, err := agentLoop.ProcessDirect(ctx, input, sessionKey)
+		spin.Stop()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			continue
@@ -192,7 +200,10 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 		}
 
 		ctx := context.Background()
+		spin := newSpinner("Thinking...")
+		spin.Start()
 		response, err := agentLoop.ProcessDirect(ctx, input, sessionKey)
+		spin.Stop()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			continue
