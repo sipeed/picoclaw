@@ -1447,11 +1447,18 @@ func TestBuildArgsSnippet_ExecStripsCD(t *testing.T) {
 			wantSnip:  "src/main.go",
 		},
 		{
-			name:      "edit_file with old_text",
+			name:      "edit_file shows path",
 			tool:      "edit_file",
 			args:      map[string]interface{}{"path": "/ws/config.json", "old_text": "old value here"},
 			workspace: "/ws",
-			wantSnip:  "config.json  old:old value here",
+			wantSnip:  "config.json",
+		},
+		{
+			name:      "file tool long path prioritizes filename",
+			tool:      "read_file",
+			args:      map[string]interface{}{"path": "/ws/projects/terra-py-form/src/terra_py_form/hot/state/backend.py"},
+			workspace: "/ws",
+			wantSnip:  "projects/terra-py-form/src/terra_py_form/hot/sta\u2026/backend.py",
 		},
 		{
 			name:      "unknown tool shows raw JSON",
@@ -1529,8 +1536,8 @@ func TestBuildRichStatus(t *testing.T) {
 	mustContain := []string{
 		"Task in progress (3/20)",
 		"my-projects",
-		"exec",
-		"read_file",
+		"read_file",       // latest entry
+		"No errors",       // no error yet
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(got, s) {
@@ -1550,29 +1557,76 @@ func TestBuildRichStatus(t *testing.T) {
 	}
 }
 
-func TestBuildRichStatus_ShowsLast5(t *testing.T) {
+func TestBuildRichStatus_FixedHeight(t *testing.T) {
+	// Test that output has the same number of lines regardless of entry count
+	countLines := func(s string) int {
+		return strings.Count(s, "\n")
+	}
+
+	// 0 entries
+	task0 := &activeTask{Iteration: 1, MaxIter: 10}
+	lines0 := countLines(buildRichStatus(task0, true, "/ws/p"))
+
+	// 1 entry
+	task1 := &activeTask{Iteration: 1, MaxIter: 10,
+		toolLog: []toolLogEntry{{Name: "exec", ArgsSnip: "ls", Result: "⏳"}}}
+	lines1 := countLines(buildRichStatus(task1, true, "/ws/p"))
+
+	// 5 entries
+	task5 := &activeTask{Iteration: 5, MaxIter: 10}
+	for i := 0; i < 5; i++ {
+		task5.toolLog = append(task5.toolLog, toolLogEntry{
+			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s"})
+	}
+	lines5 := countLines(buildRichStatus(task5, true, "/ws/p"))
+
+	// 5 entries + sticky error
+	task5err := &activeTask{Iteration: 5, MaxIter: 10}
+	for i := 0; i < 5; i++ {
+		task5err.toolLog = append(task5err.toolLog, toolLogEntry{
+			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s"})
+	}
+	errEntry := toolLogEntry{Name: "[3] exec", ArgsSnip: "pytest", Result: "✗ 2.0s",
+		ErrDetail: "FAILED test\nExit code: 1"}
+	task5err.lastError = &errEntry
+	lines5err := countLines(buildRichStatus(task5err, true, "/ws/p"))
+
+	if lines0 != lines1 || lines1 != lines5 || lines5 != lines5err {
+		t.Errorf("line counts should be equal: 0=%d, 1=%d, 5=%d, 5+err=%d",
+			lines0, lines1, lines5, lines5err)
+	}
+}
+
+func TestBuildRichStatus_StickyError(t *testing.T) {
+	// Error from a past entry sticks in the error section
+	errEntry := toolLogEntry{
+		Name: "[2] exec", ArgsSnip: "pytest", Result: "✗ 3.2s",
+		ErrDetail: "FAILED test_login\nExit code: 1",
+	}
 	task := &activeTask{
-		Iteration: 8,
-		MaxIter:   20,
-	}
-	for i := 1; i <= 8; i++ {
-		task.toolLog = append(task.toolLog, toolLogEntry{
-			Name:   fmt.Sprintf("[%d] exec", i),
-			Result: "✓ 1.0s",
-		})
+		Iteration: 5,
+		MaxIter:   10,
+		toolLog: []toolLogEntry{
+			{Name: "[3] read_file", ArgsSnip: "src/auth.py", Result: "✓ 0.1s"},
+			{Name: "[4] edit_file", ArgsSnip: "src/auth.py", Result: "✓ 0.2s"},
+			{Name: "[5] exec", ArgsSnip: "pytest --retry", Result: "⏳"},
+		},
+		lastError: &errEntry,
 	}
 
-	got := buildRichStatus(task, false, "/home/user/my-projects")
+	got := buildRichStatus(task, false, "/ws/p")
 
-	// Should contain entries 4-8 but not 1-3
-	if strings.Contains(got, "[3] exec") {
-		t.Error("should not contain entry [3] (only last 5)")
+	// Error section should show the sticky error in code block
+	if !strings.Contains(got, "FAILED test_login") {
+		t.Errorf("expected sticky error detail in error section, got:\n%s", got)
 	}
-	if !strings.Contains(got, "[4] exec") {
-		t.Error("should contain entry [4]")
+	if !strings.Contains(got, "\u274C") { // ❌
+		t.Errorf("expected ❌ error header, got:\n%s", got)
 	}
-	if !strings.Contains(got, "[8] exec") {
-		t.Error("should contain entry [8]")
+
+	// Latest entry is NOT the error
+	if !strings.Contains(got, "pytest --retry") {
+		t.Errorf("expected latest entry command, got:\n%s", got)
 	}
 }
 
@@ -1589,71 +1643,12 @@ func TestBuildRichStatus_LastEntryShowsMoreCommand(t *testing.T) {
 
 	got := buildRichStatus(task, false, "/ws/my-project")
 
-	// Last entry: shows more than compact (36) but truncated at ~70
-	// "exec " + longCmd = 79 chars → should be truncated
-	if strings.Contains(got, "--timeout=60") {
-		t.Errorf("last entry should be truncated at ~70 chars, got:\n%s", got)
-	}
-	// But shows more than the compact 36
+	// Shows more than compact 36 chars
 	if !strings.Contains(got, "test_state_backend") {
-		t.Errorf("last entry should show more than compact format, got:\n%s", got)
+		t.Errorf("latest entry should show more than compact format, got:\n%s", got)
 	}
 	// Result on separate indented line
 	if !strings.Contains(got, "  ⏳") {
-		t.Errorf("last entry result should be on indented line, got:\n%s", got)
-	}
-}
-
-func TestBuildRichStatus_ErrorAsLastEntry(t *testing.T) {
-	task := &activeTask{
-		Iteration: 2,
-		MaxIter:   10,
-		toolLog: []toolLogEntry{
-			{Name: "exec", ArgsSnip: "ls -la", Result: "✓ 0.5s"},
-			{
-				Name:      "exec",
-				ArgsSnip:  "pytest tests/test_auth.py",
-				Result:    "✗ 3.2s",
-				ErrDetail: "FAILED test_login\nExit code: 1",
-			},
-		},
-	}
-
-	got := buildRichStatus(task, false, "/ws/my-project")
-
-	// Last entry: full command + error with code fence detail
-	if !strings.Contains(got, "pytest tests/test_auth.py") {
-		t.Errorf("expected full command in last entry, got:\n%s", got)
-	}
-	if !strings.Contains(got, "✗ 3.2s") {
-		t.Errorf("expected error marker, got:\n%s", got)
-	}
-	if !strings.Contains(got, "```\nFAILED test_login\n") {
-		t.Errorf("expected code-fenced error detail, got:\n%s", got)
-	}
-}
-
-func TestBuildRichStatus_ErrorNotLastEntry(t *testing.T) {
-	// When error is a past entry (not the last), it should be 1 compact line
-	task := &activeTask{
-		Iteration: 3,
-		MaxIter:   10,
-		toolLog: []toolLogEntry{
-			{Name: "exec", ArgsSnip: "pytest", Result: "✗ 3.2s",
-				ErrDetail: "FAILED\nExit code: 1"},
-			{Name: "read_file", ArgsSnip: "src/auth.py", Result: "✓ 0.1s"},
-			{Name: "exec", ArgsSnip: "pytest", Result: "⏳"},
-		},
-	}
-
-	got := buildRichStatus(task, false, "/ws/p")
-
-	// Past error entry should NOT have code fence
-	if strings.Contains(got, "```") && strings.Contains(got, "FAILED") {
-		t.Errorf("past error entry should not have code fence detail, got:\n%s", got)
-	}
-	// But the error marker should still be visible
-	if !strings.Contains(got, "✗ 3.2s") {
-		t.Errorf("expected error marker in past entry, got:\n%s", got)
+		t.Errorf("latest entry result should be on indented line, got:\n%s", got)
 	}
 }
