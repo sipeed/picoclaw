@@ -532,6 +532,23 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 				break
 			}
 
+			if response != nil {
+				respString := func() string {
+					b, err := json.MarshalIndent(response, "", "  ")
+					if err != nil {
+						return fmt.Sprintf("[Error in parsing response: %v]", err)
+					}
+					return string(b)
+				}()
+
+				logger.DebugCF("agent", "Full LLM response",
+					map[string]interface{}{
+						"agent_id":  agent.ID,
+						"iteration": iteration,
+						"content":   respString,
+					})
+			}
+
 			errMsg := strings.ToLower(err.Error())
 			isContextError := strings.Contains(errMsg, "token") ||
 				strings.Contains(errMsg, "context") ||
