@@ -133,6 +133,10 @@ vim config/config.json      # DISCORD_BOT_TOKEN, プロバイダーの API キ�
 # 3. ビルドと起動
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Docker ユーザー**: デフォルトでは、Gateway は `127.0.0.1` でリッスンしており、ホストからアクセスできません。ヘルスチェックエンドポイントにアクセスしたり、ポートを公開したりする必要がある場合は、環境変数で `PICOCLAW_GATEWAY_HOST=0.0.0.0` を設定するか、`config.json` を更新してください。
+
+
 # 4. ログ確認
 docker compose logs -f picoclaw-gateway
 
