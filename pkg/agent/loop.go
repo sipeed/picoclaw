@@ -185,12 +185,13 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			servers := mcpManager.GetServers()
 			uniqueTools := 0
 			totalRegistrations := 0
-			agentCount := len(al.registry.ListAgentIDs())
+			agentIDs := al.registry.ListAgentIDs()
+			agentCount := len(agentIDs)
 
 			for serverName, conn := range servers {
 				uniqueTools += len(conn.Tools)
 				for _, tool := range conn.Tools {
-					for _, agentID := range al.registry.ListAgentIDs() {
+					for _, agentID := range agentIDs {
 						agent, ok := al.registry.GetAgent(agentID)
 						if !ok {
 							continue
