@@ -125,6 +125,19 @@
 
 ---
 
+# Migration
+
+- [Model List Migration](migration/model-list-migration.md)
+
+---
+
+# Design
+
+- [Provider Refactoring](design/provider-refactoring.md)
+- [Provider Refactoring Tests](design/provider-refactoring-tests.md)
+
+---
+
 # Tutorials
 
 - [Tutorials Overview](tutorials/README.md)

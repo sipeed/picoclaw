@@ -165,6 +165,19 @@ Complete configuration reference.
 - [Heartbeat Config](configuration/heartbeat-config.md)
 - [Devices Config](configuration/devices-config.md)
 
+### Migration
+
+Migrating from older configurations.
+
+- [Model List Migration](migration/model-list-migration.md) - Migrate to model_list configuration
+
+### Design
+
+Architecture and design decisions.
+
+- [Provider Refactoring](design/provider-refactoring.md) - Protocol-based provider architecture
+- [Provider Refactoring Tests](design/provider-refactoring-tests.md) - Test patterns for providers
+
 ### Tutorials
 
 Step-by-step guides.

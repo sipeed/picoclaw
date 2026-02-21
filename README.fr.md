@@ -1062,17 +1062,44 @@ PicoClaw prend en charge les rappels planifiés et les tâches récurrentes via 
 
 Les tâches sont stockées dans `~/.picoclaw/workspace/cron/` et traitées automatiquement.
 
+---
+
+## 📚 Documentation Complète
+
+Pour des guides et références complets, consultez le répertoire [docs/](docs/) :
+
+- **[Démarrage](docs/getting-started/README.md)** - Installation et guide rapide
+- **[Guide Utilisateur](docs/user-guide/README.md)** - Documentation complète des fonctionnalités
+- **[Guide Développeur](docs/developer-guide/README.md)** - Architecture et contribution
+- **[Déploiement](docs/deployment/README.md)** - Docker, systemd, guides SBC
+- **[Référence Configuration](docs/configuration/README.md)** - Référence complète des options
+
 ## 🤝 Contribuer & Feuille de Route
+
+### Points Forts de la Feuille de Route
+
+| Domaine Clé | Objectif |
+|-------------|----------|
+| **Optimisation Core** | Fonctionner sur appareils 64MB RAM avec <20MB mémoire |
+| **Sécurité Renforcée** | Défense injection prompt, protection SSRF, sandbox |
+| **Connectivité** | Architecture protocole-first, standard OneBot |
+| **Fonctionnalités Avancées** | Support MCP, automatisation navigateur, multi-agents |
+| **Expérience Développeur** | Démarrage zéro-config, documentation complète |
+
+### Contribuer
 
 Les PR sont les bienvenues ! Le code source est volontairement petit et lisible. 🤗
 
-Feuille de route à venir...
+- **Voie Rapide** : 1 PR fusionnée = accès au Discord développeurs
+- **Voie Candidature** : Email à `support@sipeed.com` avec sujet `[Apply Join PicoClaw Dev Group] + compte GitHub`
 
-Groupe de développeurs en construction. Condition d'entrée : au moins 1 PR fusionnée.
+### Communauté
 
-Groupes d'utilisateurs :
+- **Discord** : https://discord.gg/V4sAZ9XWpN
+- **Twitter** : Mentionnez @SipeedIO avec #picoclaw
+- **Bilibili** : @Sipeed矽速科技
 
-Discord : <https://discord.gg/V4sAZ9XWpN>
+Consultez [docs/community/roadmap.md](docs/community/roadmap.md) pour la feuille de route détaillée.
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 
