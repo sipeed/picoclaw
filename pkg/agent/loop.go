@@ -956,37 +956,35 @@ var cdPrefixPattern = regexp.MustCompile(`^cd\s+(\S+)\s*&&\s*`)
 // argument (e.g. "-A 20") are kept because removing them would lose context.
 var optFlagPattern = regexp.MustCompile(`\s+--?\w[\w-]*(=\S*)?`)
 
-// extractProjectDir extracts the project directory name from an exec command's
-// "cd <path> && ..." prefix by stripping the workspace prefix and taking the
-// first remaining path component.
-// Returns "" if no cd prefix or no deeper directory exists.
-func extractProjectDir(cmd, workspace string) string {
-	m := cdPrefixPattern.FindStringSubmatch(cmd)
-	if len(m) < 2 {
+// projectDirFromPath extracts the project directory name from an absolute path
+// by stripping the workspace prefix and returning the first meaningful component.
+// Generic directory names like "projects" or "repos" are skipped.
+// Returns "" if the path doesn't extend beyond workspace.
+func projectDirFromPath(absPath, workspace string) string {
+	absPath = strings.TrimRight(absPath, "/\\")
+	if absPath == "" {
 		return ""
 	}
-	cdPath := strings.TrimRight(m[1], "/\\")
 	if workspace == "" {
-		if idx := strings.LastIndex(cdPath, "/"); idx >= 0 {
-			return cdPath[idx+1:]
+		if idx := strings.LastIndex(absPath, "/"); idx >= 0 {
+			return absPath[idx+1:]
 		}
-		return cdPath
+		return absPath
 	}
 	ws := strings.TrimRight(workspace, "/\\")
-	rest := strings.TrimPrefix(cdPath, ws)
-	if rest == cdPath {
+	rest := strings.TrimPrefix(absPath, ws)
+	if rest == absPath {
 		// workspace not a prefix — fall back to last component
-		if idx := strings.LastIndex(cdPath, "/"); idx >= 0 {
-			return cdPath[idx+1:]
+		if idx := strings.LastIndex(absPath, "/"); idx >= 0 {
+			return absPath[idx+1:]
 		}
-		return cdPath
+		return absPath
 	}
 	rest = strings.TrimLeft(rest, "/\\")
 	if rest == "" {
 		return ""
 	}
-	// Take first path component (e.g. "projects/my-app" → "projects")
-	// But if it looks like a generic dir (projects, src, workspace), go deeper
+	// Take first path component, skipping generic directory names
 	parts := strings.SplitN(rest, "/", 3)
 	if len(parts) >= 2 {
 		first := strings.ToLower(parts[0])
@@ -995,6 +993,33 @@ func extractProjectDir(cmd, workspace string) string {
 		}
 	}
 	return parts[0]
+}
+
+// extractProjectDir extracts the project directory name from a tool call.
+// For exec: parses the "cd <path> && ..." prefix.
+// For file tools: uses the file path directly.
+// Returns "" if no project directory can be determined.
+func extractProjectDir(toolName string, args map[string]interface{}, workspace string) string {
+	switch toolName {
+	case "exec":
+		cmd, _ := args["command"].(string)
+		if cmd == "" {
+			return ""
+		}
+		m := cdPrefixPattern.FindStringSubmatch(cmd)
+		if len(m) < 2 {
+			return ""
+		}
+		return projectDirFromPath(m[1], workspace)
+
+	case "read_file", "write_file", "edit_file", "append_file", "list_dir":
+		path, _ := args["path"].(string)
+		if path == "" {
+			return ""
+		}
+		return projectDirFromPath(path, workspace)
+	}
+	return ""
 }
 
 // buildArgsSnippet produces a human-friendly snippet for the tool log.
@@ -1534,11 +1559,9 @@ func (al *AgentLoop) runLLMIteration(
 					ArgsSnip: buildArgsSnippet(tc.Name, tc.Arguments, agent.Workspace),
 					Result:   "\u23F3",
 				})
-				// Detect project directory from exec cd prefix (once)
-				if task.projectDir == "" && tc.Name == "exec" {
-					if cmd, _ := tc.Arguments["command"].(string); cmd != "" {
-						task.projectDir = extractProjectDir(cmd, agent.Workspace)
-					}
+				// Detect project directory from tool call args (once)
+				if task.projectDir == "" {
+					task.projectDir = extractProjectDir(tc.Name, tc.Arguments, agent.Workspace)
 				}
 			}
 			task.mu.Unlock()
