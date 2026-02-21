@@ -489,6 +489,14 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	hasModelList, err := validateModelListPresence(path, data)
+	if err != nil {
+		return nil, err
+	}
+	if hasModelList {
+		cfg.ModelList = nil
+	}
+
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
@@ -508,6 +516,22 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func validateModelListPresence(path string, data []byte) (bool, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return false, nil
+	}
+
+	if _, ok := raw["model_list"]; ok {
+		return true, nil
+	}
+
+	return false, fmt.Errorf(
+		"config file %q is missing required `model_list`; automatic default model_list backfill is disabled to avoid overwriting existing config, please run migration or update config.json manually",
+		path,
+	)
 }
 
 func SaveConfig(path string, cfg *Config) error {
