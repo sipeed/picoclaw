@@ -78,7 +78,7 @@ Open an issue at: [https://github.com/sipeed/picoclaw/issues](https://github.com
 
 ### Issue Template
 
-```markdown
+~~~markdown
 ## Description
 Brief description of the problem
 
@@ -104,7 +104,7 @@ What actually happens
 
 ## Additional Context
 Any other relevant information
-```
+~~~
 
 ### What to Include
 

@@ -277,7 +277,7 @@ Include:
 
 ### Issue Template
 
-```markdown
+~~~markdown
 ## Description
 [Describe the bug]
 
@@ -301,7 +301,7 @@ Include:
 ```
 [paste relevant logs]
 ```
-```
+~~~
 
 ## Feature Requests
 

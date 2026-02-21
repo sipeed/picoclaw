@@ -1134,7 +1134,7 @@ PRs welcome! The codebase is intentionally small and readable. 🤗
 | **Multi-Agent** | Model routing, swarm mode, AIEOS integration |
 | **DevEx** | Interactive CLI wizard, comprehensive docs |
 
-See [Full Roadmap](docs/community/roadmap.md) and [Community Roadmap](docs/community/roadmap.md) for details.
+See the [Full Roadmap](docs/community/roadmap.md) for details.
 
 ### Volunteer Roles
 

@@ -364,7 +364,7 @@ PicoClaw automatically redacts:
 
 ```bash
 # Redact API keys before sharing logs
-sed -E 's/sk-[a-zA-Z0-9]+/sk-***/g' picoclaw.log > redacted.log
+sed -E 's/sk-[a-zA-Z0-9_-]+/sk-***/g' picoclaw.log > redacted.log
 ```
 
 ### Log Access Control

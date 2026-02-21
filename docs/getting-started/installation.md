@@ -8,17 +8,8 @@ This guide covers installing PicoClaw on your system. Choose the method that bes
 
 Download the precompiled binary for your platform from the [Releases page](https://github.com/sipeed/picoclaw/releases).
 
-```bash
-# Set version (update this when new versions are released)
-VERSION="v0.1.2"
 
-# Example: Download for Linux ARM64
-wget https://github.com/sipeed/picoclaw/releases/download/${VERSION}/picoclaw_Linux_arm64.tar.gz
-tar -xzf picoclaw_Linux_arm64.tar.gz
-chmod +x picoclaw
-sudo mv picoclaw /usr/local/bin
-picoclaw onboard
-```
+
 
 ## Installation Methods
 
@@ -42,26 +33,8 @@ The easiest way to get started. Download the appropriate binary for your platfor
 | **FreeBSD** | ARM64 | `picoclaw_Freebsd_arm64.tar.gz` |
 | **FreeBSD** | ARMv6 | `picoclaw_Freebsd_armv6.tar.gz` |
 
-**Download and install:**
 
-```bash
-# Set version
-VERSION="v0.1.2"
-
-# Download for your platform (example: Linux x86_64)
-wget https://github.com/sipeed/picoclaw/releases/download/${VERSION}/picoclaw_Linux_x86_64.tar.gz
-
-# Extract
-tar -xzf picoclaw_Linux_x86_64.tar.gz
-
-# Make executable
-chmod +x picoclaw
-
-# Move to PATH (optional)
-sudo mv picoclaw /usr/local/bin/
-```
-
-**One-liner install:**
+**One-liner install Linux/macOS:**
 
 ```bash
 # Linux/macOS - detect platform and install

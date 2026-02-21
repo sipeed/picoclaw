@@ -150,7 +150,7 @@ I've written "4" to result.txt in the workspace.
 > Thanks!
 You're welcome! Let me know if you need anything else.
 
-> /exit
+> exit
 Goodbye!
 ```
 
