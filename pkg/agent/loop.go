@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -152,6 +153,71 @@ func registerSharedTools(
 
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
+
+	// Initialize MCP servers for all agents
+	if al.cfg.Tools.MCP.Enabled {
+		mcpManager := mcp.NewManager()
+		defaultAgent := al.registry.GetDefaultAgent()
+		workspacePath := ""
+		if defaultAgent != nil && defaultAgent.Workspace != "" {
+			workspacePath = defaultAgent.Workspace
+		} else {
+			workspacePath = al.cfg.WorkspacePath()
+		}
+
+		if err := mcpManager.LoadFromMCPConfig(ctx, al.cfg.Tools.MCP, workspacePath); err != nil {
+			logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
+				map[string]interface{}{
+					"error": err.Error(),
+				})
+		} else {
+			// Ensure MCP connections are cleaned up on exit, only if initialization succeeded
+			defer func() {
+				if err := mcpManager.Close(); err != nil {
+					logger.ErrorCF("agent", "Failed to close MCP manager",
+						map[string]interface{}{
+							"error": err.Error(),
+						})
+				}
+			}()
+
+			// Register MCP tools for all agents
+			servers := mcpManager.GetServers()
+			uniqueTools := 0
+			totalRegistrations := 0
+			agentIDs := al.registry.ListAgentIDs()
+			agentCount := len(agentIDs)
+
+			for serverName, conn := range servers {
+				uniqueTools += len(conn.Tools)
+				for _, tool := range conn.Tools {
+					for _, agentID := range agentIDs {
+						agent, ok := al.registry.GetAgent(agentID)
+						if !ok {
+							continue
+						}
+						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+						agent.Tools.Register(mcpTool)
+						totalRegistrations++
+						logger.DebugCF("agent", "Registered MCP tool",
+							map[string]interface{}{
+								"agent_id": agentID,
+								"server":   serverName,
+								"tool":     tool.Name,
+								"name":     mcpTool.Name(),
+							})
+					}
+				}
+			}
+			logger.InfoCF("agent", "MCP tools registered successfully",
+				map[string]interface{}{
+					"server_count":        len(servers),
+					"unique_tools":        uniqueTools,
+					"total_registrations": totalRegistrations,
+					"agent_count":         agentCount,
+				})
+		}
+	}
 
 	for al.running.Load() {
 		select {
