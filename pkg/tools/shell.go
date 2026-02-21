@@ -102,7 +102,10 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}
 
-	var allowPatterns []string = config.Agents.Defaults.AllowPatterns
+	var allowPatterns []string
+	if config != nil {
+		allowPatterns = config.Agents.Defaults.AllowPatterns
+	}
 	var allowRegex []*regexp.Regexp
 	if len(allowPatterns) > 0 {
 		allowRegex = make([]*regexp.Regexp, 0, len(allowPatterns))
