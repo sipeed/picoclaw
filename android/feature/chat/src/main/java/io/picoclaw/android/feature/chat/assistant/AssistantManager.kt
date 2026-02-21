@@ -8,6 +8,7 @@ import io.picoclaw.android.core.domain.model.AssistantMessage
 import io.picoclaw.android.core.domain.model.VoicePhase
 import io.picoclaw.android.core.domain.repository.AssistantConnection
 import io.picoclaw.android.feature.chat.voice.CameraCaptureManager
+import io.picoclaw.android.feature.chat.voice.ScreenCaptureManager
 import io.picoclaw.android.feature.chat.voice.SpeechRecognizerWrapper
 import io.picoclaw.android.feature.chat.voice.SttResult
 import io.picoclaw.android.feature.chat.voice.TextToSpeechWrapper
@@ -34,6 +35,7 @@ class AssistantManager(
     private val ttsWrapper: TextToSpeechWrapper,
     private val connection: AssistantConnection,
     private val cameraCaptureManager: CameraCaptureManager,
+    private val screenCaptureManager: ScreenCaptureManager,
     private val contentResolver: ContentResolver
 ) {
 
@@ -44,14 +46,33 @@ class AssistantManager(
     private var parentScope: CoroutineScope? = null
 
     fun toggleCamera() {
-        _state.update { it.copy(isCameraActive = !it.isCameraActive) }
+        _state.update {
+            it.copy(
+                isCameraActive = !it.isCameraActive,
+                isScreenCaptureActive = false
+            )
+        }
+    }
+
+    fun toggleScreenCapture() {
+        if (_state.value.isScreenCaptureActive) {
+            _state.update { it.copy(isScreenCaptureActive = false) }
+        } else {
+            _state.update {
+                it.copy(
+                    isScreenCaptureActive = true,
+                    isCameraActive = false
+                )
+            }
+            cameraCaptureManager.unbind()
+        }
     }
 
     fun start(scope: CoroutineScope) {
         if (loopJob?.isActive == true) return
         parentScope = scope
         _state.update {
-            VoiceModeState(isActive = true, phase = VoicePhase.LISTENING, isCameraActive = it.isCameraActive, chatHistory = it.chatHistory)
+            VoiceModeState(isActive = true, phase = VoicePhase.LISTENING, isCameraActive = it.isCameraActive, isScreenCaptureActive = it.isScreenCaptureActive, chatHistory = it.chatHistory)
         }
         loopJob = scope.launch {
             voiceLoop()
@@ -76,7 +97,7 @@ class AssistantManager(
         loopJob = null
 
         _state.update {
-            VoiceModeState(isActive = true, phase = VoicePhase.LISTENING, isCameraActive = it.isCameraActive, chatHistory = it.chatHistory)
+            VoiceModeState(isActive = true, phase = VoicePhase.LISTENING, isCameraActive = it.isCameraActive, isScreenCaptureActive = it.isScreenCaptureActive, chatHistory = it.chatHistory)
         }
         loopJob = scope.launch { voiceLoop() }
     }
@@ -126,7 +147,7 @@ class AssistantManager(
                         if (!text.isNullOrBlank()) {
                             _state.update { it.copy(phase = VoicePhase.SENDING, recognizedText = text, chatHistory = it.chatHistory + ChatTurn("user", text)) }
                             try {
-                                val base64Images = if (_state.value.isCameraActive) {
+                                val base64Images = if (_state.value.isCameraActive || _state.value.isScreenCaptureActive) {
                                     captureAndEncode()
                                 } else emptyList()
                                 connection.send(text, base64Images)
@@ -265,7 +286,11 @@ class AssistantManager(
     }
 
     private suspend fun captureAndEncode(): List<String> {
-        val attachment = cameraCaptureManager.captureFrame() ?: return emptyList()
+        val attachment = when {
+            _state.value.isScreenCaptureActive -> screenCaptureManager.captureFrame()
+            _state.value.isCameraActive -> cameraCaptureManager.captureFrame()
+            else -> null
+        } ?: return emptyList()
         val uri = android.net.Uri.parse(attachment.uri)
         return try {
             val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }

@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">PicoClaw</string>
+    <string name="accessibility_service_description">Allows PicoClaw to capture screenshots during voice assistant conversations.</string>
 </resources>

@@ -13,5 +13,6 @@ data class VoiceModeState(
     val errorMessage: String? = null,
     val amplitudeNormalized: Float = 0f,
     val isCameraActive: Boolean = false,
+    val isScreenCaptureActive: Boolean = false,
     val chatHistory: List<ChatTurn> = emptyList()
 )

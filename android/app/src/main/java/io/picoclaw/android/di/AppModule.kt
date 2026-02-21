@@ -5,7 +5,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.websocket.WebSockets
 import io.picoclaw.android.core.data.local.AppDatabase
+import io.picoclaw.android.assistant.AccessibilityScreenshotSource
 import io.picoclaw.android.core.data.local.ImageFileStorage
+import io.picoclaw.android.feature.chat.voice.ScreenshotSource
 import io.picoclaw.android.core.data.remote.WebSocketClient
 import io.picoclaw.android.core.data.repository.ChatRepositoryImpl
 import io.picoclaw.android.core.data.repository.TtsCatalogRepositoryImpl
@@ -89,6 +91,10 @@ val appModule = module {
     factory { LoadMoreMessagesUseCase(get()) }
     factory { ConnectChatUseCase(get()) }
     factory { DisconnectChatUseCase(get()) }
+
+    // Screenshot
+    single { AccessibilityScreenshotSource() }
+    single<ScreenshotSource> { get<AccessibilityScreenshotSource>() }
 
     // Voice
     factory { SpeechRecognizerWrapper(androidContext()) }

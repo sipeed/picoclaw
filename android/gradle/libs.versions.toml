@@ -1,6 +1,6 @@
 [versions]
 android-compileSdk = "36"
-android-minSdk = "29"
+android-minSdk = "30"
 android-targetSdk = "36"
 agp = "9.0.1"
 kotlin = "2.3.0"

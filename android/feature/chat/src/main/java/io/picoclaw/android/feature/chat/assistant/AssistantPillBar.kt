@@ -76,6 +76,7 @@ fun AssistantPillBar(
     onClose: () -> Unit,
     onInterrupt: () -> Unit,
     onCameraToggle: () -> Unit,
+    onScreenCaptureToggle: () -> Unit,
     cameraCaptureManager: CameraCaptureManager,
     modifier: Modifier = Modifier
 ) {
@@ -252,6 +253,22 @@ fun AssistantPillBar(
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
+
+                    // Screen capture toggle
+                    IconButton(
+                        onClick = onScreenCaptureToggle,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(
+                                if (state.isScreenCaptureActive) LucideR.drawable.lucide_ic_monitor_off
+                                else LucideR.drawable.lucide_ic_monitor
+                            ),
+                            contentDescription = if (state.isScreenCaptureActive) "Turn off screen capture" else "Turn on screen capture",
+                            modifier = Modifier.size(18.dp),
+                            tint = if (state.isScreenCaptureActive) GradientCyan else TextSecondary
+                        )
+                    }
 
                     // Camera toggle
                     IconButton(

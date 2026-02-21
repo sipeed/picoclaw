@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.IBinder
+import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -42,6 +43,8 @@ import io.picoclaw.android.core.ui.theme.PicoClawTheme
 import io.picoclaw.android.feature.chat.assistant.AssistantManager
 import io.picoclaw.android.feature.chat.assistant.AssistantPillBar
 import io.picoclaw.android.feature.chat.voice.CameraCaptureManager
+import io.picoclaw.android.feature.chat.voice.ScreenCaptureManager
+import io.picoclaw.android.feature.chat.voice.ScreenshotSource
 import io.picoclaw.android.feature.chat.voice.SpeechRecognizerWrapper
 import io.picoclaw.android.feature.chat.voice.TextToSpeechWrapper
 import io.picoclaw.android.receiver.NotificationHelper
@@ -55,6 +58,7 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
 
     private val httpClient: HttpClient by inject()
     private val ttsSettingsRepo: TtsSettingsRepository by inject()
+    private val screenshotSource: ScreenshotSource by inject()
 
     private lateinit var serviceScope: CoroutineScope
     private lateinit var connection: AssistantConnection
@@ -62,6 +66,7 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
     private lateinit var ttsWrapper: TextToSpeechWrapper
     private lateinit var sttWrapper: SpeechRecognizerWrapper
     private lateinit var cameraCaptureManager: CameraCaptureManager
+    private lateinit var screenCaptureManager: ScreenCaptureManager
 
     private var overlayView: View? = null
     private val windowManager by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
@@ -93,12 +98,16 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
         sttWrapper = SpeechRecognizerWrapper(this)
         ttsWrapper = TextToSpeechWrapper(this, ttsSettingsRepo.ttsConfig)
         cameraCaptureManager = CameraCaptureManager(this)
+        screenCaptureManager = ScreenCaptureManager(screenshotSource, applicationContext) { visible ->
+            overlayView?.visibility = if (visible) View.VISIBLE else View.INVISIBLE
+        }
 
         assistantManager = AssistantManager(
             sttWrapper = sttWrapper,
             ttsWrapper = ttsWrapper,
             connection = connection,
             cameraCaptureManager = cameraCaptureManager,
+            screenCaptureManager = screenCaptureManager,
             contentResolver = contentResolver
         )
 
@@ -159,6 +168,25 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
+    private fun handleScreenCaptureToggle() {
+        if (assistantManager.state.value.isScreenCaptureActive) {
+            assistantManager.toggleScreenCapture()
+            return
+        }
+        if (screenCaptureManager.isAvailable) {
+            // Turn off camera first if active
+            if (assistantManager.state.value.isCameraActive) {
+                assistantManager.toggleCamera()
+            }
+            assistantManager.toggleScreenCapture()
+        } else {
+            // Open accessibility settings so the user can enable the service
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+        }
+    }
+
     private fun shutdown() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -209,6 +237,7 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
                             onClose = { shutdown() },
                             onInterrupt = { assistantManager.interrupt() },
                             onCameraToggle = { handleCameraToggle() },
+                            onScreenCaptureToggle = { handleScreenCaptureToggle() },
                             cameraCaptureManager = cameraCaptureManager,
                             modifier = Modifier.onGloballyPositioned { coordinates ->
                                 wrapper.contentTop = coordinates.positionInWindow().y.toInt()
