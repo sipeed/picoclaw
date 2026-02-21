@@ -221,6 +221,7 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
+      "allow_patterns": [],
       "model": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,

@@ -203,6 +203,7 @@ picoclaw onboard
   ],
   "agents": {
     "defaults": {
+      "allow_patterns": [],
       "model": "gpt4"
     }
   },
@@ -565,7 +566,8 @@ PicoClaw chạy trong môi trường sandbox theo mặc định. Agent chỉ có
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "restrict_to_workspace": true
+      "restrict_to_workspace": true,
+      "allow_patterns": []
     }
   }
 }
@@ -575,6 +577,25 @@ PicoClaw chạy trong môi trường sandbox theo mặc định. Agent chỉ có
 |----------|---------|-------|
 | `workspace` | `~/.picoclaw/workspace` | Thư mục làm việc của agent |
 | `restrict_to_workspace` | `true` | Giới hạn truy cập file/lệnh trong workspace |
+| `allow_patterns` | `[]` | Danh sách cho phép regex tùy chọn cho nội dung lệnh `exec`. Nếu đặt, lệnh phải khớp ít nhất một mẫu |
+
+`allow_patterns` được so khớp với toàn bộ lệnh (không phân biệt hoa/thường). Để mảng rỗng để tắt lọc allowlist.
+
+Ví dụ:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "allow_patterns": [
+        "^ls(\\s|$)",
+        "^pwd$",
+        "^cat\\s+README\\.md$"
+      ]
+    }
+  }
+}
+```
 
 #### Công cụ được bảo vệ
 
