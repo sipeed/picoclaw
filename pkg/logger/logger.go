@@ -61,41 +61,6 @@ func SetLevel(level LogLevel) {
 	currentLevel = level
 }
 
-func GetLevel() LogLevel {
-	mu.RLock()
-	defer mu.RUnlock()
-	return currentLevel
-}
-
-func EnableFileLogging(filePath string) error {
-	mu.Lock()
-	defer mu.Unlock()
-
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return fmt.Errorf("failed to open log file: %w", err)
-	}
-
-	if logger.file != nil {
-		logger.file.Close()
-	}
-
-	logger.file = file
-	log.Println("File logging enabled:", filePath)
-	return nil
-}
-
-func DisableFileLogging() {
-	mu.Lock()
-	defer mu.Unlock()
-
-	if logger.file != nil {
-		logger.file.Close()
-		logger.file = nil
-		log.Println("File logging disabled")
-	}
-}
-
 func logMessage(level LogLevel, component string, message string, fields map[string]any) {
 	if level < currentLevel {
 		return

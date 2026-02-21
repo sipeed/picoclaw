@@ -134,10 +134,3 @@ func DownloadFile(url, filename string, opts DownloadOptions) string {
 
 	return localPath
 }
-
-// DownloadFileSimple is a simplified version of DownloadFile without options
-func DownloadFileSimple(url, filename string) string {
-	return DownloadFile(url, filename, DownloadOptions{
-		LoggerPrefix: "media",
-	})
-}
