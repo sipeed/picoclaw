@@ -16,7 +16,8 @@ VERSION="v0.1.2"
 wget https://github.com/sipeed/picoclaw/releases/download/${VERSION}/picoclaw_Linux_arm64.tar.gz
 tar -xzf picoclaw_Linux_arm64.tar.gz
 chmod +x picoclaw
-./picoclaw onboard
+sudo mv picoclaw /usr/local/bin
+picoclaw onboard
 ```
 
 ## Installation Methods
