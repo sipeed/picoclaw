@@ -186,6 +186,66 @@ func TestShellTool_OutputTruncation(t *testing.T) {
 	}
 }
 
+// TestShellTool_WorkingDir_OutsideWorkspace verifies that working_dir cannot escape the workspace directly
+func TestShellTool_WorkingDir_OutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outsideDir := filepath.Join(root, "outside")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+	if err := os.MkdirAll(outsideDir, 0755); err != nil {
+		t.Fatalf("failed to create outside dir: %v", err)
+	}
+
+	tool := NewExecTool(workspace, true)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"command":     "pwd",
+		"working_dir": outsideDir,
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected working_dir outside workspace to be blocked, got output: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "blocked") {
+		t.Errorf("expected 'blocked' in error, got: %s", result.ForLLM)
+	}
+}
+
+// TestShellTool_WorkingDir_SymlinkEscape verifies that a symlink inside the workspace
+// pointing outside cannot be used as working_dir to escape the sandbox.
+func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	secretDir := filepath.Join(root, "secret")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+	if err := os.MkdirAll(secretDir, 0755); err != nil {
+		t.Fatalf("failed to create secret dir: %v", err)
+	}
+	os.WriteFile(filepath.Join(secretDir, "secret.txt"), []byte("top secret"), 0644)
+
+	// symlink lives inside the workspace but resolves to secretDir outside it
+	link := filepath.Join(workspace, "escape")
+	if err := os.Symlink(secretDir, link); err != nil {
+		t.Skipf("symlinks not supported in this environment: %v", err)
+	}
+
+	tool := NewExecTool(workspace, true)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"command":     "cat secret.txt",
+		"working_dir": link,
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected symlink working_dir escape to be blocked, got output: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "blocked") {
+		t.Errorf("expected 'blocked' in error, got: %s", result.ForLLM)
+	}
+}
+
 // TestShellTool_RestrictToWorkspace verifies workspace restriction
 func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	tmpDir := t.TempDir()

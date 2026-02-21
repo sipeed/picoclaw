@@ -144,7 +144,15 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		cwd = wd
+		if t.restrictToWorkspace && t.workingDir != "" {
+			resolvedWD, err := validatePath(wd, t.workingDir, true)
+			if err != nil {
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
+			}
+			cwd = resolvedWD
+		} else {
+			cwd = wd
+		}
 	}
 
 	if cwd == "" {
