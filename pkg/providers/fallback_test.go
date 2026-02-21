@@ -462,7 +462,13 @@ func TestResolveCandidates_EmptyPrimary(t *testing.T) {
 func TestFallbackExhaustedError_Message(t *testing.T) {
 	e := &FallbackExhaustedError{
 		Attempts: []FallbackAttempt{
-			{Provider: "openai", Model: "gpt-4", Error: errors.New("rate limited"), Reason: FailoverRateLimit, Duration: 500 * time.Millisecond},
+			{
+				Provider: "openai",
+				Model:    "gpt-4",
+				Error:    errors.New("rate limited"),
+				Reason:   FailoverRateLimit,
+				Duration: 500 * time.Millisecond,
+			},
 			{Provider: "anthropic", Model: "claude", Skipped: true},
 		},
 	}

@@ -10,9 +10,18 @@ import (
 )
 
 // MockLLMProvider is a test implementation of LLMProvider
-type MockLLMProvider struct{}
+type MockLLMProvider struct {
+	lastOptions map[string]any
+}
 
-func (m *MockLLMProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, options map[string]interface{}) (*providers.LLMResponse, error) {
+func (m *MockLLMProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	m.lastOptions = options
 	// Find the last user message to generate a response
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
@@ -34,6 +43,32 @@ func (m *MockLLMProvider) SupportsTools() bool {
 
 func (m *MockLLMProvider) GetContextWindow() int {
 	return 4096
+}
+
+func TestSubagentManager_SetLLMOptions_AppliesToRunToolLoop(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
+	manager.SetLLMOptions(2048, 0.6)
+	tool := NewSubagentTool(manager)
+	tool.SetContext("cli", "direct")
+
+	ctx := context.Background()
+	args := map[string]any{"task": "Do something"}
+	result := tool.Execute(ctx, args)
+
+	if result == nil || result.IsError {
+		t.Fatalf("Expected successful result, got: %+v", result)
+	}
+
+	if provider.lastOptions == nil {
+		t.Fatal("Expected LLM options to be passed, got nil")
+	}
+	if provider.lastOptions["max_tokens"] != 2048 {
+		t.Fatalf("max_tokens = %v, want %d", provider.lastOptions["max_tokens"], 2048)
+	}
+	if provider.lastOptions["temperature"] != 0.6 {
+		t.Fatalf("temperature = %v, want %v", provider.lastOptions["temperature"], 0.6)
+	}
 }
 
 // TestSubagentTool_Name verifies tool name
@@ -79,13 +114,13 @@ func TestSubagentTool_Parameters(t *testing.T) {
 	}
 
 	// Check properties
-	props, ok := params["properties"].(map[string]interface{})
+	props, ok := params["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("Properties should be a map")
 	}
 
 	// Verify task parameter
-	task, ok := props["task"].(map[string]interface{})
+	task, ok := props["task"].(map[string]any)
 	if !ok {
 		t.Fatal("Task parameter should exist")
 	}
@@ -94,7 +129,7 @@ func TestSubagentTool_Parameters(t *testing.T) {
 	}
 
 	// Verify label parameter
-	label, ok := props["label"].(map[string]interface{})
+	label, ok := props["label"].(map[string]any)
 	if !ok {
 		t.Fatal("Label parameter should exist")
 	}
@@ -134,7 +169,7 @@ func TestSubagentTool_Execute_Success(t *testing.T) {
 	tool.SetContext("telegram", "chat-123")
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"task":  "Write a haiku about coding",
 		"label": "haiku-task",
 	}
@@ -189,7 +224,7 @@ func TestSubagentTool_Execute_NoLabel(t *testing.T) {
 	tool := NewSubagentTool(manager)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"task": "Test task without label",
 	}
 
@@ -212,7 +247,7 @@ func TestSubagentTool_Execute_MissingTask(t *testing.T) {
 	tool := NewSubagentTool(manager)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"label": "test",
 	}
 
@@ -239,7 +274,7 @@ func TestSubagentTool_Execute_NilManager(t *testing.T) {
 	tool := NewSubagentTool(nil)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"task": "test task",
 	}
 
@@ -268,7 +303,7 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 	tool.SetContext(channel, chatID)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"task": "Test context passing",
 	}
 
@@ -295,7 +330,7 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 
 	// Create a task that will generate long response
 	longTask := strings.Repeat("This is a very long task description. ", 100)
-	args := map[string]interface{}{
+	args := map[string]any{
 		"task":  longTask,
 		"label": "long-test",
 	}

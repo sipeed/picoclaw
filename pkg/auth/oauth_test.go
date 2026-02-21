@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func makeJWTForClaims(t *testing.T, claims map[string]interface{}) string {
+func makeJWTForClaims(t *testing.T, claims map[string]any) string {
 	t.Helper()
 
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
@@ -89,7 +89,7 @@ func TestBuildAuthorizeURLOpenAIExtras(t *testing.T) {
 }
 
 func TestParseTokenResponse(t *testing.T) {
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"access_token":  "test-access-token",
 		"refresh_token": "test-refresh-token",
 		"expires_in":    3600,
@@ -120,8 +120,8 @@ func TestParseTokenResponse(t *testing.T) {
 }
 
 func TestParseTokenResponseExtractsAccountIDFromIDToken(t *testing.T) {
-	idToken := makeJWTForClaims(t, map[string]interface{}{"chatgpt_account_id": "acc-id-from-id-token"})
-	resp := map[string]interface{}{
+	idToken := makeJWTForClaims(t, map[string]any{"chatgpt_account_id": "acc-id-from-id-token"})
+	resp := map[string]any{
 		"access_token":  "opaque-access-token",
 		"refresh_token": "test-refresh-token",
 		"expires_in":    3600,
@@ -139,9 +139,9 @@ func TestParseTokenResponseExtractsAccountIDFromIDToken(t *testing.T) {
 }
 
 func TestExtractAccountIDFromOrganizationsFallback(t *testing.T) {
-	token := makeJWTForClaims(t, map[string]interface{}{
-		"organizations": []interface{}{
-			map[string]interface{}{"id": "org_from_orgs"},
+	token := makeJWTForClaims(t, map[string]any{
+		"organizations": []any{
+			map[string]any{"id": "org_from_orgs"},
 		},
 	})
 
@@ -160,7 +160,7 @@ func TestParseTokenResponseNoAccessToken(t *testing.T) {
 
 func TestParseTokenResponseAccountIDFromIDToken(t *testing.T) {
 	idToken := makeJWTWithAccountID("acc-from-id")
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"access_token":  "not-a-jwt",
 		"refresh_token": "test-refresh-token",
 		"expires_in":    3600,
@@ -180,7 +180,9 @@ func TestParseTokenResponseAccountIDFromIDToken(t *testing.T) {
 
 func makeJWTWithAccountID(accountID string) string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
-	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"` + accountID + `"}}`))
+	payload := base64.RawURLEncoding.EncodeToString(
+		[]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"` + accountID + `"}}`),
+	)
 	return header + "." + payload + ".sig"
 }
 
@@ -201,7 +203,7 @@ func TestExchangeCodeForTokens(t *testing.T) {
 			return
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"access_token":  "mock-access-token",
 			"refresh_token": "mock-refresh-token",
 			"expires_in":    3600,
@@ -240,7 +242,7 @@ func TestRefreshAccessToken(t *testing.T) {
 			return
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"access_token":  "refreshed-access-token",
 			"refresh_token": "refreshed-refresh-token",
 			"expires_in":    3600,
@@ -290,7 +292,7 @@ func TestRefreshAccessTokenNoRefreshToken(t *testing.T) {
 
 func TestRefreshAccessTokenPreservesRefreshAndAccountID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"access_token": "new-access-token-only",
 			"expires_in":   3600,
 		}

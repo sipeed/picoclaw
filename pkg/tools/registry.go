@@ -34,16 +34,22 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	return tool, ok
 }
 
-func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) *ToolResult {
+func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *ToolResult {
 	return r.ExecuteWithContext(ctx, name, args, "", "", nil)
 }
 
 // ExecuteWithContext executes a tool with channel/chatID context and optional async callback.
 // If the tool implements AsyncTool and a non-nil callback is provided,
 // the callback will be set on the tool before execution.
-func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args map[string]interface{}, channel, chatID string, asyncCallback AsyncCallback) *ToolResult {
+func (r *ToolRegistry) ExecuteWithContext(
+	ctx context.Context,
+	name string,
+	args map[string]any,
+	channel, chatID string,
+	asyncCallback AsyncCallback,
+) *ToolResult {
 	logger.InfoCF("tool", "Tool execution started",
-		map[string]interface{}{
+		map[string]any{
 			"tool": name,
 			"args": args,
 		})
@@ -51,7 +57,7 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 	tool, ok := r.Get(name)
 	if !ok {
 		logger.ErrorCF("tool", "Tool not found",
-			map[string]interface{}{
+			map[string]any{
 				"tool": name,
 			})
 		return ErrorResult(fmt.Sprintf("tool %q not found", name)).WithError(fmt.Errorf("tool not found"))
@@ -66,7 +72,7 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 	if asyncTool, ok := tool.(AsyncTool); ok && asyncCallback != nil {
 		asyncTool.SetCallback(asyncCallback)
 		logger.DebugCF("tool", "Async callback injected",
-			map[string]interface{}{
+			map[string]any{
 				"tool": name,
 			})
 	}
@@ -78,20 +84,20 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 	// Log based on result type
 	if result.IsError {
 		logger.ErrorCF("tool", "Tool execution failed",
-			map[string]interface{}{
+			map[string]any{
 				"tool":     name,
 				"duration": duration.Milliseconds(),
 				"error":    result.ForLLM,
 			})
 	} else if result.Async {
 		logger.InfoCF("tool", "Tool started (async)",
-			map[string]interface{}{
+			map[string]any{
 				"tool":     name,
 				"duration": duration.Milliseconds(),
 			})
 	} else {
 		logger.InfoCF("tool", "Tool execution completed",
-			map[string]interface{}{
+			map[string]any{
 				"tool":          name,
 				"duration_ms":   duration.Milliseconds(),
 				"result_length": len(result.ForLLM),
@@ -101,11 +107,11 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 	return result
 }
 
-func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {
+func (r *ToolRegistry) GetDefinitions() []map[string]any {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	definitions := make([]map[string]interface{}, 0, len(r.tools))
+	definitions := make([]map[string]any, 0, len(r.tools))
 	for _, tool := range r.tools {
 		definitions = append(definitions, ToolToSchema(tool))
 	}
@@ -123,14 +129,14 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 		schema := ToolToSchema(tool)
 
 		// Safely extract nested values with type checks
-		fn, ok := schema["function"].(map[string]interface{})
+		fn, ok := schema["function"].(map[string]any)
 		if !ok {
 			continue
 		}
 
 		name, _ := fn["name"].(string)
 		desc, _ := fn["description"].(string)
-		params, _ := fn["parameters"].(map[string]interface{})
+		params, _ := fn["parameters"].(map[string]any)
 
 		definitions = append(definitions, providers.ToolDefinition{
 			Type: "function",

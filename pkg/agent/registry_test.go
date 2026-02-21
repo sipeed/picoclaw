@@ -10,7 +10,13 @@ import (
 
 type mockRegistryProvider struct{}
 
-func (m *mockRegistryProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, options map[string]interface{}) (*providers.LLMResponse, error) {
+func (m *mockRegistryProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
 	return &providers.LLMResponse{Content: "mock", FinishReason: "stop"}, nil
 }
 
