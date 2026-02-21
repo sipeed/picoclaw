@@ -108,6 +108,7 @@ type Manager struct {
 	servers map[string]*ServerConnection
 	mu      sync.RWMutex
 	closed  bool
+	wg      sync.WaitGroup // tracks in-flight CallTool calls
 }
 
 // NewManager creates a new MCP manager
@@ -414,11 +415,15 @@ func (m *Manager) CallTool(ctx context.Context, serverName, toolName string, arg
 		return nil, fmt.Errorf("manager is closed")
 	}
 	conn, ok := m.servers[serverName]
+	if ok {
+		m.wg.Add(1)
+	}
 	m.mu.RUnlock()
 
 	if !ok {
 		return nil, fmt.Errorf("server %s not found", serverName)
 	}
+	defer m.wg.Done()
 
 	params := &mcp.CallToolParams{
 		Name:      toolName,
@@ -436,12 +441,18 @@ func (m *Manager) CallTool(ctx context.Context, serverName, toolName string, arg
 // Close closes all server connections
 func (m *Manager) Close() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if m.closed {
+		m.mu.Unlock()
 		return nil
 	}
 	m.closed = true
+	m.mu.Unlock()
+
+	// Wait for all in-flight CallTool calls to finish before closing sessions
+	m.wg.Wait()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	logger.InfoCF("mcp", "Closing all MCP server connections",
 		map[string]interface{}{
