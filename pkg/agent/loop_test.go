@@ -1852,3 +1852,240 @@ func TestSanitizeHistoryForProvider_MultiToolCall(t *testing.T) {
 		t.Errorf("expected 2 tool results, got %d", toolCount)
 	}
 }
+
+// ---------- plan nudge tests ----------
+
+// countingMockProvider counts Chat calls and always returns text-only responses.
+type countingMockProvider struct {
+	callCount int
+}
+
+func (m *countingMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.callCount++
+	return &providers.LLMResponse{
+		Content:   fmt.Sprintf("Response %d", m.callCount),
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *countingMockProvider) GetDefaultModel() string {
+	return "mock-counting-model"
+}
+
+func TestPlanNudge_ForegroundExecution(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-nudge-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	provider := &countingMockProvider{}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("no default agent")
+	}
+
+	// Write a plan in executing status with unchecked steps
+	plan := "# Active Plan\n\n> Task: Test\n> Status: executing\n> Phase: 1\n\n## Phase 1: Setup\n- [ ] Step one\n- [ ] Step two\n\n## Context\n"
+	agent.ContextBuilder.WriteMemory(plan)
+
+	// Process a foreground message (no background metadata)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	msg := bus.InboundMessage{
+		Channel:    "test",
+		SenderID:   "user1",
+		ChatID:     "chat1",
+		Content:    "continue working",
+		SessionKey: "nudge-test",
+	}
+	_, err = al.processMessage(ctx, msg)
+	if err != nil {
+		t.Fatalf("processMessage failed: %v", err)
+	}
+
+	// The provider should have been called at least 2 times:
+	// 1st call: returns text-only → nudge fires (unchecked steps remain)
+	// 2nd call: returns text-only → nudge already fired, loop exits
+	if provider.callCount < 2 {
+		t.Errorf("expected at least 2 provider calls (nudge should trigger continuation), got %d", provider.callCount)
+	}
+}
+
+func TestPlanNudge_NoNudgeWhenAllStepsComplete(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-nudge-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	provider := &countingMockProvider{}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("no default agent")
+	}
+
+	// Write a plan where all steps are already checked
+	plan := "# Active Plan\n\n> Task: Test\n> Status: executing\n> Phase: 1\n\n## Phase 1: Setup\n- [x] Step one\n- [x] Step two\n\n## Context\n"
+	agent.ContextBuilder.WriteMemory(plan)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	msg := bus.InboundMessage{
+		Channel:    "test",
+		SenderID:   "user1",
+		ChatID:     "chat1",
+		Content:    "all done",
+		SessionKey: "nudge-test-complete",
+	}
+	_, err = al.processMessage(ctx, msg)
+	if err != nil {
+		t.Fatalf("processMessage failed: %v", err)
+	}
+
+	// No unchecked steps → preUnchecked=0 → no nudge → only 1 provider call
+	if provider.callCount != 1 {
+		t.Errorf("expected exactly 1 provider call (no nudge needed), got %d", provider.callCount)
+	}
+}
+
+func TestPlanNudge_ProgressMessage(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-nudge-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	// Provider that checks the nudge message content on the 2nd call
+	var nudgeContent string
+	provider := &nudgeCaptureMockProvider{onSecondCall: func(msgs []providers.Message) {
+		// The last user message should be the nudge
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].Role == "user" {
+				nudgeContent = msgs[i].Content
+				break
+			}
+		}
+	}}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("no default agent")
+	}
+
+	// Write a plan with 3 unchecked steps; the provider edits memory to
+	// mark one step between calls (simulated by the first-call hook).
+	plan := "# Active Plan\n\n> Task: Test\n> Status: executing\n> Phase: 1\n\n## Phase 1: Setup\n- [ ] Step one\n- [ ] Step two\n- [ ] Step three\n\n## Context\n"
+	agent.ContextBuilder.WriteMemory(plan)
+
+	// After the first LLM response (no tool calls), simulate that
+	// one step was marked [x] externally (as if the AI did it via tool).
+	// We do this by hooking the provider's first call to mutate memory.
+	provider.onFirstCall = func() {
+		updated := strings.Replace(agent.ContextBuilder.ReadMemory(), "- [ ] Step one", "- [x] Step one", 1)
+		agent.ContextBuilder.WriteMemory(updated)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	msg := bus.InboundMessage{
+		Channel:    "test",
+		SenderID:   "user1",
+		ChatID:     "chat1",
+		Content:    "work on the plan",
+		SessionKey: "nudge-progress-test",
+	}
+	_, err = al.processMessage(ctx, msg)
+	if err != nil {
+		t.Fatalf("processMessage failed: %v", err)
+	}
+
+	// Should have gotten the "Progress recorded" nudge (not the "none were marked" one)
+	if !strings.Contains(nudgeContent, "Progress recorded") {
+		t.Errorf("expected 'Progress recorded' nudge, got %q", nudgeContent)
+	}
+	if !strings.Contains(nudgeContent, "2 unchecked steps remain") {
+		t.Errorf("expected '2 unchecked steps remain' in nudge, got %q", nudgeContent)
+	}
+}
+
+// nudgeCaptureMockProvider calls hooks on 1st and 2nd Chat invocations.
+type nudgeCaptureMockProvider struct {
+	callCount    int
+	onFirstCall  func()
+	onSecondCall func([]providers.Message)
+}
+
+func (m *nudgeCaptureMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.callCount++
+	if m.callCount == 1 && m.onFirstCall != nil {
+		m.onFirstCall()
+	}
+	if m.callCount == 2 && m.onSecondCall != nil {
+		m.onSecondCall(messages)
+	}
+	return &providers.LLMResponse{
+		Content:   fmt.Sprintf("Response %d", m.callCount),
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *nudgeCaptureMockProvider) GetDefaultModel() string {
+	return "mock-nudge-model"
+}
