@@ -1663,9 +1663,9 @@ func TestBuildRichStatus_LatestEntryNoInlineResult(t *testing.T) {
 	if !strings.Contains(got, "  \u23F3") {
 		t.Errorf("latest entry result should be on indented line, got:\n%s", got)
 	}
-	// Full workspace path shown (not just project name)
-	if !strings.Contains(got, "/ws/my-project") {
-		t.Errorf("should show full workspace path, got:\n%s", got)
+	// Project name shown
+	if !strings.Contains(got, "my-project") {
+		t.Errorf("should show project name, got:\n%s", got)
 	}
 	// No second separator before error section
 	lines := strings.Split(got, "\n")
