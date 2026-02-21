@@ -2,15 +2,21 @@
 
 This guide covers installing PicoClaw on your system. Choose the method that best fits your needs.
 
+> **Current Version:** `v0.1.2` — [View all releases](https://github.com/sipeed/picoclaw/releases)
+
 ## Quick Install
 
 Download the precompiled binary for your platform from the [Releases page](https://github.com/sipeed/picoclaw/releases).
 
 ```bash
+# Set version (update this when new versions are released)
+VERSION="v0.1.2"
+
 # Example: Download for Linux ARM64
-wget https://github.com/sipeed/picoclaw/releases/download/v0.1.1/picoclaw-linux-arm64
-chmod +x picoclaw-linux-arm64
-./picoclaw-linux-arm64 onboard
+wget https://github.com/sipeed/picoclaw/releases/download/${VERSION}/picoclaw_Linux_arm64.tar.gz
+tar -xzf picoclaw_Linux_arm64.tar.gz
+chmod +x picoclaw
+./picoclaw onboard
 ```
 
 ## Installation Methods
@@ -19,22 +25,54 @@ chmod +x picoclaw-linux-arm64
 
 The easiest way to get started. Download the appropriate binary for your platform:
 
-| Platform | Architecture | Binary Name |
-|----------|-------------|-------------|
-| Linux | x86_64 | `picoclaw-linux-amd64` |
-| Linux | ARM64 | `picoclaw-linux-arm64` |
-| Linux | RISC-V | `picoclaw-linux-riscv64` |
-| Linux | LoongArch | `picoclaw-linux-loong64` |
-| macOS | ARM64 (M1/M2/M3) | `picoclaw-darwin-arm64` |
-| Windows | x86_64 | `picoclaw-windows-amd64.exe` |
+| Platform | Architecture | Download |
+|----------|-------------|----------|
+| **Linux** | x86_64 | `picoclaw_Linux_x86_64.tar.gz` |
+| **Linux** | ARM64 | `picoclaw_Linux_arm64.tar.gz` |
+| **Linux** | ARMv6 | `picoclaw_Linux_armv6.tar.gz` |
+| **Linux** | RISC-V 64 | `picoclaw_Linux_riscv64.tar.gz` |
+| **Linux** | MIPS64 | `picoclaw_Linux_mips64.tar.gz` |
+| **Linux** | s390x | `picoclaw_Linux_s390x.tar.gz` |
+| **macOS** | ARM64 (M1/M2/M3/M4) | `picoclaw_Darwin_arm64.tar.gz` |
+| **macOS** | x86_64 (Intel) | `picoclaw_Darwin_x86_64.tar.gz` |
+| **Windows** | x86_64 | `picoclaw_Windows_x86_64.zip` |
+| **Windows** | ARM64 | `picoclaw_Windows_arm64.zip` |
+| **FreeBSD** | x86_64 | `picoclaw_Freebsd_x86_64.tar.gz` |
+| **FreeBSD** | ARM64 | `picoclaw_Freebsd_arm64.tar.gz` |
+| **FreeBSD** | ARMv6 | `picoclaw_Freebsd_armv6.tar.gz` |
+
+**Download and install:**
 
 ```bash
-# Download and make executable
-wget https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw-linux-amd64
-chmod +x picoclaw-linux-amd64
+# Set version
+VERSION="v0.1.2"
+
+# Download for your platform (example: Linux x86_64)
+wget https://github.com/sipeed/picoclaw/releases/download/${VERSION}/picoclaw_Linux_x86_64.tar.gz
+
+# Extract
+tar -xzf picoclaw_Linux_x86_64.tar.gz
+
+# Make executable
+chmod +x picoclaw
 
 # Move to PATH (optional)
-sudo mv picoclaw-linux-amd64 /usr/local/bin/picoclaw
+sudo mv picoclaw /usr/local/bin/
+```
+
+**One-liner install:**
+
+```bash
+# Linux/macOS - detect platform and install
+VERSION="v0.1.2"
+OS=$(uname -s)
+ARCH=$(uname -m)
+[ "$OS" = "Darwin" ] && OS="Darwin"
+[ "$OS" = "Linux" ] && OS="Linux"
+[ "$ARCH" = "x86_64" ] && ARCH="x86_64"
+[ "$ARCH" = "aarch64" ] && ARCH="arm64"
+wget -qO- https://github.com/sipeed/picoclaw/releases/download/${VERSION}/picoclaw_${OS}_${ARCH}.tar.gz | tar xz
+sudo mv picoclaw /usr/local/bin/
 ```
 
 ### Option 2: Build from Source
@@ -112,15 +150,18 @@ Run PicoClaw on old Android phones using Termux.
 # Install Termux from F-Droid or Google Play
 # Open Termux and run:
 
+VERSION="v0.1.2"
+
 # Download binary
-wget https://github.com/sipeed/picoclaw/releases/download/v0.1.1/picoclaw-linux-arm64
-chmod +x picoclaw-linux-arm64
+wget https://github.com/sipeed/picoclaw/releases/download/${VERSION}/picoclaw_Linux_arm64.tar.gz
+tar -xzf picoclaw_Linux_arm64.tar.gz
+chmod +x picoclaw
 
 # Install proot for chroot environment
 pkg install proot
 
 # Initialize
-termux-chroot ./picoclaw-linux-arm64 onboard
+termux-chroot ./picoclaw onboard
 ```
 
 See [Termux Deployment](../deployment/termux.md) for more details.
@@ -155,14 +196,15 @@ PicoClaw runs on a wide range of hardware:
 | MaixCAM | $50 | AI camera |
 | NanoKVM | $30-100 | Server maintenance |
 | Android phones | Free (old) | Via Termux |
-| macOS | $500+ | M1/M2/M3 native |
+| macOS | $500+ | M1/M2/M3/M4 native |
+| FreeBSD servers | Varies | Server deployment |
 
 ## Troubleshooting
 
 ### Permission denied
 
 ```bash
-chmod +x picoclaw-*
+chmod +x picoclaw
 ```
 
 ### Command not found
@@ -173,7 +215,7 @@ Make sure the binary is in your PATH:
 export PATH="$PWD:$PATH"
 
 # Or move to a standard location
-sudo mv picoclaw-* /usr/local/bin/picoclaw
+sudo mv picoclaw /usr/local/bin/
 ```
 
 ### Go version too old
