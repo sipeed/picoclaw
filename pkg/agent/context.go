@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -76,20 +75,14 @@ func (cb *ContextBuilder) SetEnabledChannels(channels []string) {
 func (cb *ContextBuilder) getIdentity() string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
-	runtime := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
-
 	// Build tools section dynamically
 	toolsSection := cb.buildToolsSection()
 
-	return fmt.Sprintf(`# picoclaw 🦞
-
-You are picoclaw, a helpful AI assistant.
-
-## Current Time
+	return fmt.Sprintf(`## Current Time
 %s
 
 ## Runtime
-%s
+Termux (Android)
 
 ## Workspace
 Your workspace is at: %s
@@ -107,7 +100,7 @@ Your workspace is at: %s
    - append_daily: Record today's events and memos (diary-like daily entries)
    - read_long_term: Read long-term memory
    - read_daily: Read today's daily notes`,
-		now, runtime, workspacePath, toolsSection)
+		now, workspacePath, toolsSection)
 }
 
 func (cb *ContextBuilder) buildChannelsSection() string {
@@ -228,8 +221,8 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 			channel, chatID, inputMode)
 	}
 
-	// Add voice mode instructions when input is from voice
-	if inputMode == "voice" {
+	// Add voice mode instructions when input is from voice or assistant
+	if inputMode == "voice" || inputMode == "assistant" {
 		systemPrompt += voiceModePrompt()
 	}
 
