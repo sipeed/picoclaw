@@ -221,6 +221,9 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		return history
 	}
 
+	// Repair orphaned tool_use/tool_result pairs before further sanitization.
+	history = repairOrphanedToolPairs(history)
+
 	sanitized := make([]providers.Message, 0, len(history))
 	for _, msg := range history {
 		switch msg.Role {

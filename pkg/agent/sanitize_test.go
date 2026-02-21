@@ -78,6 +78,25 @@ func TestRepairOrphanedToolPairs_OrphanToolResultDropped(t *testing.T) {
 	}
 }
 
+func TestSanitizeHistoryForProvider_OrphanToolUseRepaired(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "do something"},
+		{
+			Role: "assistant", Content: "calling tool",
+			ToolCalls: []providers.ToolCall{{ID: "call_99", Name: "exec"}},
+		},
+	}
+	sanitized := sanitizeHistoryForProvider(history)
+
+	if len(sanitized) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(sanitized))
+	}
+	if sanitized[2].Role != "tool" || sanitized[2].ToolCallID != "call_99" {
+		t.Errorf("expected synthetic tool_result for call_99, got role=%q id=%q",
+			sanitized[2].Role, sanitized[2].ToolCallID)
+	}
+}
+
 func TestRepairOrphanedToolPairs_EmptyInput(t *testing.T) {
 	repaired := repairOrphanedToolPairs(nil)
 	if len(repaired) != 0 {
