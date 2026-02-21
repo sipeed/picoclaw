@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -1004,6 +1005,13 @@ func authStatusCmd() {
 }
 
 func getConfigPath() string {
+	// Try current directory first: ./.picoclaw/config.json
+	localConfigPath := filepath.Join(".picoclaw", "config.json")
+	if _, err := os.Stat(localConfigPath); err == nil {
+		return localConfigPath
+	}
+
+	// Fallback to home directory: ~/.picoclaw/config.json
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
@@ -1459,6 +1467,10 @@ func swarmCmd() {
 	switch subcommand {
 	case "start":
 		swarmStartCmd()
+	case "stop":
+		swarmStopCmd()
+	case "dispatch":
+		swarmDispatchCmd()
 	case "status":
 		swarmStatusCmd()
 	case "nodes":
@@ -1472,6 +1484,8 @@ func swarmCmd() {
 func swarmHelp() {
 	fmt.Println("\nSwarm commands:")
 	fmt.Println("  start       Start swarm node")
+	fmt.Println("  stop        Stop running swarm node")
+	fmt.Println("  dispatch    Submit a task to the swarm")
 	fmt.Println("  status      Show swarm configuration")
 	fmt.Println("  nodes       List discovered nodes (requires running node)")
 	fmt.Println()
@@ -1480,10 +1494,21 @@ func swarmHelp() {
 	fmt.Println("  --capabilities <list> Comma-separated capabilities")
 	fmt.Println("  --embedded            Use embedded NATS server (development mode)")
 	fmt.Println("  --debug               Enable debug logging")
+	fmt.Println("  --hid <id>            Human/Owner ID (tenant identifier)")
+	fmt.Println("  --sid <id>            Shrimp/Service ID (instance identifier)")
+	fmt.Println("  --identity <hid/sid>  Both IDs in one parameter")
+	fmt.Println()
+	fmt.Println("Dispatch options:")
+	fmt.Println("  --type <type>         Task type: direct, workflow, broadcast")
+	fmt.Println("  --capability <cap>    Required capability for routing")
+	fmt.Println("  --timeout <ms>        Task timeout in milliseconds")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  picoclaw swarm start --role coordinator --embedded")
 	fmt.Println("  picoclaw swarm start --role worker --capabilities code,search")
+	fmt.Println("  picoclaw swarm start --role worker --hid alice --sid worker1")
+	fmt.Println("  picoclaw swarm start --role worker --identity alice/worker1")
+	fmt.Println("  picoclaw swarm dispatch --type direct 'Analyze this code' --capability code")
 	fmt.Println("  picoclaw swarm status")
 }
 
@@ -1492,6 +1517,7 @@ func swarmStartCmd() {
 	role := "worker"
 	capabilities := []string{}
 	embedded := false
+	var hid, sid string
 
 	args := os.Args[3:]
 	for i := 0; i < len(args); i++ {
@@ -1511,6 +1537,26 @@ func swarmStartCmd() {
 		case "--debug", "-d":
 			logger.SetLevel(logger.DEBUG)
 			fmt.Println("Debug mode enabled")
+		case "--hid", "--identity-hid":
+			if i+1 < len(args) {
+				hid = args[i+1]
+				i++
+			}
+		case "--sid", "--identity-sid":
+			if i+1 < len(args) {
+				sid = args[i+1]
+				i++
+			}
+		case "--identity":
+			if i+1 < len(args) {
+				// Parse "hid/sid" format
+				identityParts := strings.SplitN(args[i+1], "/", 2)
+				hid = identityParts[0]
+				if len(identityParts) > 1 {
+					sid = identityParts[1]
+				}
+				i++
+			}
 		}
 	}
 
@@ -1527,6 +1573,14 @@ func swarmStartCmd() {
 		cfg.Swarm.Capabilities = capabilities
 	}
 	cfg.Swarm.NATS.Embedded = embedded
+
+	// Set identity if provided
+	if hid != "" {
+		cfg.Swarm.HID = hid
+	}
+	if sid != "" {
+		cfg.Swarm.SID = sid
+	}
 
 	// Create provider
 	provider, err := providers.CreateProvider(cfg)
@@ -1579,6 +1633,157 @@ func swarmStartCmd() {
 	manager.Stop()
 	agentLoop.Stop()
 	fmt.Printf("%s Swarm node stopped\n", logo)
+}
+
+func swarmStopCmd() {
+	fmt.Printf("%s Stopping swarm node...\n", logo)
+
+	// Find and stop swarm processes
+	pids, err := findSwarmProcesses()
+	if err != nil {
+		fmt.Printf("Error finding swarm processes: %v\n", err)
+		return
+	}
+
+	if len(pids) == 0 {
+		fmt.Println("No running swarm nodes found")
+		return
+	}
+
+	fmt.Printf("Found %d swarm node(s)\n", len(pids))
+	for _, pid := range pids {
+		fmt.Printf("  Stopping PID %d...\n", pid)
+		if err := stopProcess(pid); err != nil {
+			fmt.Printf("    Error: %v\n", err)
+		} else {
+			fmt.Printf("    Stopped\n")
+		}
+	}
+	fmt.Printf("%s Swarm node(s) stopped\n", logo)
+}
+
+func swarmDispatchCmd() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: picoclaw swarm dispatch <prompt> [options]")
+		fmt.Println()
+		fmt.Println("Options:")
+		fmt.Println("  --type <type>         Task type: direct, workflow, broadcast (default: direct)")
+		fmt.Println("  --capability <cap>    Required capability for routing")
+		fmt.Println("  --timeout <ms>        Task timeout in milliseconds (default: 300000)")
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  picoclaw swarm dispatch 'Analyze this code' --capability code")
+		fmt.Println("  picoclaw swarm dispatch 'Search for info' --type direct --capability search")
+		return
+	}
+
+	// Parse arguments
+	taskType := "direct"
+	capability := "general"
+	timeout := 300000 // 5 minutes (in milliseconds)
+	prompt := ""
+
+	args := os.Args[3:]
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--type":
+			if i+1 < len(args) {
+				taskType = args[i+1]
+				i++
+			}
+		case "--capability", "-c":
+			if i+1 < len(args) {
+				capability = args[i+1]
+				i++
+			}
+		case "--timeout", "-t":
+			if i+1 < len(args) {
+				var ms int
+				fmt.Sscanf(args[i+1], "%d", &ms)
+				timeout = ms
+				i++
+			}
+		default:
+			if prompt == "" {
+				prompt = args[i]
+			}
+		}
+	}
+
+	if prompt == "" {
+		fmt.Println("Error: prompt is required")
+		return
+	}
+
+	// Load config
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		return
+	}
+
+	// Create provider and agent loop
+	provider, err := providers.CreateProvider(cfg)
+	if err != nil {
+		fmt.Printf("Error creating provider: %v\n", err)
+		return
+	}
+
+	msgBus := bus.NewMessageBus()
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+
+	// Execute task locally (simplified dispatch)
+	fmt.Printf("%s Dispatching task...\n", logo)
+	fmt.Printf("  Type: %s\n", taskType)
+	fmt.Printf("  Capability: %s\n", capability)
+	fmt.Printf("  Timeout: %d ms\n", timeout)
+	fmt.Printf("  Prompt: %s\n", prompt)
+	fmt.Println()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
+	defer cancel()
+
+	response, err := agentLoop.ProcessDirect(ctx, prompt, "swarm:dispatch")
+
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\n%s Result:\n", logo)
+	fmt.Println(response)
+}
+
+// Helper functions for process management
+
+func findSwarmProcesses() ([]int, error) {
+	cmd := exec.Command("pgrep", "-f", "picoclaw swarm start")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var pids []int
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var pid int
+		if _, err := fmt.Sscanf(line, "%d", &pid); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
+func stopProcess(pid int) error {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return proc.Signal(os.Interrupt)
 }
 
 func swarmStatusCmd() {
