@@ -39,6 +39,7 @@ type AgentLoop struct {
 	fallback        *providers.FallbackChain
 	channelManager  *channels.Manager
 	permFuncFactory tools.PermissionFuncFactory
+	eventListener   AgentEventListener
 }
 
 // processOptions configures how a message is processed
@@ -222,6 +223,19 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 // for each channel/chatID pair. This allows channel-specific permission prompts.
 func (al *AgentLoop) SetPermissionFuncFactory(factory tools.PermissionFuncFactory) {
 	al.permFuncFactory = factory
+}
+
+// SetEventListener sets the listener that receives agent lifecycle events.
+// The listener must be safe for concurrent use.
+func (al *AgentLoop) SetEventListener(listener AgentEventListener) {
+	al.eventListener = listener
+}
+
+// fireEvent dispatches an event to the listener if one is set
+func (al *AgentLoop) fireEvent(event AgentEvent) {
+	if al.eventListener != nil {
+		al.eventListener.OnEvent(event)
+	}
 }
 
 // RecordLastChannel records the last active channel for this workspace.
@@ -436,6 +450,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 4. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
+		al.fireEvent(AgentEvent{
+			Type: EventError,
+			Data: ErrorData{Err: err},
+		})
 		return "", err
 	}
 
@@ -552,6 +570,9 @@ func (al *AgentLoop) runLLMIteration(
 			})
 		}
 
+		// Notify listener that we're about to call the LLM
+		al.fireEvent(AgentEvent{Type: EventThinkingStarted})
+
 		// Retry loop for context/token errors
 		maxRetries := 2
 		for retry := 0; retry <= maxRetries; retry++ {
@@ -611,6 +632,10 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration":     iteration,
 					"content_chars": len(finalContent),
 				})
+			al.fireEvent(AgentEvent{
+				Type: EventResponseComplete,
+				Data: ResponseCompleteData{Content: finalContent},
+			})
 			break
 		}
 
@@ -692,6 +717,15 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}
 
+			al.fireEvent(AgentEvent{
+				Type: EventToolCallStarted,
+				Data: ToolCallStartedData{
+					ID:   tc.ID,
+					Name: tc.Name,
+					Args: tc.Arguments,
+				},
+			})
+
 			toolResult := agent.Tools.ExecuteWithContext(
 				ctx,
 				tc.Name,
@@ -700,6 +734,16 @@ func (al *AgentLoop) runLLMIteration(
 				opts.ChatID,
 				asyncCallback,
 			)
+
+			al.fireEvent(AgentEvent{
+				Type: EventToolCallCompleted,
+				Data: ToolCallCompletedData{
+					ID:      tc.ID,
+					Name:    tc.Name,
+					Result:  toolResult.ForLLM,
+					IsError: toolResult.Err != nil,
+				},
+			})
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
