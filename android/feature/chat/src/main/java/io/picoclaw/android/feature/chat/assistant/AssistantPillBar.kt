@@ -1,6 +1,7 @@
 package io.picoclaw.android.feature.chat.assistant
 
 import androidx.camera.view.PreviewView
+import androidx.camera.view.PreviewView.ImplementationMode
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
@@ -104,8 +105,9 @@ fun AssistantPillBar(
                 ) {
                     AndroidView(
                         factory = { ctx ->
-                            PreviewView(ctx).also { preview ->
-                                cameraCaptureManager.bind(lifecycleOwner, preview)
+                            PreviewView(ctx).apply {
+                                implementationMode = ImplementationMode.COMPATIBLE
+                                cameraCaptureManager.bind(lifecycleOwner, this)
                             }
                         },
                         modifier = Modifier.fillMaxSize()

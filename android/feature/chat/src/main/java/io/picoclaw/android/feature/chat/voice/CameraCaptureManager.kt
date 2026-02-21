@@ -1,6 +1,7 @@
 package io.picoclaw.android.feature.chat.voice
 
 import android.content.Context
+import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -18,29 +19,41 @@ class CameraCaptureManager(private val context: Context) {
 
     private var imageCapture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
+    private var currentPreviewView: PreviewView? = null
 
     fun bind(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
+        if (currentPreviewView === previewView && cameraProvider != null) return
+        unbind()
+        currentPreviewView = previewView
+
         val providerFuture = ProcessCameraProvider.getInstance(context)
         providerFuture.addListener({
-            val provider = providerFuture.get()
-            cameraProvider = provider
+            try {
+                // Stale callback – unbind() was called while waiting
+                if (currentPreviewView !== previewView) return@addListener
 
-            val preview = Preview.Builder().build().also {
-                it.surfaceProvider = previewView.surfaceProvider
+                val provider = providerFuture.get()
+                cameraProvider = provider
+
+                val preview = Preview.Builder().build().also {
+                    it.surfaceProvider = previewView.surfaceProvider
+                }
+
+                val capture = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .build()
+                imageCapture = capture
+
+                provider.unbindAll()
+                provider.bindToLifecycle(
+                    lifecycleOwner,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    capture
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to bind camera", e)
             }
-
-            val capture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .build()
-            imageCapture = capture
-
-            provider.unbindAll()
-            provider.bindToLifecycle(
-                lifecycleOwner,
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                preview,
-                capture
-            )
         }, ContextCompat.getMainExecutor(context))
     }
 
@@ -48,6 +61,7 @@ class CameraCaptureManager(private val context: Context) {
         cameraProvider?.unbindAll()
         cameraProvider = null
         imageCapture = null
+        currentPreviewView = null
     }
 
     suspend fun captureFrame(): ImageAttachment? {
@@ -76,5 +90,9 @@ class CameraCaptureManager(private val context: Context) {
                 }
             )
         }
+    }
+
+    companion object {
+        private const val TAG = "CameraCaptureManager"
     }
 }

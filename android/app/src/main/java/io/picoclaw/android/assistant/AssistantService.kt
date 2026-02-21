@@ -1,7 +1,12 @@
 package io.picoclaw.android.assistant
 
+import android.Manifest
 import android.app.Notification
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.IBinder
@@ -20,6 +25,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
@@ -27,6 +33,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.ktor.client.HttpClient
+import io.picoclaw.android.PermissionRequestActivity
 import io.picoclaw.android.core.data.remote.WebSocketClient
 import io.picoclaw.android.core.data.repository.AssistantConnectionImpl
 import io.picoclaw.android.core.domain.repository.AssistantConnection
@@ -63,6 +70,16 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
     override val savedStateRegistry: SavedStateRegistry
         get() = savedStateRegistryController.savedStateRegistry
 
+    private val permissionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val permission = intent.getStringExtra(PermissionRequestActivity.EXTRA_PERMISSION)
+            val granted = intent.getBooleanExtra(PermissionRequestActivity.EXTRA_GRANTED, false)
+            if (permission == Manifest.permission.CAMERA && granted) {
+                assistantManager.toggleCamera()
+            }
+        }
+    }
+
     override fun onCreate() {
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
@@ -82,6 +99,13 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
             connection = connection,
             cameraCaptureManager = cameraCaptureManager,
             contentResolver = contentResolver
+        )
+
+        ContextCompat.registerReceiver(
+            this,
+            permissionReceiver,
+            IntentFilter(PermissionRequestActivity.ACTION_RESULT),
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
 
@@ -106,6 +130,7 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     override fun onDestroy() {
+        unregisterReceiver(permissionReceiver)
         removeOverlay()
         assistantManager.destroy()
         ttsWrapper.destroy()
@@ -117,6 +142,20 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
     override fun onBind(intent: Intent): IBinder? {
         super.onBind(intent)
         return null
+    }
+
+    private fun handleCameraToggle() {
+        if (assistantManager.state.value.isCameraActive) {
+            assistantManager.toggleCamera()
+            return
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            assistantManager.toggleCamera()
+        } else {
+            startActivity(PermissionRequestActivity.intent(this, Manifest.permission.CAMERA))
+        }
     }
 
     private fun shutdown() {
@@ -168,7 +207,7 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
                             state = state,
                             onClose = { shutdown() },
                             onInterrupt = { assistantManager.interrupt() },
-                            onCameraToggle = { assistantManager.toggleCamera() },
+                            onCameraToggle = { handleCameraToggle() },
                             cameraCaptureManager = cameraCaptureManager,
                             modifier = Modifier.onGloballyPositioned { coordinates ->
                                 wrapper.contentTop = coordinates.positionInWindow().y.toInt()
