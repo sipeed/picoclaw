@@ -1679,3 +1679,39 @@ func TestBuildRichStatus_LatestEntryNoInlineResult(t *testing.T) {
 		t.Errorf("expected exactly 1 separator, got %d in:\n%s", sepCount, got)
 	}
 }
+
+func TestSanitizeHistoryForProvider_MultiToolCall(t *testing.T) {
+	// Regression: assistant with 2+ tool_calls had 2nd+ tool results dropped
+	// because the check only allowed tool after assistant, not after sibling tool.
+	history := []providers.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{
+			{ID: "a", Function: &providers.FunctionCall{Name: "exec"}},
+			{ID: "b", Function: &providers.FunctionCall{Name: "read_file"}},
+		}},
+		{Role: "tool", Content: "ok", ToolCallID: "a"},
+		{Role: "tool", Content: "ok", ToolCallID: "b"},
+		{Role: "assistant", Content: "done"},
+	}
+
+	got := sanitizeHistoryForProvider(history)
+
+	// All 5 messages must survive
+	if len(got) != 5 {
+		roles := make([]string, len(got))
+		for i, m := range got {
+			roles[i] = m.Role
+		}
+		t.Fatalf("expected 5 messages, got %d: %v", len(got), roles)
+	}
+	// Verify both tool results present
+	toolCount := 0
+	for _, m := range got {
+		if m.Role == "tool" {
+			toolCount++
+		}
+	}
+	if toolCount != 2 {
+		t.Errorf("expected 2 tool results, got %d", toolCount)
+	}
+}
