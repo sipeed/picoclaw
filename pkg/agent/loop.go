@@ -102,6 +102,9 @@ func registerSharedTools(
 			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+			SearXNGBaseURL:       cfg.Tools.Web.SearXNG.BaseURL,
+			SearXNGMaxResults:    cfg.Tools.Web.SearXNG.MaxResults,
+			SearXNGEnabled:       cfg.Tools.Web.SearXNG.Enabled,
 		}); searchTool != nil {
 			agent.Tools.Register(searchTool)
 		}
