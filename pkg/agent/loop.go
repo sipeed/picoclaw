@@ -1352,7 +1352,7 @@ func (al *AgentLoop) runLLMIteration(
 
 	// Snapshot unchecked step count before tool loop so we can detect progress.
 	preUnchecked := -1 // -1 = not tracking
-	if opts.Background && agent.ContextBuilder.GetPlanStatus() == "executing" {
+	if agent.ContextBuilder.GetPlanStatus() == "executing" {
 		preUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
 	}
 
@@ -1506,31 +1506,36 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
-			// Background plan continuation: if unchecked steps remain and
-			// none were marked during this heartbeat, nudge the LLM to
+			// Plan continuation: if unchecked steps remain, nudge the LLM to
 			// either mark completed steps or continue working on them.
-			// This serves as both a marking reminder and a continuation trigger
-			// (otherwise remaining steps wait until the next heartbeat).
+			// This fires for both foreground and background plan execution,
+			// ensuring the loop doesn't exit prematurely after marking a step.
 			curUnchecked := 0
 			if preUnchecked > 0 {
 				curUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
 			}
-			if preUnchecked > 0 && !planMarkNudged &&
-				agent.ContextBuilder.GetPlanStatus() == "executing" &&
-				curUnchecked == preUnchecked {
+			if curUnchecked > 0 && !planMarkNudged &&
+				agent.ContextBuilder.GetPlanStatus() == "executing" {
 				planMarkNudged = true
 				messages = append(messages, providers.Message{
 					Role:    "assistant",
 					Content: response.Content,
 				})
-				messages = append(messages, providers.Message{
-					Role: "user",
-					Content: fmt.Sprintf("[System] %d unchecked steps remain in MEMORY.md and none were marked [x] during this session. "+
+				var nudgeMsg string
+				if curUnchecked == preUnchecked {
+					nudgeMsg = fmt.Sprintf("[System] %d unchecked steps remain in MEMORY.md and "+
+						"none were marked [x] during this session. "+
 						"If you completed any steps, use edit_file to mark them [x] now. "+
-						"If steps are still in progress, continue working on them.",
-						curUnchecked),
+						"If steps are still in progress, continue working on them.", curUnchecked)
+				} else {
+					nudgeMsg = fmt.Sprintf("[System] Progress recorded. %d unchecked steps remain. "+
+						"Continue working on the next step.", curUnchecked)
+				}
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: nudgeMsg,
 				})
-				logger.InfoCF("agent", "Nudging background task: mark or continue plan steps",
+				logger.InfoCF("agent", "Nudging plan execution: continue plan steps",
 					map[string]any{"agent_id": agent.ID, "iteration": iteration, "unchecked": curUnchecked})
 				continue
 			}
