@@ -1161,6 +1161,33 @@ Finished.`
 	}
 }
 
+func TestExtractXMLToolCalls_OrphanedClosingTag(t *testing.T) {
+	// LLM emits [TOOLCALL] marker + <invoke> with orphaned closing tag (no opening tag)
+	text := "了解！確認するね。\n[TOOLCALL]\n<invoke name=\"listdir\">\n<parameter name=\"path\">/home/user/workspace</parameter>\n</invoke>\n</minimax:tool_call>"
+
+	calls := extractXMLToolCalls(text)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(calls))
+	}
+	if calls[0].Name != "listdir" {
+		t.Errorf("Name = %q, want %q", calls[0].Name, "listdir")
+	}
+	if calls[0].Arguments["path"] != "/home/user/workspace" {
+		t.Errorf("Arguments[path] = %v, want /home/user/workspace", calls[0].Arguments["path"])
+	}
+}
+
+func TestStripXMLToolCalls_OrphanedClosingTag(t *testing.T) {
+	text := "了解！確認するね。\n[TOOLCALL]\n<invoke name=\"listdir\">\n<parameter name=\"path\">/home/user</parameter>\n</invoke>\n</minimax:tool_call>"
+	got := stripXMLToolCalls(text)
+	if strings.Contains(got, "invoke") || strings.Contains(got, "TOOLCALL") || strings.Contains(got, "minimax") {
+		t.Errorf("should remove orphaned closing tag block, got %q", got)
+	}
+	if !strings.Contains(got, "了解") {
+		t.Errorf("should keep user-facing text, got %q", got)
+	}
+}
+
 func TestStripXMLToolCalls_NoXML(t *testing.T) {
 	text := "Just regular text."
 	got := stripXMLToolCalls(text)
