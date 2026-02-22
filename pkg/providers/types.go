@@ -30,6 +30,11 @@ type LLMProvider interface {
 	GetDefaultModel() string
 }
 
+type SessionProvider interface {
+	LLMProvider
+	Close()
+}
+
 // FailoverReason classifies why an LLM request failed for fallback decisions.
 type FailoverReason string
 
