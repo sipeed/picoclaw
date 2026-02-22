@@ -312,8 +312,14 @@ type agentLoopDataProvider struct {
 	loop      *agent.AgentLoop
 	workspace string
 
-	gitCache   []miniapp.GitInfo
-	gitCacheAt time.Time
+	gitReposCache   []miniapp.GitRepoSummary
+	gitReposCacheAt time.Time
+	gitDetailCache  map[string]gitDetailEntry
+}
+
+type gitDetailEntry struct {
+	info miniapp.GitInfo
+	at   time.Time
 }
 
 const gitCacheTTL = 5 * time.Minute
@@ -375,9 +381,9 @@ func (p *agentLoopDataProvider) GetActiveSessions() []miniapp.SessionInfo {
 	return result
 }
 
-func (p *agentLoopDataProvider) GetGitInfo() []miniapp.GitInfo {
-	if time.Since(p.gitCacheAt) < gitCacheTTL {
-		return p.gitCache
+func (p *agentLoopDataProvider) GetGitRepos() []miniapp.GitRepoSummary {
+	if time.Since(p.gitReposCacheAt) < gitCacheTTL {
+		return p.gitReposCache
 	}
 
 	if p.workspace == "" {
@@ -392,7 +398,7 @@ func (p *agentLoopDataProvider) GetGitInfo() []miniapp.GitInfo {
 
 	// Scan for .git dirs up to 2 levels deep under workspace
 	seen := map[string]bool{}
-	var repos []miniapp.GitInfo
+	var repos []miniapp.GitRepoSummary
 	for _, pattern := range []string{
 		filepath.Join(p.workspace, "*", ".git"),
 		filepath.Join(p.workspace, "*", "*", ".git"),
@@ -404,13 +410,60 @@ func (p *agentLoopDataProvider) GetGitInfo() []miniapp.GitInfo {
 				continue
 			}
 			seen[repoDir] = true
-			repos = append(repos, collectGitRepoInfo(repoDir))
+			name := filepath.Base(repoDir)
+			branch := ""
+			if out, err := exec.Command("git", "-C", repoDir, "rev-parse", "--abbrev-ref", "HEAD").Output(); err == nil {
+				branch = strings.TrimSpace(string(out))
+			}
+			repos = append(repos, miniapp.GitRepoSummary{Name: name, Branch: branch})
 		}
 	}
 
-	p.gitCache = repos
-	p.gitCacheAt = time.Now()
+	p.gitReposCache = repos
+	p.gitReposCacheAt = time.Now()
 	return repos
+}
+
+func (p *agentLoopDataProvider) GetGitRepoDetail(name string) miniapp.GitInfo {
+	// Path traversal prevention
+	if name == "" || filepath.Base(name) != name {
+		return miniapp.GitInfo{Name: name}
+	}
+
+	// Check detail cache
+	if p.gitDetailCache != nil {
+		if entry, ok := p.gitDetailCache[name]; ok && time.Since(entry.at) < gitCacheTTL {
+			return entry.info
+		}
+	}
+
+	if p.workspace == "" {
+		return miniapp.GitInfo{Name: name}
+	}
+
+	// Resolve repo path: try 1-level and 2-level deep
+	var repoDir string
+	for _, pattern := range []string{
+		filepath.Join(p.workspace, name, ".git"),
+		filepath.Join(p.workspace, "*", name, ".git"),
+	} {
+		matches, _ := filepath.Glob(pattern)
+		if len(matches) > 0 {
+			repoDir = filepath.Dir(matches[0])
+			break
+		}
+	}
+	if repoDir == "" {
+		return miniapp.GitInfo{Name: name}
+	}
+
+	info := collectGitRepoInfo(repoDir)
+
+	if p.gitDetailCache == nil {
+		p.gitDetailCache = make(map[string]gitDetailEntry)
+	}
+	p.gitDetailCache[name] = gitDetailEntry{info: info, at: time.Now()}
+	return info
 }
 
 func collectGitRepoInfo(gitRoot string) miniapp.GitInfo {
