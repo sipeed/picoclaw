@@ -403,6 +403,172 @@
     border-color: var(--btn);
   }
 
+  /* MEMORY.md raw display */
+  .memory-view {
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 14px 16px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    box-shadow: 0 1px 3px var(--glass-shadow);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  .memory-view .md-h1 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 16px 0 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  .memory-view .md-h1:first-child { margin-top: 0; }
+
+  .memory-view .md-h2 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 14px 0 6px;
+    color: var(--link);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  .memory-view .md-h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 12px 0 4px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  .memory-view .md-checkbox {
+    margin: 2px 0;
+  }
+
+  .memory-view .md-checkbox-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1.5px solid var(--hint);
+    vertical-align: middle;
+    margin-right: 6px;
+    position: relative;
+    top: -1px;
+  }
+
+  .memory-view .md-checkbox-icon.checked {
+    background: var(--done);
+    border-color: var(--done);
+  }
+
+  .memory-view .md-checkbox-icon.checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 4px;
+    height: 8px;
+    border: solid #fff;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+
+  .memory-view .md-quote {
+    border-left: 3px solid var(--hint);
+    padding-left: 10px;
+    color: var(--hint);
+    margin: 4px 0;
+  }
+
+  .memory-view .md-bullet {
+    margin: 2px 0;
+    padding-left: 12px;
+    text-indent: -12px;
+  }
+
+  .memory-view .md-bullet::before {
+    content: '\2022 ';
+    color: var(--hint);
+  }
+
+  /* Slide to Approve */
+  .slide-approve-wrap {
+    margin-top: 16px;
+  }
+
+  .slide-approve-track {
+    position: relative;
+    height: 52px;
+    border-radius: 26px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border-interactive);
+    box-shadow: 0 1px 3px var(--glass-shadow);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+    touch-action: none;
+    transition: background 0.3s, border-color 0.3s;
+  }
+
+  .slide-approve-track.approved {
+    background: var(--done);
+    border-color: var(--done);
+  }
+
+  .slide-approve-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--btn);
+    color: var(--btn-text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: grab;
+    transition: left 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    z-index: 1;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .slide-approve-thumb.dragging {
+    transition: none;
+    cursor: grabbing;
+  }
+
+  .slide-approve-thumb.hidden {
+    display: none;
+  }
+
+  .slide-approve-label {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--hint);
+    font-size: 14px;
+    font-weight: 600;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: color 0.3s;
+  }
+
+  .slide-approve-track.approved .slide-approve-label {
+    color: #fff;
+  }
+
 </style>
 </head>
 <body>
@@ -584,11 +750,120 @@ function renderPlanFromData(data) {
     '<div style="color:var(--hint);margin-top:4px">Phase ' + data.current_phase + ' / ' + data.total_phases + '</div>' +
   '</div>';
 
-  if (data.phases && data.phases.length > 0) {
-    html += renderPhases(data.phases, data.current_phase);
+  if (data.status === 'interviewing' || data.status === 'review') {
+    // Show raw MEMORY.md content during interview/review
+    if (data.memory) {
+      html += '<div class="memory-view">' + renderSimpleMarkdown(data.memory) + '</div>';
+    }
+    if (data.status === 'review') {
+      html += '<div class="slide-approve-wrap">' +
+        '<div class="slide-approve-track">' +
+          '<div class="slide-approve-thumb">&raquo;</div>' +
+          '<div class="slide-approve-label">Slide to Approve</div>' +
+        '</div>' +
+      '</div>';
+    }
+  } else {
+    // Show structured phase/step list during executing
+    if (data.phases && data.phases.length > 0) {
+      html += renderPhases(data.phases, data.current_phase);
+    }
   }
 
   el.innerHTML = html;
+  if (data.status === 'review') setupSlideApprove();
+}
+
+function setupSlideApprove() {
+  var track = document.querySelector('.slide-approve-track');
+  if (!track) return;
+  var thumb = track.querySelector('.slide-approve-thumb');
+  var label = track.querySelector('.slide-approve-label');
+  var dragging = false;
+  var startX = 0;
+  var thumbStartLeft = 0;
+
+  function getMaxLeft() {
+    return track.offsetWidth - thumb.offsetWidth - 4; // 2px padding each side
+  }
+
+  function onStart(e) {
+    if (track.classList.contains('approved')) return;
+    dragging = true;
+    thumb.classList.add('dragging');
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    startX = clientX;
+    thumbStartLeft = thumb.offsetLeft - 2; // subtract initial 2px offset
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    var dx = clientX - startX;
+    var newLeft = Math.max(0, Math.min(thumbStartLeft + dx, getMaxLeft()));
+    thumb.style.left = (newLeft + 2) + 'px';
+    e.preventDefault();
+  }
+
+  function onEnd(e) {
+    if (!dragging) return;
+    dragging = false;
+    thumb.classList.remove('dragging');
+    var currentLeft = thumb.offsetLeft - 2;
+    var maxLeft = getMaxLeft();
+    if (currentLeft >= maxLeft * 0.8) {
+      // Approved
+      track.classList.add('approved');
+      label.textContent = 'Approved!';
+      thumb.classList.add('hidden');
+      sendCommand('/plan start');
+    } else {
+      // Snap back
+      thumb.style.left = '2px';
+    }
+  }
+
+  thumb.addEventListener('touchstart', onStart, { passive: false });
+  thumb.addEventListener('mousedown', onStart);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('touchend', onEnd);
+  document.addEventListener('mouseup', onEnd);
+}
+
+function renderSimpleMarkdown(text) {
+  var lines = text.split('\n');
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    // Headings
+    if (/^### /.test(line)) {
+      out.push('<div class="md-h3">' + escapeHtml(line.slice(4)) + '</div>');
+    } else if (/^## /.test(line)) {
+      out.push('<div class="md-h2">' + escapeHtml(line.slice(3)) + '</div>');
+    } else if (/^# /.test(line)) {
+      out.push('<div class="md-h1">' + escapeHtml(line.slice(2)) + '</div>');
+    // Checkboxes
+    } else if (/^- \[x\] /.test(line)) {
+      out.push('<div class="md-checkbox"><span class="md-checkbox-icon checked"></span>' + escapeHtml(line.slice(6)) + '</div>');
+    } else if (/^- \[ \] /.test(line)) {
+      out.push('<div class="md-checkbox"><span class="md-checkbox-icon"></span>' + escapeHtml(line.slice(6)) + '</div>');
+    // Blockquote
+    } else if (/^> /.test(line)) {
+      out.push('<div class="md-quote">' + escapeHtml(line.slice(2)) + '</div>');
+    // Bullet list
+    } else if (/^- /.test(line)) {
+      out.push('<div class="md-bullet">' + escapeHtml(line.slice(2)) + '</div>');
+    // Empty line
+    } else if (line.trim() === '') {
+      out.push('<br>');
+    // Plain text
+    } else {
+      out.push('<div>' + escapeHtml(line) + '</div>');
+    }
+  }
+  return out.join('');
 }
 
 async function loadPlan() {
