@@ -486,3 +486,22 @@ func TestGuardCommand_CdWithAbsoluteWorkspacePath(t *testing.T) {
 		t.Errorf("cd to workspace subdir should be allowed: %q → %s", cmd, result)
 	}
 }
+
+func TestGuardCommand_QuotedSlashArgNotBlocked(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewExecTool(workspace, true)
+
+	// A quoted argument starting with "/" is not a file path — it's a
+	// command argument that happens to contain a slash.
+	cmds := []string{
+		`codex exec --yolo "/review skip-git-repo-check"`,
+		`echo '/hello world'`,
+		`grep "/etc/passwd" file.txt`,
+	}
+	for _, cmd := range cmds {
+		result := tool.guardCommand(cmd, workspace)
+		if result != "" {
+			t.Errorf("Quoted argument should not be blocked: %q → %s", cmd, result)
+		}
+	}
+}
