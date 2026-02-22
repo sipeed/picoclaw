@@ -291,11 +291,11 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		}
 
 		// Token-based absolute path detection.
-		// Uses strings.Fields instead of regex to avoid false positives
-		// from slashes in relative paths (e.g., "tests/cold/file.py").
+		// Uses shellTokenize to respect quoted strings (e.g., "/review ..."
+		// is a single argument, not a file path).
 		// Flags like -I/usr/local/include are naturally skipped because
 		// filepath.IsAbs returns false for tokens starting with "-".
-		for _, token := range strings.Fields(cmd) {
+		for _, token := range shellTokenize(cmd) {
 			token = strings.Trim(token, "\"'")
 
 			if !filepath.IsAbs(token) {
@@ -319,6 +319,42 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	return ""
+}
+
+// shellTokenize splits a command string into tokens while respecting
+// single and double quotes.  Quoted substrings are returned as a single
+// token (with the quotes still attached so the caller can trim them).
+// This prevents false positives where a quoted argument like
+// "/review skip-git-repo-check" would be split into "/review" and
+// "skip-git-repo-check" by strings.Fields.
+func shellTokenize(s string) []string {
+	var tokens []string
+	var cur strings.Builder
+	var quote byte // 0 = none, '\'' or '"'
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case quote != 0:
+			cur.WriteByte(ch)
+			if ch == quote {
+				quote = 0
+			}
+		case ch == '\'' || ch == '"':
+			cur.WriteByte(ch)
+			quote = ch
+		case ch == ' ' || ch == '\t':
+			if cur.Len() > 0 {
+				tokens = append(tokens, cur.String())
+				cur.Reset()
+			}
+		default:
+			cur.WriteByte(ch)
+		}
+	}
+	if cur.Len() > 0 {
+		tokens = append(tokens, cur.String())
+	}
+	return tokens
 }
 
 // isExecutable checks if a path points to an executable file.

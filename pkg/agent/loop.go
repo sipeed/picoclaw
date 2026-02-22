@@ -833,10 +833,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 5a. Auto-advance plan phases after LLM iteration
 	postStatus := agent.ContextBuilder.GetPlanStatus()
-	if agent.ContextBuilder.HasActivePlan() && postStatus == "executing" {
-		// Intercept: if AI changed status to executing without user approval
-		// (from interviewing or review), validate and set to "review".
-		if preStatus == "interviewing" || preStatus == "review" {
+	if agent.ContextBuilder.HasActivePlan() && (postStatus == "executing" || postStatus == "review") {
+		// Intercept: if AI changed status to executing or review without user approval
+		// (from interviewing or review), validate and hold at "review".
+		if preStatus == "interviewing" || (preStatus == "review" && postStatus == "executing") {
 			if err := agent.ContextBuilder.ValidatePlanStructure(); err != nil {
 				_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 				logger.WarnCF("agent", "Reverted plan to interviewing: "+err.Error(),
@@ -856,7 +856,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					})
 				}
 			}
-		} else if agent.ContextBuilder.GetTotalPhases() == 0 {
+		} else if postStatus == "executing" && agent.ContextBuilder.GetTotalPhases() == 0 {
 			// Safeguard: executing but no phases (shouldn't happen, but be safe).
 			_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 			logger.WarnCF("agent", "Reverted plan to interviewing: no phases defined",
