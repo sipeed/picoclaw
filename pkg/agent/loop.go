@@ -1246,9 +1246,10 @@ func compressRepeats(s string) string {
 
 // Display layout constants.
 const (
-	displayPastEntries = 4  // number of compact 1-line past entries
-	displayErrorLines  = 5  // content lines inside the error code block
-	statusSeparator    = "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+	displayPastEntries     = 4  // number of compact 1-line past entries
+	displayErrorLines      = 5  // content lines inside the error code block
+	statusSeparator        = "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+	streamingDisplayLines  = 17 // line count matching buildRichStatus output
 )
 
 // buildRichStatus builds a fixed-height terminal-like status display.
@@ -1574,10 +1575,7 @@ func (al *AgentLoop) runLLMIteration(
 					return
 				}
 				lastPublish = time.Now()
-				display := utils.StripThinkBlocks(accumulated)
-				if strings.TrimSpace(display) == "" {
-					return
-				}
+				display := utils.TailPad(accumulated, streamingDisplayLines, maxEntryLineWidth)
 				al.bus.PublishOutbound(bus.OutboundMessage{
 					Channel:  opts.Channel,
 					ChatID:   opts.ChatID,

@@ -25,6 +25,44 @@ func StripThinkBlocks(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// TailPad returns a fixed-height block of n visual lines built from the
+// tail of s.  Long lines are wrapped at wrapWidth runes so the result
+// never exceeds the chat bubble width.  If fewer than n visual lines
+// exist, Braille-blank lines (\u2800) are prepended as padding.
+func TailPad(s string, n, wrapWidth int) string {
+	// Wrap each raw line into visual lines respecting wrapWidth.
+	var visual []string
+	for _, raw := range strings.Split(s, "\n") {
+		visual = append(visual, wrapLine(raw, wrapWidth)...)
+	}
+	if len(visual) > n {
+		visual = visual[len(visual)-n:]
+	}
+	for len(visual) < n {
+		visual = append([]string{"\u2800"}, visual...)
+	}
+	return strings.Join(visual, "\n")
+}
+
+// wrapLine splits a single line into segments of at most width runes.
+// An empty line produces one empty string (preserving blank lines).
+func wrapLine(line string, width int) []string {
+	runes := []rune(line)
+	if len(runes) <= width {
+		return []string{line}
+	}
+	var segs []string
+	for len(runes) > 0 {
+		end := width
+		if end > len(runes) {
+			end = len(runes)
+		}
+		segs = append(segs, string(runes[:end]))
+		runes = runes[end:]
+	}
+	return segs
+}
+
 // DetectRepetitionLoop checks if text contains degenerate repetition
 // by computing the unique N-gram ratio on the last repetitionSampleSize runes.
 // Returns true if the ratio of unique N-grams to total N-grams
