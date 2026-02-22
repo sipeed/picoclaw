@@ -28,10 +28,21 @@ type toolRequest struct {
 	Params    map[string]interface{} `json:"params,omitempty"`
 }
 
+// UI-interaction actions restricted to assistant/overlay clients.
+var uiActions = map[string]bool{
+	"screenshot":  true,
+	"get_ui_tree": true,
+	"tap":         true,
+	"swipe":       true,
+	"text":        true,
+	"keyevent":    true,
+}
+
 type AndroidTool struct {
 	sendCallback SendCallbackWithType
 	channel      string
 	chatID       string
+	clientType   string
 }
 
 func NewAndroidTool() *AndroidTool {
@@ -40,7 +51,22 @@ func NewAndroidTool() *AndroidTool {
 
 func (t *AndroidTool) Name() string { return "android" }
 
+// SetClientType restricts available actions based on the connected client.
+// "main" (chat mode) hides UI-interaction actions; other values allow all.
+func (t *AndroidTool) SetClientType(ct string) {
+	t.clientType = ct
+}
+
 func (t *AndroidTool) Description() string {
+	if t.clientType == "main" {
+		return `Control the Android device. Available actions:
+- search_apps: Search installed apps by name or package name (requires query)
+- app_info: Get app details (requires package_name)
+- launch_app: Launch an app (requires package_name)
+- broadcast: Send a broadcast intent (requires intent_action; optional intent_extras)
+- intent: Start an activity via intent (requires intent_action; optional intent_data, intent_package, intent_type, intent_extras)
+`
+	}
 	return `Control the Android device. Available actions:
 - search_apps: Search installed apps by name or package name (requires query)
 - app_info: Get app details (requires package_name)
@@ -57,17 +83,28 @@ func (t *AndroidTool) Description() string {
 }
 
 func (t *AndroidTool) Parameters() map[string]interface{} {
+	allActions := []string{
+		"search_apps", "app_info", "launch_app",
+		"screenshot", "get_ui_tree",
+		"tap", "swipe", "text", "keyevent",
+		"broadcast", "intent",
+	}
+	actions := allActions
+	if t.clientType == "main" {
+		filtered := make([]string, 0, len(allActions))
+		for _, a := range allActions {
+			if !uiActions[a] {
+				filtered = append(filtered, a)
+			}
+		}
+		actions = filtered
+	}
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"action": map[string]interface{}{
-				"type": "string",
-				"enum": []string{
-					"search_apps", "app_info", "launch_app",
-					"screenshot", "get_ui_tree",
-					"tap", "swipe", "text", "keyevent",
-					"broadcast", "intent",
-				},
+				"type":        "string",
+				"enum":        actions,
 				"description": "The device action to perform",
 			},
 			"query": map[string]interface{}{
@@ -176,6 +213,11 @@ func (t *AndroidTool) Execute(ctx context.Context, args map[string]interface{}) 
 	action, _ := args["action"].(string)
 	if action == "" {
 		return ErrorResult("action is required")
+	}
+
+	// Safety guard: reject UI actions from chat-mode clients
+	if t.clientType == "main" && uiActions[action] {
+		return ErrorResult(fmt.Sprintf("action %q is not available in chat mode", action))
 	}
 
 	params, err := t.validateAndBuildParams(action, args)

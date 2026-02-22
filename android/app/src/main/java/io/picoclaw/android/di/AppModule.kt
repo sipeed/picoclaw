@@ -10,6 +10,7 @@ import io.picoclaw.android.assistant.DeviceController
 import io.picoclaw.android.core.data.local.ImageFileStorage
 import io.picoclaw.android.feature.chat.voice.ScreenshotSource
 import io.picoclaw.android.core.data.remote.WebSocketClient
+import io.picoclaw.android.assistant.ToolRequestHandler
 import io.picoclaw.android.core.data.repository.ChatRepositoryImpl
 import io.picoclaw.android.core.data.repository.TtsCatalogRepositoryImpl
 import io.picoclaw.android.core.data.repository.TtsSettingsRepositoryImpl
@@ -78,7 +79,21 @@ val appModule = module {
     single { ImageFileStorage(androidContext()) }
 
     // Repository
-    single<ChatRepository> { ChatRepositoryImpl(get(), get(), get(), get()) }
+    single<ChatRepository> {
+        val repo = ChatRepositoryImpl(get(), get(), get(), get())
+        val handler = ToolRequestHandler(
+            context = androidContext(),
+            deviceController = get(),
+            screenshotSource = get(),
+            setOverlayVisibility = {},
+            onAccessibilityNeeded = {}
+        )
+        repo.onToolRequest = { request ->
+            val response = handler.handle(request)
+            if (response.success) response.result ?: "" else response.error ?: "unknown error"
+        }
+        repo
+    }
     single<TtsSettingsRepository> { TtsSettingsRepositoryImpl(androidContext()) }
     single<TtsCatalogRepository> {
         TtsCatalogRepositoryImpl(androidContext(), get<TtsSettingsRepository>().ttsConfig, get())

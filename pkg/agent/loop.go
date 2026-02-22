@@ -1043,6 +1043,13 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string, metadata map[str
 		if ct, ok := tool.(tools.ContextualTool); ok {
 			ct.SetContext(channel, chatID)
 		}
+		if at, ok := tool.(*tools.AndroidTool); ok {
+			if metadata != nil {
+				at.SetClientType(metadata["client_type"])
+			} else {
+				at.SetClientType("")
+			}
+		}
 	}
 	if tool, ok := al.tools.Get("exit"); ok {
 		if et, ok := tool.(*tools.ExitTool); ok {

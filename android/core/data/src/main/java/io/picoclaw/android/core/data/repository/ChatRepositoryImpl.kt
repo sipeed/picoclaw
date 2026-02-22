@@ -1,9 +1,12 @@
 package io.picoclaw.android.core.data.repository
 
+import android.util.Log
 import io.picoclaw.android.core.data.local.ImageFileStorage
 import io.picoclaw.android.core.data.local.dao.MessageDao
 import io.picoclaw.android.core.data.mapper.MessageMapper
 import io.picoclaw.android.core.data.remote.WebSocketClient
+import io.picoclaw.android.core.data.remote.dto.ToolRequest
+import io.picoclaw.android.core.data.remote.dto.WsIncoming
 import io.picoclaw.android.core.domain.model.ChatMessage
 import io.picoclaw.android.core.domain.model.ConnectionState
 import io.picoclaw.android.core.domain.model.ImageAttachment
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 
 class ChatRepositoryImpl(
     private val webSocketClient: WebSocketClient,
@@ -26,6 +30,9 @@ class ChatRepositoryImpl(
     private val scope: CoroutineScope,
     private val imageFileStorage: ImageFileStorage
 ) : ChatRepository {
+
+    private val json = Json { ignoreUnknownKeys = true }
+    var onToolRequest: (suspend (ToolRequest) -> String)? = null
 
     private val _displayLimit = MutableStateFlow(INITIAL_LOAD_COUNT)
     private val _statusLabel = MutableStateFlow<String?>(null)
@@ -48,6 +55,8 @@ class ChatRepositoryImpl(
                 when (dto.type) {
                     "status" -> _statusLabel.value = dto.content
                     "status_end" -> _statusLabel.value = null
+                    "tool_request" -> handleToolRequest(dto.content)
+                    "exit" -> { /* ignored in chat mode */ }
                     else -> {
                         _statusLabel.value = null
                         val entity = MessageMapper.toEntity(dto)
@@ -79,7 +88,30 @@ class ChatRepositoryImpl(
         webSocketClient.disconnect()
     }
 
+    private fun handleToolRequest(content: String) {
+        scope.launch {
+            try {
+                val request = json.decodeFromString<ToolRequest>(content)
+                val callback = onToolRequest
+                val resultContent = if (callback != null) {
+                    callback(request)
+                } else {
+                    "tool request handler not configured"
+                }
+                val response = WsIncoming(
+                    content = resultContent,
+                    type = "tool_response",
+                    requestId = request.requestId
+                )
+                webSocketClient.send(response)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to handle tool request", e)
+            }
+        }
+    }
+
     companion object {
+        private const val TAG = "ChatRepositoryImpl"
         const val INITIAL_LOAD_COUNT = 50
         const val PAGE_SIZE = 30
     }
