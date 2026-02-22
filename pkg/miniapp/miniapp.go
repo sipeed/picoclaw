@@ -280,6 +280,11 @@ func (h *Handler) ActivateDevTarget(id string) error {
 
 	proxy := httputil.NewSingleHostReverseProxy(u)
 	proxy.ModifyResponse = func(resp *http.Response) error {
+		// Prevent browser/WebView from caching dev proxy responses (CSS, JS, etc.)
+		resp.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		resp.Header.Del("ETag")
+		resp.Header.Del("Last-Modified")
+
 		ct := resp.Header.Get("Content-Type")
 		if !strings.Contains(ct, "text/html") {
 			return nil
