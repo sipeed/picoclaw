@@ -176,6 +176,15 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
+	// Ignore system messages (including thread creation messages)
+	// MessageTypeDefault (0) = regular user message
+	if m.Type != discordgo.MessageTypeDefault {
+		logger.DebugCF("discord", "Message ignored - system message", map[string]any{
+			"message_type": int(m.Type),
+		})
+		return
+	}
+
 	// Check allowlist first to avoid downloading attachments and transcribing for rejected users
 	if !c.IsAllowed(m.Author.ID) {
 		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
