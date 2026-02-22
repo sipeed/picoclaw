@@ -114,9 +114,9 @@ func DefaultConfig() *Config {
 				ReplyTimeout:   5,
 			},
 			HTTP: HTTPConfig{
-				Enabled:   false,
-				Host:      "0.0.0.0",
-				Port:      8080,
+				Enabled:   true,
+				Host:      "127.0.0.1",
+				Port:      8070,
 				AllowFrom: FlexibleStringSlice{},
 			},
 		},

@@ -17,18 +17,18 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
+            padding: 10px;
         }
         .container {
             width: 100%;
-            max-width: 1200px;
+            max-width: 1400px;
             background: #0f0f23;
             border-radius: 16px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            height: 90vh;
+            height: 95vh;
             min-height: 600px;
         }
         .header {
@@ -83,6 +83,7 @@
             border-radius: 16px;
             line-height: 1.5;
             word-wrap: break-word;
+            white-space: normal; /* Evita que los \n del HTML se rendericen como espacios */
         }
         .message.user {
             align-self: flex-end;
@@ -95,6 +96,31 @@
             background: #1e293b;
             color: #e2e8f0;
             border-bottom-left-radius: 4px;
+        }
+        /* Estilos para tablas en HTTP */
+        .message.assistant table {
+            border-collapse: collapse;
+            width: 100%;
+            max-width: 100%;
+            display: block;
+            overflow-x: auto;
+            margin: 1em 0;
+            border: 1px solid #334155;
+        }
+        .message.assistant th,
+        .message.assistant td {
+            border: 1px solid #475569;
+            padding: 8px 12px;
+            text-align: left;
+            white-space: nowrap; /* Evita saltos dentro de celdas */
+            background: #0f172a;
+        }
+        .message.assistant th {
+            background: #1e293b;
+            font-weight: 600;
+        }
+        .message.assistant tr:nth-child(even) td {
+            background: #162032;
         }
         .message.assistant pre {
             background: #0f172a;
@@ -253,11 +279,15 @@
         function addMessage(content, type) {
             const div = document.createElement('div');
             div.className = `message ${type}`;
-            // Convert newlines to <br> for proper rendering in HTML
-            // For user messages, we need to preserve line breaks from textarea
-            let processedContent = content.replace(/\n/g, '<br>');
-            // Also handle double newlines as paragraphs (optional, for better readability)
-            processedContent = processedContent.replace(/\n\n/g, '<br><br>');
+            let processedContent;
+            if (type === 'user') {
+                // For user messages (plain text), convert newlines to <br>
+                processedContent = content.replace(/\n/g, '<br>');
+                processedContent = processedContent.replace(/\n\n/g, '<br><br>');
+            } else {
+                // For assistant messages (HTML from backend), use as-is
+                processedContent = content;
+            }
             div.innerHTML = processedContent;
             chatContainer.appendChild(div);
             chatContainer.scrollTop = chatContainer.scrollHeight;

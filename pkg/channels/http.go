@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -301,7 +302,24 @@ func renderMarkdown(input string) string {
 		logger.ErrorCF("http", "renderMarkdown error", map[string]any{"error": err.Error()})
 		return input // fallback to plain text on error
 	}
-	return buf.String()
+	
+	// Add target="_blank" to all links for security and UX
+	html := buf.String()
+	
+	// Pattern to match <a href="..."> links
+	// This regex adds target="_blank" and rel="noopener noreferrer" to all <a> tags
+	// that don't already have a target attribute
+	re := regexp.MustCompile(`<a\s+([^>]*?)href="([^"]*?)"([^>]*?)>`)
+	html = re.ReplaceAllStringFunc(html, func(match string) string {
+		// Check if target attribute already exists
+		if strings.Contains(match, `target=`) {
+			return match
+		}
+		// Insert target and rel attributes before closing >
+		return strings.Replace(match, `>`, ` target="_blank" rel="noopener noreferrer">`, 1)
+	})
+	
+	return html
 }
 
 func min(a, b int) int {
