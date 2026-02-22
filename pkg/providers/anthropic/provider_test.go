@@ -1,7 +1,9 @@
 package anthropicprovider
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -69,6 +71,55 @@ func TestBuildParams_ToolCallMessage(t *testing.T) {
 		{Role: "tool", Content: `{"temp": 72}`, ToolCallID: "call_1"},
 	}
 	params, err := buildParams(messages, nil, "claude-sonnet-4.6", map[string]any{})
+	if err != nil {
+		t.Fatalf("buildParams() error: %v", err)
+	}
+	if len(params.Messages) != 3 {
+		t.Fatalf("len(Messages) = %d, want 3", len(params.Messages))
+	}
+}
+
+func TestBuildParams_MultipleToolResults_MergedIntoOneMessage(t *testing.T) {
+	// When an assistant makes multiple tool calls, all tool results must be
+	// merged into a single user message for the Anthropic API.
+	messages := []Message{
+		{Role: "user", Content: "Check all endpoints"},
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{
+				{ID: "call_1", Name: "web_fetch", Arguments: map[string]any{"url": "http://a"}},
+				{ID: "call_2", Name: "web_fetch", Arguments: map[string]any{"url": "http://b"}},
+				{ID: "call_3", Name: "web_fetch", Arguments: map[string]any{"url": "http://c"}},
+			},
+		},
+		{Role: "tool", Content: `{"status":"ok"}`, ToolCallID: "call_1"},
+		{Role: "tool", Content: `{"status":"ok"}`, ToolCallID: "call_2"},
+		{Role: "tool", Content: `{"status":"ok"}`, ToolCallID: "call_3"},
+		{Role: "assistant", Content: "All endpoints are healthy."},
+	}
+	params, err := buildParams(messages, nil, "claude-sonnet-4-6", map[string]any{})
+	if err != nil {
+		t.Fatalf("buildParams() error: %v", err)
+	}
+	// Expected: user, assistant(3 tool_use), user(3 tool_results merged), assistant
+	if len(params.Messages) != 4 {
+		t.Fatalf("len(Messages) = %d, want 4 (tool results should be merged)", len(params.Messages))
+	}
+}
+
+func TestBuildParams_SingleToolResult_StillWorks(t *testing.T) {
+	// Single tool call should still produce 3 messages (user, assistant, tool_result).
+	messages := []Message{
+		{Role: "user", Content: "What's the weather?"},
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{
+				{ID: "call_1", Name: "get_weather", Arguments: map[string]any{"city": "SF"}},
+			},
+		},
+		{Role: "tool", Content: `{"temp": 72}`, ToolCallID: "call_1"},
+	}
+	params, err := buildParams(messages, nil, "claude-sonnet-4-6", map[string]any{})
 	if err != nil {
 		t.Fatalf("buildParams() error: %v", err)
 	}
@@ -260,6 +311,100 @@ func TestProvider_ChatUsesTokenSource(t *testing.T) {
 	if got := atomic.LoadInt32(&requests); got != 1 {
 		t.Fatalf("requests = %d, want 1", got)
 	}
+}
+
+func TestProvider_ChatStream_RoundTrip(t *testing.T) {
+	// SSE streaming mock: sends message_start, content_block_start,
+	// content_block_delta (x2), content_block_stop, message_delta, message_stop.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		events := []string{
+			`event: message_start
+data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.6","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0}}}`,
+			`event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
+			`event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}`,
+			`event: content_block_stop
+data: {"type":"content_block_stop","index":0}`,
+			`event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}`,
+			`event: message_stop
+data: {"type":"message_stop"}`,
+		}
+
+		for _, event := range events {
+			fmt.Fprintf(w, "%s\n\n", event)
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	provider := NewProviderWithClient(createAnthropicTestClient(server.URL, "test-token"))
+
+	var deltas []string
+	resp, err := provider.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "Hello"}},
+		nil,
+		"claude-sonnet-4.6",
+		map[string]any{"max_tokens": 1024},
+		func(delta string) {
+			deltas = append(deltas, delta)
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error: %v", err)
+	}
+
+	if resp.Content != "Hello World" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello World")
+	}
+	if resp.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "stop")
+	}
+	if len(deltas) != 2 {
+		t.Errorf("len(deltas) = %d, want 2", len(deltas))
+	}
+	if len(deltas) >= 2 {
+		if deltas[0] != "Hello" {
+			t.Errorf("deltas[0] = %q, want %q", deltas[0], "Hello")
+		}
+		if deltas[1] != " World" {
+			t.Errorf("deltas[1] = %q, want %q", deltas[1], " World")
+		}
+	}
+	if resp.Usage.PromptTokens != 10 {
+		t.Errorf("PromptTokens = %d, want 10", resp.Usage.PromptTokens)
+	}
+}
+
+func TestProvider_ImplementsStreamingProvider(t *testing.T) {
+	// Verify that Provider satisfies the StreamingProvider interface
+	var _ interface {
+		ChatStream(
+			ctx context.Context,
+			messages []Message,
+			tools []ToolDefinition,
+			model string,
+			options map[string]any,
+			onDelta func(string),
+		) (*LLMResponse, error)
+	} = &Provider{}
 }
 
 func createAnthropicTestClient(baseURL, token string) *anthropic.Client {

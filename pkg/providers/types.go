@@ -30,6 +30,25 @@ type LLMProvider interface {
 	GetDefaultModel() string
 }
 
+// StreamCallback receives partial content as it arrives from the LLM.
+type StreamCallback func(delta string)
+
+// StreamingProvider is an optional interface for providers that support streaming.
+// Providers that implement this can send partial responses as they arrive,
+// which is important for large context windows where non-streaming calls
+// can take 30+ seconds.
+type StreamingProvider interface {
+	LLMProvider
+	ChatStream(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDefinition,
+		model string,
+		options map[string]any,
+		onDelta StreamCallback,
+	) (*LLMResponse, error)
+}
+
 // FailoverReason classifies why an LLM request failed for fallback decisions.
 type FailoverReason string
 

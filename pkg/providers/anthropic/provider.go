@@ -93,6 +93,59 @@ func (p *Provider) Chat(
 	return parseResponse(resp), nil
 }
 
+// ChatStream sends a streaming request to the Anthropic API.
+// It calls onDelta for each text fragment as it arrives, then returns the
+// fully accumulated response (identical to what Chat would return).
+func (p *Provider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onDelta func(delta string),
+) (*LLMResponse, error) {
+	var opts []option.RequestOption
+	if p.tokenSource != nil {
+		tok, err := p.tokenSource()
+		if err != nil {
+			return nil, fmt.Errorf("refreshing token: %w", err)
+		}
+		opts = append(opts, option.WithAuthToken(tok))
+	}
+
+	params, err := buildParams(messages, tools, model, options)
+	if err != nil {
+		return nil, err
+	}
+
+	stream := p.client.Messages.NewStreaming(ctx, params, opts...)
+
+	var accumulated anthropic.Message
+	for stream.Next() {
+		event := stream.Current()
+
+		if err := accumulated.Accumulate(event); err != nil {
+			return nil, fmt.Errorf("accumulating stream event: %w", err)
+		}
+
+		// Deliver text deltas to the callback
+		if onDelta != nil {
+			switch e := event.AsAny().(type) {
+			case anthropic.ContentBlockDeltaEvent:
+				if td := e.Delta.AsTextDelta(); td.Text != "" {
+					onDelta(td.Text)
+				}
+			}
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		return nil, fmt.Errorf("claude streaming API call: %w", err)
+	}
+
+	return parseResponse(&accumulated), nil
+}
+
 func (p *Provider) GetDefaultModel() string {
 	return "claude-sonnet-4.6"
 }
@@ -110,15 +163,26 @@ func buildParams(
 	var system []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
 
-	for _, msg := range messages {
+	// Build messages, merging consecutive tool results into a single user
+	// message. The Anthropic API requires that ALL tool_result blocks for a
+	// given assistant tool_use turn appear in one user message immediately
+	// after the assistant message.
+	for i := 0; i < len(messages); i++ {
+		msg := messages[i]
 		switch msg.Role {
 		case "system":
 			system = append(system, anthropic.TextBlockParam{Text: msg.Content})
 		case "user":
 			if msg.ToolCallID != "" {
-				anthropicMessages = append(anthropicMessages,
-					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
-				)
+				// Tool result stored with "user" role — collect consecutive ones.
+				var toolBlocks []anthropic.ContentBlockParamUnion
+				for i < len(messages) && isToolResult(messages[i]) {
+					toolBlocks = append(toolBlocks,
+						anthropic.NewToolResultBlock(messages[i].ToolCallID, messages[i].Content, false))
+					i++
+				}
+				i-- // outer loop will increment
+				anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(toolBlocks...))
 			} else {
 				anthropicMessages = append(anthropicMessages,
 					anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)),
@@ -131,7 +195,14 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
+					args := tc.Arguments
+					if args == nil && tc.Function != nil && tc.Function.Arguments != "" {
+						_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+					}
+					if args == nil {
+						args = map[string]any{}
+					}
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, args, tc.Name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
@@ -140,9 +211,15 @@ func buildParams(
 				)
 			}
 		case "tool":
-			anthropicMessages = append(anthropicMessages,
-				anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
-			)
+			// Collect all consecutive tool results into one user message.
+			var toolBlocks []anthropic.ContentBlockParamUnion
+			for i < len(messages) && isToolResult(messages[i]) {
+				toolBlocks = append(toolBlocks,
+					anthropic.NewToolResultBlock(messages[i].ToolCallID, messages[i].Content, false))
+				i++
+			}
+			i-- // outer loop will increment
+			anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(toolBlocks...))
 		}
 	}
 
@@ -242,6 +319,12 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
 		},
 	}
+}
+
+// isToolResult returns true if the message is a tool result, regardless of
+// whether it's stored with "tool" role or "user" role with a ToolCallID.
+func isToolResult(msg Message) bool {
+	return msg.Role == "tool" || (msg.Role == "user" && msg.ToolCallID != "")
 }
 
 func normalizeBaseURL(apiBase string) string {
