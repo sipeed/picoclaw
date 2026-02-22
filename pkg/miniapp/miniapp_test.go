@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1810,6 +1811,202 @@ func TestDevProxy_HostHeaderForwarded(t *testing.T) {
 	// ReverseProxy sets Host to backend's host by default
 	if capturedHost == "" {
 		t.Error("expected Host header to be forwarded to backend")
+	}
+}
+
+// ── injectDevProxyScript tests ──
+
+func TestInjectDevProxyScript_HeadTag(t *testing.T) {
+	html := []byte(`<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hi</h1></body></html>`)
+	result := injectDevProxyScript(html)
+	s := string(result)
+	if !strings.Contains(s, `<script data-dev-proxy>`) {
+		t.Error("expected script to be injected")
+	}
+	// Script should appear before </head>
+	scriptIdx := strings.Index(s, `<script data-dev-proxy>`)
+	headIdx := strings.Index(s, `</head>`)
+	if scriptIdx >= headIdx {
+		t.Errorf("script should be before </head>: scriptIdx=%d, headIdx=%d", scriptIdx, headIdx)
+	}
+	// Original content should be preserved
+	if !strings.Contains(s, `<title>Test</title>`) {
+		t.Error("original <title> content should be preserved")
+	}
+	if !strings.Contains(s, `<h1>Hi</h1>`) {
+		t.Error("original <body> content should be preserved")
+	}
+}
+
+func TestInjectDevProxyScript_NoHead(t *testing.T) {
+	html := []byte(`<!DOCTYPE html><html><body><p>Hello</p></body></html>`)
+	result := injectDevProxyScript(html)
+	s := string(result)
+	if !strings.Contains(s, `<script data-dev-proxy>`) {
+		t.Error("expected script to be injected")
+	}
+	// Script should appear right after <body>
+	bodyIdx := strings.Index(s, `<body>`)
+	scriptIdx := strings.Index(s, `<script data-dev-proxy>`)
+	if scriptIdx != bodyIdx+len(`<body>`) {
+		t.Errorf("script should be immediately after <body>: bodyIdx=%d, scriptIdx=%d", bodyIdx, scriptIdx)
+	}
+}
+
+func TestInjectDevProxyScript_Minimal(t *testing.T) {
+	html := []byte(`<div>just a div</div>`)
+	result := injectDevProxyScript(html)
+	s := string(result)
+	if !strings.Contains(s, `<script data-dev-proxy>`) {
+		t.Error("expected script to be injected")
+	}
+	// Script should be at the beginning
+	if !strings.HasPrefix(s, `<script data-dev-proxy>`) {
+		t.Error("script should be prepended when no head/body tags exist")
+	}
+	if !strings.Contains(s, `<div>just a div</div>`) {
+		t.Error("original content should be preserved")
+	}
+}
+
+func TestInjectDevProxyScript_BodyWithAttributes(t *testing.T) {
+	html := []byte(`<html><body class="dark" id="main"><p>Content</p></body></html>`)
+	result := injectDevProxyScript(html)
+	s := string(result)
+	// Script should be after the full <body ...> opening tag
+	bodyCloseIdx := strings.Index(s, `id="main">`) + len(`id="main">`)
+	scriptIdx := strings.Index(s, `<script data-dev-proxy>`)
+	if scriptIdx != bodyCloseIdx {
+		t.Errorf("script should follow <body> closing '>': bodyClose=%d, scriptIdx=%d", bodyCloseIdx, scriptIdx)
+	}
+}
+
+func TestInjectDevProxyScript_CaseInsensitive(t *testing.T) {
+	html := []byte(`<HTML><HEAD><TITLE>Upper</TITLE></HEAD><BODY>test</BODY></HTML>`)
+	result := injectDevProxyScript(html)
+	s := string(result)
+	if !strings.Contains(s, `<script data-dev-proxy>`) {
+		t.Error("expected script injection with uppercase tags")
+	}
+	// Should still inject before </HEAD>
+	scriptIdx := strings.Index(s, `<script data-dev-proxy>`)
+	headIdx := strings.Index(s, `</HEAD>`)
+	if scriptIdx >= headIdx {
+		t.Errorf("script should be before </HEAD>")
+	}
+}
+
+func TestInjectDevProxyScript_ScriptContent(t *testing.T) {
+	html := []byte(`<html><head></head><body></body></html>`)
+	result := injectDevProxyScript(html)
+	s := string(result)
+	// Verify the script rewrites fetch and XHR
+	if !strings.Contains(s, `/miniapp/dev`) {
+		t.Error("script should contain /miniapp/dev prefix")
+	}
+	if !strings.Contains(s, `window.fetch`) {
+		t.Error("script should patch window.fetch")
+	}
+	if !strings.Contains(s, `XMLHttpRequest.prototype.open`) {
+		t.Error("script should patch XMLHttpRequest.prototype.open")
+	}
+}
+
+func TestDevProxy_ResponseRewriting(t *testing.T) {
+	// Backend returns HTML with text/html content type
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!DOCTYPE html><html><head><title>App</title></head><body><h1>Hello</h1></body></html>`)
+	}))
+	defer backend.Close()
+
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	id, _ := h.RegisterDevTarget("app", backend.URL)
+	h.ActivateDevTarget(id)
+
+	req := httptest.NewRequest("GET", "/miniapp/dev/", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `<script data-dev-proxy>`) {
+		t.Error("expected dev proxy script to be injected into HTML response")
+	}
+	if !strings.Contains(body, `<title>App</title>`) {
+		t.Error("original HTML content should be preserved")
+	}
+	// Script should be before </head>
+	scriptIdx := strings.Index(body, `<script data-dev-proxy>`)
+	headIdx := strings.Index(body, `</head>`)
+	if scriptIdx >= headIdx {
+		t.Errorf("script should be injected before </head>")
+	}
+}
+
+func TestDevProxy_ResponseRewriting_NonHTML(t *testing.T) {
+	// Backend returns JSON — should NOT be modified
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"status":"ok"}`)
+	}))
+	defer backend.Close()
+
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	id, _ := h.RegisterDevTarget("api", backend.URL)
+	h.ActivateDevTarget(id)
+
+	req := httptest.NewRequest("GET", "/miniapp/dev/api/status", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, `<script`) {
+		t.Error("script should NOT be injected into non-HTML response")
+	}
+	if body != `{"status":"ok"}` {
+		t.Errorf("JSON response should be unchanged, got %q", body)
+	}
+}
+
+func TestDevProxy_ResponseRewriting_ContentLength(t *testing.T) {
+	originalHTML := `<!DOCTYPE html><html><head></head><body>Test</body></html>`
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, originalHTML)
+	}))
+	defer backend.Close()
+
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	id, _ := h.RegisterDevTarget("app", backend.URL)
+	h.ActivateDevTarget(id)
+
+	req := httptest.NewRequest("GET", "/miniapp/dev/", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	clHeader := w.Header().Get("Content-Length")
+	if clHeader != "" {
+		cl, _ := strconv.Atoi(clHeader)
+		if cl != len(body) {
+			t.Errorf("Content-Length mismatch: header=%d, actual=%d", cl, len(body))
+		}
 	}
 }
 
