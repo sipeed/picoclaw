@@ -282,6 +282,12 @@ func generateChatID(r *http.Request) string {
 
 // renderMarkdown converts Markdown to HTML using goldmark
 func renderMarkdown(input string) string {
+	// Debug: log first 100 chars of input
+	// logger.DebugF("http renderMarkdown input", map[string]any{"input": input[:min(100, len(input))]})
+	
+	// Convert newlines to <br> before markdown processing
+	input = strings.ReplaceAll(input, "\n", "  \n")
+	
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
@@ -292,7 +298,15 @@ func renderMarkdown(input string) string {
 
 	var buf strings.Builder
 	if err := md.Convert([]byte(input), &buf); err != nil {
+		logger.ErrorCF("http", "renderMarkdown error", map[string]any{"error": err.Error()})
 		return input // fallback to plain text on error
 	}
 	return buf.String()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

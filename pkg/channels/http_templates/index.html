@@ -116,7 +116,7 @@
             display: flex;
             gap: 12px;
         }
-        .input-wrapper input {
+        .input-wrapper textarea {
             flex: 1;
             padding: 14px 20px;
             border: 2px solid #2d2d44;
@@ -125,12 +125,18 @@
             color: white;
             font-size: 1rem;
             outline: none;
-            transition: border-color 0.2s;
+            resize: none;
+            min-height: 56px;
+            max-height: 200px;
+            line-height: 1.5;
+            box-sizing: border-box;
+            font-family: inherit;
+            overflow-y: auto;
         }
-        .input-wrapper input:focus {
+        .input-wrapper textarea:focus {
             border-color: #ff6b35;
         }
-        .input-wrapper input::placeholder {
+        .input-wrapper textarea::placeholder {
             color: #64748b;
         }
         .input-wrapper button {
@@ -196,7 +202,7 @@
         </div>
         <div class="input-container">
             <div class="input-wrapper">
-                <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." autocomplete="off">
+                <textarea id="messageInput" placeholder="Escribe tu mensaje..." autocomplete="off" rows="1"></textarea>
                 <button id="sendButton">Enviar</button>
             </div>
         </div>
@@ -247,7 +253,12 @@
         function addMessage(content, type) {
             const div = document.createElement('div');
             div.className = `message ${type}`;
-            div.innerHTML = content;
+            // Convert newlines to <br> for proper rendering in HTML
+            // For user messages, we need to preserve line breaks from textarea
+            let processedContent = content.replace(/\n/g, '<br>');
+            // Also handle double newlines as paragraphs (optional, for better readability)
+            processedContent = processedContent.replace(/\n\n/g, '<br><br>');
+            div.innerHTML = processedContent;
             chatContainer.appendChild(div);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
@@ -267,7 +278,7 @@
         }
 
         function sendMessage() {
-            const content = messageInput.value.trim();
+            const content = messageInput.value;
             if (!content || !connected) return;
 
             addMessage(content, 'user');
@@ -287,9 +298,26 @@
         }
 
         sendButton.addEventListener('click', sendMessage);
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
         });
+        
+        // Auto-resize textarea
+        function autoResizeTextarea() {
+            const textarea = document.getElementById('messageInput');
+            textarea.style.height = 'auto';
+            textarea.style.height = textarea.scrollHeight + 'px';
+        }
+        
+        messageInput.addEventListener('input', autoResizeTextarea);
+        messageInput.addEventListener('keyup', autoResizeTextarea);
+        messageInput.addEventListener('click', autoResizeTextarea);
+        
+        // Initialize height
+        setTimeout(autoResizeTextarea, 100);
 
         // Heartbeat to keep connection alive
         setInterval(() => {
