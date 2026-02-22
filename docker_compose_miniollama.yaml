@@ -1,0 +1,26 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-mini
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=5m  # Unloads model after 5 mins to save RAM
+      - OLLAMA_NUM_PARALLEL=1 # Limits to 1 user at a time for speed
+    deploy:
+      resources:
+        limits:
+          memory: 4G # Change this to 50% of your Mini PC's total RAM
+          cpus: '0.50' # Limit to 50% of CPU
+
+
+--------------------------------------------
+Module to pull :configs:
+command : docker exec mini-ollama ollama pull qwen3-coder:480b-cloud
+- Cloud:
+          qwen3-coder:480b-cloud - for coding tasks, optimized for speed and accuracy
+          kimi-k2:1t-cloud - for orchestration and general tasks, optimized for versatility
+          ministral-3/glm-4.7-flash - for tool processing
