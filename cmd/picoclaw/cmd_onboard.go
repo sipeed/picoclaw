@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/setup"
 )
 
 //go:generate cp -r ../../workspace .
@@ -20,23 +21,27 @@ var embeddedFiles embed.FS
 func onboard() {
 	configPath := getConfigPath()
 
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("Config already exists at %s\n", configPath)
-		fmt.Print("Overwrite? (y/n): ")
-		var response string
-		fmt.Scanln(&response)
-		if response != "y" {
-			fmt.Println("Aborted.")
-			return
-		}
+	// Use the new setup package to run interactive setup and ask for missing values.
+	s, err := setup.NewSetup(configPath)
+	if err != nil {
+		fmt.Printf("Error initializing setup: %v\n", err)
+		os.Exit(1)
 	}
 
-	cfg := config.DefaultConfig()
+	if err := s.Run(); err != nil {
+		fmt.Printf("TUI error: %v\n", err)
+	}
+
+	if err := s.AskMissing(); err != nil {
+		fmt.Printf("Error updating config: %v\n", err)
+		os.Exit(1)
+	}
+
+	cfg := s.Cfg
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		fmt.Printf("Error saving config: %v\n", err)
 		os.Exit(1)
 	}
-
 	workspace := cfg.WorkspacePath()
 	createWorkspaceTemplates(workspace)
 
