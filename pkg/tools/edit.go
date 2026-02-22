@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"strings"
@@ -71,15 +70,16 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	if t.restrict {
-		return executeInRoot(t.allowedDir, path, func(root *os.Root, relPath string) (*ToolResult, error) {
-			if err := editFileInRoot(root, relPath, oldText, newText); err != nil {
+		return executeInWorkspace(t.allowedDir, path, func(root *os.Root, relPath string) (*ToolResult, error) {
+			rw := &sandboxFs{root: root}
+			if err := editFile(rw, relPath, oldText, newText); err != nil {
 				return nil, err
 			}
 			return SilentResult(fmt.Sprintf("File edited: %s", path)), nil
 		})
 	}
 
-	if err := editFile(&hostRW{}, path, oldText, newText); err != nil {
+	if err := editFile(&hostFs{}, path, oldText, newText); err != nil {
 		return ErrorResult(err.Error())
 	}
 	return SilentResult(fmt.Sprintf("File edited: %s", path))
@@ -125,23 +125,23 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *Tool
 		return ErrorResult("path is required")
 	}
 
-	appendContent, ok := args["content"].(string)
+	content, ok := args["content"].(string)
 	if !ok {
 		return ErrorResult("content is required")
 	}
 
 	var rw fileReadWriter
 	if t.restrict {
-		return executeInRoot(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
-			if err := appendFileWithRW(&rootRW{root: root}, relPath, appendContent); err != nil {
+		return executeInWorkspace(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
+			if err := appendFileWithRW(&sandboxFs{root: root}, relPath, content); err != nil {
 				return nil, err
 			}
 			return SilentResult(fmt.Sprintf("Appended to %s", path)), nil
 		})
 	}
 
-	rw = &hostRW{}
-	if err := appendFileWithRW(rw, path, appendContent); err != nil {
+	rw = &hostFs{}
+	if err := appendFileWithRW(rw, path, content); err != nil {
 		return ErrorResult(err.Error())
 	}
 	return SilentResult(fmt.Sprintf("Appended to %s", path))
@@ -161,46 +161,6 @@ func editFile(rw fileReadWriter, path, oldText, newText string) error {
 	}
 
 	return rw.Write(path, newContent)
-}
-
-// editFileInRoot performs an in-place edit within an os.Root using a single open call.
-// By opening with O_RDWR and reusing the same file descriptor for both read and write,
-// we narrow the TOCTOU window compared to two separate open calls.
-func editFileInRoot(root *os.Root, relPath, oldText, newText string) error {
-	f, err := root.OpenFile(relPath, os.O_RDWR, 0)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("failed to read file: file not found: %w", err)
-		}
-		if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") {
-			return fmt.Errorf("failed to read file: access denied: %w", err)
-		}
-		return fmt.Errorf("failed to open file for editing: %w", err)
-	}
-	defer f.Close()
-
-	content, err := io.ReadAll(f)
-	if err != nil {
-		return fmt.Errorf("failed to read file content: %w", err)
-	}
-
-	newContent, err := replaceEditContent(content, oldText, newText)
-	if err != nil {
-		return err
-	}
-
-	// Truncate the file and seek back to the beginning before writing.
-	if err := f.Truncate(0); err != nil {
-		return fmt.Errorf("failed to truncate file for in-place edit: %w", err)
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to seek to beginning of file: %w", err)
-	}
-
-	if _, err := f.Write(newContent); err != nil {
-		return fmt.Errorf("failed to write edited content: %w", err)
-	}
-	return nil
 }
 
 // appendFileWithRW reads the existing content (if any) via rw, appends new content, and writes back.

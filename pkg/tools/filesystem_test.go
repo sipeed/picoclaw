@@ -371,7 +371,7 @@ func TestHostRW_Read_PermissionDenied(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.Chmod(protected, 0644) // ensure cleanup
 
-	_, err = (&hostRW{}).Read(protected)
+	_, err = (&hostFs{}).Read(protected)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "access denied")
 }
@@ -380,7 +380,7 @@ func TestHostRW_Read_PermissionDenied(t *testing.T) {
 func TestHostRW_Read_Directory(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	_, err := (&hostRW{}).Read(tmpDir)
+	_, err := (&hostFs{}).Read(tmpDir)
 	assert.Error(t, err, "expected error when reading a directory as a file")
 }
 
@@ -395,7 +395,7 @@ func TestRootRW_Read_Directory(t *testing.T) {
 	err = root.Mkdir("subdir", 0755)
 	assert.NoError(t, err)
 
-	_, err = (&rootRW{root: root}).Read("subdir")
+	_, err = (&sandboxFs{root: root}).Read("subdir")
 	assert.Error(t, err, "expected error when reading a directory as a file")
 }
 
@@ -404,7 +404,7 @@ func TestHostRW_Write_ParentDirMissing(t *testing.T) {
 	tmpDir := t.TempDir()
 	target := filepath.Join(tmpDir, "a", "b", "c", "file.txt")
 
-	err := (&hostRW{}).Write(target, []byte("hello"))
+	err := (&hostFs{}).Write(target, []byte("hello"))
 	assert.NoError(t, err)
 
 	data, err := os.ReadFile(target)
@@ -421,7 +421,7 @@ func TestRootRW_Write_ParentDirMissing(t *testing.T) {
 	defer root.Close()
 
 	relPath := "x/y/z/file.txt"
-	err = (&rootRW{root: root}).Write(relPath, []byte("nested"))
+	err = (&sandboxFs{root: root}).Write(relPath, []byte("nested"))
 	assert.NoError(t, err)
 
 	data, err := os.ReadFile(filepath.Join(workspace, relPath))
@@ -435,7 +435,7 @@ func TestHostRW_Write(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "atomic_test.txt")
 	testData := []byte("atomic test content")
 
-	err := (&hostRW{}).Write(testFile, testData)
+	err := (&hostFs{}).Write(testFile, testData)
 	assert.NoError(t, err)
 
 	content, err := os.ReadFile(testFile)
@@ -444,7 +444,7 @@ func TestHostRW_Write(t *testing.T) {
 
 	// Verify it overwrites correctly
 	newData := []byte("new atomic content")
-	err = (&hostRW{}).Write(testFile, newData)
+	err = (&hostFs{}).Write(testFile, newData)
 	assert.NoError(t, err)
 
 	content, err = os.ReadFile(testFile)
@@ -462,7 +462,7 @@ func TestRootRW_Write(t *testing.T) {
 	relPath := "atomic_root_test.txt"
 	testData := []byte("atomic root test content")
 
-	erw := &rootRW{root: root}
+	erw := &sandboxFs{root: root}
 	err = erw.Write(relPath, testData)
 	assert.NoError(t, err)
 

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,8 +118,8 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	if t.restrict {
-		return executeInRoot(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
-			content, err := (&rootRW{root: root}).Read(relPath)
+		return executeInWorkspace(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
+			content, err := (&sandboxFs{root: root}).Read(relPath)
 			if err != nil {
 				return nil, err
 			}
@@ -126,7 +127,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		})
 	}
 
-	content, err := (&hostRW{}).Read(path)
+	content, err := (&hostFs{}).Read(path)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -179,15 +180,15 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	}
 
 	if t.restrict {
-		return executeInRoot(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
-			if err := (&rootRW{root: root}).Write(relPath, []byte(content)); err != nil {
+		return executeInWorkspace(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
+			if err := (&sandboxFs{root: root}).Write(relPath, []byte(content)); err != nil {
 				return nil, err
 			}
 			return SilentResult(fmt.Sprintf("File written: %s", path)), nil
 		})
 	}
 
-	if err := (&hostRW{}).Write(path, []byte(content)); err != nil {
+	if err := (&hostFs{}).Write(path, []byte(content)); err != nil {
 		return ErrorResult(err.Error())
 	}
 
@@ -238,14 +239,8 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		return formatDirEntries(entries)
 	}
 
-	return executeInRoot(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
-		f, err := root.Open(relPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open directory: %w", err)
-		}
-		defer f.Close()
-
-		entries, err := f.ReadDir(-1)
+	return executeInWorkspace(t.workspace, path, func(root *os.Root, relPath string) (*ToolResult, error) {
+		entries, err := fs.ReadDir(root.FS(), relPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read directory: %w", err)
 		}
@@ -273,10 +268,10 @@ type fileReadWriter interface {
 	Write(path string, data []byte) error
 }
 
-// hostRW is an unrestricted fileReadWriter that operates directly on the host filesystem.
-type hostRW struct{}
+// hostFs is an unrestricted fileReadWriter that operates directly on the host filesystem.
+type hostFs struct{}
 
-func (h *hostRW) Read(path string) ([]byte, error) {
+func (h *hostFs) Read(path string) ([]byte, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -290,14 +285,18 @@ func (h *hostRW) Read(path string) ([]byte, error) {
 	return content, nil
 }
 
-func (h *hostRW) Write(path string, data []byte) error {
+func (h *hostFs) Write(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create parent directories: %w", err)
 	}
 
+	// We use a "write-then-rename" pattern here to ensure an atomic write.
+	// This prevents the target file from being left in a truncated or partial state
+	// if the operation is interrupted, as the rename operation is atomic on Linux.
 	tmpPath := fmt.Sprintf("%s.%d.tmp", path, time.Now().UnixNano())
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		os.Remove(tmpPath) // Ensure cleanup of partial/empty temp file
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 
@@ -308,13 +307,13 @@ func (h *hostRW) Write(path string, data []byte) error {
 	return nil
 }
 
-// rootRW is a sandboxed fileReadWriter that operates within an os.Root boundary.
+// sandboxFs is a sandboxed fileReadWriter that operates within an os.Root boundary.
 // All paths passed to Read/Write must be relative to the root.
-type rootRW struct {
+type sandboxFs struct {
 	root *os.Root
 }
 
-func (r *rootRW) Read(path string) ([]byte, error) {
+func (r *sandboxFs) Read(path string) ([]byte, error) {
 	content, err := r.root.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -329,7 +328,7 @@ func (r *rootRW) Read(path string) ([]byte, error) {
 	return content, nil
 }
 
-func (r *rootRW) Write(path string, data []byte) error {
+func (r *sandboxFs) Write(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if dir != "." && dir != "/" {
 		if err := r.root.MkdirAll(dir, 0755); err != nil {
@@ -337,21 +336,14 @@ func (r *rootRW) Write(path string, data []byte) error {
 		}
 	}
 
+	// We use a "write-then-rename" pattern here to ensure an atomic write.
+	// This prevents the target file from being left in a truncated or partial state
+	// if the operation is interrupted, as the rename operation is atomic on Linux.
 	tmpRelPath := fmt.Sprintf("%s.%d.tmp", path, time.Now().UnixNano())
-	fw, err := r.root.Create(tmpRelPath)
-	if err != nil {
-		return fmt.Errorf("failed to create temp file for writing: %w", err)
-	}
 
-	if _, err := fw.Write(data); err != nil {
-		fw.Close()
-		r.root.Remove(tmpRelPath)
+	if err := r.root.WriteFile(tmpRelPath, data, 0644); err != nil {
+		r.root.Remove(tmpRelPath) // Ensure cleanup of partial/empty temp file
 		return fmt.Errorf("failed to write to temp file: %w", err)
-	}
-
-	if err := fw.Close(); err != nil {
-		r.root.Remove(tmpRelPath)
-		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
 	if err := r.root.Rename(tmpRelPath, path); err != nil {
@@ -383,8 +375,8 @@ func getSafeRelPath(workspace, path string) (string, error) {
 	return rel, nil
 }
 
-// executeInRoot executes a function within the safety of os.Root
-func executeInRoot(workspace string, path string, fn func(root *os.Root, relPath string) (*ToolResult, error)) *ToolResult {
+// executeInWorkspace executes a function within the safety of os.Root
+func executeInWorkspace(workspace string, path string, fn func(root *os.Root, relPath string) (*ToolResult, error)) *ToolResult {
 	if workspace == "" {
 		return ErrorResult("workspace is not defined")
 	}
@@ -392,7 +384,7 @@ func executeInRoot(workspace string, path string, fn func(root *os.Root, relPath
 	// 1. Open the Root
 	root, err := os.OpenRoot(workspace)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to open workspace root: %v", err))
+		return ErrorResult(fmt.Sprintf("failed to open workspace: %v", err))
 	}
 	defer root.Close()
 
