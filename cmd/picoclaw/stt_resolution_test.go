@@ -224,7 +224,7 @@ func TestResolveSTTTranscriber_LLMEntryNotMatchedAsSTT(t *testing.T) {
 }
 
 func TestResolveSTTTranscriber_STTModelNoAPIKey(t *testing.T) {
-	// stt_model found but no API key, should fall back
+	// stt_model found with no API key (keyless/self-hosted endpoint) - should still resolve
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
@@ -241,7 +241,7 @@ func TestResolveSTTTranscriber_STTModelNoAPIKey(t *testing.T) {
 	}
 
 	tr := resolveSTTTranscriber(cfg)
-	if tr != nil {
-		t.Error("expected nil - model has no API key")
+	if tr == nil {
+		t.Error("expected non-nil transcriber - keyless endpoints with known protocol should resolve")
 	}
 }

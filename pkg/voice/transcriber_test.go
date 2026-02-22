@@ -27,14 +27,18 @@ func TestOpenAICompatTranscriber_IsAvailable(t *testing.T) {
 	tests := []struct {
 		name     string
 		apiKey   string
+		apiBase  string
+		model    string
 		expected bool
 	}{
-		{"with key", "test-key", true},
-		{"empty key", "", false},
+		{"with key and base", "test-key", "https://example.com", "model", true},
+		{"keyless with base", "", "https://example.com", "model", true},
+		{"empty base", "test-key", "", "model", false},
+		{"empty model", "test-key", "https://example.com", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := NewOpenAICompatTranscriber(tt.apiKey, "https://example.com", "model")
+			tr := NewOpenAICompatTranscriber(tt.apiKey, tt.apiBase, tt.model)
 			if got := tr.IsAvailable(); got != tt.expected {
 				t.Errorf("IsAvailable() = %v, want %v", got, tt.expected)
 			}
@@ -108,10 +112,47 @@ func TestOpenAICompatTranscriber_TranscribeError(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	audioFile := filepath.Join(tmpDir, "test.ogg")
-	os.WriteFile(audioFile, []byte("fake audio data"), 0644)
+	if err := os.WriteFile(audioFile, []byte("fake audio data"), 0644); err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
 
 	_, err := tr.Transcribe(context.Background(), audioFile)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestNewOpenAICompatTranscriber_NormalizesTrailingSlash(t *testing.T) {
+	tr := NewOpenAICompatTranscriber("key", "https://api.example.com/v1/", "whisper-1")
+	if tr.apiBase != "https://api.example.com/v1" {
+		t.Errorf("expected trailing slash trimmed, got %q", tr.apiBase)
+	}
+}
+
+func TestOpenAICompatTranscriber_KeylessTranscription(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth := r.Header.Get("Authorization"); auth != "" {
+			t.Errorf("expected no Authorization header for keyless, got %q", auth)
+		}
+		resp := TranscriptionResponse{Text: "keyless works"}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	tr := NewOpenAICompatTranscriber("", server.URL, "whisper-1")
+
+	tmpDir := t.TempDir()
+	audioFile := filepath.Join(tmpDir, "test.ogg")
+	if err := os.WriteFile(audioFile, []byte("fake audio data"), 0644); err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+
+	result, err := tr.Transcribe(context.Background(), audioFile)
+	if err != nil {
+		t.Fatalf("Transcribe() error: %v", err)
+	}
+	if result.Text != "keyless works" {
+		t.Errorf("expected 'keyless works', got %q", result.Text)
 	}
 }

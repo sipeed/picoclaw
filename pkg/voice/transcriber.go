@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -39,7 +40,7 @@ func NewOpenAICompatTranscriber(apiKey, apiBase, model string) *OpenAICompatTran
 
 	return &OpenAICompatTranscriber{
 		apiKey:  apiKey,
-		apiBase: apiBase,
+		apiBase: strings.TrimRight(apiBase, "/"),
 		model:   model,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
@@ -108,7 +109,9 @@ func (t *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioFilePath 
 	}
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+t.apiKey)
+	if t.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+t.apiKey)
+	}
 
 	logger.DebugCF("voice", "Sending transcription request to STT API", map[string]any{
 		"url":                url,
@@ -159,7 +162,7 @@ func (t *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioFilePath 
 }
 
 func (t *OpenAICompatTranscriber) IsAvailable() bool {
-	available := t.apiKey != ""
+	available := t.apiBase != "" && t.model != ""
 	logger.DebugCF("voice", "Checking transcriber availability", map[string]any{"available": available})
 	return available
 }
