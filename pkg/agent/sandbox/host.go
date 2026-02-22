@@ -28,10 +28,28 @@ func NewHostSandbox(workspace string, restrict bool) *HostSandbox {
 }
 
 func (h *HostSandbox) Start(ctx context.Context) error {
+	// Initialize os.Root for restricted workspace mode to centrally mitigate TOCTOU (Time-of-Check-Time-of-Use) attacks.
+	if h.restrict && h.workspace != "" {
+		r, err := os.OpenRoot(h.workspace)
+		if err != nil {
+			return fmt.Errorf("failed to open workspace root: %w", err)
+		}
+		if hsFS, ok := h.fs.(*hostFS); ok {
+			hsFS.root = r
+		}
+	}
 	return nil
 }
 
 func (h *HostSandbox) Prune(ctx context.Context) error {
+	// Clean up os.Root file descriptors securely.
+	if h.restrict && h.workspace != "" {
+		if hsFS, ok := h.fs.(*hostFS); ok && hsFS.root != nil {
+			err := hsFS.root.Close()
+			hsFS.root = nil
+			return err
+		}
+	}
 	return nil
 }
 
@@ -67,7 +85,7 @@ func (h *HostSandbox) ExecStream(ctx context.Context, req ExecRequest, onEvent f
 	}
 
 	if req.WorkingDir != "" {
-		dir, err := h.resolvePath(req.WorkingDir)
+		dir, err := validatePath(req.WorkingDir, h.workspace, h.restrict)
 		if err != nil {
 			return nil, err
 		}
@@ -164,34 +182,76 @@ func (h *HostSandbox) ExecStream(ctx context.Context, req ExecRequest, onEvent f
 type hostFS struct {
 	workspace string
 	restrict  bool
+	root      *os.Root // OS-level directory file descriptor to safely confine operations and prevent TOCTOU escapes.
+}
+
+func (h *hostFS) getSafeRelPath(path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	if !isWithinWorkspace(path, h.workspace) {
+		return "", ErrOutsideWorkspace
+	}
+	// Rel is safe because isWithinWorkspace returned true
+	rel, _ := filepath.Rel(h.workspace, path)
+	return rel, nil
 }
 
 func (h *hostFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	resolved, err := resolvePath(path, h.workspace, h.restrict)
+	if !h.restrict || h.workspace == "" || h.root == nil {
+		// Unrestricted mode continues to use traditional resolution
+		resolved, err := validatePath(path, h.workspace, h.restrict)
+		if err != nil {
+			return nil, err
+		}
+		return os.ReadFile(resolved)
+	}
+
+	relPath, err := h.getSafeRelPath(path)
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(resolved)
+
+	// os.Root guarantees that the read operation strictly happens within the workspace directory,
+	// effectively and atomically mitigating TOCTOU (Time-of-Check-Time-of-Use) vulnerabilities via symlinks.
+	return h.root.ReadFile(relPath)
 }
 
 func (h *hostFS) WriteFile(ctx context.Context, path string, data []byte, mkdir bool) error {
-	resolved, err := resolvePath(path, h.workspace, h.restrict)
+	if !h.restrict || h.workspace == "" || h.root == nil {
+		// Unrestricted mode continues to use traditional resolution
+		resolved, err := validatePath(path, h.workspace, h.restrict)
+		if err != nil {
+			return err
+		}
+		if mkdir {
+			if err := os.MkdirAll(filepath.Dir(resolved), 0755); err != nil {
+				return err
+			}
+		}
+		return os.WriteFile(resolved, data, 0644)
+	}
+
+	relPath, err := h.getSafeRelPath(path)
 	if err != nil {
 		return err
 	}
+
 	if mkdir {
-		if err := os.MkdirAll(filepath.Dir(resolved), 0755); err != nil {
+		// MkdirAll natively resolves inside os.Root to avoid escapes.
+		if err := h.root.MkdirAll(filepath.Dir(relPath), 0755); err != nil {
 			return err
 		}
 	}
-	return os.WriteFile(resolved, data, 0644)
+	// Uses OS-level guarantees to restrict the file writing within the root descriptor.
+	return h.root.WriteFile(relPath, data, 0644)
 }
 
-func (h *HostSandbox) resolvePath(path string) (string, error) {
-	return resolvePath(path, h.workspace, h.restrict)
-}
-
-func resolvePath(path, workspace string, restrict bool) (string, error) {
+// validatePath ensures the given path is within the workspace if restrict is true but does not ensure atomic TOCTOU protection.
+// It is kept for setting string-based fields like cmd.Dir where os.Root cannot be directly mapped.
+// The secure file operations boundary relies on os.Root implemented in FsBridge.
+// validatePath ensures the given path is within the workspace if restrict is true.
+func validatePath(path, workspace string, restrict bool) (string, error) {
 	if workspace == "" {
 		return path, nil
 	}
@@ -211,29 +271,52 @@ func resolvePath(path, workspace string, restrict bool) (string, error) {
 		}
 	}
 
-	if !restrict {
-		return absPath, nil
-	}
+	if restrict {
+		if !isWithinWorkspace(absPath, absWorkspace) {
+			return "", ErrOutsideWorkspace
+		}
 
-	rel, err := filepath.Rel(absWorkspace, absPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve relative path: %w", err)
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return "", fmt.Errorf("access denied: path is outside the workspace")
-	}
+		var resolved string
+		workspaceReal := absWorkspace
+		if resolved, err = filepath.EvalSymlinks(absWorkspace); err == nil {
+			workspaceReal = resolved
+		}
 
-	workspaceReal := absWorkspace
-	if resolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
-		workspaceReal = resolved
-	}
-
-	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
-		relResolved, err := filepath.Rel(workspaceReal, resolved)
-		if err != nil || relResolved == ".." || strings.HasPrefix(relResolved, ".."+string(os.PathSeparator)) {
-			return "", fmt.Errorf("access denied: symlink resolves outside workspace")
+		if resolved, err = filepath.EvalSymlinks(absPath); err == nil {
+			if !isWithinWorkspace(resolved, workspaceReal) {
+				return "", ErrOutsideWorkspace
+			}
+		} else if os.IsNotExist(err) {
+			var parentResolved string
+			if parentResolved, err = resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
+				if !isWithinWorkspace(parentResolved, workspaceReal) {
+					return "", fmt.Errorf("access denied: symlink resolves outside workspace")
+				}
+			} else if !os.IsNotExist(err) {
+				return "", fmt.Errorf("failed to resolve path: %w", err)
+			}
+		} else {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
 		}
 	}
 
 	return absPath, nil
+}
+
+func resolveExistingAncestor(path string) (string, error) {
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			return resolved, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		if filepath.Dir(current) == current {
+			return "", os.ErrNotExist
+		}
+	}
+}
+
+func isWithinWorkspace(candidate, workspace string) bool {
+	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
+	return err == nil && filepath.IsLocal(rel)
 }

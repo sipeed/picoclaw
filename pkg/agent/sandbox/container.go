@@ -70,7 +70,7 @@ const defaultSandboxRegistryFile = "containers.json"
 // NewContainerSandbox creates a container sandbox with normalized defaults and precomputed config hash.
 func NewContainerSandbox(cfg ContainerSandboxConfig) *ContainerSandbox {
 	if strings.TrimSpace(cfg.Image) == "" {
-		cfg.Image = "debian:bookworm-slim"
+		cfg.Image = "openclaw-sandbox:bookworm-slim"
 	}
 	if strings.TrimSpace(cfg.ContainerPrefix) == "" {
 		cfg.ContainerPrefix = "picoclaw-sandbox-"
