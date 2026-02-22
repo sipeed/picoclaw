@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -587,6 +588,16 @@ func expandHome(path string) string {
 	if path == "" {
 		return path
 	}
+
+	// Handle multiple paths separated by |
+	if strings.Contains(path, "|") {
+		parts := strings.Split(path, "|")
+		for i, p := range parts {
+			parts[i] = expandHome(strings.TrimSpace(p))
+		}
+		return strings.Join(parts, "|")
+	}
+
 	if path[0] == '~' {
 		home, _ := os.UserHomeDir()
 		if len(path) > 1 && path[1] == '/' {

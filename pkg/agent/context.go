@@ -30,6 +30,9 @@ func getGlobalConfigDir() string {
 }
 
 func NewContextBuilder(workspace string) *ContextBuilder {
+	// workspace can be a multiplexed string separated by '|'
+	primaryWorkspace := strings.Split(workspace, "|")[0]
+
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
 	wd, _ := os.Getwd()
@@ -38,8 +41,8 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 
 	return &ContextBuilder{
 		workspace:    workspace,
-		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
-		memory:       NewMemoryStore(workspace),
+		skillsLoader: skills.NewSkillsLoader(primaryWorkspace, globalSkillsDir, builtinSkillsDir),
+		memory:       NewMemoryStore(primaryWorkspace),
 	}
 }
 
@@ -50,11 +53,24 @@ func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
 
 func (cb *ContextBuilder) getIdentity() string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
-	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
+
+	allowedPaths := strings.Split(cb.workspace, "|")
+	primaryWorkspace := allowedPaths[0]
+	workspacePath, _ := filepath.Abs(primaryWorkspace)
 	runtime := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
 	// Build tools section dynamically
 	toolsSection := cb.buildToolsSection()
+
+	var authorizedDirs strings.Builder
+	for i, p := range allowedPaths {
+		absP, _ := filepath.Abs(p)
+		if i == 0 {
+			authorizedDirs.WriteString(fmt.Sprintf("- %s (Primary Workspace)\n", absP))
+		} else {
+			authorizedDirs.WriteString(fmt.Sprintf("- %s (Authorized Directory)\n", absP))
+		}
+	}
 
 	return fmt.Sprintf(`# picoclaw 🦞
 
@@ -67,7 +83,10 @@ You are picoclaw, a helpful AI assistant.
 %s
 
 ## Workspace
-Your workspace is at: %s
+Your primary workspace is at: %s
+You are authorized to access and operate in the following directories:
+%s
+
 - Memory: %s/memory/MEMORY.md
 - Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
 - Skills: %s/skills/{skill-name}/SKILL.md
@@ -81,7 +100,7 @@ Your workspace is at: %s
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
+		now, runtime, workspacePath, authorizedDirs.String(), workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
@@ -148,9 +167,11 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 		"IDENTITY.md",
 	}
 
+	primaryWorkspace := strings.Split(cb.workspace, "|")[0]
+
 	var sb strings.Builder
 	for _, filename := range bootstrapFiles {
-		filePath := filepath.Join(cb.workspace, filename)
+		filePath := filepath.Join(primaryWorkspace, filename)
 		if data, err := os.ReadFile(filePath); err == nil {
 			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
 		}

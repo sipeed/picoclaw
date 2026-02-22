@@ -8,53 +8,81 @@ import (
 	"strings"
 )
 
-// validatePath ensures the given path is within the workspace if restrict is true.
-func validatePath(path, workspace string, restrict bool) (string, error) {
+// validatePath ensures the given path is within one of the allowed paths if restrict is true.
+// workspace can be a single path or multiple paths separated by '|'.
+func validatePath(path string, workspace string, restrict bool) (string, error) {
 	if workspace == "" {
 		return path, nil
 	}
 
-	absWorkspace, err := filepath.Abs(workspace)
+	allowedPaths := strings.Split(workspace, "|")
+	primaryWorkspace := allowedPaths[0]
+	absPrimary, err := filepath.Abs(primaryWorkspace)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve workspace path: %w", err)
+		return "", fmt.Errorf("failed to resolve primary workspace path: %w", err)
 	}
 
 	var absPath string
 	if filepath.IsAbs(path) {
 		absPath = filepath.Clean(path)
 	} else {
-		absPath, err = filepath.Abs(filepath.Join(absWorkspace, path))
+		absPath, err = filepath.Abs(filepath.Join(absPrimary, path))
 		if err != nil {
 			return "", fmt.Errorf("failed to resolve file path: %w", err)
 		}
 	}
 
 	if restrict {
-		if !isWithinWorkspace(absPath, absWorkspace) {
+		found := false
+		for _, wp := range allowedPaths {
+			absWP, _ := filepath.Abs(wp)
+			if isWithinWorkspace(absPath, absWP) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
 			return "", fmt.Errorf("access denied: path is outside the workspace")
 		}
 
+		// Symlink identification and deeper validation
 		var resolved string
-		workspaceReal := absWorkspace
-		if resolved, err = filepath.EvalSymlinks(absWorkspace); err == nil {
-			workspaceReal = resolved
-		}
-
 		if resolved, err = filepath.EvalSymlinks(absPath); err == nil {
-			if !isWithinWorkspace(resolved, workspaceReal) {
+			resFound := false
+			for _, wp := range allowedPaths {
+				absWP, _ := filepath.Abs(wp)
+				resolvedWP := absWP
+				if r, err := filepath.EvalSymlinks(absWP); err == nil {
+					resolvedWP = r
+				}
+				if isWithinWorkspace(resolved, resolvedWP) {
+					resFound = true
+					break
+				}
+			}
+			if !resFound {
 				return "", fmt.Errorf("access denied: symlink resolves outside workspace")
 			}
 		} else if os.IsNotExist(err) {
 			var parentResolved string
 			if parentResolved, err = resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
-				if !isWithinWorkspace(parentResolved, workspaceReal) {
+				resFound := false
+				for _, wp := range allowedPaths {
+					absWP, _ := filepath.Abs(wp)
+					resolvedWP := absWP
+					if r, err := filepath.EvalSymlinks(absWP); err == nil {
+						resolvedWP = r
+					}
+					if isWithinWorkspace(parentResolved, resolvedWP) {
+						resFound = true
+						break
+					}
+				}
+				if !resFound {
 					return "", fmt.Errorf("access denied: symlink resolves outside workspace")
 				}
-			} else if !os.IsNotExist(err) {
-				return "", fmt.Errorf("failed to resolve path: %w", err)
 			}
-		} else {
-			return "", fmt.Errorf("failed to resolve path: %w", err)
 		}
 	}
 
