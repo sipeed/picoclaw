@@ -242,6 +242,11 @@ func TestRefreshAccessToken(t *testing.T) {
 			return
 		}
 
+		if r.FormValue("scope") != "test-scope" {
+			http.Error(w, "invalid scope", http.StatusBadRequest)
+			return
+		}
+
 		resp := map[string]any{
 			"access_token":  "refreshed-access-token",
 			"refresh_token": "refreshed-refresh-token",
@@ -254,6 +259,7 @@ func TestRefreshAccessToken(t *testing.T) {
 	cfg := OAuthProviderConfig{
 		Issuer:   server.URL,
 		ClientID: "test-client",
+		Scopes:   "test-scope",
 	}
 
 	cred := &AuthCredential{
