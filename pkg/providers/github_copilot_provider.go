@@ -33,7 +33,10 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 			CLIUrl: uri,
 		})
 		if err := client.Start(context.Background()); err != nil {
-			return nil, fmt.Errorf("can't connect to Github Copilot: %w; `https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md#connecting-to-an-external-cli-server` for details", err)
+			return nil, fmt.Errorf(
+				"can't connect to Github Copilot: %w; `https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md#connecting-to-an-external-cli-server` for details",
+				err,
+			)
 		}
 
 		session, err := client.CreateSession(context.Background(), &copilot.SessionConfig{
@@ -67,7 +70,13 @@ func (p *GitHubCopilotProvider) Close() {
 	}
 }
 
-func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *GitHubCopilotProvider) Chat(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
 	type tempMessage struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -104,7 +113,7 @@ func (p *GitHubCopilotProvider) Chat(ctx context.Context, messages []Message, to
 		Content:      content,
 	}, nil
 }
-func (p *GitHubCopilotProvider) GetDefaultModel() string {
 
+func (p *GitHubCopilotProvider) GetDefaultModel() string {
 	return "gpt-4.1"
 }
