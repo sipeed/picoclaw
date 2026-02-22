@@ -130,6 +130,9 @@
     "spi": {
       "enabled": false
     },
+    "memory": {
+      "enabled": true
+    },
     "web": {
       "search": {
         "api_key": "YOUR_BRAVE_API_KEY",
