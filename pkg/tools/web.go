@@ -96,7 +96,7 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 		searchURL = "https://api.tavily.com/search"
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"api_key":             p.apiKey,
 		"query":               query,
 		"search_depth":        "advanced",

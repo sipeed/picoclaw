@@ -345,7 +345,7 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 		}
 
 		// Verify payload
-		var payload map[string]interface{}
+		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
 		if payload["api_key"] != "test-key" {
 			t.Errorf("Expected api_key test-key, got %v", payload["api_key"])
@@ -355,8 +355,8 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 		}
 
 		// Return mock response
-		response := map[string]interface{}{
-			"results": []map[string]interface{}{
+		response := map[string]any{
+			"results": []map[string]any{
 				{
 					"title":   "Test Result 1",
 					"url":     "https://example.com/1",
@@ -383,7 +383,7 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"query": "test query",
 	}
 
@@ -395,7 +395,8 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	}
 
 	// ForUser should contain result titles and URLs
-	if !strings.Contains(result.ForUser, "Test Result 1") || !strings.Contains(result.ForUser, "https://example.com/1") {
+	if !strings.Contains(result.ForUser, "Test Result 1") ||
+		!strings.Contains(result.ForUser, "https://example.com/1") {
 		t.Errorf("Expected results in output, got: %s", result.ForUser)
 	}
 
