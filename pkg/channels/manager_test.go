@@ -416,3 +416,219 @@ func TestSendWithRetry_ExponentialBackoff(t *testing.T) {
 		t.Fatalf("expected %d calls, got %d", maxRetries+1, callCount.Load())
 	}
 }
+
+// --- Phase 10: preSend orchestration tests ---
+
+// mockMessageEditor is a channel that supports MessageEditor.
+type mockMessageEditor struct {
+	mockChannel
+	editFn func(ctx context.Context, chatID, messageID, content string) error
+}
+
+func (m *mockMessageEditor) EditMessage(ctx context.Context, chatID, messageID, content string) error {
+	return m.editFn(ctx, chatID, messageID, content)
+}
+
+func TestPreSend_PlaceholderEditSuccess(t *testing.T) {
+	m := newTestManager()
+	var sendCalled bool
+	var editCalled bool
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				sendCalled = true
+				return nil
+			},
+		},
+		editFn: func(_ context.Context, chatID, messageID, content string) error {
+			editCalled = true
+			if chatID != "123" {
+				t.Fatalf("expected chatID 123, got %s", chatID)
+			}
+			if messageID != "456" {
+				t.Fatalf("expected messageID 456, got %s", messageID)
+			}
+			if content != "hello" {
+				t.Fatalf("expected content 'hello', got %s", content)
+			}
+			return nil
+		},
+	}
+
+	// Register placeholder
+	m.RecordPlaceholder("test", "123", "456")
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if !edited {
+		t.Fatal("expected preSend to return true (placeholder edited)")
+	}
+	if !editCalled {
+		t.Fatal("expected EditMessage to be called")
+	}
+	if sendCalled {
+		t.Fatal("expected Send to NOT be called when placeholder edited")
+	}
+}
+
+func TestPreSend_PlaceholderEditFails_FallsThrough(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				return nil
+			},
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			return fmt.Errorf("edit failed")
+		},
+	}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if edited {
+		t.Fatal("expected preSend to return false when edit fails")
+	}
+}
+
+func TestPreSend_TypingStopCalled(t *testing.T) {
+	m := newTestManager()
+	var stopCalled bool
+
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+			return nil
+		},
+	}
+
+	m.RecordTypingStop("test", "123", func() {
+		stopCalled = true
+	})
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	m.preSend(context.Background(), "test", msg, ch)
+
+	if !stopCalled {
+		t.Fatal("expected typing stop func to be called")
+	}
+}
+
+func TestPreSend_NoRegisteredState(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+			return nil
+		},
+	}
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if edited {
+		t.Fatal("expected preSend to return false with no registered state")
+	}
+}
+
+func TestPreSend_TypingAndPlaceholder(t *testing.T) {
+	m := newTestManager()
+	var stopCalled bool
+	var editCalled bool
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				return nil
+			},
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			editCalled = true
+			return nil
+		},
+	}
+
+	m.RecordTypingStop("test", "123", func() {
+		stopCalled = true
+	})
+	m.RecordPlaceholder("test", "123", "456")
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if !stopCalled {
+		t.Fatal("expected typing stop to be called")
+	}
+	if !editCalled {
+		t.Fatal("expected EditMessage to be called")
+	}
+	if !edited {
+		t.Fatal("expected preSend to return true")
+	}
+}
+
+func TestRecordPlaceholder_ConcurrentSafe(t *testing.T) {
+	m := newTestManager()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			chatID := fmt.Sprintf("chat_%d", i%10)
+			m.RecordPlaceholder("test", chatID, fmt.Sprintf("msg_%d", i))
+		}(i)
+	}
+	wg.Wait()
+}
+
+func TestRecordTypingStop_ConcurrentSafe(t *testing.T) {
+	m := newTestManager()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			chatID := fmt.Sprintf("chat_%d", i%10)
+			m.RecordTypingStop("test", chatID, func() {})
+		}(i)
+	}
+	wg.Wait()
+}
+
+func TestSendWithRetry_PreSendEditsPlaceholder(t *testing.T) {
+	m := newTestManager()
+	var sendCalled bool
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				sendCalled = true
+				return nil
+			},
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			return nil // edit succeeds
+		},
+	}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	m.sendWithRetry(context.Background(), "test", w, msg)
+
+	if sendCalled {
+		t.Fatal("expected Send to NOT be called when placeholder was edited")
+	}
+}

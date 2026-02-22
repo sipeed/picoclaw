@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mymmrac/telego"
@@ -26,25 +26,13 @@ import (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot          *telego.Bot
-	bh           *telegohandler.BotHandler
-	commands     TelegramCommander
-	config       *config.Config
-	chatIDs      map[string]int64
-	ctx          context.Context
-	cancel       context.CancelFunc
-	placeholders sync.Map // chatID -> messageID
-	stopThinking sync.Map // chatID -> thinkingCancel
-}
-
-type thinkingCancel struct {
-	fn context.CancelFunc
-}
-
-func (c *thinkingCancel) Cancel() {
-	if c != nil && c.fn != nil {
-		c.fn()
-	}
+	bot      *telego.Bot
+	bh       *telegohandler.BotHandler
+	commands TelegramCommander
+	config   *config.Config
+	chatIDs  map[string]int64
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
@@ -85,13 +73,11 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	)
 
 	return &TelegramChannel{
-		BaseChannel:  base,
-		commands:     NewTelegramCommands(bot, cfg),
-		bot:          bot,
-		config:       cfg,
-		chatIDs:      make(map[string]int64),
-		placeholders: sync.Map{},
-		stopThinking: sync.Map{},
+		BaseChannel: base,
+		commands:    NewTelegramCommands(bot, cfg),
+		bot:         bot,
+		config:      cfg,
+		chatIDs:     make(map[string]int64),
 	}, nil
 }
 
@@ -149,21 +135,6 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
 	c.SetRunning(false)
 
-	// Clean up all thinking cancel functions to avoid context leaks
-	c.stopThinking.Range(func(key, value any) bool {
-		if cf, ok := value.(*thinkingCancel); ok && cf != nil {
-			cf.Cancel()
-		}
-		c.stopThinking.Delete(key)
-		return true
-	})
-
-	// Clean up placeholder state
-	c.placeholders.Range(func(key, value any) bool {
-		c.placeholders.Delete(key)
-		return true
-	})
-
 	// Stop the bot handler
 	if c.bh != nil {
 		c.bh.Stop()
@@ -187,28 +158,9 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
 
-	// Stop thinking animation
-	if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
-		if cf, ok := stop.(*thinkingCancel); ok && cf != nil {
-			cf.Cancel()
-		}
-		c.stopThinking.Delete(msg.ChatID)
-	}
-
 	htmlContent := markdownToTelegramHTML(msg.Content)
 
-	// Try to edit placeholder
-	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
-		editMsg.ParseMode = telego.ModeHTML
-
-		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
-			return nil
-		}
-		// Fallback to new message if edit fails
-	}
-
+	// Typing/placeholder handled by Manager.preSend — just send the message
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 
@@ -223,6 +175,23 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 
 	return nil
+}
+
+// EditMessage implements channels.MessageEditor.
+func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
+	cid, err := parseChatID(chatID)
+	if err != nil {
+		return err
+	}
+	mid, err := strconv.Atoi(messageID)
+	if err != nil {
+		return err
+	}
+	htmlContent := markdownToTelegramHTML(content)
+	editMsg := tu.EditMessageText(tu.ID(cid), mid, htmlContent)
+	editMsg.ParseMode = telego.ModeHTML
+	_, err = c.bot.EditMessageText(ctx, editMsg)
+	return err
 }
 
 // SendMedia implements the channels.MediaSender interface.
@@ -445,21 +414,21 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		})
 	}
 
-	// Stop any previous thinking animation
-	if prevStop, ok := c.stopThinking.Load(chatIDStr); ok {
-		if cf, ok := prevStop.(*thinkingCancel); ok && cf != nil {
-			cf.Cancel()
-		}
-	}
-
-	// Create cancel function for thinking state
+	// Create cancel function for thinking state and register with Manager
 	_, thinkCancel := context.WithTimeout(ctx, 5*time.Minute)
-	c.stopThinking.Store(chatIDStr, &thinkingCancel{fn: thinkCancel})
+	if rec := c.GetPlaceholderRecorder(); rec != nil {
+		rec.RecordTypingStop("telegram", chatIDStr, thinkCancel)
+	} else {
+		// No recorder — cancel immediately to avoid context leak
+		thinkCancel()
+	}
 
 	pMsg, err := c.bot.SendMessage(ctx, tu.Message(tu.ID(chatID), "Thinking... 💭"))
 	if err == nil {
 		pID := pMsg.MessageID
-		c.placeholders.Store(chatIDStr, pID)
+		if rec := c.GetPlaceholderRecorder(); rec != nil {
+			rec.RecordPlaceholder("telegram", chatIDStr, fmt.Sprintf("%d", pID))
+		}
 	}
 
 	peerKind := "direct"
