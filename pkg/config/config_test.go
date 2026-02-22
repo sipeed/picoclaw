@@ -282,6 +282,27 @@ func TestDefaultConfig_Channels(t *testing.T) {
 	if cfg.Channels.Slack.Enabled {
 		t.Error("Slack should be disabled by default")
 	}
+	if cfg.Channels.Webhook.Enabled {
+		t.Error("Webhook should be disabled by default")
+	}
+	if cfg.Channels.Webhook.WebhookHost != "127.0.0.1" {
+		t.Errorf("Expected webhook host 127.0.0.1, got %s", cfg.Channels.Webhook.WebhookHost)
+	}
+	if cfg.Channels.Webhook.WebhookPort != 18794 {
+		t.Errorf("Expected webhook port 18794, got %d", cfg.Channels.Webhook.WebhookPort)
+	}
+	if cfg.Channels.Webhook.WebhookPath != "/v1/inbound" {
+		t.Errorf("Expected webhook path /v1/inbound, got %s", cfg.Channels.Webhook.WebhookPath)
+	}
+	if cfg.Channels.Webhook.SendPath != "/v1/outbound" {
+		t.Errorf("Expected webhook send path /v1/outbound, got %s", cfg.Channels.Webhook.SendPath)
+	}
+	if cfg.Channels.Webhook.ConnectorURL != "http://127.0.0.1:19400/v1/outbound" {
+		t.Errorf("Expected connector URL http://127.0.0.1:19400/v1/outbound, got %s", cfg.Channels.Webhook.ConnectorURL)
+	}
+	if cfg.Channels.Webhook.ConnectorTimeout != 10 {
+		t.Errorf("Expected connector timeout 10, got %d", cfg.Channels.Webhook.ConnectorTimeout)
+	}
 }
 
 // TestDefaultConfig_WebTools verifies web tools config

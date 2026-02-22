@@ -190,6 +190,7 @@ type ChannelsConfig struct {
 	Slack    SlackConfig    `json:"slack"`
 	LINE     LINEConfig     `json:"line"`
 	OneBot   OneBotConfig   `json:"onebot"`
+	Webhook  WebhookConfig  `json:"webhook"`
 	WeCom    WeComConfig    `json:"wecom"`
 	WeComApp WeComAppConfig `json:"wecom_app"`
 }
@@ -268,6 +269,18 @@ type OneBotConfig struct {
 	ReconnectInterval  int                 `json:"reconnect_interval"   env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
+}
+
+type WebhookConfig struct {
+	Enabled          bool                `json:"enabled"           env:"PICOCLAW_CHANNELS_WEBHOOK_ENABLED"`
+	WebhookHost      string              `json:"webhook_host"      env:"PICOCLAW_CHANNELS_WEBHOOK_WEBHOOK_HOST"`
+	WebhookPort      int                 `json:"webhook_port"      env:"PICOCLAW_CHANNELS_WEBHOOK_WEBHOOK_PORT"`
+	WebhookPath      string              `json:"webhook_path"      env:"PICOCLAW_CHANNELS_WEBHOOK_WEBHOOK_PATH"`
+	SendPath         string              `json:"send_path"         env:"PICOCLAW_CHANNELS_WEBHOOK_SEND_PATH"`
+	ConnectorURL     string              `json:"connector_url"     env:"PICOCLAW_CHANNELS_WEBHOOK_CONNECTOR_URL"`
+	ConnectorTimeout int                 `json:"connector_timeout" env:"PICOCLAW_CHANNELS_WEBHOOK_CONNECTOR_TIMEOUT"`
+	Token            string              `json:"token"             env:"PICOCLAW_CHANNELS_WEBHOOK_TOKEN"`
+	AllowFrom        FlexibleStringSlice `json:"allow_from"        env:"PICOCLAW_CHANNELS_WEBHOOK_ALLOW_FROM"`
 }
 
 type WeComConfig struct {
