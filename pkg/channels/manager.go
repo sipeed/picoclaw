@@ -8,8 +8,13 @@ package channels
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"sync"
+	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -19,12 +24,28 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
-const defaultChannelQueueSize = 100
+const (
+	defaultChannelQueueSize = 100
+	defaultRateLimit        = 10 // default 10 msg/s
+	maxRetries              = 3
+	rateLimitDelay          = 1 * time.Second
+	baseBackoff             = 500 * time.Millisecond
+	maxBackoff              = 8 * time.Second
+)
+
+// channelRateConfig maps channel name to per-second rate limit.
+var channelRateConfig = map[string]float64{
+	"telegram": 20,
+	"discord":  1,
+	"slack":    1,
+	"line":     10,
+}
 
 type channelWorker struct {
-	ch    Channel
-	queue chan bus.OutboundMessage
-	done  chan struct{}
+	ch      Channel
+	queue   chan bus.OutboundMessage
+	done    chan struct{}
+	limiter *rate.Limiter
 }
 
 type Manager struct {
@@ -83,11 +104,7 @@ func (m *Manager) initChannel(name, displayName string) {
 			}
 		}
 		m.channels[name] = ch
-		m.workers[name] = &channelWorker{
-			ch:    ch,
-			queue: make(chan bus.OutboundMessage, defaultChannelQueueSize),
-			done:  make(chan struct{}),
-		}
+		m.workers[name] = newChannelWorker(name, ch)
 		logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
 			"channel": displayName,
 		})
@@ -227,6 +244,23 @@ func (m *Manager) StopAll(ctx context.Context) error {
 	return nil
 }
 
+// newChannelWorker creates a channelWorker with a rate limiter configured
+// for the given channel name.
+func newChannelWorker(name string, ch Channel) *channelWorker {
+	rateVal := float64(defaultRateLimit)
+	if r, ok := channelRateConfig[name]; ok {
+		rateVal = r
+	}
+	burst := int(math.Max(1, math.Ceil(rateVal/2)))
+
+	return &channelWorker{
+		ch:      ch,
+		queue:   make(chan bus.OutboundMessage, defaultChannelQueueSize),
+		done:    make(chan struct{}),
+		limiter: rate.NewLimiter(rate.Limit(rateVal), burst),
+	}
+}
+
 // runWorker processes outbound messages for a single channel, splitting
 // messages that exceed the channel's maximum message length.
 func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) {
@@ -246,23 +280,72 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 				for _, chunk := range chunks {
 					chunkMsg := msg
 					chunkMsg.Content = chunk
-					if err := w.ch.Send(ctx, chunkMsg); err != nil {
-						logger.ErrorCF("channels", "Error sending chunk", map[string]any{
-							"channel": name, "error": err.Error(),
-						})
-					}
+					m.sendWithRetry(ctx, name, w, chunkMsg)
 				}
 			} else {
-				if err := w.ch.Send(ctx, msg); err != nil {
-					logger.ErrorCF("channels", "Error sending message", map[string]any{
-						"channel": name, "error": err.Error(),
-					})
-				}
+				m.sendWithRetry(ctx, name, w, msg)
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+// sendWithRetry sends a message through the channel with rate limiting and
+// retry logic. It classifies errors to determine the retry strategy:
+//   - ErrNotRunning / ErrSendFailed: permanent, no retry
+//   - ErrRateLimit: fixed delay retry
+//   - ErrTemporary / unknown: exponential backoff retry
+func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) {
+	// Rate limit: wait for token
+	if err := w.limiter.Wait(ctx); err != nil {
+		// ctx cancelled, shutting down
+		return
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		lastErr = w.ch.Send(ctx, msg)
+		if lastErr == nil {
+			return
+		}
+
+		// Permanent failures — don't retry
+		if errors.Is(lastErr, ErrNotRunning) || errors.Is(lastErr, ErrSendFailed) {
+			break
+		}
+
+		// Last attempt exhausted — don't sleep
+		if attempt == maxRetries {
+			break
+		}
+
+		// Rate limit error — fixed delay
+		if errors.Is(lastErr, ErrRateLimit) {
+			select {
+			case <-time.After(rateLimitDelay):
+				continue
+			case <-ctx.Done():
+				return
+			}
+		}
+
+		// ErrTemporary or unknown error — exponential backoff
+		backoff := min(time.Duration(float64(baseBackoff)*math.Pow(2, float64(attempt))), maxBackoff)
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return
+		}
+	}
+
+	// All retries exhausted or permanent failure
+	logger.ErrorCF("channels", "Send failed", map[string]any{
+		"channel": name,
+		"chat_id": msg.ChatID,
+		"error":   lastErr.Error(),
+		"retries": maxRetries,
+	})
 }
 
 func (m *Manager) dispatchOutbound(ctx context.Context) {
@@ -343,11 +426,7 @@ func (m *Manager) RegisterChannel(name string, channel Channel) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.channels[name] = channel
-	m.workers[name] = &channelWorker{
-		ch:    channel,
-		queue: make(chan bus.OutboundMessage, defaultChannelQueueSize),
-		done:  make(chan struct{}),
-	}
+	m.workers[name] = newChannelWorker(name, channel)
 }
 
 func (m *Manager) UnregisterChannel(name string) {
