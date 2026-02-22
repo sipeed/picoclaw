@@ -34,17 +34,19 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 			return "", fmt.Errorf("access denied: path is outside the workspace")
 		}
 
+		var resolved string
 		workspaceReal := absWorkspace
-		if resolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
+		if resolved, err = filepath.EvalSymlinks(absWorkspace); err == nil {
 			workspaceReal = resolved
 		}
 
-		if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		if resolved, err = filepath.EvalSymlinks(absPath); err == nil {
 			if !isWithinWorkspace(resolved, workspaceReal) {
 				return "", fmt.Errorf("access denied: symlink resolves outside workspace")
 			}
 		} else if os.IsNotExist(err) {
-			if parentResolved, err := resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
+			var parentResolved string
+			if parentResolved, err = resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
 				if !isWithinWorkspace(parentResolved, workspaceReal) {
 					return "", fmt.Errorf("access denied: symlink resolves outside workspace")
 				}
@@ -94,11 +96,11 @@ func (t *ReadFileTool) Description() string {
 	return "Read the contents of a file"
 }
 
-func (t *ReadFileTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *ReadFileTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
+		"properties": map[string]any{
+			"path": map[string]any{
 				"type":        "string",
 				"description": "Path to the file to read",
 			},
@@ -107,7 +109,7 @@ func (t *ReadFileTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
 		return ErrorResult("path is required")
@@ -143,15 +145,15 @@ func (t *WriteFileTool) Description() string {
 	return "Write content to a file"
 }
 
-func (t *WriteFileTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *WriteFileTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
+		"properties": map[string]any{
+			"path": map[string]any{
 				"type":        "string",
 				"description": "Path to the file to write",
 			},
-			"content": map[string]interface{}{
+			"content": map[string]any{
 				"type":        "string",
 				"description": "Content to write to the file",
 			},
@@ -160,7 +162,7 @@ func (t *WriteFileTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
 		return ErrorResult("path is required")
@@ -177,11 +179,11 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 	}
 
 	dir := filepath.Dir(resolvedPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to create directory: %v", err))
 	}
 
-	if err := os.WriteFile(resolvedPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(resolvedPath, []byte(content), 0o644); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 
@@ -205,11 +207,11 @@ func (t *ListDirTool) Description() string {
 	return "List files and directories in a path"
 }
 
-func (t *ListDirTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *ListDirTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
+		"properties": map[string]any{
+			"path": map[string]any{
 				"type":        "string",
 				"description": "Path to list",
 			},
@@ -218,7 +220,7 @@ func (t *ListDirTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
 		path = "."

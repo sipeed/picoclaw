@@ -42,23 +42,23 @@ func (t *InstallSkillTool) Description() string {
 	return "Install a skill from a registry by slug. Downloads and extracts the skill into the workspace. Use find_skills first to discover available skills."
 }
 
-func (t *InstallSkillTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *InstallSkillTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"slug": map[string]interface{}{
+		"properties": map[string]any{
+			"slug": map[string]any{
 				"type":        "string",
 				"description": "The unique slug of the skill to install (e.g., 'github', 'docker-compose')",
 			},
-			"version": map[string]interface{}{
+			"version": map[string]any{
 				"type":        "string",
 				"description": "Specific version to install (optional, defaults to latest)",
 			},
-			"registry": map[string]interface{}{
+			"registry": map[string]any{
 				"type":        "string",
 				"description": "Registry to install from (required, e.g., 'clawhub')",
 			},
-			"force": map[string]interface{}{
+			"force": map[string]any{
 				"type":        "boolean",
 				"description": "Force reinstall if skill already exists (default false)",
 			},
@@ -67,7 +67,7 @@ func (t *InstallSkillTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	// Install lock to prevent concurrent directory operations.
 	// Ideally this should be done at a `slug` level, currently, its at a `workspace` level.
 	t.mu.Lock()
@@ -94,7 +94,9 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interfac
 
 	if !force {
 		if _, err := os.Stat(targetDir); err == nil {
-			return ErrorResult(fmt.Sprintf("skill %q already installed at %s. Use force=true to reinstall.", slug, targetDir))
+			return ErrorResult(
+				fmt.Sprintf("skill %q already installed at %s. Use force=true to reinstall.", slug, targetDir),
+			)
 		}
 	} else {
 		// Force: remove existing if present.
@@ -108,7 +110,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interfac
 	}
 
 	// Ensure skills directory exists.
-	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to create skills directory: %v", err))
 	}
 
@@ -119,7 +121,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interfac
 		rmErr := os.RemoveAll(targetDir)
 		if rmErr != nil {
 			logger.ErrorCF("tool", "Failed to remove partial install",
-				map[string]interface{}{
+				map[string]any{
 					"tool":       "install_skill",
 					"target_dir": targetDir,
 					"error":      rmErr.Error(),
@@ -133,7 +135,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interfac
 		rmErr := os.RemoveAll(targetDir)
 		if rmErr != nil {
 			logger.ErrorCF("tool", "Failed to remove partial install",
-				map[string]interface{}{
+				map[string]any{
 					"tool":       "install_skill",
 					"target_dir": targetDir,
 					"error":      rmErr.Error(),
@@ -145,7 +147,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]interfac
 	// Write origin metadata.
 	if err := writeOriginMeta(targetDir, registry.Name(), slug, result.Version); err != nil {
 		logger.ErrorCF("tool", "Failed to write origin metadata",
-			map[string]interface{}{
+			map[string]any{
 				"tool":     "install_skill",
 				"error":    err.Error(),
 				"target":   targetDir,
@@ -195,5 +197,5 @@ func writeOriginMeta(targetDir, registryName, slug, version string) error {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(targetDir, ".skill-origin.json"), data, 0644)
+	return os.WriteFile(filepath.Join(targetDir, ".skill-origin.json"), data, 0o644)
 }

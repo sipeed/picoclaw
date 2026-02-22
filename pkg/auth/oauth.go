@@ -44,7 +44,9 @@ func OpenAIOAuthConfig() OAuthProviderConfig {
 // Client credentials are the same ones used by OpenCode/pi-ai for Cloud Code Assist access.
 func GoogleAntigravityOAuthConfig() OAuthProviderConfig {
 	// These are the same client credentials used by the OpenCode antigravity plugin.
-	clientID := decodeBase64("MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==")
+	clientID := decodeBase64(
+		"MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
+	)
 	clientSecret := decodeBase64("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=")
 	return OAuthProviderConfig{
 		Issuer:       "https://accounts.google.com/o/oauth2/v2",
@@ -129,8 +131,13 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 		fmt.Printf("Could not open browser automatically.\nPlease open this URL manually:\n\n%s\n\n", authURL)
 	}
 
-	fmt.Printf("Wait! If you are in a headless environment (like Coolify/VPS) and cannot reach localhost:%d,\n", cfg.Port)
-	fmt.Println("please complete the login in your local browser and then PASTE the final redirect URL (or just the code) here.")
+	fmt.Printf(
+		"Wait! If you are in a headless environment (like Coolify/VPS) and cannot reach localhost:%d,\n",
+		cfg.Port,
+	)
+	fmt.Println(
+		"please complete the login in your local browser and then PASTE the final redirect URL (or just the code) here.",
+	)
 	fmt.Println("Waiting for authentication (browser or manual paste)...")
 
 	// Start manual input in a goroutine
@@ -253,8 +260,11 @@ func LoginDeviceCode(cfg OAuthProviderConfig) (*AuthCredential, error) {
 		deviceResp.Interval = 5
 	}
 
-	fmt.Printf("\nTo authenticate, open this URL in your browser:\n\n  %s/codex/device\n\nThen enter this code: %s\n\nWaiting for authentication...\n",
-		cfg.Issuer, deviceResp.UserCode)
+	fmt.Printf(
+		"\nTo authenticate, open this URL in your browser:\n\n  %s/codex/device\n\nThen enter this code: %s\n\nWaiting for authentication...\n",
+		cfg.Issuer,
+		deviceResp.UserCode,
+	)
 
 	deadline := time.After(15 * time.Minute)
 	ticker := time.NewTicker(time.Duration(deviceResp.Interval) * time.Second)
@@ -491,15 +501,15 @@ func extractAccountID(token string) string {
 		return accountID
 	}
 
-	if authClaim, ok := claims["https://api.openai.com/auth"].(map[string]interface{}); ok {
+	if authClaim, ok := claims["https://api.openai.com/auth"].(map[string]any); ok {
 		if accountID, ok := authClaim["chatgpt_account_id"].(string); ok && accountID != "" {
 			return accountID
 		}
 	}
 
-	if orgs, ok := claims["organizations"].([]interface{}); ok {
+	if orgs, ok := claims["organizations"].([]any); ok {
 		for _, org := range orgs {
-			if orgMap, ok := org.(map[string]interface{}); ok {
+			if orgMap, ok := org.(map[string]any); ok {
 				if accountID, ok := orgMap["id"].(string); ok && accountID != "" {
 					return accountID
 				}
@@ -510,7 +520,7 @@ func extractAccountID(token string) string {
 	return ""
 }
 
-func parseJWTClaims(token string) (map[string]interface{}, error) {
+func parseJWTClaims(token string) (map[string]any, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("token is not a JWT")
@@ -529,7 +539,7 @@ func parseJWTClaims(token string) (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	var claims map[string]interface{}
+	var claims map[string]any
 	if err := json.Unmarshal(decoded, &claims); err != nil {
 		return nil, err
 	}
