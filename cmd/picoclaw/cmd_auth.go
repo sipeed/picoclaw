@@ -424,6 +424,20 @@ func authStatusCmd() {
 		fmt.Printf("  %s:\n", provider)
 		fmt.Printf("    Method: %s\n", cred.AuthMethod)
 		fmt.Printf("    Status: %s\n", status)
+
+		if cred.AuthMethod == "oauth" {
+			var scopes string
+			switch provider {
+			case "openai":
+				scopes = auth.OpenAIOAuthConfig().Scopes
+			case "google-antigravity", "antigravity":
+				scopes = auth.GoogleAntigravityOAuthConfig().Scopes
+			}
+			if scopes != "" {
+				fmt.Printf("    Scopes: %s\n", scopes)
+			}
+		}
+
 		if cred.AccountID != "" {
 			fmt.Printf("    Account: %s\n", cred.AccountID)
 		}
