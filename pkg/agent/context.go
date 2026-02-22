@@ -15,14 +15,14 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace        string
-	dataDir          string
-	skillsLoader     *skills.SkillsLoader
-	memory           *MemoryStore
-	tools            *tools.ToolRegistry // Direct reference to tool registry
-	mcpManager       *mcp.Manager        // MCP server manager
-	enabledChannels  []string            // Active communication channels
-	memoryToolEnabled bool               // Whether memory tool is registered
+	workspace         string
+	dataDir           string
+	skillsLoader      *skills.SkillsLoader
+	memory            *MemoryStore
+	tools             *tools.ToolRegistry // Direct reference to tool registry
+	mcpManager        *mcp.Manager        // MCP server manager
+	enabledChannels   []string            // Active communication channels
+	memoryToolEnabled bool                // Whether memory tool is registered
 }
 
 func getGlobalConfigDir() string {
