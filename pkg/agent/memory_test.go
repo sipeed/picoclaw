@@ -503,6 +503,147 @@ func TestFormatPlanDisplay(t *testing.T) {
 	}
 }
 
+func TestValidatePlanStructure(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr string // "" means nil error expected
+	}{
+		{
+			name: "valid plan with 1 phase and 1 step",
+			content: `# Active Plan
+
+> Task: Do something
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+- [ ] Install deps
+`,
+			wantErr: "",
+		},
+		{
+			name:    "missing Active Plan header",
+			content: `> Status: executing`,
+			wantErr: "missing '# Active Plan' header",
+		},
+		{
+			name: "missing Status line",
+			content: `# Active Plan
+
+> Phase: 1
+
+## Phase 1: Setup
+- [ ] Install deps
+`,
+			wantErr: "missing '> Status:' line",
+		},
+		{
+			name: "missing Phase line",
+			content: `# Active Plan
+
+> Status: executing
+
+## Phase 1: Setup
+- [ ] Install deps
+`,
+			wantErr: "missing '> Phase:' line",
+		},
+		{
+			name: "no Phase sections",
+			content: `# Active Plan
+
+> Task: Do something
+> Status: executing
+> Phase: 1
+`,
+			wantErr: "no '## Phase N:' sections found",
+		},
+		{
+			name: "phase with no checkbox steps",
+			content: `# Active Plan
+
+> Task: Do something
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+Some description without checkboxes
+`,
+			wantErr: "Phase 1 has no checkbox steps",
+		},
+		{
+			name: "all steps done is valid",
+			content: `# Active Plan
+
+> Task: Do something
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+- [x] Install deps
+- [x] Configure
+`,
+			wantErr: "",
+		},
+		{
+			name: "multi-phase valid",
+			content: `# Active Plan
+
+> Task: Do something
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+- [ ] Install deps
+
+## Phase 2: Build
+- [ ] Compile
+- [ ] Test
+`,
+			wantErr: "",
+		},
+		{
+			name: "second phase empty steps",
+			content: `# Active Plan
+
+> Task: Do something
+> Status: executing
+> Phase: 1
+
+## Phase 1: Setup
+- [ ] Install deps
+
+## Phase 2: Build
+No checkboxes here
+`,
+			wantErr: "Phase 2 has no checkbox steps",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms, cleanup := newTestMemoryStore(t)
+			defer cleanup()
+
+			ms.WriteLongTerm(tt.content)
+			err := ms.ValidatePlanStructure()
+
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("expected nil error, got: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.wantErr)
+				} else if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+				}
+			}
+		})
+	}
+}
+
 func TestMemoryStoreCreation(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "memory-test-*")
 	if err != nil {

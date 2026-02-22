@@ -828,10 +828,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		// Intercept: if AI changed status from interviewing to executing,
 		// hijack to "review" and show the plan for user approval.
 		if preStatus == "interviewing" {
-			if agent.ContextBuilder.GetTotalPhases() == 0 {
+			if err := agent.ContextBuilder.ValidatePlanStructure(); err != nil {
 				_ = agent.ContextBuilder.SetPlanStatus("interviewing")
-				logger.WarnCF("agent", "Reverted plan to interviewing: no phases defined",
+				logger.WarnCF("agent", "Reverted plan to interviewing: "+err.Error(),
 					map[string]interface{}{"agent_id": agent.ID})
+				// Inject rejection so LLM knows what to fix
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: "[System] Plan rejected: " + err.Error() + ". Fix and try again.",
+				})
 			} else {
 				_ = agent.ContextBuilder.SetPlanStatus("review")
 				if !constants.IsInternalChannel(opts.Channel) {

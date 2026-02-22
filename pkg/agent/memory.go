@@ -407,6 +407,41 @@ func (ms *MemoryStore) AddStep(phase int, desc string) error {
 	return ms.WriteLongTerm(strings.Join(newLines, "\n"))
 }
 
+// ValidatePlanStructure checks that the plan has valid structure for
+// transitioning out of the interview phase. Returns nil if valid,
+// or an error describing the first problem found.
+func (ms *MemoryStore) ValidatePlanStructure() error {
+	content := ms.ReadLongTerm()
+
+	// 1. Header: # Active Plan must exist
+	if !reActivePlan.MatchString(content) {
+		return fmt.Errorf("missing '# Active Plan' header")
+	}
+
+	// 2. Required metadata lines
+	if !reStatus.MatchString(content) {
+		return fmt.Errorf("missing '> Status:' line")
+	}
+	if !rePhase.MatchString(content) {
+		return fmt.Errorf("missing '> Phase:' line")
+	}
+
+	// 3. At least one phase header (## Phase N: title)
+	phases := ms.GetPlanPhases()
+	if len(phases) == 0 {
+		return fmt.Errorf("no '## Phase N:' sections found")
+	}
+
+	// 4. Every phase must have at least one checkbox step
+	for _, p := range phases {
+		if len(p.Steps) == 0 {
+			return fmt.Errorf("Phase %d has no checkbox steps (use '- [ ] ...')", p.Number)
+		}
+	}
+
+	return nil
+}
+
 // ---------- Selective injection methods ----------
 
 // GetPlanWorkDir returns the WorkDir from the plan metadata, or "".
