@@ -231,6 +231,91 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	return nil
 }
 
+// SendMedia implements the channels.MediaSender interface.
+func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	chatID, err := parseChatID(msg.ChatID)
+	if err != nil {
+		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+	}
+
+	for _, part := range msg.Parts {
+		localPath, err := store.Resolve(part.Ref)
+		if err != nil {
+			logger.ErrorCF("telegram", "Failed to resolve media ref", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		file, err := os.Open(localPath)
+		if err != nil {
+			logger.ErrorCF("telegram", "Failed to open media file", map[string]any{
+				"path":  localPath,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		filename := part.Filename
+		if filename == "" {
+			filename = "file"
+		}
+
+		switch part.Type {
+		case "image":
+			params := &telego.SendPhotoParams{
+				ChatID:  tu.ID(chatID),
+				Photo:   telego.InputFile{File: file},
+				Caption: part.Caption,
+			}
+			_, err = c.bot.SendPhoto(ctx, params)
+		case "audio":
+			params := &telego.SendAudioParams{
+				ChatID:  tu.ID(chatID),
+				Audio:   telego.InputFile{File: file},
+				Caption: part.Caption,
+			}
+			_, err = c.bot.SendAudio(ctx, params)
+		case "video":
+			params := &telego.SendVideoParams{
+				ChatID:  tu.ID(chatID),
+				Video:   telego.InputFile{File: file},
+				Caption: part.Caption,
+			}
+			_, err = c.bot.SendVideo(ctx, params)
+		default: // "file" or unknown types
+			params := &telego.SendDocumentParams{
+				ChatID:   tu.ID(chatID),
+				Document: telego.InputFile{File: file},
+				Caption:  part.Caption,
+			}
+			_, err = c.bot.SendDocument(ctx, params)
+		}
+
+		file.Close()
+
+		if err != nil {
+			logger.ErrorCF("telegram", "Failed to send media", map[string]any{
+				"type":  part.Type,
+				"error": err.Error(),
+			})
+			return fmt.Errorf("telegram send media: %w", channels.ErrTemporary)
+		}
+	}
+
+	return nil
+}
+
 func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Message) error {
 	if message == nil {
 		return fmt.Errorf("message is nil")

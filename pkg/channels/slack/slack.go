@@ -149,6 +149,60 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 	return nil
 }
 
+// SendMedia implements the channels.MediaSender interface.
+func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	channelID, _ := parseSlackChatID(msg.ChatID)
+	if channelID == "" {
+		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+	}
+
+	for _, part := range msg.Parts {
+		localPath, err := store.Resolve(part.Ref)
+		if err != nil {
+			logger.ErrorCF("slack", "Failed to resolve media ref", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		filename := part.Filename
+		if filename == "" {
+			filename = "file"
+		}
+
+		title := part.Caption
+		if title == "" {
+			title = filename
+		}
+
+		_, err = c.api.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
+			Channel:  channelID,
+			File:     localPath,
+			Filename: filename,
+			Title:    title,
+		})
+		if err != nil {
+			logger.ErrorCF("slack", "Failed to upload media", map[string]any{
+				"filename": filename,
+				"error":    err.Error(),
+			})
+			return fmt.Errorf("slack send media: %w", channels.ErrTemporary)
+		}
+	}
+
+	return nil
+}
+
 func (c *SlackChannel) eventLoop() {
 	for {
 		select {

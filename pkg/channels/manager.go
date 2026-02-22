@@ -44,10 +44,12 @@ var channelRateConfig = map[string]float64{
 }
 
 type channelWorker struct {
-	ch      Channel
-	queue   chan bus.OutboundMessage
-	done    chan struct{}
-	limiter *rate.Limiter
+	ch         Channel
+	queue      chan bus.OutboundMessage
+	mediaQueue chan bus.OutboundMediaMessage
+	done       chan struct{}
+	mediaDone  chan struct{}
+	limiter    *rate.Limiter
 }
 
 type Manager struct {
@@ -239,10 +241,12 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	// Start per-channel workers
 	for name, w := range m.workers {
 		go m.runWorker(dispatchCtx, name, w)
+		go m.runMediaWorker(dispatchCtx, name, w)
 	}
 
 	// Start the dispatcher that reads from the bus and routes to workers
 	go m.dispatchOutbound(dispatchCtx)
+	go m.dispatchOutboundMedia(dispatchCtx)
 
 	// Start shared HTTP server if configured
 	if m.httpServer != nil {
@@ -293,6 +297,13 @@ func (m *Manager) StopAll(ctx context.Context) error {
 	for _, w := range m.workers {
 		<-w.done
 	}
+	// Close all media worker queues and wait for them to drain
+	for _, w := range m.workers {
+		close(w.mediaQueue)
+	}
+	for _, w := range m.workers {
+		<-w.mediaDone
+	}
 
 	// Stop all channels
 	for name, channel := range m.channels {
@@ -321,10 +332,12 @@ func newChannelWorker(name string, ch Channel) *channelWorker {
 	burst := int(math.Max(1, math.Ceil(rateVal/2)))
 
 	return &channelWorker{
-		ch:      ch,
-		queue:   make(chan bus.OutboundMessage, defaultChannelQueueSize),
-		done:    make(chan struct{}),
-		limiter: rate.NewLimiter(rate.Limit(rateVal), burst),
+		ch:         ch,
+		queue:      make(chan bus.OutboundMessage, defaultChannelQueueSize),
+		mediaQueue: make(chan bus.OutboundMediaMessage, defaultChannelQueueSize),
+		done:       make(chan struct{}),
+		mediaDone:  make(chan struct{}),
+		limiter:    rate.NewLimiter(rate.Limit(rateVal), burst),
 	}
 }
 
@@ -457,6 +470,125 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 	}
 }
 
+func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
+	logger.InfoC("channels", "Outbound media dispatcher started")
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.InfoC("channels", "Outbound media dispatcher stopped")
+			return
+		default:
+			msg, ok := m.bus.SubscribeOutboundMedia(ctx)
+			if !ok {
+				continue
+			}
+
+			// Silently skip internal channels
+			if constants.IsInternalChannel(msg.Channel) {
+				continue
+			}
+
+			m.mu.RLock()
+			_, exists := m.channels[msg.Channel]
+			w, wExists := m.workers[msg.Channel]
+			m.mu.RUnlock()
+
+			if !exists {
+				logger.WarnCF("channels", "Unknown channel for outbound media message", map[string]any{
+					"channel": msg.Channel,
+				})
+				continue
+			}
+
+			if wExists {
+				select {
+				case w.mediaQueue <- msg:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}
+}
+
+// runMediaWorker processes outbound media messages for a single channel.
+func (m *Manager) runMediaWorker(ctx context.Context, name string, w *channelWorker) {
+	defer close(w.mediaDone)
+	for {
+		select {
+		case msg, ok := <-w.mediaQueue:
+			if !ok {
+				return
+			}
+			m.sendMediaWithRetry(ctx, name, w, msg)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// sendMediaWithRetry sends a media message through the channel with rate limiting and
+// retry logic. If the channel does not implement MediaSender, it silently skips.
+func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMediaMessage) {
+	ms, ok := w.ch.(MediaSender)
+	if !ok {
+		logger.DebugCF("channels", "Channel does not support MediaSender, skipping media", map[string]any{
+			"channel": name,
+		})
+		return
+	}
+
+	// Rate limit: wait for token
+	if err := w.limiter.Wait(ctx); err != nil {
+		return
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		lastErr = ms.SendMedia(ctx, msg)
+		if lastErr == nil {
+			return
+		}
+
+		// Permanent failures — don't retry
+		if errors.Is(lastErr, ErrNotRunning) || errors.Is(lastErr, ErrSendFailed) {
+			break
+		}
+
+		// Last attempt exhausted — don't sleep
+		if attempt == maxRetries {
+			break
+		}
+
+		// Rate limit error — fixed delay
+		if errors.Is(lastErr, ErrRateLimit) {
+			select {
+			case <-time.After(rateLimitDelay):
+				continue
+			case <-ctx.Done():
+				return
+			}
+		}
+
+		// ErrTemporary or unknown error — exponential backoff
+		backoff := min(time.Duration(float64(baseBackoff)*math.Pow(2, float64(attempt))), maxBackoff)
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return
+		}
+	}
+
+	// All retries exhausted or permanent failure
+	logger.ErrorCF("channels", "SendMedia failed", map[string]any{
+		"channel": name,
+		"chat_id": msg.ChatID,
+		"error":   lastErr.Error(),
+		"retries": maxRetries,
+	})
+}
+
 func (m *Manager) GetChannel(name string) (Channel, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -502,6 +634,8 @@ func (m *Manager) UnregisterChannel(name string) {
 	if w, ok := m.workers[name]; ok {
 		close(w.queue)
 		<-w.done
+		close(w.mediaQueue)
+		<-w.mediaDone
 	}
 	delete(m.workers, name)
 	delete(m.channels, name)
