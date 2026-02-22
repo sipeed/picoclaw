@@ -5,11 +5,20 @@ import (
 )
 
 // SplitMessage splits long messages into chunks, preserving code block integrity.
+// The maxLen parameter is measured in runes (Unicode characters), not bytes.
 // The function reserves a buffer (10% of maxLen, min 50) to leave room for closing code blocks,
 // but may extend to maxLen when needed.
 // Call SplitMessage with the full text content and the maximum allowed length of a single message;
 // it returns a slice of message chunks that each respect maxLen and avoid splitting fenced code blocks.
 func SplitMessage(content string, maxLen int) []string {
+	if maxLen <= 0 {
+		if content == "" {
+			return nil
+		}
+		return []string{content}
+	}
+
+	runes := []rune(content)
 	var messages []string
 
 	// Dynamic buffer: 10% of maxLen, but at least 50 chars if possible
@@ -21,9 +30,9 @@ func SplitMessage(content string, maxLen int) []string {
 		codeBlockBuffer = maxLen / 2
 	}
 
-	for len(content) > 0 {
-		if len(content) <= maxLen {
-			messages = append(messages, content)
+	for len(runes) > 0 {
+		if len(runes) <= maxLen {
+			messages = append(messages, string(runes))
 			break
 		}
 
@@ -34,56 +43,66 @@ func SplitMessage(content string, maxLen int) []string {
 		}
 
 		// Find natural split point within the effective limit
-		msgEnd := findLastNewline(content[:effectiveLimit], 200)
+		msgEnd := findLastNewlineRunes(runes[:effectiveLimit], 200)
 		if msgEnd <= 0 {
-			msgEnd = findLastSpace(content[:effectiveLimit], 100)
+			msgEnd = findLastSpaceRunes(runes[:effectiveLimit], 100)
 		}
 		if msgEnd <= 0 {
 			msgEnd = effectiveLimit
 		}
 
 		// Check if this would end with an incomplete code block
-		candidate := content[:msgEnd]
-		unclosedIdx := findLastUnclosedCodeBlock(candidate)
+		candidate := runes[:msgEnd]
+		unclosedIdx := findLastUnclosedCodeBlockRunes(candidate)
 
 		if unclosedIdx >= 0 {
 			// Message would end with incomplete code block
 			// Try to extend up to maxLen to include the closing ```
-			if len(content) > msgEnd {
-				closingIdx := findNextClosingCodeBlock(content, msgEnd)
+			if len(runes) > msgEnd {
+				closingIdx := findNextClosingCodeBlockRunes(runes, msgEnd)
 				if closingIdx > 0 && closingIdx <= maxLen {
 					// Extend to include the closing ```
 					msgEnd = closingIdx
 				} else {
 					// Code block is too long to fit in one chunk or missing closing fence.
 					// Try to split inside by injecting closing and reopening fences.
-					headerEnd := strings.Index(content[unclosedIdx:], "\n")
+					candidateStr := string(candidate)
+					unclosedStr := string(runes[unclosedIdx:])
+					headerEnd := strings.Index(unclosedStr, "\n")
+					var header string
 					if headerEnd == -1 {
-						headerEnd = unclosedIdx + 3
+						header = strings.TrimSpace(string(runes[unclosedIdx : unclosedIdx+3]))
 					} else {
-						headerEnd += unclosedIdx
+						header = strings.TrimSpace(string(runes[unclosedIdx : unclosedIdx+headerEnd]))
 					}
-					header := strings.TrimSpace(content[unclosedIdx:headerEnd])
+					headerEndIdx := unclosedIdx + len([]rune(header))
+					if headerEnd != -1 {
+						headerEndIdx = unclosedIdx + headerEnd
+					}
+
+					_ = candidateStr // used above for context
 
 					// If we have a reasonable amount of content after the header, split inside
-					if msgEnd > headerEnd+20 {
+					if msgEnd > headerEndIdx+20 {
 						// Find a better split point closer to maxLen
 						innerLimit := maxLen - 5 // Leave room for "\n```"
-						betterEnd := findLastNewline(content[:innerLimit], 200)
-						if betterEnd > headerEnd {
+						betterEnd := findLastNewlineRunes(runes[:innerLimit], 200)
+						if betterEnd > headerEndIdx {
 							msgEnd = betterEnd
 						} else {
 							msgEnd = innerLimit
 						}
-						messages = append(messages, strings.TrimRight(content[:msgEnd], " \t\n\r")+"\n```")
-						content = strings.TrimSpace(header + "\n" + content[msgEnd:])
+						chunk := strings.TrimRight(string(runes[:msgEnd]), " \t\n\r") + "\n```"
+						messages = append(messages, chunk)
+						remaining := strings.TrimSpace(header + "\n" + string(runes[msgEnd:]))
+						runes = []rune(remaining)
 						continue
 					}
 
 					// Otherwise, try to split before the code block starts
-					newEnd := findLastNewline(content[:unclosedIdx], 200)
+					newEnd := findLastNewlineRunes(runes[:unclosedIdx], 200)
 					if newEnd <= 0 {
-						newEnd = findLastSpace(content[:unclosedIdx], 100)
+						newEnd = findLastSpaceRunes(runes[:unclosedIdx], 100)
 					}
 					if newEnd > 0 {
 						msgEnd = newEnd
@@ -93,8 +112,10 @@ func SplitMessage(content string, maxLen int) []string {
 							msgEnd = unclosedIdx
 						} else {
 							msgEnd = maxLen - 5
-							messages = append(messages, strings.TrimRight(content[:msgEnd], " \t\n\r")+"\n```")
-							content = strings.TrimSpace(header + "\n" + content[msgEnd:])
+							chunk := strings.TrimRight(string(runes[:msgEnd]), " \t\n\r") + "\n```"
+							messages = append(messages, chunk)
+							remaining := strings.TrimSpace(header + "\n" + string(runes[msgEnd:]))
+							runes = []rune(remaining)
 							continue
 						}
 					}
@@ -106,21 +127,22 @@ func SplitMessage(content string, maxLen int) []string {
 			msgEnd = effectiveLimit
 		}
 
-		messages = append(messages, content[:msgEnd])
-		content = strings.TrimSpace(content[msgEnd:])
+		messages = append(messages, string(runes[:msgEnd]))
+		remaining := strings.TrimSpace(string(runes[msgEnd:]))
+		runes = []rune(remaining)
 	}
 
 	return messages
 }
 
-// findLastUnclosedCodeBlock finds the last opening ``` that doesn't have a closing ```
-// Returns the position of the opening ``` or -1 if all code blocks are complete
-func findLastUnclosedCodeBlock(text string) int {
+// findLastUnclosedCodeBlockRunes finds the last opening ``` that doesn't have a closing ```
+// Returns the rune position of the opening ``` or -1 if all code blocks are complete
+func findLastUnclosedCodeBlockRunes(runes []rune) int {
 	inCodeBlock := false
 	lastOpenIdx := -1
 
-	for i := 0; i < len(text); i++ {
-		if i+2 < len(text) && text[i] == '`' && text[i+1] == '`' && text[i+2] == '`' {
+	for i := 0; i < len(runes); i++ {
+		if i+2 < len(runes) && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
 			// Toggle code block state on each fence
 			if !inCodeBlock {
 				// Entering a code block: record this opening fence
@@ -137,41 +159,41 @@ func findLastUnclosedCodeBlock(text string) int {
 	return -1
 }
 
-// findNextClosingCodeBlock finds the next closing ``` starting from a position
-// Returns the position after the closing ``` or -1 if not found
-func findNextClosingCodeBlock(text string, startIdx int) int {
-	for i := startIdx; i < len(text); i++ {
-		if i+2 < len(text) && text[i] == '`' && text[i+1] == '`' && text[i+2] == '`' {
+// findNextClosingCodeBlockRunes finds the next closing ``` starting from a rune position
+// Returns the rune position after the closing ``` or -1 if not found
+func findNextClosingCodeBlockRunes(runes []rune, startIdx int) int {
+	for i := startIdx; i < len(runes); i++ {
+		if i+2 < len(runes) && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
 			return i + 3
 		}
 	}
 	return -1
 }
 
-// findLastNewline finds the last newline character within the last N characters
-// Returns the position of the newline or -1 if not found
-func findLastNewline(s string, searchWindow int) int {
-	searchStart := len(s) - searchWindow
+// findLastNewlineRunes finds the last newline character within the last N runes
+// Returns the rune position of the newline or -1 if not found
+func findLastNewlineRunes(runes []rune, searchWindow int) int {
+	searchStart := len(runes) - searchWindow
 	if searchStart < 0 {
 		searchStart = 0
 	}
-	for i := len(s) - 1; i >= searchStart; i-- {
-		if s[i] == '\n' {
+	for i := len(runes) - 1; i >= searchStart; i-- {
+		if runes[i] == '\n' {
 			return i
 		}
 	}
 	return -1
 }
 
-// findLastSpace finds the last space character within the last N characters
-// Returns the position of the space or -1 if not found
-func findLastSpace(s string, searchWindow int) int {
-	searchStart := len(s) - searchWindow
+// findLastSpaceRunes finds the last space character within the last N runes
+// Returns the rune position of the space or -1 if not found
+func findLastSpaceRunes(runes []rune, searchWindow int) int {
+	searchStart := len(runes) - searchWindow
 	if searchStart < 0 {
 		searchStart = 0
 	}
-	for i := len(s) - 1; i >= searchStart; i-- {
-		if s[i] == ' ' || s[i] == '\t' {
+	for i := len(runes) - 1; i >= searchStart; i-- {
+		if runes[i] == ' ' || runes[i] == '\t' {
 			return i
 		}
 	}

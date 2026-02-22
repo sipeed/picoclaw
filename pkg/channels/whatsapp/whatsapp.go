@@ -28,7 +28,7 @@ type WhatsAppChannel struct {
 }
 
 func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsAppChannel, error) {
-	base := channels.NewBaseChannel("whatsapp", cfg, bus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("whatsapp", cfg, bus, cfg.AllowFrom, channels.WithMaxMessageLength(65536))
 
 	return &WhatsAppChannel{
 		BaseChannel: base,

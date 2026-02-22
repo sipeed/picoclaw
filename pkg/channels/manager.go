@@ -15,10 +15,20 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
+
+const defaultChannelQueueSize = 100
+
+type channelWorker struct {
+	ch    Channel
+	queue chan bus.OutboundMessage
+	done  chan struct{}
+}
 
 type Manager struct {
 	channels     map[string]Channel
+	workers      map[string]*channelWorker
 	bus          *bus.MessageBus
 	config       *config.Config
 	dispatchTask *asyncTask
@@ -32,6 +42,7 @@ type asyncTask struct {
 func NewManager(cfg *config.Config, messageBus *bus.MessageBus) (*Manager, error) {
 	m := &Manager{
 		channels: make(map[string]Channel),
+		workers:  make(map[string]*channelWorker),
 		bus:      messageBus,
 		config:   cfg,
 	}
@@ -63,6 +74,11 @@ func (m *Manager) initChannel(name, displayName string) {
 		})
 	} else {
 		m.channels[name] = ch
+		m.workers[name] = &channelWorker{
+			ch:    ch,
+			queue: make(chan bus.OutboundMessage, defaultChannelQueueSize),
+			done:  make(chan struct{}),
+		}
 		logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
 			"channel": displayName,
 		})
@@ -141,8 +157,6 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	dispatchCtx, cancel := context.WithCancel(ctx)
 	m.dispatchTask = &asyncTask{cancel: cancel}
 
-	go m.dispatchOutbound(dispatchCtx)
-
 	for name, channel := range m.channels {
 		logger.InfoCF("channels", "Starting channel", map[string]any{
 			"channel": name,
@@ -155,6 +169,14 @@ func (m *Manager) StartAll(ctx context.Context) error {
 		}
 	}
 
+	// Start per-channel workers
+	for name, w := range m.workers {
+		go m.runWorker(dispatchCtx, name, w)
+	}
+
+	// Start the dispatcher that reads from the bus and routes to workers
+	go m.dispatchOutbound(dispatchCtx)
+
 	logger.InfoC("channels", "All channels started")
 	return nil
 }
@@ -165,11 +187,21 @@ func (m *Manager) StopAll(ctx context.Context) error {
 
 	logger.InfoC("channels", "Stopping all channels")
 
+	// Cancel dispatcher first
 	if m.dispatchTask != nil {
 		m.dispatchTask.cancel()
 		m.dispatchTask = nil
 	}
 
+	// Close all worker queues and wait for them to drain
+	for _, w := range m.workers {
+		close(w.queue)
+	}
+	for _, w := range m.workers {
+		<-w.done
+	}
+
+	// Stop all channels
 	for name, channel := range m.channels {
 		logger.InfoCF("channels", "Stopping channel", map[string]any{
 			"channel": name,
@@ -184,6 +216,44 @@ func (m *Manager) StopAll(ctx context.Context) error {
 
 	logger.InfoC("channels", "All channels stopped")
 	return nil
+}
+
+// runWorker processes outbound messages for a single channel, splitting
+// messages that exceed the channel's maximum message length.
+func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) {
+	defer close(w.done)
+	for {
+		select {
+		case msg, ok := <-w.queue:
+			if !ok {
+				return
+			}
+			maxLen := 0
+			if mlp, ok := w.ch.(MessageLengthProvider); ok {
+				maxLen = mlp.MaxMessageLength()
+			}
+			if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
+				chunks := utils.SplitMessage(msg.Content, maxLen)
+				for _, chunk := range chunks {
+					chunkMsg := msg
+					chunkMsg.Content = chunk
+					if err := w.ch.Send(ctx, chunkMsg); err != nil {
+						logger.ErrorCF("channels", "Error sending chunk", map[string]any{
+							"channel": name, "error": err.Error(),
+						})
+					}
+				}
+			} else {
+				if err := w.ch.Send(ctx, msg); err != nil {
+					logger.ErrorCF("channels", "Error sending message", map[string]any{
+						"channel": name, "error": err.Error(),
+					})
+				}
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (m *Manager) dispatchOutbound(ctx context.Context) {
@@ -206,7 +276,8 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 			}
 
 			m.mu.RLock()
-			channel, exists := m.channels[msg.Channel]
+			_, exists := m.channels[msg.Channel]
+			w, wExists := m.workers[msg.Channel]
 			m.mu.RUnlock()
 
 			if !exists {
@@ -216,11 +287,12 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				continue
 			}
 
-			if err := channel.Send(ctx, msg); err != nil {
-				logger.ErrorCF("channels", "Error sending message to channel", map[string]any{
-					"channel": msg.Channel,
-					"error":   err.Error(),
-				})
+			if wExists {
+				select {
+				case w.queue <- msg:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}
@@ -262,17 +334,28 @@ func (m *Manager) RegisterChannel(name string, channel Channel) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.channels[name] = channel
+	m.workers[name] = &channelWorker{
+		ch:    channel,
+		queue: make(chan bus.OutboundMessage, defaultChannelQueueSize),
+		done:  make(chan struct{}),
+	}
 }
 
 func (m *Manager) UnregisterChannel(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if w, ok := m.workers[name]; ok {
+		close(w.queue)
+		<-w.done
+	}
+	delete(m.workers, name)
 	delete(m.channels, name)
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {
 	m.mu.RLock()
-	channel, exists := m.channels[channelName]
+	_, exists := m.channels[channelName]
+	w, wExists := m.workers[channelName]
 	m.mu.RUnlock()
 
 	if !exists {
@@ -285,5 +368,16 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 		Content: content,
 	}
 
+	if wExists {
+		select {
+		case w.queue <- msg:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	// Fallback: direct send (should not happen)
+	channel, _ := m.channels[channelName]
 	return channel.Send(ctx, msg)
 }

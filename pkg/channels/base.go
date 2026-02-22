@@ -17,21 +17,55 @@ type Channel interface {
 	IsAllowed(senderID string) bool
 }
 
-type BaseChannel struct {
-	config    any
-	bus       *bus.MessageBus
-	running   atomic.Bool
-	name      string
-	allowList []string
+// BaseChannelOption is a functional option for configuring a BaseChannel.
+type BaseChannelOption func(*BaseChannel)
+
+// WithMaxMessageLength sets the maximum message length (in runes) for a channel.
+// Messages exceeding this limit will be automatically split by the Manager.
+// A value of 0 means no limit.
+func WithMaxMessageLength(n int) BaseChannelOption {
+	return func(c *BaseChannel) { c.maxMessageLength = n }
 }
 
-func NewBaseChannel(name string, config any, bus *bus.MessageBus, allowList []string) *BaseChannel {
-	return &BaseChannel{
+// MessageLengthProvider is an opt-in interface that channels implement
+// to advertise their maximum message length. The Manager uses this via
+// type assertion to decide whether to split outbound messages.
+type MessageLengthProvider interface {
+	MaxMessageLength() int
+}
+
+type BaseChannel struct {
+	config           any
+	bus              *bus.MessageBus
+	running          atomic.Bool
+	name             string
+	allowList        []string
+	maxMessageLength int
+}
+
+func NewBaseChannel(
+	name string,
+	config any,
+	bus *bus.MessageBus,
+	allowList []string,
+	opts ...BaseChannelOption,
+) *BaseChannel {
+	bc := &BaseChannel{
 		config:    config,
 		bus:       bus,
 		name:      name,
 		allowList: allowList,
 	}
+	for _, opt := range opts {
+		opt(bc)
+	}
+	return bc
+}
+
+// MaxMessageLength returns the maximum message length (in runes) for this channel.
+// A value of 0 means no limit.
+func (c *BaseChannel) MaxMessageLength() int {
+	return c.maxMessageLength
 }
 
 func (c *BaseChannel) Name() string {
