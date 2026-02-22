@@ -153,8 +153,9 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 	}
 
 	metadata := map[string]string{}
-	if messageID := stringValue(message.MessageId); messageID != "" {
-		metadata["message_id"] = messageID
+	messageID := ""
+	if mid := stringValue(message.MessageId); mid != "" {
+		messageID = mid
 	}
 	if messageType := stringValue(message.MessageType); messageType != "" {
 		metadata["message_type"] = messageType
@@ -167,12 +168,11 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 	}
 
 	chatType := stringValue(message.ChatType)
+	var peer bus.Peer
 	if chatType == "p2p" {
-		metadata["peer_kind"] = "direct"
-		metadata["peer_id"] = senderID
+		peer = bus.Peer{Kind: "direct", ID: senderID}
 	} else {
-		metadata["peer_kind"] = "group"
-		metadata["peer_id"] = chatID
+		peer = bus.Peer{Kind: "group", ID: chatID}
 	}
 
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{
@@ -181,7 +181,7 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		"preview":   utils.Truncate(content, 80),
 	})
 
-	c.HandleMessage(senderID, chatID, content, nil, metadata)
+	c.HandleMessage(peer, messageID, senderID, chatID, content, nil, metadata)
 	return nil
 }
 

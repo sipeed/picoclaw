@@ -160,12 +160,11 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		"session_webhook":   data.SessionWebhook,
 	}
 
+	var peer bus.Peer
 	if data.ConversationType == "1" {
-		metadata["peer_kind"] = "direct"
-		metadata["peer_id"] = senderID
+		peer = bus.Peer{Kind: "direct", ID: senderID}
 	} else {
-		metadata["peer_kind"] = "group"
-		metadata["peer_id"] = data.ConversationId
+		peer = bus.Peer{Kind: "group", ID: data.ConversationId}
 	}
 
 	logger.DebugCF("dingtalk", "Received message", map[string]any{
@@ -175,7 +174,7 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 	})
 
 	// Handle the message through the base channel
-	c.HandleMessage(senderID, chatID, content, nil, metadata)
+	c.HandleMessage(peer, "", senderID, chatID, content, nil, metadata)
 
 	// Return nil to indicate we've handled the message asynchronously
 	// The response will be sent through the message bus

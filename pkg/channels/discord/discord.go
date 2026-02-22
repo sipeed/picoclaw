@@ -294,19 +294,18 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		peerID = senderID
 	}
 
+	peer := bus.Peer{Kind: peerKind, ID: peerID}
+
 	metadata := map[string]string{
-		"message_id":   m.ID,
 		"user_id":      senderID,
 		"username":     m.Author.Username,
 		"display_name": senderName,
 		"guild_id":     m.GuildID,
 		"channel_id":   m.ChannelID,
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
-		"peer_kind":    peerKind,
-		"peer_id":      peerID,
 	}
 
-	c.HandleMessage(senderID, m.ChannelID, content, mediaPaths, metadata)
+	c.HandleMessage(peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata)
 }
 
 // startTyping starts a continuous typing indicator loop for the given chatID.

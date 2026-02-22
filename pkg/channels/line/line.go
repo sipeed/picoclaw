@@ -364,15 +364,13 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	metadata := map[string]string{
 		"platform":    "line",
 		"source_type": event.Source.Type,
-		"message_id":  msg.ID,
 	}
 
+	var peer bus.Peer
 	if isGroup {
-		metadata["peer_kind"] = "group"
-		metadata["peer_id"] = chatID
+		peer = bus.Peer{Kind: "group", ID: chatID}
 	} else {
-		metadata["peer_kind"] = "direct"
-		metadata["peer_id"] = senderID
+		peer = bus.Peer{Kind: "direct", ID: senderID}
 	}
 
 	logger.DebugCF("line", "Received message", map[string]any{
@@ -386,7 +384,7 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	// Show typing/loading indicator (requires user ID, not group ID)
 	c.sendLoading(senderID)
 
-	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
+	c.HandleMessage(peer, msg.ID, senderID, chatID, content, mediaPaths, metadata)
 }
 
 // isBotMentioned checks if the bot is mentioned in the message.

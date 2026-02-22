@@ -378,12 +378,12 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 	}
 
 	// Build metadata
+	peer := bus.Peer{Kind: peerKind, ID: peerID}
+
 	metadata := map[string]string{
 		"msg_type":     msg.MsgType,
 		"msg_id":       msg.MsgID,
 		"platform":     "wecom",
-		"peer_kind":    peerKind,
-		"peer_id":      peerID,
 		"response_url": msg.ResponseURL,
 	}
 	if isGroupChat {
@@ -400,7 +400,7 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 	})
 
 	// Handle the message through the base channel
-	c.HandleMessage(senderID, chatID, content, nil, metadata)
+	c.HandleMessage(peer, msg.MsgID, senderID, chatID, content, nil, metadata)
 }
 
 // sendWebhookReply sends a reply using the webhook URL

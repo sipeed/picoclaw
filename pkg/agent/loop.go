@@ -1119,21 +1119,20 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	return "", false
 }
 
-// extractPeer extracts the routing peer from inbound message metadata.
+// extractPeer extracts the routing peer from the inbound message's structured Peer field.
 func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
-	peerKind := msg.Metadata["peer_kind"]
-	if peerKind == "" {
+	if msg.Peer.Kind == "" {
 		return nil
 	}
-	peerID := msg.Metadata["peer_id"]
+	peerID := msg.Peer.ID
 	if peerID == "" {
-		if peerKind == "direct" {
+		if msg.Peer.Kind == "direct" {
 			peerID = msg.SenderID
 		} else {
 			peerID = msg.ChatID
 		}
 	}
-	return &routing.RoutePeer{Kind: peerKind, ID: peerID}
+	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
 }
 
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.

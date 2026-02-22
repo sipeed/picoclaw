@@ -172,22 +172,22 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]any) {
 	}
 
 	metadata := make(map[string]string)
-	if messageID, ok := msg["id"].(string); ok {
-		metadata["message_id"] = messageID
+	var messageID string
+	if mid, ok := msg["id"].(string); ok {
+		messageID = mid
 	}
 	if userName, ok := msg["from_name"].(string); ok {
 		metadata["user_name"] = userName
 	}
 
+	var peer bus.Peer
 	if chatID == senderID {
-		metadata["peer_kind"] = "direct"
-		metadata["peer_id"] = senderID
+		peer = bus.Peer{Kind: "direct", ID: senderID}
 	} else {
-		metadata["peer_kind"] = "group"
-		metadata["peer_id"] = chatID
+		peer = bus.Peer{Kind: "group", ID: chatID}
 	}
 
 	log.Printf("WhatsApp message from %s: %s...", senderID, utils.Truncate(content, 50))
 
-	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
+	c.HandleMessage(peer, messageID, senderID, chatID, content, mediaPaths, metadata)
 }

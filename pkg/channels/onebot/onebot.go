@@ -856,9 +856,9 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 	senderID := strconv.FormatInt(userID, 10)
 	var chatID string
 
-	metadata := map[string]string{
-		"message_id": messageID,
-	}
+	var peer bus.Peer
+
+	metadata := map[string]string{}
 
 	if parsed.ReplyTo != "" {
 		metadata["reply_to_message_id"] = parsed.ReplyTo
@@ -867,14 +867,12 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 	switch raw.MessageType {
 	case "private":
 		chatID = "private:" + senderID
-		metadata["peer_kind"] = "direct"
-		metadata["peer_id"] = senderID
+		peer = bus.Peer{Kind: "direct", ID: senderID}
 
 	case "group":
 		groupIDStr := strconv.FormatInt(groupID, 10)
 		chatID = "group:" + groupIDStr
-		metadata["peer_kind"] = "group"
-		metadata["peer_id"] = groupIDStr
+		peer = bus.Peer{Kind: "group", ID: groupIDStr}
 		metadata["group_id"] = groupIDStr
 
 		senderUserID, _ := parseJSONInt64(sender.UserID)
@@ -929,7 +927,7 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 		c.pendingEmojiMsg.Store(chatID, messageID)
 	}
 
-	c.HandleMessage(senderID, chatID, content, parsed.Media, metadata)
+	c.HandleMessage(peer, messageID, senderID, chatID, content, parsed.Media, metadata)
 }
 
 func (c *OneBotChannel) isDuplicate(messageID string) bool {
