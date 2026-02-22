@@ -8,6 +8,38 @@ metadata: {"nanobot":{"emoji":"🌐"}}
 
 Launch a local dev server as a background process, wait for it to become ready, and connect it to the Mini App dev preview proxy.
 
+## Network Architecture
+
+```
+User's phone (Telegram)
+  │
+  │  HTTPS (internet)
+  ▼
+Telegram Bot API server
+  │
+  │  Mini App WebView (iframe)
+  │  URL: https://BOT_DOMAIN/miniapp
+  ▼
+picoclaw server (VPS / local machine)
+  │
+  │  /miniapp/dev/*  →  reverse proxy (httputil.ReverseProxy)
+  │  strips /miniapp/dev prefix, forwards all HTTP methods
+  ▼
+localhost:PORT (dev server)
+  e.g. Vite on :5173, FastAPI on :8000, Go on :8080
+```
+
+**Request path**: User opens Dev tab in Mini App → iframe loads `/miniapp/dev/` → picoclaw reverse proxy → `localhost:PORT`
+
+**What works**: All HTTP methods (GET/POST/PUT/DELETE/PATCH), JSON APIs, form submissions, static files, SSE
+**What doesn't work**: WebSocket (reverse proxy limitation), non-HTTP protocols
+
+**Key points**:
+- The dev server only needs to bind to **localhost** — it is never exposed directly to the internet
+- picoclaw's reverse proxy handles the internet-facing HTTPS
+- The Mini App frontend sees API paths as `/miniapp/dev/api/...` — the `/miniapp/dev` prefix is stripped before forwarding
+- For CRUD apps, set the API base URL to `/miniapp/dev` in the frontend code
+
 ## Quickstart
 
 ```
