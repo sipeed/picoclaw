@@ -22,6 +22,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/hooks"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/plugin"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -40,6 +41,7 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	hooks          *hooks.HookRegistry
+	pluginManager  *plugin.Manager
 }
 
 // processOptions configures how a message is processed
@@ -239,6 +241,27 @@ func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) {
 			}
 		}
 	}
+}
+
+// SetPluginManager installs a plugin manager and routes its hook registry into the loop.
+// Must be called before Run starts.
+func (al *AgentLoop) SetPluginManager(pm *plugin.Manager) {
+	al.pluginManager = pm
+	if pm == nil {
+		al.SetHooks(nil)
+		return
+	}
+	al.SetHooks(pm.HookRegistry())
+}
+
+// EnablePlugins is a convenience helper to build and install a plugin manager.
+func (al *AgentLoop) EnablePlugins(plugins ...plugin.Plugin) error {
+	pm := plugin.NewManager()
+	if err := pm.RegisterAll(plugins...); err != nil {
+		return err
+	}
+	al.SetPluginManager(pm)
+	return nil
 }
 
 // sendOutbound wraps bus.PublishOutbound with the message_sending hook.
