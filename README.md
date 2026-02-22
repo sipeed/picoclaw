@@ -524,7 +524,7 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 
 * Go to WeCom Admin Console → App Management → Create App
 * Copy **AgentId** and **Secret**
-* Go to "My Company" page, copy **CorpID***
+* Go to "My Company" page, copy **CorpID**
 **2. Configure receive message**
 
 * In App details, click "Receive Message" → "Set API"
