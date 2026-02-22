@@ -15,7 +15,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
@@ -75,11 +78,18 @@ fun MessageBubble(
                     )
                 }
                 if (message.content.isNotEmpty()) {
+                    val baseStyle = MaterialTheme.typography.bodyLarge.copy(color = TextPrimary)
                     Markdown(
                         content = message.content,
                         colors = markdownColor(text = TextPrimary),
                         typography = markdownTypography(
-                            paragraph = MaterialTheme.typography.bodyLarge.copy(color = TextPrimary),
+                            h1 = baseStyle.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold, lineHeight = 28.sp),
+                            h2 = baseStyle.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold, lineHeight = 26.sp),
+                            h3 = baseStyle.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp),
+                            h4 = baseStyle.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp),
+                            h5 = baseStyle.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium, lineHeight = 22.sp),
+                            h6 = baseStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp),
+                            paragraph = baseStyle,
                         ),
                     )
                 }
