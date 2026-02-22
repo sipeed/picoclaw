@@ -58,12 +58,34 @@ type SessionInfo struct {
 	AgeSec     int    `json:"age_sec"`
 }
 
+// GitInfo represents the git repository state exposed via the API.
+type GitInfo struct {
+	Branch   string      `json:"branch"`
+	Commits  []GitCommit `json:"commits"`
+	Modified []GitChange `json:"modified"`
+}
+
+// GitCommit represents a single commit entry.
+type GitCommit struct {
+	Hash    string `json:"hash"`
+	Subject string `json:"subject"`
+	Author  string `json:"author"`
+	Date    string `json:"date"`
+}
+
+// GitChange represents a modified/untracked file entry.
+type GitChange struct {
+	Status string `json:"status"`
+	Path   string `json:"path"`
+}
+
 // DataProvider is the read-only interface to agent state for the Mini App API.
 type DataProvider interface {
 	ListSkills() []skills.SkillInfo
 	GetPlanInfo() PlanInfo
 	GetSessionStats() *stats.Stats
 	GetActiveSessions() []SessionInfo
+	GetGitInfo() GitInfo
 }
 
 // CommandSender injects a command into the message bus on behalf of a user.
@@ -154,6 +176,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/session", h.requireAuth(h.apiSession))
 	mux.HandleFunc("/miniapp/api/sessions", h.requireAuth(h.apiSessions))
 	mux.HandleFunc("/miniapp/api/command", h.requireAuth(h.apiCommand))
+	mux.HandleFunc("/miniapp/api/git", h.requireAuth(h.apiGit))
 	mux.HandleFunc("/miniapp/api/events", h.requireAuth(h.apiEvents))
 }
 
@@ -207,6 +230,10 @@ func (h *Handler) apiSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s)
+}
+
+func (h *Handler) apiGit(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, h.provider.GetGitInfo())
 }
 
 func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {

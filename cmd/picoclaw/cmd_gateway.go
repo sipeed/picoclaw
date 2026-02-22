@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -231,7 +232,7 @@ func gatewayCmd() {
 		}
 
 		if webAppURL != "" {
-			provider := &agentLoopDataProvider{loop: agentLoop}
+			provider := &agentLoopDataProvider{loop: agentLoop, workspace: cfg.WorkspacePath()}
 			sender := &telegramCommandSender{bus: msgBus}
 			miniappNotifier = miniapp.NewStateNotifier()
 			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token, miniappNotifier)
@@ -308,8 +309,14 @@ func setupCronTool(
 
 // agentLoopDataProvider adapts AgentLoop to the miniapp.DataProvider interface.
 type agentLoopDataProvider struct {
-	loop *agent.AgentLoop
+	loop      *agent.AgentLoop
+	workspace string
+
+	gitCache   miniapp.GitInfo
+	gitCacheAt time.Time
 }
+
+const gitCacheTTL = 5 * time.Minute
 
 func (p *agentLoopDataProvider) ListSkills() []skills.SkillInfo {
 	return p.loop.ListSkills()
@@ -366,6 +373,68 @@ func (p *agentLoopDataProvider) GetActiveSessions() []miniapp.SessionInfo {
 		}
 	}
 	return result
+}
+
+func (p *agentLoopDataProvider) GetGitInfo() miniapp.GitInfo {
+	if time.Since(p.gitCacheAt) < gitCacheTTL {
+		return p.gitCache
+	}
+
+	info := miniapp.GitInfo{}
+	if p.workspace == "" {
+		return info
+	}
+
+	// Detect git root from workspace
+	topOut, err := exec.Command("git", "-C", p.workspace, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return info // not a git repo
+	}
+	gitRoot := strings.TrimSpace(string(topOut))
+
+	// Exclude ~/.picoclaw/workspace* (picoclaw's own managed workspace)
+	home, _ := os.UserHomeDir()
+	picoDir := filepath.Join(home, ".picoclaw")
+	if strings.HasPrefix(gitRoot, picoDir) {
+		return info
+	}
+
+	// Current branch
+	out, err := exec.Command("git", "-C", gitRoot, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err == nil {
+		info.Branch = strings.TrimSpace(string(out))
+	}
+
+	// Recent commits (20 entries)
+	out, err = exec.Command("git", "-C", gitRoot, "log", "--pretty=format:%h\x1f%s\x1f%an\x1f%cr", "-20").Output()
+	if err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			parts := strings.SplitN(line, "\x1f", 4)
+			if len(parts) == 4 {
+				info.Commits = append(info.Commits, miniapp.GitCommit{
+					Hash: parts[0], Subject: parts[1], Author: parts[2], Date: parts[3],
+				})
+			}
+		}
+	}
+
+	// Modified/untracked files (git status --porcelain)
+	out, err = exec.Command("git", "-C", gitRoot, "status", "--porcelain").Output()
+	if err == nil && len(out) > 0 {
+		for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+			if len(line) < 4 {
+				continue
+			}
+			info.Modified = append(info.Modified, miniapp.GitChange{
+				Status: strings.TrimSpace(line[:2]),
+				Path:   line[3:],
+			})
+		}
+	}
+
+	p.gitCache = info
+	p.gitCacheAt = time.Now()
+	return info
 }
 
 // telegramCommandSender injects Mini App commands into the message bus.
