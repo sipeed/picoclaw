@@ -194,6 +194,26 @@ func (r *ToolRegistry) Count() int {
 	return len(r.tools)
 }
 
+// GetRuntimeStatus aggregates runtime status from all tools that implement StatusProvider.
+// Returns empty string if no tool has status to report.
+func (r *ToolRegistry) GetRuntimeStatus() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var parts []string
+	for _, tool := range r.tools {
+		if sp, ok := tool.(StatusProvider); ok {
+			if s := sp.RuntimeStatus(); s != "" {
+				parts = append(parts, s)
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 // GetSummaries returns human-readable summaries of all registered tools.
 // Returns a slice of "name - description" strings.
 func (r *ToolRegistry) GetSummaries() []string {

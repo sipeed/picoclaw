@@ -56,7 +56,9 @@ func NewAgentInstance(
 	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
+	execTool := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+	toolsRegistry.Register(execTool)
+	toolsRegistry.Register(tools.NewBgMonitorTool(execTool))
 	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
 
