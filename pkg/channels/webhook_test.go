@@ -3,6 +3,8 @@ package channels
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -116,7 +118,6 @@ func TestWebhookHandleInboundAcceptsOptionalClawdentityMetadata(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("x-clawdentity-agent-did", "did:example:sender")
 	req.Header.Set("x-clawdentity-to-agent-did", "did:example:receiver")
-	req.Header.Set("x-clawdentity-verified", "false")
 
 	rr := httptest.NewRecorder()
 	ch.handleInbound(rr, req)
@@ -137,8 +138,97 @@ func TestWebhookHandleInboundAcceptsOptionalClawdentityMetadata(t *testing.T) {
 	if msg.ChatID != "did:example:receiver" {
 		t.Fatalf("chatID = %q", msg.ChatID)
 	}
-	if msg.Metadata["clawdentity_verified"] != "false" {
-		t.Fatalf("clawdentity_verified metadata = %q", msg.Metadata["clawdentity_verified"])
+	if msg.Metadata["clawdentity_agent_did"] != "did:example:sender" {
+		t.Fatalf("clawdentity_agent_did metadata = %q", msg.Metadata["clawdentity_agent_did"])
+	}
+	if msg.Metadata["clawdentity_to_agent_did"] != "did:example:receiver" {
+		t.Fatalf("clawdentity_to_agent_did metadata = %q", msg.Metadata["clawdentity_to_agent_did"])
+	}
+}
+
+func TestWebhookHandleInboundUsesBodyUserIDAsSender(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	ch, _ := NewWebhookChannel(config.WebhookConfig{}, msgBus)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/inbound", strings.NewReader(`{"userId":"user-123","content":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	ch.handleInbound(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusAccepted)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	msg, ok := msgBus.ConsumeInbound(ctx)
+	if !ok {
+		t.Fatal("expected inbound message to be published")
+	}
+	if msg.SenderID != "user-123" {
+		t.Fatalf("sender = %q", msg.SenderID)
+	}
+	if msg.ChatID != "user-123" {
+		t.Fatalf("chatID = %q", msg.ChatID)
+	}
+}
+
+func TestWebhookHandleInboundUsesBodyUserIDAndChatID(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	ch, _ := NewWebhookChannel(config.WebhookConfig{}, msgBus)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/inbound", strings.NewReader(`{"userId":"user-123","chatId":"chat-456","content":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	ch.handleInbound(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusAccepted)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	msg, ok := msgBus.ConsumeInbound(ctx)
+	if !ok {
+		t.Fatal("expected inbound message to be published")
+	}
+	if msg.SenderID != "user-123" {
+		t.Fatalf("sender = %q", msg.SenderID)
+	}
+	if msg.ChatID != "chat-456" {
+		t.Fatalf("chatID = %q", msg.ChatID)
+	}
+}
+
+func TestWebhookHandleInboundHeadersTakePrecedenceOverBodyFields(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	ch, _ := NewWebhookChannel(config.WebhookConfig{}, msgBus)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/inbound", strings.NewReader(`{"userId":"user-body","chatId":"chat-body","content":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-webhook-sender-id", "sender-header")
+	req.Header.Set("x-webhook-chat-id", "chat-header")
+
+	rr := httptest.NewRecorder()
+	ch.handleInbound(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusAccepted)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	msg, ok := msgBus.ConsumeInbound(ctx)
+	if !ok {
+		t.Fatal("expected inbound message to be published")
+	}
+	if msg.SenderID != "sender-header" {
+		t.Fatalf("sender = %q", msg.SenderID)
+	}
+	if msg.ChatID != "chat-header" {
+		t.Fatalf("chatID = %q", msg.ChatID)
 	}
 }
 
@@ -366,5 +456,81 @@ func TestWebhookSendForwardsToConnector(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected outbound payload to be forwarded")
+	}
+}
+
+func TestWebhookStartRejectsDuplicatePaths(t *testing.T) {
+	ch, err := NewWebhookChannel(config.WebhookConfig{
+		WebhookHost: "127.0.0.1",
+		WebhookPort: 0,
+		WebhookPath: "/same-path",
+		SendPath:    "/same-path",
+	}, bus.NewMessageBus())
+	if err != nil {
+		t.Fatalf("constructor error: %v", err)
+	}
+
+	err = ch.Start(context.Background())
+	if err == nil {
+		t.Fatal("expected Start() error for duplicate paths")
+	}
+	if !strings.Contains(err.Error(), `both are "/same-path"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ch.IsRunning() {
+		t.Fatal("channel should not be running after failed Start()")
+	}
+}
+
+func TestWebhookStartRejectsPortInUse(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen setup: %v", err)
+	}
+	defer listener.Close()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	ch, err := NewWebhookChannel(config.WebhookConfig{
+		WebhookHost: "127.0.0.1",
+		WebhookPort: port,
+	}, bus.NewMessageBus())
+	if err != nil {
+		t.Fatalf("constructor error: %v", err)
+	}
+
+	err = ch.Start(context.Background())
+	if err == nil {
+		t.Fatal("expected Start() error when port is already in use")
+	}
+	if ch.IsRunning() {
+		t.Fatal("channel should not be running after bind failure")
+	}
+}
+
+func TestWebhookSendRespectsCanceledContext(t *testing.T) {
+	connector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer connector.Close()
+
+	ch, err := NewWebhookChannel(config.WebhookConfig{ConnectorURL: connector.URL}, bus.NewMessageBus())
+	if err != nil {
+		t.Fatalf("constructor error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = ch.Send(ctx, bus.OutboundMessage{
+		Channel: "webhook",
+		ChatID:  "did:example:peer",
+		Content: "hello",
+	})
+	if err == nil {
+		t.Fatal("expected send error with canceled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
 	}
 }

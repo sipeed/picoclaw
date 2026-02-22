@@ -69,8 +69,6 @@ func (c *WebhookChannel) Name() string {
 func (c *WebhookChannel) Start(ctx context.Context) error {
 	logger.InfoC("webhook", "Starting webhook channel")
 
-	c.ctx, c.cancel = context.WithCancel(ctx)
-
 	host := strings.TrimSpace(c.config.WebhookHost)
 	if host == "" {
 		host = defaultWebhookHost
@@ -91,12 +89,21 @@ func (c *WebhookChannel) Start(ctx context.Context) error {
 	if c.connectorURL == "" {
 		c.connectorURL = defaultWebhookConnectorURL
 	}
+	if c.inboundPath == c.outboundPath {
+		return fmt.Errorf("webhook inbound path and outbound path must differ: both are %q", c.inboundPath)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(c.inboundPath, c.handleInbound)
 	mux.HandleFunc(c.outboundPath, c.handleOutbound)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	c.ctx, c.cancel = context.WithCancel(ctx)
 	c.server = &http.Server{
 		Addr:    addr,
 		Handler: mux,
@@ -105,7 +112,7 @@ func (c *WebhookChannel) Start(ctx context.Context) error {
 	c.setRunning(true)
 
 	go func() {
-		if err := c.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := c.server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			logger.ErrorCF("webhook", "Webhook server error", map[string]any{
 				"error": err.Error(),
 			})
@@ -143,7 +150,7 @@ func (c *WebhookChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *WebhookChannel) Send(_ context.Context, msg bus.OutboundMessage) error {
+func (c *WebhookChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	payload := webhookOutboundPayload{
 		To:      strings.TrimSpace(msg.ChatID),
 		Content: msg.Content,
@@ -151,7 +158,7 @@ func (c *WebhookChannel) Send(_ context.Context, msg bus.OutboundMessage) error 
 	if payload.To == "" || strings.TrimSpace(payload.Content) == "" {
 		return fmt.Errorf("outbound webhook requires non-empty to/content")
 	}
-	if err := c.forwardOutbound(payload); err != nil {
+	if err := c.forwardOutbound(ctx, payload); err != nil {
 		return err
 	}
 
@@ -167,7 +174,7 @@ func (c *WebhookChannel) handleInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
@@ -180,13 +187,13 @@ func (c *WebhookChannel) handleInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	senderID := webhookSenderID(r)
+	senderID := webhookSenderID(r, payload)
 	if !c.IsAllowed(senderID) {
 		http.Error(w, "Sender not allowed", http.StatusForbidden)
 		return
 	}
 
-	chatID := webhookChatID(r, senderID)
+	chatID := webhookChatID(r, senderID, payload)
 	content, payloadJSON := webhookPayloadContent(payload)
 
 	metadata := map[string]string{
@@ -204,9 +211,6 @@ func (c *WebhookChannel) handleInbound(w http.ResponseWriter, r *http.Request) {
 	if value := strings.TrimSpace(r.Header.Get("x-clawdentity-to-agent-did")); value != "" {
 		metadata["clawdentity_to_agent_did"] = value
 	}
-	if value := strings.TrimSpace(r.Header.Get("x-clawdentity-verified")); value != "" {
-		metadata["clawdentity_verified"] = value
-	}
 
 	c.HandleMessage(senderID, chatID, content, nil, metadata)
 
@@ -220,7 +224,7 @@ func (c *WebhookChannel) handleOutbound(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
@@ -243,7 +247,7 @@ func (c *WebhookChannel) handleOutbound(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := c.forwardOutbound(payload); err != nil {
+	if err := c.forwardOutbound(r.Context(), payload); err != nil {
 		logger.ErrorCF("webhook", "Failed to forward outbound webhook payload", map[string]any{
 			"error": err.Error(),
 		})
@@ -280,7 +284,7 @@ func (c *WebhookChannel) validateJSONRequest(w http.ResponseWriter, r *http.Requ
 	return true
 }
 
-func (c *WebhookChannel) forwardOutbound(payload webhookOutboundPayload) error {
+func (c *WebhookChannel) forwardOutbound(ctx context.Context, payload webhookOutboundPayload) error {
 	if c.connectorURL == "" {
 		c.connectorURL = strings.TrimSpace(c.config.ConnectorURL)
 		if c.connectorURL == "" {
@@ -293,7 +297,7 @@ func (c *WebhookChannel) forwardOutbound(payload webhookOutboundPayload) error {
 		return fmt.Errorf("marshal outbound payload: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.connectorURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.connectorURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build outbound connector request: %w", err)
 	}
@@ -329,12 +333,16 @@ func webhookAuthToken(r *http.Request) string {
 	return auth
 }
 
-func webhookSenderID(r *http.Request) string {
+func webhookSenderID(r *http.Request, payload any) string {
 	for _, key := range []string{"x-webhook-sender-id", "x-clawdentity-agent-did"} {
 		value := strings.TrimSpace(r.Header.Get(key))
 		if value != "" {
 			return value
 		}
+	}
+
+	if value := webhookPayloadStringField(payload, "userId", "sender_id"); value != "" {
+		return value
 	}
 
 	if host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr)); err == nil && host != "" {
@@ -348,7 +356,7 @@ func webhookSenderID(r *http.Request) string {
 	return "webhook"
 }
 
-func webhookChatID(r *http.Request, senderID string) string {
+func webhookChatID(r *http.Request, senderID string, payload any) string {
 	for _, key := range []string{"x-webhook-chat-id", "x-clawdentity-to-agent-did"} {
 		value := strings.TrimSpace(r.Header.Get(key))
 		if value != "" {
@@ -356,7 +364,35 @@ func webhookChatID(r *http.Request, senderID string) string {
 		}
 	}
 
+	if value := webhookPayloadStringField(payload, "chatId", "chat_id"); value != "" {
+		return value
+	}
+
 	return senderID
+}
+
+func webhookPayloadStringField(payload any, keys ...string) string {
+	asMap, ok := payload.(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	for _, key := range keys {
+		value, exists := asMap[key]
+		if !exists {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		trimmed := strings.TrimSpace(text)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+
+	return ""
 }
 
 func webhookPayloadContent(payload any) (string, string) {
