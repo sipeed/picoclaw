@@ -89,13 +89,18 @@ func NewProviderWithOptions(apiKey, apiBase, proxy string, opts Options) *Provid
 	}
 }
 
-func (p *Provider) Chat(
+// streamBufferSize is the channel buffer size for ChatStream events.
+const streamBufferSize = 32
+
+// buildHTTPRequest constructs a ready-to-send *http.Request for the chat API.
+func (p *Provider) buildHTTPRequest(
 	ctx context.Context,
 	messages []Message,
 	tools []ToolDefinition,
 	model string,
 	options map[string]any,
-) (*LLMResponse, error) {
+	stream bool,
+) (*http.Request, error) {
 	if p.apiBase == "" {
 		return nil, fmt.Errorf("API base not configured")
 	}
@@ -138,7 +143,7 @@ func (p *Provider) Chat(
 		}
 	}
 
-	if p.stream {
+	if stream {
 		requestBody["stream"] = true
 	}
 
@@ -157,6 +162,31 @@ func (p *Provider) Chat(
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
 
+	return req, nil
+}
+
+func (p *Provider) Chat(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
+	// When streaming is enabled, delegate to ChatStream + AccumulateStream
+	// so that the SSE→channel path is always exercised.
+	if p.stream {
+		ch, err := p.ChatStream(ctx, messages, tools, model, options)
+		if err != nil {
+			return nil, err
+		}
+		return AccumulateStream(ch)
+	}
+
+	req, err := p.buildHTTPRequest(ctx, messages, tools, model, options, false)
+	if err != nil {
+		return nil, err
+	}
+
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
@@ -168,16 +198,180 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
 
-	if p.stream {
-		return parseStreamResponse(resp.Body)
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	return parseResponse(body)
+}
+
+// CanStream returns true when this provider is configured for SSE streaming.
+func (p *Provider) CanStream() bool {
+	return p.stream
+}
+
+// ChatStream opens an SSE connection and returns a channel of StreamEvent.
+// The channel is closed when the stream ends or an error occurs.
+// Cancelling ctx will abort the HTTP request and close the channel.
+func (p *Provider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (<-chan protocoltypes.StreamEvent, error) {
+	req, err := p.buildHTTPRequest(ctx, messages, tools, model, options, true)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
+	}
+
+	ch := make(chan protocoltypes.StreamEvent, streamBufferSize)
+	go func() {
+		defer resp.Body.Close()
+		defer close(ch)
+		readSSEIntoChannel(ctx, resp.Body, ch)
+	}()
+
+	return ch, nil
+}
+
+// readSSEIntoChannel reads SSE lines from r and sends StreamEvent values on ch.
+// It returns when the stream ends, an error occurs, or ctx is cancelled.
+func readSSEIntoChannel(ctx context.Context, r io.Reader, ch chan<- protocoltypes.StreamEvent) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	for scanner.Scan() {
+		// Check for context cancellation between lines.
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			return
+		}
+
+		var chunk streamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue // skip malformed chunks
+		}
+
+		ev := protocoltypes.StreamEvent{}
+
+		if chunk.Usage != nil {
+			ev.Usage = chunk.Usage
+		}
+
+		if len(chunk.Choices) > 0 {
+			choice := chunk.Choices[0]
+			ev.ContentDelta = choice.Delta.Content
+			if choice.FinishReason != "" {
+				ev.FinishReason = choice.FinishReason
+			}
+			for _, tc := range choice.Delta.ToolCalls {
+				delta := protocoltypes.StreamToolCallDelta{
+					Index: tc.Index,
+					ID:    tc.ID,
+				}
+				if tc.Function != nil {
+					delta.Name = tc.Function.Name
+					delta.ArgumentsDelta = tc.Function.Arguments
+				}
+				ev.ToolCallDeltas = append(ev.ToolCallDeltas, delta)
+			}
+		}
+
+		select {
+		case ch <- ev:
+		case <-ctx.Done():
+			return
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		select {
+		case ch <- protocoltypes.StreamEvent{Err: fmt.Errorf("reading stream: %w", err)}:
+		case <-ctx.Done():
+		}
+	}
+}
+
+// AccumulateStream drains a StreamEvent channel and returns a complete LLMResponse.
+func AccumulateStream(ch <-chan protocoltypes.StreamEvent) (*LLMResponse, error) {
+	var content strings.Builder
+	var toolCalls []streamToolCallAcc
+	var finishReason string
+	var usage *UsageInfo
+
+	for ev := range ch {
+		if ev.Err != nil {
+			return nil, ev.Err
+		}
+		if ev.ContentDelta != "" {
+			content.WriteString(ev.ContentDelta)
+		}
+		if ev.FinishReason != "" {
+			finishReason = ev.FinishReason
+		}
+		if ev.Usage != nil {
+			usage = ev.Usage
+		}
+		for _, tc := range ev.ToolCallDeltas {
+			for len(toolCalls) <= tc.Index {
+				toolCalls = append(toolCalls, streamToolCallAcc{})
+			}
+			if tc.ID != "" {
+				toolCalls[tc.Index].ID = tc.ID
+			}
+			if tc.Name != "" {
+				toolCalls[tc.Index].Name = tc.Name
+			}
+			toolCalls[tc.Index].Arguments.WriteString(tc.ArgumentsDelta)
+		}
+	}
+
+	result := &LLMResponse{
+		Content:      content.String(),
+		FinishReason: finishReason,
+		Usage:        usage,
+	}
+
+	for _, tc := range toolCalls {
+		arguments := make(map[string]any)
+		argStr := tc.Arguments.String()
+		if argStr != "" {
+			if err := json.Unmarshal([]byte(argStr), &arguments); err != nil {
+				log.Printf("openai_compat: failed to decode streamed tool call arguments for %q: %v", tc.Name, err)
+				arguments["raw"] = argStr
+			}
+		}
+		result.ToolCalls = append(result.ToolCalls, ToolCall{
+			ID:        tc.ID,
+			Name:      tc.Name,
+			Arguments: arguments,
+		})
+	}
+
+	return result, nil
 }
 
 func parseResponse(body []byte) (*LLMResponse, error) {

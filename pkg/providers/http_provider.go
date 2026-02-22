@@ -54,3 +54,19 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
 }
+
+// CanStream returns true when the underlying provider uses SSE streaming.
+func (p *HTTPProvider) CanStream() bool {
+	return p.delegate.CanStream()
+}
+
+// ChatStream opens an SSE stream and returns a channel of StreamEvent.
+func (p *HTTPProvider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (<-chan StreamEvent, error) {
+	return p.delegate.ChatStream(ctx, messages, tools, model, options)
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -2115,4 +2116,143 @@ func (m *nudgeCaptureMockProvider) Chat(
 
 func (m *nudgeCaptureMockProvider) GetDefaultModel() string {
 	return "mock-nudge-model"
+}
+
+// --- consumeStreamWithRepetitionDetection tests ---
+
+func TestConsumeStream_NormalCompletion(t *testing.T) {
+	ch := make(chan protocoltypes.StreamEvent, 8)
+	go func() {
+		ch <- protocoltypes.StreamEvent{ContentDelta: "Hello "}
+		ch <- protocoltypes.StreamEvent{ContentDelta: "world!"}
+		ch <- protocoltypes.StreamEvent{
+			FinishReason: "stop",
+			Usage:        &providers.UsageInfo{PromptTokens: 5, CompletionTokens: 2, TotalTokens: 7},
+		}
+		close(ch)
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resp, detected, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if detected {
+		t.Fatal("expected detected=false for normal content")
+	}
+	if resp.Content != "Hello world!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello world!")
+	}
+	if resp.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "stop")
+	}
+	if resp.Usage == nil || resp.Usage.TotalTokens != 7 {
+		t.Errorf("Usage.TotalTokens = %v, want 7", resp.Usage)
+	}
+	_ = ctx // keep linter happy
+}
+
+func TestConsumeStream_DetectsRepetition(t *testing.T) {
+	ch := make(chan protocoltypes.StreamEvent, 64)
+	cancelCalled := false
+
+	ctx, cancel := context.WithCancel(context.Background())
+	wrappedCancel := func() {
+		cancelCalled = true
+		cancel()
+	}
+
+	// Send enough repetitive content to trigger detection.
+	// The pattern "abcdefghij" repeated many times will have very low n-gram uniqueness.
+	repeatedChunk := strings.Repeat("abcdefghij", 50) // 500 chars per chunk
+	go func() {
+		// Send 6 chunks of repetitive content = 3000 chars total,
+		// each with 500 runes. The check triggers after every 1000 runes
+		// when content > 2000 chars.
+		for i := 0; i < 6; i++ {
+			ch <- protocoltypes.StreamEvent{ContentDelta: repeatedChunk}
+		}
+		// Send more data that should be ignored after detection.
+		for i := 0; i < 10; i++ {
+			ch <- protocoltypes.StreamEvent{ContentDelta: "more data"}
+		}
+		close(ch)
+	}()
+
+	resp, detected, err := consumeStreamWithRepetitionDetection(ch, wrappedCancel, 1000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !detected {
+		t.Fatal("expected repetition detection to trigger")
+	}
+	if !cancelCalled {
+		t.Error("expected cancelFn to be called")
+	}
+	// The response should be shorter than the full 3000+ chars
+	// because detection triggers early.
+	if len(resp.Content) >= 3000+10*len("more data") {
+		t.Errorf("Content length = %d, expected less than full output", len(resp.Content))
+	}
+	_ = ctx
+}
+
+func TestConsumeStream_ToolCallAccumulation(t *testing.T) {
+	ch := make(chan protocoltypes.StreamEvent, 8)
+	go func() {
+		ch <- protocoltypes.StreamEvent{
+			ToolCallDeltas: []protocoltypes.StreamToolCallDelta{
+				{Index: 0, ID: "call_1", Name: "test_fn", ArgumentsDelta: `{"ke`},
+			},
+		}
+		ch <- protocoltypes.StreamEvent{
+			ToolCallDeltas: []protocoltypes.StreamToolCallDelta{
+				{Index: 0, ArgumentsDelta: `y":"val"}`},
+			},
+		}
+		ch <- protocoltypes.StreamEvent{FinishReason: "tool_calls"}
+		close(ch)
+	}()
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resp, detected, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if detected {
+		t.Fatal("expected no repetition detection for tool calls")
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(resp.ToolCalls))
+	}
+	if resp.ToolCalls[0].Name != "test_fn" {
+		t.Errorf("ToolCalls[0].Name = %q, want %q", resp.ToolCalls[0].Name, "test_fn")
+	}
+	if resp.ToolCalls[0].Arguments["key"] != "val" {
+		t.Errorf("ToolCalls[0].Arguments[key] = %v, want %q", resp.ToolCalls[0].Arguments["key"], "val")
+	}
+}
+
+func TestConsumeStream_StreamError(t *testing.T) {
+	ch := make(chan protocoltypes.StreamEvent, 4)
+	go func() {
+		ch <- protocoltypes.StreamEvent{ContentDelta: "partial"}
+		ch <- protocoltypes.StreamEvent{Err: fmt.Errorf("read error")}
+		close(ch)
+	}()
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, _, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "read error") {
+		t.Errorf("error = %q, want to contain %q", err.Error(), "read error")
+	}
 }
