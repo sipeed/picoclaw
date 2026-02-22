@@ -24,7 +24,7 @@ func (t *MCPBridgeTool) Name() string {
 }
 
 func (t *MCPBridgeTool) Description() string {
-	return "Interact with MCP (Model Context Protocol) servers. Actions: mcp_list (list available servers), mcp_tools (get server's tool list), mcp_call (call a server tool)"
+	return "Interact with MCP (Model Context Protocol) servers. Actions: mcp_list (list available servers), mcp_tools (get server's tool list), mcp_call (call a server tool), mcp_read_resource (read a resource by URI)"
 }
 
 func (t *MCPBridgeTool) Parameters() map[string]interface{} {
@@ -34,7 +34,7 @@ func (t *MCPBridgeTool) Parameters() map[string]interface{} {
 			"action": map[string]interface{}{
 				"type":        "string",
 				"description": "The MCP action to perform",
-				"enum":        []string{"mcp_list", "mcp_tools", "mcp_call"},
+				"enum":        []string{"mcp_list", "mcp_tools", "mcp_call", "mcp_read_resource"},
 			},
 			"server": map[string]interface{}{
 				"type":        "string",
@@ -47,6 +47,10 @@ func (t *MCPBridgeTool) Parameters() map[string]interface{} {
 			"arguments": map[string]interface{}{
 				"type":        "object",
 				"description": "Arguments to pass to the tool (for mcp_call)",
+			},
+			"uri": map[string]interface{}{
+				"type":        "string",
+				"description": "Resource URI to read (required for mcp_read_resource)",
 			},
 		},
 		"required": []string{"action"},
@@ -66,6 +70,8 @@ func (t *MCPBridgeTool) Execute(ctx context.Context, args map[string]interface{}
 		return t.getTools(ctx, args)
 	case "mcp_call":
 		return t.callTool(ctx, args)
+	case "mcp_read_resource":
+		return t.readResource(ctx, args)
 	default:
 		return ErrorResult(fmt.Sprintf("unknown action: %s", action))
 	}
@@ -138,6 +144,25 @@ func (t *MCPBridgeTool) callTool(ctx context.Context, args map[string]interface{
 	result, err := t.manager.CallTool(ctx, server, toolName, toolArgs)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("mcp_call %s/%s failed: %v", server, toolName, err))
+	}
+
+	return SilentResult(result)
+}
+
+func (t *MCPBridgeTool) readResource(ctx context.Context, args map[string]interface{}) *ToolResult {
+	server, ok := args["server"].(string)
+	if !ok || server == "" {
+		return ErrorResult("server is required for mcp_read_resource")
+	}
+
+	uri, ok := args["uri"].(string)
+	if !ok || uri == "" {
+		return ErrorResult("uri is required for mcp_read_resource")
+	}
+
+	result, err := t.manager.ReadResource(ctx, server, uri)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("mcp_read_resource %s/%s failed: %v", server, uri, err))
 	}
 
 	return SilentResult(result)

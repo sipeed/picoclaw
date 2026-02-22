@@ -156,6 +156,42 @@ func (m *Manager) CallTool(ctx context.Context, serverName, toolName string, arg
 	return text, nil
 }
 
+// ReadResource reads a resource from an MCP server by URI.
+func (m *Manager) ReadResource(ctx context.Context, serverName, uri string) (string, error) {
+	inst, err := m.ensureRunning(ctx, serverName)
+	if err != nil {
+		return "", err
+	}
+
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+
+	inst.lastUsed = time.Now()
+
+	result, err := inst.session.ReadResource(ctx, &sdkmcp.ReadResourceParams{
+		URI: uri,
+	})
+	if err != nil {
+		m.handleSessionError(serverName, inst, err)
+		return "", fmt.Errorf("resources/read %s: %w", uri, err)
+	}
+
+	var parts []string
+	for _, content := range result.Contents {
+		if content.Text != "" {
+			parts = append(parts, content.Text)
+		} else if len(content.Blob) > 0 {
+			parts = append(parts, fmt.Sprintf("[blob: %s, %d bytes]", content.MIMEType, len(content.Blob)))
+		}
+	}
+
+	if len(parts) == 0 {
+		return "(no content)", nil
+	}
+
+	return strings.Join(parts, "\n"), nil
+}
+
 // BuildSummary generates XML for the system prompt using config only (no process start).
 func (m *Manager) BuildSummary() string {
 	m.mu.RLock()
@@ -280,8 +316,9 @@ func (m *Manager) ensureRunning(ctx context.Context, serverName string) (*Server
 			}
 		}
 		transport = &sdkmcp.StreamableClientTransport{
-			Endpoint:   cfg.URL,
-			HTTPClient: httpClient,
+			Endpoint:             cfg.URL,
+			HTTPClient:           httpClient,
+			DisableStandaloneSSE: true,
 		}
 		inst.isHTTP = true
 
