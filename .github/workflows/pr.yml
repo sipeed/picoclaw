@@ -54,6 +54,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Run go generate
+        run: go generate ./...
+
       - name: Run go fix
         run: go fix ./...
 

@@ -11,7 +11,7 @@ type AuthCredential struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
 	AccountID    string    `json:"account_id,omitempty"`
-	ExpiresAt    time.Time `json:"expires_at,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at"`
 	Provider     string    `json:"provider"`
 	AuthMethod   string    `json:"auth_method"`
 	Email        string    `json:"email,omitempty"`

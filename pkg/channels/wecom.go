@@ -87,7 +87,7 @@ type WeComBotReplyMessage struct {
 	MsgType string `json:"msgtype"`
 	Text    struct {
 		Content string `json:"content"`
-	} `json:"text,omitempty"`
+	} `json:"text"`
 }
 
 // NewWeComBotChannel creates a new WeCom Bot channel instance

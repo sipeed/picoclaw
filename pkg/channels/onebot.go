@@ -315,10 +315,7 @@ func (c *OneBotChannel) sendAPIRequest(action string, params any, timeout time.D
 }
 
 func (c *OneBotChannel) reconnectLoop() {
-	interval := time.Duration(c.config.ReconnectInterval) * time.Second
-	if interval < 5*time.Second {
-		interval = 5 * time.Second
-	}
+	interval := max(time.Duration(c.config.ReconnectInterval)*time.Second, 5*time.Second)
 
 	for {
 		select {
@@ -973,8 +970,8 @@ func (c *OneBotChannel) checkGroupTrigger(
 		if prefix == "" {
 			continue
 		}
-		if strings.HasPrefix(content, prefix) {
-			return true, strings.TrimSpace(strings.TrimPrefix(content, prefix))
+		if after, ok := strings.CutPrefix(content, prefix); ok {
+			return true, strings.TrimSpace(after)
 		}
 	}
 

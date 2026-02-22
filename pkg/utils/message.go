@@ -13,10 +13,7 @@ func SplitMessage(content string, maxLen int) []string {
 	var messages []string
 
 	// Dynamic buffer: 10% of maxLen, but at least 50 chars if possible
-	codeBlockBuffer := max(maxLen/10, 50)
-	if codeBlockBuffer > maxLen/2 {
-		codeBlockBuffer = maxLen / 2
-	}
+	codeBlockBuffer := min(max(maxLen/10, 50), maxLen/2)
 
 	for len(content) > 0 {
 		if len(content) <= maxLen {
