@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -629,8 +630,15 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 		"preview":   utils.Truncate(content, 50),
 	})
 
+	// Build sender info
+	appSender := bus.SenderInfo{
+		Platform:    "wecom",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("wecom", senderID),
+	}
+
 	// Handle the message through the base channel
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata)
+	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata, appSender)
 }
 
 // tokenRefreshLoop periodically refreshes the access token

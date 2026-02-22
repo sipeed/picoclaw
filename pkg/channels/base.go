@@ -9,6 +9,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 )
@@ -20,6 +21,7 @@ type Channel interface {
 	Send(ctx context.Context, msg bus.OutboundMessage) error
 	IsRunning() bool
 	IsAllowed(senderID string) bool
+	IsAllowedSender(sender bus.SenderInfo) bool
 }
 
 // BaseChannelOption is a functional option for configuring a BaseChannel.
@@ -168,22 +170,58 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 	return false
 }
 
+// IsAllowedSender checks whether a structured SenderInfo is permitted by the allow-list.
+// It delegates to identity.MatchAllowed for each entry, providing unified matching
+// across all legacy formats and the new canonical "platform:id" format.
+func (c *BaseChannel) IsAllowedSender(sender bus.SenderInfo) bool {
+	if len(c.allowList) == 0 {
+		return true
+	}
+
+	for _, allowed := range c.allowList {
+		if identity.MatchAllowed(sender, allowed) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (c *BaseChannel) HandleMessage(
 	ctx context.Context,
 	peer bus.Peer,
 	messageID, senderID, chatID, content string,
 	media []string,
 	metadata map[string]string,
+	senderOpts ...bus.SenderInfo,
 ) {
-	if !c.IsAllowed(senderID) {
-		return
+	// Use SenderInfo-based allow check when available, else fall back to string
+	var sender bus.SenderInfo
+	if len(senderOpts) > 0 {
+		sender = senderOpts[0]
+	}
+	if sender.CanonicalID != "" || sender.PlatformID != "" {
+		if !c.IsAllowedSender(sender) {
+			return
+		}
+	} else {
+		if !c.IsAllowed(senderID) {
+			return
+		}
+	}
+
+	// Set SenderID to canonical if available, otherwise keep the raw senderID
+	resolvedSenderID := senderID
+	if sender.CanonicalID != "" {
+		resolvedSenderID = sender.CanonicalID
 	}
 
 	scope := BuildMediaScope(c.name, chatID, messageID)
 
 	msg := bus.InboundMessage{
 		Channel:    c.name,
-		SenderID:   senderID,
+		SenderID:   resolvedSenderID,
+		Sender:     sender,
 		ChatID:     chatID,
 		Content:    content,
 		Media:      media,

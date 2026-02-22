@@ -16,6 +16,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
@@ -420,7 +421,17 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		}
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, nil, metadata)
+	sender := bus.SenderInfo{
+		Platform:    "pico",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("pico", senderID),
+	}
+
+	if !c.IsAllowedSender(sender) {
+		return
+	}
+
+	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, nil, metadata, sender)
 }
 
 // truncate truncates a string to maxLen runes.

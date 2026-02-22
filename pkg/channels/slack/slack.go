@@ -13,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -252,7 +253,12 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	}
 
 	// 检查白名单，避免为被拒绝的用户下载附件
-	if !c.IsAllowed(ev.User) {
+	sender := bus.SenderInfo{
+		Platform:    "slack",
+		PlatformID:  ev.User,
+		CanonicalID: identity.BuildCanonicalID("slack", ev.User),
+	}
+	if !c.IsAllowedSender(sender) {
 		logger.DebugCF("slack", "Message rejected by allowlist", map[string]any{
 			"user_id": ev.User,
 		})
@@ -360,7 +366,7 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		"has_thread": threadTS != "",
 	})
 
-	c.HandleMessage(c.ctx, peer, messageTS, senderID, chatID, content, mediaPaths, metadata)
+	c.HandleMessage(c.ctx, peer, messageTS, senderID, chatID, content, mediaPaths, metadata, sender)
 }
 
 func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
@@ -368,7 +374,11 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		return
 	}
 
-	if !c.IsAllowed(ev.User) {
+	if !c.IsAllowedSender(bus.SenderInfo{
+		Platform:    "slack",
+		PlatformID:  ev.User,
+		CanonicalID: identity.BuildCanonicalID("slack", ev.User),
+	}) {
 		logger.DebugCF("slack", "Mention rejected by allowlist", map[string]any{
 			"user_id": ev.User,
 		})
@@ -376,6 +386,11 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 	}
 
 	senderID := ev.User
+	mentionSender := bus.SenderInfo{
+		Platform:    "slack",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("slack", senderID),
+	}
 	channelID := ev.Channel
 	threadTS := ev.ThreadTimeStamp
 	messageTS := ev.TimeStamp
@@ -433,7 +448,7 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		"team_id":    c.teamID,
 	}
 
-	c.HandleMessage(c.ctx, mentionPeer, messageTS, senderID, chatID, content, nil, metadata)
+	c.HandleMessage(c.ctx, mentionPeer, messageTS, senderID, chatID, content, nil, metadata, mentionSender)
 }
 
 func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
@@ -446,7 +461,12 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 		c.socketClient.Ack(*event.Request)
 	}
 
-	if !c.IsAllowed(cmd.UserID) {
+	cmdSender := bus.SenderInfo{
+		Platform:    "slack",
+		PlatformID:  cmd.UserID,
+		CanonicalID: identity.BuildCanonicalID("slack", cmd.UserID),
+	}
+	if !c.IsAllowedSender(cmdSender) {
 		logger.DebugCF("slack", "Slash command rejected by allowlist", map[string]any{
 			"user_id": cmd.UserID,
 		})
@@ -476,7 +496,17 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 		"text":      utils.Truncate(content, 50),
 	})
 
-	c.HandleMessage(c.ctx, bus.Peer{Kind: "channel", ID: channelID}, "", senderID, chatID, content, nil, metadata)
+	c.HandleMessage(
+		c.ctx,
+		bus.Peer{Kind: "channel", ID: channelID},
+		"",
+		senderID,
+		chatID,
+		content,
+		nil,
+		metadata,
+		cmdSender,
+	)
 }
 
 func (c *SlackChannel) downloadSlackFile(file slack.File) string {

@@ -14,6 +14,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -182,8 +183,20 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		"preview":     utils.Truncate(content, 50),
 	})
 
+	// Build sender info
+	sender := bus.SenderInfo{
+		Platform:    "dingtalk",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("dingtalk", senderID),
+		DisplayName: senderNick,
+	}
+
+	if !c.IsAllowedSender(sender) {
+		return nil, nil
+	}
+
 	// Handle the message through the base channel
-	c.HandleMessage(ctx, peer, "", senderID, chatID, content, nil, metadata)
+	c.HandleMessage(ctx, peer, "", senderID, chatID, content, nil, metadata, sender)
 
 	// Return nil to indicate we've handled the message asynchronously
 	// The response will be sent through the message bus

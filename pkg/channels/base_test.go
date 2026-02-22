@@ -3,6 +3,7 @@ package channels
 import (
 	"testing"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -171,6 +172,93 @@ func TestShouldRespondInGroup(t *testing.T) {
 			}
 			if gotContent != tt.wantContent {
 				t.Errorf("ShouldRespondInGroup() content = %q, want %q", gotContent, tt.wantContent)
+			}
+		})
+	}
+}
+
+func TestIsAllowedSender(t *testing.T) {
+	tests := []struct {
+		name      string
+		allowList []string
+		sender    bus.SenderInfo
+		want      bool
+	}{
+		{
+			name:      "empty allowlist allows all",
+			allowList: nil,
+			sender:    bus.SenderInfo{PlatformID: "anyone"},
+			want:      true,
+		},
+		{
+			name:      "numeric ID matches PlatformID",
+			allowList: []string{"123456"},
+			sender: bus.SenderInfo{
+				Platform:    "telegram",
+				PlatformID:  "123456",
+				CanonicalID: "telegram:123456",
+			},
+			want: true,
+		},
+		{
+			name:      "canonical format matches",
+			allowList: []string{"telegram:123456"},
+			sender: bus.SenderInfo{
+				Platform:    "telegram",
+				PlatformID:  "123456",
+				CanonicalID: "telegram:123456",
+			},
+			want: true,
+		},
+		{
+			name:      "canonical format wrong platform",
+			allowList: []string{"discord:123456"},
+			sender: bus.SenderInfo{
+				Platform:    "telegram",
+				PlatformID:  "123456",
+				CanonicalID: "telegram:123456",
+			},
+			want: false,
+		},
+		{
+			name:      "@username matches",
+			allowList: []string{"@alice"},
+			sender: bus.SenderInfo{
+				Platform:    "telegram",
+				PlatformID:  "123456",
+				CanonicalID: "telegram:123456",
+				Username:    "alice",
+			},
+			want: true,
+		},
+		{
+			name:      "compound id|username matches by ID",
+			allowList: []string{"123456|alice"},
+			sender: bus.SenderInfo{
+				Platform:    "telegram",
+				PlatformID:  "123456",
+				CanonicalID: "telegram:123456",
+				Username:    "alice",
+			},
+			want: true,
+		},
+		{
+			name:      "non matching sender denied",
+			allowList: []string{"654321"},
+			sender: bus.SenderInfo{
+				Platform:    "telegram",
+				PlatformID:  "123456",
+				CanonicalID: "telegram:123456",
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ch := NewBaseChannel("test", nil, nil, tt.allowList)
+			if got := ch.IsAllowedSender(tt.sender); got != tt.want {
+				t.Fatalf("IsAllowedSender(%+v) = %v, want %v", tt.sender, got, tt.want)
 			}
 		})
 	}

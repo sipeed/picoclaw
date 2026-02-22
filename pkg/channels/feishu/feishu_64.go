@@ -17,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -189,7 +190,17 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		"preview":   utils.Truncate(content, 80),
 	})
 
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata)
+	senderInfo := bus.SenderInfo{
+		Platform:    "feishu",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("feishu", senderID),
+	}
+
+	if !c.IsAllowedSender(senderInfo) {
+		return nil
+	}
+
+	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata, senderInfo)
 	return nil
 }
 

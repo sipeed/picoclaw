@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -823,7 +824,13 @@ func (c *OneBotChannel) handleRawEvent(raw *oneBotRawEvent) {
 	switch raw.PostType {
 	case "message":
 		if userID, err := parseJSONInt64(raw.UserID); err == nil && userID > 0 {
-			if !c.IsAllowed(strconv.FormatInt(userID, 10)) {
+			// Build minimal sender for allowlist check
+			sender := bus.SenderInfo{
+				Platform:    "onebot",
+				PlatformID:  strconv.FormatInt(userID, 10),
+				CanonicalID: identity.BuildCanonicalID("onebot", strconv.FormatInt(userID, 10)),
+			}
+			if !c.IsAllowedSender(sender) {
 				logger.DebugCF("onebot", "Message rejected by allowlist", map[string]any{
 					"user_id": userID,
 				})
@@ -1040,7 +1047,21 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 		}
 	}
 
-	c.HandleMessage(c.ctx, peer, messageID, senderID, chatID, content, parsed.Media, metadata)
+	senderInfo := bus.SenderInfo{
+		Platform:    "onebot",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("onebot", senderID),
+		DisplayName: sender.Nickname,
+	}
+
+	if !c.IsAllowedSender(senderInfo) {
+		logger.DebugCF("onebot", "Message rejected by allowlist (senderInfo)", map[string]any{
+			"sender": senderID,
+		})
+		return
+	}
+
+	c.HandleMessage(c.ctx, peer, messageID, senderID, chatID, content, parsed.Media, metadata, senderInfo)
 }
 
 func (c *OneBotChannel) isDuplicate(messageID string) bool {

@@ -17,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -370,7 +371,17 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	// Show typing/loading indicator (requires user ID, not group ID)
 	c.sendLoading(senderID)
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, mediaPaths, metadata)
+	sender := bus.SenderInfo{
+		Platform:    "line",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("line", senderID),
+	}
+
+	if !c.IsAllowedSender(sender) {
+		return
+	}
+
+	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, mediaPaths, metadata, sender)
 }
 
 // isBotMentioned checks if the bot is mentioned in the message.

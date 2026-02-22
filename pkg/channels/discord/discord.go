@@ -13,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -263,7 +264,20 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	// Check allowlist first to avoid downloading attachments for rejected users
-	if !c.IsAllowed(m.Author.ID) {
+	sender := bus.SenderInfo{
+		Platform:    "discord",
+		PlatformID:  m.Author.ID,
+		CanonicalID: identity.BuildCanonicalID("discord", m.Author.ID),
+		Username:    m.Author.Username,
+	}
+	// Build display name
+	displayName := m.Author.Username
+	if m.Author.Discriminator != "" && m.Author.Discriminator != "0" {
+		displayName += "#" + m.Author.Discriminator
+	}
+	sender.DisplayName = displayName
+
+	if !c.IsAllowedSender(sender) {
 		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
 			"user_id": m.Author.ID,
 		})
@@ -297,10 +311,6 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	senderID := m.Author.ID
-	senderName := m.Author.Username
-	if m.Author.Discriminator != "" && m.Author.Discriminator != "0" {
-		senderName += "#" + m.Author.Discriminator
-	}
 
 	mediaPaths := make([]string, 0, len(m.Attachments))
 
@@ -358,7 +368,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	logger.DebugCF("discord", "Received message", map[string]any{
-		"sender_name": senderName,
+		"sender_name": sender.DisplayName,
 		"sender_id":   senderID,
 		"preview":     utils.Truncate(content, 50),
 	})
@@ -375,13 +385,13 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	metadata := map[string]string{
 		"user_id":      senderID,
 		"username":     m.Author.Username,
-		"display_name": senderName,
+		"display_name": sender.DisplayName,
 		"guild_id":     m.GuildID,
 		"channel_id":   m.ChannelID,
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
 	}
 
-	c.HandleMessage(c.ctx, peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata)
+	c.HandleMessage(c.ctx, peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata, sender)
 }
 
 // startTyping starts a continuous typing indicator loop for the given chatID.
