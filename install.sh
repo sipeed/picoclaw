@@ -105,6 +105,34 @@ download_file() {
     fi
 }
 
+# Get file size in bytes (portable across macOS/Linux)
+get_file_size() {
+    local file="$1"
+    local size
+
+    # Try stat (macOS/BSD format)
+    size=$(stat -f%z "$file" 2>/dev/null) && echo "$size" && return 0
+
+    # Try stat (Linux/GNU format)
+    size=$(stat -c%s "$file" 2>/dev/null) && echo "$size" && return 0
+
+    # Fallback to wc
+    wc -c < "$file" 2>/dev/null | tr -d ' '
+}
+
+# Format bytes to human readable
+format_size() {
+    local bytes="$1"
+
+    if [ "$bytes" -ge 1048576 ]; then
+        echo "$((bytes / 1048576))MB"
+    elif [ "$bytes" -ge 1024 ]; then
+        echo "$((bytes / 1024))KB"
+    else
+        echo "${bytes}B"
+    fi
+}
+
 # Get JSON value (using jq if available, otherwise grep)
 get_json_value() {
     local json="$1"
@@ -350,7 +378,7 @@ download_picoclaw() {
 
     # Show success message
     local file_size
-    file_size=$(ls -lh "$dest_path" | awk '{print $5}')
+    file_size=$(format_size "$(get_file_size "$dest_path")")
 
     echo ""
     msg "$GREEN" "✓ Download complete!"
