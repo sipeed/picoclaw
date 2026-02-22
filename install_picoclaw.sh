@@ -35,17 +35,11 @@ echo "  ─────────────────────"
 echo ""
 
 # Ask user which version to install
-if [ -t 0 ]; then
-    # Interactive mode (run directly from terminal)
-    echo -e "${BOLD}Select version to install:${RESET}"
-    echo "  1) Original (sipeed/picoclaw)"
-    echo "  2) Fork (muava12/picoclaw-fork)"
-    echo ""
-    read -p "Choose [1-2]: " version_choice < /dev/tty
-else
-    # Non-interactive mode (curl | bash) — default to fork
-    version_choice="2"
-fi
+echo -e "${BOLD}Select version to install:${RESET}"
+echo "  1) Original (sipeed/picoclaw)"
+echo "  2) Fork (muava12/picoclaw-fork)"
+echo ""
+read -p "Choose [1-2] (default: 2): " version_choice < /dev/tty
 
 if [[ "$version_choice" == "1" ]]; then
     URL="https://github.com/sipeed/picoclaw/releases/latest/download/picoclaw_Linux_arm64.tar.gz"
