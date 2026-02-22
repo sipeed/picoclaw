@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -401,12 +402,23 @@ func TestCodexCliProvider_GetDefaultModel(t *testing.T) {
 func createMockCodexCLI(t *testing.T, events []string) string {
 	t.Helper()
 	tmpDir := t.TempDir()
-	scriptPath := filepath.Join(tmpDir, "codex")
+	scriptName := "codex"
+	if runtime.GOOS == "windows" {
+		scriptName = "codex.cmd"
+	}
+	scriptPath := filepath.Join(tmpDir, scriptName)
 
 	var sb strings.Builder
-	sb.WriteString("#!/bin/bash\n")
-	for _, event := range events {
-		sb.WriteString(fmt.Sprintf("echo '%s'\n", event))
+	if runtime.GOOS == "windows" {
+		sb.WriteString("@echo off\r\n")
+		for _, event := range events {
+			sb.WriteString(fmt.Sprintf("echo %s\r\n", event))
+		}
+	} else {
+		sb.WriteString("#!/bin/bash\n")
+		for _, event := range events {
+			sb.WriteString(fmt.Sprintf("echo '%s'\n", event))
+		}
 	}
 
 	if err := os.WriteFile(scriptPath, []byte(sb.String()), 0755); err != nil {
@@ -473,12 +485,25 @@ func TestCodexCliProvider_MockCLI_Error(t *testing.T) {
 func TestCodexCliProvider_MockCLI_WithModel(t *testing.T) {
 	// Mock script that captures args to verify model flag is passed
 	tmpDir := t.TempDir()
-	scriptPath := filepath.Join(tmpDir, "codex")
-	script := `#!/bin/bash
+	scriptName := "codex"
+	if runtime.GOOS == "windows" {
+		scriptName = "codex.cmd"
+	}
+	scriptPath := filepath.Join(tmpDir, scriptName)
+
+	var script string
+	if runtime.GOOS == "windows" {
+		script = "@echo off\r\n" +
+			"echo %* > \"" + filepath.Join(tmpDir, "args.txt") + "\"\r\n" +
+			"echo {\"type\":\"item.completed\",\"item\":{\"id\":\"1\",\"type\":\"agent_message\",\"text\":\"ok\"}}\r\n" +
+			"echo {\"type\":\"turn.completed\"}\r\n"
+	} else {
+		script = `#!/bin/bash
 # Write args to a file for verification
 echo "$@" > "` + filepath.Join(tmpDir, "args.txt") + `"
 echo '{"type":"item.completed","item":{"id":"1","type":"agent_message","text":"ok"}}'
 echo '{"type":"turn.completed"}'`
+	}
 
 	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
 		t.Fatal(err)
@@ -519,8 +544,16 @@ echo '{"type":"turn.completed"}'`
 func TestCodexCliProvider_MockCLI_ContextCancel(t *testing.T) {
 	// Script that sleeps forever
 	tmpDir := t.TempDir()
-	scriptPath := filepath.Join(tmpDir, "codex")
+	scriptName := "codex"
+	if runtime.GOOS == "windows" {
+		scriptName = "codex.cmd"
+	}
+	scriptPath := filepath.Join(tmpDir, scriptName)
+
 	script := "#!/bin/bash\nsleep 60"
+	if runtime.GOOS == "windows" {
+		script = "@echo off\r\ntimeout /t 60 /nobreak >nul\r\n"
+	}
 
 	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
 		t.Fatal(err)

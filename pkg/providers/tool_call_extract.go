@@ -9,6 +9,18 @@ import (
 // Both ClaudeCliProvider and CodexCliProvider use this to extract
 // tool calls that the model outputs in its response text.
 func extractToolCallsFromText(text string) []ToolCall {
+	if calls := extractJSONWrapperToolCalls(text); len(calls) > 0 {
+		return calls
+	}
+
+	if call, ok := extractWebAPIToolCall(text); ok {
+		return []ToolCall{call}
+	}
+
+	return nil
+}
+
+func extractJSONWrapperToolCalls(text string) []ToolCall {
 	start := strings.Index(text, `{"tool_calls"`)
 	if start == -1 {
 		return nil
@@ -56,17 +68,103 @@ func extractToolCallsFromText(text string) []ToolCall {
 	return result
 }
 
+func extractWebAPIToolCall(text string) (ToolCall, bool) {
+	start := strings.Index(text, "/WebAPI")
+	if start == -1 {
+		return ToolCall{}, false
+	}
+
+	jsonStart := strings.Index(text[start:], "{")
+	if jsonStart == -1 {
+		return ToolCall{}, false
+	}
+	jsonStart += start
+
+	jsonEnd := findMatchingBrace(text, jsonStart)
+	if jsonEnd == jsonStart {
+		return ToolCall{}, false
+	}
+
+	jsonStr := text[jsonStart:jsonEnd]
+
+	var webAPICall struct {
+		Name      string                 `json:"name"`
+		Arguments map[string]interface{} `json:"arguments"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &webAPICall); err != nil {
+		return ToolCall{}, false
+	}
+
+	if strings.TrimSpace(webAPICall.Name) == "" {
+		return ToolCall{}, false
+	}
+
+	argBytes, err := json.Marshal(webAPICall.Arguments)
+	if err != nil {
+		argBytes = []byte("{}")
+	}
+
+	return ToolCall{
+		Type:      "function",
+		Name:      webAPICall.Name,
+		Arguments: webAPICall.Arguments,
+		Function: &FunctionCall{
+			Name:      webAPICall.Name,
+			Arguments: string(argBytes),
+		},
+	}, true
+}
+
 // stripToolCallsFromText removes tool call JSON from response text.
 func stripToolCallsFromText(text string) string {
+	if stripped, ok := stripJSONWrapperToolCalls(text); ok {
+		return stripped
+	}
+
+	if stripped, ok := stripWebAPIToolCall(text); ok {
+		return stripped
+	}
+
+	return text
+}
+
+func stripJSONWrapperToolCalls(text string) (string, bool) {
 	start := strings.Index(text, `{"tool_calls"`)
 	if start == -1 {
-		return text
+		return "", false
 	}
 
 	end := findMatchingBrace(text, start)
 	if end == start {
-		return text
+		return "", false
 	}
 
-	return strings.TrimSpace(text[:start] + text[end:])
+	return strings.TrimSpace(text[:start] + text[end:]), true
+}
+
+func stripWebAPIToolCall(text string) (string, bool) {
+	start := strings.Index(text, "/WebAPI")
+	if start == -1 {
+		return "", false
+	}
+
+	endTag := strings.Index(text[start:], "</tool_call>")
+	if endTag == -1 {
+		jsonStart := strings.Index(text[start:], "{")
+		if jsonStart == -1 {
+			return "", false
+		}
+		jsonStart += start
+
+		jsonEnd := findMatchingBrace(text, jsonStart)
+		if jsonEnd == jsonStart {
+			return "", false
+		}
+
+		return strings.TrimSpace(text[:start] + text[jsonEnd:]), true
+	}
+
+	endTag += start + len("</tool_call>")
+	return strings.TrimSpace(text[:start] + text[endTag:]), true
 }

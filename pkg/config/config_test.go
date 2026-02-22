@@ -401,7 +401,7 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 func TestLoadConfig_WebSearchProviderRequired(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"tools":{"web":{"search":{"provider":""}}}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"tools":{"web":{"search":{"provider":""},"brave":{"enabled":false},"perplexity":{"enabled":false},"duckduckgo":{"enabled":false}}}}`), 0o600); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
