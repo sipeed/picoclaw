@@ -2,6 +2,7 @@
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
+      "data_dir": "~/.picoclaw/data",
       "restrict_to_workspace": true,
       "model": "glm-4.7",
       "max_tokens": 8192,
@@ -40,6 +41,12 @@
       "verification_token": "",
       "allow_from": []
     },
+    "qq": {
+      "enabled": false,
+      "app_id": "",
+      "app_secret": "",
+      "allow_from": []
+    },
     "dingtalk": {
       "enabled": false,
       "client_id": "YOUR_CLIENT_ID",
@@ -70,7 +77,7 @@
       "allow_from": []
     },
     "websocket": {
-      "enabled": false,
+      "enabled": true,
       "host": "127.0.0.1",
       "port": 18793,
       "path": "/ws",
@@ -118,6 +125,19 @@
     "ollama": {
       "api_key": "",
       "api_base": "http://localhost:11434/v1"
+    },
+    "deepseek": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "shengsuanyun": {
+      "api_key": "",
+      "api_base": ""
+    },
+    "github_copilot": {
+      "api_key": "",
+      "api_base": "",
+      "connect_mode": "stdio"
     }
   },
   "tools": {
@@ -137,8 +157,13 @@
       "enabled": true
     },
     "web": {
-      "search": {
+      "brave": {
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": true,
         "max_results": 5
       }
     },
