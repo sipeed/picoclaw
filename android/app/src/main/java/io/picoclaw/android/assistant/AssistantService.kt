@@ -68,6 +68,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 
 class AssistantService : LifecycleService(), SavedStateRegistryOwner {
@@ -129,6 +130,9 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
             } else {
                 response.error ?: "unknown error"
             }
+        }
+        (connection as AssistantConnectionImpl).onExit = { farewell ->
+            handleExitCommand(farewell)
         }
 
         sttWrapper = SpeechRecognizerWrapper(this)
@@ -223,6 +227,17 @@ class AssistantService : LifecycleService(), SavedStateRegistryOwner {
     private fun shutdown() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    private fun handleExitCommand(farewell: String?) {
+        if (!farewell.isNullOrBlank()) {
+            serviceScope.launch {
+                ttsWrapper.speak(farewell)
+                shutdown()
+            }
+        } else {
+            shutdown()
+        }
     }
 
     private fun moveOverlayTo(top: Boolean) {

@@ -42,6 +42,7 @@ class AssistantConnectionImpl(
     override val connectionState: StateFlow<ConnectionState> = wsClient.connectionState
 
     var onToolRequest: ToolRequestCallback? = null
+    var onExit: ((String?) -> Unit)? = null
 
     init {
         scope.launch {
@@ -50,6 +51,7 @@ class AssistantConnectionImpl(
                     "status" -> _statusText.value = dto.content
                     "status_end" -> _statusText.value = null
                     "tool_request" -> handleToolRequest(dto.content)
+                    "exit" -> onExit?.invoke(dto.content)
                     else -> {
                         _messages.emit(AssistantMessage(content = dto.content, type = dto.type))
                     }

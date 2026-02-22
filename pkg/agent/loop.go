@@ -114,17 +114,18 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	}
 
 	// Android device control tool
+	sendCallbackWithType := func(channel, chatID, content, msgType string) error {
+		msgBus.PublishOutbound(bus.OutboundMessage{
+			Channel: channel,
+			ChatID:  chatID,
+			Content: content,
+			Type:    msgType,
+		})
+		return nil
+	}
 	if cfg.Tools.Android.Enabled {
 		androidTool := tools.NewAndroidTool()
-		androidTool.SetSendCallback(func(channel, chatID, content, msgType string) error {
-			msgBus.PublishOutbound(bus.OutboundMessage{
-				Channel: channel,
-				ChatID:  chatID,
-				Content: content,
-				Type:    msgType,
-			})
-			return nil
-		})
+		androidTool.SetSendCallback(sendCallbackWithType)
 		registry.Register(androidTool)
 	}
 
@@ -166,9 +167,22 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	// Subagent doesn't need spawn/subagent tools to avoid recursion
 	subagentManager.SetTools(subagentTools)
 
-	// Register spawn tool (for main agent)
+	// Register spawn tool (for main agent only)
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
+
+	// Register exit tool (for main agent only, voice/assistant mode)
+	exitTool := tools.NewExitTool()
+	exitTool.SetSendCallback(func(channel, chatID, content, msgType string) error {
+		msgBus.PublishOutbound(bus.OutboundMessage{
+			Channel: channel,
+			ChatID:  chatID,
+			Content: content,
+			Type:    msgType,
+		})
+		return nil
+	})
+	toolsRegistry.Register(exitTool)
 
 	// Register subagent tool (synchronous execution)
 	subagentTool := tools.NewSubagentTool(subagentManager)
@@ -1028,6 +1042,16 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string, metadata map[str
 	if tool, ok := al.tools.Get("android"); ok {
 		if ct, ok := tool.(tools.ContextualTool); ok {
 			ct.SetContext(channel, chatID)
+		}
+	}
+	if tool, ok := al.tools.Get("exit"); ok {
+		if et, ok := tool.(*tools.ExitTool); ok {
+			et.SetContext(channel, chatID)
+			if metadata != nil {
+				et.SetInputMode(metadata["input_mode"])
+			} else {
+				et.SetInputMode("")
+			}
 		}
 	}
 }

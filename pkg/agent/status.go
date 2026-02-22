@@ -58,6 +58,8 @@ func statusLabel(toolName string, args map[string]interface{}) string {
 		return "サブタスク実行中..."
 	case "android":
 		return androidStatusLabel(args)
+	case "exit":
+		return "アシスタント終了中..."
 	case "mcp":
 		return mcpStatusLabel(args)
 	case "i2c":

@@ -107,6 +107,9 @@ func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {
 
 	definitions := make([]map[string]interface{}, 0, len(r.tools))
 	for _, tool := range r.tools {
+		if at, ok := tool.(ActivatableTool); ok && !at.IsActive() {
+			continue
+		}
 		definitions = append(definitions, ToolToSchema(tool))
 	}
 	return definitions
@@ -120,6 +123,9 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 
 	definitions := make([]providers.ToolDefinition, 0, len(r.tools))
 	for _, tool := range r.tools {
+		if at, ok := tool.(ActivatableTool); ok && !at.IsActive() {
+			continue
+		}
 		schema := ToolToSchema(tool)
 
 		// Safely extract nested values with type checks
@@ -171,6 +177,9 @@ func (r *ToolRegistry) GetSummaries() []string {
 
 	summaries := make([]string, 0, len(r.tools))
 	for _, tool := range r.tools {
+		if at, ok := tool.(ActivatableTool); ok && !at.IsActive() {
+			continue
+		}
 		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", tool.Name(), tool.Description()))
 	}
 	return summaries

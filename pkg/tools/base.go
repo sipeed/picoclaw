@@ -17,6 +17,13 @@ type ContextualTool interface {
 	SetContext(channel, chatID string)
 }
 
+// ActivatableTool is an optional interface that tools can implement
+// to conditionally hide themselves from the LLM tool list.
+// When IsActive() returns false, the tool is excluded from provider definitions.
+type ActivatableTool interface {
+	IsActive() bool
+}
+
 // AsyncCallback is a function type that async tools use to notify completion.
 // When an async tool finishes its work, it calls this callback with the result.
 //
