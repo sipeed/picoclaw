@@ -14,14 +14,14 @@ import (
 type mockRegistryTool struct {
 	name   string
 	desc   string
-	params map[string]interface{}
+	params map[string]any
 	result *ToolResult
 }
 
-func (m *mockRegistryTool) Name() string                       { return m.name }
-func (m *mockRegistryTool) Description() string                { return m.desc }
-func (m *mockRegistryTool) Parameters() map[string]interface{} { return m.params }
-func (m *mockRegistryTool) Execute(_ context.Context, _ map[string]interface{}) *ToolResult {
+func (m *mockRegistryTool) Name() string               { return m.name }
+func (m *mockRegistryTool) Description() string        { return m.desc }
+func (m *mockRegistryTool) Parameters() map[string]any { return m.params }
+func (m *mockRegistryTool) Execute(_ context.Context, _ map[string]any) *ToolResult {
 	return m.result
 }
 
@@ -51,7 +51,7 @@ func newMockTool(name, desc string) *mockRegistryTool {
 	return &mockRegistryTool{
 		name:   name,
 		desc:   desc,
-		params: map[string]interface{}{"type": "object"},
+		params: map[string]any{"type": "object"},
 		result: SilentResult("ok"),
 	}
 }
@@ -109,7 +109,7 @@ func TestToolRegistry_Execute_Success(t *testing.T) {
 	r.Register(&mockRegistryTool{
 		name:   "greet",
 		desc:   "says hello",
-		params: map[string]interface{}{},
+		params: map[string]any{},
 		result: SilentResult("hello"),
 	})
 
@@ -203,7 +203,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	if defs[0]["type"] != "function" {
 		t.Errorf("expected type 'function', got %v", defs[0]["type"])
 	}
-	fn, ok := defs[0]["function"].(map[string]interface{})
+	fn, ok := defs[0]["function"].(map[string]any)
 	if !ok {
 		t.Fatal("expected 'function' key to be a map")
 	}
@@ -217,7 +217,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 
 func TestToolRegistry_ToProviderDefs(t *testing.T) {
 	r := NewToolRegistry()
-	params := map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+	params := map[string]any{"type": "object", "properties": map[string]any{}}
 	r.Register(&mockRegistryTool{
 		name:   "beta",
 		desc:   "tool B",
@@ -310,7 +310,7 @@ func TestToolToSchema(t *testing.T) {
 	if schema["type"] != "function" {
 		t.Errorf("expected type 'function', got %v", schema["type"])
 	}
-	fn, ok := schema["function"].(map[string]interface{})
+	fn, ok := schema["function"].(map[string]any)
 	if !ok {
 		t.Fatal("expected 'function' to be a map")
 	}
