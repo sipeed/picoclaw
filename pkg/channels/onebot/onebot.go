@@ -1040,7 +1040,7 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 		}
 	}
 
-	c.HandleMessage(peer, messageID, senderID, chatID, content, parsed.Media, metadata)
+	c.HandleMessage(c.ctx, peer, messageID, senderID, chatID, content, parsed.Media, metadata)
 }
 
 func (c *OneBotChannel) isDuplicate(messageID string) bool {

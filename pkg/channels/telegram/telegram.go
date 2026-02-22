@@ -448,7 +448,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
 
-	c.HandleMessage(
+	c.HandleMessage(c.ctx,
 		peer,
 		messageID,
 		fmt.Sprintf("%d", user.ID),

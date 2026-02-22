@@ -224,5 +224,5 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]any) {
 		"preview": utils.Truncate(content, 50),
 	})
 
-	c.HandleMessage(peer, messageID, senderID, chatID, content, mediaPaths, metadata)
+	c.HandleMessage(c.ctx, peer, messageID, senderID, chatID, content, mediaPaths, metadata)
 }

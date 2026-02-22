@@ -66,9 +66,8 @@ func SplitMessage(content string, maxLen int) []string {
 				} else {
 					// Code block is too long to fit in one chunk or missing closing fence.
 					// Try to split inside by injecting closing and reopening fences.
-					candidateStr := string(candidate)
-					unclosedStr := string(runes[unclosedIdx:])
-					headerEnd := strings.Index(unclosedStr, "\n")
+					fenceRunes := runes[unclosedIdx:]
+					headerEnd := findNewlineInRunes(fenceRunes)
 					var header string
 					if headerEnd == -1 {
 						header = strings.TrimSpace(string(runes[unclosedIdx : unclosedIdx+3]))
@@ -79,8 +78,6 @@ func SplitMessage(content string, maxLen int) []string {
 					if headerEnd != -1 {
 						headerEndIdx = unclosedIdx + headerEnd
 					}
-
-					_ = candidateStr // used above for context
 
 					// If we have a reasonable amount of content after the header, split inside
 					if msgEnd > headerEndIdx+20 {
@@ -165,6 +162,17 @@ func findNextClosingCodeBlockRunes(runes []rune, startIdx int) int {
 	for i := startIdx; i < len(runes); i++ {
 		if i+2 < len(runes) && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
 			return i + 3
+		}
+	}
+	return -1
+}
+
+// findNewlineInRunes finds the first newline character in a rune slice.
+// Returns the rune index of the newline or -1 if not found.
+func findNewlineInRunes(runes []rune) int {
+	for i, r := range runes {
+		if r == '\n' {
+			return i
 		}
 	}
 	return -1
