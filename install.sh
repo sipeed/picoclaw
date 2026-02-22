@@ -486,20 +486,30 @@ install_picoclaw() {
         msg "$BLUE" "Extracting archive..."
         local extract_dir
         extract_dir=$(mktemp -d)
-        tar -xzf "$tmp_file" -C "$extract_dir"
-        mv "${extract_dir}/${BINARY_NAME}" "$binary_path" 2>/dev/null || \
-            mv "${extract_dir}/"*"/${BINARY_NAME}" "$binary_path" 2>/dev/null || \
-            mv "${extract_dir}/"* "$binary_path" 2>/dev/null
-        rm -rf "$extract_dir" "$tmp_file"
+        if tar -xzf "$tmp_file" -C "$extract_dir" 2>/dev/null; then
+            mv "${extract_dir}/${BINARY_NAME}" "$binary_path" 2>/dev/null || \
+                mv "${extract_dir}/"*"/${BINARY_NAME}" "$binary_path" 2>/dev/null || \
+                mv "${extract_dir}/"* "$binary_path" 2>/dev/null
+            rm -rf "$extract_dir" "$tmp_file"
+        else
+            msg "$RED" "Error: Failed to extract archive"
+            rm -rf "$extract_dir" "$tmp_file"
+            exit 1
+        fi
     elif [[ "$asset_name" == *.zip ]]; then
         msg "$BLUE" "Extracting archive..."
         local extract_dir
         extract_dir=$(mktemp -d)
-        unzip -q "$tmp_file" -d "$extract_dir"
-        mv "${extract_dir}/${BINARY_NAME}" "$binary_path" 2>/dev/null || \
-            mv "${extract_dir}/"*"/${BINARY_NAME}" "$binary_path" 2>/dev/null || \
-            mv "${extract_dir}/"* "$binary_path" 2>/dev/null
-        rm -rf "$extract_dir" "$tmp_file"
+        if unzip -q "$tmp_file" -d "$extract_dir" 2>/dev/null; then
+            mv "${extract_dir}/${BINARY_NAME}" "$binary_path" 2>/dev/null || \
+                mv "${extract_dir}/"*"/${BINARY_NAME}" "$binary_path" 2>/dev/null || \
+                mv "${extract_dir}/"* "$binary_path" 2>/dev/null
+            rm -rf "$extract_dir" "$tmp_file"
+        else
+            msg "$RED" "Error: Failed to extract archive"
+            rm -rf "$extract_dir" "$tmp_file"
+            exit 1
+        fi
     else
         # Assume it's a raw binary
         mv "$tmp_file" "$binary_path"
