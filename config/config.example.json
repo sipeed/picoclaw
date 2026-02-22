@@ -36,6 +36,12 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
+      "model_name": "minimax",
+      "model": "minimax/MiniMax-M1",
+      "api_key": "your-minimax-api-key",
+      "stream": true
+    },
+    {
       "model_name": "loadbalanced-gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-key1",

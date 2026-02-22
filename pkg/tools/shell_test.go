@@ -486,3 +486,31 @@ func TestGuardCommand_CdWithAbsoluteWorkspacePath(t *testing.T) {
 		t.Errorf("cd to workspace subdir should be allowed: %q → %s", cmd, result)
 	}
 }
+
+func TestGuardCommand_AgentCLISlashCommand(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewExecTool(workspace, true)
+
+	// Agent CLI slash commands (e.g., "/review") are not file paths.
+	// They should be allowed because they don't exist on disk.
+	cmds := []string{
+		`codex exec --yolo "/review skip-git-repo-check"`,
+		`claude "/review"`,
+		`gemini "/help"`,
+	}
+	for _, cmd := range cmds {
+		result := tool.guardCommand(cmd, workspace)
+		if result != "" {
+			t.Errorf("Agent CLI slash command should not be blocked: %q → %s", cmd, result)
+		}
+	}
+
+	// Non-agent commands with absolute paths should still be blocked.
+	if runtime.GOOS != "windows" {
+		blocked := `cat /etc/hosts`
+		result := tool.guardCommand(blocked, workspace)
+		if result == "" {
+			t.Errorf("Non-agent command with absolute path should be blocked: %q", blocked)
+		}
+	}
+}

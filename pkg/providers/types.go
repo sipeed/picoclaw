@@ -17,6 +17,8 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
+	StreamEvent            = protocoltypes.StreamEvent
+	StreamToolCallDelta    = protocoltypes.StreamToolCallDelta
 )
 
 type LLMProvider interface {
@@ -65,6 +67,22 @@ func (e *FailoverError) Unwrap() error {
 // Non-retriable: Format errors (bad request structure, image dimension/size).
 func (e *FailoverError) IsRetriable() bool {
 	return e.Reason != FailoverFormat
+}
+
+// StreamingProvider extends LLMProvider with SSE channel-based streaming.
+// Use a type assertion to check if a provider supports streaming:
+//
+//	if sp, ok := provider.(StreamingProvider); ok && sp.CanStream() { ... }
+type StreamingProvider interface {
+	LLMProvider
+	CanStream() bool
+	ChatStream(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDefinition,
+		model string,
+		options map[string]any,
+	) (<-chan StreamEvent, error)
 }
 
 // ModelConfig holds primary model and fallback list.

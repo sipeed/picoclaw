@@ -51,8 +51,6 @@ const telegramMaxMessageChars = 3900
 const markdownTableMaxWidth = 42
 const markdownTableMinColWidth = 6
 
-var thinkBlockPattern = regexp.MustCompile(`(?is)<think>.*?</think>`)
-
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
 	var opts []telego.BotOption
 	telegramCfg := cfg.Channels.Telegram
@@ -196,6 +194,35 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
+// CreatePlaceholder sends a "Thinking..." placeholder for the given chatID
+// so that subsequent IsStatus messages can update it via EditStatus.
+func (c *TelegramChannel) CreatePlaceholder(ctx context.Context, chatID string) error {
+	if !c.IsRunning() {
+		return nil
+	}
+	cid, err := parseChatID(chatID)
+	if err != nil {
+		return err
+	}
+
+	// Stop any previous thinking animation
+	if prevStop, ok := c.stopThinking.Load(chatID); ok {
+		if cf, ok := prevStop.(*thinkingCancel); ok && cf != nil {
+			cf.Cancel()
+		}
+	}
+
+	_, thinkCancel := context.WithTimeout(ctx, 5*time.Minute)
+	c.stopThinking.Store(chatID, &thinkingCancel{fn: thinkCancel})
+
+	pMsg, err := c.bot.SendMessage(ctx, tu.Message(tu.ID(cid), "Thinking... 💭"))
+	if err != nil {
+		return err
+	}
+	c.placeholders.Store(chatID, pMsg.MessageID)
+	return nil
+}
+
 func (c *TelegramChannel) EditStatus(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return nil
@@ -326,8 +353,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 }
 
 func sanitizeTelegramOutgoingContent(content string) string {
-	cleaned := thinkBlockPattern.ReplaceAllString(content, "")
-	cleaned = strings.TrimSpace(cleaned)
+	cleaned := strings.TrimSpace(content)
 	if cleaned == "" {
 		return "(empty response)"
 	}
