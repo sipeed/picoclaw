@@ -833,7 +833,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 5a. Auto-advance plan phases after LLM iteration
 	postStatus := agent.ContextBuilder.GetPlanStatus()
-	if agent.ContextBuilder.HasActivePlan() && (postStatus == "executing" || postStatus == "review") {
+	if agent.ContextBuilder.HasActivePlan() && (postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
 		// Intercept: if AI changed status to executing or review without user approval
 		// (from interviewing or review), validate and hold at "review".
 		if preStatus == "interviewing" || (preStatus == "review" && postStatus == "executing") {
@@ -862,14 +862,19 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			logger.WarnCF("agent", "Reverted plan to interviewing: no phases defined",
 				map[string]interface{}{"agent_id": agent.ID})
 		} else if agent.ContextBuilder.IsPlanComplete() {
-			_ = agent.ContextBuilder.ClearMemory()
-			if !constants.IsInternalChannel(opts.Channel) {
-				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel:         opts.Channel,
-					ChatID:          opts.ChatID,
-					Content:         "\u2705 Plan completed!",
-					SkipPlaceholder: true,
-				})
+			// Mark plan as completed (keep memory for review; user can /plan clear)
+			total := agent.ContextBuilder.GetTotalPhases()
+			_ = agent.ContextBuilder.SetCurrentPhase(total)
+			if preStatus != "completed" {
+				_ = agent.ContextBuilder.SetPlanStatus("completed")
+				if !constants.IsInternalChannel(opts.Channel) {
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel:         opts.Channel,
+						ChatID:          opts.ChatID,
+						Content:         "\u2705 Plan completed!",
+						SkipPlaceholder: true,
+					})
+				}
 			}
 		} else if agent.ContextBuilder.IsCurrentPhaseComplete() {
 			prev := agent.ContextBuilder.GetCurrentPhase()
