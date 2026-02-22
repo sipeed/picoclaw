@@ -66,8 +66,15 @@ class DeviceController {
 
     suspend fun inputText(text: String): Boolean {
         val svc = service ?: return false
-        val focusedNode = svc.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            ?: return false
+        val ownPackage = svc.packageName
+        // Search non-overlay windows for the focused input field
+        val focusedNode = svc.windows
+            .filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }
+            .firstNotNullOfOrNull { win ->
+                val root = win.root ?: return@firstNotNullOfOrNull null
+                if (root.packageName?.toString() == ownPackage) return@firstNotNullOfOrNull null
+                root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            } ?: return false
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
