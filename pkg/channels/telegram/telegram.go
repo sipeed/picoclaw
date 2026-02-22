@@ -22,7 +22,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 type TelegramChannel struct {
@@ -32,7 +31,6 @@ type TelegramChannel struct {
 	commands     TelegramCommander
 	config       *config.Config
 	chatIDs      map[string]int64
-	transcriber  *voice.GroqTranscriber
 	ctx          context.Context
 	cancel       context.CancelFunc
 	placeholders sync.Map // chatID -> messageID
@@ -91,14 +89,9 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		bot:          bot,
 		config:       cfg,
 		chatIDs:      make(map[string]int64),
-		transcriber:  nil,
 		placeholders: sync.Map{},
 		stopThinking: sync.Map{},
 	}, nil
-}
-
-func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
-	c.transcriber = transcriber
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -391,32 +384,10 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		if voicePath != "" {
 			mediaPaths = append(mediaPaths, storeMedia(voicePath, "voice.ogg"))
 
-			transcribedText := ""
-			if c.transcriber != nil && c.transcriber.IsAvailable() {
-				transcriberCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				defer cancel()
-
-				result, err := c.transcriber.Transcribe(transcriberCtx, voicePath)
-				if err != nil {
-					logger.ErrorCF("telegram", "Voice transcription failed", map[string]any{
-						"error": err.Error(),
-						"path":  voicePath,
-					})
-					transcribedText = "[voice (transcription failed)]"
-				} else {
-					transcribedText = fmt.Sprintf("[voice transcription: %s]", result.Text)
-					logger.InfoCF("telegram", "Voice transcribed successfully", map[string]any{
-						"text": result.Text,
-					})
-				}
-			} else {
-				transcribedText = "[voice]"
-			}
-
 			if content != "" {
 				content += "\n"
 			}
-			content += transcribedText
+			content += "[voice]"
 		}
 	}
 
