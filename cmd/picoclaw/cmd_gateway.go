@@ -306,7 +306,7 @@ func (p *agentLoopDataProvider) ListSkills() []skills.SkillInfo {
 }
 
 func (p *agentLoopDataProvider) GetPlanInfo() miniapp.PlanInfo {
-	hasPlan, status, currentPhase, totalPhases, display := p.loop.GetPlanInfo()
+	hasPlan, status, currentPhase, totalPhases, display, memory := p.loop.GetPlanInfo()
 
 	// Convert agent.PlanPhase → miniapp.PlanPhase
 	agentPhases := p.loop.GetPlanPhases()
@@ -334,6 +334,7 @@ func (p *agentLoopDataProvider) GetPlanInfo() miniapp.PlanInfo {
 		TotalPhases:  totalPhases,
 		Display:      display,
 		Phases:       phases,
+		Memory:       memory,
 	}
 }
 

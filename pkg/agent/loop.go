@@ -960,6 +960,13 @@ func buildTaskReminder(userMessage string, lastBlocker string) providers.Message
 	}
 }
 
+// interviewRejectMessage is the fixed rejection text injected when tool calls
+// are blocked during the interview phase.  It is deliberately short to avoid
+// wasting tokens, and ends with a purpose reminder to steer the LLM back.
+const interviewRejectMessage = "[System] Tool call rejected. " +
+	"You are in interview mode — ask the user questions and update MEMORY.md. " +
+	"Do not execute, edit, or write project files."
+
 // buildPlanReminder returns a reminder message for plan pre-execution states
 // (interviewing / review) to keep the AI focused on the interview workflow
 // during tool-call iterations.
@@ -1594,6 +1601,39 @@ func (al *AgentLoop) runLLMIteration(
 			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
 		}
 
+		// --- Interview mode: reject disallowed tool calls before they
+		// enter messages or session history.  Rejected calls are stripped
+		// from normalizedToolCalls so they never reach the assistant
+		// message, the tool-result list, or the session store.
+		// A single compact rejection message is injected instead.
+		var interviewRejected []string
+		if isPlanPreExecution(agent.ContextBuilder.GetPlanStatus()) {
+			allowed := normalizedToolCalls[:0] // reuse backing array
+			for _, tc := range normalizedToolCalls {
+				if isToolAllowedDuringInterview(tc.Name, tc.Arguments) {
+					allowed = append(allowed, tc)
+				} else {
+					interviewRejected = append(interviewRejected, tc.Name)
+				}
+			}
+			normalizedToolCalls = allowed
+			if len(interviewRejected) > 0 {
+				logger.InfoCF("agent", "Interview mode: rejected tool calls",
+					map[string]any{
+						"agent_id": agent.ID,
+						"rejected": interviewRejected,
+					})
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: interviewRejectMessage,
+				})
+			}
+			// If all tool calls were rejected, skip to next iteration.
+			if len(normalizedToolCalls) == 0 {
+				continue
+			}
+		}
+
 		// Log tool calls
 		toolNames := make([]string, 0, len(normalizedToolCalls))
 		for _, tc := range normalizedToolCalls {
@@ -1734,15 +1774,8 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}
 
-			// Block non-allowed tools during plan interview mode.
-			// Only read-type tools and MEMORY.md writes are permitted.
 			toolStart := time.Now()
-			var toolResult *tools.ToolResult
-			if isPlanPreExecution(agent.ContextBuilder.GetPlanStatus()) && !isToolAllowedDuringInterview(tc.Name, tc.Arguments) {
-				toolResult = tools.ErrorResult("Interview mode: only read tools and MEMORY.md edits are allowed. Focus on asking questions and updating the plan.")
-			} else {
-				toolResult = agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
-			}
+			toolResult := agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
 			toolDuration := time.Since(toolStart)
 
 			// Update tool log entry with result
@@ -2016,20 +2049,21 @@ func (al *AgentLoop) ListSkills() []skills.SkillInfo {
 }
 
 // GetPlanInfo returns plan state from the default agent's memory store.
-func (al *AgentLoop) GetPlanInfo() (hasPlan bool, status string, currentPhase, totalPhases int, display string) {
+func (al *AgentLoop) GetPlanInfo() (hasPlan bool, status string, currentPhase, totalPhases int, display string, memory string) {
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
-		return false, "", 0, 0, "No agent available."
+		return false, "", 0, 0, "No agent available.", ""
 	}
 	mem := agent.ContextBuilder.Memory()
 	if mem == nil {
-		return false, "", 0, 0, "No memory store."
+		return false, "", 0, 0, "No memory store.", ""
 	}
 	hasPlan = mem.HasActivePlan()
 	status = mem.GetPlanStatus()
 	currentPhase = mem.GetCurrentPhase()
 	totalPhases = mem.GetTotalPhases()
 	display = mem.FormatPlanDisplay()
+	memory = mem.ReadLongTerm()
 	return
 }
 
