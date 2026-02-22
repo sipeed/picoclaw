@@ -20,7 +20,10 @@ func resolveSTTTranscriber(cfg *config.Config) voice.Transcriber {
 				protocol, modelID := providers.ExtractProtocol(mc.Model)
 				apiBase := mc.APIBase
 				if apiBase == "" {
-					apiBase = getDefaultSTTBase(protocol)
+					apiBase = providers.GetDefaultAPIBase(protocol)
+				}
+				if apiBase == "" {
+					continue // unknown protocol, skip this entry
 				}
 				return voice.NewOpenAICompatTranscriber(mc.APIKey, apiBase, modelID)
 			}

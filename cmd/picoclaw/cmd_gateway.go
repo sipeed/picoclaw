@@ -241,14 +241,3 @@ func setupCronTool(
 
 	return cronService
 }
-
-func getDefaultSTTBase(protocol string) string {
-	switch protocol {
-	case "openai":
-		return "https://api.openai.com/v1"
-	case "groq":
-		return "https://api.groq.com/openai/v1"
-	default:
-		return ""
-	}
-}

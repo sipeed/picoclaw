@@ -7,22 +7,28 @@ import (
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
-func TestGetDefaultSTTBase(t *testing.T) {
-	tests := []struct {
-		protocol string
-		expected string
-	}{
-		{"openai", "https://api.openai.com/v1"},
-		{"groq", "https://api.groq.com/openai/v1"},
-		{"unknown", ""},
-		{"", ""},
+func TestResolveSTTTranscriber_UnknownProtocolSkipped(t *testing.T) {
+	// stt_model points to an entry with an unknown protocol and no api_base.
+	// The unknown protocol resolves to an empty API base, so this entry must be
+	// skipped (continue) and the function should fall through to return nil.
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				STTModel: "whisper",
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "whisper",
+				Model:     "unknownprotocol/whisper-1",
+				APIKey:    "sk-test",
+			},
+		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.protocol, func(t *testing.T) {
-			if got := getDefaultSTTBase(tt.protocol); got != tt.expected {
-				t.Errorf("getDefaultSTTBase(%q) = %q, want %q", tt.protocol, got, tt.expected)
-			}
-		})
+
+	tr := resolveSTTTranscriber(cfg)
+	if tr != nil {
+		t.Error("expected nil - unknown protocol with no api_base should be skipped")
 	}
 }
 
