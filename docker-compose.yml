@@ -51,7 +51,7 @@ services:
     configs:
       - source: init_script
         target: /usr/local/bin/init
-        mode: 0777
+        mode: 0755
     command: ["gateway"]
 
 volumes:
