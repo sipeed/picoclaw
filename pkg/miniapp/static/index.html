@@ -1123,38 +1123,46 @@ function loadGit() {
     renderGitFromData);
 }
 
-function renderGitFromData(data) {
+function renderGitFromData(repos) {
   var loading = document.getElementById('git-loading');
   var el = document.getElementById('git-content');
   loading.classList.add('hidden');
   el.classList.remove('hidden');
 
-  var html = '<div class="card glass"><div class="card-title">Branch: ' +
-    escapeHtml(data.branch || 'unknown') + '</div>';
-
-  if (data.commits && data.commits.length > 0) {
-    data.commits.forEach(function(c) {
-      html += '<div class="git-commit">' +
-        '<span class="git-hash">' + escapeHtml(c.hash) + '</span>' +
-        '<span class="git-subject">' + escapeHtml(c.subject) + '</span>' +
-        '<span class="git-meta">' + escapeHtml(c.date) + '</span>' +
-        '</div>';
-    });
-  } else {
-    html += '<div style="padding:12px;color:var(--hint)">No commits found.</div>';
+  if (!repos || repos.length === 0) {
+    el.innerHTML = '<div class="empty-state">No git repositories found.</div>';
+    return;
   }
-  html += '</div>';
 
-  if (data.modified && data.modified.length > 0) {
-    html += '<div class="card glass" style="margin-top:12px"><div class="card-title">Changes (' + data.modified.length + ')</div>';
-    data.modified.forEach(function(f) {
-      html += '<div class="git-commit">' +
-        '<span class="git-status git-status-' + (f.status === '??' ? 'u' : f.status.toLowerCase()) + '">' + escapeHtml(f.status) + '</span>' +
-        '<span class="git-subject">' + escapeHtml(f.path) + '</span>' +
-        '</div>';
-    });
+  var html = '';
+  repos.forEach(function(repo) {
+    html += '<div class="card glass"><div class="card-title">' +
+      escapeHtml(repo.name) + ' &mdash; ' + escapeHtml(repo.branch || '?') + '</div>';
+
+    if (repo.modified && repo.modified.length > 0) {
+      html += '<div style="padding:4px 12px 8px;font-size:12px;color:var(--hint)">Changes (' + repo.modified.length + ')</div>';
+      repo.modified.forEach(function(f) {
+        html += '<div class="git-commit">' +
+          '<span class="git-status git-status-' + (f.status === '??' ? 'u' : f.status.toLowerCase()) + '">' + escapeHtml(f.status) + '</span>' +
+          '<span class="git-subject">' + escapeHtml(f.path) + '</span>' +
+          '</div>';
+      });
+    }
+
+    if (repo.commits && repo.commits.length > 0) {
+      html += '<div style="padding:4px 12px 8px;font-size:12px;color:var(--hint)">Commits</div>';
+      repo.commits.forEach(function(c) {
+        html += '<div class="git-commit">' +
+          '<span class="git-hash">' + escapeHtml(c.hash) + '</span>' +
+          '<span class="git-subject">' + escapeHtml(c.subject) + '</span>' +
+          '<span class="git-meta">' + escapeHtml(c.date) + '</span>' +
+          '</div>';
+      });
+    } else {
+      html += '<div style="padding:12px;color:var(--hint)">No commits found.</div>';
+    }
     html += '</div>';
-  }
+  });
 
   el.innerHTML = html;
 }
