@@ -37,16 +37,19 @@ jobs:
       - name: Determine Fork Version
         id: version
         run: |
-          # Dapatkan tag terbaru dari repo asli (misal: v0.1.2)
+          # Dapatkan tag terbaru dari history (mungkin sudah ada akhiran -fork)
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          
+          # Hilangkan akhiran -fork-* agar kita mendapatkan base version aslinya (misal: v0.1.2)
+          BASE_TAG=$(echo "$LATEST_TAG" | sed -E 's/-fork-[0-9]+//g')
           
           # Format increment number menggunakan run number (misal: 01, 02)
           RUN_NUM=$(printf "%02d" ${{ github.run_number }})
           
           # Gabungkan menjadi versi custom untuk fork
-          FORK_VERSION="${LATEST_TAG}-fork-${RUN_NUM}"
+          FORK_VERSION="${BASE_TAG}-fork-${RUN_NUM}"
           
-          echo "Ditemukan tag upstream: $LATEST_TAG"
+          echo "Ditemukan tag asli: $BASE_TAG"
           echo "Versi fork yang digunakan: $FORK_VERSION"
           echo "FORK_VERSION=$FORK_VERSION" >> $GITHUB_ENV
 
