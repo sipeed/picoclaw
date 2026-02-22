@@ -41,3 +41,22 @@ jobs:
 
       - name: Run go test
         run: go test ./...
+
+  gofix:
+    name: Go fix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run go fix
+        run: go fix ./...
+
+      - name: Check git diff
+        id: git-diff
+        run: git diff --exit-code
