@@ -61,7 +61,7 @@ func TestSetPluginManagerInstallsHookRegistry(t *testing.T) {
 		t.Fatal("expected agent loop hooks to use plugin manager registry")
 	}
 
-	sent := al.sendOutbound(context.Background(), bus.OutboundMessage{
+	sent, reason := al.sendOutbound(context.Background(), bus.OutboundMessage{
 		Channel: "cli",
 		ChatID:  "direct",
 		Content: "hello",
@@ -69,5 +69,38 @@ func TestSetPluginManagerInstallsHookRegistry(t *testing.T) {
 	if sent {
 		t.Fatal("expected outbound message to be blocked by plugin")
 	}
+	if reason == "" {
+		t.Fatal("expected cancel reason to be propagated")
+	}
 }
 
+func TestSetHooksPanicsWhenRunning(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-plugin-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
+	al.running.Store(true)
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic when calling SetHooks while running")
+		}
+	}()
+
+	al.SetHooks(hooks.NewHookRegistry())
+}

@@ -293,12 +293,12 @@ func TestConcurrentRegistrationAndTrigger(t *testing.T) {
 	// Goroutines registering hooks.
 	for i := range 10 {
 		wg.Add(1)
-		go func() {
+		go func(idx int) {
 			defer wg.Done()
-			r.OnMessageReceived("reg-hook", i, func(_ context.Context, _ *MessageReceivedEvent) error {
+			r.OnMessageReceived(fmt.Sprintf("reg-hook-%d", idx), idx, func(_ context.Context, _ *MessageReceivedEvent) error {
 				return nil
 			})
-		}()
+		}(i)
 	}
 
 	// Goroutines triggering hooks concurrently.
@@ -322,7 +322,7 @@ func TestInsertSorted(t *testing.T) {
 	// Register with priorities: 50, 10, 30, 20, 40
 	priorities := []int{50, 10, 30, 20, 40}
 	for _, p := range priorities {
-		r.OnBeforeToolCall("p-"+string(rune('0'+p)), p, func(_ context.Context, _ *BeforeToolCallEvent) error {
+		r.OnBeforeToolCall(fmt.Sprintf("p-%d", p), p, func(_ context.Context, _ *BeforeToolCallEvent) error {
 			order = append(order, p)
 			return nil
 		})

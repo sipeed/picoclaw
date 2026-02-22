@@ -220,23 +220,29 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 
 // SetHooks installs a hook registry. Must be called before Run starts.
 func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) {
+	if al.running.Load() {
+		panic("SetHooks must be called before Run starts")
+	}
 	al.hooks = h
 
 	// Rewire MessageTool callbacks to route through sendOutbound for hook interception.
 	for _, agentID := range al.registry.ListAgentIDs() {
 		if agent, ok := al.registry.GetAgent(agentID); ok {
 			if tool, ok := agent.Tools.Get("message"); ok {
-				if mt, ok := tool.(*tools.MessageTool); ok {
-					mt.SetSendCallback(func(channel, chatID, content string) error {
-						if !al.sendOutbound(context.Background(), bus.OutboundMessage{
-							Channel: channel,
-							ChatID:  chatID,
-							Content: content,
-						}) {
-							return fmt.Errorf("message canceled by hook")
-						}
-						return nil
-					})
+					if mt, ok := tool.(*tools.MessageTool); ok {
+						mt.SetSendCallback(func(channel, chatID, content string) error {
+							if sent, reason := al.sendOutbound(context.Background(), bus.OutboundMessage{
+								Channel: channel,
+								ChatID:  chatID,
+								Content: content,
+							}); !sent {
+								if strings.TrimSpace(reason) == "" {
+									reason = "unspecified"
+								}
+								return fmt.Errorf("message canceled by hook: %s", reason)
+							}
+							return nil
+						})
 				}
 			}
 		}
@@ -265,8 +271,8 @@ func (al *AgentLoop) EnablePlugins(plugins ...plugin.Plugin) error {
 }
 
 // sendOutbound wraps bus.PublishOutbound with the message_sending hook.
-// Returns true if the message was sent, false if canceled by a hook.
-func (al *AgentLoop) sendOutbound(ctx context.Context, msg bus.OutboundMessage) bool {
+// Returns whether the message was sent and, if canceled, the cancel reason.
+func (al *AgentLoop) sendOutbound(ctx context.Context, msg bus.OutboundMessage) (bool, string) {
 	if al.hooks != nil {
 		event := &hooks.MessageSendingEvent{Channel: msg.Channel, ChatID: msg.ChatID, Content: msg.Content}
 		al.hooks.TriggerMessageSending(ctx, event)
@@ -281,12 +287,12 @@ func (al *AgentLoop) sendOutbound(ctx context.Context, msg bus.OutboundMessage) 
 					"chat_id": msg.ChatID,
 					"reason":  reason,
 				})
-			return false
+			return false, reason
 		}
 		msg.Content = event.Content
 	}
 	al.bus.PublishOutbound(msg)
-	return true
+	return true, ""
 }
 
 // RecordLastChannel records the last active channel for this workspace.
