@@ -104,7 +104,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 
 	return &ExecTool{
 		workingDir:          workingDir,
-		timeout:             60 * time.Second,
+		timeout:             5 * time.Minute,
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
 		restrictToWorkspace: restrict,
