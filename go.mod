@@ -17,6 +17,7 @@ require (
 	github.com/slack-go/slack v0.17.3
 	github.com/stretchr/testify v1.11.1
 	github.com/tencent-connect/botgo v0.2.1
+	github.com/yuin/goldmark v1.6.0
 	golang.org/x/oauth2 v0.35.0
 )
 

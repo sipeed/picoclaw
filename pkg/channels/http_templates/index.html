@@ -247,13 +247,6 @@
         function addMessage(content, type) {
             const div = document.createElement('div');
             div.className = `message ${type}`;
-            
-            // Simple markdown-like formatting for code blocks
-            content = content.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-            content = content.replace(/`([^`]+)`/g, '<code>$1</code>');
-            content = content.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-            content = content.replace(/\n/g, '<br>');
-            
             div.innerHTML = content;
             chatContainer.appendChild(div);
             chatContainer.scrollTop = chatContainer.scrollHeight;

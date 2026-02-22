@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -128,9 +131,12 @@ func (c *HTTPChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		return nil
 	}
 
+	// Render Markdown to HTML before sending
+	renderedContent := renderMarkdown(msg.Content)
+
 	wsMsg := WSMessage{
 		Type:    "response",
-		Content: msg.Content,
+		Content: renderedContent,
 		ChatID:  msg.ChatID,
 	}
 
@@ -272,4 +278,21 @@ func (c *HTTPChannel) removeSession(chatID string) {
 
 func generateChatID(r *http.Request) string {
 	return fmt.Sprintf("web_%d", time.Now().UnixNano())
+}
+
+// renderMarkdown converts Markdown to HTML using goldmark
+func renderMarkdown(input string) string {
+	md := goldmark.New(
+		goldmark.WithExtensions(
+			extension.GFM,
+			extension.TaskList,
+			extension.Typographer,
+		),
+	)
+
+	var buf strings.Builder
+	if err := md.Convert([]byte(input), &buf); err != nil {
+		return input // fallback to plain text on error
+	}
+	return buf.String()
 }
