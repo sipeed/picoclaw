@@ -209,8 +209,15 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							ChatID:  msg.ChatID,
 							Content: response,
 						})
+						logger.InfoCF("agent", "Published outbound response",
+							map[string]any{
+								"channel": msg.Channel,
+								"chat_id": msg.ChatID,
+								"content_len": len(response),
+							})
+					} else {
+						logger.DebugCF("agent", "Skipped outbound (message tool already sent)", map[string]any{"channel": msg.Channel})
 					}
-				}
 			}()
 		}
 	}
@@ -308,8 +315,14 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 
 // ProcessHeartbeat processes a heartbeat request without session history.
 // Each heartbeat is independent and doesn't accumulate context.
+// It uses the same mutex as processMessage so heartbeat and user messages never run concurrently.
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
 	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", fmt.Errorf("no default agent for heartbeat")
+	}
+	al.agentMu.Lock()
+	defer al.agentMu.Unlock()
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      "heartbeat",
 		Channel:         channel,
@@ -362,6 +375,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if !ok {
 		agent = al.registry.GetDefaultAgent()
 	}
+	if agent == nil {
+		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+	}
+
+	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if mt, ok := tool.(tools.ContextualTool); ok {
+			mt.SetContext(msg.Channel, msg.ChatID)
+		}
+	}
 
 	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
 	sessionKey := route.SessionKey
@@ -376,6 +399,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"matched_by":  route.MatchedBy,
 		})
 
+	al.agentMu.Lock()
+	defer al.agentMu.Unlock()
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
@@ -428,10 +453,15 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	// Use default agent for system messages
 	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", fmt.Errorf("no default agent for system message")
+	}
 
 	// Use the origin session for context
 	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
 
+	al.agentMu.Lock()
+	defer al.agentMu.Unlock()
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         originChannel,

@@ -75,6 +75,8 @@
     "whatsapp": {
       "enabled": false,
       "bridge_url": "ws://localhost:3001",
+      "use_native": false,
+      "session_store_path": "",
       "allow_from": []
     },
     "feishu": {

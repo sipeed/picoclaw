@@ -154,9 +154,14 @@ make build
 # Build for multiple platforms
 make build-all
 
+# Build for Raspberry Pi Zero 2 W (32-bit: make build-linux-arm; 64-bit: make build-linux-arm64)
+make build-pi-zero
+
 # Build And Install
 make install
 ```
+
+**Raspberry Pi Zero 2 W:** Use the binary that matches your OS: 32-bit Raspberry Pi OS → `make build-linux-arm` (output: `build/picoclaw-linux-arm`); 64-bit → `make build-linux-arm64` (output: `build/picoclaw-linux-arm64`). Or run `make build-pi-zero` to build both.
 
 ## 🐳 Docker Compose
 
@@ -284,12 +289,13 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or WeCom
 
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
 | **Telegram** | Easy (just a token)                |
 | **Discord**  | Easy (bot token + intents)         |
+| **WhatsApp** | Easy (native: QR scan; or bridge URL) |
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
@@ -377,6 +383,33 @@ Set `"mention_only": true` to make the bot respond only when @-mentioned. Useful
 ```bash
 picoclaw gateway
 ```
+
+</details>
+
+<details>
+<summary><b>WhatsApp</b> (native via whatsmeow)</summary>
+
+PicoClaw can connect to WhatsApp in two ways:
+
+- **Native (recommended):** In-process using [whatsmeow](https://github.com/tulir/whatsmeow). No separate bridge. Set `"use_native": true` and leave `bridge_url` empty. On first run, scan the QR code with WhatsApp (Linked Devices). Session is stored under your workspace (e.g. `workspace/whatsapp/`).
+- **Bridge:** Connect to an external WebSocket bridge. Set `bridge_url` (e.g. `ws://localhost:3001`) and keep `use_native` false.
+
+**Configure (native)**
+
+```json
+{
+  "channels": {
+    "whatsapp": {
+      "enabled": true,
+      "use_native": true,
+      "session_store_path": "",
+      "allow_from": []
+    }
+  }
+}
+```
+
+If `session_store_path` is empty, the session is stored in `&lt;workspace&gt;/whatsapp/`. Run `picoclaw gateway`; on first run, scan the QR code printed in the terminal with WhatsApp → Linked Devices.
 
 </details>
 
@@ -1066,7 +1099,11 @@ picoclaw agent -m "Hello"
       "allow_from": [""]
     },
     "whatsapp": {
-      "enabled": false
+      "enabled": false,
+      "bridge_url": "ws://localhost:3001",
+      "use_native": false,
+      "session_store_path": "",
+      "allow_from": []
     },
     "feishu": {
       "enabled": false,

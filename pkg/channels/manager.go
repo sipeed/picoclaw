@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -210,8 +211,27 @@ func (m *Manager) initChannels() error {
 		m.initChannel("telegram", "Telegram")
 	}
 
-	if m.config.Channels.WhatsApp.Enabled && m.config.Channels.WhatsApp.BridgeURL != "" {
-		m.initChannel("whatsapp", "WhatsApp")
+	if m.config.Channels.WhatsApp.Enabled {
+		waCfg := m.config.Channels.WhatsApp
+		useNative := waCfg.UseNative
+		if useNative {
+			logger.DebugC("channels", "Attempting to initialize WhatsApp native channel (whatsmeow)")
+			storePath := waCfg.SessionStorePath
+			if storePath == "" {
+				storePath = filepath.Join(m.config.WorkspacePath(), "whatsapp")
+			}
+			ch, err := NewWhatsAppNativeChannel(waCfg, m.bus, storePath)
+			if err != nil {
+				logger.ErrorCF("channels", "Failed to initialize WhatsApp native channel", map[string]any{
+					"error": err.Error(),
+				})
+			} else {
+				m.channels["whatsapp"] = ch
+				logger.InfoC("channels", "WhatsApp native channel enabled successfully")
+			}
+		} else if waCfg.BridgeURL != "" {
+			m.initChannel("whatsapp", "WhatsApp")
+		}
 	}
 
 	if m.config.Channels.Feishu.Enabled {
