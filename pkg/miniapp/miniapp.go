@@ -45,6 +45,7 @@ type PlanInfo struct {
 	TotalPhases  int         `json:"total_phases"`
 	Display      string      `json:"display"`
 	Phases       []PlanPhase `json:"phases"`
+	Memory       string      `json:"memory"`
 }
 
 // SessionInfo represents an active session entry for the API response.
