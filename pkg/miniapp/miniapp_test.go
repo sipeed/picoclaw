@@ -2,6 +2,7 @@ package miniapp
 
 import (
 	"bufio"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,8 +10,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -263,4 +266,206 @@ func TestSSE_InitialEvents(t *testing.T) {
 			t.Errorf("missing initial event %q", name)
 		}
 	}
+}
+
+func TestStateNotifier_UnsubscribeStopsDelivery(t *testing.T) {
+	n := NewStateNotifier()
+	ch := n.Subscribe()
+
+	n.Unsubscribe(ch)
+	n.Notify()
+
+	select {
+	case <-ch:
+		t.Error("received notification after Unsubscribe")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestStateNotifier_SubscribeCycleNoLeak(t *testing.T) {
+	n := NewStateNotifier()
+
+	for i := 0; i < 100; i++ {
+		ch := n.Subscribe()
+		n.Unsubscribe(ch)
+	}
+
+	n.mu.Lock()
+	count := len(n.subs)
+	n.mu.Unlock()
+
+	if count != 0 {
+		t.Errorf("expected 0 subscribers after cycle, got %d", count)
+	}
+}
+
+func TestSSE_ClientDisconnectCleansUp(t *testing.T) {
+	notifier := NewStateNotifier()
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// Baseline goroutine count
+	runtime.GC()
+	time.Sleep(50 * time.Millisecond)
+	baseGoroutines := runtime.NumGoroutine()
+
+	// Open and close several SSE connections
+	for i := 0; i < 5; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		req, _ := http.NewRequestWithContext(ctx, "GET",
+			ts.URL+"/miniapp/api/events?initData="+url.QueryEscape(testInitData()), nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request %d failed: %v", i, err)
+		}
+		// Read at least one event line to confirm the handler is running
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Scan()
+		// Disconnect
+		cancel()
+		resp.Body.Close()
+	}
+
+	// Wait for goroutines to wind down
+	time.Sleep(200 * time.Millisecond)
+	runtime.GC()
+	time.Sleep(50 * time.Millisecond)
+
+	finalGoroutines := runtime.NumGoroutine()
+	leaked := finalGoroutines - baseGoroutines
+	if leaked > 2 { // small tolerance for runtime jitter
+		t.Errorf("possible goroutine leak: baseline=%d, final=%d, leaked=%d",
+			baseGoroutines, finalGoroutines, leaked)
+	}
+
+	// Verify all subscribers were cleaned up
+	notifier.mu.Lock()
+	subCount := len(notifier.subs)
+	notifier.mu.Unlock()
+	if subCount != 0 {
+		t.Errorf("expected 0 subscribers after disconnect, got %d", subCount)
+	}
+}
+
+func TestSSE_NotifyDrivesSubsequentEvents(t *testing.T) {
+	notifier := NewStateNotifier()
+	provider := &mutatingDataProvider{}
+	h := NewHandler(provider, &mockSender{}, testBotToken, notifier)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/miniapp/api/events?initData=" + url.QueryEscape(testInitData()))
+	if err != nil {
+		t.Fatalf("GET failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	// Drain initial 3 events
+	drainEvents(t, scanner, 3, 2*time.Second)
+
+	// Mutate state and notify — diff dedup should detect the change and send a new event
+	provider.mutated.Store(true)
+	notifier.Notify()
+
+	events := drainEvents(t, scanner, 1, 2*time.Second)
+	if !events["plan"] {
+		t.Errorf("expected plan event after mutation, got: %v", events)
+	}
+}
+
+func TestSSE_DiffDedupSuppressesDuplicate(t *testing.T) {
+	notifier := NewStateNotifier()
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/miniapp/api/events?initData=" + url.QueryEscape(testInitData()))
+	if err != nil {
+		t.Fatalf("GET failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	// Drain initial events
+	drainEvents(t, scanner, 3, 2*time.Second)
+
+	// Notify with unchanged data — should produce zero new event lines
+	notifier.Notify()
+
+	// Give the handler time to process
+	time.Sleep(100 * time.Millisecond)
+
+	// Try to read — nothing should arrive since data hasn't changed
+	gotExtra := make(chan string, 1)
+	go func() {
+		if scanner.Scan() {
+			gotExtra <- scanner.Text()
+		}
+	}()
+
+	select {
+	case line := <-gotExtra:
+		// Only fail if it's an actual event (not an empty keepalive)
+		if strings.HasPrefix(line, "event:") {
+			t.Errorf("received duplicate event despite unchanged data: %s", line)
+		}
+	case <-time.After(200 * time.Millisecond):
+		// Expected: no duplicate sent
+	}
+}
+
+// ── helpers ──
+
+// mutatingDataProvider returns different PlanInfo after mutate is set.
+type mutatingDataProvider struct {
+	mutated atomic.Bool
+}
+
+func (m *mutatingDataProvider) ListSkills() []skills.SkillInfo {
+	return []skills.SkillInfo{{Name: "test-skill", Description: "A test", Source: "local"}}
+}
+func (m *mutatingDataProvider) GetPlanInfo() PlanInfo {
+	if m.mutated.Load() {
+		return PlanInfo{HasPlan: true, Status: "executing", CurrentPhase: 1, TotalPhases: 2}
+	}
+	return PlanInfo{HasPlan: false, Status: "none"}
+}
+func (m *mutatingDataProvider) GetSessionStats() *stats.Stats { return nil }
+func (m *mutatingDataProvider) GetActiveSessions() []SessionInfo {
+	return []SessionInfo{}
+}
+
+// drainEvents reads SSE event lines until it collects `want` distinct event names or times out.
+func drainEvents(t *testing.T, scanner *bufio.Scanner, want int, timeout time.Duration) map[string]bool {
+	t.Helper()
+	events := make(map[string]bool)
+	deadline := time.After(timeout)
+	for len(events) < want {
+		done := make(chan bool, 1)
+		go func() { done <- scanner.Scan() }()
+		select {
+		case ok := <-done:
+			if !ok {
+				return events
+			}
+		case <-deadline:
+			return events
+		}
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event: ") {
+			events[strings.TrimPrefix(line, "event: ")] = true
+		}
+	}
+	return events
 }
