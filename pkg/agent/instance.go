@@ -29,6 +29,7 @@ type AgentInstance struct {
 	Sessions       *session.SessionManager
 	ContextBuilder *ContextBuilder
 	Tools          *tools.ToolRegistry
+	SandboxManager sandbox.Manager
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
 	Candidates     []providers.FallbackCandidate
@@ -58,40 +59,31 @@ func NewAgentInstance(
 	}
 
 	restrict := defaults.RestrictToWorkspace
-	sb := sandbox.NewFromConfigWithAgent(workspace, restrict, cfg, agentID)
-	isSandboxOff := true
-	if cfg != nil {
-		mode := strings.ToLower(strings.TrimSpace(cfg.Agents.Defaults.Sandbox.Mode))
-		if mode == "all" || mode == "non-main" {
-			isSandboxOff = false
-		}
-	}
 	roContainer := isContainerReadOnlySandbox(cfg)
-
 	toolsRegistry := tools.NewToolRegistry()
 
-	// Helper to check if tool is allowed (either sandbox is off or policy allows it)
-	isAllowed := func(toolName string) bool {
-		return isSandboxOff || sandbox.IsToolSandboxEnabled(cfg, toolName)
+	sandboxManager := sandbox.NewFromConfigWithAgent(workspace, restrict, cfg, agentID)
+	isSandboxAllowed := func(toolName string) bool {
+		return sandboxManager == nil || sandbox.IsToolSandboxEnabled(cfg, toolName)
 	}
 
-	if isAllowed("read_file") {
-		toolsRegistry.Register(tools.NewReadFileToolWithSandbox(workspace, restrict, sb))
+	if isSandboxAllowed("read_file") {
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
 	}
-	if !roContainer && isAllowed("write_file") {
-		toolsRegistry.Register(tools.NewWriteFileToolWithSandbox(workspace, restrict, sb))
+	if !roContainer && isSandboxAllowed("write_file") {
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
 	}
-	if isAllowed("list_dir") {
+	if isSandboxAllowed("list_dir") {
 		toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
 	}
-	if isAllowed("exec") {
-		toolsRegistry.Register(tools.NewExecToolWithSandbox(workspace, restrict, cfg, sb))
+	if isSandboxAllowed("exec") {
+		toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
 	}
 	if !roContainer {
-		if isAllowed("edit_file") {
+		if isSandboxAllowed("edit_file") {
 			toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 		}
-		if isAllowed("append_file") {
+		if isSandboxAllowed("append_file") {
 			toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
 		}
 	}
@@ -138,6 +130,7 @@ func NewAgentInstance(
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,
 		Tools:          toolsRegistry,
+		SandboxManager: sandboxManager,
 		Subagents:      subagents,
 		SkillsFilter:   skillsFilter,
 		Candidates:     candidates,

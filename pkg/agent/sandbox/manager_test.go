@@ -38,10 +38,8 @@ func TestExpandHomePath(t *testing.T) {
 }
 
 func TestNewFromConfig_HostMode(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Sandbox.Mode = "off"
-
-	sb := NewFromConfig(t.TempDir(), true, cfg)
+	// NewFromConfig always returns a HostSandbox regardless of mode config.
+	sb := NewFromConfig(t.TempDir(), true, nil)
 	if _, ok := sb.(*HostSandbox); !ok {
 		t.Fatalf("expected HostSandbox, got %T", sb)
 	}
@@ -57,12 +55,18 @@ func TestNewFromConfig_AllModeReturnsUnavailableWhenBlocked(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox.Prune.IdleHours = 0
 	cfg.Agents.Defaults.Sandbox.Prune.MaxAgeDays = 0
 
-	sb := NewFromConfig(t.TempDir(), true, cfg)
-	if _, ok := sb.(*unavailableSandbox); !ok {
-		t.Fatalf("expected unavailableSandbox, got %T", sb)
+	// NewFromConfigWithAgent is the manager factory; when Docker is unavailable
+	// it should return an unavailableSandbox that implements Manager.
+	mgr := NewFromConfigWithAgent(t.TempDir(), true, cfg, "test")
+	if mgr == nil {
+		t.Fatal("expected non-nil Manager when mode=all")
 	}
-	if err := sb.Start(context.Background()); err == nil {
-		t.Fatal("expected unavailable sandbox start error")
+	if _, ok := mgr.(*unavailableSandboxManager); !ok {
+		t.Fatalf("expected unavailableSandbox, got %T", mgr)
+	}
+	// Resolve() must propagate the unavailability error.
+	if _, err := mgr.Resolve(context.Background()); err == nil {
+		t.Fatal("expected unavailable sandbox Resolve() to return error")
 	}
 }
 

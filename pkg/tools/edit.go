@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 )
 
 // EditFileTool edits a file by replacing old_text with new_text.
@@ -72,12 +74,17 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult(err.Error())
 	}
 
-	if _, err = os.Stat(resolvedPath); os.IsNotExist(err) {
-		return ErrorResult(fmt.Sprintf("file not found: %s", path))
+	var content []byte
+	sb := sandbox.SandboxFromContext(ctx)
+	if sb != nil {
+		content, err = sb.Fs().ReadFile(ctx, path)
+	} else {
+		content, err = os.ReadFile(resolvedPath)
 	}
-
-	content, err := os.ReadFile(resolvedPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return ErrorResult(fmt.Sprintf("file not found: %s", path))
+		}
 		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
 
@@ -96,8 +103,14 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	newContent := strings.Replace(contentStr, oldText, newText, 1)
 
-	if err := os.WriteFile(resolvedPath, []byte(newContent), 0o644); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
+	if sb != nil {
+		if err := sb.Fs().WriteFile(ctx, path, []byte(newContent), true); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
+		}
+	} else {
+		if err := os.WriteFile(resolvedPath, []byte(newContent), 0o644); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
+		}
 	}
 
 	return SilentResult(fmt.Sprintf("File edited: %s", path))
@@ -151,6 +164,20 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *Tool
 	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
 	if err != nil {
 		return ErrorResult(err.Error())
+	}
+
+	sb := sandbox.SandboxFromContext(ctx)
+	if sb != nil {
+		// Implement Append using Read + Write if no Append in FsBridge
+		oldContent, err := sb.Fs().ReadFile(ctx, path)
+		if err != nil && !strings.Contains(err.Error(), "no such file") {
+			return ErrorResult(fmt.Sprintf("failed to read file for append: %v", err))
+		}
+		newContent := string(oldContent) + content
+		if err := sb.Fs().WriteFile(ctx, path, []byte(newContent), true); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to append (write) to file: %v", err))
+		}
+		return SilentResult(fmt.Sprintf("Appended to %s", path))
 	}
 
 	f, err := os.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)

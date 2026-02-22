@@ -17,3 +17,19 @@ func SessionKeyFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(sessionContextKey{}).(string)
 	return v
 }
+
+type sandboxContextKey struct{}
+
+// WithSandbox returns a derived context carrying the current sandbox instance.
+func WithSandbox(ctx context.Context, sb Sandbox) context.Context {
+	return context.WithValue(ctx, sandboxContextKey{}, sb)
+}
+
+// SandboxFromContext returns the sandbox instance attached by WithSandbox.
+func SandboxFromContext(ctx context.Context) Sandbox {
+	if ctx == nil {
+		return nil
+	}
+	v, _ := ctx.Value(sandboxContextKey{}).(Sandbox)
+	return v
+}

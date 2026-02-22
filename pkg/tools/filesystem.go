@@ -84,23 +84,10 @@ func isWithinWorkspace(candidate, workspace string) bool {
 type ReadFileTool struct {
 	workspace string
 	restrict  bool
-	fsBridge  sandbox.FsBridge
 }
 
 func NewReadFileTool(workspace string, restrict bool) *ReadFileTool {
 	return &ReadFileTool{workspace: workspace, restrict: restrict}
-}
-
-func NewReadFileToolWithSandbox(workspace string, restrict bool, sb sandbox.Sandbox) *ReadFileTool {
-	var fsBridge sandbox.FsBridge
-	if sb != nil {
-		fsBridge = sb.Fs()
-	}
-	return &ReadFileTool{workspace: workspace, restrict: restrict, fsBridge: fsBridge}
-}
-
-func NewReadFileToolWithFsBridge(workspace string, restrict bool, fsBridge sandbox.FsBridge) *ReadFileTool {
-	return &ReadFileTool{workspace: workspace, restrict: restrict, fsBridge: fsBridge}
 }
 
 func (t *ReadFileTool) Name() string {
@@ -134,8 +121,9 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		content []byte
 		err     error
 	)
-	if t.fsBridge != nil {
-		content, err = t.fsBridge.ReadFile(ctx, path)
+	sb := sandbox.SandboxFromContext(ctx)
+	if sb != nil {
+		content, err = sb.Fs().ReadFile(ctx, path)
 	} else {
 		var resolvedPath string
 		resolvedPath, err = validatePath(path, t.workspace, t.restrict)
@@ -153,23 +141,10 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 type WriteFileTool struct {
 	workspace string
 	restrict  bool
-	fsBridge  sandbox.FsBridge
 }
 
 func NewWriteFileTool(workspace string, restrict bool) *WriteFileTool {
 	return &WriteFileTool{workspace: workspace, restrict: restrict}
-}
-
-func NewWriteFileToolWithSandbox(workspace string, restrict bool, sb sandbox.Sandbox) *WriteFileTool {
-	var fsBridge sandbox.FsBridge
-	if sb != nil {
-		fsBridge = sb.Fs()
-	}
-	return &WriteFileTool{workspace: workspace, restrict: restrict, fsBridge: fsBridge}
-}
-
-func NewWriteFileToolWithFsBridge(workspace string, restrict bool, fsBridge sandbox.FsBridge) *WriteFileTool {
-	return &WriteFileTool{workspace: workspace, restrict: restrict, fsBridge: fsBridge}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -208,8 +183,9 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 		return ErrorResult("content is required")
 	}
 
-	if t.fsBridge != nil {
-		if err := t.fsBridge.WriteFile(ctx, path, []byte(content), true); err != nil {
+	sb := sandbox.SandboxFromContext(ctx)
+	if sb != nil {
+		if err := sb.Fs().WriteFile(ctx, path, []byte(content), true); err != nil {
 			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 		}
 		return SilentResult(fmt.Sprintf("File written: %s", path))
@@ -232,6 +208,8 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	return SilentResult(fmt.Sprintf("File written: %s", path))
 }
 
+// ListDirTool lists files and directories at a given path.
+// Phase 1: host-only execution; sandbox routing is deferred to Phase 2 (see sandbox.md §6.2).
 type ListDirTool struct {
 	workspace string
 	restrict  bool
@@ -274,6 +252,7 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	}
 
 	entries, err := os.ReadDir(resolvedPath)
+
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read directory: %v", err))
 	}

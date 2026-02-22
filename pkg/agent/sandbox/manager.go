@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,13 +17,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/routing"
 )
 
-// NewFromConfig builds a sandbox instance from config and starts it before returning.
+// NewFromConfig builds a host sandbox from config for host-level execution (e.g. cron jobs).
+// It does not return a Manager; use NewFromConfigWithAgent when sandbox routing is needed.
 func NewFromConfig(workspace string, restrict bool, cfg *config.Config) Sandbox {
-	return NewFromConfigWithAgent(workspace, restrict, cfg, routing.DefaultAgentID)
+	host := NewHostSandbox(workspace, restrict)
+	_ = host.Start(context.Background())
+	return host
 }
 
-// NewFromConfigWithAgent builds a sandbox instance with an explicit agent ID context.
-func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config, agentID string) Sandbox {
+// NewFromConfigWithAgent builds the sandbox Manager for an agent.
+// Returns nil when sandboxing is disabled (mode=off), so callers can check manager != nil.
+func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config, agentID string) Manager {
 	mode := "all"
 	scope := "agent"
 	workspaceAccess := "none"
@@ -63,13 +68,15 @@ func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config,
 	}
 
 	agentID = routing.NormalizeAgentID(agentID)
-	host := NewHostSandbox(workspace, restrict)
-	_ = host.Start(context.Background())
 
 	resolvedMode := normalizeSandboxMode(mode)
 	if resolvedMode == "off" {
-		return host
+		return nil // sandbox disabled; host-level access is handled directly by tools
 	}
+
+	host := NewHostSandbox(workspace, restrict)
+	_ = host.Start(context.Background())
+
 	resolvedScope := normalizeSandboxScope(scope)
 	normalizedAccess := normalizeWorkspaceAccess(workspaceAccess)
 	workspaceRootAbs := resolveAbsPath(expandHomePath(workspaceRoot))
@@ -92,7 +99,7 @@ func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config,
 	}
 	manager.fs = &managerFS{m: manager}
 	if err := manager.Start(context.Background()); err != nil {
-		return NewUnavailableSandbox(fmt.Errorf("container sandbox unavailable: %w", err))
+		return NewUnavailableSandboxManager(fmt.Errorf("container sandbox unavailable: %w", err))
 	}
 	return manager
 }
@@ -340,15 +347,22 @@ func (m *scopedSandboxManager) Fs() FsBridge {
 	return m.fs
 }
 
+// Resolve returns the specific sandbox instance to be used for the given context.
+func (m *scopedSandboxManager) Resolve(ctx context.Context) (Sandbox, error) {
+	if !m.shouldSandbox(ctx) {
+		return m.host, nil
+	}
+	return m.getOrCreateSandbox(ctx, m.scopeKeyFromContext(ctx))
+}
+
 func (m *scopedSandboxManager) shouldSandbox(ctx context.Context) bool {
 	switch m.mode {
 	case "all":
 		return true
 	case "non-main":
-		// Phase 2 deferred: `non-main` requires stable session-key propagation
-		// across all tool execution paths. For now, keep behavior disabled until
-		// the execution context plumbing is finalized.
-		return false
+		// Sandbox all sessions except the agent's main session.
+		// Normalize before comparing to handle aliases like "main" or bare agent keys
+		return m.normalizeSessionKey(SessionKeyFromContext(ctx)) != m.mainSessionKey()
 	default:
 		return false
 	}
@@ -492,4 +506,50 @@ func slugScopeKey(scopeKey string) string {
 	}
 	sum := sha256.Sum256([]byte(raw))
 	return safe + "-" + hex.EncodeToString(sum[:4])
+}
+
+type unavailableSandboxManager struct {
+	err error
+	fs  FsBridge
+}
+
+func NewUnavailableSandboxManager(err error) Manager {
+	if err == nil {
+		err = errors.New("sandbox unavailable")
+	}
+	return &unavailableSandboxManager{
+		err: err,
+		fs:  &errorFS{err: err},
+	}
+}
+
+func (u *unavailableSandboxManager) Start(ctx context.Context) error { return u.err }
+func (u *unavailableSandboxManager) Prune(ctx context.Context) error { return nil }
+
+// Resolve returns an error because the sandbox is unavailable.
+func (u *unavailableSandboxManager) Resolve(ctx context.Context) (Sandbox, error) {
+	return nil, u.err
+}
+
+func (u *unavailableSandboxManager) Fs() FsBridge { return u.fs }
+func (u *unavailableSandboxManager) Exec(ctx context.Context, req ExecRequest) (*ExecResult, error) {
+	return aggregateExecStream(func(onEvent func(ExecEvent) error) (*ExecResult, error) {
+		return u.ExecStream(ctx, req, onEvent)
+	})
+}
+
+func (u *unavailableSandboxManager) ExecStream(ctx context.Context, req ExecRequest, onEvent func(ExecEvent) error) (*ExecResult, error) {
+	return nil, u.err
+}
+
+type errorFS struct {
+	err error
+}
+
+func (e *errorFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	return nil, fmt.Errorf("sandbox unavailable: %w", e.err)
+}
+
+func (e *errorFS) WriteFile(ctx context.Context, path string, data []byte, mkdir bool) error {
+	return fmt.Errorf("sandbox unavailable: %w", e.err)
 }

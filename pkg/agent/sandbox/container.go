@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -58,6 +59,7 @@ type ContainerSandboxConfig struct {
 
 // ContainerSandbox executes commands and filesystem operations inside a managed docker container.
 type ContainerSandbox struct {
+	mu       sync.Mutex
 	cfg      ContainerSandboxConfig
 	cli      *client.Client
 	startErr error
@@ -70,10 +72,10 @@ const defaultSandboxRegistryFile = "containers.json"
 // NewContainerSandbox creates a container sandbox with normalized defaults and precomputed config hash.
 func NewContainerSandbox(cfg ContainerSandboxConfig) *ContainerSandbox {
 	if strings.TrimSpace(cfg.Image) == "" {
-		cfg.Image = "openclaw-sandbox:bookworm-slim"
+		cfg.Image = "debian:bookworm-slim"
 	}
 	if strings.TrimSpace(cfg.ContainerPrefix) == "" {
-		cfg.ContainerPrefix = "picoclaw-sbx-"
+		cfg.ContainerPrefix = "picoclaw-sandbox-"
 	}
 	if strings.TrimSpace(cfg.ContainerName) == "" {
 		cfg.ContainerName = cfg.ContainerPrefix + "default"
@@ -103,11 +105,20 @@ func NewContainerSandbox(cfg ContainerSandboxConfig) *ContainerSandbox {
 
 // Start initializes docker connectivity and validates sandbox runtime requirements.
 func (c *ContainerSandbox) Start(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.startErr != nil {
+		return c.startErr
+	}
+	if c.cli != nil {
+		return nil
+	}
+
 	if err := validateSandboxSecurity(c.cfg); err != nil {
 		c.startErr = err
 		return err
 	}
-	c.cfg.Env = sanitizeEnvVars(c.cfg.Env)
 	if strings.TrimSpace(c.cfg.Workspace) != "" && c.cfg.WorkspaceAccess == "none" {
 		if err := os.MkdirAll(c.cfg.Workspace, 0o755); err != nil {
 			c.startErr = fmt.Errorf("sandbox workspace init failed: %w", err)
@@ -145,8 +156,12 @@ func (c *ContainerSandbox) Start(ctx context.Context) error {
 		_, _ = io.Copy(io.Discard, rc)
 	}
 
-	c.startErr = nil
 	return nil
+}
+
+// Resolve returns the container sandbox itself.
+func (c *ContainerSandbox) Resolve(ctx context.Context) (Sandbox, error) {
+	return c, nil
 }
 
 // Prune reclaims container sandbox resources.

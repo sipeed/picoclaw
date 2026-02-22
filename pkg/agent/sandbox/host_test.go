@@ -104,7 +104,7 @@ func TestHostSandbox_ResolvePathRestrictions(t *testing.T) {
 }
 
 func TestUnavailableSandboxAndUtilHelpers(t *testing.T) {
-	sb := NewUnavailableSandbox(nil)
+	sb := NewUnavailableSandboxManager(nil)
 	if err := sb.Start(context.Background()); err == nil {
 		t.Fatal("expected Start() error")
 	}

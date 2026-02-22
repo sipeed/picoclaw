@@ -28,6 +28,16 @@ type Sandbox interface {
 	Fs() FsBridge
 }
 
+// Manager is implemented by the scoped sandbox manager.
+// It resolves the specific Sandbox instance to use for the current execution context
+// (e.g. based on session key / scope). Only the manager needs this; leaf sandboxes
+// (HostSandbox, ContainerSandbox) implement Sandbox directly and are the resolved result.
+type Manager interface {
+	Sandbox
+	// Resolve returns the concrete Sandbox instance to use for the given context.
+	Resolve(ctx context.Context) (Sandbox, error)
+}
+
 // ExecRequest describes a command execution request for Sandbox.Exec.
 type ExecRequest struct {
 	// Command is the program or shell command to execute.

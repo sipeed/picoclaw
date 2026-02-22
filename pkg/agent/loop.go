@@ -400,8 +400,23 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		}
 	}
 
-	// 1. Update tool contexts
+	// 1. Prepare tool contexts and sandbox
 	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
+
+	// Inject the routing session key so sandbox.shouldSandbox() can compare
+	// it against the main session key for non-main mode.
+	ctx = sandbox.WithSessionKey(ctx, opts.SessionKey)
+
+	// Resolve sandbox environment for this run
+	if agent.SandboxManager != nil {
+		sb, err := agent.SandboxManager.Resolve(ctx)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to resolve sandbox", map[string]any{"error": err.Error()})
+			return "", fmt.Errorf("failed to resolve sandbox: %w", err)
+		}
+		// Add sandbox to context for thread-safe access in tools via registry
+		ctx = sandbox.WithSandbox(ctx, sb)
+	}
 
 	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message

@@ -20,7 +20,11 @@ type stubSandbox struct {
 
 func (s *stubSandbox) Start(ctx context.Context) error { return nil }
 func (s *stubSandbox) Prune(ctx context.Context) error { return nil }
-func (s *stubSandbox) Fs() sandbox.FsBridge            { return nil }
+
+func (s *stubSandbox) Resolve(ctx context.Context) (sandbox.Sandbox, error) {
+	return s, nil
+}
+func (s *stubSandbox) Fs() sandbox.FsBridge { return nil }
 func (s *stubSandbox) Exec(ctx context.Context, req sandbox.ExecRequest) (*sandbox.ExecResult, error) {
 	return sandboxAggregateFromStub(ctx, req, s.ExecStream)
 }
@@ -354,9 +358,9 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 func TestShellTool_SandboxMapsHostWorkingDirToRelative(t *testing.T) {
 	workspace := t.TempDir()
 	sb := &stubSandbox{}
-	tool := NewExecToolWithSandbox(workspace, true, nil, sb)
+	tool := NewExecTool(workspace, true)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]interface{}{
 		"command":     "echo test",
 		"working_dir": filepath.Join(workspace, "subdir"),
@@ -373,9 +377,9 @@ func TestShellTool_SandboxMapsHostWorkingDirToRelative(t *testing.T) {
 func TestShellTool_SandboxAllowsAbsoluteWorkspaceWorkingDir(t *testing.T) {
 	workspace := t.TempDir()
 	sb := &stubSandbox{}
-	tool := NewExecToolWithSandbox(workspace, true, nil, sb)
+	tool := NewExecTool(workspace, true)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]interface{}{
 		"command":     "echo test",
 		"working_dir": "/workspace/subdir",
@@ -392,9 +396,9 @@ func TestShellTool_SandboxAllowsAbsoluteWorkspaceWorkingDir(t *testing.T) {
 func TestShellTool_SandboxBlocksAbsoluteNonWorkspaceWorkingDirWhenRestricted(t *testing.T) {
 	workspace := t.TempDir()
 	sb := &stubSandbox{}
-	tool := NewExecToolWithSandbox(workspace, true, nil, sb)
+	tool := NewExecTool(workspace, true)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]interface{}{
 		"command":     "echo test",
 		"working_dir": "/tmp/logs",
@@ -411,9 +415,10 @@ func TestShellTool_SandboxBlocksAbsoluteNonWorkspaceWorkingDirWhenRestricted(t *
 func TestShellTool_SandboxExecError(t *testing.T) {
 	workspace := t.TempDir()
 	sb := &stubSandbox{err: fmt.Errorf("sandbox down")}
-	tool := NewExecToolWithSandbox(workspace, true, nil, sb)
+	tool := NewExecTool(workspace, true)
 
-	result := tool.Execute(context.Background(), map[string]interface{}{"command": "echo test"})
+	ctx := sandbox.WithSandbox(context.Background(), sb)
+	result := tool.Execute(ctx, map[string]interface{}{"command": "echo test"})
 	if !result.IsError {
 		t.Fatal("expected sandbox error result")
 	}

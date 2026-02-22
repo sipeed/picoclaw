@@ -24,7 +24,6 @@ type ExecTool struct {
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
 	restrictToWorkspace bool
-	sandbox             sandbox.Sandbox
 }
 
 var defaultDenyPatterns = []*regexp.Regexp{
@@ -77,10 +76,6 @@ func NewExecTool(workingDir string, restrict bool) *ExecTool {
 }
 
 func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
-	return NewExecToolWithSandbox(workingDir, restrict, config, nil)
-}
-
-func NewExecToolWithSandbox(workingDir string, restrict bool, config *config.Config, sb sandbox.Sandbox) *ExecTool {
 	denyPatterns := make([]*regexp.Regexp, 0)
 
 	enableDenyPatterns := true
@@ -115,7 +110,6 @@ func NewExecToolWithSandbox(workingDir string, restrict bool, config *config.Con
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
 		restrictToWorkspace: restrict,
-		sandbox:             sb,
 	}
 }
 
@@ -150,14 +144,18 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		return ErrorResult("command is required")
 	}
 
+	wd, _ := args["working_dir"].(string)
+
+	// Resolve the working directory
 	cwd := t.workingDir
-	if wd, ok := args["working_dir"].(string); ok && wd != "" {
+	if wd != "" {
 		if t.restrictToWorkspace && t.workingDir != "" {
 			resolvedWD, err := validatePath(wd, t.workingDir, true)
 			if err != nil {
 				// In sandbox mode, allow explicit container workspace paths when
 				// restrict_to_workspace is enabled.
-				if t.sandbox != nil && filepath.IsAbs(wd) && isSandboxWorkspaceAbsolutePath(wd) {
+				sb := sandbox.SandboxFromContext(ctx)
+				if sb != nil && filepath.IsAbs(wd) && isSandboxWorkspaceAbsolutePath(wd) {
 					cwd = wd
 				} else {
 					return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
@@ -171,9 +169,8 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 
 	if cwd == "" {
-		wd, err := os.Getwd()
-		if err == nil {
-			cwd = wd
+		if dir, err := os.Getwd(); err == nil {
+			cwd = dir
 		}
 	}
 
@@ -181,9 +178,10 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		return ErrorResult(guardError)
 	}
 
-	if t.sandbox != nil {
+	sb := sandbox.SandboxFromContext(ctx)
+	if sb != nil {
 		sandboxWD := t.resolveSandboxWorkingDir(cwd)
-		res, err := t.sandbox.Exec(ctx, sandbox.ExecRequest{
+		res, err := sb.Exec(ctx, sandbox.ExecRequest{
 			Command:    command,
 			WorkingDir: sandboxWD,
 			TimeoutMs:  t.timeout.Milliseconds(),
@@ -252,7 +250,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	select {
 	case err = <-done:
 	case <-cmdCtx.Done():
-		_ = terminateProcessTree(cmd)
+		terminateProcessTree(cmd)
 		select {
 		case err = <-done:
 		case <-time.After(2 * time.Second):
@@ -270,14 +268,19 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	if err != nil {
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
-			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
+			msg := fmt.Sprintf("command timed out after %v", t.timeout)
 			return &ToolResult{
 				ForLLM:  msg,
 				ForUser: msg,
 				IsError: true,
 			}
 		}
-		output += fmt.Sprintf("\nExit code: %v", err)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			output += fmt.Sprintf("\nExit code: %d", exitErr.ExitCode())
+		} else {
+			output += fmt.Sprintf("\nError: %v", err)
+		}
 	}
 
 	if output == "" {
@@ -289,18 +292,10 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
 	}
 
-	if err != nil {
-		return &ToolResult{
-			ForLLM:  output,
-			ForUser: output,
-			IsError: true,
-		}
-	}
-
 	return &ToolResult{
 		ForLLM:  output,
 		ForUser: output,
-		IsError: false,
+		IsError: err != nil,
 	}
 }
 
