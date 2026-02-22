@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -159,10 +161,21 @@ func (n *StateNotifier) Notify() {
 	}
 }
 
-// DevTargetSetter allows tools to control the dev proxy target.
-type DevTargetSetter interface {
-	SetDevTarget(target string) error
+// DevTarget represents a registered dev server target.
+type DevTarget struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`   // display name (e.g. "frontend")
+	Target string `json:"target"` // URL (e.g. "http://localhost:3000")
+}
+
+// DevTargetManager allows tools to register, activate, and deactivate dev proxy targets.
+type DevTargetManager interface {
+	RegisterDevTarget(name, target string) (id string, err error)
+	UnregisterDevTarget(id string) error
+	ActivateDevTarget(id string) error
+	DeactivateDevTarget() error
 	GetDevTarget() string
+	ListDevTargets() []DevTarget
 }
 
 // Handler serves the Mini App HTML and API endpoints.
@@ -172,48 +185,130 @@ type Handler struct {
 	botToken string
 	notifier *StateNotifier
 
-	devMu     sync.RWMutex
-	devTarget *url.URL
-	devProxy  *httputil.ReverseProxy
+	devMu       sync.RWMutex
+	devTarget   *url.URL
+	devProxy    *httputil.ReverseProxy
+	devTargets  map[string]*DevTarget // registered targets (ID→DevTarget)
+	devNextID   int
+	devActiveID string
 }
 
 // NewHandler creates a new Mini App handler.
 func NewHandler(provider DataProvider, sender CommandSender, botToken string, notifier *StateNotifier) *Handler {
 	return &Handler{
-		provider: provider,
-		sender:   sender,
-		botToken: botToken,
-		notifier: notifier,
+		provider:   provider,
+		sender:     sender,
+		botToken:   botToken,
+		notifier:   notifier,
+		devTargets: make(map[string]*DevTarget),
 	}
 }
 
-// SetDevTarget sets the reverse proxy target URL. Only localhost targets are allowed.
-// Pass an empty string to disable the proxy.
-func (h *Handler) SetDevTarget(target string) error {
+// validateLocalhostURL parses and validates that a URL targets localhost.
+func validateLocalhostURL(target string) (*url.URL, error) {
+	u, err := url.Parse(target)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+	host := u.Hostname()
+	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+		return nil, fmt.Errorf("only localhost targets are allowed, got %q", host)
+	}
+	return u, nil
+}
+
+// RegisterDevTarget registers a new dev server target. Only localhost targets are allowed.
+func (h *Handler) RegisterDevTarget(name, target string) (string, error) {
+	if _, err := validateLocalhostURL(target); err != nil {
+		return "", err
+	}
+
 	h.devMu.Lock()
 	defer h.devMu.Unlock()
 
-	if target == "" {
+	h.devNextID++
+	id := strconv.Itoa(h.devNextID)
+
+	h.devTargets[id] = &DevTarget{ID: id, Name: name, Target: target}
+	if h.notifier != nil {
+		h.notifier.Notify()
+	}
+	return id, nil
+}
+
+// UnregisterDevTarget removes a registered target. If it was active, the proxy is disabled.
+func (h *Handler) UnregisterDevTarget(id string) error {
+	h.devMu.Lock()
+	defer h.devMu.Unlock()
+
+	if _, ok := h.devTargets[id]; !ok {
+		return fmt.Errorf("target %q not found", id)
+	}
+	delete(h.devTargets, id)
+
+	if h.devActiveID == id {
+		h.devActiveID = ""
 		h.devTarget = nil
 		h.devProxy = nil
-		if h.notifier != nil {
-			h.notifier.Notify()
-		}
-		return nil
+	}
+	if h.notifier != nil {
+		h.notifier.Notify()
+	}
+	return nil
+}
+
+// ActivateDevTarget sets the reverse proxy to the registered target with the given ID.
+func (h *Handler) ActivateDevTarget(id string) error {
+	h.devMu.Lock()
+	defer h.devMu.Unlock()
+
+	dt, ok := h.devTargets[id]
+	if !ok {
+		return fmt.Errorf("target %q not found", id)
 	}
 
-	u, err := url.Parse(target)
+	u, err := url.Parse(dt.Target)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
 
-	host := u.Hostname()
-	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
-		return fmt.Errorf("only localhost targets are allowed, got %q", host)
+	// Fix IPv6: resolve "localhost" to 127.0.0.1 to avoid connection refused on systems
+	// where localhost resolves to [::1] but the dev server only listens on IPv4.
+	if u.Hostname() == "localhost" {
+		u.Host = net.JoinHostPort("127.0.0.1", u.Port())
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(u)
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(w, `<!DOCTYPE html>
+<html><head><style>
+body{background:#1c1c1e;color:#fff;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.box{text-align:center;padding:32px}
+h2{margin:0 0 12px;font-size:20px;font-weight:600}
+p{color:#8e8e93;font-size:14px;margin:0}
+</style></head><body><div class="box"><h2>Cannot connect</h2><p>%s</p><p style="margin-top:8px;font-size:12px">Target: %s</p></div></body></html>`,
+			escapeHTMLString(err.Error()), escapeHTMLString(dt.Target))
 	}
 
 	h.devTarget = u
-	h.devProxy = httputil.NewSingleHostReverseProxy(u)
+	h.devProxy = proxy
+	h.devActiveID = id
+	if h.notifier != nil {
+		h.notifier.Notify()
+	}
+	return nil
+}
+
+// DeactivateDevTarget disables the reverse proxy without removing registrations.
+func (h *Handler) DeactivateDevTarget() error {
+	h.devMu.Lock()
+	defer h.devMu.Unlock()
+
+	h.devActiveID = ""
+	h.devTarget = nil
+	h.devProxy = nil
 	if h.notifier != nil {
 		h.notifier.Notify()
 	}
@@ -228,6 +323,29 @@ func (h *Handler) GetDevTarget() string {
 		return ""
 	}
 	return h.devTarget.String()
+}
+
+// ListDevTargets returns all registered dev targets.
+func (h *Handler) ListDevTargets() []DevTarget {
+	h.devMu.RLock()
+	defer h.devMu.RUnlock()
+
+	targets := make([]DevTarget, 0, len(h.devTargets))
+	for _, dt := range h.devTargets {
+		targets = append(targets, *dt)
+	}
+	// Sort by ID for stable order
+	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
+	return targets
+}
+
+// escapeHTMLString escapes HTML special characters in a string.
+func escapeHTMLString(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	return s
 }
 
 // RegisterRoutes registers Mini App routes on the given mux.
@@ -345,11 +463,7 @@ func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiDev(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		target := h.GetDevTarget()
-		writeJSON(w, map[string]any{
-			"active": target != "",
-			"target": target,
-		})
+		writeJSON(w, h.devStatus())
 	case http.MethodPost:
 		body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
 		if err != nil {
@@ -357,21 +471,33 @@ func (h *Handler) apiDev(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			Target string `json:"target"`
+			Action string `json:"action"`
+			ID     string `json:"id"`
 		}
 		if err := json.Unmarshal(body, &req); err != nil {
 			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
 			return
 		}
-		if err := h.SetDevTarget(req.Target); err != nil {
-			writeJSON(w, map[string]any{"error": err.Error()})
+		switch req.Action {
+		case "activate":
+			if req.ID == "" {
+				writeJSON(w, map[string]any{"error": "id is required"})
+				return
+			}
+			if err := h.ActivateDevTarget(req.ID); err != nil {
+				writeJSON(w, map[string]any{"error": err.Error()})
+				return
+			}
+		case "deactivate":
+			if err := h.DeactivateDevTarget(); err != nil {
+				writeJSON(w, map[string]any{"error": err.Error()})
+				return
+			}
+		default:
+			writeJSON(w, map[string]any{"error": "unknown action"})
 			return
 		}
-		target := h.GetDevTarget()
-		writeJSON(w, map[string]any{
-			"active": target != "",
-			"target": target,
-		})
+		writeJSON(w, h.devStatus())
 	default:
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 	}
@@ -462,10 +588,26 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) devStatus() map[string]any {
-	target := h.GetDevTarget()
+	h.devMu.RLock()
+	defer h.devMu.RUnlock()
+
+	active := h.devTarget != nil
+	target := ""
+	if h.devTarget != nil {
+		target = h.devTargets[h.devActiveID].Target // original URL before IPv6 rewrite
+	}
+
+	targets := make([]DevTarget, 0, len(h.devTargets))
+	for _, dt := range h.devTargets {
+		targets = append(targets, *dt)
+	}
+	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
+
 	return map[string]any{
-		"active": target != "",
-		"target": target,
+		"active":    active,
+		"active_id": h.devActiveID,
+		"target":    target,
+		"targets":   targets,
 	}
 }
 
