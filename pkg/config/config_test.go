@@ -69,14 +69,16 @@ func TestAgentConfig_FullParse(t *testing.T) {
 				"workspace": "~/.picoclaw/workspace",
 				"model": "glm-4.7",
 				"max_tokens": 8192,
-				"max_tool_iterations": 20
+				"max_tool_iterations": 20,
+				"enable_tools": true
 			},
 			"list": [
 				{
 					"id": "sales",
 					"default": true,
 					"name": "Sales Bot",
-					"model": "gpt-4"
+					"model": "gpt-4",
+					"enable_tools": false
 				},
 				{
 					"id": "support",
@@ -125,6 +127,9 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	if sales.Model == nil || sales.Model.Primary != "gpt-4" {
 		t.Errorf("sales.Model = %+v", sales.Model)
 	}
+	if sales.EnableTools == nil || *sales.EnableTools {
+		t.Errorf("sales.EnableTools = %v, want false", sales.EnableTools)
+	}
 
 	support := cfg.Agents.List[1]
 	if support.ID != "support" || support.Name != "Support Bot" {
@@ -161,6 +166,9 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	if len(links) != 2 {
 		t.Errorf("john links = %v", links)
 	}
+	if cfg.Agents.Defaults.EnableTools == nil || !*cfg.Agents.Defaults.EnableTools {
+		t.Errorf("Agents.Defaults.EnableTools = %v, want true", cfg.Agents.Defaults.EnableTools)
+	}
 }
 
 func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
@@ -185,6 +193,9 @@ func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 	}
 	if len(cfg.Bindings) != 0 {
 		t.Errorf("bindings should be empty, got %d", len(cfg.Bindings))
+	}
+	if cfg.Agents.Defaults.EnableTools == nil || !*cfg.Agents.Defaults.EnableTools {
+		t.Errorf("Agents.Defaults.EnableTools = %v, want true", cfg.Agents.Defaults.EnableTools)
 	}
 }
 
@@ -230,6 +241,17 @@ func TestDefaultConfig_MaxToolIterations(t *testing.T) {
 
 	if cfg.Agents.Defaults.MaxToolIterations == 0 {
 		t.Error("MaxToolIterations should not be zero")
+	}
+}
+
+func TestDefaultConfig_EnableTools(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Agents.Defaults.EnableTools == nil {
+		t.Fatal("EnableTools should not be nil")
+	}
+	if !*cfg.Agents.Defaults.EnableTools {
+		t.Error("EnableTools should default to true")
 	}
 }
 
