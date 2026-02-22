@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -84,7 +85,25 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithMaxTokensField(cfg.APIKey, apiBase, cfg.Proxy, cfg.MaxTokensField), modelID, nil
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, openai_compat.Options{
+			MaxTokensField: cfg.MaxTokensField,
+			Stream:         boolDefault(cfg.Stream, false),
+		}), modelID, nil
+
+	case "minimax":
+		// MiniMax uses a non-standard endpoint path and defaults to SSE streaming.
+		if cfg.APIKey == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for minimax protocol")
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, openai_compat.Options{
+			EndpointPath:   "/text/chatcompletion_v2",
+			MaxTokensField: cfg.MaxTokensField,
+			Stream:         boolDefault(cfg.Stream, true),
+		}), modelID, nil
 
 	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
@@ -97,7 +116,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithMaxTokensField(cfg.APIKey, apiBase, cfg.Proxy, cfg.MaxTokensField), modelID, nil
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, openai_compat.Options{
+			MaxTokensField: cfg.MaxTokensField,
+			Stream:         boolDefault(cfg.Stream, false),
+		}), modelID, nil
 
 	case "anthropic":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
@@ -186,7 +208,17 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://dashscope.aliyuncs.com/compatible-mode/v1"
 	case "vllm":
 		return "http://localhost:8000/v1"
+	case "minimax":
+		return "https://api.minimax.io/v1"
 	default:
 		return ""
 	}
+}
+
+// boolDefault dereferences a *bool, returning def when nil.
+func boolDefault(p *bool, def bool) bool {
+	if p != nil {
+		return *p
+	}
+	return def
 }
