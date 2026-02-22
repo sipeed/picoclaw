@@ -24,7 +24,6 @@ import (
 type WeComBotChannel struct {
 	*channels.BaseChannel
 	config        config.WeComConfig
-	server        *http.Server
 	ctx           context.Context
 	cancel        context.CancelFunc
 	processedMsgs map[string]bool // Message deduplication: msg_id -> processed
@@ -101,43 +100,14 @@ func (c *WeComBotChannel) Name() string {
 	return "wecom"
 }
 
-// Start initializes the WeCom Bot channel with HTTP webhook server
+// Start initializes the WeCom Bot channel
 func (c *WeComBotChannel) Start(ctx context.Context) error {
 	logger.InfoC("wecom", "Starting WeCom Bot channel...")
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	// Setup HTTP server for webhook
-	mux := http.NewServeMux()
-	webhookPath := c.config.WebhookPath
-	if webhookPath == "" {
-		webhookPath = "/webhook/wecom"
-	}
-	mux.HandleFunc(webhookPath, c.handleWebhook)
-
-	// Health check endpoint
-	mux.HandleFunc("/health/wecom", c.handleHealth)
-
-	addr := fmt.Sprintf("%s:%d", c.config.WebhookHost, c.config.WebhookPort)
-	c.server = &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
 	c.SetRunning(true)
-	logger.InfoCF("wecom", "WeCom Bot channel started", map[string]any{
-		"address": addr,
-		"path":    webhookPath,
-	})
-
-	// Start server in goroutine
-	go func() {
-		if err := c.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("wecom", "HTTP server error", map[string]any{
-				"error": err.Error(),
-			})
-		}
-	}()
+	logger.InfoC("wecom", "WeCom Bot channel started")
 
 	return nil
 }
@@ -148,12 +118,6 @@ func (c *WeComBotChannel) Stop(ctx context.Context) error {
 
 	if c.cancel != nil {
 		c.cancel()
-	}
-
-	if c.server != nil {
-		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		c.server.Shutdown(shutdownCtx)
 	}
 
 	c.SetRunning(false)
@@ -175,6 +139,29 @@ func (c *WeComBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	})
 
 	return c.sendWebhookReply(ctx, msg.ChatID, msg.Content)
+}
+
+// WebhookPath returns the path for registering on the shared HTTP server.
+func (c *WeComBotChannel) WebhookPath() string {
+	if c.config.WebhookPath != "" {
+		return c.config.WebhookPath
+	}
+	return "/webhook/wecom"
+}
+
+// ServeHTTP implements http.Handler for the shared HTTP server.
+func (c *WeComBotChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	c.handleWebhook(w, r)
+}
+
+// HealthPath returns the health check endpoint path.
+func (c *WeComBotChannel) HealthPath() string {
+	return "/health/wecom"
+}
+
+// HealthHandler handles health check requests.
+func (c *WeComBotChannel) HealthHandler(w http.ResponseWriter, r *http.Request) {
+	c.handleHealth(w, r)
 }
 
 // handleWebhook handles incoming webhook requests from WeCom

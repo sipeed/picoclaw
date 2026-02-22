@@ -28,7 +28,6 @@ const (
 type WeComAppChannel struct {
 	*channels.BaseChannel
 	config        config.WeComAppConfig
-	server        *http.Server
 	accessToken   string
 	tokenExpiry   time.Time
 	tokenMu       sync.RWMutex
@@ -134,7 +133,7 @@ func (c *WeComAppChannel) Name() string {
 	return "wecom_app"
 }
 
-// Start initializes the WeCom App channel with HTTP webhook server
+// Start initializes the WeCom App channel
 func (c *WeComAppChannel) Start(ctx context.Context) error {
 	logger.InfoC("wecom_app", "Starting WeCom App channel...")
 
@@ -150,37 +149,8 @@ func (c *WeComAppChannel) Start(ctx context.Context) error {
 	// Start token refresh goroutine
 	go c.tokenRefreshLoop()
 
-	// Setup HTTP server for webhook
-	mux := http.NewServeMux()
-	webhookPath := c.config.WebhookPath
-	if webhookPath == "" {
-		webhookPath = "/webhook/wecom-app"
-	}
-	mux.HandleFunc(webhookPath, c.handleWebhook)
-
-	// Health check endpoint
-	mux.HandleFunc("/health/wecom-app", c.handleHealth)
-
-	addr := fmt.Sprintf("%s:%d", c.config.WebhookHost, c.config.WebhookPort)
-	c.server = &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
 	c.SetRunning(true)
-	logger.InfoCF("wecom_app", "WeCom App channel started", map[string]any{
-		"address": addr,
-		"path":    webhookPath,
-	})
-
-	// Start server in goroutine
-	go func() {
-		if err := c.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("wecom_app", "HTTP server error", map[string]any{
-				"error": err.Error(),
-			})
-		}
-	}()
+	logger.InfoC("wecom_app", "WeCom App channel started")
 
 	return nil
 }
@@ -191,12 +161,6 @@ func (c *WeComAppChannel) Stop(ctx context.Context) error {
 
 	if c.cancel != nil {
 		c.cancel()
-	}
-
-	if c.server != nil {
-		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		c.server.Shutdown(shutdownCtx)
 	}
 
 	c.SetRunning(false)
@@ -221,6 +185,29 @@ func (c *WeComAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	})
 
 	return c.sendTextMessage(ctx, accessToken, msg.ChatID, msg.Content)
+}
+
+// WebhookPath returns the path for registering on the shared HTTP server.
+func (c *WeComAppChannel) WebhookPath() string {
+	if c.config.WebhookPath != "" {
+		return c.config.WebhookPath
+	}
+	return "/webhook/wecom-app"
+}
+
+// ServeHTTP implements http.Handler for the shared HTTP server.
+func (c *WeComAppChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	c.handleWebhook(w, r)
+}
+
+// HealthPath returns the health check endpoint path.
+func (c *WeComAppChannel) HealthPath() string {
+	return "/health/wecom-app"
+}
+
+// HealthHandler handles health check requests.
+func (c *WeComAppChannel) HealthHandler(w http.ResponseWriter, r *http.Request) {
+	c.handleHealth(w, r)
 }
 
 // handleWebhook handles incoming webhook requests from WeCom
