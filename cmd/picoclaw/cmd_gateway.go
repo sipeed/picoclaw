@@ -312,7 +312,7 @@ type agentLoopDataProvider struct {
 	loop      *agent.AgentLoop
 	workspace string
 
-	gitCache   miniapp.GitInfo
+	gitCache   []miniapp.GitInfo
 	gitCacheAt time.Time
 }
 
@@ -375,29 +375,46 @@ func (p *agentLoopDataProvider) GetActiveSessions() []miniapp.SessionInfo {
 	return result
 }
 
-func (p *agentLoopDataProvider) GetGitInfo() miniapp.GitInfo {
+func (p *agentLoopDataProvider) GetGitInfo() []miniapp.GitInfo {
 	if time.Since(p.gitCacheAt) < gitCacheTTL {
 		return p.gitCache
 	}
 
-	info := miniapp.GitInfo{}
 	if p.workspace == "" {
-		return info
+		return nil
 	}
 
-	// Detect git root from workspace
-	topOut, err := exec.Command("git", "-C", p.workspace, "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		return info // not a git repo
+	// Find workspace's own git root to exclude it
+	workspaceGitRoot := ""
+	if out, err := exec.Command("git", "-C", p.workspace, "rev-parse", "--show-toplevel").Output(); err == nil {
+		workspaceGitRoot = strings.TrimSpace(string(out))
 	}
-	gitRoot := strings.TrimSpace(string(topOut))
 
-	// Exclude ~/.picoclaw/workspace* (picoclaw's own managed workspace)
-	home, _ := os.UserHomeDir()
-	picoDir := filepath.Join(home, ".picoclaw")
-	if strings.HasPrefix(gitRoot, picoDir) {
-		return info
+	// Scan for .git dirs up to 2 levels deep under workspace
+	seen := map[string]bool{}
+	var repos []miniapp.GitInfo
+	for _, pattern := range []string{
+		filepath.Join(p.workspace, "*", ".git"),
+		filepath.Join(p.workspace, "*", "*", ".git"),
+	} {
+		matches, _ := filepath.Glob(pattern)
+		for _, m := range matches {
+			repoDir := filepath.Dir(m)
+			if repoDir == workspaceGitRoot || seen[repoDir] {
+				continue
+			}
+			seen[repoDir] = true
+			repos = append(repos, collectGitRepoInfo(repoDir))
+		}
 	}
+
+	p.gitCache = repos
+	p.gitCacheAt = time.Now()
+	return repos
+}
+
+func collectGitRepoInfo(gitRoot string) miniapp.GitInfo {
+	info := miniapp.GitInfo{Name: filepath.Base(gitRoot)}
 
 	// Current branch
 	out, err := exec.Command("git", "-C", gitRoot, "rev-parse", "--abbrev-ref", "HEAD").Output()
@@ -418,7 +435,7 @@ func (p *agentLoopDataProvider) GetGitInfo() miniapp.GitInfo {
 		}
 	}
 
-	// Modified/untracked files (git status --porcelain)
+	// Modified/untracked files
 	out, err = exec.Command("git", "-C", gitRoot, "status", "--porcelain").Output()
 	if err == nil && len(out) > 0 {
 		for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
@@ -432,8 +449,6 @@ func (p *agentLoopDataProvider) GetGitInfo() miniapp.GitInfo {
 		}
 	}
 
-	p.gitCache = info
-	p.gitCacheAt = time.Now()
 	return info
 }
 

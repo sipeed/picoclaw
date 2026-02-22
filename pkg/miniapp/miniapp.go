@@ -60,6 +60,7 @@ type SessionInfo struct {
 
 // GitInfo represents the git repository state exposed via the API.
 type GitInfo struct {
+	Name     string      `json:"name"`
 	Branch   string      `json:"branch"`
 	Commits  []GitCommit `json:"commits"`
 	Modified []GitChange `json:"modified"`
@@ -85,7 +86,7 @@ type DataProvider interface {
 	GetPlanInfo() PlanInfo
 	GetSessionStats() *stats.Stats
 	GetActiveSessions() []SessionInfo
-	GetGitInfo() GitInfo
+	GetGitInfo() []GitInfo
 }
 
 // CommandSender injects a command into the message bus on behalf of a user.
