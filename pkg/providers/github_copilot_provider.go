@@ -78,7 +78,7 @@ func (p *GitHubCopilotProvider) Chat(
 		Prompt: string(fullcontent),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("GitHub Copilot request failed: %w", err)
+		return nil, fmt.Errorf("github copilot request failed: %w", err)
 	}
 
 	return &LLMResponse{
