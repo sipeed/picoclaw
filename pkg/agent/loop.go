@@ -50,6 +50,7 @@ type AgentLoop struct {
 	mcpManager     *mcp.Manager
 	activeProcs    map[string]*activeProcess
 	procsMu        sync.Mutex
+	mediaDir       string
 }
 
 type activeProcess struct {
@@ -74,7 +75,7 @@ type processOptions struct {
 
 // createToolRegistry creates a tool registry with common tools.
 // This is shared between main agent and subagents.
-func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msgBus *bus.MessageBus) *tools.ToolRegistry {
+func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msgBus *bus.MessageBus, dataDir string) *tools.ToolRegistry {
 	registry := tools.NewToolRegistry()
 
 	// File system tools
@@ -83,6 +84,10 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	registry.Register(tools.NewListDirTool(workspace, restrict))
 	registry.Register(tools.NewEditFileTool(workspace, restrict))
 	registry.Register(tools.NewAppendFileTool(workspace, restrict))
+
+	// Copy file tool (allows copying from media dir to workspace)
+	mediaDir := filepath.Join(dataDir, "media")
+	registry.Register(tools.NewCopyFileTool(workspace, mediaDir, restrict))
 
 	// Shell execution (disabled by default for security)
 	if cfg.Tools.Exec.Enabled {
@@ -148,12 +153,16 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	restrict := cfg.Agents.Defaults.RestrictToWorkspace
 
+	// Create media directory for persisting images
+	mediaDir := filepath.Join(dataDir, "media")
+	os.MkdirAll(mediaDir, 0755)
+
 	// Create tool registry for main agent
-	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus)
+	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus, dataDir)
 
 	// Create subagent manager with its own tool registry
 	subagentManager := tools.NewSubagentManager(provider, cfg.Agents.Defaults.Model, workspace, msgBus)
-	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus)
+	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus, dataDir)
 	// Subagent doesn't need spawn/subagent tools to avoid recursion
 	subagentManager.SetTools(subagentTools)
 
@@ -225,6 +234,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		rateLimiter:    newRateLimiter(cfg.RateLimits.MaxToolCallsPerMinute, cfg.RateLimits.MaxRequestsPerMinute),
 		mcpManager:     mcpManager,
 		activeProcs:    make(map[string]*activeProcess),
+		mediaDir:       mediaDir,
 	}
 }
 
@@ -541,8 +551,19 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		opts.InputMode,
 	)
 
-	// 3. Save user message to session
-	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+	// 3. Save user message to session (with media if present)
+	userContent := opts.UserMessage
+	if len(opts.Media) > 0 {
+		paths := PersistMedia(opts.Media, al.mediaDir)
+		for _, p := range paths {
+			userContent += fmt.Sprintf("\n[Image: %s]", p)
+		}
+	}
+	al.sessions.AddFullMessage(opts.SessionKey, providers.Message{
+		Role:    "user",
+		Content: userContent,
+		Media:   opts.Media,
+	})
 
 	// 4. Emit thinking status
 	if !constants.IsInternalChannel(opts.Channel) {
@@ -955,6 +976,14 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 				contentForLLM = toolResult.Err.Error()
 			}
 
+			// Persist media files from tool results (e.g. screenshots)
+			if len(toolResult.Media) > 0 {
+				paths := PersistMedia(toolResult.Media, al.mediaDir)
+				for _, p := range paths {
+					contentForLLM += fmt.Sprintf("\n[Image: %s]", p)
+				}
+			}
+
 			toolResultMsg := providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
@@ -1076,6 +1105,8 @@ func (al *AgentLoop) forceCompression(sessionKey string) {
 	}
 
 	droppedCount := mid
+	// Clean up media files from dropped messages
+	CleanupMediaFiles(conversation[:mid])
 	keptConversation := conversation[mid:]
 
 	newHistory := make([]providers.Message, 0)
@@ -1245,6 +1276,8 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 	}
 
 	if finalSummary != "" {
+		// Clean up media files from messages being summarized
+		CleanupMediaFiles(toSummarize)
 		al.sessions.SetSummary(sessionKey, finalSummary)
 		al.sessions.TruncateHistory(sessionKey, 4)
 		al.sessions.Save(sessionKey)
