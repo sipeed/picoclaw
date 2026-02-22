@@ -180,18 +180,19 @@ type AgentDefaults struct {
 }
 
 type ChannelsConfig struct {
-	WhatsApp WhatsAppConfig `json:"whatsapp"`
-	Telegram TelegramConfig `json:"telegram"`
-	Feishu   FeishuConfig   `json:"feishu"`
-	Discord  DiscordConfig  `json:"discord"`
-	MaixCam  MaixCamConfig  `json:"maixcam"`
-	QQ       QQConfig       `json:"qq"`
-	DingTalk DingTalkConfig `json:"dingtalk"`
-	Slack    SlackConfig    `json:"slack"`
-	LINE     LINEConfig     `json:"line"`
-	OneBot   OneBotConfig   `json:"onebot"`
-	WeCom    WeComConfig    `json:"wecom"`
-	WeComApp WeComAppConfig `json:"wecom_app"`
+	WhatsApp  WhatsAppConfig  `json:"whatsapp"`
+	Telegram  TelegramConfig  `json:"telegram"`
+	Feishu    FeishuConfig    `json:"feishu"`
+	Discord   DiscordConfig   `json:"discord"`
+	MaixCam   MaixCamConfig   `json:"maixcam"`
+	QQ        QQConfig        `json:"qq"`
+	DingTalk  DingTalkConfig  `json:"dingtalk"`
+	Slack     SlackConfig     `json:"slack"`
+	LINE      LINEConfig      `json:"line"`
+	OneBot    OneBotConfig    `json:"onebot"`
+	WeCom     WeComConfig     `json:"wecom"`
+	WeComApp  WeComAppConfig  `json:"wecom_app"`
+	WebSocket WebSocketConfig `json:"websocket"`
 }
 
 type WhatsAppConfig struct {
@@ -294,6 +295,13 @@ type WeComAppConfig struct {
 	WebhookPath    string              `json:"webhook_path"     env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
 	AllowFrom      FlexibleStringSlice `json:"allow_from"       env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
 	ReplyTimeout   int                 `json:"reply_timeout"    env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
+}
+
+type WebSocketConfig struct {
+	Enabled   bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_WEBSOCKET_ENABLED"`
+	Host      string              `json:"host"       env:"PICOCLAW_CHANNELS_WEBSOCKET_HOST"`
+	Port      int                 `json:"port"       env:"PICOCLAW_CHANNELS_WEBSOCKET_PORT"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WEBSOCKET_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {

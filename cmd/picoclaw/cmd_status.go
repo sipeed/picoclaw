@@ -98,5 +98,47 @@ func statusCmd() {
 				fmt.Printf("  %s (%s): %s\n", provider, cred.AuthMethod, status)
 			}
 		}
+
+		// Display enabled channels
+		fmt.Println("\nChannels:")
+		if cfg.Channels.WebSocket.Enabled {
+			fmt.Printf("  WebSocket: ✓ http://%s:%d\n", cfg.Channels.WebSocket.Host, cfg.Channels.WebSocket.Port)
+		}
+		if cfg.Channels.Telegram.Enabled {
+			fmt.Println("  Telegram: ✓")
+		}
+		if cfg.Channels.Discord.Enabled {
+			fmt.Println("  Discord: ✓")
+		}
+		if cfg.Channels.Slack.Enabled {
+			fmt.Println("  Slack: ✓")
+		}
+		if cfg.Channels.QQ.Enabled {
+			fmt.Println("  QQ: ✓")
+		}
+		if cfg.Channels.Feishu.Enabled {
+			fmt.Println("  Feishu: ✓")
+		}
+		if cfg.Channels.DingTalk.Enabled {
+			fmt.Println("  DingTalk: ✓")
+		}
+		if cfg.Channels.LINE.Enabled {
+			fmt.Println("  LINE: ✓")
+		}
+		if cfg.Channels.WeCom.Enabled {
+			fmt.Println("  WeCom: ✓")
+		}
+		if cfg.Channels.WeComApp.Enabled {
+			fmt.Println("  WeCom App: ✓")
+		}
+		if cfg.Channels.WhatsApp.Enabled {
+			fmt.Println("  WhatsApp: ✓")
+		}
+		if cfg.Channels.OneBot.Enabled {
+			fmt.Println("  OneBot: ✓")
+		}
+		if cfg.Channels.MaixCam.Enabled {
+			fmt.Println("  MaixCam: ✓")
+		}
 	}
 }
