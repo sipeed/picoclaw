@@ -34,11 +34,15 @@ func TestSplitMessage(t *testing.T) {
 			maxLen:       2000,
 			expectChunks: 2,
 			checkContent: func(t *testing.T, chunks []string) {
-				if len(chunks[0]) > 2000 {
-					t.Errorf("Chunk 0 too large: %d", len(chunks[0]))
+				if len([]rune(chunks[0])) > 2000 {
+					t.Errorf("Chunk 0 too large: %d runes", len([]rune(chunks[0])))
 				}
-				if len(chunks[0])+len(chunks[1]) != len(longText) {
-					t.Errorf("Total length mismatch. Got %d, want %d", len(chunks[0])+len(chunks[1]), len(longText))
+				if len([]rune(chunks[0]))+len([]rune(chunks[1])) != len([]rune(longText)) {
+					t.Errorf(
+						"Total rune length mismatch. Got %d, want %d",
+						len([]rune(chunks[0]))+len([]rune(chunks[1])),
+						len([]rune(longText)),
+					)
 				}
 			},
 		},
@@ -53,11 +57,11 @@ func TestSplitMessage(t *testing.T) {
 			maxLen:       2000,
 			expectChunks: 2,
 			checkContent: func(t *testing.T, chunks []string) {
-				if len(chunks[0]) != 1750 {
-					t.Errorf("Expected chunk 0 to be 1750 length (split at newline), got %d", len(chunks[0]))
+				if len([]rune(chunks[0])) != 1750 {
+					t.Errorf("Expected chunk 0 to be 1750 runes (split at newline), got %d", len([]rune(chunks[0])))
 				}
 				if chunks[1] != strings.Repeat("b", 300) {
-					t.Errorf("Chunk 1 content mismatch. Len: %d", len(chunks[1]))
+					t.Errorf("Chunk 1 content mismatch. Len: %d", len([]rune(chunks[1])))
 				}
 			},
 		},
@@ -78,17 +82,39 @@ func TestSplitMessage(t *testing.T) {
 			},
 		},
 		{
-			name:         "Preserve Unicode characters",
-			content:      strings.Repeat("\u4e16", 1000), // 3000 bytes
+			name:         "Preserve Unicode characters (rune-aware)",
+			content:      strings.Repeat("\u4e16", 2500), // 2500 runes, 7500 bytes
 			maxLen:       2000,
 			expectChunks: 2,
 			checkContent: func(t *testing.T, chunks []string) {
-				// Just verify we didn't panic and got valid strings.
-				// Go strings are UTF-8, if we split mid-rune it would be bad,
-				// but standard slicing might do that.
-				// Let's assume standard behavior is acceptable or check if it produces invalid rune?
-				if !strings.Contains(chunks[0], "\u4e16") {
-					t.Error("Chunk should contain unicode characters")
+				// Verify chunks contain valid unicode and don't split mid-rune
+				for i, chunk := range chunks {
+					runeCount := len([]rune(chunk))
+					if runeCount > 2000 {
+						t.Errorf("Chunk %d has %d runes, exceeds maxLen 2000", i, runeCount)
+					}
+					if !strings.Contains(chunk, "\u4e16") {
+						t.Errorf("Chunk %d should contain unicode characters", i)
+					}
+				}
+				// Verify total rune count is preserved
+				totalRunes := 0
+				for _, chunk := range chunks {
+					totalRunes += len([]rune(chunk))
+				}
+				if totalRunes != 2500 {
+					t.Errorf("Total rune count mismatch. Got %d, want 2500", totalRunes)
+				}
+			},
+		},
+		{
+			name:         "Zero maxLen returns single chunk",
+			content:      "Hello world",
+			maxLen:       0,
+			expectChunks: 1,
+			checkContent: func(t *testing.T, chunks []string) {
+				if chunks[0] != "Hello world" {
+					t.Errorf("Expected original content, got %q", chunks[0])
 				}
 			},
 		},
@@ -145,7 +171,7 @@ func TestSplitMessage_CodeBlockIntegrity(t *testing.T) {
 	}
 
 	// First chunk should contain meaningful content
-	if len(chunks[0]) > 40 {
-		t.Errorf("First chunk exceeded maxLen: length %d", len(chunks[0]))
+	if len([]rune(chunks[0])) > 40 {
+		t.Errorf("First chunk exceeded maxLen: length %d runes", len([]rune(chunks[0])))
 	}
 }

@@ -41,7 +41,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}
 
-	base := channels.NewBaseChannel("discord", cfg, bus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("discord", cfg, bus, cfg.AllowFrom, channels.WithMaxMessageLength(2000))
 
 	return &DiscordChannel{
 		BaseChannel: base,
@@ -121,20 +121,11 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		return fmt.Errorf("channel ID is empty")
 	}
 
-	runes := []rune(msg.Content)
-	if len(runes) == 0 {
+	if len([]rune(msg.Content)) == 0 {
 		return nil
 	}
 
-	chunks := utils.SplitMessage(msg.Content, 2000) // Split messages into chunks, Discord length limit: 2000 chars
-
-	for _, chunk := range chunks {
-		if err := c.sendChunk(ctx, channelID, chunk); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return c.sendChunk(ctx, channelID, msg.Content)
 }
 
 func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content string) error {

@@ -38,7 +38,7 @@ func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (
 		return nil, fmt.Errorf("dingtalk client_id and client_secret are required")
 	}
 
-	base := channels.NewBaseChannel("dingtalk", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("dingtalk", cfg, messageBus, cfg.AllowFrom, channels.WithMaxMessageLength(20000))
 
 	return &DingTalkChannel{
 		BaseChannel:  base,

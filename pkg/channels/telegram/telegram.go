@@ -76,7 +76,13 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
 
-	base := channels.NewBaseChannel("telegram", telegramCfg, bus, telegramCfg.AllowFrom)
+	base := channels.NewBaseChannel(
+		"telegram",
+		telegramCfg,
+		bus,
+		telegramCfg.AllowFrom,
+		channels.WithMaxMessageLength(4096),
+	)
 
 	return &TelegramChannel{
 		BaseChannel:  base,
