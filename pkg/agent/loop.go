@@ -1386,6 +1386,7 @@ func consumeStreamWithRepetitionDetection(
 	ch <-chan protocoltypes.StreamEvent,
 	cancelFn context.CancelFunc,
 	checkInterval int,
+	onChunk func(accumulated string),
 ) (*providers.LLMResponse, bool, error) {
 	var content strings.Builder
 	var toolCalls []streamToolCallAcc
@@ -1400,6 +1401,9 @@ func consumeStreamWithRepetitionDetection(
 		if ev.ContentDelta != "" {
 			content.WriteString(ev.ContentDelta)
 			runesSinceLastCheck += utf8.RuneCountInString(ev.ContentDelta)
+			if onChunk != nil {
+				onChunk(content.String())
+			}
 		}
 		if ev.FinishReason != "" {
 			finishReason = ev.FinishReason
@@ -1551,6 +1555,30 @@ func (al *AgentLoop) runLLMIteration(
 		var response *providers.LLMResponse
 		var err error
 
+		// Build onChunk callback for streaming preview.
+		// When sending responses to a real (non-internal) channel, publish
+		// throttled status updates so the user sees LLM output in real time.
+		var onChunk func(string)
+		if !constants.IsInternalChannel(opts.Channel) {
+			lastPublish := time.Time{}
+			onChunk = func(accumulated string) {
+				if time.Since(lastPublish) < 500*time.Millisecond {
+					return
+				}
+				lastPublish = time.Now()
+				display := utils.StripThinkBlocks(accumulated)
+				if strings.TrimSpace(display) == "" {
+					return
+				}
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel:  opts.Channel,
+					ChatID:   opts.ChatID,
+					Content:  display + " \u2589",
+					IsStatus: true,
+				})
+			}
+		}
+
 		// doCall invokes a single LLM provider, using streaming with
 		// early repetition detection when the provider supports it.
 		opts_ := map[string]any{
@@ -1565,7 +1593,7 @@ func (al *AgentLoop) runLLMIteration(
 				if err != nil {
 					return nil, err
 				}
-				resp, repetition, err := consumeStreamWithRepetitionDetection(ch, streamCancel, 1000)
+				resp, repetition, err := consumeStreamWithRepetitionDetection(ch, streamCancel, 1000, onChunk)
 				if err != nil {
 					return nil, err
 				}
