@@ -8,6 +8,38 @@ metadata: {"nanobot":{"emoji":"🌐"}}
 
 Launch a local dev server as a background process, wait for it to become ready, and connect it to the Mini App dev preview proxy.
 
+## Network Architecture
+
+```
+User's phone (Telegram)
+  │
+  │  HTTPS (internet)
+  ▼
+Telegram Bot API server
+  │
+  │  Mini App WebView (iframe)
+  │  URL: https://BOT_DOMAIN/miniapp
+  ▼
+picoclaw server (VPS / local machine)
+  │
+  │  /miniapp/dev/*  →  reverse proxy (httputil.ReverseProxy)
+  │  strips /miniapp/dev prefix, forwards all HTTP methods
+  ▼
+localhost:PORT (dev server)
+  e.g. Vite on :5173, FastAPI on :8000, Go on :8080
+```
+
+**Request path**: User opens Dev tab in Mini App → iframe loads `/miniapp/dev/` → picoclaw reverse proxy → `localhost:PORT`
+
+**What works**: All HTTP methods (GET/POST/PUT/DELETE/PATCH), JSON APIs, form submissions, static files, SSE
+**What doesn't work**: WebSocket (reverse proxy limitation), non-HTTP protocols
+
+**Key points**:
+- The dev server only needs to bind to **localhost** — it is never exposed directly to the internet
+- picoclaw's reverse proxy handles the internet-facing HTTPS
+- The Mini App frontend sees API paths as `/miniapp/dev/api/...` — the `/miniapp/dev` prefix is stripped before forwarding
+- **fetch/XHR are auto-rewritten**: The proxy injects a script into HTML responses that patches `fetch()` and `XMLHttpRequest.open()` to add the `/miniapp/dev` prefix to absolute paths — no manual base URL configuration needed
+
 ## Quickstart
 
 ```
@@ -110,6 +142,32 @@ exec(bg_action="output", bg_id="bg-1")
 exec(bg_action="kill", bg_id="bg-1")
 dev_preview(action="stop")
 ```
+
+## Pitfalls / 落とし穴
+
+### Path rewriting (パスリライト)
+
+The dev server runs at `/` but is proxied under `/miniapp/dev/`. The reverse proxy **automatically injects a `<script>`** into HTML responses that patches `fetch()` and `XMLHttpRequest.open()` so that absolute paths like `/api/items` are rewritten to `/miniapp/dev/api/items`.
+
+- **Covered automatically**: `fetch("/api/items")`, `xhr.open("GET", "/data")` — these are patched at runtime.
+- **NOT rewritten automatically**: HTML attribute URLs such as `<img src="/img/logo.png">`, `<link href="/style.css">`, `<a href="/page">`. Use **relative paths** (`img/logo.png`, `./style.css`) in your frontend code.
+- URLs that already start with `/miniapp/dev` or `//` (protocol-relative) are left untouched to prevent double-rewriting.
+
+### WebSocket not supported
+
+`httputil.ReverseProxy` does **not** transparently proxy WebSocket connections. If your dev server uses WebSocket (e.g., Vite HMR), it will not work through the proxy. Use polling or SSE as alternatives.
+
+### Static asset absolute paths
+
+Any `src="/..."` or `href="/..."` in the HTML will be resolved by the browser relative to the domain root, **not** `/miniapp/dev/`. The injected script only patches `fetch` and `XHR`, not DOM attribute resolution.
+
+**Recommendation**: Use relative paths in all HTML attributes (e.g., `src="./assets/logo.png"` instead of `src="/assets/logo.png"`).
+
+### SPA routing
+
+If your SPA uses `history.pushState("/page")`, the browser URL becomes `/page` which is outside the `/miniapp/dev/` mount. Navigating to it will hit picoclaw's own routes instead of the dev server.
+
+**Recommendation**: Use **hash routing** (`/#/page`) to keep all navigation within the iframe's current path.
 
 ## Important Notes
 

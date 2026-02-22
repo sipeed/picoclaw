@@ -279,6 +279,23 @@ func (h *Handler) ActivateDevTarget(id string) error {
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(u)
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		ct := resp.Header.Get("Content-Type")
+		if !strings.Contains(ct, "text/html") {
+			return nil
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		modified := injectDevProxyScript(body)
+		resp.Body = io.NopCloser(bytes.NewReader(modified))
+		resp.ContentLength = int64(len(modified))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(modified)))
+		resp.Header.Del("Content-Encoding")
+		return nil
+	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadGateway)
@@ -337,6 +354,66 @@ func (h *Handler) ListDevTargets() []DevTarget {
 	// Sort by ID for stable order
 	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
 	return targets
+}
+
+// devProxyScript is the JavaScript injected into HTML responses from the dev proxy.
+// It rewrites fetch() and XMLHttpRequest.open() so that absolute paths like
+// "/api/items" are prefixed with "/miniapp/dev", matching the reverse proxy mount.
+const devProxyScript = `<script data-dev-proxy>
+(function(){
+  var B='/miniapp/dev';
+  function rw(u){
+    if(typeof u==='string'&&u.startsWith('/')&&!u.startsWith('//')&&!u.startsWith(B))return B+u;
+    return u;
+  }
+  var _f=window.fetch;
+  window.fetch=function(r,i){
+    if(typeof r==='string')r=rw(r);
+    else if(r instanceof Request)r=new Request(rw(r.url),r);
+    return _f.call(this,r,i);
+  };
+  var _o=XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open=function(m,u){
+    arguments[1]=rw(u);
+    return _o.apply(this,arguments);
+  };
+})();
+</script>`
+
+// injectDevProxyScript inserts the dev proxy rewrite script into an HTML document.
+// Insertion priority: before </head>, after <body...>, or prepend to document.
+func injectDevProxyScript(html []byte) []byte {
+	script := []byte(devProxyScript)
+
+	// Priority 1: before </head>
+	if idx := bytes.Index(bytes.ToLower(html), []byte("</head>")); idx >= 0 {
+		out := make([]byte, 0, len(html)+len(script))
+		out = append(out, html[:idx]...)
+		out = append(out, script...)
+		out = append(out, html[idx:]...)
+		return out
+	}
+
+	// Priority 2: after <body ...>
+	lower := bytes.ToLower(html)
+	if idx := bytes.Index(lower, []byte("<body")); idx >= 0 {
+		// Find the closing '>' of the <body> tag
+		closeIdx := bytes.IndexByte(lower[idx:], '>')
+		if closeIdx >= 0 {
+			insertAt := idx + closeIdx + 1
+			out := make([]byte, 0, len(html)+len(script))
+			out = append(out, html[:insertAt]...)
+			out = append(out, script...)
+			out = append(out, html[insertAt:]...)
+			return out
+		}
+	}
+
+	// Priority 3: prepend
+	out := make([]byte, 0, len(html)+len(script))
+	out = append(out, script...)
+	out = append(out, html...)
+	return out
 }
 
 // escapeHTMLString escapes HTML special characters in a string.
