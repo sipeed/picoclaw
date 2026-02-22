@@ -633,6 +633,58 @@
   }
   .git-back-btn:active { opacity: 0.6; }
 
+  /* Dev header */
+  .dev-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px;
+    margin-bottom: 8px;
+  }
+  .dev-header-title { font-weight: 600; font-size: 15px; }
+  .dev-header-target {
+    color: var(--hint);
+    font-size: 13px;
+    margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Dev target cards */
+  .dev-target-item {
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.2s, border-color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .dev-target-item:active { transform: scale(0.98); }
+  .dev-target-item.active {
+    border-color: var(--btn);
+    box-shadow: 0 2px 8px var(--glass-shadow);
+  }
+  .dev-target-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--hint);
+  }
+  .dev-target-dot.on { background: var(--done); }
+  .dev-target-name { font-weight: 600; font-size: 14px; }
+  .dev-target-url {
+    color: var(--hint);
+    font-size: 13px;
+    margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
 </style>
 </head>
 <body>
@@ -688,24 +740,15 @@
 </div>
 
 <div id="dev" class="panel">
-  <div id="dev-status" class="card glass">
-    <div class="card-title">Dev Preview</div>
-    <div class="card-value" id="dev-status-label">Inactive</div>
-    <div id="dev-target-display" style="color:var(--hint);margin-top:4px;font-size:13px"></div>
+  <div id="dev-header" class="dev-header">
+    <span id="dev-dot" class="dev-target-dot"></span>
+    <span class="dev-header-title">Dev Preview</span>
+    <span id="dev-header-target" class="dev-header-target"></span>
   </div>
-  <div class="card glass">
-    <div class="card-title">Target URL</div>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <input id="dev-target-input" class="send-input glass glass-interactive" placeholder="http://localhost:3000" style="flex:1">
-      <button class="send-btn" id="dev-set-btn" onclick="setDevTarget()">Set</button>
-    </div>
-    <div style="margin-top:8px">
-      <button class="send-btn" id="dev-stop-btn" onclick="clearDevTarget()" style="background:var(--hint);width:100%">Stop</button>
-    </div>
-  </div>
-  <div id="dev-iframe-wrap" class="hidden" style="margin-top:12px">
+  <div id="dev-targets-list"></div>
+  <div id="dev-iframe-wrap" class="hidden" style="margin-top:8px">
     <div class="card glass" style="padding:0;overflow:hidden">
-      <iframe id="dev-iframe" src="" style="width:100%;height:50vh;border:none;border-radius:16px"></iframe>
+      <iframe id="dev-iframe" src="" style="width:100%;height:70vh;border:none;border-radius:16px"></iframe>
     </div>
   </div>
 </div>
@@ -1264,62 +1307,73 @@ function renderGitDetail(repo) {
 }
 
 // ── Dev tab ──
+var devActiveId = '';
+
 function renderDevFromData(data) {
-  var label = document.getElementById('dev-status-label');
-  var display = document.getElementById('dev-target-display');
+  var dot = document.getElementById('dev-dot');
+  var headerTarget = document.getElementById('dev-header-target');
+  var targetsList = document.getElementById('dev-targets-list');
   var iframeWrap = document.getElementById('dev-iframe-wrap');
   var iframe = document.getElementById('dev-iframe');
 
+  var targets = data.targets || [];
+  devActiveId = data.active_id || '';
+
   if (data.active) {
-    label.textContent = 'Active';
-    label.style.color = 'var(--done)';
-    display.textContent = data.target;
+    dot.classList.add('on');
+    headerTarget.textContent = data.target ? data.target.replace(/^https?:\/\//, '') : '';
     iframeWrap.classList.remove('hidden');
     var iframeSrc = location.origin + '/miniapp/dev/';
     if (iframe.src !== iframeSrc) iframe.src = iframeSrc;
   } else {
-    label.textContent = 'Inactive';
-    label.style.color = '';
-    display.textContent = '';
+    dot.classList.remove('on');
+    headerTarget.textContent = '';
     iframeWrap.classList.add('hidden');
     iframe.src = '';
   }
+
+  if (targets.length === 0) {
+    targetsList.innerHTML = '<div class="empty-state">No targets registered.<br>Ask the agent to start a dev server.</div>';
+    return;
+  }
+
+  targetsList.innerHTML = targets.map(function(t) {
+    var isActive = t.id === devActiveId;
+    var activeClass = isActive ? ' active' : '';
+    var dotClass = isActive ? ' on' : '';
+    var displayUrl = t.target.replace(/^https?:\/\//, '');
+    return '<div class="dev-target-item glass glass-interactive' + activeClass + '" data-dev-id="' + escapeAttr(t.id) + '">' +
+      '<span class="dev-target-dot' + dotClass + '"></span>' +
+      '<span class="dev-target-name">' + escapeHtml(t.name) + '</span>' +
+      '<span class="dev-target-url">' + escapeHtml(displayUrl) + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+// Delegate click on target cards
+document.getElementById('dev-targets-list').addEventListener('click', function(e) {
+  var card = e.target.closest('[data-dev-id]');
+  if (!card) return;
+  postDevAction(card.dataset.devId);
+});
+
+async function postDevAction(id) {
+  var action = (id === devActiveId) ? 'deactivate' : 'activate';
+  var body = action === 'activate' ? { action: 'activate', id: id } : { action: 'deactivate' };
+
+  try {
+    var res = await fetch(API_BASE + '/miniapp/api/dev?initData=' + encodeURIComponent(initData), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    var data = await res.json();
+    if (!data.error) renderDevFromData(data);
+  } catch(e) {}
 }
 
 function loadDev() {
   apiFetch('/miniapp/api/dev').then(renderDevFromData).catch(function() {});
-}
-
-async function setDevTarget() {
-  var input = document.getElementById('dev-target-input');
-  var btn = document.getElementById('dev-set-btn');
-  var target = input.value.trim();
-  if (!target) return;
-  try {
-    var res = await fetch(API_BASE + '/miniapp/api/dev?initData=' + encodeURIComponent(initData), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target: target }),
-    });
-    var data = await res.json();
-    if (data.error) return;
-    renderDevFromData(data);
-    flashSent(btn);
-  } catch(e) {}
-}
-
-async function clearDevTarget() {
-  var btn = document.getElementById('dev-stop-btn');
-  try {
-    var res = await fetch(API_BASE + '/miniapp/api/dev?initData=' + encodeURIComponent(initData), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target: '' }),
-    });
-    var data = await res.json();
-    renderDevFromData(data);
-    flashSent(btn);
-  } catch(e) {}
 }
 
 // ── SSE real-time updates ──
