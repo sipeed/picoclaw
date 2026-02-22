@@ -453,9 +453,9 @@ type ExecConfig struct {
 }
 
 type MediaCleanupConfig struct {
-	Enabled  bool `json:"enabled" env:"PICOCLAW_TOOLS_MEDIA_CLEANUP_ENABLED"`
-	MaxAge   int  `json:"max_age_minutes" env:"PICOCLAW_TOOLS_MEDIA_CLEANUP_MAX_AGE_MINUTES"`
-	Interval int  `json:"interval_minutes" env:"PICOCLAW_TOOLS_MEDIA_CLEANUP_INTERVAL_MINUTES"`
+	Enabled  bool `json:"enabled" env:"PICOCLAW_MEDIA_CLEANUP_ENABLED"`
+	MaxAge   int  `json:"max_age_minutes" env:"PICOCLAW_MEDIA_CLEANUP_MAX_AGE"`
+	Interval int  `json:"interval_minutes" env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL"`
 }
 
 type ToolsConfig struct {
