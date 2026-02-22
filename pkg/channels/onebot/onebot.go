@@ -18,7 +18,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 type OneBotChannel struct {
@@ -36,7 +35,6 @@ type OneBotChannel struct {
 	selfID          int64
 	pending         map[string]chan json.RawMessage
 	pendingMu       sync.Mutex
-	transcriber     *voice.GroqTranscriber
 	lastMessageID   sync.Map
 	pendingEmojiMsg sync.Map
 }
@@ -110,10 +108,6 @@ func NewOneBotChannel(cfg config.OneBotConfig, messageBus *bus.MessageBus) (*One
 		dedupIdx:    0,
 		pending:     make(map[string]chan json.RawMessage),
 	}, nil
-}
-
-func (c *OneBotChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
-	c.transcriber = transcriber
 }
 
 func (c *OneBotChannel) setMsgEmojiLike(messageID string, emojiID int, set bool) {
@@ -794,25 +788,8 @@ func (c *OneBotChannel) parseMessageSegments(
 						LoggerPrefix: "onebot",
 					})
 					if localPath != "" {
-						if c.transcriber != nil && c.transcriber.IsAvailable() {
-							tctx, tcancel := context.WithTimeout(c.ctx, 30*time.Second)
-							result, err := c.transcriber.Transcribe(tctx, localPath)
-							tcancel()
-							if err != nil {
-								logger.WarnCF("onebot", "Voice transcription failed", map[string]any{
-									"error": err.Error(),
-								})
-								textParts = append(textParts, "[voice (transcription failed)]")
-								mediaRefs = append(mediaRefs, storeFile(localPath, "voice.amr"))
-							} else {
-								textParts = append(textParts, fmt.Sprintf("[voice transcription: %s]", result.Text))
-								// Still store the file so it can be released later
-								storeFile(localPath, "voice.amr")
-							}
-						} else {
-							textParts = append(textParts, "[voice]")
-							mediaRefs = append(mediaRefs, storeFile(localPath, "voice.amr"))
-						}
+						textParts = append(textParts, "[voice]")
+						mediaRefs = append(mediaRefs, storeFile(localPath, "voice.amr"))
 					}
 				}
 			}

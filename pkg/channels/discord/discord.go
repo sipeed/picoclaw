@@ -16,24 +16,21 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 const (
-	transcriptionTimeout = 30 * time.Second
-	sendTimeout          = 10 * time.Second
+	sendTimeout = 10 * time.Second
 )
 
 type DiscordChannel struct {
 	*channels.BaseChannel
-	session     *discordgo.Session
-	config      config.DiscordConfig
-	transcriber *voice.GroqTranscriber
-	ctx         context.Context
-	cancel      context.CancelFunc
-	typingMu    sync.Mutex
-	typingStop  map[string]chan struct{} // chatID → stop signal
-	botUserID   string                   // stored for mention checking
+	session    *discordgo.Session
+	config     config.DiscordConfig
+	ctx        context.Context
+	cancel     context.CancelFunc
+	typingMu   sync.Mutex
+	typingStop map[string]chan struct{} // chatID → stop signal
+	botUserID  string                   // stored for mention checking
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -48,14 +45,9 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		BaseChannel: base,
 		session:     session,
 		config:      cfg,
-		transcriber: nil,
 		ctx:         context.Background(),
 		typingStop:  make(map[string]chan struct{}),
 	}, nil
-}
-
-func (c *DiscordChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
-	c.transcriber = transcriber
 }
 
 func (c *DiscordChannel) Start(ctx context.Context) error {
@@ -265,7 +257,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
-	// Check allowlist first to avoid downloading attachments and transcribing for rejected users
+	// Check allowlist first to avoid downloading attachments for rejected users
 	if !c.IsAllowed(m.Author.ID) {
 		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
 			"user_id": m.Author.ID,
@@ -323,29 +315,8 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		if isAudio {
 			localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
 			if localPath != "" {
-				transcribedText := ""
-				if c.transcriber != nil && c.transcriber.IsAvailable() {
-					ctx, cancel := context.WithTimeout(c.ctx, transcriptionTimeout)
-					result, err := c.transcriber.Transcribe(ctx, localPath)
-					cancel() // Release context resources immediately to avoid leaks in for loop
-
-					if err != nil {
-						logger.ErrorCF("discord", "Voice transcription failed", map[string]any{
-							"error": err.Error(),
-						})
-						transcribedText = fmt.Sprintf("[audio: %s (transcription failed)]", attachment.Filename)
-					} else {
-						transcribedText = fmt.Sprintf("[audio transcription: %s]", result.Text)
-						logger.DebugCF("discord", "Audio transcribed successfully", map[string]any{
-							"text": result.Text,
-						})
-					}
-				} else {
-					transcribedText = fmt.Sprintf("[audio: %s]", attachment.Filename)
-				}
-
 				mediaPaths = append(mediaPaths, storeMedia(localPath, attachment.Filename))
-				content = appendContent(content, transcribedText)
+				content = appendContent(content, fmt.Sprintf("[audio: %s]", attachment.Filename))
 			} else {
 				logger.WarnCF("discord", "Failed to download audio attachment", map[string]any{
 					"url":      attachment.URL,
