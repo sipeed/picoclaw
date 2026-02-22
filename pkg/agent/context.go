@@ -230,7 +230,11 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				continue
 			}
 			last := sanitized[len(sanitized)-1]
-			if last.Role != "assistant" || len(last.ToolCalls) == 0 {
+			// A tool result is valid if it follows either an assistant with
+			// tool calls, or another tool result (multiple consecutive results
+			// from parallel tool calls).
+			validPredecessor := (last.Role == "assistant" && len(last.ToolCalls) > 0) || last.Role == "tool"
+			if !validPredecessor {
 				logger.DebugCF("agent", "Dropping orphaned tool message", map[string]any{})
 				continue
 			}
