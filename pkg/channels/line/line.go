@@ -496,6 +496,36 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	return c.sendPush(ctx, msg.ChatID, msg.Content, quoteToken)
 }
 
+// SendMedia implements the channels.MediaSender interface.
+// LINE requires media to be accessible via public URL; since we only have local files,
+// we fall back to sending a text message with the filename/caption.
+// For full support, an external file hosting service would be needed.
+func (c *LINEChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+	}
+
+	// LINE Messaging API requires publicly accessible URLs for media messages.
+	// Since we only have local file paths, send caption text as fallback.
+	for _, part := range msg.Parts {
+		caption := part.Caption
+		if caption == "" {
+			caption = fmt.Sprintf("[%s: %s]", part.Type, part.Filename)
+		}
+
+		if err := c.sendPush(ctx, msg.ChatID, caption, ""); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // buildTextMessage creates a text message object, optionally with quoteToken.
 func buildTextMessage(content, quoteToken string) map[string]string {
 	msg := map[string]string{

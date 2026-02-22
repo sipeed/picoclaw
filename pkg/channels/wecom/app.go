@@ -7,8 +7,11 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -185,6 +188,197 @@ func (c *WeComAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	})
 
 	return c.sendTextMessage(ctx, accessToken, msg.ChatID, msg.Content)
+}
+
+// SendMedia implements the channels.MediaSender interface.
+func (c *WeComAppChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	accessToken := c.getAccessToken()
+	if accessToken == "" {
+		return fmt.Errorf("no valid access token available: %w", channels.ErrTemporary)
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+	}
+
+	for _, part := range msg.Parts {
+		localPath, err := store.Resolve(part.Ref)
+		if err != nil {
+			logger.ErrorCF("wecom_app", "Failed to resolve media ref", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		// Map part type to WeCom media type
+		mediaType := "file"
+		switch part.Type {
+		case "image":
+			mediaType = "image"
+		case "audio":
+			mediaType = "voice"
+		case "video":
+			mediaType = "video"
+		default:
+			mediaType = "file"
+		}
+
+		// Upload media to get media_id
+		mediaID, err := c.uploadMedia(ctx, accessToken, mediaType, localPath)
+		if err != nil {
+			logger.ErrorCF("wecom_app", "Failed to upload media", map[string]any{
+				"type":  mediaType,
+				"error": err.Error(),
+			})
+			// Fallback: send caption as text
+			if part.Caption != "" {
+				_ = c.sendTextMessage(ctx, accessToken, msg.ChatID, part.Caption)
+			}
+			continue
+		}
+
+		// Send media message using the media_id
+		if mediaType == "image" {
+			err = c.sendImageMessage(ctx, accessToken, msg.ChatID, mediaID)
+		} else {
+			// For non-image types, send as text fallback with caption
+			caption := part.Caption
+			if caption == "" {
+				caption = fmt.Sprintf("[%s: %s]", part.Type, part.Filename)
+			}
+			err = c.sendTextMessage(ctx, accessToken, msg.ChatID, caption)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// uploadMedia uploads a local file to WeCom temporary media storage.
+func (c *WeComAppChannel) uploadMedia(ctx context.Context, accessToken, mediaType, localPath string) (string, error) {
+	apiURL := fmt.Sprintf("%s/cgi-bin/media/upload?access_token=%s&type=%s",
+		wecomAPIBase, url.QueryEscape(accessToken), url.QueryEscape(mediaType))
+
+	file, err := os.Open(localPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	filename := filepath.Base(localPath)
+	formFile, err := writer.CreateFormFile("media", filename)
+	if err != nil {
+		return "", fmt.Errorf("failed to create form file: %w", err)
+	}
+
+	if _, err = io.Copy(formFile, file); err != nil {
+		return "", fmt.Errorf("failed to copy file content: %w", err)
+	}
+	writer.Close()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, body)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", channels.ClassifyNetError(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom upload error: %s", string(respBody)))
+	}
+
+	var result struct {
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+		MediaID string `json:"media_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to parse upload response: %w", err)
+	}
+
+	if result.ErrCode != 0 {
+		return "", fmt.Errorf("upload API error: %s (code: %d)", result.ErrMsg, result.ErrCode)
+	}
+
+	return result.MediaID, nil
+}
+
+// sendImageMessage sends an image message using a media_id.
+func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, userID, mediaID string) error {
+	apiURL := fmt.Sprintf("%s/cgi-bin/message/send?access_token=%s", wecomAPIBase, accessToken)
+
+	msg := WeComImageMessage{
+		ToUser:  userID,
+		MsgType: "image",
+		AgentID: c.config.AgentID,
+	}
+	msg.Image.MediaID = mediaID
+
+	jsonData, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	timeout := c.config.ReplyTimeout
+	if timeout <= 0 {
+		timeout = 5
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return channels.ClassifyNetError(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom_app API error: %s", string(respBody)))
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var sendResp WeComSendMessageResponse
+	if err := json.Unmarshal(respBody, &sendResp); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if sendResp.ErrCode != 0 {
+		return fmt.Errorf("API error: %s (code: %d)", sendResp.ErrMsg, sendResp.ErrCode)
+	}
+
+	return nil
 }
 
 // WebhookPath returns the path for registering on the shared HTTP server.
