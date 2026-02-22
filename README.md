@@ -1012,6 +1012,7 @@ PicoClaw provides typed lifecycle hooks for observability, outbound filtering, a
 - If hooks are not set, default behavior is unchanged.
 
 See runnable examples: [docs/hooks-plugin-examples.md](docs/hooks-plugin-examples.md)
+Roadmap for plugin system evolution: [docs/design/plugin-system-roadmap.md](docs/design/plugin-system-roadmap.md)
 
 <details>
 <summary><b>Zhipu</b></summary>

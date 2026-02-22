@@ -2,10 +2,53 @@
 
 This guide shows how to extend PicoClaw behavior with `pkg/hooks` without modifying core agent logic.
 
+For future direction (beyond current hooks foundation), see [Plugin System Roadmap](design/plugin-system-roadmap.md).
+
 Current model:
 - "Plugin-style" means registering Go handlers at startup.
 - Hooks are in-process (no dynamic `.so` loading).
 - If no hooks are registered, the runtime follows the normal zero-cost path.
+
+## How Plugin Works
+
+PicoClaw's plugin model is a startup-time hook registry:
+
+1. Build a registry (`hooks.NewHookRegistry()`).
+2. Register one or more handlers per lifecycle hook with priority.
+3. Attach once with `agentLoop.SetHooks(registry)` before `agentLoop.Run(...)`.
+4. Agent loop triggers hook handlers at specific lifecycle points.
+
+Execution semantics:
+
+- Observe-only hooks (`message_received`, `after_tool_call`, `llm_input`, `llm_output`, `session_start`, `session_end`)
+  - run concurrently
+  - cannot block core behavior
+- Modifying hooks (`message_sending`, `before_tool_call`)
+  - run sequentially by priority (lower number first)
+  - may mutate event data
+  - may cancel operation via `Cancel=true`
+
+Safety model:
+
+- Panic in one handler is recovered and logged.
+- Handler errors are logged; pipeline continues unless canceled by event flag.
+- With no registered hooks, agent loop behavior is unchanged.
+
+Lifecycle map:
+
+```text
+Inbound message
+  -> message_received
+  -> session_start
+  -> llm_input
+  -> llm_output
+  -> before_tool_call (cancelable)
+  -> tool execute
+  -> after_tool_call
+  -> message_sending (cancelable)
+  -> outbound publish
+  -> session_end
+```
 
 ## Available Hooks
 
