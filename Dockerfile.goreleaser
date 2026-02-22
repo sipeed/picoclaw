@@ -5,6 +5,7 @@ ARG TARGETPLATFORM
 RUN apk add --no-cache ca-certificates tzdata
 
 COPY $TARGETPLATFORM/picoclaw /usr/local/bin/picoclaw
+COPY container/* /usr/local/bin/
 
-ENTRYPOINT ["picoclaw"]
+ENTRYPOINT ["entrypoint"]
 CMD ["gateway"]
