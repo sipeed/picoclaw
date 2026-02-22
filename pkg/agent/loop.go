@@ -208,6 +208,16 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	}
 }
 
+// SetToolObserver registers a ToolObserver on every agent's tool registry.
+// The observer is called after every tool execution with name, args, result, and duration.
+func (al *AgentLoop) SetToolObserver(obs tools.ToolObserver) {
+	for _, agentID := range al.registry.ListAgentIDs() {
+		if agent, ok := al.registry.GetAgent(agentID); ok {
+			agent.Tools.SetObserver(obs)
+		}
+	}
+}
+
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }

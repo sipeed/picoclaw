@@ -10,15 +10,28 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+// ToolObserver is called after every tool execution with structured event data.
+// Implement this to add observability (tracing, metrics, logging) without
+// modifying individual tools.
+type ToolObserver func(name string, args map[string]interface{}, result *ToolResult, durationMs int64)
+
 type ToolRegistry struct {
-	tools map[string]Tool
-	mu    sync.RWMutex
+	tools    map[string]Tool
+	mu       sync.RWMutex
+	observer ToolObserver
 }
 
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
 		tools: make(map[string]Tool),
 	}
+}
+
+// SetObserver registers a callback invoked after every tool execution.
+func (r *ToolRegistry) SetObserver(obs ToolObserver) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.observer = obs
 }
 
 func (r *ToolRegistry) Register(tool Tool) {
@@ -80,6 +93,14 @@ func (r *ToolRegistry) ExecuteWithContext(
 	start := time.Now()
 	result := tool.Execute(ctx, args)
 	duration := time.Since(start)
+
+	// Fire observer if registered
+	r.mu.RLock()
+	obs := r.observer
+	r.mu.RUnlock()
+	if obs != nil {
+		obs(name, args, result, duration.Milliseconds())
+	}
 
 	// Log based on result type
 	if result.IsError {
