@@ -694,6 +694,12 @@ function renderSkillsFromData(data) {
 
   el.querySelectorAll('.skill-item').forEach(function(item) {
     item.addEventListener('click', function() {
+      if (selectedSkill === item.dataset.skill) {
+        item.classList.remove('selected');
+        selectedSkill = null;
+        document.getElementById('send-bar').style.display = 'none';
+        return;
+      }
       el.querySelectorAll('.skill-item').forEach(function(i) { i.classList.remove('selected'); });
       item.classList.add('selected');
       selectedSkill = item.dataset.skill;
