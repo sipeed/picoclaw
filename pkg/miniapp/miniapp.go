@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"sort"
 	"strings"
@@ -158,12 +159,22 @@ func (n *StateNotifier) Notify() {
 	}
 }
 
+// DevTargetSetter allows tools to control the dev proxy target.
+type DevTargetSetter interface {
+	SetDevTarget(target string) error
+	GetDevTarget() string
+}
+
 // Handler serves the Mini App HTML and API endpoints.
 type Handler struct {
 	provider DataProvider
 	sender   CommandSender
 	botToken string
 	notifier *StateNotifier
+
+	devMu     sync.RWMutex
+	devTarget *url.URL
+	devProxy  *httputil.ReverseProxy
 }
 
 // NewHandler creates a new Mini App handler.
@@ -176,6 +187,49 @@ func NewHandler(provider DataProvider, sender CommandSender, botToken string, no
 	}
 }
 
+// SetDevTarget sets the reverse proxy target URL. Only localhost targets are allowed.
+// Pass an empty string to disable the proxy.
+func (h *Handler) SetDevTarget(target string) error {
+	h.devMu.Lock()
+	defer h.devMu.Unlock()
+
+	if target == "" {
+		h.devTarget = nil
+		h.devProxy = nil
+		if h.notifier != nil {
+			h.notifier.Notify()
+		}
+		return nil
+	}
+
+	u, err := url.Parse(target)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	host := u.Hostname()
+	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+		return fmt.Errorf("only localhost targets are allowed, got %q", host)
+	}
+
+	h.devTarget = u
+	h.devProxy = httputil.NewSingleHostReverseProxy(u)
+	if h.notifier != nil {
+		h.notifier.Notify()
+	}
+	return nil
+}
+
+// GetDevTarget returns the current dev proxy target URL, or empty string if disabled.
+func (h *Handler) GetDevTarget() string {
+	h.devMu.RLock()
+	defer h.devMu.RUnlock()
+	if h.devTarget == nil {
+		return ""
+	}
+	return h.devTarget.String()
+}
+
 // RegisterRoutes registers Mini App routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp", h.serveIndex)
@@ -185,7 +239,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/sessions", h.requireAuth(h.apiSessions))
 	mux.HandleFunc("/miniapp/api/command", h.requireAuth(h.apiCommand))
 	mux.HandleFunc("/miniapp/api/git", h.requireAuth(h.apiGit))
+	mux.HandleFunc("/miniapp/api/dev", h.requireAuth(h.apiDev))
 	mux.HandleFunc("/miniapp/api/events", h.requireAuth(h.apiEvents))
+	mux.HandleFunc("/miniapp/dev/", h.serveDevProxy)
 }
 
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +342,59 @@ func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
+func (h *Handler) apiDev(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		target := h.GetDevTarget()
+		writeJSON(w, map[string]any{
+			"active": target != "",
+			"target": target,
+		})
+	case http.MethodPost:
+		body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+		if err != nil {
+			http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+			return
+		}
+		var req struct {
+			Target string `json:"target"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+			return
+		}
+		if err := h.SetDevTarget(req.Target); err != nil {
+			writeJSON(w, map[string]any{"error": err.Error()})
+			return
+		}
+		target := h.GetDevTarget()
+		writeJSON(w, map[string]any{
+			"active": target != "",
+			"target": target,
+		})
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) serveDevProxy(w http.ResponseWriter, r *http.Request) {
+	h.devMu.RLock()
+	proxy := h.devProxy
+	h.devMu.RUnlock()
+
+	if proxy == nil {
+		http.Error(w, "dev proxy not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Strip /miniapp/dev prefix so /miniapp/dev/foo → /foo
+	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/miniapp/dev")
+	if r.URL.Path == "" {
+		r.URL.Path = "/"
+	}
+	proxy.ServeHTTP(w, r)
+}
+
 // extractUserFromInitData parses user.id from the initData query string.
 // initData contains a "user" param with JSON like {"id":123456,...}.
 func extractUserFromInitData(initData string) (userID, chatID string) {
@@ -325,7 +434,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 	ch := h.notifier.Subscribe()
 	defer h.notifier.Unsubscribe(ch)
 
-	var lastPlan, lastSession, lastSkills []byte
+	var lastPlan, lastSession, lastSkills, lastDev []byte
 
 	// Send initial state immediately
 	sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
@@ -333,6 +442,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 		map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions()},
 		&lastSession)
 	sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
+	sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
 
 	for {
 		select {
@@ -346,7 +456,16 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 				map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions()},
 				&lastSession)
 			sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
+			sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
 		}
+	}
+}
+
+func (h *Handler) devStatus() map[string]any {
+	target := h.GetDevTarget()
+	return map[string]any{
+		"active": target != "",
+		"target": target,
 	}
 }
 

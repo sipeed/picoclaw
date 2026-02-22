@@ -84,7 +84,7 @@
     top: 2px;
     bottom: 2px;
     left: 2px;
-    width: calc(20% - 2px);
+    width: calc(100%/6 - 2px);
     border-radius: 8px;
     background: var(--tab-pill-bg);
     box-shadow: 0 0.5px 2px rgba(0,0,0,0.12), 0 0.5px 1px rgba(0,0,0,0.08);
@@ -645,6 +645,7 @@
     <button class="tab" data-panel="skills">Skills</button>
     <button class="tab" data-panel="session">Session</button>
     <button class="tab" data-panel="config">Config</button>
+    <button class="tab" data-panel="dev">Dev</button>
   </div>
 </div>
 
@@ -686,6 +687,29 @@
   <div id="git-content" class="hidden"></div>
 </div>
 
+<div id="dev" class="panel">
+  <div id="dev-status" class="card glass">
+    <div class="card-title">Dev Preview</div>
+    <div class="card-value" id="dev-status-label">Inactive</div>
+    <div id="dev-target-display" style="color:var(--hint);margin-top:4px;font-size:13px"></div>
+  </div>
+  <div class="card glass">
+    <div class="card-title">Target URL</div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input id="dev-target-input" class="send-input glass glass-interactive" placeholder="http://localhost:3000" style="flex:1">
+      <button class="send-btn" id="dev-set-btn" onclick="setDevTarget()">Set</button>
+    </div>
+    <div style="margin-top:8px">
+      <button class="send-btn" id="dev-stop-btn" onclick="clearDevTarget()" style="background:var(--hint);width:100%">Stop</button>
+    </div>
+  </div>
+  <div id="dev-iframe-wrap" class="hidden" style="margin-top:12px">
+    <div class="card glass" style="padding:0;overflow:hidden">
+      <iframe id="dev-iframe" src="" style="width:100%;height:50vh;border:none;border-radius:16px"></iframe>
+    </div>
+  </div>
+</div>
+
 <div class="send-bar hidden" id="send-bar">
   <input id="skill-msg" class="send-input glass glass-interactive" placeholder="Message for skill...">
   <button class="send-btn" id="send-skill-btn" onclick="sendSkillCommand()">Send</button>
@@ -698,7 +722,7 @@ tg.ready();
 const API_BASE = location.origin;
 let initData = tg.initData || '';
 let selectedSkill = null;
-var lastSSE = { plan: 0, skills: 0, session: 0 };
+var lastSSE = { plan: 0, skills: 0, session: 0, dev: 0 };
 
 // Tab switching — re-fetch data unless SSE delivered recently
 const tabs = document.querySelectorAll('.tab');
@@ -725,6 +749,7 @@ tabs.forEach((tab, index) => {
     if (p === 'skills' && !fresh) loadSkills();
     if (p === 'session' && !fresh) loadSession();
     if (p === 'git') loadGit();
+    if (p === 'dev' && !fresh) loadDev();
   });
 });
 
@@ -1238,6 +1263,65 @@ function renderGitDetail(repo) {
   el.innerHTML = html;
 }
 
+// ── Dev tab ──
+function renderDevFromData(data) {
+  var label = document.getElementById('dev-status-label');
+  var display = document.getElementById('dev-target-display');
+  var iframeWrap = document.getElementById('dev-iframe-wrap');
+  var iframe = document.getElementById('dev-iframe');
+
+  if (data.active) {
+    label.textContent = 'Active';
+    label.style.color = 'var(--done)';
+    display.textContent = data.target;
+    iframeWrap.classList.remove('hidden');
+    var iframeSrc = location.origin + '/miniapp/dev/';
+    if (iframe.src !== iframeSrc) iframe.src = iframeSrc;
+  } else {
+    label.textContent = 'Inactive';
+    label.style.color = '';
+    display.textContent = '';
+    iframeWrap.classList.add('hidden');
+    iframe.src = '';
+  }
+}
+
+function loadDev() {
+  apiFetch('/miniapp/api/dev').then(renderDevFromData).catch(function() {});
+}
+
+async function setDevTarget() {
+  var input = document.getElementById('dev-target-input');
+  var btn = document.getElementById('dev-set-btn');
+  var target = input.value.trim();
+  if (!target) return;
+  try {
+    var res = await fetch(API_BASE + '/miniapp/api/dev?initData=' + encodeURIComponent(initData), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: target }),
+    });
+    var data = await res.json();
+    if (data.error) return;
+    renderDevFromData(data);
+    flashSent(btn);
+  } catch(e) {}
+}
+
+async function clearDevTarget() {
+  var btn = document.getElementById('dev-stop-btn');
+  try {
+    var res = await fetch(API_BASE + '/miniapp/api/dev?initData=' + encodeURIComponent(initData), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: '' }),
+    });
+    var data = await res.json();
+    renderDevFromData(data);
+    flashSent(btn);
+  } catch(e) {}
+}
+
 // ── SSE real-time updates ──
 var eventSource = null;
 
@@ -1258,6 +1342,9 @@ function connectSSE() {
   });
   eventSource.addEventListener('skills', function(e) {
     try { lastSSE.skills = Date.now(); renderSkillsFromData(JSON.parse(e.data)); } catch(err) {}
+  });
+  eventSource.addEventListener('dev', function(e) {
+    try { lastSSE.dev = Date.now(); renderDevFromData(JSON.parse(e.data)); } catch(err) {}
   });
   eventSource.onerror = function() {
     // Browser will auto-reconnect EventSource

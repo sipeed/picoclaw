@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -248,7 +249,7 @@ func TestSSE_InitialEvents(t *testing.T) {
 	events := make(map[string]bool)
 	deadline := time.After(2 * time.Second)
 
-	for len(events) < 3 {
+	for len(events) < 4 {
 		done := make(chan bool, 1)
 		go func() {
 			done <- scanner.Scan()
@@ -267,7 +268,7 @@ func TestSSE_InitialEvents(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"plan", "session", "skills"} {
+	for _, name := range []string{"plan", "session", "skills", "dev"} {
 		if !events[name] {
 			t.Errorf("missing initial event %q", name)
 		}
@@ -374,8 +375,8 @@ func TestSSE_NotifyDrivesSubsequentEvents(t *testing.T) {
 	defer resp.Body.Close()
 
 	scanner := bufio.NewScanner(resp.Body)
-	// Drain initial 3 events
-	drainEvents(t, scanner, 3, 2*time.Second)
+	// Drain initial 4 events (plan, session, skills, dev)
+	drainEvents(t, scanner, 4, 2*time.Second)
 
 	// Mutate state and notify — diff dedup should detect the change and send a new event
 	provider.mutated.Store(true)
@@ -403,8 +404,8 @@ func TestSSE_DiffDedupSuppressesDuplicate(t *testing.T) {
 	defer resp.Body.Close()
 
 	scanner := bufio.NewScanner(resp.Body)
-	// Drain initial events
-	drainEvents(t, scanner, 3, 2*time.Second)
+	// Drain initial events (plan, session, skills, dev)
+	drainEvents(t, scanner, 4, 2*time.Second)
 
 	// Notify with unchanged data — should produce zero new event lines
 	notifier.Notify()
@@ -456,6 +457,135 @@ func (m *mutatingDataProvider) GetGitRepos() []GitRepoSummary {
 }
 func (m *mutatingDataProvider) GetGitRepoDetail(name string) GitInfo {
 	return GitInfo{Name: name}
+}
+
+// ── Dev proxy tests ──
+
+func TestDevProxy_SetAndGet(t *testing.T) {
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+
+	// Initially empty
+	if got := h.GetDevTarget(); got != "" {
+		t.Errorf("expected empty target, got %q", got)
+	}
+
+	// Set a valid target
+	if err := h.SetDevTarget("http://localhost:3000"); err != nil {
+		t.Fatalf("SetDevTarget failed: %v", err)
+	}
+	if got := h.GetDevTarget(); got != "http://localhost:3000" {
+		t.Errorf("expected http://localhost:3000, got %q", got)
+	}
+
+	// Clear target
+	if err := h.SetDevTarget(""); err != nil {
+		t.Fatalf("SetDevTarget(\"\") failed: %v", err)
+	}
+	if got := h.GetDevTarget(); got != "" {
+		t.Errorf("expected empty target after clear, got %q", got)
+	}
+}
+
+func TestDevProxy_LocalhostOnly(t *testing.T) {
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+
+	// External host should be rejected
+	if err := h.SetDevTarget("http://example.com:3000"); err == nil {
+		t.Error("expected error for external host, got nil")
+	}
+
+	// 127.0.0.1 should be allowed
+	if err := h.SetDevTarget("http://127.0.0.1:8080"); err != nil {
+		t.Errorf("expected 127.0.0.1 to be allowed, got %v", err)
+	}
+
+	// ::1 should be allowed
+	if err := h.SetDevTarget("http://[::1]:9000"); err != nil {
+		t.Errorf("expected [::1] to be allowed, got %v", err)
+	}
+}
+
+func TestDevProxy_ReverseProxy(t *testing.T) {
+	// Create a backend server
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprintf(w, "path=%s", r.URL.Path)
+	}))
+	defer backend.Close()
+
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	// Set target to the test backend
+	if err := h.SetDevTarget(backend.URL); err != nil {
+		t.Fatalf("SetDevTarget failed: %v", err)
+	}
+
+	// Request through the proxy
+	req := httptest.NewRequest("GET", "/miniapp/dev/hello", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if got := w.Body.String(); got != "path=/hello" {
+		t.Errorf("expected path=/hello, got %q", got)
+	}
+}
+
+func TestDevProxy_503WhenNotConfigured(t *testing.T) {
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("GET", "/miniapp/dev/", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestDevProxy_APIEndpoint(t *testing.T) {
+	notifier := NewStateNotifier()
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	initData := testInitData()
+
+	// GET — initially inactive
+	resp, err := http.Get(ts.URL + "/miniapp/api/dev?initData=" + url.QueryEscape(initData))
+	if err != nil {
+		t.Fatalf("GET failed: %v", err)
+	}
+	defer resp.Body.Close()
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result["active"] != false {
+		t.Errorf("expected active=false, got %v", result["active"])
+	}
+
+	// POST — set target
+	body := strings.NewReader(`{"target":"http://localhost:4000"}`)
+	resp2, err := http.Post(ts.URL+"/miniapp/api/dev?initData="+url.QueryEscape(initData), "application/json", body)
+	if err != nil {
+		t.Fatalf("POST failed: %v", err)
+	}
+	defer resp2.Body.Close()
+	var result2 map[string]any
+	json.NewDecoder(resp2.Body).Decode(&result2)
+	if result2["active"] != true {
+		t.Errorf("expected active=true after set, got %v", result2["active"])
+	}
+	if result2["target"] != "http://localhost:4000" {
+		t.Errorf("expected target=http://localhost:4000, got %v", result2["target"])
+	}
 }
 
 // drainEvents reads SSE event lines until it collects `want` distinct event names or times out.

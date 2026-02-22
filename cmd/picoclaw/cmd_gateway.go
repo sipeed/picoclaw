@@ -238,6 +238,11 @@ func gatewayCmd() {
 			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token, miniappNotifier)
 			agentLoop.OnStateChange = miniappNotifier.Notify
 			handler.RegisterRoutes(healthServer.Mux())
+
+			// Register dev preview tool for all agents
+			devPreviewTool := tools.NewDevPreviewTool(handler)
+			agentLoop.RegisterTool(devPreviewTool)
+
 			fmt.Printf("✓ Mini App registered at %s\n", webAppURL)
 		}
 	}
