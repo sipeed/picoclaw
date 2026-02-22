@@ -87,6 +87,7 @@ type AgentLoop struct {
 	sessionLocks     sync.Map // sessionKey → *sessionSemaphore
 	activeTasks      sync.Map // sessionKey → *activeTask
 	sessions         *SessionTracker
+	OnStateChange    func() // called on plan/session/skills mutations
 }
 
 // processOptions configures how a message is processed
@@ -139,6 +140,12 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		fallback:      fallbackChain,
 		providerCache: providerCache,
 		sessions:      NewSessionTracker(),
+	}
+}
+
+func (al *AgentLoop) notifyStateChange() {
+	if al.OnStateChange != nil {
+		al.OnStateChange()
 	}
 }
 
@@ -865,6 +872,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			}
 		}
 	}
+
+	al.notifyStateChange()
 
 	// 5b. Interview staleness detection: compare MEMORY.md size after iteration.
 	if agent.ContextBuilder.GetPlanStatus() == "interviewing" {
@@ -2327,6 +2336,9 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 
 	case "/plan":
 		resp, handled := al.handlePlanCommand(args)
+		if handled {
+			al.notifyStateChange()
+		}
 		return resp, handled
 	}
 
@@ -2551,9 +2563,9 @@ func isPlanPreExecution(status string) bool {
 func isToolAllowedDuringInterview(toolName string, args map[string]interface{}) bool {
 	norm := tools.NormalizeToolName(toolName)
 
-	// Read-type tools: always allowed
+	// Read-type tools and communication: always allowed
 	switch norm {
-	case "readfile", "listdir", "websearch", "webfetch":
+	case "readfile", "listdir", "websearch", "webfetch", "message":
 		return true
 	}
 
@@ -2609,6 +2621,7 @@ func (al *AgentLoop) expandPlanCommand(msg bus.InboundMessage) (expanded string,
 	if err := agent.ContextBuilder.WriteMemory(seed); err != nil {
 		return "", "", false
 	}
+	al.notifyStateChange()
 
 	// Expanded: the task description goes to LLM.
 	// The system prompt already contains the interview guide.

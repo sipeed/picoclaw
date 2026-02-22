@@ -1,6 +1,7 @@
 package miniapp
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"embed"
@@ -12,6 +13,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/stats"
@@ -67,19 +70,60 @@ type CommandSender interface {
 	SendCommand(senderID, chatID, command string)
 }
 
+// StateNotifier broadcasts state-change signals to SSE subscribers.
+type StateNotifier struct {
+	mu   sync.Mutex
+	subs map[chan struct{}]struct{}
+}
+
+// NewStateNotifier creates a new StateNotifier.
+func NewStateNotifier() *StateNotifier {
+	return &StateNotifier{subs: make(map[chan struct{}]struct{})}
+}
+
+// Subscribe returns a channel that receives a signal on each state change.
+func (n *StateNotifier) Subscribe() chan struct{} {
+	ch := make(chan struct{}, 1)
+	n.mu.Lock()
+	n.subs[ch] = struct{}{}
+	n.mu.Unlock()
+	return ch
+}
+
+// Unsubscribe removes a subscriber channel.
+func (n *StateNotifier) Unsubscribe(ch chan struct{}) {
+	n.mu.Lock()
+	delete(n.subs, ch)
+	n.mu.Unlock()
+}
+
+// Notify sends a signal to all subscribers, coalescing rapid notifications.
+func (n *StateNotifier) Notify() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for ch := range n.subs {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
 // Handler serves the Mini App HTML and API endpoints.
 type Handler struct {
 	provider DataProvider
 	sender   CommandSender
 	botToken string
+	notifier *StateNotifier
 }
 
 // NewHandler creates a new Mini App handler.
-func NewHandler(provider DataProvider, sender CommandSender, botToken string) *Handler {
+func NewHandler(provider DataProvider, sender CommandSender, botToken string, notifier *StateNotifier) *Handler {
 	return &Handler{
 		provider: provider,
 		sender:   sender,
 		botToken: botToken,
+		notifier: notifier,
 	}
 }
 
@@ -91,6 +135,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/session", h.requireAuth(h.apiSession))
 	mux.HandleFunc("/miniapp/api/sessions", h.requireAuth(h.apiSessions))
 	mux.HandleFunc("/miniapp/api/command", h.requireAuth(h.apiCommand))
+	mux.HandleFunc("/miniapp/api/events", h.requireAuth(h.apiEvents))
 }
 
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
@@ -202,6 +247,55 @@ func extractUserFromInitData(initData string) (userID, chatID string) {
 	id := fmt.Sprintf("%d", user.ID)
 	// For Mini App commands, chatID = userID (private chat)
 	return id, id
+}
+
+func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, `{"error":"streaming not supported"}`, http.StatusInternalServerError)
+		return
+	}
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	ch := h.notifier.Subscribe()
+	defer h.notifier.Unsubscribe(ch)
+
+	var lastPlan, lastSession, lastSkills []byte
+
+	// Send initial state immediately
+	sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
+	sendSSEIfChanged(w, flusher, "session",
+		map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions()},
+		&lastSession)
+	sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ch:
+			sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
+			sendSSEIfChanged(w, flusher, "session",
+				map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions()},
+				&lastSession)
+			sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
+		}
+	}
+}
+
+func sendSSEIfChanged(w http.ResponseWriter, f http.Flusher, event string, v any, last *[]byte) {
+	data, _ := json.Marshal(v)
+	if !bytes.Equal(data, *last) {
+		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
+		f.Flush()
+		*last = data
+	}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

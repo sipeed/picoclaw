@@ -1391,6 +1391,9 @@ func TestIsToolAllowedDuringInterview_FuzzyNames(t *testing.T) {
 		{"listdir", nil, true},
 		{"websearch", nil, true},
 		{"webfetch", nil, true},
+		// Message tool — allowed (needed for interview questions)
+		{"message", nil, true},
+		{"Message", nil, true},
 		// Write to MEMORY.md — allowed
 		{"edit_file", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
 		{"editfile", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
