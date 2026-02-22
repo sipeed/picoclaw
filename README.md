@@ -42,11 +42,12 @@
 > [!CAUTION]
 > **🚨 SECURITY & OFFICIAL CHANNELS / 安全声明**
 >
-> - **NO CRYPTO:** PicoClaw has **NO** official token/coin. All claims on `pump.fun` or other trading platforms are **SCAMS**.
-> - **OFFICIAL DOMAIN:** The **ONLY** official website is **[picoclaw.io](https://picoclaw.io)**, and company website is **[sipeed.com](https://sipeed.com)**
-> - **Warning:** Many `.ai/.org/.com/.net/...` domains are registered by third parties.
-> - **Warning:** picoclaw is in early development now and may have unresolved network security issues. Do not deploy to production environments before the v1.0 release.
-> - **Note:** picoclaw has recently merged a lot of PRs, which may result in a larger memory footprint (10–20MB) in the latest versions. We plan to prioritize resource optimization as soon as the current feature set reaches a stable state.
+> * **NO CRYPTO:** PicoClaw has **NO** official token/coin. All claims on `pump.fun` or other trading platforms are **SCAMS**.
+>
+> * **OFFICIAL DOMAIN:** The **ONLY** official website is **[picoclaw.io](https://picoclaw.io)**, and company website is **[sipeed.com](https://sipeed.com)**
+> * **Warning:** Many `.ai/.org/.com/.net/...` domains are registered by third parties.
+> * **Warning:** picoclaw is in early development now and may have unresolved network security issues. Do not deploy to production environments before the v1.0 releas\*.
+> * **Note:** picoclaw has recently merged a lot of PRs, which may result in a larger memory footprint (10–20MB) in the latest versions. We plan to prioritize resource optimization as soon as the current feature set reaches a stable state.
 
 ## 📢 News
 
@@ -245,15 +246,15 @@ picoclaw onboard
       }
     }
   }
-}
+*
 ```
 
 > **New**: The `model_list` configuration format allows zero-code provider addition. See [Model Configuration](#model-configuration-model_list) for details.
 
 **3. Get API Keys**
 
-- **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-- **Web Search** (optional): [Brave Search](https://brave.com/search/api) - Free tier available (2000 requests/month)
+* **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+* **Web Search** (optional): [Brave Search](https://brave.com/search/api) - Free tier available (2000 requests/month)
 
 > **Note**: See `config.example.json` for a complete configuration template.
 
@@ -285,9 +286,9 @@ Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
 
 **1. Create a bot**
 
-- Open Telegram, search `@BotFather`
-- Send `/newbot`, follow prompts
-- Copy the token
+* Open Telegram, search `@BotFather`
+* Send `/newbot`, follow prompts
+* Copy the token
 
 **2. Configure**
 
@@ -318,19 +319,18 @@ picoclaw gateway
 
 **1. Create a bot**
 
-- Go to <https://discord.com/developers/applications>
-- Create an application → Bot → Add Bot
-- Copy the bot token
+* Go to <https://discord.com/developers/applications>
+* Create an application → Bot → Add Bot
+* Copy the bot token
 
 **2. Enable intents**
 
-- In the Bot settings, enable **MESSAGE CONTENT INTENT**
-- (Optional) Enable **SERVER MEMBERS INTENT** if you plan to use allow lists based on member data
+* In the Bot settings, enable **MESSAGE CONTENT INTENT**
+* (Optional) Enable **SERVER MEMBERS INTENT** if you plan to use allow lists based on member data
 
-**3. Get your User ID**
-
-- Discord Settings → Advanced → enable **Developer Mode**
-- Right-click your avatar → **Copy User ID**
+**3. Get your User ID***
+* Discord Settings → Advanced → enable **Developer Mode**
+* Right-click your avatar → **Copy User ID**
 
 **4. Configure**
 
@@ -349,10 +349,10 @@ picoclaw gateway
 
 **5. Invite the bot**
 
-- OAuth2 → URL Generator
-- Scopes: `bot`
-- Bot Permissions: `Send Messages`, `Read Message History`
-- Open the generated invite URL and add the bot to your server
+* OAuth2 → URL Generator
+* Scopes: `bot`
+* Bot Permissions: `Send Messages`, `Read Message History`
+* Open the generated invite URL and add the bot to your server
 
 **Optional: Mention-only mode**
 
@@ -404,9 +404,9 @@ picoclaw gateway
 
 **1. Create a bot**
 
-- Go to [Open Platform](https://open.dingtalk.com/)
-- Create an internal app
-- Copy Client ID and Client Secret
+* Go to [Open Platform](https://open.dingtalk.com/)
+* Create an internal app
+* Copy Client ID and Client Secret
 
 **2. Configure**
 
@@ -429,8 +429,7 @@ picoclaw gateway
 
 ```bash
 picoclaw gateway
-```
-
+```*
 </details>
 
 <details>
@@ -497,8 +496,8 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 
 **1. Create a bot**
 
-- Go to WeCom Admin Console → Group Chat → Add Group Bot
-- Copy the webhook URL (format: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+* Go to WeCom Admin Console → Group Chat → Add Group Bot
+* Copy the webhook URL (format: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
 
 **2. Configure**
 
@@ -523,15 +522,14 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 
 **1. Create an app**
 
-- Go to WeCom Admin Console → App Management → Create App
-- Copy **AgentId** and **Secret**
-- Go to "My Company" page, copy **CorpID**
-
+* Go to WeCom Admin Console → App Management → Create App
+* Copy **AgentId** and **\*ecret**
+* Go to "My Company" page, copy **CorpID***
 **2. Configure receive message**
 
-- In App details, click "Receive Message" → "Set API"
-- Set URL to `http://your-server:18792/webhook/wecom-app`
-- Generate **Token** and **EncodingAESKey**
+* In App details, click "Receive Message" → "Set API"
+* Set URL to `http://your-server:18792/webhook/wecom-app`
+* Generate **Token** and **EncodingAESKey**
 
 **3. Configure**
 
@@ -632,12 +630,12 @@ When `restrict_to_workspace: true`, the following tools are sandboxed:
 
 Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous commands:
 
-- `rm -rf`, `del /f`, `rmdir /s` — Bulk deletion
-- `format`, `mkfs`, `diskpart` — Disk formatting
-- `dd if=` — Disk imaging
-- Writing to `/dev/sd[a-z]` — Direct disk writes
-- `shutdown`, `reboot`, `poweroff` — System shutdown
-- Fork bomb `:(){ :|:& };:`
+* `rm -rf`, `del /f`, `rmdir /s` — Bulk deletion
+* `format`, `mkfs`, `diskpart` — Disk formatting
+* `dd if=` — Disk imaging
+* Writing to `/dev/sd[a-z]` — Direct disk writes
+* `shutdown`, `reboot`, `poweroff` — System shutdown
+* Fork bomb `:(){ :|:& };:`
 
 #### Error Examples
 
@@ -763,8 +761,8 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 
 **Environment variables:**
 
-- `PICOCLAW_HEARTBEAT_ENABLED=false` to disable
-- `PICOCLAW_HEARTBEAT_INTERVAL=60` to change interval
+* `PICOCLAW_HEARTBEAT_ENABLED=false` to disable
+* `PICOCLAW_HEARTBEAT_INTERVAL=60` to change interval
 
 ### Providers
 
@@ -986,12 +984,12 @@ PicoClaw routes providers by protocol family:
 
 This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
 
-<details>
+<details*
 <summary><b>Zhipu</b></summary>
 
 **1. Get API key and base URL**
 
-- Get [API key](https://bigmodel.cn/usercenter/proj-mgmt/apikeys)
+* Get [API key](https://bigmodel.cn/usercenter/proj-mgmt/apikeys)
 
 **2. Configure**
 
@@ -1111,9 +1109,9 @@ picoclaw agent -m "Hello"
 
 PicoClaw supports scheduled reminders and recurring tasks through the `cron` tool:
 
-- **One-time reminders**: "Remind me in 10 minutes" → triggers once after 10min
-- **Recurring tasks**: "Remind me every 2 hours" → triggers every 2 hours
-- **Cron expressions**: "Remind me at 9am daily" → uses cron expression
+* **One-time reminders**: "Remind me in 10 minutes" → triggers once after 10min
+* **Recurring tasks**: "Remind me every 2 hours" → triggers every 2 hours
+* **Cron expressions**: "Remind me at 9am daily" → uses cron expression
 
 Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
 
