@@ -298,7 +298,9 @@ func (c *OneBotChannel) sendAPIRequest(action string, params any, timeout time.D
 	}
 
 	c.writeMu.Lock()
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	err = conn.WriteMessage(websocket.TextMessage, data)
+	_ = conn.SetWriteDeadline(time.Time{})
 	c.writeMu.Unlock()
 
 	if err != nil {
@@ -354,8 +356,7 @@ func (c *OneBotChannel) Stop(ctx context.Context) error {
 	}
 
 	c.pendingMu.Lock()
-	for echo, ch := range c.pending {
-		close(ch)
+	for echo := range c.pending {
 		delete(c.pending, echo)
 	}
 	c.pendingMu.Unlock()
@@ -402,7 +403,9 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	}
 
 	c.writeMu.Lock()
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	err = conn.WriteMessage(websocket.TextMessage, data)
+	_ = conn.SetWriteDeadline(time.Time{})
 	c.writeMu.Unlock()
 
 	if err != nil {

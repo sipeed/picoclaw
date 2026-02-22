@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -21,6 +21,8 @@ type WhatsAppChannel struct {
 	conn      *websocket.Conn
 	config    config.WhatsAppConfig
 	url       string
+	ctx       context.Context
+	cancel    context.CancelFunc
 	mu        sync.Mutex
 	connected bool
 }
@@ -37,13 +39,18 @@ func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsA
 }
 
 func (c *WhatsAppChannel) Start(ctx context.Context) error {
-	log.Printf("Starting WhatsApp channel connecting to %s...", c.url)
+	logger.InfoCF("whatsapp", "Starting WhatsApp channel", map[string]any{
+		"bridge_url": c.url,
+	})
+
+	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	dialer := websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
 
 	conn, _, err := dialer.Dial(c.url, nil)
 	if err != nil {
+		c.cancel()
 		return fmt.Errorf("failed to connect to WhatsApp bridge: %w", err)
 	}
 
@@ -53,22 +60,29 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 	c.mu.Unlock()
 
 	c.SetRunning(true)
-	log.Println("WhatsApp channel connected")
+	logger.InfoC("whatsapp", "WhatsApp channel connected")
 
-	go c.listen(ctx)
+	go c.listen()
 
 	return nil
 }
 
 func (c *WhatsAppChannel) Stop(ctx context.Context) error {
-	log.Println("Stopping WhatsApp channel...")
+	logger.InfoC("whatsapp", "Stopping WhatsApp channel...")
+
+	// Cancel context first to signal listen goroutine to exit
+	if c.cancel != nil {
+		c.cancel()
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.conn != nil {
 		if err := c.conn.Close(); err != nil {
-			log.Printf("Error closing WhatsApp connection: %v", err)
+			logger.ErrorCF("whatsapp", "Error closing WhatsApp connection", map[string]any{
+				"error": err.Error(),
+			})
 		}
 		c.conn = nil
 	}
@@ -98,17 +112,20 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
+	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		_ = c.conn.SetWriteDeadline(time.Time{})
 		return fmt.Errorf("failed to send message: %w", err)
 	}
+	_ = c.conn.SetWriteDeadline(time.Time{})
 
 	return nil
 }
 
-func (c *WhatsAppChannel) listen(ctx context.Context) {
+func (c *WhatsAppChannel) listen() {
 	for {
 		select {
-		case <-ctx.Done():
+		case <-c.ctx.Done():
 			return
 		default:
 			c.mu.Lock()
@@ -122,14 +139,18 @@ func (c *WhatsAppChannel) listen(ctx context.Context) {
 
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Printf("WhatsApp read error: %v", err)
+				logger.ErrorCF("whatsapp", "WhatsApp read error", map[string]any{
+					"error": err.Error(),
+				})
 				time.Sleep(2 * time.Second)
 				continue
 			}
 
 			var msg map[string]any
 			if err := json.Unmarshal(message, &msg); err != nil {
-				log.Printf("Failed to unmarshal WhatsApp message: %v", err)
+				logger.ErrorCF("whatsapp", "Failed to unmarshal WhatsApp message", map[string]any{
+					"error": err.Error(),
+				})
 				continue
 			}
 
@@ -187,7 +208,10 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]any) {
 		peer = bus.Peer{Kind: "group", ID: chatID}
 	}
 
-	log.Printf("WhatsApp message from %s: %s...", senderID, utils.Truncate(content, 50))
+	logger.InfoCF("whatsapp", "WhatsApp message received", map[string]any{
+		"sender":  senderID,
+		"preview": utils.Truncate(content, 50),
+	})
 
 	c.HandleMessage(peer, messageID, senderID, chatID, content, mediaPaths, metadata)
 }
