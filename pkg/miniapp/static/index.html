@@ -594,6 +594,45 @@
   .git-status-d { color: #ef5350; }
   .git-status-u { color: var(--hint); }
 
+  .git-repo-item {
+    padding: 14px 14px 14px 16px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .git-repo-item:active { transform: scale(0.98); }
+  .git-repo-body { flex: 1; min-width: 0; }
+  .git-repo-name { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+  .git-repo-branch {
+    font-size: 13px;
+    color: var(--hint);
+    font-family: monospace;
+  }
+  .git-repo-arrow {
+    color: var(--hint);
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  .git-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--btn);
+    font-size: 14px;
+    font-weight: 600;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px 0;
+    margin-bottom: 8px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .git-back-btn:active { opacity: 0.6; }
+
 </style>
 </head>
 <body>
@@ -602,10 +641,10 @@
   <div class="tabs-inner">
     <div class="tab-indicator"></div>
     <button class="tab active" data-panel="plan">Plan</button>
+    <button class="tab" data-panel="git">Git</button>
     <button class="tab" data-panel="skills">Skills</button>
     <button class="tab" data-panel="session">Session</button>
     <button class="tab" data-panel="config">Config</button>
-    <button class="tab" data-panel="git">Git</button>
   </div>
 </div>
 
@@ -1117,13 +1156,16 @@ function escapeAttr(s) {
 }
 
 // ── Git tab ──
+var gitSelectedRepo = null;
+
 function loadGit() {
-  return loadTab('git-loading', 'git-content', 'git log',
+  gitSelectedRepo = null;
+  return loadTab('git-loading', 'git-content', 'repositories',
     function() { return apiFetch('/miniapp/api/git'); },
-    renderGitFromData);
+    renderGitRepos);
 }
 
-function renderGitFromData(repos) {
+function renderGitRepos(repos) {
   var loading = document.getElementById('git-loading');
   var el = document.getElementById('git-content');
   loading.classList.add('hidden');
@@ -1134,35 +1176,64 @@ function renderGitFromData(repos) {
     return;
   }
 
-  var html = '';
-  repos.forEach(function(repo) {
-    html += '<div class="card glass"><div class="card-title">' +
-      escapeHtml(repo.name) + ' &mdash; ' + escapeHtml(repo.branch || '?') + '</div>';
+  el.innerHTML = repos.map(function(r) {
+    return '<div class="git-repo-item glass glass-interactive" data-repo="' + escapeAttr(r.name) + '">' +
+      '<div class="git-repo-body">' +
+        '<div class="git-repo-name">' + escapeHtml(r.name) + '</div>' +
+        '<div class="git-repo-branch">' + escapeHtml(r.branch || '?') + '</div>' +
+      '</div>' +
+      '<span class="git-repo-arrow">\u203A</span>' +
+    '</div>';
+  }).join('');
+}
 
-    if (repo.modified && repo.modified.length > 0) {
-      html += '<div style="padding:4px 12px 8px;font-size:12px;color:var(--hint)">Changes (' + repo.modified.length + ')</div>';
-      repo.modified.forEach(function(f) {
-        html += '<div class="git-commit">' +
-          '<span class="git-status git-status-' + (f.status === '??' ? 'u' : f.status.toLowerCase()) + '">' + escapeHtml(f.status) + '</span>' +
-          '<span class="git-subject">' + escapeHtml(f.path) + '</span>' +
-          '</div>';
-      });
-    }
+document.getElementById('git-content').addEventListener('click', function(e) {
+  var item = e.target.closest('.git-repo-item');
+  if (!item) return;
+  loadGitDetail(item.dataset.repo);
+});
 
-    if (repo.commits && repo.commits.length > 0) {
-      html += '<div style="padding:4px 12px 8px;font-size:12px;color:var(--hint)">Commits</div>';
-      repo.commits.forEach(function(c) {
-        html += '<div class="git-commit">' +
-          '<span class="git-hash">' + escapeHtml(c.hash) + '</span>' +
-          '<span class="git-subject">' + escapeHtml(c.subject) + '</span>' +
-          '<span class="git-meta">' + escapeHtml(c.date) + '</span>' +
-          '</div>';
-      });
-    } else {
-      html += '<div style="padding:12px;color:var(--hint)">No commits found.</div>';
-    }
-    html += '</div>';
-  });
+function loadGitDetail(name) {
+  gitSelectedRepo = name;
+  return loadTab('git-loading', 'git-content', name,
+    function() { return apiFetch('/miniapp/api/git?repo=' + encodeURIComponent(name)); },
+    renderGitDetail);
+}
+
+function renderGitDetail(repo) {
+  var loading = document.getElementById('git-loading');
+  var el = document.getElementById('git-content');
+  loading.classList.add('hidden');
+  el.classList.remove('hidden');
+
+  var html = '<button class="git-back-btn" onclick="loadGit()">\u2190 ' + escapeHtml(repo.name || gitSelectedRepo) + '</button>';
+
+  html += '<div class="card glass"><div class="card-title">' +
+    escapeHtml(repo.name) + ' &mdash; ' + escapeHtml(repo.branch || '?') + '</div>';
+
+  if (repo.modified && repo.modified.length > 0) {
+    html += '<div style="padding:4px 12px 8px;font-size:12px;color:var(--hint)">Changes (' + repo.modified.length + ')</div>';
+    repo.modified.forEach(function(f) {
+      html += '<div class="git-commit">' +
+        '<span class="git-status git-status-' + (f.status === '??' ? 'u' : f.status.toLowerCase()) + '">' + escapeHtml(f.status) + '</span>' +
+        '<span class="git-subject">' + escapeHtml(f.path) + '</span>' +
+        '</div>';
+    });
+  }
+
+  if (repo.commits && repo.commits.length > 0) {
+    html += '<div style="padding:4px 12px 8px;font-size:12px;color:var(--hint)">Commits</div>';
+    repo.commits.forEach(function(c) {
+      html += '<div class="git-commit">' +
+        '<span class="git-hash">' + escapeHtml(c.hash) + '</span>' +
+        '<span class="git-subject">' + escapeHtml(c.subject) + '</span>' +
+        '<span class="git-meta">' + escapeHtml(c.date) + '</span>' +
+        '</div>';
+    });
+  } else {
+    html += '<div style="padding:12px;color:var(--hint)">No commits found.</div>';
+  }
+  html += '</div>';
 
   el.innerHTML = html;
 }
