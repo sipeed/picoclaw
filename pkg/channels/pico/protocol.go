@@ -4,12 +4,12 @@ import "time"
 
 // Protocol message types.
 const (
-	// Client → Server
+	// TypeMessageSend is sent from client to server.
 	TypeMessageSend = "message.send"
 	TypeMediaSend   = "media.send"
 	TypePing        = "ping"
 
-	// Server → Client
+	// TypeMessageCreate is sent from server to client.
 	TypeMessageCreate = "message.create"
 	TypeMessageUpdate = "message.update"
 	TypeMediaCreate   = "media.create"
