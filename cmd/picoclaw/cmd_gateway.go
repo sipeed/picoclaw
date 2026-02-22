@@ -233,7 +233,7 @@ func gatewayCmd() {
 
 		if webAppURL != "" {
 			provider := &agentLoopDataProvider{loop: agentLoop, workspace: cfg.WorkspacePath()}
-			sender := &telegramCommandSender{bus: msgBus}
+			sender := &telegramCommandSender{bus: msgBus, channelManager: channelManager}
 			miniappNotifier = miniapp.NewStateNotifier()
 			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token, miniappNotifier)
 			agentLoop.OnStateChange = miniappNotifier.Notify
@@ -507,10 +507,21 @@ func collectGitRepoInfo(gitRoot string) miniapp.GitInfo {
 
 // telegramCommandSender injects Mini App commands into the message bus.
 type telegramCommandSender struct {
-	bus *bus.MessageBus
+	bus            *bus.MessageBus
+	channelManager *channels.Manager
 }
 
 func (s *telegramCommandSender) SendCommand(senderID, chatID, command string) {
+	// Create a placeholder so status messages (streaming preview, tool progress)
+	// are visible to the user while the LLM processes the request.
+	if s.channelManager != nil {
+		if ch, ok := s.channelManager.GetChannel("telegram"); ok {
+			if tc, ok := ch.(*channels.TelegramChannel); ok {
+				tc.CreatePlaceholder(context.Background(), chatID)
+			}
+		}
+	}
+
 	s.bus.PublishInbound(bus.InboundMessage{
 		Channel:  "telegram",
 		SenderID: senderID,
