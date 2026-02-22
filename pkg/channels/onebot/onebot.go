@@ -97,7 +97,9 @@ type oneBotMessageSegment struct {
 }
 
 func NewOneBotChannel(cfg config.OneBotConfig, messageBus *bus.MessageBus) (*OneBotChannel, error) {
-	base := channels.NewBaseChannel("onebot", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("onebot", cfg, messageBus, cfg.AllowFrom,
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+	)
 
 	const dedupSize = 1024
 	return &OneBotChannel{
@@ -996,8 +998,8 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 			metadata["sender_name"] = sender.Nickname
 		}
 
-		triggered, strippedContent := c.checkGroupTrigger(content, isBotMentioned)
-		if !triggered {
+		respond, strippedContent := c.ShouldRespondInGroup(isBotMentioned, content)
+		if !respond {
 			logger.DebugCF("onebot", "Group message ignored (no trigger)", map[string]any{
 				"sender":       senderID,
 				"group":        groupIDStr,
@@ -1068,24 +1070,4 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(runes[:n]) + "..."
-}
-
-func (c *OneBotChannel) checkGroupTrigger(
-	content string,
-	isBotMentioned bool,
-) (triggered bool, strippedContent string) {
-	if isBotMentioned {
-		return true, strings.TrimSpace(content)
-	}
-
-	for _, prefix := range c.config.GroupTriggerPrefix {
-		if prefix == "" {
-			continue
-		}
-		if strings.HasPrefix(content, prefix) {
-			return true, strings.TrimSpace(strings.TrimPrefix(content, prefix))
-		}
-	}
-
-	return false, content
 }

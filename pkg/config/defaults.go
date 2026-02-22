@@ -80,6 +80,7 @@ func DefaultConfig() *Config {
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
 				AllowFrom:          FlexibleStringSlice{},
+				GroupTrigger:       GroupTriggerConfig{MentionOnly: true},
 			},
 			OneBot: OneBotConfig{
 				Enabled:            false,

@@ -32,7 +32,9 @@ type FeishuChannel struct {
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
-	base := channels.NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom,
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+	)
 
 	return &FeishuChannel{
 		BaseChannel: base,
@@ -173,6 +175,12 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		peer = bus.Peer{Kind: "direct", ID: senderID}
 	} else {
 		peer = bus.Peer{Kind: "group", ID: chatID}
+		// In group chats, apply unified group trigger filtering
+		respond, cleaned := c.ShouldRespondInGroup(false, content)
+		if !respond {
+			return nil
+		}
+		content = cleaned
 	}
 
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{

@@ -59,7 +59,10 @@ func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINECha
 		return nil, fmt.Errorf("line channel_secret and channel_access_token are required")
 	}
 
-	base := channels.NewBaseChannel("line", cfg, messageBus, cfg.AllowFrom, channels.WithMaxMessageLength(5000))
+	base := channels.NewBaseChannel("line", cfg, messageBus, cfg.AllowFrom,
+		channels.WithMaxMessageLength(5000),
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+	)
 
 	return &LINEChannel{
 		BaseChannel: base,
@@ -262,14 +265,6 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 		return
 	}
 
-	// In group chats, only respond when the bot is mentioned
-	if isGroup && !c.isBotMentioned(msg) {
-		logger.DebugCF("line", "Ignoring group message without mention", map[string]any{
-			"chat_id": chatID,
-		})
-		return
-	}
-
 	// Store reply token for later use
 	if event.ReplyToken != "" {
 		c.replyTokens.Store(chatID, replyTokenEntry{
@@ -337,6 +332,19 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 
 	if strings.TrimSpace(content) == "" {
 		return
+	}
+
+	// In group chats, apply unified group trigger filtering
+	if isGroup {
+		isMentioned := c.isBotMentioned(msg)
+		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
+		if !respond {
+			logger.DebugCF("line", "Ignoring group message by group trigger", map[string]any{
+				"chat_id": chatID,
+			})
+			return
+		}
+		content = cleaned
 	}
 
 	metadata := map[string]string{

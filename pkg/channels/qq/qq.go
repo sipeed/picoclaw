@@ -32,7 +32,9 @@ type QQChannel struct {
 }
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
-	base := channels.NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom,
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+	)
 
 	return &QQChannel{
 		BaseChannel:  base,
@@ -203,6 +205,13 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			logger.DebugC("qq", "Received empty group message, ignoring")
 			return nil
 		}
+
+		// GroupAT event means bot is always mentioned; apply group trigger filtering
+		respond, cleaned := c.ShouldRespondInGroup(true, content)
+		if !respond {
+			return nil
+		}
+		content = cleaned
 
 		logger.InfoCF("qq", "Received group AT message", map[string]any{
 			"sender": senderID,

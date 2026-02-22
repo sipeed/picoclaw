@@ -38,7 +38,10 @@ func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (
 		return nil, fmt.Errorf("dingtalk client_id and client_secret are required")
 	}
 
-	base := channels.NewBaseChannel("dingtalk", cfg, messageBus, cfg.AllowFrom, channels.WithMaxMessageLength(20000))
+	base := channels.NewBaseChannel("dingtalk", cfg, messageBus, cfg.AllowFrom,
+		channels.WithMaxMessageLength(20000),
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+	)
 
 	return &DingTalkChannel{
 		BaseChannel:  base,
@@ -165,6 +168,12 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		peer = bus.Peer{Kind: "direct", ID: senderID}
 	} else {
 		peer = bus.Peer{Kind: "group", ID: data.ConversationId}
+		// In group chats, apply unified group trigger filtering
+		respond, cleaned := c.ShouldRespondInGroup(false, content)
+		if !respond {
+			return nil, nil
+		}
+		content = cleaned
 	}
 
 	logger.DebugCF("dingtalk", "Received message", map[string]any{

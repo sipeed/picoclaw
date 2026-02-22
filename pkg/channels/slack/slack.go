@@ -47,7 +47,10 @@ func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*Slack
 
 	socketClient := socketmode.New(api)
 
-	base := channels.NewBaseChannel("slack", cfg, messageBus, cfg.AllowFrom, channels.WithMaxMessageLength(40000))
+	base := channels.NewBaseChannel("slack", cfg, messageBus, cfg.AllowFrom,
+		channels.WithMaxMessageLength(40000),
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+	)
 
 	return &SlackChannel{
 		BaseChannel:  base,
@@ -278,6 +281,15 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 
 	content := ev.Text
 	content = c.stripBotMention(content)
+
+	// In non-DM channels, apply group trigger filtering
+	if !strings.HasPrefix(channelID, "D") {
+		respond, cleaned := c.ShouldRespondInGroup(false, content)
+		if !respond {
+			return
+		}
+		content = cleaned
+	}
 
 	var mediaPaths []string
 

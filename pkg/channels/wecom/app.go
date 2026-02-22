@@ -122,7 +122,10 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 		return nil, fmt.Errorf("wecom_app corp_id, corp_secret and agent_id are required")
 	}
 
-	base := channels.NewBaseChannel("wecom_app", cfg, messageBus, cfg.AllowFrom, channels.WithMaxMessageLength(2048))
+	base := channels.NewBaseChannel("wecom_app", cfg, messageBus, cfg.AllowFrom,
+		channels.WithMaxMessageLength(2048),
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+	)
 
 	return &WeComAppChannel{
 		BaseChannel:   base,

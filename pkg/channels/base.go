@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 )
 
@@ -30,6 +31,11 @@ func WithMaxMessageLength(n int) BaseChannelOption {
 	return func(c *BaseChannel) { c.maxMessageLength = n }
 }
 
+// WithGroupTrigger sets the group trigger configuration for a channel.
+func WithGroupTrigger(gt config.GroupTriggerConfig) BaseChannelOption {
+	return func(c *BaseChannel) { c.groupTrigger = gt }
+}
+
 // MessageLengthProvider is an opt-in interface that channels implement
 // to advertise their maximum message length. The Manager uses this via
 // type assertion to decide whether to split outbound messages.
@@ -44,6 +50,7 @@ type BaseChannel struct {
 	name             string
 	allowList        []string
 	maxMessageLength int
+	groupTrigger     config.GroupTriggerConfig
 	mediaStore       media.MediaStore
 }
 
@@ -70,6 +77,46 @@ func NewBaseChannel(
 // A value of 0 means no limit.
 func (c *BaseChannel) MaxMessageLength() int {
 	return c.maxMessageLength
+}
+
+// ShouldRespondInGroup determines whether the bot should respond in a group chat.
+// Each channel is responsible for:
+//  1. Detecting isMentioned (platform-specific)
+//  2. Stripping bot mention from content (platform-specific)
+//  3. Calling this method to get the group response decision
+//
+// Logic:
+//   - If isMentioned → always respond
+//   - If mention_only configured and not mentioned → ignore
+//   - If prefixes configured → respond if content starts with any prefix (strip it)
+//   - If prefixes configured but no match and not mentioned → ignore
+//   - Otherwise (no group_trigger configured) → respond to all (permissive default)
+func (c *BaseChannel) ShouldRespondInGroup(isMentioned bool, content string) (bool, string) {
+	gt := c.groupTrigger
+
+	// Mentioned → always respond
+	if isMentioned {
+		return true, strings.TrimSpace(content)
+	}
+
+	// mention_only → require mention
+	if gt.MentionOnly {
+		return false, content
+	}
+
+	// Prefix matching
+	if len(gt.Prefixes) > 0 {
+		for _, prefix := range gt.Prefixes {
+			if prefix != "" && strings.HasPrefix(content, prefix) {
+				return true, strings.TrimSpace(strings.TrimPrefix(content, prefix))
+			}
+		}
+		// Prefixes configured but none matched and not mentioned → ignore
+		return false, content
+	}
+
+	// No group_trigger configured → permissive (respond to all)
+	return true, strings.TrimSpace(content)
 }
 
 func (c *BaseChannel) Name() string {
