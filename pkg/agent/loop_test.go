@@ -521,6 +521,163 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 	}
 }
 
+// TestSafeSplitIndex verifies that safeSplitIndex never breaks tool_use/tool_result pairs.
+func TestSafeSplitIndex(t *testing.T) {
+	tests := []struct {
+		name      string
+		messages  []providers.Message
+		targetIdx int
+		wantIdx   int
+	}{
+		{
+			name: "no tool messages, split at target",
+			messages: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "hello"},
+				{Role: "user", Content: "bye"},
+			},
+			targetIdx: 1,
+			wantIdx:   1,
+		},
+		{
+			name: "target lands on tool result, skip forward",
+			messages: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{{ID: "1", Name: "exec"}}},
+				{Role: "tool", Content: "result1"},
+				{Role: "user", Content: "thanks"},
+			},
+			targetIdx: 2, // lands on tool result
+			wantIdx:   3, // skip past it
+		},
+		{
+			name: "target lands on first of two tool results, skip both",
+			messages: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{{ID: "1"}, {ID: "2"}}},
+				{Role: "tool", Content: "result1"},
+				{Role: "tool", Content: "result2"},
+				{Role: "user", Content: "thanks"},
+			},
+			targetIdx: 2,
+			wantIdx:   4,
+		},
+		{
+			name: "target on non-tool message, no adjustment",
+			messages: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "hello"},
+				{Role: "user", Content: "bye"},
+				{Role: "assistant", Content: "goodbye"},
+			},
+			targetIdx: 2,
+			wantIdx:   2,
+		},
+		{
+			name: "target on tool at end, back up to assistant",
+			messages: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{{ID: "1"}}},
+				{Role: "tool", Content: "result"},
+			},
+			targetIdx: 2, // tool at end
+			wantIdx:   1, // back up to include assistant+tool pair
+		},
+		{
+			name: "target beyond messages length",
+			messages: []providers.Message{
+				{Role: "user", Content: "hi"},
+			},
+			targetIdx: 5,
+			wantIdx:   1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := safeSplitIndex(tt.messages, tt.targetIdx)
+			if got != tt.wantIdx {
+				t.Errorf("safeSplitIndex(target=%d) = %d, want %d", tt.targetIdx, got, tt.wantIdx)
+			}
+		})
+	}
+}
+
+// TestSanitizeHistoryForProvider_MultipleToolResults verifies that consecutive
+// tool results from parallel tool calls are not dropped.
+func TestSanitizeHistoryForProvider_MultipleToolResults(t *testing.T) {
+	tests := []struct {
+		name     string
+		history  []providers.Message
+		wantLen  int
+		wantDesc string
+	}{
+		{
+			name: "single tool result kept",
+			history: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "exec"}}},
+				{Role: "tool", Content: "result1", ToolCallID: "call_1"},
+				{Role: "assistant", Content: "done"},
+			},
+			wantLen:  4,
+			wantDesc: "all messages kept",
+		},
+		{
+			name: "three consecutive tool results all kept",
+			history: []providers.Message{
+				{Role: "user", Content: "check endpoints"},
+				{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{
+					{ID: "call_1", Name: "web_fetch"},
+					{ID: "call_2", Name: "web_fetch"},
+					{ID: "call_3", Name: "web_fetch"},
+				}},
+				{Role: "tool", Content: `{"status":"ok"}`, ToolCallID: "call_1"},
+				{Role: "tool", Content: `{"status":"ok"}`, ToolCallID: "call_2"},
+				{Role: "tool", Content: `{"status":"ok"}`, ToolCallID: "call_3"},
+				{Role: "assistant", Content: "All endpoints healthy"},
+			},
+			wantLen:  6,
+			wantDesc: "all 3 tool results kept",
+		},
+		{
+			name: "orphaned leading tool message dropped",
+			history: []providers.Message{
+				{Role: "tool", Content: "orphan", ToolCallID: "call_0"},
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "hello"},
+			},
+			wantLen:  2,
+			wantDesc: "orphaned tool message dropped, user+assistant kept",
+		},
+		{
+			name: "tool result after non-toolcall assistant dropped",
+			history: []providers.Message{
+				{Role: "user", Content: "hi"},
+				{Role: "assistant", Content: "hello"},
+				{Role: "tool", Content: "orphan", ToolCallID: "call_0"},
+				{Role: "user", Content: "bye"},
+			},
+			wantLen:  3,
+			wantDesc: "orphaned tool result dropped",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeHistoryForProvider(tt.history)
+			if len(got) != tt.wantLen {
+				roles := make([]string, len(got))
+				for i, m := range got {
+					roles[i] = m.Role
+				}
+				t.Errorf("sanitizeHistoryForProvider() len = %d, want %d (%s); roles = %v",
+					len(got), tt.wantLen, tt.wantDesc, roles)
+			}
+		})
+	}
+}
+
 // failFirstMockProvider fails on the first N calls with a specific error
 type failFirstMockProvider struct {
 	failures    int

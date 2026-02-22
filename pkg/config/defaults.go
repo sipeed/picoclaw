@@ -15,6 +15,7 @@ func DefaultConfig() *Config {
 				Provider:            "",
 				Model:               "glm-4.7",
 				MaxTokens:           8192,
+				ContextWindow:       128000,
 				Temperature:         nil, // nil means use provider default
 				MaxToolIterations:   20,
 			},
@@ -302,6 +303,11 @@ func DefaultConfig() *Config {
 					MaxSize:    50,
 					TTLSeconds: 300,
 				},
+			},
+			Memory: MemoryConfig{
+				OllamaURL:      "http://localhost:11434",
+				EmbeddingModel: "nomic-embed-text",
+				AutoExtract:    true,
 			},
 		},
 		Heartbeat: HeartbeatConfig{

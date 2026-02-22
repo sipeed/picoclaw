@@ -175,6 +175,7 @@ type AgentDefaults struct {
 	ImageModel          string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
 	MaxTokens           int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	ContextWindow       int      `json:"context_window,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
 	Temperature         *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations   int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
@@ -449,6 +450,14 @@ type ToolsConfig struct {
 	Cron   CronToolsConfig   `json:"cron"`
 	Exec   ExecConfig        `json:"exec"`
 	Skills SkillsToolsConfig `json:"skills"`
+	Memory MemoryConfig      `json:"memory"`
+}
+
+// MemoryConfig controls the semantic memory system backed by vector embeddings.
+type MemoryConfig struct {
+	OllamaURL      string `json:"ollama_url"       env:"PICOCLAW_TOOLS_MEMORY_OLLAMA_URL"`
+	EmbeddingModel string `json:"embedding_model"  env:"PICOCLAW_TOOLS_MEMORY_EMBEDDING_MODEL"`
+	AutoExtract    bool   `json:"auto_extract"     env:"PICOCLAW_TOOLS_MEMORY_AUTO_EXTRACT"`
 }
 
 type SkillsToolsConfig struct {

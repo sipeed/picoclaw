@@ -16,11 +16,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"path/filepath"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -38,6 +41,7 @@ type AgentLoop struct {
 	summarizing    sync.Map
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
+	semanticStores map[string]memory.Store
 }
 
 // processOptions configures how a message is processed
@@ -55,8 +59,8 @@ type processOptions struct {
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
-	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
+	// Register shared tools to all agents (including memory tools)
+	stores := registerSharedTools(cfg, msgBus, registry, provider)
 
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
@@ -70,22 +74,26 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 
 	return &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		summarizing: sync.Map{},
-		fallback:    fallbackChain,
+		bus:            msgBus,
+		cfg:            cfg,
+		registry:       registry,
+		state:          stateManager,
+		summarizing:    sync.Map{},
+		fallback:       fallbackChain,
+		semanticStores: stores,
 	}
 }
 
-// registerSharedTools registers tools that are shared across all agents (web, message, spawn).
+// registerSharedTools registers tools that are shared across all agents (web, message, spawn, memory).
+// Returns a map of agent ID to semantic memory store for auto-extraction.
 func registerSharedTools(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
-) {
+) map[string]memory.Store {
+	stores := make(map[string]memory.Store)
+
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {
@@ -145,9 +153,30 @@ func registerSharedTools(
 		})
 		agent.Tools.Register(spawnTool)
 
+		// Semantic memory tools (graceful degradation if Ollama unavailable)
+		vectorDir := filepath.Join(agent.Workspace, "memory", "vectors")
+		store, err := memory.NewSemanticStore(
+			vectorDir,
+			cfg.Tools.Memory.OllamaURL,
+			cfg.Tools.Memory.EmbeddingModel,
+		)
+		if err != nil {
+			logger.WarnCF("agent", "Semantic memory unavailable",
+				map[string]any{
+					"agent_id": agentID,
+					"error":    err.Error(),
+				})
+		} else if store.IsAvailable() {
+			agent.Tools.Register(tools.NewRememberTool(store))
+			agent.Tools.Register(tools.NewRecallTool(store))
+			stores[agentID] = store
+		}
+
 		// Update context builder with the complete tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
 	}
+
+	return stores
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
@@ -514,14 +543,16 @@ func (al *AgentLoop) runLLMIteration(
 		var response *providers.LLMResponse
 		var err error
 
+		llmOpts := map[string]any{
+			"max_tokens":  agent.MaxTokens,
+			"temperature": agent.Temperature,
+		}
+
 		callLLM := func() (*providers.LLMResponse, error) {
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
-							"max_tokens":  agent.MaxTokens,
-							"temperature": agent.Temperature,
-						})
+						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
 					},
 				)
 				if fbErr != nil {
@@ -534,10 +565,17 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
-				"max_tokens":  agent.MaxTokens,
-				"temperature": agent.Temperature,
-			})
+			// Use streaming if the provider supports it
+			if sp, ok := agent.Provider.(providers.StreamingProvider); ok {
+				return sp.ChatStream(ctx, messages, providerToolDefs, agent.Model, llmOpts,
+					func(delta string) {
+						// Streaming delta received — currently logged only.
+						// Future: push partial content to user via message bus.
+						logger.DebugCF("agent", "Stream delta",
+							map[string]any{"len": len(delta)})
+					})
+			}
+			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, llmOpts)
 		}
 
 		// Retry loop for context/token errors
@@ -783,8 +821,9 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		return
 	}
 
-	// Helper to find the mid-point of the conversation
-	mid := len(conversation) / 2
+	// Find the mid-point of the conversation, adjusted to avoid splitting
+	// tool_use/tool_result pairs.
+	mid := safeSplitIndex(conversation, len(conversation)/2)
 
 	// New history structure:
 	// 1. System Prompt (with compression note appended)
@@ -818,6 +857,33 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
 	})
+}
+
+// safeSplitIndex finds a split point in messages at or after targetIdx that
+// does not break a tool_use/tool_result pair. An assistant message with
+// ToolCalls must be kept together with the tool-result messages that
+// immediately follow it. The returned index is the first message to KEEP
+// (i.e. messages[:idx] are dropped, messages[idx:] are kept).
+func safeSplitIndex(messages []providers.Message, targetIdx int) int {
+	if targetIdx >= len(messages) {
+		return len(messages)
+	}
+	idx := targetIdx
+	// If we landed on a "tool" message, walk forward past all consecutive
+	// tool results so we don't orphan them from their assistant message.
+	for idx < len(messages) && messages[idx].Role == "tool" {
+		idx++
+	}
+	// If we ended up past the end, back up to just before the tool group.
+	if idx >= len(messages) {
+		// Walk backwards from targetIdx to find a safe point.
+		idx = targetIdx
+		for idx > 0 && messages[idx].Role == "tool" {
+			idx--
+		}
+		// idx now points to the assistant message; keep it and its tool results.
+	}
+	return idx
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
@@ -907,12 +973,17 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
 	summary := agent.Sessions.GetSummary(sessionKey)
 
-	// Keep last 4 messages for continuity
-	if len(history) <= 4 {
+	// Keep last few messages for continuity, adjusting the split point so we
+	// never orphan a tool_use from its tool_result(s).
+	if len(history) <= 6 {
 		return
 	}
 
-	toSummarize := history[:len(history)-4]
+	keepIdx := safeSplitIndex(history, len(history)-6)
+	if keepIdx <= 0 {
+		return
+	}
+	toSummarize := history[:keepIdx]
 
 	// Oversized Message Guard
 	maxMessageTokens := agent.ContextWindow / 2
@@ -920,7 +991,7 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	omitted := false
 
 	for _, m := range toSummarize {
-		if m.Role != "user" && m.Role != "assistant" {
+		if m.Role != "user" && m.Role != "assistant" && m.Role != "tool" {
 			continue
 		}
 		msgTokens := len(m.Content) / 2
@@ -975,8 +1046,94 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 
 	if finalSummary != "" {
 		agent.Sessions.SetSummary(sessionKey, finalSummary)
-		agent.Sessions.TruncateHistory(sessionKey, 4)
+		agent.Sessions.TruncateHistory(sessionKey, len(history)-keepIdx)
 		agent.Sessions.Save(sessionKey)
+
+		// Auto-extract key facts from the summarized messages into semantic memory
+		if al.cfg.Tools.Memory.AutoExtract {
+			if store, ok := al.semanticStores[agent.ID]; ok {
+				go al.extractMemories(ctx, agent, store, toSummarize)
+			}
+		}
+	}
+}
+
+// extractMemories uses the LLM to extract key facts from conversation messages
+// and stores them in the semantic memory store for later recall.
+func (al *AgentLoop) extractMemories(
+	ctx context.Context,
+	agent *AgentInstance,
+	store memory.Store,
+	messages []providers.Message,
+) {
+	if !store.IsAvailable() {
+		return
+	}
+
+	// Build a prompt asking the LLM to extract memorable facts
+	var sb strings.Builder
+	sb.WriteString("Extract key facts, user preferences, decisions, and important context from this conversation.\n")
+	sb.WriteString("Output one fact per line in the format: [category] fact\n")
+	sb.WriteString("Categories: preference, fact, decision, context\n")
+	sb.WriteString("Only extract genuinely important or reusable information. Skip trivial details.\n\n")
+	for _, m := range messages {
+		if m.Role == "user" || m.Role == "assistant" {
+			fmt.Fprintf(&sb, "%s: %s\n", m.Role, utils.Truncate(m.Content, 500))
+		}
+	}
+
+	extractCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := agent.Provider.Chat(
+		extractCtx,
+		[]providers.Message{{Role: "user", Content: sb.String()}},
+		nil,
+		agent.Model,
+		map[string]any{
+			"max_tokens":  512,
+			"temperature": 0.2,
+		},
+	)
+	if err != nil {
+		logger.WarnCF("agent", "Memory extraction failed",
+			map[string]any{"error": err.Error()})
+		return
+	}
+
+	// Parse "[category] fact" lines
+	stored := 0
+	for _, line := range strings.Split(resp.Content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "[") {
+			continue
+		}
+		closeBracket := strings.Index(line, "]")
+		if closeBracket < 2 {
+			continue
+		}
+		category := strings.TrimSpace(line[1:closeBracket])
+		content := strings.TrimSpace(line[closeBracket+1:])
+		if content == "" {
+			continue
+		}
+
+		entry := memory.MemoryEntry{
+			Content:  content,
+			Category: category,
+			Source:   "auto-extract",
+		}
+		if err := store.Remember(extractCtx, entry); err != nil {
+			logger.WarnCF("agent", "Failed to store extracted memory",
+				map[string]any{"error": err.Error()})
+			continue
+		}
+		stored++
+	}
+
+	if stored > 0 {
+		logger.InfoCF("agent", "Auto-extracted memories",
+			map[string]any{"count": stored, "agent_id": agent.ID})
 	}
 }
 
