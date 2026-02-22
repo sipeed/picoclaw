@@ -143,7 +143,7 @@ func (c *BaseChannel) HandleMessage(
 		Metadata:   metadata,
 	}
 
-	c.bus.PublishInbound(msg)
+	c.bus.PublishInbound(context.TODO(), msg)
 }
 
 func (c *BaseChannel) SetRunning(running bool) {

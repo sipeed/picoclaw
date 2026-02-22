@@ -223,6 +223,7 @@ func gatewayCmd(debug bool) error {
 		cp.Close()
 	}
 	cancel()
+	msgBus.Close()
 	healthServer.Stop(context.Background())
 	deviceService.Stop()
 	heartbeatService.Stop()
