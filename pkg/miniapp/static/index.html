@@ -84,7 +84,7 @@
     top: 2px;
     bottom: 2px;
     left: 2px;
-    width: calc(25% - 2px);
+    width: calc(20% - 2px);
     border-radius: 8px;
     background: var(--tab-pill-bg);
     box-shadow: 0 0.5px 2px rgba(0,0,0,0.12), 0 0.5px 1px rgba(0,0,0,0.08);
@@ -564,6 +564,36 @@
     animation: none;
   }
 
+  /* Git log */
+  .git-commit {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--glass-border);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .git-commit:last-child { border-bottom: none; }
+  .git-hash {
+    font-family: monospace;
+    color: var(--btn);
+    flex-shrink: 0;
+  }
+  .git-subject { flex: 1; color: var(--text); }
+  .git-meta { color: var(--hint); font-size: 11px; flex-shrink: 0; text-align: right; }
+  .git-status {
+    font-family: monospace;
+    font-weight: 700;
+    font-size: 12px;
+    flex-shrink: 0;
+    width: 24px;
+    text-align: center;
+  }
+  .git-status-m { color: #e2b93d; }
+  .git-status-a { color: #4caf50; }
+  .git-status-d { color: #ef5350; }
+  .git-status-u { color: var(--hint); }
+
 </style>
 </head>
 <body>
@@ -575,6 +605,7 @@
     <button class="tab" data-panel="skills">Skills</button>
     <button class="tab" data-panel="session">Session</button>
     <button class="tab" data-panel="config">Config</button>
+    <button class="tab" data-panel="git">Git</button>
   </div>
 </div>
 
@@ -609,6 +640,11 @@
       <button class="send-btn" onclick="sendCustomCmd()">Send</button>
     </div>
   </div>
+</div>
+
+<div id="git" class="panel">
+  <div class="loading" id="git-loading">Loading git log...</div>
+  <div id="git-content" class="hidden"></div>
 </div>
 
 <div class="send-bar hidden" id="send-bar">
@@ -649,6 +685,7 @@ tabs.forEach((tab, index) => {
     if (p === 'plan' && !fresh) loadPlan();
     if (p === 'skills' && !fresh) loadSkills();
     if (p === 'session' && !fresh) loadSession();
+    if (p === 'git') loadGit();
   });
 });
 
@@ -1077,6 +1114,49 @@ function escapeHtml(s) {
 function escapeAttr(s) {
   if (!s) return '';
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── Git tab ──
+function loadGit() {
+  return loadTab('git-loading', 'git-content', 'git log',
+    function() { return apiFetch('/miniapp/api/git'); },
+    renderGitFromData);
+}
+
+function renderGitFromData(data) {
+  var loading = document.getElementById('git-loading');
+  var el = document.getElementById('git-content');
+  loading.classList.add('hidden');
+  el.classList.remove('hidden');
+
+  var html = '<div class="card glass"><div class="card-title">Branch: ' +
+    escapeHtml(data.branch || 'unknown') + '</div>';
+
+  if (data.commits && data.commits.length > 0) {
+    data.commits.forEach(function(c) {
+      html += '<div class="git-commit">' +
+        '<span class="git-hash">' + escapeHtml(c.hash) + '</span>' +
+        '<span class="git-subject">' + escapeHtml(c.subject) + '</span>' +
+        '<span class="git-meta">' + escapeHtml(c.date) + '</span>' +
+        '</div>';
+    });
+  } else {
+    html += '<div style="padding:12px;color:var(--hint)">No commits found.</div>';
+  }
+  html += '</div>';
+
+  if (data.modified && data.modified.length > 0) {
+    html += '<div class="card glass" style="margin-top:12px"><div class="card-title">Changes (' + data.modified.length + ')</div>';
+    data.modified.forEach(function(f) {
+      html += '<div class="git-commit">' +
+        '<span class="git-status git-status-' + (f.status === '??' ? 'u' : f.status.toLowerCase()) + '">' + escapeHtml(f.status) + '</span>' +
+        '<span class="git-subject">' + escapeHtml(f.path) + '</span>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
 }
 
 // ── SSE real-time updates ──
