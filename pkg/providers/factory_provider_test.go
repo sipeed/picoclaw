@@ -111,6 +111,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"qwen", "qwen"},
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
+		{"minimax", "minimax"},
 		{"ollama", "ollama"},
 	}
 
