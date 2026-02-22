@@ -28,6 +28,12 @@ func NewHTTPProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField st
 	}
 }
 
+func NewHTTPProviderWithOptions(apiKey, apiBase, proxy string, opts openai_compat.Options) *HTTPProvider {
+	return &HTTPProvider{
+		delegate: openai_compat.NewProviderWithOptions(apiKey, apiBase, proxy, opts),
+	}
+}
+
 func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
 	resp, err := p.delegate.Chat(ctx, messages, tools, model, options)
 	if err != nil {

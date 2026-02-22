@@ -1,6 +1,7 @@
 package openai_compat
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -30,8 +31,17 @@ type (
 type Provider struct {
 	apiKey         string
 	apiBase        string
+	endpointPath   string // API path appended to apiBase (default: "/chat/completions")
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	stream         bool   // Use SSE streaming internally (accumulates into a single LLMResponse)
 	httpClient     *http.Client
+}
+
+// Options configures optional behaviour for the provider.
+type Options struct {
+	EndpointPath   string // API path appended to apiBase (default: "/chat/completions")
+	MaxTokensField string // Field name for max tokens parameter
+	Stream         bool   // Use SSE streaming internally
 }
 
 func NewProvider(apiKey, apiBase, proxy string) *Provider {
@@ -39,8 +49,18 @@ func NewProvider(apiKey, apiBase, proxy string) *Provider {
 }
 
 func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
+	return NewProviderWithOptions(apiKey, apiBase, proxy, Options{
+		MaxTokensField: maxTokensField,
+	})
+}
+
+func NewProviderWithOptions(apiKey, apiBase, proxy string, opts Options) *Provider {
+	timeout := 120 * time.Second
+	if opts.Stream {
+		timeout = 5 * time.Minute
+	}
 	client := &http.Client{
-		Timeout: 120 * time.Second,
+		Timeout: timeout,
 	}
 
 	if proxy != "" {
@@ -54,10 +74,17 @@ func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string
 		}
 	}
 
+	endpointPath := opts.EndpointPath
+	if endpointPath == "" {
+		endpointPath = "/chat/completions"
+	}
+
 	return &Provider{
 		apiKey:         apiKey,
 		apiBase:        strings.TrimRight(apiBase, "/"),
-		maxTokensField: maxTokensField,
+		endpointPath:   endpointPath,
+		maxTokensField: opts.MaxTokensField,
+		stream:         opts.Stream,
 		httpClient:     client,
 	}
 }
@@ -111,12 +138,16 @@ func (p *Provider) Chat(
 		}
 	}
 
+	if p.stream {
+		requestBody["stream"] = true
+	}
+
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+p.endpointPath, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -132,13 +163,18 @@ func (p *Provider) Chat(
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
+	}
+
+	if p.stream {
+		return parseStreamResponse(resp.Body)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
 
 	return parseResponse(body)
@@ -240,7 +276,7 @@ func normalizeModel(model, apiBase string) string {
 
 	prefix := strings.ToLower(model[:idx])
 	switch prefix {
-	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu":
+	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "minimax":
 		return model[idx+1:]
 	default:
 		return model
@@ -275,4 +311,130 @@ func asFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// --- SSE streaming support ---
+
+type streamChunk struct {
+	Choices []streamChoice `json:"choices"`
+	Usage   *UsageInfo     `json:"usage"`
+}
+
+type streamChoice struct {
+	Delta        streamDelta `json:"delta"`
+	FinishReason string      `json:"finish_reason"`
+}
+
+type streamDelta struct {
+	Content   string          `json:"content"`
+	ToolCalls []streamDeltaTC `json:"tool_calls"`
+}
+
+type streamDeltaTC struct {
+	Index    int                  `json:"index"`
+	ID       string               `json:"id"`
+	Type     string               `json:"type"`
+	Function *streamDeltaFunction `json:"function"`
+}
+
+type streamDeltaFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type streamToolCallAcc struct {
+	ID        string
+	Name      string
+	Arguments strings.Builder
+}
+
+// parseStreamResponse reads an SSE (text/event-stream) response and
+// accumulates it into a single LLMResponse.
+func parseStreamResponse(r io.Reader) (*LLMResponse, error) {
+	scanner := bufio.NewScanner(r)
+	// Allow up to 1 MB per SSE line to handle large argument deltas.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	var content strings.Builder
+	var toolCalls []streamToolCallAcc
+	var finishReason string
+	var usage *UsageInfo
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk streamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue // skip malformed chunks
+		}
+
+		if len(chunk.Choices) == 0 {
+			if chunk.Usage != nil {
+				usage = chunk.Usage
+			}
+			continue
+		}
+
+		choice := chunk.Choices[0]
+		if choice.Delta.Content != "" {
+			content.WriteString(choice.Delta.Content)
+		}
+		if choice.FinishReason != "" {
+			finishReason = choice.FinishReason
+		}
+
+		// Accumulate streaming tool calls by index.
+		for _, tc := range choice.Delta.ToolCalls {
+			for len(toolCalls) <= tc.Index {
+				toolCalls = append(toolCalls, streamToolCallAcc{})
+			}
+			if tc.ID != "" {
+				toolCalls[tc.Index].ID = tc.ID
+			}
+			if tc.Function != nil {
+				if tc.Function.Name != "" {
+					toolCalls[tc.Index].Name = tc.Function.Name
+				}
+				toolCalls[tc.Index].Arguments.WriteString(tc.Function.Arguments)
+			}
+		}
+
+		if chunk.Usage != nil {
+			usage = chunk.Usage
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading stream: %w", err)
+	}
+
+	result := &LLMResponse{
+		Content:      content.String(),
+		FinishReason: finishReason,
+		Usage:        usage,
+	}
+
+	for _, tc := range toolCalls {
+		arguments := make(map[string]any)
+		argStr := tc.Arguments.String()
+		if argStr != "" {
+			if err := json.Unmarshal([]byte(argStr), &arguments); err != nil {
+				log.Printf("openai_compat: failed to decode streamed tool call arguments for %q: %v", tc.Name, err)
+				arguments["raw"] = argStr
+			}
+		}
+		result.ToolCalls = append(result.ToolCalls, ToolCall{
+			ID:        tc.ID,
+			Name:      tc.Name,
+			Arguments: arguments,
+		})
+	}
+
+	return result, nil
 }
