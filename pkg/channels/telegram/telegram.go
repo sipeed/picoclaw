@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -289,21 +290,25 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		return fmt.Errorf("message sender (user) is nil")
 	}
 
-	senderID := fmt.Sprintf("%d", user.ID)
-	if user.Username != "" {
-		senderID = fmt.Sprintf("%d|%s", user.ID, user.Username)
+	platformID := fmt.Sprintf("%d", user.ID)
+	sender := bus.SenderInfo{
+		Platform:    "telegram",
+		PlatformID:  platformID,
+		CanonicalID: identity.BuildCanonicalID("telegram", platformID),
+		Username:    user.Username,
+		DisplayName: user.FirstName,
 	}
 
 	// 检查白名单，避免为被拒绝的用户下载附件
-	if !c.IsAllowed(senderID) {
+	if !c.IsAllowedSender(sender) {
 		logger.DebugCF("telegram", "Message rejected by allowlist", map[string]any{
-			"user_id": senderID,
+			"user_id": platformID,
 		})
 		return nil
 	}
 
 	chatID := message.Chat.ID
-	c.chatIDs[senderID] = chatID
+	c.chatIDs[platformID] = chatID
 
 	content := ""
 	mediaPaths := []string{}
@@ -401,7 +406,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	}
 
 	logger.DebugCF("telegram", "Received message", map[string]any{
-		"sender_id": senderID,
+		"sender_id": sender.CanonicalID,
 		"chat_id":   fmt.Sprintf("%d", chatID),
 		"preview":   utils.Truncate(content, 50),
 	})
@@ -451,11 +456,12 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	c.HandleMessage(c.ctx,
 		peer,
 		messageID,
-		fmt.Sprintf("%d", user.ID),
+		platformID,
 		fmt.Sprintf("%d", chatID),
 		content,
 		mediaPaths,
 		metadata,
+		sender,
 	)
 	return nil
 }
