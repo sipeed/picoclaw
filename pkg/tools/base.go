@@ -69,6 +69,13 @@ type AsyncTool interface {
 	SetCallback(cb AsyncCallback)
 }
 
+// StatusProvider is an optional interface that tools can implement
+// to inject runtime status information into the system prompt.
+// Return an empty string to inject nothing.
+type StatusProvider interface {
+	RuntimeStatus() string
+}
+
 func ToolToSchema(tool Tool) map[string]any {
 	return map[string]any{
 		"type": "function",

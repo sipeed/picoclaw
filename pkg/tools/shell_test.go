@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -512,5 +513,368 @@ func TestGuardCommand_AgentCLISlashCommand(t *testing.T) {
 		if result == "" {
 			t.Errorf("Non-agent command with absolute path should be blocked: %q", blocked)
 		}
+	}
+}
+
+// --- Background process tests ---
+
+func TestExecTool_Bg_StartAndOutput(t *testing.T) {
+	tool := NewExecTool("", false)
+	defer tool.Shutdown()
+
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "Write-Output 'hello from bg'; Start-Sleep -Seconds 30"
+	} else {
+		cmd = "echo 'hello from bg'; sleep 30"
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command":    cmd,
+		"background": true,
+	})
+	if result.IsError {
+		t.Fatalf("failed to start bg process: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "bg-1") {
+		t.Errorf("expected bg-1 in result, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "Background process started") {
+		t.Errorf("expected start message, got: %s", result.ForLLM)
+	}
+
+	// Get output
+	outputResult := tool.Execute(context.Background(), map[string]any{
+		"bg_action": "output",
+		"bg_id":     "bg-1",
+	})
+	if outputResult.IsError {
+		t.Fatalf("failed to get output: %s", outputResult.ForLLM)
+	}
+	if !strings.Contains(outputResult.ForLLM, "hello from bg") {
+		t.Errorf("expected 'hello from bg' in output, got: %s", outputResult.ForLLM)
+	}
+	if !strings.Contains(outputResult.ForLLM, "running") {
+		t.Errorf("expected 'running' status, got: %s", outputResult.ForLLM)
+	}
+}
+
+func TestExecTool_Bg_Kill(t *testing.T) {
+	tool := NewExecTool("", false)
+	defer tool.Shutdown()
+
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "Start-Sleep -Seconds 60"
+	} else {
+		cmd = "sleep 60"
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command":    cmd,
+		"background": true,
+	})
+	if result.IsError {
+		t.Fatalf("failed to start bg process: %s", result.ForLLM)
+	}
+
+	// Kill it
+	killResult := tool.Execute(context.Background(), map[string]any{
+		"bg_action": "kill",
+		"bg_id":     "bg-1",
+	})
+	if killResult.IsError {
+		t.Fatalf("failed to kill: %s", killResult.ForLLM)
+	}
+	if !strings.Contains(killResult.ForLLM, "terminated") {
+		t.Errorf("expected 'terminated' message, got: %s", killResult.ForLLM)
+	}
+
+	// Process should no longer be in the map
+	procs := tool.BgProcesses()
+	if _, ok := procs["bg-1"]; ok {
+		t.Errorf("expected bg-1 to be removed after kill")
+	}
+}
+
+func TestExecTool_Bg_ExitedProcess(t *testing.T) {
+	tool := NewExecTool("", false)
+	defer tool.Shutdown()
+
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "Write-Output 'quick exit'"
+	} else {
+		cmd = "echo 'quick exit'"
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command":    cmd,
+		"background": true,
+	})
+	if result.IsError {
+		t.Fatalf("failed to start bg process: %s", result.ForLLM)
+	}
+
+	// Wait for process to exit (initial capture is 3s, so after that it should be done)
+	time.Sleep(4 * time.Second)
+
+	// Get output — should show exited
+	outputResult := tool.Execute(context.Background(), map[string]any{
+		"bg_action": "output",
+		"bg_id":     "bg-1",
+	})
+	if outputResult.IsError {
+		t.Fatalf("failed to get output: %s", outputResult.ForLLM)
+	}
+	if !strings.Contains(outputResult.ForLLM, "exited") {
+		t.Errorf("expected 'exited' in output, got: %s", outputResult.ForLLM)
+	}
+	if !strings.Contains(outputResult.ForLLM, "quick exit") {
+		t.Errorf("expected 'quick exit' in output, got: %s", outputResult.ForLLM)
+	}
+}
+
+func TestExecTool_Bg_InvalidID(t *testing.T) {
+	tool := NewExecTool("", false)
+	defer tool.Shutdown()
+
+	// Output for non-existent ID
+	result := tool.Execute(context.Background(), map[string]any{
+		"bg_action": "output",
+		"bg_id":     "bg-999",
+	})
+	if !result.IsError {
+		t.Fatalf("expected error for invalid bg_id")
+	}
+	if !strings.Contains(result.ForLLM, "not found") {
+		t.Errorf("expected 'not found' message, got: %s", result.ForLLM)
+	}
+
+	// Kill for non-existent ID
+	result = tool.Execute(context.Background(), map[string]any{
+		"bg_action": "kill",
+		"bg_id":     "bg-999",
+	})
+	if !result.IsError {
+		t.Fatalf("expected error for invalid bg_id")
+	}
+}
+
+func TestExecTool_Bg_InitialOutputCapture(t *testing.T) {
+	tool := NewExecTool("", false)
+	defer tool.Shutdown()
+
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "Write-Output 'initial line 1'; Write-Output 'initial line 2'; Start-Sleep -Seconds 30"
+	} else {
+		cmd = "echo 'initial line 1'; echo 'initial line 2'; sleep 30"
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command":    cmd,
+		"background": true,
+	})
+	if result.IsError {
+		t.Fatalf("failed to start bg process: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "initial line 1") {
+		t.Errorf("expected 'initial line 1' in initial output, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "initial line 2") {
+		t.Errorf("expected 'initial line 2' in initial output, got: %s", result.ForLLM)
+	}
+}
+
+func TestExecTool_Bg_RuntimeStatus(t *testing.T) {
+	tool := NewExecTool("", false)
+	defer tool.Shutdown()
+
+	// No bg processes — should return empty
+	if s := tool.RuntimeStatus(); s != "" {
+		t.Errorf("expected empty runtime status with no bg processes, got: %s", s)
+	}
+
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "Start-Sleep -Seconds 30"
+	} else {
+		cmd = "sleep 30"
+	}
+
+	tool.Execute(context.Background(), map[string]any{
+		"command":    cmd,
+		"background": true,
+	})
+
+	status := tool.RuntimeStatus()
+	if !strings.Contains(status, "Background Processes") {
+		t.Errorf("expected 'Background Processes' section, got: %s", status)
+	}
+	if !strings.Contains(status, "bg-1") {
+		t.Errorf("expected 'bg-1' in status, got: %s", status)
+	}
+	if !strings.Contains(status, "running") {
+		t.Errorf("expected 'running' in status, got: %s", status)
+	}
+}
+
+func TestExecTool_Bg_Shutdown(t *testing.T) {
+	tool := NewExecTool("", false)
+
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "Start-Sleep -Seconds 60"
+	} else {
+		cmd = "sleep 60"
+	}
+
+	tool.Execute(context.Background(), map[string]any{
+		"command":    cmd,
+		"background": true,
+	})
+	tool.Execute(context.Background(), map[string]any{
+		"command":    cmd,
+		"background": true,
+	})
+
+	// Both should be running
+	procs := tool.BgProcesses()
+	for _, bp := range procs {
+		if !bp.isRunning() {
+			t.Errorf("expected process to be running before shutdown")
+		}
+	}
+
+	// Shutdown
+	tool.Shutdown()
+
+	// All should be done
+	procs = tool.BgProcesses()
+	for _, bp := range procs {
+		if bp.isRunning() {
+			t.Errorf("expected process to be stopped after shutdown")
+		}
+	}
+}
+
+func TestRingBuffer(t *testing.T) {
+	t.Run("Write and String", func(t *testing.T) {
+		rb := newRingBuffer(100)
+		rb.Write([]byte("hello "))
+		rb.Write([]byte("world"))
+		if got := rb.String(); got != "hello world" {
+			t.Errorf("expected 'hello world', got %q", got)
+		}
+	})
+
+	t.Run("Lines", func(t *testing.T) {
+		rb := newRingBuffer(100)
+		rb.Write([]byte("line1\nline2\nline3\nline4\nline5\n"))
+		lines := rb.Lines(3)
+		if len(lines) != 3 {
+			t.Fatalf("expected 3 lines, got %d", len(lines))
+		}
+		if lines[0] != "line3" || lines[1] != "line4" || lines[2] != "line5" {
+			t.Errorf("unexpected lines: %v", lines)
+		}
+	})
+
+	t.Run("Match", func(t *testing.T) {
+		rb := newRingBuffer(100)
+		rb.Write([]byte("starting...\nServer ready on port 3000\nwaiting...\n"))
+
+		re := regexp.MustCompile(`ready.*port`)
+		match := rb.Match(re)
+		if match == "" {
+			t.Fatal("expected match but got empty string")
+		}
+		if !strings.Contains(match, "ready") {
+			t.Errorf("expected match to contain 'ready', got: %s", match)
+		}
+
+		// Non-matching pattern
+		re2 := regexp.MustCompile(`never_match`)
+		match2 := rb.Match(re2)
+		if match2 != "" {
+			t.Errorf("expected no match, got: %s", match2)
+		}
+	})
+
+	t.Run("Overflow", func(t *testing.T) {
+		rb := newRingBuffer(10) // small buffer
+		rb.Write([]byte("1234567890ABCDEF"))
+		got := rb.String()
+		if len(got) != 10 {
+			t.Errorf("expected buffer to be 10 bytes, got %d", len(got))
+		}
+		// Should keep the last 10 bytes
+		if got != "7890ABCDEF" {
+			t.Errorf("expected '7890ABCDEF', got %q", got)
+		}
+	})
+
+	t.Run("Len", func(t *testing.T) {
+		rb := newRingBuffer(100)
+		if rb.Len() != 0 {
+			t.Errorf("expected 0 length initially")
+		}
+		rb.Write([]byte("hello"))
+		if rb.Len() != 5 {
+			t.Errorf("expected 5, got %d", rb.Len())
+		}
+	})
+
+	t.Run("Empty Lines", func(t *testing.T) {
+		rb := newRingBuffer(100)
+		lines := rb.Lines(5)
+		if lines != nil {
+			t.Errorf("expected nil for empty buffer, got: %v", lines)
+		}
+	})
+}
+
+func TestExecTool_Bg_RingBufferOverflow(t *testing.T) {
+	tool := NewExecTool("", false)
+	defer tool.Shutdown()
+
+	// Generate output larger than 32KB ring buffer
+	var cmd string
+	if runtime.GOOS == "windows" {
+		cmd = "1..2000 | ForEach-Object { Write-Output ('x' * 50) }; Start-Sleep -Seconds 30"
+	} else {
+		cmd = "for i in $(seq 1 2000); do echo $(head -c 50 /dev/zero | tr '\\0' 'x'); done; sleep 30"
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"command":    cmd,
+		"background": true,
+	})
+	if result.IsError {
+		t.Fatalf("failed to start bg process: %s", result.ForLLM)
+	}
+
+	// Wait for output to accumulate
+	time.Sleep(5 * time.Second)
+
+	// Get output — ring buffer should have truncated old data
+	outputResult := tool.Execute(context.Background(), map[string]any{
+		"bg_action": "output",
+		"bg_id":     "bg-1",
+	})
+	if outputResult.IsError {
+		t.Fatalf("failed to get output: %s", outputResult.ForLLM)
+	}
+
+	// The output should contain data but be bounded by the ring buffer size
+	procs := tool.BgProcesses()
+	bp := procs["bg-1"]
+	if bp == nil {
+		t.Fatal("bg-1 not found")
+	}
+	bufLen := bp.output.Len()
+	if bufLen > bgRingBufSize {
+		t.Errorf("ring buffer exceeded max size: %d > %d", bufLen, bgRingBufSize)
 	}
 }
