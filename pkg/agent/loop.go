@@ -772,7 +772,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	if agent.ContextBuilder.GetPlanStatus() == "interviewing" && agent.interviewStaleCount >= interviewStaleThreshold {
 		messages = append(messages, providers.Message{
 			Role:    "user",
-			Content: "[System] You have been interviewing for several turns without updating memory/MEMORY.md. Please use edit_file now to save your findings to the ## Context section, or organize the plan into Phases if you have enough information.",
+			Content: "[System] You have been interviewing for several turns without updating memory/MEMORY.md. Please use edit_file now to save your findings to the ## Context section, or organize the plan into ## Phase sections with `- [ ]` checkbox steps if you have enough information.",
 		})
 	}
 
@@ -968,7 +968,7 @@ func buildPlanReminder(planStatus string) (providers.Message, bool) {
 	case "interviewing":
 		content = "[System] You are interviewing the user to build a plan. " +
 			"Ask clarifying questions and save findings to ## Context in memory/MEMORY.md using edit_file. " +
-			"When you have enough information, write ## Phases and ## Commands sections."
+			"When you have enough information, write ## Phase sections with `- [ ]` checkbox steps, and ## Commands section."
 	case "review":
 		content = "[System] The plan is under review. " +
 			"Wait for the user to approve or request changes. Do not proceed with execution."
@@ -2469,7 +2469,7 @@ func (al *AgentLoop) handlePlanCommand(args []string) (string, bool) {
 	sub := args[0]
 	switch sub {
 	case "clear":
-		if !agent.ContextBuilder.HasActivePlan() {
+		if agent.ContextBuilder.ReadMemory() == "" {
 			return "No active plan to clear.", true
 		}
 		if err := agent.ContextBuilder.ClearMemory(); err != nil {

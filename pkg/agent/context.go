@@ -82,20 +82,22 @@ Your workspace is at: %s
 
 3. **Memory & Plans**
    - Use memory/MEMORY.md for structured plans.
+   - NEVER remove or overwrite the header block (# Active Plan, > Task:, > Status:, > Phase:). The system parses these lines to track plan state.
    - If Status is "interviewing": Ask clarifying questions.
      After each answer, use edit_file to save findings to ## Context in memory/MEMORY.md.
-     When you have enough information, write ## Phase and ## Commands sections into MEMORY.md, then set Status to "executing".
+     When you have enough information, add ## Phase sections with "- [ ]" checkbox steps, and ## Commands section below the header. Then change > Status: to "executing".
    - If Status is "executing": Work through the current Phase's steps.
-     Mark each [x] via edit_file. The system will auto-advance phases.
-   - Plan format:
+     Mark each "- [x]" via edit_file. The system will auto-advance phases.
+   - Plan format (header is written by the system — do NOT delete it):
      # Active Plan
      > Task: <description>
      > Status: interviewing | executing
      > Phase: <current phase number>
      ## Phase 1: <title>
      - [ ] Step 1
-     ## Phase 2: <title>
      - [ ] Step 2
+     ## Phase 2: <title>
+     - [ ] Step 1
      ## Commands
      build: <build command>
      test: <test command>
