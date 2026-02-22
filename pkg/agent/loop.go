@@ -243,7 +243,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		}
 
 		// Echo commands sent from the Mini App so the user can see what was sent.
-		if msg.Metadata["source"] == "webapp" && msg.Content != "" {
+		if msg.Metadata["source"] == "webapp" && msg.Metadata["echoed"] == "" && msg.Content != "" {
 			al.bus.PublishOutbound(bus.OutboundMessage{
 				Channel:         msg.Channel,
 				ChatID:          msg.ChatID,
@@ -266,6 +266,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			// the LLM worker actually begins executing the plan.
 			if al.planStartPending {
 				al.planStartPending = false
+				syntheticMeta := map[string]string{"echoed": "1"}
+				for k, v := range msg.Metadata {
+					if k != "source" {
+						syntheticMeta[k] = v
+					}
+				}
 				select {
 				case llmQueue <- bus.InboundMessage{
 					Channel:    msg.Channel,
@@ -273,7 +279,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					SenderID:   msg.SenderID,
 					SessionKey: msg.SessionKey,
 					Content:    "The plan has been approved. Begin executing.",
-					Metadata:   msg.Metadata,
+					Metadata:   syntheticMeta,
 				}:
 				case <-ctx.Done():
 					return nil
