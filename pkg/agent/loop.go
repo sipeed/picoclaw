@@ -259,6 +259,14 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				Content:         "via MiniApp: " + msg.Content,
 				SkipPlaceholder: true,
 			})
+			// Create a placeholder AFTER the echo so status updates appear below it.
+			if al.channelManager != nil {
+				if ch, ok := al.channelManager.GetChannel(msg.Channel); ok {
+					if tc, ok := ch.(*channels.TelegramChannel); ok {
+						tc.CreatePlaceholder(ctx, msg.ChatID)
+					}
+				}
+			}
 		}
 
 		// Fast path: handle slash commands immediately without blocking the LLM worker.
