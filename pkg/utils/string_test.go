@@ -113,6 +113,78 @@ func TestDetectRepetitionLoop_BelowSampleSize(t *testing.T) {
 	}
 }
 
+// --- TailPad ---
+
+func TestTailPad_FewerThanN(t *testing.T) {
+	got := TailPad("a\nb", 5, 80)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 5 {
+		t.Fatalf("TailPad line count = %d, want 5", len(lines))
+	}
+	for i := 0; i < 3; i++ {
+		if lines[i] != "\u2800" {
+			t.Errorf("TailPad line %d = %q, want padding", i, lines[i])
+		}
+	}
+	if lines[3] != "a" || lines[4] != "b" {
+		t.Errorf("TailPad content = %q %q, want a b", lines[3], lines[4])
+	}
+}
+
+func TestTailPad_ExactlyN(t *testing.T) {
+	in := "a\nb\nc"
+	got := TailPad(in, 3, 80)
+	if got != in {
+		t.Fatalf("TailPad exact = %q, want %q", got, in)
+	}
+}
+
+func TestTailPad_MoreThanN(t *testing.T) {
+	got := TailPad("a\nb\nc\nd\ne", 3, 80)
+	if got != "c\nd\ne" {
+		t.Fatalf("TailPad tail = %q, want %q", got, "c\nd\ne")
+	}
+}
+
+func TestTailPad_Empty(t *testing.T) {
+	got := TailPad("", 4, 80)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("TailPad empty line count = %d, want 4", len(lines))
+	}
+	for i, l := range lines {
+		if i == len(lines)-1 {
+			if l != "" {
+				t.Errorf("TailPad empty last line = %q, want empty", l)
+			}
+		} else if l != "\u2800" {
+			t.Errorf("TailPad empty line %d = %q, want padding", i, l)
+		}
+	}
+}
+
+func TestTailPad_LongLineWraps(t *testing.T) {
+	// One 10-char line wraps into 2 visual lines at width 5.
+	got := TailPad("abcdefghij", 4, 5)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("TailPad wrap line count = %d, want 4", len(lines))
+	}
+	// 2 padding + "abcde" + "fghij"
+	if lines[2] != "abcde" || lines[3] != "fghij" {
+		t.Errorf("TailPad wrap content = %v", lines)
+	}
+}
+
+func TestTailPad_WrapPushesOldLines(t *testing.T) {
+	// "short" (1 visual) + "abcdefghij" (2 visual at width 5) = 3 visual.
+	// With n=2, only tail 2 visual lines remain.
+	got := TailPad("short\nabcdefghij", 2, 5)
+	if got != "abcde\nfghij" {
+		t.Fatalf("TailPad wrap push = %q, want %q", got, "abcde\nfghij")
+	}
+}
+
 // --- Truncate ---
 
 func TestTruncate(t *testing.T) {
