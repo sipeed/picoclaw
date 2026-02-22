@@ -1401,8 +1401,32 @@ func TestIsToolAllowedDuringInterview_FuzzyNames(t *testing.T) {
 		// Write to non-MEMORY.md — blocked
 		{"edit_file", map[string]interface{}{"path": "/ws/main.go"}, false},
 		{"editfile", map[string]interface{}{"path": "/ws/main.go"}, false},
-		// exec — always blocked
+		// exec — read-only commands allowed
+		{"exec", map[string]interface{}{"command": "find . -name '*.py'"}, true},
+		{"exec", map[string]interface{}{"command": "ls -la"}, true},
+		{"exec", map[string]interface{}{"command": "grep -r TODO ."}, true},
+		{"exec", map[string]interface{}{"command": "cat README.md"}, true},
+		// exec — cd prefix stripped
+		{"exec", map[string]interface{}{"command": "cd /home/user/project && find . -type f"}, true},
+		{"exec", map[string]interface{}{"command": "cd /tmp && rm -rf *"}, false},
+		// exec — write operators blocked
+		{"exec", map[string]interface{}{"command": "find . > output.txt"}, false},
+		{"exec", map[string]interface{}{"command": "ls -la >> log.txt"}, false},
+		{"exec", map[string]interface{}{"command": "cat foo | tee bar.txt"}, false},
+		// exec — path traversal blocked
+		{"exec", map[string]interface{}{"command": "cat ../../etc/passwd"}, false},
+		{"exec", map[string]interface{}{"command": "find ../../"}, false},
+		{"exec", map[string]interface{}{"command": "ls ../secret"}, false},
+		// exec — absolute paths blocked
+		{"exec", map[string]interface{}{"command": "cat /etc/passwd"}, false},
+		{"exec", map[string]interface{}{"command": "find /etc -name '*.conf'"}, false},
+		{"exec", map[string]interface{}{"command": "ls /root"}, false},
+		// exec — write commands blocked
+		{"exec", map[string]interface{}{"command": "rm -rf /"}, false},
+		{"exec", map[string]interface{}{"command": "mv a b"}, false},
+		// exec — no args / empty command blocked
 		{"exec", nil, false},
+		{"exec", map[string]interface{}{"command": ""}, false},
 		{"Exec", nil, false},
 	}
 	for _, tt := range tests {

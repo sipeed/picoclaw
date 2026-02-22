@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -2576,6 +2577,61 @@ func isToolAllowedDuringInterview(toolName string, args map[string]interface{}) 
 		return strings.HasSuffix(path, "MEMORY.md")
 	}
 
+	// exec: allow read-only commands
+	switch norm {
+	case "exec":
+		cmd, _ := args["command"].(string)
+		return isReadOnlyCommand(cmd)
+	}
+
+	return false
+}
+
+// isReadOnlyCommand returns true when cmd is a safe, read-only shell command
+// that an LLM may run during the interview phase.
+func isReadOnlyCommand(cmd string) bool {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return false
+	}
+
+	// Reject write operators anywhere in the command
+	for _, op := range []string{">", ">>", "| tee "} {
+		if strings.Contains(cmd, op) {
+			return false
+		}
+	}
+
+	// Reject path traversal (defense in depth; ExecTool.guardCommand also enforces workspace restriction)
+	if strings.Contains(cmd, "..") {
+		return false
+	}
+	// Block absolute paths in arguments (allow "cd /path && cmd" which is stripped later)
+	for _, field := range strings.Fields(cmd) {
+		if strings.HasPrefix(field, "/") && !strings.HasPrefix(cmd, "cd ") {
+			return false
+		}
+	}
+
+	// Strip "cd /path &&" prefix (LLM habit)
+	if strings.HasPrefix(cmd, "cd ") {
+		if idx := strings.Index(cmd, "&&"); idx >= 0 {
+			cmd = strings.TrimSpace(cmd[idx+2:])
+		}
+	}
+
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		return false
+	}
+	first := filepath.Base(fields[0])
+	switch first {
+	case "find", "ls", "cat", "head", "tail", "grep", "rg",
+		"tree", "wc", "file", "which", "pwd",
+		"uname", "df", "du", "stat", "realpath", "dirname",
+		"basename", "date":
+		return true
+	}
 	return false
 }
 
