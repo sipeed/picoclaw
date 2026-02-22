@@ -95,6 +95,12 @@ build-all: generate
 	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 	@echo "All builds complete"
 
+## build-riscv64: Build picoclaw for RISC-V 64-bit
+build-riscv64: generate  
+	@mkdir -p $(BUILD_DIR)  
+	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)  
+	@echo "RISC-V build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64"
+
 ## install: Install picoclaw to system and copy builtin skills
 install: build
 	@echo "Installing $(BINARY_NAME)..."
