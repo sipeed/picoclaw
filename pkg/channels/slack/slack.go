@@ -112,7 +112,7 @@ func (c *SlackChannel) Stop(ctx context.Context) error {
 
 func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("slack channel not running")
+		return channels.ErrNotRunning
 	}
 
 	channelID, threadTS := parseSlackChatID(msg.ChatID)
@@ -130,7 +130,7 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 
 	_, _, err := c.api.PostMessageContext(ctx, channelID, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to send slack message: %w", err)
+		return fmt.Errorf("slack send: %w", channels.ErrTemporary)
 	}
 
 	if ref, ok := c.pendingAcks.LoadAndDelete(msg.ChatID); ok {

@@ -491,7 +491,7 @@ func (c *LINEChannel) resolveChatID(source lineSource) string {
 // using a cached reply token, then falls back to the Push API.
 func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("line channel not running")
+		return channels.ErrNotRunning
 	}
 
 	// Load and consume quote token for this chat
@@ -582,13 +582,13 @@ func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload any)
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("API request failed: %w", err)
+		return channels.ClassifyNetError(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("LINE API error (status %d): %s", resp.StatusCode, string(respBody))
+		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("LINE API error: %s", string(respBody)))
 	}
 
 	return nil

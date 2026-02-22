@@ -215,7 +215,14 @@ func (c *MaixCamChannel) Stop(ctx context.Context) error {
 
 func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("maixcam channel not running")
+		return channels.ErrNotRunning
+	}
+
+	// Check ctx before entering write path
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	c.clientsMux.RLock()
@@ -246,7 +253,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 				"client": conn.RemoteAddr().String(),
 				"error":  err.Error(),
 			})
-			sendErr = err
+			sendErr = fmt.Errorf("maixcam send: %w", channels.ErrTemporary)
 		}
 		_ = conn.SetWriteDeadline(time.Time{})
 	}

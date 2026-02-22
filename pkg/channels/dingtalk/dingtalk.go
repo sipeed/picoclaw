@@ -96,7 +96,7 @@ func (c *DingTalkChannel) Stop(ctx context.Context) error {
 // Send sends a message to DingTalk via the chatbot reply API
 func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("dingtalk channel not running")
+		return channels.ErrNotRunning
 	}
 
 	// Get session webhook from storage
@@ -197,7 +197,7 @@ func (c *DingTalkChannel) SendDirectReply(ctx context.Context, sessionWebhook, c
 		contentBytes,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to send reply: %w", err)
+		return fmt.Errorf("dingtalk send: %w", channels.ErrTemporary)
 	}
 
 	return nil

@@ -164,6 +164,12 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 		return true
 	})
 
+	// Clean up placeholder state
+	c.placeholders.Range(func(key, value any) bool {
+		c.placeholders.Delete(key)
+		return true
+	})
+
 	// Stop the bot handler
 	if c.bh != nil {
 		c.bh.Stop()
@@ -179,12 +185,12 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("telegram bot not running")
+		return channels.ErrNotRunning
 	}
 
 	chatID, err := parseChatID(msg.ChatID)
 	if err != nil {
-		return fmt.Errorf("invalid chat ID: %w", err)
+		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
 
 	// Stop thinking animation
@@ -217,8 +223,9 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			"error": err.Error(),
 		})
 		tgMsg.ParseMode = ""
-		_, err = c.bot.SendMessage(ctx, tgMsg)
-		return err
+		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+		}
 	}
 
 	return nil

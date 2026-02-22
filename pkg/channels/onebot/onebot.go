@@ -373,7 +373,14 @@ func (c *OneBotChannel) Stop(ctx context.Context) error {
 
 func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("OneBot channel not running")
+		return channels.ErrNotRunning
+	}
+
+	// Check ctx before entering write path
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	c.mu.Lock()
@@ -412,7 +419,7 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		logger.ErrorCF("onebot", "Failed to send message", map[string]any{
 			"error": err.Error(),
 		})
-		return err
+		return fmt.Errorf("onebot send: %w", channels.ErrTemporary)
 	}
 
 	if msgID, ok := c.pendingEmojiMsg.LoadAndDelete(msg.ChatID); ok {
