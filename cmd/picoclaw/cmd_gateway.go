@@ -193,8 +193,14 @@ func gatewayCmd() {
 		fmt.Println("✓ Device event service started")
 	}
 
-	mediaCleaner := utils.NewMediaCleaner()
-	mediaCleaner.Start()
+	if cfg.Tools.MediaCleanup.Enabled {
+		mediaCleaner := utils.NewMediaCleaner(
+			cfg.Tools.MediaCleanup.Interval,
+			cfg.Tools.MediaCleanup.MaxAge,
+		)
+		mediaCleaner.Start()
+		defer mediaCleaner.Stop()
+	}
 
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
@@ -220,7 +226,6 @@ func gatewayCmd() {
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
-	mediaCleaner.Stop()
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")

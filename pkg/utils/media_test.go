@@ -35,7 +35,7 @@ func TestMediaCleanerRemovesOldFiles(t *testing.T) {
 	defer os.Remove(newFile)
 
 	// Run cleanup directly
-	mc := NewMediaCleaner()
+	mc := NewMediaCleaner(5, 30)
 	mc.cleanup()
 
 	// Old file should be gone
@@ -50,7 +50,7 @@ func TestMediaCleanerRemovesOldFiles(t *testing.T) {
 }
 
 func TestMediaCleanerStartStop(t *testing.T) {
-	mc := NewMediaCleaner()
+	mc := NewMediaCleaner(5, 30)
 
 	// Start should not panic
 	mc.Start()

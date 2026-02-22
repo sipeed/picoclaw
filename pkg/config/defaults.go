@@ -303,6 +303,11 @@ func DefaultConfig() *Config {
 					TTLSeconds: 300,
 				},
 			},
+			MediaCleanup: MediaCleanupConfig{
+				Enabled:  true,
+				MaxAge:   30,
+				Interval: 5,
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,

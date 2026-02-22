@@ -154,12 +154,20 @@ type MediaCleaner struct {
 	once     sync.Once
 }
 
-// NewMediaCleaner creates a new MediaCleaner with default settings
-// (scan every 5 minutes, remove files older than 30 minutes).
-func NewMediaCleaner() *MediaCleaner {
+// NewMediaCleaner creates a new MediaCleaner with the given settings.
+// If intervalMinutes or maxAgeMinutes are <= 0, defaults are used (5 and 30 respectively).
+func NewMediaCleaner(intervalMinutes, maxAgeMinutes int) *MediaCleaner {
+	interval := time.Duration(intervalMinutes) * time.Minute
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	maxAge := time.Duration(maxAgeMinutes) * time.Minute
+	if maxAge <= 0 {
+		maxAge = 30 * time.Minute
+	}
 	return &MediaCleaner{
-		interval: 5 * time.Minute,
-		maxAge:   30 * time.Minute,
+		interval: interval,
+		maxAge:   maxAge,
 		stop:     make(chan struct{}),
 	}
 }
@@ -168,7 +176,10 @@ func NewMediaCleaner() *MediaCleaner {
 func (mc *MediaCleaner) Start() {
 	mc.once.Do(func() {
 		go mc.loop()
-		logger.InfoC("media", "Media cleaner started")
+		logger.InfoCF("media", "Media cleaner started", map[string]any{
+			"interval": mc.interval.String(),
+			"max_age":  mc.maxAge.String(),
+		})
 	})
 }
 
