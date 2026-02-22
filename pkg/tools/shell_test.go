@@ -29,7 +29,11 @@ func (s *stubSandbox) Exec(ctx context.Context, req sandbox.ExecRequest) (*sandb
 	return sandboxAggregateFromStub(ctx, req, s.ExecStream)
 }
 
-func (s *stubSandbox) ExecStream(ctx context.Context, req sandbox.ExecRequest, onEvent func(sandbox.ExecEvent) error) (*sandbox.ExecResult, error) {
+func (s *stubSandbox) ExecStream(
+	ctx context.Context,
+	req sandbox.ExecRequest,
+	onEvent func(sandbox.ExecEvent) error,
+) (*sandbox.ExecResult, error) {
 	s.lastReq = req
 	if s.err != nil {
 		return nil, s.err
@@ -37,12 +41,16 @@ func (s *stubSandbox) ExecStream(ctx context.Context, req sandbox.ExecRequest, o
 	if s.res != nil {
 		if onEvent != nil {
 			if s.res.Stdout != "" {
-				if err := onEvent(sandbox.ExecEvent{Type: sandbox.ExecEventStdout, Chunk: []byte(s.res.Stdout)}); err != nil {
+				if err := onEvent(
+					sandbox.ExecEvent{Type: sandbox.ExecEventStdout, Chunk: []byte(s.res.Stdout)},
+				); err != nil {
 					return nil, err
 				}
 			}
 			if s.res.Stderr != "" {
-				if err := onEvent(sandbox.ExecEvent{Type: sandbox.ExecEventStderr, Chunk: []byte(s.res.Stderr)}); err != nil {
+				if err := onEvent(
+					sandbox.ExecEvent{Type: sandbox.ExecEventStderr, Chunk: []byte(s.res.Stderr)},
+				); err != nil {
 					return nil, err
 				}
 			}
@@ -361,7 +369,7 @@ func TestShellTool_SandboxMapsHostWorkingDirToRelative(t *testing.T) {
 	tool := NewExecTool(workspace, true)
 
 	ctx := sandbox.WithSandbox(context.Background(), sb)
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command":     "echo test",
 		"working_dir": filepath.Join(workspace, "subdir"),
 	}
@@ -380,7 +388,7 @@ func TestShellTool_SandboxAllowsAbsoluteWorkspaceWorkingDir(t *testing.T) {
 	tool := NewExecTool(workspace, true)
 
 	ctx := sandbox.WithSandbox(context.Background(), sb)
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command":     "echo test",
 		"working_dir": "/workspace/subdir",
 	}
@@ -399,7 +407,7 @@ func TestShellTool_SandboxBlocksAbsoluteNonWorkspaceWorkingDirWhenRestricted(t *
 	tool := NewExecTool(workspace, true)
 
 	ctx := sandbox.WithSandbox(context.Background(), sb)
-	args := map[string]interface{}{
+	args := map[string]any{
 		"command":     "echo test",
 		"working_dir": "/tmp/logs",
 	}
@@ -418,7 +426,7 @@ func TestShellTool_SandboxExecError(t *testing.T) {
 	tool := NewExecTool(workspace, true)
 
 	ctx := sandbox.WithSandbox(context.Background(), sb)
-	result := tool.Execute(ctx, map[string]interface{}{"command": "echo test"})
+	result := tool.Execute(ctx, map[string]any{"command": "echo test"})
 	if !result.IsError {
 		t.Fatal("expected sandbox error result")
 	}

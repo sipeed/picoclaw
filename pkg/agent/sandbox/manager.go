@@ -332,7 +332,11 @@ func (m *scopedSandboxManager) Exec(ctx context.Context, req ExecRequest) (*Exec
 	return sb.Exec(ctx, req)
 }
 
-func (m *scopedSandboxManager) ExecStream(ctx context.Context, req ExecRequest, onEvent func(ExecEvent) error) (*ExecResult, error) {
+func (m *scopedSandboxManager) ExecStream(
+	ctx context.Context,
+	req ExecRequest,
+	onEvent func(ExecEvent) error,
+) (*ExecResult, error) {
 	if !m.shouldSandbox(ctx) {
 		return m.host.ExecStream(ctx, req, onEvent)
 	}
@@ -382,7 +386,8 @@ func (m *scopedSandboxManager) normalizeSessionKey(raw string) string {
 		return main
 	}
 	if parsed := routing.ParseAgentSessionKey(trimmed); parsed != nil {
-		if routing.NormalizeAgentID(parsed.AgentID) == m.agentID && strings.EqualFold(strings.TrimSpace(parsed.Rest), "main") {
+		if routing.NormalizeAgentID(parsed.AgentID) == m.agentID &&
+			strings.EqualFold(strings.TrimSpace(parsed.Rest), "main") {
 			return main
 		}
 	}
@@ -538,7 +543,11 @@ func (u *unavailableSandboxManager) Exec(ctx context.Context, req ExecRequest) (
 	})
 }
 
-func (u *unavailableSandboxManager) ExecStream(ctx context.Context, req ExecRequest, onEvent func(ExecEvent) error) (*ExecResult, error) {
+func (u *unavailableSandboxManager) ExecStream(
+	ctx context.Context,
+	req ExecRequest,
+	onEvent func(ExecEvent) error,
+) (*ExecResult, error) {
 	return nil, u.err
 }
 

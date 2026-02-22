@@ -167,16 +167,16 @@ type SessionConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace           string             `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool               `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string             `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string             `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	Workspace           string             `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool               `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Provider            string             `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	Model               string             `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
 	ModelFallbacks      []string           `json:"model_fallbacks,omitempty"`
-	ImageModel          string             `json:"image_model,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModel          string             `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks []string           `json:"image_model_fallbacks,omitempty"`
-	MaxTokens           int                `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         *float64           `json:"temperature,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int                `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	MaxTokens           int                `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature         *float64           `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int                `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	Sandbox             AgentSandboxConfig `json:"sandbox"`
 }
 
@@ -454,7 +454,7 @@ type ExecConfig struct {
 }
 
 type AgentSandboxPruneConfig struct {
-	IdleHours  int `json:"idle_hours" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_IDLE_HOURS"`
+	IdleHours  int `json:"idle_hours"   env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_IDLE_HOURS"`
 	MaxAgeDays int `json:"max_age_days" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_MAX_AGE_DAYS"`
 }
 
@@ -502,22 +502,22 @@ func (v AgentSandboxDockerUlimitValue) MarshalJSON() ([]byte, error) {
 }
 
 type AgentSandboxDockerConfig struct {
-	Image           string                                   `json:"image" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_IMAGE"`
+	Image           string                                   `json:"image"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_IMAGE"`
 	ContainerPrefix string                                   `json:"container_prefix" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_CONTAINER_PREFIX"`
-	Workdir         string                                   `json:"workdir" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_WORKDIR"`
-	ReadOnlyRoot    bool                                     `json:"read_only_root" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_READ_ONLY_ROOT"`
+	Workdir         string                                   `json:"workdir"          env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_WORKDIR"`
+	ReadOnlyRoot    bool                                     `json:"read_only_root"   env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_READ_ONLY_ROOT"`
 	Tmpfs           []string                                 `json:"tmpfs"`
-	Network         string                                   `json:"network" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_NETWORK"`
-	User            string                                   `json:"user" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_USER"`
+	Network         string                                   `json:"network"          env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_NETWORK"`
+	User            string                                   `json:"user"             env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_USER"`
 	CapDrop         []string                                 `json:"cap_drop"`
 	Env             map[string]string                        `json:"env"`
-	SetupCommand    string                                   `json:"setup_command" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_SETUP_COMMAND"`
-	PidsLimit       int64                                    `json:"pids_limit" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_PIDS_LIMIT"`
-	Memory          string                                   `json:"memory" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_MEMORY"`
-	MemorySwap      string                                   `json:"memory_swap" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_MEMORY_SWAP"`
-	Cpus            float64                                  `json:"cpus" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_CPUS"`
+	SetupCommand    string                                   `json:"setup_command"    env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_SETUP_COMMAND"`
+	PidsLimit       int64                                    `json:"pids_limit"       env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_PIDS_LIMIT"`
+	Memory          string                                   `json:"memory"           env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_MEMORY"`
+	MemorySwap      string                                   `json:"memory_swap"      env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_MEMORY_SWAP"`
+	Cpus            float64                                  `json:"cpus"             env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_CPUS"`
 	Ulimits         map[string]AgentSandboxDockerUlimitValue `json:"ulimits"`
-	SeccompProfile  string                                   `json:"seccomp_profile" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_SECCOMP_PROFILE"`
+	SeccompProfile  string                                   `json:"seccomp_profile"  env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_SECCOMP_PROFILE"`
 	ApparmorProfile string                                   `json:"apparmor_profile" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_APPARMOR_PROFILE"`
 	DNS             []string                                 `json:"dns"`
 	ExtraHosts      []string                                 `json:"extra_hosts"`
@@ -525,10 +525,10 @@ type AgentSandboxDockerConfig struct {
 }
 
 type AgentSandboxConfig struct {
-	Mode            string                   `json:"mode" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_MODE"`
-	Scope           string                   `json:"scope" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_SCOPE"`
+	Mode            string                   `json:"mode"             env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_MODE"`
+	Scope           string                   `json:"scope"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_SCOPE"`
 	WorkspaceAccess string                   `json:"workspace_access" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ACCESS"`
-	WorkspaceRoot   string                   `json:"workspace_root" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ROOT"`
+	WorkspaceRoot   string                   `json:"workspace_root"   env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ROOT"`
 	Docker          AgentSandboxDockerConfig `json:"docker"`
 	Prune           AgentSandboxPruneConfig  `json:"prune"`
 }

@@ -104,11 +104,13 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	newContent := strings.Replace(contentStr, oldText, newText, 1)
 
 	if sb != nil {
-		if err := sb.Fs().WriteFile(ctx, path, []byte(newContent), true); err != nil {
+		err = sb.Fs().WriteFile(ctx, path, []byte(newContent), true)
+		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 		}
 	} else {
-		if err := os.WriteFile(resolvedPath, []byte(newContent), 0o644); err != nil {
+		err = os.WriteFile(resolvedPath, []byte(newContent), 0o644)
+		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 		}
 	}
@@ -169,12 +171,14 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *Tool
 	sb := sandbox.SandboxFromContext(ctx)
 	if sb != nil {
 		// Implement Append using Read + Write if no Append in FsBridge
-		oldContent, err := sb.Fs().ReadFile(ctx, path)
+		var oldContent []byte
+		oldContent, err = sb.Fs().ReadFile(ctx, path)
 		if err != nil && !strings.Contains(err.Error(), "no such file") {
 			return ErrorResult(fmt.Sprintf("failed to read file for append: %v", err))
 		}
 		newContent := string(oldContent) + content
-		if err := sb.Fs().WriteFile(ctx, path, []byte(newContent), true); err != nil {
+		err = sb.Fs().WriteFile(ctx, path, []byte(newContent), true)
+		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to append (write) to file: %v", err))
 		}
 		return SilentResult(fmt.Sprintf("Appended to %s", path))

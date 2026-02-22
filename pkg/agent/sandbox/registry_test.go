@@ -53,7 +53,8 @@ func TestRegistryUpsertAndRemove(t *testing.T) {
 		t.Fatalf("createdAt preserved = %d, want %d", data.Entries[0].CreatedAtMs, now)
 	}
 
-	if err := removeRegistryEntry(path, "c1"); err != nil {
+	err = removeRegistryEntry(path, "c1")
+	if err != nil {
 		t.Fatalf("removeRegistryEntry failed: %v", err)
 	}
 	data, err = loadRegistry(path)

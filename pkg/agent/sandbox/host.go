@@ -63,7 +63,11 @@ func (h *HostSandbox) Exec(ctx context.Context, req ExecRequest) (*ExecResult, e
 	})
 }
 
-func (h *HostSandbox) ExecStream(ctx context.Context, req ExecRequest, onEvent func(ExecEvent) error) (*ExecResult, error) {
+func (h *HostSandbox) ExecStream(
+	ctx context.Context,
+	req ExecRequest,
+	onEvent func(ExecEvent) error,
+) (*ExecResult, error) {
 	if strings.TrimSpace(req.Command) == "" {
 		return nil, fmt.Errorf("empty command")
 	}
@@ -225,11 +229,11 @@ func (h *hostFS) WriteFile(ctx context.Context, path string, data []byte, mkdir 
 			return err
 		}
 		if mkdir {
-			if err := os.MkdirAll(filepath.Dir(resolved), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
 				return err
 			}
 		}
-		return os.WriteFile(resolved, data, 0644)
+		return os.WriteFile(resolved, data, 0o644)
 	}
 
 	relPath, err := h.getSafeRelPath(path)
@@ -239,12 +243,12 @@ func (h *hostFS) WriteFile(ctx context.Context, path string, data []byte, mkdir 
 
 	if mkdir {
 		// MkdirAll natively resolves inside os.Root to avoid escapes.
-		if err := h.root.MkdirAll(filepath.Dir(relPath), 0755); err != nil {
+		if err := h.root.MkdirAll(filepath.Dir(relPath), 0o755); err != nil {
 			return err
 		}
 	}
 	// Uses OS-level guarantees to restrict the file writing within the root descriptor.
-	return h.root.WriteFile(relPath, data, 0644)
+	return h.root.WriteFile(relPath, data, 0o644)
 }
 
 // validatePath ensures the given path is within the workspace if restrict is true but does not ensure atomic TOCTOU protection.

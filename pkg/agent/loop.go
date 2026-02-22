@@ -696,7 +696,14 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			toolCtx := sandbox.WithSessionKey(ctx, opts.SessionKey)
-			toolResult := agent.Tools.ExecuteWithContext(toolCtx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+			toolResult := agent.Tools.ExecuteWithContext(
+				toolCtx,
+				tc.Name,
+				tc.Arguments,
+				opts.Channel,
+				opts.ChatID,
+				asyncCallback,
+			)
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {

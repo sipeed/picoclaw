@@ -27,7 +27,8 @@ func TestContainerSandbox_Integration_ExecReadWrite(t *testing.T) {
 	}
 	defer cli.Close()
 
-	if _, err := cli.Ping(ctx); err != nil {
+	_, err = cli.Ping(ctx)
+	if err != nil {
 		t.Skipf("docker daemon unavailable: %v", err)
 	}
 
@@ -43,7 +44,8 @@ func TestContainerSandbox_Integration_ExecReadWrite(t *testing.T) {
 		ContainerName: containerName,
 		Workspace:     workspace,
 	})
-	if err := sb.Start(ctx); err != nil {
+	err = sb.Start(ctx)
+	if err != nil {
 		t.Fatalf("sandbox start failed: %v", err)
 	}
 	defer func() {
@@ -54,7 +56,8 @@ func TestContainerSandbox_Integration_ExecReadWrite(t *testing.T) {
 	}()
 
 	content := []byte("hello from integration test")
-	if err := sb.Fs().WriteFile(ctx, "it/write.txt", content, true); err != nil {
+	err = sb.Fs().WriteFile(ctx, "it/write.txt", content, true)
+	if err != nil {
 		t.Fatalf("write file failed: %v", err)
 	}
 
@@ -116,7 +119,8 @@ func TestContainerSandbox_Integration_WriteFileMkdirInContainerTmp(t *testing.T)
 	}
 	defer cli.Close()
 
-	if _, err := cli.Ping(ctx); err != nil {
+	_, err = cli.Ping(ctx)
+	if err != nil {
 		t.Skipf("docker daemon unavailable: %v", err)
 	}
 
@@ -130,7 +134,8 @@ func TestContainerSandbox_Integration_WriteFileMkdirInContainerTmp(t *testing.T)
 		Image:         image,
 		ContainerName: containerName,
 	})
-	if err := sb.Start(ctx); err != nil {
+	err = sb.Start(ctx)
+	if err != nil {
 		t.Fatalf("sandbox start failed: %v", err)
 	}
 	defer func() {
@@ -141,7 +146,8 @@ func TestContainerSandbox_Integration_WriteFileMkdirInContainerTmp(t *testing.T)
 	}()
 
 	content := []byte("mkdir path works")
-	if err := sb.Fs().WriteFile(ctx, "/workspace/it_mkdir/nested/file.txt", content, true); err != nil {
+	err = sb.Fs().WriteFile(ctx, "/workspace/it_mkdir/nested/file.txt", content, true)
+	if err != nil {
 		t.Fatalf("write with mkdir failed: %v", err)
 	}
 

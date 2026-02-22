@@ -23,6 +23,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-units"
+
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -192,7 +193,11 @@ func (c *ContainerSandbox) Exec(ctx context.Context, req ExecRequest) (*ExecResu
 	})
 }
 
-func (c *ContainerSandbox) ExecStream(ctx context.Context, req ExecRequest, onEvent func(ExecEvent) error) (*ExecResult, error) {
+func (c *ContainerSandbox) ExecStream(
+	ctx context.Context,
+	req ExecRequest,
+	onEvent func(ExecEvent) error,
+) (*ExecResult, error) {
 	if c.startErr != nil {
 		return nil, c.startErr
 	}
@@ -240,7 +245,8 @@ func (c *ContainerSandbox) ExecStream(ctx context.Context, req ExecRequest, onEv
 		onEvent:   onEvent,
 		buffer:    &stderr,
 	}
-	if _, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, attach.Reader); err != nil && err != io.EOF {
+	_, err = stdcopy.StdCopy(stdoutWriter, stderrWriter, attach.Reader)
+	if err != nil && err != io.EOF {
 		if execCtx.Err() != nil {
 			return nil, execCtx.Err()
 		}
@@ -578,7 +584,7 @@ func (f *containerFS) WriteFile(ctx context.Context, p string, data []byte, mkdi
 	tw := tar.NewWriter(&buf)
 	if err := tw.WriteHeader(&tar.Header{
 		Name: base,
-		Mode: 0644,
+		Mode: 0o644,
 		Size: int64(len(data)),
 	}); err != nil {
 		_ = tw.Close()

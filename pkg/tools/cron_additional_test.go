@@ -29,7 +29,11 @@ func (s *cronStubSandbox) Exec(ctx context.Context, req sandbox.ExecRequest) (*s
 	return s.ExecStream(ctx, req, nil)
 }
 
-func (s *cronStubSandbox) ExecStream(ctx context.Context, req sandbox.ExecRequest, onEvent func(sandbox.ExecEvent) error) (*sandbox.ExecResult, error) {
+func (s *cronStubSandbox) ExecStream(
+	ctx context.Context,
+	req sandbox.ExecRequest,
+	onEvent func(sandbox.ExecEvent) error,
+) (*sandbox.ExecResult, error) {
 	s.calls++
 	s.last = req
 	if s.err != nil {
@@ -38,12 +42,16 @@ func (s *cronStubSandbox) ExecStream(ctx context.Context, req sandbox.ExecReques
 	if s.res != nil {
 		if onEvent != nil {
 			if s.res.Stdout != "" {
-				if err := onEvent(sandbox.ExecEvent{Type: sandbox.ExecEventStdout, Chunk: []byte(s.res.Stdout)}); err != nil {
+				if err := onEvent(
+					sandbox.ExecEvent{Type: sandbox.ExecEventStdout, Chunk: []byte(s.res.Stdout)},
+				); err != nil {
 					return nil, err
 				}
 			}
 			if s.res.Stderr != "" {
-				if err := onEvent(sandbox.ExecEvent{Type: sandbox.ExecEventStderr, Chunk: []byte(s.res.Stderr)}); err != nil {
+				if err := onEvent(
+					sandbox.ExecEvent{Type: sandbox.ExecEventStderr, Chunk: []byte(s.res.Stderr)},
+				); err != nil {
 					return nil, err
 				}
 			}
@@ -66,7 +74,10 @@ func (s *cronStubSandbox) ExecStream(ctx context.Context, req sandbox.ExecReques
 
 type noopExecutor struct{}
 
-func (n *noopExecutor) ProcessDirectWithChannel(ctx context.Context, content, sessionKey, channel, chatID string) (string, error) {
+func (n *noopExecutor) ProcessDirectWithChannel(
+	ctx context.Context,
+	content, sessionKey, channel, chatID string,
+) (string, error) {
 	return "ok", nil
 }
 

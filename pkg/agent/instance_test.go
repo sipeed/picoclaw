@@ -127,7 +127,7 @@ func TestNewAgentInstance_ReadOnlyContainerOmitsWriteTools(t *testing.T) {
 		}
 	}
 
-	writeRes := agent.Tools.Execute(context.Background(), "write_file", map[string]interface{}{
+	writeRes := agent.Tools.Execute(context.Background(), "write_file", map[string]any{
 		"path":    "a.txt",
 		"content": "hello",
 	})

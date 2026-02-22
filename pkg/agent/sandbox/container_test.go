@@ -377,12 +377,21 @@ func TestParseByteLimitAndHostConfig(t *testing.T) {
 		t.Fatalf("unexpected pids limit: %#v", hc.Resources.PidsLimit)
 	}
 	if hc.Memory <= 0 || hc.MemorySwap <= 0 || hc.NanoCPUs <= 0 {
-		t.Fatalf("expected memory/swap/cpu limits set, got mem=%d swap=%d cpu=%d", hc.Memory, hc.MemorySwap, hc.NanoCPUs)
+		t.Fatalf(
+			"expected memory/swap/cpu limits set, got mem=%d swap=%d cpu=%d",
+			hc.Memory,
+			hc.MemorySwap,
+			hc.NanoCPUs,
+		)
 	}
 	if len(hc.Tmpfs) != 2 || hc.Tmpfs["/run"] != "" {
 		t.Fatalf("unexpected tmpfs map: %#v", hc.Tmpfs)
 	}
-	if got := strings.Join(hc.SecurityOpt, ","); !strings.Contains(got, "seccomp=sec-profile.json") || !strings.Contains(got, "apparmor=apparmor-profile") {
+	if got := strings.Join(
+		hc.SecurityOpt,
+		",",
+	); !strings.Contains(got, "seccomp=sec-profile.json") ||
+		!strings.Contains(got, "apparmor=apparmor-profile") {
 		t.Fatalf("security options missing expected profiles: %v", hc.SecurityOpt)
 	}
 	if len(hc.Resources.Ulimits) != 2 {

@@ -61,7 +61,8 @@ func TestHostSandbox_ExecAndFs(t *testing.T) {
 		t.Fatalf("expected working dir restriction error, got: %v", err)
 	}
 
-	if err := sb.Fs().WriteFile(context.Background(), "dir/a.txt", []byte("x"), true); err != nil {
+	err = sb.Fs().WriteFile(context.Background(), "dir/a.txt", []byte("x"), true)
+	if err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 	b, err := sb.Fs().ReadFile(context.Background(), "dir/a.txt")
@@ -285,7 +286,8 @@ func TestHostFS_ReadFileWriteFile_WithoutWorkspaceOrRoot(t *testing.T) {
 	// Test case where root is nil explicitly
 	sb2 := NewHostSandbox(root, true)
 	sb2.fs.(*hostFS).root = nil
-	if err := sb2.Fs().WriteFile(context.Background(), "nil_root_test.txt", content, true); err != nil {
+	err = sb2.Fs().WriteFile(context.Background(), "nil_root_test.txt", content, true)
+	if err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
@@ -307,7 +309,8 @@ func TestValidatePathErrors(t *testing.T) {
 	root := t.TempDir()
 
 	// target parent is file, evalSymlinks should fail
-	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0644); err != nil {
+	err = os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644)
+	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = validatePath("a.txt/b.txt", root, true)

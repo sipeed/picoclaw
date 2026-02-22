@@ -34,12 +34,12 @@ type registryFileLock struct {
 
 func acquireRegistryFileLock(registryPath string) (*registryFileLock, error) {
 	lockPath := registryPath + ".lock"
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return nil, err
 	}
 	deadline := time.Now().Add(registryLockTimeout)
 	for {
-		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			_ = f.Close()
 			return &registryFileLock{path: lockPath}, nil
@@ -89,7 +89,7 @@ func loadRegistry(path string) (*registryData, error) {
 }
 
 func saveRegistry(path string, data *registryData) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	raw, err := json.MarshalIndent(data, "", "  ")
@@ -97,7 +97,7 @@ func saveRegistry(path string, data *registryData) error {
 		return err
 	}
 	tmp := fmt.Sprintf("%s.%d.tmp", path, time.Now().UnixNano())
-	if err := os.WriteFile(tmp, append(raw, '\n'), 0644); err != nil {
+	if err := os.WriteFile(tmp, append(raw, '\n'), 0o644); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {

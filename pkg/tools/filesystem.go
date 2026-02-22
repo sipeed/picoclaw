@@ -252,7 +252,6 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	}
 
 	entries, err := os.ReadDir(resolvedPath)
-
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read directory: %v", err))
 	}
