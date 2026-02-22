@@ -246,7 +246,7 @@ picoclaw onboard
       }
     }
   }
-*
+}
 ```
 
 > **New**: The `model_list` configuration format allows zero-code provider addition. See [Model Configuration](#model-configuration-model_list) for details.
@@ -328,7 +328,7 @@ picoclaw gateway
 * In the Bot settings, enable **MESSAGE CONTENT INTENT**
 * (Optional) Enable **SERVER MEMBERS INTENT** if you plan to use allow lists based on member data
 
-**3. Get your User ID***
+**3. Get your User ID**
 * Discord Settings → Advanced → enable **Developer Mode**
 * Right-click your avatar → **Copy User ID**
 
@@ -429,7 +429,7 @@ picoclaw gateway
 
 ```bash
 picoclaw gateway
-```*
+```
 </details>
 
 <details>
@@ -523,7 +523,7 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 **1. Create an app**
 
 * Go to WeCom Admin Console → App Management → Create App
-* Copy **AgentId** and **\*ecret**
+* Copy **AgentId** and **Secret**
 * Go to "My Company" page, copy **CorpID***
 **2. Configure receive message**
 
