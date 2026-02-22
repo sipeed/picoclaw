@@ -37,7 +37,7 @@ type MessageSendingEvent struct {
 // Handlers can modify Args, or set Cancel to block execution.
 type BeforeToolCallEvent struct {
 	ToolName     string
-	Args         map[string]any // Modifiable
+	Args         map[string]any // Modifiable; guaranteed non-nil when triggered via AgentLoop.
 	Channel      string
 	ChatID       string
 	Cancel       bool
