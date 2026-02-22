@@ -161,6 +161,13 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 %s`, skillsSummary))
 	}
 
+	// Runtime status from tools (e.g., background processes)
+	if cb.tools != nil {
+		if status := cb.tools.GetRuntimeStatus(); status != "" {
+			parts = append(parts, status)
+		}
+	}
+
 	// Memory context
 	memoryContext := cb.memory.GetMemoryContext()
 	if memoryContext != "" {
