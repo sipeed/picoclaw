@@ -145,11 +145,11 @@ func (t *AndroidTool) Parameters() map[string]interface{} {
 			},
 			"max_depth": map[string]interface{}{
 				"type":        "integer",
-				"description": "Maximum traversal depth (for get_ui_tree, default 30)",
+				"description": "Maximum traversal depth (for get_ui_tree, default 15)",
 			},
 			"max_nodes": map[string]interface{}{
 				"type":        "integer",
-				"description": "Maximum number of nodes to output (for get_ui_tree, default 2000)",
+				"description": "Maximum number of nodes to output (for get_ui_tree, default 300)",
 			},
 		},
 		"required": []string{"action"},

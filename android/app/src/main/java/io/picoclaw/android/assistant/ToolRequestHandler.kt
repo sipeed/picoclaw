@@ -183,8 +183,8 @@ class ToolRequestHandler(
         val index = request.params?.get("index")?.jsonPrimitive?.intOrNull ?: 0
         val boundsX = request.params?.get("bounds_x")?.jsonPrimitive?.doubleOrNull
         val boundsY = request.params?.get("bounds_y")?.jsonPrimitive?.doubleOrNull
-        val maxDepth = request.params?.get("max_depth")?.jsonPrimitive?.intOrNull ?: 30
-        val maxNodes = request.params?.get("max_nodes")?.jsonPrimitive?.intOrNull ?: 2000
+        val maxDepth = request.params?.get("max_depth")?.jsonPrimitive?.intOrNull ?: 15
+        val maxNodes = request.params?.get("max_nodes")?.jsonPrimitive?.intOrNull ?: 300
 
         return try {
             withContext(Dispatchers.Main) { setOverlayVisibility(false) }
@@ -262,20 +262,32 @@ class ToolRequestHandler(
         nodeCount: IntArray
     ) {
         if (nodeCount[0] >= maxNodes) return
+        // Skip invisible nodes
+        if (!node.isVisibleToUser) return
         nodeCount[0]++
         val indent = "  ".repeat(depth)
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
-        sb.appendLine(
-            "${indent}[${node.className}] " +
-                "text=${node.text ?: ""} " +
-                "desc=${node.contentDescription ?: ""} " +
-                "bounds=${bounds} " +
-                "clickable=${node.isClickable} " +
-                "enabled=${node.isEnabled} " +
-                "visible=${node.isVisibleToUser} " +
-                "id=${node.viewIdResourceName ?: ""}"
-        )
+
+        // Strip common class name prefixes
+        val className = node.className?.toString() ?: "View"
+        val shortClass = className
+            .removePrefix("android.widget.")
+            .removePrefix("android.view.")
+
+        sb.append("${indent}[${shortClass}]")
+
+        // Only output non-empty fields
+        node.text?.takeIf { it.isNotEmpty() }?.let { sb.append(" text=$it") }
+        node.contentDescription?.takeIf { it.isNotEmpty() }?.let { sb.append(" desc=$it") }
+        sb.append(" bounds=$bounds")
+        // Only output non-default values: clickable=true (default is false), enabled=false (default is true)
+        if (node.isClickable) sb.append(" clickable")
+        if (!node.isEnabled) sb.append(" enabled=false")
+        node.viewIdResourceName?.let { sb.append(" id=$it") }
+
+        sb.appendLine()
+
         if (depth >= maxDepth) {
             if (node.childCount > 0) {
                 sb.appendLine("${indent}  [truncated: ${node.childCount} children at depth $depth]")
