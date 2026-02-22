@@ -12,8 +12,9 @@ type InboundMessage struct {
 	ChatID     string            `json:"chat_id"`
 	Content    string            `json:"content"`
 	Media      []string          `json:"media,omitempty"`
-	Peer       Peer              `json:"peer"`                 // routing peer
-	MessageID  string            `json:"message_id,omitempty"` // platform message ID
+	Peer       Peer              `json:"peer"`                  // routing peer
+	MessageID  string            `json:"message_id,omitempty"`  // platform message ID
+	MediaScope string            `json:"media_scope,omitempty"` // media lifecycle scope
 	SessionKey string            `json:"session_key"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
 }

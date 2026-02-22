@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -31,6 +32,7 @@ type Manager struct {
 	workers      map[string]*channelWorker
 	bus          *bus.MessageBus
 	config       *config.Config
+	mediaStore   media.MediaStore
 	dispatchTask *asyncTask
 	mu           sync.RWMutex
 }
@@ -39,12 +41,13 @@ type asyncTask struct {
 	cancel context.CancelFunc
 }
 
-func NewManager(cfg *config.Config, messageBus *bus.MessageBus) (*Manager, error) {
+func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.MediaStore) (*Manager, error) {
 	m := &Manager{
-		channels: make(map[string]Channel),
-		workers:  make(map[string]*channelWorker),
-		bus:      messageBus,
-		config:   cfg,
+		channels:   make(map[string]Channel),
+		workers:    make(map[string]*channelWorker),
+		bus:        messageBus,
+		config:     cfg,
+		mediaStore: store,
 	}
 
 	if err := m.initChannels(); err != nil {
@@ -73,6 +76,12 @@ func (m *Manager) initChannel(name, displayName string) {
 			"error":   err.Error(),
 		})
 	} else {
+		// Inject MediaStore if channel supports it
+		if m.mediaStore != nil {
+			if setter, ok := ch.(interface{ SetMediaStore(s media.MediaStore) }); ok {
+				setter.SetMediaStore(m.mediaStore)
+			}
+		}
 		m.channels[name] = ch
 		m.workers[name] = &channelWorker{
 			ch:    ch,

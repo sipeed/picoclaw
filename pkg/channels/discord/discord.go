@@ -3,7 +3,6 @@ package discord
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
@@ -202,19 +202,22 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	content := m.Content
 	content = c.stripBotMention(content)
 	mediaPaths := make([]string, 0, len(m.Attachments))
-	localFiles := make([]string, 0, len(m.Attachments))
 
-	// Ensure temp files are cleaned up when function returns
-	defer func() {
-		for _, file := range localFiles {
-			if err := os.Remove(file); err != nil {
-				logger.DebugCF("discord", "Failed to cleanup temp file", map[string]any{
-					"file":  file,
-					"error": err.Error(),
-				})
+	scope := channels.BuildMediaScope("discord", m.ChannelID, m.ID)
+
+	// Helper to register a local file with the media store
+	storeMedia := func(localPath, filename string) string {
+		if store := c.GetMediaStore(); store != nil {
+			ref, err := store.Store(localPath, media.MediaMeta{
+				Filename: filename,
+				Source:   "discord",
+			}, scope)
+			if err == nil {
+				return ref
 			}
 		}
-	}()
+		return localPath // fallback
+	}
 
 	for _, attachment := range m.Attachments {
 		isAudio := utils.IsAudioFile(attachment.Filename, attachment.ContentType)
@@ -222,8 +225,6 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		if isAudio {
 			localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
 			if localPath != "" {
-				localFiles = append(localFiles, localPath)
-
 				transcribedText := ""
 				if c.transcriber != nil && c.transcriber.IsAvailable() {
 					ctx, cancel := context.WithTimeout(c.ctx, transcriptionTimeout)
@@ -245,6 +246,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 					transcribedText = fmt.Sprintf("[audio: %s]", attachment.Filename)
 				}
 
+				mediaPaths = append(mediaPaths, storeMedia(localPath, attachment.Filename))
 				content = appendContent(content, transcribedText)
 			} else {
 				logger.WarnCF("discord", "Failed to download audio attachment", map[string]any{
