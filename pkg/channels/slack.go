@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -119,8 +120,10 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
 
+	content := markdownToSlackMrkdwn(msg.Content)
+
 	opts := []slack.MsgOption{
-		slack.MsgOptionText(msg.Content, false),
+		slack.MsgOptionText(content, false),
 	}
 
 	if threadTS != "" {
@@ -440,4 +443,157 @@ func parseSlackChatID(chatID string) (channelID, threadTS string) {
 		threadTS = parts[1]
 	}
 	return
+}
+
+// markdownToSlackMrkdwn converts standard Markdown to Slack's mrkdwn format.
+func markdownToSlackMrkdwn(text string) string {
+	if text == "" {
+		return ""
+	}
+
+	// Protect code blocks from conversion
+	codeBlocks := extractCodeBlocks(text)
+	text = codeBlocks.text
+
+	// Protect inline code from conversion
+	inlineCodes := extractInlineCodes(text)
+	text = inlineCodes.text
+
+	// Convert markdown tables to plain-text columns
+	text = convertMarkdownTables(text)
+
+	// Headings: ### heading → *heading*
+	text = regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`).ReplaceAllString(text, "*$1*")
+
+	// Horizontal rules: --- or *** or ___ → remove
+	text = regexp.MustCompile(`(?m)^[-*_]{3,}\s*$`).ReplaceAllString(text, "")
+
+	// Bold: **text** or __text__ → *text*
+	text = regexp.MustCompile(`\*\*(.+?)\*\*`).ReplaceAllString(text, "*$1*")
+	text = regexp.MustCompile(`__(.+?)__`).ReplaceAllString(text, "*$1*")
+
+	// Strikethrough: ~~text~~ → ~text~
+	text = regexp.MustCompile(`~~(.+?)~~`).ReplaceAllString(text, "~$1~")
+
+	// Links: [text](url) → <url|text>
+	text = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`).ReplaceAllString(text, "<$2|$1>")
+
+	// Bullet lists: leading * with space → •
+	text = regexp.MustCompile(`(?m)^\*\s+`).ReplaceAllString(text, "• ")
+
+	// Restore inline code (backticks work in Slack)
+	for i, code := range inlineCodes.codes {
+		text = strings.ReplaceAll(text, fmt.Sprintf("\x00IC%d\x00", i), "`"+code+"`")
+	}
+
+	// Restore code blocks (triple backticks work in Slack)
+	for i, code := range codeBlocks.codes {
+		text = strings.ReplaceAll(text, fmt.Sprintf("\x00CB%d\x00", i), "```\n"+code+"```")
+	}
+
+	// Collapse 3+ consecutive blank lines into 1
+	text = regexp.MustCompile(`\n{3,}`).ReplaceAllString(text, "\n\n")
+
+	return strings.TrimSpace(text)
+}
+
+// convertMarkdownTables converts markdown tables to aligned plain text.
+func convertMarkdownTables(text string) string {
+	lines := strings.Split(text, "\n")
+	var result []string
+	i := 0
+
+	for i < len(lines) {
+		// Detect a table: line with | chars, followed by separator |---|
+		if i+1 < len(lines) && isTableRow(lines[i]) && isTableSeparator(lines[i+1]) {
+			// Collect all table rows
+			var rows [][]string
+			// Header row
+			rows = append(rows, parseTableRow(lines[i]))
+			i++ // skip header
+			i++ // skip separator
+
+			for i < len(lines) && isTableRow(lines[i]) {
+				rows = append(rows, parseTableRow(lines[i]))
+				i++
+			}
+
+			// Calculate column widths
+			colWidths := make([]int, 0)
+			for _, row := range rows {
+				for c, cell := range row {
+					for len(colWidths) <= c {
+						colWidths = append(colWidths, 0)
+					}
+					if len(cell) > colWidths[c] {
+						colWidths[c] = len(cell)
+					}
+				}
+			}
+
+			// Format as aligned plain text
+			for r, row := range rows {
+				var line strings.Builder
+				for c, cell := range row {
+					if c > 0 {
+						line.WriteString("   ")
+					}
+					line.WriteString(cell)
+					if c < len(row)-1 && c < len(colWidths) {
+						for pad := len(cell); pad < colWidths[c]; pad++ {
+							line.WriteByte(' ')
+						}
+					}
+				}
+				result = append(result, line.String())
+				// Add a blank line after the header
+				if r == 0 {
+					var sep strings.Builder
+					for c, w := range colWidths {
+						if c > 0 {
+							sep.WriteString("   ")
+						}
+						for j := 0; j < w; j++ {
+							sep.WriteByte('-')
+						}
+					}
+					result = append(result, sep.String())
+				}
+			}
+			continue
+		}
+
+		result = append(result, lines[i])
+		i++
+	}
+
+	return strings.Join(result, "\n")
+}
+
+func isTableRow(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.Contains(trimmed, "|") && strings.HasPrefix(trimmed, "|")
+}
+
+func isTableSeparator(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "|") {
+		return false
+	}
+	cleaned := strings.ReplaceAll(trimmed, "|", "")
+	cleaned = strings.ReplaceAll(cleaned, "-", "")
+	cleaned = strings.ReplaceAll(cleaned, ":", "")
+	cleaned = strings.TrimSpace(cleaned)
+	return cleaned == ""
+}
+
+func parseTableRow(line string) []string {
+	trimmed := strings.TrimSpace(line)
+	trimmed = strings.Trim(trimmed, "|")
+	parts := strings.Split(trimmed, "|")
+	cells := make([]string, 0, len(parts))
+	for _, p := range parts {
+		cells = append(cells, strings.TrimSpace(p))
+	}
+	return cells
 }
