@@ -316,7 +316,7 @@ type agentLoopDataProvider struct {
 	gitCacheAt time.Time
 }
 
-const gitCacheTTL = 30 * time.Second
+const gitCacheTTL = 5 * time.Minute
 
 func (p *agentLoopDataProvider) ListSkills() []skills.SkillInfo {
 	return p.loop.ListSkills()
