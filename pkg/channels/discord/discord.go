@@ -113,7 +113,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	c.stopTyping(msg.ChatID)
 
 	if !c.IsRunning() {
-		return fmt.Errorf("discord bot not running")
+		return channels.ErrNotRunning
 	}
 
 	channelID := msg.ChatID
@@ -142,11 +142,11 @@ func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content strin
 	select {
 	case err := <-done:
 		if err != nil {
-			return fmt.Errorf("failed to send discord message: %w", err)
+			return fmt.Errorf("discord send: %w", channels.ErrTemporary)
 		}
 		return nil
 	case <-sendCtx.Done():
-		return fmt.Errorf("send message timeout: %w", sendCtx.Err())
+		return sendCtx.Err()
 	}
 }
 

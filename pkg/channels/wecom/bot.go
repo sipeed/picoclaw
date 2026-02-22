@@ -166,7 +166,7 @@ func (c *WeComBotChannel) Stop(ctx context.Context) error {
 // For delayed responses, we use the webhook URL
 func (c *WeComBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("wecom channel not running")
+		return channels.ErrNotRunning
 	}
 
 	logger.DebugCF("wecom", "Sending message via webhook", map[string]any{
@@ -433,9 +433,14 @@ func (c *WeComBotChannel) sendWebhookReply(ctx context.Context, userID, content 
 	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send webhook reply: %w", err)
+		return channels.ClassifyNetError(err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("webhook API error: %s", string(body)))
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

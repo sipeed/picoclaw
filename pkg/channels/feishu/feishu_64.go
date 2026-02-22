@@ -91,7 +91,7 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 
 func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("feishu channel not running")
+		return channels.ErrNotRunning
 	}
 
 	if msg.ChatID == "" {
@@ -115,11 +115,11 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 
 	resp, err := c.client.Im.V1.Message.Create(ctx, req)
 	if err != nil {
-		return fmt.Errorf("failed to send feishu message: %w", err)
+		return fmt.Errorf("feishu send: %w", channels.ErrTemporary)
 	}
 
 	if !resp.Success() {
-		return fmt.Errorf("feishu api error: code=%d msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("feishu api error (code=%d msg=%s): %w", resp.Code, resp.Msg, channels.ErrTemporary)
 	}
 
 	logger.DebugCF("feishu", "Feishu message sent", map[string]any{

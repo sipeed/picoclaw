@@ -207,7 +207,7 @@ func (c *WeComAppChannel) Stop(ctx context.Context) error {
 // Send sends a message to WeCom user proactively using access token
 func (c *WeComAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("wecom_app channel not running")
+		return channels.ErrNotRunning
 	}
 
 	accessToken := c.getAccessToken()
@@ -548,9 +548,14 @@ func (c *WeComAppChannel) sendTextMessage(ctx context.Context, accessToken, user
 	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
+		return channels.ClassifyNetError(err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom_app API error: %s", string(body)))
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -603,9 +608,14 @@ func (c *WeComAppChannel) sendMarkdownMessage(ctx context.Context, accessToken, 
 	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
+		return channels.ClassifyNetError(err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom_app API error: %s", string(body)))
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

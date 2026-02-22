@@ -114,7 +114,7 @@ func (c *QQChannel) Stop(ctx context.Context) error {
 
 func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
-		return fmt.Errorf("QQ bot not running")
+		return channels.ErrNotRunning
 	}
 
 	// 构造消息
@@ -128,7 +128,7 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		logger.ErrorCF("qq", "Failed to send C2C message", map[string]any{
 			"error": err.Error(),
 		})
-		return err
+		return fmt.Errorf("qq send: %w", channels.ErrTemporary)
 	}
 
 	return nil

@@ -94,11 +94,22 @@ func (c *WhatsAppChannel) Stop(ctx context.Context) error {
 }
 
 func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	// Check ctx before acquiring lock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.conn == nil {
-		return fmt.Errorf("whatsapp connection not established")
+		return fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
 	}
 
 	payload := map[string]any{
@@ -115,7 +126,7 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		_ = c.conn.SetWriteDeadline(time.Time{})
-		return fmt.Errorf("failed to send message: %w", err)
+		return fmt.Errorf("whatsapp send: %w", channels.ErrTemporary)
 	}
 	_ = c.conn.SetWriteDeadline(time.Time{})
 
