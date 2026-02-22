@@ -171,6 +171,11 @@ func findToolCallBlock(text string) (blockStart, blockEnd int, content string, f
 //	<parameter name="param">value</parameter>
 //	</invoke>
 //	</ns:toolcall>
+// ExtractXMLToolCalls is the exported version for use by the agent loop.
+func ExtractXMLToolCalls(text string) []ToolCall {
+	return extractXMLToolCalls(text)
+}
+
 func extractXMLToolCalls(text string) []ToolCall {
 	var result []ToolCall
 	remaining := text
@@ -258,6 +263,11 @@ func extractXMLToolCalls(text string) []ToolCall {
 	}
 
 	return result
+}
+
+// StripXMLToolCalls is the exported version for use by the agent loop.
+func StripXMLToolCalls(text string) string {
+	return stripXMLToolCalls(text)
 }
 
 // stripXMLToolCalls removes XML tool call blocks from response text.

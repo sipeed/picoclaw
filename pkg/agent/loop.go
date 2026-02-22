@@ -1525,6 +1525,14 @@ func (al *AgentLoop) runLLMIteration(
 			)
 		}
 
+		// Recover XML tool calls emitted as plain text by some providers.
+		if len(response.ToolCalls) == 0 {
+			if xmlCalls := providers.ExtractXMLToolCalls(response.Content); len(xmlCalls) > 0 {
+				response.ToolCalls = xmlCalls
+			}
+		}
+		response.Content = providers.StripXMLToolCalls(response.Content)
+
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
 			// Plan continuation: if unchecked steps remain, nudge the LLM to
