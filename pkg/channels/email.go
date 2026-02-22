@@ -418,7 +418,7 @@ func (c *EmailChannel) checkLoop(ctx context.Context) {
 	}
 
 	// Run one check immediately
-	c.checkNewEmails(ctx)
+	c.CheckNewEmails(ctx)
 
 	if !c.config.ForcedPolling {
 		// support IDLE user idle loop, waiting for server push update
@@ -438,7 +438,7 @@ func (c *EmailChannel) checkLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.checkNewEmails(ctx)
+			c.CheckNewEmails(ctx)
 		}
 	}
 }
@@ -505,7 +505,7 @@ func (c *EmailChannel) runIdleLoop(ctx context.Context, pollInterval time.Durati
 					return
 				}
 			}
-			c.checkNewEmails(ctx)
+			c.CheckNewEmails(ctx)
 		case err := <-idleDone:
 			// Idle returned (timeout restart or error)
 			if err != nil {
@@ -521,12 +521,12 @@ func (c *EmailChannel) runIdleLoop(ctx context.Context, pollInterval time.Durati
 					return
 				}
 			}
-			c.checkNewEmails(ctx)
+			c.CheckNewEmails(ctx)
 		}
 	}
 }
 
-func (c *EmailChannel) checkNewEmails(ctx context.Context) {
+func (c *EmailChannel) CheckNewEmails(ctx context.Context) {
 	for {
 		if err := ctx.Err(); err != nil {
 			return
