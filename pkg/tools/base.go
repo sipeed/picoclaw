@@ -6,8 +6,8 @@ import "context"
 type Tool interface {
 	Name() string
 	Description() string
-	Parameters() map[string]interface{}
-	Execute(ctx context.Context, args map[string]interface{}) *ToolResult
+	Parameters() map[string]any
+	Execute(ctx context.Context, args map[string]any) *ToolResult
 }
 
 // ContextualTool is an optional interface that tools can implement
@@ -69,10 +69,10 @@ type AsyncTool interface {
 	SetCallback(cb AsyncCallback)
 }
 
-func ToolToSchema(tool Tool) map[string]interface{} {
-	return map[string]interface{}{
+func ToolToSchema(tool Tool) map[string]any {
+	return map[string]any{
 		"type": "function",
-		"function": map[string]interface{}{
+		"function": map[string]any{
 			"name":        tool.Name(),
 			"description": tool.Description(),
 			"parameters":  tool.Parameters(),

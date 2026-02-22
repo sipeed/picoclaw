@@ -16,7 +16,7 @@ func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	messages := []Message{
 		{Role: "user", Content: "Hello"},
 	}
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]any{
 		"max_tokens":  2048,
 		"temperature": 0.7,
 	}, true)
@@ -39,7 +39,7 @@ func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
 		{Role: "system", Content: "You are helpful"},
 		{Role: "user", Content: "Hi"},
 	}
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{}, true)
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]any{}, true)
 	if !params.Instructions.Valid() {
 		t.Fatal("Instructions should be set")
 	}
@@ -54,12 +54,12 @@ func TestBuildCodexParams_ToolCallConversation(t *testing.T) {
 		{
 			Role: "assistant",
 			ToolCalls: []ToolCall{
-				{ID: "call_1", Name: "get_weather", Arguments: map[string]interface{}{"city": "SF"}},
+				{ID: "call_1", Name: "get_weather", Arguments: map[string]any{"city": "SF"}},
 			},
 		},
 		{Role: "tool", Content: `{"temp": 72}`, ToolCallID: "call_1"},
 	}
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{}, false)
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]any{}, false)
 	if params.Input.OfInputItemList == nil {
 		t.Fatal("Input.OfInputItemList should not be nil")
 	}
@@ -87,7 +87,7 @@ func TestBuildCodexParams_ToolCallFunctionFallback(t *testing.T) {
 		{Role: "tool", Content: "ok", ToolCallID: "call_1"},
 	}
 
-	params := buildCodexParams(messages, nil, "gpt-4o", map[string]interface{}{}, false)
+	params := buildCodexParams(messages, nil, "gpt-4o", map[string]any{}, false)
 	if params.Input.OfInputItemList == nil {
 		t.Fatal("Input.OfInputItemList should not be nil")
 	}
@@ -114,16 +114,16 @@ func TestBuildCodexParams_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather",
-				Parameters: map[string]interface{}{
+				Parameters: map[string]any{
 					"type": "object",
-					"properties": map[string]interface{}{
-						"city": map[string]interface{}{"type": "string"},
+					"properties": map[string]any{
+						"city": map[string]any{"type": "string"},
 					},
 				},
 			},
 		},
 	}
-	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, tools, "gpt-4o", map[string]interface{}{}, false)
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, tools, "gpt-4o", map[string]any{}, false)
 	if len(params.Tools) != 1 {
 		t.Fatalf("len(Tools) = %d, want 1", len(params.Tools))
 	}
@@ -136,14 +136,14 @@ func TestBuildCodexParams_WithTools(t *testing.T) {
 }
 
 func TestBuildCodexParams_StoreIsFalse(t *testing.T) {
-	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]interface{}{}, false)
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]any{}, false)
 	if !params.Store.Valid() || params.Store.Or(true) != false {
 		t.Error("Store should be explicitly set to false")
 	}
 }
 
 func TestBuildCodexParams_DefaultWebSearchEnabled(t *testing.T) {
-	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]interface{}{}, true)
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-4o", map[string]any{}, true)
 	if len(params.Tools) != 1 {
 		t.Fatalf("len(Tools) = %d, want 1", len(params.Tools))
 	}
@@ -151,7 +151,11 @@ func TestBuildCodexParams_DefaultWebSearchEnabled(t *testing.T) {
 		t.Fatal("Tool should include built-in web_search")
 	}
 	if params.Tools[0].OfWebSearch.Type != responses.WebSearchToolTypeWebSearch {
-		t.Errorf("Web search tool type = %q, want %q", params.Tools[0].OfWebSearch.Type, responses.WebSearchToolTypeWebSearch)
+		t.Errorf(
+			"Web search tool type = %q, want %q",
+			params.Tools[0].OfWebSearch.Type,
+			responses.WebSearchToolTypeWebSearch,
+		)
 	}
 }
 
@@ -162,7 +166,7 @@ func TestBuildCodexParams_WebSearchFunctionReplacedWithBuiltin(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "web_search",
 				Description: "local web search",
-				Parameters: map[string]interface{}{
+				Parameters: map[string]any{
 					"type": "object",
 				},
 			},
@@ -172,14 +176,14 @@ func TestBuildCodexParams_WebSearchFunctionReplacedWithBuiltin(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "read_file",
 				Description: "read file",
-				Parameters: map[string]interface{}{
+				Parameters: map[string]any{
 					"type": "object",
 				},
 			},
 		},
 	}
 
-	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, tools, "gpt-4o", map[string]interface{}{}, true)
+	params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, tools, "gpt-4o", map[string]any{}, true)
 	if len(params.Tools) != 2 {
 		t.Fatalf("len(Tools) = %d, want 2", len(params.Tools))
 	}
@@ -296,7 +300,7 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 			return
 		}
 
-		var reqBody map[string]interface{}
+		var reqBody map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
@@ -309,38 +313,38 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 			http.Error(w, "max_output_tokens is not supported", http.StatusBadRequest)
 			return
 		}
-		toolsAny, ok := reqBody["tools"].([]interface{})
+		toolsAny, ok := reqBody["tools"].([]any)
 		if !ok || len(toolsAny) != 1 {
 			http.Error(w, "missing default web search tool", http.StatusBadRequest)
 			return
 		}
-		toolObj, ok := toolsAny[0].(map[string]interface{})
+		toolObj, ok := toolsAny[0].(map[string]any)
 		if !ok || toolObj["type"] != "web_search" {
 			http.Error(w, "expected web_search tool", http.StatusBadRequest)
 			return
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"id":     "resp_test",
 			"object": "response",
 			"status": "completed",
-			"output": []map[string]interface{}{
+			"output": []map[string]any{
 				{
 					"id":     "msg_1",
 					"type":   "message",
 					"role":   "assistant",
 					"status": "completed",
-					"content": []map[string]interface{}{
+					"content": []map[string]any{
 						{"type": "output_text", "text": "Hi from Codex!"},
 					},
 				},
 			},
-			"usage": map[string]interface{}{
+			"usage": map[string]any{
 				"input_tokens":          12,
 				"output_tokens":         6,
 				"total_tokens":          18,
-				"input_tokens_details":  map[string]interface{}{"cached_tokens": 0},
-				"output_tokens_details": map[string]interface{}{"reasoning_tokens": 0},
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
 			},
 		}
 		writeCompletedSSE(w, resp)
@@ -351,7 +355,7 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]interface{}{"max_tokens": 1024})
+	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]any{"max_tokens": 1024})
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -373,7 +377,7 @@ func TestCodexProvider_ChatRoundTrip_WebSearchDisabled(t *testing.T) {
 			return
 		}
 
-		var reqBody map[string]interface{}
+		var reqBody map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
@@ -383,27 +387,27 @@ func TestCodexProvider_ChatRoundTrip_WebSearchDisabled(t *testing.T) {
 			return
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"id":     "resp_test",
 			"object": "response",
 			"status": "completed",
-			"output": []map[string]interface{}{
+			"output": []map[string]any{
 				{
 					"id":     "msg_1",
 					"type":   "message",
 					"role":   "assistant",
 					"status": "completed",
-					"content": []map[string]interface{}{
+					"content": []map[string]any{
 						{"type": "output_text", "text": "Hi from Codex!"},
 					},
 				},
 			},
-			"usage": map[string]interface{}{
+			"usage": map[string]any{
 				"input_tokens":          4,
 				"output_tokens":         3,
 				"total_tokens":          7,
-				"input_tokens_details":  map[string]interface{}{"cached_tokens": 0},
-				"output_tokens_details": map[string]interface{}{"reasoning_tokens": 0},
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
 			},
 		}
 		writeCompletedSSE(w, resp)
@@ -415,7 +419,7 @@ func TestCodexProvider_ChatRoundTrip_WebSearchDisabled(t *testing.T) {
 	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]interface{}{})
+	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]any{})
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -439,7 +443,7 @@ func TestCodexProvider_ChatRoundTrip_TokenSourceFallbackAccountID(t *testing.T) 
 			return
 		}
 
-		var reqBody map[string]interface{}
+		var reqBody map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
@@ -465,27 +469,27 @@ func TestCodexProvider_ChatRoundTrip_TokenSourceFallbackAccountID(t *testing.T) 
 			return
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"id":     "resp_test",
 			"object": "response",
 			"status": "completed",
-			"output": []map[string]interface{}{
+			"output": []map[string]any{
 				{
 					"id":     "msg_1",
 					"type":   "message",
 					"role":   "assistant",
 					"status": "completed",
-					"content": []map[string]interface{}{
+					"content": []map[string]any{
 						{"type": "output_text", "text": "Hi from Codex!"},
 					},
 				},
 			},
-			"usage": map[string]interface{}{
+			"usage": map[string]any{
 				"input_tokens":          8,
 				"output_tokens":         4,
 				"total_tokens":          12,
-				"input_tokens_details":  map[string]interface{}{"cached_tokens": 0},
-				"output_tokens_details": map[string]interface{}{"reasoning_tokens": 0},
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
 			},
 		}
 		writeCompletedSSE(w, resp)
@@ -499,7 +503,7 @@ func TestCodexProvider_ChatRoundTrip_TokenSourceFallbackAccountID(t *testing.T) 
 	}
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]interface{}{"temperature": 0.7})
+	resp, err := provider.Chat(t.Context(), messages, nil, "gpt-4o", map[string]any{"temperature": 0.7})
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -515,7 +519,7 @@ func TestCodexProvider_ChatRoundTrip_ModelFallbackFromUnsupported(t *testing.T) 
 			return
 		}
 
-		var reqBody map[string]interface{}
+		var reqBody map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
@@ -533,27 +537,27 @@ func TestCodexProvider_ChatRoundTrip_ModelFallbackFromUnsupported(t *testing.T) 
 			return
 		}
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"id":     "resp_test",
 			"object": "response",
 			"status": "completed",
-			"output": []map[string]interface{}{
+			"output": []map[string]any{
 				{
 					"id":     "msg_1",
 					"type":   "message",
 					"role":   "assistant",
 					"status": "completed",
-					"content": []map[string]interface{}{
+					"content": []map[string]any{
 						{"type": "output_text", "text": "Hi from Codex!"},
 					},
 				},
 			},
-			"usage": map[string]interface{}{
+			"usage": map[string]any{
 				"input_tokens":          8,
 				"output_tokens":         4,
 				"total_tokens":          12,
-				"input_tokens_details":  map[string]interface{}{"cached_tokens": 0},
-				"output_tokens_details": map[string]interface{}{"reasoning_tokens": 0},
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
 			},
 		}
 		writeCompletedSSE(w, resp)
@@ -588,7 +592,12 @@ func TestResolveCodexModel(t *testing.T) {
 		wantFallback bool
 	}{
 		{name: "empty", input: "", wantModel: codexDefaultModel, wantFallback: true},
-		{name: "unsupported namespace", input: "anthropic/claude-3.5", wantModel: codexDefaultModel, wantFallback: true},
+		{
+			name:         "unsupported namespace",
+			input:        "anthropic/claude-3.5",
+			wantModel:    codexDefaultModel,
+			wantFallback: true,
+		},
 		{name: "non-openai prefixed", input: "glm-4.7", wantModel: codexDefaultModel, wantFallback: true},
 		{name: "openai prefix", input: "openai/gpt-5.2", wantModel: "gpt-5.2", wantFallback: false},
 		{name: "direct gpt", input: "gpt-4o", wantModel: "gpt-4o", wantFallback: false},
@@ -622,8 +631,8 @@ func createOpenAITestClient(baseURL, token, accountID string) *openai.Client {
 	return &c
 }
 
-func writeCompletedSSE(w http.ResponseWriter, response map[string]interface{}) {
-	event := map[string]interface{}{
+func writeCompletedSSE(w http.ResponseWriter, response map[string]any) {
+	event := map[string]any{
 		"type":            "response.completed",
 		"sequence_number": 1,
 		"response":        response,
