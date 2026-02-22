@@ -26,6 +26,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -258,6 +259,14 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				Content:         "via MiniApp: " + msg.Content,
 				SkipPlaceholder: true,
 			})
+			// Create a placeholder AFTER the echo so status updates appear below it.
+			if al.channelManager != nil {
+				if ch, ok := al.channelManager.GetChannel(msg.Channel); ok {
+					if tc, ok := ch.(*channels.TelegramChannel); ok {
+						tc.CreatePlaceholder(ctx, msg.ChatID)
+					}
+				}
+			}
 		}
 
 		// Fast path: handle slash commands immediately without blocking the LLM worker.
@@ -824,10 +833,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 5a. Auto-advance plan phases after LLM iteration
 	postStatus := agent.ContextBuilder.GetPlanStatus()
-	if agent.ContextBuilder.HasActivePlan() && postStatus == "executing" {
-		// Intercept: if AI changed status to executing without user approval
-		// (from interviewing or review), validate and set to "review".
-		if preStatus == "interviewing" || preStatus == "review" {
+	if agent.ContextBuilder.HasActivePlan() && (postStatus == "executing" || postStatus == "review") {
+		// Intercept: if AI changed status to executing or review without user approval
+		// (from interviewing or review), validate and hold at "review".
+		if preStatus == "interviewing" || (preStatus == "review" && postStatus == "executing") {
 			if err := agent.ContextBuilder.ValidatePlanStructure(); err != nil {
 				_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 				logger.WarnCF("agent", "Reverted plan to interviewing: "+err.Error(),
@@ -847,7 +856,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					})
 				}
 			}
-		} else if agent.ContextBuilder.GetTotalPhases() == 0 {
+		} else if postStatus == "executing" && agent.ContextBuilder.GetTotalPhases() == 0 {
 			// Safeguard: executing but no phases (shouldn't happen, but be safe).
 			_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 			logger.WarnCF("agent", "Reverted plan to interviewing: no phases defined",
@@ -1237,9 +1246,10 @@ func compressRepeats(s string) string {
 
 // Display layout constants.
 const (
-	displayPastEntries = 4  // number of compact 1-line past entries
-	displayErrorLines  = 5  // content lines inside the error code block
-	statusSeparator    = "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+	displayPastEntries     = 4  // number of compact 1-line past entries
+	displayErrorLines      = 5  // content lines inside the error code block
+	statusSeparator        = "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+	streamingDisplayLines  = 17 // line count matching buildRichStatus output
 )
 
 // buildRichStatus builds a fixed-height terminal-like status display.
@@ -1377,6 +1387,101 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
+// consumeStreamWithRepetitionDetection reads StreamEvents from ch, accumulates
+// content and tool calls, and runs repetition detection every checkInterval runes.
+// If repetition is detected, cancelFn is called to abort the HTTP request and
+// the function returns the partial response with detected=true.
+func consumeStreamWithRepetitionDetection(
+	ch <-chan protocoltypes.StreamEvent,
+	cancelFn context.CancelFunc,
+	checkInterval int,
+	onChunk func(accumulated string),
+) (*providers.LLMResponse, bool, error) {
+	var content strings.Builder
+	var toolCalls []streamToolCallAcc
+	var finishReason string
+	var usage *providers.UsageInfo
+	runesSinceLastCheck := 0
+
+	for ev := range ch {
+		if ev.Err != nil {
+			return nil, false, ev.Err
+		}
+		if ev.ContentDelta != "" {
+			content.WriteString(ev.ContentDelta)
+			runesSinceLastCheck += utf8.RuneCountInString(ev.ContentDelta)
+			if onChunk != nil {
+				onChunk(content.String())
+			}
+		}
+		if ev.FinishReason != "" {
+			finishReason = ev.FinishReason
+		}
+		if ev.Usage != nil {
+			usage = ev.Usage
+		}
+		for _, tc := range ev.ToolCallDeltas {
+			for len(toolCalls) <= tc.Index {
+				toolCalls = append(toolCalls, streamToolCallAcc{})
+			}
+			if tc.ID != "" {
+				toolCalls[tc.Index].id = tc.ID
+			}
+			if tc.Name != "" {
+				toolCalls[tc.Index].name = tc.Name
+			}
+			toolCalls[tc.Index].args.WriteString(tc.ArgumentsDelta)
+		}
+
+		// Run repetition detection periodically on accumulated content.
+		if runesSinceLastCheck >= checkInterval && content.Len() > 2000 {
+			runesSinceLastCheck = 0
+			if utils.DetectRepetitionLoop(content.String()) {
+				cancelFn()
+				// Drain remaining events so the producer goroutine can exit.
+				for range ch {
+				}
+				resp := buildAccumulatedResponse(content.String(), toolCalls, finishReason, usage)
+				return resp, true, nil
+			}
+		}
+	}
+
+	resp := buildAccumulatedResponse(content.String(), toolCalls, finishReason, usage)
+	return resp, false, nil
+}
+
+// streamToolCallAcc accumulates streamed tool call fragments.
+type streamToolCallAcc struct {
+	id   string
+	name string
+	args strings.Builder
+}
+
+// buildAccumulatedResponse constructs an LLMResponse from accumulated stream data.
+func buildAccumulatedResponse(content string, toolCalls []streamToolCallAcc, finishReason string, usage *providers.UsageInfo) *providers.LLMResponse {
+	resp := &providers.LLMResponse{
+		Content:      content,
+		FinishReason: finishReason,
+		Usage:        usage,
+	}
+	for _, tc := range toolCalls {
+		arguments := make(map[string]any)
+		argStr := tc.args.String()
+		if argStr != "" {
+			if err := json.Unmarshal([]byte(argStr), &arguments); err != nil {
+				arguments["raw"] = argStr
+			}
+		}
+		resp.ToolCalls = append(resp.ToolCalls, providers.ToolCall{
+			ID:        tc.id,
+			Name:      tc.name,
+			Arguments: arguments,
+		})
+	}
+	return resp
+}
+
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
 	agent *AgentInstance,
@@ -1459,15 +1564,59 @@ func (al *AgentLoop) runLLMIteration(
 		var response *providers.LLMResponse
 		var err error
 
+		// Build onChunk callback for streaming preview.
+		// When sending responses to a real (non-internal) channel, publish
+		// throttled status updates so the user sees LLM output in real time.
+		var onChunk func(string)
+		if !constants.IsInternalChannel(opts.Channel) {
+			lastPublish := time.Time{}
+			onChunk = func(accumulated string) {
+				if time.Since(lastPublish) < 500*time.Millisecond {
+					return
+				}
+				lastPublish = time.Now()
+				display := utils.TailPad(accumulated, streamingDisplayLines, maxEntryLineWidth)
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel:  opts.Channel,
+					ChatID:   opts.ChatID,
+					Content:  display + " \u2589",
+					IsStatus: true,
+				})
+			}
+		}
+
+		// doCall invokes a single LLM provider, using streaming with
+		// early repetition detection when the provider supports it.
+		opts_ := map[string]any{
+			"max_tokens":  agent.MaxTokens,
+			"temperature": agent.Temperature,
+		}
+		doCall := func(ctx context.Context, p providers.LLMProvider, model string) (*providers.LLMResponse, error) {
+			if sp, ok := p.(providers.StreamingProvider); ok && sp.CanStream() {
+				streamCtx, streamCancel := context.WithCancel(ctx)
+				defer streamCancel()
+				ch, err := sp.ChatStream(streamCtx, messages, providerToolDefs, model, opts_)
+				if err != nil {
+					return nil, err
+				}
+				resp, repetition, err := consumeStreamWithRepetitionDetection(ch, streamCancel, 1000, onChunk)
+				if err != nil {
+					return nil, err
+				}
+				if repetition {
+					resp.FinishReason = "repetition_detected"
+				}
+				return resp, nil
+			}
+			return p.Chat(ctx, messages, providerToolDefs, model, opts_)
+		}
+
 		callLLM := func() (*providers.LLMResponse, error) {
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						p := al.resolveProvider(provider, model, agent.Provider)
-						return p.Chat(ctx, messages, providerToolDefs, model, map[string]interface{}{
-							"max_tokens":  agent.MaxTokens,
-							"temperature": agent.Temperature,
-						})
+						return doCall(ctx, p, model)
 					},
 				)
 				if fbErr != nil {
@@ -1480,10 +1629,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
-				"max_tokens":  agent.MaxTokens,
-				"temperature": agent.Temperature,
-			})
+			return doCall(ctx, agent.Provider, agent.Model)
 		}
 
 		// Retry loop for context/token errors
@@ -1544,6 +1690,47 @@ func (al *AgentLoop) runLLMIteration(
 				response.Usage.TotalTokens,
 			)
 		}
+
+		// Detect repetition loop on raw text (before stripping think
+		// blocks so loops inside <think> are caught).  Skip when the
+		// provider already returned native tool calls.
+		// Streaming providers may have already flagged repetition via
+		// FinishReason="repetition_detected" — honour that too.
+		if response.FinishReason == "repetition_detected" ||
+			(len(response.ToolCalls) == 0 && utils.DetectRepetitionLoop(response.Content)) {
+			logger.WarnCF("agent", "Repetition loop detected in LLM response, retrying",
+				map[string]any{
+					"agent_id":       agent.ID,
+					"iteration":      iteration,
+					"finish_reason":  response.FinishReason,
+					"content_length": len(response.Content),
+				})
+
+			// Retry once: inject nudge message and re-call
+			savedMsgs := messages
+			messages = append(append([]providers.Message(nil), messages...),
+				providers.Message{
+					Role:    "user",
+					Content: "[System] Your previous response contained degenerate repetition and was discarded. Please respond normally without repeating yourself.",
+				})
+			response, err = callLLM()
+			messages = savedMsgs // restore original messages
+
+			if err != nil {
+				return "", iteration, fmt.Errorf("LLM retry after repetition failed: %w", err)
+			}
+
+			// Re-check on raw text; if still repeating give up
+			if utils.DetectRepetitionLoop(response.Content) {
+				logger.ErrorCF("agent", "Repetition persists after retry, returning empty",
+					map[string]any{"agent_id": agent.ID})
+				response.Content = ""
+			}
+		}
+
+		// Strip think blocks before extracting XML tool calls so
+		// extraction operates on clean content.
+		response.Content = utils.StripThinkBlocks(response.Content)
 
 		// Recover XML tool calls emitted as plain text by some providers.
 		if len(response.ToolCalls) == 0 {

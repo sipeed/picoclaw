@@ -54,3 +54,20 @@ type ToolFunctionDefinition struct {
 	Description string         `json:"description"`
 	Parameters  map[string]any `json:"parameters"`
 }
+
+// StreamEvent represents a single chunk from an SSE streaming response.
+type StreamEvent struct {
+	ContentDelta   string
+	ToolCallDeltas []StreamToolCallDelta
+	FinishReason   string     // set only on the final event
+	Usage          *UsageInfo // set only on the final event
+	Err            error      // non-nil when the stream encountered an error
+}
+
+// StreamToolCallDelta carries an incremental piece of a streaming tool call.
+type StreamToolCallDelta struct {
+	Index          int
+	ID             string // set on the first chunk for this tool call
+	Name           string // set on the first chunk for this tool call
+	ArgumentsDelta string // JSON fragment (incremental)
+}

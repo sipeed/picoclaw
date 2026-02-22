@@ -489,7 +489,7 @@ func (ms *MemoryStore) GetInterviewContext() string {
 	sb.WriteString("- When you have enough information, use edit_file to add ## Phase, ## Commands, and ## Context sections BELOW the header block.\n")
 	sb.WriteString("- Each step MUST use checkbox syntax: `- [ ] description`. The system parses checkboxes to track progress.\n")
 	sb.WriteString("- Organize into 2-5 phases with 3-5 steps each.\n")
-	sb.WriteString("- After writing Phases, change `> Status: interviewing` to `> Status: executing` via edit_file.\n")
+	sb.WriteString("- After writing Phases, change `> Status: interviewing` to `> Status: review` via edit_file. The user must approve with /plan start before execution begins.\n")
 	sb.WriteString("\n### Target Format (MANDATORY — system parses this exact structure)\n")
 	sb.WriteString("\n")
 	sb.WriteString("# Active Plan\n")

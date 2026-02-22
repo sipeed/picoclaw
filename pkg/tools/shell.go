@@ -291,10 +291,16 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		}
 
 		// Token-based absolute path detection.
-		// Uses strings.Fields instead of regex to avoid false positives
-		// from slashes in relative paths (e.g., "tests/cold/file.py").
+		// Uses strings.Fields so relative paths (e.g., "tests/cold/file.py")
+		// are not falsely flagged.
 		// Flags like -I/usr/local/include are naturally skipped because
 		// filepath.IsAbs returns false for tokens starting with "-".
+		//
+		// Agent CLI tools (claude, codex, gemini) accept slash commands
+		// (e.g., "/review") that look like absolute paths but are not.
+		// For these tools we check whether the token is an existing path
+		// before blocking.
+		agentCLI := isAgentCLICommand(cmd)
 		for _, token := range strings.Fields(cmd) {
 			token = strings.Trim(token, "\"'")
 
@@ -313,12 +319,38 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				if isExecutable(p) {
 					continue
 				}
+				// Agent CLI slash commands: skip non-existent paths
+				// (e.g., "/review" is a command, not a file).
+				if agentCLI {
+					if _, statErr := os.Stat(p); os.IsNotExist(statErr) {
+						continue
+					}
+				}
 				return "Command blocked by safety guard (path outside working dir)"
 			}
 		}
 	}
 
 	return ""
+}
+
+// agentCLINames lists agent CLI tools that use slash commands
+// (e.g., "/review", "/help") which look like absolute paths.
+var agentCLINames = []string{"claude", "codex", "gemini"}
+
+// isAgentCLICommand returns true if the command invokes an agent CLI tool.
+func isAgentCLICommand(cmd string) bool {
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		return false
+	}
+	base := filepath.Base(fields[0])
+	for _, name := range agentCLINames {
+		if base == name {
+			return true
+		}
+	}
+	return false
 }
 
 // isExecutable checks if a path points to an executable file.
