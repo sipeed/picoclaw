@@ -27,10 +27,13 @@ import (
 type TelegramChannel struct {
 	*channels.BaseChannel
 	bot          *telego.Bot
+	bh           *telegohandler.BotHandler
 	commands     TelegramCommander
 	config       *config.Config
 	chatIDs      map[string]int64
 	transcriber  *voice.GroqTranscriber
+	ctx          context.Context
+	cancel       context.CancelFunc
 	placeholders sync.Map // chatID -> messageID
 	stopThinking sync.Map // chatID -> thinkingCancel
 }
@@ -94,17 +97,22 @@ func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 func (c *TelegramChannel) Start(ctx context.Context) error {
 	logger.InfoC("telegram", "Starting Telegram bot (polling mode)...")
 
-	updates, err := c.bot.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
+	c.ctx, c.cancel = context.WithCancel(ctx)
+
+	updates, err := c.bot.UpdatesViaLongPolling(c.ctx, &telego.GetUpdatesParams{
 		Timeout: 30,
 	})
 	if err != nil {
+		c.cancel()
 		return fmt.Errorf("failed to start long polling: %w", err)
 	}
 
 	bh, err := telegohandler.NewBotHandler(c.bot, updates)
 	if err != nil {
+		c.cancel()
 		return fmt.Errorf("failed to create bot handler: %w", err)
 	}
+	c.bh = bh
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		c.commands.Help(ctx, message)
@@ -133,17 +141,32 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 	go bh.Start()
 
-	go func() {
-		<-ctx.Done()
-		bh.Stop()
-	}()
-
 	return nil
 }
 
 func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
 	c.SetRunning(false)
+
+	// Clean up all thinking cancel functions to avoid context leaks
+	c.stopThinking.Range(func(key, value any) bool {
+		if cf, ok := value.(*thinkingCancel); ok && cf != nil {
+			cf.Cancel()
+		}
+		c.stopThinking.Delete(key)
+		return true
+	})
+
+	// Stop the bot handler
+	if c.bh != nil {
+		c.bh.Stop()
+	}
+
+	// Cancel our context (stops long polling)
+	if c.cancel != nil {
+		c.cancel()
+	}
+
 	return nil
 }
 

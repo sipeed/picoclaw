@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -17,6 +18,8 @@ type MaixCamChannel struct {
 	*channels.BaseChannel
 	config     config.MaixCamConfig
 	listener   net.Listener
+	ctx        context.Context
+	cancel     context.CancelFunc
 	clients    map[net.Conn]bool
 	clientsMux sync.RWMutex
 }
@@ -41,9 +44,12 @@ func NewMaixCamChannel(cfg config.MaixCamConfig, bus *bus.MessageBus) (*MaixCamC
 func (c *MaixCamChannel) Start(ctx context.Context) error {
 	logger.InfoC("maixcam", "Starting MaixCam channel server")
 
+	c.ctx, c.cancel = context.WithCancel(ctx)
+
 	addr := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
+		c.cancel()
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 
@@ -55,17 +61,17 @@ func (c *MaixCamChannel) Start(ctx context.Context) error {
 		"port": c.config.Port,
 	})
 
-	go c.acceptConnections(ctx)
+	go c.acceptConnections()
 
 	return nil
 }
 
-func (c *MaixCamChannel) acceptConnections(ctx context.Context) {
+func (c *MaixCamChannel) acceptConnections() {
 	logger.DebugC("maixcam", "Starting connection acceptor")
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-c.ctx.Done():
 			logger.InfoC("maixcam", "Stopping connection acceptor")
 			return
 		default:
@@ -87,12 +93,12 @@ func (c *MaixCamChannel) acceptConnections(ctx context.Context) {
 			c.clients[conn] = true
 			c.clientsMux.Unlock()
 
-			go c.handleConnection(conn, ctx)
+			go c.handleConnection(conn)
 		}
 	}
 }
 
-func (c *MaixCamChannel) handleConnection(conn net.Conn, ctx context.Context) {
+func (c *MaixCamChannel) handleConnection(conn net.Conn) {
 	logger.DebugC("maixcam", "Handling MaixCam connection")
 
 	defer func() {
@@ -107,7 +113,7 @@ func (c *MaixCamChannel) handleConnection(conn net.Conn, ctx context.Context) {
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-c.ctx.Done():
 			return
 		default:
 			var msg MaixCamMessage
@@ -186,6 +192,11 @@ func (c *MaixCamChannel) Stop(ctx context.Context) error {
 	logger.InfoC("maixcam", "Stopping MaixCam channel")
 	c.SetRunning(false)
 
+	// Cancel context first to signal goroutines to exit
+	if c.cancel != nil {
+		c.cancel()
+	}
+
 	if c.listener != nil {
 		c.listener.Close()
 	}
@@ -229,6 +240,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	var sendErr error
 	for conn := range c.clients {
+		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if _, err := conn.Write(data); err != nil {
 			logger.ErrorCF("maixcam", "Failed to send to client", map[string]any{
 				"client": conn.RemoteAddr().String(),
@@ -236,6 +248,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 			})
 			sendErr = err
 		}
+		_ = conn.SetWriteDeadline(time.Time{})
 	}
 
 	return sendErr

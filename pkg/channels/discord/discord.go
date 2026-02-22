@@ -29,6 +29,7 @@ type DiscordChannel struct {
 	config      config.DiscordConfig
 	transcriber *voice.GroqTranscriber
 	ctx         context.Context
+	cancel      context.CancelFunc
 	typingMu    sync.Mutex
 	typingStop  map[string]chan struct{} // chatID → stop signal
 	botUserID   string                   // stored for mention checking
@@ -56,17 +57,10 @@ func (c *DiscordChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 	c.transcriber = transcriber
 }
 
-func (c *DiscordChannel) getContext() context.Context {
-	if c.ctx == nil {
-		return context.Background()
-	}
-	return c.ctx
-}
-
 func (c *DiscordChannel) Start(ctx context.Context) error {
 	logger.InfoC("discord", "Starting Discord bot")
 
-	c.ctx = ctx
+	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	// Get bot user ID before opening session to avoid race condition
 	botUser, err := c.session.User("@me")
@@ -102,6 +96,11 @@ func (c *DiscordChannel) Stop(ctx context.Context) error {
 		delete(c.typingStop, chatID)
 	}
 	c.typingMu.Unlock()
+
+	// Cancel our context so typing goroutines using c.ctx.Done() exit
+	if c.cancel != nil {
+		c.cancel()
+	}
 
 	if err := c.session.Close(); err != nil {
 		return fmt.Errorf("failed to close discord session: %w", err)
@@ -236,7 +235,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 
 				transcribedText := ""
 				if c.transcriber != nil && c.transcriber.IsAvailable() {
-					ctx, cancel := context.WithTimeout(c.getContext(), transcriptionTimeout)
+					ctx, cancel := context.WithTimeout(c.ctx, transcriptionTimeout)
 					result, err := c.transcriber.Transcribe(ctx, localPath)
 					cancel() // Release context resources immediately to avoid leaks in for loop
 
