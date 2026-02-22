@@ -16,9 +16,15 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
-type GroqTranscriber struct {
+type Transcriber interface {
+	Transcribe(ctx context.Context, audioFilePath string) (*TranscriptionResponse, error)
+	IsAvailable() bool
+}
+
+type OpenAICompatTranscriber struct {
 	apiKey     string
 	apiBase    string
+	model      string
 	httpClient *http.Client
 }
 
@@ -28,20 +34,20 @@ type TranscriptionResponse struct {
 	Duration float64 `json:"duration,omitempty"`
 }
 
-func NewGroqTranscriber(apiKey string) *GroqTranscriber {
-	logger.DebugCF("voice", "Creating Groq transcriber", map[string]any{"has_api_key": apiKey != ""})
+func NewOpenAICompatTranscriber(apiKey, apiBase, model string) *OpenAICompatTranscriber {
+	logger.DebugCF("voice", "Creating STT transcriber", map[string]any{"has_api_key": apiKey != ""})
 
-	apiBase := "https://api.groq.com/openai/v1"
-	return &GroqTranscriber{
+	return &OpenAICompatTranscriber{
 		apiKey:  apiKey,
 		apiBase: apiBase,
+		model:   model,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
 	}
 }
 
-func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) (*TranscriptionResponse, error) {
+func (t *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioFilePath string) (*TranscriptionResponse, error) {
 	logger.InfoCF("voice", "Starting transcription", map[string]any{"audio_file": audioFilePath})
 
 	audioFile, err := os.Open(audioFilePath)
@@ -79,7 +85,7 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 
 	logger.DebugCF("voice", "File copied to request", map[string]any{"bytes_copied": copied})
 
-	if err = writer.WriteField("model", "whisper-large-v3"); err != nil {
+	if err = writer.WriteField("model", t.model); err != nil {
 		logger.ErrorCF("voice", "Failed to write model field", map[string]any{"error": err})
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
@@ -104,7 +110,7 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer "+t.apiKey)
 
-	logger.DebugCF("voice", "Sending transcription request to Groq API", map[string]any{
+	logger.DebugCF("voice", "Sending transcription request to STT API", map[string]any{
 		"url":                url,
 		"request_size_bytes": requestBody.Len(),
 		"file_size_bytes":    fileInfo.Size(),
@@ -131,7 +137,7 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	logger.DebugCF("voice", "Received response from Groq API", map[string]any{
+	logger.DebugCF("voice", "Received response from STT API", map[string]any{
 		"status_code":         resp.StatusCode,
 		"response_size_bytes": len(body),
 	})
@@ -152,7 +158,7 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 	return &result, nil
 }
 
-func (t *GroqTranscriber) IsAvailable() bool {
+func (t *OpenAICompatTranscriber) IsAvailable() bool {
 	available := t.apiKey != ""
 	logger.DebugCF("voice", "Checking transcriber availability", map[string]any{"available": available})
 	return available

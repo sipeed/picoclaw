@@ -35,7 +35,7 @@ type OneBotChannel struct {
 	selfID          int64
 	pending         map[string]chan json.RawMessage
 	pendingMu       sync.Mutex
-	transcriber     *voice.GroqTranscriber
+	transcriber     voice.Transcriber
 	lastMessageID   sync.Map
 	pendingEmojiMsg sync.Map
 }
@@ -111,7 +111,7 @@ func NewOneBotChannel(cfg config.OneBotConfig, messageBus *bus.MessageBus) (*One
 	}, nil
 }
 
-func (c *OneBotChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
+func (c *OneBotChannel) SetTranscriber(transcriber voice.Transcriber) {
 	c.transcriber = transcriber
 }
 
