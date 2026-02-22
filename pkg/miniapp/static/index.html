@@ -113,18 +113,24 @@
     font-weight: 600;
   }
 
+  .hidden { display: none !important; }
+
+  .glass {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    box-shadow: 0 1px 3px var(--glass-shadow);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  .glass-interactive { border-color: var(--glass-border-interactive); }
+
   .panel { display: none; padding: 16px; }
   .panel.active { display: block; }
 
   .card {
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    border-radius: 16px;
     padding: 16px;
     margin-bottom: 12px;
-    box-shadow: 0 1px 3px var(--glass-shadow);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
   }
 
   .card-title {
@@ -239,19 +245,13 @@
 
   /* Skills */
   .skill-item {
-    background: var(--glass-bg);
-    border-radius: 16px;
     padding: 14px 14px 14px 16px;
     margin-bottom: 10px;
     cursor: pointer;
     transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.2s, border-color 0.2s;
-    border: 1px solid var(--glass-border-interactive);
     display: flex;
     align-items: center;
     gap: 12px;
-    box-shadow: 0 1px 3px var(--glass-shadow);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -327,8 +327,6 @@
     flex: 1;
     padding: 10px 16px;
     border-radius: 20px;
-    border: 1px solid var(--glass-border-interactive);
-    background: var(--glass-bg);
     color: var(--text);
     font-size: 14px;
     outline: none;
@@ -379,17 +377,12 @@
   .cmd-tile {
     padding: 16px 14px;
     border-radius: 14px;
-    border: 1px solid var(--glass-border-interactive);
-    background: var(--glass-bg);
     color: var(--text);
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background 0.15s;
     text-align: center;
-    box-shadow: 0 1px 3px var(--glass-shadow);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -411,12 +404,6 @@
     white-space: pre-wrap;
     word-break: break-word;
     padding: 14px 16px;
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    border-radius: 16px;
-    box-shadow: 0 1px 3px var(--glass-shadow);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
   }
 
   .memory-view .md-h1 {
@@ -493,6 +480,73 @@
     color: var(--hint);
   }
 
+  /* Slide to Approve */
+  .slide-approve-wrap {
+    margin-top: 16px;
+  }
+
+  .slide-approve-track {
+    position: relative;
+    height: 52px;
+    border-radius: 26px;
+    overflow: hidden;
+    touch-action: none;
+    transition: background 0.3s, border-color 0.3s;
+  }
+
+  .slide-approve-track.approved {
+    background: var(--done);
+    border-color: var(--done);
+  }
+
+  .slide-approve-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--btn);
+    color: var(--btn-text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: grab;
+    transition: left 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    z-index: 1;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .slide-approve-thumb.dragging {
+    transition: none;
+    cursor: grabbing;
+  }
+
+  .slide-approve-label {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--hint);
+    font-size: 14px;
+    font-weight: 600;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: color 0.3s;
+  }
+
+  .slide-approve-track.approved .slide-approve-label {
+    color: #fff;
+  }
+
 </style>
 </head>
 <body>
@@ -509,39 +563,39 @@
 
 <div id="plan" class="panel active">
   <div class="loading" id="plan-loading">Loading plan...</div>
-  <div id="plan-content" style="display:none"></div>
+  <div id="plan-content" class="hidden"></div>
 </div>
 
 <div id="skills" class="panel">
   <div class="loading" id="skills-loading">Loading skills...</div>
-  <div id="skills-list" style="display:none"></div>
+  <div id="skills-list" class="hidden"></div>
 </div>
 
 <div id="session" class="panel">
   <div class="loading" id="session-loading">Loading session...</div>
-  <div id="session-content" style="display:none"></div>
+  <div id="session-content" class="hidden"></div>
 </div>
 
 <div id="config" class="panel">
-  <div class="card">
+  <div class="card glass">
     <div class="card-title">Quick Commands</div>
     <div class="cmd-tiles">
-      <button class="cmd-tile" data-cmd="/session">/session</button>
-      <button class="cmd-tile" data-cmd="/skills">/skills</button>
-      <button class="cmd-tile" data-cmd="/plan clear">/plan clear</button>
+      <button class="cmd-tile glass glass-interactive" data-cmd="/session">/session</button>
+      <button class="cmd-tile glass glass-interactive" data-cmd="/skills">/skills</button>
+      <button class="cmd-tile glass glass-interactive" data-cmd="/plan clear">/plan clear</button>
     </div>
   </div>
-  <div class="card">
+  <div class="card glass">
     <div class="card-title">Custom Command</div>
     <div style="display:flex;gap:8px;margin-top:8px">
-      <input id="custom-cmd" class="send-input" placeholder="/command args..." style="flex:1">
+      <input id="custom-cmd" class="send-input glass glass-interactive" placeholder="/command args..." style="flex:1">
       <button class="send-btn" onclick="sendCustomCmd()">Send</button>
     </div>
   </div>
 </div>
 
-<div class="send-bar" id="send-bar" style="display:none">
-  <input id="skill-msg" class="send-input" placeholder="Message for skill...">
+<div class="send-bar hidden" id="send-bar">
+  <input id="skill-msg" class="send-input glass glass-interactive" placeholder="Message for skill...">
   <button class="send-btn" id="send-skill-btn" onclick="sendSkillCommand()">Send</button>
 </div>
 
@@ -552,8 +606,9 @@ tg.ready();
 const API_BASE = location.origin;
 let initData = tg.initData || '';
 let selectedSkill = null;
+var lastSSE = { plan: 0, skills: 0, session: 0 };
 
-// Tab switching — always re-fetch data on tab switch
+// Tab switching — re-fetch data unless SSE delivered recently
 const tabs = document.querySelectorAll('.tab');
 const tabIndicator = document.querySelector('.tab-indicator');
 
@@ -569,12 +624,14 @@ tabs.forEach((tab, index) => {
     document.getElementById(tab.dataset.panel).classList.add('active');
     moveIndicator(index);
 
-    document.getElementById('send-bar').style.display =
-      tab.dataset.panel === 'skills' && selectedSkill ? 'flex' : 'none';
+    document.getElementById('send-bar').classList.toggle('hidden',
+      !(tab.dataset.panel === 'skills' && selectedSkill));
 
-    if (tab.dataset.panel === 'plan') loadPlan();
-    if (tab.dataset.panel === 'skills') loadSkills();
-    if (tab.dataset.panel === 'session') loadSession();
+    var p = tab.dataset.panel;
+    var fresh = lastSSE[p] && (Date.now() - lastSSE[p] < 5000);
+    if (p === 'plan' && !fresh) loadPlan();
+    if (p === 'skills' && !fresh) loadSkills();
+    if (p === 'session' && !fresh) loadSession();
   });
 });
 
@@ -651,42 +708,110 @@ async function apiFetch(path) {
 function renderPlanFromData(data) {
   var loading = document.getElementById('plan-loading');
   var el = document.getElementById('plan-content');
-  loading.style.display = 'none';
-  el.style.display = 'block';
+  loading.classList.add('hidden');
+  el.classList.remove('hidden');
 
   if (!data.has_plan) {
-    el.innerHTML =
-      '<div class="empty-state">No active plan.</div>' +
-      '<div class="card" style="margin-top:16px">' +
-        '<div class="card-title">Start a Plan</div>' +
-        '<div style="display:flex;gap:8px;margin-top:8px">' +
-          '<input id="plan-task" class="send-input" placeholder="Describe your task...">' +
-          '<button class="send-btn" onclick="startPlan()">Start</button>' +
-        '</div>' +
-      '</div>';
+    el.innerHTML = `<div class="empty-state">No active plan.</div>
+      <div class="card glass" style="margin-top:16px">
+        <div class="card-title">Start a Plan</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="plan-task" class="send-input glass glass-interactive" placeholder="Describe your task...">
+          <button class="send-btn" onclick="startPlan()">Start</button>
+        </div>
+      </div>`;
     return;
   }
 
-  var html = '';
-  html += '<div class="card">' +
-    '<div class="card-title">Status</div>' +
-    '<div class="card-value">' + escapeHtml(data.status) + '</div>' +
-    '<div style="color:var(--hint);margin-top:4px">Phase ' + data.current_phase + ' / ' + data.total_phases + '</div>' +
-  '</div>';
+  var html = `<div class="card glass">
+    <div class="card-title">Status</div>
+    <div class="card-value">${escapeHtml(data.status)}</div>
+    <div style="color:var(--hint);margin-top:4px">Phase ${data.current_phase} / ${data.total_phases}</div>
+  </div>`;
 
   if (data.status === 'interviewing' || data.status === 'review') {
-    // Show raw MEMORY.md content during interview/review
     if (data.memory) {
-      html += '<div class="memory-view">' + renderSimpleMarkdown(data.memory) + '</div>';
+      html += `<div class="memory-view glass">${renderSimpleMarkdown(data.memory)}</div>`;
+    }
+    if (data.status === 'review') {
+      html += `<div class="slide-approve-wrap">
+        <div class="slide-approve-track glass glass-interactive">
+          <div class="slide-approve-thumb">&raquo;</div>
+          <div class="slide-approve-label">Slide to Approve</div>
+        </div>
+      </div>`;
     }
   } else {
-    // Show structured phase/step list during executing
     if (data.phases && data.phases.length > 0) {
       html += renderPhases(data.phases, data.current_phase);
     }
   }
 
   el.innerHTML = html;
+  if (data.status === 'review') setupSlideApprove();
+}
+
+var slideApproveAC = null;
+function setupSlideApprove() {
+  if (slideApproveAC) slideApproveAC.abort();
+  slideApproveAC = new AbortController();
+  var signal = slideApproveAC.signal;
+
+  var track = document.querySelector('.slide-approve-track');
+  if (!track) return;
+  var thumb = track.querySelector('.slide-approve-thumb');
+  var label = track.querySelector('.slide-approve-label');
+  var dragging = false;
+  var startX = 0;
+  var thumbStartLeft = 0;
+
+  function getMaxLeft() {
+    return track.offsetWidth - thumb.offsetWidth - 4; // 2px padding each side
+  }
+
+  function onStart(e) {
+    if (track.classList.contains('approved')) return;
+    dragging = true;
+    thumb.classList.add('dragging');
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    startX = clientX;
+    thumbStartLeft = thumb.offsetLeft - 2; // subtract initial 2px offset
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    var dx = clientX - startX;
+    var newLeft = Math.max(0, Math.min(thumbStartLeft + dx, getMaxLeft()));
+    thumb.style.left = (newLeft + 2) + 'px';
+    e.preventDefault();
+  }
+
+  function onEnd(e) {
+    if (!dragging) return;
+    dragging = false;
+    thumb.classList.remove('dragging');
+    var currentLeft = thumb.offsetLeft - 2;
+    var maxLeft = getMaxLeft();
+    if (currentLeft >= maxLeft * 0.8) {
+      // Approved
+      track.classList.add('approved');
+      label.textContent = 'Approved!';
+      thumb.classList.add('hidden');
+      sendCommand('/plan start');
+    } else {
+      // Snap back
+      thumb.style.left = '2px';
+    }
+  }
+
+  thumb.addEventListener('touchstart', onStart, { passive: false, signal: signal });
+  thumb.addEventListener('mousedown', onStart, { signal: signal });
+  document.addEventListener('touchmove', onMove, { passive: false, signal: signal });
+  document.addEventListener('mousemove', onMove, { signal: signal });
+  document.addEventListener('touchend', onEnd, { signal: signal });
+  document.addEventListener('mouseup', onEnd, { signal: signal });
 }
 
 function renderSimpleMarkdown(text) {
@@ -723,26 +848,24 @@ function renderSimpleMarkdown(text) {
   return out.join('');
 }
 
-async function loadPlan() {
-  var loading = document.getElementById('plan-loading');
-  var el = document.getElementById('plan-content');
-  loading.style.display = 'block';
-  loading.textContent = 'Loading plan...';
-  el.style.display = 'none';
+async function loadTab(loadingId, contentId, label, fetchFn, renderFn) {
+  var loading = document.getElementById(loadingId);
+  var el = document.getElementById(contentId);
+  loading.classList.remove('hidden');
+  loading.textContent = 'Loading ' + label + '...';
+  el.classList.add('hidden');
+  try { renderFn(await fetchFn()); }
+  catch (e) { loading.textContent = 'Failed to load ' + label + '.'; }
+}
 
-  try {
-    var data = await apiFetch('/miniapp/api/plan');
-    renderPlanFromData(data);
-  } catch (e) {
-    loading.textContent = 'Failed to load plan.';
-    loading.style.display = 'block';
-    el.style.display = 'none';
-  }
+function loadPlan() {
+  return loadTab('plan-loading', 'plan-content', 'plan',
+    function() { return apiFetch('/miniapp/api/plan'); },
+    renderPlanFromData);
 }
 
 function renderPhases(phases, currentPhase) {
-  let html = '';
-  for (const phase of phases) {
+  return phases.map(phase => {
     const doneCount = phase.steps.filter(s => s.done).length;
     const total = phase.steps.length;
 
@@ -758,30 +881,25 @@ function renderPhases(phases, currentPhase) {
       indicator = String(phase.number);
     }
 
-    html += '<div class="phase">';
-    html += '<div class="phase-header">';
-    html += '<div class="phase-indicator ' + indicatorClass + '">' + indicator + '</div>';
-    html += '<span class="phase-title">' + escapeHtml(phase.title || 'Phase ' + phase.number) + '</span>';
-    if (total > 0) {
-      html += '<span class="phase-progress">' + doneCount + '/' + total + '</span>';
-    }
-    html += '</div>';
-
-    // Steps
-    for (const step of phase.steps) {
-      const checkClass = step.done ? 'done' : '';
-      const textClass = step.done ? 'done' : '';
+    const progressHtml = total > 0 ? `<span class="phase-progress">${doneCount}/${total}</span>` : '';
+    const stepsHtml = phase.steps.map(step => {
+      const doneClass = step.done ? 'done' : '';
       const stepClass = step.done ? 'step step-done' : 'step';
-      html += '<div class="' + stepClass + '" data-phase="' + phase.number + '" data-step="' + step.index + '" data-done="' + step.done + '">';
-      html += '<div class="step-check ' + checkClass + '"></div>';
-      html += '<div class="step-text ' + textClass + '">' + escapeHtml(step.description) + '</div>';
-      html += '</div>';
-    }
+      return `<div class="${stepClass}" data-phase="${phase.number}" data-step="${step.index}" data-done="${step.done}">
+        <div class="step-check ${doneClass}"></div>
+        <div class="step-text ${doneClass}">${escapeHtml(step.description)}</div>
+      </div>`;
+    }).join('');
 
-    html += '</div>';
-  }
-
-  return html;
+    return `<div class="phase">
+      <div class="phase-header">
+        <div class="phase-indicator ${indicatorClass}">${indicator}</div>
+        <span class="phase-title">${escapeHtml(phase.title || 'Phase ' + phase.number)}</span>
+        ${progressHtml}
+      </div>
+      ${stepsHtml}
+    </div>`;
+  }).join('');
 }
 
 // Delegate click on steps — tap to mark done (sends command, closes app)
@@ -799,63 +917,52 @@ document.getElementById('plan-content').addEventListener('click', function(e) {
 function renderSkillsFromData(data) {
   var loading = document.getElementById('skills-loading');
   var el = document.getElementById('skills-list');
-  loading.style.display = 'none';
-  el.style.display = 'block';
+  loading.classList.add('hidden');
+  el.classList.remove('hidden');
 
   if (!data || data.length === 0) {
     el.innerHTML = '<div class="empty-state">No skills installed.</div>';
     return;
   }
 
-  el.innerHTML = data.map(function(s) {
-    return '<div class="skill-item" data-skill="' + escapeAttr(s.name) + '">' +
-      '<div class="skill-body">' +
-        '<div class="skill-name">' + escapeHtml(s.name) + '</div>' +
-        '<div class="skill-desc">' + escapeHtml(s.description || 'No description') + '</div>' +
-        '<span class="skill-source">' + escapeHtml(s.source) + '</span>' +
-      '</div>' +
-      '<span class="skill-arrow">\u203A</span>' +
-    '</div>';
-  }).join('');
+  el.innerHTML = data.map(s => `<div class="skill-item glass glass-interactive" data-skill="${escapeAttr(s.name)}">
+    <div class="skill-body">
+      <div class="skill-name">${escapeHtml(s.name)}</div>
+      <div class="skill-desc">${escapeHtml(s.description || 'No description')}</div>
+      <span class="skill-source">${escapeHtml(s.source)}</span>
+    </div>
+    <span class="skill-arrow">\u203A</span>
+  </div>`).join('');
 
   if (selectedSkill) {
     var prev = el.querySelector('[data-skill="' + CSS.escape(selectedSkill) + '"]');
     if (prev) prev.classList.add('selected');
   }
-
-  el.querySelectorAll('.skill-item').forEach(function(item) {
-    item.addEventListener('click', function() {
-      if (selectedSkill === item.dataset.skill) {
-        item.classList.remove('selected');
-        selectedSkill = null;
-        document.getElementById('send-bar').style.display = 'none';
-        return;
-      }
-      el.querySelectorAll('.skill-item').forEach(function(i) { i.classList.remove('selected'); });
-      item.classList.add('selected');
-      selectedSkill = item.dataset.skill;
-      document.getElementById('send-bar').style.display = 'flex';
-      document.getElementById('skill-msg').placeholder = 'Message for /' + selectedSkill + '...';
-      document.getElementById('skill-msg').focus();
-    });
-  });
 }
 
-async function loadSkills() {
-  var loading = document.getElementById('skills-loading');
+// Delegate click on skills — single listener, registered once
+document.getElementById('skills-list').addEventListener('click', function(e) {
+  var item = e.target.closest('.skill-item');
+  if (!item) return;
   var el = document.getElementById('skills-list');
-  loading.style.display = 'block';
-  loading.textContent = 'Loading skills...';
-  el.style.display = 'none';
-
-  try {
-    var data = await apiFetch('/miniapp/api/skills');
-    renderSkillsFromData(data);
-  } catch (e) {
-    loading.textContent = 'Failed to load skills.';
-    loading.style.display = 'block';
-    el.style.display = 'none';
+  if (selectedSkill === item.dataset.skill) {
+    item.classList.remove('selected');
+    selectedSkill = null;
+    document.getElementById('send-bar').classList.add('hidden');
+    return;
   }
+  el.querySelectorAll('.skill-item').forEach(function(i) { i.classList.remove('selected'); });
+  item.classList.add('selected');
+  selectedSkill = item.dataset.skill;
+  document.getElementById('send-bar').classList.remove('hidden');
+  document.getElementById('skill-msg').placeholder = 'Message for /' + selectedSkill + '...';
+  document.getElementById('skill-msg').focus();
+});
+
+function loadSkills() {
+  return loadTab('skills-loading', 'skills-list', 'skills',
+    function() { return apiFetch('/miniapp/api/skills'); },
+    renderSkillsFromData);
 }
 
 // ── Session tab ──
@@ -874,33 +981,31 @@ function shortSessionKey(key) {
 
 function renderActiveSessions(sessions) {
   if (!sessions || sessions.length === 0) {
-    return '<div class="card">' +
-      '<div class="card-title">Active Sessions</div>' +
-      '<div style="color:var(--hint);font-size:13px">No active sessions</div>' +
-    '</div>';
+    return `<div class="card glass">
+      <div class="card-title">Active Sessions</div>
+      <div style="color:var(--hint);font-size:13px">No active sessions</div>
+    </div>`;
   }
-  var html = '<div class="card"><div class="card-title">Active Sessions</div>';
-  for (var i = 0; i < sessions.length; i++) {
-    var s = sessions[i];
-    var touchDir = s.touch_dir || '\u2014';
-    html += '<div style="padding:6px 0;border-bottom:1px solid var(--secondary-bg)">' +
-      '<div style="display:flex;align-items:center;gap:6px">' +
-        '<span style="color:var(--done);font-size:10px">\u25CF</span>' +
-        '<span style="font-weight:600;font-size:13px">' + escapeHtml(shortSessionKey(s.session_key)) + '</span>' +
-        '<span style="margin-left:auto;color:var(--hint);font-size:12px">' + formatAge(s.age_sec) + '</span>' +
-      '</div>' +
-      '<div style="color:var(--hint);font-size:12px;padding-left:16px">touch: ' + escapeHtml(touchDir) + '</div>' +
-    '</div>';
-  }
-  html += '</div>';
-  return html;
+  return `<div class="card glass"><div class="card-title">Active Sessions</div>
+    ${sessions.map(s => {
+      var touchDir = s.touch_dir || '\u2014';
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--secondary-bg)">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="color:var(--done);font-size:10px">\u25CF</span>
+          <span style="font-weight:600;font-size:13px">${escapeHtml(shortSessionKey(s.session_key))}</span>
+          <span style="margin-left:auto;color:var(--hint);font-size:12px">${formatAge(s.age_sec)}</span>
+        </div>
+        <div style="color:var(--hint);font-size:12px;padding-left:16px">touch: ${escapeHtml(touchDir)}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 function renderSessionFromData(sessions, stats) {
   var loading = document.getElementById('session-loading');
   var el = document.getElementById('session-content');
-  loading.style.display = 'none';
-  el.style.display = 'block';
+  loading.classList.add('hidden');
+  el.classList.remove('hidden');
 
   var html = renderActiveSessions(sessions);
 
@@ -912,43 +1017,33 @@ function renderSessionFromData(sessions, stats) {
 
   var since = stats.since ? new Date(stats.since).toLocaleDateString() : 'N/A';
   var today = stats.today || {};
-  html +=
-    '<div class="card">' +
-      '<div class="card-title">Today</div>' +
-      '<div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">' + (today.prompts || 0) + '</span></div>' +
-      '<div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">' + (today.requests || 0) + '</span></div>' +
-      '<div class="stat-row"><span class="stat-label">Tokens</span><span class="stat-value">' + formatTokens(today.total_tokens || 0) + '</span></div>' +
-    '</div>' +
-    '<div class="card">' +
-      '<div class="card-title">All Time (since ' + escapeHtml(since) + ')</div>' +
-      '<div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">' + (stats.total_prompts || 0) + '</span></div>' +
-      '<div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">' + (stats.total_requests || 0) + '</span></div>' +
-      '<div class="stat-row"><span class="stat-label">Total Tokens</span><span class="stat-value">' + formatTokens(stats.total_tokens || 0) + '</span></div>' +
-      '<div class="stat-row"><span class="stat-label">Prompt Tokens</span><span class="stat-value">' + formatTokens(stats.total_prompt_tokens || 0) + '</span></div>' +
-      '<div class="stat-row"><span class="stat-label">Completion Tokens</span><span class="stat-value">' + formatTokens(stats.total_completion_tokens || 0) + '</span></div>' +
-    '</div>';
+  html += `<div class="card glass">
+    <div class="card-title">Today</div>
+    <div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">${today.prompts || 0}</span></div>
+    <div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">${today.requests || 0}</span></div>
+    <div class="stat-row"><span class="stat-label">Tokens</span><span class="stat-value">${formatTokens(today.total_tokens || 0)}</span></div>
+  </div>
+  <div class="card glass">
+    <div class="card-title">All Time (since ${escapeHtml(since)})</div>
+    <div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">${stats.total_prompts || 0}</span></div>
+    <div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">${stats.total_requests || 0}</span></div>
+    <div class="stat-row"><span class="stat-label">Total Tokens</span><span class="stat-value">${formatTokens(stats.total_tokens || 0)}</span></div>
+    <div class="stat-row"><span class="stat-label">Prompt Tokens</span><span class="stat-value">${formatTokens(stats.total_prompt_tokens || 0)}</span></div>
+    <div class="stat-row"><span class="stat-label">Completion Tokens</span><span class="stat-value">${formatTokens(stats.total_completion_tokens || 0)}</span></div>
+  </div>`;
 
   el.innerHTML = html;
 }
 
-async function loadSession() {
-  var loading = document.getElementById('session-loading');
-  var el = document.getElementById('session-content');
-  loading.style.display = 'block';
-  loading.textContent = 'Loading session...';
-  el.style.display = 'none';
-
-  try {
-    var results = await Promise.all([
-      apiFetch('/miniapp/api/session'),
-      apiFetch('/miniapp/api/sessions').catch(function() { return []; }),
-    ]);
-    renderSessionFromData(results[1], results[0]);
-  } catch (e) {
-    loading.textContent = 'Failed to load session.';
-    loading.style.display = 'block';
-    el.style.display = 'none';
-  }
+function loadSession() {
+  return loadTab('session-loading', 'session-content', 'session',
+    function() {
+      return Promise.all([
+        apiFetch('/miniapp/api/session'),
+        apiFetch('/miniapp/api/sessions').catch(function() { return []; }),
+      ]);
+    },
+    function(results) { renderSessionFromData(results[1], results[0]); });
 }
 
 function formatTokens(n) {
@@ -976,16 +1071,17 @@ function connectSSE() {
     API_BASE + '/miniapp/api/events?initData=' + encodeURIComponent(initData)
   );
   eventSource.addEventListener('plan', function(e) {
-    try { renderPlanFromData(JSON.parse(e.data)); } catch(err) {}
+    try { lastSSE.plan = Date.now(); renderPlanFromData(JSON.parse(e.data)); } catch(err) {}
   });
   eventSource.addEventListener('session', function(e) {
     try {
+      lastSSE.session = Date.now();
       var d = JSON.parse(e.data);
       renderSessionFromData(d.sessions, d.stats);
     } catch(err) {}
   });
   eventSource.addEventListener('skills', function(e) {
-    try { renderSkillsFromData(JSON.parse(e.data)); } catch(err) {}
+    try { lastSSE.skills = Date.now(); renderSkillsFromData(JSON.parse(e.data)); } catch(err) {}
   });
   eventSource.onerror = function() {
     // Browser will auto-reconnect EventSource
