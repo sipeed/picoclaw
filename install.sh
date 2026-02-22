@@ -73,6 +73,10 @@ check_dependencies() {
         missing+=("jq or grep")
     fi
 
+    if ! command -v tar >/dev/null 2>&1; then
+        missing+=("tar")
+    fi
+
     if [ ${#missing[@]} -gt 0 ]; then
         msg "$RED" "Error: Missing required dependencies: ${missing[*]}"
         exit 1
@@ -438,7 +442,7 @@ install_picoclaw() {
 
     # Download binary
     local tmp_file
-    tmp_file=$(mktemp)
+    tmp_file=$(mktemp "${TMPDIR:-/tmp}/picoclaw-install.XXXXXX")
     local binary_path="${INSTALL_DIR}/${BINARY_NAME}"
 
     msg "$BLUE" "Downloading ${asset_name}..."
