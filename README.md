@@ -1119,7 +1119,7 @@ Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
 
 PRs welcome! The codebase is intentionally small and readable. 🤗
 
-See our full [Community Roadmap](docs/picoclaw_community_roadmap_260216.md).
+See our full [Community Roadmap](https://github.com/sipeed/picoclaw/blob/main/ROADMAP.md).
 
 Developer group building, join after your first merged PR!
 
