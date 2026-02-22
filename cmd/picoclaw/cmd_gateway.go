@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
@@ -192,6 +193,9 @@ func gatewayCmd() {
 		fmt.Println("✓ Device event service started")
 	}
 
+	mediaCleaner := utils.NewMediaCleaner()
+	mediaCleaner.Start()
+
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
@@ -216,6 +220,7 @@ func gatewayCmd() {
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
+	mediaCleaner.Stop()
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")

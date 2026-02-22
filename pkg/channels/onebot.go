@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -571,7 +570,6 @@ type parseMessageResult struct {
 	Text           string
 	IsBotMentioned bool
 	Media          []string
-	LocalFiles     []string
 	ReplyTo        string
 }
 
@@ -603,7 +601,6 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 	mentioned := false
 	selfIDStr := strconv.FormatInt(selfID, 10)
 	var media []string
-	var localFiles []string
 	var replyTo string
 
 	for _, seg := range segments {
@@ -642,7 +639,6 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 					})
 					if localPath != "" {
 						media = append(media, localPath)
-						localFiles = append(localFiles, localPath)
 						textParts = append(textParts, fmt.Sprintf("[%s]", segType))
 					}
 				}
@@ -656,7 +652,6 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 						LoggerPrefix: "onebot",
 					})
 					if localPath != "" {
-						localFiles = append(localFiles, localPath)
 						if c.transcriber != nil && c.transcriber.IsAvailable() {
 							tctx, tcancel := context.WithTimeout(c.ctx, 30*time.Second)
 							result, err := c.transcriber.Transcribe(tctx, localPath)
@@ -703,7 +698,6 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 		Text:           strings.TrimSpace(strings.Join(textParts, "")),
 		IsBotMentioned: mentioned,
 		Media:          media,
-		LocalFiles:     localFiles,
 		ReplyTo:        replyTo,
 	}
 }
@@ -822,20 +816,6 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 				"sender": string(raw.Sender),
 			})
 		}
-	}
-
-	// Clean up temp files when done
-	if len(parsed.LocalFiles) > 0 {
-		defer func() {
-			for _, f := range parsed.LocalFiles {
-				if err := os.Remove(f); err != nil {
-					logger.DebugCF("onebot", "Failed to remove temp file", map[string]any{
-						"path":  f,
-						"error": err.Error(),
-					})
-				}
-			}
-		}()
 	}
 
 	if c.isDuplicate(messageID) {

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -307,18 +306,6 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 
 	var content string
 	var mediaPaths []string
-	localFiles := []string{}
-
-	defer func() {
-		for _, file := range localFiles {
-			if err := os.Remove(file); err != nil {
-				logger.DebugCF("line", "Failed to cleanup temp file", map[string]any{
-					"file":  file,
-					"error": err.Error(),
-				})
-			}
-		}
-	}()
 
 	switch msg.Type {
 	case "text":
@@ -330,22 +317,19 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	case "image":
 		localPath := c.downloadContent(msg.ID, "image.jpg")
 		if localPath != "" {
-			localFiles = append(localFiles, localPath)
-			mediaPaths = append(mediaPaths, localPath)
+		mediaPaths = append(mediaPaths, localPath)
 			content = "[image]"
 		}
 	case "audio":
 		localPath := c.downloadContent(msg.ID, "audio.m4a")
 		if localPath != "" {
-			localFiles = append(localFiles, localPath)
-			mediaPaths = append(mediaPaths, localPath)
+		mediaPaths = append(mediaPaths, localPath)
 			content = "[audio]"
 		}
 	case "video":
 		localPath := c.downloadContent(msg.ID, "video.mp4")
 		if localPath != "" {
-			localFiles = append(localFiles, localPath)
-			mediaPaths = append(mediaPaths, localPath)
+		mediaPaths = append(mediaPaths, localPath)
 			content = "[video]"
 		}
 	case "file":

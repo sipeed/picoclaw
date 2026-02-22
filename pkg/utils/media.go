@@ -6,12 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+// MediaDir is the subdirectory name under os.TempDir() where downloaded media files are stored.
+const MediaDir = "picoclaw_media"
 
 // IsAudioFile checks if a file is an audio file based on its filename extension and content type.
 func IsAudioFile(filename, contentType string) bool {
@@ -65,7 +69,7 @@ func DownloadFile(url, filename string, opts DownloadOptions) string {
 		opts.LoggerPrefix = "utils"
 	}
 
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	mediaDir := filepath.Join(os.TempDir(), MediaDir)
 	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to create media directory", map[string]any{
 			"error": err.Error(),
@@ -140,4 +144,84 @@ func DownloadFileSimple(url, filename string) string {
 	return DownloadFile(url, filename, DownloadOptions{
 		LoggerPrefix: "media",
 	})
+}
+
+// MediaCleaner periodically removes old files from the media temp directory.
+type MediaCleaner struct {
+	interval time.Duration
+	maxAge   time.Duration
+	stop     chan struct{}
+	once     sync.Once
+}
+
+// NewMediaCleaner creates a new MediaCleaner with default settings
+// (scan every 5 minutes, remove files older than 30 minutes).
+func NewMediaCleaner() *MediaCleaner {
+	return &MediaCleaner{
+		interval: 5 * time.Minute,
+		maxAge:   30 * time.Minute,
+		stop:     make(chan struct{}),
+	}
+}
+
+// Start begins the background cleanup goroutine. Safe to call multiple times.
+func (mc *MediaCleaner) Start() {
+	mc.once.Do(func() {
+		go mc.loop()
+		logger.InfoC("media", "Media cleaner started")
+	})
+}
+
+// Stop signals the cleanup goroutine to exit. Safe to call multiple times.
+func (mc *MediaCleaner) Stop() {
+	select {
+	case <-mc.stop:
+	default:
+		close(mc.stop)
+		logger.InfoC("media", "Media cleaner stopped")
+	}
+}
+
+func (mc *MediaCleaner) loop() {
+	ticker := time.NewTicker(mc.interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-mc.stop:
+			return
+		case <-ticker.C:
+			mc.cleanup()
+		}
+	}
+}
+
+func (mc *MediaCleaner) cleanup() {
+	mediaDir := filepath.Join(os.TempDir(), MediaDir)
+	entries, err := os.ReadDir(mediaDir)
+	if err != nil {
+		return
+	}
+
+	now := time.Now()
+	removed := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if now.Sub(info.ModTime()) > mc.maxAge {
+			path := filepath.Join(mediaDir, entry.Name())
+			if err := os.Remove(path); err == nil {
+				removed++
+			}
+		}
+	}
+	if removed > 0 {
+		logger.DebugCF("media", "Cleaned up old media files", map[string]any{
+			"removed": removed,
+		})
+	}
 }
