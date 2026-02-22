@@ -51,8 +51,6 @@ const telegramMaxMessageChars = 3900
 const markdownTableMaxWidth = 42
 const markdownTableMinColWidth = 6
 
-var thinkBlockPattern = regexp.MustCompile(`(?is)<think>.*?</think>`)
-
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
 	var opts []telego.BotOption
 	telegramCfg := cfg.Channels.Telegram
@@ -326,8 +324,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 }
 
 func sanitizeTelegramOutgoingContent(content string) string {
-	cleaned := thinkBlockPattern.ReplaceAllString(content, "")
-	cleaned = strings.TrimSpace(cleaned)
+	cleaned := strings.TrimSpace(content)
 	if cleaned == "" {
 		return "(empty response)"
 	}

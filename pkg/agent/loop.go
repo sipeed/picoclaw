@@ -1547,6 +1547,44 @@ func (al *AgentLoop) runLLMIteration(
 			)
 		}
 
+		// Detect repetition loop on raw text (before stripping think
+		// blocks so loops inside <think> are caught).  Skip when the
+		// provider already returned native tool calls.
+		if len(response.ToolCalls) == 0 && utils.DetectRepetitionLoop(response.Content) {
+			logger.WarnCF("agent", "Repetition loop detected in LLM response, retrying",
+				map[string]any{
+					"agent_id":       agent.ID,
+					"iteration":      iteration,
+					"finish_reason":  response.FinishReason,
+					"content_length": len(response.Content),
+				})
+
+			// Retry once: inject nudge message and re-call
+			savedMsgs := messages
+			messages = append(append([]providers.Message(nil), messages...),
+				providers.Message{
+					Role:    "user",
+					Content: "[System] Your previous response contained degenerate repetition and was discarded. Please respond normally without repeating yourself.",
+				})
+			response, err = callLLM()
+			messages = savedMsgs // restore original messages
+
+			if err != nil {
+				return "", iteration, fmt.Errorf("LLM retry after repetition failed: %w", err)
+			}
+
+			// Re-check on raw text; if still repeating give up
+			if utils.DetectRepetitionLoop(response.Content) {
+				logger.ErrorCF("agent", "Repetition persists after retry, returning empty",
+					map[string]any{"agent_id": agent.ID})
+				response.Content = ""
+			}
+		}
+
+		// Strip think blocks before extracting XML tool calls so
+		// extraction operates on clean content.
+		response.Content = utils.StripThinkBlocks(response.Content)
+
 		// Recover XML tool calls emitted as plain text by some providers.
 		if len(response.ToolCalls) == 0 {
 			if xmlCalls := providers.ExtractXMLToolCalls(response.Content); len(xmlCalls) > 0 {
