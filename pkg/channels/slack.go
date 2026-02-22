@@ -238,7 +238,7 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 			if localPath == "" {
 				continue
 			}
-		mediaPaths = append(mediaPaths, localPath)
+			mediaPaths = append(mediaPaths, localPath)
 
 			if utils.IsAudioFile(file.Name, file.Mimetype) && c.transcriber != nil && c.transcriber.IsAvailable() {
 				ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)

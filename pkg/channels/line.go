@@ -317,19 +317,19 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	case "image":
 		localPath := c.downloadContent(msg.ID, "image.jpg")
 		if localPath != "" {
-		mediaPaths = append(mediaPaths, localPath)
+			mediaPaths = append(mediaPaths, localPath)
 			content = "[image]"
 		}
 	case "audio":
 		localPath := c.downloadContent(msg.ID, "audio.m4a")
 		if localPath != "" {
-		mediaPaths = append(mediaPaths, localPath)
+			mediaPaths = append(mediaPaths, localPath)
 			content = "[audio]"
 		}
 	case "video":
 		localPath := c.downloadContent(msg.ID, "video.mp4")
 		if localPath != "" {
-		mediaPaths = append(mediaPaths, localPath)
+			mediaPaths = append(mediaPaths, localPath)
 			content = "[video]"
 		}
 	case "file":

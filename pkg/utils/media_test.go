@@ -10,13 +10,13 @@ import (
 func TestMediaCleanerRemovesOldFiles(t *testing.T) {
 	// Setup: create a temp media directory with old and new files
 	mediaDir := filepath.Join(os.TempDir(), MediaDir)
-	if err := os.MkdirAll(mediaDir, 0700); err != nil {
+	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
 		t.Fatalf("failed to create media dir: %v", err)
 	}
 
 	// Create an "old" file and backdate its modification time
 	oldFile := filepath.Join(mediaDir, "test_old_file.jpg")
-	if err := os.WriteFile(oldFile, []byte("old"), 0600); err != nil {
+	if err := os.WriteFile(oldFile, []byte("old"), 0o600); err != nil {
 		t.Fatalf("failed to create old file: %v", err)
 	}
 	oldTime := time.Now().Add(-1 * time.Hour)
@@ -26,7 +26,7 @@ func TestMediaCleanerRemovesOldFiles(t *testing.T) {
 
 	// Create a "new" file (just created, so modtime is now)
 	newFile := filepath.Join(mediaDir, "test_new_file.jpg")
-	if err := os.WriteFile(newFile, []byte("new"), 0600); err != nil {
+	if err := os.WriteFile(newFile, []byte("new"), 0o600); err != nil {
 		t.Fatalf("failed to create new file: %v", err)
 	}
 

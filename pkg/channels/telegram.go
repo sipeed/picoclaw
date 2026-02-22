@@ -237,7 +237,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		photo := message.Photo[len(message.Photo)-1]
 		photoPath := c.downloadPhoto(ctx, photo.FileID)
 		if photoPath != "" {
-		mediaPaths = append(mediaPaths, photoPath)
+			mediaPaths = append(mediaPaths, photoPath)
 			if content != "" {
 				content += "\n"
 			}
@@ -248,7 +248,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	if message.Voice != nil {
 		voicePath := c.downloadFile(ctx, message.Voice.FileID, ".ogg")
 		if voicePath != "" {
-		mediaPaths = append(mediaPaths, voicePath)
+			mediaPaths = append(mediaPaths, voicePath)
 
 			transcribedText := ""
 			if c.transcriber != nil && c.transcriber.IsAvailable() {
@@ -282,7 +282,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	if message.Audio != nil {
 		audioPath := c.downloadFile(ctx, message.Audio.FileID, ".mp3")
 		if audioPath != "" {
-		mediaPaths = append(mediaPaths, audioPath)
+			mediaPaths = append(mediaPaths, audioPath)
 			if content != "" {
 				content += "\n"
 			}
@@ -293,7 +293,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	if message.Document != nil {
 		docPath := c.downloadFile(ctx, message.Document.FileID, "")
 		if docPath != "" {
-		mediaPaths = append(mediaPaths, docPath)
+			mediaPaths = append(mediaPaths, docPath)
 			if content != "" {
 				content += "\n"
 			}
