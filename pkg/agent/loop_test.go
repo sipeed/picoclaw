@@ -2135,7 +2135,7 @@ func TestConsumeStream_NormalCompletion(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resp, detected, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000)
+	resp, detected, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2181,7 +2181,7 @@ func TestConsumeStream_DetectsRepetition(t *testing.T) {
 		close(ch)
 	}()
 
-	resp, detected, err := consumeStreamWithRepetitionDetection(ch, wrappedCancel, 1000)
+	resp, detected, err := consumeStreamWithRepetitionDetection(ch, wrappedCancel, 1000, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2219,7 +2219,7 @@ func TestConsumeStream_ToolCallAccumulation(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resp, detected, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000)
+	resp, detected, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2248,11 +2248,97 @@ func TestConsumeStream_StreamError(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, _, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000)
+	_, _, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "read error") {
 		t.Errorf("error = %q, want to contain %q", err.Error(), "read error")
 	}
+}
+
+func TestConsumeStream_OnChunkCallback(t *testing.T) {
+	ch := make(chan protocoltypes.StreamEvent, 8)
+	go func() {
+		ch <- protocoltypes.StreamEvent{ContentDelta: "Hello "}
+		ch <- protocoltypes.StreamEvent{ContentDelta: "world"}
+		ch <- protocoltypes.StreamEvent{ContentDelta: "!"}
+		ch <- protocoltypes.StreamEvent{FinishReason: "stop"}
+		close(ch)
+	}()
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var chunks []string
+	onChunk := func(accumulated string) {
+		chunks = append(chunks, accumulated)
+	}
+
+	resp, detected, err := consumeStreamWithRepetitionDetection(ch, cancel, 1000, onChunk)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if detected {
+		t.Fatal("expected detected=false")
+	}
+	if resp.Content != "Hello world!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello world!")
+	}
+	// onChunk should be called once per content delta (3 times)
+	if len(chunks) != 3 {
+		t.Fatalf("onChunk called %d times, want 3", len(chunks))
+	}
+	if chunks[0] != "Hello " {
+		t.Errorf("chunks[0] = %q, want %q", chunks[0], "Hello ")
+	}
+	if chunks[1] != "Hello world" {
+		t.Errorf("chunks[1] = %q, want %q", chunks[1], "Hello world")
+	}
+	if chunks[2] != "Hello world!" {
+		t.Errorf("chunks[2] = %q, want %q", chunks[2], "Hello world!")
+	}
+}
+
+func TestConsumeStream_OnChunkWithRepetitionDetection(t *testing.T) {
+	ch := make(chan protocoltypes.StreamEvent, 64)
+	cancelCalled := false
+
+	ctx, cancel := context.WithCancel(context.Background())
+	wrappedCancel := func() {
+		cancelCalled = true
+		cancel()
+	}
+
+	repeatedChunk := strings.Repeat("abcdefghij", 50) // 500 chars per chunk
+	go func() {
+		for i := 0; i < 6; i++ {
+			ch <- protocoltypes.StreamEvent{ContentDelta: repeatedChunk}
+		}
+		for i := 0; i < 10; i++ {
+			ch <- protocoltypes.StreamEvent{ContentDelta: "more data"}
+		}
+		close(ch)
+	}()
+
+	var chunkCount int
+	onChunk := func(accumulated string) {
+		chunkCount++
+	}
+
+	_, detected, err := consumeStreamWithRepetitionDetection(ch, wrappedCancel, 1000, onChunk)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !detected {
+		t.Fatal("expected repetition detection to trigger")
+	}
+	if !cancelCalled {
+		t.Error("expected cancelFn to be called")
+	}
+	// onChunk should have been called at least once before detection
+	if chunkCount == 0 {
+		t.Error("expected onChunk to be called at least once")
+	}
+	_ = ctx
 }
