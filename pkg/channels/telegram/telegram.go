@@ -81,6 +81,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		bus,
 		telegramCfg.AllowFrom,
 		channels.WithMaxMessageLength(4096),
+		channels.WithGroupTrigger(telegramCfg.GroupTrigger),
 	)
 
 	return &TelegramChannel{
@@ -417,6 +418,19 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		content = "[empty message]"
 	}
 
+	// In group chats, apply unified group trigger filtering
+	if message.Chat.Type != "private" {
+		isMentioned := c.isBotMentioned(message)
+		if isMentioned {
+			content = c.stripBotMention(content)
+		}
+		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
+		if !respond {
+			return nil
+		}
+		content = cleaned
+	}
+
 	logger.DebugCF("telegram", "Received message", map[string]any{
 		"sender_id": senderID,
 		"chat_id":   fmt.Sprintf("%d", chatID),
@@ -628,4 +642,53 @@ func escapeHTML(text string) string {
 	text = strings.ReplaceAll(text, "<", "&lt;")
 	text = strings.ReplaceAll(text, ">", "&gt;")
 	return text
+}
+
+// isBotMentioned checks if the bot is mentioned in the message via entities.
+func (c *TelegramChannel) isBotMentioned(message *telego.Message) bool {
+	botUsername := c.bot.Username()
+	if botUsername == "" {
+		return false
+	}
+
+	entities := message.Entities
+	if entities == nil {
+		entities = message.CaptionEntities
+	}
+
+	for _, entity := range entities {
+		if entity.Type == "mention" {
+			// Extract the mention text from the message
+			text := message.Text
+			if text == "" {
+				text = message.Caption
+			}
+			runes := []rune(text)
+			end := entity.Offset + entity.Length
+			if end <= len(runes) {
+				mention := string(runes[entity.Offset:end])
+				if strings.EqualFold(mention, "@"+botUsername) {
+					return true
+				}
+			}
+		}
+		if entity.Type == "text_mention" && entity.User != nil {
+			if entity.User.Username == botUsername {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// stripBotMention removes the @bot mention from the content.
+func (c *TelegramChannel) stripBotMention(content string) string {
+	botUsername := c.bot.Username()
+	if botUsername == "" {
+		return content
+	}
+	// Case-insensitive replacement
+	re := regexp.MustCompile(`(?i)@` + regexp.QuoteMeta(botUsername))
+	content = re.ReplaceAllString(content, "")
+	return strings.TrimSpace(content)
 }

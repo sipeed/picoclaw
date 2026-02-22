@@ -86,7 +86,10 @@ func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*We
 		return nil, fmt.Errorf("wecom token and webhook_url are required")
 	}
 
-	base := channels.NewBaseChannel("wecom", cfg, messageBus, cfg.AllowFrom, channels.WithMaxMessageLength(2048))
+	base := channels.NewBaseChannel("wecom", cfg, messageBus, cfg.AllowFrom,
+		channels.WithMaxMessageLength(2048),
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+	)
 
 	return &WeComBotChannel{
 		BaseChannel:   base,
@@ -366,6 +369,15 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 
 	// Build metadata
 	peer := bus.Peer{Kind: peerKind, ID: peerID}
+
+	// In group chats, apply unified group trigger filtering
+	if isGroupChat {
+		respond, cleaned := c.ShouldRespondInGroup(false, content)
+		if !respond {
+			return
+		}
+		content = cleaned
+	}
 
 	metadata := map[string]string{
 		"msg_type":     msg.MsgType,

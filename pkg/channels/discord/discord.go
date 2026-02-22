@@ -39,7 +39,10 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}
 
-	base := channels.NewBaseChannel("discord", cfg, bus, cfg.AllowFrom, channels.WithMaxMessageLength(2000))
+	base := channels.NewBaseChannel("discord", cfg, bus, cfg.AllowFrom,
+		channels.WithMaxMessageLength(2000),
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+	)
 
 	return &DiscordChannel{
 		BaseChannel: base,
@@ -265,9 +268,11 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
-	// If configured to only respond to mentions, check if bot is mentioned
-	// Skip this check for DMs (GuildID is empty) - DMs should always be responded to
-	if c.config.MentionOnly && m.GuildID != "" {
+	content := m.Content
+
+	// In guild (group) channels, apply unified group trigger filtering
+	// DMs (GuildID is empty) always get a response
+	if m.GuildID != "" {
 		isMentioned := false
 		for _, mention := range m.Mentions {
 			if mention.ID == c.botUserID {
@@ -275,12 +280,18 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 				break
 			}
 		}
-		if !isMentioned {
-			logger.DebugCF("discord", "Message ignored - bot not mentioned", map[string]any{
+		content = c.stripBotMention(content)
+		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
+		if !respond {
+			logger.DebugCF("discord", "Group message ignored by group trigger", map[string]any{
 				"user_id": m.Author.ID,
 			})
 			return
 		}
+		content = cleaned
+	} else {
+		// DMs: just strip bot mention without filtering
+		content = c.stripBotMention(content)
 	}
 
 	senderID := m.Author.ID
@@ -289,8 +300,6 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		senderName += "#" + m.Author.Discriminator
 	}
 
-	content := m.Content
-	content = c.stripBotMention(content)
 	mediaPaths := make([]string, 0, len(m.Attachments))
 
 	scope := channels.BuildMediaScope("discord", m.ChannelID, m.ID)
