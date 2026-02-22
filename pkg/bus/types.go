@@ -24,5 +24,3 @@ type OutboundMessage struct {
 	ChatID  string `json:"chat_id"`
 	Content string `json:"content"`
 }
-
-type MessageHandler func(InboundMessage) error

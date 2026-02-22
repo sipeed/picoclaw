@@ -127,7 +127,7 @@ func (s *Service) sendNotification(ev *events.DeviceEvent) {
 	}
 
 	msg := ev.FormatMessage()
-	msgBus.PublishOutbound(bus.OutboundMessage{
+	msgBus.PublishOutbound(context.TODO(), bus.OutboundMessage{
 		Channel: platform,
 		ChatID:  userID,
 		Content: msg,

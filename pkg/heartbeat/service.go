@@ -7,6 +7,7 @@
 package heartbeat
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -307,7 +308,7 @@ func (hs *HeartbeatService) sendResponse(response string) {
 		return
 	}
 
-	msgBus.PublishOutbound(bus.OutboundMessage{
+	msgBus.PublishOutbound(context.TODO(), bus.OutboundMessage{
 		Channel: platform,
 		ChatID:  userID,
 		Content: response,
