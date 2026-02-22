@@ -487,42 +487,57 @@
 
   .slide-approve-track {
     position: relative;
-    height: 52px;
-    border-radius: 26px;
+    height: 56px;
+    border-radius: 28px;
     overflow: hidden;
     touch-action: none;
-    transition: background 0.3s, border-color 0.3s;
+    border: 1.5px solid;
+    border-image: linear-gradient(135deg, var(--btn), var(--glass-border)) 1;
+    border-image: none;
+    border-color: var(--btn);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.08);
+    transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
   }
 
   .slide-approve-track.approved {
     background: var(--done);
     border-color: var(--done);
+    box-shadow: 0 0 16px rgba(76,175,80,0.4), 0 2px 8px rgba(0,0,0,0.18);
   }
 
   .slide-approve-thumb {
     position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 48px;
-    height: 48px;
+    top: 3px;
+    left: 3px;
+    width: 50px;
+    height: 50px;
     border-radius: 50%;
     background: var(--btn);
     color: var(--btn-text);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
-    font-weight: 700;
     cursor: grab;
     transition: left 0.3s cubic-bezier(0.25, 1, 0.5, 1);
     z-index: 1;
     user-select: none;
     -webkit-user-select: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
+
+  .slide-approve-thumb svg {
+    width: 22px;
+    height: 22px;
   }
 
   .slide-approve-thumb.dragging {
     transition: none;
     cursor: grabbing;
+  }
+
+  @keyframes shimmer {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
   }
 
   .slide-approve-label {
@@ -534,17 +549,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--hint);
-    font-size: 14px;
+    color: var(--text);
+    font-size: 15px;
     font-weight: 600;
     pointer-events: none;
     user-select: none;
     -webkit-user-select: none;
     transition: color 0.3s;
+    animation: shimmer 2.5s ease-in-out infinite;
   }
 
   .slide-approve-track.approved .slide-approve-label {
     color: #fff;
+    animation: none;
   }
 
 </style>
@@ -736,7 +753,7 @@ function renderPlanFromData(data) {
     if (data.status === 'review') {
       html += `<div class="slide-approve-wrap">
         <div class="slide-approve-track glass glass-interactive">
-          <div class="slide-approve-thumb">&raquo;</div>
+          <div class="slide-approve-thumb"><svg viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
           <div class="slide-approve-label">Slide to Approve</div>
         </div>
       </div>`;
@@ -766,7 +783,7 @@ function setupSlideApprove() {
   var thumbStartLeft = 0;
 
   function getMaxLeft() {
-    return track.offsetWidth - thumb.offsetWidth - 4; // 2px padding each side
+    return track.offsetWidth - thumb.offsetWidth - 6; // 3px padding each side
   }
 
   function onStart(e) {
@@ -775,7 +792,7 @@ function setupSlideApprove() {
     thumb.classList.add('dragging');
     var clientX = e.touches ? e.touches[0].clientX : e.clientX;
     startX = clientX;
-    thumbStartLeft = thumb.offsetLeft - 2; // subtract initial 2px offset
+    thumbStartLeft = thumb.offsetLeft - 3; // subtract initial 3px offset
     e.preventDefault();
   }
 
@@ -784,7 +801,7 @@ function setupSlideApprove() {
     var clientX = e.touches ? e.touches[0].clientX : e.clientX;
     var dx = clientX - startX;
     var newLeft = Math.max(0, Math.min(thumbStartLeft + dx, getMaxLeft()));
-    thumb.style.left = (newLeft + 2) + 'px';
+    thumb.style.left = (newLeft + 3) + 'px';
     e.preventDefault();
   }
 
@@ -792,7 +809,7 @@ function setupSlideApprove() {
     if (!dragging) return;
     dragging = false;
     thumb.classList.remove('dragging');
-    var currentLeft = thumb.offsetLeft - 2;
+    var currentLeft = thumb.offsetLeft - 3;
     var maxLeft = getMaxLeft();
     if (currentLeft >= maxLeft * 0.8) {
       // Approved
@@ -802,7 +819,7 @@ function setupSlideApprove() {
       sendCommand('/plan start');
     } else {
       // Snap back
-      thumb.style.left = '2px';
+      thumb.style.left = '3px';
     }
   }
 
