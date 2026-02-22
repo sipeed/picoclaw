@@ -198,6 +198,7 @@ func gatewayCmd() {
 	// Mini App setup: register routes and determine TLS mode
 	useTLS := false
 	var tlsCert, tlsKey string
+	var miniappNotifier *miniapp.StateNotifier
 	if cfg.Channels.Telegram.Enabled {
 		webAppURL := cfg.Channels.Telegram.WebAppURL
 		if webAppURL == "" {
@@ -222,9 +223,9 @@ func gatewayCmd() {
 		if webAppURL != "" {
 			provider := &agentLoopDataProvider{loop: agentLoop}
 			sender := &telegramCommandSender{bus: msgBus}
-			notifier := miniapp.NewStateNotifier()
-			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token, notifier)
-			agentLoop.OnStateChange = notifier.Notify
+			miniappNotifier = miniapp.NewStateNotifier()
+			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token, miniappNotifier)
+			agentLoop.OnStateChange = miniappNotifier.Notify
 			handler.RegisterRoutes(healthServer.Mux())
 			fmt.Printf("✓ Mini App registered at %s\n", webAppURL)
 		}
@@ -255,7 +256,12 @@ func gatewayCmd() {
 
 	fmt.Println("\nShutting down...")
 	cancel()
-	healthServer.Stop(context.Background())
+	if miniappNotifier != nil {
+		miniappNotifier.Close()
+	}
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer shutdownCancel()
+	healthServer.Stop(shutdownCtx)
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()

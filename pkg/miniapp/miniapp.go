@@ -74,11 +74,15 @@ type CommandSender interface {
 type StateNotifier struct {
 	mu   sync.Mutex
 	subs map[chan struct{}]struct{}
+	done chan struct{}
 }
 
 // NewStateNotifier creates a new StateNotifier.
 func NewStateNotifier() *StateNotifier {
-	return &StateNotifier{subs: make(map[chan struct{}]struct{})}
+	return &StateNotifier{
+		subs: make(map[chan struct{}]struct{}),
+		done: make(chan struct{}),
+	}
 }
 
 // Subscribe returns a channel that receives a signal on each state change.
@@ -95,6 +99,20 @@ func (n *StateNotifier) Unsubscribe(ch chan struct{}) {
 	n.mu.Lock()
 	delete(n.subs, ch)
 	n.mu.Unlock()
+}
+
+// Close signals all SSE handlers to exit.
+func (n *StateNotifier) Close() {
+	select {
+	case <-n.done:
+	default:
+		close(n.done)
+	}
+}
+
+// Done returns a channel that is closed when the notifier is shut down.
+func (n *StateNotifier) Done() <-chan struct{} {
+	return n.done
 }
 
 // Notify sends a signal to all subscribers, coalescing rapid notifications.
@@ -278,6 +296,8 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-h.notifier.Done():
 			return
 		case <-ch:
 			sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
