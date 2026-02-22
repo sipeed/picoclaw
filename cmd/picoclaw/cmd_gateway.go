@@ -222,7 +222,9 @@ func gatewayCmd() {
 		if webAppURL != "" {
 			provider := &agentLoopDataProvider{loop: agentLoop}
 			sender := &telegramCommandSender{bus: msgBus}
-			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token)
+			notifier := miniapp.NewStateNotifier()
+			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token, notifier)
+			agentLoop.OnStateChange = notifier.Notify
 			handler.RegisterRoutes(healthServer.Mux())
 			fmt.Printf("✓ Mini App registered at %s\n", webAppURL)
 		}

@@ -581,49 +581,50 @@ async function apiFetch(path) {
 }
 
 // ── Plan tab ──
+function renderPlanFromData(data) {
+  var loading = document.getElementById('plan-loading');
+  var el = document.getElementById('plan-content');
+  loading.style.display = 'none';
+  el.style.display = 'block';
+
+  if (!data.has_plan) {
+    el.innerHTML =
+      '<div class="empty-state">No active plan.</div>' +
+      '<div class="card" style="margin-top:16px">' +
+        '<div class="card-title">Start a Plan</div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+          '<input id="plan-task" class="send-input" placeholder="Describe your task...">' +
+          '<button class="send-btn" onclick="startPlan()">Start</button>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  var html = '';
+  html += '<div class="card">' +
+    '<div class="card-title">Status</div>' +
+    '<div class="card-value">' + escapeHtml(data.status) + '</div>' +
+    '<div style="color:var(--hint);margin-top:4px">Phase ' + data.current_phase + ' / ' + data.total_phases + '</div>' +
+  '</div>';
+
+  if (data.phases && data.phases.length > 0) {
+    html += renderPhases(data.phases, data.current_phase);
+  }
+
+  html += '<button class="refresh-btn" onclick="loadPlan()">Refresh</button>';
+  el.innerHTML = html;
+}
+
 async function loadPlan() {
-  const loading = document.getElementById('plan-loading');
-  const el = document.getElementById('plan-content');
+  var loading = document.getElementById('plan-loading');
+  var el = document.getElementById('plan-content');
   loading.style.display = 'block';
   loading.textContent = 'Loading plan...';
   el.style.display = 'none';
 
   try {
-    const data = await apiFetch('/miniapp/api/plan');
-    loading.style.display = 'none';
-    el.style.display = 'block';
-
-    if (!data.has_plan) {
-      el.innerHTML =
-        '<div class="empty-state">No active plan.</div>' +
-        '<div class="card" style="margin-top:16px">' +
-          '<div class="card-title">Start a Plan</div>' +
-          '<div style="display:flex;gap:8px;margin-top:8px">' +
-            '<input id="plan-task" class="send-input" placeholder="Describe your task...">' +
-            '<button class="send-btn" onclick="startPlan()">Start</button>' +
-          '</div>' +
-        '</div>';
-      return;
-    }
-
-    let html = '';
-
-    // Status header card
-    html += '<div class="card">' +
-      '<div class="card-title">Status</div>' +
-      '<div class="card-value">' + escapeHtml(data.status) + '</div>' +
-      '<div style="color:var(--hint);margin-top:4px">Phase ' + data.current_phase + ' / ' + data.total_phases + '</div>' +
-    '</div>';
-
-    // Phase/step list
-    if (data.phases && data.phases.length > 0) {
-      html += renderPhases(data.phases, data.current_phase);
-    }
-
-    // Refresh button (in-app, not sendData)
-    html += '<button class="refresh-btn" onclick="loadPlan()">Refresh</button>';
-
-    el.innerHTML = html;
+    var data = await apiFetch('/miniapp/api/plan');
+    renderPlanFromData(data);
   } catch (e) {
     loading.textContent = 'Failed to load plan.';
     loading.style.display = 'block';
@@ -687,51 +688,55 @@ document.getElementById('plan-content').addEventListener('click', function(e) {
 });
 
 // ── Skills tab ──
+function renderSkillsFromData(data) {
+  var loading = document.getElementById('skills-loading');
+  var el = document.getElementById('skills-list');
+  loading.style.display = 'none';
+  el.style.display = 'block';
+
+  if (!data || data.length === 0) {
+    el.innerHTML = '<div class="empty-state">No skills installed.</div>';
+    return;
+  }
+
+  el.innerHTML = data.map(function(s) {
+    return '<div class="skill-item" data-skill="' + escapeAttr(s.name) + '">' +
+      '<div class="skill-body">' +
+        '<div class="skill-name">' + escapeHtml(s.name) + '</div>' +
+        '<div class="skill-desc">' + escapeHtml(s.description || 'No description') + '</div>' +
+        '<span class="skill-source">' + escapeHtml(s.source) + '</span>' +
+      '</div>' +
+      '<span class="skill-arrow">\u203A</span>' +
+    '</div>';
+  }).join('');
+
+  if (selectedSkill) {
+    var prev = el.querySelector('[data-skill="' + CSS.escape(selectedSkill) + '"]');
+    if (prev) prev.classList.add('selected');
+  }
+
+  el.querySelectorAll('.skill-item').forEach(function(item) {
+    item.addEventListener('click', function() {
+      el.querySelectorAll('.skill-item').forEach(function(i) { i.classList.remove('selected'); });
+      item.classList.add('selected');
+      selectedSkill = item.dataset.skill;
+      document.getElementById('send-bar').style.display = 'flex';
+      document.getElementById('skill-msg').placeholder = 'Message for /' + selectedSkill + '...';
+      document.getElementById('skill-msg').focus();
+    });
+  });
+}
+
 async function loadSkills() {
-  const loading = document.getElementById('skills-loading');
-  const el = document.getElementById('skills-list');
+  var loading = document.getElementById('skills-loading');
+  var el = document.getElementById('skills-list');
   loading.style.display = 'block';
   loading.textContent = 'Loading skills...';
   el.style.display = 'none';
 
   try {
-    const data = await apiFetch('/miniapp/api/skills');
-    loading.style.display = 'none';
-    el.style.display = 'block';
-
-    if (!data || data.length === 0) {
-      el.innerHTML = '<div class="empty-state">No skills installed.</div>';
-      return;
-    }
-
-    el.innerHTML = data.map(s =>
-      '<div class="skill-item" data-skill="' + escapeAttr(s.name) + '">' +
-        '<div class="skill-body">' +
-          '<div class="skill-name">' + escapeHtml(s.name) + '</div>' +
-          '<div class="skill-desc">' + escapeHtml(s.description || 'No description') + '</div>' +
-          '<span class="skill-source">' + escapeHtml(s.source) + '</span>' +
-        '</div>' +
-        '<span class="skill-arrow">\u203A</span>' +
-      '</div>'
-    ).join('');
-
-    // Restore selection if still valid
-    if (selectedSkill) {
-      const prev = el.querySelector('[data-skill="' + CSS.escape(selectedSkill) + '"]');
-      if (prev) prev.classList.add('selected');
-    }
-
-    el.querySelectorAll('.skill-item').forEach(item => {
-      item.addEventListener('click', () => {
-        el.querySelectorAll('.skill-item').forEach(i => i.classList.remove('selected'));
-        item.classList.add('selected');
-        selectedSkill = item.dataset.skill;
-        document.getElementById('send-bar').style.display = 'flex';
-        document.getElementById('skill-msg').placeholder =
-          'Message for /' + selectedSkill + '...';
-        document.getElementById('skill-msg').focus();
-      });
-    });
+    var data = await apiFetch('/miniapp/api/skills');
+    renderSkillsFromData(data);
   } catch (e) {
     loading.textContent = 'Failed to load skills.';
     loading.style.display = 'block';
@@ -778,47 +783,54 @@ function renderActiveSessions(sessions) {
   return html;
 }
 
+function renderSessionFromData(sessions, stats) {
+  var loading = document.getElementById('session-loading');
+  var el = document.getElementById('session-content');
+  loading.style.display = 'none';
+  el.style.display = 'block';
+
+  var html = renderActiveSessions(sessions);
+
+  if (!stats || stats.status === 'stats not enabled') {
+    html += '<div class="empty-state">Stats tracking not enabled.<br>Start gateway with --stats flag.</div>';
+    el.innerHTML = html;
+    return;
+  }
+
+  var since = stats.since ? new Date(stats.since).toLocaleDateString() : 'N/A';
+  var today = stats.today || {};
+  html +=
+    '<div class="card">' +
+      '<div class="card-title">Today</div>' +
+      '<div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">' + (today.prompts || 0) + '</span></div>' +
+      '<div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">' + (today.requests || 0) + '</span></div>' +
+      '<div class="stat-row"><span class="stat-label">Tokens</span><span class="stat-value">' + formatTokens(today.total_tokens || 0) + '</span></div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="card-title">All Time (since ' + escapeHtml(since) + ')</div>' +
+      '<div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">' + (stats.total_prompts || 0) + '</span></div>' +
+      '<div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">' + (stats.total_requests || 0) + '</span></div>' +
+      '<div class="stat-row"><span class="stat-label">Total Tokens</span><span class="stat-value">' + formatTokens(stats.total_tokens || 0) + '</span></div>' +
+      '<div class="stat-row"><span class="stat-label">Prompt Tokens</span><span class="stat-value">' + formatTokens(stats.total_prompt_tokens || 0) + '</span></div>' +
+      '<div class="stat-row"><span class="stat-label">Completion Tokens</span><span class="stat-value">' + formatTokens(stats.total_completion_tokens || 0) + '</span></div>' +
+    '</div>';
+
+  el.innerHTML = html;
+}
+
 async function loadSession() {
-  const loading = document.getElementById('session-loading');
-  const el = document.getElementById('session-content');
+  var loading = document.getElementById('session-loading');
+  var el = document.getElementById('session-content');
   loading.style.display = 'block';
   loading.textContent = 'Loading session...';
   el.style.display = 'none';
 
   try {
-    const [data, sessions] = await Promise.all([
+    var results = await Promise.all([
       apiFetch('/miniapp/api/session'),
       apiFetch('/miniapp/api/sessions').catch(function() { return []; }),
     ]);
-    loading.style.display = 'none';
-    el.style.display = 'block';
-
-    var html = renderActiveSessions(sessions);
-
-    if (data.status === 'stats not enabled') {
-      html += '<div class="empty-state">Stats tracking not enabled.<br>Start gateway with --stats flag.</div>';
-      el.innerHTML = html;
-      return;
-    }
-
-    const since = data.since ? new Date(data.since).toLocaleDateString() : 'N/A';
-    html +=
-      '<div class="card">' +
-        '<div class="card-title">Today</div>' +
-        '<div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">' + (data.today?.prompts || 0) + '</span></div>' +
-        '<div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">' + (data.today?.requests || 0) + '</span></div>' +
-        '<div class="stat-row"><span class="stat-label">Tokens</span><span class="stat-value">' + formatTokens(data.today?.total_tokens || 0) + '</span></div>' +
-      '</div>' +
-      '<div class="card">' +
-        '<div class="card-title">All Time (since ' + escapeHtml(since) + ')</div>' +
-        '<div class="stat-row"><span class="stat-label">Prompts</span><span class="stat-value">' + (data.total_prompts || 0) + '</span></div>' +
-        '<div class="stat-row"><span class="stat-label">Requests</span><span class="stat-value">' + (data.total_requests || 0) + '</span></div>' +
-        '<div class="stat-row"><span class="stat-label">Total Tokens</span><span class="stat-value">' + formatTokens(data.total_tokens || 0) + '</span></div>' +
-        '<div class="stat-row"><span class="stat-label">Prompt Tokens</span><span class="stat-value">' + formatTokens(data.total_prompt_tokens || 0) + '</span></div>' +
-        '<div class="stat-row"><span class="stat-label">Completion Tokens</span><span class="stat-value">' + formatTokens(data.total_completion_tokens || 0) + '</span></div>' +
-      '</div>';
-
-    el.innerHTML = html;
+    renderSessionFromData(results[1], results[0]);
   } catch (e) {
     loading.textContent = 'Failed to load session.';
     loading.style.display = 'block';
@@ -842,7 +854,34 @@ function escapeAttr(s) {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// Initial load
+// ── SSE real-time updates ──
+var eventSource = null;
+
+function connectSSE() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource(
+    API_BASE + '/miniapp/api/events?initData=' + encodeURIComponent(initData)
+  );
+  eventSource.addEventListener('plan', function(e) {
+    try { renderPlanFromData(JSON.parse(e.data)); } catch(err) {}
+  });
+  eventSource.addEventListener('session', function(e) {
+    try {
+      var d = JSON.parse(e.data);
+      renderSessionFromData(d.sessions, d.stats);
+    } catch(err) {}
+  });
+  eventSource.addEventListener('skills', function(e) {
+    try { renderSkillsFromData(JSON.parse(e.data)); } catch(err) {}
+  });
+  eventSource.onerror = function() {
+    // Browser will auto-reconnect EventSource
+  };
+}
+
+connectSSE();
+
+// Initial load (fallback for tabs not covered by initial SSE burst)
 loadPlan();
 </script>
 </body>
