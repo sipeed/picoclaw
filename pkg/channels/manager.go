@@ -23,7 +23,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
-	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -407,7 +406,7 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 				maxLen = mlp.MaxMessageLength()
 			}
 			if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
-				chunks := utils.SplitMessage(msg.Content, maxLen)
+				chunks := SplitMessage(msg.Content, maxLen)
 				for _, chunk := range chunks {
 					chunkMsg := msg
 					chunkMsg.Content = chunk

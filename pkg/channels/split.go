@@ -1,4 +1,4 @@
-package utils
+package channels
 
 import (
 	"strings"
