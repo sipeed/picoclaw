@@ -418,12 +418,6 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("onebot send: %w", channels.ErrTemporary)
 	}
 
-	if msgID, ok := c.pendingEmojiMsg.LoadAndDelete(msg.ChatID); ok {
-		if mid, ok := msgID.(string); ok && mid != "" {
-			c.setMsgEmojiLike(mid, 289, false)
-		}
-	}
-
 	return nil
 }
 
@@ -1037,6 +1031,13 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 	if raw.MessageType == "group" && messageID != "" && messageID != "0" {
 		c.setMsgEmojiLike(messageID, 289, true)
 		c.pendingEmojiMsg.Store(chatID, messageID)
+		// Register emoji stop with Manager for outbound orchestration
+		if rec := c.GetPlaceholderRecorder(); rec != nil {
+			capturedMsgID := messageID
+			rec.RecordTypingStop("onebot", chatID, func() {
+				c.setMsgEmojiLike(capturedMsgID, 289, false)
+			})
+		}
 	}
 
 	c.HandleMessage(peer, messageID, senderID, chatID, content, parsed.Media, metadata)

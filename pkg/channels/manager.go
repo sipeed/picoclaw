@@ -62,10 +62,53 @@ type Manager struct {
 	mux          *http.ServeMux
 	httpServer   *http.Server
 	mu           sync.RWMutex
+	placeholders sync.Map // "channel:chatID" → placeholderID (string)
+	typingStops  sync.Map // "channel:chatID" → func()
 }
 
 type asyncTask struct {
 	cancel context.CancelFunc
+}
+
+// RecordPlaceholder registers a placeholder message for later editing.
+// Implements PlaceholderRecorder.
+func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
+	key := channel + ":" + chatID
+	m.placeholders.Store(key, placeholderID)
+}
+
+// RecordTypingStop registers a typing stop function for later invocation.
+// Implements PlaceholderRecorder.
+func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
+	key := channel + ":" + chatID
+	m.typingStops.Store(key, stop)
+}
+
+// preSend handles typing stop and placeholder editing before sending a message.
+// Returns true if the message was edited into a placeholder (skip Send).
+func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) bool {
+	key := name + ":" + msg.ChatID
+
+	// 1. Stop typing
+	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
+		if stop, ok := v.(func()); ok {
+			stop() // idempotent, safe
+		}
+	}
+
+	// 2. Try editing placeholder
+	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
+		if placeholderID, ok := v.(string); ok && placeholderID != "" {
+			if editor, ok := ch.(MessageEditor); ok {
+				if err := editor.EditMessage(ctx, msg.ChatID, placeholderID, msg.Content); err == nil {
+					return true // edited successfully, skip Send
+				}
+				// edit failed → fall through to normal Send
+			}
+		}
+	}
+
+	return false
 }
 
 func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.MediaStore) (*Manager, error) {
@@ -108,6 +151,10 @@ func (m *Manager) initChannel(name, displayName string) {
 			if setter, ok := ch.(interface{ SetMediaStore(s media.MediaStore) }); ok {
 				setter.SetMediaStore(m.mediaStore)
 			}
+		}
+		// Inject PlaceholderRecorder if channel supports it
+		if setter, ok := ch.(interface{ SetPlaceholderRecorder(PlaceholderRecorder) }); ok {
+			setter.SetPlaceholderRecorder(m)
 		}
 		m.channels[name] = ch
 		m.workers[name] = newChannelWorker(name, ch)
@@ -166,6 +213,10 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.WeComApp.Enabled && m.config.Channels.WeComApp.CorpID != "" {
 		m.initChannel("wecom_app", "WeCom App")
+	}
+
+	if m.config.Channels.Pico.Enabled && m.config.Channels.Pico.Token != "" {
+		m.initChannel("pico", "Pico")
 	}
 
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
@@ -381,6 +432,11 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 	if err := w.limiter.Wait(ctx); err != nil {
 		// ctx cancelled, shutting down
 		return
+	}
+
+	// Pre-send: stop typing and try to edit placeholder
+	if m.preSend(ctx, name, msg, w.ch) {
+		return // placeholder was edited successfully, skip Send
 	}
 
 	var lastErr error

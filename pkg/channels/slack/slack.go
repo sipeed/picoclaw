@@ -274,6 +274,18 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		Timestamp: messageTS,
 	})
 
+	// Register typing stop (remove "eyes" reaction) with Manager
+	if rec := c.GetPlaceholderRecorder(); rec != nil {
+		capturedChannelID := channelID
+		capturedMessageTS := messageTS
+		rec.RecordTypingStop("slack", chatID, func() {
+			c.api.RemoveReaction("eyes", slack.ItemRef{
+				Channel:   capturedChannelID,
+				Timestamp: capturedMessageTS,
+			})
+		})
+	}
+
 	c.pendingAcks.Store(chatID, slackMessageRef{
 		ChannelID: channelID,
 		Timestamp: messageTS,
@@ -379,6 +391,18 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		Channel:   channelID,
 		Timestamp: messageTS,
 	})
+
+	// Register typing stop (remove "eyes" reaction) with Manager
+	if rec := c.GetPlaceholderRecorder(); rec != nil {
+		capturedChannelID := channelID
+		capturedMessageTS := messageTS
+		rec.RecordTypingStop("slack", chatID, func() {
+			c.api.RemoveReaction("eyes", slack.ItemRef{
+				Channel:   capturedChannelID,
+				Timestamp: capturedMessageTS,
+			})
+		})
+	}
 
 	c.pendingAcks.Store(chatID, slackMessageRef{
 		ChannelID: channelID,

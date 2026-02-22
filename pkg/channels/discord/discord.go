@@ -106,8 +106,6 @@ func (c *DiscordChannel) Stop(ctx context.Context) error {
 }
 
 func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
-	c.stopTyping(msg.ChatID)
-
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
 	}
@@ -126,8 +124,6 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 // SendMedia implements the channels.MediaSender interface.
 func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
-	c.stopTyping(msg.ChatID)
-
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
 	}
@@ -219,6 +215,12 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 		}
 		return sendCtx.Err()
 	}
+}
+
+// EditMessage implements channels.MessageEditor.
+func (c *DiscordChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
+	_, err := c.session.ChannelMessageEdit(chatID, messageID, content)
+	return err
 }
 
 func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content string) error {
@@ -350,6 +352,10 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 
 	// Start typing after all early returns — guaranteed to have a matching Send()
 	c.startTyping(m.ChannelID)
+	// Register typing stop with Manager for outbound orchestration
+	if rec := c.GetPlaceholderRecorder(); rec != nil {
+		rec.RecordTypingStop("discord", m.ChannelID, func() { c.stopTyping(m.ChannelID) })
+	}
 
 	logger.DebugCF("discord", "Received message", map[string]any{
 		"sender_name": senderName,

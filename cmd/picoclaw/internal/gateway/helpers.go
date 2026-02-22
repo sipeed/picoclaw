@@ -18,6 +18,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
+	_ "github.com/sipeed/picoclaw/pkg/channels/pico"
 	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
 	_ "github.com/sipeed/picoclaw/pkg/channels/slack"
 	_ "github.com/sipeed/picoclaw/pkg/channels/telegram"

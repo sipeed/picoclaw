@@ -202,6 +202,7 @@ type ChannelsConfig struct {
 	OneBot   OneBotConfig   `json:"onebot"`
 	WeCom    WeComConfig    `json:"wecom"`
 	WeComApp WeComAppConfig `json:"wecom_app"`
+	Pico     PicoConfig     `json:"pico"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -341,6 +342,17 @@ type WeComAppConfig struct {
 	AllowFrom      FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
 	ReplyTimeout   int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
 	GroupTrigger   GroupTriggerConfig  `json:"group_trigger,omitempty"`
+}
+
+type PicoConfig struct {
+	Enabled        bool                `json:"enabled"                   env:"PICOCLAW_CHANNELS_PICO_ENABLED"`
+	Token          string              `json:"token"                     env:"PICOCLAW_CHANNELS_PICO_TOKEN"`
+	AllowOrigins   []string            `json:"allow_origins,omitempty"`
+	PingInterval   int                 `json:"ping_interval,omitempty"`   // seconds, default 30
+	ReadTimeout    int                 `json:"read_timeout,omitempty"`    // seconds, default 60
+	WriteTimeout   int                 `json:"write_timeout,omitempty"`   // seconds, default 10
+	MaxConnections int                 `json:"max_connections,omitempty"` // default 100
+	AllowFrom      FlexibleStringSlice `json:"allow_from"                env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {

@@ -44,14 +44,15 @@ type MessageLengthProvider interface {
 }
 
 type BaseChannel struct {
-	config           any
-	bus              *bus.MessageBus
-	running          atomic.Bool
-	name             string
-	allowList        []string
-	maxMessageLength int
-	groupTrigger     config.GroupTriggerConfig
-	mediaStore       media.MediaStore
+	config              any
+	bus                 *bus.MessageBus
+	running             atomic.Bool
+	name                string
+	allowList           []string
+	maxMessageLength    int
+	groupTrigger        config.GroupTriggerConfig
+	mediaStore          media.MediaStore
+	placeholderRecorder PlaceholderRecorder
 }
 
 func NewBaseChannel(
@@ -202,6 +203,16 @@ func (c *BaseChannel) SetMediaStore(s media.MediaStore) { c.mediaStore = s }
 
 // GetMediaStore returns the injected MediaStore (may be nil).
 func (c *BaseChannel) GetMediaStore() media.MediaStore { return c.mediaStore }
+
+// SetPlaceholderRecorder injects a PlaceholderRecorder into the channel.
+func (c *BaseChannel) SetPlaceholderRecorder(r PlaceholderRecorder) {
+	c.placeholderRecorder = r
+}
+
+// GetPlaceholderRecorder returns the injected PlaceholderRecorder (may be nil).
+func (c *BaseChannel) GetPlaceholderRecorder() PlaceholderRecorder {
+	return c.placeholderRecorder
+}
 
 // BuildMediaScope constructs a scope key for media lifecycle tracking.
 func BuildMediaScope(channel, chatID, messageID string) string {
