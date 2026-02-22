@@ -176,6 +176,18 @@ docker compose --profile gateway build --no-cache
 docker compose --profile gateway up -d
 ```
 
+### Script Khởi tạo Tùy chỉnh
+
+Bạn có thể chạy các bước cài đặt tùy chỉnh trước khi PicoClaw khởi động bằng cách cung cấp một script khởi tạo. Cập nhật đường dẫn `init_script` trong `docker-compose.yml`:
+
+```yaml
+configs:
+  init_script:
+    file: /đường/dẫn/đến/script/của/bạn
+```
+
+Script được thực thi mỗi lần container khởi động, trước PicoClaw. Nếu không có file nào được cấu hình, đây là một thao tác không làm gì.
+
 ### 🚀 Bắt đầu nhanh
 
 > [!TIP]
