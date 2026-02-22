@@ -266,6 +266,15 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+	// Filter out empty or whitespace-only messages
+	if strings.TrimSpace(msg.Content) == "" {
+		logger.DebugCF("agent", "Dropped empty message", map[string]any{
+			"channel":   msg.Channel,
+			"sender_id": msg.SenderID,
+		})
+		return "", nil
+	}
+
 	// Add message preview to log (show full content for error messages)
 	var logContent string
 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
