@@ -421,6 +421,11 @@ func (cb *ContextBuilder) AddStep(phase int, desc string) error {
 	return cb.memory.AddStep(phase, desc)
 }
 
+// ValidatePlanStructure validates plan structure for interview→review transition.
+func (cb *ContextBuilder) ValidatePlanStructure() error {
+	return cb.memory.ValidatePlanStructure()
+}
+
 // SetPlanStatus sets the plan status.
 func (cb *ContextBuilder) SetPlanStatus(status string) error {
 	return cb.memory.SetStatus(status)
