@@ -1317,7 +1317,7 @@ Test
 	}
 }
 
-// TestAutoCompleteClears verifies that plan is cleared when all phases are complete.
+// TestAutoCompleteClears verifies that plan is marked completed with correct phase when all phases are complete.
 func TestAutoCompleteClears(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-auto-complete-*")
 	if err != nil {
@@ -1369,9 +1369,15 @@ Test
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
 
-	// Plan should be cleared
-	if agent.ContextBuilder.HasActivePlan() {
-		t.Error("expected plan to be cleared after completion")
+	// Plan should be kept with status "completed" and phase set to total
+	if !agent.ContextBuilder.HasActivePlan() {
+		t.Error("expected plan to be retained after completion")
+	}
+	if status := agent.ContextBuilder.GetPlanStatus(); status != "completed" {
+		t.Errorf("expected plan status 'completed', got %q", status)
+	}
+	if phase := agent.ContextBuilder.GetCurrentPhase(); phase != 1 {
+		t.Errorf("expected phase 1 (total phases), got %d", phase)
 	}
 }
 

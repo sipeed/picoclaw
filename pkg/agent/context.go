@@ -396,6 +396,11 @@ func (cb *ContextBuilder) AdvancePhase() error {
 	return cb.memory.AdvancePhase()
 }
 
+// SetCurrentPhase sets the current phase number to n.
+func (cb *ContextBuilder) SetCurrentPhase(n int) error {
+	return cb.memory.SetPhase(n)
+}
+
 // GetCurrentPhase returns the current phase number.
 func (cb *ContextBuilder) GetCurrentPhase() int {
 	return cb.memory.GetCurrentPhase()

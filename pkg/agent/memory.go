@@ -335,6 +335,17 @@ func (ms *MemoryStore) AdvancePhase() error {
 	return ms.WriteLongTerm(content)
 }
 
+// SetPhase sets the current phase number to n.
+func (ms *MemoryStore) SetPhase(n int) error {
+	content := ms.ReadLongTerm()
+	m := rePhase.FindString(content)
+	if m == "" {
+		return fmt.Errorf("no phase marker found")
+	}
+	content = strings.Replace(content, m, fmt.Sprintf("> Phase: %d", n), 1)
+	return ms.WriteLongTerm(content)
+}
+
 // MarkStep marks the nth step (1-based) in the given phase as done [x].
 func (ms *MemoryStore) MarkStep(phase, step int) error {
 	content := ms.ReadLongTerm()
