@@ -161,6 +161,17 @@ func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig
 
 			// Resolve relative envFile paths relative to workspace
 			if serverCfg.EnvFile != "" && !filepath.IsAbs(serverCfg.EnvFile) {
+				if workspace == "" {
+					err := fmt.Errorf("workspace path is empty while resolving relative envFile %q for server %s", serverCfg.EnvFile, name)
+					logger.ErrorCF("mcp", "Invalid MCP server configuration",
+						map[string]interface{}{
+							"server":   name,
+							"env_file": serverCfg.EnvFile,
+							"error":    err.Error(),
+						})
+					errs <- err
+					return
+				}
 				serverCfg.EnvFile = filepath.Join(workspace, serverCfg.EnvFile)
 			}
 
