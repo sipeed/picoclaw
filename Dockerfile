@@ -30,7 +30,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 
 # Copy container init scripts
-COPY container/* /usr/local/bin/
+COPY --chmod=0755 container/* /usr/local/bin/
 
 # Create non-root user and group
 RUN addgroup -g 1000 picoclaw && \
