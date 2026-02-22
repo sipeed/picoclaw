@@ -130,6 +130,9 @@
     "spi": {
       "enabled": false
     },
+    "android": {
+      "enabled": true
+    },
     "memory": {
       "enabled": true
     },
