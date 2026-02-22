@@ -24,7 +24,7 @@ services:
       - source: init_script
         target: /usr/local/bin/init
         mode: 0755
-    entrypoint: ["picoclaw", "agent"]
+    command: ["agent"]
     stdin_open: true
     tty: true
 
