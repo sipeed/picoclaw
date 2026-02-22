@@ -268,9 +268,10 @@ download_picoclaw() {
     if [ "$version" = "latest" ]; then
         msg "$BLUE" "Fetching latest version..."
         json=$(download_file "${GITHUB_API}/releases/latest")
-        version=$(echo "$json" | grep -m1 '"tag_name"' | cut -d'"' -f4)
         if command -v jq >/dev/null 2>&1; then
             version=$(echo "$json" | jq -r '.tag_name')
+        else
+            version=$(echo "$json" | grep -m1 '"tag_name"' | cut -d'"' -f4)
         fi
     else
         msg "$BLUE" "Fetching version $version..."
@@ -382,9 +383,10 @@ install_picoclaw() {
     if [ "$version" = "latest" ]; then
         msg "$BLUE" "Fetching latest version..."
         json=$(download_file "${GITHUB_API}/releases/latest")
-        version=$(echo "$json" | grep -m1 '"tag_name"' | cut -d'"' -f4)
         if command -v jq >/dev/null 2>&1; then
             version=$(echo "$json" | jq -r '.tag_name')
+        else
+            version=$(echo "$json" | grep -m1 '"tag_name"' | cut -d'"' -f4)
         fi
     else
         msg "$BLUE" "Fetching version $version..."
