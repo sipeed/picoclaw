@@ -13,89 +13,39 @@ import (
 )
 
 const (
-	userAgent = "Mozilla/5.0 (compatible; picoclaw/1.0)"
+	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
-type WebSearchTool struct {
-	apiKey     string
-	maxResults int
+type SearchProvider interface {
+	Search(ctx context.Context, query string, count int) (string, error)
 }
 
-func NewWebSearchTool(apiKey string, maxResults int) *WebSearchTool {
-	if maxResults <= 0 || maxResults > 10 {
-		maxResults = 5
-	}
-	return &WebSearchTool{
-		apiKey:     apiKey,
-		maxResults: maxResults,
-	}
+type BraveSearchProvider struct {
+	apiKey string
 }
 
-func (t *WebSearchTool) Name() string {
-	return "web_search"
-}
-
-func (t *WebSearchTool) Description() string {
-	return "Search the web for current information. Returns titles, URLs, and snippets from search results."
-}
-
-func (t *WebSearchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "Search query",
-			},
-			"count": map[string]interface{}{
-				"type":        "integer",
-				"description": "Number of results (1-10)",
-				"minimum":     1.0,
-				"maximum":     10.0,
-			},
-		},
-		"required": []string{"query"},
-	}
-}
-
-func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
-	if t.apiKey == "" {
-		return ErrorResult("BRAVE_API_KEY not configured")
-	}
-
-	query, ok := args["query"].(string)
-	if !ok {
-		return ErrorResult("query is required")
-	}
-
-	count := t.maxResults
-	if c, ok := args["count"].(float64); ok {
-		if int(c) > 0 && int(c) <= 10 {
-			count = int(c)
-		}
-	}
-
+func (p *BraveSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d",
 		url.QueryEscape(query), count)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to create request: %v", err))
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Subscription-Token", t.apiKey)
+	req.Header.Set("X-Subscription-Token", p.apiKey)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("request failed: %v", err))
+		return "", fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to read response: %v", err))
+		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var searchResp struct {
@@ -109,16 +59,14 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 	}
 
 	if err := json.Unmarshal(body, &searchResp); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to parse response: %v", err))
+		// Log error body for debugging
+		fmt.Printf("Brave API Error Body: %s\n", string(body))
+		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	results := searchResp.Web.Results
 	if len(results) == 0 {
-		msg := fmt.Sprintf("No results for: %s", query)
-		return &ToolResult{
-			ForLLM:  msg,
-			ForUser: msg,
-		}
+		return fmt.Sprintf("No results for: %s", query), nil
 	}
 
 	var lines []string
@@ -133,10 +81,266 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 		}
 	}
 
-	output := strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), nil
+}
+
+type DuckDuckGoSearchProvider struct{}
+
+func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", userAgent)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return p.extractResults(string(body), count, query)
+}
+
+func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query string) (string, error) {
+	// Simple regex based extraction for DDG HTML
+	// Strategy: Find all result containers or key anchors directly
+
+	// Try finding the result links directly first, as they are the most critical
+	// Pattern: <a class="result__a" href="...">Title</a>
+	// The previous regex was a bit strict. Let's make it more flexible for attributes order/content
+	reLink := regexp.MustCompile(`<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>`)
+	matches := reLink.FindAllStringSubmatch(html, count+5)
+
+	if len(matches) == 0 {
+		return fmt.Sprintf("No results found or extraction failed. Query: %s", query), nil
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Results for: %s (via DuckDuckGo)", query))
+
+	// Pre-compile snippet regex to run inside the loop
+	// We'll search for snippets relative to the link position or just globally if needed
+	// But simple global search for snippets might mismatch order.
+	// Since we only have the raw HTML string, let's just extract snippets globally and assume order matches (risky but simple for regex)
+	// Or better: Let's assume the snippet follows the link in the HTML
+
+	// A better regex approach: iterate through text and find matches in order
+	// But for now, let's grab all snippets too
+	reSnippet := regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
+	snippetMatches := reSnippet.FindAllStringSubmatch(html, count+5)
+
+	maxItems := min(len(matches), count)
+
+	for i := 0; i < maxItems; i++ {
+		urlStr := matches[i][1]
+		title := stripTags(matches[i][2])
+		title = strings.TrimSpace(title)
+
+		// URL decoding if needed
+		if strings.Contains(urlStr, "uddg=") {
+			if u, err := url.QueryUnescape(urlStr); err == nil {
+				idx := strings.Index(u, "uddg=")
+				if idx != -1 {
+					urlStr = u[idx+5:]
+				}
+			}
+		}
+
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, title, urlStr))
+
+		// Attempt to attach snippet if available and index aligns
+		if i < len(snippetMatches) {
+			snippet := stripTags(snippetMatches[i][1])
+			snippet = strings.TrimSpace(snippet)
+			if snippet != "" {
+				lines = append(lines, fmt.Sprintf("   %s", snippet))
+			}
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
+func stripTags(content string) string {
+	re := regexp.MustCompile(`<[^>]+>`)
+	return re.ReplaceAllString(content, "")
+}
+
+type PerplexitySearchProvider struct {
+	apiKey string
+}
+
+func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := "https://api.perplexity.ai/chat/completions"
+
+	payload := map[string]any{
+		"model": "sonar",
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": "You are a search assistant. Provide concise search results with titles, URLs, and brief descriptions in the following format:\n1. Title\n   URL\n   Description\n\nDo not add extra commentary.",
+			},
+			{
+				"role":    "user",
+				"content": fmt.Sprintf("Search for: %s. Provide up to %d relevant results.", query, count),
+			},
+		},
+		"max_tokens": 1000,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, strings.NewReader(string(payloadBytes)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("User-Agent", userAgent)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Perplexity API error: %s", string(body))
+	}
+
+	var searchResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(searchResp.Choices) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
+}
+
+type WebSearchTool struct {
+	provider   SearchProvider
+	maxResults int
+}
+
+type WebSearchToolOptions struct {
+	BraveAPIKey          string
+	BraveMaxResults      int
+	BraveEnabled         bool
+	DuckDuckGoMaxResults int
+	DuckDuckGoEnabled    bool
+	PerplexityAPIKey     string
+	PerplexityMaxResults int
+	PerplexityEnabled    bool
+}
+
+func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
+	var provider SearchProvider
+	maxResults := 5
+
+	// Priority: Perplexity > Brave > DuckDuckGo
+	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
+		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey}
+		if opts.PerplexityMaxResults > 0 {
+			maxResults = opts.PerplexityMaxResults
+		}
+	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
+		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey}
+		if opts.BraveMaxResults > 0 {
+			maxResults = opts.BraveMaxResults
+		}
+	} else if opts.DuckDuckGoEnabled {
+		provider = &DuckDuckGoSearchProvider{}
+		if opts.DuckDuckGoMaxResults > 0 {
+			maxResults = opts.DuckDuckGoMaxResults
+		}
+	} else {
+		return nil
+	}
+
+	return &WebSearchTool{
+		provider:   provider,
+		maxResults: maxResults,
+	}
+}
+
+func (t *WebSearchTool) Name() string {
+	return "web_search"
+}
+
+func (t *WebSearchTool) Description() string {
+	return "Search the web for current information. Returns titles, URLs, and snippets from search results."
+}
+
+func (t *WebSearchTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": "Search query",
+			},
+			"count": map[string]any{
+				"type":        "integer",
+				"description": "Number of results (1-10)",
+				"minimum":     1.0,
+				"maximum":     10.0,
+			},
+		},
+		"required": []string{"query"},
+	}
+}
+
+func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	query, ok := args["query"].(string)
+	if !ok {
+		return ErrorResult("query is required")
+	}
+
+	count := t.maxResults
+	if c, ok := args["count"].(float64); ok {
+		if int(c) > 0 && int(c) <= 10 {
+			count = int(c)
+		}
+	}
+
+	result, err := t.provider.Search(ctx, query, count)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("search failed: %v", err))
+	}
+
 	return &ToolResult{
-		ForLLM:  fmt.Sprintf("Found %d results for: %s", len(results), query),
-		ForUser: output,
+		ForLLM:  result,
+		ForUser: result,
 	}
 }
 
@@ -161,15 +365,15 @@ func (t *WebFetchTool) Description() string {
 	return "Fetch a URL and extract readable content (HTML to text). Use this to get weather info, news, articles, or any web content."
 }
 
-func (t *WebFetchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *WebFetchTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"url": map[string]interface{}{
+		"properties": map[string]any{
+			"url": map[string]any{
 				"type":        "string",
 				"description": "URL to fetch",
 			},
-			"maxChars": map[string]interface{}{
+			"maxChars": map[string]any{
 				"type":        "integer",
 				"description": "Maximum characters to extract",
 				"minimum":     100.0,
@@ -179,7 +383,7 @@ func (t *WebFetchTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	urlStr, ok := args["url"].(string)
 	if !ok {
 		return ErrorResult("url is required")
@@ -244,7 +448,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	var text, extractor string
 
 	if strings.Contains(contentType, "application/json") {
-		var jsonData interface{}
+		var jsonData any
 		if err := json.Unmarshal(body, &jsonData); err == nil {
 			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
 			text = string(formatted)
@@ -267,7 +471,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 		text = text[:maxChars]
 	}
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		"url":       urlStr,
 		"status":    resp.StatusCode,
 		"extractor": extractor,
@@ -279,7 +483,13 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	resultJSON, _ := json.MarshalIndent(result, "", "  ")
 
 	return &ToolResult{
-		ForLLM:  fmt.Sprintf("Fetched %d bytes from %s (extractor: %s, truncated: %v)", len(text), urlStr, extractor, truncated),
+		ForLLM: fmt.Sprintf(
+			"Fetched %d bytes from %s (extractor: %s, truncated: %v)",
+			len(text),
+			urlStr,
+			extractor,
+			truncated,
+		),
 		ForUser: string(resultJSON),
 	}
 }
@@ -294,8 +504,10 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 
 	result = strings.TrimSpace(result)
 
-	re = regexp.MustCompile(`\s+`)
-	result = re.ReplaceAllLiteralString(result, " ")
+	re = regexp.MustCompile(`[^\S\n]+`)
+	result = re.ReplaceAllString(result, " ")
+	re = regexp.MustCompile(`\n{3,}`)
+	result = re.ReplaceAllString(result, "\n\n")
 
 	lines := strings.Split(result, "\n")
 	var cleanLines []string

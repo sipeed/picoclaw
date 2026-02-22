@@ -10,6 +10,7 @@ build/
 *.out
 /picoclaw
 /picoclaw-test
+cmd/picoclaw/workspace
 
 # Picoclaw specific
 
@@ -35,3 +36,11 @@ coverage.html
 # Ralph workspace
 ralph/
 .ralph/
+tasks/
+
+# Editors
+.vscode/
+.idea/
+
+# Added by goreleaser init:
+dist/

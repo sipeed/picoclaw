@@ -17,7 +17,7 @@ func TestExecuteHeartbeat_Async(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.started = true // Enable for testing
+	hs.stopChan = make(chan struct{}) // Enable for testing
 
 	asyncCalled := false
 	asyncResult := &tools.ToolResult{
@@ -37,7 +37,7 @@ func TestExecuteHeartbeat_Async(t *testing.T) {
 	})
 
 	// Create HEARTBEAT.md
-	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
 
 	// Execute heartbeat directly (internal method for testing)
 	hs.executeHeartbeat()
@@ -55,7 +55,7 @@ func TestExecuteHeartbeat_Error(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.started = true // Enable for testing
+	hs.stopChan = make(chan struct{}) // Enable for testing
 
 	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
 		return &tools.ToolResult{
@@ -68,7 +68,7 @@ func TestExecuteHeartbeat_Error(t *testing.T) {
 	})
 
 	// Create HEARTBEAT.md
-	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
 
 	hs.executeHeartbeat()
 
@@ -93,7 +93,7 @@ func TestExecuteHeartbeat_Silent(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.started = true // Enable for testing
+	hs.stopChan = make(chan struct{}) // Enable for testing
 
 	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
 		return &tools.ToolResult{
@@ -106,7 +106,7 @@ func TestExecuteHeartbeat_Silent(t *testing.T) {
 	})
 
 	// Create HEARTBEAT.md
-	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
 
 	hs.executeHeartbeat()
 
@@ -167,14 +167,14 @@ func TestExecuteHeartbeat_NilResult(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.started = true // Enable for testing
+	hs.stopChan = make(chan struct{}) // Enable for testing
 
 	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
 		return nil
 	})
 
 	// Create HEARTBEAT.md
-	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
 
 	// Should not panic with nil result
 	hs.executeHeartbeat()

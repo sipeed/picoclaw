@@ -1,0 +1,588 @@
+{
+  "project": "PicoClaw - Swarm Mode 多实例协同架构",
+  "repository": "https://github.com/sipeed/picoclaw",
+  "version": "1.0.0",
+  "sprint": "00.sprint - 0213~0228",
+  "created_at": "2026-02-16",
+  "updated_at": "2026-02-20",
+  "tasks": [
+    {
+      "id": "PHASE0-DOCS-001",
+      "milestone": "Phase 0 - 身份与权限",
+      "subject": "完成架构文档与场景定义",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": "Claude",
+      "description": "完成 Swarm Mode 的架构设计文档，定义参考场景和关键技术栈",
+      "deliverables": [
+        "00.架构设计.md / 00.Architecture.md",
+        "01.记忆权限模型设计.md / 01.Memory-Permissions.md",
+        "02.技术介绍与概念梳理.md / 02.Technical-Guide.md",
+        "03.Scenario-Local-Distributed-Swarm.md"
+      ],
+      "links": [
+        "https://github.com/sipeed/picoclaw/discussions/119"
+      ],
+      "estimated_weeks": 0
+    },
+    {
+      "id": "PHASE0-ID-001",
+      "milestone": "Phase 0 - 身份与权限",
+      "subject": "实现 Identity 模型（H-id / S-id）",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现两级身份模型，支持 CLI 参数、环境变量、配置文件、自动生成四种来源",
+      "deliverables": [
+        "pkg/identity/identity.go - Identity 结构体",
+        "pkg/identity/loader.go - 身份加载逻辑",
+        "pkg/identity/generator.go - 身份自动生成",
+        "cmd/picoclaw/identity flags 支持"
+      ],
+      "blocked_by": [],
+      "dependencies": [],
+      "estimated_weeks": 0.5
+    },
+    {
+      "id": "PHASE0-MEM-001",
+      "milestone": "Phase 0 - 身份与权限",
+      "subject": "实现 Memory Permissions 模型",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现三层记忆权限模型（Private/Shared/Public）与 MemoryItem 结构",
+      "deliverables": [
+        "pkg/memory/types.go - MemoryScope, MemoryType 枚举",
+        "pkg/memory/item.go - MemoryItem 结构",
+        "pkg/memory/permission.go - 权限检查逻辑",
+        "pkg/memory/acl.go - AllowList/DenyList 支持"
+      ],
+      "blocked_by": ["PHASE0-ID-001"],
+      "dependencies": ["PHASE0-ID-001"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE0-REL-001",
+      "milestone": "Phase 0 - 身份与权限",
+      "subject": "实现 Resource + Relation 权限模型",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现基于 Resource + Relation 的细粒度访问控制，支持跨 H-id 授权",
+      "deliverables": [
+        "pkg/relation/resource.go - Resource 结构",
+        "pkg/relation/relation.go - Relation 结构",
+        "pkg/relation/registry.go - Relation Registry",
+        "pkg/relation/policy.go - Policy 定义与检查",
+        "pkg/relation/authorizer.go - 授权逻辑"
+      ],
+      "blocked_by": ["PHASE0-ID-001", "PHASE0-MEM-001"],
+      "dependencies": ["PHASE0-ID-001", "PHASE0-MEM-001"],
+      "estimated_weeks": 1.5
+    },
+    {
+      "id": "PHASE0-TEST-001",
+      "milestone": "Phase 0 - 身份与权限",
+      "subject": "Phase 0 单元测试",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "为 Identity、Memory Permissions、Relation 模型编写单元测试",
+      "deliverables": [
+        "pkg/identity/*_test.go",
+        "pkg/memory/*_test.go",
+        "pkg/relation/*_test.go",
+        "测试覆盖率 > 80%"
+      ],
+      "blocked_by": ["PHASE0-REL-001"],
+      "dependencies": ["PHASE0-REL-001"],
+      "estimated_weeks": 0.5
+    },
+    {
+      "id": "PHASE1-NATS-001",
+      "milestone": "Phase 1 - NATS 基础设施",
+      "subject": "实现 NATS Bridge 基础实现",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现 NATS 连接管理、重连逻辑、基本发布订阅功能",
+      "deliverables": [
+        "pkg/nats/conn.go - 连接管理",
+        "pkg/nats/options.go - 连接选项配置",
+        "pkg/nats/publisher.go - 发布者封装",
+        "pkg/nats/subscriber.go - 订阅者封装",
+        "pkg/nats/reconnect.go - 重连逻辑"
+      ],
+      "blocked_by": ["PHASE0-TEST-001"],
+      "dependencies": ["PHASE0-TEST-001"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE1-NATS-002",
+      "milestone": "Phase 1 - NATS 基础设施",
+      "subject": "实现按 H-id 分区",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现基于 H-id 的主题分区，确保租户隔离",
+      "deliverables": [
+        "pkg/nats/subject.go - Subject 构建器",
+        "pkg/nats/partition.go - H-id 分区逻辑",
+        "主题命名规范实现: picoclaw.{domain}.{hid}.*"
+      ],
+      "blocked_by": ["PHASE1-NATS-001"],
+      "dependencies": ["PHASE1-NATS-001"],
+      "estimated_weeks": 0.5
+    },
+    {
+      "id": "PHASE1-HB-001",
+      "milestone": "Phase 1 - NATS 基础设施",
+      "subject": "实现心跳检测与存活判定",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现节点心跳发布（10s）、可疑判定（30s）、离线判定（60s）机制",
+      "deliverables": [
+        "pkg/swarm/heartbeat.go - 心跳发布器",
+        "pkg/swarm/monitor.go - 心跳监控器",
+        "pkg/swarm/registry.go - 节点注册表",
+        "HeartbeatConfig 配置支持",
+        "NodeStatus 状态机: online/busy/draining/offline"
+      ],
+      "blocked_by": ["PHASE1-NATS-002"],
+      "dependencies": ["PHASE1-NATS-002"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE1-DISC-001",
+      "milestone": "Phase 1 - NATS 基础设施",
+      "subject": "实现节点发现机制",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现基于 NATS 的节点发现，支持能力声明与查询",
+      "deliverables": [
+        "pkg/swarm/discovery.go - 节点发现",
+        "NodeCapabilities 结构体",
+        "discovery.announce 主题",
+        "discovery.query 主题",
+        "本地节点缓存维护"
+      ],
+      "blocked_by": ["PHASE1-HB-001"],
+      "dependencies": ["PHASE1-HB-001"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE1-XHID-001",
+      "milestone": "Phase 1 - NATS 基础设施",
+      "subject": "实现跨 H-id 通信授权",
+      "status": "completed",
+      "priority": "P1",
+      "assignee": null,
+      "description": "实现跨租户通信机制，基于 Relation 授权检查",
+      "deliverables": [
+        "pkg/nats/cross_hid.go - 跨 H-id 通信",
+        "picoclaw.x.{from_hid}.{to_hid} 主题支持",
+        "Relation 授权集成",
+        "Export/Import 配置支持"
+      ],
+      "blocked_by": ["PHASE1-DISC-001", "PHASE0-REL-001"],
+      "dependencies": ["PHASE1-DISC-001", "PHASE0-REL-001"],
+      "estimated_weeks": 1.5
+    },
+    {
+      "id": "PHASE2-COORD-001",
+      "milestone": "Phase 2 - 多节点协作",
+      "subject": "实现 Coordinator 角色基础",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现 Coordinator 节点角色，负责接收请求、分解任务、编排工作流",
+      "deliverables": [
+        "pkg/swarm/coordinator.go - Coordinator 核心",
+        "pkg/swarm/scheduler.go - 任务调度器",
+        "task.assign.{sid} 主题支持",
+        "task.broadcast.{capability} 主题支持"
+      ],
+      "blocked_by": ["PHASE1-XHID-001"],
+      "dependencies": ["PHASE1-XHID-001"],
+      "estimated_weeks": 1.5
+    },
+    {
+      "id": "PHASE2-WORK-001",
+      "milestone": "Phase 2 - 多节点协作",
+      "subject": "实现 Worker 角色基础",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现 Worker 节点角色，负责执行任务、报告结果",
+      "deliverables": [
+        "pkg/swarm/worker.go - Worker 核心",
+        "pkg/swarm/executor.go - 任务执行��",
+        "task.result.{task_id} 主题支持",
+        "task.progress.{task_id} 主题支持"
+      ],
+      "blocked_by": ["PHASE1-XHID-001"],
+      "dependencies": ["PHASE1-XHID-001"],
+      "estimated_weeks": 1.5
+    },
+    {
+      "id": "PHASE2-QUEUE-001",
+      "milestone": "Phase 2 - 多节点协作",
+      "subject": "实现 NATS Queue Group 负载均衡",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "使用 NATS Queue Group 实现任务在多个 Worker 间的负载均衡",
+      "deliverables": [
+        "pkg/swarm/queue_group.go - Queue Group 封装",
+        "Worker 自动注册到 Queue Group",
+        "任务自动分配逻辑",
+        "Worker 下线自动重分配"
+      ],
+      "blocked_by": ["PHASE2-WORK-001"],
+      "dependencies": ["PHASE2-WORK-001"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE3-TEMP-001",
+      "milestone": "Phase 3 - Temporal 工作流",
+      "subject": "集成 Temporal SDK",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "集成 Temporal Go SDK，建立与 Temporal Server 的连接",
+      "deliverables": [
+        "pkg/temporal/client.go - Temporal 客户端",
+        "pkg/temporal/options.go - 连接选项",
+        "Task Queue 配置",
+        "Worker 注册机制"
+      ],
+      "blocked_by": ["PHASE2-QUEUE-001"],
+      "dependencies": ["PHASE2-QUEUE-001"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE3-WF-001",
+      "milestone": "Phase 3 - Temporal 工作流",
+      "subject": "实现核心 Workflow",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现长运行任务的 Workflow 编排，支持任务分解、子任务协调、结果聚合",
+      "deliverables": [
+        "pkg/temporal/workflow/task.go - 任务 Workflow",
+        "pkg/temporal/workflow/parallel.go - 并行任务 Workflow",
+        "Workflow 定义接口",
+        "Activity 调用封装"
+      ],
+      "blocked_by": ["PHASE3-TEMP-001"],
+      "dependencies": ["PHASE3-TEMP-001"],
+      "estimated_weeks": 2
+    },
+    {
+      "id": "PHASE3-ACT-001",
+      "milestone": "Phase 3 - Temporal 工作流",
+      "subject": "实现 Activity 与测试",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现具体的 Activity（LLM 调用、Memory 读写等）和测试",
+      "deliverables": [
+        "pkg/temporal/activity/llm.go - LLM Activity",
+        "pkg/temporal/activity/memory.go - Memory Activity",
+        "pkg/temporal/activity/tool.go - Tool Activity",
+        "Activity 单元测试",
+        "Workflow 集成测试"
+      ],
+      "blocked_by": ["PHASE3-WF-001"],
+      "dependencies": ["PHASE3-WF-001"],
+      "estimated_weeks": 1.5
+    },
+    {
+      "id": "PHASE4-LIFECYCLE-001",
+      "milestone": "Phase 4 - 故障迁移",
+      "subject": "实现任务生命周期存储",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "基于 JetStream 实现任务生命周期持久化，支持状态转换记录",
+      "deliverables": [
+        "pkg/swarm/lifecycle/store.go - 生命周期存储",
+        "pkg/swarm/lifecycle/state.go - 状态机",
+        "task.lifecycle.{task_id} 主题",
+        "TaskStatus 状态转换验证",
+        "状态转换历史查询"
+      ],
+      "blocked_by": ["PHASE3-ACT-001"],
+      "dependencies": ["PHASE3-ACT-001"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE4-CHECKPOINT-001",
+      "milestone": "Phase 4 - 故障迁移",
+      "subject": "实现任务检查点机制",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现任务检查点创建、存储、加载，支持故障恢复",
+      "deliverables": [
+        "pkg/swarm/checkpoint/checkpoint.go - 检查点结构",
+        "pkg/swarm/checkpoint/writer.go - 检查点写入器",
+        "pkg/swarm/checkpoint/reader.go - 检查点读取器",
+        "task.checkpoint.{task_id} 主题",
+        "CheckpointConfig 配置"
+      ],
+      "blocked_by": ["PHASE4-LIFECYCLE-001"],
+      "dependencies": ["PHASE4-LIFECYCLE-001"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE4-FAILOVER-001",
+      "milestone": "Phase 4 - 故障迁移",
+      "subject": "实现故障迁移机制",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "实现故障检测、任务声明、检查点恢复的完整迁移流程",
+      "deliverables": [
+        "pkg/swarm/failure/migrator.go - 故障迁移器",
+        "pkg/swarm/failure/claimer.go - 任务声明逻辑",
+        "pkg/swarm/failure/restorer.go - 检查点恢复",
+        "脑裂防护（JetStream 精确一次语义）",
+        "故障迁移测试"
+      ],
+      "blocked_by": ["PHASE4-CHECKPOINT-001"],
+      "dependencies": ["PHASE4-CHECKPOINT-001"],
+      "estimated_weeks": 1.5
+    },
+    {
+      "id": "PHASE5-PARALLEL-001",
+      "milestone": "Phase 5 - 并行执行",
+      "subject": "实现并行任务执行",
+      "status": "completed",
+      "priority": "P1",
+      "assignee": null,
+      "description": "实现父任务分解、子任务并行分配、结果聚合的并行执行模型",
+      "deliverables": [
+        "pkg/swarm/parallel/executor.go - 并行执行器",
+        "pkg/swarm/parallel/subtask.go - 子任务定义",
+        "pkg/swarm/parallel/coordinator.go - 子任务协调",
+        "WaitMode: All/Any/Quorum/None",
+        "DAG 依赖关系支持"
+      ],
+      "blocked_by": ["PHASE4-FAILOVER-001"],
+      "dependencies": ["PHASE4-FAILOVER-001"],
+      "estimated_weeks": 1.5
+    },
+    {
+      "id": "PHASE6-SPEC-001",
+      "milestone": "Phase 6 - Specialist 角色",
+      "subject": "实现 Specialist 角色与能力注册",
+      "status": "completed",
+      "priority": "P1",
+      "assignee": null,
+      "description": "实现专业化节点角色，支持特定领域能力声明与任务路由",
+      "deliverables": [
+        "pkg/swarm/specialist/role.go - Specialist 角色",
+        "pkg/swarm/capability/registry.go - 能力注册表",
+        "基于能力的任务路由",
+        "Specialist 配置支持"
+      ],
+      "blocked_by": ["PHASE5-PARALLEL-001"],
+      "dependencies": ["PHASE5-PARALLEL-001"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE7-EDGE-001",
+      "milestone": "Phase 7 - 边缘部署",
+      "subject": "边缘部署支持",
+      "status": "completed",
+      "priority": "P1",
+      "assignee": null,
+      "description": "支持在资源受限的边缘设备（RISC-V、移动设备）上部署 Worker 节点",
+      "deliverables": [
+        "交叉编译配置",
+        "轻量级 Worker 模式",
+        "资源限制配置",
+        "边缘设备部署文档"
+      ],
+      "blocked_by": ["PHASE6-SPEC-001"],
+      "dependencies": ["PHASE6-SPEC-001"],
+      "estimated_weeks": 1
+    },
+    {
+      "id": "PHASE8-DOCS-001",
+      "milestone": "Phase 8 - 文档与示例",
+      "subject": "完善文档与示例",
+      "status": "completed",
+      "priority": "P1",
+      "assignee": null,
+      "description": "完善用户文档、API 文档、部署示例",
+      "deliverables": [
+        "用户部署指南",
+        "API 参考文档",
+        "配置说明",
+        "示例部署配置（Docker Compose/K8s）",
+        "故障排查指南"
+      ],
+      "blocked_by": ["PHASE7-EDGE-001"],
+      "dependencies": ["PHASE7-EDGE-001"],
+      "estimated_weeks": 0.5
+    },
+    {
+      "id": "PHASE8-JETSTREAM-001",
+      "milestone": "Phase 1 - NATS 基础设施",
+      "subject": "实现 JetStream Memory Store",
+      "status": "completed",
+      "priority": "P0",
+      "assignee": null,
+      "description": "基于 NATS JetStream 实现热存储，支持记忆的 CRUD、查询、Watch",
+      "deliverables": [
+        "pkg/memory/jetstream/store.go - JetStream Memory Store",
+        "pkg/memory/jetstream/stream.go - Stream 管理",
+        "pkg/memory/jetstream/consumer.go - Consumer 管理",
+        "KV Store 支持",
+        "Query 与 Watch API"
+      ],
+      "blocked_by": ["PHASE1-NATS-002"],
+      "dependencies": ["PHASE1-NATS-002"],
+      "estimated_weeks": 1.5
+    },
+    {
+      "id": "PHASE8-OSS-001",
+      "milestone": "Phase 8 - 冷热存储",
+      "subject": "实现 OSS 冷存储",
+      "status": "pending",
+      "priority": "P1",
+      "assignee": null,
+      "description": "实现 S3/MinIO 冷存储，支持记忆归档与提升",
+      "deliverables": [
+        "pkg/memory/oss/backend.go - OSS 后端接口",
+        "pkg/memory/oss/s3.go - S3 实现",
+        "pkg/memory/oss/minio.go - MinIO 实现",
+        "自动归档任务",
+        "冷热透明访问"
+      ],
+      "blocked_by": ["PHASE8-JETSTREAM-001"],
+      "dependencies": ["PHASE8-JETSTREAM-001"],
+      "estimated_weeks": 1.5
+    },
+    {
+      "id": "PHASE9-DASH-001",
+      "milestone": "Phase 9 - Dashboard 与监控",
+      "subject": "实现 Swarm Dashboard",
+      "status": "completed",
+      "priority": "P2",
+      "assignee": "Claude",
+      "description": "实现基于终端的 Dashboard，用于监控 swarm 状态",
+      "deliverables": [
+        "pkg/swarm/dashboard.go - Dashboard 核心",
+        "pkg/swarm/dashboard_test.go - 测试",
+        "实时状态显示（节点、连接、选举）",
+        "紧凑单行状态输出"
+      ],
+      "blocked_by": [],
+      "dependencies": [],
+      "estimated_weeks": 0.5
+    }
+  ],
+  "summary": {
+    "total": 26,
+    "by_status": {
+      "completed": 24,
+      "pending": 2,
+      "in_progress": 0,
+      "blocked": 0
+    },
+    "by_priority": {
+      "P0": 20,
+      "P1": 5,
+      "P2": 1
+    },
+    "by_milestone": {
+      "Phase 0 - 身份与权限": 5,
+      "Phase 1 - NATS 基础设施": 6,
+      "Phase 2 - 多节点协作": 3,
+      "Phase 3 - Temporal 工作流": 3,
+      "Phase 4 - 故障迁移": 3,
+      "Phase 5 - 并行执行": 1,
+      "Phase 6 - Specialist 角色": 1,
+      "Phase 7 - 边缘部署": 1,
+      "Phase 8 - 文档与示例": 2
+    },
+    "estimated_weeks": 25
+  },
+  "milestones": [
+    {
+      "name": "Phase 0 - 身份与权限",
+      "description": "建立身份模型（H-id/S-id）和权限控制（Memory Permissions + Resource/Relation）",
+      "priority": "P0",
+      "weeks": 4,
+      "tasks": ["PHASE0-ID-001", "PHASE0-MEM-001", "PHASE0-REL-001", "PHASE0-TEST-001"]
+    },
+    {
+      "name": "Phase 1 - NATS 基础设施",
+      "description": "实现 NATS 连接、H-id 分区、心跳检测、节点发现、跨 H-id 通信",
+      "priority": "P0",
+      "weeks": 6,
+      "tasks": ["PHASE1-NATS-001", "PHASE1-NATS-002", "PHASE1-HB-001", "PHASE1-DISC-001", "PHASE1-XHID-001", "PHASE8-JETSTREAM-001"]
+    },
+    {
+      "name": "Phase 2 - 多节点协作",
+      "description": "实现 Coordinator 和 Worker 角色，NATS Queue Group 负载均衡",
+      "priority": "P0",
+      "weeks": 4,
+      "tasks": ["PHASE2-COORD-001", "PHASE2-WORK-001", "PHASE2-QUEUE-001"]
+    },
+    {
+      "name": "Phase 3 - Temporal 工作流",
+      "description": "集成 Temporal SDK，实现核心 Workflow 和 Activity",
+      "priority": "P0",
+      "weeks": 4.5,
+      "tasks": ["PHASE3-TEMP-001", "PHASE3-WF-001", "PHASE3-ACT-001"]
+    },
+    {
+      "name": "Phase 4 - 故障迁移",
+      "description": "实现任务生命周期存储、检查点机制、故障迁移",
+      "priority": "P0",
+      "weeks": 3.5,
+      "tasks": ["PHASE4-LIFECYCLE-001", "PHASE4-CHECKPOINT-001", "PHASE4-FAILOVER-001"]
+    },
+    {
+      "name": "Phase 5 - 并行执行",
+      "description": "实现并行任务执行、DAG 依赖关系、子任务协调",
+      "priority": "P1",
+      "weeks": 1.5,
+      "tasks": ["PHASE5-PARALLEL-001"]
+    },
+    {
+      "name": "Phase 6 - Specialist 角色",
+      "description": "实现专业化节点角色与能力注册",
+      "priority": "P1",
+      "weeks": 1,
+      "tasks": ["PHASE6-SPEC-001"]
+    },
+    {
+      "name": "Phase 7 - 边缘部署",
+      "description": "支持边缘设备部署",
+      "priority": "P1",
+      "weeks": 1,
+      "tasks": ["PHASE7-EDGE-001"]
+    },
+    {
+      "name": "Phase 8 - 冷热存储",
+      "description": "实现 OSS 冷存储与自动归档",
+      "priority": "P1",
+      "weeks": 1.5,
+      "tasks": ["PHASE8-OSS-001"]
+    },
+    {
+      "name": "文档与示例",
+      "description": "完善文档与示例",
+      "priority": "P1",
+      "weeks": 0.5,
+      "tasks": ["PHASE8-DOCS-001"]
+    }
+  ]
+}
