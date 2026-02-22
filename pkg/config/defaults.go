@@ -277,6 +277,14 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// MiniMax - https://platform.minimax.io/
+			{
+				ModelName: "minimax-m2.5",
+				Model:     "minimax/MiniMax-M2.5",
+				APIBase:   "https://api.minimax.io/v1",
+				APIKey:    "",
+			},
+
 			// Antigravity (Google Cloud Code Assist) - OAuth only
 			{
 				ModelName:  "gemini-flash",
