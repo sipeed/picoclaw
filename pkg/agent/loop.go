@@ -711,13 +711,26 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			toolResult := agent.Tools.ExecuteWithContext(
-				ctx,
+				toolCtx,
 				tc.Name,
 				tc.Arguments,
 				opts.Channel,
 				opts.ChatID,
 				asyncCallback,
 			)
+			toolSpan.SetAttributes(
+				attribute.Int64("tool.duration_ms", time.Since(startedAt).Milliseconds()),
+				attribute.Bool("tool.silent", toolResult.Silent),
+				attribute.Int("tool.for_user_len", len(toolResult.ForUser)),
+				attribute.Int("tool.for_llm_len", len(toolResult.ForLLM)),
+			)
+			if toolResult.Err != nil {
+				toolSpan.RecordError(toolResult.Err)
+				toolSpan.SetStatus(codes.Error, toolResult.Err.Error())
+			} else if toolResult.IsError {
+				toolSpan.SetStatus(codes.Error, toolResult.ForLLM)
+			}
+			toolSpan.End()
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
