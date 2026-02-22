@@ -26,6 +26,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -1377,6 +1378,97 @@ func buildRichStatus(task *activeTask, isBackground bool, workspace string) stri
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
+// consumeStreamWithRepetitionDetection reads StreamEvents from ch, accumulates
+// content and tool calls, and runs repetition detection every checkInterval runes.
+// If repetition is detected, cancelFn is called to abort the HTTP request and
+// the function returns the partial response with detected=true.
+func consumeStreamWithRepetitionDetection(
+	ch <-chan protocoltypes.StreamEvent,
+	cancelFn context.CancelFunc,
+	checkInterval int,
+) (*providers.LLMResponse, bool, error) {
+	var content strings.Builder
+	var toolCalls []streamToolCallAcc
+	var finishReason string
+	var usage *providers.UsageInfo
+	runesSinceLastCheck := 0
+
+	for ev := range ch {
+		if ev.Err != nil {
+			return nil, false, ev.Err
+		}
+		if ev.ContentDelta != "" {
+			content.WriteString(ev.ContentDelta)
+			runesSinceLastCheck += utf8.RuneCountInString(ev.ContentDelta)
+		}
+		if ev.FinishReason != "" {
+			finishReason = ev.FinishReason
+		}
+		if ev.Usage != nil {
+			usage = ev.Usage
+		}
+		for _, tc := range ev.ToolCallDeltas {
+			for len(toolCalls) <= tc.Index {
+				toolCalls = append(toolCalls, streamToolCallAcc{})
+			}
+			if tc.ID != "" {
+				toolCalls[tc.Index].id = tc.ID
+			}
+			if tc.Name != "" {
+				toolCalls[tc.Index].name = tc.Name
+			}
+			toolCalls[tc.Index].args.WriteString(tc.ArgumentsDelta)
+		}
+
+		// Run repetition detection periodically on accumulated content.
+		if runesSinceLastCheck >= checkInterval && content.Len() > 2000 {
+			runesSinceLastCheck = 0
+			if utils.DetectRepetitionLoop(content.String()) {
+				cancelFn()
+				// Drain remaining events so the producer goroutine can exit.
+				for range ch {
+				}
+				resp := buildAccumulatedResponse(content.String(), toolCalls, finishReason, usage)
+				return resp, true, nil
+			}
+		}
+	}
+
+	resp := buildAccumulatedResponse(content.String(), toolCalls, finishReason, usage)
+	return resp, false, nil
+}
+
+// streamToolCallAcc accumulates streamed tool call fragments.
+type streamToolCallAcc struct {
+	id   string
+	name string
+	args strings.Builder
+}
+
+// buildAccumulatedResponse constructs an LLMResponse from accumulated stream data.
+func buildAccumulatedResponse(content string, toolCalls []streamToolCallAcc, finishReason string, usage *providers.UsageInfo) *providers.LLMResponse {
+	resp := &providers.LLMResponse{
+		Content:      content,
+		FinishReason: finishReason,
+		Usage:        usage,
+	}
+	for _, tc := range toolCalls {
+		arguments := make(map[string]any)
+		argStr := tc.args.String()
+		if argStr != "" {
+			if err := json.Unmarshal([]byte(argStr), &arguments); err != nil {
+				arguments["raw"] = argStr
+			}
+		}
+		resp.ToolCalls = append(resp.ToolCalls, providers.ToolCall{
+			ID:        tc.id,
+			Name:      tc.name,
+			Arguments: arguments,
+		})
+	}
+	return resp
+}
+
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
 	agent *AgentInstance,
@@ -1459,15 +1551,38 @@ func (al *AgentLoop) runLLMIteration(
 		var response *providers.LLMResponse
 		var err error
 
+		// doCall invokes a single LLM provider, using streaming with
+		// early repetition detection when the provider supports it.
+		opts_ := map[string]any{
+			"max_tokens":  agent.MaxTokens,
+			"temperature": agent.Temperature,
+		}
+		doCall := func(ctx context.Context, p providers.LLMProvider, model string) (*providers.LLMResponse, error) {
+			if sp, ok := p.(providers.StreamingProvider); ok && sp.CanStream() {
+				streamCtx, streamCancel := context.WithCancel(ctx)
+				defer streamCancel()
+				ch, err := sp.ChatStream(streamCtx, messages, providerToolDefs, model, opts_)
+				if err != nil {
+					return nil, err
+				}
+				resp, repetition, err := consumeStreamWithRepetitionDetection(ch, streamCancel, 1000)
+				if err != nil {
+					return nil, err
+				}
+				if repetition {
+					resp.FinishReason = "repetition_detected"
+				}
+				return resp, nil
+			}
+			return p.Chat(ctx, messages, providerToolDefs, model, opts_)
+		}
+
 		callLLM := func() (*providers.LLMResponse, error) {
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						p := al.resolveProvider(provider, model, agent.Provider)
-						return p.Chat(ctx, messages, providerToolDefs, model, map[string]interface{}{
-							"max_tokens":  agent.MaxTokens,
-							"temperature": agent.Temperature,
-						})
+						return doCall(ctx, p, model)
 					},
 				)
 				if fbErr != nil {
@@ -1480,10 +1595,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
-				"max_tokens":  agent.MaxTokens,
-				"temperature": agent.Temperature,
-			})
+			return doCall(ctx, agent.Provider, agent.Model)
 		}
 
 		// Retry loop for context/token errors
@@ -1548,7 +1660,10 @@ func (al *AgentLoop) runLLMIteration(
 		// Detect repetition loop on raw text (before stripping think
 		// blocks so loops inside <think> are caught).  Skip when the
 		// provider already returned native tool calls.
-		if len(response.ToolCalls) == 0 && utils.DetectRepetitionLoop(response.Content) {
+		// Streaming providers may have already flagged repetition via
+		// FinishReason="repetition_detected" — honour that too.
+		if response.FinishReason == "repetition_detected" ||
+			(len(response.ToolCalls) == 0 && utils.DetectRepetitionLoop(response.Content)) {
 			logger.WarnCF("agent", "Repetition loop detected in LLM response, retrying",
 				map[string]any{
 					"agent_id":       agent.ID,

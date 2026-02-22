@@ -1,12 +1,16 @@
 package openai_compat
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
@@ -403,5 +407,263 @@ func TestProviderChat_CustomEndpointPath(t *testing.T) {
 	}
 	if hitPath != "/text/chatcompletion_v2" {
 		t.Fatalf("endpoint path = %q, want %q", hitPath, "/text/chatcompletion_v2")
+	}
+}
+
+func TestReadSSEIntoChannel_TextAndToolCalls(t *testing.T) {
+	sseData := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":""}]}`,
+		``,
+		`data: {"choices":[{"delta":{"content":" world"},"finish_reason":""}]}`,
+		``,
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"greet","arguments":"{\"n"}}]},"finish_reason":""}]}`,
+		``,
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ame\":\"Bob\"}"}}]},"finish_reason":""}]}`,
+		``,
+		`data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`,
+		``,
+		`data: [DONE]`,
+		``,
+	}, "\n")
+
+	ch := make(chan protocoltypes.StreamEvent, 32)
+	go func() {
+		defer close(ch)
+		readSSEIntoChannel(context.Background(), strings.NewReader(sseData), ch)
+	}()
+
+	var events []protocoltypes.StreamEvent
+	for ev := range ch {
+		events = append(events, ev)
+	}
+
+	if len(events) < 3 {
+		t.Fatalf("got %d events, want at least 3", len(events))
+	}
+
+	// Check content deltas
+	if events[0].ContentDelta != "Hello" {
+		t.Errorf("events[0].ContentDelta = %q, want %q", events[0].ContentDelta, "Hello")
+	}
+	if events[1].ContentDelta != " world" {
+		t.Errorf("events[1].ContentDelta = %q, want %q", events[1].ContentDelta, " world")
+	}
+
+	// Check tool call deltas
+	if len(events[2].ToolCallDeltas) != 1 || events[2].ToolCallDeltas[0].ID != "call_1" {
+		t.Errorf("events[2] should contain tool call with ID=call_1")
+	}
+	if events[2].ToolCallDeltas[0].Name != "greet" {
+		t.Errorf("events[2].ToolCallDeltas[0].Name = %q, want %q", events[2].ToolCallDeltas[0].Name, "greet")
+	}
+
+	// Check finish event
+	lastEv := events[len(events)-1]
+	if lastEv.FinishReason != "stop" {
+		t.Errorf("last event FinishReason = %q, want %q", lastEv.FinishReason, "stop")
+	}
+	if lastEv.Usage == nil || lastEv.Usage.TotalTokens != 7 {
+		t.Errorf("last event Usage.TotalTokens = %v, want 7", lastEv.Usage)
+	}
+}
+
+func TestReadSSEIntoChannel_ContextCancel(t *testing.T) {
+	// Simulate a slow SSE stream that gets cancelled.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create a reader that blocks after sending one chunk.
+	sseData := `data: {"choices":[{"delta":{"content":"first"},"finish_reason":""}]}` + "\n\n"
+
+	ch := make(chan protocoltypes.StreamEvent, 32)
+	go func() {
+		defer close(ch)
+		readSSEIntoChannel(ctx, strings.NewReader(sseData), ch)
+	}()
+
+	// Read the first event.
+	ev := <-ch
+	if ev.ContentDelta != "first" {
+		t.Fatalf("ContentDelta = %q, want %q", ev.ContentDelta, "first")
+	}
+
+	// Cancel the context; the channel should close.
+	cancel()
+	_, ok := <-ch
+	if ok {
+		t.Fatal("expected channel to be closed after context cancel")
+	}
+}
+
+func TestAccumulateStream_FullResponse(t *testing.T) {
+	ch := make(chan protocoltypes.StreamEvent, 8)
+
+	go func() {
+		ch <- protocoltypes.StreamEvent{ContentDelta: "Hello"}
+		ch <- protocoltypes.StreamEvent{ContentDelta: " world"}
+		ch <- protocoltypes.StreamEvent{
+			ToolCallDeltas: []protocoltypes.StreamToolCallDelta{
+				{Index: 0, ID: "call_1", Name: "test_tool", ArgumentsDelta: `{"key"`},
+			},
+		}
+		ch <- protocoltypes.StreamEvent{
+			ToolCallDeltas: []protocoltypes.StreamToolCallDelta{
+				{Index: 0, ArgumentsDelta: `:"value"}`},
+			},
+		}
+		ch <- protocoltypes.StreamEvent{
+			FinishReason: "stop",
+			Usage:        &UsageInfo{PromptTokens: 5, CompletionTokens: 3, TotalTokens: 8},
+		}
+		close(ch)
+	}()
+
+	resp, err := AccumulateStream(ch)
+	if err != nil {
+		t.Fatalf("AccumulateStream() error = %v", err)
+	}
+
+	if resp.Content != "Hello world" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Hello world")
+	}
+	if resp.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "stop")
+	}
+	if resp.Usage == nil || resp.Usage.TotalTokens != 8 {
+		t.Errorf("Usage.TotalTokens = %v, want 8", resp.Usage)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(resp.ToolCalls))
+	}
+	if resp.ToolCalls[0].Name != "test_tool" {
+		t.Errorf("ToolCalls[0].Name = %q, want %q", resp.ToolCalls[0].Name, "test_tool")
+	}
+	if resp.ToolCalls[0].Arguments["key"] != "value" {
+		t.Errorf("ToolCalls[0].Arguments[key] = %v, want %q", resp.ToolCalls[0].Arguments["key"], "value")
+	}
+}
+
+func TestAccumulateStream_Error(t *testing.T) {
+	ch := make(chan protocoltypes.StreamEvent, 4)
+
+	go func() {
+		ch <- protocoltypes.StreamEvent{ContentDelta: "partial"}
+		ch <- protocoltypes.StreamEvent{Err: fmt.Errorf("connection reset")}
+		close(ch)
+	}()
+
+	_, err := AccumulateStream(ch)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "connection reset") {
+		t.Fatalf("error = %q, want to contain %q", err.Error(), "connection reset")
+	}
+}
+
+func TestChatStream_EndToEnd(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+
+		chunks := []string{
+			`data: {"choices":[{"delta":{"content":"stream"},"finish_reason":""}]}`,
+			`data: {"choices":[{"delta":{"content":"ed"},"finish_reason":""}]}`,
+			`data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`,
+			`data: [DONE]`,
+		}
+		for _, c := range chunks {
+			fmt.Fprintln(w, c)
+			fmt.Fprintln(w)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer server.Close()
+
+	p := NewProviderWithOptions("key", server.URL, "", Options{Stream: true})
+
+	ch, err := p.ChatStream(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "test", nil)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+
+	resp, err := AccumulateStream(ch)
+	if err != nil {
+		t.Fatalf("AccumulateStream() error = %v", err)
+	}
+
+	if resp.Content != "streamed" {
+		t.Errorf("Content = %q, want %q", resp.Content, "streamed")
+	}
+	if resp.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "stop")
+	}
+	if resp.Usage == nil || resp.Usage.TotalTokens != 3 {
+		t.Errorf("Usage.TotalTokens = %v, want 3", resp.Usage)
+	}
+}
+
+func TestChatStream_EarlyCancel(t *testing.T) {
+	serverDone := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(serverDone)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+
+		// Send many chunks; expect the client to cancel early.
+		for i := 0; i < 1000; i++ {
+			select {
+			case <-r.Context().Done():
+				return
+			default:
+			}
+			fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"x\"},\"finish_reason\":\"\"}]}\n\n")
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer server.Close()
+
+	p := NewProviderWithOptions("key", server.URL, "", Options{Stream: true})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch, err := p.ChatStream(ctx, []Message{{Role: "user", Content: "hi"}}, nil, "test", nil)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+
+	// Read a few events, then cancel.
+	count := 0
+	for ev := range ch {
+		if ev.Err != nil {
+			break
+		}
+		count++
+		if count >= 5 {
+			cancel()
+		}
+	}
+
+	if count < 5 {
+		t.Errorf("expected at least 5 events before cancel, got %d", count)
+	}
+
+	// Server should have received the cancellation.
+	<-serverDone
+}
+
+func TestCanStream(t *testing.T) {
+	p1 := NewProvider("key", "https://example.com", "")
+	if p1.CanStream() {
+		t.Error("CanStream() = true for non-stream provider")
+	}
+
+	p2 := NewProviderWithOptions("key", "https://example.com", "", Options{Stream: true})
+	if !p2.CanStream() {
+		t.Error("CanStream() = false for stream provider")
 	}
 }
