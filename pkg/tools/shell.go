@@ -291,11 +291,17 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		}
 
 		// Token-based absolute path detection.
-		// Uses shellTokenize to respect quoted strings (e.g., "/review ..."
-		// is a single argument, not a file path).
+		// Uses strings.Fields so relative paths (e.g., "tests/cold/file.py")
+		// are not falsely flagged.
 		// Flags like -I/usr/local/include are naturally skipped because
 		// filepath.IsAbs returns false for tokens starting with "-".
-		for _, token := range shellTokenize(cmd) {
+		//
+		// Agent CLI tools (claude, codex, gemini) accept slash commands
+		// (e.g., "/review") that look like absolute paths but are not.
+		// For these tools we check whether the token is an existing path
+		// before blocking.
+		agentCLI := isAgentCLICommand(cmd)
+		for _, token := range strings.Fields(cmd) {
 			token = strings.Trim(token, "\"'")
 
 			if !filepath.IsAbs(token) {
@@ -313,6 +319,13 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				if isExecutable(p) {
 					continue
 				}
+				// Agent CLI slash commands: skip non-existent paths
+				// (e.g., "/review" is a command, not a file).
+				if agentCLI {
+					if _, statErr := os.Stat(p); os.IsNotExist(statErr) {
+						continue
+					}
+				}
 				return "Command blocked by safety guard (path outside working dir)"
 			}
 		}
@@ -321,40 +334,23 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	return ""
 }
 
-// shellTokenize splits a command string into tokens while respecting
-// single and double quotes.  Quoted substrings are returned as a single
-// token (with the quotes still attached so the caller can trim them).
-// This prevents false positives where a quoted argument like
-// "/review skip-git-repo-check" would be split into "/review" and
-// "skip-git-repo-check" by strings.Fields.
-func shellTokenize(s string) []string {
-	var tokens []string
-	var cur strings.Builder
-	var quote byte // 0 = none, '\'' or '"'
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		switch {
-		case quote != 0:
-			cur.WriteByte(ch)
-			if ch == quote {
-				quote = 0
-			}
-		case ch == '\'' || ch == '"':
-			cur.WriteByte(ch)
-			quote = ch
-		case ch == ' ' || ch == '\t':
-			if cur.Len() > 0 {
-				tokens = append(tokens, cur.String())
-				cur.Reset()
-			}
-		default:
-			cur.WriteByte(ch)
+// agentCLINames lists agent CLI tools that use slash commands
+// (e.g., "/review", "/help") which look like absolute paths.
+var agentCLINames = []string{"claude", "codex", "gemini"}
+
+// isAgentCLICommand returns true if the command invokes an agent CLI tool.
+func isAgentCLICommand(cmd string) bool {
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		return false
+	}
+	base := filepath.Base(fields[0])
+	for _, name := range agentCLINames {
+		if base == name {
+			return true
 		}
 	}
-	if cur.Len() > 0 {
-		tokens = append(tokens, cur.String())
-	}
-	return tokens
+	return false
 }
 
 // isExecutable checks if a path points to an executable file.

@@ -487,21 +487,30 @@ func TestGuardCommand_CdWithAbsoluteWorkspacePath(t *testing.T) {
 	}
 }
 
-func TestGuardCommand_QuotedSlashArgNotBlocked(t *testing.T) {
+func TestGuardCommand_AgentCLISlashCommand(t *testing.T) {
 	workspace := t.TempDir()
 	tool := NewExecTool(workspace, true)
 
-	// A quoted argument starting with "/" is not a file path — it's a
-	// command argument that happens to contain a slash.
+	// Agent CLI slash commands (e.g., "/review") are not file paths.
+	// They should be allowed because they don't exist on disk.
 	cmds := []string{
 		`codex exec --yolo "/review skip-git-repo-check"`,
-		`echo '/hello world'`,
-		`grep "/etc/passwd" file.txt`,
+		`claude "/review"`,
+		`gemini "/help"`,
 	}
 	for _, cmd := range cmds {
 		result := tool.guardCommand(cmd, workspace)
 		if result != "" {
-			t.Errorf("Quoted argument should not be blocked: %q → %s", cmd, result)
+			t.Errorf("Agent CLI slash command should not be blocked: %q → %s", cmd, result)
+		}
+	}
+
+	// Non-agent commands with absolute paths should still be blocked.
+	if runtime.GOOS != "windows" {
+		blocked := `cat /etc/hosts`
+		result := tool.guardCommand(blocked, workspace)
+		if result == "" {
+			t.Errorf("Non-agent command with absolute path should be blocked: %q", blocked)
 		}
 	}
 }
