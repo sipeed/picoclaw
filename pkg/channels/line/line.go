@@ -44,7 +44,6 @@ type replyTokenEntry struct {
 type LINEChannel struct {
 	*channels.BaseChannel
 	config         config.LINEConfig
-	httpServer     *http.Server
 	botUserID      string   // Bot's user ID
 	botBasicID     string   // Bot's basic ID (e.g. @216ru...)
 	botDisplayName string   // Bot's display name for text-based mention detection
@@ -68,7 +67,7 @@ func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINECha
 	}, nil
 }
 
-// Start launches the HTTP webhook server.
+// Start initializes the LINE channel.
 func (c *LINEChannel) Start(ctx context.Context) error {
 	logger.InfoC("line", "Starting LINE channel (Webhook Mode)")
 
@@ -86,31 +85,6 @@ func (c *LINEChannel) Start(ctx context.Context) error {
 			"display_name": c.botDisplayName,
 		})
 	}
-
-	mux := http.NewServeMux()
-	path := c.config.WebhookPath
-	if path == "" {
-		path = "/webhook/line"
-	}
-	mux.HandleFunc(path, c.webhookHandler)
-
-	addr := fmt.Sprintf("%s:%d", c.config.WebhookHost, c.config.WebhookPort)
-	c.httpServer = &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
-	go func() {
-		logger.InfoCF("line", "LINE webhook server listening", map[string]any{
-			"addr": addr,
-			"path": path,
-		})
-		if err := c.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("line", "Webhook server error", map[string]any{
-				"error": err.Error(),
-			})
-		}
-	}()
 
 	c.SetRunning(true)
 	logger.InfoC("line", "LINE channel started (Webhook Mode)")
@@ -151,7 +125,7 @@ func (c *LINEChannel) fetchBotInfo() error {
 	return nil
 }
 
-// Stop gracefully shuts down the HTTP server.
+// Stop gracefully stops the LINE channel.
 func (c *LINEChannel) Stop(ctx context.Context) error {
 	logger.InfoC("line", "Stopping LINE channel")
 
@@ -159,19 +133,22 @@ func (c *LINEChannel) Stop(ctx context.Context) error {
 		c.cancel()
 	}
 
-	if c.httpServer != nil {
-		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if err := c.httpServer.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorCF("line", "Webhook server shutdown error", map[string]any{
-				"error": err.Error(),
-			})
-		}
-	}
-
 	c.SetRunning(false)
 	logger.InfoC("line", "LINE channel stopped")
 	return nil
+}
+
+// WebhookPath returns the path for registering on the shared HTTP server.
+func (c *LINEChannel) WebhookPath() string {
+	if c.config.WebhookPath != "" {
+		return c.config.WebhookPath
+	}
+	return "/webhook/line"
+}
+
+// ServeHTTP implements http.Handler for the shared HTTP server.
+func (c *LINEChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	c.webhookHandler(w, r)
 }
 
 // webhookHandler handles incoming LINE webhook requests.

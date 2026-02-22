@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -55,6 +57,8 @@ type Manager struct {
 	config       *config.Config
 	mediaStore   media.MediaStore
 	dispatchTask *asyncTask
+	mux          *http.ServeMux
+	httpServer   *http.Server
 	mu           sync.RWMutex
 }
 
@@ -169,6 +173,43 @@ func (m *Manager) initChannels() error {
 	return nil
 }
 
+// SetupHTTPServer creates a shared HTTP server with the given listen address.
+// It registers health endpoints from the health server and discovers channels
+// that implement WebhookHandler and/or HealthChecker to register their handlers.
+func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
+	m.mux = http.NewServeMux()
+
+	// Register health endpoints
+	if healthServer != nil {
+		healthServer.RegisterOnMux(m.mux)
+	}
+
+	// Discover and register webhook handlers and health checkers
+	for name, ch := range m.channels {
+		if wh, ok := ch.(WebhookHandler); ok {
+			m.mux.Handle(wh.WebhookPath(), wh)
+			logger.InfoCF("channels", "Webhook handler registered", map[string]any{
+				"channel": name,
+				"path":    wh.WebhookPath(),
+			})
+		}
+		if hc, ok := ch.(HealthChecker); ok {
+			m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
+			logger.InfoCF("channels", "Health endpoint registered", map[string]any{
+				"channel": name,
+				"path":    hc.HealthPath(),
+			})
+		}
+	}
+
+	m.httpServer = &http.Server{
+		Addr:         addr,
+		Handler:      m.mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+	}
+}
+
 func (m *Manager) StartAll(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -203,6 +244,20 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	// Start the dispatcher that reads from the bus and routes to workers
 	go m.dispatchOutbound(dispatchCtx)
 
+	// Start shared HTTP server if configured
+	if m.httpServer != nil {
+		go func() {
+			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
+				"addr": m.httpServer.Addr,
+			})
+			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.ErrorCF("channels", "Shared HTTP server error", map[string]any{
+					"error": err.Error(),
+				})
+			}
+		}()
+	}
+
 	logger.InfoC("channels", "All channels started")
 	return nil
 }
@@ -213,7 +268,19 @@ func (m *Manager) StopAll(ctx context.Context) error {
 
 	logger.InfoC("channels", "Stopping all channels")
 
-	// Cancel dispatcher first
+	// Shutdown shared HTTP server first
+	if m.httpServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := m.httpServer.Shutdown(shutdownCtx); err != nil {
+			logger.ErrorCF("channels", "Shared HTTP server shutdown error", map[string]any{
+				"error": err.Error(),
+			})
+		}
+		m.httpServer = nil
+	}
+
+	// Cancel dispatcher
 	if m.dispatchTask != nil {
 		m.dispatchTask.cancel()
 		m.dispatchTask = nil

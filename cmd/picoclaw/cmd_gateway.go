@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -208,16 +207,15 @@ func gatewayCmd() {
 		fmt.Println("✓ Device event service started")
 	}
 
+	// Setup shared HTTP server with health endpoints and webhook handlers
+	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
+	channelManager.SetupHTTPServer(addr, healthServer)
+
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
-	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
-	go func() {
-		if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("health", "Health server error", map[string]any{"error": err.Error()})
-		}
-	}()
 	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	go agentLoop.Run(ctx)
@@ -229,12 +227,11 @@ func gatewayCmd() {
 	fmt.Println("\nShutting down...")
 	cancel()
 	msgBus.Close()
-	healthServer.Stop(context.Background())
+	channelManager.StopAll(ctx)
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
 	agentLoop.Stop()
-	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
 }
 
