@@ -20,6 +20,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
@@ -251,19 +252,24 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 
 	content := ""
 	mediaPaths := []string{}
-	localFiles := []string{} // 跟踪需要清理的本地文件
 
-	// 确保临时文件在函数返回时被清理
-	defer func() {
-		for _, file := range localFiles {
-			if err := os.Remove(file); err != nil {
-				logger.DebugCF("telegram", "Failed to cleanup temp file", map[string]any{
-					"file":  file,
-					"error": err.Error(),
-				})
+	chatIDStr := fmt.Sprintf("%d", chatID)
+	messageIDStr := fmt.Sprintf("%d", message.MessageID)
+	scope := channels.BuildMediaScope("telegram", chatIDStr, messageIDStr)
+
+	// Helper to register a local file with the media store
+	storeMedia := func(localPath, filename string) string {
+		if store := c.GetMediaStore(); store != nil {
+			ref, err := store.Store(localPath, media.MediaMeta{
+				Filename: filename,
+				Source:   "telegram",
+			}, scope)
+			if err == nil {
+				return ref
 			}
 		}
-	}()
+		return localPath // fallback: use raw path
+	}
 
 	if message.Text != "" {
 		content += message.Text
@@ -280,8 +286,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		photo := message.Photo[len(message.Photo)-1]
 		photoPath := c.downloadPhoto(ctx, photo.FileID)
 		if photoPath != "" {
-			localFiles = append(localFiles, photoPath)
-			mediaPaths = append(mediaPaths, photoPath)
+			mediaPaths = append(mediaPaths, storeMedia(photoPath, "photo.jpg"))
 			if content != "" {
 				content += "\n"
 			}
@@ -292,8 +297,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	if message.Voice != nil {
 		voicePath := c.downloadFile(ctx, message.Voice.FileID, ".ogg")
 		if voicePath != "" {
-			localFiles = append(localFiles, voicePath)
-			mediaPaths = append(mediaPaths, voicePath)
+			mediaPaths = append(mediaPaths, storeMedia(voicePath, "voice.ogg"))
 
 			transcribedText := ""
 			if c.transcriber != nil && c.transcriber.IsAvailable() {
@@ -327,8 +331,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	if message.Audio != nil {
 		audioPath := c.downloadFile(ctx, message.Audio.FileID, ".mp3")
 		if audioPath != "" {
-			localFiles = append(localFiles, audioPath)
-			mediaPaths = append(mediaPaths, audioPath)
+			mediaPaths = append(mediaPaths, storeMedia(audioPath, "audio.mp3"))
 			if content != "" {
 				content += "\n"
 			}
@@ -339,8 +342,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	if message.Document != nil {
 		docPath := c.downloadFile(ctx, message.Document.FileID, "")
 		if docPath != "" {
-			localFiles = append(localFiles, docPath)
-			mediaPaths = append(mediaPaths, docPath)
+			mediaPaths = append(mediaPaths, storeMedia(docPath, "document"))
 			if content != "" {
 				content += "\n"
 			}
@@ -367,7 +369,6 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	}
 
 	// Stop any previous thinking animation
-	chatIDStr := fmt.Sprintf("%d", chatID)
 	if prevStop, ok := c.stopThinking.Load(chatIDStr); ok {
 		if cf, ok := prevStop.(*thinkingCancel); ok && cf != nil {
 			cf.Cancel()

@@ -5,7 +5,10 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/google/uuid"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 type Channel interface {
@@ -41,6 +44,7 @@ type BaseChannel struct {
 	name             string
 	allowList        []string
 	maxMessageLength int
+	mediaStore       media.MediaStore
 }
 
 func NewBaseChannel(
@@ -125,15 +129,18 @@ func (c *BaseChannel) HandleMessage(
 		return
 	}
 
+	scope := BuildMediaScope(c.name, chatID, messageID)
+
 	msg := bus.InboundMessage{
-		Channel:   c.name,
-		SenderID:  senderID,
-		ChatID:    chatID,
-		Content:   content,
-		Media:     media,
-		Peer:      peer,
-		MessageID: messageID,
-		Metadata:  metadata,
+		Channel:    c.name,
+		SenderID:   senderID,
+		ChatID:     chatID,
+		Content:    content,
+		Media:      media,
+		Peer:       peer,
+		MessageID:  messageID,
+		MediaScope: scope,
+		Metadata:   metadata,
 	}
 
 	c.bus.PublishInbound(msg)
@@ -141,4 +148,19 @@ func (c *BaseChannel) HandleMessage(
 
 func (c *BaseChannel) SetRunning(running bool) {
 	c.running.Store(running)
+}
+
+// SetMediaStore injects a MediaStore into the channel.
+func (c *BaseChannel) SetMediaStore(s media.MediaStore) { c.mediaStore = s }
+
+// GetMediaStore returns the injected MediaStore (may be nil).
+func (c *BaseChannel) GetMediaStore() media.MediaStore { return c.mediaStore }
+
+// BuildMediaScope constructs a scope key for media lifecycle tracking.
+func BuildMediaScope(channel, chatID, messageID string) string {
+	id := messageID
+	if id == "" {
+		id = uuid.New().String()
+	}
+	return channel + ":" + chatID + ":" + id
 }

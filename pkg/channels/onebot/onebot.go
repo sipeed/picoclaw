@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
@@ -575,11 +575,15 @@ type parseMessageResult struct {
 	Text           string
 	IsBotMentioned bool
 	Media          []string
-	LocalFiles     []string
 	ReplyTo        string
 }
 
-func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) parseMessageResult {
+func (c *OneBotChannel) parseMessageSegments(
+	raw json.RawMessage,
+	selfID int64,
+	store media.MediaStore,
+	scope string,
+) parseMessageResult {
 	if len(raw) == 0 {
 		return parseMessageResult{}
 	}
@@ -606,9 +610,22 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 	var textParts []string
 	mentioned := false
 	selfIDStr := strconv.FormatInt(selfID, 10)
-	var media []string
-	var localFiles []string
+	var mediaRefs []string
 	var replyTo string
+
+	// Helper to register a local file with the media store
+	storeFile := func(localPath, filename string) string {
+		if store != nil {
+			ref, err := store.Store(localPath, media.MediaMeta{
+				Filename: filename,
+				Source:   "onebot",
+			}, scope)
+			if err == nil {
+				return ref
+			}
+		}
+		return localPath // fallback
+	}
 
 	for _, seg := range segments {
 		segType, _ := seg["type"].(string)
@@ -645,8 +662,7 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 						LoggerPrefix: "onebot",
 					})
 					if localPath != "" {
-						media = append(media, localPath)
-						localFiles = append(localFiles, localPath)
+						mediaRefs = append(mediaRefs, storeFile(localPath, filename))
 						textParts = append(textParts, fmt.Sprintf("[%s]", segType))
 					}
 				}
@@ -660,7 +676,6 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 						LoggerPrefix: "onebot",
 					})
 					if localPath != "" {
-						localFiles = append(localFiles, localPath)
 						if c.transcriber != nil && c.transcriber.IsAvailable() {
 							tctx, tcancel := context.WithTimeout(c.ctx, 30*time.Second)
 							result, err := c.transcriber.Transcribe(tctx, localPath)
@@ -670,13 +685,15 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 									"error": err.Error(),
 								})
 								textParts = append(textParts, "[voice (transcription failed)]")
-								media = append(media, localPath)
+								mediaRefs = append(mediaRefs, storeFile(localPath, "voice.amr"))
 							} else {
 								textParts = append(textParts, fmt.Sprintf("[voice transcription: %s]", result.Text))
+								// Still store the file so it can be released later
+								storeFile(localPath, "voice.amr")
 							}
 						} else {
 							textParts = append(textParts, "[voice]")
-							media = append(media, localPath)
+							mediaRefs = append(mediaRefs, storeFile(localPath, "voice.amr"))
 						}
 					}
 				}
@@ -706,8 +723,7 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 	return parseMessageResult{
 		Text:           strings.TrimSpace(strings.Join(textParts, "")),
 		IsBotMentioned: mentioned,
-		Media:          media,
-		LocalFiles:     localFiles,
+		Media:          mediaRefs,
 		ReplyTo:        replyTo,
 	}
 }
@@ -799,7 +815,17 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 		selfID = atomic.LoadInt64(&c.selfID)
 	}
 
-	parsed := c.parseMessageSegments(raw.Message, selfID)
+	// Compute scope for media store before parsing (parsing may download files)
+	var chatIDForScope string
+	switch raw.MessageType {
+	case "group":
+		chatIDForScope = "group:" + strconv.FormatInt(groupID, 10)
+	default:
+		chatIDForScope = "private:" + strconv.FormatInt(userID, 10)
+	}
+	scope := channels.BuildMediaScope("onebot", chatIDForScope, messageID)
+
+	parsed := c.parseMessageSegments(raw.Message, selfID, c.GetMediaStore(), scope)
 	isBotMentioned := parsed.IsBotMentioned
 
 	content := raw.RawMessage
@@ -826,20 +852,6 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 				"sender": string(raw.Sender),
 			})
 		}
-	}
-
-	// Clean up temp files when done
-	if len(parsed.LocalFiles) > 0 {
-		defer func() {
-			for _, f := range parsed.LocalFiles {
-				if err := os.Remove(f); err != nil {
-					logger.DebugCF("onebot", "Failed to remove temp file", map[string]any{
-						"path":  f,
-						"error": err.Error(),
-					})
-				}
-			}
-		}()
 	}
 
 	if c.isDuplicate(messageID) {

@@ -3,7 +3,6 @@ package slack
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
@@ -233,19 +233,22 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	content = c.stripBotMention(content)
 
 	var mediaPaths []string
-	localFiles := []string{} // 跟踪需要清理的本地文件
 
-	// 确保临时文件在函数返回时被清理
-	defer func() {
-		for _, file := range localFiles {
-			if err := os.Remove(file); err != nil {
-				logger.DebugCF("slack", "Failed to cleanup temp file", map[string]any{
-					"file":  file,
-					"error": err.Error(),
-				})
+	scope := channels.BuildMediaScope("slack", chatID, messageTS)
+
+	// Helper to register a local file with the media store
+	storeMedia := func(localPath, filename string) string {
+		if store := c.GetMediaStore(); store != nil {
+			ref, err := store.Store(localPath, media.MediaMeta{
+				Filename: filename,
+				Source:   "slack",
+			}, scope)
+			if err == nil {
+				return ref
 			}
 		}
-	}()
+		return localPath // fallback
+	}
 
 	if ev.Message != nil && len(ev.Message.Files) > 0 {
 		for _, file := range ev.Message.Files {
@@ -253,8 +256,7 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 			if localPath == "" {
 				continue
 			}
-			localFiles = append(localFiles, localPath)
-			mediaPaths = append(mediaPaths, localPath)
+			mediaPaths = append(mediaPaths, storeMedia(localPath, file.Name))
 
 			if utils.IsAudioFile(file.Name, file.Mimetype) && c.transcriber != nil && c.transcriber.IsAvailable() {
 				ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
