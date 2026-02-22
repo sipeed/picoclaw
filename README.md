@@ -268,12 +268,51 @@ Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
 
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
+| **HTTP**     | Automatic (enabled by default)    |
 | **Telegram** | Easy (just a token)                |
 | **Discord**  | Easy (bot token + intents)         |
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
 | **WeCom**    | Medium (CorpID + webhook setup)    |
+
+<details>
+<summary><b>HTTP</b> (Default)</summary>
+
+The HTTP channel is enabled by default and runs on `http://127.0.0.1:8070`. No configuration needed!
+
+**Access the web interface:**
+
+1. Start the gateway:
+```bash
+picoclaw gateway
+```
+
+2. Open your browser and navigate to `http://127.0.0.1:8070`
+
+**Configuration:**
+
+```json
+{
+  "channels": {
+    "http": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 8070
+    }
+  }
+}
+```
+
+**Features:**
+
+- Real-time chat interface
+- Markdown support with proper rendering
+- Responsive design for mobile and desktop
+
+The HTTP channel is perfect for testing, local development, or running PicoClaw on a headless server with a web UI.
+
+</details>
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
