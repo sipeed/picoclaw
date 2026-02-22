@@ -399,7 +399,7 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 	})
 
 	// Handle the message through the base channel
-	c.HandleMessage(peer, msg.MsgID, senderID, chatID, content, nil, metadata)
+	c.HandleMessage(ctx, peer, msg.MsgID, senderID, chatID, content, nil, metadata)
 }
 
 // sendWebhookReply sends a reply using the webhook URL

@@ -255,7 +255,8 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	go c.readLoop(pc)
 }
 
-// authenticate checks the Bearer token from header or query parameter.
+// authenticate checks the Bearer token from the Authorization header.
+// Query parameter authentication is only allowed when AllowTokenQuery is explicitly enabled.
 func (c *PicoChannel) authenticate(r *http.Request) bool {
 	token := c.config.Token
 	if token == "" {
@@ -270,9 +271,11 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 		}
 	}
 
-	// Check query parameter
-	if r.URL.Query().Get("token") == token {
-		return true
+	// Check query parameter only when explicitly allowed
+	if c.config.AllowTokenQuery {
+		if r.URL.Query().Get("token") == token {
+			return true
+		}
 	}
 
 	return false
@@ -417,7 +420,7 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		}
 	}
 
-	c.HandleMessage(peer, msg.ID, senderID, chatID, content, nil, metadata)
+	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, nil, metadata)
 }
 
 // truncate truncates a string to maxLen runes.

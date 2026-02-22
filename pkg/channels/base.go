@@ -9,6 +9,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 )
 
@@ -168,6 +169,7 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 }
 
 func (c *BaseChannel) HandleMessage(
+	ctx context.Context,
 	peer bus.Peer,
 	messageID, senderID, chatID, content string,
 	media []string,
@@ -191,7 +193,13 @@ func (c *BaseChannel) HandleMessage(
 		Metadata:   metadata,
 	}
 
-	c.bus.PublishInbound(context.TODO(), msg)
+	if err := c.bus.PublishInbound(ctx, msg); err != nil {
+		logger.ErrorCF("channels", "Failed to publish inbound message", map[string]any{
+			"channel": c.name,
+			"chat_id": chatID,
+			"error":   err.Error(),
+		})
+	}
 }
 
 func (c *BaseChannel) SetRunning(running bool) {

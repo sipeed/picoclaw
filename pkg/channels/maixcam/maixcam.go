@@ -179,7 +179,16 @@ func (c *MaixCamChannel) handlePersonDetection(msg MaixCamMessage) {
 		"h":         fmt.Sprintf("%.0f", h),
 	}
 
-	c.HandleMessage(bus.Peer{Kind: "channel", ID: "default"}, "", senderID, chatID, content, []string{}, metadata)
+	c.HandleMessage(
+		c.ctx,
+		bus.Peer{Kind: "channel", ID: "default"},
+		"",
+		senderID,
+		chatID,
+		content,
+		[]string{},
+		metadata,
+	)
 }
 
 func (c *MaixCamChannel) handleStatusUpdate(msg MaixCamMessage) {

@@ -25,23 +25,32 @@ type MediaStore interface {
 	// Resolve returns the local file path for a given ref.
 	Resolve(ref string) (localPath string, err error)
 
+	// ResolveWithMeta returns the local file path and metadata for a given ref.
+	ResolveWithMeta(ref string) (localPath string, meta MediaMeta, err error)
+
 	// ReleaseAll deletes all files registered under the given scope
 	// and removes the mapping entries. File-not-exist errors are ignored.
 	ReleaseAll(scope string) error
+}
+
+// mediaEntry holds the path and metadata for a stored media file.
+type mediaEntry struct {
+	path string
+	meta MediaMeta
 }
 
 // FileMediaStore is a pure in-memory implementation of MediaStore.
 // Files are expected to already exist on disk (e.g. in /tmp/picoclaw_media/).
 type FileMediaStore struct {
 	mu          sync.RWMutex
-	refToPath   map[string]string
+	refs        map[string]mediaEntry
 	scopeToRefs map[string]map[string]struct{}
 }
 
 // NewFileMediaStore creates a new FileMediaStore.
 func NewFileMediaStore() *FileMediaStore {
 	return &FileMediaStore{
-		refToPath:   make(map[string]string),
+		refs:        make(map[string]mediaEntry),
 		scopeToRefs: make(map[string]map[string]struct{}),
 	}
 }
@@ -49,15 +58,15 @@ func NewFileMediaStore() *FileMediaStore {
 // Store registers a local file under the given scope. The file must exist.
 func (s *FileMediaStore) Store(localPath string, meta MediaMeta, scope string) (string, error) {
 	if _, err := os.Stat(localPath); err != nil {
-		return "", fmt.Errorf("media store: file does not exist: %s", localPath)
+		return "", fmt.Errorf("media store: %s: %w", localPath, err)
 	}
 
-	ref := "media://" + uuid.New().String()[:8]
+	ref := "media://" + uuid.New().String()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.refToPath[ref] = localPath
+	s.refs[ref] = mediaEntry{path: localPath, meta: meta}
 	if s.scopeToRefs[scope] == nil {
 		s.scopeToRefs[scope] = make(map[string]struct{})
 	}
@@ -71,11 +80,23 @@ func (s *FileMediaStore) Resolve(ref string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	path, ok := s.refToPath[ref]
+	entry, ok := s.refs[ref]
 	if !ok {
 		return "", fmt.Errorf("media store: unknown ref: %s", ref)
 	}
-	return path, nil
+	return entry.path, nil
+}
+
+// ResolveWithMeta returns the local path and metadata for the given ref.
+func (s *FileMediaStore) ResolveWithMeta(ref string) (string, MediaMeta, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	entry, ok := s.refs[ref]
+	if !ok {
+		return "", MediaMeta{}, fmt.Errorf("media store: unknown ref: %s", ref)
+	}
+	return entry.path, entry.meta, nil
 }
 
 // ReleaseAll removes all files under the given scope and cleans up mappings.
@@ -89,11 +110,11 @@ func (s *FileMediaStore) ReleaseAll(scope string) error {
 	}
 
 	for ref := range refs {
-		if path, exists := s.refToPath[ref]; exists {
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if entry, exists := s.refs[ref]; exists {
+			if err := os.Remove(entry.path); err != nil && !os.IsNotExist(err) {
 				// Log but continue — best effort cleanup
 			}
-			delete(s.refToPath, ref)
+			delete(s.refs, ref)
 		}
 	}
 

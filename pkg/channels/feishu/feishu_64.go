@@ -131,7 +131,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	return nil
 }
 
-func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2MessageReceiveV1) error {
+func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
 		return nil
 	}
@@ -189,7 +189,7 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		"preview":   utils.Truncate(content, 80),
 	})
 
-	c.HandleMessage(peer, messageID, senderID, chatID, content, nil, metadata)
+	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata)
 	return nil
 }
 

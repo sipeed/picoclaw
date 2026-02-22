@@ -630,7 +630,7 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 	})
 
 	// Handle the message through the base channel
-	c.HandleMessage(peer, messageID, senderID, chatID, content, nil, metadata)
+	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata)
 }
 
 // tokenRefreshLoop periodically refreshes the access token

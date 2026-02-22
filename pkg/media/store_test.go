@@ -139,6 +139,50 @@ func TestStoreNonexistentFile(t *testing.T) {
 	if err == nil {
 		t.Error("Store should fail for nonexistent file")
 	}
+	// Error message should include the underlying os error, not just "file does not exist"
+	if !strings.Contains(err.Error(), "no such file or directory") {
+		t.Errorf("Error should contain OS error detail, got: %v", err)
+	}
+}
+
+func TestResolveWithMeta(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileMediaStore()
+
+	path := createTempFile(t, dir, "image.png")
+	meta := MediaMeta{
+		Filename:    "image.png",
+		ContentType: "image/png",
+		Source:      "telegram",
+	}
+
+	ref, err := store.Store(path, meta, "scope1")
+	if err != nil {
+		t.Fatalf("Store failed: %v", err)
+	}
+
+	resolvedPath, resolvedMeta, err := store.ResolveWithMeta(ref)
+	if err != nil {
+		t.Fatalf("ResolveWithMeta failed: %v", err)
+	}
+	if resolvedPath != path {
+		t.Errorf("ResolveWithMeta path = %q, want %q", resolvedPath, path)
+	}
+	if resolvedMeta.Filename != meta.Filename {
+		t.Errorf("ResolveWithMeta Filename = %q, want %q", resolvedMeta.Filename, meta.Filename)
+	}
+	if resolvedMeta.ContentType != meta.ContentType {
+		t.Errorf("ResolveWithMeta ContentType = %q, want %q", resolvedMeta.ContentType, meta.ContentType)
+	}
+	if resolvedMeta.Source != meta.Source {
+		t.Errorf("ResolveWithMeta Source = %q, want %q", resolvedMeta.Source, meta.Source)
+	}
+
+	// Unknown ref should fail
+	_, _, err = store.ResolveWithMeta("media://nonexistent")
+	if err == nil {
+		t.Error("ResolveWithMeta should fail for unknown ref")
+	}
 }
 
 func TestConcurrentSafety(t *testing.T) {

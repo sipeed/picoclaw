@@ -185,7 +185,13 @@ func gatewayCmd(debug bool) error {
 	}
 	cancel()
 	msgBus.Close()
-	channelManager.StopAll(ctx)
+
+	// Use a fresh context with timeout for graceful shutdown,
+	// since the original ctx is already cancelled.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+
+	channelManager.StopAll(shutdownCtx)
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()

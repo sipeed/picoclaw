@@ -381,7 +381,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
 	}
 
-	c.HandleMessage(peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata)
+	c.HandleMessage(c.ctx, peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata)
 }
 
 // startTyping starts a continuous typing indicator loop for the given chatID.

@@ -345,14 +345,15 @@ type WeComAppConfig struct {
 }
 
 type PicoConfig struct {
-	Enabled        bool                `json:"enabled"                   env:"PICOCLAW_CHANNELS_PICO_ENABLED"`
-	Token          string              `json:"token"                     env:"PICOCLAW_CHANNELS_PICO_TOKEN"`
-	AllowOrigins   []string            `json:"allow_origins,omitempty"`
-	PingInterval   int                 `json:"ping_interval,omitempty"`   // seconds, default 30
-	ReadTimeout    int                 `json:"read_timeout,omitempty"`    // seconds, default 60
-	WriteTimeout   int                 `json:"write_timeout,omitempty"`   // seconds, default 10
-	MaxConnections int                 `json:"max_connections,omitempty"` // default 100
-	AllowFrom      FlexibleStringSlice `json:"allow_from"                env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
+	Enabled         bool                `json:"enabled"                     env:"PICOCLAW_CHANNELS_PICO_ENABLED"`
+	Token           string              `json:"token"                       env:"PICOCLAW_CHANNELS_PICO_TOKEN"`
+	AllowTokenQuery bool                `json:"allow_token_query,omitempty"`
+	AllowOrigins    []string            `json:"allow_origins,omitempty"`
+	PingInterval    int                 `json:"ping_interval,omitempty"`
+	ReadTimeout     int                 `json:"read_timeout,omitempty"`
+	WriteTimeout    int                 `json:"write_timeout,omitempty"`
+	MaxConnections  int                 `json:"max_connections,omitempty"`
+	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {
