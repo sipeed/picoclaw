@@ -171,8 +171,11 @@ func (m *mockDataProvider) GetSessionStats() *stats.Stats {
 func (m *mockDataProvider) GetActiveSessions() []SessionInfo {
 	return []SessionInfo{}
 }
-func (m *mockDataProvider) GetGitInfo() []GitInfo {
+func (m *mockDataProvider) GetGitRepos() []GitRepoSummary {
 	return nil
+}
+func (m *mockDataProvider) GetGitRepoDetail(name string) GitInfo {
+	return GitInfo{Name: name}
 }
 
 type mockSender struct{}
@@ -448,8 +451,11 @@ func (m *mutatingDataProvider) GetSessionStats() *stats.Stats { return nil }
 func (m *mutatingDataProvider) GetActiveSessions() []SessionInfo {
 	return []SessionInfo{}
 }
-func (m *mutatingDataProvider) GetGitInfo() []GitInfo {
+func (m *mutatingDataProvider) GetGitRepos() []GitRepoSummary {
 	return nil
+}
+func (m *mutatingDataProvider) GetGitRepoDetail(name string) GitInfo {
+	return GitInfo{Name: name}
 }
 
 // drainEvents reads SSE event lines until it collects `want` distinct event names or times out.

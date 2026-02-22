@@ -58,6 +58,12 @@ type SessionInfo struct {
 	AgeSec     int    `json:"age_sec"`
 }
 
+// GitRepoSummary represents a lightweight repo entry for the list view.
+type GitRepoSummary struct {
+	Name   string `json:"name"`
+	Branch string `json:"branch"`
+}
+
 // GitInfo represents the git repository state exposed via the API.
 type GitInfo struct {
 	Name     string      `json:"name"`
@@ -86,7 +92,8 @@ type DataProvider interface {
 	GetPlanInfo() PlanInfo
 	GetSessionStats() *stats.Stats
 	GetActiveSessions() []SessionInfo
-	GetGitInfo() []GitInfo
+	GetGitRepos() []GitRepoSummary
+	GetGitRepoDetail(name string) GitInfo
 }
 
 // CommandSender injects a command into the message bus on behalf of a user.
@@ -234,7 +241,12 @@ func (h *Handler) apiSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) apiGit(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, h.provider.GetGitInfo())
+	repo := r.URL.Query().Get("repo")
+	if repo == "" {
+		writeJSON(w, h.provider.GetGitRepos())
+	} else {
+		writeJSON(w, h.provider.GetGitRepoDetail(repo))
+	}
 }
 
 func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
