@@ -153,7 +153,7 @@ func (m *Manager) initChannel(name, displayName string) {
 			}
 		}
 		// Inject PlaceholderRecorder if channel supports it
-		if setter, ok := ch.(interface{ SetPlaceholderRecorder(PlaceholderRecorder) }); ok {
+		if setter, ok := ch.(interface{ SetPlaceholderRecorder(r PlaceholderRecorder) }); ok {
 			setter.SetPlaceholderRecorder(m)
 		}
 		m.channels[name] = ch
