@@ -18,7 +18,9 @@ type FeishuChannel struct {
 
 // NewFeishuChannel returns an error on 32-bit architectures where the Feishu SDK is not supported
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
-	return nil, errors.New("feishu channel is not supported on 32-bit architectures (armv7l, 386, etc.). Please use a 64-bit system or disable feishu in your config")
+	return nil, errors.New(
+		"feishu channel is not supported on 32-bit architectures (armv7l, 386, etc.). Please use a 64-bit system or disable feishu in your config",
+	)
 }
 
 // Start is a stub method to satisfy the Channel interface

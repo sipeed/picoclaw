@@ -362,17 +362,25 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		peerID = fmt.Sprintf("%d", chatID)
 	}
 
+	peer := bus.Peer{Kind: peerKind, ID: peerID}
+	messageID := fmt.Sprintf("%d", message.MessageID)
+
 	metadata := map[string]string{
-		"message_id": fmt.Sprintf("%d", message.MessageID),
 		"user_id":    fmt.Sprintf("%d", user.ID),
 		"username":   user.Username,
 		"first_name": user.FirstName,
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
-		"peer_kind":  peerKind,
-		"peer_id":    peerID,
 	}
 
-	c.HandleMessage(fmt.Sprintf("%d", user.ID), fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+	c.HandleMessage(
+		peer,
+		messageID,
+		fmt.Sprintf("%d", user.ID),
+		fmt.Sprintf("%d", chatID),
+		content,
+		mediaPaths,
+		metadata,
+	)
 	return nil
 }
 

@@ -425,6 +425,9 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 
 	// Build metadata
 	// WeCom App only supports direct messages (private chat)
+	peer := bus.Peer{Kind: "direct", ID: senderID}
+	messageID := fmt.Sprintf("%d", msg.MsgId)
+
 	metadata := map[string]string{
 		"msg_type":    msg.MsgType,
 		"msg_id":      fmt.Sprintf("%d", msg.MsgId),
@@ -432,8 +435,6 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 		"platform":    "wecom_app",
 		"media_id":    msg.MediaId,
 		"create_time": fmt.Sprintf("%d", msg.CreateTime),
-		"peer_kind":   "direct",
-		"peer_id":     senderID,
 	}
 
 	content := msg.Content
@@ -445,7 +446,7 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 	})
 
 	// Handle the message through the base channel
-	c.HandleMessage(senderID, chatID, content, nil, metadata)
+	c.HandleMessage(peer, messageID, senderID, chatID, content, nil, metadata)
 }
 
 // tokenRefreshLoop periodically refreshes the access token
