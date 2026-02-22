@@ -115,6 +115,8 @@ func main() {
 		authCmd()
 	case "cron":
 		cronCmd()
+	case "memory":
+		memoryCmd()
 	case "skills":
 		if len(os.Args) < 3 {
 			skillsHelp()
@@ -185,6 +187,7 @@ func printHelp() {
 	fmt.Println("  status      Show picoclaw status")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
+	fmt.Println("  memory      Query and manage semantic memory store")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  version     Show version information")
 }
