@@ -11,6 +11,8 @@ jobs:
   build-arm64:
     name: Build Linux ARM64
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: 📢 Notify Start
         run: |
@@ -71,6 +73,14 @@ jobs:
           name: picoclaw-linux-arm64-${{ env.FORK_VERSION }}
           path: dist/*linux_arm64*/picoclaw*
           if-no-files-found: warn
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ env.FORK_VERSION }}" dist/*linux_arm64*/picoclaw* \
+            --title "Fork Build ${{ env.FORK_VERSION }}" \
+            --notes "Automated release from branch ${{ github.ref_name }}."
 
       - name: 📢 Notify Success
         if: success()
