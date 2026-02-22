@@ -831,6 +831,7 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 | `qwen`                     | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                         |
 | `cerebras`                 | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                                   |
+| `minimax`                  | LLM (MiniMax direct)                    | [platform.minimax.io](https://platform.minimax.io)               |
 
 ### Model Configuration (model_list)
 
@@ -862,6 +863,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
+| **MiniMax**         | `minimax/`        | `https://api.minimax.io/v1`                       | OpenAI    | [Get Key](https://platform.minimax.io)                         |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
 
