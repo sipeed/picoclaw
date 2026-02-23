@@ -210,6 +210,11 @@ type Handler struct {
 
 const maxWSClients = 4
 
+const (
+	wsPongWait   = 60 * time.Second
+	wsPingPeriod = 54 * time.Second // must be less than wsPongWait
+)
+
 type wsClient struct {
 	conn *websocket.Conn
 }
@@ -936,6 +941,13 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 	sub := logger.Subscribe(filter)
 	defer logger.Unsubscribe(sub)
 
+	// Configure ping/pong to detect dead connections
+	conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		return nil
+	})
+
 	// Send initial data
 	initial := logger.RecentLogs(minLevel, component, 50)
 	if err := conn.WriteJSON(map[string]any{"type": "init", "entries": initial}); err != nil {
@@ -953,7 +965,10 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Stream loop
+	// Stream loop with periodic pings
+	ticker := time.NewTicker(wsPingPeriod)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case entry, ok := <-sub.Ch:
@@ -963,6 +978,10 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 			entry.Caller = ""                              // strip for security
 			entry.Fields = logger.SanitizeFields(entry.Fields) // mask sensitive values
 			if err := conn.WriteJSON(map[string]any{"type": "entry", "entry": entry}); err != nil {
+				return
+			}
+		case <-ticker.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		case <-done:
