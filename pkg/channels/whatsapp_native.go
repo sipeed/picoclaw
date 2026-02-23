@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mdp/qrterminal/v3"
 	_ "modernc.org/sqlite"
@@ -35,16 +36,24 @@ import (
 const (
 	sqliteDriver   = "sqlite"
 	whatsappDBName = "store.db"
+
+	reconnectInitial   = 5 * time.Second
+	reconnectMax       = 5 * time.Minute
+	reconnectMultiplier = 2.0
 )
 
 // WhatsAppNativeChannel implements the WhatsApp channel using whatsmeow (in-process, no external bridge).
 type WhatsAppNativeChannel struct {
 	*BaseChannel
-	config    config.WhatsAppConfig
-	storePath string
-	client    *whatsmeow.Client
-	container *sqlstore.Container
-	mu        sync.Mutex
+	config       config.WhatsAppConfig
+	storePath    string
+	client       *whatsmeow.Client
+	container    *sqlstore.Container
+	mu           sync.Mutex
+	runCtx       context.Context
+	runCancel    context.CancelFunc
+	reconnectMu  sync.Mutex
+	reconnecting bool
 }
 
 // NewWhatsAppNativeChannel creates a WhatsApp channel that uses whatsmeow for connection.
@@ -133,6 +142,7 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 		}
 	}
 
+	c.runCtx, c.runCancel = context.WithCancel(ctx)
 	c.setRunning(true)
 	logger.InfoCF("channels", "WhatsApp native channel connected", nil)
 	return nil
@@ -140,6 +150,9 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 
 func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 	logger.InfoCF("channels", "Stopping WhatsApp native channel", nil)
+	if c.runCancel != nil {
+		c.runCancel()
+	}
 	c.mu.Lock()
 	client := c.client
 	container := c.container
@@ -158,9 +171,65 @@ func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 }
 
 func (c *WhatsAppNativeChannel) eventHandler(evt interface{}) {
-	switch v := evt.(type) {
+	switch evt.(type) {
 	case *events.Message:
-		c.handleIncoming(v)
+		c.handleIncoming(evt.(*events.Message))
+	case *events.Disconnected:
+		logger.InfoCF("channels", "WhatsApp disconnected, will attempt reconnection", nil)
+		c.reconnectMu.Lock()
+		if c.reconnecting {
+			c.reconnectMu.Unlock()
+			return
+		}
+		c.reconnecting = true
+		c.reconnectMu.Unlock()
+		go c.reconnectWithBackoff()
+	}
+}
+
+func (c *WhatsAppNativeChannel) reconnectWithBackoff() {
+	defer func() {
+		c.reconnectMu.Lock()
+		c.reconnecting = false
+		c.reconnectMu.Unlock()
+	}()
+
+	backoff := reconnectInitial
+	for {
+		select {
+		case <-c.runCtx.Done():
+			return
+		default:
+		}
+
+		c.mu.Lock()
+		client := c.client
+		c.mu.Unlock()
+		if client == nil {
+			return
+		}
+
+		logger.InfoCF("channels", "WhatsApp reconnecting", map[string]any{"backoff": backoff.String()})
+		err := client.Connect()
+		if err == nil {
+			logger.InfoCF("channels", "WhatsApp reconnected", nil)
+			return
+		}
+
+		logger.WarnCF("channels", "WhatsApp reconnect failed", map[string]any{"error": err.Error()})
+
+		select {
+		case <-c.runCtx.Done():
+			return
+		case <-time.After(backoff):
+			if backoff < reconnectMax {
+				next := time.Duration(float64(backoff) * reconnectMultiplier)
+				if next > reconnectMax {
+					next = reconnectMax
+				}
+				backoff = next
+			}
+		}
 	}
 }
 
