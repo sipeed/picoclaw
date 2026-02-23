@@ -122,7 +122,7 @@ func registerSharedTools(
 
 		// Message tool
 		messageTool := tools.NewMessageTool()
-		messageTool.SetSendCallback(func(channel, chatID, content string) error {
+		messageTool.SetSendCallback(func(_ context.Context, channel, chatID, content string) error {
 			msgBus.PublishOutbound(bus.OutboundMessage{
 				Channel: channel,
 				ChatID:  chatID,
@@ -219,9 +219,9 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 }
 
 // SetHooks installs a hook registry. Must be called before Run starts.
-func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) {
+func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) error {
 	if al.running.Load() {
-		panic("SetHooks must be called before Run starts")
+		return fmt.Errorf("SetHooks must be called before Run starts")
 	}
 	al.hooks = h
 
@@ -229,35 +229,35 @@ func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) {
 	for _, agentID := range al.registry.ListAgentIDs() {
 		if agent, ok := al.registry.GetAgent(agentID); ok {
 			if tool, ok := agent.Tools.Get("message"); ok {
-					if mt, ok := tool.(*tools.MessageTool); ok {
-						mt.SetSendCallback(func(channel, chatID, content string) error {
-							if sent, reason := al.sendOutbound(context.Background(), bus.OutboundMessage{
-								Channel: channel,
-								ChatID:  chatID,
-								Content: content,
-							}); !sent {
-								if strings.TrimSpace(reason) == "" {
-									reason = "unspecified"
-								}
-								return fmt.Errorf("message canceled by hook: %s", reason)
+				if mt, ok := tool.(*tools.MessageTool); ok {
+					mt.SetSendCallback(func(ctx context.Context, channel, chatID, content string) error {
+						if sent, reason := al.sendOutbound(ctx, bus.OutboundMessage{
+							Channel: channel,
+							ChatID:  chatID,
+							Content: content,
+						}); !sent {
+							if strings.TrimSpace(reason) == "" {
+								reason = "unspecified"
 							}
-							return nil
-						})
+							return fmt.Errorf("message canceled by hook: %s", reason)
+						}
+						return nil
+					})
 				}
 			}
 		}
 	}
+	return nil
 }
 
 // SetPluginManager installs a plugin manager and routes its hook registry into the loop.
 // Must be called before Run starts.
-func (al *AgentLoop) SetPluginManager(pm *plugin.Manager) {
+func (al *AgentLoop) SetPluginManager(pm *plugin.Manager) error {
 	al.pluginManager = pm
 	if pm == nil {
-		al.SetHooks(nil)
-		return
+		return al.SetHooks(nil)
 	}
-	al.SetHooks(pm.HookRegistry())
+	return al.SetHooks(pm.HookRegistry())
 }
 
 // EnablePlugins is a convenience helper to build and install a plugin manager.
@@ -266,8 +266,7 @@ func (al *AgentLoop) EnablePlugins(plugins ...plugin.Plugin) error {
 	if err := pm.RegisterAll(plugins...); err != nil {
 		return err
 	}
-	al.SetPluginManager(pm)
-	return nil
+	return al.SetPluginManager(pm)
 }
 
 // sendOutbound wraps bus.PublishOutbound with the message_sending hook.

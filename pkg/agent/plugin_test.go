@@ -56,7 +56,9 @@ func TestSetPluginManagerInstallsHookRegistry(t *testing.T) {
 		t.Fatalf("register plugin: %v", err)
 	}
 
-	al.SetPluginManager(pm)
+	if err := al.SetPluginManager(pm); err != nil {
+		t.Fatalf("SetPluginManager: %v", err)
+	}
 
 	if al.pluginManager == nil {
 		t.Fatal("expected plugin manager to be set")
@@ -78,7 +80,7 @@ func TestSetPluginManagerInstallsHookRegistry(t *testing.T) {
 	}
 }
 
-func TestSetHooksPanicsWhenRunning(t *testing.T) {
+func TestSetHooksReturnsErrorWhenRunning(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-plugin-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -100,11 +102,7 @@ func TestSetHooksPanicsWhenRunning(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
 	al.running.Store(true)
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic when calling SetHooks while running")
-		}
-	}()
-
-	al.SetHooks(hooks.NewHookRegistry())
+	if err := al.SetHooks(hooks.NewHookRegistry()); err == nil {
+		t.Fatal("expected error when calling SetHooks while running")
+	}
 }
