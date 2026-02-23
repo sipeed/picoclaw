@@ -223,7 +223,7 @@ func (c *WeComAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		"preview": utils.Truncate(msg.Content, 100),
 	})
 
-	return c.sendTextMessage(ctx, accessToken, msg.ChatID, msg.Content)
+	return c.sendMarkdownMessage(ctx, accessToken, msg.ChatID, msg.Content)
 }
 
 // handleWebhook handles incoming webhook requests from WeCom
