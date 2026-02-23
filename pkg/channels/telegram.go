@@ -158,7 +158,7 @@ func (c *TelegramChannel) registerCommands(ctx context.Context) error {
 		{Command: "start", Description: "Start the bot"},
 		{Command: "help", Description: "Show this help message"},
 		{Command: "show", Description: "Show current configuration"},
-		{Command: "list", Description: "List available options (models or channels)"},
+		{Command: "list", Description: "List available options"},
 	}
 
 	return c.bot.SetMyCommands(ctx, &telego.SetMyCommandsParams{
