@@ -6,12 +6,77 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 )
+
+// privateRanges contains CIDR blocks for private/reserved IP addresses.
+var privateRanges []*net.IPNet
+
+func init() {
+	for _, cidr := range []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"127.0.0.0/8",
+		"169.254.0.0/16",
+		"::1/128",
+		"fc00::/7",
+		"fe80::/10",
+	} {
+		_, network, _ := net.ParseCIDR(cidr)
+		privateRanges = append(privateRanges, network)
+	}
+}
+
+// blockedHosts contains hostnames that should never be accessed.
+var blockedHosts = map[string]bool{
+	"metadata.google.internal":  true,
+	"metadata.google.internal.": true,
+}
+
+// isPrivateIP checks if an IP is in a private or reserved range.
+func isPrivateIP(ip net.IP) bool {
+	for _, r := range privateRanges {
+		if r.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateURLSafety checks if a URL is safe to fetch (not targeting private infrastructure).
+func validateURLSafety(parsedURL *url.URL) error {
+	host := parsedURL.Hostname()
+
+	if blockedHosts[host] {
+		return fmt.Errorf("blocked: metadata endpoint")
+	}
+
+	// Check if host is a direct IP address
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateIP(ip) {
+			return fmt.Errorf("blocked: private IP address")
+		}
+		return nil
+	}
+
+	// Resolve hostname and check all IPs
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil // let DNS failures fail at HTTP level
+	}
+	for _, ip := range ips {
+		if isPrivateIP(ip) {
+			return fmt.Errorf("blocked: URL resolves to private IP")
+		}
+	}
+	return nil
+}
 
 const (
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -440,7 +505,8 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolR
 }
 
 type WebFetchTool struct {
-	maxChars int
+	maxChars      int
+	skipSSRFCheck bool // only for testing with httptest servers
 }
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {
@@ -497,6 +563,13 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("missing domain in URL")
 	}
 
+	// SSRF protection: block private IPs and metadata endpoints
+	if !t.skipSSRFCheck {
+		if err := validateURLSafety(parsedURL); err != nil {
+			return ErrorResult(err.Error())
+		}
+	}
+
 	maxChars := t.maxChars
 	if mc, ok := args["maxChars"].(float64); ok {
 		if int(mc) > 100 {
@@ -511,14 +584,35 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	req.Header.Set("User-Agent", userAgent)
 
+	transport := &http.Transport{
+		MaxIdleConns:        10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  false,
+		TLSHandshakeTimeout: 15 * time.Second,
+	}
+	// DNS rebinding protection: verify resolved IPs at connection time
+	if !t.skipSSRFCheck {
+		transport.DialContext = func(dialCtx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(dialCtx, host)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if isPrivateIP(ip.IP) {
+					return nil, fmt.Errorf("blocked: connection to private IP")
+				}
+			}
+			dialer := &net.Dialer{Timeout: 10 * time.Second}
+			return dialer.DialContext(dialCtx, network, net.JoinHostPort(ips[0].IP.String(), port))
+		}
+	}
 	client := &http.Client{
-		Timeout: 60 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false,
-			TLSHandshakeTimeout: 15 * time.Second,
-		},
+		Timeout:   60 * time.Second,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("stopped after 5 redirects")

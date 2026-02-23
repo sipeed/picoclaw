@@ -3,10 +3,14 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
@@ -18,7 +22,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := &WebFetchTool{maxChars: 50000, skipSSRFCheck: true}
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -54,7 +58,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := &WebFetchTool{maxChars: 50000, skipSSRFCheck: true}
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -75,7 +79,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 
 // TestWebTool_WebFetch_InvalidURL verifies error handling for invalid URL
 func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool := &WebFetchTool{maxChars: 50000, skipSSRFCheck: true}
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "not-a-valid-url",
@@ -96,7 +100,7 @@ func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 
 // TestWebTool_WebFetch_UnsupportedScheme verifies error handling for non-http URLs
 func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool := &WebFetchTool{maxChars: 50000, skipSSRFCheck: true}
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "ftp://example.com/file.txt",
@@ -117,7 +121,7 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingURL verifies error handling for missing URL
 func TestWebTool_WebFetch_MissingURL(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool := &WebFetchTool{maxChars: 50000, skipSSRFCheck: true}
 	ctx := context.Background()
 	args := map[string]any{}
 
@@ -145,7 +149,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(1000) // Limit to 1000 chars
+	tool := &WebFetchTool{maxChars: 1000, skipSSRFCheck: true} // Limit to 1000 chars
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -214,7 +218,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := &WebFetchTool{maxChars: 50000, skipSSRFCheck: true}
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -315,7 +319,7 @@ func TestWebFetchTool_extractText(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool := &WebFetchTool{maxChars: 50000, skipSSRFCheck: true}
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "https://",
@@ -404,4 +408,88 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	if !strings.Contains(result.ForUser, "via Tavily") {
 		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
 	}
+}
+
+// --- SSRF Protection Tests ---
+
+func TestIsPrivateIP(t *testing.T) {
+	tests := []struct {
+		ip      string
+		private bool
+	}{
+		{"127.0.0.1", true},
+		{"10.0.0.1", true},
+		{"172.16.0.1", true},
+		{"192.168.1.1", true},
+		{"169.254.169.254", true},
+		{"::1", true},
+		{"8.8.8.8", false},
+		{"1.1.1.1", false},
+		{"93.184.216.34", false},
+	}
+	for _, tt := range tests {
+		ip := net.ParseIP(tt.ip)
+		got := isPrivateIP(ip)
+		assert.Equal(t, tt.private, got, "isPrivateIP(%s)", tt.ip)
+	}
+}
+
+func TestValidateURLSafety_PrivateIPs(t *testing.T) {
+	tests := []struct {
+		urlStr    string
+		wantError bool
+	}{
+		{"http://127.0.0.1:8080/admin", true},
+		{"http://10.0.0.1/internal", true},
+		{"http://192.168.1.1/router", true},
+		{"http://169.254.169.254/latest/meta-data", true},
+		{"http://[::1]/path", true},
+	}
+	for _, tt := range tests {
+		parsed, _ := url.Parse(tt.urlStr)
+		err := validateURLSafety(parsed)
+		if tt.wantError {
+			assert.Error(t, err, "expected block for %s", tt.urlStr)
+		} else {
+			assert.NoError(t, err, "expected allow for %s", tt.urlStr)
+		}
+	}
+}
+
+func TestValidateURLSafety_MetadataEndpoints(t *testing.T) {
+	parsed, _ := url.Parse("http://metadata.google.internal/computeMetadata/v1/")
+	err := validateURLSafety(parsed)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "metadata")
+}
+
+func TestWebFetch_SSRF_BlocksPrivateIP(t *testing.T) {
+	tool := NewWebFetchTool(50000) // SSRF check enabled (default)
+	ctx := context.Background()
+
+	result := tool.Execute(ctx, map[string]any{"url": "http://127.0.0.1:8080/"})
+	assert.True(t, result.IsError)
+	assert.Contains(t, result.ForLLM, "blocked")
+}
+
+func TestWebFetch_SSRF_BlocksMetadata(t *testing.T) {
+	tool := NewWebFetchTool(50000)
+	ctx := context.Background()
+
+	result := tool.Execute(ctx, map[string]any{"url": "http://169.254.169.254/latest/meta-data"})
+	assert.True(t, result.IsError)
+	assert.Contains(t, result.ForLLM, "blocked")
+}
+
+func TestWebFetch_SSRF_AllowsPublicWithSkip(t *testing.T) {
+	// Verify that skipSSRFCheck allows httptest servers (127.0.0.1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}))
+	defer server.Close()
+
+	tool := &WebFetchTool{maxChars: 50000, skipSSRFCheck: true}
+	result := tool.Execute(context.Background(), map[string]any{"url": server.URL})
+	assert.False(t, result.IsError, "skipSSRFCheck should allow localhost: %s", result.ForLLM)
 }
