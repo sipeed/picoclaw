@@ -1,6 +1,9 @@
 package memory
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -189,7 +192,209 @@ func TestExtractWikilinks_Adjacent(t *testing.T) {
 	assertStringSlice(t, "links", links, []string{"one", "two"})
 }
 
+// --- ScanAll tests ---
+
+func TestScanAll_MultipleNotes(t *testing.T) {
+	dir := t.TempDir()
+
+	// Note with frontmatter in a subfolder
+	writeTestFile(t, dir, "topics/go-errors.md", `---
+title: Go Error Patterns
+created: 2026-02-20
+updated: 2026-02-23
+tags: [go, errors]
+aliases: [error-handling]
+---
+
+Content about Go errors. See [[testing-guide]].`)
+
+	// Note without frontmatter at root
+	writeTestFile(t, dir, "quick-note.md", "# Quick Note\n\nJust some text.")
+
+	// Daily note
+	writeTestFile(t, dir, "202602/20260223.md", `---
+title: 2026-02-23
+created: 2026-02-23
+updated: 2026-02-23
+tags: [daily]
+---
+
+Today's notes.`)
+
+	// _index.md should be skipped
+	writeTestFile(t, dir, "_index.md", "# Index\nShould be skipped.")
+
+	// Non-md file should be skipped
+	writeTestFile(t, dir, "notes.txt", "Not a markdown file.")
+
+	vault := NewVault(dir)
+	notes, err := vault.ScanAll()
+	if err != nil {
+		t.Fatalf("ScanAll error: %v", err)
+	}
+
+	if len(notes) != 3 {
+		t.Fatalf("got %d notes, want 3", len(notes))
+	}
+
+	// Find the go-errors note and verify metadata
+	var goErrors *NoteMeta
+	for i := range notes {
+		if strings.Contains(notes[i].RelPath, "go-errors") {
+			goErrors = &notes[i]
+			break
+		}
+	}
+	if goErrors == nil {
+		t.Fatal("go-errors note not found in scan results")
+	}
+	if goErrors.Title != "Go Error Patterns" {
+		t.Errorf("Title = %q, want %q", goErrors.Title, "Go Error Patterns")
+	}
+	assertStringSlice(t, "Tags", goErrors.Tags, []string{"go", "errors"})
+	assertStringSlice(t, "Links", goErrors.Links, []string{"testing-guide"})
+
+	// Note without frontmatter should use filename as title
+	var quickNote *NoteMeta
+	for i := range notes {
+		if strings.Contains(notes[i].RelPath, "quick-note") {
+			quickNote = &notes[i]
+			break
+		}
+	}
+	if quickNote == nil {
+		t.Fatal("quick-note not found in scan results")
+	}
+	if quickNote.Title != "quick-note" {
+		t.Errorf("Title = %q, want %q (inferred from filename)", quickNote.Title, "quick-note")
+	}
+}
+
+func TestScanAll_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	vault := NewVault(dir)
+	notes, err := vault.ScanAll()
+	if err != nil {
+		t.Fatalf("ScanAll error: %v", err)
+	}
+	if len(notes) != 0 {
+		t.Errorf("got %d notes, want 0", len(notes))
+	}
+}
+
+// --- RebuildIndex tests ---
+
+func TestRebuildIndex(t *testing.T) {
+	dir := t.TempDir()
+
+	writeTestFile(t, dir, "go-patterns.md", `---
+title: Go Patterns
+created: 2026-02-20
+updated: 2026-02-23
+tags: [go, patterns]
+aliases: [golang-patterns]
+---
+
+Go patterns content.`)
+
+	writeTestFile(t, dir, "hardware.md", `---
+title: Hardware Setup
+created: 2026-02-18
+updated: 2026-02-22
+tags: [hardware, setup]
+---
+
+Hardware content.`)
+
+	vault := NewVault(dir)
+	err := vault.RebuildIndex()
+	if err != nil {
+		t.Fatalf("RebuildIndex error: %v", err)
+	}
+
+	// Verify _index.md was created
+	indexPath := filepath.Join(dir, "_index.md")
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("Failed to read _index.md: %v", err)
+	}
+
+	index := string(data)
+
+	// Check structure
+	if !strings.Contains(index, "# Memory Vault Index") {
+		t.Error("Index missing header")
+	}
+	if !strings.Contains(index, "Auto-generated") {
+		t.Error("Index missing auto-generated comment")
+	}
+	if !strings.Contains(index, "## Notes") {
+		t.Error("Index missing Notes section")
+	}
+	if !strings.Contains(index, "## Tags") {
+		t.Error("Index missing Tags section")
+	}
+
+	// Check note entries
+	if !strings.Contains(index, "Go Patterns") {
+		t.Error("Index missing Go Patterns entry")
+	}
+	if !strings.Contains(index, "Hardware Setup") {
+		t.Error("Index missing Hardware Setup entry")
+	}
+
+	// Check tags
+	if !strings.Contains(index, "**go**") {
+		t.Error("Index missing 'go' tag")
+	}
+	if !strings.Contains(index, "**hardware**") {
+		t.Error("Index missing 'hardware' tag")
+	}
+
+	// Check aliases
+	if !strings.Contains(index, "## Aliases") {
+		t.Error("Index missing Aliases section")
+	}
+	if !strings.Contains(index, "golang-patterns") {
+		t.Error("Index missing golang-patterns alias")
+	}
+}
+
+// --- ReadIndex tests ---
+
+func TestReadIndex_Exists(t *testing.T) {
+	dir := t.TempDir()
+	indexContent := "# Memory Vault Index\n\nSome index content."
+	writeTestFile(t, dir, "_index.md", indexContent)
+
+	vault := NewVault(dir)
+	got := vault.ReadIndex()
+	if got != indexContent {
+		t.Errorf("ReadIndex = %q, want %q", got, indexContent)
+	}
+}
+
+func TestReadIndex_Missing(t *testing.T) {
+	dir := t.TempDir()
+	vault := NewVault(dir)
+	got := vault.ReadIndex()
+	if got != "" {
+		t.Errorf("ReadIndex = %q, want empty for missing index", got)
+	}
+}
+
 // --- Test helpers ---
+
+func writeTestFile(t *testing.T, dir, relPath, content string) {
+	t.Helper()
+	fullPath := filepath.Join(dir, filepath.FromSlash(relPath))
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatalf("Failed to create dir for %s: %v", relPath, err)
+	}
+	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("Failed to write %s: %v", relPath, err)
+	}
+}
 
 func assertStringSlice(t *testing.T, name string, got, want []string) {
 	t.Helper()

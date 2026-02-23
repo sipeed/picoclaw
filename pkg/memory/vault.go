@@ -1,6 +1,13 @@
 package memory
 
-import "strings"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+)
 
 // NoteMeta represents parsed frontmatter metadata from a single markdown note.
 type NoteMeta struct {
@@ -91,6 +98,131 @@ func parseBracketList(s string) []string {
 		return nil
 	}
 	return result
+}
+
+// ScanAll walks the memory directory recursively and returns metadata for all
+// markdown notes. It skips _index.md and non-.md files. Notes without
+// frontmatter get their title inferred from the filename.
+func (v *Vault) ScanAll() ([]NoteMeta, error) {
+	var notes []NoteMeta
+	err := filepath.WalkDir(v.memoryDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+		rel, _ := filepath.Rel(v.memoryDir, path)
+		rel = filepath.ToSlash(rel)
+		if rel == "_index.md" {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil // skip unreadable files
+		}
+		meta, body := ParseFrontmatter(string(content))
+		meta.RelPath = rel
+		meta.Links = ExtractWikilinks(body)
+		if meta.Title == "" {
+			base := filepath.Base(rel)
+			meta.Title = strings.TrimSuffix(base, ".md")
+		}
+		notes = append(notes, meta)
+		return nil
+	})
+	return notes, err
+}
+
+// RebuildIndex performs a full scan of all notes and regenerates _index.md.
+func (v *Vault) RebuildIndex() error {
+	notes, err := v.ScanAll()
+	if err != nil {
+		return err
+	}
+	return v.writeIndex(notes)
+}
+
+// ReadIndex reads and returns the current _index.md content.
+// Returns an empty string if the index file does not exist.
+func (v *Vault) ReadIndex() string {
+	data, err := os.ReadFile(filepath.Join(v.memoryDir, "_index.md"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// writeIndex generates _index.md from the given notes list.
+func (v *Vault) writeIndex(notes []NoteMeta) error {
+	// Sort notes by updated date (newest first), then by title
+	sort.Slice(notes, func(i, j int) bool {
+		if notes[i].Updated != notes[j].Updated {
+			return notes[i].Updated > notes[j].Updated
+		}
+		return notes[i].Title < notes[j].Title
+	})
+
+	// Collect unique tags and count
+	tagNotes := make(map[string][]string) // tag -> list of paths
+	for _, n := range notes {
+		for _, tag := range n.Tags {
+			tagNotes[tag] = append(tagNotes[tag], n.RelPath)
+		}
+	}
+
+	// Collect aliases
+	type aliasEntry struct {
+		alias string
+		path  string
+	}
+	var aliases []aliasEntry
+	for _, n := range notes {
+		for _, a := range n.Aliases {
+			aliases = append(aliases, aliasEntry{alias: a, path: n.RelPath})
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# Memory Vault Index\n")
+	sb.WriteString(fmt.Sprintf("<!-- Auto-generated. Do not edit manually. -->\n"))
+	sb.WriteString(fmt.Sprintf("<!-- Last rebuilt: %s -->\n", time.Now().Format(time.RFC3339)))
+	sb.WriteString(fmt.Sprintf("<!-- Notes: %d | Tags: %d -->\n", len(notes), len(tagNotes)))
+
+	// Notes table
+	sb.WriteString("\n## Notes\n\n")
+	sb.WriteString("| Title | Path | Tags | Updated |\n")
+	sb.WriteString("|-------|------|------|----------|\n")
+	for _, n := range notes {
+		tags := strings.Join(n.Tags, ", ")
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", n.Title, n.RelPath, tags, n.Updated))
+	}
+
+	// Tags section
+	sb.WriteString("\n## Tags\n\n")
+	sortedTags := make([]string, 0, len(tagNotes))
+	for tag := range tagNotes {
+		sortedTags = append(sortedTags, tag)
+	}
+	sort.Strings(sortedTags)
+	for _, tag := range sortedTags {
+		paths := tagNotes[tag]
+		sb.WriteString(fmt.Sprintf("- **%s** (%d): %s\n", tag, len(paths), strings.Join(paths, ", ")))
+	}
+
+	// Aliases section
+	if len(aliases) > 0 {
+		sb.WriteString("\n## Aliases\n\n")
+		sort.Slice(aliases, func(i, j int) bool {
+			return aliases[i].alias < aliases[j].alias
+		})
+		for _, a := range aliases {
+			sb.WriteString(fmt.Sprintf("- %s -> %s\n", a.alias, a.path))
+		}
+	}
+
+	indexPath := filepath.Join(v.memoryDir, "_index.md")
+	return os.WriteFile(indexPath, []byte(sb.String()), 0o644)
 }
 
 // ExtractWikilinks finds all [[target]] references in body text.
