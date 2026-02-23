@@ -12,15 +12,18 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/memory"
 )
 
 // MemoryStore manages persistent memory for the agent.
-// - Long-term memory: memory/MEMORY.md
-// - Daily notes: memory/YYYYMM/YYYYMMDD.md
+// It supports both the legacy MEMORY.md format and the new vault-based
+// index system. When a vault _index.md exists, it is preferred over MEMORY.md.
 type MemoryStore struct {
 	workspace  string
 	memoryDir  string
 	memoryFile string
+	vault      *memory.Vault
 }
 
 // NewMemoryStore creates a new MemoryStore with the given workspace path.
@@ -36,6 +39,7 @@ func NewMemoryStore(workspace string) *MemoryStore {
 		workspace:  workspace,
 		memoryDir:  memoryDir,
 		memoryFile: memoryFile,
+		vault:      memory.NewVault(memoryDir),
 	}
 }
 
@@ -123,24 +127,40 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 }
 
 // GetMemoryContext returns formatted memory context for the agent prompt.
-// Includes long-term memory and recent daily notes.
+// Prefers the vault index (_index.md) when available, falling back to
+// the legacy MEMORY.md. Recent daily notes are always included.
 func (ms *MemoryStore) GetMemoryContext() string {
-	longTerm := ms.ReadLongTerm()
+	// Prefer vault index over legacy MEMORY.md
+	index := ms.vault.ReadIndex()
+	if index == "" {
+		index = ms.ReadLongTerm()
+	}
+
 	recentNotes := ms.GetRecentDailyNotes(3)
 
-	if longTerm == "" && recentNotes == "" {
+	if index == "" && recentNotes == "" {
 		return ""
 	}
 
 	var sb strings.Builder
 
-	if longTerm != "" {
-		sb.WriteString("## Long-term Memory\n\n")
-		sb.WriteString(longTerm)
+	if index != "" {
+		sb.WriteString("## Memory Vault Index\n\n")
+		// Truncate if too large for system prompt
+		if len(index) > 4000 {
+			if tableEnd := strings.Index(index, "\n## Tags"); tableEnd > 0 {
+				sb.WriteString(index[:tableEnd])
+			} else {
+				sb.WriteString(index[:4000])
+				sb.WriteString("\n\n(Index truncated. Use memory_search for full details.)")
+			}
+		} else {
+			sb.WriteString(index)
+		}
 	}
 
 	if recentNotes != "" {
-		if longTerm != "" {
+		if index != "" {
 			sb.WriteString("\n\n---\n\n")
 		}
 		sb.WriteString("## Recent Daily Notes\n\n")

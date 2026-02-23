@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -54,6 +55,12 @@ func NewAgentInstance(
 	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
 	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
+
+	// Memory vault tools
+	memVault := memory.NewVault(filepath.Join(workspace, "memory"))
+	toolsRegistry.Register(tools.NewMemorySaveTool(memVault))
+	toolsRegistry.Register(tools.NewMemorySearchTool(memVault))
+	toolsRegistry.Register(tools.NewMemoryRecallTool(memVault))
 
 	// Configure security middleware from config
 	if cfg != nil {
