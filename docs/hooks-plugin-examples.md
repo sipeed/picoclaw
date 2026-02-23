@@ -2,7 +2,7 @@
 
 This guide shows how to extend PicoClaw behavior with `pkg/hooks` without modifying core agent logic.
 
-For future direction (beyond current hooks foundation), see [Plugin System Roadmap](design/plugin-system-roadmap.md).
+For future direction (beyond current hooks foundation), see [Plugin System Roadmap](plugin-system-roadmap.md).
 
 Current model:
 - "Plugin-style" means registering Go handlers at startup.
