@@ -218,6 +218,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					} else {
 						logger.DebugCF("agent", "Skipped outbound (message tool already sent)", map[string]any{"channel": msg.Channel})
 					}
+				}
 			}()
 		}
 	}
@@ -315,7 +316,6 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 
 // ProcessHeartbeat processes a heartbeat request without session history.
 // Each heartbeat is independent and doesn't accumulate context.
-// It uses the same mutex as processMessage so heartbeat and user messages never run concurrently.
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {

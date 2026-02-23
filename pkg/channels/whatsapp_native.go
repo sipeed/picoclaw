@@ -267,7 +267,7 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 		metadata["peer_id"] = senderID
 	}
 
-	logger.InfoCF("channels", "WhatsApp message received", map[string]any{"sender_id": senderID, "content_preview": utils.Truncate(content, 50)})
+	logger.DebugCF("channels", "WhatsApp message received", map[string]any{"sender_id": senderID, "content_preview": utils.Truncate(content, 50)})
 	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
 }
 
