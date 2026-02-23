@@ -383,6 +383,196 @@ func TestReadIndex_Missing(t *testing.T) {
 	}
 }
 
+// --- SaveNote tests ---
+
+func TestSaveNote_New(t *testing.T) {
+	dir := t.TempDir()
+	vault := NewVault(dir)
+
+	meta := NoteMeta{
+		Title:   "Test Note",
+		Tags:    []string{"test", "example"},
+		Aliases: []string{"test-alias"},
+	}
+	err := vault.SaveNote("topics/test-note.md", meta, "This is the body content.")
+	if err != nil {
+		t.Fatalf("SaveNote error: %v", err)
+	}
+
+	// Verify file was created with correct content
+	data, err := os.ReadFile(filepath.Join(dir, "topics", "test-note.md"))
+	if err != nil {
+		t.Fatalf("Failed to read saved note: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "title: Test Note") {
+		t.Error("Saved note missing title in frontmatter")
+	}
+	if !strings.Contains(content, "tags: [test, example]") {
+		t.Error("Saved note missing tags in frontmatter")
+	}
+	if !strings.Contains(content, "aliases: [test-alias]") {
+		t.Error("Saved note missing aliases in frontmatter")
+	}
+	if !strings.Contains(content, "created:") {
+		t.Error("Saved note missing created date")
+	}
+	if !strings.Contains(content, "This is the body content.") {
+		t.Error("Saved note missing body content")
+	}
+
+	// Verify index was updated
+	index := vault.ReadIndex()
+	if !strings.Contains(index, "Test Note") {
+		t.Error("Index not updated after SaveNote")
+	}
+}
+
+func TestSaveNote_UpdateExisting(t *testing.T) {
+	dir := t.TempDir()
+	vault := NewVault(dir)
+
+	// Save initial note
+	meta1 := NoteMeta{
+		Title: "Original Title",
+		Tags:  []string{"v1"},
+	}
+	vault.SaveNote("note.md", meta1, "Original body.")
+
+	// Read back to get the created date
+	data1, _ := os.ReadFile(filepath.Join(dir, "note.md"))
+	origMeta, _ := ParseFrontmatter(string(data1))
+	origCreated := origMeta.Created
+
+	// Update the same note
+	meta2 := NoteMeta{
+		Title: "Updated Title",
+		Tags:  []string{"v2"},
+	}
+	err := vault.SaveNote("note.md", meta2, "Updated body.")
+	if err != nil {
+		t.Fatalf("SaveNote update error: %v", err)
+	}
+
+	// Verify created date was preserved
+	data2, _ := os.ReadFile(filepath.Join(dir, "note.md"))
+	updatedMeta, _ := ParseFrontmatter(string(data2))
+
+	if updatedMeta.Created != origCreated {
+		t.Errorf("Created date changed: %q -> %q", origCreated, updatedMeta.Created)
+	}
+	if updatedMeta.Title != "Updated Title" {
+		t.Errorf("Title = %q, want %q", updatedMeta.Title, "Updated Title")
+	}
+}
+
+// --- ReadNote tests ---
+
+func TestReadNote(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "test.md", "# Test\nContent.")
+
+	vault := NewVault(dir)
+	content, err := vault.ReadNote("test.md")
+	if err != nil {
+		t.Fatalf("ReadNote error: %v", err)
+	}
+	if content != "# Test\nContent." {
+		t.Errorf("ReadNote = %q, want %q", content, "# Test\nContent.")
+	}
+}
+
+func TestReadNote_Missing(t *testing.T) {
+	dir := t.TempDir()
+	vault := NewVault(dir)
+	_, err := vault.ReadNote("nonexistent.md")
+	if err == nil {
+		t.Error("ReadNote should error for missing file")
+	}
+}
+
+// --- Search tests ---
+
+func TestSearch_ByTags(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "a.md", "---\ntitle: Note A\ntags: [go, errors]\n---\nContent A.")
+	writeTestFile(t, dir, "b.md", "---\ntitle: Note B\ntags: [go, testing]\n---\nContent B.")
+	writeTestFile(t, dir, "c.md", "---\ntitle: Note C\ntags: [python]\n---\nContent C.")
+
+	vault := NewVault(dir)
+	results, err := vault.Search("", []string{"go"})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2", len(results))
+	}
+
+	// Search with AND logic: must have both tags
+	results2, err := vault.Search("", []string{"go", "errors"})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(results2) != 1 {
+		t.Fatalf("got %d results for AND search, want 1", len(results2))
+	}
+	if results2[0].Title != "Note A" {
+		t.Errorf("Title = %q, want %q", results2[0].Title, "Note A")
+	}
+}
+
+func TestSearch_ByQuery(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "go-errors.md", "---\ntitle: Go Error Patterns\ntags: [go]\n---\nContent.")
+	writeTestFile(t, dir, "python.md", "---\ntitle: Python Basics\ntags: [python]\n---\nContent.")
+
+	vault := NewVault(dir)
+	results, err := vault.Search("Error", nil)
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if results[0].Title != "Go Error Patterns" {
+		t.Errorf("Title = %q, want %q", results[0].Title, "Go Error Patterns")
+	}
+}
+
+func TestSearch_Combined(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "a.md", "---\ntitle: Go Errors\ntags: [go, errors]\n---\nContent.")
+	writeTestFile(t, dir, "b.md", "---\ntitle: Go Testing\ntags: [go, testing]\n---\nContent.")
+	writeTestFile(t, dir, "c.md", "---\ntitle: Python Errors\ntags: [python, errors]\n---\nContent.")
+
+	vault := NewVault(dir)
+	results, err := vault.Search("Go", []string{"errors"})
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if results[0].Title != "Go Errors" {
+		t.Errorf("Title = %q, want %q", results[0].Title, "Go Errors")
+	}
+}
+
+func TestSearch_NoResults(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "a.md", "---\ntitle: Note A\ntags: [go]\n---\nContent.")
+
+	vault := NewVault(dir)
+	results, err := vault.Search("nonexistent", nil)
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("got %d results, want 0", len(results))
+	}
+}
+
 // --- Test helpers ---
 
 func writeTestFile(t *testing.T, dir, relPath, content string) {

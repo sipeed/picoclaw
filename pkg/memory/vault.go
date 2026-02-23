@@ -225,6 +225,115 @@ func (v *Vault) writeIndex(notes []NoteMeta) error {
 	return os.WriteFile(indexPath, []byte(sb.String()), 0o644)
 }
 
+// SaveNote writes a markdown note with generated frontmatter and updates the index.
+// If the note already exists, the original created date is preserved.
+func (v *Vault) SaveNote(relPath string, meta NoteMeta, body string) error {
+	absPath := filepath.Join(v.memoryDir, filepath.FromSlash(relPath))
+
+	// Preserve created date from existing note
+	today := time.Now().Format("2006-01-02")
+	created := today
+	if data, err := os.ReadFile(absPath); err == nil {
+		existing, _ := ParseFrontmatter(string(data))
+		if existing.Created != "" {
+			created = existing.Created
+		}
+	}
+
+	// Build frontmatter
+	var sb strings.Builder
+	sb.WriteString("---\n")
+	sb.WriteString(fmt.Sprintf("title: %s\n", meta.Title))
+	sb.WriteString(fmt.Sprintf("created: %s\n", created))
+	sb.WriteString(fmt.Sprintf("updated: %s\n", today))
+	if len(meta.Tags) > 0 {
+		sb.WriteString(fmt.Sprintf("tags: [%s]\n", strings.Join(meta.Tags, ", ")))
+	}
+	if len(meta.Aliases) > 0 {
+		sb.WriteString(fmt.Sprintf("aliases: [%s]\n", strings.Join(meta.Aliases, ", ")))
+	}
+	sb.WriteString("---\n\n")
+	sb.WriteString(body)
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+	if err := os.WriteFile(absPath, []byte(sb.String()), 0o644); err != nil {
+		return fmt.Errorf("failed to write note: %w", err)
+	}
+
+	// Update index after save
+	return v.RebuildIndex()
+}
+
+// ReadNote reads the full content of a note by its relative path within the vault.
+func (v *Vault) ReadNote(relPath string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(v.memoryDir, filepath.FromSlash(relPath)))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// Search finds notes matching the given query and/or tags.
+// Tags use AND logic: a note must have all specified tags to match.
+// Query matches against title, tags, and aliases (case-insensitive).
+func (v *Vault) Search(query string, tags []string) ([]NoteMeta, error) {
+	notes, err := v.ScanAll()
+	if err != nil {
+		return nil, err
+	}
+
+	var results []NoteMeta
+	queryLower := strings.ToLower(query)
+
+	for _, n := range notes {
+		// Tag filter (AND logic)
+		if len(tags) > 0 && !hasAllTags(n.Tags, tags) {
+			continue
+		}
+
+		// Query filter
+		if query != "" {
+			titleMatch := strings.Contains(strings.ToLower(n.Title), queryLower)
+			tagMatch := containsAnyLower(n.Tags, queryLower)
+			aliasMatch := containsAnyLower(n.Aliases, queryLower)
+			if !titleMatch && !tagMatch && !aliasMatch {
+				continue
+			}
+		}
+
+		results = append(results, n)
+	}
+
+	return results, nil
+}
+
+// hasAllTags returns true if noteTags contains all of the required tags.
+func hasAllTags(noteTags, required []string) bool {
+	tagSet := make(map[string]bool, len(noteTags))
+	for _, t := range noteTags {
+		tagSet[strings.ToLower(t)] = true
+	}
+	for _, r := range required {
+		if !tagSet[strings.ToLower(r)] {
+			return false
+		}
+	}
+	return true
+}
+
+// containsAnyLower returns true if any item in the slice contains the query (case-insensitive).
+func containsAnyLower(items []string, queryLower string) bool {
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item), queryLower) {
+			return true
+		}
+	}
+	return false
+}
+
 // ExtractWikilinks finds all [[target]] references in body text.
 // Returns a slice of link targets with the brackets stripped.
 func ExtractWikilinks(body string) []string {
