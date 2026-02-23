@@ -340,7 +340,15 @@ func (cs *CronService) saveStoreUnsafe() error {
 		return err
 	}
 
-	return os.WriteFile(cs.storePath, data, 0o600)
+	// Write atomically: write to a temp file then rename.
+	// os.WriteFile truncates the file before writing, so a crash between
+	// truncation and completion leaves an empty or partial file.
+	// os.Rename on the same filesystem is atomic on Linux.
+	tmpPath := cs.storePath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, cs.storePath)
 }
 
 func (cs *CronService) AddJob(
