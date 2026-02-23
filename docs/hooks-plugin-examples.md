@@ -15,7 +15,7 @@ PicoClaw's plugin model is a startup-time hook registry:
 
 1. Build a registry (`hooks.NewHookRegistry()`).
 2. Register one or more handlers per lifecycle hook with priority.
-3. Attach once with `agentLoop.SetHooks(registry)` before `agentLoop.Run(...)`.
+3. Attach once with `agentLoop.SetHooks(registry)` before `agentLoop.Run(...)` (check error).
 4. Agent loop triggers hook handlers at specific lifecycle points.
 
 Execution semantics:
@@ -114,7 +114,9 @@ Attach once during startup:
 
 ```go
 agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
-agentLoop.SetHooks(buildHooks()) // Must be called before Run()
+if err := agentLoop.SetHooks(buildHooks()); err != nil {
+	panic(err) // replace with your startup error handling
+}
 ```
 
 ## Priority and Cancellation

@@ -1008,7 +1008,7 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
 PicoClaw provides typed lifecycle hooks for observability, outbound filtering, and tool guardrails.
 
 - Register hooks in Go at startup with `hooks.NewHookRegistry()`.
-- Attach once via `agentLoop.SetHooks(registry)` before `Run()`.
+- Attach once via `agentLoop.SetHooks(registry)` before `Run()` and handle setup errors.
 - If hooks are not set, default behavior is unchanged.
 
 See runnable examples: [docs/hooks-plugin-examples.md](docs/hooks-plugin-examples.md)
