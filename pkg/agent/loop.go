@@ -168,18 +168,20 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
-			// Process message and ensure media is released afterward
+			// Process message
 			func() {
-				defer func() {
-					if al.mediaStore != nil && msg.MediaScope != "" {
-						if releaseErr := al.mediaStore.ReleaseAll(msg.MediaScope); releaseErr != nil {
-							logger.WarnCF("agent", "Failed to release media", map[string]any{
-								"scope": msg.MediaScope,
-								"error": releaseErr.Error(),
-							})
-						}
-					}
-				}()
+				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
+				// Currently disabled because files are deleted before the LLM can access their content.
+				// defer func() {
+				// 	if al.mediaStore != nil && msg.MediaScope != "" {
+				// 		if releaseErr := al.mediaStore.ReleaseAll(msg.MediaScope); releaseErr != nil {
+				// 			logger.WarnCF("agent", "Failed to release media", map[string]any{
+				// 				"scope": msg.MediaScope,
+				// 				"error": releaseErr.Error(),
+				// 			})
+				// 		}
+				// 	}
+				// }()
 
 				response, err := al.processMessage(ctx, msg)
 				if err != nil {
