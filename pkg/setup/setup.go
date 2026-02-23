@@ -103,6 +103,18 @@ func (s *Setup) AskMissing() error {
 func (s *Setup) RunNonInteractive() error {
 	cfg := s.Cfg
 
+	if _, err := os.Stat(s.ConfigPath); err == nil {
+		fmt.Print("Config already exists. Overwrite and reset to default? (yes/no): ")
+		var answer string
+		fmt.Scanln(&answer)
+		if answer != "yes" && answer != "y" {
+			fmt.Println("Cancelled.")
+			return nil
+		}
+		cfg = config.DefaultConfig()
+		s.Cfg = cfg
+	}
+
 	if cfg.Agents.Defaults.Workspace == "" {
 		cfg.Agents.Defaults.Workspace = "~/.picoclaw/workspace"
 	}
@@ -120,7 +132,7 @@ func (s *Setup) RunNonInteractive() error {
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╔═══════════════════════════════════════════════════════╗")))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("║              PicoClaw Setup Complete                ║")))
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("║              PicoClaw Setup Complete                  ║")))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╚═══════════════════════════════════════════════════════╝")))
 	b.WriteString("\n\n")
@@ -141,7 +153,7 @@ func (s *Setup) RunNonInteractive() error {
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
 	b.WriteString("\n\n")
 
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("📋 IMPORTANT COMMANDS")))
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("IMPORTANT COMMANDS")))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(highlightStyle.Render("  picoclaw agent             - Start chatting with the agent")))
 	b.WriteString("\n")
@@ -181,7 +193,7 @@ func (s *Setup) RunNonInteractive() error {
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
 	b.WriteString("\n\n")
 
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("💬 CHANNELS (in config.json)")))
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("CHANNELS (in config.json)")))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(highlightStyle.Render("  telegram    : Telegram bot (token from @BotFather)")))
 	b.WriteString("\n")
@@ -211,7 +223,7 @@ func (s *Setup) RunNonInteractive() error {
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
 	b.WriteString("\n\n")
 
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("🤖 MODELS (in model_list)")))
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("MODELS (in model_list)")))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  Format: {\"model\": \"provider/model-id\", \"api_base\": \"url\"}")))
 	b.WriteString("\n\n")
@@ -229,7 +241,7 @@ func (s *Setup) RunNonInteractive() error {
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
 	b.WriteString("\n\n")
 
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("🚀 NEXT STEPS")))
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("NEXT STEPS")))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(highlightStyle.Render("  1. Edit config.json to add your provider API key")))
 	b.WriteString("\n")
@@ -685,8 +697,8 @@ func (t *tuiModel) validateSession(questions []Question) []string {
 		if q.ID == "provider_api_base" {
 			continue
 		}
-		// Skip provider_api_key if using oauth_login
-		if q.ID == "provider_api_key" && t.answers["provider_auth_method"] == "oauth_login" {
+		// Skip provider_api_key - it's optional (can be added in config.json later)
+		if q.ID == "provider_api_key" {
 			continue
 		}
 		// Skip channel token fields - they're optional based on channel selection
