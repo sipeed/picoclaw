@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2347,4 +2348,159 @@ func TestConsumeStream_OnChunkWithRepetitionDetection(t *testing.T) {
 		t.Error("expected onChunk to be called at least once")
 	}
 	_ = ctx
+}
+
+// modelCapturingMockProvider records which model was passed to Chat.
+type modelCapturingMockProvider struct {
+	mu        sync.Mutex
+	models    []string
+	response  string
+}
+
+func (m *modelCapturingMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools_ []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.mu.Lock()
+	m.models = append(m.models, model)
+	m.mu.Unlock()
+	return &providers.LLMResponse{
+		Content:   m.response,
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *modelCapturingMockProvider) GetDefaultModel() string {
+	return "mock-capture-model"
+}
+
+func TestAgentLoop_PlanModel_UsedDuringInterviewing(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-planmodel-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "normal-model",
+				PlanModel:         "plan-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 2,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &modelCapturingMockProvider{response: "Plan interview response"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	// Write MEMORY.md with interviewing status to activate plan model
+	memoryDir := filepath.Join(tmpDir, "memory")
+	os.MkdirAll(memoryDir, 0o755)
+	memoryPath := filepath.Join(memoryDir, "MEMORY.md")
+	memoryContent := "# Active Plan\n\n> Task: Test plan model\n> Status: interviewing\n> Phase: 1\n"
+	if err := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); err != nil {
+		t.Fatalf("Failed to write MEMORY.md: %v", err)
+	}
+
+	_, err = al.ProcessDirectWithChannel(
+		context.Background(),
+		"Hello, plan model test",
+		"test-plan-session",
+		"test",
+		"test-chat",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+
+	if len(provider.models) == 0 {
+		t.Fatal("Expected at least one Chat call")
+	}
+	// The first call should use the plan model since we're in interviewing state
+	if provider.models[0] != "plan-model" {
+		t.Errorf("Expected plan model 'plan-model' during interviewing, got %q", provider.models[0])
+	}
+}
+
+func TestAgentLoop_PlanModel_NotUsedDuringExecuting(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-planmodel-exec-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "normal-model",
+				PlanModel:         "plan-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 2,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &modelCapturingMockProvider{response: "Executing response"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	// Write MEMORY.md with executing status - should use normal model
+	memoryDir := filepath.Join(tmpDir, "memory")
+	os.MkdirAll(memoryDir, 0o755)
+	memoryPath := filepath.Join(memoryDir, "MEMORY.md")
+	memoryContent := `# Active Plan
+
+> Task: Test plan model
+> Status: executing
+> Phase: 1
+
+## Phase 1: Build
+- [ ] Run build
+`
+	if err := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); err != nil {
+		t.Fatalf("Failed to write MEMORY.md: %v", err)
+	}
+
+	_, err = al.ProcessDirectWithChannel(
+		context.Background(),
+		"Hello, executing test",
+		"test-exec-session",
+		"test",
+		"test-chat",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+
+	if len(provider.models) == 0 {
+		t.Fatal("Expected at least one Chat call")
+	}
+	// During executing phase, should use normal model, not plan model
+	if provider.models[0] != "normal-model" {
+		t.Errorf("Expected normal model 'normal-model' during executing, got %q", provider.models[0])
+	}
 }
