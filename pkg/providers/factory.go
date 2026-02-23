@@ -178,6 +178,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.model = "deepseek-chat"
 				}
 			}
+		case "mistral":
+			if cfg.Providers.Mistral.APIKey != "" {
+				sel.apiKey = cfg.Providers.Mistral.APIKey
+				sel.apiBase = cfg.Providers.Mistral.APIBase
+				sel.proxy = cfg.Providers.Mistral.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.mistral.ai/v1"
+				}
+			}
 		case "github_copilot", "copilot":
 			sel.providerType = providerTypeGitHubCopilot
 			if cfg.Providers.GitHubCopilot.APIBase != "" {
@@ -280,6 +289,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.Ollama.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "http://localhost:11434/v1"
+			}
+		case (strings.Contains(lowerModel, "mistral") || strings.HasPrefix(model, "mistral/")) && cfg.Providers.Mistral.APIKey != "":
+			sel.apiKey = cfg.Providers.Mistral.APIKey
+			sel.apiBase = cfg.Providers.Mistral.APIBase
+			sel.proxy = cfg.Providers.Mistral.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.mistral.ai/v1"
 			}
 		case cfg.Providers.VLLM.APIBase != "":
 			sel.apiKey = cfg.Providers.VLLM.APIKey

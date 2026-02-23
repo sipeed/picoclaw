@@ -131,14 +131,15 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 			GitHubCopilot: ProviderConfig{ConnectMode: "grpc"},
 			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
 			Qwen:          ProviderConfig{APIKey: "key17"},
+			Mistral:       ProviderConfig{APIKey: "key18"},
 		},
 	}
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 17 providers should be converted
-	if len(result) != 17 {
-		t.Errorf("len(result) = %d, want 17", len(result))
+	// All 18 providers should be converted
+	if len(result) != 18 {
+		t.Errorf("len(result) = %d, want 18", len(result))
 	}
 }
 
@@ -361,7 +362,10 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 				Agents: AgentsConfig{
 					Defaults: AgentDefaults{
 						Provider: tt.providerAlias,
-						Model:    strings.TrimPrefix(tt.expectedModel, tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1]),
+						Model: strings.TrimPrefix(
+							tt.expectedModel,
+							tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1],
+						),
 					},
 				},
 				Providers: ProvidersConfig{},
@@ -382,7 +386,10 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 			}
 
 			// Need to fix the model name in config
-			cfg.Agents.Defaults.Model = strings.TrimPrefix(tt.expectedModel, tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1])
+			cfg.Agents.Defaults.Model = strings.TrimPrefix(
+				tt.expectedModel,
+				tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1],
+			)
 
 			result := ConvertProvidersToModelList(cfg)
 			if len(result) != 1 {
@@ -515,7 +522,11 @@ func TestBuildModelWithProtocol_AlreadyHasPrefix(t *testing.T) {
 func TestBuildModelWithProtocol_DifferentPrefix(t *testing.T) {
 	result := buildModelWithProtocol("anthropic", "openrouter/claude-sonnet-4.6")
 	if result != "openrouter/claude-sonnet-4.6" {
-		t.Errorf("buildModelWithProtocol(anthropic, openrouter/claude-sonnet-4.6) = %q, want %q", result, "openrouter/claude-sonnet-4.6")
+		t.Errorf(
+			"buildModelWithProtocol(anthropic, openrouter/claude-sonnet-4.6) = %q, want %q",
+			result,
+			"openrouter/claude-sonnet-4.6",
+		)
 	}
 }
 

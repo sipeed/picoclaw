@@ -119,15 +119,15 @@ func (t *ExecTool) Description() string {
 	return "Execute a shell command and return its output. Use with caution."
 }
 
-func (t *ExecTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *ExecTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"command": map[string]interface{}{
+		"properties": map[string]any{
+			"command": map[string]any{
 				"type":        "string",
 				"description": "The shell command to execute",
 			},
-			"working_dir": map[string]interface{}{
+			"working_dir": map[string]any{
 				"type":        "string",
 				"description": "Optional working directory for the command",
 			},
@@ -136,7 +136,7 @@ func (t *ExecTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	command, ok := args["command"].(string)
 	if !ok {
 		return ErrorResult("command is required")
@@ -144,7 +144,15 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		cwd = wd
+		if t.restrictToWorkspace && t.workingDir != "" {
+			resolvedWD, err := validatePath(wd, t.workingDir, true)
+			if err != nil {
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
+			}
+			cwd = resolvedWD
+		} else {
+			cwd = wd
+		}
 	}
 
 	if cwd == "" {

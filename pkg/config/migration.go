@@ -325,6 +325,22 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 			},
 		},
 		{
+			providerNames: []string{"mistral"},
+			protocol:      "mistral",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Mistral.APIKey == "" && p.Mistral.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "mistral",
+					Model:     "mistral/mistral-small-latest",
+					APIKey:    p.Mistral.APIKey,
+					APIBase:   p.Mistral.APIBase,
+					Proxy:     p.Mistral.Proxy,
+				}, true
+			},
+		},
+		{
 			providerNames: []string{"picolm"},
 			protocol:      "picolm",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {

@@ -77,7 +77,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to get websocket info: %w", err)
 	}
 
-	logger.InfoCF("qq", "Got WebSocket info", map[string]interface{}{
+	logger.InfoCF("qq", "Got WebSocket info", map[string]any{
 		"shards": wsInfo.Shards,
 	})
 
@@ -87,7 +87,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	// 在 goroutine 中启动 WebSocket 连接，避免阻塞
 	go func() {
 		if err := c.sessionManager.Start(wsInfo, c.tokenSource, &intent); err != nil {
-			logger.ErrorCF("qq", "WebSocket session error", map[string]interface{}{
+			logger.ErrorCF("qq", "WebSocket session error", map[string]any{
 				"error": err.Error(),
 			})
 			c.setRunning(false)
@@ -124,7 +124,7 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	// C2C 消息发送
 	_, err := c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
 	if err != nil {
-		logger.ErrorCF("qq", "Failed to send C2C message", map[string]interface{}{
+		logger.ErrorCF("qq", "Failed to send C2C message", map[string]any{
 			"error": err.Error(),
 		})
 		return err
@@ -157,7 +157,7 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 			return nil
 		}
 
-		logger.InfoCF("qq", "Received C2C message", map[string]interface{}{
+		logger.InfoCF("qq", "Received C2C message", map[string]any{
 			"sender": senderID,
 			"length": len(content),
 		})
@@ -199,7 +199,7 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			return nil
 		}
 
-		logger.InfoCF("qq", "Received group AT message", map[string]interface{}{
+		logger.InfoCF("qq", "Received group AT message", map[string]any{
 			"sender": senderID,
 			"group":  data.GroupID,
 			"length": len(content),
