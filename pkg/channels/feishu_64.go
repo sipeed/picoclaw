@@ -121,6 +121,15 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	}
 
 	if !resp.Success() {
+		fields := map[string]any{
+			"chat_id": msg.ChatID,
+			"code":    resp.Code,
+			"msg":     resp.Msg,
+		}
+		if resp.Code == 99991672 {
+			fields["hint"] = "missing app scopes, enable im:message:send_as_bot (or equivalent) and publish the app"
+		}
+		logger.ErrorCF("feishu", "Feishu message send rejected", fields)
 		return fmt.Errorf("feishu api error: code=%d msg=%s", resp.Code, resp.Msg)
 	}
 

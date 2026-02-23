@@ -1,6 +1,12 @@
 package channels
 
-import "testing"
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/sipeed/picoclaw/pkg/bus"
+)
 
 func TestBaseChannelIsAllowed(t *testing.T) {
 	tests := []struct {
@@ -48,5 +54,36 @@ func TestBaseChannelIsAllowed(t *testing.T) {
 				t.Fatalf("IsAllowed(%q) = %v, want %v", tt.senderID, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBaseChannelHandleMessageAllowList(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	ch := NewBaseChannel("test", nil, msgBus, []string{"allowed"})
+
+	ch.HandleMessage("blocked", "chat-1", "denied", nil, nil)
+
+	deniedCtx, deniedCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer deniedCancel()
+	if msg, ok := msgBus.ConsumeInbound(deniedCtx); ok {
+		t.Fatalf("expected denied sender to be dropped, got message: %+v", msg)
+	}
+
+	ch.HandleMessage("allowed", "chat-1", "accepted", []string{"m1"}, map[string]string{"k": "v"})
+
+	allowedCtx, allowedCancel := context.WithTimeout(context.Background(), time.Second)
+	defer allowedCancel()
+	msg, ok := msgBus.ConsumeInbound(allowedCtx)
+	if !ok {
+		t.Fatal("expected allowed sender message to be published")
+	}
+	if msg.Channel != "test" || msg.SenderID != "allowed" || msg.ChatID != "chat-1" || msg.Content != "accepted" {
+		t.Fatalf("unexpected inbound message: %+v", msg)
+	}
+	if len(msg.Media) != 1 || msg.Media[0] != "m1" {
+		t.Fatalf("unexpected media payload: %+v", msg.Media)
+	}
+	if msg.Metadata["k"] != "v" {
+		t.Fatalf("unexpected metadata: %+v", msg.Metadata)
 	}
 }

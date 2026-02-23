@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 type Channel interface {
@@ -83,6 +84,12 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 
 func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []string, metadata map[string]string) {
 	if !c.IsAllowed(senderID) {
+		logger.WarnCF("channels", "Inbound message blocked by allow_from", map[string]any{
+			"channel":          c.name,
+			"sender_id":        senderID,
+			"chat_id":          chatID,
+			"allow_from_count": len(c.allowList),
+		})
 		return
 	}
 
