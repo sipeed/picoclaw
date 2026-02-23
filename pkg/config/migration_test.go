@@ -131,14 +131,15 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 			GitHubCopilot: ProviderConfig{ConnectMode: "grpc"},
 			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
 			Qwen:          ProviderConfig{APIKey: "key17"},
+			Mistral:       ProviderConfig{APIKey: "key18"},
 		},
 	}
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 17 providers should be converted
-	if len(result) != 17 {
-		t.Errorf("len(result) = %d, want 17", len(result))
+	// All 18 providers should be converted
+	if len(result) != 18 {
+		t.Errorf("len(result) = %d, want 18", len(result))
 	}
 }
 
