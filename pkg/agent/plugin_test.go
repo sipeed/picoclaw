@@ -17,6 +17,10 @@ func (p blockingPlugin) Name() string {
 	return "block-outbound"
 }
 
+func (p blockingPlugin) APIVersion() string {
+	return plugin.APIVersion
+}
+
 func (p blockingPlugin) Register(r *hooks.HookRegistry) error {
 	r.OnMessageSending("block-all", 0, func(_ context.Context, e *hooks.MessageSendingEvent) error {
 		e.Cancel = true

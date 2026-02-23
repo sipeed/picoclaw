@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/hooks"
+	"github.com/sipeed/picoclaw/pkg/plugin"
 )
 
 // PolicyDemoConfig controls the demo plugin behavior.
@@ -106,6 +107,10 @@ func NewPolicyDemoPlugin(cfg PolicyDemoConfig) *PolicyDemoPlugin {
 
 func (p *PolicyDemoPlugin) Name() string {
 	return "policy-demo"
+}
+
+func (p *PolicyDemoPlugin) APIVersion() string {
+	return plugin.APIVersion
 }
 
 func (p *PolicyDemoPlugin) Snapshot() PolicyDemoStats {

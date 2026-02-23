@@ -22,6 +22,7 @@ const APIVersion = "v1alpha1"
 // Plugin is the Phase-1 compile-time contract for PicoClaw extensions.
 type Plugin interface {
 	Name() string
+	APIVersion() string
 	Register(*hooks.HookRegistry) error
 }
 
@@ -62,6 +63,17 @@ func (m *Manager) Register(p Plugin) error {
 	if name == "" {
 		return errors.New("plugin name is required")
 	}
+	if got := strings.TrimSpace(p.APIVersion()); got != APIVersion {
+		if got == "" {
+			got = "<empty>"
+		}
+		return fmt.Errorf(
+			"plugin %q api version mismatch: got %s, want %s",
+			name,
+			got,
+			APIVersion,
+		)
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -85,4 +97,3 @@ func (m *Manager) RegisterAll(plugins ...Plugin) error {
 	}
 	return nil
 }
-

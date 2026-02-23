@@ -10,6 +10,7 @@ import (
 
 type testPlugin struct {
 	name       string
+	apiVersion string
 	registerFn func(*hooks.HookRegistry) error
 }
 
@@ -22,6 +23,13 @@ func (p testPlugin) Register(r *hooks.HookRegistry) error {
 		return p.registerFn(r)
 	}
 	return nil
+}
+
+func (p testPlugin) APIVersion() string {
+	if p.apiVersion == "" {
+		return APIVersion
+	}
+	return p.apiVersion
 }
 
 func TestNewManager(t *testing.T) {
@@ -110,3 +118,14 @@ func TestRegisterPropagatesPluginError(t *testing.T) {
 	}
 }
 
+func TestRegisterRejectsPluginVersionMismatch(t *testing.T) {
+	m := NewManager()
+	p := testPlugin{
+		name:       "old-plugin",
+		apiVersion: "v0",
+	}
+	err := m.Register(p)
+	if err == nil {
+		t.Fatal("expected version mismatch error")
+	}
+}
