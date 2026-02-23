@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,6 +17,35 @@ import (
 const (
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
+
+// Package-level regexp variables for better performance
+var (
+	scriptTagRegex = regexp.MustCompile(`<script[\s\S]*?</script>`)
+	styleTagRegex  = regexp.MustCompile(`<style[\s\S]*?</style>`)
+	allTagsRegex   = regexp.MustCompile(`<[^>]+>`)
+	whitespaceRegex = regexp.MustCompile(`[^\S\n]+`)
+	newlineRegex    = regexp.MustCompile(`\n{3,}`)
+	
+	// Block tag regexes
+	blockTags = []string{"div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "tr", "td", "th", "blockquote", "pre", "section", "article", "header", "footer"}
+	
+	// Compile regexes for block tags once
+	blockTagRegexes []*regexp.Regexp
+)
+
+func init() {
+	// Precompile regexes for block tags
+	blockTagRegexes = make([]*regexp.Regexp, 0, len(blockTags)*2)
+	for _, tag := range blockTags {
+		// Opening tag regex
+		openingRegex := regexp.MustCompile(`<` + tag + `[^>]*>`)
+		blockTagRegexes = append(blockTagRegexes, openingRegex)
+		
+		// Closing tag regex
+		closingRegex := regexp.MustCompile(`</` + tag + `>`)
+		blockTagRegexes = append(blockTagRegexes, closingRegex)
+	}
+}
 
 type SearchProvider interface {
 	Search(ctx context.Context, query string, count int) (string, error)
@@ -590,20 +620,26 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 }
 
 func (t *WebFetchTool) extractText(htmlContent string) string {
-	re := regexp.MustCompile(`<script[\s\S]*?</script>`)
-	result := re.ReplaceAllLiteralString(htmlContent, "")
-	re = regexp.MustCompile(`<style[\s\S]*?</style>`)
-	result = re.ReplaceAllLiteralString(result, "")
-	re = regexp.MustCompile(`<[^>]+>`)
-	result = re.ReplaceAllLiteralString(result, "")
+	// First remove script and style tags
+	result := scriptTagRegex.ReplaceAllLiteralString(htmlContent, "")
+	result = styleTagRegex.ReplaceAllLiteralString(result, "")
+	
+	// Handle self-closing tags like <br/> by replacing them with spaces
+	selfClosingTagsRegex := regexp.MustCompile(`<br[^>]*>`)
+	result = selfClosingTagsRegex.ReplaceAllLiteralString(result, " ")
+	
+	// Remove HTML tags but preserve some structure information
+	result = t.removeHTMLTags(result)
+	
+	// Handle HTML entities using standard library
+	result = html.UnescapeString(result)
 
+	// Clean up whitespace
 	result = strings.TrimSpace(result)
+	result = whitespaceRegex.ReplaceAllString(result, " ")
+	result = newlineRegex.ReplaceAllString(result, "\n\n")
 
-	re = regexp.MustCompile(`[^\S\n]+`)
-	result = re.ReplaceAllString(result, " ")
-	re = regexp.MustCompile(`\n{3,}`)
-	result = re.ReplaceAllString(result, "\n\n")
-
+	// Remove empty lines
 	lines := strings.Split(result, "\n")
 	var cleanLines []string
 	for _, line := range lines {
@@ -614,4 +650,19 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	}
 
 	return strings.Join(cleanLines, "\n")
+}
+
+
+
+// removeHTMLTags removes HTML tags but preserves content structure
+func (t *WebFetchTool) removeHTMLTags(s string) string {
+	// For block-level elements, add newlines before removal to preserve structure
+	for _, regex := range blockTagRegexes {
+		s = regex.ReplaceAllString(s, "\n")
+	}
+	
+	// Remove all remaining HTML tags
+	s = allTagsRegex.ReplaceAllLiteralString(s, "")
+
+	return s
 }

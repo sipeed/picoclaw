@@ -303,6 +303,61 @@ func TestWebFetchTool_extractText(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "HTML entity decoding",
+			input: "<p>Hello &lt;world&gt; &amp; &quot;quoted&quot; &apos;apostrophe&apos;</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if !strings.Contains(got, "Hello <world> & \"quoted\" 'apostrophe'") {
+					t.Errorf("Expected HTML entities to be decoded, got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "nested tags",
+			input: "<div><h1>Header</h1><p>Paragraph <strong>bold</strong> text</p></div>",
+			wantFunc: func(t *testing.T, got string) {
+				if !strings.Contains(got, "Header") || !strings.Contains(got, "Paragraph bold text") {
+					t.Errorf("Expected nested tags to be handled correctly, got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "self-closing tags",
+			input: "<p>Text<br/>with<br/>breaks</p><img src=\"image.jpg\" alt=\"image\"/>",
+			wantFunc: func(t *testing.T, got string) {
+				if !strings.Contains(got, "Text with breaks") {
+					t.Errorf("Expected self-closing tags to be handled correctly, got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "complex HTML with multiple block elements",
+			input: "<html><body><header><h1>Website</h1></header><main><section><h2>Section 1</h2><p>Content 1</p></section><section><h2>Section 2</h2><ul><li>Item 1</li><li>Item 2</li></ul></section></main><footer><p>Footer</p></footer></body></html>",
+			wantFunc: func(t *testing.T, got string) {
+				if !strings.Contains(got, "Website") || !strings.Contains(got, "Section 1") || 
+				   !strings.Contains(got, "Item 1") || !strings.Contains(got, "Footer") {
+					t.Errorf("Expected complex HTML structure to be preserved, got: %q", got)
+				}
+				// Should have multiple lines
+				lines := strings.Split(got, "\n")
+				if len(lines) < 3 {
+					t.Errorf("Expected multiple lines for complex structure, got %d: %q", len(lines), got)
+				}
+			},
+		},
+		{
+			name:  "HTML entities in attributes",
+			input: "<a href=\"page.html?param=value&amp;other=123\">Link &lt;with&gt; entity</a>",
+			wantFunc: func(t *testing.T, got string) {
+				if !strings.Contains(got, "Link <with> entity") {
+					t.Errorf("Expected content entities to be decoded, got: %q", got)
+				}
+				// Should not contain attribute content
+				if strings.Contains(got, "param=value") {
+					t.Errorf("Expected attribute entities to be stripped, got: %q", got)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
