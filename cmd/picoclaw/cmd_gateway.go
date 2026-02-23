@@ -121,7 +121,7 @@ func gatewayCmd() {
 	// Inject channel manager into agent loop for command handling
 	agentLoop.SetChannelManager(channelManager)
 
-	var transcriber *voice.GroqTranscriber
+	var transcriber voice.Transcriber
 	groqAPIKey := cfg.Providers.Groq.APIKey
 	if groqAPIKey == "" {
 		for _, mc := range cfg.ModelList {
@@ -136,23 +136,39 @@ func gatewayCmd() {
 		logger.InfoC("voice", "Groq voice transcription enabled")
 	}
 
+	if transcriber == nil {
+		deepgramAPIKey := cfg.Providers.Deepgram.APIKey
+		if deepgramAPIKey == "" {
+			for _, mc := range cfg.ModelList {
+				if strings.HasPrefix(mc.Model, "deepgram/") && mc.APIKey != "" {
+					deepgramAPIKey = mc.APIKey
+					break
+				}
+			}
+		}
+		if deepgramAPIKey != "" {
+			transcriber = voice.NewDeepgramTranscriber(deepgramAPIKey)
+			logger.InfoC("voice", "Deepgram voice transcription enabled")
+		}
+	}
+
 	if transcriber != nil {
 		if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
 			if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
 				tc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Telegram channel")
+				logger.InfoC("voice", "Voice transcription attached to Telegram channel")
 			}
 		}
 		if discordChannel, ok := channelManager.GetChannel("discord"); ok {
 			if dc, ok := discordChannel.(*channels.DiscordChannel); ok {
 				dc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Discord channel")
+				logger.InfoC("voice", "Voice transcription attached to Discord channel")
 			}
 		}
 		if slackChannel, ok := channelManager.GetChannel("slack"); ok {
 			if sc, ok := slackChannel.(*channels.SlackChannel); ok {
 				sc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Slack channel")
+				logger.InfoC("voice", "Voice transcription attached to Slack channel")
 			}
 		}
 	}

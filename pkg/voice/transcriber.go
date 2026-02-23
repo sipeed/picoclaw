@@ -16,6 +16,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// Transcriber is the interface for speech-to-text providers.
+type Transcriber interface {
+	Transcribe(ctx context.Context, audioFilePath string) (*TranscriptionResponse, error)
+	IsAvailable() bool
+}
+
 type GroqTranscriber struct {
 	apiKey     string
 	apiBase    string
