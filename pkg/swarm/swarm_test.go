@@ -85,11 +85,11 @@ func TestClusterView(t *testing.T) {
 
 func TestLoadMonitor(t *testing.T) {
 	config := &LoadMonitorConfig{
-		Enabled:      true,
-		Interval:     Duration{time.Second},
-		SampleSize:   10,
-		CPUWeight:    0.3,
-		MemoryWeight: 0.3,
+		Enabled:       true,
+		Interval:      Duration{time.Second},
+		SampleSize:    10,
+		CPUWeight:     0.3,
+		MemoryWeight:  0.3,
 		SessionWeight: 0.4,
 	}
 

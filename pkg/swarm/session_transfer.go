@@ -17,12 +17,12 @@ import (
 
 // SessionTransfer handles session migration between nodes.
 type SessionTransfer struct {
-	config     RPCConfig
-	localNode  *NodeInfo
-	transfers  map[string]*TransferOperation // session_key -> operation
-	mu         sync.RWMutex
-	conn       *net.UDPConn
-	onReceive  func(*TransferPayload)
+	config    RPCConfig
+	localNode *NodeInfo
+	transfers map[string]*TransferOperation // session_key -> operation
+	mu        sync.RWMutex
+	conn      *net.UDPConn
+	onReceive func(*TransferPayload)
 }
 
 // TransferOperation represents an ongoing transfer operation.
@@ -49,15 +49,15 @@ const (
 
 // TransferPayload represents the session data being transferred.
 type TransferPayload struct {
-	SessionKey      string            `json:"session_key"`
-	SourceNodeID    string            `json:"source_node_id"`
-	TargetNodeID    string            `json:"target_node_id"`
-	Messages        []SessionMessage  `json:"messages"`
-	Summary         string            `json:"summary,omitempty"`
-	Context         map[string]any    `json:"context,omitempty"`
-	Metadata        map[string]string `json:"metadata,omitempty"`
-	Timestamp       int64             `json:"timestamp"`
-	TransferID      string            `json:"transfer_id"`
+	SessionKey   string            `json:"session_key"`
+	SourceNodeID string            `json:"source_node_id"`
+	TargetNodeID string            `json:"target_node_id"`
+	Messages     []SessionMessage  `json:"messages"`
+	Summary      string            `json:"summary,omitempty"`
+	Context      map[string]any    `json:"context,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
+	Timestamp    int64             `json:"timestamp"`
+	TransferID   string            `json:"transfer_id"`
 }
 
 // NewSessionTransfer creates a new session transfer handler.

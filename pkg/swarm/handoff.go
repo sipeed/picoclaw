@@ -21,11 +21,11 @@ import (
 type HandoffReason string
 
 const (
-	ReasonOverloaded    HandoffReason = "overloaded"     // Load is too high
-	ReasonNoCapability  HandoffReason = "no_capability"  // Missing capability
-	ReasonUserRequest   HandoffReason = "user_request"   // User explicitly requested
-	ReasonNodeLeave     HandoffReason = "node_leave"     // Node is leaving
-	ReasonShutdown      HandoffReason = "shutdown"       // Graceful shutdown
+	ReasonOverloaded   HandoffReason = "overloaded"    // Load is too high
+	ReasonNoCapability HandoffReason = "no_capability" // Missing capability
+	ReasonUserRequest  HandoffReason = "user_request"  // User explicitly requested
+	ReasonNodeLeave    HandoffReason = "node_leave"    // Node is leaving
+	ReasonShutdown     HandoffReason = "shutdown"      // Graceful shutdown
 )
 
 // HandoffState represents the state of a handoff operation.
@@ -42,27 +42,27 @@ const (
 
 // HandoffRequest represents a request to hand off a session.
 type HandoffRequest struct {
-	RequestID       string                 `json:"request_id"`
-	Reason          HandoffReason          `json:"reason"`
-	SessionKey      string                 `json:"session_key"`
-	SessionMessages []SessionMessage       `json:"session_messages,omitempty"`
-	Context         map[string]any         `json:"context,omitempty"`
-	RequiredCap     string                 `json:"required_cap,omitempty"`
-	Metadata        map[string]string      `json:"metadata,omitempty"`
-	FromNodeID      string                 `json:"from_node_id"`
-	FromNodeAddr    string                 `json:"from_node_addr"`
-	Timestamp       int64                  `json:"timestamp"`
+	RequestID       string            `json:"request_id"`
+	Reason          HandoffReason     `json:"reason"`
+	SessionKey      string            `json:"session_key"`
+	SessionMessages []SessionMessage  `json:"session_messages,omitempty"`
+	Context         map[string]any    `json:"context,omitempty"`
+	RequiredCap     string            `json:"required_cap,omitempty"`
+	Metadata        map[string]string `json:"metadata,omitempty"`
+	FromNodeID      string            `json:"from_node_id"`
+	FromNodeAddr    string            `json:"from_node_addr"`
+	Timestamp       int64             `json:"timestamp"`
 }
 
 // HandoffResponse represents the response to a handoff request.
 type HandoffResponse struct {
-	RequestID      string         `json:"request_id"`
-	Accepted       bool           `json:"accepted"`
-	NodeID         string         `json:"node_id"`
-	Reason         string         `json:"reason,omitempty"`
-	SessionKey     string         `json:"session_key,omitempty"` // New session key on target
-	Timestamp      int64          `json:"timestamp"`
-	State          HandoffState   `json:"state"`
+	RequestID  string       `json:"request_id"`
+	Accepted   bool         `json:"accepted"`
+	NodeID     string       `json:"node_id"`
+	Reason     string       `json:"reason,omitempty"`
+	SessionKey string       `json:"session_key,omitempty"` // New session key on target
+	Timestamp  int64        `json:"timestamp"`
+	State      HandoffState `json:"state"`
 }
 
 // HandoffCoordinator coordinates handoff operations between nodes.
@@ -71,9 +71,9 @@ type HandoffCoordinator struct {
 	membership *MembershipManager
 	config     HandoffConfig
 
-	pending    map[string]*HandoffOperation // request_id -> operation
-	mu         sync.RWMutex
-	conn       *net.UDPConn
+	pending map[string]*HandoffOperation // request_id -> operation
+	mu      sync.RWMutex
+	conn    *net.UDPConn
 
 	// Accept/reject callbacks
 	onHandoffRequest  func(*HandoffRequest) *HandoffResponse
@@ -82,22 +82,22 @@ type HandoffCoordinator struct {
 
 // HandoffOperation represents an ongoing handoff operation.
 type HandoffOperation struct {
-	Request      *HandoffRequest
-	Response     *HandoffResponse
-	State        HandoffState
-	StartTime    time.Time
-	LastUpdate   time.Time
-	RetryCount   int
-	TargetNode   *NodeWithState
+	Request    *HandoffRequest
+	Response   *HandoffResponse
+	State      HandoffState
+	StartTime  time.Time
+	LastUpdate time.Time
+	RetryCount int
+	TargetNode *NodeWithState
 }
 
 // NewHandoffCoordinator creates a new handoff coordinator.
 func NewHandoffCoordinator(ds *DiscoveryService, config HandoffConfig) (*HandoffCoordinator, error) {
 	hc := &HandoffCoordinator{
-		discovery: ds,
+		discovery:  ds,
 		membership: ds.membership,
-		config:    config,
-		pending:   make(map[string]*HandoffOperation),
+		config:     config,
+		pending:    make(map[string]*HandoffOperation),
 	}
 
 	// Bind UDP socket for handoff messages

@@ -19,13 +19,13 @@ type MetricsCollector struct {
 	mu sync.RWMutex
 
 	// Counters (atomic for performance)
-	messagesSent     atomic.Int64
-	messagesReceived atomic.Int64
+	messagesSent      atomic.Int64
+	messagesReceived  atomic.Int64
 	handoffsInitiated atomic.Int64
-	handoffsAccepted atomic.Int64
-	handoffsRejected atomic.Int64
-	handoffsFailed   atomic.Int64
-	electionsWon     atomic.Int64
+	handoffsAccepted  atomic.Int64
+	handoffsRejected  atomic.Int64
+	handoffsFailed    atomic.Int64
+	electionsWon      atomic.Int64
 
 	// Gauges (use atomic.Value for float64)
 	currentLoadScore atomic.Value // float64
@@ -40,9 +40,9 @@ type MetricsCollector struct {
 
 // LatencyBucket tracks latency distribution.
 type LatencyBucket struct {
-	mu    sync.RWMutex
-	count int64
-	sum   int64
+	mu      sync.RWMutex
+	count   int64
+	sum     int64
 	buckets [12]int64 // 0-1ms, 1-2ms, 2-5ms, 5-10ms, 10-20ms, 20-50ms, 50-100ms, 100-200ms, 200-500ms, 500ms-1s, 1-2s, 2s+
 }
 
@@ -118,7 +118,7 @@ func (m *MetricsCollector) RecordLatency(operation string, latency time.Duration
 	bucket := m.latencyBuckets[operation]
 	m.mu.Unlock()
 
-	ms := int64(latency.Milliseconds())
+	ms := latency.Milliseconds()
 
 	bucket.mu.Lock()
 	bucket.count++
@@ -174,24 +174,24 @@ func (m *MetricsCollector) GetMetrics() map[string]any {
 
 	return map[string]any{
 		// Counters
-		"messages_sent":       m.messagesSent.Load(),
-		"messages_received":   m.messagesReceived.Load(),
-		"handoffs_initiated":  m.handoffsInitiated.Load(),
-		"handoffs_accepted":   m.handoffsAccepted.Load(),
-		"handoffs_rejected":   m.handoffsRejected.Load(),
-		"handoffs_failed":     m.handoffsFailed.Load(),
-		"elections_won":       m.electionsWon.Load(),
+		"messages_sent":      m.messagesSent.Load(),
+		"messages_received":  m.messagesReceived.Load(),
+		"handoffs_initiated": m.handoffsInitiated.Load(),
+		"handoffs_accepted":  m.handoffsAccepted.Load(),
+		"handoffs_rejected":  m.handoffsRejected.Load(),
+		"handoffs_failed":    m.handoffsFailed.Load(),
+		"elections_won":      m.electionsWon.Load(),
 
 		// Gauges
-		"load_score":          m.currentLoadScore.Load(),
-		"active_sessions":     m.activeSessions.Load(),
-		"member_count":        m.memberCount.Load(),
+		"load_score":      m.currentLoadScore.Load(),
+		"active_sessions": m.activeSessions.Load(),
+		"member_count":    m.memberCount.Load(),
 
 		// System info
-		"uptime_seconds":      time.Since(m.startTime).Seconds(),
+		"uptime_seconds": time.Since(m.startTime).Seconds(),
 
 		// Latency histograms
-		"latency_ms":          latency,
+		"latency_ms": latency,
 	}
 }
 
@@ -205,7 +205,7 @@ func (m *MetricsCollector) percentile(bucket *LatencyBucket, p float64) float64 
 	cumulative := int64(0)
 
 	// Upper bounds for each bucket in ms
-	upperBounds := []int64{1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 1<<62}
+	upperBounds := []int64{1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 1 << 62}
 
 	for i, count := range bucket.buckets {
 		cumulative += count

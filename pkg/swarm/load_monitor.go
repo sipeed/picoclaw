@@ -14,9 +14,9 @@ import (
 
 // LoadMonitor monitors system load and calculates a load score.
 type LoadMonitor struct {
-	config      *LoadMonitorConfig
-	samples     []float64
-	mu          sync.RWMutex
+	config       *LoadMonitorConfig
+	samples      []float64
+	mu           sync.RWMutex
 	sessionCount int
 	ticker       *time.Ticker
 	stopChan     chan struct{}
@@ -33,9 +33,9 @@ func NewLoadMonitor(config *LoadMonitorConfig) *LoadMonitor {
 	}
 
 	lm := &LoadMonitor{
-		config:     config,
-		samples:    make([]float64, 0, config.SampleSize),
-		stopChan:   make(chan struct{}),
+		config:      config,
+		samples:     make([]float64, 0, config.SampleSize),
+		stopChan:    make(chan struct{}),
 		onThreshold: make([]func(float64), 0),
 	}
 	return lm
@@ -89,20 +89,20 @@ func (lm *LoadMonitor) run() {
 
 // LoadMetrics represents current load metrics.
 type LoadMetrics struct {
-	CPUUsage      float64 `json:"cpu_usage"`
-	MemoryUsage   float64 `json:"memory_usage"`
-	ActiveSessions int    `json:"active_sessions"`
-	Goroutines    int     `json:"goroutines"`
-	Score         float64 `json:"score"`
-	Timestamp     int64   `json:"timestamp"`
+	CPUUsage       float64 `json:"cpu_usage"`
+	MemoryUsage    float64 `json:"memory_usage"`
+	ActiveSessions int     `json:"active_sessions"`
+	Goroutines     int     `json:"goroutines"`
+	Score          float64 `json:"score"`
+	Timestamp      int64   `json:"timestamp"`
 }
 
 // GetCurrentLoad returns the current load metrics.
 func (lm *LoadMonitor) GetCurrentLoad() *LoadMetrics {
 	metrics := &LoadMetrics{
 		ActiveSessions: lm.GetSessionCount(),
-		Goroutines:    runtime.NumGoroutine(),
-		Timestamp:     time.Now().UnixNano(),
+		Goroutines:     runtime.NumGoroutine(),
+		Timestamp:      time.Now().UnixNano(),
 	}
 
 	// Get memory usage
@@ -245,7 +245,7 @@ func (lm *LoadMonitor) GetTrend() string {
 
 	// Simple linear regression to detect trend
 	n := float64(len(lm.samples))
-	sumX := n*(n-1)/2
+	sumX := n * (n - 1) / 2
 	sumY := 0.0
 	sumXY := 0.0
 
@@ -255,7 +255,7 @@ func (lm *LoadMonitor) GetTrend() string {
 		sumXY += x * s
 	}
 
-	slope := (n*sumXY - sumX*sumY) / (n*(n-1)*(2*n-1)/6)
+	slope := (n*sumXY - sumX*sumY) / (n * (n - 1) * (2*n - 1) / 6)
 
 	if slope > TrendIncreasingThreshold {
 		return "increasing"

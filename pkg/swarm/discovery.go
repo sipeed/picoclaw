@@ -31,10 +31,10 @@ type DiscoveryService struct {
 	rpcConn      net.Listener
 	auth         *AuthProvider
 
-	mu         sync.RWMutex
-	running    bool
-	stopChan   chan struct{}
-	once       sync.Once
+	mu       sync.RWMutex
+	running  bool
+	stopChan chan struct{}
+	once     sync.Once
 
 	// Sequence number for updates
 	seqNum uint64
@@ -281,13 +281,13 @@ func (ds *DiscoveryService) gossipLoop() {
 
 // GossipMessage represents a gossip message.
 type GossipMessage struct {
-	Type      string     `json:"type"`      // "ping", "pong", "join", "update"
-	FromNode  string     `json:"from_node"`
-	SeqNum    uint64     `json:"seq_num"`
-	Timestamp int64      `json:"timestamp"`
-	Payload   []byte     `json:"payload,omitempty"`
+	Type      string      `json:"type"` // "ping", "pong", "join", "update"
+	FromNode  string      `json:"from_node"`
+	SeqNum    uint64      `json:"seq_num"`
+	Timestamp int64       `json:"timestamp"`
+	Payload   []byte      `json:"payload,omitempty"`
 	Nodes     []*NodeInfo `json:"nodes,omitempty"` // For memberlist exchange
-	AuthToken  *AuthToken  `json:"auth_token,omitempty"`
+	AuthToken *AuthToken  `json:"auth_token,omitempty"`
 }
 
 // handleGossip handles an incoming gossip message.

@@ -20,9 +20,9 @@ type MembershipManager struct {
 	mu        sync.RWMutex
 
 	// Event callbacks
-	onJoin    []func(*NodeInfo)
-	onLeave   []func(*NodeInfo)
-	onUpdate  []func(*NodeInfo)
+	onJoin   []func(*NodeInfo)
+	onLeave  []func(*NodeInfo)
+	onUpdate []func(*NodeInfo)
 }
 
 // NewMembershipManager creates a new membership manager.

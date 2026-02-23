@@ -63,13 +63,13 @@ const (
 
 // NodeState represents the state of a node in the membership view.
 type NodeState struct {
-	Node         *NodeInfo `json:"node"`
-	Status       NodeStatus `json:"status"`
-	StatusSince  int64      `json:"status_since"` // Unix nano when status was set
-	LastSeen     int64      `json:"last_seen"`    // Unix nano of last sighting
-	LastPing     int64      `json:"last_ping"`    // Unix nano of last successful ping
-	PingSuccess  int        `json:"ping_success"` // Consecutive successful pings
-	PingFailure  int        `json:"ping_failure"` // Consecutive failed pings
+	Node        *NodeInfo  `json:"node"`
+	Status      NodeStatus `json:"status"`
+	StatusSince int64      `json:"status_since"` // Unix nano when status was set
+	LastSeen    int64      `json:"last_seen"`    // Unix nano of last sighting
+	LastPing    int64      `json:"last_ping"`    // Unix nano of last successful ping
+	PingSuccess int        `json:"ping_success"` // Consecutive successful pings
+	PingFailure int        `json:"ping_failure"` // Consecutive failed pings
 }
 
 // IsAvailable returns true if the node is available for handoff.
@@ -85,9 +85,9 @@ func (ns *NodeState) UpdateStatus(status NodeStatus) {
 
 // NodeEvent represents a node state change event.
 type NodeEvent struct {
-	Node    *NodeInfo `json:"node"`
-	Event   EventType `json:"event"`
-	Time    int64     `json:"time"`
+	Node  *NodeInfo `json:"node"`
+	Event EventType `json:"event"`
+	Time  int64     `json:"time"`
 }
 
 // EventType represents the type of node event.
@@ -195,13 +195,13 @@ func (ed *EventDispatcher) DispatchContext(event *NodeEvent, ctx context.Context
 
 // NodeStats tracks statistics about a node.
 type NodeStats struct {
-	MessagesSent     int64     `json:"messages_sent"`
-	MessagesReceived int64     `json:"messages_received"`
-	HandoffsAccepted int       `json:"handoffs_accepted"`
-	HandoffsInitiated int      `json:"handoffs_initiated"`
-	LastError        string    `json:"last_error,omitempty"`
-	LastErrorTime    time.Time `json:"last_error_time,omitempty"`
-	UptimeStart      time.Time `json:"uptime_start"`
+	MessagesSent      int64     `json:"messages_sent"`
+	MessagesReceived  int64     `json:"messages_received"`
+	HandoffsAccepted  int       `json:"handoffs_accepted"`
+	HandoffsInitiated int       `json:"handoffs_initiated"`
+	LastError         string    `json:"last_error,omitempty"`
+	LastErrorTime     time.Time `json:"last_error_time,omitempty"`
+	UptimeStart       time.Time `json:"uptime_start"`
 }
 
 // NodeWithState combines a node with its state and stats.
@@ -222,9 +222,9 @@ func (nws *NodeWithState) IsAvailable() bool {
 // ClusterView represents the current view of the cluster.
 type ClusterView struct {
 	Nodes       map[string]*NodeWithState `json:"nodes"`
-	LocalNodeID string                   `json:"local_node_id"`
-	Size        int                      `json:"size"`
-	Version     int64                    `json:"version"` // View version for conflict detection
+	LocalNodeID string                    `json:"local_node_id"`
+	Size        int                       `json:"size"`
+	Version     int64                     `json:"version"` // View version for conflict detection
 	mu          sync.RWMutex
 }
 

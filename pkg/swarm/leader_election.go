@@ -178,7 +178,8 @@ func (le *LeaderElection) monitorLeader() {
 
 	// Check if leader is still in the membership
 	if _, exists := le.membership.GetNode(leaderID); !exists {
-		logger.WarnCF("swarm", "Leader no longer in membership, triggering reelection", map[string]any{"leader_id": leaderID})
+		logger.WarnCF("swarm", "Leader no longer in membership, triggering reelection",
+			map[string]any{"leader_id": leaderID})
 		// Trigger reelection by clearing current leader
 		le.mu.Lock()
 		le.currentLeader = ""
