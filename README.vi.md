@@ -152,6 +152,10 @@ vim config/config.json      # Thiết lập DISCORD_BOT_TOKEN, API keys, v.v.
 # 3. Build & Khởi động
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Người dùng Docker**: Theo mặc định, Gateway lắng nghe trên `127.0.0.1`, không thể truy cập từ máy chủ. Nếu bạn cần truy cập các endpoint kiểm tra sức khỏe hoặc mở cổng, hãy đặt `PICOCLAW_GATEWAY_HOST=0.0.0.0` trong môi trường của bạn hoặc cập nhật `config.json`.
+
+
 # 4. Xem logs
 docker compose logs -f picoclaw-gateway
 

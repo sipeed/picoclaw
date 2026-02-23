@@ -272,7 +272,7 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
+			Host: "127.0.0.1",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
