@@ -130,6 +130,13 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		"username": c.bot.Username(),
 	})
 
+	// Register command menu with Telegram
+	if err := c.registerCommands(ctx); err != nil {
+		logger.WarnCF("telegram", "Failed to register commands menu", map[string]any{
+			"error": err.Error(),
+		})
+	}
+
 	go bh.Start()
 
 	go func() {
@@ -144,6 +151,19 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
 	c.setRunning(false)
 	return nil
+}
+
+func (c *TelegramChannel) registerCommands(ctx context.Context) error {
+	commands := []telego.BotCommand{
+		{Command: "start", Description: "Start the bot"},
+		{Command: "help", Description: "Show available commands"},
+		{Command: "show", Description: "Show current configuration"},
+		{Command: "list", Description: "List available options"},
+	}
+
+	return c.bot.SetMyCommands(ctx, &telego.SetMyCommandsParams{
+		Commands: commands,
+	})
 }
 
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
