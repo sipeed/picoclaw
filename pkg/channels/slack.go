@@ -200,6 +200,11 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 
+	// Check if this is an app mention (bot was mentioned) - if so, let handleAppMention handle it
+	if strings.Contains(ev.Text, fmt.Sprintf("<@%s>", c.botUserID)) {
+		return
+	}
+
 	// 检查白名单，避免为被拒绝的用户下载附件
 	if !c.IsAllowed(ev.User) {
 		logger.DebugCF("slack", "Message rejected by allowlist", map[string]any{
@@ -229,7 +234,6 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	})
 
 	content := ev.Text
-	content = c.stripBotMention(content)
 
 	var mediaPaths []string
 	localFiles := []string{} // 跟踪需要清理的本地文件
