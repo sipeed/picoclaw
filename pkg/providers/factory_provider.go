@@ -151,7 +151,15 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return provider, modelID, nil
 
 	default:
-		return nil, "", fmt.Errorf("unknown protocol %q in model %q", protocol, cfg.Model)
+		// Treat unknown protocols as OpenAI-compatible
+		if cfg.APIKey == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase("openai")
+		}
+		return NewHTTPProviderWithMaxTokensField(cfg.APIKey, apiBase, cfg.Proxy, cfg.MaxTokensField), cfg.Model, nil
 	}
 }
 
