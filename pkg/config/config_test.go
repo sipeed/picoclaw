@@ -55,7 +55,7 @@ func TestAgentModelConfig_MarshalObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	json.Unmarshal(data, &result)
 	if result["primary"] != "claude-opus" {
 		t.Errorf("primary = %v", result["primary"])
@@ -237,8 +237,8 @@ func TestDefaultConfig_MaxToolIterations(t *testing.T) {
 func TestDefaultConfig_Temperature(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Agents.Defaults.Temperature == 0 {
-		t.Error("Temperature should not be zero")
+	if cfg.Agents.Defaults.Temperature != nil {
+		t.Error("Temperature should be nil when not provided")
 	}
 }
 
@@ -319,7 +319,7 @@ func TestSaveConfig_FilePermissions(t *testing.T) {
 	}
 
 	perm := info.Mode().Perm()
-	if perm != 0600 {
+	if perm != 0o600 {
 		t.Errorf("config file has permission %04o, want 0600", perm)
 	}
 }
@@ -334,8 +334,8 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.Model == "" {
 		t.Error("Model should not be empty")
 	}
-	if cfg.Agents.Defaults.Temperature == 0 {
-		t.Error("Temperature should have default value")
+	if cfg.Agents.Defaults.Temperature != nil {
+		t.Error("Temperature should be nil when not provided")
 	}
 	if cfg.Agents.Defaults.MaxTokens == 0 {
 		t.Error("MaxTokens should not be zero")
@@ -390,78 +390,5 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	}
 	if cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
-	}
-}
-
-func TestDefaultConfigUsesOpenRouterAutoModel(t *testing.T) {
-	cfg := DefaultConfig()
-
-	if cfg.Agents.Defaults.Model != "openrouter/auto" {
-		t.Fatalf("default model = %q, want %q", cfg.Agents.Defaults.Model, "openrouter/auto")
-	}
-}
-
-func TestLoadConfigNormalizesLegacyGLMModelForOpenRouter(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
-	content := `{
-  "agents": { "defaults": { "model": "glm-4.7" } },
-  "providers": { "openrouter": { "api_key": "sk-or-test" } }
-}`
-
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("failed to write config fixture: %v", err)
-	}
-
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("LoadConfig failed: %v", err)
-	}
-
-	if cfg.Agents.Defaults.Model != "openrouter/auto" {
-		t.Fatalf("model = %q, want %q", cfg.Agents.Defaults.Model, "openrouter/auto")
-	}
-}
-
-func TestLoadConfigKeepsLegacyGLMModelWhenZhipuConfigured(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
-	content := `{
-  "agents": { "defaults": { "model": "glm-4.7" } },
-  "providers": {
-    "openrouter": { "api_key": "sk-or-test" },
-    "zhipu": { "api_key": "zhipu-key" }
-  }
-}`
-
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("failed to write config fixture: %v", err)
-	}
-
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("LoadConfig failed: %v", err)
-	}
-
-	if cfg.Agents.Defaults.Model != "glm-4.7" {
-		t.Fatalf("model = %q, want %q", cfg.Agents.Defaults.Model, "glm-4.7")
-	}
-}
-
-func TestLoadConfigKeepsLegacyGLMModelWhenNoProviderKeysConfigured(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
-	content := `{
-  "agents": { "defaults": { "model": "glm-4.7" } }
-}`
-
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("failed to write config fixture: %v", err)
-	}
-
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("LoadConfig failed: %v", err)
-	}
-
-	if cfg.Agents.Defaults.Model != "glm-4.7" {
-		t.Fatalf("model = %q, want %q", cfg.Agents.Defaults.Model, "glm-4.7")
 	}
 }

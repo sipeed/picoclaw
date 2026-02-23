@@ -28,7 +28,7 @@ func TestSaveStore_FilePermissions(t *testing.T) {
 	}
 
 	perm := info.Mode().Perm()
-	if perm != 0600 {
+	if perm != 0o600 {
 		t.Errorf("cron store has permission %04o, want 0600", perm)
 	}
 }

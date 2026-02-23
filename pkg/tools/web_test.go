@@ -20,7 +20,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": server.URL,
 	}
 
@@ -56,7 +56,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": server.URL,
 	}
 
@@ -77,7 +77,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": "not-a-valid-url",
 	}
 
@@ -98,7 +98,7 @@ func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": "ftp://example.com/file.txt",
 	}
 
@@ -119,7 +119,7 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 func TestWebTool_WebFetch_MissingURL(t *testing.T) {
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{}
+	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
 
@@ -147,7 +147,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 
 	tool := NewWebFetchTool(1000) // Limit to 1000 chars
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": server.URL,
 	}
 
@@ -159,7 +159,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}
 
 	// ForUser should contain truncated content (not the full 20000 chars)
-	resultMap := make(map[string]interface{})
+	resultMap := make(map[string]any)
 	json.Unmarshal([]byte(result.ForUser), &resultMap)
 	if text, ok := resultMap["text"].(string); ok {
 		if len(text) > 1100 { // Allow some margin
@@ -191,7 +191,7 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
 	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
 	ctx := context.Background()
-	args := map[string]interface{}{}
+	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
 
@@ -206,13 +206,17 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`<html><body><script>alert('test');</script><style>body{color:red;}</style><h1>Title</h1><p>Content</p></body></html>`))
+		w.Write(
+			[]byte(
+				`<html><body><script>alert('test');</script><style>body{color:red;}</style><h1>Title</h1><p>Content</p></body></html>`,
+			),
+		)
 	}))
 	defer server.Close()
 
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": server.URL,
 	}
 
@@ -234,11 +238,86 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}
 }
 
+// TestWebFetchTool_extractText verifies text extraction preserves newlines
+func TestWebFetchTool_extractText(t *testing.T) {
+	tool := &WebFetchTool{}
+
+	tests := []struct {
+		name     string
+		input    string
+		wantFunc func(t *testing.T, got string)
+	}{
+		{
+			name:  "preserves newlines between block elements",
+			input: "<html><body><h1>Title</h1>\n<p>Paragraph 1</p>\n<p>Paragraph 2</p></body></html>",
+			wantFunc: func(t *testing.T, got string) {
+				lines := strings.Split(got, "\n")
+				if len(lines) < 2 {
+					t.Errorf("Expected multiple lines, got %d: %q", len(lines), got)
+				}
+				if !strings.Contains(got, "Title") || !strings.Contains(got, "Paragraph 1") ||
+					!strings.Contains(got, "Paragraph 2") {
+					t.Errorf("Missing expected text: %q", got)
+				}
+			},
+		},
+		{
+			name:  "removes script and style tags",
+			input: "<script>alert('x');</script><style>body{}</style><p>Keep this</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if strings.Contains(got, "alert") || strings.Contains(got, "body{}") {
+					t.Errorf("Expected script/style content removed, got: %q", got)
+				}
+				if !strings.Contains(got, "Keep this") {
+					t.Errorf("Expected 'Keep this' to remain, got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "collapses excessive blank lines",
+			input: "<p>A</p>\n\n\n\n\n<p>B</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if strings.Contains(got, "\n\n\n") {
+					t.Errorf("Expected excessive blank lines collapsed, got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "collapses horizontal whitespace",
+			input: "<p>hello     world</p>",
+			wantFunc: func(t *testing.T, got string) {
+				if strings.Contains(got, "     ") {
+					t.Errorf("Expected spaces collapsed, got: %q", got)
+				}
+				if !strings.Contains(got, "hello world") {
+					t.Errorf("Expected 'hello world', got: %q", got)
+				}
+			},
+		},
+		{
+			name:  "empty input",
+			input: "",
+			wantFunc: func(t *testing.T, got string) {
+				if got != "" {
+					t.Errorf("Expected empty string, got: %q", got)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tool.extractText(tt.input)
+			tt.wantFunc(t, got)
+		})
+	}
+}
+
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	tool := NewWebFetchTool(50000)
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"url": "https://",
 	}
 
@@ -252,5 +331,77 @@ func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	// Should mention missing domain
 	if !strings.Contains(result.ForLLM, "domain") && !strings.Contains(result.ForUser, "domain") {
 		t.Errorf("Expected domain error message, got ForLLM: %s", result.ForLLM)
+	}
+}
+
+// TestWebTool_TavilySearch_Success verifies successful Tavily search
+func TestWebTool_TavilySearch_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("Expected POST request, got %s", r.Method)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("Expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
+		}
+
+		// Verify payload
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if payload["api_key"] != "test-key" {
+			t.Errorf("Expected api_key test-key, got %v", payload["api_key"])
+		}
+		if payload["query"] != "test query" {
+			t.Errorf("Expected query 'test query', got %v", payload["query"])
+		}
+
+		// Return mock response
+		response := map[string]any{
+			"results": []map[string]any{
+				{
+					"title":   "Test Result 1",
+					"url":     "https://example.com/1",
+					"content": "Content for result 1",
+				},
+				{
+					"title":   "Test Result 2",
+					"url":     "https://example.com/2",
+					"content": "Content for result 2",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		TavilyEnabled:    true,
+		TavilyAPIKey:     "test-key",
+		TavilyBaseURL:    server.URL,
+		TavilyMaxResults: 5,
+	})
+
+	ctx := context.Background()
+	args := map[string]any{
+		"query": "test query",
+	}
+
+	result := tool.Execute(ctx, args)
+
+	// Success should not be an error
+	if result.IsError {
+		t.Errorf("Expected success, got IsError=true: %s", result.ForLLM)
+	}
+
+	// ForUser should contain result titles and URLs
+	if !strings.Contains(result.ForUser, "Test Result 1") ||
+		!strings.Contains(result.ForUser, "https://example.com/1") {
+		t.Errorf("Expected results in output, got: %s", result.ForUser)
+	}
+
+	// Should mention via Tavily
+	if !strings.Contains(result.ForUser, "via Tavily") {
+		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
 	}
 }
