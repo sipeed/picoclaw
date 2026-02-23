@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
@@ -19,10 +20,24 @@ import (
 // MemoryStore manages persistent memory for the agent.
 // - Long-term memory: memory/MEMORY.md
 // - Daily notes: memory/YYYYMM/YYYYMMDD.md
+// - In-memory cache to reduce file I/O
 type MemoryStore struct {
-	workspace  string
-	memoryDir  string
-	memoryFile string
+	workspace     string
+	memoryDir     string
+	memoryFile    string
+	longTermCache string
+	todayCache    string
+	todayCacheKey string
+	// Concurrency safety
+	mu sync.RWMutex
+	// File modification times for cache invalidation
+	longTermMtime time.Time
+	todayMtime    time.Time
+}
+
+// getCacheKey returns a cache key based on the current date.
+func (ms *MemoryStore) getCacheKey() string {
+	return time.Now().Format("20060102") // YYYYMMDD
 }
 
 // NewMemoryStore creates a new MemoryStore with the given workspace path.
@@ -51,34 +66,111 @@ func (ms *MemoryStore) getTodayFile() string {
 
 // ReadLongTerm reads the long-term memory (MEMORY.md).
 // Returns empty string if the file doesn't exist.
+// Uses in-memory cache to reduce file I/O, but checks file mtime for cache invalidation.
 func (ms *MemoryStore) ReadLongTerm() string {
-	if data, err := os.ReadFile(ms.memoryFile); err == nil {
-		return string(data)
+	ms.mu.RLock()
+	cache := ms.longTermCache
+	mtime := ms.longTermMtime
+	ms.mu.RUnlock()
+
+	// Check file modification time to invalidate cache if file was edited externally
+	if cache != "" {
+		if info, err := os.Stat(ms.memoryFile); err == nil {
+			if info.ModTime().After(mtime) {
+				// File was modified externally, invalidate cache
+				cache = ""
+			}
+		}
 	}
+
+	if cache != "" {
+		return cache
+	}
+
+	// Read from file and update cache
+	if data, err := os.ReadFile(ms.memoryFile); err == nil {
+		content := string(data)
+		ms.mu.Lock()
+		ms.longTermCache = content
+		if info, err := os.Stat(ms.memoryFile); err == nil {
+			ms.longTermMtime = info.ModTime()
+		}
+		ms.mu.Unlock()
+		return content
+	}
+
 	return ""
 }
 
 // WriteLongTerm writes content to the long-term memory file (MEMORY.md).
+// Also updates the in-memory cache.
 func (ms *MemoryStore) WriteLongTerm(content string) error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	// Using 0o600 (owner read/write only) for secure default permissions.
-	return fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0o600)
+	if err := fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0o600); err != nil {
+		return err
+	}
+
+	// Update cache on successful write
+	ms.mu.Lock()
+	ms.longTermCache = content
+	if info, err := os.Stat(ms.memoryFile); err == nil {
+		ms.longTermMtime = info.ModTime()
+	}
+	ms.mu.Unlock()
+	return nil
 }
 
 // ReadToday reads today's daily note.
 // Returns empty string if the file doesn't exist.
+// Uses in-memory cache to reduce file I/O, but checks file mtime for cache invalidation.
 func (ms *MemoryStore) ReadToday() string {
+	todayKey := ms.getCacheKey()
 	todayFile := ms.getTodayFile()
-	if data, err := os.ReadFile(todayFile); err == nil {
-		return string(data)
+
+	ms.mu.RLock()
+	cacheKey := ms.todayCacheKey
+	cache := ms.todayCache
+	mtime := ms.todayMtime
+	ms.mu.RUnlock()
+
+	// Check if cache is valid for today and not expired
+	if cacheKey == todayKey && cache != "" {
+		// Check file modification time to invalidate cache if file was edited externally
+		if info, err := os.Stat(todayFile); err == nil {
+			if info.ModTime().After(mtime) {
+				// File was modified externally, invalidate cache
+				cache = ""
+			}
+		}
 	}
+
+	if cache != "" {
+		return cache
+	}
+
+	// Read from file and update cache
+	if data, err := os.ReadFile(todayFile); err == nil {
+		content := string(data)
+		ms.mu.Lock()
+		ms.todayCache = content
+		ms.todayCacheKey = todayKey
+		if info, err := os.Stat(todayFile); err == nil {
+			ms.todayMtime = info.ModTime()
+		}
+		ms.mu.Unlock()
+		return content
+	}
+
 	return ""
 }
 
 // AppendToday appends content to today's daily note.
 // If the file doesn't exist, it creates a new file with a date header.
+// Also updates the in-memory cache.
 func (ms *MemoryStore) AppendToday(content string) error {
 	todayFile := ms.getTodayFile()
+	todayKey := ms.getCacheKey()
 
 	// Ensure month directory exists
 	monthDir := filepath.Dir(todayFile)
@@ -86,9 +178,20 @@ func (ms *MemoryStore) AppendToday(content string) error {
 		return err
 	}
 
+	// Get existing content from cache or file
 	var existingContent string
-	if data, err := os.ReadFile(todayFile); err == nil {
-		existingContent = string(data)
+	ms.mu.RLock()
+	cacheKey := ms.todayCacheKey
+	if cacheKey == todayKey {
+		existingContent = ms.todayCache
+	}
+	ms.mu.RUnlock()
+
+	// Fallback to file if cache is not valid
+	if existingContent == "" {
+		if data, err := os.ReadFile(todayFile); err == nil {
+			existingContent = string(data)
+		}
 	}
 
 	var newContent string
@@ -102,7 +205,19 @@ func (ms *MemoryStore) AppendToday(content string) error {
 	}
 
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
-	return fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0o600)
+	if err := fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0o600); err != nil {
+		return err
+	}
+
+	// Update cache on successful write
+	ms.mu.Lock()
+	ms.todayCache = newContent
+	ms.todayCacheKey = todayKey
+	if info, err := os.Stat(todayFile); err == nil {
+		ms.todayMtime = info.ModTime()
+	}
+	ms.mu.Unlock()
+	return nil
 }
 
 // GetRecentDailyNotes returns daily notes from the last N days.
