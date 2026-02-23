@@ -112,6 +112,7 @@
       "access_token": "",
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
+      "mentioned_only": true,
       "allow_from": []
     },
     "wecom": {

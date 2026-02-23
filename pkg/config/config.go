@@ -267,6 +267,7 @@ type OneBotConfig struct {
 	AccessToken        string              `json:"access_token"         env:"PICOCLAW_CHANNELS_ONEBOT_ACCESS_TOKEN"`
 	ReconnectInterval  int                 `json:"reconnect_interval"   env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
+	MentionedOnly      *bool               `json:"mentioned_only"     env:"PICOCLAW_CHANNELS_ONEBOT_MENTIONED_ONLY"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
 }
 

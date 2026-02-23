@@ -887,7 +887,17 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 			metadata["sender_name"] = sender.Nickname
 		}
 
-		triggered, strippedContent := c.checkGroupTrigger(content, isBotMentioned)
+		mentionedOnly := true
+		if c.config.MentionedOnly != nil {
+			mentionedOnly = *c.config.MentionedOnly
+		}
+		var triggered bool
+		var strippedContent string
+		if mentionedOnly {
+			triggered, strippedContent = c.checkGroupTrigger(content, isBotMentioned)
+		} else {
+			triggered, strippedContent = true, content
+		}
 		if !triggered {
 			logger.DebugCF("onebot", "Group message ignored (no trigger)", map[string]any{
 				"sender":       senderID,
