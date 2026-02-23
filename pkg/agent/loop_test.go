@@ -2505,6 +2505,75 @@ func TestAgentLoop_PlanModel_NotUsedDuringExecuting(t *testing.T) {
 	}
 }
 
+func TestAgentLoop_PlanModel_ResolvesProviderForSingleCandidate(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-planmodel-resolve-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "MiniMax-M2.5",
+				PlanModel:         "openai/gpt-5.2",
+				MaxTokens:         4096,
+				MaxToolIterations: 2,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	// The main provider simulates the wrong provider (e.g. MiniMax).
+	mainProvider := &modelCapturingMockProvider{response: "wrong provider response"}
+	al := NewAgentLoop(cfg, msgBus, mainProvider)
+
+	// Inject a mock provider into the cache so resolveProvider returns it
+	// for the "openai/gpt-5.2" candidate (provider="openai", model="gpt-5.2").
+	resolvedProvider := &modelCapturingMockProvider{response: "correct provider response"}
+	al.providerCache["openai/gpt-5.2"] = resolvedProvider
+
+	// Write MEMORY.md with interviewing status to activate plan model
+	memoryDir := filepath.Join(tmpDir, "memory")
+	os.MkdirAll(memoryDir, 0o755)
+	memoryPath := filepath.Join(memoryDir, "MEMORY.md")
+	memoryContent := "# Active Plan\n\n> Task: Test provider resolution\n> Status: interviewing\n> Phase: 1\n"
+	if err := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); err != nil {
+		t.Fatalf("Failed to write MEMORY.md: %v", err)
+	}
+
+	_, err = al.ProcessDirectWithChannel(
+		context.Background(),
+		"Hello, resolve provider test",
+		"test-resolve-session",
+		"test",
+		"test-chat",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+
+	resolvedProvider.mu.Lock()
+	defer resolvedProvider.mu.Unlock()
+	mainProvider.mu.Lock()
+	defer mainProvider.mu.Unlock()
+
+	// The resolved provider should have been called with the stripped model name
+	if len(resolvedProvider.models) == 0 {
+		t.Fatal("Expected resolved provider to receive Chat call, but it got none")
+	}
+	if resolvedProvider.models[0] != "gpt-5.2" {
+		t.Errorf("Expected resolved provider to receive model 'gpt-5.2', got %q", resolvedProvider.models[0])
+	}
+
+	// The main provider should NOT have been called for the LLM request
+	if len(mainProvider.models) > 0 {
+		t.Errorf("Expected main provider to receive no Chat calls during plan model phase, got %d calls with models %v",
+			len(mainProvider.models), mainProvider.models)
+	}
+}
+
 func TestPlanCommand_StartClear(t *testing.T) {
 	al, cleanup := newTestAgentLoop(t)
 	defer cleanup()
