@@ -71,112 +71,50 @@ func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string
 
 func (sl *SkillsLoader) ListSkills() []SkillInfo {
 	skills := make([]SkillInfo, 0)
+	seen := make(map[string]bool)
 
-	if sl.workspaceSkills != "" {
-		if dirs, err := os.ReadDir(sl.workspaceSkills); err == nil {
-			for _, dir := range dirs {
-				if dir.IsDir() {
-					skillFile := filepath.Join(sl.workspaceSkills, dir.Name(), "SKILL.md")
-					if _, err := os.Stat(skillFile); err == nil {
-						info := SkillInfo{
-							Name:   dir.Name(),
-							Path:   skillFile,
-							Source: "workspace",
-						}
-						metadata := sl.getSkillMetadata(skillFile)
-						if metadata != nil {
-							info.Description = metadata.Description
-							info.Name = metadata.Name
-						}
-						if err := info.validate(); err != nil {
-							slog.Warn("invalid skill from workspace", "name", info.Name, "error", err)
-							continue
-						}
-						skills = append(skills, info)
-					}
-				}
+	addSkills := func(dir, source string) {
+		if dir == "" {
+			return
+		}
+		dirs, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, d := range dirs {
+			if !d.IsDir() {
+				continue
 			}
+			skillFile := filepath.Join(dir, d.Name(), "SKILL.md")
+			if _, err := os.Stat(skillFile); err != nil {
+				continue
+			}
+			info := SkillInfo{
+				Name:   d.Name(),
+				Path:   skillFile,
+				Source: source,
+			}
+			metadata := sl.getSkillMetadata(skillFile)
+			if metadata != nil {
+				info.Description = metadata.Description
+				info.Name = metadata.Name
+			}
+			if err := info.validate(); err != nil {
+				slog.Warn("invalid skill from "+source, "name", info.Name, "error", err)
+				continue
+			}
+			if seen[info.Name] {
+				continue
+			}
+			seen[info.Name] = true
+			skills = append(skills, info)
 		}
 	}
 
-	// 全局 skills (~/.picoclaw/skills) - 被 workspace skills 覆盖
-	if sl.globalSkills != "" {
-		if dirs, err := os.ReadDir(sl.globalSkills); err == nil {
-			for _, dir := range dirs {
-				if dir.IsDir() {
-					skillFile := filepath.Join(sl.globalSkills, dir.Name(), "SKILL.md")
-					if _, err := os.Stat(skillFile); err == nil {
-						// 检查是否已被 workspace skills 覆盖
-						exists := false
-						for _, s := range skills {
-							if s.Name == dir.Name() && s.Source == "workspace" {
-								exists = true
-								break
-							}
-						}
-						if exists {
-							continue
-						}
-
-						info := SkillInfo{
-							Name:   dir.Name(),
-							Path:   skillFile,
-							Source: "global",
-						}
-						metadata := sl.getSkillMetadata(skillFile)
-						if metadata != nil {
-							info.Description = metadata.Description
-							info.Name = metadata.Name
-						}
-						if err := info.validate(); err != nil {
-							slog.Warn("invalid skill from global", "name", info.Name, "error", err)
-							continue
-						}
-						skills = append(skills, info)
-					}
-				}
-			}
-		}
-	}
-
-	if sl.builtinSkills != "" {
-		if dirs, err := os.ReadDir(sl.builtinSkills); err == nil {
-			for _, dir := range dirs {
-				if dir.IsDir() {
-					skillFile := filepath.Join(sl.builtinSkills, dir.Name(), "SKILL.md")
-					if _, err := os.Stat(skillFile); err == nil {
-						// 检查是否已被 workspace 或 global skills 覆盖
-						exists := false
-						for _, s := range skills {
-							if s.Name == dir.Name() && (s.Source == "workspace" || s.Source == "global") {
-								exists = true
-								break
-							}
-						}
-						if exists {
-							continue
-						}
-
-						info := SkillInfo{
-							Name:   dir.Name(),
-							Path:   skillFile,
-							Source: "builtin",
-						}
-						metadata := sl.getSkillMetadata(skillFile)
-						if metadata != nil {
-							info.Description = metadata.Description
-							info.Name = metadata.Name
-						}
-						if err := info.validate(); err != nil {
-							slog.Warn("invalid skill from builtin", "name", info.Name, "error", err)
-							continue
-						}
-						skills = append(skills, info)
-					}
-				}
-			}
-		}
-	}
+	// Priority: workspace > global > builtin
+	addSkills(sl.workspaceSkills, "workspace")
+	addSkills(sl.globalSkills, "global")
+	addSkills(sl.builtinSkills, "builtin")
 
 	return skills
 }
