@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"sync/atomic"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // ErrBusClosed is returned when publishing to a closed MessageBus.
@@ -104,5 +106,41 @@ func (mb *MessageBus) SubscribeOutboundMedia(ctx context.Context) (OutboundMedia
 func (mb *MessageBus) Close() {
 	if mb.closed.CompareAndSwap(false, true) {
 		close(mb.done)
+
+		// Drain buffered channels so messages aren't silently lost.
+		// Channels are NOT closed to avoid send-on-closed panics from concurrent publishers.
+		drained := 0
+		for {
+			select {
+			case <-mb.inbound:
+				drained++
+			default:
+				goto doneInbound
+			}
+		}
+	doneInbound:
+		for {
+			select {
+			case <-mb.outbound:
+				drained++
+			default:
+				goto doneOutbound
+			}
+		}
+	doneOutbound:
+		for {
+			select {
+			case <-mb.outboundMedia:
+				drained++
+			default:
+				goto doneMedia
+			}
+		}
+	doneMedia:
+		if drained > 0 {
+			logger.DebugCF("bus", "Drained buffered messages during close", map[string]any{
+				"count": drained,
+			})
+		}
 	}
 }

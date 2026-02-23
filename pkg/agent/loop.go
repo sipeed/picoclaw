@@ -122,12 +122,13 @@ func registerSharedTools(
 		// Message tool
 		messageTool := tools.NewMessageTool()
 		messageTool.SetSendCallback(func(channel, chatID, content string) error {
-			msgBus.PublishOutbound(context.TODO(), bus.OutboundMessage{
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer pubCancel()
+			return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 				Channel: channel,
 				ChatID:  chatID,
 				Content: content,
 			})
-			return nil
 		})
 		agent.Tools.Register(messageTool)
 

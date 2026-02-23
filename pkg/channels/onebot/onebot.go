@@ -306,6 +306,9 @@ func (c *OneBotChannel) sendAPIRequest(action string, params any, timeout time.D
 
 	select {
 	case resp := <-ch:
+		if resp == nil {
+			return nil, fmt.Errorf("API request %s: channel stopped", action)
+		}
 		return resp, nil
 	case <-time.After(timeout):
 		return nil, fmt.Errorf("API request %s timed out after %v", action, timeout)
@@ -353,7 +356,11 @@ func (c *OneBotChannel) Stop(ctx context.Context) error {
 	}
 
 	c.pendingMu.Lock()
-	for echo := range c.pending {
+	for echo, ch := range c.pending {
+		select {
+		case ch <- nil: // non-blocking wake for blocked sendAPIRequest goroutines
+		default:
+		}
 		delete(c.pending, echo)
 	}
 	c.pendingMu.Unlock()
