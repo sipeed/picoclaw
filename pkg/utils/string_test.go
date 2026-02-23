@@ -104,3 +104,27 @@ func TestTruncate(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeMessageContent(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"empty", "", ""},
+		{"plain text unchanged", "Hello world", "Hello world"},
+		{"strip ZWSP", "Hello\u200bworld", "Helloworld"},
+		{"strip RTL override", "Hi\u202eevil", "Hievil"},
+		{"strip BOM", "\uFEFFcontent", "content"},
+		{"strip multiple", "a\u200c\u202ab\u202cc", "abc"},
+		{"unicode letters preserved", "café 日本語", "café 日本語"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SanitizeMessageContent(tt.input)
+			if got != tt.want {
+				t.Errorf("SanitizeMessageContent(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

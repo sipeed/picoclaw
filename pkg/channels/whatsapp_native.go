@@ -174,6 +174,9 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 	if content == "" && evt.Message.ExtendedTextMessage != nil {
 		content = evt.Message.ExtendedTextMessage.GetText()
 	}
+	content = utils.SanitizeMessageContent(content)
+
+	if content == "" { return } // ignore empty messages
 
 	var mediaPaths []string
 	// Optional: resolve media to local paths if needed; for now we only forward text to the bus.
