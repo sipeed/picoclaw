@@ -1668,6 +1668,11 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
+			if len(candidates) > 0 {
+				c := candidates[0]
+				p := al.resolveProvider(c.Provider, c.Model, agent.Provider)
+				return doCall(ctx, p, c.Model)
+			}
 			return doCall(ctx, agent.Provider, primaryModel)
 		}
 

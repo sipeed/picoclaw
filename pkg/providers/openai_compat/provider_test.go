@@ -287,6 +287,12 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 }
 
+func TestNormalizeModel_OpenAIPrefix(t *testing.T) {
+	if got := normalizeModel("openai/gpt-5.2", "https://api.openai.com/v1"); got != "gpt-5.2" {
+		t.Fatalf("normalizeModel(openai/gpt-5.2) = %q, want %q", got, "gpt-5.2")
+	}
+}
+
 func TestProviderChat_StreamingTextResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/text/chatcompletion_v2" {
