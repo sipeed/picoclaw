@@ -23,6 +23,7 @@ Compatibility:
 - No remote plugin marketplace/distribution
 - No plugin sandboxing model
 - No stable external plugin ABI yet
+- No Go `.so` plugin loading as default direction
 
 ## Phase Plan
 
@@ -78,12 +79,26 @@ Exit criteria:
 
 Goal: support runtime-loaded plugins only if security and operability are acceptable.
 
+Preferred direction:
+
+- Runtime plugins run as subprocesses.
+- Host and plugin communicate via RPC/gRPC.
+- Host manages lifecycle (spawn/health/timeout/restart), not in-process dynamic loading.
+
+Why this direction:
+
+- Go native `.so` plugin loading has strict toolchain/ABI coupling with host binary.
+- Subprocess RPC model reduces coupling and improves fault isolation.
+- Process boundary provides a cleaner place for permissions and sandbox controls.
+
 Preconditions:
 
 - Threat model approved
 - Signature/trust model defined
 - Sandboxing and permission boundaries defined
 - Rollback and safe-disable behavior validated
+- Versioned RPC handshake and capability negotiation defined
+- Process supervision policy defined (timeouts, retries, crash loop backoff)
 
 Until then, compile-time registration remains the recommended model.
 
