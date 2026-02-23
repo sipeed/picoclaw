@@ -272,3 +272,26 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 		)
 	}
 }
+
+func TestShellTool_RestrictToWorkspace_AllowsEnvAssignmentWithSlash(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+
+	guardErr := tool.guardCommand("TZ=Asia/Shanghai date '+%Y-%m-%d'", tmpDir)
+	if guardErr != "" {
+		t.Fatalf("expected env assignment path to be ignored, got guard error: %s", guardErr)
+	}
+}
+
+func TestShellTool_RestrictToWorkspace_StillBlocksRealPathAfterEnvAssignment(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+
+	guardErr := tool.guardCommand("TZ=Asia/Shanghai cat /etc/passwd", tmpDir)
+	if guardErr == "" {
+		t.Fatalf("expected real path access to be blocked")
+	}
+	if !strings.Contains(guardErr, "outside working dir") {
+		t.Fatalf("expected outside working dir error, got: %s", guardErr)
+	}
+}

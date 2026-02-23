@@ -72,6 +72,11 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
 }
 
+var (
+	guardPathPattern  = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+	envVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
+
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
 	return NewExecToolWithConfig(workingDir, restrict, nil)
 }
@@ -556,10 +561,13 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		matches := guardPathPattern.FindAllStringIndex(cmd, -1)
+		for _, match := range matches {
+			raw := cmd[match[0]:match[1]]
+			if pathMatchIsEnvAssignmentValue(cmd, match[0]) {
+				continue
+			}
 
-		for _, raw := range matches {
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue
@@ -577,6 +585,25 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	return ""
+}
+
+func pathMatchIsEnvAssignmentValue(command string, matchStart int) bool {
+	if matchStart <= 0 || matchStart > len(command) {
+		return false
+	}
+
+	tokenStart := strings.LastIndexAny(command[:matchStart], " \t\r\n") + 1
+	if tokenStart < 0 || tokenStart >= matchStart {
+		return false
+	}
+
+	prefix := command[tokenStart:matchStart]
+	eq := strings.Index(prefix, "=")
+	if eq <= 0 {
+		return false
+	}
+
+	return envVarNamePattern.MatchString(prefix[:eq])
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

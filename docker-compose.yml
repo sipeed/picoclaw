@@ -26,6 +26,7 @@ services:
       - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
       - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
     environment:
+      TZ: Asia/Shanghai
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: localhost,127.0.0.1,::1
@@ -68,6 +69,7 @@ services:
       # Persistent workspace (sessions, memory, logs)
       - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
     environment:
+      TZ: Asia/Shanghai
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: localhost,127.0.0.1,::1

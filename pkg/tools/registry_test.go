@@ -143,7 +143,7 @@ func TestToolRegistry_ExecuteWithContext_ContextualTool(t *testing.T) {
 	}
 	r.Register(ct)
 
-	r.ExecuteWithContext(context.Background(), "ctx_tool", nil, "telegram", "chat-42", nil)
+	r.ExecuteWithContext(context.Background(), "ctx_tool", nil, "telegram", "chat-42", "", nil)
 
 	if ct.channel != "telegram" {
 		t.Errorf("expected channel 'telegram', got %q", ct.channel)
@@ -160,7 +160,7 @@ func TestToolRegistry_ExecuteWithContext_SkipsEmptyContext(t *testing.T) {
 	}
 	r.Register(ct)
 
-	r.ExecuteWithContext(context.Background(), "ctx_tool", nil, "", "", nil)
+	r.ExecuteWithContext(context.Background(), "ctx_tool", nil, "", "", "", nil)
 
 	if ct.channel != "" || ct.chatID != "" {
 		t.Error("SetContext should not be called with empty channel/chatID")
@@ -178,7 +178,7 @@ func TestToolRegistry_ExecuteWithContext_AsyncCallback(t *testing.T) {
 	called := false
 	cb := func(_ context.Context, _ *ToolResult) { called = true }
 
-	result := r.ExecuteWithContext(context.Background(), "async_tool", nil, "", "", cb)
+	result := r.ExecuteWithContext(context.Background(), "async_tool", nil, "", "", "", cb)
 	if at.cb == nil {
 		t.Error("expected SetCallback to have been called")
 	}
