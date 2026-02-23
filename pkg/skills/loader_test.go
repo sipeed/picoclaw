@@ -1,9 +1,12 @@
 package skills
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSkillsInfoValidate(t *testing.T) {
@@ -133,6 +136,134 @@ func TestExtractFrontmatter(t *testing.T) {
 			)
 		})
 	}
+}
+
+// createSkillDir creates a skill directory with a SKILL.md file containing the given frontmatter.
+func createSkillDir(t *testing.T, base, dirName, name, description string) {
+	t.Helper()
+	dir := filepath.Join(base, dirName)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	content := "---\nname: " + name + "\ndescription: " + description + "\n---\n\n# " + name
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644))
+}
+
+func TestListSkillsWorkspaceOverridesGlobal(t *testing.T) {
+	tmp := t.TempDir()
+	ws := filepath.Join(tmp, "workspace")
+	global := filepath.Join(tmp, "global")
+
+	createSkillDir(t, filepath.Join(ws, "skills"), "my-skill", "my-skill", "workspace version")
+	createSkillDir(t, global, "my-skill", "my-skill", "global version")
+
+	sl := NewSkillsLoader(ws, global, "")
+	skills := sl.ListSkills()
+
+	assert.Len(t, skills, 1)
+	assert.Equal(t, "workspace", skills[0].Source)
+	assert.Equal(t, "workspace version", skills[0].Description)
+}
+
+func TestListSkillsGlobalOverridesBuiltin(t *testing.T) {
+	tmp := t.TempDir()
+	ws := filepath.Join(tmp, "workspace")
+	global := filepath.Join(tmp, "global")
+	builtin := filepath.Join(tmp, "builtin")
+
+	createSkillDir(t, global, "my-skill", "my-skill", "global version")
+	createSkillDir(t, builtin, "my-skill", "my-skill", "builtin version")
+
+	sl := NewSkillsLoader(ws, global, builtin)
+	skills := sl.ListSkills()
+
+	assert.Len(t, skills, 1)
+	assert.Equal(t, "global", skills[0].Source)
+	assert.Equal(t, "global version", skills[0].Description)
+}
+
+func TestListSkillsMetadataNameDedup(t *testing.T) {
+	tmp := t.TempDir()
+	ws := filepath.Join(tmp, "workspace")
+	global := filepath.Join(tmp, "global")
+
+	// Different directory names but same metadata name
+	createSkillDir(t, filepath.Join(ws, "skills"), "dir-a", "shared-name", "workspace version")
+	createSkillDir(t, global, "dir-b", "shared-name", "global version")
+
+	sl := NewSkillsLoader(ws, global, "")
+	skills := sl.ListSkills()
+
+	assert.Len(t, skills, 1)
+	assert.Equal(t, "shared-name", skills[0].Name)
+	assert.Equal(t, "workspace", skills[0].Source)
+}
+
+func TestListSkillsMultipleDistinctSkills(t *testing.T) {
+	tmp := t.TempDir()
+	ws := filepath.Join(tmp, "workspace")
+	global := filepath.Join(tmp, "global")
+	builtin := filepath.Join(tmp, "builtin")
+
+	createSkillDir(t, filepath.Join(ws, "skills"), "skill-a", "skill-a", "desc a")
+	createSkillDir(t, global, "skill-b", "skill-b", "desc b")
+	createSkillDir(t, builtin, "skill-c", "skill-c", "desc c")
+
+	sl := NewSkillsLoader(ws, global, builtin)
+	skills := sl.ListSkills()
+
+	assert.Len(t, skills, 3)
+	names := map[string]string{}
+	for _, s := range skills {
+		names[s.Name] = s.Source
+	}
+	assert.Equal(t, "workspace", names["skill-a"])
+	assert.Equal(t, "global", names["skill-b"])
+	assert.Equal(t, "builtin", names["skill-c"])
+}
+
+func TestListSkillsInvalidSkillSkipped(t *testing.T) {
+	tmp := t.TempDir()
+	ws := filepath.Join(tmp, "workspace")
+	global := filepath.Join(tmp, "global")
+
+	// Invalid name (underscore)
+	createSkillDir(t, filepath.Join(ws, "skills"), "bad_skill", "bad_skill", "desc")
+	// Valid skill
+	createSkillDir(t, global, "good-skill", "good-skill", "desc")
+
+	sl := NewSkillsLoader(ws, global, "")
+	skills := sl.ListSkills()
+
+	assert.Len(t, skills, 1)
+	assert.Equal(t, "good-skill", skills[0].Name)
+}
+
+func TestListSkillsEmptyAndNonexistentDirs(t *testing.T) {
+	tmp := t.TempDir()
+	ws := filepath.Join(tmp, "workspace")
+	emptyDir := filepath.Join(tmp, "empty")
+	require.NoError(t, os.MkdirAll(emptyDir, 0o755))
+
+	sl := NewSkillsLoader(ws, emptyDir, filepath.Join(tmp, "nonexistent"))
+	skills := sl.ListSkills()
+
+	assert.Empty(t, skills)
+}
+
+func TestListSkillsDirWithoutSkillMD(t *testing.T) {
+	tmp := t.TempDir()
+	ws := filepath.Join(tmp, "workspace")
+	global := filepath.Join(tmp, "global")
+
+	// Directory exists but has no SKILL.md
+	require.NoError(t, os.MkdirAll(filepath.Join(global, "no-skillmd"), 0o755))
+	// Valid skill alongside
+	createSkillDir(t, global, "real-skill", "real-skill", "desc")
+
+	sl := NewSkillsLoader(ws, global, "")
+	skills := sl.ListSkills()
+
+	assert.Len(t, skills, 1)
+	assert.Equal(t, "real-skill", skills[0].Name)
 }
 
 func TestStripFrontmatter(t *testing.T) {
