@@ -234,7 +234,9 @@ func normalizeModel(model, apiBase string) string {
 		return model
 	}
 
-	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
+	lowerBase := strings.ToLower(apiBase)
+	if strings.Contains(lowerBase, "openrouter.ai") ||
+		strings.Contains(lowerBase, "nvidia.com") {
 		return model
 	}
 
