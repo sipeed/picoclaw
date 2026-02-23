@@ -9,6 +9,13 @@ import (
 // but may extend to maxLen when needed. It respects rune counts to ensure multi-byte
 // characters (like emojis or CJK) are not split in half.
 func SplitMessage(content string, maxLen int) []string {
+	if content == "" {
+		return nil
+	}
+	if maxLen <= 0 {
+		return []string{content}
+	}
+
 	var messages []string
 
 	// Dynamic buffer: 10% of maxLen, but at least 50 chars if possible
@@ -35,7 +42,8 @@ func SplitMessage(content string, maxLen int) []string {
 		}
 
 		// Find natural split point within the effective limit
-		msgEnd := findLastSentenceBoundaryRunes(runes[:effectiveLimit], 300)
+		// We pass the full slice and a limit so findLastSentenceBoundaryRunes can look ahead.
+		msgEnd := findLastSentenceBoundaryRunes(runes, effectiveLimit, 300)
 		if msgEnd <= 0 {
 			msgEnd = findLastNewlineRunes(runes[:effectiveLimit], 200)
 		}
@@ -84,7 +92,7 @@ func SplitMessage(content string, maxLen int) []string {
 					if msgEnd > headerEnd+20 {
 						// Find a better split point closer to maxLen
 						innerLimit := maxLen - 5 // Leave room for "\n```"
-						betterEnd := findLastSentenceBoundaryRunes(runes[:innerLimit], 300)
+						betterEnd := findLastSentenceBoundaryRunes(runes, innerLimit, 300)
 						if betterEnd <= headerEnd {
 							betterEnd = findLastNewlineRunes(runes[:innerLimit], 200)
 						}
@@ -105,7 +113,7 @@ func SplitMessage(content string, maxLen int) []string {
 					}
 
 					// Otherwise, try to split before the code block starts
-					newEnd := findLastSentenceBoundaryRunes(runes[:unclosedIdx], 300)
+					newEnd := findLastSentenceBoundaryRunes(runes, unclosedIdx, 300)
 					if newEnd <= 0 {
 						newEnd = findLastNewlineRunes(runes[:unclosedIdx], 200)
 					}
@@ -210,21 +218,27 @@ func findLastSpaceRunes(runes []rune, searchWindow int) int {
 	return -1
 }
 
-// findLastSentenceBoundaryRunes finds the last sentence-ending punctuation
-// Returns the position after the punctuation or -1 if not found
-func findLastSentenceBoundaryRunes(runes []rune, searchWindow int) int {
-	searchStart := len(runes) - searchWindow
+// findLastSentenceBoundaryRunes finds the last sentence-ending punctuation within a limit.
+// It looks ahead to verify the boundary is real (followed by space, newline, or end of string).
+func findLastSentenceBoundaryRunes(runes []rune, limit int, searchWindow int) int {
+	if limit > len(runes) {
+		limit = len(runes)
+	}
+	searchStart := limit - searchWindow
 	if searchStart < 0 {
 		searchStart = 0
 	}
-	for i := len(runes) - 1; i >= searchStart; i-- {
+	for i := limit - 1; i >= searchStart; i-- {
 		switch runes[i] {
 		case '.', '!', '?', '。', '！', '？':
-			// Ensure it's the end of a sentence (followed by space, newline, or end of string)
-			if i == len(runes)-1 || runes[i+1] == ' ' || runes[i+1] == '\n' || runes[i+1] == '\t' {
+			// Ensure it's a true boundary: 
+			// either it's the very end of the full message, 
+			// or the NEXT rune (lookahead) is a space, newline, or tab.
+			if i == len(runes)-1 || (i+1 < len(runes) && (runes[i+1] == ' ' || runes[i+1] == '\n' || runes[i+1] == '\t')) {
 				return i + 1
 			}
 		}
 	}
 	return -1
 }
+

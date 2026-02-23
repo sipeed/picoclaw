@@ -169,7 +169,14 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		limit = 4000 // Default Telegram limit (~4096)
 	}
 
-	chunks := utils.SplitMessage(msg.Content, limit)
+	// Telegram HTML tags (like <pre><code>) can expand content significantly.
+	// We use a safe headroom for the markdown-based split.
+	effectiveMarkdownLimit := limit - 500
+	if effectiveMarkdownLimit < 500 {
+		effectiveMarkdownLimit = 500
+	}
+
+	chunks := utils.SplitMessage(msg.Content, effectiveMarkdownLimit)
 
 	for i, chunk := range chunks {
 		htmlContent := markdownToTelegramHTML(chunk)

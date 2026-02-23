@@ -29,6 +29,12 @@ func TestSplitMessage(t *testing.T) {
 			expectChunks: 1,
 		},
 		{
+			name:         "MaxLen 0 (no split)",
+			content:      "Hello world",
+			maxLen:       0,
+			expectChunks: 1,
+		},
+		{
 			name:         "Simple split regular text",
 			content:      longText,
 			maxLen:       2000,
@@ -44,11 +50,6 @@ func TestSplitMessage(t *testing.T) {
 		},
 		{
 			name: "Split at newline",
-			// 1750 chars then newline, then more chars.
-			// Dynamic buffer: 2000 / 10 = 200.
-			// Effective limit: 2000 - 200 = 1800.
-			// Split should happen at newline because it's at 1750 (< 1800).
-			// Total length must > 2000 to trigger split. 1750 + 1 + 300 = 2051.
 			content:      strings.Repeat("a", 1750) + "\n" + strings.Repeat("b", 300),
 			maxLen:       2000,
 			expectChunks: 2,
@@ -67,11 +68,9 @@ func TestSplitMessage(t *testing.T) {
 			maxLen:       2000,
 			expectChunks: 2,
 			checkContent: func(t *testing.T, chunks []string) {
-				// Check that first chunk ends with closing fence
 				if !strings.HasSuffix(chunks[0], "\n```") {
 					t.Error("First chunk should end with injected closing fence")
 				}
-				// Check that second chunk starts with execution header
 				if !strings.HasPrefix(chunks[1], "```go") {
 					t.Error("Second chunk should start with injected code block header")
 				}
@@ -83,12 +82,20 @@ func TestSplitMessage(t *testing.T) {
 			maxLen:       2000,
 			expectChunks: 2,
 			checkContent: func(t *testing.T, chunks []string) {
-				// Just verify we didn't panic and got valid strings.
-				// Go strings are UTF-8, if we split mid-rune it would be bad,
-				// but standard slicing might do that.
-				// Let's assume standard behavior is acceptable or check if it produces invalid rune?
-				if !strings.Contains(chunks[0], "\u4e16") {
-					t.Error("Chunk should contain unicode characters")
+				// Each chunk should stay within max runes limit
+				for i, chunk := range chunks {
+					runeCount := len([]rune(chunk))
+					if runeCount > 2000 {
+						t.Errorf("Chunk %d has too many runes: %d", i, runeCount)
+					}
+				}
+				// Verify total rune count
+				totalRunes := 0
+				for _, chunk := range chunks {
+					totalRunes += len([]rune(chunk))
+				}
+				if totalRunes != 2500 {
+					t.Errorf("Total rune count mismatch. Got %d, want 2500", totalRunes)
 				}
 			},
 		},
