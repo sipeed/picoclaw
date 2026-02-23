@@ -1,7 +1,7 @@
 .git
 .gitignore
 build/
-.picoclaw/
+.clawdroid/
 config/
 .env
 .env.example
