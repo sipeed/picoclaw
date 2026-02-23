@@ -179,7 +179,7 @@ func getMessagingGuidance() string {
 - Reply in the current session: automatically routes to the source channel.
 - Use the message tool for proactive sends and cross-channel messaging. Parameters: content (required), channel (optional), chat_id (optional).
 - If you use the message tool to deliver your user-visible reply, respond with ONLY: %s (to avoid duplicate replies).
-- Never use exec or curl for messaging; PicoClaw handles all routing internally.`, SilentReplyToken)
+- Never use exec or curl for messaging; the system handles all routing internally.`, SilentReplyToken)
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +242,7 @@ Rules:
 func getHeartbeatSection() string {
 	return `## Heartbeats
 If you receive a heartbeat poll (a scheduled check message), and there is nothing that needs attention, reply exactly: HEARTBEAT_OK
-PicoClaw treats "HEARTBEAT_OK" as a heartbeat acknowledgment and discards it.
+The system treats "HEARTBEAT_OK" as a heartbeat acknowledgment and discards it.
 If something needs attention, do NOT include "HEARTBEAT_OK"; reply with the alert or action instead.`
 }
 
@@ -252,7 +252,7 @@ If something needs attention, do NOT include "HEARTBEAT_OK"; reply with the aler
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	bootstrapFiles := []string{
-		"AGENTS.md",
+		"AGENT.md",
 		"SOUL.md",
 		"USER.md",
 		"IDENTITY.md",
