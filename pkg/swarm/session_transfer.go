@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 // SessionTransfer handles session migration between nodes.
@@ -101,7 +102,7 @@ func (st *SessionTransfer) TransferSession(ctx context.Context, targetNode *Node
 
 	payload.SourceNodeID = st.localNode.ID
 	payload.TargetNodeID = targetNode.ID
-	payload.Timestamp = payload.Timestamp
+	payload.Timestamp = time.Now().UnixNano()
 
 	// Create transfer operation
 	op := &TransferOperation{
