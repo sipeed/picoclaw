@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,6 +17,35 @@ import (
 const (
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
+
+// Package-level regexp variables for better performance
+var (
+	scriptTagRegex = regexp.MustCompile(`<script[\s\S]*?</script>`)
+	styleTagRegex  = regexp.MustCompile(`<style[\s\S]*?</style>`)
+	allTagsRegex   = regexp.MustCompile(`<[^>]+>`)
+	whitespaceRegex = regexp.MustCompile(`[^\S\n]+`)
+	newlineRegex    = regexp.MustCompile(`\n{3,}`)
+	
+	// Block tag regexes
+	blockTags = []string{"div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "tr", "td", "th", "blockquote", "pre", "section", "article", "header", "footer"}
+	
+	// Compile regexes for block tags once
+	blockTagRegexes []*regexp.Regexp
+)
+
+func init() {
+	// Precompile regexes for block tags
+	blockTagRegexes = make([]*regexp.Regexp, 0, len(blockTags)*2)
+	for _, tag := range blockTags {
+		// Opening tag regex
+		openingRegex := regexp.MustCompile(`<` + tag + `[^>]*>`)
+		blockTagRegexes = append(blockTagRegexes, openingRegex)
+		
+		// Closing tag regex
+		closingRegex := regexp.MustCompile(`</` + tag + `>`)
+		blockTagRegexes = append(blockTagRegexes, closingRegex)
+	}
+}
 
 type SearchProvider interface {
 	Search(ctx context.Context, query string, count int) (string, error)
@@ -590,26 +620,26 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 }
 
 func (t *WebFetchTool) extractText(htmlContent string) string {
-	// 首先移除 script 和 style 标签
-	re := regexp.MustCompile(`<script[\s\S]*?</script>`)
-	result := re.ReplaceAllLiteralString(htmlContent, "")
-	re = regexp.MustCompile(`<style[\s\S]*?</style>`)
-	result = re.ReplaceAllLiteralString(result, "")
+	// First remove script and style tags
+	result := scriptTagRegex.ReplaceAllLiteralString(htmlContent, "")
+	result = styleTagRegex.ReplaceAllLiteralString(result, "")
 	
-	// 处理 HTML 实体
-	result = t.decodeHTMLEntities(result)
+	// Handle self-closing tags like <br/> by replacing them with spaces
+	selfClosingTagsRegex := regexp.MustCompile(`<br[^>]*>`)
+	result = selfClosingTagsRegex.ReplaceAllLiteralString(result, " ")
 	
-	// 移除 HTML 标签，但保留一些结构信息
+	// Remove HTML tags but preserve some structure information
 	result = t.removeHTMLTags(result)
+	
+	// Handle HTML entities using standard library
+	result = html.UnescapeString(result)
 
-	// 清理空白字符
+	// Clean up whitespace
 	result = strings.TrimSpace(result)
-	re = regexp.MustCompile(`[^\S\n]+`)
-	result = re.ReplaceAllString(result, " ")
-	re = regexp.MustCompile(`\n{3,}`)
-	result = re.ReplaceAllString(result, "\n\n")
+	result = whitespaceRegex.ReplaceAllString(result, " ")
+	result = newlineRegex.ReplaceAllString(result, "\n\n")
 
-	// 移除空行
+	// Remove empty lines
 	lines := strings.Split(result, "\n")
 	var cleanLines []string
 	for _, line := range lines {
@@ -622,44 +652,17 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	return strings.Join(cleanLines, "\n")
 }
 
-// decodeHTMLEntities 解码常见的 HTML 实体
-func (t *WebFetchTool) decodeHTMLEntities(s string) string {
-	entities := map[string]string{
-		"&amp;":  "&",
-		"&lt;":   "<",
-		"&gt;":   ">",
-		"&quot;": "\"",
-		"&#39;":  "'",
-		"&nbsp;": " ",
-		"&copy;": "©",
-		"&reg;":  "®",
-		"&trade;": "™",
-	}
-	
-	for entity, char := range entities {
-		s = strings.ReplaceAll(s, entity, char)
-	}
-	
-	return s
-}
 
-// removeHTMLTags 移除 HTML 标签，但尽量保留内容结构
+
+// removeHTMLTags removes HTML tags but preserves content structure
 func (t *WebFetchTool) removeHTMLTags(s string) string {
-	// 对于块级元素，在移除前添加换行符，以保留结构
-	blockTags := []string{"div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "tr", "td", "th", "blockquote", "pre", "section", "article", "header", "footer"}
-	
-	for _, tag := range blockTags {
-		// 匹配开始标签
-		re := regexp.MustCompile(`<` + tag + `[^>]*>`)
-		s = re.ReplaceAllString(s, "\n")
-		// 匹配结束标签
-		re = regexp.MustCompile(`</` + tag + `>`)
-		s = re.ReplaceAllString(s, "\n")
+	// For block-level elements, add newlines before removal to preserve structure
+	for _, regex := range blockTagRegexes {
+		s = regex.ReplaceAllString(s, "\n")
 	}
 	
-	// 移除所有剩余的 HTML 标签
-	re = regexp.MustCompile(`<[^>]+>`)
-	s = re.ReplaceAllLiteralString(s, "")
-	
+	// Remove all remaining HTML tags
+	s = allTagsRegex.ReplaceAllLiteralString(s, "")
+
 	return s
 }
