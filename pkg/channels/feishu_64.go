@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,7 +47,9 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	}
 
 	dispatcher := larkdispatcher.NewEventDispatcher(c.config.VerificationToken, c.config.EncryptKey).
-		OnP2MessageReceiveV1(c.handleMessageReceive)
+		OnP2MessageReceiveV1(c.handleMessageReceive).
+		// Backward compatibility for legacy "message" event subscriptions.
+		OnP1MessageReceiveV1(c.handleLegacyMessageReceive)
 
 	runCtx, cancel := context.WithCancel(ctx)
 
@@ -130,6 +133,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 
 func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
+		logger.DebugC("feishu", "Ignored empty P2 message event")
 		return nil
 	}
 
@@ -138,6 +142,7 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 
 	chatID := stringValue(message.ChatId)
 	if chatID == "" {
+		logger.DebugC("feishu", "Ignored P2 message event with empty chat_id")
 		return nil
 	}
 
@@ -175,6 +180,71 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 	}
 
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{
+		"sender_id": senderID,
+		"chat_id":   chatID,
+		"preview":   utils.Truncate(content, 80),
+	})
+
+	c.HandleMessage(senderID, chatID, content, nil, metadata)
+	return nil
+}
+
+func (c *FeishuChannel) handleLegacyMessageReceive(_ context.Context, event *larkim.P1MessageReceiveV1) error {
+	if event == nil || event.Event == nil {
+		logger.DebugC("feishu", "Ignored empty P1 legacy message event")
+		return nil
+	}
+
+	payload := event.Event
+	chatID := strings.TrimSpace(payload.OpenChatID)
+	if chatID == "" {
+		logger.DebugC("feishu", "Ignored P1 legacy event with empty open_chat_id")
+		return nil
+	}
+
+	senderID := strings.TrimSpace(payload.EmployeeID)
+	if senderID == "" {
+		senderID = strings.TrimSpace(payload.OpenID)
+	}
+	if senderID == "" {
+		senderID = strings.TrimSpace(payload.UnionID)
+	}
+	if senderID == "" {
+		senderID = "unknown"
+	}
+
+	content := strings.TrimSpace(payload.TextWithoutAtBot)
+	if content == "" {
+		content = strings.TrimSpace(payload.Text)
+	}
+	if content == "" {
+		content = "[empty message]"
+	}
+
+	metadata := map[string]string{}
+	if payload.OpenMessageID != "" {
+		metadata["message_id"] = payload.OpenMessageID
+	}
+	if payload.MsgType != "" {
+		metadata["message_type"] = payload.MsgType
+	}
+	if payload.ChatType != "" {
+		metadata["chat_type"] = payload.ChatType
+	}
+	if payload.TenantKey != "" {
+		metadata["tenant_key"] = payload.TenantKey
+	}
+
+	chatType := strings.ToLower(strings.TrimSpace(payload.ChatType))
+	if chatType == "p2p" || chatType == "private" {
+		metadata["peer_kind"] = "direct"
+		metadata["peer_id"] = senderID
+	} else {
+		metadata["peer_kind"] = "group"
+		metadata["peer_id"] = chatID
+	}
+
+	logger.InfoCF("feishu", "Feishu message received (legacy event)", map[string]any{
 		"sender_id": senderID,
 		"chat_id":   chatID,
 		"preview":   utils.Truncate(content, 80),
