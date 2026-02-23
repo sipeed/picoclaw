@@ -4,8 +4,8 @@ type ToolCall struct {
 	ID               string         `json:"id"`
 	Type             string         `json:"type,omitempty"`
 	Function         *FunctionCall  `json:"function,omitempty"`
-	Name             string         `json:"name,omitempty"`
-	Arguments        map[string]any `json:"arguments,omitempty"`
+	Name             string         `json:"-"`
+	Arguments        map[string]any `json:"-"`
 	ThoughtSignature string         `json:"-"` // Internal use only
 	ExtraContent     *ExtraContent  `json:"extra_content,omitempty"`
 }
