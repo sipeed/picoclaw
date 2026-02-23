@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -57,6 +58,7 @@ type Channel struct {
 	bus       *bus.MessageBus
 	running   bool
 	allowList []string
+	token     string // Authentication token (optional)
 	server    *http.Server
 	upgrader  websocket.Upgrader
 	clients   sync.Map // map[string]*clientConn
@@ -83,10 +85,16 @@ func NewChannel(cfg config.WebSocketConfig, messageBus *bus.MessageBus) (*Channe
 		cfg.Host = "0.0.0.0"
 	}
 
+	// Validate allow_from configuration at startup
+	if err := validateAllowList(cfg.AllowFrom); err != nil {
+		return nil, fmt.Errorf("invalid allow_from configuration: %w", err)
+	}
+
 	return &Channel{
 		config:    cfg,
 		bus:       messageBus,
 		allowList: cfg.AllowFrom,
+		token:     strings.TrimSpace(cfg.Token),
 		running:   false,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -98,6 +106,55 @@ func NewChannel(cfg config.WebSocketConfig, messageBus *bus.MessageBus) (*Channe
 			WriteBufferSize: 1024,
 		},
 	}, nil
+}
+
+// validateAllowList validates the allow_from configuration at startup
+// This prevents silent failures during runtime when invalid rules are encountered
+func validateAllowList(allowList []string) error {
+	if len(allowList) == 0 {
+		// Empty list is valid (allows all)
+		return nil
+	}
+
+	var invalidRules []string
+	validRuleCount := 0
+
+	for _, allowed := range allowList {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "" {
+			continue
+		}
+
+		// Check if it's a CIDR notation
+		if strings.Contains(allowed, "/") {
+			if _, _, err := net.ParseCIDR(allowed); err != nil {
+				invalidRules = append(invalidRules, fmt.Sprintf("%s (CIDR parse error: %v)", allowed, err))
+				continue
+			}
+			validRuleCount++
+		} else {
+			// Validate as plain IP address
+			// Strip zone identifier for validation
+			ipStr := allowed
+			if idx := strings.IndexByte(ipStr, '%'); idx != -1 {
+				ipStr = ipStr[:idx]
+			}
+			if net.ParseIP(ipStr) == nil {
+				invalidRules = append(invalidRules, fmt.Sprintf("%s (invalid IP address)", allowed))
+				continue
+			}
+			validRuleCount++
+		}
+	}
+
+	// If there are invalid rules, return error with details
+	if len(invalidRules) > 0 {
+		return fmt.Errorf("found %d invalid rule(s) in allow_from: %s",
+			len(invalidRules), strings.Join(invalidRules, "; "))
+	}
+
+	// All rules are valid
+	return nil
 }
 
 // Name returns the channel name
@@ -112,17 +169,91 @@ func (c *Channel) IsRunning() bool {
 	return c.running
 }
 
-// IsAllowed checks if a sender ID is allowed to use this channel
-func (c *Channel) IsAllowed(senderID string) bool {
+// IsAllowed checks if a client IP is allowed to use this channel
+// The clientID should be in the format "ip:port" (from r.RemoteAddr)
+// Supports:
+//   - Exact IP match: "192.168.1.5"
+//   - CIDR notation: "192.168.1.0/24", "10.0.0.0/8"
+//   - IPv6: "::1", "fe80::/10"
+func (c *Channel) IsAllowed(clientID string) bool {
 	if len(c.allowList) == 0 {
 		return true
 	}
+
+	// Extract IP address from "ip:port" format
+	clientIPStr := c.extractIP(clientID)
+	if clientIPStr == "" {
+		logger.WarnCF("websocket", "Failed to extract IP from client ID", map[string]any{
+			"client_id": clientID,
+		})
+		return false
+	}
+
+	// Parse client IP (strip zone identifier for IPv6 link-local addresses)
+	clientIPStr = c.stripZone(clientIPStr)
+	clientIP := net.ParseIP(clientIPStr)
+	if clientIP == nil {
+		logger.WarnCF("websocket", "Invalid client IP address", map[string]any{
+			"client_ip": clientIPStr,
+		})
+		return false
+	}
+
+	// Check against allow list
 	for _, allowed := range c.allowList {
-		if strings.EqualFold(allowed, senderID) {
-			return true
+		// Try CIDR notation first
+		if strings.Contains(allowed, "/") {
+			_, ipNet, err := net.ParseCIDR(allowed)
+			if err != nil {
+				// This should never happen as we validate at startup
+				// But keep for safety
+				logger.ErrorCF("websocket", "Invalid CIDR in allow list (should be caught at startup)", map[string]any{
+					"cidr":  allowed,
+					"error": err.Error(),
+				})
+				continue
+			}
+			if ipNet.Contains(clientIP) {
+				return true
+			}
+		} else {
+			// Exact IP match (strip zone for comparison)
+			allowedStripped := c.stripZone(allowed)
+			if strings.EqualFold(allowedStripped, clientIPStr) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// extractIP extracts the IP address from "ip:port" format
+// Handles:
+//   - "192.168.1.5:8080" -> "192.168.1.5"
+//   - "[::1]:8080" -> "::1"
+//   - "[::1]" -> "::1" (brackets without port)
+//   - "::1" -> "::1" (no brackets, no port)
+func (c *Channel) extractIP(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// Handle IPv6 addresses with brackets but no port: [::1] -> ::1
+		if strings.HasPrefix(addr, "[") && strings.HasSuffix(addr, "]") {
+			return addr[1 : len(addr)-1]
+		}
+		// Otherwise assume it's already just an IP (no port)
+		return addr
+	}
+	return host
+}
+
+// stripZone removes the zone identifier from IPv6 addresses
+// For example: "fe80::1%eth0" -> "fe80::1"
+// This is necessary because net.ParseIP doesn't handle zone identifiers
+func (c *Channel) stripZone(ipStr string) string {
+	if idx := strings.IndexByte(ipStr, '%'); idx != -1 {
+		return ipStr[:idx]
+	}
+	return ipStr
 }
 
 // setRunning sets the running state
@@ -133,11 +264,8 @@ func (c *Channel) setRunning(running bool) {
 }
 
 // HandleMessage processes an incoming message and publishes it to the bus
+// Note: Authorization is already checked during WebSocket connection establishment
 func (c *Channel) HandleMessage(senderID, chatID, content string, media []string, metadata map[string]string) {
-	if !c.IsAllowed(senderID) {
-		return
-	}
-
 	// Build session key: channel:chatID
 	sessionKey := fmt.Sprintf("%s:%s", c.Name(), chatID)
 
@@ -313,8 +441,74 @@ func min(a, b int) int {
 	return b
 }
 
+// validateToken validates the authentication token from the request
+// Supports multiple token sources:
+//  1. Query parameter: ?token=xxx
+//  2. Authorization header: Bearer xxx
+//  3. Sec-WebSocket-Protocol header: token (WebSocket standard approach)
+func (c *Channel) validateToken(r *http.Request) bool {
+	if c.token == "" {
+		return true // No token configured, allow
+	}
+
+	// Method 1: Check query parameter
+	if tokenParam := r.URL.Query().Get("token"); tokenParam != "" {
+		return tokenParam == c.token
+	}
+
+	// Method 2: Check Authorization header (Bearer token)
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			return token == c.token
+		}
+	}
+
+	// Method 3: Check Sec-WebSocket-Protocol header
+	// Client can send: Sec-WebSocket-Protocol: token
+	// This is a standard WebSocket approach for authentication
+	protocol := r.Header.Get("Sec-WebSocket-Protocol")
+	if protocol != "" {
+		// Support both "token" format and "bearer-<token>" format
+		if protocol == c.token {
+			return true
+		}
+		if strings.HasPrefix(protocol, "bearer-") {
+			token := strings.TrimPrefix(protocol, "bearer-")
+			return token == c.token
+		}
+	}
+
+	return false
+}
+
 // handleWebSocket handles WebSocket connection upgrades
 func (c *Channel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Check token authentication if configured
+	if c.token != "" {
+		if !c.validateToken(r) {
+			logger.WarnCF("websocket", "Unauthorized connection attempt - invalid token", map[string]any{
+				"remote_addr": r.RemoteAddr,
+				"user_agent":  r.UserAgent(),
+			})
+			http.Error(w, "Unauthorized: invalid or missing token", http.StatusUnauthorized)
+			return
+		}
+	}
+
+	// Check IP authorization
+	clientID := r.RemoteAddr
+	if !c.IsAllowed(clientID) {
+		clientIP := c.extractIP(clientID)
+		logger.WarnCF("websocket", "Unauthorized connection attempt - IP not allowed", map[string]any{
+			"client_ip": clientIP,
+			"client_id": clientID,
+		})
+		http.Error(w, "Forbidden: IP not allowed", http.StatusForbidden)
+		return
+	}
+
 	conn, err := c.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logger.ErrorCF("websocket", "Failed to upgrade connection", map[string]any{
@@ -323,13 +517,12 @@ func (c *Channel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate client ID from remote address
-	clientID := r.RemoteAddr
 	client := &clientConn{conn: conn}
 	c.clients.Store(clientID, client)
 
 	logger.InfoCF("websocket", "New client connected", map[string]any{
 		"client_id": clientID,
+		"client_ip": c.extractIP(clientID),
 	})
 
 	// Handle client messages
@@ -407,14 +600,6 @@ func (c *Channel) handleClient(clientID string, client *clientConn) {
 
 			// Process chat messages
 			if wsMsg.Type == "chat" {
-				// Check allowlist
-				if !c.IsAllowed(clientID) {
-					logger.WarnCF("websocket", "Unauthorized client", map[string]any{
-						"client_id": clientID,
-					})
-					continue
-				}
-
 				logger.DebugCF("websocket", "Received message", map[string]any{
 					"client_id": clientID,
 					"content":   wsMsg.Content,

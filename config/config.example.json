@@ -139,6 +139,13 @@
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
       "reply_timeout": 5
+    },
+    "websocket": {
+      "enabled": false,
+      "host": "127.0.0.1",
+      "port": 8080,
+      "token": "YOUR_TOKEN",
+      "allow_from": []
     }
   },
   "providers": {

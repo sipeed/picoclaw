@@ -1004,6 +1004,8 @@
 
         let reconnectCount = 0;
         let reconnectMessageElement = null;
+        let connectionAttempted = false;  // Track if we've tried to connect
+        let hasEverConnected = false;     // Track if we've successfully connected before
         let lastMessageTime = null;
 
         // Scroll to bottom helper
@@ -1072,8 +1074,28 @@
         }
 
         function connect() {
+            // Get token from multiple sources (priority order):
+            // 1. URL parameter: ?token=xxx
+            // 2. localStorage
+            // 3. Prompt user
+            let token = new URLSearchParams(window.location.search).get('token');
+            
+            if (!token) {
+                token = localStorage.getItem('picoclaw-token');
+            }
+            
+            // If still no token and this is first connection attempt, check if token might be required
+            // by attempting connection. Server will return 401 if token is needed.
+            
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = protocol + '//' + window.location.host + '/ws';
+            let wsUrl = protocol + '//' + window.location.host + '/ws';
+            
+            // Add token to URL if available
+            if (token) {
+                wsUrl += '?token=' + encodeURIComponent(token);
+                // Save token for future use
+                localStorage.setItem('picoclaw-token', token);
+            }
             
             // Close existing connection if any
             if (ws && ws.readyState !== WebSocket.CLOSED) {
@@ -1119,9 +1141,109 @@
             };
 
             ws.onclose = (event) => {
-                console.log('Disconnected from PicoClaw', event.code, event.reason);
+                console.log('Disconnected from PicoClaw', event.code, event.reason, 'hasEverConnected:', hasEverConnected, 'connectionAttempted:', connectionAttempted, 'hasToken:', !!localStorage.getItem('picoclaw-token'));
                 
-                // Increment reconnect count
+                // Scenario 1: First connection attempt failed without token
+                // This likely means server requires token (close code 1006 = abnormal closure from HTTP error)
+                if (!hasEverConnected && connectionAttempted && !localStorage.getItem('picoclaw-token') && event.code === 1006) {
+                    const t = currentLang === 'zh' 
+                        ? { 
+                            authRequired: '连接失败', 
+                            authPrompt: '服务器可能需要访问令牌（Token）\n\n如果已配置 token，请输入；\n如果未配置 token，请留空并点击「确定」',
+                            retry: '重试中...',
+                            noAuth: '正在重试连接...'
+                          }
+                        : { 
+                            authRequired: 'Connection Failed', 
+                            authPrompt: 'Server may require access token\n\nIf token is configured, enter it;\nIf not configured, leave empty and click OK',
+                            retry: 'Retrying...',
+                            noAuth: 'Retrying connection...'
+                          };
+                    
+                    statusDiv.innerHTML = '<div class="status-dot"></div><span>' + t.authRequired + '</span>';
+                    statusDiv.className = 'status disconnected';
+                    messageInput.disabled = true;
+                    sendButton.disabled = true;
+                    
+                    // Prompt for token (user can leave empty if server has no token)
+                    setTimeout(() => {
+                        const token = prompt(t.authPrompt);
+                        // User clicked OK (with or without token)
+                        if (token !== null) {
+                            if (token.trim()) {
+                                // User entered a token, save and retry
+                                localStorage.setItem('picoclaw-token', token.trim());
+                                statusDiv.innerHTML = '<div class="status-dot"></div><span>' + t.retry + '</span>';
+                                addMessage('system', t.retry, 'system');
+                                setTimeout(connect, 500);
+                            } else {
+                                // User left empty and clicked OK - server might not require token
+                                addMessage('system', t.noAuth, 'system');
+                                setTimeout(connect, 2000);
+                            }
+                        } else {
+                            // User clicked Cancel - don't retry
+                            const cancelMsg = currentLang === 'zh' ? '已取消连接' : 'Connection cancelled';
+                            addMessage('system', cancelMsg, 'system');
+                            addRetryButton();
+                        }
+                    }, 100);
+                    return;
+                }
+                
+                // Scenario 2: Connection failed with token present
+                // This means the token is invalid (close code 1006 from HTTP 401)
+                if (event.code === 1006 && localStorage.getItem('picoclaw-token') && !hasEverConnected) {
+                    localStorage.removeItem('picoclaw-token');
+                    
+                    const t = currentLang === 'zh' 
+                        ? { 
+                            authRequired: '认证失败', 
+                            authPrompt: 'Token 无效或已过期，请重新输入：',
+                            authFailed: '认证失败，请检查令牌是否正确',
+                            tokenRequired: '需要有效的访问令牌才能连接',
+                            retry: '重试中...',
+                            cancelled: '已取消连接'
+                          }
+                        : { 
+                            authRequired: 'Authentication Failed', 
+                            authPrompt: 'Token invalid or expired, please enter again:',
+                            authFailed: 'Authentication failed, please check your token',
+                            tokenRequired: 'Valid access token required to connect',
+                            retry: 'Retrying...',
+                            cancelled: 'Connection cancelled'
+                          };
+                    
+                    statusDiv.innerHTML = '<div class="status-dot"></div><span>' + t.authRequired + '</span>';
+                    statusDiv.className = 'status disconnected';
+                    messageInput.disabled = true;
+                    sendButton.disabled = true;
+                    
+                    // Show auth failure message
+                    addMessage('system', t.authFailed, 'system');
+                    
+                    // Prompt for token with retry support
+                    setTimeout(() => {
+                        const token = prompt(t.authPrompt);
+                        if (token && token.trim()) {
+                            localStorage.setItem('picoclaw-token', token.trim());
+                            statusDiv.innerHTML = '<div class="status-dot"></div><span>' + t.retry + '</span>';
+                            addMessage('system', t.retry, 'system');
+                            setTimeout(connect, 500);
+                        } else {
+                            // User cancelled
+                            addMessage('system', t.cancelled + ' - ' + t.tokenRequired, 'system');
+                            statusDiv.innerHTML = '<div class="status-dot"></div><span>' + t.cancelled + '</span>';
+                            messageInput.disabled = true;
+                            sendButton.disabled = true;
+                            addRetryButton();
+                        }
+                    }, 100);
+                    return;
+                }
+                
+                // Scenario 3: Normal disconnection after successful connection
+                // Increment reconnect count and try to reconnect
                 reconnectCount++;
                 
                 const t = currentLang === 'zh' 
@@ -1151,7 +1273,9 @@
             };
 
             ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
+                console.error('WebSocket error:', error, 'hasEverConnected:', hasEverConnected, 'hasToken:', !!localStorage.getItem('picoclaw-token'));
+                // Mark that connection has been attempted
+                connectionAttempted = true;
             };
         }
 
@@ -1216,6 +1340,70 @@
                     const cleanHtml = DOMPurify.sanitize(rawHtml);
                     contentDiv.innerHTML = cleanHtml;
                 }
+            }
+        }
+
+        // Add a retry button for reconnection with token
+        function addRetryButton() {
+            const t = currentLang === 'zh'
+                ? { retryButton: '点击重新连接', clickToRetry: '点击下方按钮重新输入 Token 并连接' }
+                : { retryButton: 'Retry Connection', clickToRetry: 'Click button below to re-enter token and connect' };
+            
+            // Create a message with a retry button
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message system';
+            messageDiv.dataset.timestamp = Date.now();
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.style.cursor = 'pointer';
+            contentDiv.style.userSelect = 'none';
+            
+            const rawHtml = marked.parse(
+                t.clickToRetry + '\n\n**[' + t.retryButton + ']**'
+            );
+            const cleanHtml = DOMPurify.sanitize(rawHtml);
+            contentDiv.innerHTML = cleanHtml;
+            
+            messageDiv.appendChild(contentDiv);
+            messagesDiv.insertBefore(messageDiv, typingIndicator);
+            
+            // Make it clickable
+            contentDiv.addEventListener('click', () => {
+                // Remove the retry button message
+                messageDiv.remove();
+                // Trigger reconnection with token prompt
+                promptForToken();
+            });
+            
+            scrollToBottom();
+        }
+
+        // Prompt user for token and attempt reconnection
+        function promptForToken() {
+            const t = currentLang === 'zh'
+                ? { 
+                    authPrompt: '请输入访问令牌（Token）：',
+                    retry: '重试中...',
+                    cancelled: '已取消连接',
+                    tokenRequired: '需要有效的访问令牌才能连接'
+                  }
+                : {
+                    authPrompt: 'Please enter access token:',
+                    retry: 'Retrying...',
+                    cancelled: 'Connection cancelled',
+                    tokenRequired: 'Valid access token required to connect'
+                  };
+            
+            const token = prompt(t.authPrompt);
+            if (token && token.trim()) {
+                localStorage.setItem('picoclaw-token', token.trim());
+                statusDiv.innerHTML = '<div class="status-dot"></div><span>' + t.retry + '</span>';
+                addMessage('system', t.retry, 'system');
+                setTimeout(connect, 500);
+            } else {
+                addMessage('system', t.cancelled + ' - ' + t.tokenRequired, 'system');
+                addRetryButton();
             }
         }
 

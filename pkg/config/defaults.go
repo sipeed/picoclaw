@@ -115,8 +115,9 @@ func DefaultConfig() *Config {
 			},
 			WebSocket: WebSocketConfig{
 				Enabled:   false,
-				Host:      "0.0.0.0",
+				Host:      "127.0.0.1",
 				Port:      8080,
+				Token:     "YOUR_TOKEN",
 				AllowFrom: FlexibleStringSlice{},
 			},
 		},
