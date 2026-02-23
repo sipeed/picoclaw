@@ -56,7 +56,10 @@ var ProviderModelsList = []ProviderModels{
 			{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", ContextSize: 200000},
 			{ID: "gemini-2.5-pro-preview-06-05", Name: "Gemini 2.5 Pro (Preview)", ContextSize: 200000},
 			{ID: "gemini-2.5-flash-lite", Name: "Gemini 2.5 Flash Lite", ContextSize: 1000000},
-			{ID: "gemini-2.5-flash-lite-preview-09-2025", Name: "Gemini 2.5 Flash Lite (Sep 2025)", ContextSize: 1000000},
+			{
+				ID: "gemini-2.5-flash-lite-preview-09-2025", Name: "Gemini 2.5 Flash Lite (Sep 2025)",
+				ContextSize: 1000000,
+			},
 			{ID: "gemini-2.5-flash-image", Name: "Gemini 2.5 Flash (Image)", ContextSize: 1000000},
 			{ID: "gemini-2.0-flash-001", Name: "Gemini 2.0 Flash", ContextSize: 1000000},
 			{ID: "gemini-2.0-flash-lite-001", Name: "Gemini 2.0 Flash Lite", ContextSize: 1000000},

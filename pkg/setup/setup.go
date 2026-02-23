@@ -130,14 +130,22 @@ func (s *Setup) RunNonInteractive() error {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╔═══════════════════════════════════════════════════════╗")))
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(
+		titleStyle.Render("╔═══════════════════════════════════════════════════════╗")))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("║              PicoClaw Setup Complete                  ║")))
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(
+		titleStyle.Render("║              PicoClaw Setup Complete                  ║")))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╚═══════════════════════════════════════════════════════╝")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(titleStyle.Render("╚═══════════════════════════════════════════════════════╝")),
+	)
 	b.WriteString("\n\n")
 
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(successStyle.Render("✓ Workspace config created and is working!")))
+	b.WriteString(
+		lipgloss.NewStyle().PaddingLeft(4).Render(successStyle.Render("✓ Workspace config created and is working!")),
+	)
 	b.WriteString("\n\n")
 
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("📁 Workspace:")))
@@ -150,21 +158,39 @@ func (s *Setup) RunNonInteractive() error {
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render(s.ConfigPath)))
 	b.WriteString("\n\n")
 
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")),
+	)
 	b.WriteString("\n\n")
 
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("IMPORTANT COMMANDS")))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(highlightStyle.Render("  picoclaw agent             - Start chatting")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(highlightStyle.Render("  picoclaw agent             - Start chatting")),
+	)
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw onboard --interactive - Full setup")))
+	b.WriteString(
+		lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw onboard --interactive - Full setup")),
+	)
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw auth login       - Login to providers")))
+	b.WriteString(
+		lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw auth login       - Login to providers")),
+	)
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw status          - Show status")))
+	b.WriteString(
+		lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw status          - Show status")),
+	)
 	b.WriteString("\n\n")
 
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")),
+	)
 	b.WriteString("\n\n")
 
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("CHANNELS (in config.json)")))
@@ -175,10 +201,18 @@ func (s *Setup) RunNonInteractive() error {
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  discord    : Discord")))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  + more: whatsapp, feishu, dingtalk, line, qq, etc.")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(dimStyle.Render("  + more: whatsapp, feishu, dingtalk, line, qq, etc.")),
+	)
 	b.WriteString("\n\n")
 
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")),
+	)
 	b.WriteString("\n\n")
 
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("NEXT STEPS")))
@@ -187,7 +221,11 @@ func (s *Setup) RunNonInteractive() error {
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  2. Run 'picoclaw agent' to start!")))
 	b.WriteString("\n\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  Run 'picoclaw onboard --interactive' for guided setup")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(dimStyle.Render("  Run 'picoclaw onboard --interactive' for guided setup")),
+	)
 	b.WriteString("\n")
 	// b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
 	// b.WriteString("\n\n")
@@ -217,8 +255,8 @@ type tuiModel struct {
 	errorMsg    string
 }
 
-func newTuiModel(s *Setup) tuiModel {
-	return tuiModel{
+func newTuiModel(s *Setup) *tuiModel {
+	return &tuiModel{
 		setup:      s,
 		state:      "intro",
 		answers:    make(map[string]string),
@@ -227,11 +265,11 @@ func newTuiModel(s *Setup) tuiModel {
 	}
 }
 
-func (t tuiModel) Init() tea.Cmd {
+func (t *tuiModel) Init() tea.Cmd {
 	return nil
 }
 
-func (t tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (t *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -260,7 +298,7 @@ func (t tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return t, nil
 }
 
-func (t tuiModel) handleIntro(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (t *tuiModel) handleIntro(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		t.state = "questions"
@@ -274,7 +312,7 @@ func (t tuiModel) handleIntro(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return t, nil
 }
 
-func (t tuiModel) handleQuestions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (t *tuiModel) handleQuestions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	session := t.registry.Sessions[t.sessionIdx]
 	visible := t.getVisibleQuestions(session)
 
@@ -358,7 +396,7 @@ func (t tuiModel) handleQuestions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return t, nil
 }
 
-func (t tuiModel) proceedToNextSession() (tea.Model, tea.Cmd) {
+func (t *tuiModel) proceedToNextSession() (tea.Model, tea.Cmd) {
 	session := t.registry.Sessions[t.sessionIdx]
 	visible := t.getVisibleQuestions(session)
 
@@ -409,7 +447,7 @@ func (t tuiModel) proceedToNextSession() (tea.Model, tea.Cmd) {
 	return t, nil
 }
 
-func (t tuiModel) nextQuestion() (tea.Model, tea.Cmd) {
+func (t *tuiModel) nextQuestion() (tea.Model, tea.Cmd) {
 	session := t.registry.Sessions[t.sessionIdx]
 	visible := t.getVisibleQuestions(session)
 
@@ -421,7 +459,7 @@ func (t tuiModel) nextQuestion() (tea.Model, tea.Cmd) {
 	return t, nil
 }
 
-func (t tuiModel) prevQuestion() (tea.Model, tea.Cmd) {
+func (t *tuiModel) prevQuestion() (tea.Model, tea.Cmd) {
 	if t.questionIdx > 0 {
 		t.questionIdx--
 		t.focusCurrent()
@@ -1018,7 +1056,7 @@ func (t *tuiModel) applyChannelSelection(channel string, cfg *config.Config) {
 	}
 }
 
-func (t tuiModel) View() string {
+func (t *tuiModel) View() string {
 	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 	promptStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
 	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
@@ -1031,16 +1069,30 @@ func (t tuiModel) View() string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╔════════════════════════════════════════════════╗")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(titleStyle.Render("╔════════════════════════════════════════════════╗")),
+	)
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("║           PicoClaw Interactive Setup           ║")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(titleStyle.Render("║           PicoClaw Interactive Setup           ║")),
+	)
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╚════════════════════════════════════════════════╝")))
+	b.WriteString(
+		lipgloss.NewStyle().
+			PaddingLeft(4).
+			Render(titleStyle.Render("╚════════════════════════════════════════════════╝")),
+	)
 	b.WriteString("\n\n")
 
 	switch t.state {
 	case "intro":
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Press Enter to start the configuration wizard")))
+		b.WriteString(
+			lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Press Enter to start the configuration wizard")),
+		)
 		b.WriteString("\n\n")
 		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Press q or Ctrl+C to exit")))
 
@@ -1052,7 +1104,11 @@ func (t tuiModel) View() string {
 		header := fmt.Sprintf("Step %d of %d: %s", t.sessionIdx+1, totalSessions, session.Title)
 		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render(header)))
 		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+		b.WriteString(
+			lipgloss.NewStyle().
+				PaddingLeft(4).
+				Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")),
+		)
 		b.WriteString("\n\n")
 
 		if t.errorMsg != "" {
@@ -1112,7 +1168,11 @@ func (t tuiModel) View() string {
 			b.WriteString("\n")
 		}
 
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("─────────────────────────────────────────────────")))
+		b.WriteString(
+			lipgloss.NewStyle().
+				PaddingLeft(4).
+				Render(dimStyle.Render("─────────────────────────────────────────────────")),
+		)
 		b.WriteString("\n")
 
 		// Show summary in confirmation session
@@ -1120,7 +1180,11 @@ func (t tuiModel) View() string {
 			b.WriteString("\n")
 			b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("Configuration Summary:")))
 			b.WriteString("\n")
-			b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+			b.WriteString(
+				lipgloss.NewStyle().
+					PaddingLeft(4).
+					Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")),
+			)
 			b.WriteString("\n\n")
 
 			summary := t.buildAnswersSummary()
@@ -1129,13 +1193,25 @@ func (t tuiModel) View() string {
 				b.WriteString("\n")
 			}
 			b.WriteString("\n")
-			b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Press 'e' to go back and edit, or confirm below:")))
+			b.WriteString(
+				lipgloss.NewStyle().
+					PaddingLeft(4).
+					Render(dimStyle.Render("Press 'e' to go back and edit, or confirm below:")),
+			)
 			b.WriteString("\n\n")
 		}
 
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("─────────────────────────────────────────────────")))
+		b.WriteString(
+			lipgloss.NewStyle().
+				PaddingLeft(4).
+				Render(dimStyle.Render("─────────────────────────────────────────────────")),
+		)
 		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("↑/↓: Select option | Tab/Enter: Next | Esc: Back | e: Edit (in confirm) | q: Quit")))
+		b.WriteString(
+			lipgloss.NewStyle().
+				PaddingLeft(4).
+				Render(dimStyle.Render("↑/↓: Select option | Tab/Enter: Next | Esc: Back | e: Edit (in confirm) | q: Quit")),
+		)
 
 	case "done":
 		workspace := t.setup.Cfg.WorkspacePath()
@@ -1152,23 +1228,35 @@ func (t tuiModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("Workspace structure:")))
 		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📁 memory/       - Persistent memory")))
+		b.WriteString(
+			lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📁 memory/       - Persistent memory")),
+		)
 		b.WriteString("\n")
 		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📁 skills/       - Custom skills")))
 		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 AGENT.md     - Agent configuration")))
+		b.WriteString(
+			lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 AGENT.md     - Agent configuration")),
+		)
 		b.WriteString("\n")
 		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 IDENTITY.md  - Agent identity")))
 		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 SOUL.md      - Agent personality")))
+		b.WriteString(
+			lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 SOUL.md      - Agent personality")),
+		)
 		b.WriteString("\n")
 		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 USER.md      - User profile")))
 		b.WriteString("\n\n")
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Next: Run 'picoclaw agent' to start chatting!")))
+		b.WriteString(
+			lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Next: Run 'picoclaw agent' to start chatting!")),
+		)
 		b.WriteString("\n")
 		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Config: ~/.picoclaw/config.json")))
 		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("─────────────────────────────────────────────────")))
+		b.WriteString(
+			lipgloss.NewStyle().
+				PaddingLeft(4).
+				Render(dimStyle.Render("─────────────────────────────────────────────────")),
+		)
 		b.WriteString("\n")
 		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Press Enter or q to exit")))
 	}

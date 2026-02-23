@@ -67,7 +67,11 @@ func GetEnabledChannelsInfo(c *Config) []ChannelInfo {
 	if c == nil {
 		// return requirements only (not enabled) if config not provided
 		for _, name := range GetAllChannelNames() {
-			res = append(res, ChannelInfo{Name: name, Enabled: false, RequiredCredentials: GetChannelRequirements(name)})
+			res = append(res, ChannelInfo{
+				Name:                name,
+				Enabled:             false,
+				RequiredCredentials: GetChannelRequirements(name),
+			})
 		}
 		return res
 	}
@@ -139,9 +143,20 @@ func GetSupportedModelNames(c *Config) []string {
 
 // Known providers and their typical credential requirements.
 var knownProviders = map[string]ProviderInfo{
-	"anthropic":      {Name: "anthropic", RequiredCredentials: []string{"api_key"}, OptionalCredentials: []string{"api_base"}},
-	"openai":         {Name: "openai", RequiredCredentials: []string{"api_key"}, OptionalCredentials: []string{"api_base"}},
-	"openrouter":     {Name: "openrouter", RequiredCredentials: []string{"api_key"}, OptionalCredentials: []string{"api_base"}},
+	"anthropic": {
+		Name: "anthropic", RequiredCredentials: []string{"api_key"},
+		OptionalCredentials: []string{"api_base"},
+	},
+	"openai": {
+		Name:                "openai",
+		RequiredCredentials: []string{"api_key"},
+		OptionalCredentials: []string{"api_base"},
+	},
+	"openrouter": {
+		Name:                "openrouter",
+		RequiredCredentials: []string{"api_key"},
+		OptionalCredentials: []string{"api_base"},
+	},
 	"groq":           {Name: "groq", RequiredCredentials: []string{"api_key"}},
 	"zhipu":          {Name: "zhipu", RequiredCredentials: []string{"api_key"}},
 	"vllm":           {Name: "vllm", RequiredCredentials: []string{"api_key"}},
@@ -160,7 +175,23 @@ var knownProviders = map[string]ProviderInfo{
 
 // ProviderPriority lists popular providers first to present them in a stable order.
 var ProviderPriority = []string{
-	"openai", "anthropic", "openrouter", "ollama", "gemini", "groq", "github_copilot", "antigravity", "qwen", "vllm", "nvidia", "moonshot", "shengsuanyun", "deepseek", "cerebras", "volcengine", "zhipu",
+	"openai",
+	"anthropic",
+	"openrouter",
+	"ollama",
+	"gemini",
+	"groq",
+	"github_copilot",
+	"antigravity",
+	"qwen",
+	"vllm",
+	"nvidia",
+	"moonshot",
+	"shengsuanyun",
+	"deepseek",
+	"cerebras",
+	"volcengine",
+	"zhipu",
 }
 
 // GetOrderedProviderNames returns provider names in a deterministic order:
@@ -271,8 +302,6 @@ func GetProvidersInfo(c *Config) []ProviderInfo {
 	return res
 }
 
-// parseProtocol extracts the protocol prefix from a model string of the form
-// "protocol/model-identifier". If no prefix exists, returns empty string.
 // ParseProtocol extracts the protocol prefix from a model string of the form
 // "protocol/model-identifier". If no prefix exists, returns empty string.
 func ParseProtocol(model string) string {

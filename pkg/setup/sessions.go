@@ -2,6 +2,7 @@ package setup
 
 import (
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -21,40 +22,79 @@ type ChannelInfo struct {
 var channelInfoMap = map[string]ChannelInfo{
 	"telegram": {
 		Fields: []ChannelField{
-			{ID: "token", Prompt: "Bot Token", Placeholder: "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz", Info: "Get from @BotFather on Telegram"},
+			{
+				ID: "token", Prompt: "Bot Token", Placeholder: "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+				Info: "Get from @BotFather on Telegram",
+			},
 		},
 	},
 	"slack": {
 		Fields: []ChannelField{
-			{ID: "bot_token", Prompt: "Bot Token", Placeholder: "xoxb-xxxxx-xxxxx", Info: "Bot token from Slack App settings (starts with xoxb-)"},
-			{ID: "app_token", Prompt: "App Token", Placeholder: "xoxa-xxxxx-xxxxx", Info: "App token from Slack App settings (starts with xoxa-)"},
+			{
+				ID: "bot_token", Prompt: "Bot Token", Placeholder: "xoxb-xxxxx-xxxxx",
+				Info: "Bot token from Slack App settings (starts with xoxb-)",
+			},
+			{
+				ID: "app_token", Prompt: "App Token", Placeholder: "xoxa-xxxxx-xxxxx",
+				Info: "App token from Slack App settings (starts with xoxa-)",
+			},
 		},
 	},
 	"discord": {
 		Fields: []ChannelField{
-			{ID: "token", Prompt: "Bot Token", Placeholder: "MTExxxxxxxxxxxx.MDExxxxxxxx.xxxxx", Info: "Get from Discord Developer Portal > Bot"},
+			{
+				ID:          "token",
+				Prompt:      "Bot Token",
+				Placeholder: "MTExxxxxxxxxxxx.MDExxxxxxxx.xxxxx",
+				Info:        "Get from Discord Developer Portal > Bot",
+			},
 		},
 	},
 	"whatsapp": {
 		Fields: []ChannelField{
-			{ID: "bridge_url", Prompt: "Bridge URL", Placeholder: "http://localhost:9080", Info: "URL of your WhatsApp bridge service"},
+			{
+				ID:          "bridge_url",
+				Prompt:      "Bridge URL",
+				Placeholder: "http://localhost:9080",
+				Info:        "URL of your WhatsApp bridge service",
+			},
 		},
 	},
 	"feishu": {
 		Fields: []ChannelField{
 			{ID: "app_id", Prompt: "App ID", Placeholder: "cli_xxxxx", Info: "App ID from Feishu Open Platform > App"},
-			{ID: "app_secret", Prompt: "App Secret", Placeholder: "xxxxxxxxxxxxxxxx", Info: "App Secret from Feishu Open Platform > App"},
+			{
+				ID:          "app_secret",
+				Prompt:      "App Secret",
+				Placeholder: "xxxxxxxxxxxxxxxx",
+				Info:        "App Secret from Feishu Open Platform > App",
+			},
 		},
 	},
 	"dingtalk": {
 		Fields: []ChannelField{
-			{ID: "client_id", Prompt: "Client ID", Placeholder: "dingxxxxx", Info: "Client ID from DingTalk Admin > OAuth"},
-			{ID: "client_secret", Prompt: "Client Secret", Placeholder: "xxxxxxxxxxxxxxxx", Info: "Client Secret from DingTalk Admin > OAuth"},
+			{
+				ID:          "client_id",
+				Prompt:      "Client ID",
+				Placeholder: "dingxxxxx",
+				Info:        "Client ID from DingTalk Admin > OAuth",
+			},
+			{
+				ID:          "client_secret",
+				Prompt:      "Client Secret",
+				Placeholder: "xxxxxxxxxxxxxxxx",
+				Info:        "Client Secret from DingTalk Admin > OAuth",
+			},
 		},
 	},
 	"line": {
 		Fields: []ChannelField{
-			{ID: "channel_access_token", Prompt: "Channel Access Token", Placeholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", Info: "Get from LINE Developers > Channel Access Token"},
+			{
+				ID:          "channel_access_token",
+				Prompt:      "Channel Access Token",
+				Placeholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+				Info:        "Get from LINE Developers > Channel Access Token",
+			},
 		},
 	},
 	"qq": {
@@ -64,13 +104,23 @@ var channelInfoMap = map[string]ChannelInfo{
 	},
 	"onebot": {
 		Fields: []ChannelField{
-			{ID: "access_token", Prompt: "Access Token", Placeholder: "your_access_token_here", Info: "Access token configured in your OneBot server"},
+			{
+				ID:          "access_token",
+				Prompt:      "Access Token",
+				Placeholder: "your_access_token_here",
+				Info:        "Access token configured in your OneBot server",
+			},
 		},
 	},
 	"wecom": {
 		Fields: []ChannelField{
 			{ID: "token", Prompt: "Token", Placeholder: "your_token", Info: "Token from Wecom Admin"},
-			{ID: "encoding_aes_key", Prompt: "Encoding AES Key", Placeholder: "your_encoding_aes_key", Info: "Encoding AES Key from Wecom Admin"},
+			{
+				ID:          "encoding_aes_key",
+				Prompt:      "Encoding AES Key",
+				Placeholder: "your_encoding_aes_key",
+				Info:        "Encoding AES Key from Wecom Admin",
+			},
 		},
 	},
 	"wecom_app": {
@@ -81,7 +131,12 @@ var channelInfoMap = map[string]ChannelInfo{
 	},
 	"maixcam": {
 		Fields: []ChannelField{
-			{ID: "device_address", Prompt: "Device Address", Placeholder: "http://192.168.1.100:8080", Info: "MaixCam device HTTP address"},
+			{
+				ID:          "device_address",
+				Prompt:      "Device Address",
+				Placeholder: "http://192.168.1.100:8080",
+				Info:        "MaixCam device HTTP address",
+			},
 		},
 	},
 }
@@ -409,7 +464,7 @@ func BuildSessionRegistry(cfg *config.Config) SessionRegistry {
 		}
 	} else {
 		modelSuggestions := config.GetPopularModels(selProvider)
-		modelOptions = make([]string, len(modelSuggestions))
+		modelOptions = make([]string, 0, len(modelSuggestions))
 		copy(modelOptions, modelSuggestions)
 	}
 	modelOptions = append(modelOptions, "custom")
@@ -763,7 +818,7 @@ func GetChannelFieldToken(cfg *config.Config, questionID string) string {
 	case "wecom_app_agent_id":
 		return fmt.Sprintf("%d", cfg.Channels.WeComApp.AgentID)
 	case "maixcam_device_address":
-		return fmt.Sprintf("http://%s:%d", cfg.Channels.MaixCam.Host, cfg.Channels.MaixCam.Port)
+		return "http://" + net.JoinHostPort(cfg.Channels.MaixCam.Host, fmt.Sprintf("%d", cfg.Channels.MaixCam.Port))
 	}
 	return ""
 }
