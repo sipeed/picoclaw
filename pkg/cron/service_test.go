@@ -47,7 +47,14 @@ func TestSaveStoreFixesExistingFilePermissions(t *testing.T) {
 	}
 
 	cs := NewCronService(storePath, nil)
-	if _, err := cs.AddJob("perm-test", CronSchedule{Kind: "every", EveryMS: int64Ptr(60000)}, "hello", true, "cli", "direct"); err != nil {
+	if _, err := cs.AddJob(
+		"perm-test",
+		CronSchedule{Kind: "every", EveryMS: int64Ptr(60000)},
+		"hello",
+		true,
+		"cli",
+		"direct",
+	); err != nil {
 		t.Fatalf("AddJob failed: %v", err)
 	}
 

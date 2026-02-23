@@ -308,13 +308,6 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		return
 	}
 	if !c.IsAllowed(ev.User) {
-		logger.DebugCF("slack", "App mention rejected by allowlist", map[string]interface{}{
-			"user_id": ev.User,
-		})
-		return
-	}
-
-	if !c.IsAllowed(ev.User) {
 		logger.DebugCF("slack", "Mention rejected by allowlist", map[string]any{
 			"user_id": ev.User,
 		})
@@ -380,16 +373,9 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 		c.socketClient.Ack(*event.Request)
 	}
 
-	if !c.IsAllowed(cmd.UserID) {
-		logger.DebugCF("slack", "Slash command rejected by allowlist", map[string]any{
-			"user_id": cmd.UserID,
-		})
-		return
-	}
-
 	senderID := cmd.UserID
 	if !c.IsAllowed(senderID) {
-		logger.DebugCF("slack", "Slash command rejected by allowlist", map[string]interface{}{
+		logger.DebugCF("slack", "Slash command rejected by allowlist", map[string]any{
 			"user_id": senderID,
 			"command": cmd.Command,
 		})
