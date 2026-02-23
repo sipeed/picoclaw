@@ -220,6 +220,10 @@ var wsUpgrader = websocket.Upgrader{
 		if origin == "" {
 			return true // non-browser clients (e.g. curl)
 		}
+		// Allow same-origin requests (e.g. Tailscale direct access)
+		if u, err := url.Parse(origin); err == nil && u.Host == r.Host {
+			return true
+		}
 		// Allow Telegram WebApp origins and localhost for dev
 		return strings.HasSuffix(origin, ".telegram.org") ||
 			strings.HasSuffix(origin, ".t.me") ||
@@ -883,6 +887,11 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 	if levelStr != "" {
 		minLevel = logger.ParseLevel(levelStr)
 	}
+
+	// Clear HTTP server deadlines before WebSocket hijack
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+	_ = rc.SetReadDeadline(time.Time{})
 
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
