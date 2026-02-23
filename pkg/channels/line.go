@@ -512,7 +512,7 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 
 	limit := c.config.MaxMessageLength
 	if limit <= 0 {
-		limit = 4000
+		limit = 4500 // LINE individual message bubbles are capped at 5,000 chars
 	}
 
 	chunks := utils.SplitMessage(msg.Content, limit)
@@ -525,7 +525,7 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 
 		if i == 0 && hasReplyToken {
 			if err := c.sendReply(ctx, tokenEntry.token, chunk, currentQuoteToken); err == nil {
-				logger.DebugCF("line", "Message chunk sent via Reply API", map[string]interface{}{
+				logger.DebugCF("line", "Message chunk sent via Reply API", map[string]any{
 					"chat_id": msg.ChatID,
 					"quoted":  currentQuoteToken != "",
 					"chunk":   i + 1,

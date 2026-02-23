@@ -121,7 +121,7 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 
 	limit := c.config.MaxMessageLength
 	if limit <= 0 {
-		limit = 3000
+		limit = 3500 // Slack has a 4,000 char limit (individual blocks may be 3k)
 	}
 
 	chunks := utils.SplitMessage(msg.Content, limit)

@@ -123,7 +123,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	limit := c.config.MaxMessageLength
 	if limit <= 0 {
-		limit = 1900
+		limit = 1900 // Discord limit is 2000 chars
 	}
 
 	chunks := utils.SplitMessage(msg.Content, limit)

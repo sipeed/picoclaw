@@ -99,6 +99,22 @@ func TestSplitMessage(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "Prefer sentence boundary",
+			// Content is: 1700 'a's, then ". ", then 500 'b's.
+			// Effective limit with maxLen=2000 is 1800. 1700 is well within it.
+			content:      strings.Repeat("a", 1700) + ". " + strings.Repeat("b", 500),
+			maxLen:       2000,
+			expectChunks: 2,
+			checkContent: func(t *testing.T, chunks []string) {
+				if len([]rune(chunks[0])) != 1701 { // 1700 'a's + '.'
+					t.Errorf("Expected chunk 0 to be 1701 runes (split at period), got %d %q", len([]rune(chunks[0])), chunks[0])
+				}
+				if !strings.HasSuffix(chunks[0], ".") {
+					t.Errorf("Chunk 0 should end with a period, got suffix: %q", chunks[0][len(chunks[0])-5:])
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {

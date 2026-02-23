@@ -170,10 +170,11 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 
 	// Telegram HTML tags (like <pre><code>) can expand content significantly.
-	// We use a safe headroom for the markdown-based split.
+	// We use a safe headroom for the markdown-based split, but never exceed
+	// the configured limit.
 	effectiveMarkdownLimit := limit - 500
-	if effectiveMarkdownLimit < 500 {
-		effectiveMarkdownLimit = 500
+	if effectiveMarkdownLimit < 1 {
+		effectiveMarkdownLimit = 1
 	}
 
 	chunks := utils.SplitMessage(msg.Content, effectiveMarkdownLimit)
@@ -199,8 +200,12 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		tgMsg.ParseMode = telego.ModeHTML
 
 		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-			logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
-				"error": err.Error(),
+			logger.ErrorCF("telegram", "failed to send message in HTML mode, falling back to plain text", map[string]any{
+				"error":        err.Error(),
+				"chat_id":      msg.ChatID,
+				"chunk_index":  i,
+				"chunk_total":  len(chunks),
+				"chunk_length": len(chunk),
 			})
 			tgMsg.ParseMode = ""
 			tgMsg.Text = chunk // Use raw chunk if HTML fails

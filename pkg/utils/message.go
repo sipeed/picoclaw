@@ -28,10 +28,12 @@ func SplitMessage(content string, maxLen int) []string {
 	}
 
 	runes := []rune(content)
+	startIndex := 0
 
-	for len(runes) > 0 {
-		if len(runes) <= maxLen {
-			messages = append(messages, string(runes))
+	for startIndex < len(runes) {
+		remainingRunes := runes[startIndex:]
+		if len(remainingRunes) <= maxLen {
+			messages = append(messages, string(remainingRunes))
 			break
 		}
 
@@ -41,113 +43,124 @@ func SplitMessage(content string, maxLen int) []string {
 			effectiveLimit = maxLen / 2
 		}
 
-		// Find natural split point within the effective limit
-		// We pass the full slice and a limit so findLastSentenceBoundaryRunes can look ahead.
-		msgEnd := findLastSentenceBoundaryRunes(runes, effectiveLimit, 300)
-		if msgEnd <= 0 {
-			msgEnd = findLastNewlineRunes(runes[:effectiveLimit], 200)
+		// Find natural split point within the effective limit from the current startIndex
+		// We pass the full slice so findLastSentenceBoundaryRunes can look ahead past the window
+		msgEndOffset := findLastSentenceBoundaryRunes(runes, startIndex+effectiveLimit, 300)
+		if msgEndOffset <= startIndex {
+			msgEndOffset = findLastNewlineRunes(remainingRunes[:effectiveLimit], 200)
+			if msgEndOffset >= 0 {
+				msgEndOffset += startIndex
+			}
 		}
-		if msgEnd <= 0 {
-			msgEnd = findLastSpaceRunes(runes[:effectiveLimit], 100)
+		if msgEndOffset <= startIndex {
+			msgEndOffset = findLastSpaceRunes(remainingRunes[:effectiveLimit], 100)
+			if msgEndOffset >= 0 {
+				msgEndOffset += startIndex
+			}
 		}
-		if msgEnd <= 0 {
-			msgEnd = effectiveLimit
+		if msgEndOffset <= startIndex {
+			msgEndOffset = startIndex + effectiveLimit
 		}
 
 		// Check if this would end with an incomplete code block
-		candidate := runes[:msgEnd]
-		unclosedIdx := findLastUnclosedCodeBlockRunes(candidate)
+		candidateRunes := runes[startIndex:msgEndOffset]
+		unclosedIdx := findLastUnclosedCodeBlockRunes(candidateRunes)
 
 		if unclosedIdx >= 0 {
-			// Message would end with incomplete code block
+			// Absolute index of the unclosed fence
+			absUnclosedIdx := startIndex + unclosedIdx
+
 			// Try to extend up to maxLen to include the closing ```
-			if len(runes) > msgEnd {
-				closingIdx := findNextClosingCodeBlockRunes(runes, msgEnd)
-				if closingIdx > 0 && closingIdx <= maxLen {
-					// Extend to include the closing ```
-					msgEnd = closingIdx
+			closingIdx := findNextClosingCodeBlockRunes(runes, msgEndOffset)
+			if closingIdx > 0 && closingIdx <= startIndex+maxLen {
+				msgEndOffset = closingIdx
+			} else {
+				// Find first newline after opening fence to extract header
+				headerEnd := -1
+				for i := absUnclosedIdx; i < len(runes); i++ {
+					if runes[i] == '\n' {
+						headerEnd = i
+						break
+					}
+				}
+				if headerEnd == -1 {
+					headerEnd = absUnclosedIdx + 3
 				} else {
-					// Code block is too long to fit in one chunk or missing closing fence.
-					// Try to split inside by injecting closing and reopening fences.
-					
-					// Find the header end (first newline after the opening ```)
-					headerEnd := -1
-					for i := unclosedIdx; i < len(runes); i++ {
-						if runes[i] == '\n' {
-							headerEnd = i
-							break
+					headerEnd++ // include newline
+				}
+				header := strings.TrimSpace(string(runes[absUnclosedIdx:headerEnd]))
+
+				if msgEndOffset > headerEnd+20 {
+					innerLimit := maxLen - 5
+					betterEnd := findLastSentenceBoundaryRunes(runes, startIndex+innerLimit, 300)
+					if betterEnd <= headerEnd {
+						betterEnd = findLastNewlineRunes(runes[startIndex:startIndex+innerLimit], 200)
+						if betterEnd >= 0 {
+							betterEnd += startIndex
 						}
 					}
-					
-					if headerEnd == -1 {
-						headerEnd = unclosedIdx + 3
+
+					if betterEnd > headerEnd {
+						msgEndOffset = betterEnd
 					} else {
-						// include newline
-						headerEnd++
+						msgEndOffset = startIndex + innerLimit
 					}
 
-					header := strings.TrimSpace(string(runes[unclosedIdx:headerEnd]))
+					chunkStr := string(runes[startIndex:msgEndOffset])
+					messages = append(messages, strings.TrimRight(chunkStr, " \t\n\r")+"\n```")
 
-					// If we have a reasonable amount of content after the header, split inside
-					if msgEnd > headerEnd+20 {
-						// Find a better split point closer to maxLen
-						innerLimit := maxLen - 5 // Leave room for "\n```"
-						betterEnd := findLastSentenceBoundaryRunes(runes, innerLimit, 300)
-						if betterEnd <= headerEnd {
-							betterEnd = findLastNewlineRunes(runes[:innerLimit], 200)
-						}
-						
-						if betterEnd > headerEnd {
-							msgEnd = betterEnd
-						} else {
-							msgEnd = innerLimit
-						}
-						
-						chunkStr := string(runes[:msgEnd])
-						messages = append(messages, strings.TrimRight(chunkStr, " \t\n\r")+"\n```")
-						
-						nextChunkStart := string(runes[msgEnd:])
-						content = strings.TrimSpace(header + "\n" + nextChunkStart)
-						runes = []rune(content)
-						continue
-					}
+					// Move startIndex to msgEndOffset but "inject" the header for the next iteration.
+					// We prepend the header and a newline.
+					injectedHeader := header + "\n"
+					nextRunes := append([]rune(injectedHeader), runes[msgEndOffset:]...)
+					runes = append(runes[:0], nextRunes...) // Reuse capacity
+					startIndex = 0
+					continue
+				}
 
-					// Otherwise, try to split before the code block starts
-					newEnd := findLastSentenceBoundaryRunes(runes, unclosedIdx, 300)
-					if newEnd <= 0 {
-						newEnd = findLastNewlineRunes(runes[:unclosedIdx], 200)
+				// Try to split before the code block
+				newEnd := findLastSentenceBoundaryRunes(runes, absUnclosedIdx, 300)
+				if newEnd <= startIndex {
+					newEnd = findLastNewlineRunes(runes[startIndex:absUnclosedIdx], 200)
+					if newEnd >= 0 {
+						newEnd += startIndex
 					}
-					if newEnd <= 0 {
-						newEnd = findLastSpaceRunes(runes[:unclosedIdx], 100)
+				}
+				if newEnd <= startIndex {
+					newEnd = findLastSpaceRunes(runes[startIndex:absUnclosedIdx], 100)
+					if newEnd >= 0 {
+						newEnd += startIndex
 					}
-					if newEnd > 0 {
-						msgEnd = newEnd
-					} else {
-						// If we can't split before, we MUST split inside (last resort)
-						if unclosedIdx > 20 {
-							msgEnd = unclosedIdx
-						} else {
-							msgEnd = maxLen - 5
-							chunkStr := string(runes[:msgEnd])
-							messages = append(messages, strings.TrimRight(chunkStr, " \t\n\r")+"\n```")
-							
-							nextChunkStart := string(runes[msgEnd:])
-							content = strings.TrimSpace(header + "\n" + nextChunkStart)
-							runes = []rune(content)
-							continue
-						}
-					}
+				}
+
+				if newEnd > startIndex {
+					msgEndOffset = newEnd
+				} else {
+					// Hard split inside (last resort)
+					msgEndOffset = startIndex + maxLen - 5
+					chunkStr := string(runes[startIndex:msgEndOffset])
+					messages = append(messages, strings.TrimRight(chunkStr, " \t\n\r")+"\n```")
+
+					injectedHeader := header + "\n"
+					nextRunes := append([]rune(injectedHeader), runes[msgEndOffset:]...)
+					runes = append(runes[:0], nextRunes...)
+					startIndex = 0
+					continue
 				}
 			}
 		}
 
-		if msgEnd <= 0 {
-			msgEnd = effectiveLimit
+		if msgEndOffset <= startIndex {
+			msgEndOffset = startIndex + effectiveLimit
 		}
 
-		messages = append(messages, string(runes[:msgEnd]))
-		nextContent := strings.TrimSpace(string(runes[msgEnd:]))
-		runes = []rune(nextContent)
+		messages = append(messages, string(runes[startIndex:msgEndOffset]))
+
+		// Advance startIndex and skip leading whitespace for next chunk
+		startIndex = msgEndOffset
+		for startIndex < len(runes) && (runes[startIndex] == ' ' || runes[startIndex] == '\n' || runes[startIndex] == '\t' || runes[startIndex] == '\r') {
+			startIndex++
+		}
 	}
 
 	return messages
