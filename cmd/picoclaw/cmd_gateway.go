@@ -115,8 +115,11 @@ func gatewayCmd() {
 		if response == "HEARTBEAT_OK" {
 			return tools.SilentResult("Heartbeat OK")
 		}
-		// For heartbeat, always return silent - the subagent result will be
-		// sent to user via processSystemMessage when the async task completes
+		// Deliver response to user when a plan interview/review needs resuming.
+		// For async tasks (spawn), results are delivered separately via processSystemMessage.
+		if status := agentLoop.GetPlanStatus(); status == "interviewing" || status == "review" {
+			return tools.UserResult(response)
+		}
 		return tools.SilentResult(response)
 	})
 

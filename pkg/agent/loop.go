@@ -2301,6 +2301,15 @@ func (al *AgentLoop) GetPlanInfo() (hasPlan bool, status string, currentPhase, t
 	return
 }
 
+// GetPlanStatus returns the current plan status ("interviewing", "executing", "review", etc.) or "".
+func (al *AgentLoop) GetPlanStatus() string {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return ""
+	}
+	return agent.ContextBuilder.GetPlanStatus()
+}
+
 // GetPlanPhases returns structured phase/step data from the default agent's plan.
 func (al *AgentLoop) GetPlanPhases() []PlanPhase {
 	agent := al.registry.GetDefaultAgent()
