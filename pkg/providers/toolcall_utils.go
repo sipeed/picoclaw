@@ -20,12 +20,12 @@ func NormalizeToolCall(tc ToolCall) ToolCall {
 
 	// Ensure Arguments is not nil
 	if normalized.Arguments == nil {
-		normalized.Arguments = map[string]interface{}{}
+		normalized.Arguments = map[string]any{}
 	}
 
 	// Parse Arguments from Function.Arguments if not already set
 	if len(normalized.Arguments) == 0 && normalized.Function != nil && normalized.Function.Arguments != "" {
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		if err := json.Unmarshal([]byte(normalized.Function.Arguments), &parsed); err == nil && parsed != nil {
 			normalized.Arguments = parsed
 		}

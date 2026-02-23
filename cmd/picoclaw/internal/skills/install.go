@@ -3,9 +3,10 @@ package skills
 import (
 	"fmt"
 
+	"github.com/spf13/cobra"
+
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/spf13/cobra"
 )
 
 func newInstallCommand(installer *skills.SkillInstaller) *cobra.Command {

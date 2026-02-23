@@ -67,7 +67,7 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	if _, err := os.Stat(openclawHome); os.IsNotExist(err) {
+	if _, err = os.Stat(openclawHome); os.IsNotExist(err) {
 		return nil, fmt.Errorf("OpenClaw installation not found at %s", openclawHome)
 	}
 
@@ -161,7 +161,7 @@ func Execute(actions []Action, openclawHome, picoClawHome string) *Result {
 				fmt.Printf("  ✓ Converted config: %s\n", action.Destination)
 			}
 		case ActionCreateDir:
-			if err := os.MkdirAll(action.Destination, 0755); err != nil {
+			if err := os.MkdirAll(action.Destination, 0o755); err != nil {
 				result.Errors = append(result.Errors, err)
 			} else {
 				result.DirsCreated++
@@ -174,9 +174,13 @@ func Execute(actions []Action, openclawHome, picoClawHome string) *Result {
 				continue
 			}
 			result.BackupsCreated++
-			fmt.Printf("  ✓ Backed up %s -> %s.bak\n", filepath.Base(action.Destination), filepath.Base(action.Destination))
+			fmt.Printf(
+				"  ✓ Backed up %s -> %s.bak\n",
+				filepath.Base(action.Destination),
+				filepath.Base(action.Destination),
+			)
 
-			if err := os.MkdirAll(filepath.Dir(action.Destination), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(action.Destination), 0o755); err != nil {
 				result.Errors = append(result.Errors, err)
 				continue
 			}
@@ -188,7 +192,7 @@ func Execute(actions []Action, openclawHome, picoClawHome string) *Result {
 				fmt.Printf("  ✓ Copied %s\n", relPath(action.Source, openclawHome))
 			}
 		case ActionCopy:
-			if err := os.MkdirAll(filepath.Dir(action.Destination), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(action.Destination), 0o755); err != nil {
 				result.Errors = append(result.Errors, err)
 				continue
 			}
@@ -226,7 +230,7 @@ func executeConfigMigration(srcConfigPath, dstConfigPath, picoClawHome string) e
 		incoming = MergeConfig(existing, incoming)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dstConfigPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dstConfigPath), 0o755); err != nil {
 		return err
 	}
 	return config.SaveConfig(dstConfigPath, incoming)

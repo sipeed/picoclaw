@@ -1,8 +1,9 @@
 package skills
 
 import (
-	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/spf13/cobra"
+
+	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 func newListCommand(skillsLoader *skills.SkillsLoader) *cobra.Command {

@@ -123,7 +123,7 @@ func authLoginGoogleAntigravity() {
 		fmt.Printf("Project: %s\n", projectID)
 	}
 
-	if err := auth.SetCredential("google-antigravity", cred); err != nil {
+	if err = auth.SetCredential("google-antigravity", cred); err != nil {
 		fmt.Printf("Failed to save credentials: %v\n", err)
 		os.Exit(1)
 	}
@@ -366,7 +366,9 @@ func authStatusCmd() error {
 func authModelsCmd() error {
 	cred, err := auth.GetCredential("google-antigravity")
 	if err != nil || cred == nil {
-		return fmt.Errorf("not logged in to Google Antigravity.\nrun: picoclaw auth login --provider google-antigravity")
+		return fmt.Errorf(
+			"not logged in to Google Antigravity.\nrun: picoclaw auth login --provider google-antigravity",
+		)
 	}
 
 	// Refresh token if needed

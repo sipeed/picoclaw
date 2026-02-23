@@ -3,8 +3,9 @@ package version
 import (
 	"fmt"
 
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/spf13/cobra"
+
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 )
 
 func NewVersionCommand() *cobra.Command {

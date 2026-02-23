@@ -63,14 +63,14 @@ func (s *Service) Start(ctx context.Context) error {
 	for _, src := range s.sources {
 		eventCh, err := src.Start(s.ctx)
 		if err != nil {
-			logger.ErrorCF("devices", "Failed to start source", map[string]interface{}{
+			logger.ErrorCF("devices", "Failed to start source", map[string]any{
 				"kind":  src.Kind(),
 				"error": err.Error(),
 			})
 			continue
 		}
 		go s.handleEvents(src.Kind(), eventCh)
-		logger.InfoCF("devices", "Device source started", map[string]interface{}{
+		logger.InfoCF("devices", "Device source started", map[string]any{
 			"kind": src.Kind(),
 		})
 	}
@@ -115,7 +115,7 @@ func (s *Service) sendNotification(ev *events.DeviceEvent) {
 
 	lastChannel := s.state.GetLastChannel()
 	if lastChannel == "" {
-		logger.DebugCF("devices", "No last channel, skipping notification", map[string]interface{}{
+		logger.DebugCF("devices", "No last channel, skipping notification", map[string]any{
 			"event": ev.FormatMessage(),
 		})
 		return
@@ -133,7 +133,7 @@ func (s *Service) sendNotification(ev *events.DeviceEvent) {
 		Content: msg,
 	})
 
-	logger.InfoCF("devices", "Device notification sent", map[string]interface{}{
+	logger.InfoCF("devices", "Device notification sent", map[string]any{
 		"kind":   ev.Kind,
 		"action": ev.Action,
 		"to":     platform,

@@ -82,7 +82,7 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	if err := os.MkdirAll(filepath.Join(workspace, "skills"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(workspace, "skills"), 0o755); err != nil {
 		return fmt.Errorf("\u2717 failed to create skills directory: %v", err)
 	}
 
@@ -149,7 +149,7 @@ func skillsInstallBuiltinCmd(workspace string) {
 			continue
 		}
 
-		if err := os.MkdirAll(workspacePath, 0755); err != nil {
+		if err := os.MkdirAll(workspacePath, 0o755); err != nil {
 			fmt.Printf("✗ Failed to create directory for %s: %v\n", skillName, err)
 			continue
 		}

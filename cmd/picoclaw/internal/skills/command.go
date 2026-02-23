@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
+
 	internal2 "github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/spf13/cobra"
 )
 
 func NewSkillsCommand() *cobra.Command {

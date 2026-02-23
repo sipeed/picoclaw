@@ -9,6 +9,8 @@ package main
 import (
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/agent"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/auth"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cron"
@@ -18,7 +20,6 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/skills"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/status"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/version"
-	"github.com/spf13/cobra"
 )
 
 func NewPicoclawCommand() *cobra.Command {

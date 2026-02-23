@@ -254,7 +254,7 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 	content, err := os.ReadFile(skillPath)
 	if err != nil {
 		logger.WarnCF("skills", "Failed to read skill metadata",
-			map[string]interface{}{
+			map[string]any{
 				"skill_path": skillPath,
 				"error":      err.Error(),
 			})
