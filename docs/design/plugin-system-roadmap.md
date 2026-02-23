@@ -4,7 +4,7 @@ This document defines how PicoClaw evolves from hook-based extension points to a
 
 ## Current Status (Phase 0: Foundation)
 
-Implemented in current hooks MR:
+Implemented in current hooks PR:
 
 - Typed lifecycle hooks (`pkg/hooks`)
 - Priority-based handler ordering
@@ -27,19 +27,20 @@ Compatibility:
 
 ## Phase Plan
 
-## Phase 1: Static Plugin Contract (Compile-time)
+## Phase 1: Static Plugin Contract (Compile-time) — Implemented
 
 Goal: define a minimal public plugin contract for Go modules.
 
-Proposed:
+Implemented:
 
 - Add `pkg/plugin` with a small interface:
   - `Name() string`
+  - `APIVersion() string`
   - `Register(*hooks.HookRegistry) error`
 - Register plugins at startup in code.
-- Add compatibility metadata (`PluginAPIVersion`) for forward checks.
+- Add compatibility metadata (`plugin.APIVersion`) and registration-time checks.
 
-Exit criteria:
+Exit criteria (met):
 
 - Example plugin module builds against the contract.
 - Startup validation logs loaded plugins and registration errors clearly.
@@ -104,4 +105,4 @@ Until then, compile-time registration remains the recommended model.
 
 ## Maintainer Review Notes
 
-The current hooks MR should be reviewed as Phase 0 only. It intentionally establishes extension points while avoiding high-risk runtime plugin mechanics.
+The current hooks PR should be reviewed as Phase 0+1 only. It intentionally establishes extension points while avoiding high-risk runtime plugin mechanics.

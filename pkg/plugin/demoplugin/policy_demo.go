@@ -218,6 +218,8 @@ func clampArgNumber(args map[string]any, key string, max int) {
 func toInt(v any) (int, bool) {
 	maxInt := int(^uint(0) >> 1)
 	maxIntU64 := uint64(maxInt)
+	maxInt64 := int64(maxInt)
+	minInt64 := -maxInt64 - 1
 
 	switch n := v.(type) {
 	case int:
@@ -229,6 +231,9 @@ func toInt(v any) (int, bool) {
 	case int32:
 		return int(n), true
 	case int64:
+		if n < minInt64 || n > maxInt64 {
+			return 0, false
+		}
 		return int(n), true
 	case uint:
 		if uint64(n) > maxIntU64 {
@@ -250,8 +255,10 @@ func toInt(v any) (int, bool) {
 		}
 		return int(n), true
 	case float32:
+		// Truncation is intentional for timeout normalization.
 		return int(n), true
 	case float64:
+		// Truncation is intentional for timeout normalization.
 		return int(n), true
 	default:
 		return 0, false

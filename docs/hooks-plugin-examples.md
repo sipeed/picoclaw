@@ -50,6 +50,10 @@ Inbound message
   -> session_end
 ```
 
+Note: the map above is shown as a single pass for readability. In practice, the
+agent loop may iterate up to `MaxToolIterations`, and `llm_input`, `llm_output`,
+`before_tool_call`, and `after_tool_call` can fire multiple times.
+
 ## Available Hooks
 
 | Hook | Type | Typical use |

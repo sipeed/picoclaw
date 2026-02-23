@@ -913,7 +913,7 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
-func (al *AgentLoop) maybeSummarize(ctx context.Context, agent *AgentInstance, sessionKey, channel, chatID string) {
+func (al *AgentLoop) maybeSummarize(_ context.Context, agent *AgentInstance, sessionKey, channel, chatID string) {
 	newHistory := agent.Sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := agent.ContextWindow * 75 / 100
@@ -924,7 +924,7 @@ func (al *AgentLoop) maybeSummarize(ctx context.Context, agent *AgentInstance, s
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
 				if !constants.IsInternalChannel(channel) {
-					al.sendOutbound(ctx, bus.OutboundMessage{
+					al.sendOutbound(context.Background(), bus.OutboundMessage{
 						Channel: channel,
 						ChatID:  chatID,
 						Content: "Memory threshold reached. Optimizing conversation history...",

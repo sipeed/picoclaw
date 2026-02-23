@@ -2,6 +2,7 @@ package demoplugin
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -169,5 +170,14 @@ func TestPolicyDemoPluginNoConfigNoEffect(t *testing.T) {
 	pm.HookRegistry().TriggerMessageSending(context.Background(), msgEvent)
 	if msgEvent.Content != "token=sk-abc123" {
 		t.Fatalf("did not expect content rewrite, got %q", msgEvent.Content)
+	}
+}
+
+func TestToIntRejectsInt64OverflowOn32Bit(t *testing.T) {
+	if strconv.IntSize != 32 {
+		t.Skip("overflow scenario is specific to 32-bit int")
+	}
+	if _, ok := toInt(int64(1 << 40)); ok {
+		t.Fatal("expected overflow conversion to fail on 32-bit int")
 	}
 }
