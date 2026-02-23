@@ -48,7 +48,7 @@ func authLoginOpenAI(useDeviceCode bool) error {
 		return fmt.Errorf("login failed: %w", err)
 	}
 
-	if err := auth.SetCredential("openai", cred); err != nil {
+	if err = auth.SetCredential("openai", cred); err != nil {
 		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 
@@ -199,7 +199,7 @@ func authLoginPasteToken(provider string) error {
 		return fmt.Errorf("login failed: %w", err)
 	}
 
-	if err := auth.SetCredential(provider, cred); err != nil {
+	if err = auth.SetCredential(provider, cred); err != nil {
 		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 

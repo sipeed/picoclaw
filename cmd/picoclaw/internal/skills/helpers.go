@@ -75,14 +75,14 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 	workspace := cfg.WorkspacePath()
 	targetDir := filepath.Join(workspace, "skills", slug)
 
-	if _, err := os.Stat(targetDir); err == nil {
+	if _, err = os.Stat(targetDir); err == nil {
 		return fmt.Errorf("\u2717 skill '%s' already installed at %s", slug, targetDir)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	if err := os.MkdirAll(filepath.Join(workspace, "skills"), 0o755); err != nil {
+	if err = os.MkdirAll(filepath.Join(workspace, "skills"), 0o755); err != nil {
 		return fmt.Errorf("\u2717 failed to create skills directory: %v", err)
 	}
 
