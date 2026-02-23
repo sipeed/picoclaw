@@ -27,6 +27,21 @@ var chatHTML []byte
 //go:embed logo.jpg
 var logoImage []byte
 
+//go:embed static/css/fontawesome.min.css
+var fontawesomeCSS []byte
+
+//go:embed static/webfonts/fa-brands-400.woff2
+var faBrandsFont []byte
+
+//go:embed static/webfonts/fa-regular-400.woff2
+var faRegularFont []byte
+
+//go:embed static/webfonts/fa-solid-900.woff2
+var faSolidFont []byte
+
+//go:embed static/webfonts/fa-v4compatibility.woff2
+var faV4CompatFont []byte
+
 // clientConn wraps a WebSocket connection with a write mutex for safe concurrent writes
 type clientConn struct {
 	conn    *websocket.Conn
@@ -290,6 +305,11 @@ func (c *Channel) Start(ctx context.Context) error {
 	mux.HandleFunc("/ws", c.handleWebSocket)
 	mux.HandleFunc("/", c.handleIndex)
 	mux.HandleFunc("/assets/logo.jpg", c.handleLogo)
+	mux.HandleFunc("/static/css/fontawesome.min.css", c.handleFontawesomeCSS)
+	mux.HandleFunc("/static/webfonts/fa-brands-400.woff2", c.handleFaBrandsFont)
+	mux.HandleFunc("/static/webfonts/fa-regular-400.woff2", c.handleFaRegularFont)
+	mux.HandleFunc("/static/webfonts/fa-solid-900.woff2", c.handleFaSolidFont)
+	mux.HandleFunc("/static/webfonts/fa-v4compatibility.woff2", c.handleFaV4CompatFont)
 
 	addr := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
 	c.server = &http.Server{
@@ -625,4 +645,39 @@ func (c *Channel) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// Use embedded HTML file
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(chatHTML)
+}
+
+// handleFontawesomeCSS serves the FontAwesome CSS file
+func (c *Channel) handleFontawesomeCSS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css")
+	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 1 day
+	w.Write(fontawesomeCSS)
+}
+
+// handleFaBrandsFont serves the FontAwesome brands font file
+func (c *Channel) handleFaBrandsFont(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 1 day
+	w.Write(faBrandsFont)
+}
+
+// handleFaRegularFont serves the FontAwesome regular font file
+func (c *Channel) handleFaRegularFont(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 1 day
+	w.Write(faRegularFont)
+}
+
+// handleFaSolidFont serves the FontAwesome solid font file
+func (c *Channel) handleFaSolidFont(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 1 day
+	w.Write(faSolidFont)
+}
+
+// handleFaV4CompatFont serves the FontAwesome v4 compatibility font file
+func (c *Channel) handleFaV4CompatFont(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 1 day
+	w.Write(faV4CompatFont)
 }
