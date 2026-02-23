@@ -115,6 +115,53 @@ func TestSplitMessage(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:    "Emoji splitting",
+			content: "Hello 🌟🌟🌟🌟🌟",
+			maxLen:  8, // Limit by runes. "Hello " = 6, plus two "🌟" = 8 runes.
+			expectChunks: 2,
+			checkContent: func(t *testing.T, chunks []string) {
+				if strings.Contains(chunks[0], "\ufffd") || strings.Contains(chunks[1], "\ufffd") {
+					t.Error("Emoji was split mid-byte, resulting in invalid UTF-8")
+				}
+				if len([]rune(chunks[0])) > 8 {
+					t.Errorf("Chunk 0 exceeded max runes: got %d", len([]rune(chunks[0])))
+				}
+			},
+		},
+		{
+			name:    "Exactly at Limit",
+			content: strings.Repeat("A", 2000),
+			maxLen:  2000,
+			expectChunks: 1,
+			checkContent: func(t *testing.T, chunks []string) {
+				if len(chunks) != 1 {
+					t.Errorf("Expected exactly 1 chunk, got %d", len(chunks))
+				}
+				if len(chunks[0]) != 2000 {
+					t.Errorf("Expected chunk length 2000, got %d", len(chunks[0]))
+				}
+			},
+		},
+		{
+			name:    "No natural split points",
+			content: "ThisIsALongStringWithNoSpacesOrNewlines",
+			maxLen:  10, 
+			// 10 / 2 = 5 buffer -> effective limit is 5.
+			// 39 chars: 6 chunks of 5, 1 chunk of 9
+			expectChunks: 7,
+			checkContent: func(t *testing.T, chunks []string) {
+				for i, chunk := range chunks {
+					if len(chunk) > 10 {
+						t.Errorf("Chunk %d exceeded limit: len %d", i, len(chunk))
+					}
+				}
+				joined := strings.Join(chunks, "")
+				if joined != "ThisIsALongStringWithNoSpacesOrNewlines" {
+					t.Errorf("Reconstructed string does not match original")
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {
