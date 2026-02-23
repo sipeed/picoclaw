@@ -202,6 +202,19 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.WATI.Enabled && m.config.Channels.WATI.APIToken != "" {
+		logger.DebugC("channels", "Attempting to initialize WATI channel")
+		wati, err := NewWATIChannel(m.config.Channels.WATI, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize WATI channel", map[string]any{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["wati"] = wati
+			logger.InfoC("channels", "WATI channel enabled successfully")
+		}
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})

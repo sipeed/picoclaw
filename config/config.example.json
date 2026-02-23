@@ -139,6 +139,16 @@
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
       "reply_timeout": 5
+    },
+    "wati": {
+      "_comment": "WATI WhatsApp Business API - https://www.wati.io/",
+      "enabled": false,
+      "api_token": "YOUR_WATI_API_TOKEN",
+      "api_base_url": "https://live-mt-server.wati.io",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18794,
+      "webhook_path": "/webhook/wati",
+      "allow_from": []
     }
   },
   "providers": {

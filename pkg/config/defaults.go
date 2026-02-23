@@ -113,6 +113,15 @@ func DefaultConfig() *Config {
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
 			},
+			WATI: WATIConfig{
+				Enabled:     false,
+				APIToken:    "",
+				APIBaseURL:  "https://live-mt-server.wati.io",
+				WebhookHost: "0.0.0.0",
+				WebhookPort: 18794,
+				WebhookPath: "/webhook/wati",
+				AllowFrom:   FlexibleStringSlice{},
+			},
 		},
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{WebSearch: true},

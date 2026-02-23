@@ -192,6 +192,7 @@ type ChannelsConfig struct {
 	OneBot   OneBotConfig   `json:"onebot"`
 	WeCom    WeComConfig    `json:"wecom"`
 	WeComApp WeComAppConfig `json:"wecom_app"`
+	WATI     WATIConfig     `json:"wati"`
 }
 
 type WhatsAppConfig struct {
@@ -294,6 +295,16 @@ type WeComAppConfig struct {
 	WebhookPath    string              `json:"webhook_path"     env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
 	AllowFrom      FlexibleStringSlice `json:"allow_from"       env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
 	ReplyTimeout   int                 `json:"reply_timeout"    env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
+}
+
+type WATIConfig struct {
+	Enabled     bool                `json:"enabled"      env:"PICOCLAW_CHANNELS_WATI_ENABLED"`
+	APIToken    string              `json:"api_token"    env:"PICOCLAW_CHANNELS_WATI_API_TOKEN"`
+	APIBaseURL  string              `json:"api_base_url" env:"PICOCLAW_CHANNELS_WATI_API_BASE_URL"`
+	WebhookHost string              `json:"webhook_host" env:"PICOCLAW_CHANNELS_WATI_WEBHOOK_HOST"`
+	WebhookPort int                 `json:"webhook_port" env:"PICOCLAW_CHANNELS_WATI_WEBHOOK_PORT"`
+	WebhookPath string              `json:"webhook_path" env:"PICOCLAW_CHANNELS_WATI_WEBHOOK_PATH"`
+	AllowFrom   FlexibleStringSlice `json:"allow_from"   env:"PICOCLAW_CHANNELS_WATI_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {
