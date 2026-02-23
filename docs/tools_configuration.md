@@ -34,12 +34,14 @@ Web tools are used for web search and fetching.
 | `enabled` | bool | true | Enable DuckDuckGo search |
 | `max_results` | int | 5 | Maximum number of results |
 
-### Perplexity
+### Grok
 
 | Config | Type | Default | Description |
 |--------|------|---------|-------------|
-| `enabled` | bool | false | Enable Perplexity search |
-| `api_key` | string | - | Perplexity API key |
+| `enabled` | bool | false | Enable Grok search |
+| `api_key` | string | - | Grok API key |
+| `endpoint` | string | `https://api.x.ai/v1/chat/completions` | Grok-compatible chat completions endpoint |
+| `default_model` | string | `grok-4` | Default Grok model used by web search |
 | `max_results` | int | 5 | Maximum number of results |
 
 ## Exec Tool

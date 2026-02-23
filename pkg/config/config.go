@@ -444,17 +444,19 @@ type DuckDuckGoConfig struct {
 	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
-type PerplexityConfig struct {
-	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
-	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+type GrokConfig struct {
+	Enabled      bool   `json:"enabled"       env:"PICOCLAW_TOOLS_WEB_GROK_ENABLED"`
+	APIKey       string `json:"api_key"       env:"PICOCLAW_TOOLS_WEB_GROK_API_KEY"`
+	Endpoint     string `json:"endpoint"      env:"PICOCLAW_TOOLS_WEB_GROK_ENDPOINT"`
+	DefaultModel string `json:"default_model" env:"PICOCLAW_TOOLS_WEB_GROK_DEFAULT_MODEL"`
+	MaxResults   int    `json:"max_results"   env:"PICOCLAW_TOOLS_WEB_GROK_MAX_RESULTS"`
 }
 
 type WebToolsConfig struct {
 	Brave      BraveConfig      `json:"brave"`
 	Tavily     TavilyConfig     `json:"tavily"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
-	Perplexity PerplexityConfig `json:"perplexity"`
+	Grok       GrokConfig       `json:"grok"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
 	Proxy string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_WEB_PROXY"`

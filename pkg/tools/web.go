@@ -319,16 +319,25 @@ func stripTags(content string) string {
 	return reTags.ReplaceAllString(content, "")
 }
 
-type PerplexitySearchProvider struct {
-	apiKey string
-	proxy  string
+type GrokSearchProvider struct {
+	apiKey   string
+	endpoint string
+	model    string
+	proxy    string
 }
 
-func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
-	searchURL := "https://api.perplexity.ai/chat/completions"
+func (p *GrokSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := strings.TrimSpace(p.endpoint)
+	if searchURL == "" {
+		searchURL = "https://api.x.ai/v1/chat/completions"
+	}
+	model := strings.TrimSpace(p.model)
+	if model == "" {
+		model = "grok-4"
+	}
 
 	payload := map[string]any{
-		"model": "sonar",
+		"model": model,
 		"messages": []map[string]string{
 			{
 				"role":    "system",
@@ -372,7 +381,7 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Perplexity API error: %s", string(body))
+		return "", fmt.Errorf("Grok API error: %s", string(body))
 	}
 
 	var searchResp struct {
@@ -391,7 +400,7 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 		return fmt.Sprintf("No results for: %s", query), nil
 	}
 
-	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
+	return fmt.Sprintf("Results for: %s (via Grok)\n%s", query, searchResp.Choices[0].Message.Content), nil
 }
 
 type WebSearchTool struct {
@@ -409,9 +418,11 @@ type WebSearchToolOptions struct {
 	TavilyEnabled        bool
 	DuckDuckGoMaxResults int
 	DuckDuckGoEnabled    bool
-	PerplexityAPIKey     string
-	PerplexityMaxResults int
-	PerplexityEnabled    bool
+	GrokAPIKey           string
+	GrokEndpoint         string
+	GrokModel            string
+	GrokMaxResults       int
+	GrokEnabled          bool
 	Proxy                string
 }
 
@@ -419,11 +430,16 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
-	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
-		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey, proxy: opts.Proxy}
-		if opts.PerplexityMaxResults > 0 {
-			maxResults = opts.PerplexityMaxResults
+	// Priority: Grok > Brave > Tavily > DuckDuckGo
+	if opts.GrokEnabled && opts.GrokAPIKey != "" {
+		provider = &GrokSearchProvider{
+			apiKey:   opts.GrokAPIKey,
+			endpoint: opts.GrokEndpoint,
+			model:    opts.GrokModel,
+			proxy:    opts.Proxy,
+		}
+		if opts.GrokMaxResults > 0 {
+			maxResults = opts.GrokMaxResults
 		}
 	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
 		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey, proxy: opts.Proxy}

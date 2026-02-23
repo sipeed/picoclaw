@@ -287,10 +287,12 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
-				Perplexity: PerplexityConfig{
-					Enabled:    false,
-					APIKey:     "",
-					MaxResults: 5,
+				Grok: GrokConfig{
+					Enabled:      false,
+					APIKey:       "",
+					Endpoint:     "https://api.x.ai/v1/chat/completions",
+					DefaultModel: "grok-4",
+					MaxResults:   5,
 				},
 			},
 			Cron: CronToolsConfig{
