@@ -158,6 +158,32 @@ var knownProviders = map[string]ProviderInfo{
 	"qwen":           {Name: "qwen", RequiredCredentials: []string{"api_key"}},
 }
 
+// ProviderPriority lists popular providers first to present them in a stable order.
+var ProviderPriority = []string{
+	"openai", "anthropic", "openrouter", "ollama", "gemini", "groq", "github_copilot", "antigravity", "qwen", "vllm", "nvidia", "moonshot", "shengsuanyun", "deepseek", "cerebras", "volcengine", "zhipu",
+}
+
+// GetOrderedProviderNames returns provider names in a deterministic order:
+// popular providers first (ProviderPriority), then any remaining known providers.
+func GetOrderedProviderNames() []string {
+	seen := map[string]struct{}{}
+	res := make([]string, 0, len(knownProviders))
+	for _, p := range ProviderPriority {
+		if _, ok := knownProviders[p]; ok {
+			res = append(res, p)
+			seen[p] = struct{}{}
+		}
+	}
+	// append any others in a deterministic order
+	for k := range knownProviders {
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		res = append(res, k)
+	}
+	return res
+}
+
 // GetProvidersInfo returns provider metadata including required/optional fields
 // and whether credentials are present in the current config.
 func GetProvidersInfo(c *Config) []ProviderInfo {
@@ -222,7 +248,7 @@ func GetProvidersInfo(c *Config) []ProviderInfo {
 		// Model-list based credentials: map model protocol -> present
 		for _, m := range c.ModelList {
 			if m.APIKey != "" || m.APIBase != "" {
-				p := parseProtocol(m.Model)
+				p := ParseProtocol(m.Model)
 				if p == "" {
 					p = "openai"
 				}
@@ -247,7 +273,9 @@ func GetProvidersInfo(c *Config) []ProviderInfo {
 
 // parseProtocol extracts the protocol prefix from a model string of the form
 // "protocol/model-identifier". If no prefix exists, returns empty string.
-func parseProtocol(model string) string {
+// ParseProtocol extracts the protocol prefix from a model string of the form
+// "protocol/model-identifier". If no prefix exists, returns empty string.
+func ParseProtocol(model string) string {
 	if model == "" {
 		return ""
 	}
@@ -257,4 +285,33 @@ func parseProtocol(model string) string {
 	parts := strings.SplitN(model, "/", 2)
 	p := strings.ToLower(strings.TrimSpace(parts[0]))
 	return p
+}
+
+// PopularModels contains a curated list of common/popular models per provider.
+// This is used as a default suggestion list during onboarding when we can't
+// query provider APIs.
+var popularModels = map[string][]string{
+	"openai":     {"gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-3.5-turbo"},
+	"anthropic":  {"claude-3-opus", "claude-2", "claude-instant"},
+	"openrouter": {"gpt-4o", "gpt-3.5-turbo"},
+	"ollama":     {"llama2", "mistral"},
+	"gemini":     {"gemini-proto", "gemini-1"},
+	"groq":       {"groq-1"},
+	"zhipu":      {"zhipu-2"},
+}
+
+// GetPopularModels returns suggested model identifiers for a provider name.
+// The provider parameter may be a protocol like "openai" or a model-list
+// protocol discovered in config. If no curated list exists it returns a
+// small default set.
+func GetPopularModels(provider string) []string {
+	if provider == "" {
+		return []string{"gpt-4", "gpt-3.5-turbo"}
+	}
+	p := strings.ToLower(strings.TrimSpace(provider))
+	if arr, ok := popularModels[p]; ok {
+		return arr
+	}
+	// fallback
+	return []string{"gpt-4", "gpt-3.5-turbo"}
 }
