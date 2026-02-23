@@ -100,6 +100,156 @@ func (s *Setup) AskMissing() error {
 	return nil
 }
 
+func (s *Setup) RunNonInteractive() error {
+	cfg := s.Cfg
+
+	if cfg.Agents.Defaults.Workspace == "" {
+		cfg.Agents.Defaults.Workspace = "~/.picoclaw/workspace"
+	}
+
+	workspace := cfg.WorkspacePath()
+
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+	successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	highlightStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
+	sectionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+
+	var b strings.Builder
+
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╔═══════════════════════════════════════════════════════╗")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("║              PicoClaw Setup Complete                ║")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╚═══════════════════════════════════════════════════════╝")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(successStyle.Render("✓ Workspace config created and is working!")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("📁 Workspace:")))
+	b.WriteString(" ")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render(workspace)))
+	b.WriteString("\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("⚙  Config:")))
+	b.WriteString(" ")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render(s.ConfigPath)))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("📋 IMPORTANT COMMANDS")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(highlightStyle.Render("  picoclaw agent             - Start chatting with the agent")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw onboard --interactive - Full interactive setup")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw auth login       - Login to providers (openai, anthropic)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw skills list      - List available skills")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw status          - Show picoclaw status")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  picoclaw gateway         - Start the gateway server")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("🔌 PROVIDERS (in config.json)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(highlightStyle.Render("  openai       : OpenAI API key")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  anthropic   : Anthropic/Claude API key")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  openrouter  : OpenRouter (unified API)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  groq        : Groq (fast inference)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  deepseek    : DeepSeek API")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  ollama      : Local models (http://localhost:11434)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  vllm        : Local vLLM server")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  + more: gemini, nvidia, moonshot, qwen, etc.")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("💬 CHANNELS (in config.json)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(highlightStyle.Render("  telegram    : Telegram bot (token from @BotFather)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  slack       : Slack bot (bot_token, app_token)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  discord     : Discord bot (token from dev portal)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  whatsapp    : WhatsApp bridge (bridge_url)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  feishu      : Feishu/Lark (app_id, app_secret)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  dingtalk    : DingTalk (client_id, client_secret)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  line        : LINE (channel_access_token)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  qq          : QQ (app_id)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  onebot      : OneBot (ws_url, access_token)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  wecom       : WeCom (token, encoding_aes_key)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  wecom_app   : WeCom App (corp_id, agent_id)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  maixcam     : MaixCam device")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("🤖 MODELS (in model_list)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  Format: {\"model\": \"provider/model-id\", \"api_base\": \"url\"}")))
+	b.WriteString("\n\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  Examples:")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("    {\"model\": \"openai/gpt-4o\", \"api_base\": \"https://api.openai.com/v1\"}")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("    {\"model\": \"anthropic/claude-sonnet-4-20250514\", \"api_base\": \"https://api.anthropic.com/v1\"}")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("    {\"model\": \"deepseek/deepseek-chat\", \"api_base\": \"https://api.deepseek.com/v1\"}")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("    {\"model\": \"ollama/llama3\", \"api_base\": \"http://localhost:11434/v1\"}")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(sectionStyle.Render("🚀 NEXT STEPS")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(highlightStyle.Render("  1. Edit config.json to add your provider API key")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  2. Enable and configure your desired channel(s)")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  3. Run 'picoclaw auth login' for OAuth providers")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(successStyle.Render("  4. Run 'picoclaw agent' to start chatting!")))
+	b.WriteString("\n\n")
+
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  Run 'picoclaw onboard --interactive' for guided setup")))
+	b.WriteString("\n\n")
+
+	fmt.Println(b.String())
+
+	return nil
+}
+
 func saveConfigPath(path string, cfg *config.Config) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

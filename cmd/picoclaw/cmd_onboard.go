@@ -18,23 +18,37 @@ import (
 //go:embed workspace
 var embeddedFiles embed.FS
 
-func onboard() {
+func onboard(args []string) {
 	configPath := getConfigPath()
 
-	// Use the new setup package to run interactive setup and ask for missing values.
+	interactive := false
+	for _, arg := range args {
+		if arg == "--interactive" || arg == "-i" {
+			interactive = true
+			break
+		}
+	}
+
 	s, err := setup.NewSetup(configPath)
 	if err != nil {
 		fmt.Printf("Error initializing setup: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := s.Run(); err != nil {
-		fmt.Printf("TUI error: %v\n", err)
-	}
+	if interactive {
+		if err := s.Run(); err != nil {
+			fmt.Printf("TUI error: %v\n", err)
+		}
 
-	if err := s.AskMissing(); err != nil {
-		fmt.Printf("Error updating config: %v\n", err)
-		os.Exit(1)
+		if err := s.AskMissing(); err != nil {
+			fmt.Printf("Error updating config: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		if err := s.RunNonInteractive(); err != nil {
+			fmt.Printf("Error running non-interactive setup: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	cfg := s.Cfg
@@ -47,44 +61,37 @@ func onboard() {
 }
 
 func copyEmbeddedToTarget(targetDir string) error {
-	// Ensure target directory exists
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return fmt.Errorf("Failed to create target directory: %w", err)
+		return fmt.Errorf("failed to create target directory: %w", err)
 	}
 
-	// Walk through all files in embed.FS
 	err := fs.WalkDir(embeddedFiles, "workspace", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Skip directories
 		if d.IsDir() {
 			return nil
 		}
 
-		// Read embedded file
 		data, err := embeddedFiles.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("Failed to read embedded file %s: %w", path, err)
+			return fmt.Errorf("failed to read embedded file %s: %w", path, err)
 		}
 
-		new_path, err := filepath.Rel("workspace", path)
+		newPath, err := filepath.Rel("workspace", path)
 		if err != nil {
-			return fmt.Errorf("Failed to get relative path for %s: %v\n", path, err)
+			return fmt.Errorf("failed to get relative path for %s: %v\n", path, err)
 		}
 
-		// Build target file path
-		targetPath := filepath.Join(targetDir, new_path)
+		targetPath := filepath.Join(targetDir, newPath)
 
-		// Ensure target file's directory exists
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-			return fmt.Errorf("Failed to create directory %s: %w", filepath.Dir(targetPath), err)
+			return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(targetPath), err)
 		}
 
-		// Write file
 		if err := os.WriteFile(targetPath, data, 0o644); err != nil {
-			return fmt.Errorf("Failed to write file %s: %w", targetPath, err)
+			return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 		}
 
 		return nil

@@ -102,7 +102,7 @@ func main() {
 
 	switch command {
 	case "onboard":
-		onboard()
+		onboard(os.Args[2:])
 	case "agent":
 		agentCmd()
 	case "gateway":
