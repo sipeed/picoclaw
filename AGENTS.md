@@ -3,6 +3,25 @@
 ## Scope
 This file applies to the `picoclaw` project root.
 
+## Git Upstream and Periodic Sync
+
+Current remote setup:
+- `origin`: `https://github.com/xwysyy/picoclaw.git` (your fork)
+- `upstream`: `https://github.com/sipeed/picoclaw.git` (original project)
+
+If `upstream` is missing, add it:
+- `git remote add upstream https://github.com/sipeed/picoclaw.git`
+
+### Periodic sync routine (recommended)
+Run these commands regularly to sync latest upstream changes into your fork branch:
+1. `source ~/.zshrc && proxy_on && git fetch upstream`
+2. `git checkout main`
+3. `git rebase upstream/main`
+4. `source ~/.zshrc && proxy_on && git push origin main`
+
+If your workflow prefers merge over rebase, use:
+- `git merge upstream/main`
+
 ## Known API Error: `No tool output found for function call`
 
 ### Symptom
@@ -58,4 +77,3 @@ Expected healthy state:
 In non-interactive command contexts, use:
 
 - `source ~/.zshrc && proxy_on && <your-command>`
-
