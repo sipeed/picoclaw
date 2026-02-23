@@ -1,3 +1,18 @@
+// Package memory implements an Obsidian-inspired markdown vault for persistent
+// agent memory. Notes are plain markdown files with YAML frontmatter for
+// metadata (title, tags, aliases, dates). The vault is folder-agnostic:
+// organization comes from tags and [[wikilinks]], not directory structure.
+//
+// The vault generates an auto-maintained _index.md file containing a compact
+// overview of all notes, tags, and aliases. This index is injected into the
+// agent's system prompt so the LLM can efficiently query memory without
+// reading every note.
+//
+// Key design constraints:
+//   - No external dependencies (hand-rolled frontmatter parser, pure stdlib)
+//   - No in-memory caches (reads from disk on demand, <10ms for <100 notes)
+//   - No mutexes (tools are called sequentially by the agent loop)
+//   - Backward compatible with the legacy MEMORY.md format
 package memory
 
 import (
@@ -11,18 +26,20 @@ import (
 
 // NoteMeta represents parsed frontmatter metadata from a single markdown note.
 type NoteMeta struct {
-	Title   string
-	Created string
-	Updated string
-	Tags    []string
-	Aliases []string
-	RelPath string
-	Links   []string
+	Title   string   // Note title from frontmatter, or inferred from filename.
+	Created string   // Creation date in YYYY-MM-DD format.
+	Updated string   // Last modification date in YYYY-MM-DD format.
+	Tags    []string // Classification tags for search and filtering.
+	Aliases []string // Alternate names for wikilink resolution.
+	RelPath string   // Slash-separated path relative to the vault root.
+	Links   []string // Wikilink targets ([[target]]) extracted from the note body.
 }
 
 // Vault manages the memory vault: scanning, indexing, and searching notes.
+// All operations read from disk on demand with no in-memory caching, keeping
+// the implementation stateless and safe for sequential tool calls.
 type Vault struct {
-	memoryDir string
+	memoryDir string // Absolute path to the vault root directory.
 }
 
 // NewVault creates a new Vault rooted at the given memory directory.

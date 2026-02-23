@@ -9,6 +9,9 @@ import (
 )
 
 // MemorySaveTool saves a structured note to the memory vault with frontmatter.
+// It auto-generates YAML frontmatter (title, created, updated, tags, aliases),
+// preserves the original created date when updating an existing note, and
+// rebuilds the vault index after every write.
 type MemorySaveTool struct {
 	vault *memory.Vault
 }
@@ -102,6 +105,10 @@ func (t *MemorySaveTool) Execute(ctx context.Context, args map[string]any) *Tool
 }
 
 // MemorySearchTool searches the memory vault by tags, title, or text content.
+// Tags use AND logic (a note must match all specified tags). The text query
+// matches case-insensitively against title, tags, and aliases. Results are
+// capped at 20 entries and include metadata only — use MemoryRecallTool to
+// read full note content.
 type MemorySearchTool struct {
 	vault *memory.Vault
 }
@@ -179,7 +186,9 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]any) *To
 }
 
 // MemoryRecallTool recalls specific notes from the memory vault by path or topic.
-// Unlike memory_search which returns metadata, memory_recall returns full note content.
+// Unlike MemorySearchTool which returns metadata only, MemoryRecallTool returns
+// the full note body with frontmatter stripped. When using topic-based recall,
+// it searches for matching notes and reads the top N (default 3).
 type MemoryRecallTool struct {
 	vault *memory.Vault
 }
