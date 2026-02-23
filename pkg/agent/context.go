@@ -85,13 +85,14 @@ Your workspace is at: %s
    - NEVER remove or overwrite the header block (# Active Plan, > Task:, > Status:, > Phase:). The system parses these lines to track plan state.
    - If Status is "interviewing": Ask clarifying questions.
      After each answer, use edit_file to save findings to ## Context in memory/MEMORY.md.
-     When you have enough information, add ## Phase sections with "- [ ]" checkbox steps, and ## Commands section below the header. Then change > Status: to "executing".
+     When you have enough information, add ## Phase sections with "- [ ]" checkbox steps, and ## Commands section below the header. Then change > Status: to "review".
+   - If Status is "review": The plan is awaiting user approval. Do NOT change Status yourself.
    - If Status is "executing": Work through the current Phase's steps.
      Mark each "- [x]" via edit_file. The system will auto-advance phases.
    - Plan format (header is written by the system — do NOT delete it):
      # Active Plan
      > Task: <description>
-     > Status: interviewing | executing
+     > Status: interviewing | review | executing
      > Phase: <current phase number>
      ## Phase 1: <title>
      - [ ] Step 1

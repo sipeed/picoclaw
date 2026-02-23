@@ -823,7 +823,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	}
 
 	// 5. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts, task)
+	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts, task, preStatus)
 	if err != nil {
 		return "", err
 	}
@@ -993,7 +993,8 @@ func buildPlanReminder(planStatus string) (providers.Message, bool) {
 	case "interviewing":
 		content = "[System] You are interviewing the user to build a plan. " +
 			"Ask clarifying questions and save findings to ## Context in memory/MEMORY.md using edit_file. " +
-			"When you have enough information, write ## Phase sections with `- [ ]` checkbox steps, and ## Commands section."
+			"When you have enough information, write ## Phase sections with `- [ ]` checkbox steps, and ## Commands section. " +
+			"Then change > Status: to review. Do NOT set it to executing."
 	case "review":
 		content = "[System] The plan is under review. " +
 			"Wait for the user to approve or request changes. Do not proceed with execution."
@@ -1493,6 +1494,7 @@ func (al *AgentLoop) runLLMIteration(
 	messages []providers.Message,
 	opts processOptions,
 	task *activeTask,
+	planSnapshot string,
 ) (string, int, error) {
 	iteration := 0
 	var finalContent string
@@ -1503,7 +1505,7 @@ func (al *AgentLoop) runLLMIteration(
 
 	// Snapshot unchecked step count before tool loop so we can detect progress.
 	preUnchecked := -1 // -1 = not tracking
-	if agent.ContextBuilder.GetPlanStatus() == "executing" {
+	if planSnapshot == "executing" {
 		preUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
 	}
 
@@ -1756,7 +1758,7 @@ func (al *AgentLoop) runLLMIteration(
 				curUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
 			}
 			if curUnchecked > 0 && !planMarkNudged &&
-				agent.ContextBuilder.GetPlanStatus() == "executing" {
+				planSnapshot == "executing" {
 				planMarkNudged = true
 				messages = append(messages, providers.Message{
 					Role:    "assistant",
@@ -1802,7 +1804,7 @@ func (al *AgentLoop) runLLMIteration(
 		// message, the tool-result list, or the session store.
 		// A single compact rejection message is injected instead.
 		var interviewRejected []string
-		if isPlanPreExecution(agent.ContextBuilder.GetPlanStatus()) {
+		if isPlanPreExecution(planSnapshot) {
 			allowed := normalizedToolCalls[:0] // reuse backing array
 			for _, tc := range normalizedToolCalls {
 				if isToolAllowedDuringInterview(tc.Name, tc.Arguments) {
@@ -2069,14 +2071,14 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		// Inject plan-mode reminder to keep AI focused on interview/review workflow.
-		if iteration > 1 && isPlanPreExecution(agent.ContextBuilder.GetPlanStatus()) {
-			if reminder, ok := buildPlanReminder(agent.ContextBuilder.GetPlanStatus()); ok {
+		if iteration > 1 && isPlanPreExecution(planSnapshot) {
+			if reminder, ok := buildPlanReminder(planSnapshot); ok {
 				messages = append(messages, reminder)
 				logger.DebugCF("agent", "Injected plan reminder",
 					map[string]interface{}{
 						"agent_id":    agent.ID,
 						"iteration":   iteration,
-						"plan_status": agent.ContextBuilder.GetPlanStatus(),
+						"plan_status": planSnapshot,
 					})
 			}
 		}
