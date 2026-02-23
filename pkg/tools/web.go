@@ -349,6 +349,7 @@ func (p *GrokSearchProvider) Search(ctx context.Context, query string, count int
 			},
 		},
 		"max_tokens": 1000,
+		"stream":     false,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -356,12 +357,13 @@ func (p *GrokSearchProvider) Search(ctx context.Context, query string, count int
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, strings.NewReader(string(payloadBytes)))
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("User-Agent", userAgent)
 
@@ -384,6 +386,19 @@ func (p *GrokSearchProvider) Search(ctx context.Context, query string, count int
 		return "", fmt.Errorf("Grok API error: %s", string(body))
 	}
 
+	content, err := parseGrokResponseContent(body)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+	if strings.TrimSpace(content) == "" {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	return fmt.Sprintf("Results for: %s (via Grok)\n%s", query, content), nil
+}
+
+func parseGrokResponseContent(body []byte) (string, error) {
+	// First try regular JSON completion response.
 	var searchResp struct {
 		Choices []struct {
 			Message struct {
@@ -391,16 +406,65 @@ func (p *GrokSearchProvider) Search(ctx context.Context, query string, count int
 			} `json:"message"`
 		} `json:"choices"`
 	}
-
-	if err := json.Unmarshal(body, &searchResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
+	if err := json.Unmarshal(body, &searchResp); err == nil {
+		if len(searchResp.Choices) > 0 {
+			return strings.TrimSpace(searchResp.Choices[0].Message.Content), nil
+		}
 	}
 
-	if len(searchResp.Choices) == 0 {
-		return fmt.Sprintf("No results for: %s", query), nil
+	// Some OpenAI-compatible gateways return SSE chunks even when stream=false.
+	// Parse lines in "data: {...}" format and stitch delta content.
+	text := strings.TrimSpace(string(body))
+	if !strings.Contains(text, "data:") {
+		return "", fmt.Errorf("unexpected response format")
 	}
 
-	return fmt.Sprintf("Results for: %s (via Grok)\n%s", query, searchResp.Choices[0].Message.Content), nil
+	var merged strings.Builder
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		chunk := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if chunk == "" || chunk == "[DONE]" {
+			continue
+		}
+
+		var sseChunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(chunk), &sseChunk); err != nil {
+			continue
+		}
+		if len(sseChunk.Choices) == 0 {
+			continue
+		}
+
+		part := strings.TrimSpace(sseChunk.Choices[0].Delta.Content)
+		if part == "" {
+			part = strings.TrimSpace(sseChunk.Choices[0].Message.Content)
+		}
+		if part == "" {
+			continue
+		}
+		if merged.Len() > 0 {
+			merged.WriteByte(' ')
+		}
+		merged.WriteString(part)
+	}
+
+	if merged.Len() == 0 {
+		return "", fmt.Errorf("empty content in SSE response")
+	}
+	return merged.String(), nil
 }
 
 type WebSearchTool struct {

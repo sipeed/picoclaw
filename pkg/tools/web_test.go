@@ -572,3 +572,90 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
 	}
 }
+
+// TestWebTool_GrokSearch_JSONResponse verifies Grok JSON response parsing.
+func TestWebTool_GrokSearch_JSONResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("Expected POST request, got %s", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("Expected Authorization Bearer test-key, got %s", got)
+		}
+
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("Failed to decode payload: %v", err)
+		}
+		if payload["model"] != "grok-4.20-beta" {
+			t.Errorf("Expected model grok-4.20-beta, got %v", payload["model"])
+		}
+		if stream, ok := payload["stream"].(bool); !ok || stream {
+			t.Errorf("Expected stream=false, got %v", payload["stream"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"choices":[{"message":{"content":"1. Test\n   https://example.com\n   Example snippet"}}]}`))
+	}))
+	defer server.Close()
+
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		GrokEnabled:    true,
+		GrokAPIKey:     "test-key",
+		GrokEndpoint:   server.URL,
+		GrokModel:      "grok-4.20-beta",
+		GrokMaxResults: 3,
+	})
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "test query",
+		"count": 3.0,
+	})
+
+	if result.IsError {
+		t.Fatalf("Expected success, got error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForUser, "via Grok") {
+		t.Errorf("Expected 'via Grok' in output, got: %s", result.ForUser)
+	}
+	if !strings.Contains(result.ForUser, "https://example.com") {
+		t.Errorf("Expected result URL in output, got: %s", result.ForUser)
+	}
+}
+
+// TestWebTool_GrokSearch_SSEResponse verifies SSE chunk response parsing.
+func TestWebTool_GrokSearch_SSEResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(
+			"data: {\"id\":\"1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n" +
+				"data: {\"id\":\"1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"1. SSE Result\"}}]}\n\n" +
+				"data: {\"id\":\"1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" https://example.org\"}}]}\n\n" +
+				"data: [DONE]\n\n",
+		))
+	}))
+	defer server.Close()
+
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		GrokEnabled:  true,
+		GrokAPIKey:   "test-key",
+		GrokEndpoint: server.URL,
+		GrokModel:    "grok-4.20-beta",
+	})
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "sse query",
+	})
+
+	if result.IsError {
+		t.Fatalf("Expected success, got error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForUser, "SSE Result") {
+		t.Errorf("Expected SSE content in output, got: %s", result.ForUser)
+	}
+	if !strings.Contains(result.ForUser, "https://example.org") {
+		t.Errorf("Expected SSE URL in output, got: %s", result.ForUser)
+	}
+}
