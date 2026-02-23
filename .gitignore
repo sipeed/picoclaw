@@ -8,14 +8,14 @@ build/
 *.dylib
 *.test
 *.out
-/picoclaw
-/picoclaw-test
-cmd/picoclaw/workspace
+/clawdroid
+/clawdroid-test
+cmd/clawdroid/workspace
 
-# Picoclaw specific
+# ClawDroid specific
 
-# PicoClaw
-.picoclaw/
+# ClawDroid
+.clawdroid/
 config.json
 sessions/
 build/

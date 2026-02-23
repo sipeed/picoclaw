@@ -1,8 +1,8 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// ClawDroid - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 ClawDroid contributors
 
 package agent
 
@@ -18,17 +18,17 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/constants"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/mcp"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/session"
-	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/KarakuriAgent/clawdroid/pkg/bus"
+	"github.com/KarakuriAgent/clawdroid/pkg/channels"
+	"github.com/KarakuriAgent/clawdroid/pkg/config"
+	"github.com/KarakuriAgent/clawdroid/pkg/constants"
+	"github.com/KarakuriAgent/clawdroid/pkg/logger"
+	"github.com/KarakuriAgent/clawdroid/pkg/mcp"
+	"github.com/KarakuriAgent/clawdroid/pkg/providers"
+	"github.com/KarakuriAgent/clawdroid/pkg/session"
+	"github.com/KarakuriAgent/clawdroid/pkg/state"
+	"github.com/KarakuriAgent/clawdroid/pkg/tools"
+	"github.com/KarakuriAgent/clawdroid/pkg/utils"
 )
 
 type AgentLoop struct {

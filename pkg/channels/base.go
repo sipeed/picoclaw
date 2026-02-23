@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/KarakuriAgent/clawdroid/pkg/bus"
 )
 
 type Channel interface {

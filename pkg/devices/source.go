@@ -1,5 +1,5 @@
 package devices
 
-import "github.com/sipeed/picoclaw/pkg/devices/events"
+import "github.com/KarakuriAgent/clawdroid/pkg/devices/events"
 
 type EventSource = events.EventSource

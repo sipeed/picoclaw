@@ -12,8 +12,8 @@ import (
 	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/KarakuriAgent/clawdroid/pkg/config"
+	"github.com/KarakuriAgent/clawdroid/pkg/logger"
 )
 
 // ServerInstance manages a connected MCP server session.
@@ -300,7 +300,7 @@ func (m *Manager) ensureRunning(ctx context.Context, serverName string) (*Server
 
 	// Create SDK client
 	client := sdkmcp.NewClient(
-		&sdkmcp.Implementation{Name: "picoclaw", Version: "1.0.0"},
+		&sdkmcp.Implementation{Name: "clawdroid", Version: "1.0.0"},
 		nil,
 	)
 

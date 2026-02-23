@@ -1,10 +1,10 @@
-## 🚀 Join the PicoClaw Journey: Call for Community Volunteers & Roadmap Reveal
+## 🚀 Join the ClawDroid Journey: Call for Community Volunteers & Roadmap Reveal
 
-**Hello, PicoClaw Community!**
+**Hello, ClawDroid Community!**
 
-First, a massive thank you to everyone for your enthusiasm and PR contributions. It is because of you that PicoClaw continues to iterate and evolve so rapidly. Thanks to the simplicity and accessibility of the **Go language**, we’ve seen a non-stop stream of high-quality PRs!
+First, a massive thank you to everyone for your enthusiasm and PR contributions. It is because of you that ClawDroid continues to iterate and evolve so rapidly. Thanks to the simplicity and accessibility of the **Go language**, we’ve seen a non-stop stream of high-quality PRs!
 
-PicoClaw is growing much faster than we anticipated. As we are currently in the midst of the **Chinese New Year holiday**, we are looking to recruit community volunteers to help us maintain this incredible momentum.
+ClawDroid is growing much faster than we anticipated. As we are currently in the midst of the **Chinese New Year holiday**, we are looking to recruit community volunteers to help us maintain this incredible momentum.
 
 This document outlines the specific volunteer roles we need right now and provides a look at our upcoming **Roadmap**.
 
@@ -17,9 +17,9 @@ To show our appreciation, developers who officially join our community operation
 
 ### 🎥 Calling All Content Creators!
 
-Not a developer? You can still help! We welcome users to post **PicoClaw reviews or tutorials**.
+Not a developer? You can still help! We welcome users to post **ClawDroid reviews or tutorials**.
 
-* **Twitter:** Use the tag **#picoclaw** and mention **@SipeedIO**.
+* **Twitter:** Use the tag **#clawdroid** and mention **@SipeedIO**.
 * **Bilibili:** Mention **@Sipeed矽速科技** or send us a DM.
 We will be rewarding high-quality content creators with the same perks as our community developers!
 
@@ -35,7 +35,7 @@ We are looking for experts in the following areas:
 
 
 2. **Resource Optimization Experts**
-* **The Mission:** Rapid growth has introduced dependencies that are making PicoClaw a bit "heavy." We want to keep it lean.
+* **The Mission:** Rapid growth has introduced dependencies that are making ClawDroid a bit "heavy." We want to keep it lean.
 * **Focus:** Analyzing resource growth between releases and trimming redundancy.
 * **Priority:** **RAM usage optimization** > Binary size reduction.
 
@@ -51,10 +51,10 @@ We are looking for experts in the following areas:
 
 
 5. **AI-Powered CI/CD Optimization**
-* **The Mission:** PicoClaw started as a "vibe coding" experiment; now we want to use AI to manage it.
+* **The Mission:** ClawDroid started as a "vibe coding" experiment; now we want to use AI to manage it.
 * **Focus:** Automating builds with AI and exploring AI-driven issue resolution.
 
-**How to Apply:** > If you are interested in any of the roles above, please send an email to support@sipeed.com with the subject line: [Apply: PicoClaw Expert Volunteer] + Your Desired Role.   
+**How to Apply:** > If you are interested in any of the roles above, please send an email to support@sipeed.com with the subject line: [Apply: ClawDroid Expert Volunteer] + Your Desired Role.   
 Please include a brief introduction and any relevant experience or portfolio links. We will review all applications and grant project permissions to selected contributors!
 
 ---
@@ -98,15 +98,15 @@ If you would like to claim a task, please feel free to start a conversation by c
 
 **Everything is open to your creativity!** If you have a wild idea, just PR it.
 
-1. **The Fast Track:** Once you have at least **one merged PR**, you are eligible to join our **Developer Discord** to help plan the future of PicoClaw.
+1. **The Fast Track:** Once you have at least **one merged PR**, you are eligible to join our **Developer Discord** to help plan the future of ClawDroid.
 2. **The Application Track:** If you haven’t submitted a PR yet but want to dive in, email **support@sipeed.com** with the subject:
-> `[Apply Join PicoClaw Dev Group] + Your GitHub Account`
+> `[Apply Join ClawDroid Dev Group] + Your GitHub Account`
 > Include the role you're interested in and any evidence of your development experience.
 
 
 
 ### Looking Ahead
 
-Powered by PicoClaw, we are crafting a Swarm AI Assistant to transform your environment into a seamless network of personal stewards. By automating the friction of daily life, we empower you to transcend the ordinary and freely explore your creative potential.
+Powered by ClawDroid, we are crafting a Swarm AI Assistant to transform your environment into a seamless network of personal stewards. By automating the friction of daily life, we empower you to transcend the ordinary and freely explore your creative potential.
 
-**Finally, Happy Chinese New Year to everyone!** May PicoClaw gallop forward in this **Year of the Horse!** 🐎
+**Finally, Happy Chinese New Year to everyone!** May ClawDroid gallop forward in this **Year of the Horse!** 🐎

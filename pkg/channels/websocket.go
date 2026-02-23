@@ -9,14 +9,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/sipeed/picoclaw/pkg/broadcast"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/KarakuriAgent/clawdroid/pkg/broadcast"
+	"github.com/KarakuriAgent/clawdroid/pkg/bus"
+	"github.com/KarakuriAgent/clawdroid/pkg/config"
+	"github.com/KarakuriAgent/clawdroid/pkg/logger"
+	"github.com/KarakuriAgent/clawdroid/pkg/tools"
 )
 
-// wsIncoming is the JSON message sent from APK to picoclaw.
+// wsIncoming is the JSON message sent from APK to clawdroid.
 type wsIncoming struct {
 	Content   string   `json:"content"`
 	SenderID  string   `json:"sender_id,omitempty"`
@@ -26,7 +26,7 @@ type wsIncoming struct {
 	RequestID string   `json:"request_id,omitempty"` // correlates with tool_request
 }
 
-// wsOutgoing is the JSON message sent from picoclaw to APK.
+// wsOutgoing is the JSON message sent from clawdroid to APK.
 type wsOutgoing struct {
 	Content string `json:"content"`
 	Type    string `json:"type,omitempty"`

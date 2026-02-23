@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "io.picoclaw.android.core.data"
+    namespace = "io.clawdroid.core.data"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {

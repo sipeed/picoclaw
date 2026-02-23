@@ -1,40 +1,40 @@
 services:
   # ─────────────────────────────────────────────
-  # PicoClaw Agent (one-shot query)
-  #   docker compose run --rm picoclaw-agent -m "Hello"
+  # ClawDroid Agent (one-shot query)
+  #   docker compose run --rm clawdroid-agent -m "Hello"
   # ─────────────────────────────────────────────
-  picoclaw-agent:
+  clawdroid-agent:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: picoclaw-agent
+    container_name: clawdroid-agent
     profiles:
       - agent
     volumes:
-      - ./config/config.json:/root/.picoclaw/config.json:ro
-      - picoclaw-workspace:/root/.picoclaw/workspace
-    entrypoint: ["picoclaw", "agent"]
+      - ./config/config.json:/root/.clawdroid/config.json:ro
+      - clawdroid-workspace:/root/.clawdroid/workspace
+    entrypoint: ["clawdroid", "agent"]
     stdin_open: true
     tty: true
 
   # ─────────────────────────────────────────────
-  # PicoClaw Gateway (Long-running Bot)
-  #   docker compose up picoclaw-gateway
+  # ClawDroid Gateway (Long-running Bot)
+  #   docker compose up clawdroid-gateway
   # ─────────────────────────────────────────────
-  picoclaw-gateway:
+  clawdroid-gateway:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: picoclaw-gateway
+    container_name: clawdroid-gateway
     restart: unless-stopped
     profiles:
       - gateway
     volumes:
       # Configuration file
-      - ./config/config.json:/root/.picoclaw/config.json:ro
+      - ./config/config.json:/root/.clawdroid/config.json:ro
       # Persistent workspace (sessions, memory, logs)
-      - picoclaw-workspace:/root/.picoclaw/workspace
+      - clawdroid-workspace:/root/.clawdroid/workspace
     command: ["gateway"]
 
 volumes:
-  picoclaw-workspace:
+  clawdroid-workspace:

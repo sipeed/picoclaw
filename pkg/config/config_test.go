@@ -205,8 +205,8 @@ func TestDefaultConfig_DataDir(t *testing.T) {
 	if cfg.Agents.Defaults.DataDir == "" {
 		t.Error("DataDir should not be empty")
 	}
-	if cfg.Agents.Defaults.DataDir != "~/.picoclaw/data" {
-		t.Errorf("DataDir should be '~/.picoclaw/data', got '%s'", cfg.Agents.Defaults.DataDir)
+	if cfg.Agents.Defaults.DataDir != "~/.clawdroid/data" {
+		t.Errorf("DataDir should be '~/.clawdroid/data', got '%s'", cfg.Agents.Defaults.DataDir)
 	}
 }
 
@@ -218,7 +218,7 @@ func TestConfig_DataPath(t *testing.T) {
 	if path == "" {
 		t.Error("DataPath should not be empty")
 	}
-	if path == "~/.picoclaw/data" {
+	if path == "~/.clawdroid/data" {
 		t.Error("DataPath should expand ~ to home directory")
 	}
 	if path[0] == '~' {

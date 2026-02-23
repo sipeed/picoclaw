@@ -12,24 +12,24 @@
     *** INSTANCE;
     kotlinx.serialization.KSerializer serializer(...);
 }
--keepclasseswithmembers class io.picoclaw.android.** {
+-keepclasseswithmembers class io.clawdroid.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
 
 # Keep generated $$serializer classes
--keepclassmembers class io.picoclaw.android.**$$serializer {
+-keepclassmembers class io.clawdroid.**$$serializer {
     *** INSTANCE;
     *;
 }
 
 # Keep private ImageEntry used via Json.decodeFromString in MessageMapper
--keep class io.picoclaw.android.core.data.mapper.ImageEntry { *; }
+-keep class io.clawdroid.core.data.mapper.ImageEntry { *; }
 
 # ========================
 # Enums stored as strings in Room DB
 # ========================
--keepclassmembers enum io.picoclaw.android.core.domain.model.MessageSender { *; }
--keepclassmembers enum io.picoclaw.android.core.domain.model.MessageStatus { *; }
+-keepclassmembers enum io.clawdroid.core.domain.model.MessageSender { *; }
+-keepclassmembers enum io.clawdroid.core.domain.model.MessageStatus { *; }
 
 # ========================
 # Ktor

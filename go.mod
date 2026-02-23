@@ -1,4 +1,4 @@
-module github.com/sipeed/picoclaw
+module github.com/KarakuriAgent/clawdroid
 
 go 1.25.6
 

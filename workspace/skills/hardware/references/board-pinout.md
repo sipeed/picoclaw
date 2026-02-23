@@ -126,6 +126,6 @@ I2C adapter numbers can change between boots depending on driver load order. Alw
 
 ### Permissions
 `/dev/i2c-*` and `/dev/spidev*` typically require root access. Options:
-- Run picoclaw as root
+- Run clawdroid as root
 - Add user to `i2c` and `spi` groups
 - Create udev rules: `SUBSYSTEM=="i2c-dev", MODE="0666"`

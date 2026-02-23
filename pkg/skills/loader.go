@@ -54,7 +54,7 @@ func (info SkillInfo) validate() error {
 type SkillsLoader struct {
 	dataDir       string
 	dataSkills    string // data dir skills
-	globalSkills  string // global skills (~/.picoclaw/skills)
+	globalSkills  string // global skills (~/.clawdroid/skills)
 	builtinSkills string // builtin skills
 }
 
@@ -62,7 +62,7 @@ func NewSkillsLoader(dataDir string, globalSkills string, builtinSkills string) 
 	return &SkillsLoader{
 		dataDir:       dataDir,
 		dataSkills:    filepath.Join(dataDir, "skills"),
-		globalSkills:  globalSkills, // ~/.picoclaw/skills
+		globalSkills:  globalSkills, // ~/.clawdroid/skills
 		builtinSkills: builtinSkills,
 	}
 }
@@ -97,7 +97,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 		}
 	}
 
-	// 全局 skills (~/.picoclaw/skills) - 被 workspace skills 覆盖
+	// 全局 skills (~/.clawdroid/skills) - 被 workspace skills 覆盖
 	if sl.globalSkills != "" {
 		if dirs, err := os.ReadDir(sl.globalSkills); err == nil {
 			for _, dir := range dirs {
@@ -188,7 +188,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 		}
 	}
 
-	// 2. 其次从全局 skills 加载 (~/.picoclaw/skills)
+	// 2. 其次从全局 skills 加载 (~/.clawdroid/skills)
 	if sl.globalSkills != "" {
 		skillFile := filepath.Join(sl.globalSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {

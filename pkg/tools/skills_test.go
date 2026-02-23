@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/KarakuriAgent/clawdroid/pkg/skills"
 )
 
 func setupSkillFixture(t *testing.T) (string, *skills.SkillsLoader) {

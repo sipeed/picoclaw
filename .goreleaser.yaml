@@ -5,10 +5,10 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - go generate ./cmd/picoclaw
+    - go generate ./cmd/clawdroid
 
 builds:
-  - id: picoclaw
+  - id: clawdroid
     env:
       - CGO_ENABLED=0
     goos:
@@ -23,18 +23,18 @@ builds:
       - s390x
       - mips64
       - arm
-    main: ./cmd/picoclaw
+    main: ./cmd/clawdroid
     ignore:
       - goos: windows
         goarch: arm
 
 dockers_v2:
-  - id: picoclaw
+  - id: clawdroid
     dockerfile: Dockerfile.goreleaser
     ids:
-      - picoclaw
+      - clawdroid
     images:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/clawdroid"
       - "docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}"
     tags:
       - "{{ .Tag }}"

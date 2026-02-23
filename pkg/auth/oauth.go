@@ -101,7 +101,7 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 		fmt.Printf("Could not open browser automatically.\nPlease open this URL manually:\n\n%s\n\n", authURL)
 	}
 
-	fmt.Println("If you're running in a headless environment, use: picoclaw auth login --provider openai --device-code")
+	fmt.Println("If you're running in a headless environment, use: clawdroid auth login --provider openai --device-code")
 	fmt.Println("Waiting for authentication in browser...")
 
 	select {
@@ -311,7 +311,7 @@ func buildAuthorizeURL(cfg OAuthProviderConfig, pkce PKCECodes, state, redirectU
 		"state":                      {state},
 	}
 	if strings.Contains(strings.ToLower(cfg.Issuer), "auth.openai.com") {
-		params.Set("originator", "picoclaw")
+		params.Set("originator", "clawdroid")
 	}
 	if cfg.Originator != "" {
 		params.Set("originator", cfg.Originator)

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/KarakuriAgent/clawdroid/pkg/logger"
 )
 
 const maxImageFileSize = 50 * 1024 * 1024 // 50MB
@@ -120,7 +120,7 @@ func DownloadFile(url, filename string, opts DownloadOptions) string {
 		opts.LoggerPrefix = "utils"
 	}
 
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	mediaDir := filepath.Join(os.TempDir(), "clawdroid_media")
 	if err := os.MkdirAll(mediaDir, 0700); err != nil {
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to create media directory", map[string]interface{}{
 			"error": err.Error(),

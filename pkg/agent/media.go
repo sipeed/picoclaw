@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/KarakuriAgent/clawdroid/pkg/logger"
+	"github.com/KarakuriAgent/clawdroid/pkg/providers"
 )
 
 // PersistMedia saves base64 data URL images to the mediaDir as files.

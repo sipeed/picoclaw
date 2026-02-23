@@ -147,11 +147,11 @@ jobs:
       - name: Rename APK with version
         run: |
           mv app/build/outputs/apk/release/app-release.apk \
-             app/build/outputs/apk/release/picoclaw-${{ inputs.tag }}.apk
+             app/build/outputs/apk/release/clawdroid-${{ inputs.tag }}.apk
 
       - name: Upload APK to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ inputs.tag }}" \
-            app/build/outputs/apk/release/picoclaw-${{ inputs.tag }}.apk
+            app/build/outputs/apk/release/clawdroid-${{ inputs.tag }}.apk

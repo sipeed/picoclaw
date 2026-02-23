@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/KarakuriAgent/clawdroid/pkg/logger"
+	"github.com/KarakuriAgent/clawdroid/pkg/utils"
 )
 
 type GroqTranscriber struct {

@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/cron"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/KarakuriAgent/clawdroid/pkg/bus"
+	"github.com/KarakuriAgent/clawdroid/pkg/cron"
+	"github.com/KarakuriAgent/clawdroid/pkg/utils"
 )
 
 // JobExecutor is the interface for executing cron jobs through the agent

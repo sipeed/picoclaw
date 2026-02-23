@@ -52,5 +52,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: picoclaw-release-apk
+          name: clawdroid-release-apk
           path: android/app/build/outputs/apk/release/*.apk

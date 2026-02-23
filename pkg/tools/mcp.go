@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/mcp"
+	"github.com/KarakuriAgent/clawdroid/pkg/mcp"
 )
 
 // MCPBridgeTool exposes MCP servers to the LLM as a single tool with actions.

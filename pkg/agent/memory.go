@@ -1,8 +1,8 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// ClawDroid - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 ClawDroid contributors
 
 package agent
 

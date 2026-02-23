@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/KarakuriAgent/clawdroid/pkg/skills"
 )
 
 type SkillTool struct {

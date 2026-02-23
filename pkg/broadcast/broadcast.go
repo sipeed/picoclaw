@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/KarakuriAgent/clawdroid/pkg/logger"
 )
 
 const (
 	// Action is the intent action the Android app listens for.
-	Action = "io.picoclaw.android.AGENT_MESSAGE"
+	Action = "io.clawdroid.AGENT_MESSAGE"
 	// Package is the Android app package name.
-	Package = "io.picoclaw.android"
+	Package = "io.clawdroid"
 )
 
 // Message represents a message to send via Android broadcast.

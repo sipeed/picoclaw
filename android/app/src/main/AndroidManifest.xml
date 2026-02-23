@@ -19,13 +19,13 @@
     </queries>
 
     <application
-        android:name=".PicoClawApp"
+        android:name=".ClawDroidApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
-        android:theme="@style/Theme.PicoClaw">
+        android:theme="@style/Theme.ClawDroid">
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -39,7 +39,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.PicoClaw">
+            android:theme="@style/Theme.ClawDroid">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -50,7 +50,7 @@
             android:name=".receiver.AgentMessageReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="io.picoclaw.android.AGENT_MESSAGE" />
+                <action android:name="io.clawdroid.AGENT_MESSAGE" />
             </intent-filter>
         </receiver>
 
@@ -84,7 +84,7 @@
                 android:value="AI voice assistant overlay for real-time conversation" />
         </service>
         <service
-            android:name=".assistant.PicoClawAccessibilityService"
+            android:name=".assistant.ClawDroidAccessibilityService"
             android:exported="false"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>

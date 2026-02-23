@@ -12,7 +12,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "PicoClaw"
+rootProject.name = "ClawDroid"
 include(":app")
 include(":feature:chat")
 include(":core:domain")

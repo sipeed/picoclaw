@@ -10,7 +10,7 @@ assignees: ''
 ## Quick Summary
 
 ##  Environment & Tools
-- **PicoClaw Version:** (e.g., v0.1.2 or commit hash)
+- **ClawDroid Version:** (e.g., v0.1.2 or commit hash)
 - **Go Version:** (e.g., go 1.22)
 - **AI Model & Provider:** (e.g., GPT-4o via OpenAI / DeepSeek via SiliconFlow)
 - **Operating System:** (e.g., Ubuntu 22.04 / macOS / Android Termux)

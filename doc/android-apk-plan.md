@@ -1,8 +1,8 @@
-# PicoClaw Android APK - チャットUI設計プラン
+# ClawDroid Android APK - チャットUI設計プラン
 
 ## Context
 
-PicoClawはTermux上で動作するGo製AIエージェント。WebSocketサーバーチャネル(`pkg/channels/websocket.go`)を通じて外部クライアントと通信可能。このWSサーバーに接続するAndroid APKを作成する。初期リリースはテキスト+画像チャットUI、将来的にボイスUI（Googleアシスタント風）を追加予定。
+ClawDroidはTermux上で動作するGo製AIエージェント。WebSocketサーバーチャネル(`pkg/channels/websocket.go`)を通じて外部クライアントと通信可能。このWSサーバーに接続するAndroid APKを作成する。初期リリースはテキスト+画像チャットUI、将来的にボイスUI（Googleアシスタント風）を追加予定。
 
 ## WSプロトコル（確認済み）
 
@@ -81,8 +81,8 @@ android/
 │       │   ├── values/strings.xml
 │       │   ├── values/colors.xml
 │       │   └── values/themes.xml
-│       └── java/io/picoclaw/android/
-│           ├── PicoClawApp.kt                 # Application（Koin初期化）
+│       └── java/io/clawdroid/android/
+│           ├── ClawDroidApp.kt                 # Application（Koin初期化）
 │           ├── MainActivity.kt                 # Single Activity + Navigation
 │           └── di/
 │               └── AppModule.kt               # Koin全体module定義
@@ -90,7 +90,7 @@ android/
 ├── feature/
 │   └── chat/                                  # === :feature:chat モジュール ===
 │       ├── build.gradle.kts
-│       └── src/main/java/io/picoclaw/android/feature/chat/
+│       └── src/main/java/io/clawdroid/android/feature/chat/
 │           ├── ChatViewModel.kt
 │           ├── ChatUiState.kt
 │           ├── ChatEvent.kt
@@ -106,7 +106,7 @@ android/
 ├── core/
 │   ├── domain/                                # === :core:domain モジュール ===
 │   │   ├── build.gradle.kts
-│   │   └── src/main/java/io/picoclaw/android/core/domain/
+│   │   └── src/main/java/io/clawdroid/android/core/domain/
 │   │       ├── model/
 │   │       │   ├── ChatMessage.kt
 │   │       │   ├── ConnectionState.kt
@@ -121,7 +121,7 @@ android/
 │   │
 │   ├── data/                                  # === :core:data モジュール ===
 │   │   ├── build.gradle.kts
-│   │   └── src/main/java/io/picoclaw/android/core/data/
+│   │   └── src/main/java/io/clawdroid/android/core/data/
 │   │       ├── remote/
 │   │       │   ├── WebSocketClient.kt         # Ktor WS + auto-reconnect
 │   │       │   └── dto/
@@ -142,7 +142,7 @@ android/
 │   │
 │   └── ui/                                    # === :core:ui モジュール ===
 │       ├── build.gradle.kts
-│       └── src/main/java/io/picoclaw/android/core/ui/
+│       └── src/main/java/io/clawdroid/android/core/ui/
 │           └── theme/
 │               ├── Theme.kt
 │               ├── Color.kt
@@ -368,7 +368,7 @@ LaunchedEffect(shouldLoadMore) {
 val appModule = module {
     // Room
     single {
-        Room.databaseBuilder(androidContext(), AppDatabase::class.java, "picoclaw.db").build()
+        Room.databaseBuilder(androidContext(), AppDatabase::class.java, "clawdroid.db").build()
     }
     single { get<AppDatabase>().messageDao() }
 
@@ -414,7 +414,7 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories { google(); mavenCentral() }
 }
-rootProject.name = "PicoClaw"
+rootProject.name = "ClawDroid"
 include(":app")
 include(":feature:chat")
 include(":core:domain")
@@ -541,14 +541,14 @@ KSPは`:core:data`モジュールのみで使用（Room compiler）。
 
 ### Phase 7: :app
 22. `AppModule.kt`（Koin全体module）
-23. `PicoClawApp.kt`
+23. `ClawDroidApp.kt`
 24. `MainActivity.kt`
 
 ---
 
 ## 検証方法
 
-1. Termuxでpicoclaw起動（WSサーバーが`127.0.0.1:18793`でリスン）
+1. Termuxでclawdroid起動（WSサーバーが`127.0.0.1:18793`でリスン）
 2. APKをビルド・インストール（`./gradlew assembleDebug`）
 3. アプリ起動 → ConnectionBannerが「Connected」表示を確認
 4. テキスト送信 → エージェントからの応答がチャットに表示されることを確認

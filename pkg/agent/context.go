@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/mcp"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/KarakuriAgent/clawdroid/pkg/logger"
+	"github.com/KarakuriAgent/clawdroid/pkg/mcp"
+	"github.com/KarakuriAgent/clawdroid/pkg/providers"
+	"github.com/KarakuriAgent/clawdroid/pkg/skills"
+	"github.com/KarakuriAgent/clawdroid/pkg/tools"
 )
 
 // SilentReplyToken is the token the LLM emits when it has nothing to say.
@@ -34,7 +34,7 @@ func getGlobalConfigDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".picoclaw")
+	return filepath.Join(home, ".clawdroid")
 }
 
 func NewContextBuilder(workspace string, dataDir string) *ContextBuilder {

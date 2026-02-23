@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "io.picoclaw.android.feature.chat"
+    namespace = "io.clawdroid.feature.chat"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {

@@ -1,8 +1,8 @@
 {
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "data_dir": "~/.picoclaw/data",
+      "workspace": "~/.clawdroid/workspace",
+      "data_dir": "~/.clawdroid/data",
       "restrict_to_workspace": true,
       "model": "glm-4.7",
       "max_tokens": 8192,
