@@ -1,3 +1,5 @@
+//go:build whatsapp_native
+
 // PicoClaw - Ultra-lightweight personal AI agent
 // License: MIT
 //
@@ -58,16 +60,17 @@ type WhatsAppNativeChannel struct {
 
 // NewWhatsAppNativeChannel creates a WhatsApp channel that uses whatsmeow for connection.
 // storePath is the directory for the SQLite session store (e.g. workspace/whatsapp).
-func NewWhatsAppNativeChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus, storePath string) (*WhatsAppNativeChannel, error) {
+func NewWhatsAppNativeChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus, storePath string) (Channel, error) {
 	base := NewBaseChannel("whatsapp", cfg, bus, cfg.AllowFrom)
 	if storePath == "" {
 		storePath = "whatsapp"
 	}
-	return &WhatsAppNativeChannel{
+	c := &WhatsAppNativeChannel{
 		BaseChannel: base,
 		config:      cfg,
 		storePath:   storePath,
-	}, nil
+	}
+	return c, nil
 }
 
 func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
