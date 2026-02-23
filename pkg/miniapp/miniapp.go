@@ -1,7 +1,9 @@
 package miniapp
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/hmac"
 	"crypto/sha256"
 	"embed"
@@ -13,12 +15,16 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/stats"
 )
@@ -180,10 +186,12 @@ type DevTargetManager interface {
 
 // Handler serves the Mini App HTML and API endpoints.
 type Handler struct {
-	provider DataProvider
-	sender   CommandSender
-	botToken string
-	notifier *StateNotifier
+	provider  DataProvider
+	sender    CommandSender
+	botToken  string
+	notifier  *StateNotifier
+	allowList []string
+	workspace string
 
 	devMu       sync.RWMutex
 	devTarget   *url.URL
@@ -191,15 +199,44 @@ type Handler struct {
 	devTargets  map[string]*DevTarget // registered targets (ID→DevTarget)
 	devNextID   int
 	devActiveID string
+
+	wsClients   []*wsClient
+	wsClientsMu sync.Mutex
+
+	consoleMu       sync.Mutex
+	consoleReqCount int
+	consoleReqSec   int64
+}
+
+const maxWSClients = 4
+
+type wsClient struct {
+	conn *websocket.Conn
+}
+
+var wsUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // non-browser clients (e.g. curl)
+		}
+		// Allow Telegram WebApp origins and localhost for dev
+		return strings.HasSuffix(origin, ".telegram.org") ||
+			strings.HasSuffix(origin, ".t.me") ||
+			strings.HasPrefix(origin, "http://localhost") ||
+			strings.HasPrefix(origin, "http://127.0.0.1")
+	},
 }
 
 // NewHandler creates a new Mini App handler.
-func NewHandler(provider DataProvider, sender CommandSender, botToken string, notifier *StateNotifier) *Handler {
+func NewHandler(provider DataProvider, sender CommandSender, botToken string, notifier *StateNotifier, allowList []string, workspace string) *Handler {
 	return &Handler{
 		provider:   provider,
 		sender:     sender,
 		botToken:   botToken,
 		notifier:   notifier,
+		allowList:  allowList,
+		workspace:  workspace,
 		devTargets: make(map[string]*DevTarget),
 	}
 }
@@ -364,6 +401,7 @@ func (h *Handler) ListDevTargets() []DevTarget {
 // devProxyScript is the JavaScript injected into HTML responses from the dev proxy.
 // It rewrites fetch() and XMLHttpRequest.open() so that absolute paths like
 // "/api/items" are prefixed with "/miniapp/dev", matching the reverse proxy mount.
+// It also captures console.log/warn/error/info and forwards them to the server.
 const devProxyScript = `<script data-dev-proxy>
 (function(){
   var B='/miniapp/dev';
@@ -382,6 +420,30 @@ const devProxyScript = `<script data-dev-proxy>
     arguments[1]=rw(u);
     return _o.apply(this,arguments);
   };
+  // Console capture: batch POST to /miniapp/dev/console
+  var _cl=console.log,_cw=console.warn,_ce=console.error,_ci=console.info;
+  var _buf=[],_timer=null;
+  function _flush(){
+    _timer=null;
+    if(!_buf.length)return;
+    var batch=_buf.splice(0,20);
+    try{navigator.sendBeacon('/miniapp/dev/console',JSON.stringify(batch));}catch(e){}
+  }
+  function _cap(level,args){
+    var msg=Array.prototype.map.call(args,function(a){
+      try{return typeof a==='object'?JSON.stringify(a):String(a);}catch(e){return String(a);}
+    }).join(' ');
+    if(msg.length>1024)msg=msg.substring(0,1024);
+    _buf.push({level:level,message:msg,timestamp:new Date().toISOString()});
+    if(_buf.length>=20){if(_timer){clearTimeout(_timer);_timer=null;}_flush();}
+    else if(!_timer){_timer=setTimeout(_flush,500);}
+  }
+  console.log=function(){_cap('log',arguments);_cl.apply(console,arguments);};
+  console.warn=function(){_cap('warn',arguments);_cw.apply(console,arguments);};
+  console.error=function(){_cap('error',arguments);_ce.apply(console,arguments);};
+  console.info=function(){_cap('info',arguments);_ci.apply(console,arguments);};
+  window.onerror=function(m,s,l,c,e){_cap('error',[m,'at',s+':'+l+':'+c]);};
+  window.onunhandledrejection=function(e){_cap('error',['Unhandled rejection:',e.reason]);};
 })();
 </script>`
 
@@ -441,6 +503,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/git", h.requireAuth(h.apiGit))
 	mux.HandleFunc("/miniapp/api/dev", h.requireAuth(h.apiDev))
 	mux.HandleFunc("/miniapp/api/events", h.requireAuth(h.apiEvents))
+	mux.HandleFunc("/miniapp/api/logs/ws", h.requireAuth(h.wsLogs))
+	mux.HandleFunc("/miniapp/api/logs/snapshot", h.requireAuth(h.apiLogsSnapshot))
+	mux.HandleFunc("/miniapp/api/logs/snapshot/", h.requireAuth(h.apiLogsSnapshotDownload))
+	mux.HandleFunc("/miniapp/dev/console", h.apiDevConsole)
 	mux.HandleFunc("/miniapp/dev/", h.serveDevProxy)
 }
 
@@ -465,8 +531,34 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, `{"error":"invalid initData"}`, http.StatusUnauthorized)
 			return
 		}
+		if len(h.allowList) > 0 {
+			userID, _ := extractUserFromInitData(initData)
+			if userID == "" || !isAllowed(userID, h.allowList) {
+				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+				return
+			}
+		}
 		next(w, r)
 	}
+}
+
+// isAllowed checks whether userID matches any entry in the allow list.
+// Logic mirrors BaseChannel.IsAllowed without importing channels package.
+func isAllowed(userID string, allowList []string) bool {
+	if len(allowList) == 0 {
+		return true
+	}
+	for _, allowed := range allowList {
+		trimmed := strings.TrimPrefix(allowed, "@")
+		allowedID := trimmed
+		if idx := strings.Index(trimmed, "|"); idx > 0 {
+			allowedID = trimmed[:idx]
+		}
+		if userID == allowed || userID == trimmed || userID == allowedID {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) apiSkills(w http.ResponseWriter, r *http.Request) {
@@ -716,7 +808,282 @@ func writeJSON(w http.ResponseWriter, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// ValidateInitData verifies the Telegram WebApp initData HMAC-SHA256 signature.
+// apiDevConsole receives console output from dev preview iframes.
+func (h *Handler) apiDevConsole(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Only accept console posts when dev proxy is active
+	if h.GetDevTarget() == "" {
+		http.Error(w, `{"error":"not available"}`, http.StatusNotFound)
+		return
+	}
+
+	// Simple rate limit: max 10 requests per second
+	now := time.Now().Unix()
+	h.consoleMu.Lock()
+	if h.consoleReqSec != now {
+		h.consoleReqSec = now
+		h.consoleReqCount = 0
+	}
+	h.consoleReqCount++
+	over := h.consoleReqCount > 10
+	h.consoleMu.Unlock()
+	if over {
+		http.Error(w, `{"error":"rate limit"}`, http.StatusTooManyRequests)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 32*1024))
+	if err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+
+	var entries []struct {
+		Level   string `json:"level"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &entries); err != nil {
+		http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Cap at 20 entries per batch
+	if len(entries) > 20 {
+		entries = entries[:20]
+	}
+
+	for _, e := range entries {
+		msg := e.Message
+		if len(msg) > 1024 {
+			msg = msg[:1024]
+		}
+		switch e.Level {
+		case "warn":
+			logger.WarnC("dev-console", msg)
+		case "error":
+			logger.ErrorC("dev-console", msg)
+		default:
+			logger.InfoC("dev-console", msg)
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// wsLogs serves a WebSocket endpoint that streams log entries in real time.
+func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
+	// Parse filter params
+	component := r.URL.Query().Get("component")
+	levelStr := r.URL.Query().Get("level")
+	minLevel := logger.INFO
+	if levelStr != "" {
+		minLevel = logger.ParseLevel(levelStr)
+	}
+
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+
+	client := &wsClient{conn: conn}
+
+	// Enforce max WS clients: evict oldest if full
+	h.wsClientsMu.Lock()
+	if len(h.wsClients) >= maxWSClients {
+		oldest := h.wsClients[0]
+		h.wsClients = h.wsClients[1:]
+		oldest.conn.Close()
+	}
+	h.wsClients = append(h.wsClients, client)
+	h.wsClientsMu.Unlock()
+
+	defer func() {
+		h.wsClientsMu.Lock()
+		for i, c := range h.wsClients {
+			if c == client {
+				h.wsClients = append(h.wsClients[:i], h.wsClients[i+1:]...)
+				break
+			}
+		}
+		h.wsClientsMu.Unlock()
+		conn.Close()
+	}()
+
+	// Build filter function
+	filter := func(e logger.LogEntry) bool {
+		if lvl := logger.ParseLevel(e.Level); lvl < minLevel {
+			return false
+		}
+		if component != "" && e.Component != component {
+			return false
+		}
+		return true
+	}
+
+	sub := logger.Subscribe(filter)
+	defer logger.Unsubscribe(sub)
+
+	// Send initial data
+	initial := logger.RecentLogs(minLevel, component, 50)
+	if err := conn.WriteJSON(map[string]any{"type": "init", "entries": initial}); err != nil {
+		return
+	}
+
+	// Close detection goroutine
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Stream loop
+	for {
+		select {
+		case entry, ok := <-sub.Ch:
+			if !ok {
+				return
+			}
+			entry.Caller = "" // strip for security
+			if err := conn.WriteJSON(map[string]any{"type": "entry", "entry": entry}); err != nil {
+				return
+			}
+		case <-done:
+			return
+		}
+	}
+}
+
+// apiLogsSnapshot creates a tar.gz snapshot of the current log buffer.
+func (h *Handler) apiLogsSnapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	entries := logger.RecentLogs(logger.DEBUG, "", 300)
+
+	snapshotDir := filepath.Join(h.workspace, "logs", "snapshots")
+	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		http.Error(w, `{"error":"cannot create snapshot dir"}`, http.StatusInternalServerError)
+		return
+	}
+
+	id := time.Now().UTC().Format("20060102-150405")
+	filename := fmt.Sprintf("picoclaw-logs-%s.tar.gz", id)
+	snapshotPath := filepath.Join(snapshotDir, filename)
+
+	// Create tar.gz
+	f, err := os.Create(snapshotPath)
+	if err != nil {
+		http.Error(w, `{"error":"cannot create snapshot file"}`, http.StatusInternalServerError)
+		return
+	}
+
+	gw := gzip.NewWriter(f)
+	tw := tar.NewWriter(gw)
+
+	prefix := fmt.Sprintf("picoclaw-logs-%s/", id)
+
+	// logs.json
+	logsJSON, _ := json.MarshalIndent(entries, "", "  ")
+	_ = tw.WriteHeader(&tar.Header{
+		Name:    prefix + "logs.json",
+		Size:    int64(len(logsJSON)),
+		Mode:    0o644,
+		ModTime: time.Now(),
+	})
+	_, _ = tw.Write(logsJSON)
+
+	// metadata.json
+	hostname, _ := os.Hostname()
+	meta := map[string]any{
+		"version":     "1",
+		"hostname":    hostname,
+		"timestamp":   time.Now().UTC().Format(time.RFC3339),
+		"entry_count": len(entries),
+	}
+	metaJSON, _ := json.MarshalIndent(meta, "", "  ")
+	_ = tw.WriteHeader(&tar.Header{
+		Name:    prefix + "metadata.json",
+		Size:    int64(len(metaJSON)),
+		Mode:    0o644,
+		ModTime: time.Now(),
+	})
+	_, _ = tw.Write(metaJSON)
+
+	tw.Close()
+	gw.Close()
+	f.Close()
+
+	// Cleanup old snapshots (>14 days)
+	go cleanOldSnapshots(snapshotDir, 14*24*time.Hour)
+
+	downloadURL := fmt.Sprintf("/miniapp/api/logs/snapshot/%s", id)
+	writeJSON(w, map[string]string{"id": id, "download_url": downloadURL})
+}
+
+// apiLogsSnapshotDownload serves a snapshot tar.gz file.
+func (h *Handler) apiLogsSnapshotDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := strings.TrimPrefix(r.URL.Path, "/miniapp/api/logs/snapshot/")
+	id = filepath.Base(id) // path traversal prevention
+
+	if id == "" || id == "." || id == ".." {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	filename := fmt.Sprintf("picoclaw-logs-%s.tar.gz", id)
+	snapshotPath := filepath.Join(h.workspace, "logs", "snapshots", filename)
+
+	if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	http.ServeFile(w, r, snapshotPath)
+}
+
+// cleanOldSnapshots removes snapshot files older than maxAge.
+func cleanOldSnapshots(dir string, maxAge time.Duration) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-maxAge)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
+// initDataMaxAge is the maximum age of initData before it is considered expired.
+const initDataMaxAge = 24 * time.Hour
+
+// ValidateInitData verifies the Telegram WebApp initData HMAC-SHA256 signature
+// and checks that auth_date is not older than initDataMaxAge.
 // See https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
 func ValidateInitData(initData, botToken string) bool {
 	values, err := url.ParseQuery(initData)
@@ -727,6 +1094,17 @@ func ValidateInitData(initData, botToken string) bool {
 	receivedHash := values.Get("hash")
 	if receivedHash == "" {
 		return false
+	}
+
+	// Check auth_date freshness
+	if authDateStr := values.Get("auth_date"); authDateStr != "" {
+		authDate, err := strconv.ParseInt(authDateStr, 10, 64)
+		if err != nil {
+			return false
+		}
+		if time.Since(time.Unix(authDate, 0)) > initDataMaxAge {
+			return false
+		}
 	}
 
 	// Build the data-check-string: sort all key=value pairs except "hash",

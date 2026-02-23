@@ -57,9 +57,9 @@ func TestValidateInitData(t *testing.T) {
 
 	t.Run("valid initData", func(t *testing.T) {
 		params := map[string]string{
-			"query_id": "AAHdF6IQAAAAAN0XohDhrOrc",
-			"user":     `{"id":279058397,"first_name":"Vlad"}`,
-			"auth_date": "1234567890",
+			"query_id":  "AAHdF6IQAAAAAN0XohDhrOrc",
+			"user":      `{"id":279058397,"first_name":"Vlad"}`,
+			"auth_date": freshAuthDate(),
 		}
 		initData := buildInitData(params, botToken)
 		if !ValidateInitData(initData, botToken) {
@@ -69,9 +69,9 @@ func TestValidateInitData(t *testing.T) {
 
 	t.Run("tampered data", func(t *testing.T) {
 		params := map[string]string{
-			"query_id": "AAHdF6IQAAAAAN0XohDhrOrc",
-			"user":     `{"id":279058397,"first_name":"Vlad"}`,
-			"auth_date": "1234567890",
+			"query_id":  "AAHdF6IQAAAAAN0XohDhrOrc",
+			"user":      `{"id":279058397,"first_name":"Vlad"}`,
+			"auth_date": freshAuthDate(),
 		}
 		initData := buildInitData(params, botToken)
 		// Tamper with the data
@@ -83,7 +83,7 @@ func TestValidateInitData(t *testing.T) {
 
 	t.Run("wrong bot token", func(t *testing.T) {
 		params := map[string]string{
-			"auth_date": "1234567890",
+			"auth_date": freshAuthDate(),
 		}
 		initData := buildInitData(params, botToken)
 		if ValidateInitData(initData, "wrong-token") {
@@ -91,8 +91,19 @@ func TestValidateInitData(t *testing.T) {
 		}
 	})
 
+	t.Run("expired auth_date", func(t *testing.T) {
+		params := map[string]string{
+			"auth_date": "1234567890",
+		}
+		initData := buildInitData(params, botToken)
+		if ValidateInitData(initData, botToken) {
+			t.Error("ValidateInitData() returned true for expired auth_date")
+		}
+	})
+
 	t.Run("missing hash", func(t *testing.T) {
-		if ValidateInitData("auth_date=1234567890", botToken) {
+		now := freshAuthDate()
+		if ValidateInitData("auth_date="+now, botToken) {
 			t.Error("ValidateInitData() returned true for missing hash")
 		}
 	})
@@ -186,16 +197,20 @@ func (m *mockSender) SendCommand(senderID, chatID, command string) {}
 
 const testBotToken = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 
+func freshAuthDate() string {
+	return strconv.FormatInt(time.Now().Unix(), 10)
+}
+
 func testInitData() string {
 	return buildInitData(map[string]string{
 		"user":      `{"id":279058397,"first_name":"Test"}`,
-		"auth_date": "1234567890",
+		"auth_date": freshAuthDate(),
 	}, testBotToken)
 }
 
 func TestSSE_AuthRequired(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -210,7 +225,7 @@ func TestSSE_AuthRequired(t *testing.T) {
 
 func TestSSE_Headers(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -233,7 +248,7 @@ func TestSSE_Headers(t *testing.T) {
 
 func TestSSE_InitialEvents(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -309,7 +324,7 @@ func TestStateNotifier_SubscribeCycleNoLeak(t *testing.T) {
 
 func TestSSE_ClientDisconnectCleansUp(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -362,7 +377,7 @@ func TestSSE_ClientDisconnectCleansUp(t *testing.T) {
 func TestSSE_NotifyDrivesSubsequentEvents(t *testing.T) {
 	notifier := NewStateNotifier()
 	provider := &mutatingDataProvider{}
-	h := NewHandler(provider, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(provider, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -391,7 +406,7 @@ func TestSSE_NotifyDrivesSubsequentEvents(t *testing.T) {
 
 func TestSSE_DiffDedupSuppressesDuplicate(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -463,7 +478,7 @@ func (m *mutatingDataProvider) GetGitRepoDetail(name string) GitInfo {
 // ── Dev proxy tests ──
 
 func TestDevProxy_RegisterAndActivate(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	// Initially empty
 	if got := h.GetDevTarget(); got != "" {
@@ -502,7 +517,7 @@ func TestDevProxy_RegisterAndActivate(t *testing.T) {
 }
 
 func TestDevProxy_UnregisterActive(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 	h.ActivateDevTarget(id)
@@ -519,21 +534,21 @@ func TestDevProxy_UnregisterActive(t *testing.T) {
 }
 
 func TestDevProxy_UnregisterNotFound(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	if err := h.UnregisterDevTarget("999"); err == nil {
 		t.Error("expected error for non-existent target")
 	}
 }
 
 func TestDevProxy_ActivateNotFound(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	if err := h.ActivateDevTarget("999"); err == nil {
 		t.Error("expected error for non-existent target")
 	}
 }
 
 func TestDevProxy_LocalhostOnly(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	// External host should be rejected at registration
 	if _, err := h.RegisterDevTarget("ext", "http://example.com:3000"); err == nil {
@@ -552,7 +567,7 @@ func TestDevProxy_LocalhostOnly(t *testing.T) {
 }
 
 func TestDevProxy_IPv4Rewrite(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id, _ := h.RegisterDevTarget("front", "http://localhost:3000")
 	h.ActivateDevTarget(id)
@@ -568,7 +583,7 @@ func TestDevProxy_IPv4Rewrite(t *testing.T) {
 }
 
 func TestDevProxy_ListDevTargets(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	h.RegisterDevTarget("api", "http://localhost:8080")
 	h.RegisterDevTarget("frontend", "http://localhost:3000")
@@ -594,7 +609,7 @@ func TestDevProxy_ReverseProxy(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -621,7 +636,7 @@ func TestDevProxy_ReverseProxy(t *testing.T) {
 }
 
 func TestDevProxy_ErrorHandler(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -643,7 +658,7 @@ func TestDevProxy_ErrorHandler(t *testing.T) {
 }
 
 func TestDevProxy_503WhenNotConfigured(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -658,7 +673,7 @@ func TestDevProxy_503WhenNotConfigured(t *testing.T) {
 
 func TestDevProxy_APIEndpoint(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -724,7 +739,7 @@ func TestDevProxy_APIEndpoint(t *testing.T) {
 // ── Registration edge cases ──
 
 func TestDevProxy_RegisterUniqueIDs(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id1, _ := h.RegisterDevTarget("a", "http://localhost:3000")
 	id2, _ := h.RegisterDevTarget("b", "http://localhost:3001")
@@ -736,7 +751,7 @@ func TestDevProxy_RegisterUniqueIDs(t *testing.T) {
 }
 
 func TestDevProxy_RegisterInvalidURL(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	if _, err := h.RegisterDevTarget("bad", "://not-a-url"); err == nil {
 		t.Error("expected error for malformed URL")
@@ -744,7 +759,7 @@ func TestDevProxy_RegisterInvalidURL(t *testing.T) {
 }
 
 func TestDevProxy_RegisterVariousLocalhost(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	cases := []struct {
 		name   string
@@ -778,7 +793,7 @@ func TestDevProxy_RegisterVariousLocalhost(t *testing.T) {
 // ── Activation switching ──
 
 func TestDevProxy_SwitchActiveTarget(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id1, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 	id2, _ := h.RegisterDevTarget("frontend", "http://localhost:3000")
@@ -801,7 +816,7 @@ func TestDevProxy_SwitchActiveTarget(t *testing.T) {
 }
 
 func TestDevProxy_ReactivateSameTarget(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 	h.ActivateDevTarget(id)
@@ -816,7 +831,7 @@ func TestDevProxy_ReactivateSameTarget(t *testing.T) {
 }
 
 func TestDevProxy_ActivateAfterDeactivate(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 	h.ActivateDevTarget(id)
@@ -834,7 +849,7 @@ func TestDevProxy_ActivateAfterDeactivate(t *testing.T) {
 // ── Unregister edge cases ──
 
 func TestDevProxy_UnregisterInactiveTarget(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id1, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 	id2, _ := h.RegisterDevTarget("frontend", "http://localhost:3000")
@@ -853,7 +868,7 @@ func TestDevProxy_UnregisterInactiveTarget(t *testing.T) {
 }
 
 func TestDevProxy_UnregisterTwice(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 	h.UnregisterDevTarget(id)
@@ -866,7 +881,7 @@ func TestDevProxy_UnregisterTwice(t *testing.T) {
 // ── IPv4 rewrite edge cases ──
 
 func TestDevProxy_IPv4NoRewriteFor127(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id, _ := h.RegisterDevTarget("api", "http://127.0.0.1:8080")
 	h.ActivateDevTarget(id)
@@ -878,7 +893,7 @@ func TestDevProxy_IPv4NoRewriteFor127(t *testing.T) {
 }
 
 func TestDevProxy_IPv4NoRewriteForIPv6(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id, _ := h.RegisterDevTarget("api", "http://[::1]:9000")
 	h.ActivateDevTarget(id)
@@ -891,7 +906,7 @@ func TestDevProxy_IPv4NoRewriteForIPv6(t *testing.T) {
 }
 
 func TestDevProxy_IPv4RewriteLocalhostNoPort(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id, _ := h.RegisterDevTarget("api", "http://localhost")
 	h.ActivateDevTarget(id)
@@ -908,7 +923,7 @@ func TestDevProxy_IPv4RewriteLocalhostNoPort(t *testing.T) {
 // ── devStatus ──
 
 func TestDevProxy_DevStatusEmpty(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	status := h.devStatus()
 	if status["active"] != false {
@@ -927,7 +942,7 @@ func TestDevProxy_DevStatusEmpty(t *testing.T) {
 }
 
 func TestDevProxy_DevStatusTargetsButNoActive(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	h.RegisterDevTarget("api", "http://localhost:8080")
 	h.RegisterDevTarget("frontend", "http://localhost:3000")
@@ -943,7 +958,7 @@ func TestDevProxy_DevStatusTargetsButNoActive(t *testing.T) {
 }
 
 func TestDevProxy_DevStatusReturnsOriginalURL(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id, _ := h.RegisterDevTarget("front", "http://localhost:3000")
 	h.ActivateDevTarget(id)
@@ -956,7 +971,7 @@ func TestDevProxy_DevStatusReturnsOriginalURL(t *testing.T) {
 }
 
 func TestDevProxy_DevStatusActiveID(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id1, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 	id2, _ := h.RegisterDevTarget("frontend", "http://localhost:3000")
@@ -986,7 +1001,7 @@ func TestDevProxy_DevStatusActiveID(t *testing.T) {
 // ── ListDevTargets ──
 
 func TestDevProxy_ListDevTargetsEmpty(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	targets := h.ListDevTargets()
 	if len(targets) != 0 {
 		t.Errorf("expected 0, got %d", len(targets))
@@ -994,7 +1009,7 @@ func TestDevProxy_ListDevTargetsEmpty(t *testing.T) {
 }
 
 func TestDevProxy_ListDevTargetsStableOrder(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	// Register in reverse order of expected sort
 	h.RegisterDevTarget("c", "http://localhost:3003")
@@ -1010,7 +1025,7 @@ func TestDevProxy_ListDevTargetsStableOrder(t *testing.T) {
 }
 
 func TestDevProxy_ListDevTargetsAfterUnregister(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id1, _ := h.RegisterDevTarget("a", "http://localhost:3001")
 	h.RegisterDevTarget("b", "http://localhost:3002")
@@ -1035,7 +1050,7 @@ func TestDevProxy_PathStripping(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	id, _ := h.RegisterDevTarget("back", backend.URL)
@@ -1062,7 +1077,7 @@ func TestDevProxy_PathStripping(t *testing.T) {
 }
 
 func TestDevProxy_RootPathStripRedirect(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	id, _ := h.RegisterDevTarget("back", "http://127.0.0.1:19999")
@@ -1080,7 +1095,7 @@ func TestDevProxy_RootPathStripRedirect(t *testing.T) {
 // ── ErrorHandler details ──
 
 func TestDevProxy_ErrorHandlerHTMLContent(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -1114,7 +1129,7 @@ func TestDevProxy_NotifierTriggeredOnRegister(t *testing.T) {
 	notifier := NewStateNotifier()
 	ch := notifier.Subscribe()
 	defer notifier.Unsubscribe(ch)
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 
 	h.RegisterDevTarget("api", "http://localhost:8080")
 
@@ -1127,7 +1142,7 @@ func TestDevProxy_NotifierTriggeredOnRegister(t *testing.T) {
 
 func TestDevProxy_NotifierTriggeredOnUnregister(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	id, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 
 	ch := notifier.Subscribe()
@@ -1144,7 +1159,7 @@ func TestDevProxy_NotifierTriggeredOnUnregister(t *testing.T) {
 
 func TestDevProxy_NotifierTriggeredOnActivate(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	id, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 
 	ch := notifier.Subscribe()
@@ -1161,7 +1176,7 @@ func TestDevProxy_NotifierTriggeredOnActivate(t *testing.T) {
 
 func TestDevProxy_NotifierTriggeredOnDeactivate(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	id, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 	h.ActivateDevTarget(id)
 
@@ -1180,7 +1195,7 @@ func TestDevProxy_NotifierTriggeredOnDeactivate(t *testing.T) {
 // ── API endpoint edge cases ──
 
 func TestDevAPI_InvalidJSON(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -1199,7 +1214,7 @@ func TestDevAPI_InvalidJSON(t *testing.T) {
 }
 
 func TestDevAPI_UnknownAction(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -1220,7 +1235,7 @@ func TestDevAPI_UnknownAction(t *testing.T) {
 }
 
 func TestDevAPI_ActivateMissingID(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -1241,7 +1256,7 @@ func TestDevAPI_ActivateMissingID(t *testing.T) {
 }
 
 func TestDevAPI_ActivateNonExistentID(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -1262,7 +1277,7 @@ func TestDevAPI_ActivateNonExistentID(t *testing.T) {
 }
 
 func TestDevAPI_MethodNotAllowed(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -1281,7 +1296,7 @@ func TestDevAPI_MethodNotAllowed(t *testing.T) {
 
 func TestDevAPI_GetReturnsTargetsArray(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -1314,7 +1329,7 @@ func TestDevAPI_GetReturnsTargetsArray(t *testing.T) {
 }
 
 func TestDevAPI_DeactivateWhenAlreadyInactive(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -1342,7 +1357,7 @@ func TestDevAPI_DeactivateWhenAlreadyInactive(t *testing.T) {
 // ── Concurrency ──
 
 func TestDevProxy_ConcurrentRegisterActivate(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	const n = 50
 	done := make(chan struct{}, n)
@@ -1373,7 +1388,7 @@ func TestDevProxy_ConcurrentRegisterActivate(t *testing.T) {
 }
 
 func TestDevProxy_ConcurrentActivateDeactivate(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 
 	id1, _ := h.RegisterDevTarget("api", "http://localhost:8080")
 	id2, _ := h.RegisterDevTarget("frontend", "http://localhost:3000")
@@ -1407,7 +1422,7 @@ func TestDevProxy_ConcurrentActivateDeactivate(t *testing.T) {
 
 func TestSSE_DevEventContainsTargets(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -1518,7 +1533,7 @@ func TestEscapeHTMLString(t *testing.T) {
 // ── Handler implements DevTargetManager ──
 
 func TestHandler_ImplementsDevTargetManager(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	var _ DevTargetManager = h // compile-time check
 }
 
@@ -1558,7 +1573,7 @@ func TestDevProxy_FullLifecycle(t *testing.T) {
 	}))
 	defer backend2.Close()
 
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -1648,7 +1663,7 @@ func TestDevProxy_FullLifecycle(t *testing.T) {
 
 func TestSSE_DevEventUpdatesOnActivateDeactivate(t *testing.T) {
 	notifier := NewStateNotifier()
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier)
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -1684,7 +1699,7 @@ func TestSSE_DevEventUpdatesOnActivateDeactivate(t *testing.T) {
 // ── API auth on /miniapp/api/dev ──
 
 func TestDevAPI_AuthRequired(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -1714,7 +1729,7 @@ func TestDevProxy_NoAuthRequired(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	id, _ := h.RegisterDevTarget("back", backend.URL)
@@ -1735,7 +1750,7 @@ func TestDevProxy_NoAuthRequired(t *testing.T) {
 // ── API response JSON structure ──
 
 func TestDevAPI_ResponseTargetFields(t *testing.T) {
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	ts := httptest.NewServer(mux)
@@ -1798,7 +1813,7 @@ func TestDevProxy_HostHeaderForwarded(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	id, _ := h.RegisterDevTarget("back", backend.URL)
@@ -1920,7 +1935,7 @@ func TestDevProxy_ResponseRewriting(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -1958,7 +1973,7 @@ func TestDevProxy_ResponseRewriting_NonHTML(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -1989,7 +2004,7 @@ func TestDevProxy_ResponseRewriting_ContentLength(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier())
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, "")
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
