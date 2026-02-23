@@ -203,7 +203,7 @@ picoclaw onboard
   ],
   "agents": {
     "defaults": {
-      "model": "gpt4"
+      "model_name": "gpt4"
     }
   },
   "channels": {

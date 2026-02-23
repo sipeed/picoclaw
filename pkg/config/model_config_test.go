@@ -6,6 +6,7 @@
 package config
 
 import (
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -111,6 +112,137 @@ func TestGetModelConfig_Concurrent(t *testing.T) {
 
 	for err := range errors {
 		t.Errorf("Concurrent GetModelConfig() error: %v", err)
+	}
+}
+
+func TestAgentDefaults_GetModelName_BackwardCompat(t *testing.T) {
+	tests := []struct {
+		name     string
+		defaults AgentDefaults
+		wantName string
+	}{
+		{
+			name:     "new model_name field only",
+			defaults: AgentDefaults{ModelName: "new-model"},
+			wantName: "new-model",
+		},
+		{
+			name:     "old model field only",
+			defaults: AgentDefaults{Model: "legacy-model"},
+			wantName: "legacy-model",
+		},
+		{
+			name:     "both fields - model_name takes precedence",
+			defaults: AgentDefaults{ModelName: "new-model", Model: "old-model"},
+			wantName: "new-model",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.defaults.GetModelName(); got != tt.wantName {
+				t.Errorf("GetModelName() = %q, want %q", got, tt.wantName)
+			}
+		})
+	}
+}
+
+func TestAgentDefaults_JSON_BackwardCompat(t *testing.T) {
+	tests := []struct {
+		name     string
+		json     string
+		wantName string
+	}{
+		{
+			name:     "new model_name field",
+			json:     `{"model_name": "gpt4"}`,
+			wantName: "gpt4",
+		},
+		{
+			name:     "old model field",
+			json:     `{"model": "gpt4"}`,
+			wantName: "gpt4",
+		},
+		{
+			name:     "both fields - model_name wins",
+			json:     `{"model_name": "new", "model": "old"}`,
+			wantName: "new",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var defaults AgentDefaults
+			if err := json.Unmarshal([]byte(tt.json), &defaults); err != nil {
+				t.Fatalf("Unmarshal error: %v", err)
+			}
+			if got := defaults.GetModelName(); got != tt.wantName {
+				t.Errorf("GetModelName() = %q, want %q", got, tt.wantName)
+			}
+		})
+	}
+}
+
+func TestFullConfig_JSON_BackwardCompat(t *testing.T) {
+	// Test complete config with both old and new formats
+	oldFormat := `{
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "gpt4",
+				"max_tokens": 4096
+			}
+		},
+		"model_list": [
+			{
+				"model_name": "gpt4",
+				"model": "openai/gpt-4o",
+				"api_key": "test-key"
+			}
+		]
+	}`
+
+	newFormat := `{
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model_name": "gpt4",
+				"max_tokens": 4096
+			}
+		},
+		"model_list": [
+			{
+				"model_name": "gpt4",
+				"model": "openai/gpt-4o",
+				"api_key": "test-key"
+			}
+		]
+	}`
+
+	for name, jsonStr := range map[string]string{
+		"old format (model)":    oldFormat,
+		"new format (model_name)": newFormat,
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := &Config{}
+			if err := json.Unmarshal([]byte(jsonStr), cfg); err != nil {
+				t.Fatalf("Unmarshal error: %v", err)
+			}
+
+			// Check that GetModelName returns correct value
+			if got := cfg.Agents.Defaults.GetModelName(); got != "gpt4" {
+				t.Errorf("GetModelName() = %q, want %q", got, "gpt4")
+			}
+
+			// Check that GetModelConfig works
+			modelCfg, err := cfg.GetModelConfig("gpt4")
+			if err != nil {
+				t.Fatalf("GetModelConfig error: %v", err)
+			}
+			if modelCfg.Model != "openai/gpt-4o" {
+				t.Errorf("Model = %q, want %q", modelCfg.Model, "openai/gpt-4o")
+			}
+		})
 	}
 }
 
