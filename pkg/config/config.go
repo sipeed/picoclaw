@@ -452,11 +452,24 @@ type ExecConfig struct {
 	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 }
 
+type ToolPolicyConfig struct {
+	Enabled        *bool `json:"enabled,omitempty"`
+	MaxArgSize     int   `json:"max_arg_size,omitempty"     env:"MAX_ARG_SIZE"`
+	MaxCallsPerMin int   `json:"max_calls_per_min,omitempty" env:"MAX_CALLS_PER_MIN"`
+}
+
+type SecurityConfig struct {
+	DefaultMaxArgSize     int                          `json:"default_max_arg_size"      env:"PICOCLAW_TOOLS_SECURITY_DEFAULT_MAX_ARG_SIZE"`
+	DefaultMaxCallsPerMin int                          `json:"default_max_calls_per_min" env:"PICOCLAW_TOOLS_SECURITY_DEFAULT_MAX_CALLS_PER_MIN"`
+	ToolPolicies          map[string]ToolPolicyConfig   `json:"tool_policies,omitempty"`
+}
+
 type ToolsConfig struct {
-	Web    WebToolsConfig    `json:"web"`
-	Cron   CronToolsConfig   `json:"cron"`
-	Exec   ExecConfig        `json:"exec"`
-	Skills SkillsToolsConfig `json:"skills"`
+	Web      WebToolsConfig    `json:"web"`
+	Cron     CronToolsConfig   `json:"cron"`
+	Exec     ExecConfig        `json:"exec"`
+	Skills   SkillsToolsConfig `json:"skills"`
+	Security SecurityConfig    `json:"security"`
 }
 
 type SkillsToolsConfig struct {

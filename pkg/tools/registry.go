@@ -11,8 +11,9 @@ import (
 )
 
 type ToolRegistry struct {
-	tools map[string]Tool
-	mu    sync.RWMutex
+	tools      map[string]Tool
+	mu         sync.RWMutex
+	Middleware *ToolMiddleware
 }
 
 func NewToolRegistry() *ToolRegistry {
@@ -75,6 +76,18 @@ func (r *ToolRegistry) ExecuteWithContext(
 			map[string]any{
 				"tool": name,
 			})
+	}
+
+	// Security middleware check (pre-execution)
+	if r.Middleware != nil {
+		if err := r.Middleware.Check(name, args); err != nil {
+			logger.WarnCF("tool", "Tool blocked by middleware",
+				map[string]any{
+					"tool":   name,
+					"reason": err.Error(),
+				})
+			return ErrorResult(fmt.Sprintf("Blocked: %v", err))
+		}
 	}
 
 	start := time.Now()

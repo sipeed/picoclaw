@@ -55,6 +55,32 @@ func NewAgentInstance(
 	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
 
+	// Configure security middleware from config
+	if cfg != nil {
+		sec := cfg.Tools.Security
+		mw := tools.NewToolMiddleware()
+		for toolName, pc := range sec.ToolPolicies {
+			enabled := true
+			if pc.Enabled != nil {
+				enabled = *pc.Enabled
+			}
+			maxArg := pc.MaxArgSize
+			if maxArg == 0 {
+				maxArg = sec.DefaultMaxArgSize
+			}
+			maxCalls := pc.MaxCallsPerMin
+			if maxCalls == 0 {
+				maxCalls = sec.DefaultMaxCallsPerMin
+			}
+			mw.SetPolicy(toolName, tools.ToolPolicy{
+				Enabled:        enabled,
+				MaxArgSize:     maxArg,
+				MaxCallsPerMin: maxCalls,
+			})
+		}
+		toolsRegistry.Middleware = mw
+	}
+
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
 
