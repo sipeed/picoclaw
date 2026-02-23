@@ -235,7 +235,7 @@ func gatewayCmd() {
 			provider := &agentLoopDataProvider{loop: agentLoop, workspace: cfg.WorkspacePath()}
 			sender := &telegramCommandSender{bus: msgBus}
 			miniappNotifier = miniapp.NewStateNotifier()
-			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token, miniappNotifier)
+			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token, miniappNotifier, cfg.Channels.Telegram.AllowFrom, cfg.WorkspacePath())
 			agentLoop.OnStateChange = miniappNotifier.Notify
 			handler.RegisterRoutes(healthServer.Mux())
 

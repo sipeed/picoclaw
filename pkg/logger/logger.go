@@ -30,11 +30,73 @@ var (
 		FATAL: "FATAL",
 	}
 
+	levelFromName = map[string]LogLevel{
+		"DEBUG": DEBUG,
+		"INFO":  INFO,
+		"WARN":  WARN,
+		"ERROR": ERROR,
+		"FATAL": FATAL,
+	}
+
 	currentLevel = INFO
 	logger       *Logger
 	once         sync.Once
 	mu           sync.RWMutex
+
+	ringBuf   *logRingBuffer
+	logSubs   []*LogSubscriber
+	logSubsMu sync.Mutex
 )
+
+const ringBufSize = 300
+
+// logRingBuffer is a fixed-size circular buffer for log entries.
+type logRingBuffer struct {
+	entries []LogEntry
+	head    int
+	count   int
+	seq     uint64
+	mu      sync.RWMutex
+}
+
+func newLogRingBuffer(size int) *logRingBuffer {
+	return &logRingBuffer{
+		entries: make([]LogEntry, size),
+	}
+}
+
+func (rb *logRingBuffer) push(entry LogEntry) {
+	rb.mu.Lock()
+	rb.entries[rb.head] = entry
+	rb.head = (rb.head + 1) % len(rb.entries)
+	if rb.count < len(rb.entries) {
+		rb.count++
+	}
+	rb.seq++
+	rb.mu.Unlock()
+}
+
+func (rb *logRingBuffer) recent(limit int) []LogEntry {
+	rb.mu.RLock()
+	defer rb.mu.RUnlock()
+
+	n := rb.count
+	if limit > 0 && limit < n {
+		n = limit
+	}
+	result := make([]LogEntry, n)
+	start := (rb.head - n + len(rb.entries)) % len(rb.entries)
+	for i := 0; i < n; i++ {
+		result[i] = rb.entries[(start+i)%len(rb.entries)]
+	}
+	return result
+}
+
+// LogSubscriber receives log entries matching its filter.
+type LogSubscriber struct {
+	Ch     chan LogEntry
+	filter func(LogEntry) bool
+}
 
 type Logger struct {
 	file *os.File
@@ -52,6 +114,7 @@ type LogEntry struct {
 func init() {
 	once.Do(func() {
 		logger = &Logger{}
+		ringBuf = newLogRingBuffer(ringBufSize)
 	})
 }
 
@@ -115,6 +178,10 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 			entry.Caller = fmt.Sprintf("%s:%d (%s)", file, line, fn.Name())
 		}
 	}
+
+	// Push to ring buffer and broadcast to subscribers
+	ringBuf.push(entry)
+	broadcastToSubscribers(entry)
 
 	if logger.file != nil {
 		jsonData, err := json.Marshal(entry)
@@ -236,4 +303,82 @@ func FatalF(message string, fields map[string]any) {
 
 func FatalCF(component string, message string, fields map[string]any) {
 	logMessage(FATAL, component, message, fields)
+}
+
+// broadcastToSubscribers sends an entry to all matching subscribers (non-blocking).
+func broadcastToSubscribers(entry LogEntry) {
+	logSubsMu.Lock()
+	subs := make([]*LogSubscriber, len(logSubs))
+	copy(subs, logSubs)
+	logSubsMu.Unlock()
+
+	for _, sub := range subs {
+		if sub.filter != nil && !sub.filter(entry) {
+			continue
+		}
+		select {
+		case sub.Ch <- entry:
+		default:
+			// drop if subscriber channel is full
+		}
+	}
+}
+
+// RecentLogs returns recent log entries from the ring buffer, optionally filtered
+// by minimum level and component. The Caller field is stripped for security.
+func RecentLogs(minLevel LogLevel, component string, limit int) []LogEntry {
+	all := ringBuf.recent(0) // get all
+	result := make([]LogEntry, 0, limit)
+	for i := len(all) - 1; i >= 0 && len(result) < limit; i-- {
+		e := all[i]
+		if lvl, ok := levelFromName[e.Level]; ok && lvl < minLevel {
+			continue
+		}
+		if component != "" && e.Component != component {
+			continue
+		}
+		e.Caller = "" // strip for security
+		result = append(result, e)
+	}
+	// Reverse so oldest first
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+	return result
+}
+
+// Subscribe registers a new log subscriber with an optional filter.
+// The returned LogSubscriber's Ch channel has a buffer of 64 entries.
+func Subscribe(filter func(LogEntry) bool) *LogSubscriber {
+	sub := &LogSubscriber{
+		Ch:     make(chan LogEntry, 64),
+		filter: filter,
+	}
+	logSubsMu.Lock()
+	logSubs = append(logSubs, sub)
+	logSubsMu.Unlock()
+	return sub
+}
+
+// Unsubscribe removes a subscriber and closes its channel.
+func Unsubscribe(sub *LogSubscriber) {
+	logSubsMu.Lock()
+	for i, s := range logSubs {
+		if s == sub {
+			logSubs = append(logSubs[:i], logSubs[i+1:]...)
+			break
+		}
+	}
+	logSubsMu.Unlock()
+	close(sub.Ch)
+}
+
+// ParseLevel converts a level name string to a LogLevel.
+// Returns INFO if the string is not recognized.
+func ParseLevel(s string) LogLevel {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	if lvl, ok := levelFromName[s]; ok {
+		return lvl
+	}
+	return INFO
 }

@@ -330,7 +330,7 @@ When Telegram is enabled, PicoClaw automatically registers a "Dashboard" menu bu
 | **Plan** | View plan phases/steps as a checklist, tap to mark done, start new plans |
 | **Skills** | Browse and invoke skills with a message input |
 | **Session** | View active sessions and token usage stats (requires `--stats` flag for stats) |
-| **Config** | Quick command buttons and custom command input |
+| **Config** | Quick command buttons, custom command input, and **Log Viewer** |
 
 **Setup — Tailscale (recommended for self-hosting):**
 
@@ -369,6 +369,16 @@ If you already have an HTTPS endpoint (e.g., reverse proxy, Cloudflare Tunnel), 
 ```
 
 When `web_app_url` is set, PicoClaw skips Tailscale auto-detection and serves the Mini App over HTTP (your reverse proxy handles TLS).
+
+**Log Viewer (Config tab):**
+
+The Config tab includes a real-time log viewer that streams logs via WebSocket. It supports three log streams:
+
+- **picoclaw** — agent, tools, and channel activity logs
+- **telego** — Telegram library internal logs
+- **dev-console** — JavaScript console output from Dev Preview iframes
+
+Features: component filter chips, auto-reconnect, and **Save Snapshot** to download a `.tar.gz` archive of the current log buffer (auto-deleted after 14 days). When `allow_from` is configured, the log viewer is restricted to allowed users only.
 
 </details>
 

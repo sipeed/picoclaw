@@ -47,6 +47,17 @@ func (c *thinkingCancel) Cancel() {
 	}
 }
 
+// telegoLogAdapter routes telego library logs through picoclaw's logger.
+type telegoLogAdapter struct{}
+
+func (telegoLogAdapter) Debugf(format string, args ...any) {
+	logger.DebugCF("telego", fmt.Sprintf(format, args...), nil)
+}
+
+func (telegoLogAdapter) Errorf(format string, args ...any) {
+	logger.ErrorCF("telego", fmt.Sprintf(format, args...), nil)
+}
+
 const telegramMaxMessageChars = 3900
 const markdownTableMaxWidth = 42
 const markdownTableMinColWidth = 6
@@ -73,6 +84,8 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 			},
 		}))
 	}
+
+	opts = append(opts, telego.WithLogger(telegoLogAdapter{}))
 
 	bot, err := telego.NewBot(telegramCfg.Token, opts...)
 	if err != nil {
