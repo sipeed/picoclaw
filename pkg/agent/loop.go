@@ -766,6 +766,9 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	newHistory = append(newHistory, keptConversation...)
 	newHistory = append(newHistory, history[len(history)-1]) // Last message
 
+	// Sanitize tool pairs that may have been split by the midpoint cut
+	newHistory = sanitizeToolPairs(newHistory)
+
 	// Update session
 	agent.Sessions.SetHistory(sessionKey, newHistory)
 	agent.Sessions.Save(sessionKey)
@@ -923,6 +926,14 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	if finalSummary != "" {
 		agent.Sessions.SetSummary(sessionKey, finalSummary)
 		agent.Sessions.TruncateHistory(sessionKey, 4)
+
+		// Sanitize remaining history to fix orphaned tool pairs from truncation
+		remaining := agent.Sessions.GetHistory(sessionKey)
+		sanitized := sanitizeToolPairs(remaining)
+		if len(sanitized) != len(remaining) {
+			agent.Sessions.SetHistory(sessionKey, sanitized)
+		}
+
 		agent.Sessions.Save(sessionKey)
 	}
 }
