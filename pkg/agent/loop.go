@@ -91,6 +91,7 @@ type AgentLoop struct {
 	activeTasks      sync.Map // sessionKey → *activeTask
 	sessions         *SessionTracker
 	OnStateChange    func() // called on plan/session/skills mutations
+	OnUserMessage    func() // called when a real user message is processed
 }
 
 // processOptions configures how a message is processed
@@ -531,6 +532,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
+	}
+
+	// Notify listeners that a real user message arrived (e.g. reset heartbeat suppression)
+	if al.OnUserMessage != nil {
+		al.OnUserMessage()
 	}
 
 	// Expand /skill command: inject SKILL.md content into message, then continue to LLM

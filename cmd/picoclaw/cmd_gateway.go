@@ -123,6 +123,9 @@ func gatewayCmd() {
 		return tools.SilentResult(response)
 	})
 
+	// Reset heartbeat suppression when a real user message arrives
+	agentLoop.OnUserMessage = heartbeatService.ResetSuppression
+
 	channelManager, err := channels.NewManager(cfg, msgBus)
 	if err != nil {
 		fmt.Printf("Error creating channel manager: %v\n", err)

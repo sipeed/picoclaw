@@ -24,6 +24,7 @@ import (
 const (
 	minIntervalMinutes     = 5
 	defaultIntervalMinutes = 30
+	suppressionTTL         = 24 * time.Hour
 )
 
 // HeartbeatHandler is the function type for handling heartbeat.
@@ -33,14 +34,15 @@ type HeartbeatHandler func(prompt, channel, chatID string) *tools.ToolResult
 
 // HeartbeatService manages periodic heartbeat checks
 type HeartbeatService struct {
-	workspace string
-	bus       *bus.MessageBus
-	state     *state.Manager
-	handler   HeartbeatHandler
-	interval  time.Duration
-	enabled   bool
-	mu        sync.RWMutex
-	stopChan  chan struct{}
+	workspace      string
+	bus            *bus.MessageBus
+	state          *state.Manager
+	handler        HeartbeatHandler
+	interval       time.Duration
+	enabled        bool
+	mu             sync.RWMutex
+	stopChan       chan struct{}
+	lastNotifiedAt time.Time // when a non-silent result was last sent to user
 }
 
 // NewHeartbeatService creates a new heartbeat service
@@ -74,6 +76,15 @@ func (hs *HeartbeatService) SetHandler(handler HeartbeatHandler) {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 	hs.handler = handler
+}
+
+// ResetSuppression clears the notification suppression so the next
+// non-silent heartbeat result will be delivered to the user again.
+// Typically called when a user message arrives.
+func (hs *HeartbeatService) ResetSuppression() {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	hs.lastNotifiedAt = time.Time{}
 }
 
 // Start begins the heartbeat service
@@ -205,12 +216,25 @@ func (hs *HeartbeatService) executeHeartbeat() {
 		return
 	}
 
+	// Suppress duplicate notifications within the TTL window
+	hs.mu.RLock()
+	suppressed := !hs.lastNotifiedAt.IsZero() && time.Since(hs.lastNotifiedAt) < suppressionTTL
+	hs.mu.RUnlock()
+	if suppressed {
+		hs.logInfo("Heartbeat suppressed (already notified user recently)")
+		return
+	}
+
 	// Send result to user
 	if result.ForUser != "" {
 		hs.sendResponse(result.ForUser)
 	} else if result.ForLLM != "" {
 		hs.sendResponse(result.ForLLM)
 	}
+
+	hs.mu.Lock()
+	hs.lastNotifiedAt = time.Now()
+	hs.mu.Unlock()
 
 	hs.logInfo("Heartbeat completed: %s", result.ForLLM)
 }
