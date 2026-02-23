@@ -450,6 +450,9 @@ type CronToolsConfig struct {
 type ExecConfig struct {
 	EnableDenyPatterns bool     `json:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
 	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
+	EnableAllowlist    bool     `json:"enable_allowlist"      env:"PICOCLAW_TOOLS_EXEC_ENABLE_ALLOWLIST"`
+	AllowPatterns      []string `json:"allow_patterns"        env:"PICOCLAW_TOOLS_EXEC_ALLOW_PATTERNS"`
+	MaxCommandLength   int      `json:"max_command_length"    env:"PICOCLAW_TOOLS_EXEC_MAX_COMMAND_LENGTH"`
 }
 
 type ToolPolicyConfig struct {

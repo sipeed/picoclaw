@@ -289,6 +289,7 @@ func DefaultConfig() *Config {
 			},
 			Exec: ExecConfig{
 				EnableDenyPatterns: true,
+				MaxCommandLength:   10000,
 			},
 			Security: SecurityConfig{
 				DefaultMaxArgSize: 100000,

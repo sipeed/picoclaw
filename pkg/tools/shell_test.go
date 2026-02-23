@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestShellTool_Success verifies successful command execution
@@ -271,4 +274,59 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 			result.ForUser,
 		)
 	}
+}
+
+// --- Allowlist and Command Length Tests ---
+
+func TestShellTool_MaxCommandLength_Blocks(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tools.Exec.MaxCommandLength = 50
+	tool := NewExecToolWithConfig(t.TempDir(), false, cfg)
+
+	longCmd := strings.Repeat("a", 100)
+	result := tool.Execute(context.Background(), map[string]any{"command": longCmd})
+
+	assert.True(t, result.IsError)
+	assert.Contains(t, result.ForLLM, "max command length")
+}
+
+func TestShellTool_MaxCommandLength_Allows(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tools.Exec.MaxCommandLength = 100
+	tool := NewExecToolWithConfig(t.TempDir(), false, cfg)
+
+	result := tool.Execute(context.Background(), map[string]any{"command": "echo hello"})
+	assert.False(t, result.IsError, "short command should be allowed: %s", result.ForLLM)
+}
+
+func TestShellTool_AllowlistMode_Blocks(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tools.Exec.EnableAllowlist = true
+	cfg.Tools.Exec.AllowPatterns = []string{`\becho\b`, `\bls\b`}
+	tool := NewExecToolWithConfig(t.TempDir(), false, cfg)
+
+	// "cat" is not in the allowlist
+	result := tool.Execute(context.Background(), map[string]any{"command": "cat /etc/passwd"})
+	assert.True(t, result.IsError)
+	assert.Contains(t, result.ForLLM, "allowlist")
+}
+
+func TestShellTool_AllowlistMode_Allows(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tools.Exec.EnableAllowlist = true
+	cfg.Tools.Exec.AllowPatterns = []string{`\becho\b`, `\bls\b`}
+	tool := NewExecToolWithConfig(t.TempDir(), false, cfg)
+
+	result := tool.Execute(context.Background(), map[string]any{"command": "echo hello"})
+	assert.False(t, result.IsError, "echo should be allowed: %s", result.ForLLM)
+}
+
+func TestShellTool_AllowlistDisabled_AllowsAll(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tools.Exec.EnableAllowlist = false
+	tool := NewExecToolWithConfig(t.TempDir(), false, cfg)
+
+	// Without allowlist, normal commands pass (unless blocked by deny patterns)
+	result := tool.Execute(context.Background(), map[string]any{"command": "echo test"})
+	assert.False(t, result.IsError)
 }

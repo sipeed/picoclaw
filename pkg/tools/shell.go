@@ -22,6 +22,7 @@ type ExecTool struct {
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
 	restrictToWorkspace bool
+	maxCommandLength    int
 }
 
 var defaultDenyPatterns = []*regexp.Regexp{
@@ -102,12 +103,32 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}
 
+	var allowPatterns []*regexp.Regexp
+	maxCmdLen := 10000
+	if config != nil {
+		execConfig := config.Tools.Exec
+		if execConfig.EnableAllowlist && len(execConfig.AllowPatterns) > 0 {
+			for _, pattern := range execConfig.AllowPatterns {
+				re, err := regexp.Compile(pattern)
+				if err != nil {
+					fmt.Printf("Invalid allow pattern %q: %v\n", pattern, err)
+					continue
+				}
+				allowPatterns = append(allowPatterns, re)
+			}
+		}
+		if execConfig.MaxCommandLength > 0 {
+			maxCmdLen = execConfig.MaxCommandLength
+		}
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             60 * time.Second,
 		denyPatterns:        denyPatterns,
-		allowPatterns:       nil,
+		allowPatterns:       allowPatterns,
 		restrictToWorkspace: restrict,
+		maxCommandLength:    maxCmdLen,
 	}
 }
 
@@ -259,6 +280,11 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
+
+	if t.maxCommandLength > 0 && len(cmd) > t.maxCommandLength {
+		return "Command blocked by safety guard (exceeds max command length)"
+	}
+
 	lower := strings.ToLower(cmd)
 
 	for _, pattern := range t.denyPatterns {
