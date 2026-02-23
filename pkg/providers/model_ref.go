@@ -19,12 +19,12 @@ func ParseModelRef(raw string, defaultProvider string) *ModelRef {
 
 	if idx := strings.Index(raw, "/"); idx > 0 {
 		prefix := strings.TrimSpace(raw[:idx])
+		model := strings.TrimSpace(raw[idx+1:])
+		if model == "" {
+			return nil
+		}
 		if isKnownProviderPrefix(prefix) {
 			provider := NormalizeProvider(prefix)
-			model := strings.TrimSpace(raw[idx+1:])
-			if model == "" {
-				return nil
-			}
 			return &ModelRef{Provider: provider, Model: model}
 		}
 	}
@@ -35,17 +35,42 @@ func ParseModelRef(raw string, defaultProvider string) *ModelRef {
 	}
 }
 
+var knownProviderPrefixes = map[string]struct{}{
+	"openai":         {},
+	"anthropic":      {},
+	"openrouter":     {},
+	"groq":           {},
+	"zhipu":          {},
+	"gemini":         {},
+	"nvidia":         {},
+	"ollama":         {},
+	"moonshot":       {},
+	"shengsuanyun":   {},
+	"deepseek":       {},
+	"cerebras":       {},
+	"volcengine":     {},
+	"vllm":           {},
+	"qwen-portal":    {},
+	"mistral":        {},
+	"antigravity":    {},
+	"claude-cli":     {},
+	"claudecli":      {},
+	"claude-code":    {},
+	"claudecode":     {},
+	"codex-cli":      {},
+	"codexcli":       {},
+	"codex-code":     {},
+	"github-copilot": {},
+	"github_copilot": {},
+	"copilot":        {},
+	"zai":            {},
+	"opencode":       {},
+	"kimi-coding":    {},
+}
+
 func isKnownProviderPrefix(prefix string) bool {
-	switch NormalizeProvider(prefix) {
-	case "openai", "anthropic", "openrouter", "groq", "zhipu", "gemini",
-		"nvidia", "ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"volcengine", "vllm", "qwen-portal", "mistral", "antigravity",
-		"claude-cli", "claudecli", "codex-cli", "codexcli", "github-copilot",
-		"github_copilot", "copilot", "zai", "opencode", "kimi-coding":
-		return true
-	default:
-		return false
-	}
+	_, ok := knownProviderPrefixes[NormalizeProvider(prefix)]
+	return ok
 }
 
 // NormalizeProvider normalizes provider identifiers to canonical form.
