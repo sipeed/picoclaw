@@ -255,6 +255,14 @@ func DefaultConfig() *Config {
 				APIKey:    "ollama",
 			},
 
+			// Mistral AI - https://console.mistral.ai/api-keys
+			{
+				ModelName: "mistral-small",
+				Model:     "mistral/mistral-small-latest",
+				APIBase:   "https://api.mistral.ai/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
