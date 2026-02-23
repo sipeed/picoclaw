@@ -308,7 +308,9 @@ func (hs *HeartbeatService) sendResponse(response string) {
 		return
 	}
 
-	msgBus.PublishOutbound(context.TODO(), bus.OutboundMessage{
+	pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pubCancel()
+	msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 		Channel: platform,
 		ChatID:  userID,
 		Content: response,
