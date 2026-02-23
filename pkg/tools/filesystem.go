@@ -273,7 +273,11 @@ func (h *hostFs) ReadFile(path string) ([]byte, error) {
 }
 
 func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
-	return os.ReadDir(path)
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read directory: %w", err)
+	}
+	return entries, nil
 }
 
 func (h *hostFs) WriteFile(path string, data []byte) error {

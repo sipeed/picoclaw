@@ -844,7 +844,7 @@ func TestExecTool_Bg_RingBufferOverflow(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		cmd = "1..2000 | ForEach-Object { Write-Output ('x' * 50) }; Start-Sleep -Seconds 30"
 	} else {
-		cmd = "for i in $(seq 1 2000); do echo $(head -c 50 /dev/zero | tr '\\0' 'x'); done; sleep 30"
+		cmd = "yes 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | head -n 2000; sleep 30"
 	}
 
 	result := tool.Execute(context.Background(), map[string]any{
