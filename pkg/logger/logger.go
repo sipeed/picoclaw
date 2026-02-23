@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -109,6 +110,26 @@ type LogEntry struct {
 	Message   string         `json:"message"`
 	Fields    map[string]any `json:"fields,omitempty"`
 	Caller    string         `json:"caller,omitempty"`
+}
+
+var sensitiveKeyPattern = regexp.MustCompile(`(?i)(token|key|secret|password|authorization|credential)`)
+
+// SanitizeFields returns a copy of fields with sensitive values masked.
+// Keys matching patterns like token, key, secret, password, authorization,
+// or credential (case-insensitive) will have their values replaced with "***".
+func SanitizeFields(fields map[string]any) map[string]any {
+	if len(fields) == 0 {
+		return fields
+	}
+	sanitized := make(map[string]any, len(fields))
+	for k, v := range fields {
+		if sensitiveKeyPattern.MatchString(k) {
+			sanitized[k] = "***"
+		} else {
+			sanitized[k] = v
+		}
+	}
+	return sanitized
 }
 
 func init() {
@@ -337,7 +358,8 @@ func RecentLogs(minLevel LogLevel, component string, limit int) []LogEntry {
 		if component != "" && e.Component != component {
 			continue
 		}
-		e.Caller = "" // strip for security
+		e.Caller = ""                      // strip for security
+		e.Fields = SanitizeFields(e.Fields) // mask sensitive values
 		result = append(result, e)
 	}
 	// Reverse so oldest first
