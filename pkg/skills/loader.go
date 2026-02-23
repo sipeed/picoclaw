@@ -85,9 +85,6 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 			if !d.IsDir() {
 				continue
 			}
-			if seen[d.Name()] {
-				continue
-			}
 			skillFile := filepath.Join(dir, d.Name(), "SKILL.md")
 			if _, err := os.Stat(skillFile); err != nil {
 				continue
@@ -106,7 +103,10 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 				slog.Warn("invalid skill from "+source, "name", info.Name, "error", err)
 				continue
 			}
-			seen[d.Name()] = true
+			if seen[info.Name] {
+				continue
+			}
+			seen[info.Name] = true
 			skills = append(skills, info)
 		}
 	}
