@@ -482,6 +482,8 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 	}
 
 	sanitized := make([]providers.Message, 0, len(history))
+	var pendingToolCalls map[string]struct{}
+
 	for _, msg := range history {
 		switch msg.Role {
 		case "system":
@@ -493,29 +495,32 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 			continue
 
 		case "tool":
-			if len(sanitized) == 0 {
-				logger.DebugCF("agent", "Dropping orphaned leading tool message", map[string]any{})
-				continue
-			}
-			// Walk backwards to find the nearest assistant message,
-			// skipping over any preceding tool messages (multi-tool-call case).
-			foundAssistant := false
-			for i := len(sanitized) - 1; i >= 0; i-- {
-				if sanitized[i].Role == "tool" {
-					continue
-				}
-				if sanitized[i].Role == "assistant" && len(sanitized[i].ToolCalls) > 0 {
-					foundAssistant = true
-				}
-				break
-			}
-			if !foundAssistant {
+			if pendingToolCalls == nil {
 				logger.DebugCF("agent", "Dropping orphaned tool message", map[string]any{})
 				continue
+			}
+
+			// When tool call IDs are available, require exact call_id matches.
+			if len(pendingToolCalls) > 0 {
+				if msg.ToolCallID == "" {
+					logger.DebugCF("agent", "Dropping orphaned tool message with empty call id", map[string]any{})
+					continue
+				}
+				if _, ok := pendingToolCalls[msg.ToolCallID]; !ok {
+					logger.DebugCF(
+						"agent",
+						"Dropping orphaned tool message with unknown call id",
+						map[string]any{"tool_call_id": msg.ToolCallID},
+					)
+					continue
+				}
+				delete(pendingToolCalls, msg.ToolCallID)
 			}
 			sanitized = append(sanitized, msg)
 
 		case "assistant":
+			pendingToolCalls = nil
+
 			if len(msg.ToolCalls) > 0 {
 				if len(sanitized) == 0 {
 					logger.DebugCF("agent", "Dropping assistant tool-call turn at history start", map[string]any{})
@@ -530,10 +535,18 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 					)
 					continue
 				}
+
+				pendingToolCalls = make(map[string]struct{}, len(msg.ToolCalls))
+				for _, tc := range msg.ToolCalls {
+					if tc.ID != "" {
+						pendingToolCalls[tc.ID] = struct{}{}
+					}
+				}
 			}
 			sanitized = append(sanitized, msg)
 
 		default:
+			pendingToolCalls = nil
 			sanitized = append(sanitized, msg)
 		}
 	}

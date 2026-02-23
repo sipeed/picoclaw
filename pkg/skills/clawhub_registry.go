@@ -76,6 +76,7 @@ func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
 		client: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
+				Proxy:               http.ProxyFromEnvironment,
 				MaxIdleConns:        5,
 				IdleConnTimeout:     30 * time.Second,
 				TLSHandshakeTimeout: 10 * time.Second,

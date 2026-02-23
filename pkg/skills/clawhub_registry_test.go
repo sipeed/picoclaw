@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -147,6 +148,19 @@ func TestClawHubRegistryAuthToken(t *testing.T) {
 
 	reg := newTestRegistry(srv.URL, "test-token-123")
 	_, _ = reg.Search(context.Background(), "test", 5)
+}
+
+func TestClawHubRegistryUsesProxyFromEnvironment(t *testing.T) {
+	reg := newTestRegistry("https://example.com", "")
+
+	transport, ok := reg.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.NotNil(t, transport.Proxy)
+	assert.Equal(
+		t,
+		reflect.ValueOf(http.ProxyFromEnvironment).Pointer(),
+		reflect.ValueOf(transport.Proxy).Pointer(),
+	)
 }
 
 func TestExtractZipPathTraversal(t *testing.T) {

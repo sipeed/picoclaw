@@ -188,6 +188,52 @@ func TestSanitizeHistoryForProvider_PlainConversation(t *testing.T) {
 	assertRoles(t, result, "user", "assistant", "user", "assistant")
 }
 
+func TestSanitizeHistoryForProvider_KeepMultipleToolOutputsFromOneAssistantTurn(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "check two files"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{ID: "call_1", Name: "read_file"},
+				{ID: "call_2", Name: "read_file"},
+			},
+		},
+		{Role: "tool", ToolCallID: "call_1", Content: "file a"},
+		{Role: "tool", ToolCallID: "call_2", Content: "file b"},
+	}
+
+	got := sanitizeHistoryForProvider(history)
+
+	if len(got) != 4 {
+		t.Fatalf("len(got) = %d, want 4; got=%#v", len(got), got)
+	}
+	if got[2].Role != "tool" || got[2].ToolCallID != "call_1" {
+		t.Fatalf("got[2] = %#v, want tool output for call_1", got[2])
+	}
+	if got[3].Role != "tool" || got[3].ToolCallID != "call_2" {
+		t.Fatalf("got[3] = %#v, want tool output for call_2", got[3])
+	}
+}
+
+func TestSanitizeHistoryForProvider_DropToolOutputWithUnknownCallID(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "check file"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{ID: "call_1", Name: "read_file"},
+			},
+		},
+		{Role: "tool", ToolCallID: "call_999", Content: "orphan"},
+	}
+
+	got := sanitizeHistoryForProvider(history)
+
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2; got=%#v", len(got), got)
+	}
+}
+
 func roles(msgs []providers.Message) []string {
 	r := make([]string, len(msgs))
 	for i, m := range msgs {

@@ -3,6 +3,20 @@
 # ============================================================
 FROM golang:1.25-alpine AS builder
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+
+ENV HTTP_PROXY=$HTTP_PROXY \
+  HTTPS_PROXY=$HTTPS_PROXY \
+  NO_PROXY=$NO_PROXY \
+  http_proxy=$http_proxy \
+  https_proxy=$https_proxy \
+  no_proxy=$no_proxy
+
 RUN apk add --no-cache git make
 
 WORKDIR /src
@@ -20,11 +34,25 @@ RUN make build
 # ============================================================
 FROM alpine:3.23
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+
+ENV HTTP_PROXY=$HTTP_PROXY \
+  HTTPS_PROXY=$HTTPS_PROXY \
+  NO_PROXY=$NO_PROXY \
+  http_proxy=$http_proxy \
+  https_proxy=$https_proxy \
+  no_proxy=$no_proxy
+
 RUN apk add --no-cache ca-certificates tzdata curl
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -q --spider http://localhost:18790/health || exit 1
+  CMD curl --silent --fail --noproxy '*' http://localhost:18790/health >/dev/null || exit 1
 
 # Copy binary
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
