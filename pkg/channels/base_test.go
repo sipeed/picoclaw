@@ -43,7 +43,7 @@ func TestBaseChannelIsAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ch := NewBaseChannel("test", nil, nil, tt.allowList)
+			ch := NewBaseChannel("test", nil, nil, tt.allowList, "")
 			if got := ch.IsAllowed(tt.senderID); got != tt.want {
 				t.Fatalf("IsAllowed(%q) = %v, want %v", tt.senderID, got, tt.want)
 			}

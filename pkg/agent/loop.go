@@ -467,47 +467,32 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 }
 
 func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string) {
-	channels := al.cfg.Channels
-
-	switch channelName {
-	case "telegram":
-		return channels.Telegram.ReasoningChannelID
-	case "whatsapp":
-		return channels.WhatsApp.ReasoningChannelID
-	case "feishu":
-		return channels.Feishu.ReasoningChannelID
-	case "discord":
-		return channels.Discord.ReasoningChannelID
-	case "maixcam":
-		return channels.MaixCam.ReasoningChannelID
-	case "qq":
-		return channels.QQ.ReasoningChannelID
-	case "dingtalk":
-		return channels.DingTalk.ReasoningChannelID
-	case "slack":
-		return channels.Slack.ReasoningChannelID
-	case "line":
-		return channels.LINE.ReasoningChannelID
-	case "onebot":
-		return channels.OneBot.ReasoningChannelID
-	case "wecom":
-		return channels.WeCom.ReasoningChannelID
-	case "wecom_app":
-		return channels.WeComApp.ReasoningChannelID
+	if al.channelManager == nil {
+		return ""
 	}
-	return
+
+	if ch, ok := al.channelManager.GetChannel(channelName); ok {
+		return ch.ReasoningChannelID()
+	}
+
+	return ""
 }
 
-func (al *AgentLoop) handleReasoning(reasoningContent, channelName, channelID string) {
+func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, channelName, channelID string) {
 	if reasoningContent == "" || channelName == "" || channelID == "" {
 		return
 	}
 
-	al.bus.PublishOutbound(bus.OutboundMessage{
-		Channel: channelName,
-		ChatID:  channelID,
-		Content: reasoningContent,
-	})
+	select {
+	case <-ctx.Done():
+		return
+	default:
+		al.bus.PublishOutbound(bus.OutboundMessage{
+			Channel: channelName,
+			ChatID:  channelID,
+			Content: reasoningContent,
+		})
+	}
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
@@ -634,7 +619,7 @@ func (al *AgentLoop) runLLMIteration(
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
-		go al.handleReasoning(response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
+		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
 		// Log LLM response details
 		logger.InfoCF("agent", "LLM response",
 			map[string]any{

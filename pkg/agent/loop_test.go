@@ -9,10 +9,21 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
+
+type fakeChannel struct{ id string }
+
+func (f *fakeChannel) Name() string                                            { return "fake" }
+func (f *fakeChannel) Start(ctx context.Context) error                         { return nil }
+func (f *fakeChannel) Stop(ctx context.Context) error                          { return nil }
+func (f *fakeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error { return nil }
+func (f *fakeChannel) IsRunning() bool                                         { return true }
+func (f *fakeChannel) IsAllowed(string) bool                                   { return true }
+func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
 
 func TestRecordLastChannel(t *testing.T) {
 	// Create temp workspace
@@ -648,23 +659,30 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 				MaxToolIterations: 10,
 			},
 		},
-		Channels: config.ChannelsConfig{
-			WhatsApp: config.WhatsAppConfig{ReasoningChannelID: "rid-whatsapp"},
-			Telegram: config.TelegramConfig{ReasoningChannelID: "rid-telegram"},
-			Feishu:   config.FeishuConfig{ReasoningChannelID: "rid-feishu"},
-			Discord:  config.DiscordConfig{ReasoningChannelID: "rid-discord"},
-			MaixCam:  config.MaixCamConfig{ReasoningChannelID: "rid-maixcam"},
-			QQ:       config.QQConfig{ReasoningChannelID: "rid-qq"},
-			DingTalk: config.DingTalkConfig{ReasoningChannelID: "rid-dingtalk"},
-			Slack:    config.SlackConfig{ReasoningChannelID: "rid-slack"},
-			LINE:     config.LINEConfig{ReasoningChannelID: "rid-line"},
-			OneBot:   config.OneBotConfig{ReasoningChannelID: "rid-onebot"},
-			WeCom:    config.WeComConfig{ReasoningChannelID: "rid-wecom"},
-			WeComApp: config.WeComAppConfig{ReasoningChannelID: "rid-wecom-app"},
-		},
 	}
 
 	al := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	chManager, err := channels.NewManager(&config.Config{}, bus.NewMessageBus())
+	if err != nil {
+		t.Fatalf("Failed to create channel manager: %v", err)
+	}
+	for name, id := range map[string]string{
+		"whatsapp":  "rid-whatsapp",
+		"telegram":  "rid-telegram",
+		"feishu":    "rid-feishu",
+		"discord":   "rid-discord",
+		"maixcam":   "rid-maixcam",
+		"qq":        "rid-qq",
+		"dingtalk":  "rid-dingtalk",
+		"slack":     "rid-slack",
+		"line":      "rid-line",
+		"onebot":    "rid-onebot",
+		"wecom":     "rid-wecom",
+		"wecom_app": "rid-wecom-app",
+	} {
+		chManager.RegisterChannel(name, &fakeChannel{id: id})
+	}
+	al.SetChannelManager(chManager)
 	tests := []struct {
 		channel string
 		wantID  string
@@ -718,7 +736,7 @@ func TestHandleReasoning(t *testing.T) {
 
 	t.Run("skips when any required field is empty", func(t *testing.T) {
 		al, msgBus := newLoop(t)
-		al.handleReasoning("reasoning", "telegram", "")
+		al.handleReasoning(context.Background(), "reasoning", "telegram", "")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 		defer cancel()
@@ -729,7 +747,7 @@ func TestHandleReasoning(t *testing.T) {
 
 	t.Run("publishes one message for non telegram", func(t *testing.T) {
 		al, msgBus := newLoop(t)
-		al.handleReasoning("hello reasoning", "slack", "channel-1")
+		al.handleReasoning(context.Background(), "hello reasoning", "slack", "channel-1")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		defer cancel()
@@ -745,7 +763,7 @@ func TestHandleReasoning(t *testing.T) {
 	t.Run("publishes one message for telegram", func(t *testing.T) {
 		al, msgBus := newLoop(t)
 		reasoning := "hello telegram reasoning"
-		al.handleReasoning(reasoning, "telegram", "tg-chat")
+		al.handleReasoning(context.Background(), reasoning, "telegram", "tg-chat")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		defer cancel()
@@ -762,6 +780,20 @@ func TestHandleReasoning(t *testing.T) {
 		}
 		if msg.Content != reasoning {
 			t.Fatalf("content mismatch: got %q want %q", msg.Content, reasoning)
+		}
+	})
+	t.Run("expired ctx", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		reasoning := "hello telegram reasoning"
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		al.handleReasoning(ctx, reasoning, "telegram", "tg-chat")
+
+		ctx, cancel = context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		msg, ok := msgBus.SubscribeOutbound(ctx)
+		if ok {
+			t.Fatalf("expected no outbound message, got %+v", msg)
 		}
 	})
 }

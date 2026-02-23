@@ -98,7 +98,7 @@ type oneBotMessageSegment struct {
 }
 
 func NewOneBotChannel(cfg config.OneBotConfig, messageBus *bus.MessageBus) (*OneBotChannel, error) {
-	base := NewBaseChannel("onebot", cfg, messageBus, cfg.AllowFrom)
+	base := NewBaseChannel("onebot", cfg, messageBus, cfg.AllowFrom, cfg.ReasoningChannelID)
 
 	const dedupSize = 1024
 	return &OneBotChannel{

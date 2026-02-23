@@ -96,7 +96,7 @@ func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*We
 		return nil, fmt.Errorf("wecom token and webhook_url are required")
 	}
 
-	base := NewBaseChannel("wecom", cfg, messageBus, cfg.AllowFrom)
+	base := NewBaseChannel("wecom", cfg, messageBus, cfg.AllowFrom, cfg.ReasoningChannelID)
 
 	return &WeComBotChannel{
 		BaseChannel:   base,

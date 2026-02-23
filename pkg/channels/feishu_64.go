@@ -31,7 +31,7 @@ type FeishuChannel struct {
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
-	base := NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom)
+	base := NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom, cfg.ReasoningChannelID)
 
 	return &FeishuChannel{
 		BaseChannel: base,

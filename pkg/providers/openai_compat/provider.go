@@ -25,6 +25,7 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
+	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
 type Provider struct {
@@ -148,15 +149,10 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
-				Reasoning        string `json:"reasoning"`
-				ReasoningDetails []struct {
-					Format string `json:"format"`
-					Index  int    `json:"index"`
-					Type   string `json:"type"`
-					Text   string `json:"text"`
-				} `json:"reasoning_details"`
-				Content   string `json:"content"`
-				ToolCalls []struct {
+				Reasoning        string            `json:"reasoning"`
+				ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
+				Content          string            `json:"content"`
+				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function *struct {
