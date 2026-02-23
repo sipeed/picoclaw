@@ -402,10 +402,17 @@ func BuildSessionRegistry(cfg *config.Config) SessionRegistry {
 
 	// Collect model options based on selected provider
 	selProvider := cfg.Agents.Defaults.Provider
-	modelSuggestions := config.GetPopularModels(selProvider)
-	modelOptions := make([]string, len(modelSuggestions)+1)
-	copy(modelOptions, modelSuggestions)
-	modelOptions[len(modelSuggestions)] = "custom"
+	var modelOptions []string
+	if models := config.GetModelsForProvider(selProvider); len(models) > 0 {
+		for _, m := range models {
+			modelOptions = append(modelOptions, m.ID)
+		}
+	} else {
+		modelSuggestions := config.GetPopularModels(selProvider)
+		modelOptions = make([]string, len(modelSuggestions))
+		copy(modelOptions, modelSuggestions)
+	}
+	modelOptions = append(modelOptions, "custom")
 
 	// Deep copy sessions and fill in options
 	for i, sess := range AllSessions {

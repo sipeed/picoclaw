@@ -607,6 +607,7 @@ func (t *tuiModel) saveAnswer(q Question) {
 	// Update provider auth method options when provider is selected
 	if q.ID == "provider" {
 		t.updateProviderAuthOptions()
+		t.updateModelOptions()
 	}
 }
 
@@ -684,6 +685,39 @@ func (t *tuiModel) updateProviderAuthOptions() {
 					} else {
 						q.Options = []string{"api_key"}
 					}
+					// Reset selection if out of bounds
+					if idx, ok := t.selIdx[q.ID]; ok && idx >= len(q.Options) {
+						t.selIdx[q.ID] = 0
+					}
+				}
+			}
+			break
+		}
+	}
+}
+
+func (t *tuiModel) updateModelOptions() {
+	provider := t.answers["provider"]
+	if provider == "" {
+		return
+	}
+
+	var modelIDs []string
+	if models := config.GetModelsForProvider(provider); len(models) > 0 {
+		for _, m := range models {
+			modelIDs = append(modelIDs, m.ID)
+		}
+	} else {
+		modelIDs = config.GetPopularModels(provider)
+	}
+	modelIDs = append(modelIDs, "custom")
+
+	for i := range t.registry.Sessions {
+		if t.registry.Sessions[i].ID == "model" {
+			for j := range t.registry.Sessions[i].Questions {
+				q := &t.registry.Sessions[i].Questions[j]
+				if q.ID == "model_select" {
+					q.Options = modelIDs
 					// Reset selection if out of bounds
 					if idx, ok := t.selIdx[q.ID]; ok && idx >= len(q.Options) {
 						t.selIdx[q.ID] = 0
