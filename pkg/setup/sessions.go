@@ -91,6 +91,14 @@ func GetChannelInfo(channel string) (ChannelInfo, bool) {
 	return info, ok
 }
 
+func isOAuthProvider(provider string) bool {
+	switch strings.ToLower(provider) {
+	case "openai", "anthropic", "google-antigravity", "antigravity":
+		return true
+	}
+	return false
+}
+
 // QuestionType defines the type of response expected for a question.
 type QuestionType string
 
@@ -415,6 +423,17 @@ func BuildSessionRegistry(cfg *config.Config) SessionRegistry {
 				switch q.ID {
 				case "provider":
 					registry.Sessions[i].Questions[j].Options = provOptions
+				case "provider_auth_method":
+					// Determine auth options based on selected provider
+					selectedProvider := cfg.Agents.Defaults.Provider
+					if selectedProvider == "" {
+						selectedProvider = registry.Answers["provider"]
+					}
+					if isOAuthProvider(selectedProvider) {
+						registry.Sessions[i].Questions[j].Options = []string{"oauth_login", "api_key"}
+					} else {
+						registry.Sessions[i].Questions[j].Options = []string{"api_key"}
+					}
 				case "channel_select":
 					registry.Sessions[i].Questions[j].Options = channelOptions
 				case "model_select":

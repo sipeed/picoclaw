@@ -11,14 +11,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 type Setup struct {
-	ConfigPath string
-	Cfg        *config.Config
-	Steps      []string
-	Confirmed  bool
+	ConfigPath    string
+	Cfg           *config.Config
+	Steps         []string
+	Confirmed     bool
+	OAuthProvider string
 }
 
 func NewSetup(configPath string) (*Setup, error) {
@@ -53,6 +55,44 @@ func (s *Setup) Run() error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
+	if s.OAuthProvider != "" {
+		fmt.Println("\nRunning OAuth login for", s.OAuthProvider, "...")
+		if err := runOAuthLogin(s.OAuthProvider); err != nil {
+			return fmt.Errorf("oauth login failed: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func runOAuthLogin(provider string) error {
+	switch strings.ToLower(provider) {
+	case "openai":
+		cfg := auth.OpenAIOAuthConfig()
+		cred, err := auth.LoginBrowser(cfg)
+		if err != nil {
+			return fmt.Errorf("openai login failed: %w", err)
+		}
+		if err := auth.SetCredential("openai", cred); err != nil {
+			return fmt.Errorf("failed to save credentials: %w", err)
+		}
+		fmt.Println("OpenAI login successful!")
+	case "anthropic":
+		fmt.Println("Anthropic OAuth not available. Please run: picoclaw auth login --provider anthropic")
+	case "google-antigravity", "antigravity":
+		cfg := auth.GoogleAntigravityOAuthConfig()
+		cred, err := auth.LoginBrowser(cfg)
+		if err != nil {
+			return fmt.Errorf("google-antigravity login failed: %w", err)
+		}
+		cred.Provider = "google-antigravity"
+		if err := auth.SetCredential("google-antigravity", cred); err != nil {
+			return fmt.Errorf("failed to save credentials: %w", err)
+		}
+		fmt.Println("Google Antigravity login successful!")
+	default:
+		return fmt.Errorf("unsupported OAuth provider: %s", provider)
+	}
 	return nil
 }
 
@@ -492,7 +532,11 @@ func (t *tuiModel) validateSession(questions []Question) []string {
 	var missing []string
 	for _, q := range questions {
 		// Skip optional fields
-		if q.ID == "provider_api_key" || q.ID == "provider_api_base" {
+		if q.ID == "provider_api_base" {
+			continue
+		}
+		// Skip provider_api_key if using oauth_login
+		if q.ID == "provider_api_key" && t.answers["provider_auth_method"] == "oauth_login" {
 			continue
 		}
 		// Skip channel token fields - they're optional based on channel selection
@@ -559,6 +603,11 @@ func (t *tuiModel) saveAnswer(q Question) {
 	if q.ID == "channel_select" {
 		t.updateChannelQuestionPrompt()
 	}
+
+	// Update provider auth method options when provider is selected
+	if q.ID == "provider" {
+		t.updateProviderAuthOptions()
+	}
 }
 
 func (t *tuiModel) updateChannelQuestionPrompt() {
@@ -619,6 +668,33 @@ func getChannelFieldIDs(channel string) []string {
 	return nil
 }
 
+func (t *tuiModel) updateProviderAuthOptions() {
+	provider := t.answers["provider"]
+	if provider == "" {
+		return
+	}
+
+	for i := range t.registry.Sessions {
+		if t.registry.Sessions[i].ID == "provider" {
+			for j := range t.registry.Sessions[i].Questions {
+				q := &t.registry.Sessions[i].Questions[j]
+				if q.ID == "provider_auth_method" {
+					if isOAuthProvider(provider) {
+						q.Options = []string{"oauth_login", "api_key"}
+					} else {
+						q.Options = []string{"api_key"}
+					}
+					// Reset selection if out of bounds
+					if idx, ok := t.selIdx[q.ID]; ok && idx >= len(q.Options) {
+						t.selIdx[q.ID] = 0
+					}
+				}
+			}
+			break
+		}
+	}
+}
+
 func (t *tuiModel) applyAnswersToConfig() {
 	cfg := t.setup.Cfg
 
@@ -634,6 +710,29 @@ func (t *tuiModel) applyAnswersToConfig() {
 			cfg.Agents.Defaults.RestrictToWorkspace = (val == "yes")
 		case "provider":
 			cfg.Agents.Defaults.Provider = val
+			// Set auth method if oauth_login was selected
+			if t.answers["provider_auth_method"] == "oauth_login" {
+				authMethod := "oauth"
+				prov := strings.ToLower(val)
+				switch prov {
+				case "openai":
+					cfg.Providers.OpenAI.AuthMethod = authMethod
+				case "anthropic":
+					cfg.Providers.Anthropic.AuthMethod = authMethod
+				case "google-antigravity", "antigravity":
+					cfg.Providers.Antigravity.AuthMethod = authMethod
+				}
+				// Also update model list
+				for i := range cfg.ModelList {
+					pfx := config.ParseProtocol(cfg.ModelList[i].Model)
+					if pfx == "" {
+						pfx = "openai"
+					}
+					if pfx == prov {
+						cfg.ModelList[i].AuthMethod = authMethod
+					}
+				}
+			}
 		case "model_select":
 			if val != "custom" {
 				cfg.Agents.Defaults.Model = val
@@ -741,13 +840,18 @@ func (t *tuiModel) applyAnswersToConfig() {
 			}
 		case "provider_api_key":
 			prov := t.answers["provider"]
-			if prov != "" {
+			if prov != "" && t.answers["provider_auth_method"] == "api_key" {
 				SetProviderCredential(cfg, prov, "api_key", val)
 			}
 		case "provider_api_base":
 			prov := t.answers["provider"]
 			if prov != "" {
 				SetProviderCredential(cfg, prov, "api_base", val)
+			}
+		case "provider_auth_method":
+			prov := t.answers["provider"]
+			if prov != "" && val == "oauth_login" {
+				t.setup.OAuthProvider = prov
 			}
 		}
 	}
