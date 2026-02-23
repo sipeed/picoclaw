@@ -321,8 +321,6 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
 	}
-	al.agentMu.Lock()
-	defer al.agentMu.Unlock()
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      "heartbeat",
 		Channel:         channel,
@@ -397,10 +395,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"agent_id":    agent.ID,
 			"session_key": sessionKey,
 			"matched_by":  route.MatchedBy,
-		})
+	})
 
-	al.agentMu.Lock()
-	defer al.agentMu.Unlock()
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
@@ -460,8 +456,6 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	// Use the origin session for context
 	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
 
-	al.agentMu.Lock()
-	defer al.agentMu.Unlock()
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         originChannel,
