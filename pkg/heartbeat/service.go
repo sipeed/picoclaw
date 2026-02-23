@@ -17,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -158,6 +159,9 @@ func (hs *HeartbeatService) executeHeartbeat() {
 	}
 
 	logger.DebugC("heartbeat", "Executing heartbeat")
+
+	// Nightly vault index rebuild (runs once per day between 2-5am)
+	hs.maybeRebuildVaultIndex()
 
 	prompt := hs.buildPrompt()
 	if prompt == "" {
@@ -339,6 +343,37 @@ func (hs *HeartbeatService) parseLastChannel(lastChannel string) (platform, user
 	}
 
 	return platform, userID
+}
+
+// maybeRebuildVaultIndex performs a nightly full rebuild of the memory vault
+// index. It runs at most once per day, during quiet hours (2-5am local time),
+// to catch any inconsistencies from incremental updates.
+func (hs *HeartbeatService) maybeRebuildVaultIndex() {
+	memoryDir := filepath.Join(hs.workspace, "memory")
+	stampFile := filepath.Join(memoryDir, ".last_rebuild")
+	today := time.Now().Format("2006-01-02")
+
+	// Check if already rebuilt today
+	if data, err := os.ReadFile(stampFile); err == nil {
+		if strings.TrimSpace(string(data)) == today {
+			return
+		}
+	}
+
+	// Only rebuild during quiet hours (2am-5am)
+	hour := time.Now().Hour()
+	if hour < 2 || hour >= 5 {
+		return
+	}
+
+	vault := memory.NewVault(memoryDir)
+	if err := vault.RebuildIndex(); err != nil {
+		hs.logError("Vault index rebuild failed: %v", err)
+		return
+	}
+
+	os.WriteFile(stampFile, []byte(today), 0o644)
+	hs.logInfo("Nightly vault index rebuild completed")
 }
 
 // logInfo logs an informational message to the heartbeat log
