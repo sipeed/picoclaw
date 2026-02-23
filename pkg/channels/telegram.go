@@ -156,7 +156,7 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 func (c *TelegramChannel) registerCommands(ctx context.Context) error {
 	commands := []telego.BotCommand{
 		{Command: "start", Description: "Start the bot"},
-		{Command: "help", Description: "Show available commands"},
+		{Command: "help", Description: "Show this help message"},
 		{Command: "show", Description: "Show current configuration"},
 		{Command: "list", Description: "List available options"},
 	}
