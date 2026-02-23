@@ -2,8 +2,11 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -346,5 +349,85 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 	// ForLLM should have full content
 	if !strings.Contains(result.ForLLM, longTask[:50]) {
 		t.Error("ForLLM should contain reference to original task")
+	}
+}
+
+// SlowMockLLMProvider delays responses to allow testing concurrency.
+type SlowMockLLMProvider struct {
+	delay time.Duration
+}
+
+func (m *SlowMockLLMProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	select {
+	case <-time.After(m.delay):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return &providers.LLMResponse{Content: "done"}, nil
+}
+
+func (m *SlowMockLLMProvider) GetDefaultModel() string { return "test-model" }
+func (m *SlowMockLLMProvider) SupportsTools() bool     { return false }
+func (m *SlowMockLLMProvider) GetContextWindow() int   { return 4096 }
+
+// TestSubagentManager_ConcurrencyLimit verifies that spawning beyond maxConcurrent is rejected.
+func TestSubagentManager_ConcurrencyLimit(t *testing.T) {
+	provider := &SlowMockLLMProvider{delay: 2 * time.Second}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
+	// maxConcurrent defaults to 3
+
+	ctx := context.Background()
+
+	// Spawn 3 tasks — should all succeed
+	for i := 0; i < 3; i++ {
+		_, err := manager.Spawn(ctx, fmt.Sprintf("task-%d", i), fmt.Sprintf("label-%d", i), "agent", "cli", "direct", nil)
+		if err != nil {
+			t.Fatalf("Spawn %d should succeed, got: %v", i, err)
+		}
+	}
+
+	// 4th spawn should fail
+	_, err := manager.Spawn(ctx, "task-overflow", "overflow", "agent", "cli", "direct", nil)
+	if err == nil {
+		t.Fatal("Expected error for exceeding maxConcurrent, got nil")
+	}
+	if !strings.Contains(err.Error(), "too many concurrent subagents") {
+		t.Errorf("Expected 'too many concurrent subagents' error, got: %v", err)
+	}
+}
+
+// TestSubagentManager_ConcurrencyReleasesAfterCompletion verifies slots are freed after task completion.
+func TestSubagentManager_ConcurrencyReleasesAfterCompletion(t *testing.T) {
+	provider := &SlowMockLLMProvider{delay: 50 * time.Millisecond}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
+
+	ctx := context.Background()
+
+	// Fill all 3 slots
+	var wg sync.WaitGroup
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		cb := func(_ context.Context, _ *ToolResult) { wg.Done() }
+		_, err := manager.Spawn(ctx, fmt.Sprintf("task-%d", i), fmt.Sprintf("label-%d", i), "agent", "cli", "direct", cb)
+		if err != nil {
+			t.Fatalf("Spawn %d should succeed, got: %v", i, err)
+		}
+	}
+
+	// Wait for all tasks to complete
+	wg.Wait()
+	// Small delay to ensure activeCount is decremented
+	time.Sleep(20 * time.Millisecond)
+
+	// Now spawning should succeed again
+	_, err := manager.Spawn(ctx, "task-after", "after", "agent", "cli", "direct", nil)
+	if err != nil {
+		t.Fatalf("Spawn after completion should succeed, got: %v", err)
 	}
 }

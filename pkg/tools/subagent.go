@@ -36,6 +36,8 @@ type SubagentManager struct {
 	hasMaxTokens   bool
 	hasTemperature bool
 	nextID         int
+	maxConcurrent  int
+	activeCount    int
 }
 
 func NewSubagentManager(
@@ -52,6 +54,7 @@ func NewSubagentManager(
 		tools:         NewToolRegistry(),
 		maxIterations: 10,
 		nextID:        1,
+		maxConcurrent: 3,
 	}
 }
 
@@ -88,8 +91,13 @@ func (sm *SubagentManager) Spawn(
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
+	if sm.maxConcurrent > 0 && sm.activeCount >= sm.maxConcurrent {
+		return "", fmt.Errorf("too many concurrent subagents (max %d)", sm.maxConcurrent)
+	}
+
 	taskID := fmt.Sprintf("subagent-%d", sm.nextID)
 	sm.nextID++
+	sm.activeCount++
 
 	subagentTask := &SubagentTask{
 		ID:            taskID,
@@ -113,6 +121,12 @@ func (sm *SubagentManager) Spawn(
 }
 
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {
+	defer func() {
+		sm.mu.Lock()
+		sm.activeCount--
+		sm.mu.Unlock()
+	}()
+
 	task.Status = "running"
 	task.Created = time.Now().UnixMilli()
 
