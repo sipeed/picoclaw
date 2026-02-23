@@ -575,6 +575,15 @@ func (h *Handler) apiDev(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, map[string]any{"error": err.Error()})
 				return
 			}
+		case "unregister":
+			if req.ID == "" {
+				writeJSON(w, map[string]any{"error": "id is required"})
+				return
+			}
+			if err := h.UnregisterDevTarget(req.ID); err != nil {
+				writeJSON(w, map[string]any{"error": err.Error()})
+				return
+			}
 		default:
 			writeJSON(w, map[string]any{"error": "unknown action"})
 			return
