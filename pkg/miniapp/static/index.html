@@ -755,6 +755,7 @@
   .log-badge.debug { background: rgba(142,142,147,0.12); color: #8e8e93; }
   .log-comp { color: var(--link); flex-shrink: 0; font-size: 10px; }
   .log-msg { flex: 1; word-break: break-all; color: var(--text); }
+  .log-fields { color: var(--hint); font-size: 10px; }
   .log-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
   .log-snap-btn {
     padding: 6px 12px;
@@ -1607,11 +1608,19 @@ function renderLogs() {
     var lvl = (e.level || 'info').toLowerCase();
     var ts = e.timestamp ? e.timestamp.substring(11, 19) : '';
     var comp = e.component ? '<span class="log-comp">' + escapeHtml(e.component) + '</span>' : '';
+    var fields = '';
+    if (e.fields && typeof e.fields === 'object') {
+      var parts = [];
+      for (var k in e.fields) {
+        if (e.fields.hasOwnProperty(k)) parts.push(k + '=' + e.fields[k]);
+      }
+      if (parts.length) fields = ' <span class="log-fields">{' + escapeHtml(parts.join(', ')) + '}</span>';
+    }
     html += '<div class="log-entry">' +
       '<span class="log-ts">' + ts + '</span>' +
       '<span class="log-badge ' + lvl + '">' + lvl + '</span>' +
       comp +
-      '<span class="log-msg">' + escapeHtml(e.message || '') + '</span>' +
+      '<span class="log-msg">' + escapeHtml(e.message || '') + fields + '</span>' +
       '</div>';
   }
   container.innerHTML = html;
