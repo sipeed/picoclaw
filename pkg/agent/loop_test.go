@@ -2504,3 +2504,139 @@ func TestAgentLoop_PlanModel_NotUsedDuringExecuting(t *testing.T) {
 		t.Errorf("Expected normal model 'normal-model' during executing, got %q", provider.models[0])
 	}
 }
+
+func TestPlanCommand_StartClear(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+
+	// Create a plan in review status with phases
+	plan := "# Active Plan\n\n> Task: Test task\n> Status: review\n> Phase: 1\n\n## Phase 1: Setup\n- [ ] Step one\n\n## Context\n"
+	_ = agent.ContextBuilder.WriteMemory(plan)
+
+	// Seed session history so we can verify it gets cleared
+	agent.Sessions.AddMessage("test-session", "user", "hello")
+	agent.Sessions.AddMessage("test-session", "assistant", "world")
+	agent.Sessions.SetSummary("test-session", "some summary")
+
+	// Approve with clear
+	response, handled := al.handleCommand(context.Background(), bus.InboundMessage{
+		Content:    "/plan start clear",
+		SessionKey: "test-session",
+	})
+	if !handled {
+		t.Fatal("expected /plan start clear to be handled")
+	}
+	if !strings.Contains(response, "clean history") {
+		t.Errorf("expected 'clean history' in response, got %q", response)
+	}
+	if !al.planStartPending {
+		t.Error("expected planStartPending to be true")
+	}
+	if !al.planClearHistory {
+		t.Error("expected planClearHistory to be true")
+	}
+
+	// Simulate what Run() does when planStartPending is set
+	al.planStartPending = false
+	clearHistory := al.planClearHistory
+	al.planClearHistory = false
+	if clearHistory {
+		agent.Sessions.SetHistory("test-session", nil)
+		agent.Sessions.SetSummary("test-session", "")
+		_ = agent.Sessions.Save("test-session")
+	}
+
+	// Verify history and summary are cleared
+	history := agent.Sessions.GetHistory("test-session")
+	if len(history) != 0 {
+		t.Errorf("expected empty history after clear, got %d messages", len(history))
+	}
+	summary := agent.Sessions.GetSummary("test-session")
+	if summary != "" {
+		t.Errorf("expected empty summary after clear, got %q", summary)
+	}
+}
+
+func TestPlanCommand_StartWithoutClear_PreservesHistory(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+
+	// Create a plan in review status with phases
+	plan := "# Active Plan\n\n> Task: Test task\n> Status: review\n> Phase: 1\n\n## Phase 1: Setup\n- [ ] Step one\n\n## Context\n"
+	_ = agent.ContextBuilder.WriteMemory(plan)
+
+	// Seed session history
+	agent.Sessions.AddMessage("test-session", "user", "hello")
+	agent.Sessions.AddMessage("test-session", "assistant", "world")
+	agent.Sessions.SetSummary("test-session", "some summary")
+
+	// Approve without clear
+	response, _ := al.handleCommand(context.Background(), bus.InboundMessage{
+		Content:    "/plan start",
+		SessionKey: "test-session",
+	})
+	if strings.Contains(response, "clean history") {
+		t.Errorf("did not expect 'clean history' in response, got %q", response)
+	}
+	if al.planClearHistory {
+		t.Error("planClearHistory should be false for /plan start without clear")
+	}
+
+	// Verify history is preserved
+	history := agent.Sessions.GetHistory("test-session")
+	if len(history) != 2 {
+		t.Errorf("expected 2 history messages preserved, got %d", len(history))
+	}
+	summary := agent.Sessions.GetSummary("test-session")
+	if summary != "some summary" {
+		t.Errorf("expected summary preserved, got %q", summary)
+	}
+}
+
+func TestFilterInterviewTools(t *testing.T) {
+	allDefs := []providers.ToolDefinition{
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "read_file"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "list_dir"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "web_search"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "web_fetch"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "message"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "edit_file"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "append_file"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "write_file"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "exec"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "logs"}},
+		// These should be filtered out:
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "spawn_subagent"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "skills_search"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "skills_install"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "bg_monitor"}},
+		{Function: protocoltypes.ToolFunctionDefinition{Name: "i2c_transfer"}},
+	}
+
+	filtered := filterInterviewTools(allDefs)
+
+	// Should keep exactly the 10 allowed tools
+	if len(filtered) != 10 {
+		names := make([]string, len(filtered))
+		for i, d := range filtered {
+			names[i] = d.Function.Name
+		}
+		t.Errorf("expected 10 allowed tools, got %d: %v", len(filtered), names)
+	}
+
+	// Verify none of the disallowed tools slipped through
+	disallowed := map[string]bool{
+		"spawnsubagent": true, "skillssearch": true,
+		"skillsinstall": true, "bgmonitor": true, "ictransfer": true,
+	}
+	for _, d := range filtered {
+		norm := tools.NormalizeToolName(d.Function.Name)
+		if disallowed[norm] {
+			t.Errorf("disallowed tool %q should have been filtered out", d.Function.Name)
+		}
+	}
+}

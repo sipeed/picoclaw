@@ -86,6 +86,7 @@ type AgentLoop struct {
 	channelManager   *channels.Manager
 	providerCache    map[string]providers.LLMProvider
 	planStartPending bool // set by /plan start to trigger LLM execution
+	planClearHistory bool // set by /plan start clear to wipe history on transition
 	sessionLocks     sync.Map // sessionKey → *sessionSemaphore
 	activeTasks      sync.Map // sessionKey → *activeTask
 	sessions         *SessionTracker
@@ -287,6 +288,17 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			// the LLM worker actually begins executing the plan.
 			if al.planStartPending {
 				al.planStartPending = false
+				clearHistory := al.planClearHistory
+				al.planClearHistory = false
+
+				if clearHistory {
+					if agent := al.registry.GetDefaultAgent(); agent != nil {
+						agent.Sessions.SetHistory(msg.SessionKey, nil)
+						agent.Sessions.SetSummary(msg.SessionKey, "")
+						_ = agent.Sessions.Save(msg.SessionKey)
+					}
+				}
+
 				syntheticMeta := map[string]string{"echoed": "1"}
 				for k, v := range msg.Metadata {
 					if k != "source" {
@@ -1550,6 +1562,12 @@ func (al *AgentLoop) runLLMIteration(
 		// Build tool definitions
 		providerToolDefs := agent.Tools.ToProviderDefs()
 
+		// Interview mode: strip tool definitions the LLM must not use,
+		// reducing token cost and preventing wasted reject-retry cycles.
+		if isPlanPreExecution(planSnapshot) {
+			providerToolDefs = filterInterviewTools(providerToolDefs)
+		}
+
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
 			map[string]any{
@@ -2772,6 +2790,11 @@ func (al *AgentLoop) handlePlanCommand(args []string) (string, bool) {
 			return fmt.Sprintf("Error: %v", err), true
 		}
 		al.planStartPending = true
+		clearHistory := len(args) > 1 && args[1] == "clear"
+		al.planClearHistory = clearHistory
+		if clearHistory {
+			return "Plan approved. Executing with clean history.", true
+		}
 		return "Plan approved. Executing.", true
 
 	case "next":
@@ -2802,34 +2825,56 @@ func isPlanPreExecution(status string) bool {
 	return status == "interviewing" || status == "review"
 }
 
+// interviewAllowedTools is the single source of truth for tool names that may
+// be sent to the LLM (and subsequently invoked) during the interview phase.
+// filterInterviewTools uses this to strip tool *definitions* before the LLM call,
+// while isToolAllowedDuringInterview adds argument-level checks as a second gate.
+var interviewAllowedTools = map[string]bool{
+	"readfile":  true,
+	"listdir":   true,
+	"websearch": true,
+	"webfetch":  true,
+	"message":   true,
+	"editfile":  true,
+	"appendfile": true,
+	"writefile": true,
+	"exec":      true,
+	"logs":      true,
+}
+
+// filterInterviewTools removes tool definitions that are not in the
+// interviewAllowedTools whitelist, reducing token usage and preventing the
+// LLM from attempting disallowed tool calls during the interview phase.
+func filterInterviewTools(defs []providers.ToolDefinition) []providers.ToolDefinition {
+	filtered := make([]providers.ToolDefinition, 0, len(defs))
+	for _, d := range defs {
+		if interviewAllowedTools[tools.NormalizeToolName(d.Function.Name)] {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered
+}
+
 // isToolAllowedDuringInterview checks whether a tool call is permitted while the
-// plan is in a pre-execution state. Read-type tools are always allowed. Write-type
-// tools (edit_file, append_file, write_file) are only allowed when targeting MEMORY.md.
-// Uses normalized names so "readfile" matches "read_file", etc.
+// plan is in a pre-execution state. Uses the shared interviewAllowedTools map for
+// name-level gating, then applies argument-level constraints for write-type tools
+// (MEMORY.md only) and exec (read-only commands only).
 func isToolAllowedDuringInterview(toolName string, args map[string]interface{}) bool {
 	norm := tools.NormalizeToolName(toolName)
-
-	// Read-type tools and communication: always allowed
-	switch norm {
-	case "readfile", "listdir", "websearch", "webfetch", "message":
-		return true
+	if !interviewAllowedTools[norm] {
+		return false
 	}
 
-	// Write-type tools: allowed only when targeting MEMORY.md
+	// Argument-level constraints
 	switch norm {
 	case "editfile", "appendfile", "writefile":
 		path, _ := args["path"].(string)
 		return strings.HasSuffix(path, "MEMORY.md")
-	}
-
-	// exec: allow read-only commands
-	switch norm {
 	case "exec":
 		cmd, _ := args["command"].(string)
 		return isReadOnlyCommand(cmd)
 	}
-
-	return false
+	return true
 }
 
 // isReadOnlyCommand returns true when cmd is a safe, read-only shell command

@@ -995,9 +995,15 @@ function renderPlanFromData(data) {
     }
     if (data.status === 'review') {
       html += `<div class="slide-approve-wrap">
-        <div class="slide-approve-track glass glass-interactive">
+        <div class="slide-approve-track glass glass-interactive" data-cmd="/plan start">
           <div class="slide-approve-thumb"><svg viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
           <div class="slide-approve-label">Slide to Approve</div>
+        </div>
+      </div>
+      <div class="slide-approve-wrap">
+        <div class="slide-approve-track glass glass-interactive" data-cmd="/plan start clear" style="border-color:var(--warn,#ff9800)">
+          <div class="slide-approve-thumb" style="background:var(--warn,#ff9800)"><svg viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
+          <div class="slide-approve-label">Approve &amp; Clear History</div>
         </div>
       </div>`;
     }
@@ -1017,61 +1023,69 @@ function setupSlideApprove() {
   slideApproveAC = new AbortController();
   var signal = slideApproveAC.signal;
 
-  var track = document.querySelector('.slide-approve-track');
-  if (!track) return;
-  var thumb = track.querySelector('.slide-approve-thumb');
-  var label = track.querySelector('.slide-approve-label');
-  var dragging = false;
-  var startX = 0;
-  var thumbStartLeft = 0;
+  var tracks = document.querySelectorAll('.slide-approve-track');
+  if (!tracks.length) return;
 
-  function getMaxLeft() {
-    return track.offsetWidth - thumb.offsetWidth - 6; // 3px padding each side
-  }
+  tracks.forEach(function(track) {
+    var thumb = track.querySelector('.slide-approve-thumb');
+    var label = track.querySelector('.slide-approve-label');
+    var cmd = track.getAttribute('data-cmd') || '/plan start';
+    var dragging = false;
+    var startX = 0;
+    var thumbStartLeft = 0;
 
-  function onStart(e) {
-    if (track.classList.contains('approved')) return;
-    dragging = true;
-    thumb.classList.add('dragging');
-    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    startX = clientX;
-    thumbStartLeft = thumb.offsetLeft - 3; // subtract initial 3px offset
-    e.preventDefault();
-  }
-
-  function onMove(e) {
-    if (!dragging) return;
-    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    var dx = clientX - startX;
-    var newLeft = Math.max(0, Math.min(thumbStartLeft + dx, getMaxLeft()));
-    thumb.style.left = (newLeft + 3) + 'px';
-    e.preventDefault();
-  }
-
-  function onEnd(e) {
-    if (!dragging) return;
-    dragging = false;
-    thumb.classList.remove('dragging');
-    var currentLeft = thumb.offsetLeft - 3;
-    var maxLeft = getMaxLeft();
-    if (currentLeft >= maxLeft * 0.8) {
-      // Approved
-      track.classList.add('approved');
-      label.textContent = 'Approved!';
-      thumb.classList.add('hidden');
-      sendCommand('/plan start');
-    } else {
-      // Snap back
-      thumb.style.left = '3px';
+    function getMaxLeft() {
+      return track.offsetWidth - thumb.offsetWidth - 6;
     }
-  }
 
-  thumb.addEventListener('touchstart', onStart, { passive: false, signal: signal });
-  thumb.addEventListener('mousedown', onStart, { signal: signal });
-  document.addEventListener('touchmove', onMove, { passive: false, signal: signal });
-  document.addEventListener('mousemove', onMove, { signal: signal });
-  document.addEventListener('touchend', onEnd, { signal: signal });
-  document.addEventListener('mouseup', onEnd, { signal: signal });
+    function markAllApproved() {
+      tracks.forEach(function(t) {
+        t.classList.add('approved');
+        t.querySelector('.slide-approve-label').textContent = 'Approved!';
+        t.querySelector('.slide-approve-thumb').classList.add('hidden');
+      });
+    }
+
+    function onStart(e) {
+      if (track.classList.contains('approved')) return;
+      dragging = true;
+      thumb.classList.add('dragging');
+      var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      startX = clientX;
+      thumbStartLeft = thumb.offsetLeft - 3;
+      e.preventDefault();
+    }
+
+    function onMove(e) {
+      if (!dragging) return;
+      var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      var dx = clientX - startX;
+      var newLeft = Math.max(0, Math.min(thumbStartLeft + dx, getMaxLeft()));
+      thumb.style.left = (newLeft + 3) + 'px';
+      e.preventDefault();
+    }
+
+    function onEnd(e) {
+      if (!dragging) return;
+      dragging = false;
+      thumb.classList.remove('dragging');
+      var currentLeft = thumb.offsetLeft - 3;
+      var maxLeft = getMaxLeft();
+      if (currentLeft >= maxLeft * 0.8) {
+        markAllApproved();
+        sendCommand(cmd);
+      } else {
+        thumb.style.left = '3px';
+      }
+    }
+
+    thumb.addEventListener('touchstart', onStart, { passive: false, signal: signal });
+    thumb.addEventListener('mousedown', onStart, { signal: signal });
+    document.addEventListener('touchmove', onMove, { passive: false, signal: signal });
+    document.addEventListener('mousemove', onMove, { signal: signal });
+    document.addEventListener('touchend', onEnd, { signal: signal });
+    document.addEventListener('mouseup', onEnd, { signal: signal });
+  });
 }
 
 function renderSimpleMarkdown(text) {
