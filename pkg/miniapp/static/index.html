@@ -684,6 +684,26 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .dev-target-delete {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    padding: 6px;
+    margin: -6px;
+    margin-left: 8px;
+    border-radius: 50%;
+    color: var(--hint);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .dev-target-delete:active {
+    color: #ff3b30;
+    background: rgba(255, 59, 48, 0.1);
+  }
 
 </style>
 </head>
@@ -1346,12 +1366,23 @@ function renderDevFromData(data) {
       '<span class="dev-target-dot' + dotClass + '"></span>' +
       '<span class="dev-target-name">' + escapeHtml(t.name) + '</span>' +
       '<span class="dev-target-url">' + escapeHtml(displayUrl) + '</span>' +
+      '<span class="dev-target-delete" data-del-id="' + escapeAttr(t.id) + '" data-del-name="' + escapeAttr(t.name) + '">&times;</span>' +
     '</div>';
   }).join('');
 }
 
 // Delegate click on target cards
 document.getElementById('dev-targets-list').addEventListener('click', function(e) {
+  var delBtn = e.target.closest('.dev-target-delete');
+  if (delBtn) {
+    e.stopPropagation();
+    var id = delBtn.dataset.delId;
+    var name = delBtn.dataset.delName;
+    if (confirm('Remove "' + name + '"?')) {
+      postDevUnregister(id);
+    }
+    return;
+  }
   var card = e.target.closest('[data-dev-id]');
   if (!card) return;
   postDevAction(card.dataset.devId);
@@ -1366,6 +1397,18 @@ async function postDevAction(id) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+    });
+    var data = await res.json();
+    if (!data.error) renderDevFromData(data);
+  } catch(e) {}
+}
+
+async function postDevUnregister(id) {
+  try {
+    var res = await fetch(API_BASE + '/miniapp/api/dev?initData=' + encodeURIComponent(initData), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'unregister', id: id }),
     });
     var data = await res.json();
     if (!data.error) renderDevFromData(data);
