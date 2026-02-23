@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -167,6 +168,7 @@ type SessionConfig struct {
 }
 
 type AgentDefaults struct {
+	Timezone            string   `json:"timezone,omitempty"              env:"PICOCLAW_AGENTS_DEFAULTS_TIMEZONE"`
 	Workspace           string   `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
 	RestrictToWorkspace bool     `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 	Provider            string   `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
@@ -513,6 +515,15 @@ func LoadConfig(path string) (*Config, error) {
 	// Validate model_list for uniqueness and required fields
 	if err := cfg.ValidateModelList(); err != nil {
 		return nil, err
+	}
+
+	// Apply timezone from config — overrides process-wide default
+	if tz := cfg.Agents.Defaults.Timezone; tz != "" {
+		loc, err := time.LoadLocation(tz)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timezone %q: %w", tz, err)
+		}
+		time.Local = loc
 	}
 
 	return cfg, nil

@@ -2,6 +2,7 @@
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
+      "timezone": "Asia/Makassar",
       "restrict_to_workspace": true,
       "model": "gpt4",
       "max_tokens": 8192,
