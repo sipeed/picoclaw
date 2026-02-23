@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/net/proxy"
 )
 
 const (
@@ -23,6 +26,7 @@ type SearchProvider interface {
 
 type BraveSearchProvider struct {
 	apiKey string
+	proxy  string
 }
 
 func (p *BraveSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
@@ -37,7 +41,10 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Subscription-Token", p.apiKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client, err := clientForProxy(p.proxy, 10*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("failed to create http client: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -88,6 +95,7 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 type TavilySearchProvider struct {
 	apiKey  string
 	baseURL string
+	proxy   string
 }
 
 func (p *TavilySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
@@ -119,7 +127,10 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client, err := clientForProxy(p.proxy, 10*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("failed to create http client: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -167,7 +178,10 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 	return strings.Join(lines, "\n"), nil
 }
 
-type DuckDuckGoSearchProvider struct{}
+// duckduckgo provider may use an optional proxy (socks5 or http)
+type DuckDuckGoSearchProvider struct {
+	proxy string
+}
 
 func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
@@ -179,7 +193,10 @@ func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, cou
 
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client, err := clientForProxy(p.proxy, 10*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("failed to create http client: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -259,8 +276,64 @@ func stripTags(content string) string {
 	return re.ReplaceAllString(content, "")
 }
 
+// clientForProxy returns an *http.Client honoring the provided proxy string.
+// Supported formats:
+// - "socks5://host:port" or plain "host:port" (treated as socks5)
+// - any URL with scheme (http://, https://) will be used as an HTTP proxy via ProxyURL
+func clientForProxy(proxyStr string, timeout time.Duration) (*http.Client, error) {
+	transport := &http.Transport{
+		TLSHandshakeTimeout: 15 * time.Second,
+		MaxIdleConns:        10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  false,
+	}
+
+	if proxyStr == "" {
+		return &http.Client{Timeout: timeout, Transport: transport}, nil
+	}
+
+	// If no scheme provided, assume socks5
+	if !strings.Contains(proxyStr, "://") {
+		// treat as socks5 host:port
+		dialer, err := proxy.SOCKS5("tcp", proxyStr, nil, proxy.Direct)
+		if err != nil {
+			return nil, err
+		}
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		}
+		return &http.Client{Timeout: timeout, Transport: transport}, nil
+	}
+
+	u, err := url.Parse(proxyStr)
+	if err != nil {
+		return nil, err
+	}
+
+	switch u.Scheme {
+	case "socks5", "socks5h":
+		var auth *proxy.Auth
+		if u.User != nil {
+			password, _ := u.User.Password()
+			auth = &proxy.Auth{User: u.User.Username(), Password: password}
+		}
+		dialer, err := proxy.SOCKS5("tcp", u.Host, auth, proxy.Direct)
+		if err != nil {
+			return nil, err
+		}
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		}
+		return &http.Client{Timeout: timeout, Transport: transport}, nil
+	default:
+		transport.Proxy = http.ProxyURL(u)
+		return &http.Client{Timeout: timeout, Transport: transport}, nil
+	}
+}
+
 type PerplexitySearchProvider struct {
 	apiKey string
+	proxy  string
 }
 
 func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
@@ -295,7 +368,11 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client, err := clientForProxy(p.proxy, 30*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("failed to create http client: %w", err)
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -348,6 +425,7 @@ type WebSearchToolOptions struct {
 	PerplexityAPIKey     string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
+	Proxy                string
 }
 
 func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
@@ -356,12 +434,12 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 
 	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
-		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey}
+		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey, proxy: opts.Proxy}
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
 		}
 	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
-		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey}
+		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey, proxy: opts.Proxy}
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
 		}
@@ -369,12 +447,13 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 		provider = &TavilySearchProvider{
 			apiKey:  opts.TavilyAPIKey,
 			baseURL: opts.TavilyBaseURL,
+			proxy:   opts.Proxy,
 		}
 		if opts.TavilyMaxResults > 0 {
 			maxResults = opts.TavilyMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
-		provider = &DuckDuckGoSearchProvider{}
+		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy}
 		if opts.DuckDuckGoMaxResults > 0 {
 			maxResults = opts.DuckDuckGoMaxResults
 		}

@@ -106,6 +106,7 @@ func registerSharedTools(
 			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+				Proxy:                cfg.Tools.Web.Proxy,
 		}); searchTool != nil {
 			agent.Tools.Register(searchTool)
 		}

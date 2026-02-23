@@ -453,6 +453,7 @@ type WebToolsConfig struct {
 	Tavily     TavilyConfig     `json:"tavily"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 	Perplexity PerplexityConfig `json:"perplexity"`
+	Proxy      string           `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_WEB_PROXY"`
 }
 
 type CronToolsConfig struct {
