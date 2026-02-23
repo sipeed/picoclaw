@@ -1623,8 +1623,18 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		callLLM := func() (*providers.LLMResponse, error) {
-			if len(agent.Candidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
+			// Plan model switching: use plan model during interviewing/review phases
+			candidates := agent.Candidates
+			primaryModel := agent.Model
+			if isPlanPreExecution(planSnapshot) && agent.PlanModel != "" {
+				candidates = agent.PlanCandidates
+				primaryModel = agent.PlanModel
+				logger.InfoCF("agent", "Using plan model",
+					map[string]any{"agent_id": agent.ID, "plan_model": agent.PlanModel})
+			}
+
+			if len(candidates) > 1 && al.fallback != nil {
+				fbResult, fbErr := al.fallback.Execute(ctx, candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						p := al.resolveProvider(provider, model, agent.Provider)
 						return doCall(ctx, p, model)
@@ -1640,7 +1650,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return doCall(ctx, agent.Provider, agent.Model)
+			return doCall(ctx, agent.Provider, primaryModel)
 		}
 
 		// Retry loop for context/token errors

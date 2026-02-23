@@ -32,6 +32,9 @@ type AgentInstance struct {
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
 	Candidates     []providers.FallbackCandidate
+	PlanModel      string
+	PlanFallbacks  []string
+	PlanCandidates []providers.FallbackCandidate
 
 	// Interview staleness tracking: consecutive turns where MEMORY.md was not updated.
 	interviewStaleCount  int
@@ -108,6 +111,18 @@ func NewAgentInstance(
 	}
 	candidates := providers.ResolveCandidates(modelCfg, defaults.Provider)
 
+	// Resolve plan model (for interviewing/review phases)
+	planModel := resolvePlanModel(agentCfg, defaults)
+	planFallbacks := resolvePlanFallbacks(agentCfg, defaults)
+	var planCandidates []providers.FallbackCandidate
+	if planModel != "" {
+		planModelCfg := providers.ModelConfig{
+			Primary:   planModel,
+			Fallbacks: planFallbacks,
+		}
+		planCandidates = providers.ResolveCandidates(planModelCfg, defaults.Provider)
+	}
+
 	return &AgentInstance{
 		ID:             agentID,
 		Name:           agentName,
@@ -126,6 +141,9 @@ func NewAgentInstance(
 		Subagents:      subagents,
 		SkillsFilter:   skillsFilter,
 		Candidates:     candidates,
+		PlanModel:      planModel,
+		PlanFallbacks:  planFallbacks,
+		PlanCandidates: planCandidates,
 	}
 }
 
@@ -156,6 +174,22 @@ func resolveAgentFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentD
 		return agentCfg.Model.Fallbacks
 	}
 	return defaults.ModelFallbacks
+}
+
+// resolvePlanModel resolves the plan model for an agent (used during interviewing/review phases).
+func resolvePlanModel(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
+	if agentCfg != nil && agentCfg.PlanModel != nil && strings.TrimSpace(agentCfg.PlanModel.Primary) != "" {
+		return strings.TrimSpace(agentCfg.PlanModel.Primary)
+	}
+	return defaults.PlanModel
+}
+
+// resolvePlanFallbacks resolves the plan model fallbacks for an agent.
+func resolvePlanFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) []string {
+	if agentCfg != nil && agentCfg.PlanModel != nil && agentCfg.PlanModel.Fallbacks != nil {
+		return agentCfg.PlanModel.Fallbacks
+	}
+	return defaults.PlanModelFallbacks
 }
 
 func expandHome(path string) string {

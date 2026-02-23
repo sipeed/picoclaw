@@ -135,6 +135,7 @@ type AgentConfig struct {
 	Name      string            `json:"name,omitempty"`
 	Workspace string            `json:"workspace,omitempty"`
 	Model     *AgentModelConfig `json:"model,omitempty"`
+	PlanModel *AgentModelConfig `json:"plan_model,omitempty"`
 	Skills    []string          `json:"skills,omitempty"`
 	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
 }
@@ -175,6 +176,8 @@ type AgentDefaults struct {
 	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
 	ImageModel          string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
+	PlanModel           string   `json:"plan_model,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_PLAN_MODEL"`
+	PlanModelFallbacks  []string `json:"plan_model_fallbacks,omitempty"`
 	MaxTokens            int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature          *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations    int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
