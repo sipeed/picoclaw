@@ -88,7 +88,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"volcengine", "vllm", "qwen":
+		"volcengine", "vllm", "qwen", "mistral":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -186,6 +186,8 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://dashscope.aliyuncs.com/compatible-mode/v1"
 	case "vllm":
 		return "http://localhost:8000/v1"
+	case "mistral":
+		return "https://api.mistral.ai/v1"
 	default:
 		return ""
 	}

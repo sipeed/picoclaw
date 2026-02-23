@@ -102,7 +102,7 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 		"search_depth":        "advanced",
 		"include_answer":      false,
 		"include_images":      false,
-		"include_raw_content": "false",
+		"include_raw_content": false,
 		"max_results":         count,
 	}
 

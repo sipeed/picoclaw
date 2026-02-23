@@ -2,8 +2,9 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
@@ -12,16 +13,18 @@ import (
 // EditFileTool edits a file by replacing old_text with new_text.
 // The old_text must exist exactly in the file.
 type EditFileTool struct {
-	allowedDir string
-	restrict   bool
+	fs fileSystem
 }
 
 // NewEditFileTool creates a new EditFileTool with optional directory restriction.
-func NewEditFileTool(allowedDir string, restrict bool) *EditFileTool {
-	return &EditFileTool{
-		allowedDir: allowedDir,
-		restrict:   restrict,
+func NewEditFileTool(workspace string, restrict bool) *EditFileTool {
+	var fs fileSystem
+	if restrict {
+		fs = &sandboxFs{workspace: workspace}
+	} else {
+		fs = &hostFs{}
 	}
+	return &EditFileTool{fs: fs}
 }
 
 func (t *EditFileTool) Name() string {
@@ -69,62 +72,51 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("new_text is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.allowedDir, t.restrict)
-	if err != nil {
-		return ErrorResult(err.Error())
-	}
-
-	var content []byte
 	sb := sandbox.SandboxFromContext(ctx)
 	if sb != nil {
-		content, err = sb.Fs().ReadFile(ctx, path)
-	} else {
-		content, err = os.ReadFile(resolvedPath)
-	}
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ErrorResult(fmt.Sprintf("file not found: %s", path))
+		content, err := sb.Fs().ReadFile(ctx, path)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 		}
-		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
-	}
 
-	contentStr := string(content)
+		contentStr := string(content)
+		if !strings.Contains(contentStr, oldText) {
+			return ErrorResult("old_text not found in file. Make sure it matches exactly")
+		}
 
-	if !strings.Contains(contentStr, oldText) {
-		return ErrorResult("old_text not found in file. Make sure it matches exactly")
-	}
+		count := strings.Count(contentStr, oldText)
+		if count > 1 {
+			return ErrorResult(
+				fmt.Sprintf("old_text appears %d times. Please provide more context to make it unique", count),
+			)
+		}
 
-	count := strings.Count(contentStr, oldText)
-	if count > 1 {
-		return ErrorResult(
-			fmt.Sprintf("old_text appears %d times. Please provide more context to make it unique", count),
-		)
-	}
-
-	newContent := strings.Replace(contentStr, oldText, newText, 1)
-
-	if sb != nil {
+		newContent := strings.Replace(contentStr, oldText, newText, 1)
 		err = sb.Fs().WriteFile(ctx, path, []byte(newContent), true)
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 		}
-	} else {
-		err = os.WriteFile(resolvedPath, []byte(newContent), 0o644)
-		if err != nil {
-			return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
-		}
+		return SilentResult(fmt.Sprintf("File edited: %s", path))
 	}
 
+	if err := editFile(t.fs, path, oldText, newText); err != nil {
+		return ErrorResult(err.Error())
+	}
 	return SilentResult(fmt.Sprintf("File edited: %s", path))
 }
 
 type AppendFileTool struct {
-	workspace string
-	restrict  bool
+	fs fileSystem
 }
 
 func NewAppendFileTool(workspace string, restrict bool) *AppendFileTool {
-	return &AppendFileTool{workspace: workspace, restrict: restrict}
+	var fs fileSystem
+	if restrict {
+		fs = &sandboxFs{workspace: workspace}
+	} else {
+		fs = &hostFs{}
+	}
+	return &AppendFileTool{fs: fs}
 }
 
 func (t *AppendFileTool) Name() string {
@@ -163,16 +155,10 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *Tool
 		return ErrorResult("content is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
-	if err != nil {
-		return ErrorResult(err.Error())
-	}
-
 	sb := sandbox.SandboxFromContext(ctx)
 	if sb != nil {
 		// Implement Append using Read + Write if no Append in FsBridge
-		var oldContent []byte
-		oldContent, err = sb.Fs().ReadFile(ctx, path)
+		oldContent, err := sb.Fs().ReadFile(ctx, path)
 		if err != nil && !strings.Contains(err.Error(), "no such file") {
 			return ErrorResult(fmt.Sprintf("failed to read file for append: %v", err))
 		}
@@ -184,15 +170,52 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *Tool
 		return SilentResult(fmt.Sprintf("Appended to %s", path))
 	}
 
-	f, err := os.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to open file: %v", err))
+	if err := appendFile(t.fs, path, content); err != nil {
+		return ErrorResult(err.Error())
 	}
-	defer f.Close()
-
-	if _, err := f.WriteString(content); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to append to file: %v", err))
-	}
-
 	return SilentResult(fmt.Sprintf("Appended to %s", path))
+}
+
+// editFile reads the file via sysFs, performs the replacement, and writes back.
+// It uses a fileSystem interface, allowing the same logic for both restricted and unrestricted modes.
+func editFile(sysFs fileSystem, path, oldText, newText string) error {
+	content, err := sysFs.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	newContent, err := replaceEditContent(content, oldText, newText)
+	if err != nil {
+		return err
+	}
+
+	return sysFs.WriteFile(path, newContent)
+}
+
+// appendFile reads the existing content (if any) via sysFs, appends new content, and writes back.
+func appendFile(sysFs fileSystem, path, appendContent string) error {
+	content, err := sysFs.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	newContent := append(content, []byte(appendContent)...)
+	return sysFs.WriteFile(path, newContent)
+}
+
+// replaceEditContent handles the core logic of finding and replacing a single occurrence of oldText.
+func replaceEditContent(content []byte, oldText, newText string) ([]byte, error) {
+	contentStr := string(content)
+
+	if !strings.Contains(contentStr, oldText) {
+		return nil, fmt.Errorf("old_text not found in file. Make sure it matches exactly")
+	}
+
+	count := strings.Count(contentStr, oldText)
+	if count > 1 {
+		return nil, fmt.Errorf("old_text appears %d times. Please provide more context to make it unique", count)
+	}
+
+	newContent := strings.Replace(contentStr, oldText, newText, 1)
+	return []byte(newContent), nil
 }
