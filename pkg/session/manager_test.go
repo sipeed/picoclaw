@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSanitizeFilename(t *testing.T) {
@@ -70,5 +71,48 @@ func TestSave_RejectsPathTraversal(t *testing.T) {
 		if err := sm.Save(key); err == nil {
 			t.Errorf("Save(%q) should have failed but didn't", key)
 		}
+	}
+}
+
+func TestGetSessionSnapshot_IsDeepCopy(t *testing.T) {
+	sm := NewSessionManager(t.TempDir())
+	key := "agent:main:main"
+	sm.AddMessage(key, "user", "hello")
+
+	snapshot, ok := sm.GetSessionSnapshot(key)
+	if !ok {
+		t.Fatalf("expected snapshot for key %q", key)
+	}
+	if len(snapshot.Messages) != 1 {
+		t.Fatalf("expected 1 message in snapshot, got %d", len(snapshot.Messages))
+	}
+
+	// Mutate returned snapshot; internal state should remain unchanged.
+	snapshot.Messages[0].Content = "mutated"
+	history := sm.GetHistory(key)
+	if history[0].Content != "hello" {
+		t.Fatalf("snapshot mutation leaked into manager state, got %q", history[0].Content)
+	}
+}
+
+func TestListSessionSnapshots_SortedByUpdatedDesc(t *testing.T) {
+	sm := NewSessionManager(t.TempDir())
+	sm.AddMessage("session-a", "user", "old")
+	time.Sleep(10 * time.Millisecond)
+	sm.AddMessage("session-b", "user", "new")
+
+	snapshots := sm.ListSessionSnapshots()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(snapshots))
+	}
+	if snapshots[0].Key != "session-b" {
+		t.Fatalf("expected newest session first, got %q", snapshots[0].Key)
+	}
+
+	// Ensure returned slices are copies.
+	snapshots[0].Messages[0].Content = "changed"
+	history := sm.GetHistory("session-b")
+	if history[0].Content != "new" {
+		t.Fatalf("snapshot mutation leaked into manager state, got %q", history[0].Content)
 	}
 }

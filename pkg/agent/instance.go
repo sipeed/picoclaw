@@ -51,12 +51,16 @@ func NewAgentInstance(
 	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
+	execTool := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+	toolsRegistry.Register(execTool)
+	toolsRegistry.Register(tools.NewProcessTool(execTool.ProcessManager()))
 	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
+	toolsRegistry.Register(tools.NewSessionsListTool(sessionsManager))
+	toolsRegistry.Register(tools.NewSessionsHistoryTool(sessionsManager))
 
 	contextBuilder := NewContextBuilder(workspace)
 

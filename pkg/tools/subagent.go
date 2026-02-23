@@ -85,6 +85,23 @@ func (sm *SubagentManager) Spawn(
 	task, label, agentID, originChannel, originChatID string,
 	callback AsyncCallback,
 ) (string, error) {
+	subagentTask, err := sm.SpawnTask(ctx, task, label, agentID, originChannel, originChatID, callback)
+	if err != nil {
+		return "", err
+	}
+
+	if label != "" {
+		return fmt.Sprintf("Spawned subagent '%s' for task: %s (id: %s)", label, task, subagentTask.ID), nil
+	}
+	return fmt.Sprintf("Spawned subagent for task: %s (id: %s)", task, subagentTask.ID), nil
+}
+
+// SpawnTask starts a background subagent task and returns an immutable snapshot of the created task.
+func (sm *SubagentManager) SpawnTask(
+	ctx context.Context,
+	task, label, agentID, originChannel, originChatID string,
+	callback AsyncCallback,
+) (*SubagentTask, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -103,13 +120,11 @@ func (sm *SubagentManager) Spawn(
 	}
 	sm.tasks[taskID] = subagentTask
 
-	// Start task in background with context cancellation support
+	// Start task in background with context cancellation support.
 	go sm.runTask(ctx, subagentTask, callback)
 
-	if label != "" {
-		return fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task), nil
-	}
-	return fmt.Sprintf("Spawned subagent for task: %s", task), nil
+	snapshot := *subagentTask
+	return &snapshot, nil
 }
 
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {

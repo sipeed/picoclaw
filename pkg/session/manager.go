@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -279,4 +280,59 @@ func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 		session.Messages = msgs
 		session.Updated = time.Now()
 	}
+}
+
+// GetSessionSnapshot returns a deep-copied snapshot of a session by key.
+func (sm *SessionManager) GetSessionSnapshot(key string) (*Session, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	stored, ok := sm.sessions[key]
+	if !ok {
+		return nil, false
+	}
+
+	snapshot := Session{
+		Key:     stored.Key,
+		Summary: stored.Summary,
+		Created: stored.Created,
+		Updated: stored.Updated,
+	}
+	if len(stored.Messages) > 0 {
+		snapshot.Messages = make([]providers.Message, len(stored.Messages))
+		copy(snapshot.Messages, stored.Messages)
+	} else {
+		snapshot.Messages = []providers.Message{}
+	}
+
+	return &snapshot, true
+}
+
+// ListSessionSnapshots returns deep-copied snapshots of all sessions, sorted by Updated descending.
+func (sm *SessionManager) ListSessionSnapshots() []Session {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	snapshots := make([]Session, 0, len(sm.sessions))
+	for _, stored := range sm.sessions {
+		snapshot := Session{
+			Key:     stored.Key,
+			Summary: stored.Summary,
+			Created: stored.Created,
+			Updated: stored.Updated,
+		}
+		if len(stored.Messages) > 0 {
+			snapshot.Messages = make([]providers.Message, len(stored.Messages))
+			copy(snapshot.Messages, stored.Messages)
+		} else {
+			snapshot.Messages = []providers.Message{}
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+
+	sort.Slice(snapshots, func(i, j int) bool {
+		return snapshots[i].Updated.After(snapshots[j].Updated)
+	})
+
+	return snapshots
 }
