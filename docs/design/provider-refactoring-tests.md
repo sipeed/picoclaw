@@ -1,7 +1,5 @@
 # Provider Architecture Refactoring - Test Suite Summary
 
-> PRD: `tasks/prd-provider-refactoring.md`
-
 This document summarizes the complete test suite designed for the Provider architecture refactoring.
 
 ## Test File Structure
@@ -12,10 +10,8 @@ pkg/
 │   ├── model_config_test.go      # US-001, US-002: ModelConfig struct and GetModelConfig tests
 │   └── migration_test.go         # US-003: Backward compatibility and migration tests
 ├── providers/
-│   ├── registry_test.go          # US-006: Load balancing tests
-│   ├── integration_test.go       # E2E integration tests
-│   └── factory/
-│       └── factory_test.go       # US-004, US-005: Provider factory tests
+│   ├── factory_test.go           # US-004, US-005: Provider factory tests
+│   └── factory_provider_test.go  # Factory provider integration tests
 ```
 
 ---
@@ -122,7 +118,6 @@ go test ./pkg/... -race
 # Run specific package tests
 go test ./pkg/config -v
 go test ./pkg/providers -v
-go test ./pkg/providers/factory -v
 
 # Run E2E tests
 go test ./pkg/providers -run TestE2E -v
