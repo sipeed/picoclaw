@@ -26,6 +26,31 @@ var chatHTML []byte
 //go:embed logo.jpg
 var logoImage []byte
 
+// clientConn wraps a WebSocket connection with a write mutex for safe concurrent writes
+type clientConn struct {
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+}
+
+// writeMessage safely writes a message to the WebSocket connection
+func (c *clientConn) writeMessage(messageType int, data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.conn.WriteMessage(messageType, data)
+}
+
+// writeControl safely writes a control message to the WebSocket connection
+func (c *clientConn) writeControl(messageType int, data []byte, deadline time.Time) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.conn.WriteControl(messageType, data, deadline)
+}
+
+// close closes the underlying WebSocket connection
+func (c *clientConn) close() error {
+	return c.conn.Close()
+}
+
 // Channel implements the Channel interface for WebSocket connections
 type Channel struct {
 	config    config.WebSocketConfig
@@ -34,7 +59,7 @@ type Channel struct {
 	allowList []string
 	server    *http.Server
 	upgrader  websocket.Upgrader
-	clients   sync.Map // map[string]*websocket.Conn
+	clients   sync.Map // map[string]*clientConn
 	clientsMu sync.RWMutex
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -182,8 +207,8 @@ func (c *Channel) Stop(ctx context.Context) error {
 
 	// Close all client connections
 	c.clients.Range(func(key, value any) bool {
-		if conn, ok := value.(*websocket.Conn); ok {
-			conn.Close()
+		if client, ok := value.(*clientConn); ok {
+			client.close()
 		}
 		c.clients.Delete(key)
 		return true
@@ -235,8 +260,8 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if msg.ChatID != "" && msg.ChatID != "broadcast" {
 		// Send to specific client
 		if conn, ok := c.clients.Load(msg.ChatID); ok {
-			if wsConn, ok := conn.(*websocket.Conn); ok {
-				err := wsConn.WriteMessage(websocket.TextMessage, data)
+			if client, ok := conn.(*clientConn); ok {
+				err := client.writeMessage(websocket.TextMessage, data)
 				if err != nil {
 					// Connection may be dead, clean it up
 					logger.WarnCF("websocket", "Failed to send to client, removing connection", map[string]any{
@@ -256,8 +281,8 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	var lastErr error
 	deadClients := make([]any, 0)
 	c.clients.Range(func(key, value any) bool {
-		if conn, ok := value.(*websocket.Conn); ok {
-			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		if client, ok := value.(*clientConn); ok {
+			if err := client.writeMessage(websocket.TextMessage, data); err != nil {
 				logger.WarnCF("websocket", "Failed to send to client", map[string]any{
 					"client": key,
 					"error":  err.Error(),
@@ -300,20 +325,21 @@ func (c *Channel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Generate client ID from remote address
 	clientID := r.RemoteAddr
-	c.clients.Store(clientID, conn)
+	client := &clientConn{conn: conn}
+	c.clients.Store(clientID, client)
 
 	logger.InfoCF("websocket", "New client connected", map[string]any{
 		"client_id": clientID,
 	})
 
 	// Handle client messages
-	go c.handleClient(clientID, conn)
+	go c.handleClient(clientID, client)
 }
 
 // handleClient processes messages from a WebSocket client
-func (c *Channel) handleClient(clientID string, conn *websocket.Conn) {
+func (c *Channel) handleClient(clientID string, client *clientConn) {
 	defer func() {
-		conn.Close()
+		client.close()
 		c.clients.Delete(clientID)
 		logger.InfoCF("websocket", "Client disconnected", map[string]any{
 			"client_id": clientID,
@@ -321,9 +347,9 @@ func (c *Channel) handleClient(clientID string, conn *websocket.Conn) {
 	}()
 
 	// Set up ping/pong handlers for connection health check
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	client.conn.SetPongHandler(func(string) error {
+		client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 
@@ -338,7 +364,7 @@ func (c *Channel) handleClient(clientID string, conn *websocket.Conn) {
 	// Read messages in a goroutine
 	go func() {
 		for {
-			_, message, err := conn.ReadMessage()
+			_, message, err := client.conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 					logger.ErrorCF("websocket", "WebSocket error", map[string]any{
@@ -358,7 +384,7 @@ func (c *Channel) handleClient(clientID string, conn *websocket.Conn) {
 			return
 		case <-pingTicker.C:
 			// Send ping to check connection health
-			if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
+			if err := client.writeControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
 				logger.WarnCF("websocket", "Failed to send ping", map[string]any{
 					"client_id": clientID,
 					"error":     err.Error(),
