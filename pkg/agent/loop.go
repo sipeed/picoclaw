@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
+	"github.com/sipeed/picoclaw/pkg/swarm"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -38,6 +39,12 @@ type AgentLoop struct {
 	summarizing    sync.Map
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
+
+	// Swarm mode support
+	swarmEnabled   bool
+	swarmDiscovery *swarm.DiscoveryService
+	swarmHandoff   *swarm.HandoffCoordinator
+	swarmLoad      *swarm.LoadMonitor
 }
 
 // processOptions configures how a message is processed
@@ -69,7 +76,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
-	return &AgentLoop{
+	al := &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
 		registry:    registry,
@@ -77,6 +84,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
 	}
+
+	// Initialize swarm mode if enabled
+	if cfg.Swarm.Enabled {
+		al.initSwarm()
+	}
+
+	return al
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
@@ -319,6 +333,22 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"matched_by":  route.MatchedBy,
 		})
 
+	// Check if we should handoff this request to another node
+	if al.swarmEnabled && al.shouldHandoff(agent, processOptions{
+		SessionKey:  sessionKey,
+		Channel:     msg.Channel,
+		ChatID:      msg.ChatID,
+		UserMessage: msg.Content,
+	}) {
+		handoffResp, err := al.initiateSwarmHandoff(ctx, agent, sessionKey, msg)
+		if err == nil && handoffResp != nil && handoffResp.Accepted {
+			// Handoff was successful, return the response
+			return fmt.Sprintf("Your request has been handed off to node %s for processing.", handoffResp.NodeID), nil
+		}
+		// If handoff failed, continue processing locally
+		logger.WarnCF("swarm", "Handoff failed, processing locally", map[string]any{"error": err})
+	}
+
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
@@ -388,6 +418,10 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 // runAgentLoop is the core message processing logic.
 func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
+	// Track active session for swarm load monitoring
+	al.IncrementSwarmSessions()
+	defer al.DecrementSwarmSessions()
+
 	// 0. Record last channel for heartbeat notifications (skip internal channels)
 	if opts.Channel != "" && opts.ChatID != "" {
 		// Don't record internal channels (cli, system, subagent)
@@ -1144,3 +1178,290 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
 }
+
+// Swarm methods
+
+// initSwarm initializes the swarm mode components.
+func (al *AgentLoop) initSwarm() {
+	logger.InfoC("swarm", "Initializing swarm mode")
+
+	// Convert config to swarm config
+	swarmConfig := al.convertToSwarmConfig(al.cfg.Swarm)
+
+	// Create discovery service
+	discovery, err := swarm.NewDiscoveryService(swarmConfig)
+	if err != nil {
+		logger.ErrorCF("swarm", "Failed to create discovery service", map[string]any{"error": err.Error()})
+		return
+	}
+
+	// Start discovery
+	if err := discovery.Start(); err != nil {
+		logger.ErrorCF("swarm", "Failed to start discovery service", map[string]any{"error": err.Error()})
+		return
+	}
+
+	al.swarmDiscovery = discovery
+
+	// Create handoff coordinator
+	handoffConfig := swarm.HandoffConfig{
+		Enabled:       al.cfg.Swarm.Handoff.Enabled,
+		LoadThreshold: al.cfg.Swarm.Handoff.LoadThreshold,
+		Timeout:       swarm.Duration{Duration: time.Duration(al.cfg.Swarm.Handoff.Timeout) * time.Second},
+		MaxRetries:    al.cfg.Swarm.Handoff.MaxRetries,
+		RetryDelay:    swarm.Duration{Duration: time.Duration(al.cfg.Swarm.Handoff.RetryDelay) * time.Second},
+	}
+
+	al.swarmHandoff, err = swarm.NewHandoffCoordinator(discovery, handoffConfig)
+	if err != nil {
+		logger.ErrorCF("swarm", "Failed to create handoff coordinator", map[string]any{"error": err.Error()})
+		return
+	}
+
+	// Create load monitor
+	loadConfig := swarm.LoadMonitorConfig{
+		Enabled:      al.cfg.Swarm.LoadMonitor.Enabled,
+		Interval:     swarm.Duration{Duration: time.Duration(al.cfg.Swarm.LoadMonitor.Interval) * time.Second},
+		SampleSize:   al.cfg.Swarm.LoadMonitor.SampleSize,
+		CPUWeight:    al.cfg.Swarm.LoadMonitor.CPUWeight,
+		MemoryWeight: al.cfg.Swarm.LoadMonitor.MemoryWeight,
+		SessionWeight: al.cfg.Swarm.LoadMonitor.SessionWeight,
+	}
+
+	al.swarmLoad = swarm.NewLoadMonitor(&loadConfig)
+	if al.cfg.Swarm.LoadMonitor.Enabled {
+		al.swarmLoad.Start()
+
+		// Register callback to update discovery with load
+		al.swarmLoad.OnThreshold(func(score float64) {
+			discovery.UpdateLoad(score)
+		})
+	}
+
+	al.swarmEnabled = true
+
+	// Register handoff tool to all agents
+	if al.cfg.Swarm.Handoff.Enabled {
+		handoffTool := tools.NewHandoffTool(al.swarmHandoff)
+		al.RegisterTool(handoffTool)
+	}
+
+	// Subscribe to node events for logging
+	discovery.Subscribe(func(event *swarm.NodeEvent) {
+		switch event.Event {
+		case swarm.EventJoin:
+			logger.InfoCF("swarm", "Node joined", map[string]any{"node_id": event.Node.ID})
+		case swarm.EventLeave:
+			logger.InfoCF("swarm", "Node left", map[string]any{"node_id": event.Node.ID})
+		case swarm.EventUpdate:
+			logger.DebugCF("swarm", "Node updated", map[string]any{
+				"node_id":     event.Node.ID,
+				"load_score":  event.Node.LoadScore,
+			})
+		}
+	})
+
+	logger.InfoCF("swarm", "Swarm mode initialized", map[string]any{
+		"node_id":      discovery.LocalNode().ID,
+		"bind_addr":    al.cfg.Swarm.BindAddr,
+		"bind_port":    al.cfg.Swarm.BindPort,
+		"handoff":      al.cfg.Swarm.Handoff.Enabled,
+	})
+}
+
+// convertToSwarmConfig converts the config.SwarmConfig to swarm.Config.
+func (al *AgentLoop) convertToSwarmConfig(cfg config.SwarmConfig) *swarm.Config {
+	return &swarm.Config{
+		Enabled:       cfg.Enabled,
+		NodeID:        cfg.NodeID,
+		BindAddr:      cfg.BindAddr,
+		BindPort:      cfg.BindPort,
+		AdvertiseAddr: cfg.AdvertiseAddr,
+		Discovery: swarm.DiscoveryConfig{
+			JoinAddrs:       cfg.Discovery.JoinAddrs,
+			GossipInterval:  swarm.Duration{Duration: time.Duration(cfg.Discovery.GossipInterval) * time.Second},
+			PushPullInterval: swarm.Duration{Duration: time.Duration(cfg.Discovery.PushPullInterval) * time.Second},
+			NodeTimeout:     swarm.Duration{Duration: time.Duration(cfg.Discovery.NodeTimeout) * time.Second},
+			DeadNodeTimeout: swarm.Duration{Duration: time.Duration(cfg.Discovery.DeadNodeTimeout) * time.Second},
+		},
+		Handoff: swarm.HandoffConfig{
+			Enabled:       cfg.Handoff.Enabled,
+			LoadThreshold: cfg.Handoff.LoadThreshold,
+			Timeout:       swarm.Duration{Duration: time.Duration(cfg.Handoff.Timeout) * time.Second},
+			MaxRetries:    cfg.Handoff.MaxRetries,
+			RetryDelay:    swarm.Duration{Duration: time.Duration(cfg.Handoff.RetryDelay) * time.Second},
+		},
+		RPC: swarm.RPCConfig{
+			Port:    cfg.RPC.Port,
+			Timeout: swarm.Duration{Duration: time.Duration(cfg.RPC.Timeout) * time.Second},
+		},
+		LoadMonitor: swarm.LoadMonitorConfig{
+			Enabled:       cfg.LoadMonitor.Enabled,
+			Interval:      swarm.Duration{Duration: time.Duration(cfg.LoadMonitor.Interval) * time.Second},
+			SampleSize:    cfg.LoadMonitor.SampleSize,
+			CPUWeight:     cfg.LoadMonitor.CPUWeight,
+			MemoryWeight:  cfg.LoadMonitor.MemoryWeight,
+			SessionWeight: cfg.LoadMonitor.SessionWeight,
+		},
+	}
+}
+
+// shouldHandoff determines if the current request should be handed off to another node.
+func (al *AgentLoop) shouldHandoff(agent *AgentInstance, opts processOptions) bool {
+	if !al.swarmEnabled || al.swarmHandoff == nil {
+		return false
+	}
+
+	// Check if load is too high
+	if al.swarmLoad != nil && al.swarmLoad.ShouldOffload() {
+		logger.InfoCF("swarm", "Load threshold exceeded, considering handoff", map[string]any{
+			"load_score": al.swarmLoad.GetCurrentLoad().Score,
+		})
+		return true
+	}
+
+	return false
+}
+
+// UpdateSwarmLoad updates the current load score reported to the swarm.
+func (al *AgentLoop) UpdateSwarmLoad(sessionCount int) {
+	if al.swarmLoad != nil {
+		al.swarmLoad.SetSessionCount(sessionCount)
+	}
+}
+
+// IncrementSwarmSessions increments the active session count.
+func (al *AgentLoop) IncrementSwarmSessions() {
+	if al.swarmLoad != nil {
+		al.swarmLoad.IncrementSessions()
+	}
+}
+
+// DecrementSwarmSessions decrements the active session count.
+func (al *AgentLoop) DecrementSwarmSessions() {
+	if al.swarmLoad != nil {
+		al.swarmLoad.DecrementSessions()
+	}
+}
+
+// GetSwarmStatus returns the current swarm status.
+func (al *AgentLoop) GetSwarmStatus() map[string]any {
+	if !al.swarmEnabled {
+		return map[string]any{"enabled": false}
+	}
+
+	status := map[string]any{
+		"enabled":   true,
+		"node_id":   al.swarmDiscovery.LocalNode().ID,
+		"handoff":   al.cfg.Swarm.Handoff.Enabled,
+	}
+
+	if al.swarmLoad != nil {
+		metrics := al.swarmLoad.GetCurrentLoad()
+		status["load"] = map[string]any{
+			"score":           metrics.Score,
+			"cpu_usage":       metrics.CPUUsage,
+			"memory_usage":    metrics.MemoryUsage,
+			"active_sessions": metrics.ActiveSessions,
+			"goroutines":      metrics.Goroutines,
+			"trend":           al.swarmLoad.GetTrend(),
+		}
+	}
+
+	if al.swarmDiscovery != nil {
+		members := al.swarmDiscovery.Members()
+		status["members"] = len(members)
+	}
+
+	return status
+}
+
+// ShutdownSwarm gracefully shuts down the swarm components.
+func (al *AgentLoop) ShutdownSwarm() error {
+	if !al.swarmEnabled {
+		return nil
+	}
+
+	var errs []string
+
+	if al.swarmLoad != nil {
+		al.swarmLoad.Stop()
+	}
+
+	if al.swarmHandoff != nil {
+		if err := al.swarmHandoff.Close(); err != nil {
+			errs = append(errs, fmt.Sprintf("handoff: %v", err))
+		}
+	}
+
+	if al.swarmDiscovery != nil {
+		if err := al.swarmDiscovery.Stop(); err != nil {
+			errs = append(errs, fmt.Sprintf("discovery: %v", err))
+		}
+	}
+
+	al.swarmEnabled = false
+
+	if len(errs) > 0 {
+		return fmt.Errorf("swarm shutdown errors: %s", strings.Join(errs, ", "))
+	}
+	return nil
+}
+
+// initiateSwarmHandoff initiates a handoff to another node.
+func (al *AgentLoop) initiateSwarmHandoff(ctx context.Context, agent *AgentInstance, sessionKey string, msg bus.InboundMessage) (*swarm.HandoffResponse, error) {
+	if al.swarmHandoff == nil {
+		return nil, swarm.ErrDiscoveryDisabled
+	}
+
+	// Build session history for handoff
+	sessionMessages := make([]swarm.SessionMessage, 0)
+	history := agent.Sessions.GetHistory(sessionKey)
+
+	for _, m := range history {
+		if m.Role == "user" || m.Role == "assistant" {
+			sessionMessages = append(sessionMessages, swarm.SessionMessage{
+				Role:    m.Role,
+				Content: m.Content,
+			})
+		}
+	}
+
+	// Create handoff request
+	req := &swarm.HandoffRequest{
+		Reason:          swarm.ReasonOverloaded,
+		SessionKey:      sessionKey,
+		SessionMessages: sessionMessages,
+		Context: map[string]any{
+			"channel":  msg.Channel,
+			"chat_id":  msg.ChatID,
+			"sender":   msg.SenderID,
+			"agent_id": agent.ID,
+		},
+		Metadata: map[string]string{
+			"original_channel": msg.Channel,
+			"original_chat_id": msg.ChatID,
+		},
+	}
+
+	logger.InfoCF("swarm", "Initiating handoff", map[string]any{
+		"session_key": sessionKey,
+		"reason":      req.Reason,
+		"history_len": len(sessionMessages),
+	})
+
+	// Execute handoff
+	resp, err := al.swarmHandoff.InitiateHandoff(ctx, req)
+
+	if resp != nil {
+		logger.InfoCF("swarm", "Handoff response received", map[string]any{
+			"accepted": resp.Accepted,
+			"node_id":  resp.NodeID,
+			"state":    resp.State,
+		})
+	}
+
+	return resp, err
+}
+
+
