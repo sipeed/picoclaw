@@ -9,7 +9,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -62,7 +62,7 @@ func NewWhatsAppNativeChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus, st
 }
 
 func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
-	log.Printf("Starting WhatsApp native channel (whatsmeow), store: %s", c.storePath)
+	logger.InfoCF("channels", "Starting WhatsApp native channel (whatsmeow)", map[string]any{"store": c.storePath})
 
 	if err := os.MkdirAll(c.storePath, 0700); err != nil {
 		return fmt.Errorf("create session store dir: %w", err)
@@ -116,14 +116,14 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 		}
 		for evt := range qrChan {
 			if evt.Event == "code" {
-				log.Println("Scan this QR code with WhatsApp (Linked Devices):")
+				logger.InfoCF("channels", "Scan this QR code with WhatsApp (Linked Devices):", nil)
 				qrterminal.GenerateWithConfig(evt.Code, qrterminal.Config{
 					Level:      qrterminal.L,
 					Writer:     os.Stdout,
 					HalfBlocks: true,
 				})
 			} else {
-				log.Printf("WhatsApp login event: %s", evt.Event)
+				logger.InfoCF("channels", "WhatsApp login event", map[string]any{"event": evt.Event})
 			}
 		}
 	} else {
@@ -134,12 +134,12 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 	}
 
 	c.setRunning(true)
-	log.Println("WhatsApp native channel connected")
+	logger.InfoCF("channels", "WhatsApp native channel connected", nil)
 	return nil
 }
 
 func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
-	log.Println("Stopping WhatsApp native channel...")
+	logger.InfoCF("channels", "Stopping WhatsApp native channel", nil)
 	c.mu.Lock()
 	client := c.client
 	container := c.container
@@ -195,7 +195,7 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 		metadata["peer_id"] = senderID
 	}
 
-	log.Printf("WhatsApp message from %s: %s...", senderID, utils.Truncate(content, 50))
+	logger.InfoCF("channels", "WhatsApp message received", map[string]any{"sender_id": senderID, "content_preview": utils.Truncate(content, 50)})
 	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
 }
 
