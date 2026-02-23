@@ -951,7 +951,8 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			entry.Caller = "" // strip for security
+			entry.Caller = ""                              // strip for security
+			entry.Fields = logger.SanitizeFields(entry.Fields) // mask sensitive values
 			if err := conn.WriteJSON(map[string]any{"type": "entry", "entry": entry}); err != nil {
 				return
 			}

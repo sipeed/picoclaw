@@ -292,6 +292,99 @@ func TestUnsubscribe_ClosesChannel(t *testing.T) {
 	}
 }
 
+func TestSanitizeFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    map[string]any
+		maskedK  []string // keys that should be "***"
+		safeK    []string // keys that should keep original value
+	}{
+		{
+			name:    "nil fields",
+			input:   nil,
+			maskedK: nil,
+		},
+		{
+			name:    "empty fields",
+			input:   map[string]any{},
+			maskedK: nil,
+		},
+		{
+			name:    "sensitive keys masked",
+			input:   map[string]any{"token": "abc123", "api_key": "sk-xxx", "secret": "s3cr3t", "password": "pass", "authorization": "Bearer tok"},
+			maskedK: []string{"token", "api_key", "secret", "password", "authorization"},
+		},
+		{
+			name:    "case insensitive",
+			input:   map[string]any{"Token": "abc", "API_KEY": "xyz", "Secret": "s", "PASSWORD": "p", "Authorization": "a", "Credential": "c"},
+			maskedK: []string{"Token", "API_KEY", "Secret", "PASSWORD", "Authorization", "Credential"},
+		},
+		{
+			name:    "safe keys preserved",
+			input:   map[string]any{"error": "something failed", "count": 42, "user_id": "12345", "component": "test"},
+			safeK:   []string{"error", "count", "user_id", "component"},
+		},
+		{
+			name:    "mixed keys",
+			input:   map[string]any{"token": "sensitive", "msg_signature": "safe", "corp_secret": "sensitive2", "nonce": "safe2"},
+			maskedK: []string{"token", "corp_secret"},
+			safeK:   []string{"msg_signature", "nonce"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizeFields(tt.input)
+			for _, k := range tt.maskedK {
+				if v, ok := result[k]; !ok || v != "***" {
+					t.Errorf("expected key %q to be masked, got %v", k, v)
+				}
+			}
+			for _, k := range tt.safeK {
+				if result[k] != tt.input[k] {
+					t.Errorf("expected key %q to be preserved as %v, got %v", k, tt.input[k], result[k])
+				}
+			}
+		})
+	}
+}
+
+func TestSanitizeFieldsDoesNotMutateOriginal(t *testing.T) {
+	original := map[string]any{"token": "secret_value", "name": "test"}
+	_ = SanitizeFields(original)
+	if original["token"] != "secret_value" {
+		t.Error("SanitizeFields should not mutate the original map")
+	}
+}
+
+func TestRecentLogsSanitizesFields(t *testing.T) {
+	initialLevel := GetLevel()
+	defer SetLevel(initialLevel)
+	SetLevel(DEBUG)
+
+	InfoCF("sanitize-test", "log with sensitive fields", map[string]any{
+		"token":    "my-secret-token",
+		"api_key":  "sk-12345",
+		"user_id":  "safe-value",
+	})
+
+	got := RecentLogs(DEBUG, "sanitize-test", 100)
+	if len(got) == 0 {
+		t.Fatal("expected at least one log entry")
+	}
+
+	last := got[len(got)-1]
+	if last.Fields["token"] != "***" {
+		t.Errorf("expected token to be masked, got %v", last.Fields["token"])
+	}
+	if last.Fields["api_key"] != "***" {
+		t.Errorf("expected api_key to be masked, got %v", last.Fields["api_key"])
+	}
+	if last.Fields["user_id"] != "safe-value" {
+		t.Errorf("expected user_id to be preserved, got %v", last.Fields["user_id"])
+	}
+}
+
 func TestParseLevel(t *testing.T) {
 	tests := []struct {
 		input string
