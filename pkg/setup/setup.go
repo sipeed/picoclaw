@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -13,33 +14,16 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-var Banner = `
-*******************************************************************
-
-  ██████╗ ██╗ ██████╗ ██████╗  ██████╗██╗      █████╗ ██╗    ██╗
-  ██╔══██╗██║██╔════╝██╔═══██╗██╔════╝██║     ██╔══██╗██║    ██║
-  ██████╔╝██║██║     ██║   ██║██║     ██║     ███████║██║ █╗ ██║
-  ██╔═══╝ ██║██║     ██║   ██║██║     ██║     ██╔══██║██║███╗██║
-  ██║     ██║╚██████╗╚██████╔╝╚██████╗███████╗██║  ██║╚███╔███╔╝
-  ╚═╝     ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝ 
-
-*******************************************************************
-`
-
-var About = `Tiny, Fast, and Deployable anywhere — automate the mundane, unleash your creativity`
-
-// Setup holds state for the interactive setup flow.
 type Setup struct {
 	ConfigPath string
 	Cfg        *config.Config
 	Steps      []string
+	Confirmed  bool
 }
 
-// NewSetup creates a Setup, loading existing config if present or using defaults.
 func NewSetup(configPath string) (*Setup, error) {
 	s := &Setup{ConfigPath: configPath}
 
-	// Try load existing config, otherwise use defaults
 	if _, err := os.Stat(configPath); err == nil {
 		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
@@ -54,78 +38,17 @@ func NewSetup(configPath string) (*Setup, error) {
 	return s, nil
 }
 
-// BuildDefs creates the per-step tui definitions based on the current config.
-// It only includes steps that are relevant (e.g., missing values) but always
-// exposes the provider selector so users can change it.
-func (s *Setup) BuildDefs() []stepDef {
-	defs := []stepDef{}
-
-	// Workspace: always allow the user to set/change workspace
-	defs = append(defs, stepDef{id: "workspace", kind: "text", prompt: "1. Workspace path (e.g. ~/.picoclaw/workspace)", info: "always allow the user to set/change workspace"})
-
-	// Provider: allow selection (always present so user can change)
-	defs = append(defs, stepDef{id: "provider", kind: "select", prompt: "2. Choose default provider", options: []string{
-		"openai", "openrouter", "anthropic", "ollama", "volcengine", "github_copilot", "groq", "gemini", "zhipu", "deepseek", "antigravity", "qwen",
-	}})
-
-	// Provider-specific API key prompts (only add when the provider is openai or when key is missing)
-	// For now we only prompt for OpenAI API key if empty.
-	if s.Cfg.Providers.OpenAI.APIKey == "" {
-		defs = append(defs, stepDef{id: "openai_api_key", kind: "text", prompt: "3. Provider API key (leave empty to skip)"})
-	}
-
-	// Default model
-	if s.Cfg.Agents.Defaults.Model == "" {
-		defs = append(defs, stepDef{id: "default_model", kind: "text", prompt: "4. Default model name (e.g. gpt-5.2)"})
-	}
-
-	// Web search option for OpenAI (only relevant if provider is openai but safe to show)
-	defs = append(defs, stepDef{id: "provider", kind: "select", prompt: "2. Choose channel", options: []string{
-		"telegram", "whatsapp", "discord", "feishu", "maxicam", "qq", "dingtalk", "slack", "line", "onebot", "wecom",
-	}})
-	// Install example skills (optional)
-	defs = append(defs, stepDef{id: "install_skills", kind: "yesno", prompt: "6. Install example skills now?", options: []string{"yes", "no"}})
-
-	return defs
-}
-
-// buildSteps inspects the config and creates a list of remaining steps for the user.
 func (s *Setup) buildSteps() {
 	s.Steps = []string{}
-	// If providers section is empty, prompt to add API keys
-	// if s.Cfg.Providers.IsEmpty() {
-	// 	s.Steps = append(s.Steps, "Choose workspace location")
-	// }
-
-	// Check model list for missing API keys
-	missing := 0
-	for _, m := range s.Cfg.ModelList {
-		if m.APIKey == "" {
-			missing++
-		}
-	}
-	if missing > 0 {
-		s.Steps = append(s.Steps, fmt.Sprintf("Add API keys for %d model(s) in model_list", missing))
-	}
-
-	// Workspace
-	if s.Cfg.Agents.Defaults.Workspace == "" {
-		s.Steps = append(s.Steps, "Configure workspace path")
-	}
 }
 
-// Run shows a minimal Bubble Tea UI listing steps and waits for user to continue.
 func (s *Setup) Run() error {
-	// Create the TUI model which owns a pointer to this Setup so it can
-	// update s.Cfg while the user answers questions.
-	m := tuiModel{setup: s, state: "intro"}
-
+	m := newTuiModel(s)
 	p := tea.NewProgram(m)
-	if err := p.Start(); err != nil {
+	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui start failed: %w", err)
 	}
 
-	// On exit, save the potentially-updated config back to disk.
 	if err := saveConfigPath(s.ConfigPath, s.Cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
@@ -133,8 +56,9 @@ func (s *Setup) Run() error {
 	return nil
 }
 
-// AskMissing is deprecated when using full TUI; keep for backward compatibility.
-func (s *Setup) AskMissing() error { return nil }
+func (s *Setup) AskMissing() error {
+	return nil
+}
 
 func saveConfigPath(path string, cfg *config.Config) error {
 	dir := filepath.Dir(path)
@@ -144,324 +68,875 @@ func saveConfigPath(path string, cfg *config.Config) error {
 	return config.SaveConfig(path, cfg)
 }
 
-// trimNewline kept for potential future use
-// func trimNewline(s string) string {
-// 	if len(s) == 0 {
-// 		return s
-// 	}
-// 	if s[len(s)-1] == '\n' {
-// 		s = s[:len(s)-1]
-// 	}
-// 	if len(s) > 0 && s[len(s)-1] == '\r' {
-// 		s = s[:len(s)-1]
-// 	}
-// 	return s
-// }
-
-// --- TUI model ---
 type tuiModel struct {
-	setup  *Setup
-	state  string // "intro", "questions", "done"
-	cursor int
-	// per-step definitions
-	defs []stepDef
-	// active text input (if current step is text)
-	ti textinput.Model
-	// selection index for select/yesno steps
-	selIdx int
+	setup       *Setup
+	state       string
+	sessionIdx  int
+	questionIdx int
+	answers     map[string]string
+	textInputs  map[string]textinput.Model
+	selIdx      map[string]int
+	registry    SessionRegistry
+	errorMsg    string
 }
 
-type stepDef struct {
-	kind    string // "text", "select", "yesno"
-	prompt  string
-	info    string
-	options []string // for select/yesno
-	id      string   // logical identifier for mapping answers into config
+func newTuiModel(s *Setup) tuiModel {
+	return tuiModel{
+		setup:      s,
+		state:      "intro",
+		answers:    make(map[string]string),
+		textInputs: make(map[string]textinput.Model),
+		selIdx:     make(map[string]int),
+	}
 }
 
-func (t tuiModel) Init() tea.Cmd { return nil }
+func (t tuiModel) Init() tea.Cmd {
+	return nil
+}
 
 func (t tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Always allow immediate quit for sensitive interrupts
-		if msg.String() == "esc" || msg.String() == "ctrl+c" {
-			return t, tea.Quit
-		}
-
-		// If we're in questions state and the current step is text, let the textinput
-		// handle keystrokes first. In that state we must not treat `q` as a global
-		// quit key because the user may be typing the letter 'q' into the input.
-		if t.state == "questions" && len(t.defs) > 0 && t.defs[t.cursor].kind == "text" {
-			var cmd tea.Cmd
-			ti, cmd := t.ti.Update(msg)
-			t.ti = ti
-			// propagate any command from textinput
-			if cmd != nil {
-				return t, cmd
-			}
-			// After textinput processed the key, do not interpret `q` as quit here.
-			// Continue to next message handling (e.g. Enter) below.
-		}
-
-		// quit key 'q' should work when not typing into a text input (e.g., intro or select)
-		if msg.String() == "q" {
-			return t, tea.Quit
-		}
-
-		// handle other keys (enter, left/right) below
 		switch msg.String() {
-		case "enter":
-			if t.state == "intro" {
-				// Build defs dynamically from the Setup
-				t.defs = t.setup.BuildDefs()
-
-				// initialize first input if text
-				t.cursor = 0
-				if t.defs[0].kind == "text" {
-					ti := textinput.New()
-					ti.Placeholder = t.defs[0].prompt
-					ti.CharLimit = 512
-					// prefill from config when we know mapping; try workspace first
-					if t.setup.Cfg.Agents.Defaults.Workspace != "" {
-						ti.SetValue(t.setup.Cfg.Agents.Defaults.Workspace)
-					}
-					ti.Focus()
-					t.ti = ti
-				}
-				// initialize selection index from existing config when applicable
-				t.selIdx = 0
-				// if provider already configured, set selIdx accordingly
-				// find first select/yesno and prefill from config
-				for _, def := range t.defs {
-					if def.kind == "select" {
-						for i, o := range def.options {
-							if o == t.setup.Cfg.Agents.Defaults.Provider {
-								t.selIdx = i
-								break
-							}
-						}
-						break
-					}
-				}
-				t.state = "questions"
-				return t, nil
-			}
-			if t.state == "questions" {
-				// commit current answer and advance; when past last, finish
-				idx := t.cursor
-				def := t.defs[idx]
-				switch def.kind {
-				case "text":
-					ans := t.ti.Value()
-					// Store mapped answers by matching prompt where possible.
-					// This avoids relying on fixed indices since defs are now dynamic.
-					// Prefer id mapping when available
-					switch def.id {
-					case "workspace":
-						t.setup.Cfg.Agents.Defaults.Workspace = ans
-					case "openai_api_key":
-						t.setup.Cfg.Providers.OpenAI.APIKey = ans
-					case "default_model":
-						t.setup.Cfg.Agents.Defaults.Model = ans
-					default:
-						// fallback to prompt matching for backward compatibility
-						switch def.prompt {
-						case "Workspace path (e.g. ~/.picoclaw/workspace)":
-							t.setup.Cfg.Agents.Defaults.Workspace = ans
-						case "OpenAI API key (leave empty to skip)":
-							t.setup.Cfg.Providers.OpenAI.APIKey = ans
-						case "Default model name (e.g. gpt-5.2)":
-							t.setup.Cfg.Agents.Defaults.Model = ans
-						}
-					}
-				case "yesno":
-					// map yes/no to booleans
-					yes := t.selIdx == 0
-					// map by prompt instead of index
-					if def.prompt == "Enable OpenAI web search?" {
-						t.setup.Cfg.Providers.OpenAI.WebSearch = yes
-					}
-					// install-skills prompt left as a TODO action
-				case "select":
-					// set selected provider
-					sel := def.options[t.selIdx]
-					// prefer id-based mapping
-					if def.id == "provider" {
-						t.setup.Cfg.Agents.Defaults.Provider = sel
-					} else {
-						t.setup.Cfg.Agents.Defaults.Provider = sel
-					}
-				}
-
-				if t.cursor < len(t.defs)-1 {
-					t.cursor++
-					// prepare next input
-					if t.defs[t.cursor].kind == "text" {
-						ti := textinput.New()
-						ti.Placeholder = t.defs[t.cursor].prompt
-						ti.CharLimit = 512
-						// prefill from config by inspecting the prompt
-						// prefill using id when present, otherwise prompt match
-						switch t.defs[t.cursor].id {
-						case "workspace":
-							ti.SetValue(t.setup.Cfg.Agents.Defaults.Workspace)
-						case "openai_api_key":
-							ti.SetValue(t.setup.Cfg.Providers.OpenAI.APIKey)
-						case "default_model":
-							ti.SetValue(t.setup.Cfg.Agents.Defaults.Model)
-						default:
-							switch t.defs[t.cursor].prompt {
-							case "Workspace path (e.g. ~/.picoclaw/workspace)":
-								ti.SetValue(t.setup.Cfg.Agents.Defaults.Workspace)
-							case "OpenAI API key (leave empty to skip)":
-								ti.SetValue(t.setup.Cfg.Providers.OpenAI.APIKey)
-							case "Default model name (e.g. gpt-5.2)":
-								ti.SetValue(t.setup.Cfg.Agents.Defaults.Model)
-							}
-						}
-						ti.Focus()
-						t.ti = ti
-					} else {
-						t.ti.Blur()
-						// set selection index from existing config if available
-						if t.defs[t.cursor].kind == "select" {
-							for i, o := range t.defs[t.cursor].options {
-								if o == t.setup.Cfg.Agents.Defaults.Provider {
-									t.selIdx = i
-									break
-								}
-							}
-						} else if t.defs[t.cursor].kind == "yesno" {
-							// try to map known yesno prompts to config
-							if t.defs[t.cursor].prompt == "Enable OpenAI web search?" {
-								if t.setup.Cfg.Providers.OpenAI.WebSearch {
-									t.selIdx = 0
-								} else {
-									t.selIdx = 1
-								}
-							} else {
-								t.selIdx = 0
-							}
-						} else {
-							t.selIdx = 0
-						}
-					}
-					return t, nil
-				}
-				// last step committed
-				t.state = "done"
+		case "ctrl+c":
+			return t, tea.Quit
+		case "esc":
+			if t.state == "intro" || t.state == "done" {
 				return t, tea.Quit
 			}
-		case "left":
-			// For select/yesno steps, move selection left
-			if t.state == "questions" && len(t.defs) > 0 {
-				k := t.defs[t.cursor].kind
-				if (k == "yesno" || k == "select") && t.selIdx > 0 {
-					t.selIdx--
-				}
+			return t.prevQuestion()
+		case "q":
+			if t.state == "intro" || t.state == "done" {
+				return t, tea.Quit
 			}
-		case "right":
-			// For select/yesno steps, move selection right
-			if t.state == "questions" && len(t.defs) > 0 {
-				k := t.defs[t.cursor].kind
-				if k == "yesno" || k == "select" {
-					if t.selIdx < len(t.defs[t.cursor].options)-1 {
-						t.selIdx++
-					}
-				}
-			}
-		case "up":
-			// allow up to also move selection up for select/yesno
-			if t.state == "questions" && len(t.defs) > 0 {
-				k := t.defs[t.cursor].kind
-				if (k == "yesno" || k == "select") && t.selIdx > 0 {
-					t.selIdx--
-				}
-			}
-		case "down":
-			// allow down to move selection down for select/yesno
-			if t.state == "questions" && len(t.defs) > 0 {
-				k := t.defs[t.cursor].kind
-				if k == "yesno" || k == "select" {
-					if t.selIdx < len(t.defs[t.cursor].options)-1 {
-						t.selIdx++
-					}
-				}
-			}
+		}
+
+		switch t.state {
+		case "intro":
+			return t.handleIntro(msg)
+		case "questions":
+			return t.handleQuestions(msg)
+		case "done":
+			return t, tea.Quit
 		}
 	}
 	return t, nil
 }
 
-func (t tuiModel) View() string {
-	// Styles
-	// Keep styles simple and avoid lipgloss alignment/layout, which can
-	// cause flex-like behavior. We'll control left offset manually.
-	bannerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
-	aboutStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	stepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
-	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+func (t tuiModel) handleIntro(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		t.state = "questions"
+		t.sessionIdx = 0
+		t.questionIdx = 0
+		t.errorMsg = ""
+		t.registry = BuildSessionRegistry(t.setup.Cfg)
+		t.initSession()
+		return t, nil
+	}
+	return t, nil
+}
 
-	out := ""
-	// render banner and about with a small left offset
-	out += lipgloss.NewStyle().PaddingLeft(1).Render(bannerStyle.Render(Banner)) + "\n"
-	out += lipgloss.NewStyle().PaddingLeft(1).Render(aboutStyle.Render(About)) + "\n\n"
+func (t tuiModel) handleQuestions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	session := t.registry.Sessions[t.sessionIdx]
+	visible := t.getVisibleQuestions(session)
 
-	// Show slideshow style: only current step prompt and progress
-	if t.state == "questions" && len(t.defs) > 0 {
-		total := len(t.defs)
-		out += stepStyle.Render(fmt.Sprintf("Step [%d/%d]\n", t.cursor+1, total))
-		// separator between step header and prompt
-		sep := lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render(strings.Repeat("─", 0))
-		out += sep + "\n"
-		cur := t.defs[t.cursor]
-		promptStyle := lipgloss.NewStyle().Bold(true)
-		out += promptStyle.Render(cur.prompt) + "\n\n"
-		// optional informational label (may be empty)
-		if cur.info != "" {
-			// Label style: bold, no left margin
-			// labelStyle := lipgloss.NewStyle().Bold(true)
-			// Info style: secondary light color, small padding to separate from label
-			infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).PaddingLeft(0)
-			out += infoStyle.Render(cur.info) + "\n\n"
+	if len(visible) == 0 {
+		return t, nil
+	}
+
+	if t.questionIdx >= len(visible) {
+		t.questionIdx = len(visible) - 1
+	}
+
+	currentQ := visible[t.questionIdx]
+
+	switch msg.String() {
+	case "enter":
+		// Save current answer
+		t.saveAnswer(currentQ)
+		t.errorMsg = ""
+
+		// Ensure text inputs exist for newly visible questions
+		t.ensureInputsExist()
+
+		// Recalculate visible questions after saving (dependencies may change)
+		session = t.registry.Sessions[t.sessionIdx]
+		visible = t.getVisibleQuestions(session)
+
+		// If not the last question, move to next question in same session
+		if t.questionIdx < len(visible)-1 {
+			t.questionIdx++
+			t.focusCurrent()
+			return t, nil
 		}
-		// show the input or selection
-		if cur.kind == "text" {
-			out += t.ti.View() + "\n"
-		} else if cur.kind == "yesno" || cur.kind == "select" {
-			for i, opt := range cur.options {
-				if i == t.selIdx {
-					out += selectedStyle.Render("→ "+opt) + "\n"
-				} else {
-					out += stepStyle.Render("  "+opt) + "\n"
-				}
+		// If last question, try to proceed to next session
+		return t.proceedToNextSession()
+
+	case "tab":
+		t.errorMsg = ""
+		return t.nextQuestion()
+
+	case "shift+tab":
+		t.errorMsg = ""
+		return t.prevQuestion()
+
+	case "e":
+		// Go back to edit from confirmation session
+		if session.ID == "confirm" {
+			t.sessionIdx = 0
+			t.questionIdx = 0
+			t.initSession()
+			return t, nil
+		}
+	}
+
+	// Handle input based on current question type
+	switch currentQ.Type {
+	case QuestionTypeText:
+		// Ensure text input exists
+		t.ensureTextInputExists(currentQ)
+
+		if ti, ok := t.textInputs[currentQ.ID]; ok {
+			var cmd tea.Cmd
+			t.textInputs[currentQ.ID], cmd = ti.Update(msg)
+			return t, cmd
+		}
+
+	case QuestionTypeSelect, QuestionTypeYesNo:
+		switch msg.String() {
+		case "up", "k":
+			t.errorMsg = ""
+			if t.selIdx[currentQ.ID] > 0 {
+				t.selIdx[currentQ.ID]--
+			}
+		case "down", "j":
+			t.errorMsg = ""
+			if t.selIdx[currentQ.ID] < len(currentQ.Options)-1 {
+				t.selIdx[currentQ.ID]++
 			}
 		}
-		out += "\n"
-	} else {
-		out += stepStyle.Render("Press Enter to begin the interactive setup") + "\n\n"
 	}
+
+	return t, nil
+}
+
+func (t tuiModel) proceedToNextSession() (tea.Model, tea.Cmd) {
+	session := t.registry.Sessions[t.sessionIdx]
+	visible := t.getVisibleQuestions(session)
+
+	// Save all answers first
+	for _, q := range visible {
+		t.saveAnswer(q)
+	}
+
+	// Validate all required fields are filled
+	missing := t.validateSession(visible)
+	if len(missing) > 0 {
+		t.errorMsg = fmt.Sprintf("Please fill: %s", strings.Join(missing, ", "))
+		// Move to first missing field
+		for i, q := range visible {
+			if t.isQuestionEmpty(q) {
+				t.questionIdx = i
+				t.focusCurrent()
+				break
+			}
+		}
+		return t, nil
+	}
+
+	t.errorMsg = ""
+
+	if session.ID == "confirm" {
+		confirmVal := t.answers["confirm"]
+		if confirmVal == "yes" {
+			t.applyAnswersToConfig()
+			t.state = "done"
+			return t, tea.Quit
+		}
+		t.state = "intro"
+		t.sessionIdx = 0
+		t.questionIdx = 0
+		t.answers = make(map[string]string)
+		t.textInputs = make(map[string]textinput.Model)
+		t.selIdx = make(map[string]int)
+		return t, nil
+	}
+
+	if t.sessionIdx < len(t.registry.Sessions)-1 {
+		t.sessionIdx++
+		t.questionIdx = 0
+		t.initSession()
+	}
+
+	return t, nil
+}
+
+func (t tuiModel) nextQuestion() (tea.Model, tea.Cmd) {
+	session := t.registry.Sessions[t.sessionIdx]
+	visible := t.getVisibleQuestions(session)
+
+	if t.questionIdx < len(visible)-1 {
+		t.questionIdx++
+		t.ensureInputsExist()
+		t.focusCurrent()
+	}
+	return t, nil
+}
+
+func (t tuiModel) prevQuestion() (tea.Model, tea.Cmd) {
+	if t.questionIdx > 0 {
+		t.questionIdx--
+		t.focusCurrent()
+	} else if t.sessionIdx > 0 {
+		// Go to previous session
+		t.sessionIdx--
+		// Get the last question of the previous session
+		prevSession := t.registry.Sessions[t.sessionIdx]
+		prevVisible := t.getVisibleQuestions(prevSession)
+		if len(prevVisible) > 0 {
+			t.questionIdx = len(prevVisible) - 1
+		} else {
+			t.questionIdx = 0
+		}
+		t.initSession()
+	}
+	return t, nil
+}
+
+func (t *tuiModel) initSession() {
+	t.ensureInputsExist()
+	t.focusCurrent()
+}
+
+func (t *tuiModel) ensureInputsExist() {
+	session := t.registry.Sessions[t.sessionIdx]
+	visible := t.getVisibleQuestions(session)
+
+	for _, q := range visible {
+		switch q.Type {
+		case QuestionTypeText:
+			t.ensureTextInputExists(q)
+		case QuestionTypeSelect, QuestionTypeYesNo:
+			if _, ok := t.selIdx[q.ID]; !ok {
+				t.selIdx[q.ID] = t.getDefaultSelIdx(q)
+			}
+		}
+	}
+}
+
+func (t *tuiModel) ensureTextInputExists(q Question) {
+	if q.Type != QuestionTypeText {
+		return
+	}
+
+	// Only create if doesn't exist
+	if _, exists := t.textInputs[q.ID]; !exists {
+		ti := textinput.New()
+
+		// Determine placeholder based on question type
+		switch q.ID {
+		case "provider_api_key":
+			// Get API key for the selected provider (from answers)
+			if provider := t.answers["provider"]; provider != "" {
+				ti.Placeholder = GetProviderAPIKey(t.setup.Cfg, provider)
+			} else if q.DefaultValue != "" {
+				ti.Placeholder = q.DefaultValue
+			} else {
+				ti.Placeholder = q.Info
+			}
+		case "provider_api_base":
+			// Get API base for the selected provider (from answers)
+			if provider := t.answers["provider"]; provider != "" {
+				ti.Placeholder = GetProviderAPIBase(t.setup.Cfg, provider)
+			} else if q.DefaultValue != "" {
+				ti.Placeholder = q.DefaultValue
+			} else {
+				ti.Placeholder = q.Info
+			}
+		default:
+			if q.DefaultValue != "" {
+				ti.Placeholder = q.DefaultValue
+			} else {
+				ti.Placeholder = q.Info
+			}
+		}
+
+		ti.CharLimit = 512
+		ti.Width = 40
+
+		if val, ok := t.answers[q.ID]; ok && val != "" {
+			ti.SetValue(val)
+		} else if q.DefaultValue != "" {
+			ti.SetValue(q.DefaultValue)
+		}
+		t.textInputs[q.ID] = ti
+	}
+}
+
+func (t *tuiModel) getDefaultSelIdx(q Question) int {
+	defaultIdx := 0
+	if val, ok := t.answers[q.ID]; ok && val != "" {
+		for i, opt := range q.Options {
+			if opt == val {
+				defaultIdx = i
+				break
+			}
+		}
+	} else if q.DefaultValue != "" {
+		for i, opt := range q.Options {
+			if opt == q.DefaultValue {
+				defaultIdx = i
+				break
+			}
+		}
+	}
+	return defaultIdx
+}
+
+func (t *tuiModel) focusCurrent() {
+	session := t.registry.Sessions[t.sessionIdx]
+	visible := t.getVisibleQuestions(session)
+
+	// Blur all text inputs
+	for id := range t.textInputs {
+		if ti, ok := t.textInputs[id]; ok {
+			ti.Blur()
+			t.textInputs[id] = ti
+		}
+	}
+
+	// Focus current text input if applicable
+	if t.questionIdx < len(visible) {
+		q := visible[t.questionIdx]
+		if q.Type == QuestionTypeText {
+			t.ensureTextInputExists(q)
+			if ti, ok := t.textInputs[q.ID]; ok {
+				ti.Focus()
+				t.textInputs[q.ID] = ti
+			}
+		}
+	}
+}
+
+func (t *tuiModel) getVisibleQuestions(session Session) []Question {
+	var visible []Question
+	for _, q := range session.Questions {
+		if t.isQuestionVisible(q) {
+			visible = append(visible, q)
+		}
+	}
+	return visible
+}
+
+func (t *tuiModel) isQuestionVisible(q Question) bool {
+	if q.DependsOn == "" {
+		return true
+	}
+	depValue := t.answers[q.DependsOn]
+	if q.DependsValue != "" {
+		return depValue == q.DependsValue
+	}
+	return depValue != ""
+}
+
+func (t *tuiModel) buildAnswersSummary() []string {
+	var summary []string
+
+	// Workspace
+	if val := t.answers["workspace"]; val != "" {
+		summary = append(summary, fmt.Sprintf("Workspace: %s", val))
+	}
+	if val := t.answers["restrict_workspace"]; val != "" {
+		summary = append(summary, fmt.Sprintf("Restrict to workspace: %s", val))
+	}
+
+	// Provider
+	if val := t.answers["provider"]; val != "" {
+		summary = append(summary, fmt.Sprintf("Provider: %s", val))
+	}
+	if val := t.answers["provider_api_key"]; val != "" {
+		summary = append(summary, fmt.Sprintf("API Key: %s", maskSensitive(val)))
+	}
+
+	// Model
+	if val := t.answers["model_select"]; val != "" {
+		if val == "custom" {
+			if customVal := t.answers["custom_model"]; customVal != "" {
+				summary = append(summary, fmt.Sprintf("Model: %s (custom)", customVal))
+			}
+		} else {
+			summary = append(summary, fmt.Sprintf("Model: %s", val))
+		}
+	}
+
+	// Channel
+	if val := t.answers["channel_select"]; val != "" {
+		summary = append(summary, fmt.Sprintf("Channel: %s", val))
+	}
+	if val := t.answers["channel_token"]; val != "" {
+		summary = append(summary, fmt.Sprintf("Channel Token: %s", maskSensitive(val)))
+	}
+
+	return summary
+}
+
+func maskSensitive(val string) string {
+	if len(val) <= 4 {
+		return "****"
+	}
+	return val[:4] + strings.Repeat("*", len(val)-4)
+}
+
+func (t *tuiModel) validateSession(questions []Question) []string {
+	var missing []string
+	for _, q := range questions {
+		// Skip optional fields
+		if q.ID == "provider_api_key" || q.ID == "provider_api_base" {
+			continue
+		}
+		// Skip channel token fields - they're optional based on channel selection
+		if isChannelTokenField(q.ID) {
+			continue
+		}
+		// Skip channel_enable if set to "no"
+		if q.ID == "channel_enable" && t.answers["channel_enable"] == "no" {
+			continue
+		}
+		if t.isQuestionEmpty(q) {
+			missing = append(missing, q.Prompt)
+		}
+	}
+	return missing
+}
+
+func isChannelTokenField(id string) bool {
+	channelFields := []string{
+		"telegram_token", "slack_bot_token", "slack_app_token",
+		"discord_token", "whatsapp_bridge_url",
+		"feishu_app_id", "feishu_app_secret",
+		"dingtalk_client_id", "dingtalk_client_secret",
+		"line_channel_access_token", "qq_app_id",
+		"onebot_access_token",
+		"wecom_token", "wecom_encoding_aes_key",
+		"wecom_app_corp_id", "wecom_app_agent_id",
+		"maixcam_device_address",
+	}
+	for _, f := range channelFields {
+		if id == f {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *tuiModel) isQuestionEmpty(q Question) bool {
+	switch q.Type {
+	case QuestionTypeText:
+		if ti, ok := t.textInputs[q.ID]; ok {
+			return strings.TrimSpace(ti.Value()) == ""
+		}
+		return true
+	case QuestionTypeSelect, QuestionTypeYesNo:
+		return false
+	}
+	return false
+}
+
+func (t *tuiModel) saveAnswer(q Question) {
+	switch q.Type {
+	case QuestionTypeText:
+		if ti, ok := t.textInputs[q.ID]; ok {
+			t.answers[q.ID] = ti.Value()
+		}
+	case QuestionTypeSelect, QuestionTypeYesNo:
+		if idx, ok := t.selIdx[q.ID]; ok && idx >= 0 && idx < len(q.Options) {
+			t.answers[q.ID] = q.Options[idx]
+		}
+	}
+
+	// Update channel question prompts when channel is selected
+	if q.ID == "channel_select" {
+		t.updateChannelQuestionPrompt()
+	}
+}
+
+func (t *tuiModel) updateChannelQuestionPrompt() {
+	channel := t.answers["channel_select"]
+	if channel == "" {
+		return
+	}
+
+	ch := strings.ToLower(channel)
+	channelFieldIDs := getChannelFieldIDs(ch)
+
+	for i := range t.registry.Sessions {
+		if t.registry.Sessions[i].ID == "channel" {
+			for j := range t.registry.Sessions[i].Questions {
+				q := &t.registry.Sessions[i].Questions[j]
+				for _, fieldID := range channelFieldIDs {
+					if q.ID == fieldID {
+						q.DefaultValue = GetChannelFieldToken(t.setup.Cfg, fieldID)
+						if ti, ok := t.textInputs[fieldID]; ok {
+							ti.SetValue(q.DefaultValue)
+							t.textInputs[fieldID] = ti
+						}
+					}
+				}
+			}
+			break
+		}
+	}
+}
+
+func getChannelFieldIDs(channel string) []string {
+	switch channel {
+	case "telegram":
+		return []string{"telegram_token"}
+	case "slack":
+		return []string{"slack_bot_token", "slack_app_token"}
+	case "discord":
+		return []string{"discord_token"}
+	case "whatsapp":
+		return []string{"whatsapp_bridge_url"}
+	case "feishu":
+		return []string{"feishu_app_id", "feishu_app_secret"}
+	case "dingtalk":
+		return []string{"dingtalk_client_id", "dingtalk_client_secret"}
+	case "line":
+		return []string{"line_channel_access_token"}
+	case "qq":
+		return []string{"qq_app_id"}
+	case "onebot":
+		return []string{"onebot_access_token"}
+	case "wecom":
+		return []string{"wecom_token", "wecom_encoding_aes_key"}
+	case "wecom_app":
+		return []string{"wecom_app_corp_id", "wecom_app_agent_id"}
+	case "maixcam":
+		return []string{"maixcam_device_address"}
+	}
+	return nil
+}
+
+func (t *tuiModel) applyAnswersToConfig() {
+	cfg := t.setup.Cfg
+
+	for qID, val := range t.answers {
+		if val == "" {
+			continue
+		}
+
+		switch qID {
+		case "workspace":
+			cfg.Agents.Defaults.Workspace = val
+		case "restrict_workspace":
+			cfg.Agents.Defaults.RestrictToWorkspace = (val == "yes")
+		case "provider":
+			cfg.Agents.Defaults.Provider = val
+		case "model_select":
+			if val != "custom" {
+				cfg.Agents.Defaults.Model = val
+			}
+		case "custom_model":
+			if t.answers["model_select"] == "custom" {
+				cfg.Agents.Defaults.Model = val
+			}
+		case "channel_select":
+			if t.answers["channel_enable"] != "no" {
+				t.applyChannelSelection(val, cfg)
+			}
+		case "channel_enable":
+			if val == "no" {
+				cfg.Channels.Telegram.Enabled = false
+				cfg.Channels.Slack.Enabled = false
+				cfg.Channels.Discord.Enabled = false
+				cfg.Channels.WhatsApp.Enabled = false
+				cfg.Channels.Feishu.Enabled = false
+				cfg.Channels.DingTalk.Enabled = false
+				cfg.Channels.LINE.Enabled = false
+				cfg.Channels.QQ.Enabled = false
+				cfg.Channels.OneBot.Enabled = false
+				cfg.Channels.WeCom.Enabled = false
+				cfg.Channels.WeComApp.Enabled = false
+				cfg.Channels.MaixCam.Enabled = false
+			}
+		case "telegram_token":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.Telegram.Token = val
+			}
+		case "slack_bot_token":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.Slack.BotToken = val
+			}
+		case "slack_app_token":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.Slack.AppToken = val
+			}
+		case "discord_token":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.Discord.Token = val
+			}
+		case "whatsapp_bridge_url":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.WhatsApp.BridgeURL = val
+			}
+		case "feishu_app_id":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.Feishu.AppID = val
+			}
+		case "feishu_app_secret":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.Feishu.AppSecret = val
+			}
+		case "dingtalk_client_id":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.DingTalk.ClientID = val
+			}
+		case "dingtalk_client_secret":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.DingTalk.ClientSecret = val
+			}
+		case "line_channel_access_token":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.LINE.ChannelAccessToken = val
+			}
+		case "qq_app_id":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.QQ.AppID = val
+			}
+		case "onebot_access_token":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.OneBot.AccessToken = val
+			}
+		case "wecom_token":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.WeCom.Token = val
+			}
+		case "wecom_encoding_aes_key":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.WeCom.EncodingAESKey = val
+			}
+		case "wecom_app_corp_id":
+			if t.answers["channel_enable"] != "no" {
+				cfg.Channels.WeComApp.CorpID = val
+			}
+		case "wecom_app_agent_id":
+			if t.answers["channel_enable"] != "no" {
+				if agentID, err := strconv.ParseInt(val, 10, 64); err == nil {
+					cfg.Channels.WeComApp.AgentID = agentID
+				}
+			}
+		case "maixcam_device_address":
+			if t.answers["channel_enable"] != "no" {
+				val = strings.TrimPrefix(strings.TrimPrefix(val, "http://"), "https://")
+				if idx := strings.Index(val, ":"); idx > 0 {
+					cfg.Channels.MaixCam.Host = val[:idx]
+					if port, err := strconv.Atoi(val[idx+1:]); err == nil {
+						cfg.Channels.MaixCam.Port = port
+					}
+				} else {
+					cfg.Channels.MaixCam.Host = val
+				}
+			}
+		case "provider_api_key":
+			prov := t.answers["provider"]
+			if prov != "" {
+				SetProviderCredential(cfg, prov, "api_key", val)
+			}
+		case "provider_api_base":
+			prov := t.answers["provider"]
+			if prov != "" {
+				SetProviderCredential(cfg, prov, "api_base", val)
+			}
+		}
+	}
+}
+
+func (t *tuiModel) applyChannelSelection(channel string, cfg *config.Config) {
+	ch := strings.ToLower(channel)
+	switch ch {
+	case "telegram":
+		cfg.Channels.Telegram.Enabled = true
+	case "slack":
+		cfg.Channels.Slack.Enabled = true
+	case "discord":
+		cfg.Channels.Discord.Enabled = true
+	case "whatsapp":
+		cfg.Channels.WhatsApp.Enabled = true
+	case "feishu":
+		cfg.Channels.Feishu.Enabled = true
+	case "dingtalk":
+		cfg.Channels.DingTalk.Enabled = true
+	case "line":
+		cfg.Channels.LINE.Enabled = true
+	case "qq":
+		cfg.Channels.QQ.Enabled = true
+	case "onebot":
+		cfg.Channels.OneBot.Enabled = true
+	case "wecom":
+		cfg.Channels.WeCom.Enabled = true
+	case "wecom_app":
+		cfg.Channels.WeComApp.Enabled = true
+	case "maixcam":
+		cfg.Channels.MaixCam.Enabled = true
+	}
+}
+
+func (t tuiModel) View() string {
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+	promptStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
+	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
+	optionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true)
+
+	var b strings.Builder
+
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╔════════════════════════════════════════════════╗")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("║           PicoClaw Interactive Setup           ║")))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("╚════════════════════════════════════════════════╝")))
+	b.WriteString("\n\n")
 
 	switch t.state {
 	case "intro":
-		out += lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true).Render("Press Enter to start interactive setup — q to quit")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Press Enter to start the configuration wizard")))
+		b.WriteString("\n\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Press q or Ctrl+C to exit")))
+
 	case "questions":
-		out += lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render("Use Up/Down to move between steps; type and Enter to submit; q to quit.") + "\n\n"
-		// (current step rendering done above)
+		session := t.registry.Sessions[t.sessionIdx]
+		visible := t.getVisibleQuestions(session)
+		totalSessions := len(t.registry.Sessions)
+
+		header := fmt.Sprintf("Step %d of %d: %s", t.sessionIdx+1, totalSessions, session.Title)
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render(header)))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+		b.WriteString("\n\n")
+
+		if t.errorMsg != "" {
+			b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(errorStyle.Render("⚠ " + t.errorMsg)))
+			b.WriteString("\n\n")
+		}
+
+		for i, q := range visible {
+			isActive := i == t.questionIdx
+
+			prompt := q.Prompt
+			if isActive {
+				b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(activeStyle.Render("▶ " + prompt)))
+			} else {
+				b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(promptStyle.Render("  " + prompt)))
+			}
+			b.WriteString("\n")
+
+			switch q.Type {
+			case QuestionTypeText:
+				t.ensureTextInputExists(q)
+				if ti, ok := t.textInputs[q.ID]; ok {
+					if isActive {
+						b.WriteString(lipgloss.NewStyle().PaddingLeft(6).Render(ti.View()))
+					} else {
+						val := ti.Value()
+						if val == "" {
+							b.WriteString(lipgloss.NewStyle().PaddingLeft(6).Render(dimStyle.Render("(not filled)")))
+						} else {
+							b.WriteString(lipgloss.NewStyle().PaddingLeft(6).Render(optionStyle.Render(val)))
+						}
+					}
+				}
+
+			case QuestionTypeSelect, QuestionTypeYesNo:
+				idx, ok := t.selIdx[q.ID]
+				if !ok {
+					idx = 0
+				}
+				for j, opt := range q.Options {
+					var line string
+					if j == idx {
+						if isActive {
+							line = "  ◆ " + opt
+							b.WriteString(lipgloss.NewStyle().PaddingLeft(6).Render(selectedStyle.Render(line)))
+						} else {
+							line = "  ○ " + opt
+							b.WriteString(lipgloss.NewStyle().PaddingLeft(6).Render(optionStyle.Render(line)))
+						}
+					} else {
+						line = "    " + opt
+						b.WriteString(lipgloss.NewStyle().PaddingLeft(6).Render(dimStyle.Render(line)))
+					}
+					b.WriteString("\n")
+				}
+			}
+			b.WriteString("\n")
+		}
+
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("─────────────────────────────────────────────────")))
+		b.WriteString("\n")
+
+		// Show summary in confirmation session
+		if session.ID == "confirm" {
+			b.WriteString("\n")
+			b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("Configuration Summary:")))
+			b.WriteString("\n")
+			b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")))
+			b.WriteString("\n\n")
+
+			summary := t.buildAnswersSummary()
+			for _, line := range summary {
+				b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render(line)))
+				b.WriteString("\n")
+			}
+			b.WriteString("\n")
+			b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Press 'e' to go back and edit, or confirm below:")))
+			b.WriteString("\n\n")
+		}
+
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("─────────────────────────────────────────────────")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("↑/↓: Select option | Tab/Enter: Next | Esc: Back | e: Edit (in confirm) | q: Quit")))
+
 	case "done":
-		out += lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Render("Setup complete — saving config and exiting...")
+		workspace := t.setup.Cfg.WorkspacePath()
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(successStyle.Render("✓ picoclaw is ready!")))
+		b.WriteString("\n\n")
+		for _, line := range BuildSummary(t.setup.Cfg) {
+			b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render(line)))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("Workspace Path:")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render(workspace)))
+		b.WriteString("\n\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(titleStyle.Render("Workspace structure:")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📁 memory/       - Persistent memory")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📁 skills/       - Custom skills")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 AGENT.md     - Agent configuration")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 IDENTITY.md  - Agent identity")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 SOUL.md      - Agent personality")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("  📄 USER.md      - User profile")))
+		b.WriteString("\n\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Next: Run 'picoclaw agent' to start chatting!")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Config: ~/.picoclaw/config.json")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("─────────────────────────────────────────────────")))
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().PaddingLeft(4).Render(dimStyle.Render("Press Enter or q to exit")))
 	}
 
-	// Apply global left padding so the whole UI shifts right by 3 columns.
-	return lipgloss.NewStyle().PaddingLeft(3).Render(out)
+	return b.String()
 }
-
-// Where to add questions/forms/selectors:
-// - Implement the interactive questions inside the Update/View branches for state == "questions".
-// - Use the charmbracelet/bubbles components (textinput, list, radiobuttons, checkbox) to build forms.
-// - Example plan:
-//   1) Create a field list (or pages) for missing items: models without API keys, providers, workspace path.
-//   2) For each missing item, show a text input (bubbles/textinput) and let the user type and submit.
-//   3) Store answers directly in t.setup.Cfg (it's a pointer) so they persist.
-//   4) After all fields are answered, transition to state "done" which will cause Run() to save the config.
