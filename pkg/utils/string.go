@@ -94,6 +94,9 @@ func DetectRepetitionLoop(text string) bool {
 // Handles multi-byte Unicode characters properly.
 // If the string is truncated, "..." is appended to indicate truncation.
 func Truncate(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
 	runes := []rune(s)
 	if len(runes) <= maxLen {
 		return s

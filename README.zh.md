@@ -52,7 +52,7 @@
 
 ## 📢 新闻 (News)
 
-2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](docs/picoclaw_community_roadmap_260216.md), 期待你的参与！
+2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](docs/ROADMAP.md), 期待你的参与！
 
 2026-02-13 🎉 **PicoClaw 在 4 天内突破 5000 Stars！** 感谢社区的支持！由于正值中国春节假期，PR 和 Issue 涌入较多，我们正在利用这段时间敲定 **项目路线图 (Roadmap)** 并组建 **开发者群组**，以便加速 PicoClaw 的开发。
 🚀 **行动号召：** 请在 GitHub Discussions 中提交您的功能请求 (Feature Requests)。我们将在接下来的周会上进行审查和优先级排序。
@@ -205,7 +205,7 @@ docker compose --profile gateway up -d
 > [!TIP]
 > 在 `~/.picoclaw/config.json` 中设置您的 API Key。
 > 获取 API Key: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu (智谱)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> 网络搜索是 **可选的** - 获取免费的 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询)
+> 网络搜索是 **可选的** - 获取免费的 [Tavily API](https://tavily.com) (每月 1000 次免费查询) 或 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询)
 
 **1. 初始化 (Initialize)**
 
@@ -246,8 +246,9 @@ picoclaw onboard
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       },
-      "duckduckgo": {
-        "enabled": true,
+      "tavily": {
+        "enabled": false,
+        "api_key": "YOUR_TAVILY_API_KEY",
         "max_results": 5
       }
     },
@@ -262,8 +263,8 @@ picoclaw onboard
 
 **3. 获取 API Key**
 
-- **LLM 提供商**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-- **网络搜索** (可选): [Brave Search](https://brave.com/search/api) - 提供免费层级 (2000 请求/月)
+* **LLM 提供商**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+* **网络搜索** (可选): [Tavily](https://tavily.com) - 专为 AI Agent 优化 (1000 请求/月) · [Brave Search](https://brave.com/search/api) - 提供免费层级 (2000 请求/月)
 
 > **注意**: 完整的配置模板请参考 `config.example.json`。
 
@@ -795,7 +796,7 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 
 启用网络搜索：
 
-1. 在 [https://brave.com/search/api](https://brave.com/search/api) 获取免费 API Key (每月 2000 次免费查询)
+1. 在 [https://tavily.com](https://tavily.com) (1000 次免费) 或 [https://brave.com/search/api](https://brave.com/search/api) 获取免费 API Key (2000 次免费)
 2. 添加到 `~/.picoclaw/config.json`:
 
 ```json
@@ -828,10 +829,10 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 
 ## 📝 API Key 对比
 
-| 服务             | 免费层级       | 适用场景                      |
-| ---------------- | -------------- | ----------------------------- |
-| **OpenRouter**   | 200K tokens/月 | 多模型聚合 (Claude, GPT-4 等) |
-| **智谱 (Zhipu)** | 200K tokens/月 | 最适合中国用户                |
-| **Brave Search** | 2000 次查询/月 | 网络搜索功能                  |
-| **Groq**         | 提供免费层级   | 极速推理 (Llama, Mixtral)     |
-| **Cerebras**     | 提供免费层级   | 极速推理 (Llama, Qwen 等)     |
+| 服务 | 免费层级 | 适用场景 |
+| --- | --- | --- |
+| **OpenRouter** | 200K tokens/月 | 多模型聚合 (Claude, GPT-4 等) |
+| **智谱 (Zhipu)** | 200K tokens/月 | 最适合中国用户 |
+| **Brave Search** | 2000 次查询/月 | 网络搜索功能 |
+| **Tavily** | 1000 次查询/月 | AI Agent 搜索优化 |
+| **Groq** | 提供免费层级 | 极速推理 (Llama, Mixtral) |
