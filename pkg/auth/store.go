@@ -58,17 +58,58 @@ func LoadStore() (*AuthStore, error) {
 	if store.Credentials == nil {
 		store.Credentials = make(map[string]*AuthCredential)
 	}
+
+	// Decrypt tokens if master key is set
+	if mk := GetMasterKey(); mk != "" {
+		key := DeriveKey(mk)
+		for _, cred := range store.Credentials {
+			if IsEncrypted(cred.AccessToken) {
+				if dec, err := Decrypt(cred.AccessToken, key); err == nil {
+					cred.AccessToken = dec
+				}
+			}
+			if IsEncrypted(cred.RefreshToken) {
+				if dec, err := Decrypt(cred.RefreshToken, key); err == nil {
+					cred.RefreshToken = dec
+				}
+			}
+		}
+	}
+
 	return &store, nil
 }
 
 func SaveStore(store *AuthStore) error {
 	path := authFilePath()
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 
-	data, err := json.MarshalIndent(store, "", "  ")
+	// Clone and encrypt tokens if master key is set
+	toSave := &AuthStore{Credentials: make(map[string]*AuthCredential, len(store.Credentials))}
+	for k, cred := range store.Credentials {
+		clone := *cred
+		toSave.Credentials[k] = &clone
+	}
+
+	if mk := GetMasterKey(); mk != "" {
+		key := DeriveKey(mk)
+		for _, cred := range toSave.Credentials {
+			if cred.AccessToken != "" && !IsEncrypted(cred.AccessToken) {
+				if enc, err := Encrypt(cred.AccessToken, key); err == nil {
+					cred.AccessToken = enc
+				}
+			}
+			if cred.RefreshToken != "" && !IsEncrypted(cred.RefreshToken) {
+				if enc, err := Encrypt(cred.RefreshToken, key); err == nil {
+					cred.RefreshToken = enc
+				}
+			}
+		}
+	}
+
+	data, err := json.MarshalIndent(toSave, "", "  ")
 	if err != nil {
 		return err
 	}

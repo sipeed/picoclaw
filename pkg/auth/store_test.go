@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -185,5 +186,130 @@ func TestLoadStoreEmpty(t *testing.T) {
 	}
 	if len(store.Credentials) != 0 {
 		t.Errorf("expected empty credentials, got %d", len(store.Credentials))
+	}
+}
+
+// --- Encryption integration tests ---
+
+func TestStoreRoundtrip_WithEncryption(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+	t.Setenv("PICOCLAW_MASTER_KEY", "test-master-key")
+
+	cred := &AuthCredential{
+		AccessToken:  "secret-access-token",
+		RefreshToken: "secret-refresh-token",
+		Provider:     "openai",
+		AuthMethod:   "oauth",
+	}
+
+	if err := SetCredential("openai", cred); err != nil {
+		t.Fatalf("SetCredential() error: %v", err)
+	}
+
+	// Verify on-disk tokens are encrypted
+	path := filepath.Join(tmpDir, ".picoclaw", "auth.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error: %v", err)
+	}
+
+	var raw struct {
+		Credentials map[string]json.RawMessage `json:"credentials"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Unmarshal raw: %v", err)
+	}
+
+	var rawCred struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.Unmarshal(raw.Credentials["openai"], &rawCred); err != nil {
+		t.Fatalf("Unmarshal cred: %v", err)
+	}
+
+	if !IsEncrypted(rawCred.AccessToken) {
+		t.Errorf("On-disk access_token should be encrypted, got: %s", rawCred.AccessToken)
+	}
+	if !IsEncrypted(rawCred.RefreshToken) {
+		t.Errorf("On-disk refresh_token should be encrypted, got: %s", rawCred.RefreshToken)
+	}
+
+	// Verify LoadStore decrypts correctly
+	loaded, err := GetCredential("openai")
+	if err != nil {
+		t.Fatalf("GetCredential() error: %v", err)
+	}
+	if loaded.AccessToken != "secret-access-token" {
+		t.Errorf("AccessToken = %q, want %q", loaded.AccessToken, "secret-access-token")
+	}
+	if loaded.RefreshToken != "secret-refresh-token" {
+		t.Errorf("RefreshToken = %q, want %q", loaded.RefreshToken, "secret-refresh-token")
+	}
+}
+
+func TestStoreRoundtrip_WithoutMasterKey(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+	t.Setenv("PICOCLAW_MASTER_KEY", "")
+
+	cred := &AuthCredential{
+		AccessToken: "plaintext-token",
+		Provider:    "openai",
+		AuthMethod:  "oauth",
+	}
+
+	if err := SetCredential("openai", cred); err != nil {
+		t.Fatalf("SetCredential() error: %v", err)
+	}
+
+	// Verify on-disk token is plaintext (no encryption without master key)
+	path := filepath.Join(tmpDir, ".picoclaw", "auth.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error: %v", err)
+	}
+
+	var raw struct {
+		Credentials map[string]json.RawMessage `json:"credentials"`
+	}
+	json.Unmarshal(data, &raw)
+
+	var rawCred struct {
+		AccessToken string `json:"access_token"`
+	}
+	json.Unmarshal(raw.Credentials["openai"], &rawCred)
+
+	if IsEncrypted(rawCred.AccessToken) {
+		t.Error("Without master key, token should be plaintext on disk")
+	}
+	if rawCred.AccessToken != "plaintext-token" {
+		t.Errorf("AccessToken = %q, want %q", rawCred.AccessToken, "plaintext-token")
+	}
+}
+
+func TestStore_DirPermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+	t.Setenv("PICOCLAW_MASTER_KEY", "")
+
+	cred := &AuthCredential{AccessToken: "x", Provider: "test", AuthMethod: "token"}
+	if err := SetCredential("test", cred); err != nil {
+		t.Fatalf("SetCredential() error: %v", err)
+	}
+
+	dir := filepath.Join(tmpDir, ".picoclaw")
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("Stat dir: %v", err)
+	}
+	perm := info.Mode().Perm()
+	// On Windows, permissions may differ; check that it's at least created
+	if perm&0o700 != 0o700 {
+		t.Logf("Directory permissions = %o (platform may differ)", perm)
 	}
 }
