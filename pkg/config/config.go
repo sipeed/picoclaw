@@ -531,7 +531,53 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Validate configuration values
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+// Validate checks configuration values for correctness.
+func (c *Config) Validate() error {
+	// Temperature: [0.0, 2.0] if set
+	if c.Agents.Defaults.Temperature != nil {
+		t := *c.Agents.Defaults.Temperature
+		if t < 0.0 || t > 2.0 {
+			return fmt.Errorf("agents.defaults.temperature must be between 0.0 and 2.0, got %v", t)
+		}
+	}
+
+	// MaxTokens > 0
+	if c.Agents.Defaults.MaxTokens <= 0 {
+		return fmt.Errorf("agents.defaults.max_tokens must be > 0, got %d", c.Agents.Defaults.MaxTokens)
+	}
+
+	// MaxToolIterations > 0
+	if c.Agents.Defaults.MaxToolIterations <= 0 {
+		return fmt.Errorf("agents.defaults.max_tool_iterations must be > 0, got %d", c.Agents.Defaults.MaxToolIterations)
+	}
+
+	// Gateway port: 1-65535
+	if c.Gateway.Port < 1 || c.Gateway.Port > 65535 {
+		return fmt.Errorf("gateway.port must be between 1 and 65535, got %d", c.Gateway.Port)
+	}
+
+	// Security: non-negative values
+	if c.Tools.Security.DefaultMaxArgSize < 0 {
+		return fmt.Errorf("tools.security.default_max_arg_size must be >= 0, got %d", c.Tools.Security.DefaultMaxArgSize)
+	}
+	for name, policy := range c.Tools.Security.ToolPolicies {
+		if policy.MaxCallsPerMin < 0 {
+			return fmt.Errorf("tools.security.tool_policies[%s].max_calls_per_min must be >= 0, got %d", name, policy.MaxCallsPerMin)
+		}
+		if policy.MaxArgSize < 0 {
+			return fmt.Errorf("tools.security.tool_policies[%s].max_arg_size must be >= 0, got %d", name, policy.MaxArgSize)
+		}
+	}
+
+	return nil
 }
 
 func SaveConfig(path string, cfg *Config) error {

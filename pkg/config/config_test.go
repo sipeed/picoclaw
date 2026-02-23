@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -390,5 +391,115 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	}
 	if cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
+	}
+}
+
+// --- Config Validate() tests ---
+
+func TestValidate_DefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("DefaultConfig should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_TemperatureTooHigh(t *testing.T) {
+	cfg := DefaultConfig()
+	temp := 3.0
+	cfg.Agents.Defaults.Temperature = &temp
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for temperature > 2.0")
+	}
+	if !strings.Contains(err.Error(), "temperature") {
+		t.Errorf("Error should mention temperature, got: %v", err)
+	}
+}
+
+func TestValidate_TemperatureNegative(t *testing.T) {
+	cfg := DefaultConfig()
+	temp := -0.1
+	cfg.Agents.Defaults.Temperature = &temp
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for negative temperature")
+	}
+}
+
+func TestValidate_TemperatureValid(t *testing.T) {
+	cfg := DefaultConfig()
+	temp := 0.7
+	cfg.Agents.Defaults.Temperature = &temp
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Temperature 0.7 should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_MaxTokensZero(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.MaxTokens = 0
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for MaxTokens = 0")
+	}
+	if !strings.Contains(err.Error(), "max_tokens") {
+		t.Errorf("Error should mention max_tokens, got: %v", err)
+	}
+}
+
+func TestValidate_MaxTokensNegative(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.MaxTokens = -1
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for negative MaxTokens")
+	}
+}
+
+func TestValidate_MaxToolIterationsZero(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.MaxToolIterations = 0
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for MaxToolIterations = 0")
+	}
+}
+
+func TestValidate_GatewayPortInvalid(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gateway.Port = 0
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for port = 0")
+	}
+	if !strings.Contains(err.Error(), "port") {
+		t.Errorf("Error should mention port, got: %v", err)
+	}
+}
+
+func TestValidate_GatewayPortTooHigh(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gateway.Port = 70000
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for port > 65535")
+	}
+}
+
+func TestValidate_SecurityMaxArgSizeNegative(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Tools.Security.DefaultMaxArgSize = -1
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for negative DefaultMaxArgSize")
+	}
+}
+
+func TestValidate_SecurityMaxCallsPerMinNegative(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Tools.Security.ToolPolicies["exec"] = ToolPolicyConfig{MaxCallsPerMin: -1}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for negative MaxCallsPerMin")
 	}
 }
