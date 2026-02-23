@@ -16,6 +16,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
@@ -24,6 +25,7 @@ func agentCmd() {
 	message := ""
 	sessionKey := "cli:default"
 	modelOverride := ""
+	configPath := ""
 
 	args := os.Args[2:]
 	for i := 0; i < len(args); i++ {
@@ -46,31 +48,42 @@ func agentCmd() {
 				modelOverride = args[i+1]
 				i++
 			}
+		case "-c", "--config":
+			if i+1 < len(args) {
+				configPath = args[i+1]
+				i++
+			}
 		}
 	}
 
-	cfg, err := loadConfig()
+	var appCfg *config.Config
+	var err error
+	if configPath != "" {
+		appCfg, err = config.LoadConfig(configPath)
+	} else {
+		appCfg, err = loadConfig()
+	}
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
 	}
 
 	if modelOverride != "" {
-		cfg.Agents.Defaults.Model = modelOverride
+		appCfg.Agents.Defaults.Model = modelOverride
 	}
 
-	provider, modelID, err := providers.CreateProvider(cfg)
+	provider, modelID, err := providers.CreateProvider(appCfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
 		os.Exit(1)
 	}
 	// Use the resolved model ID from provider creation
 	if modelID != "" {
-		cfg.Agents.Defaults.Model = modelID
+		appCfg.Agents.Defaults.Model = modelID
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(appCfg, msgBus, provider)
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
