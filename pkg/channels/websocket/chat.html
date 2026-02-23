@@ -889,6 +889,37 @@
             headerIds: true,
             mangle: false
         });
+        
+        // 配置 DOMPurify 以提供更强的 XSS 防护
+        const DOMPURIFY_CONFIG = {
+            ALLOWED_TAGS: [
+                'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                'p', 'br', 'hr',
+                'strong', 'em', 'b', 'i', 'u', 'del', 's', 'code', 'pre',
+                'ul', 'ol', 'li',
+                'blockquote',
+                'a', 'img',
+                'table', 'thead', 'tbody', 'tr', 'th', 'td',
+                'span', 'div'
+            ],
+            ALLOWED_ATTR: [
+                'href', 'title', 'alt', 'src',
+                'class', 'id'
+            ],
+            ALLOW_DATA_ATTR: false,
+            ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+            FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+            FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
+            KEEP_CONTENT: true,
+            RETURN_DOM: false,
+            RETURN_DOM_FRAGMENT: false,
+            RETURN_TRUSTED_TYPE: false
+        };
+        
+        // 创建安全的 sanitize 函数
+        function sanitizeHtml(html) {
+            return DOMPurify.sanitize(html, DOMPURIFY_CONFIG);
+        }
 
         let ws;
         const messagesDiv = document.getElementById('messages');
@@ -1314,7 +1345,7 @@
             if (sender === 'assistant' || sender === 'system') {
                 // AI 回复和系统消息渲染 Markdown
                 const rawHtml = marked.parse(content);
-                const cleanHtml = DOMPurify.sanitize(rawHtml);
+                const cleanHtml = sanitizeHtml(rawHtml);
                 contentDiv.innerHTML = cleanHtml;
             } else {
                 // 用户消息保持纯文本
@@ -1337,7 +1368,7 @@
                 if (contentDiv) {
                     // Render Markdown for system messages
                     const rawHtml = marked.parse(newContent);
-                    const cleanHtml = DOMPurify.sanitize(rawHtml);
+                    const cleanHtml = sanitizeHtml(rawHtml);
                     contentDiv.innerHTML = cleanHtml;
                 }
             }
@@ -1362,7 +1393,7 @@
             const rawHtml = marked.parse(
                 t.clickToRetry + '\n\n**[' + t.retryButton + ']**'
             );
-            const cleanHtml = DOMPurify.sanitize(rawHtml);
+            const cleanHtml = sanitizeHtml(rawHtml);
             contentDiv.innerHTML = cleanHtml;
             
             messageDiv.appendChild(contentDiv);
