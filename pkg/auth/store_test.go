@@ -108,7 +108,7 @@ func TestStoreFilePermissions(t *testing.T) {
 		t.Fatalf("Stat() error: %v", err)
 	}
 	perm := info.Mode().Perm()
-	if perm != 0600 {
+	if perm != 0o600 {
 		t.Errorf("file permissions = %o, want 0600", perm)
 	}
 }

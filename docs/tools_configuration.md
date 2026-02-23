@@ -9,8 +9,8 @@ PicoClaw's tools configuration is located in the `tools` field of `config.json`.
   "tools": {
     "web": { ... },
     "exec": { ... },
-    "approval": { ... },
-    "cron": { ... }
+    "cron": { ... },
+    "skills": { ... }
   }
 }
 ```
@@ -83,24 +83,11 @@ By default, PicoClaw blocks the following dangerous commands:
       "custom_deny_patterns": [
         "\\brm\\s+-r\\b",
         "\\bkillall\\s+python"
-      ],
+      ]
     }
   }
 }
 ```
-
-## Approval Tool
-
-The approval tool controls permissions for dangerous operations.
-
-| Config | Type | Default | Description |
-|--------|------|---------|-------------|
-| `enabled` | bool | true | Enable approval functionality |
-| `write_file` | bool | true | Require approval for file writes |
-| `edit_file` | bool | true | Require approval for file edits |
-| `append_file` | bool | true | Require approval for file appends |
-| `exec` | bool | true | Require approval for command execution |
-| `timeout_minutes` | int | 5 | Approval timeout in minutes |
 
 ## Cron Tool
 
@@ -109,6 +96,40 @@ The cron tool is used for scheduling periodic tasks.
 | Config | Type | Default | Description |
 |--------|------|---------|-------------|
 | `exec_timeout_minutes` | int | 5 | Execution timeout in minutes, 0 means no limit |
+
+## Skills Tool
+
+The skills tool configures skill discovery and installation via registries like ClawHub.
+
+### Registries
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `registries.clawhub.enabled` | bool | true | Enable ClawHub registry |
+| `registries.clawhub.base_url` | string | `https://clawhub.ai` | ClawHub base URL |
+| `registries.clawhub.search_path` | string | `/api/v1/search` | Search API path |
+| `registries.clawhub.skills_path` | string | `/api/v1/skills` | Skills API path |
+| `registries.clawhub.download_path` | string | `/api/v1/download` | Download API path |
+
+### Configuration Example
+
+```json
+{
+  "tools": {
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "enabled": true,
+          "base_url": "https://clawhub.ai",
+          "search_path": "/api/v1/search",
+          "skills_path": "/api/v1/skills",
+          "download_path": "/api/v1/download"
+        }
+      }
+    }
+  }
+}
+```
 
 ## Environment Variables
 

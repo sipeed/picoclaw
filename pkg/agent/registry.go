@@ -42,7 +42,7 @@ func NewAgentRegistry(
 			instance := NewAgentInstance(ac, &cfg.Agents.Defaults, cfg, provider)
 			registry.agents[id] = instance
 			logger.InfoCF("agent", "Registered agent",
-				map[string]interface{}{
+				map[string]any{
 					"agent_id":  id,
 					"name":      ac.Name,
 					"workspace": instance.Workspace,

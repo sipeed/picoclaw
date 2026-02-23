@@ -55,7 +55,7 @@ func onboard() {
 
 func copyEmbeddedToTarget(targetDir string) error {
 	// Ensure target directory exists
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("Failed to create target directory: %w", err)
 	}
 
@@ -85,12 +85,12 @@ func copyEmbeddedToTarget(targetDir string) error {
 		targetPath := filepath.Join(targetDir, new_path)
 
 		// Ensure target file's directory exists
-		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 			return fmt.Errorf("Failed to create directory %s: %w", filepath.Dir(targetPath), err)
 		}
 
 		// Write file
-		if err := os.WriteFile(targetPath, data, 0644); err != nil {
+		if err := os.WriteFile(targetPath, data, 0o644); err != nil {
 			return fmt.Errorf("Failed to write file %s: %w", targetPath, err)
 		}
 

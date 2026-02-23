@@ -115,7 +115,7 @@ func (m *USBMonitor) Start(ctx context.Context) (<-chan *events.DeviceEvent, err
 		}
 
 		if err := scanner.Err(); err != nil {
-			logger.ErrorCF("devices", "udevadm scan error", map[string]interface{}{"error": err.Error()})
+			logger.ErrorCF("devices", "udevadm scan error", map[string]any{"error": err.Error()})
 		}
 		cmd.Wait()
 	}()

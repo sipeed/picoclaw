@@ -24,48 +24,9 @@ jobs:
         with:
           version: v2.10.1
 
-  # TODO: Remove once linter is properly configured
-  fmt-check:
-    name: Formatting
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Check formatting
-        run: |
-          make fmt
-          git diff --exit-code || (echo "::error::Code is not formatted. Run 'make fmt' and commit the changes." && exit 1)
-
-  # TODO: Remove once linter is properly configured
-  vet:
-    name: Vet
-    runs-on: ubuntu-latest
-    needs: fmt-check
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Run go generate
-        run: go generate ./...
-
-      - name: Run go vet
-        run: go vet ./...
-
   test:
     name: Tests
     runs-on: ubuntu-latest
-    needs: fmt-check
     steps:
       - name: Checkout
         uses: actions/checkout@v6

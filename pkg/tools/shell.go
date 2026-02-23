@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -118,15 +119,15 @@ func (t *ExecTool) Description() string {
 	return "Execute a shell command and return its output. Use with caution."
 }
 
-func (t *ExecTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *ExecTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"command": map[string]interface{}{
+		"properties": map[string]any{
+			"command": map[string]any{
 				"type":        "string",
 				"description": "The shell command to execute",
 			},
-			"working_dir": map[string]interface{}{
+			"working_dir": map[string]any{
 				"type":        "string",
 				"description": "Optional working directory for the command",
 			},
@@ -135,7 +136,7 @@ func (t *ExecTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	command, ok := args["command"].(string)
 	if !ok {
 		return ErrorResult("command is required")
@@ -143,7 +144,15 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		cwd = wd
+		if t.restrictToWorkspace && t.workingDir != "" {
+			resolvedWD, err := validatePath(wd, t.workingDir, true)
+			if err != nil {
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
+			}
+			cwd = resolvedWD
+		} else {
+			cwd = wd
+		}
 	}
 
 	if cwd == "" {
@@ -177,18 +186,43 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		cmd.Dir = cwd
 	}
 
+	prepareCommandForTermination(cmd)
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-cmdCtx.Done():
+		_ = terminateProcessTree(cmd)
+		select {
+		case err = <-done:
+		case <-time.After(2 * time.Second):
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			err = <-done
+		}
+	}
+
 	output := stdout.String()
 	if stderr.Len() > 0 {
 		output += "\nSTDERR:\n" + stderr.String()
 	}
 
 	if err != nil {
-		if cmdCtx.Err() == context.DeadlineExceeded {
+		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
 			return &ToolResult{
 				ForLLM:  msg,
