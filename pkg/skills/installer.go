@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
 type SkillInstaller struct {
@@ -68,7 +68,7 @@ func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, repo string) er
 	skillPath := filepath.Join(skillDir, "SKILL.md")
 	
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
-	if err := utils.WriteFileAtomic(skillPath, body, 0o600); err != nil {
+	if err := fileutil.WriteFileAtomic(skillPath, body, 0o600); err != nil {
 		return fmt.Errorf("failed to write skill file: %w", err)
 	}
 

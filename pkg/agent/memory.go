@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
 // MemoryStore manages persistent memory for the agent.
@@ -62,7 +62,7 @@ func (ms *MemoryStore) ReadLongTerm() string {
 func (ms *MemoryStore) WriteLongTerm(content string) error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	// Using 0o600 (owner read/write only) for secure default permissions.
-	return utils.WriteFileAtomic(ms.memoryFile, []byte(content), 0o600)
+	return fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0o600)
 }
 
 // ReadToday reads today's daily note.
@@ -102,7 +102,7 @@ func (ms *MemoryStore) AppendToday(content string) error {
 	}
 
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
-	return utils.WriteFileAtomic(todayFile, []byte(newContent), 0o600)
+	return fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0o600)
 }
 
 // GetRecentDailyNotes returns daily notes from the last N days.

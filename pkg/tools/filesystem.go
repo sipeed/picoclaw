@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
 // validatePath ensures the given path is within the workspace if restrict is true.
@@ -280,7 +280,7 @@ func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
 func (h *hostFs) WriteFile(path string, data []byte) error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	// Using 0o600 (owner read/write only) for secure default permissions.
-	return utils.WriteFileAtomic(path, data, 0o600)
+	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
 // sandboxFs is a sandboxed fileSystem that operates within a strictly defined workspace using os.Root.

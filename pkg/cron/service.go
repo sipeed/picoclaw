@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
 type CronSchedule struct {
@@ -336,7 +336,7 @@ func (cs *CronService) saveStoreUnsafe() error {
 	}
 
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
-	return utils.WriteFileAtomic(cs.storePath, data, 0o600)
+	return fileutil.WriteFileAtomic(cs.storePath, data, 0o600)
 }
 
 func (cs *CronService) AddJob(

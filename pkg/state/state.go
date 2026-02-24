@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
 // State represents the persistent state for a workspace.
@@ -139,7 +139,7 @@ func (sm *Manager) saveAtomic() error {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
 
-	return utils.WriteFileAtomic(sm.stateFile, data, 0o600)
+	return fileutil.WriteFileAtomic(sm.stateFile, data, 0o600)
 }
 
 // load loads the state from disk.

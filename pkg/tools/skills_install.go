@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -198,5 +199,5 @@ func writeOriginMeta(targetDir, registryName, slug, version string) error {
 	}
 
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
-	return utils.WriteFileAtomic(filepath.Join(targetDir, ".skill-origin.json"), data, 0o600)
+	return fileutil.WriteFileAtomic(filepath.Join(targetDir, ".skill-origin.json"), data, 0o600)
 }
