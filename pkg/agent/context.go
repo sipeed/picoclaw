@@ -40,12 +40,13 @@ After spawning, record the assignment in ## Orchestration > Delegated in MEMORY.
 When results come back, synthesize and decide the next fork.`
 
 type ContextBuilder struct {
-	workspace    string
-	workDir      string              // session-specific working directory (worktree or project subdir)
-	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore
-	tools        *tools.ToolRegistry // Direct reference to tool registry
-	peerNote     string              // set per-call from loop.go for peer session awareness
+	workspace              string
+	workDir                string              // session-specific working directory (worktree or project subdir)
+	skillsLoader           *skills.SkillsLoader
+	memory                 *MemoryStore
+	tools                  *tools.ToolRegistry // Direct reference to tool registry
+	peerNote               string              // set per-call from loop.go for peer session awareness
+	orchestrationEnabled   bool                // set from AgentLoop when --orchestration flag is used
 }
 
 func getGlobalConfigDir() string {
@@ -86,6 +87,11 @@ func (cb *ContextBuilder) SetPeerNote(note string) {
 	cb.peerNote = note
 }
 
+// SetOrchestrationEnabled sets whether orchestration is enabled.
+func (cb *ContextBuilder) SetOrchestrationEnabled(enabled bool) {
+	cb.orchestrationEnabled = enabled
+}
+
 func (cb *ContextBuilder) getIdentity() string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
@@ -94,7 +100,16 @@ func (cb *ContextBuilder) getIdentity() string {
 	// Build tools section dynamically
 	toolsSection := cb.buildToolsSection()
 
-	return fmt.Sprintf(`# picoclaw 🦞
+	// Build prompt with optional orchestration banner
+	var prompt string
+	if cb.orchestrationEnabled {
+		prompt = `/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+O R C H E S T R A  M O D E
+\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
+
+`
+	}
+	return fmt.Sprintf(prompt+`# picoclaw 🦞
 
 You are picoclaw, a helpful AI assistant.
 

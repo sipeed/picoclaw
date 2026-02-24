@@ -31,6 +31,8 @@ type SubagentManager struct {
 	bus            *bus.MessageBus
 	workspace      string
 	tools          *ToolRegistry
+	webSearchOpts  WebSearchToolOptions
+	execTool       *ExecTool // Shared exec tool for all presets
 	maxIterations  int
 	maxTokens      int
 	temperature    float64
@@ -45,10 +47,13 @@ func NewSubagentManager(
 	defaultModel, workspace string,
 	bus *bus.MessageBus,
 	reporter orch.AgentReporter,
+	webSearchOpts WebSearchToolOptions,
 ) *SubagentManager {
 	if reporter == nil {
 		reporter = orch.Noop
 	}
+	// Create a shared exec tool for all presets
+	execTool := NewExecTool(workspace, true)
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
@@ -56,6 +61,8 @@ func NewSubagentManager(
 		bus:           bus,
 		workspace:     workspace,
 		tools:         NewToolRegistry(),
+		webSearchOpts: webSearchOpts,
+		execTool:      execTool,
 		maxIterations: 10,
 		nextID:        1,
 		reporter:      reporter,
@@ -89,7 +96,7 @@ func (sm *SubagentManager) RegisterTool(tool Tool) {
 
 func (sm *SubagentManager) Spawn(
 	ctx context.Context,
-	task, label, agentID, originChannel, originChatID string,
+	task, label, agentID, originChannel, originChatID, preset string,
 	callback AsyncCallback,
 ) (string, error) {
 	sm.mu.Lock()
@@ -113,7 +120,7 @@ func (sm *SubagentManager) Spawn(
 	sm.reporter.ReportSpawn(taskID, label, task)
 
 	// Start task in background with context cancellation support
-	go sm.runTask(ctx, subagentTask, callback)
+	go sm.runTask(ctx, subagentTask, preset, callback)
 
 	if label != "" {
 		return fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task), nil
@@ -121,13 +128,30 @@ func (sm *SubagentManager) Spawn(
 	return fmt.Sprintf("Spawned subagent for task: %s", task), nil
 }
 
-func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {
+func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, preset string, callback AsyncCallback) {
 	task.Status = "running"
 
-	// Build system prompt for subagent
+	// Build system prompt based on preset type
 	systemPrompt := `You are a subagent. Complete the given task independently and report the result.
 You have access to tools - use them as needed to complete your task.
 After completing the task, provide a clear summary of what was done.`
+
+	// Select prompt based on preset (exploratory vs deliberate)
+	p := Preset(preset)
+	if IsValidPreset(p) {
+		switch p {
+		case PresetScout, PresetAnalyst:
+			// Exploratory presets
+			systemPrompt = `You are an exploratory subagent. Investigate the task and report your findings.
+Use your best judgment when encountering ambiguity. Use tools as needed.
+Return clear findings and observations.`
+		case PresetCoder, PresetWorker, PresetCoordinator:
+			// Deliberate presets
+			systemPrompt = `You are a deliberate subagent. Complete the task methodically and verify your work.
+Before executing significant actions, think through your approach.
+After completing, provide a clear summary of what was done and how it was verified.`
+		}
+	}
 
 	messages := []providers.Message{
 		{
@@ -153,7 +177,11 @@ After completing the task, provide a clear summary of what was done.`
 
 	// Run tool loop with access to tools
 	sm.mu.RLock()
+	// Use preset registry if preset is valid, otherwise use default registry
 	tools := sm.tools
+	if IsValidPreset(p) {
+		tools = sm.buildPresetRegistry(p, sm.workspace)
+	}
 	maxIter := sm.maxIterations
 	maxTokens := sm.maxTokens
 	temperature := sm.temperature
@@ -245,6 +273,68 @@ After completing the task, provide a clear summary of what was done.`
 			Content: announceContent,
 		})
 	}
+}
+
+// buildPresetRegistry constructs a ToolRegistry for the given preset with appropriate restrictions.
+func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) *ToolRegistry {
+	registry := NewToolRegistry()
+	config := SandboxConfigForPreset(preset, writeRoot)
+
+	readRoot := writeRoot
+	if readRoot == "" {
+		readRoot = sm.workspace
+	}
+
+	// Register read_file and list_dir with restrict=true
+	if config.AllowedTools["read_file"] {
+		registry.Register(NewReadFileTool(readRoot, true))
+	}
+	if config.AllowedTools["list_dir"] {
+		registry.Register(NewListDirTool(readRoot, true))
+	}
+
+	// Register write tools only if allowed and writeRoot is set
+	if config.AllowedTools["write_file"] && writeRoot != "" {
+		registry.Register(NewWriteFileTool(writeRoot, true))
+		registry.Register(NewEditFileTool(writeRoot, true))
+		registry.Register(NewAppendFileTool(writeRoot, true))
+	}
+
+	// Register exec and bg_monitor if allowed
+	if config.AllowedTools["exec"] {
+		// Use the shared exec tool but set allow patterns
+		execTool := sm.execTool
+		if config.ExecPolicy != nil {
+			_ = execTool.SetAllowPatterns([]string{config.ExecPolicy.AllowPattern})
+		}
+		registry.Register(execTool)
+
+		if config.AllowedTools["bg_monitor"] {
+			registry.Register(NewBgMonitorTool(execTool))
+		}
+	}
+
+	// Register web tools
+	if config.AllowedTools["web_search"] {
+		webSearchTool := NewWebSearchTool(sm.webSearchOpts)
+		if webSearchTool != nil {
+			registry.Register(webSearchTool)
+		}
+	}
+	if config.AllowedTools["web_fetch"] {
+		registry.Register(NewWebFetchTool(50000))
+	}
+
+	// Register message tool (always available)
+	registry.Register(NewMessageTool())
+
+	// Register spawn tool only for coordinator preset
+	if config.AllowedTools["spawn"] && preset == PresetCoordinator {
+		spawnTool := NewSpawnTool(sm)
+		registry.Register(spawnTool)
+	}
+
+	return registry
 }
 
 func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {

@@ -261,7 +261,21 @@ func registerSharedTools(
 
 		// Spawn tool — only registered when orchestration is explicitly enabled.
 		if agent.Subagents != nil && agent.Subagents.Enabled {
-			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus, al.reporter())
+			webSearchOpts := tools.WebSearchToolOptions{
+				BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
+				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
+				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+				TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
+				TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
+				TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
+				TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
+				DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
+				DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+				PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+				PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+				PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+			}
+			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus, al.reporter(), webSearchOpts)
 			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 			spawnTool := tools.NewSpawnTool(subagentManager)
 			currentAgentID := agentID
@@ -273,6 +287,11 @@ func registerSharedTools(
 
 		// Update context builder with the complete tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
+
+		// Set orchestration mode if enabled
+		if agent.Subagents != nil && agent.Subagents.Enabled {
+			agent.ContextBuilder.SetOrchestrationEnabled(true)
+		}
 	}
 }
 
