@@ -67,12 +67,11 @@ func SanitizeBranchName(task string) string {
 		s = "worktree"
 	}
 
-	// Truncate to 40 chars
-	runes := []rune(s)
-	if len(runes) > 40 {
-		runes = runes[:40]
+	// Truncate to 40 chars (ASCII fast path: branch names are ASCII after sanitization)
+	if len(s) > 40 {
+		s = s[:40]
 	}
-	s = strings.TrimRight(string(runes), "-")
+	s = strings.TrimRight(s, "-")
 
 	return "plan/" + s
 }

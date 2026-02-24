@@ -1036,28 +1036,32 @@ func formatMarkdownTable(lines []string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+func runeDisplayWidth(r rune) int {
+	switch {
+	case r == '\u200d' || r == '\u200c' || r == '\ufe0f':
+		return 0
+	case unicode.Is(unicode.Mn, r):
+		return 0
+	case isEmojiRune(r):
+		return 3
+	case unicode.In(r,
+		unicode.Han,
+		unicode.Hiragana,
+		unicode.Katakana,
+		unicode.Hangul):
+		return 2
+	case (r >= 0x3000 && r <= 0x303F) || (r >= 0xFF00 && r <= 0xFFEF):
+		// CJK symbols/punctuation and half/fullwidth forms.
+		return 2
+	default:
+		return 1
+	}
+}
+
 func displayWidth(s string) int {
 	w := 0
 	for _, r := range s {
-		switch {
-		case r == '\u200d' || r == '\u200c' || r == '\ufe0f':
-			continue
-		case unicode.Is(unicode.Mn, r):
-			continue
-		case isEmojiRune(r):
-			w += 3
-		case unicode.In(r,
-			unicode.Han,
-			unicode.Hiragana,
-			unicode.Katakana,
-			unicode.Hangul):
-			w += 2
-		case (r >= 0x3000 && r <= 0x303F) || (r >= 0xFF00 && r <= 0xFFEF):
-			// CJK symbols/punctuation and half/fullwidth forms.
-			w += 2
-		default:
-			w++
-		}
+		w += runeDisplayWidth(r)
 	}
 	return w
 }
@@ -1092,7 +1096,7 @@ func wrapByDisplayWidth(s string, maxWidth int) []string {
 			flush()
 			continue
 		}
-		rw := displayWidth(string(r))
+		rw := runeDisplayWidth(r)
 		if rw == 0 {
 			cur.WriteRune(r)
 			continue

@@ -47,6 +47,10 @@ func TailPad(s string, n, wrapWidth int) string {
 // wrapLine splits a single line into segments of at most width runes.
 // An empty line produces one empty string (preserving blank lines).
 func wrapLine(line string, width int) []string {
+	// ASCII fast path: byte length == rune length for pure ASCII
+	if len(line) <= width {
+		return []string{line}
+	}
 	runes := []rune(line)
 	if len(runes) <= width {
 		return []string{line}
@@ -96,6 +100,10 @@ func DetectRepetitionLoop(text string) bool {
 func Truncate(s string, maxLen int) string {
 	if maxLen <= 0 {
 		return ""
+	}
+	// ASCII fast path: byte length == rune length for pure ASCII
+	if len(s) <= maxLen {
+		return s
 	}
 	runes := []rune(s)
 	if len(runes) <= maxLen {

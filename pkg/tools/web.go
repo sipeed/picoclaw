@@ -278,7 +278,7 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, strings.NewReader(string(payloadBytes)))
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -534,6 +534,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	var text, extractor string
 
+	bodyStr := string(body)
 	if strings.Contains(contentType, "application/json") {
 		var jsonData any
 		if err := json.Unmarshal(body, &jsonData); err == nil {
@@ -541,15 +542,15 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 			text = string(formatted)
 			extractor = "json"
 		} else {
-			text = string(body)
+			text = bodyStr
 			extractor = "raw"
 		}
 	} else if strings.Contains(contentType, "text/html") || len(body) > 0 &&
-		(strings.HasPrefix(string(body), "<!DOCTYPE") || strings.HasPrefix(strings.ToLower(string(body)), "<html")) {
-		text = t.extractText(string(body))
+		(strings.HasPrefix(bodyStr, "<!DOCTYPE") || strings.HasPrefix(strings.ToLower(bodyStr), "<html")) {
+		text = t.extractText(bodyStr)
 		extractor = "text"
 	} else {
-		text = string(body)
+		text = bodyStr
 		extractor = "raw"
 	}
 
