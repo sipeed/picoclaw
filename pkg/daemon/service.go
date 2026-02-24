@@ -150,12 +150,22 @@ func (s *Service) Start() error {
 
 	pid := cmd.Process.Pid
 
-	// Write PID file atomically
-	if err := s.pidFile.Write(); err != nil {
+	// Write PID file atomically with the child's PID
+	if err := s.pidFile.WritePID(pid); err != nil {
 		// Failed to write PID file, kill the process
 		cmd.Process.Kill()
 		logFile.Close()
 		return fmt.Errorf("failed to write PID file: %w", err)
+	}
+
+	// Verify the child process is actually running
+	// This prevents race conditions where status is checked immediately
+	time.Sleep(100 * time.Millisecond)
+	if !s.pidFile.IsProcessRunning() {
+		// Child process died immediately, likely a startup error
+		s.pidFile.Remove()
+		logFile.Close()
+		return fmt.Errorf("gateway process failed to start (check log file: %s)", s.logConfig.Path)
 	}
 
 	// Update state

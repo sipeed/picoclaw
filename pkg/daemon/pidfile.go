@@ -44,24 +44,30 @@ func NewPIDFile(path string) *PIDFile {
 // This prevents multiple instances of the gateway from running simultaneously,
 // which could cause resource conflicts and undefined behavior.
 func (p *PIDFile) Write() error {
+	return p.WritePID(os.Getpid())
+}
+
+// WritePID atomically writes the specified process ID to the PID file.
+// Returns an error if a PID file already exists with a running process.
+//
+// Use this method when you need to write a PID other than the current process,
+// such as when spawning a child process.
+func (p *PIDFile) WritePID(pid int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	// Check for existing PID file
 	if _, err := os.Stat(p.path); err == nil {
 		// PID file exists, check if process is running
-		pid, err := p.read()
-		if err == nil && p.isProcessRunning(pid) {
+		existingPid, err := p.read()
+		if err == nil && p.isProcessRunning(existingPid) {
 			return &ProcessRunningError{
-				pid:  pid,
+				pid:  existingPid,
 				Path: p.path,
 			}
 		}
 		// Process is not running, stale PID file, continue
 	}
-
-	// Write PID to temp file in same directory (atomic preparation)
-	pid := os.Getpid()
 	pidStr := strconv.Itoa(pid)
 
 	tempFile := p.path + ".tmp"
