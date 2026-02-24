@@ -786,7 +786,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 	ch := h.notifier.Subscribe()
 	defer h.notifier.Unsubscribe(ch)
 
-	var lastPlan, lastSession, lastSkills, lastDev, lastContext []byte
+	var lastPlan, lastSession, lastSkills, lastDev, lastContext, lastPrompt []byte
 
 	// Send initial state immediately
 	sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
@@ -796,6 +796,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 	sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 	sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
 	sendSSEIfChanged(w, flusher, "context", h.provider.GetContextInfo(), &lastContext)
+	sendSSEIfChanged(w, flusher, "prompt", map[string]string{"prompt": h.provider.GetSystemPrompt()}, &lastPrompt)
 
 	for {
 		select {
@@ -811,6 +812,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 			sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 			sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
 			sendSSEIfChanged(w, flusher, "context", h.provider.GetContextInfo(), &lastContext)
+			sendSSEIfChanged(w, flusher, "prompt", map[string]string{"prompt": h.provider.GetSystemPrompt()}, &lastPrompt)
 		}
 	}
 }

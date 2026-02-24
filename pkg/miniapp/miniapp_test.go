@@ -397,8 +397,8 @@ func TestSSE_NotifyDrivesSubsequentEvents(t *testing.T) {
 	defer resp.Body.Close()
 
 	scanner := bufio.NewScanner(resp.Body)
-	// Drain initial 5 events (plan, session, skills, dev, context)
-	drainEvents(t, scanner, 5, 2*time.Second)
+	// Drain initial 6 events (plan, session, skills, dev, context, prompt)
+	drainEvents(t, scanner, 6, 2*time.Second)
 
 	// Mutate state and notify — diff dedup should detect the change and send a new event
 	provider.mutated.Store(true)
@@ -426,8 +426,8 @@ func TestSSE_DiffDedupSuppressesDuplicate(t *testing.T) {
 	defer resp.Body.Close()
 
 	scanner := bufio.NewScanner(resp.Body)
-	// Drain initial events (plan, session, skills, dev, context)
-	drainEvents(t, scanner, 5, 2*time.Second)
+	// Drain initial events (plan, session, skills, dev, context, prompt)
+	drainEvents(t, scanner, 6, 2*time.Second)
 
 	// Notify with unchanged data — should produce zero new event lines
 	notifier.Notify()
@@ -1690,8 +1690,8 @@ func TestSSE_DevEventUpdatesOnActivateDeactivate(t *testing.T) {
 	defer resp.Body.Close()
 
 	scanner := bufio.NewScanner(resp.Body)
-	// Drain initial 5 events
-	drainEvents(t, scanner, 5, 2*time.Second)
+	// Drain initial 6 events (plan, session, skills, dev, context, prompt)
+	drainEvents(t, scanner, 6, 2*time.Second)
 
 	// Activate — should trigger a dev event with active=true
 	h.ActivateDevTarget(id)

@@ -1605,6 +1605,15 @@ function connectSSE() {
   eventSource.addEventListener('context', function(e) {
     try { renderContextFromData(JSON.parse(e.data)); } catch(err) {}
   });
+  eventSource.addEventListener('prompt', function(e) {
+    try {
+      var d = JSON.parse(e.data);
+      var view = document.getElementById('system-prompt-view');
+      if (view && view.style.display !== 'none') {
+        view.textContent = d.prompt || '(empty)';
+      }
+    } catch(err) {}
+  });
   eventSource.onerror = function() {
     // Browser will auto-reconnect EventSource
   };
