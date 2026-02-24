@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -164,6 +165,19 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		c.stopThinking.Delete(msg.ChatID)
 	}
 
+	// If media is present, send media (skip placeholder edit — can't edit text into photo)
+	if len(msg.Media) > 0 {
+		// Delete placeholder instead of editing it
+		if pID, ok := c.placeholders.Load(msg.ChatID); ok {
+			c.placeholders.Delete(msg.ChatID)
+			_ = c.bot.DeleteMessage(ctx, &telego.DeleteMessageParams{
+				ChatID:    tu.ID(chatID),
+				MessageID: pID.(int),
+			})
+		}
+		return c.sendMedia(ctx, chatID, msg)
+	}
+
 	htmlContent := markdownToTelegramHTML(msg.Content)
 
 	// Try to edit placeholder
@@ -191,6 +205,99 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 
 	return nil
+}
+
+// sendMedia sends media files (images/documents) to a Telegram chat.
+// For images (.jpg/.jpeg/.png/.gif/.webp), uses SendPhoto.
+// For all other file types, uses SendDocument.
+// Supports both local file paths and URLs. Files are streamed, not buffered.
+func (c *TelegramChannel) sendMedia(ctx context.Context, chatID int64, msg bus.OutboundMessage) error {
+	caption := msg.Content
+	var firstErr error
+
+	for i, mediaPath := range msg.Media {
+		// Only first media gets the caption
+		itemCaption := ""
+		if i == 0 {
+			itemCaption = caption
+		}
+
+		err := c.sendSingleMedia(ctx, chatID, mediaPath, itemCaption)
+		if err != nil {
+			logger.ErrorCF("telegram", "Failed to send media", map[string]any{
+				"path":  mediaPath,
+				"error": err.Error(),
+			})
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+
+	// If all media failed and we have text content, fall back to text
+	if firstErr != nil && caption != "" {
+		tgMsg := tu.Message(tu.ID(chatID), markdownToTelegramHTML(caption))
+		tgMsg.ParseMode = telego.ModeHTML
+		if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
+			tgMsg.ParseMode = ""
+			_, _ = c.bot.SendMessage(ctx, tgMsg)
+		}
+	}
+
+	return firstErr
+}
+
+// sendSingleMedia sends one media file. It determines the input source (URL vs local file)
+// and the send method (photo vs document) based on the path and file extension.
+func (c *TelegramChannel) sendSingleMedia(ctx context.Context, chatID int64, mediaPath, caption string) error {
+	isURL := strings.HasPrefix(mediaPath, "http://") || strings.HasPrefix(mediaPath, "https://")
+	isImage := isImageExtension(mediaPath)
+
+	if isURL {
+		input := tu.FileFromURL(mediaPath)
+		if isImage {
+			params := tu.Photo(tu.ID(chatID), input)
+			params.Caption = caption
+			_, err := c.bot.SendPhoto(ctx, params)
+			return err
+		}
+		params := tu.Document(tu.ID(chatID), input)
+		params.Caption = caption
+		_, err := c.bot.SendDocument(ctx, params)
+		return err
+	}
+
+	// Local file — stream directly, don't buffer in memory
+	file, err := os.Open(mediaPath)
+	if err != nil {
+		return fmt.Errorf("open media file: %w", err)
+	}
+	defer file.Close()
+
+	fileName := filepath.Base(mediaPath)
+	input := tu.File(tu.NameReader(file, fileName))
+
+	if isImage {
+		params := tu.Photo(tu.ID(chatID), input)
+		params.Caption = caption
+		_, err = c.bot.SendPhoto(ctx, params)
+		return err
+	}
+
+	params := tu.Document(tu.ID(chatID), input)
+	params.Caption = caption
+	_, err = c.bot.SendDocument(ctx, params)
+	return err
+}
+
+// isImageExtension returns true for common image file extensions.
+func isImageExtension(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+		return true
+	}
+	return false
 }
 
 func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Message) error {
