@@ -123,6 +123,100 @@ Lint: `golangci-lint run`
 
 ---
 
+### 設計レベルの根本原因 — 「見落とし」ではなく「構造的に不可避」な問題
+
+個別の最適化候補の多くは、書いた人の不注意ではなく、**設計上の選択が特定のアロケーションパターンを必然的に引き起こしている**ことが読み取れる。以下はその根本原因を設計レベルで整理したもの。
+
+#### D-1. MemoryStore が「ファイル = 正」の設計で、パース済み表現をキャッシュできない
+
+`MemoryStore` の各メソッドはほぼ全員が `ReadLongTerm()` → `strings.Split()` → scan → `strings.Join()` を独立して実行する。`GetMemoryContext()` を1回呼ぶだけで、内部で `ReadLongTerm()` が3回以上呼ばれる連鎖が起きる。
+
+```
+GetMemoryContext()
+  └─ HasActivePlan()    → ReadLongTerm() → ファイルI/O
+  └─ GetPlanStatus()   → ReadLongTerm() → ファイルI/O
+  └─ GetPlanContext()  → ReadLongTerm() → ファイルI/O
+       └─ GetCurrentPhase() → ReadLongTerm() → ファイルI/O
+       └─ GetTotalPhases()  → ReadLongTerm() → ファイルI/O
+```
+
+**なぜこうなったか**: MEMORY.md をユーザーが直接編集できる外部ファイルとして設計したため、「ファイルが常に最新の正」という前提が成立している。インメモリキャッシュを持つと外部編集が反映されなくなる恐れがあり、キャッシュを自然に導入できない。
+
+**設計上の選択肢**: (a) `content` を引数として受け取る内部 pure function 群 + 高レベルメソッドだけが1回 ReadLongTerm() を呼ぶ、(b) ウォッチ付きキャッシュ (`fsnotify`)、(c) エージェントループ内で1ターンに1回だけ読む「ターンスコープキャッシュ」。
+
+---
+
+#### D-2. `FunctionCall.Arguments` が JSON 文字列のまま型として定義されている
+
+```go
+// protocoltypes/types.go
+type FunctionCall struct {
+    Name      string `json:"name"`
+    Arguments string `json:"arguments"`  // ← ワイヤフォーマット (JSON文字列) をそのままドメイン型に
+}
+```
+
+ツール引数はワイヤ上 `"arguments": "{\"key\":\"value\"}"` の形で届くが、この型定義はその文字列をそのまま保持する。使う側は毎回 `json.Unmarshal([]byte(tc.Function.Arguments), &args)` しなければならず、これがストリーミングループ内の重複 Unmarshal の根本原因になっている。
+
+**対比**: `ToolCall.Arguments map[string]any json:"-"` というパース済みフィールドは存在するが、openai_compat の streaming path ではこの `map[string]any` フィールドではなく `Function.Arguments string` から直接読んでいる。両方のフィールドが中途半端に共存している。
+
+---
+
+#### D-3. `ToolFunctionDefinition.Parameters` が `map[string]any` で、シリアライズ済み形式を保持できない
+
+```go
+type ToolFunctionDefinition struct {
+    Name        string         `json:"name"`
+    Description string         `json:"description"`
+    Parameters  map[string]any `json:"parameters"`  // ← プロバイダーへ送るたびに Marshal が必要
+}
+```
+
+ツール定義はエージェント起動時に一度決まり、実行中は変化しない。しかし `map[string]any` として保持しているため、各プロバイダーへの送信のたびに `json.Marshal` → `string` 変換が発生する。`json.RawMessage` にしておけば「一度 marshal したバイト列をそのまま複数プロバイダーへ流す」設計が可能になる。
+
+---
+
+#### D-4. 検索プロバイダー群に共通フォーマット抽象がなく、同じ欠陥が3箇所に複製されている
+
+`BraveSearchProvider`, `TavilySearchProvider`, `DuckDuckGoSearchProvider` は全て独立して「結果 → 文字列」の変換ロジックを実装している。共通の `ResultFormatter` インターフェースや `formatSearchResult(title, url, snippet string)` ヘルパーがないため、同じ `[]string + strings.Join` パターンが3箇所に独立してコピーされた。最適化漏れも3箇所に同時に発生する。
+
+**設計の示唆**: プロバイダーの `Search()` 戻り値を `string` にせず構造体 (`[]SearchResult`) にして、フォーマットを呼び出し側に移譲する設計なら、フォーマットロジックは1箇所で済む。
+
+---
+
+#### D-5. `Session.Messages` が可変スライスで、読み取りに構造的な全コピーが必要
+
+```go
+type Session struct {
+    Messages []providers.Message  // ← 可変。append で追記される
+}
+
+func (sm *SessionManager) GetHistory(key string) []providers.Message {
+    history := make([]providers.Message, len(session.Messages))
+    copy(history, session.Messages)  // ← 安全のために必須
+    return history
+}
+```
+
+`session.Messages` は `append` で追記される可変スライスで、外部から参照を渡すと内部状態が壊れるリスクがある。そのため `GetHistory()`, `Save()`, `SetHistory()` の全てでコピーが必要になる。コメントにも「to strictly isolate internal state from the caller's slice」と明記されており、これは意図的な設計だがコピーコストを構造的に固定している。
+
+**代替設計**: メッセージログを append-only な不変構造 (`[]*Message` のリンクリストや、インデックスで管理するリングバッファ) にすれば、参照の共有が安全になりコピーを排除できる。
+
+---
+
+#### D-6. `MemoryStore` のメソッド境界が「ファイル操作単位」で切られており、呼び出し側が合成できない
+
+```go
+// 呼び出し側は content を持てないため、内部で毎回 ReadLongTerm() を呼ぶ
+phases := ms.GetPlanPhases()       // ReadLongTerm() 内包
+current := ms.GetCurrentPhase()    // ReadLongTerm() 内包
+status := ms.GetPlanStatus()       // ReadLongTerm() 内包
+```
+
+各 public メソッドが「ファイルを読んでパースして1つの値を返す」単位で設計されているため、呼び出し側は複数の値が必要なときでもメソッドを複数回呼ぶしか選択肢がない。`content` を受け取る private 関数群 (`extractPhaseContent(content, phase)` など) は存在するが、public API からは使えない。
+
+---
+
 ### コードのにおい — 見落としやすいパターン集
 
 上記の個別発見を横断して見ると、このコードベースに繰り返し現れる**7つの構造的なにおい**がある。新しいコードを書くとき・レビューするときのチェックリストとして使う。
