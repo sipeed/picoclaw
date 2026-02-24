@@ -299,7 +299,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		DisplayName: user.FirstName,
 	}
 
-	// 检查白名单，避免为被拒绝的用户下载附件
+	// check allowlist to avoid downloading attachments for rejected users
 	if !c.IsAllowedSender(sender) {
 		logger.DebugCF("telegram", "Message rejected by allowlist", map[string]any{
 			"user_id": platformID,
