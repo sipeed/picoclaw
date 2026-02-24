@@ -166,7 +166,7 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 
 		// /help and /usage work in all modes
 		if input == "/help" {
-			printHelp()
+			printInteractiveHelp()
 			continue
 		}
 		if input == "/usage" {
@@ -291,7 +291,7 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 
 		// /help and /usage work in all modes
 		if input == "/help" {
-			printHelp()
+			printInteractiveHelp()
 			continue
 		}
 		if input == "/usage" {
@@ -371,8 +371,8 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	}
 }
 
-// printHelp outputs detailed usage information for all interactive modes.
-func printHelp() {
+// printInteractiveHelp outputs detailed usage information for all interactive modes.
+func printInteractiveHelp() {
 	fmt.Printf(`%s PicoClaw Interactive Mode Help
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

@@ -94,7 +94,7 @@ func copyDirectory(src, dst string) error {
 
 func main() {
 	if len(os.Args) < 2 {
-		printHelp()
+		printCliHelp()
 		os.Exit(1)
 	}
 
@@ -168,12 +168,12 @@ func main() {
 		printVersion()
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
-		printHelp()
+		printCliHelp()
 		os.Exit(1)
 	}
 }
 
-func printHelp() {
+func printCliHelp() {
 	fmt.Printf("%s picoclaw - Personal AI Assistant v%s\n\n", logo, version)
 	fmt.Println("Usage: picoclaw <command>")
 	fmt.Println()
