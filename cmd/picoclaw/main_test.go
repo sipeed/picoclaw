@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,23 +27,23 @@ func TestNewPicoclawCommand(t *testing.T) {
 	assert.Nil(t, cmd.PersistentPreRun)
 	assert.Nil(t, cmd.PersistentPostRun)
 
-	allowedCommands := map[string]struct{}{
-		"agent":   {},
-		"auth":    {},
-		"cron":    {},
-		"gateway": {},
-		"migrate": {},
-		"onboard": {},
-		"skills":  {},
-		"status":  {},
-		"version": {},
+	allowedCommands := []string{
+		"agent",
+		"auth",
+		"cron",
+		"gateway",
+		"migrate",
+		"onboard",
+		"skills",
+		"status",
+		"version",
 	}
 
 	subcommands := cmd.Commands()
 	assert.Len(t, subcommands, len(allowedCommands))
 
 	for _, subcmd := range subcommands {
-		_, found := allowedCommands[subcmd.Name()]
+		found := slices.Contains(allowedCommands, subcmd.Name())
 		assert.True(t, found, "unexpected subcommand %q", subcmd.Name())
 
 		assert.False(t, subcmd.Hidden)

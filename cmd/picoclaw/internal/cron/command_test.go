@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,19 +29,19 @@ func TestNewCronCommand(t *testing.T) {
 
 	assert.True(t, cmd.HasSubCommands())
 
-	allowedCommands := map[string]struct{}{
-		"list":    {},
-		"add":     {},
-		"remove":  {},
-		"enable":  {},
-		"disable": {},
+	allowedCommands := []string{
+		"list",
+		"add",
+		"remove",
+		"enable",
+		"disable",
 	}
 
 	subcommands := cmd.Commands()
 	assert.Len(t, subcommands, len(allowedCommands))
 
 	for _, subcmd := range subcommands {
-		_, found := allowedCommands[subcmd.Name()]
+		found := slices.Contains(allowedCommands, subcmd.Name())
 		assert.True(t, found, "unexpected subcommand %q", subcmd.Name())
 
 		assert.Len(t, subcmd.Aliases, 0)

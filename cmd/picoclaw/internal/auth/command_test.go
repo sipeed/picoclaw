@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,18 +27,18 @@ func TestNewAuthCommand(t *testing.T) {
 	assert.False(t, cmd.HasFlags())
 	assert.True(t, cmd.HasSubCommands())
 
-	allowedCommands := map[string]struct{}{
-		"login":  {},
-		"logout": {},
-		"status": {},
-		"models": {},
+	allowedCommands := []string{
+		"login",
+		"logout",
+		"status",
+		"models",
 	}
 
 	subcommands := cmd.Commands()
 	assert.Len(t, subcommands, len(allowedCommands))
 
 	for _, subcmd := range subcommands {
-		_, found := allowedCommands[subcmd.Name()]
+		found := slices.Contains(allowedCommands, subcmd.Name())
 		assert.True(t, found, "unexpected subcommand %q", subcmd.Name())
 
 		assert.Len(t, subcmd.Aliases, 0)
