@@ -678,3 +678,31 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
 
+---
+
+## FEEDBACK — 第8回レビュー (M)
+
+> レビュー日: 2026-02-24。アクション指示は正確。Phase 3-2 の説明注記に軽微な誤りあり。
+
+### M-1. Phase 3-2「効果範囲の限定」の例示が不正確 (軽微)
+
+**指摘内容**: Phase 3-2 の説明注記に「この統合が効くのは読み取り専用メソッド (`GetPlanContext`, `GetReviewContext`, `FormatPlanDisplay` 等) のみ」とあるが、`GetReviewContext()` は `strings.Split` を呼ぶヘルパーを使わないため Phase 3-2 の恩恵がない。
+
+**`GetReviewContext()` L545-555 の実態**:
+```go
+func (ms *MemoryStore) GetReviewContext() string {
+    content := ms.ReadLongTerm()
+    var sb strings.Builder
+    sb.WriteString(content)   // content をそのまま書き込むだけ — Split なし
+    ...
+}
+```
+
+同様に `GetInterviewContext()` (L497-541) も `sb.WriteString(content)` するだけで split ヘルパーを呼ばない。
+
+Phase 3-2 で実際に恩恵を受けるのは:
+- `GetPlanContext()` — `extractPhaseContent` / `extractCommandsSection` / `extractContextSection` を直接呼ぶ (対応セクションに正しく記載済み ✓)
+- `FormatPlanDisplay()` — `getPlanPhasesFrom` / `extractCommandsSection` / `extractContextSection` を直接呼ぶ (同上 ✓)
+
+**実装への影響**: なし (対応セクションの指示は正確)。「効果範囲の限定」注記の例示を `GetReviewContext` → `GetPlanContext`/`FormatPlanDisplay` に差し替えれば正確になる。
+
