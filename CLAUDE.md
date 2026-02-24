@@ -454,3 +454,177 @@ RAM 制約がない前提での推奨順:
 2. **`sessions/*.json` の write-behind** — セッション単位の dirty フラグ + シャットダウンフック
 3. **`MemoryStore` への `*ParsedPlan` 常駐** — D-1/D-6 を根本解決、読み取りアロケーションをゼロに
 4. **ターンスコープキャッシュ** — 3 が実装されれば自然に解決するため不要になる可能性あり
+
+---
+
+## 改修計画 — メモリ最適化の実装フェーズ
+
+> 作成 2026-02-24。レビュー結果 (A〜H + D-1〜D-6 + ストレージ保護) を実装可能な単位に分割。
+> 各フェーズは `go build ./... && go test ./... && go vet ./...` が通る状態で完結する。
+
+### フェーズ 0: 機械的な置き換え (低リスク・高カバレッジ)
+
+**目的**: コード構造を変えず、同じ関数内でパターンを置き換えるだけの修正。レビューが容易で回帰リスクが最小。
+
+#### 0-1. strings.Builder 置き換え (カテゴリ A 残り)
+
+| ファイル | 関数 | 優先度 |
+|----------|------|--------|
+| `pkg/tools/web.go` | `BraveSearchProvider.Search()` L73-85 | 🔴 |
+| `pkg/tools/web.go` | `TavilySearchProvider.Search()` L155-167 | 🔴 |
+| `pkg/tools/web.go` | `DuckDuckGoSearchProvider.extractResults()` L211-254 | 🔴 |
+| `pkg/tools/web.go` | `WebFetchTool.extractText()` L592-617 | 🔴 |
+| `pkg/skills/loader.go` | `BuildSkillsSummary()` L234-250 | 🔴 |
+| `pkg/agent/context.go` | `BuildSystemPrompt()` L247 — `+=` を Builder に | 🟡 |
+| `pkg/logger/logger.go` | `formatFields()` L241-246 | 🟡 |
+| `pkg/skills/loader.go` | `LoadSkillsForContext()` L217-225 | 🟡 |
+| `pkg/channels/discord.go` | `appendContent()` L162-168 | 🟡 |
+| `pkg/channels/slack.go` | `handleMessageEvent()` L234-272 | 🟡 |
+
+#### 0-2. スライス事前容量 (カテゴリ B 残り)
+
+| ファイル | 変更 |
+|----------|------|
+| `pkg/skills/loader.go:73` | `make([]SkillInfo, 0)` → `make([]SkillInfo, 0, 20)` |
+| `pkg/config/config.go:628` | `var matches` → `make([]ModelConfig, 0, 4)` |
+| `pkg/config/migration.go:48` | `var result` → `make([]ModelConfig, 0, len(providers)*4)` |
+| `pkg/skills/registry.go:183` | `var merged` → `make([]SearchResult, 0, len(regs)*limit)` |
+| `pkg/agent/session_tracker.go:125` | `var result` → 容量ヒント付き |
+| `pkg/skills/search_cache.go:42-43` | map/slice に `maxEntries` ヒント |
+
+#### 0-3. byte/string 変換の削減 (カテゴリ C)
+
+| ファイル | 変更 |
+|----------|------|
+| `pkg/tools/web.go:289` | `strings.NewReader(string(payloadBytes))` → `bytes.NewReader(payloadBytes)` |
+| `pkg/tools/web.go:545-562` | 複数の `string(body)` → 1回だけ変換して変数に保持 |
+| `pkg/providers/claude_cli_provider.go:133` | `string(paramsJSON)` → `sb.Write(paramsJSON)` |
+| `pkg/utils/string.go:100` | `Truncate()` — `len(s) <= max` で早期 return (ASCII fast path) |
+| `pkg/utils/string.go:50` | `wrapLine()` — 同上 ASCII fast path |
+| `pkg/git/worktree.go:71-75` | `[]rune` → byte 長チェックで早期 return |
+
+#### 0-4. パッケージ変数化 (カテゴリ H)
+
+| ファイル | 変更 |
+|----------|------|
+| `pkg/utils/media.go:18-19` | `audioExtensions`/`audioTypes` を関数外の `var` に |
+| `pkg/skills/clawhub_registry.go:114` | `fmt.Sprintf("%d", limit)` → `strconv.Itoa(limit)` |
+
+**コミット単位**: 0-1, 0-2, 0-3, 0-4 をそれぞれ個別コミット。
+
+---
+
+### フェーズ 1: 値渡し・コピーの最適化 (カテゴリ E)
+
+**目的**: struct の不要なコピーを削減。型シグネチャが変わるため呼び出し側の修正が必要。
+
+| ファイル | 変更 | 注意 |
+|----------|------|------|
+| `pkg/agent/session_tracker.go:125` | `ListActive()` の戻り値を `[]*SessionEntry` に | 呼び出し側 (`cmd_gateway.go`, `miniapp.go`) の型合わせ |
+| `pkg/logger/logger.go:88-92` | `recent()` の戻り値を `[]*LogEntry` 検討 | JSON シリアライズへの影響確認 |
+| `pkg/skills/registry.go:132-133` | `SearchAll()` 内の registries コピーをポインタスライスに | ロック範囲の再確認 |
+
+**コミット**: 1つにまとめる。
+
+---
+
+### フェーズ 2: JSON ホットパスの最適化 (カテゴリ D)
+
+**目的**: ストリーミングループ内の重複 Marshal/Unmarshal を排除。
+
+#### 2-1. openai_compat streaming の Arguments 重複 Unmarshal
+
+`pkg/providers/openai_compat/provider.go` L274, 362, 621
+— ストリーム完了時に1回だけ Unmarshal するよう制御フローを整理。
+
+#### 2-2. codex/claude CLI の Parameters 重複 Marshal
+
+`pkg/providers/codex_cli_provider.go:154-155`, `pkg/providers/claude_cli_provider.go:133`
+— ツール定義はループ外で1回 Marshal してキャッシュ、またはループ内で `json.RawMessage` 直接書き込み。
+
+**コミット**: 2-1, 2-2 を個別。
+
+---
+
+### フェーズ 3: MemoryStore の読み取り最適化 (設計 D-1, D-6)
+
+**目的**: `GetMemoryContext()` 1回で `ReadLongTerm()` が 5回以上呼ばれる問題を解消。
+
+#### 方式: content パススルー (最小侵襲)
+
+既存の private 関数群 (`extractPhaseContent`, `getPlanPhasesFromContent` 等) は既に `content string` を受け取る設計。
+public メソッド側に「content を引数に取るバリアント」を追加し、`GetMemoryContext()` で1回だけ Read する。
+
+```go
+// 新設: 1回の Read で全情報を取得
+func (ms *MemoryStore) GetMemoryContextCached() string {
+    content := ms.ReadLongTerm()
+    // content を全ヘルパーに渡す
+    hasPlan := hasActivePlanFrom(content)
+    status  := getPlanStatusFrom(content)
+    ctx     := getPlanContextFrom(content)
+    ...
+}
+```
+
+既存の public メソッド (`HasActivePlan()`, `GetPlanStatus()` 等) は互換性のため残す（単体テスト・CLI から呼ばれる可能性）。
+
+#### memory.go 内の重複 Split/Join (カテゴリ H 後半)
+
+`extractPhaseContent`, `GetPlanPhases`, `MarkStep`, `AddStep` が個別に `strings.Split` する問題は、
+content パススルー方式で自然に解消される（Split は `GetMemoryContext()` 内で1回のみ）。
+
+**コミット**: 1つ。
+
+---
+
+### フェーズ 4: ストレージ保護 — write-behind (設計セクション)
+
+**目的**: microSD 書き込み回数を 97% 削減。
+
+#### 4-1. stats.json の write-behind
+
+- `SessionTracker` (または stats 管理構造体) に dirty フラグ + タイマー (5分)
+- `RecordUsage()` / `RecordPrompt()` はインメモリのみ更新
+- シャットダウンフックで強制フラッシュ
+- 実装量: 最小。タイマー goroutine 1本 + `Close()` メソッド
+
+#### 4-2. sessions/*.json の write-behind
+
+- `SessionManager` に `dirtyKeys map[string]bool` + バックグラウンドフラッシャー
+- `AddFullMessage()` → dirty 記録のみ、`Save()` はフラッシャーから呼ぶ
+- フラッシュ間隔: 5分 or 20メッセージ
+- シャットダウンフックで全 dirty セッションをフラッシュ
+
+**コミット**: 4-1, 4-2 を個別。
+
+---
+
+### フェーズ 5: 発展的最適化 (任意)
+
+実装コストが高い or 効果が限定的なもの。必要に応じて着手。
+
+| 項目 | 内容 | 見送り理由 |
+|------|------|-----------|
+| F: sync.Pool | web.go extractText, telegram.go Markdown 変換 | 呼び出し頻度が低く Pool の効果が薄い可能性 |
+| G: LRU O(1) 化 | search_cache.go を doubly-linked list に | maxEntries=100 で O(n) でも十分高速 |
+| D-2: FunctionCall.Arguments 型変更 | `string` → `json.RawMessage` | 全プロバイダーに波及、破壊的変更 |
+| D-3: Parameters を RawMessage に | 同上 | 同上 |
+| D-5: Session.Messages を immutable に | COW or linked list | セッション管理の根本再設計が必要 |
+| telegram.go wrapByDisplayWidth | ループ内 `string(r)` | runewidth ライブラリ依存、別途検討 |
+
+---
+
+### 実装順サマリー
+
+```
+Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
+ 機械的      値渡し       JSON       Memory      Storage
+ 置き換え    最適化     ホットパス    読み取り    write-behind
+ (4 commits) (1 commit) (2 commits) (1 commit)  (2 commits)
+```
+
+- Phase 0〜2: **アロケーション削減** (GC 圧力軽減)
+- Phase 3: **syscall + Split/Join 削減** (CPU + アロケーション)
+- Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
+- Phase 5: 必要に応じて個別判断
