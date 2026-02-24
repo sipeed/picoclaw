@@ -109,6 +109,7 @@ func agentCmd() {
 	} else {
 		fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n", logo)
 		fmt.Println("  /help    - show detailed help")
+		fmt.Println("  /usage   - show model info and token usage")
 		fmt.Println("  /cmd     - switch to command mode")
 		fmt.Println("  /pico    - switch to chat mode")
 		fmt.Println("  /hipico  - AI assistance in command mode")
@@ -163,9 +164,13 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			return
 		}
 
-		// /help works in all modes
+		// /help and /usage work in all modes
 		if input == "/help" {
 			printHelp()
+			continue
+		}
+		if input == "/usage" {
+			printUsage(agentLoop)
 			continue
 		}
 
@@ -284,9 +289,13 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			return
 		}
 
-		// /help works in all modes
+		// /help and /usage work in all modes
 		if input == "/help" {
 			printHelp()
+			continue
+		}
+		if input == "/usage" {
+			printUsage(agentLoop)
 			continue
 		}
 
@@ -383,6 +392,7 @@ PicoClaw has three interactive modes:
 
 Commands (available in all modes):
   /help      Show this help message
+  /usage     Show model info and token usage
   exit       Exit PicoClaw
   quit       Exit PicoClaw
   Ctrl+C     Exit PicoClaw
@@ -408,6 +418,35 @@ Examples:
     %s> /byepico
 
 `, logo, logo, logo, logo)
+}
+
+// printUsage displays current model information and accumulated token usage.
+func printUsage(agentLoop *agent.AgentLoop) {
+	info := agentLoop.GetUsageInfo()
+	if info == nil {
+		fmt.Println("No usage information available.")
+		return
+	}
+	fmt.Printf(`%s Usage
+━━━━━━━━━━━━━━━━━━━━━━
+Model:              %s
+Max tokens:         %d
+Temperature:        %.1f
+
+Token usage (this session):
+  Prompt tokens:    %d
+  Completion tokens:%d
+  Total tokens:     %d
+  Requests:         %d
+`, logo,
+		info["model"],
+		info["max_tokens"],
+		info["temperature"],
+		info["prompt_tokens"],
+		info["completion_tokens"],
+		info["total_tokens"],
+		info["requests"],
+	)
 }
 
 // executeShellCommand runs a shell command in the current working directory

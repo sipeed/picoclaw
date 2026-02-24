@@ -594,6 +594,9 @@ func (al *AgentLoop) runLLMIteration(
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
+		// Accumulate token usage
+		agent.AddUsage(response.Usage)
+
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
@@ -850,6 +853,25 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 	}
 
 	return info
+}
+
+// GetUsageInfo returns accumulated token usage for the default agent.
+func (al *AgentLoop) GetUsageInfo() map[string]any {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return nil
+	}
+	promptTokens := agent.TotalPromptTokens.Load()
+	completionTokens := agent.TotalCompletionTokens.Load()
+	return map[string]any{
+		"model":             agent.Model,
+		"max_tokens":        agent.MaxTokens,
+		"temperature":       agent.Temperature,
+		"prompt_tokens":     promptTokens,
+		"completion_tokens": completionTokens,
+		"total_tokens":      promptTokens + completionTokens,
+		"requests":          agent.TotalRequests.Load(),
+	}
 }
 
 // formatMessagesForLog formats messages for logging
