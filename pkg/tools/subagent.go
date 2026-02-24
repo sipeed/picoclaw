@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -36,6 +37,7 @@ type SubagentManager struct {
 	hasMaxTokens   bool
 	hasTemperature bool
 	nextID         int
+	broadcaster    *orch.Broadcaster
 }
 
 func NewSubagentManager(
@@ -52,7 +54,14 @@ func NewSubagentManager(
 		tools:         NewToolRegistry(),
 		maxIterations: 10,
 		nextID:        1,
+		broadcaster:   orch.NewBroadcaster(),
 	}
+}
+
+// GetBroadcaster returns the Broadcaster so the miniapp handler can
+// subscribe to real-time orchestration events.
+func (sm *SubagentManager) GetBroadcaster() *orch.Broadcaster {
+	return sm.broadcaster
 }
 
 // SetLLMOptions sets max tokens and temperature for subagent LLM calls.
@@ -102,6 +111,13 @@ func (sm *SubagentManager) Spawn(
 		Created:       time.Now().UnixMilli(),
 	}
 	sm.tasks[taskID] = subagentTask
+
+	sm.broadcaster.Publish(orch.Event{
+		Type:  "agent_spawn",
+		ID:    taskID,
+		Label: label,
+		Task:  task,
+	})
 
 	// Start task in background with context cancellation support
 	go sm.runTask(ctx, subagentTask, callback)
@@ -164,12 +180,28 @@ After completing the task, provide a clear summary of what was done.`
 		}
 	}
 
+	// Notify conductor that the subagent is starting
+	sm.broadcaster.Publish(orch.Event{
+		Type: "conversation",
+		From: "conductor",
+		To:   task.ID,
+		Text: task.Task,
+	})
+
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
 		Provider:      sm.provider,
 		Model:         sm.defaultModel,
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
+		OnStateChange: func(state, tool string) {
+			sm.broadcaster.Publish(orch.Event{
+				Type:  "agent_state",
+				ID:    task.ID,
+				State: state,
+				Tool:  tool,
+			})
+		},
 	}, messages, task.OriginChannel, task.OriginChatID)
 
 	sm.mu.Lock()
@@ -186,10 +218,17 @@ After completing the task, provide a clear summary of what was done.`
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
 		// Check if it was cancelled
+		gcReason := "failed"
 		if ctx.Err() != nil {
 			task.Status = "cancelled"
 			task.Result = "Task cancelled during execution"
+			gcReason = "cancelled"
 		}
+		sm.broadcaster.Publish(orch.Event{
+			Type:   "agent_gc",
+			ID:     task.ID,
+			Reason: gcReason,
+		})
 		result = &ToolResult{
 			ForLLM:  task.Result,
 			ForUser: "",
@@ -201,6 +240,18 @@ After completing the task, provide a clear summary of what was done.`
 	} else {
 		task.Status = "completed"
 		task.Result = loopResult.Content
+		// Notify conductor of the result
+		sm.broadcaster.Publish(orch.Event{
+			Type: "conversation",
+			From: task.ID,
+			To:   "conductor",
+			Text: loopResult.Content,
+		})
+		sm.broadcaster.Publish(orch.Event{
+			Type:   "agent_gc",
+			ID:     task.ID,
+			Reason: "completed",
+		})
 		result = &ToolResult{
 			ForLLM: fmt.Sprintf(
 				"Subagent '%s' completed (iterations: %d): %s",

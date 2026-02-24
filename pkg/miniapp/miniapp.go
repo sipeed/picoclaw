@@ -25,6 +25,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/stats"
 )
@@ -206,12 +207,13 @@ type DevTargetManager interface {
 
 // Handler serves the Mini App HTML and API endpoints.
 type Handler struct {
-	provider  DataProvider
-	sender    CommandSender
-	botToken  string
-	notifier  *StateNotifier
-	allowList []string
-	workspace string
+	provider        DataProvider
+	sender          CommandSender
+	botToken        string
+	notifier        *StateNotifier
+	allowList       []string
+	workspace       string
+	orchBroadcaster *orch.Broadcaster
 
 	devMu       sync.RWMutex
 	devTarget   *url.URL
@@ -525,6 +527,12 @@ func escapeHTMLString(s string) string {
 	return s
 }
 
+// SetOrchBroadcaster wires the orchestration broadcaster so the Mini App can
+// push live agent state to the canvas UI via WebSocket.
+func (h *Handler) SetOrchBroadcaster(b *orch.Broadcaster) {
+	h.orchBroadcaster = b
+}
+
 // RegisterRoutes registers Mini App routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp", h.serveIndex)
@@ -541,6 +549,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/logs/ws", h.requireAuth(h.wsLogs))
 	mux.HandleFunc("/miniapp/api/logs/snapshot", h.requireAuth(h.apiLogsSnapshot))
 	mux.HandleFunc("/miniapp/api/logs/snapshot/", h.requireAuth(h.apiLogsSnapshotDownload))
+	mux.HandleFunc("/miniapp/api/orchestration/ws", h.requireAuth(h.wsOrchestration))
 	mux.HandleFunc("/miniapp/dev/console", h.apiDevConsole)
 	mux.HandleFunc("/miniapp/dev/", h.serveDevProxy)
 }
@@ -1016,6 +1025,76 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 			entry.Caller = ""                              // strip for security
 			entry.Fields = logger.SanitizeFields(entry.Fields) // mask sensitive values
 			if err := conn.WriteJSON(map[string]any{"type": "entry", "entry": entry}); err != nil {
+				return
+			}
+		case <-ticker.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		case <-done:
+			return
+		}
+	}
+}
+
+// wsOrchestration streams live orchestration events (agent spawn/state/gc and
+// conductor↔agent conversations) to the canvas UI.
+//
+// Protocol:
+//
+//	{"type":"init","agents":[...OrchAgentInfo]}   — sent once on connect
+//	{"type":"event","event":{...OrchEvent}}        — pushed on each state change
+func (h *Handler) wsOrchestration(w http.ResponseWriter, r *http.Request) {
+	if h.orchBroadcaster == nil {
+		http.Error(w, `{"error":"orchestration not enabled"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+	_ = rc.SetReadDeadline(time.Time{})
+
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	sub := h.orchBroadcaster.Subscribe()
+	defer h.orchBroadcaster.Unsubscribe(sub)
+
+	// Send current agent snapshot so the canvas can populate immediately
+	snapshot := h.orchBroadcaster.Snapshot()
+	if err := conn.WriteJSON(map[string]any{"type": "init", "agents": snapshot}); err != nil {
+		return
+	}
+
+	conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		return nil
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	ticker := time.NewTicker(wsPingPeriod)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case ev, ok := <-sub.Ch:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(map[string]any{"type": "event", "event": ev}); err != nil {
 				return
 			}
 		case <-ticker.C:

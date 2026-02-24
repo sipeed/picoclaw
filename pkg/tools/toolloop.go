@@ -23,6 +23,11 @@ type ToolLoopConfig struct {
 	Tools         *ToolRegistry
 	MaxIterations int
 	LLMOptions    map[string]any
+	// OnStateChange is an optional hook for UI feedback.
+	// Called with ("waiting","") before each LLM call and
+	// ("toolcall", toolName) when each tool starts executing.
+	// nil is safe to pass.
+	OnStateChange func(state, tool string)
 }
 
 // ToolLoopResult contains the result of running the tool loop.
@@ -62,7 +67,10 @@ func RunToolLoop(
 		if llmOpts == nil {
 			llmOpts = map[string]any{}
 		}
-		// 3. Call LLM
+		// 3. Call LLM  (hook: waiting for response)
+		if config.OnStateChange != nil {
+			config.OnStateChange("waiting", "")
+		}
 		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
@@ -121,7 +129,7 @@ func RunToolLoop(
 		}
 		messages = append(messages, assistantMsg)
 
-		// 7. Execute tool calls
+		// 7. Execute tool calls  (hook: toolcall per tool)
 		for _, tc := range normalizedToolCalls {
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
@@ -130,6 +138,9 @@ func RunToolLoop(
 					"tool":      tc.Name,
 					"iteration": iteration,
 				})
+			if config.OnStateChange != nil {
+				config.OnStateChange("toolcall", tc.Name)
+			}
 
 			// Execute tool (no async callback for subagents - they run independently)
 			var toolResult *ToolResult
