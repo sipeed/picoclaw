@@ -2467,7 +2467,12 @@ func (al *AgentLoop) GetContextInfo() (workDir, planWorkDir, workspace string, b
 	}
 	workspace = agent.Workspace
 	planWorkDir = agent.ContextBuilder.GetPlanWorkDir()
-	workDir = agent.ContextBuilder.workDir
+	// Use the most recent active session's touch_dir (tool-detected project directory)
+	if active := al.sessions.ListActive(); len(active) > 0 && active[0].TouchDir != "" {
+		workDir = active[0].TouchDir
+	} else {
+		workDir = agent.ContextBuilder.workDir
+	}
 	bootstrap = agent.ContextBuilder.ResolveBootstrapPaths()
 	return
 }
