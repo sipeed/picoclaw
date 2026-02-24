@@ -214,6 +214,11 @@
         "enabled": true,
         "max_results": 5
       },
+      "tavily": {
+        "enabled": false,
+        "api_key": "tvly-YOUR_TAVILY_API_KEY",
+        "max_results": 5
+      },
       "perplexity": {
         "enabled": false,
         "api_key": "pplx-xxx",

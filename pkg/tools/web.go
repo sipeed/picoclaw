@@ -354,8 +354,16 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
-	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
+	// Priority: Tavily > Perplexity > Brave > DuckDuckGo
+	if opts.TavilyEnabled && opts.TavilyAPIKey != "" {
+		provider = &TavilySearchProvider{
+			apiKey:  opts.TavilyAPIKey,
+			baseURL: opts.TavilyBaseURL,
+		}
+		if opts.TavilyMaxResults > 0 {
+			maxResults = opts.TavilyMaxResults
+		}
+	} else if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
 		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey}
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
@@ -364,14 +372,6 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey}
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
-		}
-	} else if opts.TavilyEnabled && opts.TavilyAPIKey != "" {
-		provider = &TavilySearchProvider{
-			apiKey:  opts.TavilyAPIKey,
-			baseURL: opts.TavilyBaseURL,
-		}
-		if opts.TavilyMaxResults > 0 {
-			maxResults = opts.TavilyMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
 		provider = &DuckDuckGoSearchProvider{}
