@@ -8,16 +8,18 @@
 #   prayer_notify.sh setup <city>           — Set city and fetch initial data
 #   prayer_notify.sh status                 — Show current config and data status
 #
-# Config file: ~/.picoclaw/prayer-times/config
+# Config file: skills/prayer-times/data/config (co-located with skill)
 # Auto-fetch: schedule command auto-fetches if data is missing or stale
 
 set -euo pipefail
 
-DATA_DIR="${PRAYER_DATA_DIR:-$HOME/.picoclaw/prayer-times}"
+# Resolve paths relative to this script's location
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DATA_DIR="${PRAYER_DATA_DIR:-$SKILL_DIR/data}"
 CONFIG_FILE="$DATA_DIR/config"
 
 # Locate shared ntfy_send.sh relative to this script
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NTFY_SEND="${SCRIPT_DIR}/../../shared/scripts/ntfy_send.sh"
 
 mkdir -p "$DATA_DIR"

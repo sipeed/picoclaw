@@ -16,6 +16,7 @@ cmd/picoclaw/workspace
 
 # PicoClaw
 .picoclaw/
+skills/*/data/
 config.json
 sessions/
 build/

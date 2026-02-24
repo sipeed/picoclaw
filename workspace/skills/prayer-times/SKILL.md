@@ -49,12 +49,12 @@ Saat user **pertama kali** minta reminder sholat:
 ```bash
 bash skills/prayer-times/scripts/prayer_notify.sh setup samarinda
 ```
-Ini akan save config ke `~/.picoclaw/prayer-times/config` dan fetch data bulan ini.
+Ini akan save config ke `skills/prayer-times/data/config` dan fetch data bulan ini.
 
 ### 3. Setup ntfy (opsional, via exec tool)
 Jika user memberikan ntfy URL, tambahkan ke config:
 ```bash
-sed -i 's|NTFY_TOPIC=".*"|NTFY_TOPIC="https://ntfy.sh/USER_TOPIC"|' ~/.picoclaw/prayer-times/config
+sed -i 's|NTFY_TOPIC=".*"|NTFY_TOPIC="https://ntfy.sh/USER_TOPIC"|' skills/prayer-times/data/config
 ```
 Simpan juga ke MEMORY.md agar tidak lupa.
 
@@ -75,7 +75,7 @@ Simpan juga ke MEMORY.md agar tidak lupa.
 
 ## Config File
 
-Disimpan di `~/.picoclaw/prayer-times/config` — **milik skill ini sendiri, tidak shared**:
+Disimpan di `skills/prayer-times/data/config` — **milik skill ini sendiri, tidak shared**:
 ```
 CITY="samarinda"
 SAHUR_MINS="30"
