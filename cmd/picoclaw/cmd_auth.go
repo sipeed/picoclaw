@@ -25,6 +25,14 @@ func authCmd() {
 		return
 	}
 
+	subcommand := os.Args[2]
+
+	if strings.HasPrefix(subcommand, "-") {
+		fmt.Printf("Error: %s is an unknown flag\n", subcommand)
+		authHelp()
+		os.Exit(1)
+	}
+
 	switch os.Args[2] {
 	case "login":
 		authLoginCmd()

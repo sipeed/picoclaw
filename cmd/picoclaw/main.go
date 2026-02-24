@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -122,6 +123,12 @@ func main() {
 		}
 
 		subcommand := os.Args[2]
+
+		if strings.HasPrefix(subcommand, "-") {
+			fmt.Printf("Error: %s is an unknown flag\n", subcommand)
+			skillsHelp()
+			os.Exit(1)
+		}
 
 		cfg, err := loadConfig()
 		if err != nil {

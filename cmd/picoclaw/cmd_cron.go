@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/cron"
@@ -19,6 +20,12 @@ func cronCmd() {
 	}
 
 	subcommand := os.Args[2]
+
+	if strings.HasPrefix(subcommand, "-") {
+		fmt.Printf("Error: %s is an unknown flag\n", subcommand)
+		cronHelp()
+		os.Exit(1)
+	}
 
 	// Load config to get workspace path
 	cfg, err := loadConfig()
