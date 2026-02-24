@@ -43,7 +43,7 @@ func TestSubagentManager_Spawn_EmitsLifecycleEvents(t *testing.T) {
 	defer b.Unsubscribe(sub)
 
 	provider := &MockLLMProvider{}
-	mgr := NewSubagentManager(provider, "test-model", "/tmp/test", nil, b)
+	mgr := NewSubagentManager(provider, "test-model", "/tmp/test", nil, b, WebSearchToolOptions{})
 
 	var callbackCalled int32
 	cb := AsyncCallback(func(_ context.Context, _ *ToolResult) {
@@ -52,7 +52,7 @@ func TestSubagentManager_Spawn_EmitsLifecycleEvents(t *testing.T) {
 
 	_, err := mgr.Spawn(
 		context.Background(),
-		"say hello", "hello-task", "", "cli", "direct",
+		"say hello", "hello-task", "", "cli", "direct", "",
 		cb,
 	)
 	if err != nil {
@@ -143,11 +143,11 @@ func TestSubagentManager_Spawn_SnapshotLiveDuringExecution(t *testing.T) {
 	defer b.Unsubscribe(sub)
 
 	provider := &MockLLMProvider{}
-	mgr := NewSubagentManager(provider, "test-model", "/tmp/test", nil, b)
+	mgr := NewSubagentManager(provider, "test-model", "/tmp/test", nil, b, WebSearchToolOptions{})
 
 	_, err := mgr.Spawn(
 		context.Background(),
-		"any task", "live-test", "", "cli", "direct",
+		"any task", "live-test", "", "cli", "direct", "",
 		nil,
 	)
 	if err != nil {
@@ -188,12 +188,12 @@ func TestSubagentManager_Spawn_CancelledDuringExecution(t *testing.T) {
 	defer b.Unsubscribe(sub)
 
 	bp := newBlockingProvider()
-	mgr := NewSubagentManager(bp, "test-model", "/tmp/test", nil, b)
+	mgr := NewSubagentManager(bp, "test-model", "/tmp/test", nil, b, WebSearchToolOptions{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, err := mgr.Spawn(ctx, "long task", "cancel-me", "", "cli", "direct", nil)
+	_, err := mgr.Spawn(ctx, "long task", "cancel-me", "", "cli", "direct", "", nil)
 	if err != nil {
 		t.Fatalf("Spawn() error: %v", err)
 	}

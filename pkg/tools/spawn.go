@@ -50,6 +50,11 @@ func (t *SpawnTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional target agent ID to delegate the task to",
 			},
+			"preset": map[string]any{
+				"type": "string",
+				"enum": []string{"scout", "analyst", "coder", "worker", "coordinator"},
+				"description": "Optional capability tier: scout (explore), analyst (analyze), coder (code), worker (build), coordinator (orchestrate)",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -72,11 +77,16 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 
 	label, _ := args["label"].(string)
 	agentID, _ := args["agent_id"].(string)
+	preset, _ := args["preset"].(string)
 
-	// Check allowlist if targeting a specific agent
-	if agentID != "" && t.allowlistCheck != nil {
-		if !t.allowlistCheck(agentID) {
-			return ErrorResult(fmt.Sprintf("not allowed to spawn agent '%s'", agentID))
+	// Check allowlist if targeting a specific agent or preset
+	checkTarget := agentID
+	if checkTarget == "" && preset != "" {
+		checkTarget = preset
+	}
+	if checkTarget != "" && t.allowlistCheck != nil {
+		if !t.allowlistCheck(checkTarget) {
+			return ErrorResult(fmt.Sprintf("not allowed to spawn agent '%s' or preset '%s'", agentID, preset))
 		}
 	}
 
@@ -85,7 +95,7 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 	}
 
 	// Pass callback to manager for async completion notification
-	result, err := t.manager.Spawn(ctx, task, label, agentID, t.originChannel, t.originChatID, t.callback)
+	result, err := t.manager.Spawn(ctx, task, label, agentID, t.originChannel, t.originChatID, preset, t.callback)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to spawn subagent: %v", err))
 	}
