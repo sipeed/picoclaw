@@ -812,6 +812,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **Google Gemini**   | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Get Key](https://aistudio.google.com/api-keys)                  |
 | **Groq**            | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
 | **Moonshot**        | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          |
+| **Kimi Coding**     | `moonshot/`       | `https://api.kimi.com/coding/v1`                    | OpenAI    | [Get Key](https://www.kimi.com/code)                             |
 | **通义千问 (Qwen)** | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
@@ -881,6 +882,17 @@ This design also enables **multi-agent support** with flexible provider selectio
   "model_name": "deepseek-chat",
   "model": "deepseek/deepseek-chat",
   "api_key": "sk-..."
+}
+```
+
+**Kimi Coding**
+
+```json
+{
+  "model_name": "kimi-k2.5",
+  "model": "moonshot/kimi-k2.5",
+  "api_base": "https://api.kimi.com/coding/v1",
+  "api_key": "sk-kimi-..."
 }
 ```
 
