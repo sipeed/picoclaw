@@ -1104,15 +1104,20 @@ picoclaw agent -m "Hello"
 
 ## CLI Reference
 
-| Command                   | Description                   |
-| ------------------------- | ----------------------------- |
-| `picoclaw onboard`        | Initialize config & workspace |
-| `picoclaw agent -m "..."` | Chat with the agent           |
-| `picoclaw agent`          | Interactive chat mode         |
-| `picoclaw gateway`        | Start the gateway             |
-| `picoclaw status`         | Show status                   |
-| `picoclaw cron list`      | List all scheduled jobs       |
-| `picoclaw cron add ...`   | Add a scheduled job           |
+| Command                        | Description                         |
+| ------------------------------ | ----------------------------------- |
+| `picoclaw onboard`             | Initialize config & workspace       |
+| `picoclaw agent -m "..."`    | Chat with the agent                 |
+| `picoclaw agent`               | Interactive chat mode               |
+| `picoclaw gateway`             | Start the gateway                   |
+| `picoclaw status`              | Show status                         |
+| `picoclaw skills list`         | List installed skills               |
+| `picoclaw skills install <repo>` | Install skill from GitHub          |
+| `picoclaw skills install --registry <name> <slug>` | Install from registry |
+| `picoclaw skills remove <name>` | Remove installed skill              |
+| `picoclaw skills search`       | Search available skills             |
+| `picoclaw cron list`           | List all scheduled jobs             |
+| `picoclaw cron add ...`        | Add a scheduled job                  |
 
 ### Scheduled Tasks / Reminders
 
@@ -1123,6 +1128,75 @@ PicoClaw supports scheduled reminders and recurring tasks through the `cron` too
 * **Cron expressions**: "Remind me at 9am daily" → uses cron expression
 
 Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
+
+### Skills
+
+PicoClaw supports extensible skills that can add new capabilities to your AI assistant.
+
+#### Install Skills from GitHub
+
+```bash
+# Install a skill from a GitHub repository
+picoclaw skills install sipeed/picoclaw-skills/weather
+```
+
+#### Install Skills from Registry
+
+PicoClaw supports installing skills from configured registries (e.g., ClawHub):
+
+```bash
+# Install a skill from a registry
+picoclaw skills install --registry <registry_name> <slug>
+
+# Example: Install from ClawHub
+picoclaw skills install --registry clawhub opencode-controller
+```
+
+**Available Registries:**
+
+| Registry   | Description                          |
+| ---------- | ------------------------------------ |
+| `clawhub`  | ClawHub skill registry (default)    |
+
+**Configuration:**
+
+To use registries, enable them in your `~/.picoclaw/config.json`:
+
+```json
+{
+  "tools": {
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "enabled": true
+        }
+      }
+    }
+  }
+}
+```
+
+#### Other Skills Commands
+
+```bash
+# List installed skills
+picoclaw skills list
+
+# List available builtin skills
+picoclaw skills list-builtin
+
+# Install all builtin skills to workspace
+picoclaw skills install-builtin
+
+# Search for available skills
+picoclaw skills search
+
+# Show skill details
+picoclaw skills show <skill-name>
+
+# Remove a skill
+picoclaw skills remove <skill-name>
+```
 
 ## 🤝 Contribute & Roadmap
 
