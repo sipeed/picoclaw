@@ -18,6 +18,11 @@ Run these commands regularly to sync latest upstream changes into your fork bran
 2. `git checkout main`
 3. `git rebase upstream/main`
 4. `source ~/.zshrc && proxy_on && git push origin main`
+5. Restart currently running `picoclaw` containers:
+   - `docker ps -q --filter label=com.docker.compose.project=picoclaw | xargs -r docker restart`
+6. Verify current runtime status:
+   - `docker ps --filter label=com.docker.compose.project=picoclaw`
+   - `curl -sS http://127.0.0.1:18790/health`
 
 If your workflow prefers merge over rebase, use:
 - `git merge upstream/main`
