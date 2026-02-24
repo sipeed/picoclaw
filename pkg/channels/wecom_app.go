@@ -405,22 +405,11 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 	// Message deduplication: Use msg_id to prevent duplicate processing
 	// As per WeCom documentation, use msg_id for deduplication
 	msgID := fmt.Sprintf("%d", msg.MsgId)
-	c.msgMu.Lock()
-	if c.processedMsgs[msgID] {
-		c.msgMu.Unlock()
+	if !markMessageProcessed(&c.msgMu, &c.processedMsgs, msgID, wecomMaxProcessedMessages) {
 		logger.DebugCF("wecom_app", "Skipping duplicate message", map[string]any{
 			"msg_id": msgID,
 		})
 		return
-	}
-	c.processedMsgs[msgID] = true
-	c.msgMu.Unlock()
-
-	// Clean up old messages periodically (keep last 1000)
-	if len(c.processedMsgs) > 1000 {
-		c.msgMu.Lock()
-		c.processedMsgs = make(map[string]bool)
-		c.msgMu.Unlock()
 	}
 
 	senderID := msg.FromUserName
