@@ -624,6 +624,37 @@ func (al *AgentLoop) runLLMIteration(
 				"iteration": iteration,
 			})
 
+		// Check for duplicate consecutive tool calls (prevents infinite loops)
+		// If the LLM keeps trying to call the same tool with identical arguments,
+		// it's likely stuck on the same input. Break to prevent spam.
+		if iteration > 1 && len(messages) >= 2 {
+			lastAssistantMsg := messages[len(messages)-2] // Previous assistant message
+			if len(lastAssistantMsg.ToolCalls) > 0 && len(normalizedToolCalls) > 0 {
+				// Check if we're calling the same tool with same arguments
+				lastTC := lastAssistantMsg.ToolCalls[0]
+				currentTC := normalizedToolCalls[0]
+				if lastTC.Name == currentTC.Name {
+					// Compare arguments
+					lastArgsJSON, _ := json.Marshal(lastTC.Arguments)
+					currentArgsJSON, _ := json.Marshal(currentTC.Arguments)
+					if string(lastArgsJSON) == string(currentArgsJSON) {
+						logger.InfoCF("agent", "Detected duplicate tool call, breaking iteration loop",
+							map[string]any{
+								"agent_id":  agent.ID,
+								"tool":      currentTC.Name,
+								"iteration": iteration,
+							})
+						// Use the LLM response content as final answer
+						finalContent = response.Content
+						if finalContent == "" {
+							finalContent = "I've completed processing but have no new response to give."
+						}
+						break
+					}
+				}
+			}
+		}
+
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
 			Role:    "assistant",
