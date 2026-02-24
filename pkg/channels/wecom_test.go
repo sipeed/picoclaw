@@ -198,10 +198,8 @@ func TestWeComBotVerifySignature(t *testing.T) {
 			Token:      "",
 			WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
 		}
-		base := NewBaseChannel("wecom", cfgEmpty, msgBus, cfgEmpty.AllowFrom)
 		chEmpty := &WeComBotChannel{
-			BaseChannel: base,
-			config:      cfgEmpty,
+			config: cfgEmpty,
 		}
 
 		if !WeComVerifySignature(chEmpty.config.Token, "any_sig", "any_ts", "any_nonce", "any_msg") {

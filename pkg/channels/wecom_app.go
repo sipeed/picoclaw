@@ -348,7 +348,7 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		AgentID    string   `xml:"AgentID"`
 	}
 
-	if err := xml.Unmarshal(body, &encryptedMsg); err != nil {
+	if err = xml.Unmarshal(body, &encryptedMsg); err != nil {
 		logger.ErrorCF("wecom_app", "Failed to parse XML", map[string]any{
 			"error": err.Error(),
 		})
@@ -526,61 +526,6 @@ func (c *WeComAppChannel) sendTextMessage(ctx context.Context, accessToken, user
 		AgentID: c.config.AgentID,
 	}
 	msg.Text.Content = content
-
-	jsonData, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
-	}
-
-	// Use configurable timeout (default 5 seconds)
-	timeout := c.config.ReplyTimeout
-	if timeout <= 0 {
-		timeout = 5
-	}
-
-	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	var sendResp WeComSendMessageResponse
-	if err := json.Unmarshal(body, &sendResp); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if sendResp.ErrCode != 0 {
-		return fmt.Errorf("API error: %s (code: %d)", sendResp.ErrMsg, sendResp.ErrCode)
-	}
-
-	return nil
-}
-
-// sendMarkdownMessage sends a markdown message to a user
-func (c *WeComAppChannel) sendMarkdownMessage(ctx context.Context, accessToken, userID, content string) error {
-	apiURL := fmt.Sprintf("%s/cgi-bin/message/send?access_token=%s", wecomAPIBase, accessToken)
-
-	msg := WeComMarkdownMessage{
-		ToUser:  userID,
-		MsgType: "markdown",
-		AgentID: c.config.AgentID,
-	}
-	msg.Markdown.Content = content
 
 	jsonData, err := json.Marshal(msg)
 	if err != nil {

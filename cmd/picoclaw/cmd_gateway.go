@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/agent"
@@ -59,7 +60,7 @@ func gatewayCmd() {
 	}
 	// Use the resolved model ID from provider creation
 	if modelID != "" {
-		cfg.Agents.Defaults.Model = modelID
+		cfg.Agents.Defaults.ModelName = modelID
 	}
 
 	msgBus := bus.NewMessageBus()
@@ -106,7 +107,8 @@ func gatewayCmd() {
 			channel, chatID = "cli", "direct"
 		}
 		// Use ProcessHeartbeat - no session history, each heartbeat is independent
-		response, err := agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
+		var response string
+		response, err = agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
 		if err != nil {
 			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
 		}
@@ -128,8 +130,17 @@ func gatewayCmd() {
 	agentLoop.SetChannelManager(channelManager)
 
 	var transcriber *voice.GroqTranscriber
-	if cfg.Providers.Groq.APIKey != "" {
-		transcriber = voice.NewGroqTranscriber(cfg.Providers.Groq.APIKey)
+	groqAPIKey := cfg.Providers.Groq.APIKey
+	if groqAPIKey == "" {
+		for _, mc := range cfg.ModelList {
+			if strings.HasPrefix(mc.Model, "groq/") && mc.APIKey != "" {
+				groqAPIKey = mc.APIKey
+				break
+			}
+		}
+	}
+	if groqAPIKey != "" {
+		transcriber = voice.NewGroqTranscriber(groqAPIKey)
 		logger.InfoC("voice", "Groq voice transcription enabled")
 	}
 
@@ -208,6 +219,9 @@ func gatewayCmd() {
 	<-sigChan
 
 	fmt.Println("\nShutting down...")
+	if cp, ok := provider.(providers.StatefulProvider); ok {
+		cp.Close()
+	}
 	cancel()
 	healthServer.Stop(context.Background())
 	deviceService.Stop()

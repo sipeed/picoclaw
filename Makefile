@@ -14,7 +14,7 @@ GO_VERSION=$(shell $(GO) version | awk '{print $$3}')
 LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X main.buildTime=$(BUILD_TIME) -X main.goVersion=$(GO_VERSION) -s -w"
 
 # Go variables
-GO?=go
+GO?=CGO_ENABLED=0 go
 GOFLAGS?=-v -tags stdjson
 
 # Golangci-lint
@@ -24,6 +24,7 @@ GOLANGCI_LINT?=golangci-lint
 INSTALL_PREFIX?=$(HOME)/.local
 INSTALL_BIN_DIR=$(INSTALL_PREFIX)/bin
 INSTALL_MAN_DIR=$(INSTALL_PREFIX)/share/man/man1
+INSTALL_TMP_SUFFIX=.new
 
 # Workspace and Skills
 PICOCLAW_HOME?=$(HOME)/.picoclaw
@@ -99,8 +100,10 @@ build-all: generate
 install: build
 	@echo "Installing $(BINARY_NAME)..."
 	@mkdir -p $(INSTALL_BIN_DIR)
-	@cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_BIN_DIR)/$(BINARY_NAME)
-	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)
+	# Copy binary with temporary suffix to ensure atomic update
+	@cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)
+	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX)
+	@mv -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)$(INSTALL_TMP_SUFFIX) $(INSTALL_BIN_DIR)/$(BINARY_NAME)
 	@echo "Installed binary to $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
 	@echo "Installation complete!"
 
@@ -141,6 +144,10 @@ fmt:
 lint:
 	@$(GOLANGCI_LINT) run
 
+## fix: Fix linting issues
+fix:
+	@$(GOLANGCI_LINT) run --fix
+
 ## deps: Download dependencies
 deps:
 	@$(GO) mod download
@@ -166,7 +173,7 @@ help:
 	@echo "  make [target]"
 	@echo ""
 	@echo "Targets:"
-	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## /  /'
+	@grep -E '^## ' $(MAKEFILE_LIST) | sort | awk -F': ' '{printf "  %-16s %s\n", substr($$1, 4), $$2}'
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build              # Build for current platform"

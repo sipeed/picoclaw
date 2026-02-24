@@ -57,7 +57,7 @@ func agentCmd() {
 	}
 
 	if modelOverride != "" {
-		cfg.Agents.Defaults.Model = modelOverride
+		cfg.Agents.Defaults.ModelName = modelOverride
 	}
 
 	otelShutdown, err := observability.Init(context.Background(), cfg.Observability)
@@ -74,7 +74,7 @@ func agentCmd() {
 	}
 	// Use the resolved model ID from provider creation
 	if modelID != "" {
-		cfg.Agents.Defaults.Model = modelID
+		cfg.Agents.Defaults.ModelName = modelID
 	}
 
 	msgBus := bus.NewMessageBus()
@@ -156,7 +156,7 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print(fmt.Sprintf("%s You: ", logo))
+		fmt.Printf("%s You: ", logo)
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {

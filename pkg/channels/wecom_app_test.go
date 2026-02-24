@@ -852,19 +852,6 @@ func TestWeComAppMessageStructures(t *testing.T) {
 		}
 	})
 
-	t.Run("WeComImageMessage structure", func(t *testing.T) {
-		msg := WeComImageMessage{
-			ToUser:  "user123",
-			MsgType: "image",
-			AgentID: 1000002,
-		}
-		msg.Image.MediaID = "media_123456"
-
-		if msg.Image.MediaID != "media_123456" {
-			t.Errorf("Image.MediaID = %q, want %q", msg.Image.MediaID, "media_123456")
-		}
-	})
-
 	t.Run("WeComAccessTokenResponse structure", func(t *testing.T) {
 		jsonData := `{
 			"errcode": 0,
