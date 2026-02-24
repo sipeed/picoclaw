@@ -601,7 +601,7 @@ if m := rePhase.FindStringSubmatch(content); len(m) >= 2 { currentPhase, _ = str
 content パススルーで解消されるのは `ReadLongTerm()` の多重呼び出しのみ。
 `extractPhaseContent()`, `GetPlanPhases()` 等が個別に `strings.Split` する問題は残る。
 
-対応: `GetMemoryContext()` / `FormatPlanDisplay()` 内で1回 `strings.Split(content, "\n")` し、`[]string` (行スライス) を受け取る内部ヘルパーを追加。既存の `content string` を受け取るヘルパーは互換性のため残す。
+対応: `GetPlanContext()` / `FormatPlanDisplay()` 内で1回 `strings.Split(content, "\n")` し、`[]string` (行スライス) を受け取る内部ヘルパーを追加。既存の `content string` を受け取るヘルパーは互換性のため残す。(`GetMemoryContext()` 自身は Split ヘルパーを直接呼ばないため対象外。Split は呼び先の `GetPlanContext()` 等で発生する。)
 
 **効果範囲の限定**: この統合が効くのは読み取り専用メソッド (`GetPlanContext`, `GetReviewContext`, `FormatPlanDisplay` 等) のみ。ミューテーション系 (`MarkStep`, `AddStep`) は `GetMemoryContext()` を経由せず直接 `ReadLongTerm()` + `Split` + `WriteLongTerm()` を実行するため、この Phase では対象外。ミューテーション系の Split 統合には ParsedPlan インメモリモデル (Phase 5) が必要。
 
@@ -677,39 +677,4 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 3: **syscall + Split/Join 削減** (CPU + アロケーション)
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
-
----
-
-## FEEDBACK — 第7回レビュー (L)
-
-> レビュー日: 2026-02-24。`pkg/agent/memory.go` の呼び出し経路と Phase 3-2 の対象関数を照合。
-
-### L-1. Phase 3-2: `GetMemoryContext()` は Split 最適化の対象外、`GetPlanContext()` が抜けている
-
-**指摘内容**: Phase 3-2 に「`GetMemoryContext()` / `FormatPlanDisplay()` 内で1回 `strings.Split(content, "\n")`」とあるが、`GetMemoryContext()` は `strings.Split` を呼ぶヘルパーを**直接呼ばない**。Split は呼び先の `GetPlanContext()` 等の内部で起きる。Phase 3-2 の対象は `GetMemoryContext()` ではなく `GetPlanContext()` が正しい。
-
-**各関数から split ヘルパーへの直接呼び出しを確認**:
-
-```
-GetMemoryContext() (Phase 3-1 修正後)
-  ├─ reActivePlan.MatchString(content)        ← regex、split なし
-  ├─ reStatus.FindStringSubmatch(content)      ← regex、split なし
-  └─ GetPlanContext() / GetInterviewContext() 等 ← 内部で split するが、
-                                                   GetMemoryContext から lines を渡せない
-                                                   (signature 変更が必要になる)
-
-FormatPlanDisplay()
-  ├─ getPlanPhasesFrom(content)                ← 内部で extractPhaseContent → Split ✓
-  ├─ extractCommandsSection(content) L699      ← extractSection → Split ✓
-  └─ extractContextSection(content)  L710      ← extractSection → Split ✓
-
-GetPlanContext()
-  ├─ extractPhaseContent(content, phase) L585  ← Split ✓
-  ├─ extractCommandsSection(content)    L591   ← Split ✓
-  └─ extractContextSection(content)    L598    ← Split ✓
-```
-
-`FormatPlanDisplay()` と `GetPlanContext()` はいずれも同じ `content` を受け取り、複数の split ヘルパーを呼ぶ。これらが Phase 3-2 の正しい対象。
-
-**計画の修正箇所**: Phase 3-2 の対象を `GetMemoryContext()` → `GetPlanContext()` に差し替える。
 
