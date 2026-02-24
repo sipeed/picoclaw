@@ -300,6 +300,19 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					}
 				}
 
+				// Activate worktree for the session's plan execution
+				if agent := al.registry.GetDefaultAgent(); agent != nil {
+					taskName := agent.ContextBuilder.Memory().GetPlanTaskName()
+					if taskName == "" {
+						taskName = "plan-execution"
+					}
+					if wt, err := agent.ActivateWorktree(msg.SessionKey, taskName); err != nil {
+						logger.WarnCF("agent", "Worktree activation skipped", map[string]any{"error": err.Error()})
+					} else {
+						logger.InfoCF("agent", "Worktree activated", map[string]any{"branch": wt.Branch})
+					}
+				}
+
 				syntheticMeta := map[string]string{"echoed": "1"}
 				for k, v := range msg.Metadata {
 					if k != "source" {
@@ -768,6 +781,24 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 1. Update tool contexts
 	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
 
+	// 1b. Inject peer session awareness into system prompt
+	projectPath := agent.ContextBuilder.GetPlanWorkDir()
+	if projectPath == "" {
+		projectPath = agent.Workspace
+	}
+	peers := al.sessions.GetPeerPurposes(opts.SessionKey, projectPath)
+	if len(peers) > 0 {
+		var peerNote strings.Builder
+		peerNote.WriteString("Other sessions working on this project:\n")
+		for _, p := range peers {
+			peerNote.WriteString(fmt.Sprintf("- %s: %s (branch: %s)\n", p.SessionKey, p.Purpose, p.Branch))
+		}
+		peerNote.WriteString("\nAvoid conflicting changes with these sessions.")
+		agent.ContextBuilder.SetPeerNote(peerNote.String())
+	} else {
+		agent.ContextBuilder.SetPeerNote("")
+	}
+
 	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message
 	var summary string
@@ -889,11 +920,21 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			_ = agent.ContextBuilder.SetCurrentPhase(total)
 			if preStatus != "completed" {
 				_ = agent.ContextBuilder.SetPlanStatus("completed")
+
+				// Deactivate worktree on plan completion
+				commitMsg := "plan: " + agent.ContextBuilder.Memory().GetPlanTaskName()
+				wtResult, _ := agent.DeactivateWorktree(opts.SessionKey, commitMsg, false)
+
 				if !constants.IsInternalChannel(opts.Channel) {
+					msg := "\u2705 Plan completed!"
+					if wtResult != nil && wtResult.CommitsAhead > 0 {
+						msg += fmt.Sprintf("\nBranch `%s` retained (%d commits). To merge: `git merge %s`",
+							wtResult.Branch, wtResult.CommitsAhead, wtResult.Branch)
+					}
 					al.bus.PublishOutbound(bus.OutboundMessage{
 						Channel:         opts.Channel,
 						ChatID:          opts.ChatID,
-						Content:         "\u2705 Plan completed!",
+						Content:         msg,
 						SkipPlaceholder: true,
 					})
 				}
@@ -961,6 +1002,20 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			"iterations":   iteration,
 			"final_length": len(finalContent),
 		})
+
+	// 10. Heartbeat worktree cleanup: auto-commit and dispose after background task
+	if opts.Background && agent.IsInWorktree(opts.SessionKey) {
+		commitMsg := "heartbeat: auto-save"
+		wtResult, _ := agent.DeactivateWorktree(opts.SessionKey, commitMsg, false)
+		if wtResult != nil && wtResult.CommitsAhead > 0 && !constants.IsInternalChannel(opts.Channel) {
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel: opts.Channel,
+				ChatID:  opts.ChatID,
+				Content: fmt.Sprintf("Heartbeat made code changes on branch `%s` (%d commits).",
+					wtResult.Branch, wtResult.CommitsAhead),
+			})
+		}
+	}
 
 	return finalContent, nil
 }
@@ -1950,7 +2005,15 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}
 			if detectedDir != "" {
-				al.sessions.Touch(opts.SessionKey, opts.Channel, opts.ChatID, detectedDir)
+				meta := &TouchMeta{
+					ProjectPath: agent.ContextBuilder.GetPlanWorkDir(),
+					Purpose:     utils.Truncate(opts.UserMessage, 80),
+					Branch:      agent.GetWorktreeBranch(opts.SessionKey),
+				}
+				if meta.ProjectPath == "" {
+					meta.ProjectPath = agent.Workspace
+				}
+				al.sessions.Touch(opts.SessionKey, opts.Channel, opts.ChatID, detectedDir, meta)
 			}
 		}
 
@@ -1998,6 +2061,14 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration": iteration,
 				})
 
+			// Heartbeat lazy worktree: create worktree on first write-tool call
+			if opts.Background && isWriteTool(tc.Name) && !agent.IsInWorktree(opts.SessionKey) {
+				taskName := "heartbeat-" + time.Now().Format("20060102")
+				if wt, err := agent.ActivateWorktree(opts.SessionKey, taskName); err == nil {
+					logger.InfoCF("agent", "Heartbeat worktree created", map[string]any{"branch": wt.Branch})
+				}
+			}
+
 			// Create async callback for tools that implement AsyncTool
 			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
 			// Instead, they notify the agent via PublishInbound, and the agent decides
@@ -2015,7 +2086,11 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			toolStart := time.Now()
-			toolResult := agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+			toolCtx := ctx
+			if wt := agent.GetWorktree(opts.SessionKey); wt != nil {
+				toolCtx = tools.WithWorkspaceOverride(toolCtx, wt.Path)
+			}
+			toolResult := agent.Tools.ExecuteWithContext(toolCtx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
 			toolDuration := time.Since(toolStart)
 
 			// Update tool log entry with result
@@ -2619,7 +2694,7 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 		return al.handleSkillsCommand(), true
 
 	case "/plan":
-		resp, handled := al.handlePlanCommand(args)
+		resp, handled := al.handlePlanCommand(args, msg.SessionKey)
 		if handled {
 			al.notifyStateChange()
 		}
@@ -2739,7 +2814,7 @@ func (al *AgentLoop) handleSkillsCommand() string {
 // Returns (response, handled). For "/plan <task>" (new plan), it returns
 // ("", false) so the message falls through to the LLM queue, where
 // expandPlanCommand writes the seed and rewrites the content.
-func (al *AgentLoop) handlePlanCommand(args []string) (string, bool) {
+func (al *AgentLoop) handlePlanCommand(args []string, sessionKey string) (string, bool) {
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
 		return "No agent configured.", true
@@ -2755,6 +2830,10 @@ func (al *AgentLoop) handlePlanCommand(args []string) (string, bool) {
 	case "clear":
 		if agent.ContextBuilder.ReadMemory() == "" {
 			return "No active plan to clear.", true
+		}
+		// Deactivate worktree on plan clear
+		if sessionKey != "" {
+			agent.DeactivateWorktree(sessionKey, "", true)
 		}
 		if err := agent.ContextBuilder.ClearMemory(); err != nil {
 			return fmt.Sprintf("Error clearing plan: %v", err), true
@@ -2940,6 +3019,15 @@ func isReadOnlyCommand(cmd string) bool {
 		"tree", "wc", "file", "which", "pwd",
 		"uname", "df", "du", "stat", "realpath", "dirname",
 		"basename", "date":
+		return true
+	}
+	return false
+}
+
+// isWriteTool returns true if the tool can modify files.
+func isWriteTool(name string) bool {
+	switch tools.NormalizeToolName(name) {
+	case "writefile", "editfile", "appendfile", "exec":
 		return true
 	}
 	return false

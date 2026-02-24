@@ -9,7 +9,7 @@ func TestTouch(t *testing.T) {
 	st := NewSessionTracker()
 
 	// Basic touch creates entry
-	st.Touch("sess1", "telegram", "123", "projects/myapp")
+	st.Touch("sess1", "telegram", "123", "projects/myapp", nil)
 	entries := st.ListActive()
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -25,7 +25,7 @@ func TestTouch(t *testing.T) {
 	}
 
 	// Touch again with new dir overwrites TouchDir
-	st.Touch("sess1", "", "", "projects/other")
+	st.Touch("sess1", "", "", "projects/other", nil)
 	entries = st.ListActive()
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -39,7 +39,7 @@ func TestTouch(t *testing.T) {
 	}
 
 	// Touch with empty dir does not overwrite TouchDir
-	st.Touch("sess1", "", "", "")
+	st.Touch("sess1", "", "", "", nil)
 	entries = st.ListActive()
 	if entries[0].TouchDir != "projects/other" {
 		t.Errorf("expected touch_dir unchanged, got %s", entries[0].TouchDir)
@@ -50,7 +50,7 @@ func TestIsActiveInDir(t *testing.T) {
 	st := NewSessionTracker()
 
 	// Setup: sess1 touches "projects/myapp"
-	st.Touch("sess1", "telegram", "123", "projects/myapp")
+	st.Touch("sess1", "telegram", "123", "projects/myapp", nil)
 
 	// Same dir, excluding sess1 → false
 	if st.IsActiveInDir("projects/myapp", "sess1") {
@@ -91,9 +91,9 @@ func TestListActive(t *testing.T) {
 	st := NewSessionTracker()
 
 	// Add two sessions
-	st.Touch("sess1", "telegram", "123", "projects/a")
+	st.Touch("sess1", "telegram", "123", "projects/a", nil)
 	time.Sleep(5 * time.Millisecond) // ensure different timestamps
-	st.Touch("sess2", "discord", "456", "projects/b")
+	st.Touch("sess2", "discord", "456", "projects/b", nil)
 
 	entries := st.ListActive()
 	if len(entries) != 2 {

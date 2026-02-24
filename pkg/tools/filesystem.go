@@ -123,7 +123,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("path is required")
 	}
 
-	content, err := t.fs.ReadFile(path)
+	content, err := resolveFS(ctx, t.fs, path).ReadFile(path)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -180,7 +180,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 		return ErrorResult("content is required")
 	}
 
-	if err := t.fs.WriteFile(path, []byte(content)); err != nil {
+	if err := resolveFS(ctx, t.fs, path).WriteFile(path, []byte(content)); err != nil {
 		return ErrorResult(err.Error())
 	}
 
@@ -228,7 +228,7 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		path = "."
 	}
 
-	entries, err := t.fs.ReadDir(path)
+	entries, err := resolveFS(ctx, t.fs, path).ReadDir(path)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}

@@ -465,6 +465,19 @@ func (ms *MemoryStore) GetPlanWorkDir() string {
 	return strings.TrimSpace(m[1])
 }
 
+// reTaskLine extracts the task name from "> Task: <description>".
+var reTaskLine = regexp.MustCompile(`(?m)^> Task:\s*(.+)`)
+
+// GetPlanTaskName returns the task description from the plan metadata, or "".
+func (ms *MemoryStore) GetPlanTaskName() string {
+	content := ms.ReadLongTerm()
+	m := reTaskLine.FindStringSubmatch(content)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
+}
+
 // interviewSeed is the initial content written to MEMORY.md when /plan starts.
 const interviewSeedTemplate = `# Active Plan
 

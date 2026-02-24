@@ -171,6 +171,8 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bdocker\s+exec\b`),
 	regexp.MustCompile(`\bgit\s+push\b`),
 	regexp.MustCompile(`\bgit\s+force\b`),
+	regexp.MustCompile(`\bgit\s+checkout\b`),
+	regexp.MustCompile(`\bgit\s+switch\b`),
 	regexp.MustCompile(`\bssh\b.*@`),
 	regexp.MustCompile(`\beval\b`),
 	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
@@ -277,6 +279,9 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 
 	cwd := t.workingDir
+	if override := WorkspaceOverrideFromCtx(ctx); override != "" {
+		cwd = override
+	}
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
 		if t.restrictToWorkspace && t.workingDir != "" {
 			resolvedWD, err := validatePath(wd, t.workingDir, true)

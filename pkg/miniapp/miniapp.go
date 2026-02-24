@@ -59,12 +59,15 @@ type PlanInfo struct {
 
 // SessionInfo represents an active session entry for the API response.
 type SessionInfo struct {
-	SessionKey string `json:"session_key"`
-	Channel    string `json:"channel"`
-	ChatID     string `json:"chat_id"`
-	TouchDir   string `json:"touch_dir"`
-	LastSeenAt string `json:"last_seen_at"`
-	AgeSec     int    `json:"age_sec"`
+	SessionKey  string `json:"session_key"`
+	Channel     string `json:"channel"`
+	ChatID      string `json:"chat_id"`
+	TouchDir    string `json:"touch_dir"`
+	ProjectPath string `json:"project_path,omitempty"`
+	Purpose     string `json:"purpose,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	LastSeenAt  string `json:"last_seen_at"`
+	AgeSec      int    `json:"age_sec"`
 }
 
 // GitRepoSummary represents a lightweight repo entry for the list view.
