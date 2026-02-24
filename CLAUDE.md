@@ -654,4 +654,80 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
 
+---
+
+## FEEDBACK — 第4回レビュー (I)
+
+> レビュー日: 2026-02-24。`pkg/stats/tracker.go` と `pkg/agent/memory.go` を精読して発見した前提誤りと記述の欠落。
+
+### I-1. Phase 4-1: stats.Tracker に dirty フラグは不要
+
+**指摘内容**: Phase 4-1 に「dirty フラグ + タイマー (5分)」と記述しているが、`stats.Tracker` の状態を更新するのは `RecordUsage()` と `RecordPrompt()` の2関数のみ。どちらを一度でも呼べば常にデータは「更新済み」であり、フラグで dirty/clean を区別する意味がない。
+
+**現状コード** (`pkg/stats/tracker.go`):
+
+```go
+func (t *Tracker) RecordUsage(...) {
+    t.mu.Lock()
+    defer t.mu.Unlock()
+    // カウンタ更新
+    t.save()  // ← ここを外すだけ
+}
+
+func (t *Tracker) RecordPrompt(...) {
+    t.mu.Lock()
+    defer t.mu.Unlock()
+    // カウンタ更新
+    t.save()  // ← ここも外すだけ
+}
+```
+
+**正しい実装**: dirty フラグを追加せず、単純に:
+1. `RecordUsage()` / `RecordPrompt()` 内の `t.save()` 呼び出しを削除
+2. 起動時にタイマー goroutine 1本 (`time.NewTicker(5 * time.Minute)` → `t.save()`)
+3. `Close()` メソッドでタイマー停止 + `t.save()`
+
+一度もデータ更新されていない場合にタイマーが `save()` を呼ぶリスクがあるが、`Tracker` は起動時にファイルをロードするため「同じ内容を上書きするだけ」で実害なし。
+
+**計画の修正箇所**: Phase 4-1 の「dirty フラグ」という記述を削除し、「`save()` 呼び出しを `RecordUsage`/`RecordPrompt` から除去 + 定期タイマー」に単純化する。
+
+---
+
+### I-2. Phase 3-1: private ヘルパー関数の新規作成が明示されていない
+
+**指摘内容**: Phase 3-1 のコードスニペットに `hasActivePlanFrom(content)` や `getPlanStatusFrom(content)` が登場するが、これらの関数は **現在存在しない**。計画を読んだだけでは「既存関数の内部リファクタ」と誤解しやすく、必要な作業量が過小評価される。
+
+**現状の `pkg/agent/memory.go`**:
+
+```go
+// 既存 public メソッド — それぞれ独立して ReadLongTerm() を呼ぶ
+func (ms *MemoryStore) HasActivePlan() bool {
+    content := ms.ReadLongTerm()  // ← 内部で読む
+    return strings.Contains(content, "# Plan:") && ...
+}
+
+func (ms *MemoryStore) GetPlanStatus() string {
+    content := ms.ReadLongTerm()  // ← 内部で読む
+    ...
+}
+// GetCurrentPhase(), GetTotalPhases(), GetPlanPhases(), FormatPlanDisplay() も同様
+```
+
+既存の public メソッドを `GetMemoryContext()` 内から呼ぶと各々が `ReadLongTerm()` を呼ぶため、content passthrough の目的が失われる。
+
+**必要な実装**: `content string` を受け取る private ヘルパー関数群を新規作成する必要がある:
+
+```go
+// 新規作成が必要な関数群 (現在は存在しない)
+func hasActivePlanFrom(content string) bool         { ... }
+func getPlanStatusFrom(content string) string       { ... }
+func getCurrentPhaseFrom(content string) int        { ... }
+func getTotalPhasesFrom(content string) int         { ... }
+func getPlanPhasesFrom(content string) []PlanPhase  { ... }
+func formatPlanDisplayFrom(content string) string   { ... }
+```
+
+既存の public メソッド (`HasActivePlan()` 等) は互換性のため残し、内部で上記 private 関数を呼ぶ形に書き換える。
+
+**計画の修正箇所**: Phase 3-1 に「既存の public メソッドは内部で `ReadLongTerm()` を呼ぶため再利用不可。`content string` を受け取る private ヘルパー関数群を新規作成し、public メソッドをそれらのラッパーに書き換える」という注記を追加する。
 
