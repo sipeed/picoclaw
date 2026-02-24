@@ -83,10 +83,11 @@ func TestGetConfigPath_Windows(t *testing.T) {
 		t.Skip("windows-specific HOME behavior varies; run on windows")
 	}
 
-	t.Setenv("USERPROFILE", `C:\Users\Test`)
+	testUserProfilePath := `C:\Users\Test`
+	t.Setenv("USERPROFILE", testUserProfilePath)
 
 	got := GetConfigPath()
-	want := filepath.Join(`C:\Users\Test`, ".picoclaw", "config.json")
+	want := filepath.Join(testUserProfilePath, ".picoclaw", "config.json")
 
 	require.True(t, strings.EqualFold(got, want), "GetConfigPath() = %q, want %q", got, want)
 }
