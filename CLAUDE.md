@@ -699,69 +699,42 @@ func (t *Tracker) RecordPrompt() {
 
 ---
 
-### I-2. Phase 3-1: private ヘルパー関数の新規作成が明示されていない
+### I-2. Phase 3-1: private ヘルパーの新規作成は最小限で済む ← 当初指摘を修正
 
-**指摘内容**: Phase 3-1 のコードスニペットに `hasActivePlanFrom(content)` や `getPlanStatusFrom(content)` が登場するが、これらの関数は **現在存在しない**。計画を読んだだけでは「既存関数の内部リファクタ」と誤解しやすく、必要な作業量が過小評価される。
+**当初の指摘の問題**: 「`hasActivePlanFrom`, `getPlanStatusFrom`, ... の private 関数群を新規作成」と述べたが、過剰だった。`HasActivePlan()`, `GetPlanStatus()` 等の本体を見ると、いずれも **L137-145 に定義済みのパッケージ変数 regex を1〜2行で呼ぶだけ** であり、専用の private 関数を作らずインライン化できる。
 
-**現状の各 public メソッド** (`pkg/agent/memory.go`):
+| メソッド | 本体の実態 | 置き換え手段 |
+|----------|-----------|-------------|
+| `HasActivePlan()` L148 | `reActivePlan.MatchString(content)` | **インライン** (1行) |
+| `GetPlanStatus()` L154 | `reStatus.FindStringSubmatch` + TrimSpace | **インライン** (2行) |
+| `GetCurrentPhase()` L164 | `rePhase.FindStringSubmatch` + Atoi | **インライン** (2行) |
+| `GetTotalPhases()` L175 | `rePhaseHeader.FindAllStringSubmatch` + max loop | **インライン** (5行) |
+| `GetPlanPhases()` L270 | 42行の複雑なロジック | **private 関数 1つ** が要る |
 
-```go
-// L148-151: HasActivePlan() — ReadLongTerm() を L149 で呼ぶ
-func (ms *MemoryStore) HasActivePlan() bool {
-    content := ms.ReadLongTerm()          // L149
-    return reActivePlan.MatchString(content)
-}
-
-// L154-161: GetPlanStatus() — ReadLongTerm() を L155 で呼ぶ
-func (ms *MemoryStore) GetPlanStatus() string {
-    content := ms.ReadLongTerm()          // L155
-    m := reStatus.FindStringSubmatch(content)
-    ...
-}
-
-// GetCurrentPhase() L164, GetTotalPhases() L175 も同様
-// GetPlanPhases() L270 は ReadLongTerm() (L271) + GetTotalPhases() (L276) で 2回読む
-```
-
-既存の public メソッドを `GetMemoryContext()` や `FormatPlanDisplay()` 内から呼ぶと各々が `ReadLongTerm()` を呼ぶため、content passthrough の目的が失われる。
-
-**特に致命的な即時矛盾 (今すぐ直せるレベル)**:
+**致命的な即時矛盾 (インラインで今すぐ直せる)**:
 
 ```go
 // GetMemoryContext() L725-746
-func (ms *MemoryStore) GetMemoryContext() string {
-    longTerm := ms.ReadLongTerm()     // L728 — ここで読む
-    if longTerm != "" {
-        if ms.HasActivePlan() {       // L730 — HasActivePlan() がまた ReadLongTerm() を呼ぶ！
-                                      //         longTerm は L728 にあるのに
-```
-
-```go
-// FormatPlanDisplay() L656-668
-func (ms *MemoryStore) FormatPlanDisplay() string {
-    content := ms.ReadLongTerm()      // L657 — ここで読む
-    if !ms.HasActivePlan() {          // L658 — HasActivePlan() がまた ReadLongTerm() を呼ぶ！
-                                      //         content は L657 にあるのに
+longTerm := ms.ReadLongTerm()          // L728 — 読んだ
+if ms.HasActivePlan() {                // L730 — また ReadLongTerm() ← content は L728 にある
+    status := ms.GetPlanStatus()       // L731 — また ReadLongTerm()
     ...
-    status := ms.GetPlanStatus()      // L666 — また ReadLongTerm()
-    currentPhase := ms.GetCurrentPhase()  // L667 — また ReadLongTerm()
-    phases := ms.GetPlanPhases()      // L668 — また ReadLongTerm() (+GetTotalPhases() でもう1回)
+if !ms.HasActivePlan() {               // L746 — また ReadLongTerm() ← 3回目
+
+// FormatPlanDisplay() L656-668
+content := ms.ReadLongTerm()           // L657 — 読んだ
+if !ms.HasActivePlan() { ... }         // L658 — また ReadLongTerm() ← content は L657 にある
+status := ms.GetPlanStatus()           // L666 — また ReadLongTerm()
+currentPhase := ms.GetCurrentPhase()   // L667 — また ReadLongTerm()
+phases := ms.GetPlanPhases()           // L668 — ReadLongTerm() + GetTotalPhases() でさらに1回
 ```
 
-**補足 — パターンは既に確立されている**: `extractPhaseContent(content string, phase int)` (L231-253) という「content を受け取る private ヘルパー」が既に存在する。同じパターンを `HasActivePlan`, `GetPlanStatus` 等にも適用するのがこの Phase の作業。
+L730/L731/L746 は全て `reActivePlan.MatchString(longTerm)` / `reStatus...` のインラインに置き換えるだけ。`GetPlanPhases(content)` のみ private 関数が必要。
 
-**必要な実装**: `content string` を受け取る private ヘルパー関数群を新規作成する:
+**実装量の再評価**:
+- 新規 private 関数: **1つ** (`getPlanPhasesFrom(content string) []PlanPhase`)
+- 既存 public メソッドの変更: なし (互換性維持)
+- `GetMemoryContext()` / `FormatPlanDisplay()` 内の修正: 各メソッドで数行のインライン置き換え
 
-```go
-// 新規作成が必要 (現在は存在しない)
-func hasActivePlanFrom(content string) bool        { return reActivePlan.MatchString(content) }
-func getPlanStatusFrom(content string) string      { /* reStatus から抽出 */ }
-func getCurrentPhaseFrom(content string) int       { /* rePhase から抽出 */ }
-func getTotalPhasesFrom(content string) int        { /* rePhaseHeader から算出 */ }
-func getPlanPhasesFrom(content string) []PlanPhase { /* extractPhaseContent を使う */ }
-```
-
-既存の public メソッド (`HasActivePlan()` L148 等) は互換性のため残し、内部で上記を呼ぶラッパーに書き換える。`GetMemoryContext()` L730 と `FormatPlanDisplay()` L658 は `ReadLongTerm()` の戻り値が手元にあるため、public メソッドを経由せず private ヘルパーを直接呼ぶ。
-
-**計画の修正箇所**: Phase 3-1 に「既存の public メソッドは内部で `ReadLongTerm()` を呼ぶため再利用不可。`content string` を受け取る private ヘルパー群を新規作成 (L231 の `extractPhaseContent` と同パターン) し、public メソッドをラッパーに書き換える」を追記する。
+**計画の修正箇所**: Phase 3-1 の「private ヘルパー群を新規作成」という表現を「`HasActivePlan` 等の単純呼び出しをパッケージ変数 regex のインライン呼び出しに置き換え、複雑な `GetPlanPhases` だけ private variant を1つ追加」に修正する。
 
