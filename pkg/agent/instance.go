@@ -133,7 +133,7 @@ func resolveAgentModel(agentCfg *config.AgentConfig, defaults *config.AgentDefau
 	if agentCfg != nil && agentCfg.Model != nil && strings.TrimSpace(agentCfg.Model.Primary) != "" {
 		return strings.TrimSpace(agentCfg.Model.Primary)
 	}
-	return defaults.Model
+	return defaults.GetModelName()
 }
 
 // resolveAgentFallbacks resolves the fallback models for an agent.
