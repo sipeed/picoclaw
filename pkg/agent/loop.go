@@ -926,13 +926,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		return "", err
 	}
 
-	// 5-post. Refresh cached system prompt: tool execution may have updated touch_dir,
-	// so rebuild with current workDir so Mini App shows the up-to-date version.
-	if active := al.sessions.ListActive(); len(active) > 0 && active[0].SessionKey == opts.SessionKey && active[0].TouchDir != "" {
-		agent.ContextBuilder.SetWorkDir(filepath.Join(agent.Workspace, active[0].TouchDir))
-	}
-	al.lastSystemPrompt.Store(agent.ContextBuilder.BuildSystemPrompt())
-
 	// 5a. Auto-advance plan phases after LLM iteration
 	postStatus := agent.ContextBuilder.GetPlanStatus()
 	if agent.ContextBuilder.HasActivePlan() && (postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
