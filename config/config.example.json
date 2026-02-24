@@ -4,9 +4,6 @@
     "api_key": "",
     "base_url": ""
   },
-  "stt": {
-    "api_key": ""
-  },
   "agents": {
     "defaults": {
       "workspace": "~/.clawdroid/workspace",
@@ -96,12 +93,6 @@
     "exec": {
       "enabled": false
     },
-    "i2c": {
-      "enabled": false
-    },
-    "spi": {
-      "enabled": false
-    },
     "android": {
       "enabled": true
     },
@@ -139,10 +130,6 @@
   "heartbeat": {
     "enabled": true,
     "interval": 30
-  },
-  "devices": {
-    "enabled": false,
-    "monitor_usb": true
   },
   "gateway": {
     "host": "127.0.0.1",

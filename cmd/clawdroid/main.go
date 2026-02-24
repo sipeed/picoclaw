@@ -27,15 +27,12 @@ import (
 	"github.com/KarakuriAgent/clawdroid/pkg/channels"
 	"github.com/KarakuriAgent/clawdroid/pkg/config"
 	"github.com/KarakuriAgent/clawdroid/pkg/cron"
-	"github.com/KarakuriAgent/clawdroid/pkg/devices"
 	"github.com/KarakuriAgent/clawdroid/pkg/health"
 	"github.com/KarakuriAgent/clawdroid/pkg/heartbeat"
 	"github.com/KarakuriAgent/clawdroid/pkg/logger"
 	"github.com/KarakuriAgent/clawdroid/pkg/providers"
 	"github.com/KarakuriAgent/clawdroid/pkg/skills"
-	"github.com/KarakuriAgent/clawdroid/pkg/state"
 	"github.com/KarakuriAgent/clawdroid/pkg/tools"
-	"github.com/KarakuriAgent/clawdroid/pkg/voice"
 )
 
 //go:generate cp -r ../../workspace .
@@ -518,33 +515,6 @@ func gatewayCmd() {
 	// Inject channel manager into agent loop for command handling
 	agentLoop.SetChannelManager(channelManager)
 
-	var transcriber *voice.GroqTranscriber
-	if cfg.STT.APIKey != "" {
-		transcriber = voice.NewGroqTranscriber(cfg.STT.APIKey)
-		logger.InfoC("voice", "Groq voice transcription enabled")
-	}
-
-	if transcriber != nil {
-		if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
-			if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
-				tc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Telegram channel")
-			}
-		}
-		if discordChannel, ok := channelManager.GetChannel("discord"); ok {
-			if dc, ok := discordChannel.(*channels.DiscordChannel); ok {
-				dc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Discord channel")
-			}
-		}
-		if slackChannel, ok := channelManager.GetChannel("slack"); ok {
-			if sc, ok := slackChannel.(*channels.SlackChannel); ok {
-				sc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Slack channel")
-			}
-		}
-	}
-
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
 		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
@@ -568,18 +538,6 @@ func gatewayCmd() {
 	}
 	fmt.Println("✓ Heartbeat service started")
 
-	stateManager := state.NewManager(cfg.DataPath())
-	deviceService := devices.NewService(devices.Config{
-		Enabled:    cfg.Devices.Enabled,
-		MonitorUSB: cfg.Devices.MonitorUSB,
-	}, stateManager)
-	deviceService.SetBus(msgBus)
-	if err := deviceService.Start(ctx); err != nil {
-		fmt.Printf("Error starting device service: %v\n", err)
-	} else if cfg.Devices.Enabled {
-		fmt.Println("✓ Device event service started")
-	}
-
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
@@ -601,7 +559,6 @@ func gatewayCmd() {
 	fmt.Println("\nShutting down...")
 	cancel()
 	healthServer.Stop(context.Background())
-	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
 	agentLoop.Stop()
@@ -648,9 +605,6 @@ func statusCmd() {
 		}
 		if cfg.LLM.BaseURL != "" {
 			fmt.Printf("Base URL: %s\n", cfg.LLM.BaseURL)
-		}
-		if cfg.STT.APIKey != "" {
-			fmt.Println("STT API Key: ✓")
 		}
 	}
 }

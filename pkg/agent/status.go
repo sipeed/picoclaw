@@ -62,10 +62,6 @@ func statusLabel(toolName string, args map[string]interface{}) string {
 		return "アシスタント終了中..."
 	case "mcp":
 		return mcpStatusLabel(args)
-	case "i2c":
-		return i2cStatusLabel(args)
-	case "spi":
-		return spiStatusLabel(args)
 	default:
 		return "処理中..."
 	}
@@ -180,49 +176,6 @@ func mcpStatusLabel(args map[string]interface{}) string {
 	}
 }
 
-func i2cStatusLabel(args map[string]interface{}) string {
-	switch strArg(args, "action") {
-	case "detect":
-		return "I2Cバス検出中..."
-	case "scan":
-		if b := strArg(args, "bus"); b != "" {
-			return fmt.Sprintf("I2Cデバイススキャン中...（bus %s）", b)
-		}
-		return "I2Cデバイススキャン中..."
-	case "read":
-		if addr := intArg(args, "address"); addr > 0 {
-			return fmt.Sprintf("センサー読み取り中...（0x%02X）", addr)
-		}
-		return "センサー読み取り中..."
-	case "write":
-		if addr := intArg(args, "address"); addr > 0 {
-			return fmt.Sprintf("デバイス書き込み中...（0x%02X）", addr)
-		}
-		return "デバイス書き込み中..."
-	default:
-		return "I2C操作中..."
-	}
-}
-
-func spiStatusLabel(args map[string]interface{}) string {
-	switch strArg(args, "action") {
-	case "list":
-		return "SPIデバイス一覧取得中..."
-	case "transfer":
-		if d := strArg(args, "device"); d != "" {
-			return fmt.Sprintf("SPI通信中...（%s）", d)
-		}
-		return "SPI通信中..."
-	case "read":
-		if d := strArg(args, "device"); d != "" {
-			return fmt.Sprintf("SPI読み取り中...（%s）", d)
-		}
-		return "SPI読み取り中..."
-	default:
-		return "SPI操作中..."
-	}
-}
-
 // strArg extracts a string argument from a tool arguments map.
 func strArg(args map[string]interface{}, key string) string {
 	if v, ok := args[key]; ok {
@@ -231,19 +184,6 @@ func strArg(args map[string]interface{}, key string) string {
 		}
 	}
 	return ""
-}
-
-// intArg extracts an integer argument from a tool arguments map.
-func intArg(args map[string]interface{}, key string) int {
-	if v, ok := args[key]; ok {
-		switch n := v.(type) {
-		case float64:
-			return int(n)
-		case int:
-			return n
-		}
-	}
-	return 0
 }
 
 // truncLabel truncates a string to maxRunes runes, appending "..." if truncated.

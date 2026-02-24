@@ -49,19 +49,13 @@ type LLMConfig struct {
 	BaseURL string `json:"base_url" env:"CLAWDROID_LLM_BASE_URL"`
 }
 
-type STTConfig struct {
-	APIKey string `json:"api_key" env:"CLAWDROID_STT_API_KEY"`
-}
-
 type Config struct {
 	LLM        LLMConfig        `json:"llm"`
-	STT        STTConfig        `json:"stt"`
 	Agents     AgentsConfig     `json:"agents"`
 	Channels   ChannelsConfig   `json:"channels"`
 	Gateway    GatewayConfig    `json:"gateway"`
 	Tools      ToolsConfig      `json:"tools"`
 	Heartbeat  HeartbeatConfig  `json:"heartbeat"`
-	Devices    DevicesConfig    `json:"devices"`
 	RateLimits RateLimitsConfig `json:"rate_limits"`
 	mu         sync.RWMutex
 }
@@ -182,11 +176,6 @@ type HeartbeatConfig struct {
 	Interval int  `json:"interval" env:"CLAWDROID_HEARTBEAT_INTERVAL"` // minutes, min 5
 }
 
-type DevicesConfig struct {
-	Enabled    bool `json:"enabled" env:"CLAWDROID_DEVICES_ENABLED"`
-	MonitorUSB bool `json:"monitor_usb" env:"CLAWDROID_DEVICES_MONITOR_USB"`
-}
-
 type RateLimitsConfig struct {
 	MaxToolCallsPerMinute int `json:"max_tool_calls_per_minute" env:"CLAWDROID_RATE_LIMITS_MAX_TOOL_CALLS_PER_MINUTE"` // 0 = unlimited
 	MaxRequestsPerMinute  int `json:"max_requests_per_minute" env:"CLAWDROID_RATE_LIMITS_MAX_REQUESTS_PER_MINUTE"`     // 0 = unlimited
@@ -217,14 +206,6 @@ type ExecToolsConfig struct {
 	Enabled bool `json:"enabled" env:"CLAWDROID_TOOLS_EXEC_ENABLED"`
 }
 
-type I2CToolsConfig struct {
-	Enabled bool `json:"enabled" env:"CLAWDROID_TOOLS_I2C_ENABLED"`
-}
-
-type SPIToolsConfig struct {
-	Enabled bool `json:"enabled" env:"CLAWDROID_TOOLS_SPI_ENABLED"`
-}
-
 type MCPServerConfig struct {
 	// Stdio transport
 	Command string            `json:"command,omitempty"`
@@ -250,8 +231,6 @@ type MemoryToolsConfig struct {
 type ToolsConfig struct {
 	Web     WebToolsConfig             `json:"web"`
 	Exec    ExecToolsConfig            `json:"exec"`
-	I2C     I2CToolsConfig             `json:"i2c"`
-	SPI     SPIToolsConfig             `json:"spi"`
 	Android AndroidToolsConfig         `json:"android"`
 	Memory  MemoryToolsConfig          `json:"memory"`
 	MCP     map[string]MCPServerConfig `json:"mcp,omitempty"`
@@ -262,7 +241,6 @@ func DefaultConfig() *Config {
 		LLM: LLMConfig{
 			Model: "zhipu/glm-4.7",
 		},
-		STT: STTConfig{},
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:           "~/.clawdroid/workspace",
@@ -355,12 +333,6 @@ func DefaultConfig() *Config {
 			Exec: ExecToolsConfig{
 				Enabled: false,
 			},
-			I2C: I2CToolsConfig{
-				Enabled: false,
-			},
-			SPI: SPIToolsConfig{
-				Enabled: false,
-			},
 			Android: AndroidToolsConfig{
 				Enabled: true,
 			},
@@ -382,10 +354,6 @@ func DefaultConfig() *Config {
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
 			Interval: 30, // default 30 minutes
-		},
-		Devices: DevicesConfig{
-			Enabled:    false,
-			MonitorUSB: true,
 		},
 		RateLimits: RateLimitsConfig{
 			MaxToolCallsPerMinute: 60,

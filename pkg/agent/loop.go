@@ -106,14 +106,6 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	}
 	registry.Register(tools.NewWebFetchTool(50000))
 
-	// Hardware tools (I2C, SPI) - disabled by default for security
-	if cfg.Tools.I2C.Enabled {
-		registry.Register(tools.NewI2CTool())
-	}
-	if cfg.Tools.SPI.Enabled {
-		registry.Register(tools.NewSPITool())
-	}
-
 	// Android device control tool
 	sendCallbackWithType := func(channel, chatID, content, msgType string) error {
 		msgBus.PublishOutbound(bus.OutboundMessage{

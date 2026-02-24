@@ -129,22 +129,6 @@ func TestDefaultConfig_ExecToolDisabled(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_I2CToolDisabled verifies I2C tool is disabled by default
-func TestDefaultConfig_I2CToolDisabled(t *testing.T) {
-	cfg := DefaultConfig()
-	if cfg.Tools.I2C.Enabled {
-		t.Error("I2C tool should be disabled by default")
-	}
-}
-
-// TestDefaultConfig_SPIToolDisabled verifies SPI tool is disabled by default
-func TestDefaultConfig_SPIToolDisabled(t *testing.T) {
-	cfg := DefaultConfig()
-	if cfg.Tools.SPI.Enabled {
-		t.Error("SPI tool should be disabled by default")
-	}
-}
-
 // TestDefaultConfig_WebTools verifies web tools config
 func TestDefaultConfig_WebTools(t *testing.T) {
 	cfg := DefaultConfig()
