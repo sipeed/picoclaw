@@ -519,11 +519,18 @@ type ExecConfig struct {
 	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 }
 
+type MediaCleanupConfig struct {
+	Enabled  bool `json:"enabled"          env:"PICOCLAW_MEDIA_CLEANUP_ENABLED"`
+	MaxAge   int  `json:"max_age_minutes"  env:"PICOCLAW_MEDIA_CLEANUP_MAX_AGE"`
+	Interval int  `json:"interval_minutes" env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL"`
+}
+
 type ToolsConfig struct {
-	Web    WebToolsConfig    `json:"web"`
-	Cron   CronToolsConfig   `json:"cron"`
-	Exec   ExecConfig        `json:"exec"`
-	Skills SkillsToolsConfig `json:"skills"`
+	Web          WebToolsConfig     `json:"web"`
+	Cron         CronToolsConfig    `json:"cron"`
+	Exec         ExecConfig         `json:"exec"`
+	Skills       SkillsToolsConfig  `json:"skills"`
+	MediaCleanup MediaCleanupConfig `json:"media_cleanup"`
 }
 
 type SkillsToolsConfig struct {

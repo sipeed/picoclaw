@@ -291,6 +291,11 @@ func DefaultConfig() *Config {
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
+			MediaCleanup: MediaCleanupConfig{
+				Enabled:  true,
+				MaxAge:   30,
+				Interval: 5,
+			},
 			Web: WebToolsConfig{
 				Proxy: "",
 				Brave: BraveConfig{
