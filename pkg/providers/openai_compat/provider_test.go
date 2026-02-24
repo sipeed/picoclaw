@@ -9,7 +9,7 @@ import (
 )
 
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
-	var requestBody map[string]interface{}
+	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
@@ -20,10 +20,10 @@ func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		resp := map[string]interface{}{
-			"choices": []map[string]interface{}{
+		resp := map[string]any{
+			"choices": []map[string]any{
 				{
-					"message":       map[string]interface{}{"content": "ok"},
+					"message":       map[string]any{"content": "ok"},
 					"finish_reason": "stop",
 				},
 			},
@@ -34,7 +34,13 @@ func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	defer server.Close()
 
 	p := NewProvider("key", server.URL, "")
-	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "glm-4.7", map[string]interface{}{"max_tokens": 1234})
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"glm-4.7",
+		map[string]any{"max_tokens": 1234},
+	)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -49,16 +55,16 @@ func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 
 func TestProviderChat_ParsesToolCalls(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{
-			"choices": []map[string]interface{}{
+		resp := map[string]any{
+			"choices": []map[string]any{
 				{
-					"message": map[string]interface{}{
+					"message": map[string]any{
 						"content": "",
-						"tool_calls": []map[string]interface{}{
+						"tool_calls": []map[string]any{
 							{
 								"id":   "call_1",
 								"type": "function",
-								"function": map[string]interface{}{
+								"function": map[string]any{
 									"name":      "get_weather",
 									"arguments": "{\"city\":\"SF\"}",
 								},
@@ -68,7 +74,7 @@ func TestProviderChat_ParsesToolCalls(t *testing.T) {
 					"finish_reason": "tool_calls",
 				},
 			},
-			"usage": map[string]interface{}{
+			"usage": map[string]any{
 				"prompt_tokens":     10,
 				"completion_tokens": 5,
 				"total_tokens":      15,
@@ -95,6 +101,50 @@ func TestProviderChat_ParsesToolCalls(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ParsesReasoningContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content":           "The answer is 2",
+						"reasoning_content": "Let me think step by step... 1+1=2",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call_1",
+								"type": "function",
+								"function": map[string]any{
+									"name":      "calculator",
+									"arguments": "{\"expr\":\"1+1\"}",
+								},
+							},
+						},
+					},
+					"finish_reason": "tool_calls",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "1+1=?"}}, nil, "kimi-k2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if out.ReasoningContent != "Let me think step by step... 1+1=2" {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "Let me think step by step... 1+1=2")
+	}
+	if out.Content != "The answer is 2" {
+		t.Fatalf("Content = %q, want %q", out.Content, "The answer is 2")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+}
+
 func TestProviderChat_HTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -109,17 +159,17 @@ func TestProviderChat_HTTPError(t *testing.T) {
 }
 
 func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testing.T) {
-	var requestBody map[string]interface{}
+	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		resp := map[string]interface{}{
-			"choices": []map[string]interface{}{
+		resp := map[string]any{
+			"choices": []map[string]any{
 				{
-					"message":       map[string]interface{}{"content": "ok"},
+					"message":       map[string]any{"content": "ok"},
 					"finish_reason": "stop",
 				},
 			},
@@ -135,7 +185,7 @@ func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testin
 		[]Message{{Role: "user", Content: "hi"}},
 		nil,
 		"moonshot/kimi-k2.5",
-		map[string]interface{}{"temperature": 0.3},
+		map[string]any{"temperature": 0.3},
 	)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
@@ -174,17 +224,17 @@ func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var requestBody map[string]interface{}
+			var requestBody map[string]any
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
-				resp := map[string]interface{}{
-					"choices": []map[string]interface{}{
+				resp := map[string]any{
+					"choices": []map[string]any{
 						{
-							"message":       map[string]interface{}{"content": "ok"},
+							"message":       map[string]any{"content": "ok"},
 							"finish_reason": "stop",
 						},
 					},
@@ -227,17 +277,17 @@ func TestProvider_ProxyConfigured(t *testing.T) {
 }
 
 func TestProviderChat_AcceptsNumericOptionTypes(t *testing.T) {
-	var requestBody map[string]interface{}
+	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		resp := map[string]interface{}{
-			"choices": []map[string]interface{}{
+		resp := map[string]any{
+			"choices": []map[string]any{
 				{
-					"message":       map[string]interface{}{"content": "ok"},
+					"message":       map[string]any{"content": "ok"},
 					"finish_reason": "stop",
 				},
 			},
@@ -253,7 +303,7 @@ func TestProviderChat_AcceptsNumericOptionTypes(t *testing.T) {
 		[]Message{{Role: "user", Content: "hi"}},
 		nil,
 		"gpt-4o",
-		map[string]interface{}{"max_tokens": float64(512), "temperature": 1},
+		map[string]any{"max_tokens": float64(512), "temperature": 1},
 	)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)

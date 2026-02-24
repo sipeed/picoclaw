@@ -292,10 +292,10 @@ func TestBuildPrompt_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get current weather",
-				Parameters: map[string]interface{}{
+				Parameters: map[string]any{
 					"type": "object",
-					"properties": map[string]interface{}{
-						"city": map[string]interface{}{"type": "string"},
+					"properties": map[string]any{
+						"city": map[string]any{"type": "string"},
 					},
 				},
 			},
@@ -409,7 +409,7 @@ func createMockCodexCLI(t *testing.T, events []string) string {
 		sb.WriteString(fmt.Sprintf("echo '%s'\n", event))
 	}
 
-	if err := os.WriteFile(scriptPath, []byte(sb.String()), 0755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(sb.String()), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return scriptPath
@@ -480,7 +480,7 @@ echo "$@" > "` + filepath.Join(tmpDir, "args.txt") + `"
 echo '{"type":"item.completed","item":{"id":"1","type":"agent_message","text":"ok"}}'
 echo '{"type":"turn.completed"}'`
 
-	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -522,7 +522,7 @@ func TestCodexCliProvider_MockCLI_ContextCancel(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "codex")
 	script := "#!/bin/bash\nsleep 60"
 
-	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

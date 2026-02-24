@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mymmrac/telego"
+
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -35,6 +36,7 @@ func commandArgs(text string) string {
 	}
 	return strings.TrimSpace(parts[1])
 }
+
 func (c *cmd) Help(ctx context.Context, message telego.Message) error {
 	msg := `/start - Start the bot
 /help - Show this help message
@@ -79,7 +81,7 @@ func (c *cmd) Show(ctx context.Context, message telego.Message) error {
 	switch args {
 	case "model":
 		response = fmt.Sprintf("Current Model: %s (Provider: %s)",
-			c.config.Agents.Defaults.Model,
+			c.config.Agents.Defaults.GetModelName(),
 			c.config.Agents.Defaults.Provider)
 	case "channel":
 		response = "Current Channel: telegram"
@@ -96,6 +98,7 @@ func (c *cmd) Show(ctx context.Context, message telego.Message) error {
 	})
 	return err
 }
+
 func (c *cmd) List(ctx context.Context, message telego.Message) error {
 	args := commandArgs(message.Text)
 	if args == "" {
@@ -117,7 +120,7 @@ func (c *cmd) List(ctx context.Context, message telego.Message) error {
 			provider = "configured default"
 		}
 		response = fmt.Sprintf("Configured Model: %s\nProvider: %s\n\nTo change models, update config.yaml",
-			c.config.Agents.Defaults.Model, provider)
+			c.config.Agents.Defaults.GetModelName(), provider)
 
 	case "channels":
 		var enabled []string

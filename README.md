@@ -12,9 +12,13 @@
     <br>
     <a href="https://picoclaw.io"><img src="https://img.shields.io/badge/Website-picoclaw.io-blue?style=flat&logo=google-chrome&logoColor=white" alt="Website"></a>
     <a href="https://x.com/SipeedIO"><img src="https://img.shields.io/badge/X_(Twitter)-SipeedIO-black?style=flat&logo=x&logoColor=white" alt="Twitter"></a>
+    <br>
+    <a href="./assets/wechat.png"><img src="https://img.shields.io/badge/WeChat-Group-41d56b?style=flat&logo=wechat&logoColor=white"></a>
+    <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
- [中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | **English**
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | **English**
+
 </div>
 
 ---
@@ -42,16 +46,17 @@
 > **🚨 SECURITY & OFFICIAL CHANNELS / 安全声明**
 >
 > * **NO CRYPTO:** PicoClaw has **NO** official token/coin. All claims on `pump.fun` or other trading platforms are **SCAMS**.
+>
 > * **OFFICIAL DOMAIN:** The **ONLY** official website is **[picoclaw.io](https://picoclaw.io)**, and company website is **[sipeed.com](https://sipeed.com)**
 > * **Warning:** Many `.ai/.org/.com/.net/...` domains are registered by third parties.
 > * **Warning:** picoclaw is in early development now and may have unresolved network security issues. Do not deploy to production environments before the v1.0 release.
 > * **Note:** picoclaw has recently merged a lot of PRs, which may result in a larger memory footprint (10–20MB) in the latest versions. We plan to prioritize resource optimization as soon as the current feature set reaches a stable state.
 
-
 ## 📢 News
-2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](docs/picoclaw_community_roadmap_260216.md) —we can’t wait to have you on board!
 
-2026-02-13 🎉 PicoClaw hit 5000 stars in 4days! Thank you for the community! There are so many PRs&issues come in (during Chinese New Year holidays), we are finalizing the Project Roadmap and setting up the Developer Group to accelerate PicoClaw's development.  
+2026-02-16 🎉 PicoClaw hit 12K stars in one week! Thank you all for your support! PicoClaw is growing faster than we ever imagined. Given the high volume of PRs, we urgently need community maintainers. Our volunteer roles and roadmap are officially posted [here](docs/ROADMAP.md) —we can’t wait to have you on board!
+
+2026-02-13 🎉 PicoClaw hit 5000 stars in 4days! Thank you for the community! There are so many PRs & issues coming in (during Chinese New Year holidays), we are finalizing the Project Roadmap and setting up the Developer Group to accelerate PicoClaw's development.  
 🚀 Call to Action: Please submit your feature requests in GitHub Discussions. We will review and prioritize them during our upcoming weekly meeting.
 
 2026-02-09 🎉 PicoClaw Launched! Built in 1 day to bring AI Agents to $10 hardware with <10MB RAM. 🦐 PicoClaw，Let's Go！
@@ -100,9 +105,12 @@
 </table>
 
 ### 📱 Run on old Android Phones
+
 Give your decade-old phone a second life! Turn it into a smart AI Assistant with PicoClaw. Quick Start:
+
 1. **Install Termux** (Available on F-Droid or Google Play).
 2. **Execute cmds**
+
 ```bash
 # Note: Replace v0.1.1 with the latest version from the Releases page
 wget https://github.com/sipeed/picoclaw/releases/download/v0.1.1/picoclaw-linux-arm64
@@ -110,6 +118,7 @@ chmod +x picoclaw-linux-arm64
 pkg install proot
 termux-chroot ./picoclaw-linux-arm64 onboard
 ```
+
 And then follow the instructions in the "Quick Start" section to complete the configuration!
 <img src="assets/termux.jpg" alt="PicoClaw" width="512">
 
@@ -165,6 +174,10 @@ vim config/config.json      # Set DISCORD_BOT_TOKEN, API keys, etc.
 # 3. Build & Start
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Docker Users**: By default, the Gateway listens on `127.0.0.1` which is not accessible from the host. If you need to access the health endpoints or expose ports, set `PICOCLAW_GATEWAY_HOST=0.0.0.0` in your environment or update `config.json`.
+
+
 # 4. Check logs
 docker compose logs -f picoclaw-gateway
 
@@ -194,7 +207,7 @@ docker compose --profile gateway up -d
 > [!TIP]
 > Set your API key in `~/.picoclaw/config.json`.
 > Get API keys: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web search is **optional** - get free [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
+> Web Search is **optional** - get free [Tavily API](https://tavily.com) (1000 free queries/month) or [Brave Search API](https://brave.com/search/api) (2000 free queries/month) or use built-in auto fallback.
 
 **1. Initialize**
 
@@ -209,7 +222,7 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "deepseek/deepseek-chat",
+      "model_name": "deepseek/deepseek-chat",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -234,6 +247,11 @@ picoclaw onboard
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       },
+      "tavily": {
+        "enabled": false,
+        "api_key": "YOUR_TAVILY_API_KEY",
+        "max_results": 5
+      },
       "duckduckgo": {
         "enabled": true,
         "max_results": 5
@@ -243,12 +261,12 @@ picoclaw onboard
 }
 ```
 
-> **New**: The `model_list` configuration format allows zero-code provider addition. See [Model Configuration](#-model-configuration) for details.
+> **New**: The `model_list` configuration format allows zero-code provider addition. See [Model Configuration](#model-configuration-model_list) for details.
 
 **3. Get API Keys**
 
 * **LLM Provider**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-* **Web Search** (optional): [Brave Search](https://brave.com/search/api) - Free tier available (2000 requests/month)
+* **Web Search** (optional): [Tavily](https://tavily.com) - Optimized for AI Agents (1000 requests/month) · [Brave Search](https://brave.com/search/api) - Free tier available (2000 requests/month)
 
 > **Note**: See `config.example.json` for a complete configuration template.
 
@@ -264,7 +282,7 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, DingTalk, or LINE
+Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
 
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
@@ -273,6 +291,7 @@ Talk to your picoclaw through Telegram, Discord, DingTalk, or LINE
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
+| **WeCom**    | Medium (CorpID + webhook setup)    |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -322,7 +341,6 @@ picoclaw gateway
 * (Optional) Enable **SERVER MEMBERS INTENT** if you plan to use allow lists based on member data
 
 **3. Get your User ID**
-
 * Discord Settings → Advanced → enable **Developer Mode**
 * Right-click your avatar → **Copy User ID**
 
@@ -334,7 +352,8 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"],
+      "mention_only": false
     }
   }
 }
@@ -346,6 +365,10 @@ picoclaw gateway
 * Scopes: `bot`
 * Bot Permissions: `Send Messages`, `Read Message History`
 * Open the generated invite URL and add the bot to your server
+
+**Optional: Mention-only mode**
+
+Set `"mention_only": true` to make the bot respond only when @-mentioned. Useful for shared servers where you want the bot to respond only when explicitly called.
 
 **6. Run**
 
@@ -412,14 +435,13 @@ picoclaw gateway
 }
 ```
 
-> Set `allow_from` to empty to allow all users, or specify QQ numbers to restrict access.
+> Set `allow_from` to empty to allow all users, or specify DingTalk user IDs to restrict access.
 
 **3. Run**
 
 ```bash
 picoclaw gateway
 ```
-
 </details>
 
 <details>
@@ -472,6 +494,86 @@ picoclaw gateway
 
 </details>
 
+<details>
+<summary><b>WeCom (企业微信)</b></summary>
+
+PicoClaw supports two types of WeCom integration:
+
+**Option 1: WeCom Bot (智能机器人)** - Easier setup, supports group chats
+**Option 2: WeCom App (自建应用)** - More features, proactive messaging
+
+See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detailed setup instructions.
+
+**Quick Setup - WeCom Bot:**
+
+**1. Create a bot**
+
+* Go to WeCom Admin Console → Group Chat → Add Group Bot
+* Copy the webhook URL (format: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**Quick Setup - WeCom App:**
+
+**1. Create an app**
+
+* Go to WeCom Admin Console → App Management → Create App
+* Copy **AgentId** and **Secret**
+* Go to "My Company" page, copy **CorpID**
+**2. Configure receive message**
+
+* In App details, click "Receive Message" → "Set API"
+* Set URL to `http://your-server:18792/webhook/wecom-app`
+* Generate **Token** and **EncodingAESKey**
+
+**3. Configure**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. Run**
+
+```bash
+picoclaw gateway
+```
+
+> **Note**: WeCom App requires opening port 18792 for webhook callbacks. Use a reverse proxy for HTTPS.
+
+</details>
+
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Join the Agent Social Network
 
 Connect Picoclaw to the Agent Social Network simply by sending a single message via the CLI or any integrated Chat App.
@@ -518,23 +620,23 @@ PicoClaw runs in a sandboxed environment by default. The agent can only access f
 }
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `workspace` | `~/.picoclaw/workspace` | Working directory for the agent |
-| `restrict_to_workspace` | `true` | Restrict file/command access to workspace |
+| Option                  | Default                 | Description                               |
+| ----------------------- | ----------------------- | ----------------------------------------- |
+| `workspace`             | `~/.picoclaw/workspace` | Working directory for the agent           |
+| `restrict_to_workspace` | `true`                  | Restrict file/command access to workspace |
 
 #### Protected Tools
 
 When `restrict_to_workspace: true`, the following tools are sandboxed:
 
-| Tool | Function | Restriction |
-|------|----------|-------------|
-| `read_file` | Read files | Only files within workspace |
-| `write_file` | Write files | Only files within workspace |
-| `list_dir` | List directories | Only directories within workspace |
-| `edit_file` | Edit files | Only files within workspace |
-| `append_file` | Append to files | Only files within workspace |
-| `exec` | Execute commands | Command paths must be within workspace |
+| Tool          | Function         | Restriction                            |
+| ------------- | ---------------- | -------------------------------------- |
+| `read_file`   | Read files       | Only files within workspace            |
+| `write_file`  | Write files      | Only files within workspace            |
+| `list_dir`    | List directories | Only directories within workspace      |
+| `edit_file`   | Edit files       | Only files within workspace            |
+| `append_file` | Append to files  | Only files within workspace            |
+| `exec`        | Execute commands | Command paths must be within workspace |
 
 #### Additional Exec Protection
 
@@ -587,11 +689,11 @@ export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false
 
 The `restrict_to_workspace` setting applies consistently across all execution paths:
 
-| Execution Path | Security Boundary |
-|----------------|-------------------|
-| Main Agent | `restrict_to_workspace` ✅ |
+| Execution Path   | Security Boundary            |
+| ---------------- | ---------------------------- |
+| Main Agent       | `restrict_to_workspace` ✅   |
 | Subagent / Spawn | Inherits same restriction ✅ |
-| Heartbeat tasks | Inherits same restriction ✅ |
+| Heartbeat tasks  | Inherits same restriction ✅ |
 
 All paths share the same workspace restriction — there's no way to bypass the security boundary through subagents or scheduled tasks.
 
@@ -617,21 +719,23 @@ For long-running tasks (web search, API calls), use the `spawn` tool to create a
 # Periodic Tasks
 
 ## Quick Tasks (respond directly)
+
 - Report current time
 
 ## Long Tasks (use spawn for async)
+
 - Search the web for AI news and summarize
 - Check email and report important messages
 ```
 
 **Key behaviors:**
 
-| Feature | Description |
-|---------|-------------|
-| **spawn** | Creates async subagent, doesn't block heartbeat |
-| **Independent context** | Subagent has its own context, no session history |
-| **message tool** | Subagent communicates with user directly via message tool |
-| **Non-blocking** | After spawning, heartbeat continues to next task |
+| Feature                 | Description                                               |
+| ----------------------- | --------------------------------------------------------- |
+| **spawn**               | Creates async subagent, doesn't block heartbeat           |
+| **Independent context** | Subagent has its own context, no session history          |
+| **message tool**        | Subagent communicates with user directly via message tool |
+| **Non-blocking**        | After spawning, heartbeat continues to next task          |
 
 #### How Subagent Communication Works
 
@@ -662,10 +766,10 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 }
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `enabled` | `true` | Enable/disable heartbeat |
-| `interval` | `30` | Check interval in minutes (min: 5) |
+| Option     | Default | Description                        |
+| ---------- | ------- | ---------------------------------- |
+| `enabled`  | `true`  | Enable/disable heartbeat           |
+| `interval` | `30`    | Check interval in minutes (min: 5) |
 
 **Environment variables:**
 
@@ -677,17 +781,17 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 > [!NOTE]
 > Groq provides free voice transcription via Whisper. If configured, Telegram voice messages will be automatically transcribed.
 
-| Provider                   | Purpose                                 | Get API Key                                            |
-| -------------------------- | --------------------------------------- | ------------------------------------------------------ |
-| `gemini`                   | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)     |
-| `zhipu`                    | LLM (Zhipu direct)                      | [bigmodel.cn](bigmodel.cn)                             |
-| `openrouter(To be tested)` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                 |
-| `anthropic(To be tested)`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com) |
-| `openai(To be tested)`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)     |
-| `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com) |
+| Provider                   | Purpose                                 | Get API Key                                                          |
+| -------------------------- | --------------------------------------- | -------------------------------------------------------------------- |
+| `gemini`                   | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)                   |
+| `zhipu`                    | LLM (Zhipu direct)                      | [bigmodel.cn](https://bigmodel.cn)                                   |
+| `openrouter(To be tested)` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                               |
+| `anthropic(To be tested)`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)               |
+| `openai(To be tested)`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)                   |
+| `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)               |
 | `qwen`                     | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
-| `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)           |
-| `cerebras`                 | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                     |
+| `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                         |
+| `cerebras`                 | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                                   |
 
 ### Model Configuration (model_list)
 
@@ -702,25 +806,25 @@ This design also enables **multi-agent support** with flexible provider selectio
 
 #### 📋 All Supported Vendors
 
-| Vendor | `model` Prefix | Default API Base | Protocol | API Key |
-|--------|----------------|------------------|----------|---------|
-| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [Get Key](https://platform.openai.com) |
-| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [Get Key](https://console.anthropic.com) |
-| **智谱 AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
-| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [Get Key](https://platform.deepseek.com) |
-| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [Get Key](https://aistudio.google.com/api-keys) |
-| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [Get Key](https://console.groq.com) |
-| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [Get Key](https://platform.moonshot.cn) |
-| **通义千问 (Qwen)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [Get Key](https://dashscope.console.aliyun.com) |
-| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [Get Key](https://build.nvidia.com) |
-| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | Local (no key needed) |
-| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [Get Key](https://openrouter.ai/keys) |
-| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | Local |
-| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Get Key](https://cerebras.ai) |
-| **火山引擎** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Get Key](https://console.volcengine.com) |
-| **神算云** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
-| **Antigravity** | `antigravity/` | Google Cloud | Custom | OAuth only |
-| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
+| Vendor              | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
+| ------------------- | ----------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
+| **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
+| **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
+| **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek**        | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [Get Key](https://platform.deepseek.com)                         |
+| **Google Gemini**   | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Get Key](https://aistudio.google.com/api-keys)                  |
+| **Groq**            | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
+| **Moonshot**        | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          |
+| **通义千问 (Qwen)** | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
+| **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
+| **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
+| **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
+| **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
+| **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
+| **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
+| **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
+| **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
+| **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
 
 #### Basic Configuration
 
@@ -754,6 +858,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 #### Vendor-Specific Examples
 
 **OpenAI**
+
 ```json
 {
   "model_name": "gpt-5.2",
@@ -763,6 +868,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 ```
 
 **智谱 AI (GLM)**
+
 ```json
 {
   "model_name": "glm-4.7",
@@ -772,6 +878,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 ```
 
 **DeepSeek**
+
 ```json
 {
   "model_name": "deepseek-chat",
@@ -780,17 +887,20 @@ This design also enables **multi-agent support** with flexible provider selectio
 }
 ```
 
-**Anthropic (with OAuth)**
+**Anthropic (with API key)**
+
 ```json
 {
   "model_name": "claude-sonnet-4.6",
   "model": "anthropic/claude-sonnet-4.6",
-  "auth_method": "oauth"
+  "api_key": "sk-ant-your-key"
 }
 ```
-> Run `picoclaw auth login --provider anthropic` to set up OAuth credentials.
+
+> Run `picoclaw auth login --provider anthropic` to paste your API token.
 
 **Ollama (local)**
+
 ```json
 {
   "model_name": "llama3",
@@ -799,6 +909,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 ```
 
 **Custom Proxy/API**
+
 ```json
 {
   "model_name": "my-custom-model",
@@ -836,6 +947,7 @@ Configure multiple endpoints for the same model name—PicoClaw will automatical
 The old `providers` configuration is **deprecated** but still supported for backward compatibility.
 
 **Old Config (deprecated):**
+
 ```json
 {
   "providers": {
@@ -854,6 +966,7 @@ The old `providers` configuration is **deprecated** but still supported for back
 ```
 
 **New Config (recommended):**
+
 ```json
 {
   "model_list": [
@@ -1018,13 +1131,13 @@ Jobs are stored in `~/.picoclaw/workspace/cron/` and processed automatically.
 
 PRs welcome! The codebase is intentionally small and readable. 🤗
 
-Roadmap coming soon...
+See our full [Community Roadmap](https://github.com/sipeed/picoclaw/blob/main/ROADMAP.md).
 
-Developer group building, Entry Requirement: At least 1 Merged PR.
+Developer group building, join after your first merged PR!
 
 User Groups:
 
-discord:  <https://discord.gg/V4sAZ9XWpN>
+discord: <https://discord.gg/V4sAZ9XWpN>
 
 <img src="assets/wechat.png" alt="PicoClaw" width="512">
 

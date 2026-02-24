@@ -131,7 +131,7 @@ func main() {
 
 		workspace := cfg.WorkspacePath()
 		installer := skills.NewSkillInstaller(workspace)
-		// 获取全局配置目录和内置 skills 目录
+		// get global config directory and builtin skills directory
 		globalDir := filepath.Dir(getConfigPath())
 		globalSkillsDir := filepath.Join(globalDir, "skills")
 		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
@@ -141,7 +141,7 @@ func main() {
 		case "list":
 			skillsListCmd(skillsLoader)
 		case "install":
-			skillsInstallCmd(installer)
+			skillsInstallCmd(installer, cfg)
 		case "remove", "uninstall":
 			if len(os.Args) < 4 {
 				fmt.Println("Usage: picoclaw skills remove <skill-name>")

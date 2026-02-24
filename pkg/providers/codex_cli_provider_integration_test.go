@@ -27,7 +27,6 @@ func TestIntegration_RealCodexCLI(t *testing.T) {
 	resp, err := p.Chat(ctx, []Message{
 		{Role: "user", Content: "Respond with only the word 'pong'. Nothing else."},
 	}, nil, "", nil)
-
 	if err != nil {
 		t.Fatalf("Chat() with real CLI error = %v", err)
 	}
@@ -64,7 +63,6 @@ func TestIntegration_RealCodexCLI_WithSystemPrompt(t *testing.T) {
 		{Role: "system", Content: "You are a calculator. Only respond with numbers. No text."},
 		{Role: "user", Content: "What is 2+2?"},
 	}, nil, "", nil)
-
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}

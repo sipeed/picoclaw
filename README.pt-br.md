@@ -50,7 +50,7 @@
 
 ## 📢 Novidades
 
-2026-02-16 🎉 PicoClaw atingiu 12K stars em uma semana! Obrigado a todos pelo apoio! O PicoClaw está crescendo mais rápido do que jamais imaginamos. Dado o alto volume de PRs, precisamos urgentemente de maintainers da comunidade. Nossos papéis de voluntários e roadmap foram publicados oficialmente [aqui](docs/picoclaw_community_roadmap_260216.md) — estamos ansiosos para ter você a bordo!
+2026-02-16 🎉 PicoClaw atingiu 12K stars em uma semana! Obrigado a todos pelo apoio! O PicoClaw está crescendo mais rápido do que jamais imaginamos. Dado o alto volume de PRs, precisamos urgentemente de maintainers da comunidade. Nossos papéis de voluntários e roadmap foram publicados oficialmente [aqui](docs/ROADMAP.md) — estamos ansiosos para ter você a bordo!
 
 2026-02-13 🎉 PicoClaw atingiu 5000 stars em 4 dias! Obrigado à comunidade! Estamos finalizando o **Roadmap do Projeto** e configurando o **Grupo de Desenvolvedores** para acelerar o desenvolvimento do PicoClaw.
 
@@ -172,6 +172,10 @@ vim config/config.json      # Configure DISCORD_BOT_TOKEN, API keys, etc.
 # 3. Build & Iniciar
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Usuários Docker**: Por padrão, o Gateway ouve em `127.0.0.1`, o que não é acessível a partir do host. Se você precisar acessar os endpoints de integridade ou expor portas, defina `PICOCLAW_GATEWAY_HOST=0.0.0.0` em seu ambiente ou atualize o `config.json`.
+
+
 # 4. Ver logs
 docker compose logs -f picoclaw-gateway
 
@@ -213,19 +217,17 @@ picoclaw onboard
 
 ```json
 {
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key",
+      "api_base": "https://api.openai.com/v1"
+    }
+  ],
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
-      "max_tokens": 8192,
-      "temperature": 0.7,
-      "max_tool_iterations": 20
-    }
-  },
-  "providers": {
-    "openrouter": {
-      "api_key": "xxx",
-      "api_base": "https://openrouter.ai/api/v1"
+      "model_name": "gpt4"
     }
   },
   "tools": {
@@ -263,7 +265,7 @@ Pronto! Você tem um assistente de IA funcionando em 2 minutos.
 
 ## 💬 Integração com Apps de Chat
 
-Converse com seu PicoClaw via Telegram, Discord, DingTalk ou LINE.
+Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
 
 | Canal | Nível de Configuração |
 | --- | --- |
@@ -272,6 +274,7 @@ Converse com seu PicoClaw via Telegram, Discord, DingTalk ou LINE.
 | **QQ** | Fácil (AppID + AppSecret) |
 | **DingTalk** | Médio (credenciais do app) |
 | **LINE** | Médio (credenciais + webhook URL) |
+| **WeCom** | Médio (CorpID + configuração webhook) |
 
 <details>
 <summary><b>Telegram</b> (Recomendado)</summary>
@@ -290,7 +293,7 @@ Converse com seu PicoClaw via Telegram, Discord, DingTalk ou LINE.
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -333,7 +336,7 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -468,6 +471,87 @@ picoclaw gateway
 > Em chats de grupo, o bot responde apenas quando mencionado com @. As respostas citam a mensagem original.
 
 > **Docker Compose**: Adicione `ports: ["18791:18791"]` ao serviço `picoclaw-gateway` para expor a porta do webhook.
+
+</details>
+
+<details>
+<summary><b>WeCom (WeChat Work)</b></summary>
+
+O PicoClaw suporta dois tipos de integração WeCom:
+
+**Opção 1: WeCom Bot (Robô Inteligente)** - Configuração mais fácil, suporta chats em grupo
+**Opção 2: WeCom App (Aplicativo Personalizado)** - Mais recursos, mensagens proativas
+
+Veja o [Guia de Configuração WeCom App](docs/wecom-app-configuration.md) para instruções detalhadas.
+
+**Configuração Rápida - WeCom Bot:**
+
+**1. Criar um bot**
+
+* Acesse o Console de Administração WeCom → Chat em Grupo → Adicionar Bot de Grupo
+* Copie a URL do webhook (formato: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+
+**2. Configurar**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**Configuração Rápida - WeCom App:**
+
+**1. Criar um aplicativo**
+
+* Acesse o Console de Administração WeCom → Gerenciamento de Aplicativos → Criar Aplicativo
+* Copie o **AgentId** e o **Secret**
+* Acesse a página "Minha Empresa", copie o **CorpID**
+
+**2. Configurar recebimento de mensagens**
+
+* Nos detalhes do aplicativo, clique em "Receber Mensagens" → "Configurar API"
+* Defina a URL como `http://your-server:18792/webhook/wecom-app`
+* Gere o **Token** e o **EncodingAESKey**
+
+**3. Configurar**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. Executar**
+
+```bash
+picoclaw gateway
+```
+
+> **Nota**: O WeCom App requer a abertura da porta 18792 para callbacks de webhook. Use um proxy reverso para HTTPS em produção.
 
 </details>
 
@@ -684,6 +768,8 @@ O subagente tem acesso às ferramentas (message, web_search, etc.) e pode se com
 | `anthropic` (Em teste) | LLM (Claude direto) | [console.anthropic.com](https://console.anthropic.com) |
 | `openai` (Em teste) | LLM (GPT direto) | [platform.openai.com](https://platform.openai.com) |
 | `deepseek` (Em teste) | LLM (DeepSeek direto) | [platform.deepseek.com](https://platform.deepseek.com) |
+| `qwen` | Alibaba Qwen | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| `cerebras` | Cerebras | [cerebras.ai](https://cerebras.ai) |
 | `groq` | LLM + **Transcrição de voz** (Whisper) | [console.groq.com](https://console.groq.com) |
 
 <details>
@@ -1006,7 +1092,7 @@ Adicione a key em `~/.picoclaw/config.json` se usar o Brave:
   "tools": {
     "web": {
       "brave": {
-        "enabled": true,
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       },
@@ -1037,3 +1123,4 @@ Isso acontece quando outra instância do bot está em execução. Certifique-se 
 | **Zhipu** | 200K tokens/mês | Melhor para usuários chineses |
 | **Brave Search** | 2000 consultas/mês | Funcionalidade de busca web |
 | **Groq** | Plano gratuito disponível | Inferência ultra-rápida (Llama, Mixtral) |
+| **Cerebras** | Plano gratuito disponível | Inferência ultra-rápida (Llama 3.3 70B) |

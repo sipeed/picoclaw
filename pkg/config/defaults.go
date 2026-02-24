@@ -43,9 +43,10 @@ func DefaultConfig() *Config {
 				AllowFrom:         FlexibleStringSlice{},
 			},
 			Discord: DiscordConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:     false,
+				Token:       "",
+				AllowFrom:   FlexibleStringSlice{},
+				MentionOnly: false,
 			},
 			MaixCam: MaixCamConfig{
 				Enabled:   false,
@@ -87,6 +88,30 @@ func DefaultConfig() *Config {
 				ReconnectInterval:  5,
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
+			},
+			WeCom: WeComConfig{
+				Enabled:        false,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookURL:     "",
+				WebhookHost:    "0.0.0.0",
+				WebhookPort:    18793,
+				WebhookPath:    "/webhook/wecom",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
+			},
+			WeComApp: WeComAppConfig{
+				Enabled:        false,
+				CorpID:         "",
+				CorpSecret:     "",
+				AgentID:        0,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookHost:    "0.0.0.0",
+				WebhookPort:    18792,
+				WebhookPath:    "/webhook/wecom-app",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
 			},
 		},
 		Providers: ProvidersConfig{
@@ -230,6 +255,14 @@ func DefaultConfig() *Config {
 				APIKey:    "ollama",
 			},
 
+			// Mistral AI - https://console.mistral.ai/api-keys
+			{
+				ModelName: "mistral-small",
+				Model:     "mistral/mistral-small-latest",
+				APIBase:   "https://api.mistral.ai/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
@@ -239,7 +272,7 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
+			Host: "127.0.0.1",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
@@ -261,6 +294,22 @@ func DefaultConfig() *Config {
 			},
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5,
+			},
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
+			},
+			Skills: SkillsToolsConfig{
+				Registries: SkillsRegistriesConfig{
+					ClawHub: ClawHubRegistryConfig{
+						Enabled: true,
+						BaseURL: "https://clawhub.ai",
+					},
+				},
+				MaxConcurrentSearches: 2,
+				SearchCache: SearchCacheConfig{
+					MaxSize:    50,
+					TTLSeconds: 300,
+				},
 			},
 		},
 		Heartbeat: HeartbeatConfig{

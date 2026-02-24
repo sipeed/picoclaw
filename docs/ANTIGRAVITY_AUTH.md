@@ -378,7 +378,7 @@ const antigravityPlugin = {
   description: "OAuth flow for Google Antigravity (Cloud Code Assist)",
   configSchema: emptyPluginConfigSchema(),
   
-  register(api: OpenClawPluginApi) {
+  register(api: PicoClawPluginApi) {
     api.registerProvider({
       id: "google-antigravity",
       label: "Google Antigravity",
@@ -405,7 +405,7 @@ const antigravityPlugin = {
 
 ```typescript
 type ProviderAuthContext = {
-  config: OpenClawConfig;
+  config: PicoClawConfig;
   agentDir?: string;
   workspaceDir?: string;
   prompter: WizardPrompter;      // UI prompts/notifications
@@ -426,7 +426,7 @@ type ProviderAuthResult = {
     profileId: string;
     credential: AuthProfileCredential;
   }>;
-  configPatch?: Partial<OpenClawConfig>;
+  configPatch?: Partial<PicoClawConfig>;
   defaultModel?: string;
   notes?: string[];
 };
@@ -438,10 +438,9 @@ type ProviderAuthResult = {
 
 ### 1. Required Environment/Dependencies
 
-- Node.js ≥ 22
-- OpenClaw plugin-sdk
-- crypto module (built-in)
-- http module (built-in)
+- Go ≥ 1.21
+- PicoClaw codebase (`pkg/providers/` and `pkg/auth/`)
+- `crypto` and `net/http` standard library packages
 
 ### 2. Required Headers for API Calls
 
@@ -572,36 +571,40 @@ Each SSE message (`data: {...}`) is wrapped in a `response` field:
 
 ## Configuration
 
-### openclaw.json Configuration
+### config.json Configuration
 
-```json5
+```json
 {
-  agents: {
-    defaults: {
-      model: {
-        primary: "google-antigravity/claude-opus-4-6-thinking",
-      },
-    },
-  },
+  "model_list": [
+    {
+      "model_name": "gemini-flash",
+      "model": "antigravity/gemini-3-flash",
+      "auth_method": "oauth"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gemini-flash"
+    }
+  }
 }
 ```
 
 ### Auth Profile Storage
 
-Auth profiles are stored in `~/.openclaw/agent/auth-profiles.json`:
+Auth profiles are stored in `~/.picoclaw/auth.json`:
 
 ```json
 {
-  "version": 1,
-  "profiles": {
-    "google-antigravity:user@example.com": {
-      "type": "oauth",
+  "credentials": {
+    "google-antigravity": {
+      "access_token": "ya29...",
+      "refresh_token": "1//...",
+      "expires_at": "2026-01-01T00:00:00Z",
       "provider": "google-antigravity",
-      "access": "ya29...",
-      "refresh": "1//...",
-      "expires": 1704067200000,
+      "auth_method": "oauth",
       "email": "user@example.com",
-      "projectId": "my-project-id"
+      "project_id": "my-project-id"
     }
   }
 }
@@ -611,277 +614,85 @@ Auth profiles are stored in `~/.openclaw/agent/auth-profiles.json`:
 
 ## Creating a New Provider in PicoClaw
 
+PicoClaw providers are implemented as Go packages under `pkg/providers/`. To add a new provider:
+
 ### Step-by-Step Implementation
 
-#### 1. Create Plugin Structure
+#### 1. Create Provider File
+
+Create a new Go file in `pkg/providers/`:
 
 ```
-extensions/
-└── your-provider-auth/
-    ├── openclaw.plugin.json
-    ├── package.json
-    ├── README.md
-    └── index.ts
+pkg/providers/
+└── your_provider.go
 ```
 
-#### 2. Define Plugin Manifest
+#### 2. Implement the Provider Interface
 
-**openclaw.plugin.json:**
-```json
-{
-  "id": "your-provider-auth",
-  "providers": ["your-provider"],
-  "configSchema": {
-    "type": "object",
-    "additionalProperties": false,
-    "properties": {}
-  }
+Your provider must implement the `Provider` interface defined in `pkg/providers/types.go`:
+
+```go
+package providers
+
+type YourProvider struct {
+    apiKey  string
+    apiBase string
 }
-```
 
-**package.json:**
-```json
-{
-  "name": "@openclaw/your-provider-auth",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Your Provider OAuth plugin",
-  "type": "module"
-}
-```
-
-#### 3. Implement OAuth Flow
-
-```typescript
-import {
-  buildOauthProviderAuthResult,
-  emptyPluginConfigSchema,
-  type OpenClawPluginApi,
-  type ProviderAuthContext,
-} from "openclaw/plugin-sdk";
-
-const YOUR_CLIENT_ID = "your-client-id";
-const YOUR_CLIENT_SECRET = "your-client-secret";
-const AUTH_URL = "https://provider.com/oauth/authorize";
-const TOKEN_URL = "https://provider.com/oauth/token";
-const REDIRECT_URI = "http://localhost:PORT/oauth-callback";
-
-async function loginYourProvider(params: {
-  isRemote: boolean;
-  openUrl: (url: string) => Promise<void>;
-  prompt: (message: string) => Promise<string>;
-  note: (message: string, title?: string) => Promise<void>;
-  log: (message: string) => void;
-  progress: { update: (msg: string) => void; stop: (msg?: string) => void };
-}) {
-  // 1. Generate PKCE
-  const { verifier, challenge } = generatePkce();
-  const state = randomBytes(16).toString("hex");
-  
-  // 2. Build auth URL
-  const authUrl = buildAuthUrl({ challenge, state });
-  
-  // 3. Start callback server (if not remote)
-  const callbackServer = !params.isRemote 
-    ? await startCallbackServer({ timeoutMs: 5 * 60 * 1000 })
-    : null;
-  
-  // 4. Open browser or show URL
-  if (callbackServer) {
-    await params.openUrl(authUrl);
-    const callback = await callbackServer.waitForCallback();
-    code = callback.searchParams.get("code");
-  } else {
-    await params.note(`Auth URL: ${authUrl}`, "OAuth");
-    const input = await params.prompt("Paste redirect URL:");
-    const parsed = parseCallbackInput(input);
-    code = parsed.code;
-  }
-  
-  // 5. Exchange code for tokens
-  const tokens = await exchangeCode({ code, verifier });
-  
-  // 6. Fetch additional user data
-  const email = await fetchUserEmail(tokens.access);
-  
-  return { ...tokens, email };
-}
-```
-
-#### 4. Register Provider
-
-```typescript
-const yourProviderPlugin = {
-  id: "your-provider-auth",
-  name: "Your Provider Auth",
-  description: "OAuth for Your Provider",
-  configSchema: emptyPluginConfigSchema(),
-  
-  register(api: OpenClawPluginApi) {
-    api.registerProvider({
-      id: "your-provider",
-      label: "Your Provider",
-      docsPath: "/providers/models",
-      aliases: ["yp"],
-      
-      auth: [
-        {
-          id: "oauth",
-          label: "OAuth Login",
-          hint: "Browser-based authentication",
-          kind: "oauth",
-          
-          run: async (ctx: ProviderAuthContext) => {
-            const spin = ctx.prompter.progress("Starting OAuth...");
-            
-            try {
-              const result = await loginYourProvider({
-                isRemote: ctx.isRemote,
-                openUrl: ctx.openUrl,
-                prompt: async (msg) => String(await ctx.prompter.text({ message: msg })),
-                note: ctx.prompter.note,
-                log: (msg) => ctx.runtime.log(msg),
-                progress: spin,
-              });
-              
-              return buildOauthProviderAuthResult({
-                providerId: "your-provider",
-                defaultModel: "your-provider/model-name",
-                access: result.access,
-                refresh: result.refresh,
-                expires: result.expires,
-                email: result.email,
-                notes: ["Provider-specific notes"],
-              });
-            } catch (err) {
-              spin.stop("OAuth failed");
-              throw err;
-            }
-          },
-        },
-      ],
-    });
-  },
-};
-
-export default yourProviderPlugin;
-```
-
-#### 5. Implement Usage Tracking (Optional)
-
-```typescript
-// src/infra/provider-usage.fetch.your-provider.ts
-export async function fetchYourProviderUsage(
-  token: string,
-  timeoutMs: number,
-  fetchFn: typeof fetch
-): Promise<ProviderUsageSnapshot> {
-  // Fetch usage data from provider API
-  const response = await fetchFn("https://api.provider.com/usage", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  
-  const data = await response.json();
-  
-  return {
-    provider: "your-provider",
-    displayName: "Your Provider",
-    windows: [
-      { label: "Credits", usedPercent: data.usedPercent },
-    ],
-    plan: data.planName,
-  };
-}
-```
-
-#### 6. Register Usage Fetcher
-
-```typescript
-// src/infra/provider-usage.load.ts
-case "your-provider":
-  return await fetchYourProviderUsage(auth.token, timeoutMs, fetchFn);
-```
-
-#### 7. Add Provider to Type Definitions
-
-```typescript
-// src/infra/provider-usage.types.ts
-export type SupportedProvider =
-  | "anthropic"
-  | "github-copilot"
-  | "google-gemini-cli"
-  | "google-antigravity"
-  | "your-provider"  // Add here
-  | "minimax"
-  | "openai-codex";
-```
-
-#### 8. Add Auth Choice Handler
-
-```typescript
-// src/commands/auth-choice.apply.your-provider.ts
-import { applyAuthChoicePluginProvider } from "./auth-choice.apply.plugin-provider.js";
-
-export async function applyAuthChoiceYourProvider(
-  params: ApplyAuthChoiceParams
-): Promise<ApplyAuthChoiceResult | null> {
-  return await applyAuthChoicePluginProvider(params, {
-    authChoice: "your-provider",
-    pluginId: "your-provider-auth",
-    providerId: "your-provider",
-    methodId: "oauth",
-    label: "Your Provider",
-  });
-}
-```
-
-#### 9. Export from Main Index
-
-```typescript
-// src/commands/auth-choice.apply.ts
-import { applyAuthChoiceYourProvider } from "./auth-choice.apply.your-provider.js";
-
-// In the switch statement:
-case "your-provider":
-  return await applyAuthChoiceYourProvider(params);
-```
-
-### Helper Utilities
-
-#### PKCE Generation
-```typescript
-function generatePkce(): { verifier: string; challenge: string } {
-  const verifier = randomBytes(32).toString("hex");
-  const challenge = createHash("sha256").update(verifier).digest("base64url");
-  return { verifier, challenge };
-}
-```
-
-#### Callback Server
-```typescript
-async function startCallbackServer(params: { timeoutMs: number }) {
-  const port = 51121; // Your port
-  
-  const server = createServer((request, response) => {
-    const url = new URL(request.url!, `http://localhost:${port}`);
-    
-    if (url.pathname === "/oauth-callback") {
-      response.writeHead(200, { "Content-Type": "text/html" });
-      response.end("<h1>Authentication complete</h1>");
-      resolveCallback(url);
-      server.close();
+func NewYourProvider(apiKey, apiBase, proxy string) *YourProvider {
+    if apiBase == "" {
+        apiBase = "https://api.your-provider.com/v1"
     }
-  });
-  
-  await new Promise((resolve, reject) => {
-    server.listen(port, "127.0.0.1", resolve);
-    server.once("error", reject);
-  });
-  
-  return {
-    waitForCallback: () => callbackPromise,
-    close: () => new Promise((resolve) => server.close(resolve)),
-  };
+    return &YourProvider{apiKey: apiKey, apiBase: apiBase}
+}
+
+func (p *YourProvider) Chat(ctx context.Context, messages []Message, tools []Tool, cb StreamCallback) error {
+    // Implement chat completion with streaming
+}
+```
+
+#### 3. Register in the Factory
+
+Add your provider to the protocol switch in `pkg/providers/factory.go`:
+
+```go
+case "your-provider":
+    return NewYourProvider(sel.apiKey, sel.apiBase, sel.proxy), nil
+```
+
+#### 4. Add Default Config (Optional)
+
+Add a default entry in `pkg/config/defaults.go`:
+
+```go
+{
+    ModelName: "your-model",
+    Model:     "your-provider/model-name",
+    APIKey:    "",
+},
+```
+
+#### 5. Add Auth Support (Optional)
+
+If your provider requires OAuth or special authentication, add a case to `cmd/picoclaw/cmd_auth.go`:
+
+```go
+case "your-provider":
+    authLoginYourProvider()
+```
+
+#### 6. Configure via `config.json`
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "your-model",
+      "model": "your-provider/model-name",
+      "api_key": "your-api-key",
+      "api_base": "https://api.your-provider.com/v1"
+    }
+  ]
 }
 ```
 
@@ -892,33 +703,27 @@ async function startCallbackServer(params: { timeoutMs: number }) {
 ### CLI Commands
 
 ```bash
-# Enable the plugin
-openclaw plugins enable your-provider-auth
+# Authenticate with a provider
+picoclaw auth login --provider your-provider
 
-# Restart gateway
-openclaw gateway restart
+# List models (for Antigravity)
+picoclaw auth models
 
-# Authenticate
-openclaw models auth login --provider your-provider --set-default
+# Start the gateway
+picoclaw gateway
 
-# List models
-openclaw models list
-
-# Set model
-openclaw models set your-provider/model-name
-
-# Check usage
-openclaw models usage
+# Run an agent with a specific model
+picoclaw agent -m "Hello" --model your-model
 ```
 
 ### Environment Variables for Testing
 
 ```bash
-# Test specific providers only
-export OPENCLAW_LIVE_PROVIDERS="your-provider,google-antigravity"
+# Override default model
+export PICOCLAW_AGENTS_DEFAULTS_MODEL=your-model
 
-# Test with specific models
-export OPENCLAW_LIVE_GATEWAY_MODELS="your-provider/model-name"
+# Override provider settings
+export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/model-name","api_key":"..."}]'
 ```
 
 ---
@@ -926,16 +731,16 @@ export OPENCLAW_LIVE_GATEWAY_MODELS="your-provider/model-name"
 ## References
 
 - **Source Files:**
-  - `extensions/google-antigravity-auth/index.ts` - Full OAuth implementation
-  - `src/infra/provider-usage.fetch.antigravity.ts` - Usage fetching
-  - `src/agents/pi-embedded-runner/google.ts` - Model sanitization
-  - `src/agents/model-forward-compat.ts` - Forward compatibility
-  - `src/plugin-sdk/provider-auth-result.ts` - Auth result builder
-  - `src/plugins/types.ts` - Plugin type definitions
+  - `pkg/providers/antigravity_provider.go` - Antigravity provider implementation
+  - `pkg/auth/oauth.go` - OAuth flow implementation
+  - `pkg/auth/store.go` - Auth credential storage (`~/.picoclaw/auth.json`)
+  - `pkg/providers/factory.go` - Provider factory and protocol routing
+  - `pkg/providers/types.go` - Provider interface definitions
+  - `cmd/picoclaw/cmd_auth.go` - Auth CLI commands
 
 - **Documentation:**
-  - `docs/concepts/model-providers.md` - Provider overview
-  - `docs/concepts/usage-tracking.md` - Usage tracking
+  - `docs/ANTIGRAVITY_USAGE.md` - Antigravity usage guide
+  - `docs/migration/model-list-migration.md` - Migration guide
 
 ---
 
@@ -987,7 +792,7 @@ Some models might show up in the available models list but return an empty respo
 ## Troubleshooting
 
 ### "Token expired"
-- Refresh OAuth tokens: `openclaw models auth login --provider google-antigravity`
+- Refresh OAuth tokens: `picoclaw auth login --provider antigravity`
 
 ### "Gemini for Google Cloud is not enabled"
 - Enable the API in your Google Cloud Console
@@ -998,5 +803,5 @@ Some models might show up in the available models list but return an empty respo
 
 ### Models not appearing in list
 - Verify OAuth authentication completed successfully
-- Check auth profile storage: `~/.openclaw/agent/auth-profiles.json`
-- Ensure the plugin is enabled: `openclaw plugins list`
+- Check auth profile storage: `~/.picoclaw/auth.json`
+- Re-run `picoclaw auth login --provider antigravity`

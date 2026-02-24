@@ -41,7 +41,7 @@ func NewAgentInstance(
 	provider providers.LLMProvider,
 ) *AgentInstance {
 	workspace := resolveAgentWorkspace(agentCfg, defaults)
-	os.MkdirAll(workspace, 0755)
+	os.MkdirAll(workspace, 0o755)
 
 	model := resolveAgentModel(agentCfg, defaults)
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
@@ -133,7 +133,7 @@ func resolveAgentModel(agentCfg *config.AgentConfig, defaults *config.AgentDefau
 	if agentCfg != nil && agentCfg.Model != nil && strings.TrimSpace(agentCfg.Model.Primary) != "" {
 		return strings.TrimSpace(agentCfg.Model.Primary)
 	}
-	return defaults.Model
+	return defaults.GetModelName()
 }
 
 // resolveAgentFallbacks resolves the fallback models for an agent.

@@ -45,7 +45,13 @@ func NewAntigravityProvider() *AntigravityProvider {
 // Chat implements LLMProvider.Chat using the Cloud Code Assist v1internal API.
 // The v1internal endpoint wraps the standard Gemini request in an envelope with
 // project, model, request, requestType, userAgent, and requestId fields.
-func (p *AntigravityProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *AntigravityProvider) Chat(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
 	accessToken, projectID, err := p.tokenSource()
 	if err != nil {
 		return nil, fmt.Errorf("antigravity auth: %w", err)
@@ -58,7 +64,7 @@ func (p *AntigravityProvider) Chat(ctx context.Context, messages []Message, tool
 	model = strings.TrimPrefix(model, "google-antigravity/")
 	model = strings.TrimPrefix(model, "antigravity/")
 
-	logger.DebugCF("provider.antigravity", "Starting chat", map[string]interface{}{
+	logger.DebugCF("provider.antigravity", "Starting chat", map[string]any{
 		"model":     model,
 		"project":   projectID,
 		"requestId": fmt.Sprintf("agent-%d-%s", time.Now().UnixMilli(), randomString(9)),
@@ -68,7 +74,7 @@ func (p *AntigravityProvider) Chat(ctx context.Context, messages []Message, tool
 	innerRequest := p.buildRequest(messages, tools, model, options)
 
 	// Wrap in v1internal envelope (matches pi-ai SDK format)
-	envelope := map[string]interface{}{
+	envelope := map[string]any{
 		"project":     projectID,
 		"model":       model,
 		"request":     innerRequest,
@@ -115,7 +121,7 @@ func (p *AntigravityProvider) Chat(ctx context.Context, messages []Message, tool
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		logger.ErrorCF("provider.antigravity", "API call failed", map[string]interface{}{
+		logger.ErrorCF("provider.antigravity", "API call failed", map[string]any{
 			"status_code": resp.StatusCode,
 			"response":    string(respBody),
 			"model":       model,
@@ -133,7 +139,9 @@ func (p *AntigravityProvider) Chat(ctx context.Context, messages []Message, tool
 
 	// Check for empty response (some models might return valid success but empty text)
 	if llmResp.Content == "" && len(llmResp.ToolCalls) == 0 {
-		return nil, fmt.Errorf("antigravity: model returned an empty response (this model might be invalid or restricted)")
+		return nil, fmt.Errorf(
+			"antigravity: model returned an empty response (this model might be invalid or restricted)",
+		)
 	}
 
 	return llmResp, nil
@@ -167,13 +175,13 @@ type antigravityPart struct {
 }
 
 type antigravityFunctionCall struct {
-	Name string                 `json:"name"`
-	Args map[string]interface{} `json:"args"`
+	Name string         `json:"name"`
+	Args map[string]any `json:"args"`
 }
 
 type antigravityFunctionResponse struct {
-	Name     string                 `json:"name"`
-	Response map[string]interface{} `json:"response"`
+	Name     string         `json:"name"`
+	Response map[string]any `json:"response"`
 }
 
 type antigravityTool struct {
@@ -181,9 +189,9 @@ type antigravityTool struct {
 }
 
 type antigravityFuncDecl struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description,omitempty"`
-	Parameters  interface{} `json:"parameters,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Parameters  any    `json:"parameters,omitempty"`
 }
 
 type antigravitySystemPrompt struct {
@@ -195,7 +203,12 @@ type antigravityGenConfig struct {
 	Temperature     float64 `json:"temperature,omitempty"`
 }
 
-func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) antigravityRequest {
+func (p *AntigravityProvider) buildRequest(
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) antigravityRequest {
 	req := antigravityRequest{}
 	toolCallNames := make(map[string]string)
 
@@ -215,7 +228,7 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 					Parts: []antigravityPart{{
 						FunctionResponse: &antigravityFunctionResponse{
 							Name: toolName,
-							Response: map[string]interface{}{
+							Response: map[string]any{
 								"result": msg.Content,
 							},
 						},
@@ -237,9 +250,13 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 			for _, tc := range msg.ToolCalls {
 				toolName, toolArgs, thoughtSignature := normalizeStoredToolCall(tc)
 				if toolName == "" {
-					logger.WarnCF("provider.antigravity", "Skipping tool call with empty name in history", map[string]interface{}{
-						"tool_call_id": tc.ID,
-					})
+					logger.WarnCF(
+						"provider.antigravity",
+						"Skipping tool call with empty name in history",
+						map[string]any{
+							"tool_call_id": tc.ID,
+						},
+					)
 					continue
 				}
 				if tc.ID != "" {
@@ -264,7 +281,7 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 				Parts: []antigravityPart{{
 					FunctionResponse: &antigravityFunctionResponse{
 						Name: toolName,
-						Response: map[string]interface{}{
+						Response: map[string]any{
 							"result": msg.Content,
 						},
 					},
@@ -311,7 +328,7 @@ func (p *AntigravityProvider) buildRequest(messages []Message, tools []ToolDefin
 	return req
 }
 
-func normalizeStoredToolCall(tc ToolCall) (string, map[string]interface{}, string) {
+func normalizeStoredToolCall(tc ToolCall) (string, map[string]any, string) {
 	name := tc.Name
 	args := tc.Arguments
 	thoughtSignature := ""
@@ -324,11 +341,11 @@ func normalizeStoredToolCall(tc ToolCall) (string, map[string]interface{}, strin
 	}
 
 	if args == nil {
-		args = map[string]interface{}{}
+		args = map[string]any{}
 	}
 
 	if len(args) == 0 && tc.Function != nil && tc.Function.Arguments != "" {
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		if err := json.Unmarshal([]byte(tc.Function.Arguments), &parsed); err == nil && parsed != nil {
 			args = parsed
 		}
@@ -483,9 +500,12 @@ func (p *AntigravityProvider) parseSSEResponse(body string) (*LLMResponse, error
 						Name:      part.FunctionCall.Name,
 						Arguments: part.FunctionCall.Args,
 						Function: &FunctionCall{
-							Name:             part.FunctionCall.Name,
-							Arguments:        string(argumentsJSON),
-							ThoughtSignature: extractPartThoughtSignature(part.ThoughtSignature, part.ThoughtSignatureSnake),
+							Name:      part.FunctionCall.Name,
+							Arguments: string(argumentsJSON),
+							ThoughtSignature: extractPartThoughtSignature(
+								part.ThoughtSignature,
+								part.ThoughtSignatureSnake,
+							),
 						},
 					})
 				}
@@ -556,24 +576,24 @@ var geminiUnsupportedKeywords = map[string]bool{
 	"maxProperties":        true,
 }
 
-func sanitizeSchemaForGemini(schema map[string]interface{}) map[string]interface{} {
+func sanitizeSchemaForGemini(schema map[string]any) map[string]any {
 	if schema == nil {
 		return nil
 	}
 
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 	for k, v := range schema {
 		if geminiUnsupportedKeywords[k] {
 			continue
 		}
 		// Recursively sanitize nested objects
 		switch val := v.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			result[k] = sanitizeSchemaForGemini(val)
-		case []interface{}:
-			sanitized := make([]interface{}, len(val))
+		case []any:
+			sanitized := make([]any, len(val))
 			for i, item := range val {
-				if m, ok := item.(map[string]interface{}); ok {
+				if m, ok := item.(map[string]any); ok {
 					sanitized[i] = sanitizeSchemaForGemini(m)
 				} else {
 					sanitized[i] = item
@@ -604,7 +624,9 @@ func createAntigravityTokenSource() func() (string, string, error) {
 			return "", "", fmt.Errorf("loading auth credentials: %w", err)
 		}
 		if cred == nil {
-			return "", "", fmt.Errorf("no credentials for google-antigravity. Run: picoclaw auth login --provider google-antigravity")
+			return "", "", fmt.Errorf(
+				"no credentials for google-antigravity. Run: picoclaw auth login --provider google-antigravity",
+			)
 		}
 
 		// Refresh if needed
@@ -625,7 +647,9 @@ func createAntigravityTokenSource() func() (string, string, error) {
 		}
 
 		if cred.IsExpired() {
-			return "", "", fmt.Errorf("antigravity credentials expired. Run: picoclaw auth login --provider google-antigravity")
+			return "", "", fmt.Errorf(
+				"antigravity credentials expired. Run: picoclaw auth login --provider google-antigravity",
+			)
 		}
 
 		projectID := cred.ProjectID
@@ -633,7 +657,7 @@ func createAntigravityTokenSource() func() (string, string, error) {
 			// Try to fetch project ID from API
 			fetchedID, err := FetchAntigravityProjectID(cred.AccessToken)
 			if err != nil {
-				logger.WarnCF("provider.antigravity", "Could not fetch project ID, using fallback", map[string]interface{}{
+				logger.WarnCF("provider.antigravity", "Could not fetch project ID, using fallback", map[string]any{
 					"error": err.Error(),
 				})
 				projectID = "rising-fact-p41fc" // Default fallback (same as OpenCode)
@@ -650,8 +674,8 @@ func createAntigravityTokenSource() func() (string, string, error) {
 
 // FetchAntigravityProjectID retrieves the Google Cloud project ID from the loadCodeAssist endpoint.
 func FetchAntigravityProjectID(accessToken string) (string, error) {
-	reqBody, _ := json.Marshal(map[string]interface{}{
-		"metadata": map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]any{
+		"metadata": map[string]any{
 			"ideType":    "IDE_UNSPECIFIED",
 			"platform":   "PLATFORM_UNSPECIFIED",
 			"pluginType": "GEMINI",
@@ -695,7 +719,7 @@ func FetchAntigravityProjectID(accessToken string) (string, error) {
 
 // FetchAntigravityModels fetches available models from the Cloud Code Assist API.
 func FetchAntigravityModels(accessToken, projectID string) ([]AntigravityModelInfo, error) {
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]any{
 		"project": projectID,
 	})
 
@@ -717,16 +741,20 @@ func FetchAntigravityModels(accessToken, projectID string) ([]AntigravityModelIn
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetchAvailableModels failed (HTTP %d): %s", resp.StatusCode, truncateString(string(body), 200))
+		return nil, fmt.Errorf(
+			"fetchAvailableModels failed (HTTP %d): %s",
+			resp.StatusCode,
+			truncateString(string(body), 200),
+		)
 	}
 
 	var result struct {
 		Models map[string]struct {
 			DisplayName string `json:"displayName"`
 			QuotaInfo   struct {
-				RemainingFraction interface{} `json:"remainingFraction"`
-				ResetTime         string      `json:"resetTime"`
-				IsExhausted       bool        `json:"isExhausted"`
+				RemainingFraction any    `json:"remainingFraction"`
+				ResetTime         string `json:"resetTime"`
+				IsExhausted       bool   `json:"isExhausted"`
 			} `json:"quotaInfo"`
 		} `json:"models"`
 	}
@@ -797,10 +825,10 @@ func randomString(n int) string {
 func (p *AntigravityProvider) parseAntigravityError(statusCode int, body []byte) error {
 	var errResp struct {
 		Error struct {
-			Code    int                      `json:"code"`
-			Message string                   `json:"message"`
-			Status  string                   `json:"status"`
-			Details []map[string]interface{} `json:"details"`
+			Code    int              `json:"code"`
+			Message string           `json:"message"`
+			Status  string           `json:"status"`
+			Details []map[string]any `json:"details"`
 		} `json:"error"`
 	}
 
@@ -813,7 +841,7 @@ func (p *AntigravityProvider) parseAntigravityError(statusCode int, body []byte)
 		// Try to extract quota reset info
 		for _, detail := range errResp.Error.Details {
 			if typeVal, ok := detail["@type"].(string); ok && strings.HasSuffix(typeVal, "ErrorInfo") {
-				if metadata, ok := detail["metadata"].(map[string]interface{}); ok {
+				if metadata, ok := detail["metadata"].(map[string]any); ok {
 					if delay, ok := metadata["quotaResetDelay"].(string); ok {
 						return fmt.Errorf("antigravity rate limit exceeded: %s (reset in %s)", msg, delay)
 					}
