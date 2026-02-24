@@ -10,7 +10,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/orch"
 )
 
-//go:embed static/index.html
+//go:embed static/index.html static/map.js
 var staticFS embed.FS
 
 // Handler serves the Mini App HTML and API endpoints.
@@ -74,6 +74,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/logs/snapshot", h.requireAuth(h.apiLogsSnapshot))
 	mux.HandleFunc("/miniapp/api/logs/snapshot/", h.requireAuth(h.apiLogsSnapshotDownload))
 	mux.HandleFunc("/miniapp/api/orchestration/ws", h.requireAuth(h.wsOrchestration))
+	mux.HandleFunc("/miniapp/map.js", h.serveMapJS)
 	mux.HandleFunc("/miniapp/dev/console", h.apiDevConsole)
 	mux.HandleFunc("/miniapp/dev/", h.serveDevProxy)
 }
@@ -85,5 +86,15 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(data)
+}
+
+func (h *Handler) serveMapJS(w http.ResponseWriter, r *http.Request) {
+	data, err := staticFS.ReadFile("static/map.js")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Write(data)
 }
