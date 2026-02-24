@@ -926,8 +926,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		return "", err
 	}
 
-	// If last tool had ForUser content and we already sent it, we might not need to send final response
-	// This is controlled by the tool's Silent flag and ForUser content
+	// 5-post. Refresh cached system prompt: tool execution may have updated touch_dir,
+	// so rebuild with current workDir so Mini App shows the up-to-date version.
+	if active := al.sessions.ListActive(); len(active) > 0 && active[0].SessionKey == opts.SessionKey && active[0].TouchDir != "" {
+		agent.ContextBuilder.SetWorkDir(filepath.Join(agent.Workspace, active[0].TouchDir))
+	}
+	al.lastSystemPrompt.Store(agent.ContextBuilder.BuildSystemPrompt())
 
 	// 5a. Auto-advance plan phases after LLM iteration
 	postStatus := agent.ContextBuilder.GetPlanStatus()
