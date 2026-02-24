@@ -302,8 +302,7 @@ func authLogoutCmd(provider string) error {
 	}
 
 	if err := auth.DeleteAllCredentials(); err != nil {
-		fmt.Printf("Failed to remove credentials: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to remove credentials: %w", err)
 	}
 
 	appCfg, err := internal.LoadConfig()
