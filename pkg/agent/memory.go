@@ -562,9 +562,8 @@ func (ms *MemoryStore) GetPlanContext() string {
 	currentPhase := ms.GetCurrentPhase()
 	totalPhases := ms.GetTotalPhases()
 
-	// Extract task description
 	taskLine := ""
-	if m := regexp.MustCompile(`(?m)^> Task:\s*(.+)`).FindStringSubmatch(content); len(m) >= 2 {
+	if m := reTaskLine.FindStringSubmatch(content); len(m) >= 2 {
 		taskLine = strings.TrimSpace(m[1])
 	}
 
@@ -660,7 +659,7 @@ func (ms *MemoryStore) FormatPlanDisplay() string {
 	}
 
 	taskLine := ""
-	if m := regexp.MustCompile(`(?m)^> Task:\s*(.+)`).FindStringSubmatch(content); len(m) >= 2 {
+	if m := reTaskLine.FindStringSubmatch(content); len(m) >= 2 {
 		taskLine = strings.TrimSpace(m[1])
 	}
 	status := ms.GetPlanStatus()

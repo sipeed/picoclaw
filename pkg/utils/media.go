@@ -13,10 +13,13 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
+var (
+	audioExtensions = []string{".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
+	audioTypes      = []string{"audio/", "application/ogg", "application/x-ogg"}
+)
+
 // IsAudioFile checks if a file is an audio file based on its filename extension and content type.
 func IsAudioFile(filename, contentType string) bool {
-	audioExtensions := []string{".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
-	audioTypes := []string{"audio/", "application/ogg", "application/x-ogg"}
 
 	for _, ext := range audioExtensions {
 		if strings.HasSuffix(strings.ToLower(filename), ext) {
