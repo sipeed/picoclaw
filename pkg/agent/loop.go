@@ -518,9 +518,9 @@ func (al *AgentLoop) runLLMIteration(
 		var response *providers.LLMResponse
 		var err error
 
-		callLLM := func() (*providers.LLMResponse, error) {
+		callLLMOnce := func(callCtx context.Context) (*providers.LLMResponse, error) {
 			if len(agent.Candidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
+				fbResult, fbErr := al.fallback.Execute(callCtx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
 							"max_tokens":  agent.MaxTokens,
@@ -538,16 +538,34 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
+			return agent.Provider.Chat(callCtx, messages, providerToolDefs, agent.Model, map[string]any{
 				"max_tokens":  agent.MaxTokens,
 				"temperature": agent.Temperature,
 			})
 		}
 
+		retryCfg := utils.RetryConfig{
+			Timeouts: []time.Duration{45 * time.Second, 90 * time.Second, 120 * time.Second},
+			Backoffs: []time.Duration{2 * time.Second, 5 * time.Second},
+			Notify: func(attempt, total int, decision utils.RetryDecision) {
+				if opts.Channel == "" || opts.ChatID == "" || constants.IsInternalChannel(opts.Channel) {
+					return
+				}
+				notice := utils.FormatLLMRetryNotice(attempt, total, decision)
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: opts.Channel,
+					ChatID:  opts.ChatID,
+					Content: notice,
+				})
+			},
+		}
+
 		// Retry loop for context/token errors
 		maxRetries := 2
 		for retry := 0; retry <= maxRetries; retry++ {
-			response, err = callLLM()
+			response, err = utils.DoWithRetry(ctx, retryCfg, func(attemptCtx context.Context) (*providers.LLMResponse, error) {
+				return callLLMOnce(attemptCtx)
+			})
 			if err == nil {
 				break
 			}
