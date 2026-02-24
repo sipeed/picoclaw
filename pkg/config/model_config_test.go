@@ -220,7 +220,7 @@ func TestFullConfig_JSON_BackwardCompat(t *testing.T) {
 	}`
 
 	for name, jsonStr := range map[string]string{
-		"old format (model)":    oldFormat,
+		"old format (model)":      oldFormat,
 		"new format (model_name)": newFormat,
 	} {
 		t.Run(name, func(t *testing.T) {
