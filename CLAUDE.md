@@ -511,6 +511,7 @@ RAM 制約がない前提での推奨順:
 |----------|------|
 | `pkg/utils/media.go:18-19` | `audioExtensions`/`audioTypes` を関数外の `var` に |
 | `pkg/skills/clawhub_registry.go:114` | `fmt.Sprintf("%d", limit)` → `strconv.Itoa(limit)` |
+| `pkg/agent/memory.go:567, 663` | `regexp.MustCompile(...)` インライン → 既存パッケージ変数 `reTaskLine` (L469) に置き換え |
 
 **コミット単位**: 0-1, 0-2, 0-3, 0-4 をそれぞれ個別コミット。
 
@@ -522,7 +523,7 @@ RAM 制約がない前提での推奨順:
 
 | ファイル | 変更 | 注意 |
 |----------|------|------|
-| `pkg/logger/logger.go:88-92` | リングバッファ内部型を `[]*LogEntry` に変更 + `visit(fn)` メソッド追加。`RecentLogs()` を visit ベースに書き換え (フィルタで弾くエントリのコピーを排除) | `add()` 毎に1ヒープアロケーション増だがログI/Oパスなので許容 |
+| `pkg/logger/logger.go:88-92` | リングバッファ内部型を `[]*LogEntry` に変更 + `visit(fn)` メソッド追加。`RecentLogs()` を visit ベースに書き換え (フィルタで弾くエントリのコピーを排除) | `push()` 毎に1ヒープアロケーション増だがログI/Oパスなので許容 |
 
 **削除した項目**:
 - `session_tracker.go:125` — `Touch()` がロックなしにフィールドを直接更新しており、`*entry` 値コピー (L125) が唯一の安全装置。ポインタ返却は安全上の退行。`SessionEntry` は ~80バイトの小さい struct でコピーコストも無視可能。
@@ -681,53 +682,4 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 5: 必要に応じて個別判断
 
 ---
-
-## FEEDBACK — 第10回レビュー (ラウンド O)
-
-### O-1: Phase 1 注記の関数名誤り — `add()` → `push()`
-
-**場所**: Phase 1 最初の表の「注意」列
-> `add()` 毎に1ヒープアロケーション増だがログI/Oパスなので許容
-
-`pkg/logger/logger.go` で ring buffer に書き込む関数の実際の名前は **`push()`** (L69)。`add()` という関数は存在しない。
-
-```go
-// logger.go L69
-func (rb *logRingBuffer) push(entry LogEntry) {
-```
-
-注記を `push()` に修正すること。
-
----
-
-### O-2: `regexp.MustCompile` インライン 2 箇所が H テーブルにも Phase 3-1 スニペットにも未記載
-
-**場所**:
-- `pkg/agent/memory.go` L567 (`GetPlanContext()` 内)
-- `pkg/agent/memory.go` L663 (`FormatPlanDisplay()` 内)
-
-両箇所とも `regexp.MustCompile(`(?m)^> Task:\s*(.+)`)` を関数呼び出し毎にインラインでコンパイルしている。
-これは `reTaskLine` (L469) と**完全同一パターン**。
-
-```go
-// L469 — パッケージレベル変数 (正しい)
-var reTaskLine = regexp.MustCompile(`(?m)^> Task:\s*(.+)`)
-
-// L567 GetPlanContext() — 毎呼び出しコンパイル (問題)
-if m := regexp.MustCompile(`(?m)^> Task:\s*(.+)`).FindStringSubmatch(content); ...
-
-// L663 FormatPlanDisplay() — 毎呼び出しコンパイル (問題)
-if m := regexp.MustCompile(`(?m)^> Task:\s*(.+)`).FindStringSubmatch(content); ...
-```
-
-現状の計画における扱い:
-- H カテゴリ候補テーブルは `utils/media.go`・`clawhub_registry.go` のみで `memory.go` のインライン `MustCompile` は未記載
-- Phase 0-4 の実装テーブルにも未記載
-- Phase 3-1 スニペットは `GetPlanContext()` / `FormatPlanDisplay()` を対象にしているが、task line 部分のスニペットを示していないため、`reTaskLine` への置き換えが見落とされるリスクがある
-
-Phase 3-1 では両関数を触るため、実装時に自然に気づく可能性はあるが、**計画に明示されていないため抜け漏れリスクが残る**。
-以下のどちらかで対処すること:
-- Phase 0-4 の H テーブルに追加: `pkg/agent/memory.go` L567, L663 — `regexp.MustCompile(...)` → `reTaskLine`
-- または Phase 3-1 スニペットに task line インライン化を明示: `if m := reTaskLine.FindStringSubmatch(content); len(m) >= 2 { taskLine = strings.TrimSpace(m[1]) }`
-
 
