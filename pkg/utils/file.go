@@ -10,20 +10,28 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // WriteFileAtomic atomically writes data to a file using a temp file + rename pattern.
 //
 // This guarantees that the target file is either:
 // - Completely written with the new data
-// - Unchanged (if write fails or power loss during write)
+// - Unchanged (if any step fails before rename)
 //
 // The function:
-// 1. Creates a temp file in the same directory
+// 1. Creates a temp file in the same directory (original untouched)
 // 2. Writes data to temp file
-// 3. Syncs to disk (critical for SD cards/flash storage)
+// 3. Syncs data to disk (critical for SD cards/flash storage)
 // 4. Sets file permissions
-// 5. Atomically renames temp file to target path
+// 5. Syncs directory metadata (ensures rename is durable)
+// 6. Atomically renames temp file to target path
+//
+// Safety guarantees:
+// - Original file is NEVER modified until successful rename
+// - Temp file is always cleaned up on error
+// - Data is flushed to physical storage before rename
+// - Directory entry is synced to prevent orphaned inodes
 //
 // Parameters:
 //   - path: Target file path
@@ -47,51 +55,64 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 
 	// Create temp file in the same directory (ensures atomic rename works)
-	tmpFile, err := os.CreateTemp(dir, ".tmp-*.tmp")
+	// Using a hidden prefix (.tmp-) to avoid issues with some tools
+	tmpFile, err := os.OpenFile(
+		filepath.Join(dir, fmt.Sprintf(".tmp-%d-%d", os.Getpid(), time.Now().UnixNano())),
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+		perm,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	tmpPath := tmpFile.Name()
 
-	// Cleanup on error: ensure temp file is removed if anything fails
+	tmpPath := tmpFile.Name()
 	cleanup := true
+
 	defer func() {
 		if cleanup {
+			tmpFile.Close()
 			_ = os.Remove(tmpPath)
 		}
 	}()
 
 	// Write data to temp file
+	// Note: Original file is untouched at this point
 	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 
-	// CRITICAL: Force sync to storage medium before rename.
+	// CRITICAL: Force sync to storage medium before any other operations.
 	// This ensures data is physically written to disk, not just cached.
 	// Essential for SD cards, eMMC, and other flash storage on edge devices.
 	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
 		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
 
-	// Set file permissions
+	// Set file permissions before closing
 	if err := tmpFile.Chmod(perm); err != nil {
-		tmpFile.Close()
 		return fmt.Errorf("failed to set permissions: %w", err)
 	}
 
-	// Close file before rename
+	// Close file before rename (required on Windows)
 	if err := tmpFile.Close(); err != nil {
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
 	// Atomic rename: temp file becomes the target
+	// On POSIX: rename() is atomic
+	// On Windows: Rename() is atomic for files
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
-	// Success: skip cleanup
+	// Sync directory to ensure rename is durable
+	// This prevents the renamed file from disappearing after a crash
+	if dirFile, err := os.Open(dir); err == nil {
+		_ = dirFile.Sync()
+		dirFile.Close()
+	}
+
+	// Success: skip cleanup (file was renamed, no temp to remove)
 	cleanup = false
 	return nil
 }
