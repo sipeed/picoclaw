@@ -11,6 +11,7 @@ import (
 
 	"github.com/line/line-bot-sdk-go/v8/linebot/messaging_api"
 	"github.com/line/line-bot-sdk-go/v8/linebot/webhook"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -79,14 +80,14 @@ func (c *LINEChannel) Start(ctx context.Context) error {
 	// Fetch bot profile to get bot's userId for mention detection
 	info, err := c.client.GetBotInfo()
 	if err != nil {
-		logger.WarnCF("line", "Failed to fetch bot info (mention detection disabled)", map[string]interface{}{
+		logger.WarnCF("line", "Failed to fetch bot info (mention detection disabled)", map[string]any{
 			"error": err.Error(),
 		})
 	} else {
 		c.botUserID = info.UserId
 		c.botBasicID = info.BasicId
 		c.botDisplayName = info.DisplayName
-		logger.InfoCF("line", "Bot info fetched", map[string]interface{}{
+		logger.InfoCF("line", "Bot info fetched", map[string]any{
 			"bot_user_id":  c.botUserID,
 			"basic_id":     c.botBasicID,
 			"display_name": c.botDisplayName,
@@ -137,7 +138,7 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 			logger.WarnC("line", "Invalid webhook signature")
 			http.Error(w, "Forbidden", http.StatusForbidden)
 		} else {
-			logger.ErrorCF("line", "Failed to parse webhook request", map[string]interface{}{
+			logger.ErrorCF("line", "Failed to parse webhook request", map[string]any{
 				"error": err.Error(),
 			})
 			http.Error(w, "Bad request", http.StatusBadRequest)
@@ -156,7 +157,7 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 func (c *LINEChannel) processEvent(event webhook.EventInterface) {
 	msgEvent, ok := event.(webhook.MessageEvent)
 	if !ok {
-		logger.DebugCF("line", "Ignoring non-message event", map[string]interface{}{
+		logger.DebugCF("line", "Ignoring non-message event", map[string]any{
 			"type": event.GetType(),
 		})
 		return
@@ -231,7 +232,7 @@ func (c *LINEChannel) processEvent(event webhook.EventInterface) {
 	case webhook.StickerMessageContent:
 		content = "[sticker]"
 	default:
-		logger.WarnCF("line", "Ignoring unsupported message type", map[string]interface{}{
+		logger.WarnCF("line", "Ignoring unsupported message type", map[string]any{
 			"type": msgEvent.Message.GetType(),
 		})
 		return
@@ -420,7 +421,7 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 				Messages:   []messaging_api.MessageInterface{&textMsg},
 			})
 			if err == nil {
-				logger.DebugCF("line", "Message sent via Reply API", map[string]interface{}{
+				logger.DebugCF("line", "Message sent via Reply API", map[string]any{
 					"chat_id": msg.ChatID,
 					"quoted":  quoteToken != "",
 				})
