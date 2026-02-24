@@ -125,6 +125,9 @@ func (p *Provider) Chat(
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
+	if ua := selectUserAgent(p.apiBase); ua != "" {
+		req.Header.Set("User-Agent", ua)
+	}
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -245,6 +248,15 @@ func normalizeModel(model, apiBase string) string {
 	default:
 		return model
 	}
+}
+
+func selectUserAgent(apiBase string) string {
+	base := strings.ToLower(apiBase)
+	if strings.Contains(base, "api.kimi.com/coding") {
+		// Kimi For Coding currently restricts access to recognized coding-agent clients.
+		return "KimiCLI/1.3"
+	}
+	return ""
 }
 
 func asInt(v any) (int, bool) {
