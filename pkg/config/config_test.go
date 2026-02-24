@@ -197,6 +197,20 @@ func TestDefaultConfig_HeartbeatEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_Observability(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Observability.Enabled {
+		t.Error("Observability should be disabled by default")
+	}
+	if cfg.Observability.ServiceName == "" {
+		t.Error("Observability service name should not be empty")
+	}
+	if cfg.Observability.OTLPEndpoint == "" {
+		t.Error("Observability OTLP endpoint should not be empty")
+	}
+}
+
 // TestDefaultConfig_WorkspacePath verifies workspace path is correctly set
 func TestDefaultConfig_WorkspacePath(t *testing.T) {
 	cfg := DefaultConfig()
@@ -351,6 +365,20 @@ func TestConfig_Complete(t *testing.T) {
 	}
 	if !cfg.Heartbeat.Enabled {
 		t.Error("Heartbeat should be enabled by default")
+	}
+}
+
+func TestLoadConfig_AppliesProviderEnvOverrides(t *testing.T) {
+	t.Setenv("PICOCLAW_PROVIDERS_OPENAI_API_KEY", "test-openai-key")
+
+	path := filepath.Join(t.TempDir(), "missing-config.json")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if cfg.Providers.OpenAI.APIKey != "test-openai-key" {
+		t.Fatalf("expected OpenAI API key from env, got %q", cfg.Providers.OpenAI.APIKey)
 	}
 }
 

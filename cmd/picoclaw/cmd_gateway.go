@@ -22,6 +22,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/observability"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -44,6 +45,13 @@ func gatewayCmd() {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
 	}
+
+	otelShutdown, err := observability.Init(context.Background(), cfg.Observability)
+	if err != nil {
+		fmt.Printf("Error initializing observability: %v\n", err)
+		os.Exit(1)
+	}
+	defer otelShutdown(context.Background())
 
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {

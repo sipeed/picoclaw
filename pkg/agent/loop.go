@@ -21,12 +21,15 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/observability"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type AgentLoop struct {
@@ -271,6 +274,15 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+	ctx, span := observability.Tracer("picoclaw.agent").Start(ctx, "agent.process_message")
+	span.SetAttributes(
+		attribute.String("channel", msg.Channel),
+		attribute.String("chat_id", msg.ChatID),
+		attribute.String("sender_id", msg.SenderID),
+		attribute.String("session_key", msg.SessionKey),
+	)
+	defer span.End()
+
 	// Add message preview to log (show full content for error messages)
 	var logContent string
 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
@@ -288,11 +300,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
-		return al.processSystemMessage(ctx, msg)
+		resp, err := al.processSystemMessage(ctx, msg)
+		if err != nil {
+			span.RecordError(err)
+		}
+		return resp, err
 	}
 
 	// Check for commands
 	if response, handled := al.handleCommand(ctx, msg); handled {
+		span.SetAttributes(attribute.Bool("command_handled", true))
 		return response, nil
 	}
 
@@ -324,7 +341,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"matched_by":  route.MatchedBy,
 		})
 
-	return al.runAgentLoop(ctx, agent, processOptions{
+	resp, err := al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
@@ -333,6 +350,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:   true,
 		SendResponse:    false,
 	})
+	if err != nil {
+		span.RecordError(err)
+	}
+	return resp, err
 }
 
 func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
@@ -660,6 +681,16 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Execute tool calls
 		for _, tc := range normalizedToolCalls {
+			toolCtx, toolSpan := observability.Tracer("picoclaw.agent").Start(ctx, "agent.tool_call")
+			toolSpan.SetAttributes(
+				attribute.String("tool.name", tc.Name),
+				attribute.Int("agent.iteration", iteration),
+				attribute.String("channel", opts.Channel),
+				attribute.String("chat_id", opts.ChatID),
+			)
+			startedAt := time.Now()
+
+			// Log tool call with arguments preview
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
 			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
@@ -686,13 +717,26 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			toolResult := agent.Tools.ExecuteWithContext(
-				ctx,
+				toolCtx,
 				tc.Name,
 				tc.Arguments,
 				opts.Channel,
 				opts.ChatID,
 				asyncCallback,
 			)
+			toolSpan.SetAttributes(
+				attribute.Int64("tool.duration_ms", time.Since(startedAt).Milliseconds()),
+				attribute.Bool("tool.silent", toolResult.Silent),
+				attribute.Int("tool.for_user_len", len(toolResult.ForUser)),
+				attribute.Int("tool.for_llm_len", len(toolResult.ForLLM)),
+			)
+			if toolResult.Err != nil {
+				toolSpan.RecordError(toolResult.Err)
+				toolSpan.SetStatus(codes.Error, toolResult.Err.Error())
+			} else if toolResult.IsError {
+				toolSpan.SetStatus(codes.Error, toolResult.ForLLM)
+			}
+			toolSpan.End()
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
