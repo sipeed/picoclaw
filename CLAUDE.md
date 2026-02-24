@@ -658,3 +658,59 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
 
+---
+
+## FEEDBACK — 第5回レビュー (J)
+
+> レビュー日: 2026-02-24。`pkg/agent/memory.go` の実コードと Phase 3-1 のコードスニペットを照合して発見した誤り。
+
+### J-1. Phase 3-1: コードスニペットが `GetMemoryContext()` の実コードと2点で食い違う
+
+**問題1 — `phases` は `GetMemoryContext()` では使われない**
+
+スニペットに `phases := getPlanPhasesFrom(content)` が登場するが、実際の `GetMemoryContext()` (L725-757) は `GetPlanPhases()` を呼ばない。`GetMemoryContext()` は status に応じて `GetInterviewContext()` / `GetReviewContext()` / `GetPlanContext()` のいずれかを呼ぶだけ。
+
+`getPlanPhasesFrom(content)` が必要なのは `FormatPlanDisplay()` (L668) のみ。スニペットの置き場所が間違っている。
+
+**問題2 — `status` の型が合わない**
+
+スニペット:
+```go
+status  := reStatus.FindStringSubmatch(content)        // インライン
+```
+
+`reStatus.FindStringSubmatch` は `[]string` を返す。しかし `GetMemoryContext()` L732 では `switch status { case "interviewing": ... }` と `string` として使う。このままではコンパイルエラー。正しいインライン化:
+
+```go
+var status string
+if m := reStatus.FindStringSubmatch(content); len(m) >= 2 {
+    status = strings.TrimSpace(m[1])
+}
+switch status {
+```
+
+**計画の修正箇所**: Phase 3-1 のスニペットを `GetMemoryContext()` と `FormatPlanDisplay()` で分けて示す。`getPlanPhasesFrom` は後者のみ。`status` の取り出しは `m[1]` 経由で。
+
+---
+
+### J-2. Phase 3-1: `GetPlanContext()` 内部の同じ冗長が未対処
+
+`GetPlanContext()` (L560-563) 自体も同じパターンを持つ:
+
+```go
+func (ms *MemoryStore) GetPlanContext() string {
+    content := ms.ReadLongTerm()          // L561 — 読む
+    currentPhase := ms.GetCurrentPhase()  // L562 — また ReadLongTerm()
+    totalPhases  := ms.GetTotalPhases()   // L563 — また ReadLongTerm()
+```
+
+`GetCurrentPhase()` / `GetTotalPhases()` はいずれも1〜5行のインライン化可能な regex 呼び出し (J-1 と同パターン)。Phase 3-1 では `GetMemoryContext()` と `FormatPlanDisplay()` だけ修正しているが、`GetPlanContext()` は修正対象に含まれていない。
+
+**影響**: Phase 3-1 適用後の `GetMemoryContext()` 呼び出しの実際の読み取り回数:
+- `GetMemoryContext()` 内: 1回 (修正済)
+- 内部で呼ばれる `GetPlanContext()` 内: 3回 (未修正)
+- **合計: 4回** (修正前の 5+ 回から微減にとどまる)
+
+`GetPlanContext()` も同 Phase でインライン化すれば合計 2回 (GetMemoryContext の1回 + GetPlanContext の1回) に抑えられる。
+
+**計画の修正箇所**: Phase 3-1 の修正対象に `GetPlanContext()` L562-563 を追加。`GetCurrentPhase()` → `rePhase.FindStringSubmatch(content)` のインライン、`GetTotalPhases()` → `rePhaseHeader.FindAllStringSubmatch` のインラインで対応。
