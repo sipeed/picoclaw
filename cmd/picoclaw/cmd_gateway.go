@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/agent"
@@ -25,7 +24,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 func gatewayCmd() {
@@ -121,38 +119,35 @@ func gatewayCmd() {
 	// Inject channel manager into agent loop for command handling
 	agentLoop.SetChannelManager(channelManager)
 
-	var transcriber *voice.GroqTranscriber
-	groqAPIKey := cfg.Providers.Groq.APIKey
-	if groqAPIKey == "" {
-		for _, mc := range cfg.ModelList {
-			if strings.HasPrefix(mc.Model, "groq/") && mc.APIKey != "" {
-				groqAPIKey = mc.APIKey
-				break
-			}
-		}
-	}
-	if groqAPIKey != "" {
-		transcriber = voice.NewGroqTranscriber(groqAPIKey)
-		logger.InfoC("voice", "Groq voice transcription enabled")
+	// STT (Speech-to-Text) transcriber setup
+	transcriber := resolveSTTTranscriber(cfg)
+	if transcriber != nil {
+		logger.InfoC("voice", "STT voice transcription enabled")
 	}
 
 	if transcriber != nil {
 		if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
 			if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
 				tc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Telegram channel")
+				logger.InfoC("voice", "STT transcription attached to Telegram channel")
 			}
 		}
 		if discordChannel, ok := channelManager.GetChannel("discord"); ok {
 			if dc, ok := discordChannel.(*channels.DiscordChannel); ok {
 				dc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Discord channel")
+				logger.InfoC("voice", "STT transcription attached to Discord channel")
 			}
 		}
 		if slackChannel, ok := channelManager.GetChannel("slack"); ok {
 			if sc, ok := slackChannel.(*channels.SlackChannel); ok {
 				sc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Slack channel")
+				logger.InfoC("voice", "STT transcription attached to Slack channel")
+			}
+		}
+		if onebotChannel, ok := channelManager.GetChannel("onebot"); ok {
+			if oc, ok := onebotChannel.(*channels.OneBotChannel); ok {
+				oc.SetTranscriber(transcriber)
+				logger.InfoC("voice", "STT transcription attached to OneBot channel")
 			}
 		}
 	}

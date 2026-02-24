@@ -776,7 +776,7 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 ### Providers
 
 > [!NOTE]
-> Groq provides free voice transcription via Whisper. If configured, Telegram voice messages will be automatically transcribed.
+> PicoClaw supports voice transcription (STT) on Telegram, Discord, Slack, and OneBot channels. You can use **any OpenAI-compatible Whisper endpoint** (OpenAI, Groq, local Whisper servers, etc.) by configuring `stt_model` in `agents.defaults`. See [Voice Transcription (STT)](#voice-transcription-stt) for details.
 
 | Provider                   | Purpose                                 | Get API Key                                                          |
 | -------------------------- | --------------------------------------- | -------------------------------------------------------------------- |
@@ -787,7 +787,7 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 | `openai(To be tested)`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)                   |
 | `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)               |
 | `qwen`                     | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
-| `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                         |
+| `groq`                     | LLM + STT (Whisper)                     | [console.groq.com](https://console.groq.com)                         |
 | `cerebras`                 | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                                   |
 
 ### Model Configuration (model_list)
@@ -1101,6 +1101,56 @@ picoclaw agent -m "Hello"
 ```
 
 </details>
+
+### Voice Transcription (STT)
+
+PicoClaw can automatically transcribe voice messages on Telegram, Discord, Slack, and OneBot channels. Instead of being limited to a single hardcoded provider, you can use **any OpenAI-compatible Whisper endpoint** by setting the `stt_model` field in `agents.defaults`.
+
+#### Configuration
+
+Add a Whisper-compatible model to your `model_list` and point `stt_model` to it:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "my-llm",
+      "stt_model": "whisper"
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "whisper",
+      "model": "openai/whisper-1",
+      "api_key": "sk-your-openai-key",
+      "api_base": "https://api.openai.com/v1"
+    }
+  ]
+}
+```
+
+This works with any provider that exposes the `/audio/transcriptions` endpoint (OpenAI, Groq, local Whisper servers, etc.):
+
+| Provider | `model` value | Notes |
+| --- | --- | --- |
+| **OpenAI** | `openai/whisper-1` | High accuracy |
+| **Groq** | `groq/whisper-large-v3` | Fast inference, free tier |
+| **Local** | `openai/whisper-1` | Set `api_base` to your local server |
+
+#### Backward Compatibility
+
+If `stt_model` is not set, PicoClaw falls back to legacy Groq detection:
+
+1. `providers.groq.api_key` — uses Groq Whisper automatically
+2. Any `groq/` entry in `model_list` — uses that entry's API key for Groq Whisper
+
+No existing configuration will break.
+
+#### Environment Variable
+
+```bash
+export PICOCLAW_AGENTS_DEFAULTS_STT_MODEL=whisper
+```
 
 ## CLI Reference
 
