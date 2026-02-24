@@ -3,6 +3,21 @@ name: build
 on:
   push:
     branches: ["main"]
+    paths:
+      - "cmd/**"
+      - "pkg/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "cmd/**"
+      - "pkg/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/build.yml"
 
 jobs:
   build:
