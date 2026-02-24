@@ -36,7 +36,8 @@ type AgentLoop struct {
 	provider       providers.LLMProvider
 	workspace      string
 	model          string
-	maxTokens      int // Maximum tokens for API response
+	maxTokens      int     // Maximum tokens for API response
+	temperature    float64 // Temperature for LLM (0 = not sent)
 	contextWindow  int // Maximum context window size in tokens (for summarization)
 	maxIterations  int
 	sessions       *session.SessionManager
@@ -162,7 +163,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus, dataDir)
 
 	// Create subagent manager with its own tool registry
-	subagentManager := tools.NewSubagentManager(provider, cfg.Agents.Defaults.Model, workspace, msgBus)
+	subagentManager := tools.NewSubagentManager(provider, cfg.LLM.Model, workspace, msgBus)
 	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus, dataDir)
 	// Subagent doesn't need spawn/subagent tools to avoid recursion
 	subagentManager.SetTools(subagentTools)
@@ -236,8 +237,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		bus:            msgBus,
 		provider:       provider,
 		workspace:      workspace,
-		model:          cfg.Agents.Defaults.Model,
+		model:          cfg.LLM.Model,
 		maxTokens:      cfg.Agents.Defaults.MaxTokens,
+		temperature:    cfg.Agents.Defaults.Temperature,
 		contextWindow:  cfg.Agents.Defaults.ContextWindow,
 		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
 		sessions:       sessionsManager,
@@ -709,7 +711,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 				"messages_count":    len(messages),
 				"tools_count":       len(providerToolDefs),
 				"max_tokens":        al.maxTokens,
-				"temperature":       0.7,
+				"temperature":       al.temperature,
 				"system_prompt_len": len(messages[0].Content),
 			})
 
@@ -727,10 +729,13 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.M
 		// Retry loop for context/token errors
 		maxRetries := 2
 		for retry := 0; retry <= maxRetries; retry++ {
-			response, err = al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
-				"max_tokens":  al.maxTokens,
-				"temperature": 0.7,
-			})
+			llmOpts := map[string]interface{}{
+				"max_tokens": al.maxTokens,
+			}
+			if al.temperature > 0 {
+				llmOpts["temperature"] = al.temperature
+			}
+			response, err = al.provider.Chat(ctx, messages, providerToolDefs, al.model, llmOpts)
 
 			if err == nil {
 				break // Success
@@ -1290,8 +1295,7 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 		// Merge them
 		mergePrompt := fmt.Sprintf("Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s", s1, s2)
 		resp, err := al.provider.Chat(ctx, []providers.Message{{Role: "user", Content: mergePrompt}}, nil, al.model, map[string]interface{}{
-			"max_tokens":  1024,
-			"temperature": 0.3,
+			"max_tokens": 1024,
 		})
 		if err == nil {
 			finalSummary = resp.Content
@@ -1327,8 +1331,7 @@ func (al *AgentLoop) summarizeBatch(ctx context.Context, batch []providers.Messa
 	}
 
 	response, err := al.provider.Chat(ctx, []providers.Message{{Role: "user", Content: prompt}}, nil, al.model, map[string]interface{}{
-		"max_tokens":  1024,
-		"temperature": 0.3,
+		"max_tokens": 1024,
 	})
 	if err != nil {
 		return "", err

@@ -56,8 +56,7 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 		llmOpts := config.LLMOptions
 		if llmOpts == nil {
 			llmOpts = map[string]any{
-				"max_tokens":  4096,
-				"temperature": 0.7,
+				"max_tokens": 4096,
 			}
 		}
 

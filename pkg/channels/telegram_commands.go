@@ -78,9 +78,8 @@ func (c *cmd) Show(ctx context.Context, message telego.Message) error {
 	var response string
 	switch args {
 	case "model":
-		response = fmt.Sprintf("Current Model: %s (Provider: %s)",
-			c.config.Agents.Defaults.Model,
-			c.config.Agents.Defaults.Provider)
+		response = fmt.Sprintf("Current Model: %s",
+			c.config.LLM.Model)
 	case "channel":
 		response = "Current Channel: telegram"
 	default:
@@ -112,12 +111,8 @@ func (c *cmd) List(ctx context.Context, message telego.Message) error {
 	var response string
 	switch args {
 	case "models":
-		provider := c.config.Agents.Defaults.Provider
-		if provider == "" {
-			provider = "configured default"
-		}
-		response = fmt.Sprintf("Configured Model: %s\nProvider: %s\n\nTo change models, update config.yaml",
-			c.config.Agents.Defaults.Model, provider)
+		response = fmt.Sprintf("Configured Model: %s\n\nTo change models, update config.json",
+			c.config.LLM.Model)
 
 	case "channels":
 		var enabled []string

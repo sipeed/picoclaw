@@ -43,10 +43,21 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type LLMConfig struct {
+	Model   string `json:"model" env:"CLAWDROID_LLM_MODEL"`
+	APIKey  string `json:"api_key" env:"CLAWDROID_LLM_API_KEY"`
+	BaseURL string `json:"base_url" env:"CLAWDROID_LLM_BASE_URL"`
+}
+
+type STTConfig struct {
+	APIKey string `json:"api_key" env:"CLAWDROID_STT_API_KEY"`
+}
+
 type Config struct {
+	LLM        LLMConfig        `json:"llm"`
+	STT        STTConfig        `json:"stt"`
 	Agents     AgentsConfig     `json:"agents"`
 	Channels   ChannelsConfig   `json:"channels"`
-	Providers  ProvidersConfig  `json:"providers"`
 	Gateway    GatewayConfig    `json:"gateway"`
 	Tools      ToolsConfig      `json:"tools"`
 	Heartbeat  HeartbeatConfig  `json:"heartbeat"`
@@ -63,8 +74,6 @@ type AgentDefaults struct {
 	Workspace           string  `json:"workspace" env:"CLAWDROID_AGENTS_DEFAULTS_WORKSPACE"`
 	DataDir             string  `json:"data_dir" env:"CLAWDROID_AGENTS_DEFAULTS_DATA_DIR"`
 	RestrictToWorkspace bool    `json:"restrict_to_workspace" env:"CLAWDROID_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string  `json:"provider" env:"CLAWDROID_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string  `json:"model" env:"CLAWDROID_AGENTS_DEFAULTS_MODEL"`
 	MaxTokens           int     `json:"max_tokens" env:"CLAWDROID_AGENTS_DEFAULTS_MAX_TOKENS"`
 	ContextWindow       int     `json:"context_window" env:"CLAWDROID_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
 	Temperature         float64 `json:"temperature" env:"CLAWDROID_AGENTS_DEFAULTS_TEMPERATURE"`
@@ -183,30 +192,6 @@ type RateLimitsConfig struct {
 	MaxRequestsPerMinute  int `json:"max_requests_per_minute" env:"CLAWDROID_RATE_LIMITS_MAX_REQUESTS_PER_MINUTE"`     // 0 = unlimited
 }
 
-type ProvidersConfig struct {
-	Anthropic     ProviderConfig `json:"anthropic"`
-	OpenAI        ProviderConfig `json:"openai"`
-	OpenRouter    ProviderConfig `json:"openrouter"`
-	Groq          ProviderConfig `json:"groq"`
-	Zhipu         ProviderConfig `json:"zhipu"`
-	VLLM          ProviderConfig `json:"vllm"`
-	Gemini        ProviderConfig `json:"gemini"`
-	Nvidia        ProviderConfig `json:"nvidia"`
-	Ollama        ProviderConfig `json:"ollama"`
-	Moonshot      ProviderConfig `json:"moonshot"`
-	ShengSuanYun  ProviderConfig `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig `json:"deepseek"`
-	GitHubCopilot ProviderConfig `json:"github_copilot"`
-}
-
-type ProviderConfig struct {
-	APIKey      string `json:"api_key" env:"CLAWDROID_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase     string `json:"api_base" env:"CLAWDROID_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy       string `json:"proxy,omitempty" env:"CLAWDROID_PROVIDERS_{{.Name}}_PROXY"`
-	AuthMethod  string `json:"auth_method,omitempty" env:"CLAWDROID_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode string `json:"connect_mode,omitempty" env:"CLAWDROID_PROVIDERS_{{.Name}}_CONNECT_MODE"` //only for Github Copilot, `stdio` or `grpc`
-}
-
 type GatewayConfig struct {
 	Host string `json:"host" env:"CLAWDROID_GATEWAY_HOST"`
 	Port int    `json:"port" env:"CLAWDROID_GATEWAY_PORT"`
@@ -274,16 +259,18 @@ type ToolsConfig struct {
 
 func DefaultConfig() *Config {
 	return &Config{
+		LLM: LLMConfig{
+			Model: "zhipu/glm-4.7",
+		},
+		STT: STTConfig{},
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:           "~/.clawdroid/workspace",
 				DataDir:             "~/.clawdroid/data",
 				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "glm-4.7",
 				MaxTokens:           8192,
 				ContextWindow:       128000,
-				Temperature:         0.7,
+				Temperature:         0,
 				MaxToolIterations:   20,
 			},
 		},
@@ -359,18 +346,6 @@ func DefaultConfig() *Config {
 				Path:      "/ws",
 				AllowFrom: FlexibleStringSlice{},
 			},
-		},
-		Providers: ProvidersConfig{
-			Anthropic:    ProviderConfig{},
-			OpenAI:       ProviderConfig{},
-			OpenRouter:   ProviderConfig{},
-			Groq:         ProviderConfig{},
-			Zhipu:        ProviderConfig{},
-			VLLM:         ProviderConfig{},
-			Gemini:       ProviderConfig{},
-			Nvidia:       ProviderConfig{},
-			Moonshot:     ProviderConfig{},
-			ShengSuanYun: ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host: "127.0.0.1",
@@ -468,54 +443,6 @@ func (c *Config) DataPath() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return expandHome(c.Agents.Defaults.DataDir)
-}
-
-func (c *Config) GetAPIKey() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.Providers.OpenRouter.APIKey != "" {
-		return c.Providers.OpenRouter.APIKey
-	}
-	if c.Providers.Anthropic.APIKey != "" {
-		return c.Providers.Anthropic.APIKey
-	}
-	if c.Providers.OpenAI.APIKey != "" {
-		return c.Providers.OpenAI.APIKey
-	}
-	if c.Providers.Gemini.APIKey != "" {
-		return c.Providers.Gemini.APIKey
-	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIKey
-	}
-	if c.Providers.Groq.APIKey != "" {
-		return c.Providers.Groq.APIKey
-	}
-	if c.Providers.VLLM.APIKey != "" {
-		return c.Providers.VLLM.APIKey
-	}
-	if c.Providers.ShengSuanYun.APIKey != "" {
-		return c.Providers.ShengSuanYun.APIKey
-	}
-	return ""
-}
-
-func (c *Config) GetAPIBase() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.Providers.OpenRouter.APIKey != "" {
-		if c.Providers.OpenRouter.APIBase != "" {
-			return c.Providers.OpenRouter.APIBase
-		}
-		return "https://openrouter.ai/api/v1"
-	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIBase
-	}
-	if c.Providers.VLLM.APIKey != "" && c.Providers.VLLM.APIBase != "" {
-		return c.Providers.VLLM.APIBase
-	}
-	return ""
 }
 
 func expandHome(path string) string {

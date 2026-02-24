@@ -39,11 +39,13 @@ func TestRecordLastChannel(t *testing.T) {
 
 	// Create test config
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -86,11 +88,13 @@ func TestRecordLastChatID(t *testing.T) {
 
 	// Create test config
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -133,11 +137,13 @@ func TestNewAgentLoop_StateInitialized(t *testing.T) {
 
 	// Create test config
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -171,11 +177,13 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -219,11 +227,13 @@ func TestToolContext_Updates(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -252,11 +262,13 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -298,11 +310,13 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -347,11 +361,13 @@ func TestCreateToolRegistry_ExecDisabled(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -388,11 +404,13 @@ func TestCreateToolRegistry_ExecEnabled(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -434,11 +452,13 @@ func TestCreateToolRegistry_I2CDisabled(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -473,11 +493,13 @@ func TestCreateToolRegistry_I2CEnabled(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -517,11 +539,13 @@ func TestCreateToolRegistry_SPIDisabled(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -556,11 +580,13 @@ func TestCreateToolRegistry_SPIEnabled(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -600,11 +626,13 @@ func TestAgentLoop_Stop(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -724,11 +752,13 @@ func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -768,11 +798,13 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -835,11 +867,13 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -932,11 +966,13 @@ func TestRetryLoop_CancelledContextSkipsCompression(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -995,11 +1031,13 @@ func TestForceCompression_ToolGroupBoundary(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -1082,11 +1120,13 @@ func TestForceCompression_MidOnAssistantWithToolCalls(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,
@@ -1170,11 +1210,13 @@ func TestForceCompression_NoteUsesUserRole(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	cfg := &config.Config{
+		LLM: config.LLMConfig{
+			Model: "test-model",
+		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
 				DataDir:           tmpDir,
-				Model:             "test-model",
 				MaxTokens:         4096,
 				ContextWindow:     128000,
 				MaxToolIterations: 10,

@@ -31,8 +31,8 @@ func TestDefaultConfig_WorkspacePath(t *testing.T) {
 func TestDefaultConfig_Model(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Agents.Defaults.Model == "" {
-		t.Error("Model should not be empty")
+	if cfg.LLM.Model == "" {
+		t.Error("LLM.Model should not be empty")
 	}
 }
 
@@ -75,31 +75,18 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_Providers verifies provider structure
-func TestDefaultConfig_Providers(t *testing.T) {
+// TestDefaultConfig_LLM verifies LLM config defaults
+func TestDefaultConfig_LLM(t *testing.T) {
 	cfg := DefaultConfig()
 
-	// Verify all providers are empty by default
-	if cfg.Providers.Anthropic.APIKey != "" {
-		t.Error("Anthropic API key should be empty by default")
+	if cfg.LLM.APIKey != "" {
+		t.Error("LLM API key should be empty by default")
 	}
-	if cfg.Providers.OpenAI.APIKey != "" {
-		t.Error("OpenAI API key should be empty by default")
+	if cfg.LLM.BaseURL != "" {
+		t.Error("LLM BaseURL should be empty by default")
 	}
-	if cfg.Providers.OpenRouter.APIKey != "" {
-		t.Error("OpenRouter API key should be empty by default")
-	}
-	if cfg.Providers.Groq.APIKey != "" {
-		t.Error("Groq API key should be empty by default")
-	}
-	if cfg.Providers.Zhipu.APIKey != "" {
-		t.Error("Zhipu API key should be empty by default")
-	}
-	if cfg.Providers.VLLM.APIKey != "" {
-		t.Error("VLLM API key should be empty by default")
-	}
-	if cfg.Providers.Gemini.APIKey != "" {
-		t.Error("Gemini API key should be empty by default")
+	if cfg.LLM.Model != "zhipu/glm-4.7" {
+		t.Errorf("LLM Model = %q, want %q", cfg.LLM.Model, "zhipu/glm-4.7")
 	}
 }
 
@@ -234,8 +221,8 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.Workspace == "" {
 		t.Error("Workspace should not be empty")
 	}
-	if cfg.Agents.Defaults.Model == "" {
-		t.Error("Model should not be empty")
+	if cfg.LLM.Model == "" {
+		t.Error("LLM.Model should not be empty")
 	}
 	if cfg.Agents.Defaults.Temperature == 0 {
 		t.Error("Temperature should have default value")

@@ -1,10 +1,17 @@
 {
+  "llm": {
+    "model": "zhipu/glm-4.7",
+    "api_key": "",
+    "base_url": ""
+  },
+  "stt": {
+    "api_key": ""
+  },
   "agents": {
     "defaults": {
       "workspace": "~/.clawdroid/workspace",
       "data_dir": "~/.clawdroid/data",
       "restrict_to_workspace": true,
-      "model": "glm-4.7",
       "max_tokens": 8192,
       "context_window": 128000,
       "temperature": 0.7,
@@ -83,62 +90,6 @@
       "port": 18793,
       "path": "/ws",
       "allow_from": []
-    }
-  },
-  "providers": {
-    "anthropic": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "openai": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "openrouter": {
-      "api_key": "sk-or-v1-xxx",
-      "api_base": ""
-    },
-    "groq": {
-      "api_key": "gsk_xxx",
-      "api_base": ""
-    },
-    "zhipu": {
-      "api_key": "YOUR_ZHIPU_API_KEY",
-      "api_base": ""
-    },
-    "gemini": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "vllm": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "nvidia": {
-      "api_key": "nvapi-xxx",
-      "api_base": "",
-      "proxy": "http://127.0.0.1:7890"
-    },
-    "moonshot": {
-      "api_key": "sk-xxx",
-      "api_base": ""
-    },
-    "ollama": {
-      "api_key": "",
-      "api_base": "http://localhost:11434/v1"
-    },
-    "deepseek": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "shengsuanyun": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "github_copilot": {
-      "api_key": "",
-      "api_base": "",
-      "connect_mode": "stdio"
     }
   },
   "tools": {

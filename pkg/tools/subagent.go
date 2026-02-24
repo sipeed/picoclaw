@@ -132,7 +132,6 @@ After completing the task, provide a clear summary of what was done.`
 		MaxIterations: maxIter,
 		LLMOptions: map[string]any{
 			"max_tokens":  4096,
-			"temperature": 0.7,
 		},
 	}, messages, task.OriginChannel, task.OriginChatID)
 
@@ -290,7 +289,6 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 		MaxIterations: maxIter,
 		LLMOptions: map[string]any{
 			"max_tokens":  4096,
-			"temperature": 0.7,
 		},
 	}, messages, t.originChannel, t.originChatID)
 
