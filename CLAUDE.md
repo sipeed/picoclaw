@@ -60,7 +60,7 @@ Lint: `golangci-lint run`
 | 🟡 | `pkg/config/migration.go` | 48 | `ConvertProvidersToModelList()` — result に make([]ModelConfig, 0, 20) |
 | 🟡 | `pkg/skills/registry.go` | 183 | `SearchAll()` — merged に make([]SearchResult, 0, len(regs)*limit) |
 | 🟡 | `pkg/skills/loader.go` | 73 | `ListSkills()` — skills に make([]SkillInfo, 0, 20) 程度 |
-| 🟡 | `pkg/channels/telegram.go` | 832-861 | `extractMarkdownTables()` — out / tables スライスに容量ヒント |
+| 🟡 | `pkg/channels/telegram.go` | 832-861 | `extractMarkdownTables()` — out は実装済み (`make([]string, 0, len(lines))`)、`tables` (L835) のみ容量ヒント未対応 |
 | 🟢 | `pkg/skills/search_cache.go` | 42-43 | `NewSearchCache()` — entries map / order slice に maxEntries をヒント |
 | 🟢 | `pkg/agent/session_tracker.go` | 121 | `ListActive()` — result スライスに容量ヒント — **除外**: アクティブセッション数が事前不明で静的見積もり不可 |
 
@@ -772,22 +772,4 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 5: 必要に応じて個別判断
 
 ---
-
-## FEEDBACK — 第12回レビュー (ラウンド Q)
-
-### Q-1: B テーブル `telegram.go:832-861` の記述が実装済み部分を含んでいる
-
-B テーブルの当該行:
-> `extractMarkdownTables()` — out / tables スライスに容量ヒント
-
-コードを確認すると `out` は既に `make([]string, 0, len(lines))` (L834) で容量ヒント付き実装済み。未対応は `tables` (L835 `make([]string, 0)`) のみ。
-
-```go
-// telegram.go:834-835 現状
-out := make([]string, 0, len(lines))  // ← 実装済み
-tables := make([]string, 0)           // ← 容量ヒントなし (対象)
-```
-
-Phase 0-2 の記述 ("tables スライスに容量ヒント") は正しい。
-B テーブルの記述を `toolloop.go:87-96` と同様に "out は実装済み、tables のみ対象" と修正すること。
 
