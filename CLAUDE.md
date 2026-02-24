@@ -680,6 +680,58 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 
 ---
 
+## FEEDBACK — 第9回レビュー (N) — 実装安全性確認
+
+> レビュー日: 2026-02-24。loop.go の Save 呼び出し箇所 (L299/836/996/2339/2568) をすべて確認済み ✓。
+> Phase 1 の2項目に偽最適化 / 安全性問題あり。
+
+### N-1. Phase 1: `session_tracker.go:125` — `[]*SessionEntry` 返却は安全でない (🔴 削除推奨)
+
+**問題**: `ListActive()` の戻り値を `[]SessionEntry` から `[]*SessionEntry` に変更する提案だが、`SessionTracker` の設計と合わない。
+
+**現状コード**:
+```go
+// Touch() L53 — ロックなしにフィールドを直接更新
+func (st *SessionTracker) Touch(sessionKey, channel, chatID, dir string, meta *TouchMeta) {
+    val, loaded := st.entries.Load(sessionKey)
+    if loaded {
+        entry := val.(*SessionEntry)
+        entry.LastSeenAt = now    // ← struct フィールドを直接書き込む (per-struct ロックなし)
+        entry.TouchDir = dir      // ← 同上
+```
+
+```go
+// ListActive() L119-133 — *entry を値コピーして返す
+result = append(result, *entry)  // L125 ← 値コピーが現在の唯一の安全装置
+```
+
+`SessionTracker` は `sync.Map` で `*SessionEntry` を保持し、`Touch()` が per-struct ロックなしにフィールドを直接更新する。現在の `ListActive()` が `*entry` を値コピー (L125) しているのは、呼び出し時点のスナップショットを呼び出し側に渡すため。
+
+`[]*SessionEntry` を返すと呼び出し側がライブオブジェクトへのポインタを保持し、並行する `Touch()` の書き込みが見える。これは安全上の退行。
+
+**追記 — コストの観点でも不要**: `SessionEntry` は8フィールドの小さい struct (~80 バイト)、`ListActive()` の呼び出し頻度は低い (UI リクエスト毎)。コピーコストは完全に無視できる。
+
+**対応**: Phase 1 から `session_tracker.go:125` の項目を削除する。
+
+---
+
+### N-2. Phase 1: `skills/registry.go:132-133` — SkillRegistry はインターフェース、pointer-to-interface はアンチパターン (🟡 削除推奨)
+
+**問題**: "registries コピーをポインタスライスに" とあるが、`rm.registries` の型は `[]SkillRegistry`（L83）であり `SkillRegistry` はインターフェース。
+
+インターフェース値を `*SkillRegistry` にすると **pointer-to-interface** になり、Go ではアンチパターン (インターフェース自体がすでに型+ポインタの2ワード構造)。
+
+**コストの実態**:
+```go
+regs := make([]SkillRegistry, len(rm.registries))  // L132
+copy(regs, rm.registries)                          // L133 — n * 16バイトをコピー
+```
+通常 `n = 2〜5` レジストリ → 32〜80 バイトのコピー。無視できる。
+
+**対応**: Phase 1 から `skills/registry.go:132-133` の項目を削除する。
+
+---
+
 ## FEEDBACK — 第8回レビュー (M)
 
 > レビュー日: 2026-02-24。アクション指示は正確。Phase 3-2 の説明注記に軽微な誤りあり。
