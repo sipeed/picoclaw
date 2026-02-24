@@ -23,22 +23,26 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 	switch connectMode {
 
 	case "stdio":
-		// todo
+		return nil, fmt.Errorf("stdio connect mode is not yet supported for GitHub Copilot provider")
 	case "grpc":
 		client := copilot.NewClient(&copilot.ClientOptions{
 			CLIUrl: uri,
 		})
 		if err := client.Start(context.Background()); err != nil {
-			return nil, fmt.Errorf(
-				"Can't connect to Github Copilot, https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md#connecting-to-an-external-cli-server for details",
-			)
+			return nil, fmt.Errorf("can't connect to GitHub Copilot (see https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md#connecting-to-an-external-cli-server): %w", err)
 		}
 		defer client.Stop()
-		session, _ = client.CreateSession(context.Background(), &copilot.SessionConfig{
+		var err error
+		session, err = client.CreateSession(context.Background(), &copilot.SessionConfig{
 			Model: model,
 			Hooks: &copilot.SessionHooks{},
 		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GitHub Copilot session: %w", err)
+		}
 
+	default:
+		return nil, fmt.Errorf("unsupported connect mode %q for GitHub Copilot provider (supported: grpc)", connectMode)
 	}
 
 	return &GitHubCopilotProvider{
@@ -65,11 +69,17 @@ func (p *GitHubCopilotProvider) Chat(
 		})
 	}
 
-	fullcontent, _ := json.Marshal(out)
+	fullcontent, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal messages: %w", err)
+	}
 
-	content, _ := p.session.Send(ctx, copilot.MessageOptions{
+	content, err := p.session.Send(ctx, copilot.MessageOptions{
 		Prompt: string(fullcontent),
 	})
+	if err != nil {
+		return nil, fmt.Errorf("github copilot request failed: %w", err)
+	}
 
 	return &LLMResponse{
 		FinishReason: "stop",
