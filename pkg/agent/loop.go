@@ -307,7 +307,8 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					if taskName == "" {
 						taskName = "plan-execution"
 					}
-					if wt, err := agent.ActivateWorktree(msg.SessionKey, taskName); err != nil {
+					planDir := agent.ContextBuilder.GetPlanWorkDir()
+					if wt, err := agent.ActivateWorktree(msg.SessionKey, taskName, planDir); err != nil {
 						logger.WarnCF("agent", "Worktree activation skipped", map[string]any{"error": err.Error()})
 					} else {
 						logger.InfoCF("agent", "Worktree activated", map[string]any{"branch": wt.Branch})
@@ -2111,7 +2112,8 @@ func (al *AgentLoop) runLLMIteration(
 			// Heartbeat lazy worktree: create worktree on first write-tool call
 			if opts.Background && isWriteTool(tc.Name) && !agent.IsInWorktree(opts.SessionKey) {
 				taskName := "heartbeat-" + time.Now().Format("20060102")
-				if wt, err := agent.ActivateWorktree(opts.SessionKey, taskName); err == nil {
+				hbDir := agent.ContextBuilder.GetPlanWorkDir()
+				if wt, err := agent.ActivateWorktree(opts.SessionKey, taskName, hbDir); err == nil {
 					logger.InfoCF("agent", "Heartbeat worktree created", map[string]any{"branch": wt.Branch})
 				}
 			}

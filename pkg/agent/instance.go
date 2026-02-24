@@ -206,16 +206,21 @@ func resolvePlanFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentDe
 }
 
 // ActivateWorktree creates a worktree for a session.
-// Path: <workspace>/.picoclaw/worktrees/<branch-basename>/
-func (ai *AgentInstance) ActivateWorktree(sessionKey, taskName string) (*git.WorktreeInfo, error) {
-	repoRoot := git.FindRepoRoot(ai.Workspace)
+// projectDir is the git repository to create the worktree in.
+// If empty, falls back to ai.Workspace.
+// Path: <projectDir>/.picoclaw/worktrees/<branch-basename>/
+func (ai *AgentInstance) ActivateWorktree(sessionKey, taskName, projectDir string) (*git.WorktreeInfo, error) {
+	if projectDir == "" {
+		projectDir = ai.Workspace
+	}
+	repoRoot := git.FindRepoRoot(projectDir)
 	if repoRoot == "" {
-		return nil, fmt.Errorf("workspace is not a git repository")
+		return nil, fmt.Errorf("directory is not a git repository: %s", projectDir)
 	}
 
 	branchName := git.SanitizeBranchName(taskName)
 	baseName := git.BranchBaseName(branchName)
-	wtPath := filepath.Join(ai.Workspace, ".picoclaw", "worktrees", baseName)
+	wtPath := filepath.Join(repoRoot, ".picoclaw", "worktrees", baseName)
 
 	wt, err := git.CreateWorktree(repoRoot, wtPath, branchName)
 	if err != nil {
