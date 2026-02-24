@@ -34,13 +34,14 @@ type LLMProvider interface {
 type FailoverReason string
 
 const (
-	FailoverAuth       FailoverReason = "auth"
-	FailoverRateLimit  FailoverReason = "rate_limit"
-	FailoverBilling    FailoverReason = "billing"
-	FailoverTimeout    FailoverReason = "timeout"
-	FailoverFormat     FailoverReason = "format"
-	FailoverOverloaded FailoverReason = "overloaded"
-	FailoverUnknown    FailoverReason = "unknown"
+	FailoverAuth          FailoverReason = "auth"
+	FailoverRateLimit     FailoverReason = "rate_limit"
+	FailoverBilling       FailoverReason = "billing"
+	FailoverTimeout       FailoverReason = "timeout"
+	FailoverFormat        FailoverReason = "format"
+	FailoverOverloaded    FailoverReason = "overloaded"
+	FailoverContextWindow FailoverReason = "context_window"
+	FailoverUnknown       FailoverReason = "unknown"
 )
 
 // FailoverError wraps an LLM provider error with classification metadata.

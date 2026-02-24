@@ -86,6 +86,18 @@ var (
 		rxp(`image exceeds.*mb`),
 	}
 
+	// contextWindowPatterns detects context window / token limit exhaustion errors.
+	contextWindowPatterns = []errorPattern{
+		rxp(`context.*(window|length).*exceed`),
+		rxp(`max.*token.*(limit|exceed)`),
+		rxp(`total tokens.*exceed`),
+		substr("context_length_exceeded"),
+		substr("maximum context length"),
+		substr("invalidparameter"),
+		rxp(`tokens?.*exceed`),
+		rxp(`exceeds? the (model|max).*token`),
+	}
+
 	// Transient HTTP status codes that map to timeout (server-side failures).
 	transientStatusCodes = map[int]bool{
 		500: true, 502: true, 503: true,
@@ -223,6 +235,17 @@ func IsImageDimensionError(msg string) bool {
 // IsImageSizeError returns true if the message indicates an image file size error.
 func IsImageSizeError(msg string) bool {
 	return matchesAny(msg, imageSizePatterns)
+}
+
+// IsContextWindowError returns true if the error indicates a context window / token limit
+// exhaustion. This is more precise than naive string matching and avoids false positives
+// on errors like "invalid authentication token".
+func IsContextWindowError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return matchesAny(msg, contextWindowPatterns)
 }
 
 // matchesAny checks if msg matches any of the patterns.
