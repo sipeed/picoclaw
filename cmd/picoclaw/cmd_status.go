@@ -28,16 +28,16 @@ func statusCmd() {
 	fmt.Println()
 
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Println("Config:", configPath, "✓")
+		fmt.Println("Config:", configPath, "ok")
 	} else {
-		fmt.Println("Config:", configPath, "✗")
+		fmt.Println("Config:", configPath, "missing")
 	}
 
 	workspace := cfg.WorkspacePath()
 	if _, err := os.Stat(workspace); err == nil {
-		fmt.Println("Workspace:", workspace, "✓")
+		fmt.Println("Workspace:", workspace, "ok")
 	} else {
-		fmt.Println("Workspace:", workspace, "✗")
+		fmt.Println("Workspace:", workspace, "missing")
 	}
 
 	if _, err := os.Stat(configPath); err == nil {
@@ -59,7 +59,7 @@ func statusCmd() {
 
 		status := func(enabled bool) string {
 			if enabled {
-				return "✓"
+				return "ok"
 			}
 			return "not set"
 		}
@@ -75,14 +75,24 @@ func statusCmd() {
 		fmt.Println("VolcEngine API:", status(hasVolcEngine))
 		fmt.Println("Nvidia API:", status(hasNvidia))
 		if hasVLLM {
-			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)
+			fmt.Printf("vLLM/Local: ok %s\n", cfg.Providers.VLLM.APIBase)
 		} else {
 			fmt.Println("vLLM/Local: not set")
 		}
 		if hasOllama {
-			fmt.Printf("Ollama: ✓ %s\n", cfg.Providers.Ollama.APIBase)
+			fmt.Printf("Ollama: ok %s\n", cfg.Providers.Ollama.APIBase)
 		} else {
 			fmt.Println("Ollama: not set")
+		}
+		if cfg.Observability.Enabled {
+			fmt.Printf("Observability: ok OTLP=%s sample_ratio=%.2f\n", cfg.Observability.OTLPEndpoint, cfg.Observability.SampleRatio)
+			if cfg.Observability.Langfuse.IsConfigured() {
+				fmt.Printf("Langfuse: ok host=%s\n", cfg.Observability.Langfuse.Host)
+			} else {
+				fmt.Println("Langfuse: not set")
+			}
+		} else {
+			fmt.Println("Observability: not set")
 		}
 
 		store, _ := auth.LoadStore()

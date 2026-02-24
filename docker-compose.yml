@@ -14,12 +14,31 @@ services:
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
     volumes:
-      - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
-      - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
+      # Configuration file
+      - ./config/config.json:/root/.picoclaw/config.json:ro
+      # Persistent workspace (sessions, memory, logs)
+      - picoclaw-workspace:/root/.picoclaw/workspace
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
-
+    environment:
+      - PICOCLAW_OBSERVABILITY_ENABLED=true
+      - PICOCLAW_OBSERVABILITY_SERVICE_NAME=picoclaw-agent
+      - PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT=${PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT:-otel-collector:4317}
+      - PICOCLAW_OBSERVABILITY_INSECURE=true
+      - PICOCLAW_OBSERVABILITY_SAMPLE_RATIO=1.0
+      - PICOCLAW_OBSERVABILITY_LANGFUSE_ENABLED=${PICOCLAW_OBSERVABILITY_LANGFUSE_ENABLED:-false}
+      - PICOCLAW_OBSERVABILITY_LANGFUSE_HOST=${PICOCLAW_OBSERVABILITY_LANGFUSE_HOST:-http://langfuse-web:3000}
+      - PICOCLAW_OBSERVABILITY_LANGFUSE_PUBLIC_KEY=${PICOCLAW_OBSERVABILITY_LANGFUSE_PUBLIC_KEY:-}
+      - PICOCLAW_OBSERVABILITY_LANGFUSE_SECRET_KEY=${PICOCLAW_OBSERVABILITY_LANGFUSE_SECRET_KEY:-}
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${PICOCLAW_AGENTS_DEFAULTS_PROVIDER:-}
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${PICOCLAW_AGENTS_DEFAULTS_MODEL:-}
+      - PICOCLAW_PROVIDERS_OPENAI_API_KEY=${PICOCLAW_PROVIDERS_OPENAI_API_KEY:-}
+      - PICOCLAW_PROVIDERS_OPENAI_API_BASE=${PICOCLAW_PROVIDERS_OPENAI_API_BASE:-}
+      - PICOCLAW_PROVIDERS_OPENROUTER_API_KEY=${PICOCLAW_PROVIDERS_OPENROUTER_API_KEY:-}
+      - PICOCLAW_PROVIDERS_ZHIPU_API_KEY=${PICOCLAW_PROVIDERS_ZHIPU_API_KEY:-}
+    depends_on:
+      - otel-collector
   # ─────────────────────────────────────────────
   # PicoClaw Gateway (Long-running Bot)
   #   docker compose up picoclaw-gateway
@@ -41,6 +60,264 @@ services:
       # Persistent workspace (sessions, memory, logs)
       - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
     command: ["gateway"]
+    ports:
+      - "18790:18790"
+    environment:
+      - PICOCLAW_OBSERVABILITY_ENABLED=true
+      - PICOCLAW_OBSERVABILITY_SERVICE_NAME=picoclaw-gateway
+      - PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT=${PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT:-otel-collector:4317}
+      - PICOCLAW_OBSERVABILITY_INSECURE=true
+      - PICOCLAW_OBSERVABILITY_SAMPLE_RATIO=1.0
+      - PICOCLAW_OBSERVABILITY_LANGFUSE_ENABLED=${PICOCLAW_OBSERVABILITY_LANGFUSE_ENABLED:-false}
+      - PICOCLAW_OBSERVABILITY_LANGFUSE_HOST=${PICOCLAW_OBSERVABILITY_LANGFUSE_HOST:-http://langfuse-web:3000}
+      - PICOCLAW_OBSERVABILITY_LANGFUSE_PUBLIC_KEY=${PICOCLAW_OBSERVABILITY_LANGFUSE_PUBLIC_KEY:-}
+      - PICOCLAW_OBSERVABILITY_LANGFUSE_SECRET_KEY=${PICOCLAW_OBSERVABILITY_LANGFUSE_SECRET_KEY:-}
+      - PICOCLAW_AGENTS_DEFAULTS_PROVIDER=${PICOCLAW_AGENTS_DEFAULTS_PROVIDER:-}
+      - PICOCLAW_AGENTS_DEFAULTS_MODEL=${PICOCLAW_AGENTS_DEFAULTS_MODEL:-}
+      - PICOCLAW_PROVIDERS_OPENAI_API_KEY=${PICOCLAW_PROVIDERS_OPENAI_API_KEY:-}
+      - PICOCLAW_PROVIDERS_OPENAI_API_BASE=${PICOCLAW_PROVIDERS_OPENAI_API_BASE:-}
+      - PICOCLAW_PROVIDERS_OPENROUTER_API_KEY=${PICOCLAW_PROVIDERS_OPENROUTER_API_KEY:-}
+      - PICOCLAW_PROVIDERS_ZHIPU_API_KEY=${PICOCLAW_PROVIDERS_ZHIPU_API_KEY:-}
+    depends_on:
+      - otel-collector
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    container_name: otel-collector
+    profiles: [observability]
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "9464:9464"
+    networks:
+      default:
+        aliases:
+          - otel-collector
+
+  prometheus:
+    image: prom/prometheus:v3.4.2
+    container_name: prometheus
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - otel-collector
+
+  loki:
+    image: grafana/loki:3.5.3
+    container_name: loki
+    profiles: [observability]
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:3.5.3
+    container_name: promtail
+    profiles: [observability]
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./observability/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    container_name: grafana
+    profiles: [observability]
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+  # Local Langfuse self-hosted demo stack
+  # Reference: https://langfuse.com/self-hosting/deployment/docker-compose
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3
+    container_name: langfuse-worker
+    profiles: [observability]
+    restart: unless-stopped
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    environment:
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3001}
+      DATABASE_URL: ${LANGFUSE_DATABASE_URL:-postgresql://postgres:postgres@langfuse-postgres:5432/postgres}
+      SALT: ${LANGFUSE_SALT:-change-me-langfuse-salt}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: ${LANGFUSE_TELEMETRY_ENABLED:-false}
+      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://langfuse-clickhouse:9000}
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_REGION:-auto}
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-miniosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: ${LANGFUSE_S3_REGION:-auto}
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-miniosecret}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT:-http://langfuse-minio:9000}
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_AUTH:-myredissecret}
+
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3
+    container_name: langfuse-web
+    profiles: [observability]
+    restart: unless-stopped
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    ports:
+      - "3001:3000"
+    environment:
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3001}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me-langfuse-nextauth-secret}
+      DATABASE_URL: ${LANGFUSE_DATABASE_URL:-postgresql://postgres:postgres@langfuse-postgres:5432/postgres}
+      SALT: ${LANGFUSE_SALT:-change-me-langfuse-salt}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: ${LANGFUSE_TELEMETRY_ENABLED:-false}
+      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://langfuse-clickhouse:9000}
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_REGION:-auto}
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-miniosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: ${LANGFUSE_S3_REGION:-auto}
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-miniosecret}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT:-http://langfuse-minio:9000}
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_AUTH:-myredissecret}
+
+  langfuse-postgres:
+    image: postgres:17
+    container_name: langfuse-postgres
+    profiles: [observability]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    volumes:
+      - langfuse-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  langfuse-redis:
+    image: redis:7
+    container_name: langfuse-redis
+    profiles: [observability]
+    restart: unless-stopped
+    command: >-
+      --requirepass ${REDIS_AUTH:-myredissecret}
+      --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  langfuse-clickhouse:
+    image: docker.io/clickhouse/clickhouse-server
+    container_name: langfuse-clickhouse
+    profiles: [observability]
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  langfuse-minio:
+    image: cgr.dev/chainguard/minio
+    container_name: langfuse-minio
+    profiles: [observability]
+    restart: unless-stopped
+    entrypoint: sh
+    command:
+      - -c
+      - 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    ports:
+      - "${LANGFUSE_MINIO_API_PORT:-9092}:9000"
+      - "${LANGFUSE_MINIO_CONSOLE_PORT:-9093}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret}
+    volumes:
+      - langfuse-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
 
 volumes:
   picoclaw-workspace:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+  langfuse-postgres-data:
+  langfuse-clickhouse-data:
+  langfuse-clickhouse-logs:
+  langfuse-minio-data:

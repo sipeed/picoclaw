@@ -17,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/observability"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -58,6 +59,13 @@ func agentCmd() {
 	if modelOverride != "" {
 		cfg.Agents.Defaults.ModelName = modelOverride
 	}
+
+	otelShutdown, err := observability.Init(context.Background(), cfg.Observability)
+	if err != nil {
+		fmt.Printf("Error initializing observability: %v\n", err)
+		os.Exit(1)
+	}
+	defer otelShutdown(context.Background())
 
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {

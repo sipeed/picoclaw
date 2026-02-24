@@ -47,16 +47,17 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty"`
-	Session   SessionConfig   `json:"session,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
+	Agents        AgentsConfig        `json:"agents"`
+	Bindings      []AgentBinding      `json:"bindings,omitempty"`
+	Session       SessionConfig       `json:"session,omitempty"`
+	Channels      ChannelsConfig      `json:"channels"`
+	Providers     ProvidersConfig     `json:"providers,omitempty"`
+	ModelList     []ModelConfig       `json:"model_list"` // New model-centric provider configuration
+	Gateway       GatewayConfig       `json:"gateway"`
+	Tools         ToolsConfig         `json:"tools"`
+	Heartbeat     HeartbeatConfig     `json:"heartbeat"`
+	Devices       DevicesConfig       `json:"devices"`
+	Observability ObservabilityConfig `json:"observability"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -316,6 +317,26 @@ type DevicesConfig struct {
 	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
 }
 
+type ObservabilityConfig struct {
+	Enabled      bool           `json:"enabled" env:"PICOCLAW_OBSERVABILITY_ENABLED"`
+	ServiceName  string         `json:"service_name" env:"PICOCLAW_OBSERVABILITY_SERVICE_NAME"`
+	OTLPEndpoint string         `json:"otlp_endpoint" env:"PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT"`
+	Insecure     bool           `json:"insecure" env:"PICOCLAW_OBSERVABILITY_INSECURE"`
+	SampleRatio  float64        `json:"sample_ratio" env:"PICOCLAW_OBSERVABILITY_SAMPLE_RATIO"`
+	Langfuse     LangfuseConfig `json:"langfuse"`
+}
+
+type LangfuseConfig struct {
+	Enabled   bool   `json:"enabled" env:"PICOCLAW_OBSERVABILITY_LANGFUSE_ENABLED"`
+	Host      string `json:"host" env:"PICOCLAW_OBSERVABILITY_LANGFUSE_HOST"`
+	PublicKey string `json:"public_key" env:"PICOCLAW_OBSERVABILITY_LANGFUSE_PUBLIC_KEY"`
+	SecretKey string `json:"secret_key" env:"PICOCLAW_OBSERVABILITY_LANGFUSE_SECRET_KEY"`
+}
+
+func (c LangfuseConfig) IsConfigured() bool {
+	return c.Enabled && c.Host != "" && c.PublicKey != "" && c.SecretKey != ""
+}
+
 type ProvidersConfig struct {
 	Anthropic     ProviderConfig       `json:"anthropic"`
 	OpenAI        OpenAIProviderConfig `json:"openai"`
@@ -507,6 +528,17 @@ func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			if err := env.Parse(cfg); err != nil {
+				return nil, err
+			}
+			applyObservabilityEnvOverrides(cfg)
+			applyProviderEnvOverrides(cfg)
+			if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
+				cfg.ModelList = ConvertProvidersToModelList(cfg)
+			}
+			if err := cfg.ValidateModelList(); err != nil {
+				return nil, err
+			}
 			return cfg, nil
 		}
 		return nil, err
@@ -534,6 +566,12 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	applyObservabilityEnvOverrides(cfg)
+
+	// ProviderConfig uses a shared type and cannot reliably express provider-specific
+	// env tags using template placeholders. Apply explicit overrides here.
+	applyProviderEnvOverrides(cfg)
+
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
 	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
@@ -545,6 +583,59 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func applyProviderEnvOverrides(cfg *Config) {
+	setProviderFromEnv("PICOCLAW_PROVIDERS_ANTHROPIC", &cfg.Providers.Anthropic)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_OPENAI", &cfg.Providers.OpenAI.ProviderConfig)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_OPENROUTER", &cfg.Providers.OpenRouter)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_GROQ", &cfg.Providers.Groq)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_ZHIPU", &cfg.Providers.Zhipu)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_VLLM", &cfg.Providers.VLLM)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_GEMINI", &cfg.Providers.Gemini)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_NVIDIA", &cfg.Providers.Nvidia)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_OLLAMA", &cfg.Providers.Ollama)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_MOONSHOT", &cfg.Providers.Moonshot)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_SHENGSUANYUN", &cfg.Providers.ShengSuanYun)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_DEEPSEEK", &cfg.Providers.DeepSeek)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_CEREBRAS", &cfg.Providers.Cerebras)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_VOLCENGINE", &cfg.Providers.VolcEngine)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_GITHUB_COPILOT", &cfg.Providers.GitHubCopilot)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_ANTIGRAVITY", &cfg.Providers.Antigravity)
+	setProviderFromEnv("PICOCLAW_PROVIDERS_QWEN", &cfg.Providers.Qwen)
+}
+
+func applyObservabilityEnvOverrides(cfg *Config) {
+	if v, ok := os.LookupEnv("PICOCLAW_OBSERVABILITY_LANGFUSE_ENABLED"); ok {
+		cfg.Observability.Langfuse.Enabled = v == "1" || v == "true" || v == "TRUE" || v == "True"
+	}
+	if v, ok := os.LookupEnv("PICOCLAW_OBSERVABILITY_LANGFUSE_HOST"); ok {
+		cfg.Observability.Langfuse.Host = v
+	}
+	if v, ok := os.LookupEnv("PICOCLAW_OBSERVABILITY_LANGFUSE_PUBLIC_KEY"); ok {
+		cfg.Observability.Langfuse.PublicKey = v
+	}
+	if v, ok := os.LookupEnv("PICOCLAW_OBSERVABILITY_LANGFUSE_SECRET_KEY"); ok {
+		cfg.Observability.Langfuse.SecretKey = v
+	}
+}
+
+func setProviderFromEnv(prefix string, provider *ProviderConfig) {
+	if v, ok := os.LookupEnv(prefix + "_API_KEY"); ok {
+		provider.APIKey = v
+	}
+	if v, ok := os.LookupEnv(prefix + "_API_BASE"); ok {
+		provider.APIBase = v
+	}
+	if v, ok := os.LookupEnv(prefix + "_PROXY"); ok {
+		provider.Proxy = v
+	}
+	if v, ok := os.LookupEnv(prefix + "_AUTH_METHOD"); ok {
+		provider.AuthMethod = v
+	}
+	if v, ok := os.LookupEnv(prefix + "_CONNECT_MODE"); ok {
+		provider.ConnectMode = v
+	}
 }
 
 func SaveConfig(path string, cfg *Config) error {

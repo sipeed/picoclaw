@@ -320,5 +320,16 @@ func DefaultConfig() *Config {
 			Enabled:    false,
 			MonitorUSB: true,
 		},
+		Observability: ObservabilityConfig{
+			Enabled:      false,
+			ServiceName:  "picoclaw",
+			OTLPEndpoint: "localhost:4317",
+			Insecure:     true,
+			SampleRatio:  0.1,
+			Langfuse: LangfuseConfig{
+				Enabled: false,
+				Host:    "http://localhost:3001",
+			},
+		},
 	}
 }
