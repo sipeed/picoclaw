@@ -15,7 +15,8 @@ func TestNewSearchSubcommand(t *testing.T) {
 	assert.Equal(t, "search", cmd.Use)
 	assert.Equal(t, "Search available skills", cmd.Short)
 
-	assert.NotNil(t, cmd.Run)
+	assert.Nil(t, cmd.Run)
+	assert.NotNil(t, cmd.RunE)
 
 	assert.False(t, cmd.HasSubCommands())
 	assert.False(t, cmd.HasFlags())

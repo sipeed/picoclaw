@@ -10,46 +10,70 @@ import (
 	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
+type deps struct {
+	workspace    string
+	installer    *skills.SkillInstaller
+	skillsLoader *skills.SkillsLoader
+}
+
 func NewSkillsCommand() *cobra.Command {
+	var d deps
+
 	cmd := &cobra.Command{
 		Use:   "skills",
 		Short: "Manage skills",
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := internal2.LoadConfig()
+			if err != nil {
+				return fmt.Errorf("error loading config: %w", err)
+			}
+
+			d.workspace = cfg.WorkspacePath()
+			d.installer = skills.NewSkillInstaller(d.workspace)
+
+			// get global config directory and builtin skills directory
+			globalDir := filepath.Dir(internal2.GetConfigPath())
+			globalSkillsDir := filepath.Join(globalDir, "skills")
+			builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
+			d.skillsLoader = skills.NewSkillsLoader(d.workspace, globalSkillsDir, builtinSkillsDir)
+
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
 
-	var loaded bool
-
-	cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-		cfg, err := internal2.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("error loading config: %w", err)
+	installerFn := func() (*skills.SkillInstaller, error) {
+		if d.installer == nil {
+			return nil, fmt.Errorf("skills installer is not initialized")
 		}
-
-		workspace := cfg.WorkspacePath()
-		installer := skills.NewSkillInstaller(workspace)
-
-		// get global config directory and builtin skills directory
-		globalDir := filepath.Dir(internal2.GetConfigPath())
-		globalSkillsDir := filepath.Join(globalDir, "skills")
-		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
-		skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
-
-		if !loaded {
-			cmd.AddCommand(
-				newListCommand(skillsLoader),
-				newInstallCommand(installer),
-				newInstallBuiltinCommand(workspace),
-				newListBuiltinCommand(),
-				newRemoveCommand(installer),
-				newSearchCommand(installer),
-				newShowCommand(skillsLoader),
-			)
-			loaded = true
-		}
-		return nil
+		return d.installer, nil
 	}
+
+	loaderFn := func() (*skills.SkillsLoader, error) {
+		if d.skillsLoader == nil {
+			return nil, fmt.Errorf("skills loader is not initialized")
+		}
+		return d.skillsLoader, nil
+	}
+
+	workspaceFn := func() (string, error) {
+		if d.workspace == "" {
+			return "", fmt.Errorf("workspace is not initialized")
+		}
+		return d.workspace, nil
+	}
+
+	cmd.AddCommand(
+		newListCommand(loaderFn),
+		newInstallCommand(installerFn),
+		newInstallBuiltinCommand(workspaceFn),
+		newListBuiltinCommand(),
+		newRemoveCommand(installerFn),
+		newSearchCommand(installerFn),
+		newShowCommand(loaderFn),
+	)
 
 	return cmd
 }

@@ -6,13 +6,18 @@ import (
 	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
-func newListCommand(skillsLoader *skills.SkillsLoader) *cobra.Command {
+func newListCommand(loaderFn func() (*skills.SkillsLoader, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List installed skills",
 		Example: `picoclaw skills list`,
-		Run: func(_ *cobra.Command, _ []string) {
-			skillsListCmd(skillsLoader)
+		RunE: func(_ *cobra.Command, _ []string) error {
+			loader, err := loaderFn()
+			if err != nil {
+				return err
+			}
+			skillsListCmd(loader)
+			return nil
 		},
 	}
 

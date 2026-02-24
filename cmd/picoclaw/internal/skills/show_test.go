@@ -15,7 +15,8 @@ func TestNewShowSubcommand(t *testing.T) {
 	assert.Equal(t, "show", cmd.Use)
 	assert.Equal(t, "Show skill details", cmd.Short)
 
-	assert.NotNil(t, cmd.Run)
+	assert.Nil(t, cmd.Run)
+	assert.NotNil(t, cmd.RunE)
 
 	assert.True(t, cmd.HasExample())
 	assert.False(t, cmd.HasSubCommands())

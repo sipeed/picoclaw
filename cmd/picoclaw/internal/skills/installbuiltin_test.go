@@ -8,14 +8,15 @@ import (
 )
 
 func TestNewInstallbuiltinSubcommand(t *testing.T) {
-	cmd := newInstallBuiltinCommand("")
+	cmd := newInstallBuiltinCommand(nil)
 
 	require.NotNil(t, cmd)
 
 	assert.Equal(t, "install-builtin", cmd.Use)
 	assert.Equal(t, "Install all builtin skills to workspace", cmd.Short)
 
-	assert.NotNil(t, cmd.Run)
+	assert.Nil(t, cmd.Run)
+	assert.NotNil(t, cmd.RunE)
 
 	assert.True(t, cmd.HasExample())
 	assert.False(t, cmd.HasSubCommands())

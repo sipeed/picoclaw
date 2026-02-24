@@ -15,7 +15,8 @@ func TestNewRemoveSubcommand(t *testing.T) {
 	assert.Equal(t, "remove", cmd.Use)
 	assert.Equal(t, "Remove installed skill", cmd.Short)
 
-	assert.NotNil(t, cmd.Run)
+	assert.Nil(t, cmd.Run)
+	assert.NotNil(t, cmd.RunE)
 
 	assert.True(t, cmd.HasExample())
 	assert.False(t, cmd.HasSubCommands())

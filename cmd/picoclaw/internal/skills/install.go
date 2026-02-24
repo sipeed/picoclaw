@@ -9,7 +9,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
-func newInstallCommand(installer *skills.SkillInstaller) *cobra.Command {
+func newInstallCommand(installerFn func() (*skills.SkillInstaller, error)) *cobra.Command {
 	var registry string
 
 	cmd := &cobra.Command{
@@ -20,9 +20,7 @@ picoclaw skills install sipeed/picoclaw-skills/weather
 picoclaw skills install --registry clawhub github
 `,
 		Args: func(cmd *cobra.Command, args []string) error {
-			reg, _ := cmd.Flags().GetString("registry")
-
-			if reg != "" {
+			if registry != "" {
 				if len(args) != 2 {
 					return fmt.Errorf("when --registry is set, exactly 2 arguments are required: <name> <slug>")
 				}
@@ -36,6 +34,11 @@ picoclaw skills install --registry clawhub github
 			return nil
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
+			installer, err := installerFn()
+			if err != nil {
+				return err
+			}
+
 			if registry != "" {
 				cfg, err := internal.LoadConfig()
 				if err != nil {
@@ -49,7 +52,7 @@ picoclaw skills install --registry clawhub github
 		},
 	}
 
-	cmd.Flags().StringVar(&registry, "registry", "", "--registry <name> <slug>")
+	cmd.Flags().StringVar(&registry, "registry", "", "Install from registry: --registry <name> <slug>")
 
 	return cmd
 }

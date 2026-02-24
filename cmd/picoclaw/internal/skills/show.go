@@ -6,14 +6,19 @@ import (
 	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
-func newShowCommand(skillsLoader *skills.SkillsLoader) *cobra.Command {
+func newShowCommand(loaderFn func() (*skills.SkillsLoader, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "show",
 		Short:   "Show skill details",
 		Args:    cobra.ExactArgs(1),
 		Example: `picoclaw skills show weather`,
-		Run: func(_ *cobra.Command, args []string) {
-			skillsShowCmd(skillsLoader, args[0])
+		RunE: func(_ *cobra.Command, args []string) error {
+			loader, err := loaderFn()
+			if err != nil {
+				return err
+			}
+			skillsShowCmd(loader, args[0])
+			return nil
 		},
 	}
 

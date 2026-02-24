@@ -6,12 +6,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
-func newSearchCommand(installer *skills.SkillInstaller) *cobra.Command {
+func newSearchCommand(installerFn func() (*skills.SkillInstaller, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search",
 		Short: "Search available skills",
-		Run: func(_ *cobra.Command, _ []string) {
+		RunE: func(_ *cobra.Command, _ []string) error {
+			installer, err := installerFn()
+			if err != nil {
+				return err
+			}
 			skillsSearchCmd(installer)
+			return nil
 		},
 	}
 
