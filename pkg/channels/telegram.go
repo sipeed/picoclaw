@@ -21,7 +21,6 @@ import (
 	"github.com/KarakuriAgent/clawdroid/pkg/config"
 	"github.com/KarakuriAgent/clawdroid/pkg/logger"
 	"github.com/KarakuriAgent/clawdroid/pkg/utils"
-	"github.com/KarakuriAgent/clawdroid/pkg/voice"
 )
 
 type TelegramChannel struct {
@@ -30,7 +29,6 @@ type TelegramChannel struct {
 	commands     TelegramCommander
 	config       *config.Config
 	chatIDs      map[string]int64
-	transcriber  *voice.GroqTranscriber
 	placeholders sync.Map // chatID -> messageID
 	stopThinking sync.Map // chatID -> thinkingCancel
 }
@@ -74,14 +72,9 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		bot:          bot,
 		config:       cfg,
 		chatIDs:      make(map[string]int64),
-		transcriber:  nil,
 		placeholders: sync.Map{},
 		stopThinking: sync.Map{},
 	}, nil
-}
-
-func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
-	c.transcriber = transcriber
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -256,32 +249,10 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 			localFiles = append(localFiles, voicePath)
 			mediaPaths = append(mediaPaths, voicePath)
 
-			transcribedText := ""
-			if c.transcriber != nil && c.transcriber.IsAvailable() {
-				ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				defer cancel()
-
-				result, err := c.transcriber.Transcribe(ctx, voicePath)
-				if err != nil {
-					logger.ErrorCF("telegram", "Voice transcription failed", map[string]interface{}{
-						"error": err.Error(),
-						"path":  voicePath,
-					})
-					transcribedText = "[voice (transcription failed)]"
-				} else {
-					transcribedText = fmt.Sprintf("[voice transcription: %s]", result.Text)
-					logger.InfoCF("telegram", "Voice transcribed successfully", map[string]interface{}{
-						"text": result.Text,
-					})
-				}
-			} else {
-				transcribedText = "[voice]"
-			}
-
 			if content != "" {
 				content += "\n"
 			}
-			content += transcribedText
+			content += "[voice]"
 		}
 	}
 

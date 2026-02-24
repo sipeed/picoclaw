@@ -12,20 +12,17 @@ import (
 	"github.com/KarakuriAgent/clawdroid/pkg/config"
 	"github.com/KarakuriAgent/clawdroid/pkg/logger"
 	"github.com/KarakuriAgent/clawdroid/pkg/utils"
-	"github.com/KarakuriAgent/clawdroid/pkg/voice"
 )
 
 const (
-	transcriptionTimeout = 30 * time.Second
-	sendTimeout          = 10 * time.Second
+	sendTimeout = 10 * time.Second
 )
 
 type DiscordChannel struct {
 	*BaseChannel
 	session     *discordgo.Session
-	config      config.DiscordConfig
-	transcriber *voice.GroqTranscriber
-	ctx         context.Context
+	config config.DiscordConfig
+	ctx    context.Context
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -39,14 +36,9 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 	return &DiscordChannel{
 		BaseChannel: base,
 		session:     session,
-		config:      cfg,
-		transcriber: nil,
-		ctx:         context.Background(),
+		config: cfg,
+		ctx:    context.Background(),
 	}, nil
-}
-
-func (c *DiscordChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
-	c.transcriber = transcriber
 }
 
 func (c *DiscordChannel) getContext() context.Context {
@@ -319,48 +311,13 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}()
 
 	for _, attachment := range m.Attachments {
-		isAudio := utils.IsAudioFile(attachment.Filename, attachment.ContentType)
-
-		if isAudio {
-			localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
-			if localPath != "" {
-				localFiles = append(localFiles, localPath)
-
-				transcribedText := ""
-				if c.transcriber != nil && c.transcriber.IsAvailable() {
-					ctx, cancel := context.WithTimeout(c.getContext(), transcriptionTimeout)
-					result, err := c.transcriber.Transcribe(ctx, localPath)
-					cancel() // 立即释放context资源，避免在for循环中泄漏
-
-					if err != nil {
-						logger.ErrorCF("discord", "Voice transcription failed", map[string]any{
-							"error": err.Error(),
-						})
-						transcribedText = fmt.Sprintf("[audio: %s (transcription failed)]", attachment.Filename)
-					} else {
-						transcribedText = fmt.Sprintf("[audio transcription: %s]", result.Text)
-						logger.DebugCF("discord", "Audio transcribed successfully", map[string]any{
-							"text": result.Text,
-						})
-					}
-				} else {
-					transcribedText = fmt.Sprintf("[audio: %s]", attachment.Filename)
-				}
-
-				content = appendContent(content, transcribedText)
+		localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
+		if localPath != "" {
+			localFiles = append(localFiles, localPath)
+			if dataURL := utils.EncodeFileToDataURL(localPath); dataURL != "" {
+				mediaPaths = append(mediaPaths, dataURL)
 			} else {
-				logger.WarnCF("discord", "Failed to download audio attachment", map[string]any{
-					"url":      attachment.URL,
-					"filename": attachment.Filename,
-				})
-			}
-		} else {
-			localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
-			if localPath != "" {
-				localFiles = append(localFiles, localPath)
-				if dataURL := utils.EncodeFileToDataURL(localPath); dataURL != "" {
-					mediaPaths = append(mediaPaths, dataURL)
-				}
+				content = appendContent(content, fmt.Sprintf("[audio: %s]", attachment.Filename))
 			}
 		}
 	}

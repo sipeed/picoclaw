@@ -68,26 +68,6 @@ func EncodeFileToDataURL(path string) string {
 	return "data:" + mime + ";base64," + encoded
 }
 
-// IsAudioFile checks if a file is an audio file based on its filename extension and content type.
-func IsAudioFile(filename, contentType string) bool {
-	audioExtensions := []string{".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
-	audioTypes := []string{"audio/", "application/ogg", "application/x-ogg"}
-
-	for _, ext := range audioExtensions {
-		if strings.HasSuffix(strings.ToLower(filename), ext) {
-			return true
-		}
-	}
-
-	for _, audioType := range audioTypes {
-		if strings.HasPrefix(strings.ToLower(contentType), audioType) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // SanitizeFilename removes potentially dangerous characters from a filename
 // and returns a safe version for local filesystem storage.
 func SanitizeFilename(filename string) string {
