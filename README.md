@@ -4,7 +4,7 @@
 
 Ultra-lightweight personal AI assistant for Android. A Go backend runs in Termux while a native Kotlin/Jetpack Compose app provides the chat UI, voice assistant, and device automation.
 
-Forked from [PicoClaw](https://github.com/pico-claw/picoclaw).
+Forked from [PicoClaw](https://github.com/sipeed/picoclaw).
 
 ## Architecture
 
@@ -523,4 +523,4 @@ clawdroid/
 
 MIT License. Copyright (c) 2026 PicoClaw contributors.
 
-Forked from [PicoClaw](https://github.com/pico-claw/picoclaw).
+Forked from [PicoClaw](https://github.com/sipeed/picoclaw).

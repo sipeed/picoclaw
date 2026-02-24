@@ -2,7 +2,7 @@
 
 Android 向け超軽量パーソナル AI アシスタント。Go バックエンドが Termux 上で動作し、ネイティブ Kotlin/Jetpack Compose アプリがチャット UI、音声アシスタント、デバイス自動操作を提供します。
 
-[PicoClaw](https://github.com/pico-claw/picoclaw) からフォークしたプロジェクトです。
+[PicoClaw](https://github.com/sipeed/picoclaw) からフォークしたプロジェクトです。
 
 ## アーキテクチャ
 
@@ -522,4 +522,4 @@ clawdroid/
 
 MIT License。Copyright (c) 2026 PicoClaw contributors。
 
-[PicoClaw](https://github.com/pico-claw/picoclaw) からフォーク。
+[PicoClaw](https://github.com/sipeed/picoclaw) からフォーク。
