@@ -1,24 +1,33 @@
 #!/bin/bash
-# ntfy_send.sh — Stateless ntfy notification sender utility
-# Does NOT manage its own config. Reads NTFY_TOPIC from environment variable.
-# Each skill is responsible for setting NTFY_TOPIC from its own config.
+# ntfy_send.sh — ntfy notification sender for prayer-times skill
+# Auto-loads config from skills/prayer-times/data/config (reads NTFY_TOPIC)
 #
-# Usage:
-#   NTFY_TOPIC=https://ntfy.sh/topic ntfy_send.sh "message"
-#   NTFY_TOPIC=https://ntfy.sh/topic ntfy_send.sh "message" --title "T" --tags "t" --priority "high"
+# Usage (from workspace root):
+#   bash skills/prayer-times/scripts/ntfy_send.sh "message"
+#   bash skills/prayer-times/scripts/ntfy_send.sh "message" --title "T" --tags "t"
 #
-# If NTFY_TOPIC is empty, silently skips (exit 0).
+# If NTFY_TOPIC is empty or config missing, silently exits (exit 0).
 
 set -euo pipefail
 
-if [ -z "${NTFY_TOPIC:-}" ]; then
-    # No topic configured — skip silently so cron jobs don't fail
+# Auto-load config relative to this script
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONF_FILE="$SKILL_DIR/data/config"
+
+# Source config if exists
+NTFY_TOPIC=""
+if [ -f "$CONF_FILE" ]; then
+    . "$CONF_FILE"
+fi
+
+if [ -z "$NTFY_TOPIC" ]; then
     exit 0
 fi
 
-message="${1:-}"
+message="$1"
 if [ -z "$message" ]; then
-    echo "Usage: ntfy_send.sh \"message\" [--title T] [--tags T] [--priority P]"
+    echo "Usage: ntfy_send.sh message [--title T] [--tags T] [--priority P]"
     exit 1
 fi
 shift
@@ -34,11 +43,16 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Build curl args
-curl_args=(-sf)
-[ -n "$title" ]    && curl_args+=(-H "Title: $title")
-[ -n "$tags" ]     && curl_args+=(-H "Tags: $tags")
-[ -n "$priority" ] && curl_args+=(-H "Priority: $priority")
-curl_args+=(-d "$message" "$NTFY_TOPIC")
+# Send notification
+HEADERS=""
+if [ -n "$title" ]; then
+    HEADERS="$HEADERS -H \"Title: $title\""
+fi
+if [ -n "$tags" ]; then
+    HEADERS="$HEADERS -H \"Tags: $tags\""
+fi
+if [ -n "$priority" ]; then
+    HEADERS="$HEADERS -H \"Priority: $priority\""
+fi
 
-curl "${curl_args[@]}" > /dev/null 2>&1 || true
+eval curl -sf $HEADERS -d "\"$message\"" "\"$NTFY_TOPIC\"" || true
