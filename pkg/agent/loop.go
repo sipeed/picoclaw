@@ -137,6 +137,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 
 	// Determine if orchestration broadcaster is needed (any agent has subagents enabled).
+	// Note: instance.go maps defaults.Orchestration → Subagents.Enabled, so --orchestration
+	// is automatically reflected here.
 	var orchBroadcaster *orch.Broadcaster
 	var orchReporter orch.AgentReporter = orch.Noop
 	for _, id := range registry.ListAgentIDs() {
