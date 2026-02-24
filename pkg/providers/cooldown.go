@@ -37,14 +37,14 @@ func NewCooldownTracker() *CooldownTracker {
 	}
 }
 
-// MarkFailure records a failure for a provider and sets appropriate cooldown.
+// MarkFailure records a failure for a specific model key and sets appropriate cooldown.
 // Resets error counts if last failure was more than failureWindow ago.
-func (ct *CooldownTracker) MarkFailure(provider string, reason FailoverReason) {
+func (ct *CooldownTracker) MarkFailure(key string, reason FailoverReason) {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 
 	now := ct.nowFunc()
-	entry := ct.getOrCreate(provider)
+	entry := ct.getOrCreate(key)
 
 	// 24h failure window reset: if no failure in failureWindow, reset counters.
 	if !entry.LastFailure.IsZero() && now.Sub(entry.LastFailure) > ct.failureWindow {
@@ -65,12 +65,12 @@ func (ct *CooldownTracker) MarkFailure(provider string, reason FailoverReason) {
 	}
 }
 
-// MarkSuccess resets all counters and cooldowns for a provider.
-func (ct *CooldownTracker) MarkSuccess(provider string) {
+// MarkSuccess resets all counters and cooldowns for a specific model key.
+func (ct *CooldownTracker) MarkSuccess(key string) {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 
-	entry := ct.entries[provider]
+	entry := ct.entries[key]
 	if entry == nil {
 		return
 	}
@@ -82,12 +82,12 @@ func (ct *CooldownTracker) MarkSuccess(provider string) {
 	entry.DisabledReason = ""
 }
 
-// IsAvailable returns true if the provider is not in cooldown or disabled.
-func (ct *CooldownTracker) IsAvailable(provider string) bool {
+// IsAvailable returns true if the specific model key is not in cooldown or disabled.
+func (ct *CooldownTracker) IsAvailable(key string) bool {
 	ct.mu.RLock()
 	defer ct.mu.RUnlock()
 
-	entry := ct.entries[provider]
+	entry := ct.entries[key]
 	if entry == nil {
 		return true
 	}
@@ -107,13 +107,13 @@ func (ct *CooldownTracker) IsAvailable(provider string) bool {
 	return true
 }
 
-// CooldownRemaining returns how long until the provider becomes available.
+// CooldownRemaining returns how long until the specific model key becomes available.
 // Returns 0 if already available.
-func (ct *CooldownTracker) CooldownRemaining(provider string) time.Duration {
+func (ct *CooldownTracker) CooldownRemaining(key string) time.Duration {
 	ct.mu.RLock()
 	defer ct.mu.RUnlock()
 
-	entry := ct.entries[provider]
+	entry := ct.entries[key]
 	if entry == nil {
 		return 0
 	}
@@ -138,37 +138,37 @@ func (ct *CooldownTracker) CooldownRemaining(provider string) time.Duration {
 	return remaining
 }
 
-// ErrorCount returns the current error count for a provider.
-func (ct *CooldownTracker) ErrorCount(provider string) int {
+// ErrorCount returns the current error count for a specific model key.
+func (ct *CooldownTracker) ErrorCount(key string) int {
 	ct.mu.RLock()
 	defer ct.mu.RUnlock()
 
-	entry := ct.entries[provider]
+	entry := ct.entries[key]
 	if entry == nil {
 		return 0
 	}
 	return entry.ErrorCount
 }
 
-// FailureCount returns the failure count for a specific reason.
-func (ct *CooldownTracker) FailureCount(provider string, reason FailoverReason) int {
+// FailureCount returns the failure count for a specific reason and model key.
+func (ct *CooldownTracker) FailureCount(key string, reason FailoverReason) int {
 	ct.mu.RLock()
 	defer ct.mu.RUnlock()
 
-	entry := ct.entries[provider]
+	entry := ct.entries[key]
 	if entry == nil {
 		return 0
 	}
 	return entry.FailureCounts[reason]
 }
 
-func (ct *CooldownTracker) getOrCreate(provider string) *cooldownEntry {
-	entry := ct.entries[provider]
+func (ct *CooldownTracker) getOrCreate(key string) *cooldownEntry {
+	entry := ct.entries[key]
 	if entry == nil {
 		entry = &cooldownEntry{
 			FailureCounts: make(map[FailoverReason]int),
 		}
-		ct.entries[provider] = entry
+		ct.entries[key] = entry
 	}
 	return entry
 }
