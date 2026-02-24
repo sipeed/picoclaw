@@ -190,7 +190,12 @@ func (s *Service) Start() error {
 func (s *Service) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.stopLocked()
+}
 
+// stopLocked stops the running gateway daemon without acquiring the lock.
+// Must be called with the lock already held.
+func (s *Service) stopLocked() error {
 	logger.InfoC("daemon", "Stopping gateway daemon")
 
 	pid := s.pidFile.Read()
@@ -254,9 +259,9 @@ func (s *Service) Restart() error {
 
 	logger.InfoC("daemon", "Restarting gateway daemon")
 
-	// Stop if running
+	// Stop if running (call stopLocked to avoid deadlock)
 	if s.pidFile.IsProcessRunning() {
-		if err := s.Stop(); err != nil {
+		if err := s.stopLocked(); err != nil {
 			return fmt.Errorf("failed to stop daemon: %w", err)
 		}
 	}
