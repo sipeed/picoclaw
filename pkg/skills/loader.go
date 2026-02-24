@@ -214,15 +214,20 @@ func (sl *SkillsLoader) LoadSkillsForContext(skillNames []string) string {
 		return ""
 	}
 
-	var parts []string
+	var sb strings.Builder
+	first := true
 	for _, name := range skillNames {
 		content, ok := sl.LoadSkill(name)
 		if ok {
-			parts = append(parts, fmt.Sprintf("### Skill: %s\n\n%s", name, content))
+			if !first {
+				sb.WriteString("\n\n---\n\n")
+			}
+			fmt.Fprintf(&sb, "### Skill: %s\n\n%s", name, content)
+			first = false
 		}
 	}
 
-	return strings.Join(parts, "\n\n---\n\n")
+	return sb.String()
 }
 
 func (sl *SkillsLoader) BuildSkillsSummary() string {
@@ -231,23 +236,23 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 		return ""
 	}
 
-	var lines []string
-	lines = append(lines, "<skills>")
+	var sb strings.Builder
+	sb.WriteString("<skills>")
 	for _, s := range allSkills {
 		escapedName := escapeXML(s.Name)
 		escapedDesc := escapeXML(s.Description)
 		escapedPath := escapeXML(s.Path)
 
-		lines = append(lines, fmt.Sprintf("  <skill>"))
-		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapedName))
-		lines = append(lines, fmt.Sprintf("    <description>%s</description>", escapedDesc))
-		lines = append(lines, fmt.Sprintf("    <location>%s</location>", escapedPath))
-		lines = append(lines, fmt.Sprintf("    <source>%s</source>", s.Source))
-		lines = append(lines, "  </skill>")
+		sb.WriteString("\n  <skill>")
+		fmt.Fprintf(&sb, "\n    <name>%s</name>", escapedName)
+		fmt.Fprintf(&sb, "\n    <description>%s</description>", escapedDesc)
+		fmt.Fprintf(&sb, "\n    <location>%s</location>", escapedPath)
+		fmt.Fprintf(&sb, "\n    <source>%s</source>", s.Source)
+		sb.WriteString("\n  </skill>")
 	}
-	lines = append(lines, "</skills>")
+	sb.WriteString("\n</skills>")
 
-	return strings.Join(lines, "\n")
+	return sb.String()
 }
 
 func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {

@@ -239,11 +239,18 @@ func formatComponent(component string) string {
 }
 
 func formatFields(fields map[string]any) string {
-	var parts []string
+	var sb strings.Builder
+	sb.WriteByte('{')
+	first := true
 	for k, v := range fields {
-		parts = append(parts, fmt.Sprintf("%s=%v", k, v))
+		if !first {
+			sb.WriteString(", ")
+		}
+		fmt.Fprintf(&sb, "%s=%v", k, v)
+		first = false
 	}
-	return fmt.Sprintf("{%s}", strings.Join(parts, ", "))
+	sb.WriteByte('}')
+	return sb.String()
 }
 
 func Debug(message string) {

@@ -70,19 +70,19 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 		return fmt.Sprintf("No results for: %s", query), nil
 	}
 
-	var lines []string
-	lines = append(lines, fmt.Sprintf("Results for: %s", query))
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Results for: %s", query)
 	for i, item := range results {
 		if i >= count {
 			break
 		}
-		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+		fmt.Fprintf(&sb, "\n%d. %s\n   %s", i+1, item.Title, item.URL)
 		if item.Description != "" {
-			lines = append(lines, fmt.Sprintf("   %s", item.Description))
+			fmt.Fprintf(&sb, "\n   %s", item.Description)
 		}
 	}
 
-	return strings.Join(lines, "\n"), nil
+	return sb.String(), nil
 }
 
 type TavilySearchProvider struct {
@@ -152,19 +152,19 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 		return fmt.Sprintf("No results for: %s", query), nil
 	}
 
-	var lines []string
-	lines = append(lines, fmt.Sprintf("Results for: %s (via Tavily)", query))
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Results for: %s (via Tavily)", query)
 	for i, item := range results {
 		if i >= count {
 			break
 		}
-		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+		fmt.Fprintf(&sb, "\n%d. %s\n   %s", i+1, item.Title, item.URL)
 		if item.Content != "" {
-			lines = append(lines, fmt.Sprintf("   %s", item.Content))
+			fmt.Fprintf(&sb, "\n   %s", item.Content)
 		}
 	}
 
-	return strings.Join(lines, "\n"), nil
+	return sb.String(), nil
 }
 
 type DuckDuckGoSearchProvider struct{}
@@ -208,17 +208,9 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 		return fmt.Sprintf("No results found or extraction failed. Query: %s", query), nil
 	}
 
-	var lines []string
-	lines = append(lines, fmt.Sprintf("Results for: %s (via DuckDuckGo)", query))
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Results for: %s (via DuckDuckGo)", query)
 
-	// Pre-compile snippet regex to run inside the loop
-	// We'll search for snippets relative to the link position or just globally if needed
-	// But simple global search for snippets might mismatch order.
-	// Since we only have the raw HTML string, let's just extract snippets globally and assume order matches (risky but simple for regex)
-	// Or better: Let's assume the snippet follows the link in the HTML
-
-	// A better regex approach: iterate through text and find matches in order
-	// But for now, let's grab all snippets too
 	reSnippet := regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
 	snippetMatches := reSnippet.FindAllStringSubmatch(html, count+5)
 
@@ -239,19 +231,19 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 			}
 		}
 
-		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, title, urlStr))
+		fmt.Fprintf(&sb, "\n%d. %s\n   %s", i+1, title, urlStr)
 
 		// Attempt to attach snippet if available and index aligns
 		if i < len(snippetMatches) {
 			snippet := stripTags(snippetMatches[i][1])
 			snippet = strings.TrimSpace(snippet)
 			if snippet != "" {
-				lines = append(lines, fmt.Sprintf("   %s", snippet))
+				fmt.Fprintf(&sb, "\n   %s", snippet)
 			}
 		}
 	}
 
-	return strings.Join(lines, "\n"), nil
+	return sb.String(), nil
 }
 
 func stripTags(content string) string {
@@ -605,13 +597,16 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	result = re.ReplaceAllString(result, "\n\n")
 
 	lines := strings.Split(result, "\n")
-	var cleanLines []string
+	var sb strings.Builder
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line != "" {
-			cleanLines = append(cleanLines, line)
+			if sb.Len() > 0 {
+				sb.WriteByte('\n')
+			}
+			sb.WriteString(line)
 		}
 	}
 
-	return strings.Join(cleanLines, "\n")
+	return sb.String()
 }
