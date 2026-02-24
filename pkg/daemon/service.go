@@ -241,18 +241,13 @@ func (s *Service) stopLocked() error {
 	return nil
 }
 
-// Restart restarts the gateway daemon with automatic crash recovery.
-//
-// This method implements the auto-restart loop:
-// 1. If daemon is running, stop it first
-// 2. Start the daemon
-// 3. If it crashes, wait (exponential backoff) and restart
-// 4. Repeat up to MaxAttempts within WindowDuration
-// 5. Give up if max attempts exceeded
+// Restart restarts the gateway daemon (stop if running, then start).
+// This is a simple one-time restart. For auto-restart with crash recovery,
+// use the Run method with proper supervision.
 //
 // Returns an error if:
 // - Stop fails
-// - Max restart attempts exceeded
+// - Start fails
 func (s *Service) Restart() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -266,61 +261,98 @@ func (s *Service) Restart() error {
 		}
 	}
 
+	// Start the gateway (non-blocking, returns immediately)
+	if err := s.startLocked(); err != nil {
+		return fmt.Errorf("failed to start daemon: %w", err)
+	}
+
+	logger.InfoC("daemon", "Gateway daemon restarted successfully")
+	return nil
+}
+
+// RunWithAutoRestart starts the gateway and monitors it for crashes.
+// If the gateway crashes, it will automatically restart with exponential backoff.
+// This method blocks until the gateway crashes 3 times within 5 minutes.
+//
+// Use this for long-running daemon supervision.
+func (s *Service) RunWithAutoRestart() error {
 	// Create restart tracker
 	tracker := NewRestartTracker(s.restartPolicy)
 
-	// Restart loop
+	// Restart loop with crash recovery
 	for tracker.ShouldRestart() {
-		// Attempt to start
+		// Start the gateway and wait for it to exit
 		err := s.startInternal()
-		if err == nil {
-			// Success! Reset restart counter and return
-			tracker.Reset()
-			logger.InfoC("daemon", "Gateway daemon restarted successfully")
-			return nil
-		}
+		if err != nil {
+			// Gateway exited with an error
 
-		// Check if this is an "already running" error
-		if _, ok := err.(*AlreadyRunningError); ok {
-			return err
-		}
+			// Check if this is an "already running" error
+			if _, ok := err.(*AlreadyRunningError); ok {
+				return err
+			}
 
-		// Record the failed attempt and get backoff duration
-		backoff, backoffErr := tracker.RecordAttempt()
-		if backoffErr != nil {
-			// Max attempts exceeded
-			logger.ErrorCF("daemon", "Maximum restart attempts exceeded", map[string]any{
-				"attempts": tracker.GetAttemptCount(),
-				"max":      s.restartPolicy.MaxAttempts,
+			// Record the failed attempt and get backoff duration
+			backoff, backoffErr := tracker.RecordAttempt()
+			if backoffErr != nil {
+				// Max attempts exceeded
+				logger.ErrorCF("daemon", "Maximum restart attempts exceeded", map[string]any{
+					"attempts": tracker.GetAttemptCount(),
+					"max":      s.restartPolicy.MaxAttempts,
+				})
+				return backoffErr
+			}
+
+			// Update state with restart count
+			s.state.IncrementRestartCount()
+
+			logger.WarnCF("daemon", "Gateway daemon crashed, will restart", map[string]any{
+				"attempt":       tracker.GetAttemptCount(),
+				"backoff":       backoff.String(),
+				"error":         err.Error(),
 			})
-			return backoffErr
+
+			// Wait before next restart attempt
+			select {
+			case <-time.After(backoff):
+				// Continue to next attempt
+				continue
+			case <-s.quitChan:
+				// Abort restart loop
+				return fmt.Errorf("restart aborted")
+			}
 		}
-
-		// Update state with restart count
-		s.state.IncrementRestartCount()
-
-		logger.WarnCF("daemon", "Gateway daemon crashed, will restart", map[string]any{
-			"attempt":       tracker.GetAttemptCount(),
-			"backoff":       backoff.String(),
-			"error":         err.Error(),
-		})
-
-		// Wait before next restart attempt
-		select {
-		case <-time.After(backoff):
-			// Continue to next attempt
-		case <-s.quitChan:
-			// Abort restart loop
-			return fmt.Errorf("restart aborted")
-		}
+		// If startInternal returned nil, the gateway was stopped manually
+		// Exit the loop and return
+		break
 	}
 
-	return fmt.Errorf("maximum restart attempts exceeded")
+	return nil
 }
 
-// startInternal starts the daemon without locking.
+// startInternal starts the daemon without locking and waits for it to exit.
 // Must be called with the lock held.
+// This is used for the auto-restart loop where we monitor for crashes.
 func (s *Service) startInternal() error {
+	// Start the gateway (non-blocking)
+	if err := s.startLocked(); err != nil {
+		return err
+	}
+
+	// Wait for the process to exit
+	pid := s.pidFile.Read()
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("failed to find process: %w", err)
+	}
+
+	// Block until process exits
+	_, err = process.Wait()
+	return err
+}
+
+// startLocked starts the gateway daemon without locking and returns immediately.
+// Must be called with the lock held.
+func (s *Service) startLocked() error {
 	// Prepare command
 	cmd := exec.Command(s.binaryPath, s.buildArgs()...)
 	cmd.Env = append(os.Environ(), "PICOCLAW_DAEMON=1")
@@ -342,11 +374,19 @@ func (s *Service) startInternal() error {
 
 	pid := cmd.Process.Pid
 
-	// Write PID file
-	if err := s.pidFile.Write(); err != nil {
+	// Write PID file with the child's PID
+	if err := s.pidFile.WritePID(pid); err != nil {
 		cmd.Process.Kill()
 		logFile.Close()
 		return fmt.Errorf("failed to write PID file: %w", err)
+	}
+
+	// Verify the child process is actually running
+	time.Sleep(100 * time.Millisecond)
+	if !s.pidFile.IsProcessRunning() {
+		s.pidFile.Remove()
+		logFile.Close()
+		return fmt.Errorf("gateway process failed to start (check log file: %s)", s.logConfig.Path)
 	}
 
 	// Update state
@@ -354,8 +394,12 @@ func (s *Service) startInternal() error {
 	s.state.SetStartTime(time.Now())
 	s.state.SetVersion(s.version)
 
-	// Wait for process to exit
-	return cmd.Wait()
+	logger.InfoCF("daemon", "Gateway daemon started", map[string]any{
+		"pid":     pid,
+		"version": s.version,
+	})
+
+	return nil
 }
 
 // Status returns the current status of the gateway daemon.
