@@ -522,9 +522,11 @@ RAM 制約がない前提での推奨順:
 
 | ファイル | 変更 | 注意 |
 |----------|------|------|
-| `pkg/agent/session_tracker.go:125` | `ListActive()` の戻り値を `[]*SessionEntry` に | 呼び出し側 (`cmd_gateway.go`, `miniapp.go`) の型合わせ |
 | `pkg/logger/logger.go:88-92` | リングバッファ内部型を `[]*LogEntry` に変更 + `visit(fn)` メソッド追加。`RecentLogs()` を visit ベースに書き換え (フィルタで弾くエントリのコピーを排除) | `add()` 毎に1ヒープアロケーション増だがログI/Oパスなので許容 |
-| `pkg/skills/registry.go:132-133` | `SearchAll()` 内の registries コピーをポインタスライスに | ロック範囲の再確認 |
+
+**削除した項目**:
+- `session_tracker.go:125` — `Touch()` がロックなしにフィールドを直接更新しており、`*entry` 値コピー (L125) が唯一の安全装置。ポインタ返却は安全上の退行。`SessionEntry` は ~80バイトの小さい struct でコピーコストも無視可能。
+- `skills/registry.go:132-133` — `SkillRegistry` はインターフェース型。`*SkillRegistry` は pointer-to-interface アンチパターン。コピーも n × 16バイト (n=2〜5) で無視可能。
 
 **コミット**: 1つにまとめる。
 
@@ -603,7 +605,7 @@ content パススルーで解消されるのは `ReadLongTerm()` の多重呼び
 
 対応: `GetPlanContext()` / `FormatPlanDisplay()` 内で1回 `strings.Split(content, "\n")` し、`[]string` (行スライス) を受け取る内部ヘルパーを追加。既存の `content string` を受け取るヘルパーは互換性のため残す。(`GetMemoryContext()` 自身は Split ヘルパーを直接呼ばないため対象外。Split は呼び先の `GetPlanContext()` 等で発生する。)
 
-**効果範囲の限定**: この統合が効くのは読み取り専用メソッド (`GetPlanContext`, `GetReviewContext`, `FormatPlanDisplay` 等) のみ。ミューテーション系 (`MarkStep`, `AddStep`) は `GetMemoryContext()` を経由せず直接 `ReadLongTerm()` + `Split` + `WriteLongTerm()` を実行するため、この Phase では対象外。ミューテーション系の Split 統合には ParsedPlan インメモリモデル (Phase 5) が必要。
+**効果範囲の限定**: この統合が効くのは読み取り専用メソッド (`GetPlanContext`, `FormatPlanDisplay`) のみ。ミューテーション系 (`MarkStep`, `AddStep`) は `GetMemoryContext()` を経由せず直接 `ReadLongTerm()` + `Split` + `WriteLongTerm()` を実行するため、この Phase では対象外。ミューテーション系の Split 統合には ParsedPlan インメモリモデル (Phase 5) が必要。
 
 **コミット**: 1つ。
 
@@ -680,81 +682,4 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 
 ---
 
-## FEEDBACK — 第9回レビュー (N) — 実装安全性確認
-
-> レビュー日: 2026-02-24。loop.go の Save 呼び出し箇所 (L299/836/996/2339/2568) をすべて確認済み ✓。
-> Phase 1 の2項目に偽最適化 / 安全性問題あり。
-
-### N-1. Phase 1: `session_tracker.go:125` — `[]*SessionEntry` 返却は安全でない (🔴 削除推奨)
-
-**問題**: `ListActive()` の戻り値を `[]SessionEntry` から `[]*SessionEntry` に変更する提案だが、`SessionTracker` の設計と合わない。
-
-**現状コード**:
-```go
-// Touch() L53 — ロックなしにフィールドを直接更新
-func (st *SessionTracker) Touch(sessionKey, channel, chatID, dir string, meta *TouchMeta) {
-    val, loaded := st.entries.Load(sessionKey)
-    if loaded {
-        entry := val.(*SessionEntry)
-        entry.LastSeenAt = now    // ← struct フィールドを直接書き込む (per-struct ロックなし)
-        entry.TouchDir = dir      // ← 同上
-```
-
-```go
-// ListActive() L119-133 — *entry を値コピーして返す
-result = append(result, *entry)  // L125 ← 値コピーが現在の唯一の安全装置
-```
-
-`SessionTracker` は `sync.Map` で `*SessionEntry` を保持し、`Touch()` が per-struct ロックなしにフィールドを直接更新する。現在の `ListActive()` が `*entry` を値コピー (L125) しているのは、呼び出し時点のスナップショットを呼び出し側に渡すため。
-
-`[]*SessionEntry` を返すと呼び出し側がライブオブジェクトへのポインタを保持し、並行する `Touch()` の書き込みが見える。これは安全上の退行。
-
-**追記 — コストの観点でも不要**: `SessionEntry` は8フィールドの小さい struct (~80 バイト)、`ListActive()` の呼び出し頻度は低い (UI リクエスト毎)。コピーコストは完全に無視できる。
-
-**対応**: Phase 1 から `session_tracker.go:125` の項目を削除する。
-
----
-
-### N-2. Phase 1: `skills/registry.go:132-133` — SkillRegistry はインターフェース、pointer-to-interface はアンチパターン (🟡 削除推奨)
-
-**問題**: "registries コピーをポインタスライスに" とあるが、`rm.registries` の型は `[]SkillRegistry`（L83）であり `SkillRegistry` はインターフェース。
-
-インターフェース値を `*SkillRegistry` にすると **pointer-to-interface** になり、Go ではアンチパターン (インターフェース自体がすでに型+ポインタの2ワード構造)。
-
-**コストの実態**:
-```go
-regs := make([]SkillRegistry, len(rm.registries))  // L132
-copy(regs, rm.registries)                          // L133 — n * 16バイトをコピー
-```
-通常 `n = 2〜5` レジストリ → 32〜80 バイトのコピー。無視できる。
-
-**対応**: Phase 1 から `skills/registry.go:132-133` の項目を削除する。
-
----
-
-## FEEDBACK — 第8回レビュー (M)
-
-> レビュー日: 2026-02-24。アクション指示は正確。Phase 3-2 の説明注記に軽微な誤りあり。
-
-### M-1. Phase 3-2「効果範囲の限定」の例示が不正確 (軽微)
-
-**指摘内容**: Phase 3-2 の説明注記に「この統合が効くのは読み取り専用メソッド (`GetPlanContext`, `GetReviewContext`, `FormatPlanDisplay` 等) のみ」とあるが、`GetReviewContext()` は `strings.Split` を呼ぶヘルパーを使わないため Phase 3-2 の恩恵がない。
-
-**`GetReviewContext()` L545-555 の実態**:
-```go
-func (ms *MemoryStore) GetReviewContext() string {
-    content := ms.ReadLongTerm()
-    var sb strings.Builder
-    sb.WriteString(content)   // content をそのまま書き込むだけ — Split なし
-    ...
-}
-```
-
-同様に `GetInterviewContext()` (L497-541) も `sb.WriteString(content)` するだけで split ヘルパーを呼ばない。
-
-Phase 3-2 で実際に恩恵を受けるのは:
-- `GetPlanContext()` — `extractPhaseContent` / `extractCommandsSection` / `extractContextSection` を直接呼ぶ (対応セクションに正しく記載済み ✓)
-- `FormatPlanDisplay()` — `getPlanPhasesFrom` / `extractCommandsSection` / `extractContextSection` を直接呼ぶ (同上 ✓)
-
-**実装への影響**: なし (対応セクションの指示は正確)。「効果範囲の限定」注記の例示を `GetReviewContext` → `GetPlanContext`/`FormatPlanDisplay` に差し替えれば正確になる。
 
