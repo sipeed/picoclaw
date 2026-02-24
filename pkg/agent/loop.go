@@ -708,6 +708,22 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		interrupt:   make(chan string, 1),
 	}
 
+	// Guarantee heartbeat worktree cleanup on ALL exit paths (error, panic, normal).
+	defer func() {
+		if opts.Background && agent.IsInWorktree(opts.SessionKey) {
+			commitMsg := "heartbeat: auto-save"
+			wtResult, _ := agent.DeactivateWorktree(opts.SessionKey, commitMsg, false)
+			if wtResult != nil && wtResult.CommitsAhead > 0 && !constants.IsInternalChannel(opts.Channel) {
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: opts.Channel,
+					ChatID:  opts.ChatID,
+					Content: fmt.Sprintf("Heartbeat made code changes on branch `%s` (%d commits).",
+						wtResult.Branch, wtResult.CommitsAhead),
+				})
+			}
+		}
+	}()
+
 	// For background tasks (cron/heartbeat), generate a TaskID and send notification
 	isBackgroundTask := opts.Background && al.state != nil
 	if isBackgroundTask && opts.TaskID == "" {
@@ -1002,20 +1018,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			"iterations":   iteration,
 			"final_length": len(finalContent),
 		})
-
-	// 10. Heartbeat worktree cleanup: auto-commit and dispose after background task
-	if opts.Background && agent.IsInWorktree(opts.SessionKey) {
-		commitMsg := "heartbeat: auto-save"
-		wtResult, _ := agent.DeactivateWorktree(opts.SessionKey, commitMsg, false)
-		if wtResult != nil && wtResult.CommitsAhead > 0 && !constants.IsInternalChannel(opts.Channel) {
-			al.bus.PublishOutbound(bus.OutboundMessage{
-				Channel: opts.Channel,
-				ChatID:  opts.ChatID,
-				Content: fmt.Sprintf("Heartbeat made code changes on branch `%s` (%d commits).",
-					wtResult.Branch, wtResult.CommitsAhead),
-			})
-		}
-	}
 
 	return finalContent, nil
 }
