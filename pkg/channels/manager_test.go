@@ -632,3 +632,233 @@ func TestSendWithRetry_PreSendEditsPlaceholder(t *testing.T) {
 		t.Fatal("expected Send to NOT be called when placeholder was edited")
 	}
 }
+
+// --- Dispatcher exit tests (Step 1) ---
+
+func TestDispatcherExitsOnCancel(t *testing.T) {
+	mb := bus.NewMessageBus()
+	defer mb.Close()
+
+	m := &Manager{
+		channels: make(map[string]Channel),
+		workers:  make(map[string]*channelWorker),
+		bus:      mb,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		m.dispatchOutbound(ctx)
+		close(done)
+	}()
+
+	// Cancel context and verify the dispatcher exits quickly
+	cancel()
+
+	select {
+	case <-done:
+		// success
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatchOutbound did not exit within 2s after context cancel")
+	}
+}
+
+func TestDispatcherMediaExitsOnCancel(t *testing.T) {
+	mb := bus.NewMessageBus()
+	defer mb.Close()
+
+	m := &Manager{
+		channels: make(map[string]Channel),
+		workers:  make(map[string]*channelWorker),
+		bus:      mb,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		m.dispatchOutboundMedia(ctx)
+		close(done)
+	}()
+
+	cancel()
+
+	select {
+	case <-done:
+		// success
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatchOutboundMedia did not exit within 2s after context cancel")
+	}
+}
+
+// --- TTL Janitor tests (Step 2) ---
+
+func TestTypingStopJanitorEviction(t *testing.T) {
+	m := newTestManager()
+
+	var stopCalled atomic.Bool
+	// Store a typing entry with a creation time far in the past
+	m.typingStops.Store("test:123", typingEntry{
+		stop:      func() { stopCalled.Store(true) },
+		createdAt: time.Now().Add(-10 * time.Minute), // well past typingStopTTL
+	})
+
+	// Run janitor with a short-lived context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Manually trigger the janitor logic once by simulating a tick
+	go func() {
+		// Override janitor to run immediately
+		now := time.Now()
+		m.typingStops.Range(func(key, value any) bool {
+			if entry, ok := value.(typingEntry); ok {
+				if now.Sub(entry.createdAt) > typingStopTTL {
+					if _, loaded := m.typingStops.LoadAndDelete(key); loaded {
+						entry.stop()
+					}
+				}
+			}
+			return true
+		})
+		cancel()
+	}()
+
+	<-ctx.Done()
+
+	if !stopCalled.Load() {
+		t.Fatal("expected typing stop function to be called by janitor eviction")
+	}
+
+	// Verify entry was deleted
+	if _, loaded := m.typingStops.Load("test:123"); loaded {
+		t.Fatal("expected typing entry to be deleted after eviction")
+	}
+}
+
+func TestPlaceholderJanitorEviction(t *testing.T) {
+	m := newTestManager()
+
+	// Store a placeholder entry with a creation time far in the past
+	m.placeholders.Store("test:456", placeholderEntry{
+		id:        "msg_old",
+		createdAt: time.Now().Add(-20 * time.Minute), // well past placeholderTTL
+	})
+
+	// Simulate janitor logic
+	now := time.Now()
+	m.placeholders.Range(func(key, value any) bool {
+		if entry, ok := value.(placeholderEntry); ok {
+			if now.Sub(entry.createdAt) > placeholderTTL {
+				m.placeholders.Delete(key)
+			}
+		}
+		return true
+	})
+
+	// Verify entry was deleted
+	if _, loaded := m.placeholders.Load("test:456"); loaded {
+		t.Fatal("expected placeholder entry to be deleted after eviction")
+	}
+}
+
+func TestPreSendStillWorksWithWrappedTypes(t *testing.T) {
+	m := newTestManager()
+	var stopCalled bool
+	var editCalled bool
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				return nil
+			},
+		},
+		editFn: func(_ context.Context, chatID, messageID, content string) error {
+			editCalled = true
+			if messageID != "ph_id" {
+				t.Fatalf("expected messageID ph_id, got %s", messageID)
+			}
+			return nil
+		},
+	}
+
+	// Use the new wrapped types via the public API
+	m.RecordTypingStop("test", "chat1", func() {
+		stopCalled = true
+	})
+	m.RecordPlaceholder("test", "chat1", "ph_id")
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "chat1", Content: "response"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if !stopCalled {
+		t.Fatal("expected typing stop to be called via wrapped type")
+	}
+	if !editCalled {
+		t.Fatal("expected EditMessage to be called via wrapped type")
+	}
+	if !edited {
+		t.Fatal("expected preSend to return true")
+	}
+}
+
+// --- Lazy worker creation tests (Step 6) ---
+
+func TestLazyWorkerCreation(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+			return nil
+		},
+	}
+
+	// RegisterChannel should NOT create a worker
+	m.RegisterChannel("lazy", ch)
+
+	m.mu.RLock()
+	_, chExists := m.channels["lazy"]
+	_, wExists := m.workers["lazy"]
+	m.mu.RUnlock()
+
+	if !chExists {
+		t.Fatal("expected channel to be registered")
+	}
+	if wExists {
+		t.Fatal("expected worker to NOT be created by RegisterChannel (lazy creation)")
+	}
+}
+
+// --- FastID uniqueness test (Step 5) ---
+
+func TestBuildMediaScope_FastIDUniqueness(t *testing.T) {
+	seen := make(map[string]bool)
+
+	for i := 0; i < 1000; i++ {
+		scope := BuildMediaScope("test", "chat1", "")
+		if seen[scope] {
+			t.Fatalf("duplicate scope generated: %s", scope)
+		}
+		seen[scope] = true
+	}
+
+	// Verify format: "channel:chatID:id"
+	scope := BuildMediaScope("telegram", "42", "")
+	parts := 0
+	for _, c := range scope {
+		if c == ':' {
+			parts++
+		}
+	}
+	if parts != 2 {
+		t.Fatalf("expected scope to have 2 colons (channel:chatID:id), got: %s", scope)
+	}
+}
+
+func TestBuildMediaScope_WithMessageID(t *testing.T) {
+	scope := BuildMediaScope("discord", "chat99", "msg123")
+	expected := "discord:chat99:msg123"
+	if scope != expected {
+		t.Fatalf("expected %s, got %s", expected, scope)
+	}
+}

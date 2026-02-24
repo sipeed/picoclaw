@@ -26,13 +26,29 @@ import (
 )
 
 const (
-	defaultChannelQueueSize = 100
+	defaultChannelQueueSize = 16
 	defaultRateLimit        = 10 // default 10 msg/s
 	maxRetries              = 3
 	rateLimitDelay          = 1 * time.Second
 	baseBackoff             = 500 * time.Millisecond
 	maxBackoff              = 8 * time.Second
+
+	janitorInterval = 10 * time.Second
+	typingStopTTL   = 5 * time.Minute
+	placeholderTTL  = 10 * time.Minute
 )
+
+// typingEntry wraps a typing stop function with a creation timestamp for TTL eviction.
+type typingEntry struct {
+	stop      func()
+	createdAt time.Time
+}
+
+// placeholderEntry wraps a placeholder ID with a creation timestamp for TTL eviction.
+type placeholderEntry struct {
+	id        string
+	createdAt time.Time
+}
 
 // channelRateConfig maps channel name to per-second rate limit.
 var channelRateConfig = map[string]float64{
@@ -73,14 +89,14 @@ type asyncTask struct {
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
 	key := channel + ":" + chatID
-	m.placeholders.Store(key, placeholderID)
+	m.placeholders.Store(key, placeholderEntry{id: placeholderID, createdAt: time.Now()})
 }
 
 // RecordTypingStop registers a typing stop function for later invocation.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	key := channel + ":" + chatID
-	m.typingStops.Store(key, stop)
+	m.typingStops.Store(key, typingEntry{stop: stop, createdAt: time.Now()})
 }
 
 // preSend handles typing stop and placeholder editing before sending a message.
@@ -90,16 +106,16 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 
 	// 1. Stop typing
 	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
-		if stop, ok := v.(func()); ok {
-			stop() // idempotent, safe
+		if entry, ok := v.(typingEntry); ok {
+			entry.stop() // idempotent, safe
 		}
 	}
 
 	// 2. Try editing placeholder
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
-		if placeholderID, ok := v.(string); ok && placeholderID != "" {
+		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
-				if err := editor.EditMessage(ctx, msg.ChatID, placeholderID, msg.Content); err == nil {
+				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
 					return true // edited successfully, skip Send
 				}
 				// edit failed → fall through to normal Send
@@ -156,7 +172,6 @@ func (m *Manager) initChannel(name, displayName string) {
 			setter.SetPlaceholderRecorder(m)
 		}
 		m.channels[name] = ch
-		m.workers[name] = newChannelWorker(name, ch)
 		logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
 			"channel": displayName,
 		})
@@ -285,11 +300,11 @@ func (m *Manager) StartAll(ctx context.Context) error {
 				"channel": name,
 				"error":   err.Error(),
 			})
+			continue
 		}
-	}
-
-	// Start per-channel workers
-	for name, w := range m.workers {
+		// Lazily create worker only after channel starts successfully
+		w := newChannelWorker(name, channel)
+		m.workers[name] = w
 		go m.runWorker(dispatchCtx, name, w)
 		go m.runMediaWorker(dispatchCtx, name, w)
 	}
@@ -297,6 +312,9 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	// Start the dispatcher that reads from the bus and routes to workers
 	go m.dispatchOutbound(dispatchCtx)
 	go m.dispatchOutboundMedia(dispatchCtx)
+
+	// Start the TTL janitor that cleans up stale typing/placeholder entries
+	go m.runTTLJanitor(dispatchCtx)
 
 	// Start shared HTTP server if configured
 	if m.httpServer != nil {
@@ -342,17 +360,25 @@ func (m *Manager) StopAll(ctx context.Context) error {
 
 	// Close all worker queues and wait for them to drain
 	for _, w := range m.workers {
-		close(w.queue)
+		if w != nil {
+			close(w.queue)
+		}
 	}
 	for _, w := range m.workers {
-		<-w.done
+		if w != nil {
+			<-w.done
+		}
 	}
 	// Close all media worker queues and wait for them to drain
 	for _, w := range m.workers {
-		close(w.mediaQueue)
+		if w != nil {
+			close(w.mediaQueue)
+		}
 	}
 	for _, w := range m.workers {
-		<-w.mediaDone
+		if w != nil {
+			<-w.mediaDone
+		}
 	}
 
 	// Stop all channels
@@ -487,40 +513,39 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 	logger.InfoC("channels", "Outbound dispatcher started")
 
 	for {
-		select {
-		case <-ctx.Done():
+		msg, ok := m.bus.SubscribeOutbound(ctx)
+		if !ok {
 			logger.InfoC("channels", "Outbound dispatcher stopped")
 			return
-		default:
-			msg, ok := m.bus.SubscribeOutbound(ctx)
-			if !ok {
-				continue
-			}
+		}
 
-			// Silently skip internal channels
-			if constants.IsInternalChannel(msg.Channel) {
-				continue
-			}
+		// Silently skip internal channels
+		if constants.IsInternalChannel(msg.Channel) {
+			continue
+		}
 
-			m.mu.RLock()
-			_, exists := m.channels[msg.Channel]
-			w, wExists := m.workers[msg.Channel]
-			m.mu.RUnlock()
+		m.mu.RLock()
+		_, exists := m.channels[msg.Channel]
+		w, wExists := m.workers[msg.Channel]
+		m.mu.RUnlock()
 
-			if !exists {
-				logger.WarnCF("channels", "Unknown channel for outbound message", map[string]any{
-					"channel": msg.Channel,
-				})
-				continue
-			}
+		if !exists {
+			logger.WarnCF("channels", "Unknown channel for outbound message", map[string]any{
+				"channel": msg.Channel,
+			})
+			continue
+		}
 
-			if wExists {
-				select {
-				case w.queue <- msg:
-				case <-ctx.Done():
-					return
-				}
+		if wExists && w != nil {
+			select {
+			case w.queue <- msg:
+			case <-ctx.Done():
+				return
 			}
+		} else if exists {
+			logger.WarnCF("channels", "Channel has no active worker, skipping message", map[string]any{
+				"channel": msg.Channel,
+			})
 		}
 	}
 }
@@ -529,40 +554,39 @@ func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
 	logger.InfoC("channels", "Outbound media dispatcher started")
 
 	for {
-		select {
-		case <-ctx.Done():
+		msg, ok := m.bus.SubscribeOutboundMedia(ctx)
+		if !ok {
 			logger.InfoC("channels", "Outbound media dispatcher stopped")
 			return
-		default:
-			msg, ok := m.bus.SubscribeOutboundMedia(ctx)
-			if !ok {
-				continue
-			}
+		}
 
-			// Silently skip internal channels
-			if constants.IsInternalChannel(msg.Channel) {
-				continue
-			}
+		// Silently skip internal channels
+		if constants.IsInternalChannel(msg.Channel) {
+			continue
+		}
 
-			m.mu.RLock()
-			_, exists := m.channels[msg.Channel]
-			w, wExists := m.workers[msg.Channel]
-			m.mu.RUnlock()
+		m.mu.RLock()
+		_, exists := m.channels[msg.Channel]
+		w, wExists := m.workers[msg.Channel]
+		m.mu.RUnlock()
 
-			if !exists {
-				logger.WarnCF("channels", "Unknown channel for outbound media message", map[string]any{
-					"channel": msg.Channel,
-				})
-				continue
-			}
+		if !exists {
+			logger.WarnCF("channels", "Unknown channel for outbound media message", map[string]any{
+				"channel": msg.Channel,
+			})
+			continue
+		}
 
-			if wExists {
-				select {
-				case w.mediaQueue <- msg:
-				case <-ctx.Done():
-					return
-				}
+		if wExists && w != nil {
+			select {
+			case w.mediaQueue <- msg:
+			case <-ctx.Done():
+				return
 			}
+		} else if exists {
+			logger.WarnCF("channels", "Channel has no active worker, skipping media message", map[string]any{
+				"channel": msg.Channel,
+			})
 		}
 	}
 }
@@ -644,6 +668,40 @@ func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channe
 	})
 }
 
+// runTTLJanitor periodically scans the typingStops and placeholders maps
+// and evicts entries that have exceeded their TTL. This prevents memory
+// accumulation when outbound paths fail to trigger preSend (e.g. LLM errors).
+func (m *Manager) runTTLJanitor(ctx context.Context) {
+	ticker := time.NewTicker(janitorInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			m.typingStops.Range(func(key, value any) bool {
+				if entry, ok := value.(typingEntry); ok {
+					if now.Sub(entry.createdAt) > typingStopTTL {
+						if _, loaded := m.typingStops.LoadAndDelete(key); loaded {
+							entry.stop() // idempotent, safe
+						}
+					}
+				}
+				return true
+			})
+			m.placeholders.Range(func(key, value any) bool {
+				if entry, ok := value.(placeholderEntry); ok {
+					if now.Sub(entry.createdAt) > placeholderTTL {
+						m.placeholders.Delete(key)
+					}
+				}
+				return true
+			})
+		}
+	}
+}
+
 func (m *Manager) GetChannel(name string) (Channel, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -680,13 +738,12 @@ func (m *Manager) RegisterChannel(name string, channel Channel) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.channels[name] = channel
-	m.workers[name] = newChannelWorker(name, channel)
 }
 
 func (m *Manager) UnregisterChannel(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if w, ok := m.workers[name]; ok {
+	if w, ok := m.workers[name]; ok && w != nil {
 		close(w.queue)
 		<-w.done
 		close(w.mediaQueue)
@@ -712,7 +769,7 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 		Content: content,
 	}
 
-	if wExists {
+	if wExists && w != nil {
 		select {
 		case w.queue <- msg:
 			return nil

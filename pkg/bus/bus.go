@@ -11,6 +11,8 @@ import (
 // ErrBusClosed is returned when publishing to a closed MessageBus.
 var ErrBusClosed = errors.New("message bus closed")
 
+const defaultBusBufferSize = 16
+
 type MessageBus struct {
 	inbound       chan InboundMessage
 	outbound      chan OutboundMessage
@@ -21,9 +23,9 @@ type MessageBus struct {
 
 func NewMessageBus() *MessageBus {
 	return &MessageBus{
-		inbound:       make(chan InboundMessage, 100),
-		outbound:      make(chan OutboundMessage, 100),
-		outboundMedia: make(chan OutboundMediaMessage, 100),
+		inbound:       make(chan InboundMessage, defaultBusBufferSize),
+		outbound:      make(chan OutboundMessage, defaultBusBufferSize),
+		outboundMedia: make(chan OutboundMediaMessage, defaultBusBufferSize),
 		done:          make(chan struct{}),
 	}
 }

@@ -2,10 +2,13 @@ package channels
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"encoding/hex"
+	"strconv"
 	"strings"
 	"sync/atomic"
-
-	"github.com/google/uuid"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -13,6 +16,28 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 )
+
+var (
+	fastIDCounter uint64
+	fastIDPrefix  string
+)
+
+func init() {
+	// One-time read from crypto/rand for a unique prefix (single syscall).
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// fallback to time-based prefix
+		binary.BigEndian.PutUint64(b[:], uint64(time.Now().UnixNano()))
+	}
+	fastIDPrefix = hex.EncodeToString(b[:])
+}
+
+// fastID generates a unique ID using a random prefix and an atomic counter.
+// Much cheaper than uuid.New() which calls crypto/rand.Read on every invocation.
+func fastID() string {
+	n := atomic.AddUint64(&fastIDCounter, 1)
+	return fastIDPrefix + strconv.FormatUint(n, 16)
+}
 
 type Channel interface {
 	Name() string
@@ -264,7 +289,7 @@ func (c *BaseChannel) GetPlaceholderRecorder() PlaceholderRecorder {
 func BuildMediaScope(channel, chatID, messageID string) string {
 	id := messageID
 	if id == "" {
-		id = uuid.New().String()
+		id = fastID()
 	}
 	return channel + ":" + chatID + ":" + id
 }
