@@ -232,7 +232,8 @@ picoclaw onboard
     {
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
-      "api_key": "your-api-key"
+      "api_key": "your-api-key",
+      "request_timeout": 300
     },
     {
       "model_name": "claude-sonnet-4.6",
@@ -262,6 +263,7 @@ picoclaw onboard
 ```
 
 > **New**: The `model_list` configuration format allows zero-code provider addition. See [Model Configuration](#model-configuration-model_list) for details.
+> `request_timeout` is optional and uses seconds. If omitted or set to `<= 0`, PicoClaw uses the default timeout (120s).
 
 **3. Get API Keys**
 
@@ -915,7 +917,8 @@ This design also enables **multi-agent support** with flexible provider selectio
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-..."
+  "api_key": "sk-...",
+  "request_timeout": 300
 }
 ```
 

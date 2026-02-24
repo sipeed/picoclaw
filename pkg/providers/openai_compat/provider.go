@@ -34,13 +34,24 @@ type Provider struct {
 	httpClient     *http.Client
 }
 
+const defaultRequestTimeout = 120 * time.Second
+
 func NewProvider(apiKey, apiBase, proxy string) *Provider {
 	return NewProviderWithMaxTokensField(apiKey, apiBase, proxy, "")
 }
 
 func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
+	return NewProviderWithMaxTokensFieldAndTimeout(apiKey, apiBase, proxy, maxTokensField, 0)
+}
+
+func NewProviderWithMaxTokensFieldAndTimeout(apiKey, apiBase, proxy, maxTokensField string, requestTimeoutSeconds int) *Provider {
+	timeout := defaultRequestTimeout
+	if requestTimeoutSeconds > 0 {
+		timeout = time.Duration(requestTimeoutSeconds) * time.Second
+	}
+
 	client := &http.Client{
-		Timeout: 120 * time.Second,
+		Timeout: timeout,
 	}
 
 	if proxy != "" {
