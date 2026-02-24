@@ -44,7 +44,10 @@ func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string
 	return NewProviderWithMaxTokensFieldAndTimeout(apiKey, apiBase, proxy, maxTokensField, 0)
 }
 
-func NewProviderWithMaxTokensFieldAndTimeout(apiKey, apiBase, proxy, maxTokensField string, requestTimeoutSeconds int) *Provider {
+func NewProviderWithMaxTokensFieldAndTimeout(
+	apiKey, apiBase, proxy, maxTokensField string,
+	requestTimeoutSeconds int,
+) *Provider {
 	timeout := defaultRequestTimeout
 	if requestTimeoutSeconds > 0 {
 		timeout = time.Duration(requestTimeoutSeconds) * time.Second
