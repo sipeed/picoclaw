@@ -7,6 +7,26 @@ import (
 	"time"
 )
 
+// humanDuration formats a time.Duration into a concise human-readable string.
+// Examples: "45s", "4m32s", "1h5m", "2h0m".
+func humanDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		m := int(d.Minutes())
+		s := int(d.Seconds()) % 60
+		if s == 0 {
+			return fmt.Sprintf("%dm", m)
+		}
+		return fmt.Sprintf("%dm%ds", m, s)
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	return fmt.Sprintf("%dh%dm", h, m)
+}
+
 // FallbackChain orchestrates model fallback across multiple candidates.
 type FallbackChain struct {
 	cooldown *CooldownTracker
@@ -111,9 +131,8 @@ func (fc *FallbackChain) Execute(
 				Skipped:  true,
 				Reason:   FailoverRateLimit,
 				Error: fmt.Errorf(
-					"provider %s in cooldown (%s remaining)",
-					candidate.Provider,
-					remaining.Round(time.Second),
+					"skipped (cooldown %s remaining)",
+					humanDuration(remaining),
 				),
 			})
 			continue
@@ -277,7 +296,11 @@ func (e *FallbackExhaustedError) Error() string {
 	sb.WriteString(fmt.Sprintf("fallback: all %d candidates failed:", len(e.Attempts)))
 	for i, a := range e.Attempts {
 		if a.Skipped {
-			sb.WriteString(fmt.Sprintf("\n  [%d] %s/%s: skipped (cooldown)", i+1, a.Provider, a.Model))
+			if a.Error != nil {
+				sb.WriteString(fmt.Sprintf("\n  [%d] %s/%s: %v", i+1, a.Provider, a.Model, a.Error))
+			} else {
+				sb.WriteString(fmt.Sprintf("\n  [%d] %s/%s: skipped (cooldown)", i+1, a.Provider, a.Model))
+			}
 		} else {
 			sb.WriteString(fmt.Sprintf("\n  [%d] %s/%s: %v (reason=%s, %s)",
 				i+1, a.Provider, a.Model, a.Error, a.Reason, a.Duration.Round(time.Millisecond)))
