@@ -120,3 +120,109 @@ Lint: `golangci-lint run`
 | 重要度 | ファイル | 行 | 内容 |
 |--------|----------|----|------|
 | 🟡 | `pkg/agent/memory.go` | 233, 285, 352, 381 | `extractPhaseContent` / `GetPlanPhases` / `MarkStep` / `AddStep` — 同一 MEMORY.md を関数毎に Split → 統合 or キャッシュ |
+
+---
+
+### コードのにおい — 見落としやすいパターン集
+
+上記の個別発見を横断して見ると、このコードベースに繰り返し現れる**7つの構造的なにおい**がある。新しいコードを書くとき・レビューするときのチェックリストとして使う。
+
+#### 1. 「先に集めてから結合」パターン (`[]string` + `strings.Join`)
+
+```go
+// においのある書き方
+var parts []string
+for _, x := range items {
+    parts = append(parts, fmt.Sprintf("...%s...", x))
+}
+return strings.Join(parts, "\n")
+```
+
+`var parts []string` → ループ内 `append` → 最後に `strings.Join` という3ステップの流れ。見た目が整理されているため気づきにくいが、中間スライスと最終結合の2回アロケーションが発生する。`strings.Builder` に一本化すれば1回で済む。**web.go の検索プロバイダー4箇所、logger.go、skills/loader.go など計10箇所以上で観察された。**
+
+#### 2. 「変換してから渡す」パターン ([]byte ↔ string の橋渡し)
+
+```go
+// においのある書き方
+payload, _ := json.Marshal(body)
+req, _ := http.NewRequest("POST", url, strings.NewReader(string(payload)))
+//                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//                                    []byte → string → io.Reader と2段変換
+```
+
+`json.Marshal` は `[]byte` を返すのに、直後に `string()` へキャストして `strings.NewReader` に渡す。`bytes.NewReader(payload)` で変換ゼロで済む。**web.go の Perplexity プロバイダー、各 CLI プロバイダーで観察された。**
+
+#### 3. 「ループ内で静的なものを毎回生成」パターン
+
+```go
+// においのある書き方
+for _, tool := range tools {
+    paramsJSON, _ := json.Marshal(tool.Parameters) // ← ループ内 Marshal
+    prompt += fmt.Sprintf("...", string(paramsJSON))
+}
+```
+
+ループ内で毎イテレーション行われる処理のうち、**入力が変わらないものが含まれていないか**を疑う。典型例：
+- ループ内での `json.Marshal` (引数が定数的なとき)
+- ループ内での `string(rune)` 変換 (1文字ずつ変換)
+- ループ内でのスライス/マップリテラル生成
+
+**telegram.go の `wrapByDisplayWidth`、openai_compat の streaming ループ、codex の tool 定義ループで観察された。**
+
+#### 4. 「防衛的コピーが広すぎる」パターン (スレッド安全の過剰適用)
+
+```go
+// においのある書き方
+func (m *Manager) GetHistory() []Message {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    result := make([]Message, len(m.messages))
+    copy(result, m.messages)   // ← 全件コピーしてからロック解除
+    return result
+}
+```
+
+並行安全のため slice 全体を防衛的にコピーするのは正しいが、**コピー範囲が呼び出し側の実際の用途より広い**ことがある。読み取り専用なら `sync.RWMutex` + ポインタ返却 + immutable 制約、または Copy-on-Write で代替できる場合がある。**session/manager.go の GetHistory・Save で観察された。**
+
+#### 5. 「ファイルを読むたびにパース」パターン (ステートレスな繰り返しパース)
+
+```go
+// においのある書き方
+func GetPlanPhases(content string) []string {
+    lines := strings.Split(content, "\n")   // ← 呼び出し毎にフルスキャン
+    ...
+}
+func MarkStep(content, step string) string {
+    lines := strings.Split(content, "\n")   // ← 同じ content を再度スキャン
+    ...
+}
+```
+
+同一のファイル内容を受け取る複数の関数がそれぞれ独立して `strings.Split` → スキャン → `strings.Join` している。呼び出し側でパース済み表現（行スライスなど）を保持して渡すか、パース結果をキャッシュする設計にすると複数回のアロケーションを削減できる。**memory.go の4関数で観察された。**
+
+#### 6. 「`var x []T` から始まる容量なし append」パターン
+
+```go
+// においのある書き方
+var result []ModelConfig          // cap=0 から開始
+for _, p := range providers {
+    result = append(result, ...)  // 倍々に再アロケーション
+}
+```
+
+`var x []T` や `make([]T, 0)` で始まり、ループ内で `append` を重ねる。**ソースの長さが事前にわかっている場合**（別スライスの len、定数上限など）は `make([]T, 0, n)` で初期容量を与えれば再アロケーションをゼロにできる。見落とされやすい理由は「append は自動で伸びるから大丈夫」という習慣。**config/migration.go、skills/registry.go、skills/loader.go ほか6箇所で観察された。**
+
+#### 7. 「Unicode 安全のための過剰な []rune 変換」パターン
+
+```go
+// においのある書き方
+func Truncate(s string, max int) string {
+    runes := []rune(s)       // ← 全文字を変換してから長さ確認
+    if len(runes) <= max {
+        return s
+    }
+    return string(runes[:max])
+}
+```
+
+文字数を正しく数えるために `[]rune` へ変換するのは正しい。しかし **①変換前に `len(s)` で byte 長をチェックして早期 return できる**（ASCII なら byte 長 == rune 長）、**②実際の入力が ASCII 主体であれば `utf8.RuneCountInString` + `utf8.RuneError` チェックでアロケーションなしに処理できる**。`[]rune(s)` は文字列全体をヒープにコピーするため、長い文字列では無視できないコストになる。**utils/string.go の2関数、git/worktree.go で観察された。**
