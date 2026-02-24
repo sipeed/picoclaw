@@ -47,16 +47,16 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty"`
-	Session   SessionConfig   `json:"session,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
+	Agents        AgentsConfig        `json:"agents"`
+	Bindings      []AgentBinding      `json:"bindings,omitempty"`
+	Session       SessionConfig       `json:"session,omitempty"`
+	Channels      ChannelsConfig      `json:"channels"`
+	Providers     ProvidersConfig     `json:"providers,omitempty"`
+	ModelList     []ModelConfig       `json:"model_list"` // New model-centric provider configuration
+	Gateway       GatewayConfig       `json:"gateway"`
+	Tools         ToolsConfig         `json:"tools"`
+	Heartbeat     HeartbeatConfig     `json:"heartbeat"`
+	Devices       DevicesConfig       `json:"devices"`
 	Observability ObservabilityConfig `json:"observability"`
 }
 
@@ -318,11 +318,23 @@ type DevicesConfig struct {
 }
 
 type ObservabilityConfig struct {
-	Enabled      bool    `json:"enabled" env:"PICOCLAW_OBSERVABILITY_ENABLED"`
-	ServiceName  string  `json:"service_name" env:"PICOCLAW_OBSERVABILITY_SERVICE_NAME"`
-	OTLPEndpoint string  `json:"otlp_endpoint" env:"PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT"`
-	Insecure     bool    `json:"insecure" env:"PICOCLAW_OBSERVABILITY_INSECURE"`
-	SampleRatio  float64 `json:"sample_ratio" env:"PICOCLAW_OBSERVABILITY_SAMPLE_RATIO"`
+	Enabled      bool           `json:"enabled" env:"PICOCLAW_OBSERVABILITY_ENABLED"`
+	ServiceName  string         `json:"service_name" env:"PICOCLAW_OBSERVABILITY_SERVICE_NAME"`
+	OTLPEndpoint string         `json:"otlp_endpoint" env:"PICOCLAW_OBSERVABILITY_OTLP_ENDPOINT"`
+	Insecure     bool           `json:"insecure" env:"PICOCLAW_OBSERVABILITY_INSECURE"`
+	SampleRatio  float64        `json:"sample_ratio" env:"PICOCLAW_OBSERVABILITY_SAMPLE_RATIO"`
+	Langfuse     LangfuseConfig `json:"langfuse"`
+}
+
+type LangfuseConfig struct {
+	Enabled   bool   `json:"enabled" env:"PICOCLAW_OBSERVABILITY_LANGFUSE_ENABLED"`
+	Host      string `json:"host" env:"PICOCLAW_OBSERVABILITY_LANGFUSE_HOST"`
+	PublicKey string `json:"public_key" env:"PICOCLAW_OBSERVABILITY_LANGFUSE_PUBLIC_KEY"`
+	SecretKey string `json:"secret_key" env:"PICOCLAW_OBSERVABILITY_LANGFUSE_SECRET_KEY"`
+}
+
+func (c LangfuseConfig) IsConfigured() bool {
+	return c.Enabled && c.Host != "" && c.PublicKey != "" && c.SecretKey != ""
 }
 
 type ProvidersConfig struct {
@@ -516,6 +528,17 @@ func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			if err := env.Parse(cfg); err != nil {
+				return nil, err
+			}
+			applyObservabilityEnvOverrides(cfg)
+			applyProviderEnvOverrides(cfg)
+			if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
+				cfg.ModelList = ConvertProvidersToModelList(cfg)
+			}
+			if err := cfg.ValidateModelList(); err != nil {
+				return nil, err
+			}
 			return cfg, nil
 		}
 		return nil, err
@@ -542,6 +565,8 @@ func LoadConfig(path string) (*Config, error) {
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+
+	applyObservabilityEnvOverrides(cfg)
 
 	// ProviderConfig uses a shared type and cannot reliably express provider-specific
 	// env tags using template placeholders. Apply explicit overrides here.
@@ -578,6 +603,21 @@ func applyProviderEnvOverrides(cfg *Config) {
 	setProviderFromEnv("PICOCLAW_PROVIDERS_GITHUB_COPILOT", &cfg.Providers.GitHubCopilot)
 	setProviderFromEnv("PICOCLAW_PROVIDERS_ANTIGRAVITY", &cfg.Providers.Antigravity)
 	setProviderFromEnv("PICOCLAW_PROVIDERS_QWEN", &cfg.Providers.Qwen)
+}
+
+func applyObservabilityEnvOverrides(cfg *Config) {
+	if v, ok := os.LookupEnv("PICOCLAW_OBSERVABILITY_LANGFUSE_ENABLED"); ok {
+		cfg.Observability.Langfuse.Enabled = v == "1" || v == "true" || v == "TRUE" || v == "True"
+	}
+	if v, ok := os.LookupEnv("PICOCLAW_OBSERVABILITY_LANGFUSE_HOST"); ok {
+		cfg.Observability.Langfuse.Host = v
+	}
+	if v, ok := os.LookupEnv("PICOCLAW_OBSERVABILITY_LANGFUSE_PUBLIC_KEY"); ok {
+		cfg.Observability.Langfuse.PublicKey = v
+	}
+	if v, ok := os.LookupEnv("PICOCLAW_OBSERVABILITY_LANGFUSE_SECRET_KEY"); ok {
+		cfg.Observability.Langfuse.SecretKey = v
+	}
 }
 
 func setProviderFromEnv(prefix string, provider *ProviderConfig) {

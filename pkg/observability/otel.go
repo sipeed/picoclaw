@@ -2,13 +2,16 @@ package observability
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -29,7 +32,7 @@ func Init(ctx context.Context, cfg config.ObservabilityConfig) (func(context.Con
 		clientOpts = append(clientOpts, otlptracegrpc.WithInsecure())
 	}
 
-	exporter, err := otlptracegrpc.New(ctx, clientOpts...)
+	otlpExporter, err := otlptracegrpc.New(ctx, clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create OTLP trace exporter: %w", err)
 	}
@@ -50,11 +53,44 @@ func Init(ctx context.Context, cfg config.ObservabilityConfig) (func(context.Con
 		return nil, fmt.Errorf("create otel resource: %w", err)
 	}
 
-	tp := sdktrace.NewTracerProvider(
+	options := []sdktrace.TracerProviderOption{
 		sdktrace.WithSampler(sdktrace.TraceIDRatioBased(ratio)),
-		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
-	)
+		sdktrace.WithBatcher(otlpExporter),
+	}
+
+	if cfg.Langfuse.IsConfigured() {
+		auth := base64.StdEncoding.EncodeToString([]byte(cfg.Langfuse.PublicKey + ":" + cfg.Langfuse.SecretKey))
+		langfuseEndpoint := strings.TrimRight(cfg.Langfuse.Host, "/")
+		switch {
+		case strings.HasSuffix(langfuseEndpoint, "/api/public/otel/v1/traces"):
+		case strings.HasSuffix(langfuseEndpoint, "/api/public/otel"):
+			langfuseEndpoint += "/v1/traces"
+		default:
+			langfuseEndpoint += "/api/public/otel/v1/traces"
+		}
+
+		langfuseExporter, lfErr := otlptracehttp.New(ctx,
+			otlptracehttp.WithEndpointURL(langfuseEndpoint),
+			otlptracehttp.WithHeaders(map[string]string{
+				"Authorization": "Basic " + auth,
+			}),
+		)
+		if lfErr != nil {
+			logger.WarnCF("otel", "Langfuse exporter disabled (init failed)", map[string]any{
+				"error": lfErr.Error(),
+				"host":  cfg.Langfuse.Host,
+			})
+		} else {
+			options = append(options, sdktrace.WithBatcher(langfuseExporter))
+			logger.InfoCF("otel", "Langfuse OTLP exporter enabled", map[string]any{
+				"host":     cfg.Langfuse.Host,
+				"endpoint": langfuseEndpoint,
+			})
+		}
+	}
+
+	tp := sdktrace.NewTracerProvider(options...)
 
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})

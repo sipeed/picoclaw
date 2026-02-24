@@ -209,6 +209,12 @@ func TestDefaultConfig_Observability(t *testing.T) {
 	if cfg.Observability.OTLPEndpoint == "" {
 		t.Error("Observability OTLP endpoint should not be empty")
 	}
+	if cfg.Observability.Langfuse.Enabled {
+		t.Error("Langfuse should be disabled by default")
+	}
+	if cfg.Observability.Langfuse.Host == "" {
+		t.Error("Langfuse host should not be empty")
+	}
 }
 
 // TestDefaultConfig_WorkspacePath verifies workspace path is correctly set

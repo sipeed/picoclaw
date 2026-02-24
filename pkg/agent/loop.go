@@ -461,6 +461,24 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		finalContent = opts.DefaultResponse
 	}
 
+	// Emit a dedicated final-response span so evaluators can target completed user-facing output
+	finalCtx, finalSpan := observability.Tracer("picoclaw.agent").Start(ctx, "agent.final_response")
+	_ = finalCtx
+	finalSpan.SetAttributes(
+		attribute.String("agent.id", agent.ID),
+		attribute.String("channel", opts.Channel),
+		attribute.String("chat_id", opts.ChatID),
+		attribute.String("session_key", opts.SessionKey),
+		attribute.String("input.value", opts.UserMessage),
+		attribute.String("langfuse.observation.input", opts.UserMessage),
+		attribute.String("output.value", finalContent),
+		attribute.String("langfuse.observation.output", finalContent),
+		attribute.Bool("llm.has_output", strings.TrimSpace(finalContent) != ""),
+		attribute.String("langfuse.observation.type", "generation"),
+	)
+	finalSpan.SetStatus(codes.Ok, "final response recorded")
+	finalSpan.End()
+
 	// 6. Save final assistant message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 	agent.Sessions.Save(opts.SessionKey)
@@ -544,7 +562,7 @@ func (al *AgentLoop) runLLMIteration(
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
+						return al.callProviderChat(ctx, agent, messages, providerToolDefs, model, map[string]any{
 							"max_tokens":  agent.MaxTokens,
 							"temperature": agent.Temperature,
 						})
@@ -560,7 +578,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
+			return al.callProviderChat(ctx, agent, messages, providerToolDefs, agent.Model, map[string]any{
 				"max_tokens":  agent.MaxTokens,
 				"temperature": agent.Temperature,
 			})
@@ -771,6 +789,94 @@ func (al *AgentLoop) runLLMIteration(
 	}
 
 	return finalContent, iteration, nil
+}
+
+func (al *AgentLoop) callProviderChat(
+	ctx context.Context,
+	agent *AgentInstance,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	ctx, span := observability.Tracer("picoclaw.agent").Start(ctx, "agent.llm_call")
+	startedAt := time.Now()
+	modelForCost := model
+	if idx := strings.LastIndex(model, "/"); idx >= 0 && idx < len(model)-1 {
+		modelForCost = model[idx+1:]
+	}
+	providerName := "unknown"
+	if idx := strings.Index(model, "/"); idx > 0 {
+		providerName = model[:idx]
+	}
+	lastUserInput := ""
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			lastUserInput = messages[i].Content
+			break
+		}
+	}
+	span.SetAttributes(
+		attribute.String("llm.model", model),
+		attribute.String("llm.model.short", modelForCost),
+		attribute.Int("llm.messages_count", len(messages)),
+		attribute.Int("llm.tools_count", len(tools)),
+		// Langfuse/OpenTelemetry GenAI conventions for usage & cost dashboards
+		attribute.String("gen_ai.operation.name", "chat"),
+		attribute.String("gen_ai.provider.name", providerName),
+		attribute.String("gen_ai.request.model", modelForCost),
+		attribute.String("gen_ai.response.model", modelForCost),
+		attribute.String("langfuse.observation.type", "generation"),
+		attribute.String("langfuse.generation.model", modelForCost),
+	)
+	if lastUserInput != "" {
+		span.SetAttributes(
+			attribute.String("input.value", lastUserInput),
+			attribute.String("gen_ai.prompt", lastUserInput),
+			attribute.String("langfuse.observation.input", lastUserInput),
+		)
+	}
+	if agent != nil {
+		span.SetAttributes(attribute.String("agent.id", agent.ID))
+	}
+	if v, ok := options["max_tokens"].(int); ok {
+		span.SetAttributes(attribute.Int("llm.max_tokens", v))
+	}
+	if v, ok := options["temperature"].(*float64); ok && v != nil {
+		span.SetAttributes(attribute.Float64("llm.temperature", *v))
+	}
+	defer span.End()
+
+	resp, err := agent.Provider.Chat(ctx, messages, tools, model, options)
+	span.SetAttributes(attribute.Int64("llm.duration_ms", time.Since(startedAt).Milliseconds()))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
+	span.SetAttributes(
+		attribute.String("llm.finish_reason", resp.FinishReason),
+		attribute.Int("llm.content_chars", len(resp.Content)),
+		attribute.Int("llm.tool_calls_count", len(resp.ToolCalls)),
+		attribute.Bool("llm.has_output", strings.TrimSpace(resp.Content) != ""),
+		attribute.String("output.value", resp.Content),
+		attribute.String("gen_ai.completion", resp.Content),
+		attribute.String("langfuse.observation.output", resp.Content),
+	)
+	if resp.Usage != nil {
+		span.SetAttributes(
+			attribute.Int("llm.tokens.prompt", resp.Usage.PromptTokens),
+			attribute.Int("llm.tokens.completion", resp.Usage.CompletionTokens),
+			attribute.Int("llm.tokens.total", resp.Usage.TotalTokens),
+			attribute.Int("gen_ai.usage.prompt_tokens", resp.Usage.PromptTokens),
+			attribute.Int("gen_ai.usage.completion_tokens", resp.Usage.CompletionTokens),
+			attribute.Int("gen_ai.usage.total_tokens", resp.Usage.TotalTokens),
+			attribute.Int("gen_ai.usage.input_tokens", resp.Usage.PromptTokens),
+			attribute.Int("gen_ai.usage.output_tokens", resp.Usage.CompletionTokens),
+		)
+	}
+	return resp, nil
 }
 
 // updateToolContexts updates the context for tools that need channel/chatID info.
@@ -1000,8 +1106,9 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 			s1,
 			s2,
 		)
-		resp, err := agent.Provider.Chat(
+		resp, err := al.callProviderChat(
 			ctx,
+			agent,
 			[]providers.Message{{Role: "user", Content: mergePrompt}},
 			nil,
 			agent.Model,
@@ -1050,8 +1157,9 @@ func (al *AgentLoop) summarizeBatch(
 	}
 	prompt := sb.String()
 
-	response, err := agent.Provider.Chat(
+	response, err := al.callProviderChat(
 		ctx,
+		agent,
 		[]providers.Message{{Role: "user", Content: prompt}},
 		nil,
 		agent.Model,
