@@ -5,22 +5,20 @@ import (
 	"testing"
 )
 
-func TestMarkMessageProcessed_DuplicateDetection(t *testing.T) {
-	var mu sync.RWMutex
-	processed := make(map[string]bool)
+func TestMessageDeduplicator_DuplicateDetection(t *testing.T) {
+	d := NewMessageDeduplicator(wecomMaxProcessedMessages)
 
-	if ok := markMessageProcessed(&mu, &processed, "msg-1", wecomMaxProcessedMessages); !ok {
+	if ok := d.MarkMessageProcessed("msg-1"); !ok {
 		t.Fatalf("first message should be accepted")
 	}
 
-	if ok := markMessageProcessed(&mu, &processed, "msg-1", wecomMaxProcessedMessages); ok {
+	if ok := d.MarkMessageProcessed("msg-1"); ok {
 		t.Fatalf("duplicate message should be rejected")
 	}
 }
 
-func TestMarkMessageProcessed_ConcurrentSameMessage(t *testing.T) {
-	var mu sync.RWMutex
-	processed := make(map[string]bool)
+func TestMessageDeduplicator_ConcurrentSameMessage(t *testing.T) {
+	d := NewMessageDeduplicator(wecomMaxProcessedMessages)
 
 	const goroutines = 64
 	var wg sync.WaitGroup
@@ -30,7 +28,7 @@ func TestMarkMessageProcessed_ConcurrentSameMessage(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
-			results <- markMessageProcessed(&mu, &processed, "msg-concurrent", wecomMaxProcessedMessages)
+			results <- d.MarkMessageProcessed("msg-concurrent")
 		}()
 	}
 
@@ -49,30 +47,37 @@ func TestMarkMessageProcessed_ConcurrentSameMessage(t *testing.T) {
 	}
 }
 
-func TestMarkMessageProcessed_RotationClearsMapAtBoundary(t *testing.T) {
-	var mu sync.RWMutex
-	processed := make(map[string]bool)
+func TestMessageDeduplicator_CircularQueueEviction(t *testing.T) {
+	// Create a deduplicator with a very small capacity to test eviction easily
+	capacity := 3
+	d := NewMessageDeduplicator(capacity)
 
-	if ok := markMessageProcessed(&mu, &processed, "msg-1", 1); !ok {
-		t.Fatalf("first message should be accepted")
-	}
-	if len(processed) != 1 {
-		t.Fatalf("expected map size 1 after first insert, got %d", len(processed))
-	}
+	// Fill the queue
+	d.MarkMessageProcessed("msg-1")
+	d.MarkMessageProcessed("msg-2")
+	d.MarkMessageProcessed("msg-3")
 
-	// Inserting second unique message exceeds maxEntries and should reset map, but keep the new message.
-	if ok := markMessageProcessed(&mu, &processed, "msg-2", 1); !ok {
-		t.Fatalf("second unique message should be accepted")
-	}
-	if len(processed) != 1 {
-		t.Fatalf("expected map to retain current message after rotation, got size %d", len(processed))
-	}
-	if !processed["msg-2"] {
-		t.Fatalf("expected current message marker to be retained after rotation")
+	// At this point, the queue is full. msg-1 is the oldest.
+	if len(d.msgs) != 3 {
+		t.Fatalf("expected map size to be 3, got %d", len(d.msgs))
 	}
 
-	// Because msg-2 was retained, an immediate duplicate should be rejected.
-	if ok := markMessageProcessed(&mu, &processed, "msg-2", 1); ok {
-		t.Fatalf("duplicate message immediately after rotation should be rejected")
+	// This should evict msg-1 and add msg-4
+	if ok := d.MarkMessageProcessed("msg-4"); !ok {
+		t.Fatalf("msg-4 should be accepted")
+	}
+
+	if len(d.msgs) != 3 {
+		t.Fatalf("expected map size to remain at max capacity (3), got %d", len(d.msgs))
+	}
+
+	// msg-1 should now be forgotten (evicted)
+	if ok := d.MarkMessageProcessed("msg-1"); !ok {
+		t.Fatalf("msg-1 should be accepted again because it was evicted")
+	}
+
+	// msg-2 should have been evicted when we added msg-1 back
+	if ok := d.MarkMessageProcessed("msg-2"); !ok {
+		t.Fatalf("msg-2 should be accepted again because it was evicted")
 	}
 }
