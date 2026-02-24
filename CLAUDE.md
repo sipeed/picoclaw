@@ -523,7 +523,7 @@ RAM 制約がない前提での推奨順:
 | ファイル | 変更 | 注意 |
 |----------|------|------|
 | `pkg/agent/session_tracker.go:125` | `ListActive()` の戻り値を `[]*SessionEntry` に | 呼び出し側 (`cmd_gateway.go`, `miniapp.go`) の型合わせ |
-| `pkg/logger/logger.go:88-92` | リングバッファ内部型を `[]*LogEntry` に変更 + `visit(fn)` メソッド追加。`RecentLogs()` を visit ベースに書き換え (フィルタで弾くエントリのコピーを排除) | `add()` 毎に1ヒープアロケーション増だがログI/Oパスなので許容。ミューテーション系 (`MarkStep` 等) の Split は対象外 |
+| `pkg/logger/logger.go:88-92` | リングバッファ内部型を `[]*LogEntry` に変更 + `visit(fn)` メソッド追加。`RecentLogs()` を visit ベースに書き換え (フィルタで弾くエントリのコピーを排除) | `add()` 毎に1ヒープアロケーション増だがログI/Oパスなので許容 |
 | `pkg/skills/registry.go:132-133` | `SearchAll()` 内の registries コピーをポインタスライスに | ロック範囲の再確認 |
 
 **コミット**: 1つにまとめる。
@@ -599,9 +599,19 @@ content パススルーで解消されるのは `ReadLongTerm()` の多重呼び
 
 #### 4-2. sessions/*.json の write-behind
 
-- `SessionManager` に `dirtyKeys map[string]bool` + バックグラウンドフラッシャー
-- `AddFullMessage()` → dirty 記録のみ、`Save()` はフラッシャーから呼ぶ
-- フラッシュ間隔: 5分 or 20メッセージ
+`AddFullMessage()` はすでにインメモリのみの操作。書き込みは `loop.go` が `Save()` を明示的に呼ぶ5箇所で発生する。
+
+| loop.go 行 | 文脈 | 頻度 | 方針 |
+|------------|------|------|------|
+| L996 | エージェントターン終了 | **毎ターン** | dirty マーク化 (主要ターゲット) |
+| L299 | `/plan start clear` 履歴クリア | 低頻度 | 即時書き込み維持 (意味的チェックポイント) |
+| L836 | tool call sanitize | 低頻度 | 即時書き込み維持 |
+| L2339 | 強制履歴圧縮 | 低頻度 | 即時書き込み維持 |
+| L2568 | サマリー生成・トランケート | 低頻度 | 即時書き込み維持 |
+
+- L996 の `Save()` を `MarkDirty()` に変更、バックグラウンドフラッシャー (5分タイマー) で遅延書き込み
+- 残り4箇所は意味的なチェックポイントなので `Save()` を即時維持
+- `SessionManager` に `dirtyKeys map[string]bool` + フラッシャー goroutine 追加
 - シャットダウンフックで全 dirty セッションをフラッシュ
 
 #### `AppendToday()` について
@@ -626,6 +636,7 @@ content パススルーで解消されるのは `ReadLongTerm()` の多重呼び
 | D-2: FunctionCall.Arguments 型変更 | `string` → `json.RawMessage` | 全プロバイダーに波及、破壊的変更 |
 | D-3: Parameters を RawMessage に | 同上 | 同上 |
 | D-5: Session.Messages を immutable に | COW or linked list | セッション管理の根本再設計が必要 |
+| ParsedPlan インメモリモデル | MemoryStore にパース済み構造体を常駐させ MarkStep/AddStep の Split 重複を根本解消 (D-1/D-6 完全解決) | 設計変更が広範囲 |
 
 ---
 
@@ -635,7 +646,7 @@ content パススルーで解消されるのは `ReadLongTerm()` の多重呼び
 Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
  機械的      値渡し       JSON       Memory      Storage
  置き換え    最適化     ホットパス    読み取り    write-behind
- (4 commits) (1 commit) (2 commits) (1 commit)  (2 commits)
+ (4 commits) (1 commit) (2 commits) (2 commits) (2 commits)
 ```
 
 - Phase 0〜2: **アロケーション削減** (GC 圧力軽減)
@@ -643,74 +654,4 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
 
----
-
-## FEEDBACK — 第3回レビュー
-
-> レビュー日 2026-02-24。G-1〜G-4 の反映を確認し、新たに発見した問題を記載。
-
-**前回指摘の反映確認**: G-1 ✅ G-2 ✅ G-3 ✅ G-4 ✅ — 全4件が正しく反映されている。
-
----
-
-### H-1. Phase 4-2: `AddFullMessage()` を変えても書き込みは一切減らない 🚨
-
-計画の核心的な前提誤り。
-
-**計画が想定していた構造:**
-```
-AddFullMessage() → append → Save() → ファイル書き込み
-     ↑ここを dirty マーク化すれば書き込みを遅延できる (誤り)
-```
-
-**実際のコード:**
-```go
-// session/manager.go — Save() を呼ばない
-func (sm *SessionManager) AddFullMessage(...) {
-    session.Messages = append(session.Messages, msg) // インメモリのみ
-}
-
-// loop.go — 呼び出し側が明示的にタイミングを選んで Save() を呼ぶ
-agent.Sessions.AddMessage(...)   // L995: append のみ
-agent.Sessions.Save(sessionKey)  // L996: 明示的な書き込み ← ここが本当のターゲット
-```
-
-`AddFullMessage()` はすでに「インメモリへの追記のみ」で止まっており、`Save()` は `loop.go` が意図的に呼んでいる。`AddFullMessage()` を変更しても書き込み回数はゼロも減らない。
-
-**`Save()` の実際の呼び出し元 (loop.go の5箇所):**
-
-| 行 | 文脈 | 頻度 |
-|----|------|------|
-| L996 | エージェントターン終了 | **毎ターン** ← 主要ターゲット |
-| L299 | `/plan start clear` で履歴クリア | 低頻度 |
-| L836 | tool call グループ sanitize | 低頻度 |
-| L2339 | 強制履歴圧縮 | 低頻度 |
-| L2568 | サマリー生成・履歴トランケート | 低頻度 |
-
-**計画の再考が必要**: Phase 4-2 を「`AddFullMessage()` の変更」から「`loop.go` の `Save()` 呼び出しを dirty マーク化」に全面的に書き直す必要がある。低頻度の4箇所（L299/836/2339/2568）は意味的なチェックポイントなので即時書き込みを維持するか否かも判断が必要。
-
-### H-2. Phase 1: logger.go の行の注釈が誤配置
-
-Phase 1 の logger.go 行に「ミューテーション系 (`MarkStep` 等) の Split は対象外」という注釈があるが、これは logger.go の変更内容と無関係で Phase 3-2 の注意書きが誤って混入している。削除すること。
-
-### H-3. Phase 5: `ParsedPlan` インメモリモデルが項目として存在しない
-
-Phase 3-2 が「ミューテーション系の Split 統合には ParsedPlan インメモリモデル (Phase 5) が必要」と参照しているにもかかわらず、Phase 5 の表に該当項目がない。以下を追加すること。
-
-```
-| ParsedPlan インメモリモデル | MemoryStore にパース済み構造体を常駐させ MarkStep/AddStep の Split 重複を根本解消 | 設計変更が広範囲、D-1/D-6 の完全解決 |
-```
-
-### H-4. 実装順サマリーの Phase 3 コミット数が古い
-
-`FormatPlanDisplay()` が Phase 3-1 に追加されたためスコープが拡大。`GetMemoryContext()` と `FormatPlanDisplay()` を別コミットにするなら 2 commits になる。サマリーの `(1 commit)` を更新すること。
-
-### まとめ: 今回の修正項目
-
-| # | 対象 | 修正内容 |
-|---|------|---------|
-| H-1 | Phase 4-2 | `AddFullMessage()` → `loop.go` の5箇所 `Save()` に記述を訂正。L996 を dirty マーク化、残り4箇所は要判断 |
-| H-2 | Phase 1 | logger.go 行の `MarkStep` 言及を削除 |
-| H-3 | Phase 5 | `ParsedPlan インメモリモデル` 項目を追加 |
-| H-4 | 実装順サマリー | Phase 3 のコミット数を `(1 commit)` → `(2 commits)` に更新 |
 
