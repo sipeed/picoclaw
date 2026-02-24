@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -36,13 +37,18 @@ type SubagentManager struct {
 	hasMaxTokens   bool
 	hasTemperature bool
 	nextID         int
+	reporter       orch.AgentReporter
 }
 
 func NewSubagentManager(
 	provider providers.LLMProvider,
 	defaultModel, workspace string,
 	bus *bus.MessageBus,
+	reporter orch.AgentReporter,
 ) *SubagentManager {
+	if reporter == nil {
+		reporter = orch.Noop
+	}
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
@@ -52,6 +58,7 @@ func NewSubagentManager(
 		tools:         NewToolRegistry(),
 		maxIterations: 10,
 		nextID:        1,
+		reporter:      reporter,
 	}
 }
 
@@ -103,6 +110,8 @@ func (sm *SubagentManager) Spawn(
 	}
 	sm.tasks[taskID] = subagentTask
 
+	sm.reporter.ReportSpawn(taskID, label, task)
+
 	// Start task in background with context cancellation support
 	go sm.runTask(ctx, subagentTask, callback)
 
@@ -114,7 +123,6 @@ func (sm *SubagentManager) Spawn(
 
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {
 	task.Status = "running"
-	task.Created = time.Now().UnixMilli()
 
 	// Build system prompt for subagent
 	systemPrompt := `You are a subagent. Complete the given task independently and report the result.
@@ -164,12 +172,17 @@ After completing the task, provide a clear summary of what was done.`
 		}
 	}
 
+	// Notify conductor that the subagent is starting
+	sm.reporter.ReportConversation("conductor", task.ID, task.Task)
+
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
 		Provider:      sm.provider,
 		Model:         sm.defaultModel,
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
+		Reporter:      sm.reporter,
+		AgentID:       task.ID,
 	}, messages, task.OriginChannel, task.OriginChatID)
 
 	sm.mu.Lock()
@@ -186,10 +199,13 @@ After completing the task, provide a clear summary of what was done.`
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
 		// Check if it was cancelled
+		gcReason := "failed"
 		if ctx.Err() != nil {
 			task.Status = "cancelled"
 			task.Result = "Task cancelled during execution"
+			gcReason = "cancelled"
 		}
+		sm.reporter.ReportGC(task.ID, gcReason)
 		result = &ToolResult{
 			ForLLM:  task.Result,
 			ForUser: "",
@@ -201,6 +217,9 @@ After completing the task, provide a clear summary of what was done.`
 	} else {
 		task.Status = "completed"
 		task.Result = loopResult.Content
+		// Notify conductor of the result
+		sm.reporter.ReportConversation(task.ID, "conductor", loopResult.Content)
+		sm.reporter.ReportGC(task.ID, "completed")
 		result = &ToolResult{
 			ForLLM: fmt.Sprintf(
 				"Subagent '%s' completed (iterations: %d): %s",

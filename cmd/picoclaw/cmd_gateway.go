@@ -243,6 +243,9 @@ func gatewayCmd() {
 			miniappNotifier = miniapp.NewStateNotifier()
 			handler := miniapp.NewHandler(provider, sender, cfg.Channels.Telegram.Token, miniappNotifier, cfg.Channels.Telegram.AllowFrom, cfg.WorkspacePath())
 			agentLoop.OnStateChange = miniappNotifier.Notify
+			if b := agentLoop.GetOrchBroadcaster(); b != nil {
+				handler.SetOrchBroadcaster(b)
+			}
 			handler.RegisterRoutes(healthServer.Mux())
 
 			// Register dev preview tool for all agents
