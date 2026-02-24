@@ -95,7 +95,9 @@ func (t *I2CTool) detect() *ToolResult {
 	}
 
 	if len(matches) == 0 {
-		return SilentResult("No I2C buses found. You may need to:\n1. Load the i2c-dev module: modprobe i2c-dev\n2. Check that I2C is enabled in device tree\n3. Configure pinmux for your board (see hardware skill)")
+		return SilentResult(
+			"No I2C buses found. You may need to:\n1. Load the i2c-dev module: modprobe i2c-dev\n2. Check that I2C is enabled in device tree\n3. Configure pinmux for your board (see hardware skill)",
+		)
 	}
 
 	type busInfo struct {
@@ -128,7 +130,7 @@ func isValidBusID(id string) bool {
 // parseI2CAddress extracts and validates an I2C address from args
 //
 //nolint:unused // Used by i2c_linux.go
-func parseI2CAddress(args map[string]interface{}) (int, *ToolResult) {
+func parseI2CAddress(args map[string]any) (int, *ToolResult) {
 	addrFloat, ok := args["address"].(float64)
 	if !ok {
 		return 0, ErrorResult("address is required (e.g. 0x38 for AHT20)")
@@ -143,7 +145,7 @@ func parseI2CAddress(args map[string]interface{}) (int, *ToolResult) {
 // parseI2CBus extracts and validates an I2C bus from args
 //
 //nolint:unused // Used by i2c_linux.go
-func parseI2CBus(args map[string]interface{}) (string, *ToolResult) {
+func parseI2CBus(args map[string]any) (string, *ToolResult) {
 	bus, ok := args["bus"].(string)
 	if !ok || bus == "" {
 		return "", ErrorResult("bus is required (e.g. \"1\" for /dev/i2c-1)")

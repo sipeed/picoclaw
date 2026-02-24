@@ -97,7 +97,9 @@ func (t *SPITool) list() *ToolResult {
 	}
 
 	if len(matches) == 0 {
-		return SilentResult("No SPI devices found. You may need to:\n1. Enable SPI in device tree\n2. Configure pinmux for your board (see hardware skill)\n3. Check that spidev module is loaded")
+		return SilentResult(
+			"No SPI devices found. You may need to:\n1. Enable SPI in device tree\n2. Configure pinmux for your board (see hardware skill)\n3. Check that spidev module is loaded",
+		)
 	}
 
 	type devInfo struct {
@@ -122,7 +124,7 @@ func (t *SPITool) list() *ToolResult {
 // parseSPIArgs extracts and validates common SPI parameters
 //
 //nolint:unused // Used by spi_linux.go
-func parseSPIArgs(args map[string]interface{}) (device string, speed uint32, mode uint8, bits uint8, errMsg string) {
+func parseSPIArgs(args map[string]any) (device string, speed uint32, mode uint8, bits uint8, errMsg string) {
 	dev, ok := args["device"].(string)
 	if !ok || dev == "" {
 		return "", 0, 0, 0, "device is required (e.g. \"2.0\" for /dev/spidev2.0)"
