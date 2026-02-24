@@ -37,8 +37,7 @@ type WeComAppChannel struct {
 	tokenMu       sync.RWMutex
 	ctx           context.Context
 	cancel        context.CancelFunc
-	processedMsgs map[string]bool // Message deduplication: msg_id -> processed
-	msgMu         sync.RWMutex
+	processedMsgs *MessageDeduplicator
 }
 
 // WeComXMLMessage represents the XML message structure from WeCom
@@ -128,7 +127,7 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 	return &WeComAppChannel{
 		BaseChannel:   base,
 		config:        cfg,
-		processedMsgs: make(map[string]bool),
+		processedMsgs: NewMessageDeduplicator(wecomMaxProcessedMessages),
 	}, nil
 }
 
@@ -405,7 +404,7 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 	// Message deduplication: Use msg_id to prevent duplicate processing
 	// As per WeCom documentation, use msg_id for deduplication
 	msgID := fmt.Sprintf("%d", msg.MsgId)
-	if !markMessageProcessed(&c.msgMu, &c.processedMsgs, msgID, wecomMaxProcessedMessages) {
+	if !c.processedMsgs.MarkMessageProcessed(msgID) {
 		logger.DebugCF("wecom_app", "Skipping duplicate message", map[string]any{
 			"msg_id": msgID,
 		})
