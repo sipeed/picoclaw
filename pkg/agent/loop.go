@@ -63,6 +63,7 @@ type processOptions struct {
 	EnableSummary   bool   // Whether to trigger summarization
 	SendResponse    bool   // Whether to send response via bus
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
+	WorkingDir      string // Current working directory override (for hipico from cmd mode)
 }
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
@@ -273,6 +274,20 @@ func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey stri
 	return al.ProcessDirectWithChannel(ctx, content, sessionKey, "cli", "direct")
 }
 
+// ProcessDirectWithWorkDir processes a message with an explicit working directory context.
+// The workDir is injected into the system prompt so the AI resolves file paths relative to it.
+func (al *AgentLoop) ProcessDirectWithWorkDir(ctx context.Context, content, sessionKey, workDir string) (string, error) {
+	msg := bus.InboundMessage{
+		Channel:    "cli",
+		SenderID:   "cron",
+		ChatID:     "direct",
+		Content:    content,
+		SessionKey: sessionKey,
+		Metadata:   map[string]string{"work_dir": workDir},
+	}
+	return al.processMessage(ctx, msg)
+}
+
 func (al *AgentLoop) ProcessDirectWithChannel(
 	ctx context.Context,
 	content, sessionKey, channel, chatID string,
@@ -371,7 +386,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			if workDir == "" {
 				workDir = agent.Workspace
 			}
-			userMessage = fmt.Sprintf("[Command mode context: working directory is %s]\n\n%s", workDir, userMessage)
 			hipicoSessionKey := sessionKey + ":hipico"
 			return al.runAgentLoop(ctx, agent, processOptions{
 				SessionKey:      hipicoSessionKey,
@@ -381,6 +395,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				DefaultResponse: "I've completed processing but have no response to give.",
 				EnableSummary:   false,
 				SendResponse:    false,
+				WorkingDir:      workDir,
 			})
 		}
 	}
@@ -399,6 +414,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			DefaultResponse: "I've completed processing but have no response to give.",
 			EnableSummary:   true,
 			SendResponse:    false,
+			WorkingDir:      msg.Metadata["work_dir"],
 		})
 	}
 }
@@ -490,6 +506,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		opts.Channel,
 		opts.ChatID,
 	)
+
+	// 2b. Inject current working directory into system prompt if set
+	if opts.WorkingDir != "" && len(messages) > 0 && messages[0].Role == "system" {
+		messages[0].Content += fmt.Sprintf(
+			"\n\n## Current Working Directory\nThe user is currently working in: %s\n"+
+				"When the user refers to files or directories, resolve them relative to this path, not the workspace root.",
+			opts.WorkingDir,
+		)
+	}
 
 	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
