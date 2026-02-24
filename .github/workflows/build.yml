@@ -17,4 +17,4 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
-        run: make build-all
+        run: scripts/build.sh --all
