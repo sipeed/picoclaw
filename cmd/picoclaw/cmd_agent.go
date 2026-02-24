@@ -46,6 +46,10 @@ func agentCmd() {
 				modelOverride = args[i+1]
 				i++
 			}
+		default:
+			fmt.Printf("Unknown flag: %s\n", args[i])
+			printHelp()
+			os.Exit(1)
 		}
 	}
 

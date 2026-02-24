@@ -29,13 +29,16 @@ import (
 )
 
 func gatewayCmd() {
-	// Check for --debug flag
 	args := os.Args[2:]
-	for _, arg := range args {
-		if arg == "--debug" || arg == "-d" {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--debug", "-d":
 			logger.SetLevel(logger.DEBUG)
 			fmt.Println("🔍 Debug mode enabled")
-			break
+		default:
+			fmt.Printf("Unknown flag: %s\n", args[i])
+			printHelp()
+			os.Exit(1)
 		}
 	}
 

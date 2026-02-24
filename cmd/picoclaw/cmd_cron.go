@@ -153,6 +153,10 @@ func cronAddCmd(storePath string) {
 				channel = args[i+1]
 				i++
 			}
+		default:
+			fmt.Printf("Unknown flag: %s\n", args[i])
+			cronHelp()
+			os.Exit(1)
 		}
 	}
 

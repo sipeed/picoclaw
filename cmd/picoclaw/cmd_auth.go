@@ -75,6 +75,10 @@ func authLoginCmd() {
 			}
 		case "--device-code":
 			useDeviceCode = true
+		default:
+			fmt.Printf("Unknown flag: %s\n", args[i])
+			authHelp()
+			os.Exit(1)
 		}
 	}
 
@@ -334,6 +338,10 @@ func authLogoutCmd() {
 				provider = args[i+1]
 				i++
 			}
+		default:
+			fmt.Printf("Unknown flag: %s\n", args[i])
+			authHelp()
+			os.Exit(1)
 		}
 	}
 
