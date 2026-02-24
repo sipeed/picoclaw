@@ -84,6 +84,10 @@ func (t *CronTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Cron expression for complex recurring schedules (e.g., '0 9 * * *' for daily at 9am). Use this for complex recurring schedules.",
 			},
+			"timezone": map[string]any{
+				"type":        "string",
+				"description": "Optional IANA timezone for cron_expr (e.g., 'Asia/Shanghai'). Defaults to local timezone.",
+			},
 			"job_id": map[string]any{
 				"type":        "string",
 				"description": "Job ID (for remove/enable/disable)",
@@ -149,6 +153,7 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 	atSeconds, hasAt := args["at_seconds"].(float64)
 	everySeconds, hasEvery := args["every_seconds"].(float64)
 	cronExpr, hasCron := args["cron_expr"].(string)
+	timezone, _ := args["timezone"].(string)
 
 	// Priority: at_seconds > every_seconds > cron_expr
 	if hasAt {
@@ -167,6 +172,7 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 		schedule = cron.CronSchedule{
 			Kind: "cron",
 			Expr: cronExpr,
+			TZ:   timezone,
 		}
 	} else {
 		return ErrorResult("one of at_seconds, every_seconds, or cron_expr is required")
