@@ -84,7 +84,7 @@
     top: 2px;
     bottom: 2px;
     left: 2px;
-    width: calc(100%/7 - 2px);
+    width: calc(100% / var(--tab-count, 7) - 2px);
     border-radius: 8px;
     background: var(--tab-pill-bg);
     box-shadow: 0 0.5px 2px rgba(0,0,0,0.12), 0 0.5px 1px rgba(0,0,0,0.08);
@@ -941,8 +941,17 @@ let initData = tg.initData || '';
 let selectedSkill = null;
 var lastSSE = { plan: 0, skills: 0, session: 0, dev: 0 };
 
+// Hide Orch tab when orchestration is not enabled (ORCH_ENABLED injected by server).
+if (!window.ORCH_ENABLED) {
+  var orchTabBtn = document.querySelector('.tab[data-panel="orch"]');
+  var orchPanel  = document.getElementById('orch');
+  if (orchTabBtn) orchTabBtn.style.display = 'none';
+  if (orchPanel)  orchPanel.style.display  = 'none';
+  document.documentElement.style.setProperty('--tab-count', '6');
+}
+
 // Tab switching — re-fetch data unless SSE delivered recently
-const tabs = document.querySelectorAll('.tab');
+const tabs = document.querySelectorAll('.tab:not([style*="display: none"])');
 const tabIndicator = document.querySelector('.tab-indicator');
 
 function moveIndicator(index) {

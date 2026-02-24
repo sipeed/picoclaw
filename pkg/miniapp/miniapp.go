@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/orch"
@@ -86,6 +87,9 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if h.orchBroadcaster != nil {
+		data = []byte(strings.Replace(string(data), "</head>", "<script>var ORCH_ENABLED=true;</script></head>", 1))
+	}
 	w.Write(data)
 }
 
