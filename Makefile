@@ -144,6 +144,10 @@ fmt:
 lint:
 	@$(GOLANGCI_LINT) run
 
+## fix: Fix linting issues
+fix:
+	@$(GOLANGCI_LINT) run --fix
+
 ## deps: Download dependencies
 deps:
 	@$(GO) mod download
@@ -169,7 +173,7 @@ help:
 	@echo "  make [target]"
 	@echo ""
 	@echo "Targets:"
-	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## /  /'
+	@grep -E '^## ' $(MAKEFILE_LIST) | sort | awk -F': ' '{printf "  %-16s %s\n", substr($$1, 4), $$2}'
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build              # Build for current platform"
