@@ -20,7 +20,7 @@ Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
 - Web search and content fetching
 - File system operations (read, write, edit)
 - Shell command execution
-- Multi-channel messaging (Telegram, WhatsApp, Feishu)
+- Multi-channel messaging (Telegram, WhatsApp, Discord, Slack, LINE)
 - Skill-based extensibility
 - Memory and context management
 

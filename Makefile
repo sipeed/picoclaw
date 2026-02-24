@@ -33,29 +33,13 @@ BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 UNAME_S:=$(shell uname -s)
 UNAME_M:=$(shell uname -m)
 
-# Platform-specific settings
-ifeq ($(UNAME_S),Linux)
-	PLATFORM=linux
-	ifeq ($(UNAME_M),x86_64)
-		ARCH=amd64
-	else ifeq ($(UNAME_M),aarch64)
-		ARCH=arm64
-	else ifeq ($(UNAME_M),riscv64)
-		ARCH=riscv64
-	else
-		ARCH=$(UNAME_M)
-	endif
-else ifeq ($(UNAME_S),Darwin)
-	PLATFORM=darwin
-	ifeq ($(UNAME_M),x86_64)
-		ARCH=amd64
-	else ifeq ($(UNAME_M),arm64)
-		ARCH=arm64
-	else
-		ARCH=$(UNAME_M)
-	endif
+# Platform-specific settings (Linux only)
+PLATFORM=linux
+ifeq ($(UNAME_M),x86_64)
+	ARCH=amd64
+else ifeq ($(UNAME_M),aarch64)
+	ARCH=arm64
 else
-	PLATFORM=$(UNAME_S)
 	ARCH=$(UNAME_M)
 endif
 
@@ -85,9 +69,7 @@ build-all: generate
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
-	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
-	GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
-	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
+	GOOS=linux GOARCH=arm $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./$(CMD_DIR)
 	@echo "All builds complete"
 
 ## install: Install clawdroid to system and copy builtin skills

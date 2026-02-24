@@ -77,14 +77,9 @@ type AgentDefaults struct {
 type ChannelsConfig struct {
 	WhatsApp  WhatsAppConfig  `json:"whatsapp"`
 	Telegram  TelegramConfig  `json:"telegram"`
-	Feishu    FeishuConfig    `json:"feishu"`
 	Discord   DiscordConfig   `json:"discord"`
-	MaixCam   MaixCamConfig   `json:"maixcam"`
-	QQ        QQConfig        `json:"qq"`
-	DingTalk  DingTalkConfig  `json:"dingtalk"`
 	Slack     SlackConfig     `json:"slack"`
 	LINE      LINEConfig      `json:"line"`
-	OneBot    OneBotConfig    `json:"onebot"`
 	WebSocket WebSocketConfig `json:"websocket"`
 }
 
@@ -101,40 +96,10 @@ type TelegramConfig struct {
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_TELEGRAM_ALLOW_FROM"`
 }
 
-type FeishuConfig struct {
-	Enabled           bool                `json:"enabled" env:"CLAWDROID_CHANNELS_FEISHU_ENABLED"`
-	AppID             string              `json:"app_id" env:"CLAWDROID_CHANNELS_FEISHU_APP_ID"`
-	AppSecret         string              `json:"app_secret" env:"CLAWDROID_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey        string              `json:"encrypt_key" env:"CLAWDROID_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken string              `json:"verification_token" env:"CLAWDROID_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
-	AllowFrom         FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_FEISHU_ALLOW_FROM"`
-}
-
 type DiscordConfig struct {
 	Enabled   bool                `json:"enabled" env:"CLAWDROID_CHANNELS_DISCORD_ENABLED"`
 	Token     string              `json:"token" env:"CLAWDROID_CHANNELS_DISCORD_TOKEN"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_DISCORD_ALLOW_FROM"`
-}
-
-type MaixCamConfig struct {
-	Enabled   bool                `json:"enabled" env:"CLAWDROID_CHANNELS_MAIXCAM_ENABLED"`
-	Host      string              `json:"host" env:"CLAWDROID_CHANNELS_MAIXCAM_HOST"`
-	Port      int                 `json:"port" env:"CLAWDROID_CHANNELS_MAIXCAM_PORT"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_MAIXCAM_ALLOW_FROM"`
-}
-
-type QQConfig struct {
-	Enabled   bool                `json:"enabled" env:"CLAWDROID_CHANNELS_QQ_ENABLED"`
-	AppID     string              `json:"app_id" env:"CLAWDROID_CHANNELS_QQ_APP_ID"`
-	AppSecret string              `json:"app_secret" env:"CLAWDROID_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_QQ_ALLOW_FROM"`
-}
-
-type DingTalkConfig struct {
-	Enabled      bool                `json:"enabled" env:"CLAWDROID_CHANNELS_DINGTALK_ENABLED"`
-	ClientID     string              `json:"client_id" env:"CLAWDROID_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret string              `json:"client_secret" env:"CLAWDROID_CHANNELS_DINGTALK_CLIENT_SECRET"`
-	AllowFrom    FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
 type SlackConfig struct {
@@ -152,15 +117,6 @@ type LINEConfig struct {
 	WebhookPort        int                 `json:"webhook_port" env:"CLAWDROID_CHANNELS_LINE_WEBHOOK_PORT"`
 	WebhookPath        string              `json:"webhook_path" env:"CLAWDROID_CHANNELS_LINE_WEBHOOK_PATH"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_LINE_ALLOW_FROM"`
-}
-
-type OneBotConfig struct {
-	Enabled            bool                `json:"enabled" env:"CLAWDROID_CHANNELS_ONEBOT_ENABLED"`
-	WSUrl              string              `json:"ws_url" env:"CLAWDROID_CHANNELS_ONEBOT_WS_URL"`
-	AccessToken        string              `json:"access_token" env:"CLAWDROID_CHANNELS_ONEBOT_ACCESS_TOKEN"`
-	ReconnectInterval  int                 `json:"reconnect_interval" env:"CLAWDROID_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
-	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"CLAWDROID_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_ONEBOT_ALLOW_FROM"`
 }
 
 type WebSocketConfig struct {
@@ -263,36 +219,10 @@ func DefaultConfig() *Config {
 				Token:     "",
 				AllowFrom: FlexibleStringSlice{},
 			},
-			Feishu: FeishuConfig{
-				Enabled:           false,
-				AppID:             "",
-				AppSecret:         "",
-				EncryptKey:        "",
-				VerificationToken: "",
-				AllowFrom:         FlexibleStringSlice{},
-			},
 			Discord: DiscordConfig{
 				Enabled:   false,
 				Token:     "",
 				AllowFrom: FlexibleStringSlice{},
-			},
-			MaixCam: MaixCamConfig{
-				Enabled:   false,
-				Host:      "127.0.0.1",
-				Port:      18792,
-				AllowFrom: FlexibleStringSlice{},
-			},
-			QQ: QQConfig{
-				Enabled:   false,
-				AppID:     "",
-				AppSecret: "",
-				AllowFrom: FlexibleStringSlice{},
-			},
-			DingTalk: DingTalkConfig{
-				Enabled:      false,
-				ClientID:     "",
-				ClientSecret: "",
-				AllowFrom:    FlexibleStringSlice{},
 			},
 			Slack: SlackConfig{
 				Enabled:   false,
@@ -307,14 +237,6 @@ func DefaultConfig() *Config {
 				WebhookHost:        "127.0.0.1",
 				WebhookPort:        18791,
 				WebhookPath:        "/webhook/line",
-				AllowFrom:          FlexibleStringSlice{},
-			},
-			OneBot: OneBotConfig{
-				Enabled:            false,
-				WSUrl:              "ws://127.0.0.1:3001",
-				AccessToken:        "",
-				ReconnectInterval:  5,
-				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
 			},
 			WebSocket: WebSocketConfig{

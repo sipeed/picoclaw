@@ -54,12 +54,12 @@ func TestDefaultConfig_MaxToolIterations(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_Temperature verifies temperature has default value
+// TestDefaultConfig_Temperature verifies temperature has expected default value (0 = deterministic)
 func TestDefaultConfig_Temperature(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Agents.Defaults.Temperature == 0 {
-		t.Error("Temperature should not be zero")
+	if cfg.Agents.Defaults.Temperature != 0 {
+		t.Errorf("Temperature should be 0 by default, got %v", cfg.Agents.Defaults.Temperature)
 	}
 }
 
@@ -101,20 +101,8 @@ func TestDefaultConfig_Channels(t *testing.T) {
 	if cfg.Channels.Telegram.Enabled {
 		t.Error("Telegram should be disabled by default")
 	}
-	if cfg.Channels.Feishu.Enabled {
-		t.Error("Feishu should be disabled by default")
-	}
 	if cfg.Channels.Discord.Enabled {
 		t.Error("Discord should be disabled by default")
-	}
-	if cfg.Channels.MaixCam.Enabled {
-		t.Error("MaixCam should be disabled by default")
-	}
-	if cfg.Channels.QQ.Enabled {
-		t.Error("QQ should be disabled by default")
-	}
-	if cfg.Channels.DingTalk.Enabled {
-		t.Error("DingTalk should be disabled by default")
 	}
 	if cfg.Channels.Slack.Enabled {
 		t.Error("Slack should be disabled by default")
@@ -207,9 +195,6 @@ func TestConfig_Complete(t *testing.T) {
 	}
 	if cfg.LLM.Model == "" {
 		t.Error("LLM.Model should not be empty")
-	}
-	if cfg.Agents.Defaults.Temperature == 0 {
-		t.Error("Temperature should have default value")
 	}
 	if cfg.Agents.Defaults.MaxTokens == 0 {
 		t.Error("MaxTokens should not be zero")

@@ -13,36 +13,11 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
-      - windows
-      - darwin
-      - freebsd
     goarch:
       - amd64
       - arm64
-      - riscv64
-      - s390x
-      - mips64
       - arm
     main: ./cmd/clawdroid
-    ignore:
-      - goos: windows
-        goarch: arm
-
-dockers_v2:
-  - id: clawdroid
-    dockerfile: Dockerfile.goreleaser
-    ids:
-      - clawdroid
-    images:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/clawdroid"
-      - "docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}"
-    tags:
-      - "{{ .Tag }}"
-      - "latest"
-    platforms:
-      - linux/amd64
-      - linux/arm64
-      - linux/riscv64
 
 archives:
   - formats: [tar.gz]
@@ -54,11 +29,6 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
-    format_overrides:
-      - goos: windows
-        formats: [zip]
-
 changelog:
   sort: asc
   filters:

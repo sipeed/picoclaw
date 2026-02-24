@@ -27,35 +27,9 @@
       "token": "YOUR_DISCORD_BOT_TOKEN",
       "allow_from": []
     },
-    "maixcam": {
-      "enabled": false,
-      "host": "127.0.0.1",
-      "port": 18792,
-      "allow_from": []
-    },
     "whatsapp": {
       "enabled": false,
       "bridge_url": "ws://localhost:3001",
-      "allow_from": []
-    },
-    "feishu": {
-      "enabled": false,
-      "app_id": "",
-      "app_secret": "",
-      "encrypt_key": "",
-      "verification_token": "",
-      "allow_from": []
-    },
-    "qq": {
-      "enabled": false,
-      "app_id": "",
-      "app_secret": "",
-      "allow_from": []
-    },
-    "dingtalk": {
-      "enabled": false,
-      "client_id": "YOUR_CLIENT_ID",
-      "client_secret": "YOUR_CLIENT_SECRET",
       "allow_from": []
     },
     "slack": {
@@ -71,14 +45,6 @@
       "webhook_host": "127.0.0.1",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
-      "allow_from": []
-    },
-    "onebot": {
-      "enabled": false,
-      "ws_url": "ws://127.0.0.1:3001",
-      "access_token": "",
-      "reconnect_interval": 5,
-      "group_trigger_prefix": [],
       "allow_from": []
     },
     "websocket": {

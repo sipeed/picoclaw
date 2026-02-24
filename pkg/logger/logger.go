@@ -1,7 +1,6 @@
 package logger
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -36,9 +35,7 @@ var (
 	mu           sync.RWMutex
 )
 
-type Logger struct {
-	file *os.File
-}
+type Logger struct{}
 
 type LogEntry struct {
 	Level     string                 `json:"level"`
@@ -61,41 +58,6 @@ func SetLevel(level LogLevel) {
 	currentLevel = level
 }
 
-func GetLevel() LogLevel {
-	mu.RLock()
-	defer mu.RUnlock()
-	return currentLevel
-}
-
-func EnableFileLogging(filePath string) error {
-	mu.Lock()
-	defer mu.Unlock()
-
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open log file: %w", err)
-	}
-
-	if logger.file != nil {
-		logger.file.Close()
-	}
-
-	logger.file = file
-	log.Println("File logging enabled:", filePath)
-	return nil
-}
-
-func DisableFileLogging() {
-	mu.Lock()
-	defer mu.Unlock()
-
-	if logger.file != nil {
-		logger.file.Close()
-		logger.file = nil
-		log.Println("File logging disabled")
-	}
-}
-
 func logMessage(level LogLevel, component string, message string, fields map[string]interface{}) {
 	if level < currentLevel {
 		return
@@ -113,13 +75,6 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		fn := runtime.FuncForPC(pc)
 		if fn != nil {
 			entry.Caller = fmt.Sprintf("%s:%d (%s)", file, line, fn.Name())
-		}
-	}
-
-	if logger.file != nil {
-		jsonData, err := json.Marshal(entry)
-		if err == nil {
-			logger.file.WriteString(string(jsonData) + "\n")
 		}
 	}
 

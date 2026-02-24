@@ -14,7 +14,7 @@ assignees: ''
 - **Go Version:** (e.g., go 1.22)
 - **AI Model & Provider:** (e.g., GPT-4o via OpenAI / DeepSeek via SiliconFlow)
 - **Operating System:** (e.g., Ubuntu 22.04 / macOS / Android Termux)
-- **Channels:** (e.g., Discord, Telegram, Feishu, ...)
+- **Channels:** (e.g., Telegram, Discord, Slack, LINE, ...)
 
 ## 📸 Steps to Reproduce
 1. 

@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -27,7 +26,6 @@ import (
 	"github.com/KarakuriAgent/clawdroid/pkg/channels"
 	"github.com/KarakuriAgent/clawdroid/pkg/config"
 	"github.com/KarakuriAgent/clawdroid/pkg/cron"
-	"github.com/KarakuriAgent/clawdroid/pkg/health"
 	"github.com/KarakuriAgent/clawdroid/pkg/heartbeat"
 	"github.com/KarakuriAgent/clawdroid/pkg/logger"
 	"github.com/KarakuriAgent/clawdroid/pkg/providers"
@@ -542,14 +540,6 @@ func gatewayCmd() {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
-	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
-	go func() {
-		if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("health", "Health server error", map[string]interface{}{"error": err.Error()})
-		}
-	}()
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
-
 	go agentLoop.Run(ctx)
 
 	sigChan := make(chan os.Signal, 1)
@@ -558,7 +548,6 @@ func gatewayCmd() {
 
 	fmt.Println("\nShutting down...")
 	cancel()
-	healthServer.Stop(context.Background())
 	heartbeatService.Stop()
 	cronService.Stop()
 	agentLoop.Stop()

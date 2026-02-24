@@ -271,7 +271,7 @@ This file contains tasks for the heartbeat service to check periodically.
 
 - Check for unread messages
 - Review upcoming calendar events
-- Check device status (e.g., MaixCam)
+- Check device status
 
 ## Instructions
 

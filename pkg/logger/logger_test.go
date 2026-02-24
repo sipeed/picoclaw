@@ -5,7 +5,7 @@ import (
 )
 
 func TestLogLevelFiltering(t *testing.T) {
-	initialLevel := GetLevel()
+	initialLevel := currentLevel
 	defer SetLevel(initialLevel)
 
 	SetLevel(WARN)
@@ -45,7 +45,7 @@ func TestLogLevelFiltering(t *testing.T) {
 }
 
 func TestLoggerWithComponent(t *testing.T) {
-	initialLevel := GetLevel()
+	initialLevel := currentLevel
 	defer SetLevel(initialLevel)
 
 	SetLevel(DEBUG)
@@ -102,22 +102,8 @@ func TestLogLevels(t *testing.T) {
 	}
 }
 
-func TestSetGetLevel(t *testing.T) {
-	initialLevel := GetLevel()
-	defer SetLevel(initialLevel)
-
-	tests := []LogLevel{DEBUG, INFO, WARN, ERROR, FATAL}
-
-	for _, level := range tests {
-		SetLevel(level)
-		if GetLevel() != level {
-			t.Errorf("SetLevel(%v) -> GetLevel() = %v, want %v", level, GetLevel(), level)
-		}
-	}
-}
-
 func TestLoggerHelperFunctions(t *testing.T) {
-	initialLevel := GetLevel()
+	initialLevel := currentLevel
 	defer SetLevel(initialLevel)
 
 	SetLevel(INFO)
