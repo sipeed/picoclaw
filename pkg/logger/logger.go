@@ -201,7 +201,7 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 
 	entry := LogEntry{
 		Level:     logLevelNames[level],
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Timestamp: time.Now().Format(time.RFC3339),
 		Component: component,
 		Message:   message,
 		Fields:    fields,
