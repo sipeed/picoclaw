@@ -1,12 +1,9 @@
 ---
 name: dev-preview
 description: Start a dev server in the background and preview it through the Mini App reverse proxy.
-metadata: {"nanobot":{"emoji":"🌐"}}
 ---
 
-# dev-preview Skill
-
-Launch a local dev server as a background process, wait for it to become ready, and connect it to the Mini App dev preview proxy.
+# Dev Preview Skill
 
 ## Network Architecture
 
@@ -32,13 +29,18 @@ localhost:PORT (dev server)
 **Request path**: User opens Dev tab in Mini App → iframe loads `/miniapp/dev/` → picoclaw reverse proxy → `localhost:PORT`
 
 **What works**: All HTTP methods (GET/POST/PUT/DELETE/PATCH), JSON APIs, form submissions, static files, SSE
-**What doesn't work**: WebSocket (reverse proxy limitation), non-HTTP protocols
+**What doesn't work**: WebSocket (reverse proxy limitation), non-HTTP protocols, **external domain loading** (Telegram Mini App sandbox blocks cross-origin scripts/styles/images)
 
 **Key points**:
 - The dev server only needs to bind to **localhost** — it is never exposed directly to the internet
 - picoclaw's reverse proxy handles the internet-facing HTTPS
 - The Mini App frontend sees API paths as `/miniapp/dev/api/...` — the `/miniapp/dev` prefix is stripped before forwarding
-- **fetch/XHR are auto-rewritten**: The proxy injects a script into HTML responses that patches `fetch()` and `XMLHttpRequest.open()` to add the `/miniapp/dev` prefix to absolute paths — no manual base URL configuration needed
+- `fetch()`/`XHR` absolute paths are auto-rewritten by an injected script — no manual base URL needed
+
+## When to use
+- User asks to preview/test a web app, API, or HTML page being developed
+- User wants to see the output of code that serves HTTP content
+- After writing server code that needs visual confirmation
 
 ## Quickstart
 
@@ -51,127 +53,103 @@ localhost:PORT (dev server)
 
 3. dev_preview(action="start", target="http://localhost:3000", name="frontend")
    → Dev preview started
+
+4. exec(command="bun run skills/dev-preview/scripts/validate-html-paths.ts http://localhost:3000")
+   → OK — 1 URL(s) checked, no absolute path violations.
 ```
 
-## Tools Overview
+## Flow
+1. Write or modify the server/web code as requested
+2. Start the dev server with `exec(command="...", background=true)`
+3. Wait for readiness with `bg_monitor(action="watch", bg_id="bg-1", pattern="...")`
+4. Register the proxy with `dev_preview(action="start", target="http://localhost:PORT")`
+5. Run the path validator (see "Path validation" section below) — fix violations until exit 0
+6. Tell the user to check the Dev tab in the Mini App
 
-### exec (background mode)
+## Starting the dev server
 
-Start a long-running process without blocking.
+Use `exec` with `background=true` — the process runs in the background and returns immediately with a process ID.
+
+| Framework | Command |
+|-----------|---------|
+| Python (FastAPI) | `exec(command="uv run fastapi dev --port PORT", background=true)` |
+| Python (Flask) | `exec(command="uv run flask run --port PORT", background=true)` |
+| Python (Django) | `exec(command="uv run python manage.py runserver PORT", background=true)` |
+| Bun (Hono/Elysia) | `exec(command="bun run --hot src/index.ts", background=true)` |
+| Bun (Next.js) | `exec(command="bun run next dev --port PORT", background=true)` |
+| Go (Echo/Gin/Chi) | `exec(command="go run .", background=true)` |
+| Static HTML | `exec(command="uv run python -m http.server PORT", background=true)` |
+| Node.js (Vite) | `exec(command="npm run dev", background=true)` |
+
+Use a port in the range 3000-9000.
+
+## Waiting for server readiness
+
+**Always** use `bg_monitor(action="watch")` before calling `dev_preview(action="start")`:
+
+```
+bg_monitor(action="watch", bg_id="bg-1", pattern="ready|listening|Serving|localhost")
+```
+
+- Polls every 100ms, returns when pattern matches (default 30s timeout).
+- Set `watch_timeout` (seconds) to extend if the server is slow to start.
+- If timeout occurs, use `bg_monitor(action="tail", bg_id="bg-1")` to diagnose.
+
+## Registering the proxy
+
+Use the `dev_preview` tool:
+- Start: `dev_preview(action="start", target="http://localhost:PORT")`
+- Check: `dev_preview(action="status")`
+- Stop: `dev_preview(action="stop")`
+
+## Path validation
+
+After the dev server is running, **always** run the validator before telling the user:
+
+```
+exec(command="bun run skills/dev-preview/scripts/validate-html-paths.ts http://localhost:PORT")
+```
+
+- Exit 0 → pass. Proceed to tell the user.
+- Exit 1 → violations found. Follow each `FIX:` line in the output, then re-run until exit 0.
+- Exit 2 → fetch error. Check that the dev server is running.
+
+## Monitoring and debugging
 
 | Call | Purpose |
 |------|---------|
-| `exec(command="npm run dev", background=true)` | Start dev server |
-| `exec(bg_action="output", bg_id="bg-1")` | Get latest output |
-| `exec(bg_action="kill", bg_id="bg-1")` | Stop process |
+| `bg_monitor(action="list")` | List all background processes |
+| `bg_monitor(action="tail", bg_id="bg-1", lines=30)` | Get last 30 lines of output |
+| `exec(bg_action="output", bg_id="bg-1")` | Full output with status |
 
-- Background processes auto-terminate after **45 minutes**.
-- Initial output (first 3 seconds) is included in the start response.
-- Output is kept in a **32 KB ring buffer** (most recent bytes).
-- Maximum **10** concurrent background processes.
+Background processes are also shown in the system prompt automatically.
 
-### bg_monitor
+## After registration
+Tell the user: "Dev tab in the Mini App でプレビューできます"
 
-Inspect and wait on background processes.
-
-| Call | Purpose |
-|------|---------|
-| `bg_monitor(action="list")` | List all bg processes |
-| `bg_monitor(action="watch", bg_id="bg-1", pattern="ready")` | Wait for pattern (default 30s timeout) |
-| `bg_monitor(action="tail", bg_id="bg-1", lines=30)` | Get last N lines |
-
-- `watch` polls every 100ms and returns the matching line.
-- Set `watch_timeout` (seconds) to override the default 30s.
-- If the process exits before a match, returns an error with the final output.
-
-### dev_preview
-
-Control the Mini App dev reverse proxy.
-
-| Call | Purpose |
-|------|---------|
-| `dev_preview(action="start", target="http://localhost:3000")` | Register + activate |
-| `dev_preview(action="stop")` | Deactivate proxy |
-| `dev_preview(action="status")` | Show all targets |
-| `dev_preview(action="unregister", id="...")` | Remove a target |
-
-- Only **localhost** targets are allowed (localhost, 127.0.0.1, ::1).
-- `name` is optional; auto-generated from host:port if omitted.
-
-## System Prompt Integration
-
-Active background processes are automatically injected into the system prompt:
-
-```
-## Background Processes
-
-  [bg-1] pid=1234 running  (uptime: 5m, max: 45m) npm run dev
-  [bg-2] pid=5678 exited=0 (ran: 2m)               go build .
-```
-
-This means the agent always knows which processes are running, even across conversation turns and heartbeats.
-
-## Common Patterns
-
-### Python HTTP server
-
-```
-exec(command="python -m http.server 8080", background=true)
-bg_monitor(action="watch", bg_id="bg-1", pattern="Serving")
-dev_preview(action="start", target="http://localhost:8080")
-```
-
-### Vite / Next.js
-
-```
-exec(command="npm run dev", background=true)
-bg_monitor(action="watch", bg_id="bg-1", pattern="ready|localhost|Local:")
-dev_preview(action="start", target="http://localhost:5173", name="vite-app")
-```
-
-### Debugging
-
-```
-bg_monitor(action="tail", bg_id="bg-1", lines=50)
-exec(bg_action="output", bg_id="bg-1")
-```
-
-### Cleanup
+## Stopping
 
 ```
 exec(bg_action="kill", bg_id="bg-1")
 dev_preview(action="stop")
 ```
 
+## Background process details
+- Auto-terminated after **45 minutes**
+- Output kept in a **32 KB ring buffer** (most recent bytes)
+- Maximum **10** concurrent background processes
+- Exited processes remain visible until explicitly killed
+
 ## Pitfalls / 落とし穴
-
-### Path rewriting (パスリライト)
-
-The dev server runs at `/` but is proxied under `/miniapp/dev/`. The reverse proxy **automatically injects a `<script>`** into HTML responses that patches `fetch()` and `XMLHttpRequest.open()` so that absolute paths like `/api/items` are rewritten to `/miniapp/dev/api/items`.
-
-- **Covered automatically**: `fetch("/api/items")`, `xhr.open("GET", "/data")` — these are patched at runtime.
-- **NOT rewritten automatically**: HTML attribute URLs such as `<img src="/img/logo.png">`, `<link href="/style.css">`, `<a href="/page">`. Use **relative paths** (`img/logo.png`, `./style.css`) in your frontend code.
-- URLs that already start with `/miniapp/dev` or `//` (protocol-relative) are left untouched to prevent double-rewriting.
 
 ### WebSocket not supported
 
-`httputil.ReverseProxy` does **not** transparently proxy WebSocket connections. If your dev server uses WebSocket (e.g., Vite HMR), it will not work through the proxy. Use polling or SSE as alternatives.
-
-### Static asset absolute paths
-
-Any `src="/..."` or `href="/..."` in the HTML will be resolved by the browser relative to the domain root, **not** `/miniapp/dev/`. The injected script only patches `fetch` and `XHR`, not DOM attribute resolution.
-
-**Recommendation**: Use relative paths in all HTML attributes (e.g., `src="./assets/logo.png"` instead of `src="/assets/logo.png"`).
+`httputil.ReverseProxy` does **not** proxy WebSocket. Use polling or SSE instead.
 
 ### SPA routing
 
-If your SPA uses `history.pushState("/page")`, the browser URL becomes `/page` which is outside the `/miniapp/dev/` mount. Navigating to it will hit picoclaw's own routes instead of the dev server.
+Use **hash routing** (`/#/page`) — `history.pushState` paths escape the `/miniapp/dev/` mount.
 
-**Recommendation**: Use **hash routing** (`/#/page`) to keep all navigation within the iframe's current path.
-
-## Important Notes
-
-- Always use `bg_monitor(action="watch")` between starting a server and calling `dev_preview(action="start")`. Without it, the server may not be ready yet.
-- If `watch` times out, check the output with `bg_monitor(action="tail")` to diagnose startup errors.
-- Background processes persist across tool calls but are cleaned up on app shutdown.
-- Exited processes remain visible (for output/exit code inspection) until explicitly killed.
+## Prohibited
+- MUST NOT use ports below 1024
+- MUST NOT proxy to external hosts (only localhost)
