@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -23,11 +24,12 @@ type ToolLoopConfig struct {
 	Tools         *ToolRegistry
 	MaxIterations int
 	LLMOptions    map[string]any
-	// OnStateChange is an optional hook for UI feedback.
-	// Called with ("waiting","") before each LLM call and
-	// ("toolcall", toolName) when each tool starts executing.
-	// nil is safe to pass.
-	OnStateChange func(state, tool string)
+	// Reporter and AgentID replace the old OnStateChange func.
+	// Reporter is called with ReportStateChange("waiting","") before each LLM
+	// call and ReportStateChange("toolcall", toolName) when each tool starts.
+	// Pass nil or orch.Noop to disable. nil is treated as orch.Noop internally.
+	Reporter orch.AgentReporter
+	AgentID  string
 }
 
 // ToolLoopResult contains the result of running the tool loop.
@@ -44,6 +46,11 @@ func RunToolLoop(
 	messages []providers.Message,
 	channel, chatID string,
 ) (*ToolLoopResult, error) {
+	reporter := config.Reporter
+	if reporter == nil {
+		reporter = orch.Noop
+	}
+
 	iteration := 0
 	var finalContent string
 
@@ -68,9 +75,7 @@ func RunToolLoop(
 			llmOpts = map[string]any{}
 		}
 		// 3. Call LLM  (hook: waiting for response)
-		if config.OnStateChange != nil {
-			config.OnStateChange("waiting", "")
-		}
+		reporter.ReportStateChange(config.AgentID, "waiting", "")
 		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
@@ -138,9 +143,7 @@ func RunToolLoop(
 					"tool":      tc.Name,
 					"iteration": iteration,
 				})
-			if config.OnStateChange != nil {
-				config.OnStateChange("toolcall", tc.Name)
-			}
+			reporter.ReportStateChange(config.AgentID, "toolcall", tc.Name)
 
 			// Execute tool (no async callback for subagents - they run independently)
 			var toolResult *ToolResult
