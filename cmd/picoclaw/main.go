@@ -106,6 +106,16 @@ func main() {
 	case "agent":
 		agentCmd()
 	case "gateway":
+		// Check for subcommands: start, stop, restart, status
+		if len(os.Args) >= 3 {
+			subcommand := os.Args[2]
+			switch subcommand {
+			case "start", "stop", "restart", "status":
+				gatewayServiceCmd(subcommand)
+				return
+			}
+		}
+		// No subcommand or unrecognized subcommand - run gateway in foreground
 		gatewayCmd()
 	case "status":
 		statusCmd()
@@ -178,15 +188,19 @@ func printHelp() {
 	fmt.Println("Usage: picoclaw <command>")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
-	fmt.Println("  agent       Interact with the agent directly")
-	fmt.Println("  auth        Manage authentication (login, logout, status)")
-	fmt.Println("  gateway     Start picoclaw gateway")
-	fmt.Println("  status      Show picoclaw status")
-	fmt.Println("  cron        Manage scheduled tasks")
-	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
-	fmt.Println("  skills      Manage skills (install, list, remove)")
-	fmt.Println("  version     Show version information")
+	fmt.Println("  onboard          Initialize picoclaw configuration and workspace")
+	fmt.Println("  agent            Interact with the agent directly")
+	fmt.Println("  auth             Manage authentication (login, logout, status)")
+	fmt.Println("  gateway          Start picoclaw gateway (foreground mode)")
+	fmt.Println("  gateway start    Start gateway as daemon (background)")
+	fmt.Println("  gateway stop     Stop the gateway daemon")
+	fmt.Println("  gateway restart  Restart the gateway daemon")
+	fmt.Println("  gateway status   Show gateway daemon status")
+	fmt.Println("  status           Show picoclaw status")
+	fmt.Println("  cron             Manage scheduled tasks")
+	fmt.Println("  migrate          Migrate from OpenClaw to PicoClaw")
+	fmt.Println("  skills           Manage skills (install, list, remove)")
+	fmt.Println("  version          Show version information")
 }
 
 func getConfigPath() string {

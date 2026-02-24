@@ -280,6 +280,91 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ---
 
+## 🚀 Running the Gateway
+
+PicoClaw provides two modes for running the gateway:
+
+### Foreground Mode (Development)
+
+Run the gateway in the foreground for development and testing:
+
+```bash
+picoclaw gateway
+```
+
+Press `Ctrl+C` to stop the gateway.
+
+### Daemon Mode (Production)
+
+Run the gateway as a background daemon for production deployments:
+
+```bash
+# Start the gateway in the background
+picoclaw gateway start
+
+# Check gateway status
+picoclaw gateway status
+
+# Stop the gateway
+picoclaw gateway stop
+
+# Restart the gateway
+picoclaw gateway restart
+```
+
+**Daemon Features:**
+- **Auto-restart**: If the gateway crashes, it automatically restarts up to 3 times with exponential backoff
+- **Logging**: All logs are written to `~/.picoclaw/gateway.log` with automatic rotation (100MB per file, 3 backups)
+- **Status tracking**: View PID, uptime, and restart count with `picoclaw gateway status`
+- **No terminal needed**: The gateway runs in the background, freeing up your terminal
+
+**Log File Location:**
+```
+~/.picoclaw/gateway.log      # Current log
+~/.picoclaw/gateway.log.1    # First backup
+~/.picoclaw/gateway.log.2    # Second backup
+~/.picoclaw/gateway.log.3    # Third backup
+```
+
+**Viewing Logs:**
+```bash
+# Follow the log file
+tail -f ~/.picoclaw/gateway.log
+
+# View last 100 lines
+tail -n 100 ~/.picoclaw/gateway.log
+```
+
+**systemd Integration (Linux):**
+
+For automatic startup on boot, create a systemd service:
+
+```ini
+# /etc/systemd/system/picoclaw.service
+[Unit]
+Description=PicoClaw Gateway
+After=network.target
+
+[Service]
+Type=forking
+User=pi
+ExecStart=/home/pi/picoclaw gateway start
+ExecStop=/home/pi/picoclaw gateway stop
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable picoclaw
+sudo systemctl start picoclaw
+```
+
+---
+
 ## 💬 Chat Apps
 
 Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
@@ -1107,15 +1192,19 @@ picoclaw agent -m "Hello"
 
 ## CLI Reference
 
-| Command                   | Description                   |
-| ------------------------- | ----------------------------- |
-| `picoclaw onboard`        | Initialize config & workspace |
-| `picoclaw agent -m "..."` | Chat with the agent           |
-| `picoclaw agent`          | Interactive chat mode         |
-| `picoclaw gateway`        | Start the gateway             |
-| `picoclaw status`         | Show status                   |
-| `picoclaw cron list`      | List all scheduled jobs       |
-| `picoclaw cron add ...`   | Add a scheduled job           |
+| Command                         | Description                                |
+| ------------------------------- | ------------------------------------------ |
+| `picoclaw onboard`              | Initialize config & workspace              |
+| `picoclaw agent -m "..."`       | Chat with the agent                        |
+| `picoclaw agent`                | Interactive chat mode                      |
+| `picoclaw gateway`              | Start gateway in foreground                |
+| `picoclaw gateway start`        | Start gateway as daemon (background)       |
+| `picoclaw gateway stop`         | Stop the gateway daemon                    |
+| `picoclaw gateway restart`      | Restart the gateway daemon                 |
+| `picoclaw gateway status`       | Show gateway daemon status (PID, uptime)   |
+| `picoclaw status`               | Show picoclaw status                       |
+| `picoclaw cron list`            | List all scheduled jobs                    |
+| `picoclaw cron add ...`         | Add a scheduled job                        |
 
 ### Scheduled Tasks / Reminders
 
