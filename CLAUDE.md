@@ -559,19 +559,22 @@ RAM 制約がない前提での推奨順:
 既存の `GetMemoryContext()` を直接書き直す（新関数は追加しない）。
 内部で `ReadLongTerm()` を1回だけ呼び、取得した `content` を既存の private ヘルパー群に渡す。
 
+`HasActivePlan`, `GetPlanStatus`, `GetCurrentPhase`, `GetTotalPhases` はいずれもパッケージ変数 regex (`reActivePlan`, `reStatus`, `rePhase`, `rePhaseHeader`) を1〜2行で呼ぶだけなので、private 関数を新規作成せずインライン化できる。`GetPlanPhases` のみ42行の複雑なロジックがあるため private variant (`getPlanPhasesFrom(content)`) を1つ追加。
+
 ```go
 func (ms *MemoryStore) GetMemoryContext() string {
     content := ms.ReadLongTerm()
     if content == "" { return "" }
-    hasPlan := hasActivePlanFrom(content)
-    status  := getPlanStatusFrom(content)
-    // ... content を各ヘルパーに渡す
+    hasPlan := reActivePlan.MatchString(content)           // インライン
+    status  := reStatus.FindStringSubmatch(content)        // インライン
+    phases  := getPlanPhasesFrom(content)                  // private 関数 (1つだけ新設)
+    // ...
 }
 ```
 
 既存の public メソッド (`HasActivePlan()`, `GetPlanStatus()` 等) は互換性のため残す（単体テスト・CLI から個別に呼ばれる）。
 
-`FormatPlanDisplay()` も同じ多重 `ReadLongTerm()` 問題を持つ（`HasActivePlan`, `GetPlanStatus`, `GetCurrentPhase`, `GetPlanPhases` を個別に呼ぶ）。同様に content パススルー方式にリファクタする。
+`FormatPlanDisplay()` も同じ多重 `ReadLongTerm()` 問題を持つ（L657 で content を読んだ後 L658/L666/L667/L668 で再度 ReadLongTerm を呼ぶ）。同様にインライン置き換え + `getPlanPhasesFrom(content)` でリファクタする。
 
 #### 3-2. Split 重複の統合 (読み取りパスのみ)
 
@@ -592,10 +595,11 @@ content パススルーで解消されるのは `ReadLongTerm()` の多重呼び
 
 #### 4-1. stats.json の write-behind
 
-- `stats.Tracker` に dirty フラグ + タイマー (5分)
-- `RecordUsage()` / `RecordPrompt()` はインメモリのみ更新
-- シャットダウンフックで強制フラッシュ
-- 実装量: 最小。タイマー goroutine 1本 + `Close()` メソッド
+- `RecordUsage()` L77 / `RecordPrompt()` L90 の `t.save()` 呼び出しを削除 (カウンタ更新はインメモリのみに)
+- 起動時に `time.NewTicker(5 * time.Minute)` → `t.save()` のタイマー goroutine 1本追加
+- `Close()` メソッドを新規追加: タイマー停止 + 最終 `t.save()`
+- `Reset()` L111 の `t.save()` は意味的チェックポイントなので即時維持
+- dirty フラグは不要 (タイマーが無更新時に save() しても同内容の上書きで無害)
 
 #### 4-2. sessions/*.json の write-behind
 
@@ -653,88 +657,4 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 3: **syscall + Split/Join 削減** (CPU + アロケーション)
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
-
----
-
-## FEEDBACK — 第4回レビュー (I)
-
-> レビュー日: 2026-02-24。`pkg/stats/tracker.go` と `pkg/agent/memory.go` を精読して発見した前提誤りと記述の欠落。
-
-### I-1. Phase 4-1: stats.Tracker に dirty フラグは不要
-
-**指摘内容**: Phase 4-1 に「dirty フラグ + タイマー (5分)」と記述しているが、`stats.Tracker` でカウンタを更新するのは `RecordUsage()` と `RecordPrompt()` の2関数のみ（`Reset()` は意味的チェックポイントなので別扱い）。どちらを呼んだ後も常にデータは「更新済み」であり、フラグで dirty/clean を区別する意味がない。
-
-**現状コード** (`pkg/stats/tracker.go`):
-
-```go
-// L61-78
-func (t *Tracker) RecordUsage(...) {
-    t.mu.Lock()
-    defer t.mu.Unlock()
-    // カウンタ更新 (L67-75)
-    t.save()  // L77 ← 削除対象
-}
-
-// L81-91
-func (t *Tracker) RecordPrompt() {
-    t.mu.Lock()
-    defer t.mu.Unlock()
-    // カウンタ更新 (L85-88)
-    t.save()  // L90 ← 削除対象
-}
-
-// L103-112: Reset() は save() を L111 で呼ぶが、意味的チェックポイントなので即時維持
-```
-
-**注意**: `Reset()` (L103) も `save()` を呼ぶ (L111)。これは意図的な意味的チェックポイントであり、write-behind の対象外。「ONLY writers」という言い方は厳密には誤り。
-
-**正しい実装**: dirty フラグを追加せず、単純に:
-1. `RecordUsage()` L77 / `RecordPrompt()` L90 の `t.save()` 呼び出しを削除
-2. 起動時にタイマー goroutine 1本 (`time.NewTicker(5 * time.Minute)` → `t.save()`)
-3. `Close()` メソッドを新規追加: タイマー停止 + `t.save()` (現在 `Close()` は存在しない)
-
-タイマーが「一度も更新されていないのに save()」を呼ぶリスクがあるが、`NewTracker()` が `load()` → 即 `save()` する設計にしない限り無害（同じ内容の上書き）。
-
-**計画の修正箇所**: Phase 4-1 の「dirty フラグ」という記述を削除し、「`save()` 呼び出しを L77/L90 から除去 + 定期タイマー + `Close()` 新規追加」に単純化する。
-
----
-
-### I-2. Phase 3-1: private ヘルパーの新規作成は最小限で済む ← 当初指摘を修正
-
-**当初の指摘の問題**: 「`hasActivePlanFrom`, `getPlanStatusFrom`, ... の private 関数群を新規作成」と述べたが、過剰だった。`HasActivePlan()`, `GetPlanStatus()` 等の本体を見ると、いずれも **L137-145 に定義済みのパッケージ変数 regex を1〜2行で呼ぶだけ** であり、専用の private 関数を作らずインライン化できる。
-
-| メソッド | 本体の実態 | 置き換え手段 |
-|----------|-----------|-------------|
-| `HasActivePlan()` L148 | `reActivePlan.MatchString(content)` | **インライン** (1行) |
-| `GetPlanStatus()` L154 | `reStatus.FindStringSubmatch` + TrimSpace | **インライン** (2行) |
-| `GetCurrentPhase()` L164 | `rePhase.FindStringSubmatch` + Atoi | **インライン** (2行) |
-| `GetTotalPhases()` L175 | `rePhaseHeader.FindAllStringSubmatch` + max loop | **インライン** (5行) |
-| `GetPlanPhases()` L270 | 42行の複雑なロジック | **private 関数 1つ** が要る |
-
-**致命的な即時矛盾 (インラインで今すぐ直せる)**:
-
-```go
-// GetMemoryContext() L725-746
-longTerm := ms.ReadLongTerm()          // L728 — 読んだ
-if ms.HasActivePlan() {                // L730 — また ReadLongTerm() ← content は L728 にある
-    status := ms.GetPlanStatus()       // L731 — また ReadLongTerm()
-    ...
-if !ms.HasActivePlan() {               // L746 — また ReadLongTerm() ← 3回目
-
-// FormatPlanDisplay() L656-668
-content := ms.ReadLongTerm()           // L657 — 読んだ
-if !ms.HasActivePlan() { ... }         // L658 — また ReadLongTerm() ← content は L657 にある
-status := ms.GetPlanStatus()           // L666 — また ReadLongTerm()
-currentPhase := ms.GetCurrentPhase()   // L667 — また ReadLongTerm()
-phases := ms.GetPlanPhases()           // L668 — ReadLongTerm() + GetTotalPhases() でさらに1回
-```
-
-L730/L731/L746 は全て `reActivePlan.MatchString(longTerm)` / `reStatus...` のインラインに置き換えるだけ。`GetPlanPhases(content)` のみ private 関数が必要。
-
-**実装量の再評価**:
-- 新規 private 関数: **1つ** (`getPlanPhasesFrom(content string) []PlanPhase`)
-- 既存 public メソッドの変更: なし (互換性維持)
-- `GetMemoryContext()` / `FormatPlanDisplay()` 内の修正: 各メソッドで数行のインライン置き換え
-
-**計画の修正箇所**: Phase 3-1 の「private ヘルパー群を新規作成」という表現を「`HasActivePlan` 等の単純呼び出しをパッケージ変数 regex のインライン呼び出しに置き換え、複雑な `GetPlanPhases` だけ private variant を1つ追加」に修正する。
 
