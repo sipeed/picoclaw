@@ -132,6 +132,15 @@ func (st *SessionTracker) ListActive() []SessionEntry {
 	return result
 }
 
+// GetTouchDir returns the TouchDir for a given session key, or "" if not found.
+func (st *SessionTracker) GetTouchDir(sessionKey string) string {
+	val, ok := st.entries.Load(sessionKey)
+	if !ok {
+		return ""
+	}
+	return val.(*SessionEntry).TouchDir
+}
+
 // GetPeerPurposes returns purposes of other active sessions targeting the same project.
 // Used for lightweight coordination without context pollution.
 func (st *SessionTracker) GetPeerPurposes(sessionKey, projectPath string) []PeerInfo {

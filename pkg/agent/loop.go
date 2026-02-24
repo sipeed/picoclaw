@@ -91,6 +91,7 @@ type AgentLoop struct {
 	activeTasks      sync.Map // sessionKey → *activeTask
 	sessions         *SessionTracker
 	lastSystemPrompt atomic.Value // string — last system prompt sent to LLM
+	promptDirty      atomic.Bool   // true = rebuild needed on next GetSystemPrompt read
 	OnStateChange    func() // called on plan/session/skills mutations
 	OnUserMessage    func() // called when a real user message is processed
 }
@@ -149,6 +150,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 }
 
 func (al *AgentLoop) notifyStateChange() {
+	al.promptDirty.Store(true)
 	if al.OnStateChange != nil {
 		al.OnStateChange()
 	}
@@ -918,6 +920,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// Capture the finalized system prompt for Mini App inspection
 	if len(messages) > 0 {
 		al.lastSystemPrompt.Store(messages[0].Content)
+		al.promptDirty.Store(false)
 	}
 
 	// 5. Run LLM iteration loop
@@ -2247,6 +2250,18 @@ func (al *AgentLoop) runLLMIteration(
 			}
 		}
 
+		// Refresh system prompt: tool execution may have changed workDir,
+		// memory, plan status, etc.  Update messages[0] so the next LLM
+		// call sees the current state.
+		if touchDir := al.sessions.GetTouchDir(opts.SessionKey); touchDir != "" {
+			agent.ContextBuilder.SetWorkDir(filepath.Join(agent.Workspace, touchDir))
+		}
+		if newPrompt := agent.ContextBuilder.BuildSystemPrompt(); len(messages) > 0 && messages[0].Content != newPrompt {
+			messages[0].Content = newPrompt
+			al.lastSystemPrompt.Store(newPrompt)
+			al.promptDirty.Store(false)
+		}
+
 	}
 
 	// If max iterations exhausted with tool calls still pending,
@@ -2483,17 +2498,23 @@ func (al *AgentLoop) GetContextInfo() (workDir, planWorkDir, workspace string, b
 }
 
 // GetSystemPrompt returns the system prompt last sent to the LLM.
-// Falls back to building from current state if no LLM call has occurred yet.
+// If the prompt is dirty (state changed since last capture), it rebuilds
+// from current state. Falls back to building if no LLM call has occurred yet.
 func (al *AgentLoop) GetSystemPrompt() string {
-	if v := al.lastSystemPrompt.Load(); v != nil {
-		return v.(string)
+	if !al.promptDirty.Load() {
+		if v := al.lastSystemPrompt.Load(); v != nil {
+			return v.(string)
+		}
 	}
-	// Fallback: no LLM call yet — build from current state
+	// Rebuild from current state
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
 		return ""
 	}
-	return agent.ContextBuilder.BuildSystemPrompt()
+	prompt := agent.ContextBuilder.BuildSystemPrompt()
+	al.lastSystemPrompt.Store(prompt)
+	al.promptDirty.Store(false)
+	return prompt
 }
 
 // formatMessagesForLog formats messages for logging
