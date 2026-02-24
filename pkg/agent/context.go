@@ -103,9 +103,9 @@ func (cb *ContextBuilder) getIdentity() string {
 	// Build prompt with optional orchestration banner
 	var prompt string
 	if cb.orchestrationEnabled {
-		prompt = `/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
-O R C H E S T R A  M O D E
-\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
+		prompt = ` /_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+ O R C H E S T R A  M O D E
+/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
 `
 	}
