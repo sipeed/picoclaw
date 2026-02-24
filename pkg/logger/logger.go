@@ -93,6 +93,20 @@ func (rb *logRingBuffer) recent(limit int) []LogEntry {
 	return result
 }
 
+// visitReverse iterates entries from newest to oldest under the read lock.
+// The callback receives a pointer to the internal entry (valid only during
+// the call). Return false to stop iteration.
+func (rb *logRingBuffer) visitReverse(fn func(*LogEntry) bool) {
+	rb.mu.RLock()
+	defer rb.mu.RUnlock()
+	for i := 0; i < rb.count; i++ {
+		idx := (rb.head - 1 - i + len(rb.entries)) % len(rb.entries)
+		if !fn(&rb.entries[idx]) {
+			return
+		}
+	}
+}
+
 // LogSubscriber receives log entries matching its filter.
 type LogSubscriber struct {
 	Ch     chan LogEntry
@@ -355,20 +369,23 @@ func broadcastToSubscribers(entry LogEntry) {
 // RecentLogs returns recent log entries from the ring buffer, optionally filtered
 // by minimum level and component. The Caller field is stripped for security.
 func RecentLogs(minLevel LogLevel, component string, limit int) []LogEntry {
-	all := ringBuf.recent(0) // get all
 	result := make([]LogEntry, 0, limit)
-	for i := len(all) - 1; i >= 0 && len(result) < limit; i-- {
-		e := all[i]
+	ringBuf.visitReverse(func(e *LogEntry) bool {
+		if len(result) >= limit {
+			return false
+		}
 		if lvl, ok := levelFromName[e.Level]; ok && lvl < minLevel {
-			continue
+			return true
 		}
 		if component != "" && e.Component != component {
-			continue
+			return true
 		}
-		e.Caller = ""                      // strip for security
-		e.Fields = SanitizeFields(e.Fields) // mask sensitive values
-		result = append(result, e)
-	}
+		entry := *e
+		entry.Caller = ""
+		entry.Fields = SanitizeFields(e.Fields)
+		result = append(result, entry)
+		return true
+	})
 	// Reverse so oldest first
 	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
 		result[i], result[j] = result[j], result[i]
