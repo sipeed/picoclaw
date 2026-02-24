@@ -228,8 +228,8 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		Timestamp: messageTS,
 	})
 
-	content := ev.Text
-	content = c.stripBotMention(content)
+	var contentBuf strings.Builder
+	contentBuf.WriteString(c.stripBotMention(ev.Text))
 
 	var mediaPaths []string
 	localFiles := []string{} // 跟踪需要清理的本地文件
@@ -262,16 +262,17 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 
 				if err != nil {
 					logger.ErrorCF("slack", "Voice transcription failed", map[string]any{"error": err.Error()})
-					content += fmt.Sprintf("\n[audio: %s (transcription failed)]", file.Name)
+					fmt.Fprintf(&contentBuf, "\n[audio: %s (transcription failed)]", file.Name)
 				} else {
-					content += fmt.Sprintf("\n[voice transcription: %s]", result.Text)
+					fmt.Fprintf(&contentBuf, "\n[voice transcription: %s]", result.Text)
 				}
 			} else {
-				content += fmt.Sprintf("\n[file: %s]", file.Name)
+				fmt.Fprintf(&contentBuf, "\n[file: %s]", file.Name)
 			}
 		}
 	}
 
+	content := contentBuf.String()
 	if strings.TrimSpace(content) == "" {
 		return
 	}

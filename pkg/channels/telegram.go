@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -797,7 +798,7 @@ func extractCodeBlocks(text string) codeBlockMatch {
 
 	i := 0
 	text = re.ReplaceAllStringFunc(text, func(m string) string {
-		placeholder := fmt.Sprintf("\x00CB%d\x00", i)
+		placeholder := "\x00CB" + strconv.Itoa(i) + "\x00"
 		i++
 		return placeholder
 	})
@@ -821,7 +822,7 @@ func extractInlineCodes(text string) inlineCodeMatch {
 
 	i := 0
 	text = re.ReplaceAllStringFunc(text, func(m string) string {
-		placeholder := fmt.Sprintf("\x00IC%d\x00", i)
+		placeholder := "\x00IC" + strconv.Itoa(i) + "\x00"
 		i++
 		return placeholder
 	})

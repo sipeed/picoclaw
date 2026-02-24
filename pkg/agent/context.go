@@ -218,14 +218,16 @@ func (cb *ContextBuilder) BuildMessages(
 ) []providers.Message {
 	messages := []providers.Message{}
 
-	systemPrompt := cb.BuildSystemPrompt()
+	var sysBuilder strings.Builder
+	sysBuilder.WriteString(cb.BuildSystemPrompt())
 
 	// Add Current Session info if provided
 	if channel != "" && chatID != "" {
-		systemPrompt += fmt.Sprintf("\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
+		fmt.Fprintf(&sysBuilder, "\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
 	}
 
 	// Log system prompt summary for debugging (debug mode only)
+	systemPrompt := sysBuilder.String()
 	logger.DebugCF("agent", "System prompt built",
 		map[string]any{
 			"total_chars":   len(systemPrompt),
@@ -244,7 +246,9 @@ func (cb *ContextBuilder) BuildMessages(
 		})
 
 	if summary != "" {
-		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
+		sysBuilder.WriteString("\n\n## Summary of Previous Conversation\n\n")
+		sysBuilder.WriteString(summary)
+		systemPrompt = sysBuilder.String()
 	}
 
 	history = sanitizeHistoryForProvider(history)
