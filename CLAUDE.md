@@ -478,6 +478,8 @@ RAM 制約がない前提での推奨順:
 | `pkg/agent/context.go` | `BuildSystemPrompt()` L247 — `+=` を Builder に | 🟡 |
 | `pkg/logger/logger.go` | `formatFields()` L241-246 | 🟡 |
 | `pkg/skills/loader.go` | `LoadSkillsForContext()` L217-225 | 🟡 |
+| `pkg/channels/telegram.go` | `extractCodeBlocks()` L789-806 — codes 無容量 + ループ内 `fmt.Sprintf` | 🔴 |
+| `pkg/channels/telegram.go` | `extractInlineCodes()` L813-830 — 同上パターン | 🔴 |
 | `pkg/channels/discord.go` | `appendContent()` L162-168 | 🟡 |
 | `pkg/channels/slack.go` | `handleMessageEvent()` L234-272 | 🟡 |
 
@@ -487,9 +489,8 @@ RAM 制約がない前提での推奨順:
 |----------|------|
 | `pkg/skills/loader.go:73` | `make([]SkillInfo, 0)` → `make([]SkillInfo, 0, 20)` |
 | `pkg/config/config.go:628` | `var matches` → `make([]ModelConfig, 0, 4)` |
-| `pkg/config/migration.go:48` | `var result` → `make([]ModelConfig, 0, len(providers)*4)` |
+| `pkg/config/migration.go:48` | `var result` → `make([]ModelConfig, 0, 20)` |
 | `pkg/skills/registry.go:183` | `var merged` → `make([]SearchResult, 0, len(regs)*limit)` |
-| `pkg/agent/session_tracker.go:125` | `var result` → 容量ヒント付き |
 | `pkg/skills/search_cache.go:42-43` | map/slice に `maxEntries` ヒント |
 
 #### 0-3. byte/string 変換の削減 (カテゴリ C)
@@ -502,6 +503,7 @@ RAM 制約がない前提での推奨順:
 | `pkg/utils/string.go:100` | `Truncate()` — `len(s) <= max` で早期 return (ASCII fast path) |
 | `pkg/utils/string.go:50` | `wrapLine()` — 同上 ASCII fast path |
 | `pkg/git/worktree.go:71-75` | `[]rune` → byte 長チェックで早期 return |
+| `pkg/channels/telegram.go:1071-1111` | `wrapByDisplayWidth()` — ループ内 `string(r)` を `displayWidth` の引数を `rune` に変更して排除 |
 
 #### 0-4. パッケージ変数化 (カテゴリ H)
 
@@ -550,29 +552,29 @@ RAM 制約がない前提での推奨順:
 
 **目的**: `GetMemoryContext()` 1回で `ReadLongTerm()` が 5回以上呼ばれる問題を解消。
 
-#### 方式: content パススルー (最小侵襲)
+#### 3-1. `GetMemoryContext()` を content パススルー方式にリファクタ
 
-既存の private 関数群 (`extractPhaseContent`, `getPlanPhasesFromContent` 等) は既に `content string` を受け取る設計。
-public メソッド側に「content を引数に取るバリアント」を追加し、`GetMemoryContext()` で1回だけ Read する。
+既存の `GetMemoryContext()` を直接書き直す（新関数は追加しない）。
+内部で `ReadLongTerm()` を1回だけ呼び、取得した `content` を既存の private ヘルパー群に渡す。
 
 ```go
-// 新設: 1回の Read で全情報を取得
-func (ms *MemoryStore) GetMemoryContextCached() string {
+func (ms *MemoryStore) GetMemoryContext() string {
     content := ms.ReadLongTerm()
-    // content を全ヘルパーに渡す
+    if content == "" { return "" }
     hasPlan := hasActivePlanFrom(content)
     status  := getPlanStatusFrom(content)
-    ctx     := getPlanContextFrom(content)
-    ...
+    // ... content を各ヘルパーに渡す
 }
 ```
 
-既存の public メソッド (`HasActivePlan()`, `GetPlanStatus()` 等) は互換性のため残す（単体テスト・CLI から呼ばれる可能性）。
+既存の public メソッド (`HasActivePlan()`, `GetPlanStatus()` 等) は互換性のため残す（単体テスト・CLI から個別に呼ばれる）。
 
-#### memory.go 内の重複 Split/Join (カテゴリ H 後半)
+#### 3-2. Split 重複の統合 (content パススルーとは別問題)
 
-`extractPhaseContent`, `GetPlanPhases`, `MarkStep`, `AddStep` が個別に `strings.Split` する問題は、
-content パススルー方式で自然に解消される（Split は `GetMemoryContext()` 内で1回のみ）。
+content パススルーで解消されるのは `ReadLongTerm()` の多重呼び出しのみ。
+`extractPhaseContent()`, `GetPlanPhases()`, `MarkStep()`, `AddStep()` が個別に `strings.Split` する問題は残る。
+
+対応: `GetMemoryContext()` 内で1回 `strings.Split(content, "\n")` し、`[]string` (行スライス) を受け取る内部ヘルパーを追加。既存の `content string` を受け取るヘルパーは互換性のため残す。
 
 **コミット**: 1つ。
 
@@ -584,7 +586,7 @@ content パススルー方式で自然に解消される（Split は `GetMemoryC
 
 #### 4-1. stats.json の write-behind
 
-- `SessionTracker` (または stats 管理構造体) に dirty フラグ + タイマー (5分)
+- `stats.Tracker` に dirty フラグ + タイマー (5分)
 - `RecordUsage()` / `RecordPrompt()` はインメモリのみ更新
 - シャットダウンフックで強制フラッシュ
 - 実装量: 最小。タイマー goroutine 1本 + `Close()` メソッド
@@ -595,6 +597,13 @@ content パススルー方式で自然に解消される（Split は `GetMemoryC
 - `AddFullMessage()` → dirty 記録のみ、`Save()` はフラッシャーから呼ぶ
 - フラッシュ間隔: 5分 or 20メッセージ
 - シャットダウンフックで全 dirty セッションをフラッシュ
+
+#### `AppendToday()` について
+
+`AppendToday()` (日次ノート追記) は write-behind の対象外とする。理由:
+- 書き込み頻度が低い（日次ノート追記時のみ）
+- 書き込み内容がユーザーの手動確認対象であり、即時反映が望ましい
+- sessions/stats と異なり、遅延のメリットが小さい
 
 **コミット**: 4-1, 4-2 を個別。
 
@@ -611,7 +620,6 @@ content パススルー方式で自然に解消される（Split は `GetMemoryC
 | D-2: FunctionCall.Arguments 型変更 | `string` → `json.RawMessage` | 全プロバイダーに波及、破壊的変更 |
 | D-3: Parameters を RawMessage に | 同上 | 同上 |
 | D-5: Session.Messages を immutable に | COW or linked list | セッション管理の根本再設計が必要 |
-| telegram.go wrapByDisplayWidth | ループ内 `string(r)` | runewidth ライブラリ依存、別途検討 |
 
 ---
 
@@ -629,70 +637,3 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
 
----
-
-## FEEDBACK — 改修計画レビュー
-
-> レビュー日 2026-02-24。改修計画の誤り・漏れ・改善点をまとめる。
-
-### F-1. telegram.go の 🔴 High 項目が Phase 0-1 から抜け落ちている
-
-`pkg/channels/telegram.go` の以下2関数は元レビューで 🔴 High と評価したが、計画のどのフェーズにも記載がない。
-
-| 関数 | 行 | 問題 |
-|------|----|------|
-| `extractCodeBlocks()` | L789-806 | codes スライス無容量 + ループ内 `fmt.Sprintf` |
-| `extractInlineCodes()` | L813-830 | 同上パターン |
-
-どちらも Phase 0-1 (strings.Builder 置き換え) に追加すること。
-
-### F-2. `wrapByDisplayWidth` の見送り理由が誤っている
-
-Phase 5 の見送り理由「runewidth ライブラリ依存」は不正確。現状のコードはどの外部ライブラリも使っていない。問題はループ内の `string(r)` (rune→string 変換) であり、修正は「rune のコードポイントを直接比較する」か「`displayWidth` 関数の引数を `rune` に変更する」だけで済む。ライブラリ不要。
-
-🔴 High 評価なので Phase 0-3 に移動すること。
-
-### F-3. Phase 3 の新関数名 `GetMemoryContextCached` が誤解を招く
-
-```go
-func (ms *MemoryStore) GetMemoryContextCached() string { ... }
-```
-
-この名前は「呼び出し間でキャッシュする」と読めるが、実際は「1回の呼び出し内で ReadLongTerm を1回だけ呼ぶ」というだけ。既存の `GetMemoryContext()` を直接リファクタリングすれば新関数は不要。
-
-推奨: `GetMemoryContext()` を content パススルー方式に書き直す。互換性のため残すべき public メソッド (`HasActivePlan()` 等) はそのまま保持。新関数の追加は不要。
-
-### F-4. Phase 3 の「Split が1回になる」という主張は不正確
-
-計画には「Split は `GetMemoryContext()` 内で1回のみ」と書かれているが、`GetMemoryContext()` 自身は `strings.Split` を呼ばない。`strings.Split` を呼ぶのは `extractPhaseContent()`, `GetPlanPhases()`, `MarkStep()`, `AddStep()` の各ヘルパー関数。
-
-content パススルーで解消されるのは **`ReadLongTerm()` の多重呼び出し** だけであり、Split の重複は別問題として残る。Split の統合には「`GetPlanPhases()` が1回 Split して `[]string` を内部ヘルパーに渡す」という追加リファクタが必要。計画に明記すること。
-
-### F-5. `session_tracker.go:125` が Phase 0-2 と Phase 1 に重複している
-
-Phase 0-2 に「`pkg/agent/session_tracker.go:125` — 容量ヒント付き」、Phase 1 に「`ListActive()` の戻り値を `[]*SessionEntry` に」が別々に記載されている。戻り値を `[]*SessionEntry` にすれば値コピーの問題も容量の問題も同時に解消されるため、Phase 1 で1回だけ対応すれば十分。Phase 0-2 から削除すること。
-
-### F-6. Phase 4-1 の主語が間違っている
-
-「`SessionTracker` (または stats 管理構造体) に dirty フラグ」と書かれているが、正しくは `stats.Tracker`。`SessionTracker` はセッション追跡の別の構造体 (`pkg/agent/session_tracker.go`)。混同に注意。
-
-### F-7. config/migration.go の容量ヒント計算が過大
-
-Phase 0-2 の提案「`make([]ModelConfig, 0, len(providers)*4)`」は providers の各フィールドを×4するが、`ConvertProvidersToModelList` が返す最大要素数は providers 数と同程度（約18）であり `*4` は過剰。`make([]ModelConfig, 0, 20)` または `make([]ModelConfig, 0, len(knownProviders))` で十分。
-
-### F-8. `AppendToday()` の write-behind が Phase 4 に含まれていない
-
-`AppendToday()` も「read → append → write」のパターンで、セッションに比べ頻度は低いが同じ write-behind の対象になりうる。Phase 4 の対象から意図的に外したなら理由を記載すること。
-
-### まとめ: 計画の修正項目
-
-| # | 対象フェーズ | 修正内容 |
-|---|------------|---------|
-| F-1 | Phase 0-1 | `extractCodeBlocks`, `extractInlineCodes` を追加 |
-| F-2 | Phase 0-3 へ移動 | `wrapByDisplayWidth` の見送り理由を訂正、Phase 0-3 に格上げ |
-| F-3 | Phase 3 | `GetMemoryContextCached` を廃止、`GetMemoryContext` を直接リファクタ |
-| F-4 | Phase 3 | Split 重複は別問題として明記、対応を追加 |
-| F-5 | Phase 0-2 | `session_tracker.go:125` の重複エントリを削除 |
-| F-6 | Phase 4-1 | `SessionTracker` → `stats.Tracker` に訂正 |
-| F-7 | Phase 0-2 | `*4` 容量ヒントを `20` に修正 |
-| F-8 | Phase 4 | `AppendToday()` の扱いを明記 |
