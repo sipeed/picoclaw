@@ -108,6 +108,7 @@ func agentCmd() {
 		fmt.Printf("\n%s %s\n", logo, response)
 	} else {
 		fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n", logo)
+		fmt.Println("  /help    - show detailed help")
 		fmt.Println("  /cmd     - switch to command mode")
 		fmt.Println("  /pico    - switch to chat mode")
 		fmt.Println("  /hipico  - AI assistance in command mode")
@@ -160,6 +161,12 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 		if input == "exit" || input == "quit" {
 			fmt.Println("Goodbye!")
 			return
+		}
+
+		// /help works in all modes
+		if input == "/help" {
+			printHelp()
+			continue
 		}
 
 		switch mode {
@@ -277,6 +284,12 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			return
 		}
 
+		// /help works in all modes
+		if input == "/help" {
+			printHelp()
+			continue
+		}
+
 		switch mode {
 		case modePico:
 			if input == "/cmd" {
@@ -347,6 +360,54 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			fmt.Printf("\n%s %s\n\n", logo, response)
 		}
 	}
+}
+
+// printHelp outputs detailed usage information for all interactive modes.
+func printHelp() {
+	fmt.Printf(`%s PicoClaw Interactive Mode Help
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PicoClaw has three interactive modes:
+
+  1. Chat Mode (default)
+     Talk to the AI agent directly. Your input is sent as a message
+     and the AI responds.
+
+  2. Command Mode
+     Execute shell commands directly, like a terminal. Supports cd,
+     pipes, redirects, and all standard shell features.
+
+  3. AI-Assisted Command Mode
+     A multi-turn AI conversation within command mode. The AI is aware
+     of your current working directory and can help with system tasks.
+
+Commands (available in all modes):
+  /help      Show this help message
+  exit       Exit PicoClaw
+  quit       Exit PicoClaw
+  Ctrl+C     Exit PicoClaw
+
+Mode switching:
+  /cmd       Switch to command mode        (from chat mode)
+  /pico      Switch to chat mode           (from command / AI-assisted mode)
+  /hipico <msg>  Start AI-assisted mode    (from command mode)
+  /byepico   End AI assistance             (from AI-assisted mode)
+
+Examples:
+  Chat mode:
+    %s You: What is the weather today?
+
+  Command mode:
+    $ ls -al /var/log
+    $ cd /tmp
+    $ cat error.log | grep "FATAL"
+
+  AI-assisted mode (enter from command mode):
+    $ /hipico check the log files for errors
+    %s> show me more details on line 42
+    %s> /byepico
+
+`, logo, logo, logo, logo)
 }
 
 // executeShellCommand runs a shell command in the current working directory
