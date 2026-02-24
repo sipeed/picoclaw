@@ -643,3 +643,54 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
 
+---
+
+## FEEDBACK — 第3回レビュー
+
+> レビュー日 2026-02-24。G-1〜G-4 の反映を確認し、新たに発見した問題を記載。
+
+**前回指摘の反映確認**: G-1 ✅ G-2 ✅ G-3 ✅ G-4 ✅ — 全4件が正しく反映されている。
+
+---
+
+### H-1. Phase 4-2: `Save()` の呼び出し元は `AddFullMessage()` ではなく `loop.go` の5箇所
+
+計画には「`AddFullMessage()` → dirty 記録のみ」とあるが、実際には `AddFullMessage()` は `Save()` を呼ばない。`Save()` は `loop.go` から直接5箇所で呼ばれている。
+
+| 行 | 文脈 |
+|----|------|
+| L299 | `/plan start clear` でセッション履歴をクリアした直後 |
+| L836 | 壊れた tool call グループを sanitize した直後 |
+| L996 | **エージェントターン終了時** (最も頻繁、毎ターン実行) |
+| L2339 | 強制履歴圧縮の直後 |
+| L2568 | サマリー生成・履歴トランケートの直後 |
+
+L996 がほぼ毎ターン実行される主要な書き込み源。残り4箇所は低頻度だが意味的に重要な状態変更（クリア・圧縮・サマリー）のチェックポイント。
+
+**修正方針**: 「`AddFullMessage()` → dirty 記録」という記述を「loop.go の `Save()` 呼び出し箇所を dirty マークに置き換える」に訂正する。低頻度の4箇所（L299/836/2339/2568）は意味的なチェックポイントのため即時書き込みを維持する選択肢もあり、判断が必要。
+
+### H-2. Phase 1: logger.go の行の注釈が誤配置
+
+Phase 1 の logger.go 行に「ミューテーション系 (`MarkStep` 等) の Split は対象外」という注釈があるが、これは logger.go の変更内容と無関係で Phase 3-2 の注意書きが誤って混入している。削除すること。
+
+### H-3. Phase 5: `ParsedPlan` インメモリモデルが項目として存在しない
+
+Phase 3-2 が「ミューテーション系の Split 統合には ParsedPlan インメモリモデル (Phase 5) が必要」と参照しているにもかかわらず、Phase 5 の表に該当項目がない。以下を追加すること。
+
+```
+| ParsedPlan インメモリモデル | MemoryStore にパース済み構造体を常駐させ MarkStep/AddStep の Split 重複を根本解消 | 設計変更が広範囲、D-1/D-6 の完全解決 |
+```
+
+### H-4. 実装順サマリーの Phase 3 コミット数が古い
+
+`FormatPlanDisplay()` が Phase 3-1 に追加されたためスコープが拡大。`GetMemoryContext()` と `FormatPlanDisplay()` を別コミットにするなら 2 commits になる。サマリーの `(1 commit)` を更新すること。
+
+### まとめ: 今回の修正項目
+
+| # | 対象 | 修正内容 |
+|---|------|---------|
+| H-1 | Phase 4-2 | `AddFullMessage()` → `loop.go` の5箇所 `Save()` に記述を訂正。L996 を dirty マーク化、残り4箇所は要判断 |
+| H-2 | Phase 1 | logger.go 行の `MarkStep` 言及を削除 |
+| H-3 | Phase 5 | `ParsedPlan インメモリモデル` 項目を追加 |
+| H-4 | 実装順サマリー | Phase 3 のコミット数を `(1 commit)` → `(2 commits)` に更新 |
+
