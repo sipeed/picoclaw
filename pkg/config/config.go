@@ -170,13 +170,23 @@ type AgentDefaults struct {
 	Workspace           string   `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
 	RestrictToWorkspace bool     `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 	Provider            string   `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string   `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	ModelName           string   `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model               string   `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
 	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
 	ImageModel          string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
 	MaxTokens           int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations   int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+}
+
+// GetModelName returns the effective model name for the agent defaults.
+// It prefers the new "model_name" field but falls back to "model" for backward compatibility.
+func (d *AgentDefaults) GetModelName() string {
+	if d.ModelName != "" {
+		return d.ModelName
+	}
+	return d.Model
 }
 
 type ChannelsConfig struct {
@@ -333,6 +343,7 @@ type ProvidersConfig struct {
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
 	Antigravity   ProviderConfig       `json:"antigravity"`
 	Qwen          ProviderConfig       `json:"qwen"`
+	Mistral       ProviderConfig       `json:"mistral"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -354,7 +365,8 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
 		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
 		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
-		p.Qwen.APIKey == "" && p.Qwen.APIBase == ""
+		p.Qwen.APIKey == "" && p.Qwen.APIBase == "" &&
+		p.Mistral.APIKey == "" && p.Mistral.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
@@ -506,6 +518,20 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Pre-scan the JSON to check how many model_list entries the user provided.
+	// Go's JSON decoder reuses existing slice backing-array elements rather than
+	// zero-initializing them, so fields absent from the user's JSON (e.g. api_base)
+	// would silently inherit values from the DefaultConfig template at the same
+	// index position. We only reset cfg.ModelList when the user actually provides
+	// entries; when count is 0 we keep DefaultConfig's built-in list as fallback.
+	var tmp Config
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return nil, err
+	}
+	if len(tmp.ModelList) > 0 {
+		cfg.ModelList = nil
+	}
+
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
@@ -653,7 +679,8 @@ func (c *Config) HasProvidersConfig() bool {
 		v.VolcEngine.APIKey != "" || v.VolcEngine.APIBase != "" ||
 		v.GitHubCopilot.APIKey != "" || v.GitHubCopilot.APIBase != "" ||
 		v.Antigravity.APIKey != "" || v.Antigravity.APIBase != "" ||
-		v.Qwen.APIKey != "" || v.Qwen.APIBase != ""
+		v.Qwen.APIKey != "" || v.Qwen.APIBase != "" ||
+		v.Mistral.APIKey != "" || v.Mistral.APIBase != ""
 }
 
 // ValidateModelList validates all ModelConfig entries in the model_list.
