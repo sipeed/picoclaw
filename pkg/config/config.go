@@ -170,13 +170,23 @@ type AgentDefaults struct {
 	Workspace           string   `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
 	RestrictToWorkspace bool     `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 	Provider            string   `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string   `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	ModelName           string   `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model               string   `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
 	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
 	ImageModel          string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
 	MaxTokens           int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations   int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+}
+
+// GetModelName returns the effective model name for the agent defaults.
+// It prefers the new "model_name" field but falls back to "model" for backward compatibility.
+func (d *AgentDefaults) GetModelName() string {
+	if d.ModelName != "" {
+		return d.ModelName
+	}
+	return d.Model
 }
 
 type ChannelsConfig struct {
