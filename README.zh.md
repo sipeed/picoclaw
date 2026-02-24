@@ -173,6 +173,9 @@ vim config/config.json      # 设置 DISCORD_BOT_TOKEN, API keys 等
 # 3. 构建并启动
 docker compose --profile gateway up -d
 
+> [!TIP]
+**Docker 用户**: 默认情况下, Gateway监听 `127.0.0.1`，这使得这个端口未暴露到容器外。如果你需要通过端口映射访问健康检查接口, 请在环境变量中设置 `PICOCLAW_GATEWAY_HOST=0.0.0.0` 或修改 `config.json`。
+
 # 4. 查看日志
 docker compose logs -f picoclaw-gateway
 

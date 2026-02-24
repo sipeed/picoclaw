@@ -172,6 +172,10 @@ vim config/config.json      # Configure DISCORD_BOT_TOKEN, API keys, etc.
 # 3. Build & Iniciar
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Usuários Docker**: Por padrão, o Gateway ouve em `127.0.0.1`, o que não é acessível a partir do host. Se você precisar acessar os endpoints de integridade ou expor portas, defina `PICOCLAW_GATEWAY_HOST=0.0.0.0` em seu ambiente ou atualize o `config.json`.
+
+
 # 4. Ver logs
 docker compose logs -f picoclaw-gateway
 
