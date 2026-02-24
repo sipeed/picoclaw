@@ -12,9 +12,11 @@ func TestNewTracker_Persistence(t *testing.T) {
 	tr := NewTracker(dir)
 	tr.RecordUsage(100, 50, 150)
 	tr.RecordPrompt()
+	tr.Close() // flush to disk before reload
 
 	// Reload from disk
 	tr2 := NewTracker(dir)
+	defer tr2.Close()
 	s := tr2.GetStats()
 
 	if s.TotalTokens != 150 {
@@ -36,6 +38,7 @@ func TestNewTracker_Persistence(t *testing.T) {
 
 func TestTracker_Accumulation(t *testing.T) {
 	tr := NewTracker(t.TempDir())
+	defer tr.Close()
 
 	tr.RecordUsage(10, 5, 15)
 	tr.RecordUsage(20, 10, 30)
@@ -63,6 +66,7 @@ func TestTracker_Accumulation(t *testing.T) {
 
 func TestTracker_Reset(t *testing.T) {
 	tr := NewTracker(t.TempDir())
+	defer tr.Close()
 
 	tr.RecordUsage(100, 50, 150)
 	tr.RecordPrompt()
@@ -86,6 +90,7 @@ func TestTracker_Reset(t *testing.T) {
 func TestTracker_DayRoll(t *testing.T) {
 	dir := t.TempDir()
 	tr := NewTracker(dir)
+	defer tr.Close()
 
 	tr.RecordUsage(100, 50, 150)
 
@@ -115,10 +120,11 @@ func TestTracker_StateFileCreated(t *testing.T) {
 	dir := t.TempDir()
 	tr := NewTracker(dir)
 	tr.RecordUsage(1, 1, 2)
+	tr.Close() // flush to disk
 
 	stateFile := filepath.Join(dir, "state", "stats.json")
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
-		t.Error("expected stats.json to be created")
+		t.Error("expected stats.json to be created after Close()")
 	}
 }
 

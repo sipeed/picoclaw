@@ -384,6 +384,14 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
+// Close releases resources held by the loop (e.g. flushes write-behind stats
+// and dirty session data). Should be called during graceful shutdown.
+func (al *AgentLoop) Close() {
+	if al.stats != nil {
+		al.stats.Close()
+	}
+}
+
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	for _, agentID := range al.registry.ListAgentIDs() {
 		if agent, ok := al.registry.GetAgent(agentID); ok {
