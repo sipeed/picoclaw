@@ -653,21 +653,41 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 
 ---
 
-### H-1. Phase 4-2: `Save()` の呼び出し元は `AddFullMessage()` ではなく `loop.go` の5箇所
+### H-1. Phase 4-2: `AddFullMessage()` を変えても書き込みは一切減らない 🚨
 
-計画には「`AddFullMessage()` → dirty 記録のみ」とあるが、実際には `AddFullMessage()` は `Save()` を呼ばない。`Save()` は `loop.go` から直接5箇所で呼ばれている。
+計画の核心的な前提誤り。
 
-| 行 | 文脈 |
-|----|------|
-| L299 | `/plan start clear` でセッション履歴をクリアした直後 |
-| L836 | 壊れた tool call グループを sanitize した直後 |
-| L996 | **エージェントターン終了時** (最も頻繁、毎ターン実行) |
-| L2339 | 強制履歴圧縮の直後 |
-| L2568 | サマリー生成・履歴トランケートの直後 |
+**計画が想定していた構造:**
+```
+AddFullMessage() → append → Save() → ファイル書き込み
+     ↑ここを dirty マーク化すれば書き込みを遅延できる (誤り)
+```
 
-L996 がほぼ毎ターン実行される主要な書き込み源。残り4箇所は低頻度だが意味的に重要な状態変更（クリア・圧縮・サマリー）のチェックポイント。
+**実際のコード:**
+```go
+// session/manager.go — Save() を呼ばない
+func (sm *SessionManager) AddFullMessage(...) {
+    session.Messages = append(session.Messages, msg) // インメモリのみ
+}
 
-**修正方針**: 「`AddFullMessage()` → dirty 記録」という記述を「loop.go の `Save()` 呼び出し箇所を dirty マークに置き換える」に訂正する。低頻度の4箇所（L299/836/2339/2568）は意味的なチェックポイントのため即時書き込みを維持する選択肢もあり、判断が必要。
+// loop.go — 呼び出し側が明示的にタイミングを選んで Save() を呼ぶ
+agent.Sessions.AddMessage(...)   // L995: append のみ
+agent.Sessions.Save(sessionKey)  // L996: 明示的な書き込み ← ここが本当のターゲット
+```
+
+`AddFullMessage()` はすでに「インメモリへの追記のみ」で止まっており、`Save()` は `loop.go` が意図的に呼んでいる。`AddFullMessage()` を変更しても書き込み回数はゼロも減らない。
+
+**`Save()` の実際の呼び出し元 (loop.go の5箇所):**
+
+| 行 | 文脈 | 頻度 |
+|----|------|------|
+| L996 | エージェントターン終了 | **毎ターン** ← 主要ターゲット |
+| L299 | `/plan start clear` で履歴クリア | 低頻度 |
+| L836 | tool call グループ sanitize | 低頻度 |
+| L2339 | 強制履歴圧縮 | 低頻度 |
+| L2568 | サマリー生成・履歴トランケート | 低頻度 |
+
+**計画の再考が必要**: Phase 4-2 を「`AddFullMessage()` の変更」から「`loop.go` の `Save()` 呼び出しを dirty マーク化」に全面的に書き直す必要がある。低頻度の4箇所（L299/836/2339/2568）は意味的なチェックポイントなので即時書き込みを維持するか否かも判断が必要。
 
 ### H-2. Phase 1: logger.go の行の注釈が誤配置
 
