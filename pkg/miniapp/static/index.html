@@ -797,6 +797,7 @@
 <div id="session" class="panel">
   <div class="loading" id="session-loading">Loading session...</div>
   <div id="session-content" class="hidden"></div>
+  <div id="context-content"></div>
 </div>
 
 <div id="config" class="panel">
@@ -1310,15 +1311,79 @@ function renderSessionFromData(sessions, stats) {
   el.innerHTML = html;
 }
 
+var cachedContextInfo = null;
+
+function renderContextCard(ctx) {
+  if (!ctx) return '';
+  cachedContextInfo = ctx;
+  var wd = ctx.work_dir || '\u2014';
+  var pwd = ctx.plan_work_dir || '\u2014';
+  var ws = ctx.workspace || '\u2014';
+  var filesHtml = '';
+  if (ctx.bootstrap && ctx.bootstrap.length) {
+    filesHtml = ctx.bootstrap.map(function(b) {
+      var path = b.path ? escapeHtml(b.path) : '\u2014';
+      var scope = b.scope === 'global' ? 'global' : 'project';
+      var found = b.path ? 'var(--text)' : 'var(--hint)';
+      return `<div style="display:flex;gap:8px;padding:2px 0;font-size:12px">
+        <span style="min-width:90px;font-weight:600;color:${found}">${escapeHtml(b.name)}</span>
+        <span style="color:var(--hint);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${path}">${path}</span>
+        <span style="color:var(--hint);font-size:11px">${scope}</span>
+      </div>`;
+    }).join('');
+  }
+  return `<div class="card glass">
+    <div class="card-title">Context</div>
+    <div style="font-size:12px">
+      <div class="stat-row"><span class="stat-label">workDir</span><span class="stat-value" style="font-size:12px;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(wd)}">${escapeHtml(wd)}</span></div>
+      <div class="stat-row"><span class="stat-label">planWorkDir</span><span class="stat-value" style="font-size:12px;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(pwd)}">${escapeHtml(pwd)}</span></div>
+      <div class="stat-row"><span class="stat-label">workspace</span><span class="stat-value" style="font-size:12px;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(ws)}">${escapeHtml(ws)}</span></div>
+    </div>
+    <div style="margin-top:8px">${filesHtml}</div>
+    <div style="margin-top:8px;text-align:center">
+      <button onclick="toggleSystemPrompt()" style="background:var(--secondary-bg);color:var(--text);border:none;padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer" id="prompt-toggle-btn">Show System Prompt</button>
+    </div>
+    <pre id="system-prompt-view" style="display:none;margin-top:8px;font-size:11px;max-height:400px;overflow:auto;background:var(--secondary-bg);padding:8px;border-radius:6px;white-space:pre-wrap;word-break:break-word"></pre>
+  </div>`;
+}
+
+function toggleSystemPrompt() {
+  var view = document.getElementById('system-prompt-view');
+  var btn = document.getElementById('prompt-toggle-btn');
+  if (!view || !btn) return;
+  if (view.style.display === 'none') {
+    btn.textContent = 'Loading...';
+    apiFetch('/miniapp/api/prompt').then(function(data) {
+      view.textContent = data.prompt || '(empty)';
+      view.style.display = 'block';
+      btn.textContent = 'Hide System Prompt';
+    }).catch(function() {
+      btn.textContent = 'Show System Prompt';
+    });
+  } else {
+    view.style.display = 'none';
+    btn.textContent = 'Show System Prompt';
+  }
+}
+
+function renderContextFromData(ctx) {
+  var el = document.getElementById('context-content');
+  if (el) el.innerHTML = renderContextCard(ctx);
+}
+
 function loadSession() {
   return loadTab('session-loading', 'session-content', 'session',
     function() {
       return Promise.all([
         apiFetch('/miniapp/api/session'),
         apiFetch('/miniapp/api/sessions').catch(function() { return []; }),
+        apiFetch('/miniapp/api/context').catch(function() { return null; }),
       ]);
     },
-    function(results) { renderSessionFromData(results[1], results[0]); });
+    function(results) {
+      renderSessionFromData(results[1], results[0]);
+      renderContextFromData(results[2]);
+    });
 }
 
 function formatTokens(n) {
@@ -1536,6 +1601,9 @@ function connectSSE() {
   });
   eventSource.addEventListener('dev', function(e) {
     try { lastSSE.dev = Date.now(); renderDevFromData(JSON.parse(e.data)); } catch(err) {}
+  });
+  eventSource.addEventListener('context', function(e) {
+    try { renderContextFromData(JSON.parse(e.data)); } catch(err) {}
   });
   eventSource.onerror = function() {
     // Browser will auto-reconnect EventSource

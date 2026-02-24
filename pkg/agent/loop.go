@@ -811,6 +811,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 1. Update tool contexts
 	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
 
+	// 1a. Set session-specific working directory for bootstrap file lookup
+	agent.ContextBuilder.SetWorkDir(agent.EffectiveWorkspace(opts.SessionKey))
+
 	// 1b. Inject peer session awareness into system prompt
 	projectPath := agent.ContextBuilder.GetPlanWorkDir()
 	if projectPath == "" {
@@ -2454,6 +2457,19 @@ func (al *AgentLoop) GetSessionStats() *stats.Stats {
 	}
 	s := al.stats.GetStats()
 	return &s
+}
+
+// GetContextInfo returns the bootstrap file resolution and directory context for the default agent.
+func (al *AgentLoop) GetContextInfo() (workDir, planWorkDir, workspace string, bootstrap []BootstrapFileInfo) {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", "", "", nil
+	}
+	workspace = agent.Workspace
+	planWorkDir = agent.ContextBuilder.GetPlanWorkDir()
+	workDir = agent.ContextBuilder.workDir
+	bootstrap = agent.ContextBuilder.ResolveBootstrapPaths()
+	return
 }
 
 // GetSystemPrompt returns the system prompt last sent to the LLM.

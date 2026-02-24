@@ -190,6 +190,12 @@ func (m *mockDataProvider) GetGitRepos() []GitRepoSummary {
 func (m *mockDataProvider) GetGitRepoDetail(name string) GitInfo {
 	return GitInfo{Name: name}
 }
+func (m *mockDataProvider) GetContextInfo() ContextInfo {
+	return ContextInfo{Workspace: "/mock/workspace"}
+}
+func (m *mockDataProvider) GetSystemPrompt() string {
+	return "mock system prompt"
+}
 
 type mockSender struct{}
 
@@ -391,8 +397,8 @@ func TestSSE_NotifyDrivesSubsequentEvents(t *testing.T) {
 	defer resp.Body.Close()
 
 	scanner := bufio.NewScanner(resp.Body)
-	// Drain initial 4 events (plan, session, skills, dev)
-	drainEvents(t, scanner, 4, 2*time.Second)
+	// Drain initial 5 events (plan, session, skills, dev, context)
+	drainEvents(t, scanner, 5, 2*time.Second)
 
 	// Mutate state and notify — diff dedup should detect the change and send a new event
 	provider.mutated.Store(true)
@@ -420,8 +426,8 @@ func TestSSE_DiffDedupSuppressesDuplicate(t *testing.T) {
 	defer resp.Body.Close()
 
 	scanner := bufio.NewScanner(resp.Body)
-	// Drain initial events (plan, session, skills, dev)
-	drainEvents(t, scanner, 4, 2*time.Second)
+	// Drain initial events (plan, session, skills, dev, context)
+	drainEvents(t, scanner, 5, 2*time.Second)
 
 	// Notify with unchanged data — should produce zero new event lines
 	notifier.Notify()
@@ -473,6 +479,12 @@ func (m *mutatingDataProvider) GetGitRepos() []GitRepoSummary {
 }
 func (m *mutatingDataProvider) GetGitRepoDetail(name string) GitInfo {
 	return GitInfo{Name: name}
+}
+func (m *mutatingDataProvider) GetContextInfo() ContextInfo {
+	return ContextInfo{Workspace: "/mock/workspace"}
+}
+func (m *mutatingDataProvider) GetSystemPrompt() string {
+	return "mock system prompt"
 }
 
 // ── Dev proxy tests ──
@@ -1678,8 +1690,8 @@ func TestSSE_DevEventUpdatesOnActivateDeactivate(t *testing.T) {
 	defer resp.Body.Close()
 
 	scanner := bufio.NewScanner(resp.Body)
-	// Drain initial 4 events
-	drainEvents(t, scanner, 4, 2*time.Second)
+	// Drain initial 5 events
+	drainEvents(t, scanner, 5, 2*time.Second)
 
 	// Activate — should trigger a dev event with active=true
 	h.ActivateDevTarget(id)
