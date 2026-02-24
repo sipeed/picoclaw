@@ -216,15 +216,17 @@ func registerSharedTools(
 		agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
 		agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
 
-		// Spawn tool with allowlist checker
-		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
-		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
-		spawnTool := tools.NewSpawnTool(subagentManager)
-		currentAgentID := agentID
-		spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
-			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
-		})
-		agent.Tools.Register(spawnTool)
+		// Spawn tool — only registered when orchestration is explicitly enabled.
+		if agent.Subagents != nil && agent.Subagents.Enabled {
+			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
+			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+			spawnTool := tools.NewSpawnTool(subagentManager)
+			currentAgentID := agentID
+			spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
+				return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+			})
+			agent.Tools.Register(spawnTool)
+		}
 
 		// Update context builder with the complete tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)

@@ -24,6 +24,7 @@ func agentCmd() {
 	message := ""
 	sessionKey := "cli:default"
 	modelOverride := ""
+	orchestrationEnabled := false
 
 	args := os.Args[2:]
 	for i := 0; i < len(args); i++ {
@@ -46,6 +47,8 @@ func agentCmd() {
 				modelOverride = args[i+1]
 				i++
 			}
+		case "--orchestration":
+			orchestrationEnabled = true
 		}
 	}
 
@@ -57,6 +60,10 @@ func agentCmd() {
 
 	if modelOverride != "" {
 		cfg.Agents.Defaults.Model = modelOverride
+	}
+
+	if orchestrationEnabled {
+		cfg.Agents.Defaults.Orchestration = true
 	}
 
 	provider, modelID, err := providers.CreateProvider(cfg)
