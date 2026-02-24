@@ -518,6 +518,4 @@ clawdroid/
 
 ## ライセンス
 
-MIT License。Copyright (c) 2026 PicoClaw contributors。
-
-[PicoClaw](https://github.com/sipeed/picoclaw) からフォーク。
+[MIT License](LICENSE)。[PicoClaw](https://github.com/sipeed/picoclaw) からフォーク。

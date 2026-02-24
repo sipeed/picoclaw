@@ -520,6 +520,4 @@ clawdroid/
 
 ## License
 
-MIT License. Copyright (c) 2026 PicoClaw contributors.
-
-Forked from [PicoClaw](https://github.com/sipeed/picoclaw).
+[MIT License](LICENSE). Forked from [PicoClaw](https://github.com/sipeed/picoclaw).
