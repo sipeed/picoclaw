@@ -141,6 +141,7 @@ type AgentConfig struct {
 }
 
 type SubagentsConfig struct {
+	Enabled     bool              `json:"enabled,omitempty"`
 	AllowAgents []string          `json:"allow_agents,omitempty"`
 	Model       *AgentModelConfig `json:"model,omitempty"`
 }
@@ -182,6 +183,7 @@ type AgentDefaults struct {
 	Temperature          *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations    int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	TaskReminderInterval int      `json:"task_reminder_interval"          env:"PICOCLAW_AGENTS_DEFAULTS_TASK_REMINDER_INTERVAL"`
+	Orchestration        bool     `json:"orchestration,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_ORCHESTRATION"`
 }
 
 type ChannelsConfig struct {

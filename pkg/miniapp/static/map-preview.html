@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orchestration Room</title>
+  <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #060810;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 16px 0;
+      font-family: 'Silkscreen', monospace;
+    }
+
+    /* ── three-column layout ── */
+    .room-row {
+      display: flex;
+      align-items: flex-start;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding-top: 24px;
+      width: 44px;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      opacity: 0.3;
+      transition: opacity 0.3s;
+    }
+    .badge.alive   { opacity: 1; }
+    .badge.talking { opacity: 1; }
+
+    .badge-emoji { font-size: 18px; line-height: 1; }
+
+    .badge-label {
+      font-size: 7px;
+      color: #3a4259;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .badge.alive   .badge-label { color: #4a6ac0; }
+    .badge.talking .badge-label { color: #facc15; }
+
+    .badge-dot {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: #1a1f2e;
+    }
+    .badge.alive   .badge-dot { background: #4ade80; }
+    .badge.toolcall .badge-dot { background: #fb923c; animation: blink 0.2s step-end infinite; }
+    .badge.waiting  .badge-dot { background: #60a5fa; }
+    .badge.talking  .badge-dot { background: #facc15; animation: blink 0.6s step-end infinite; }
+
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* ── canvas ── */
+    .canvas-wrap {
+      flex: 1;
+      min-width: 0;
+    }
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+    }
+
+    /* ── demo state indicator (bottom) ── */
+    .demo-bar {
+      margin-top: 10px;
+      font-size: 8px;
+      color: #2a3259;
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+    }
+    .demo-bar span { color: #3a4a80; }
+    .demo-bar span.on { color: #4ade80; }
+  </style>
+  <script src="map.js"></script>
+</head>
+<body>
+
+<div class="room-row">
+
+  <!-- left panel: permanent characters -->
+  <div class="side-panel" id="panel-left">
+    <div class="badge alive" id="badge-conductor" data-id="conductor">
+      <div class="badge-emoji">👑</div>
+      <div class="badge-label">CNDR</div>
+      <div class="badge-dot"></div>
+    </div>
+    <div class="badge alive" id="badge-secretary" data-id="secretary">
+      <div class="badge-emoji">👩‍💼</div>
+      <div class="badge-label">SEC</div>
+      <div class="badge-dot"></div>
+    </div>
+  </div>
+
+  <!-- canvas -->
+  <div class="canvas-wrap">
+    <canvas id="c" width="320" height="320"></canvas>
+  </div>
+
+  <!-- right panel: subagent presets -->
+  <div class="side-panel" id="panel-right">
+    <div class="badge" id="badge-s0" data-id="s0">
+      <div class="badge-emoji">🔍</div>
+      <div class="badge-label">SCOUT</div>
+      <div class="badge-dot"></div>
+    </div>
+    <div class="badge" id="badge-s1" data-id="s1">
+      <div class="badge-emoji">📊</div>
+      <div class="badge-label">ANLY</div>
+      <div class="badge-dot"></div>
+    </div>
+    <div class="badge" id="badge-s2" data-id="s2">
+      <div class="badge-emoji">💻</div>
+      <div class="badge-label">CODE</div>
+      <div class="badge-dot"></div>
+    </div>
+    <div class="badge" id="badge-s3" data-id="s3">
+      <div class="badge-emoji">🔧</div>
+      <div class="badge-label">WRKR</div>
+      <div class="badge-dot"></div>
+    </div>
+    <div class="badge" id="badge-s4" data-id="s4">
+      <div class="badge-emoji">🎯</div>
+      <div class="badge-label">CORD</div>
+      <div class="badge-dot"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="demo-bar">
+  <span id="demo-label">demo: idle</span>
+  <span>⬡ fast = toolcall</span>
+  <span>⬡ slow = llm wait</span>
+</div>
+
+<script>
+'use strict';
+
+// ─── canvas setup ─────────────────────────────────────────────────────────
+var canvas = document.getElementById('c');
+var ctx    = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+// ─── bob frames: 4-step cycle [down, mid, up, mid] ───────────────────────
+//   カクカクした待機モーション — yオフセット (px, canvas logical units)
+var BOB = [0, -1, -2, -1];
+
+// frame duration per state (ms/frame → full cycle = 4×)
+var FRAME_MS = {
+  idle:     450,   //  1.8s cycle — very calm
+  waiting:  650,   //  2.6s cycle — lazy, LLM response pending
+  toolcall:  90,   //  360ms cycle — rapid, tool executing
+  talking:  280,   //  1.1s cycle — attentive
+  entering: 220,
+  exiting:  220,
+};
+
+// move speed px/s
+var WALK_SPEED = 55;
+
+// ─── character definitions ────────────────────────────────────────────────
+var PRESETS = [
+  { id: 's0', emoji: '🔍', label: 'scout'       },
+  { id: 's1', emoji: '📊', label: 'analyst'     },
+  { id: 's2', emoji: '💻', label: 'coder'       },
+  { id: 's3', emoji: '🔧', label: 'worker'      },
+  { id: 's4', emoji: '🎯', label: 'coordinator' },
+];
+
+function makeChar(id, emoji, home) {
+  return {
+    id:        id,
+    emoji:     emoji,
+    x:         home.x,
+    y:         home.y,
+    home:      home,
+    target:    null,
+    state:     'idle',
+    frame:     0,
+    frameTimer:0,
+    bubble:    null,   // { text, ttl }
+    alive:     false,
+  };
+}
+
+var conductor = makeChar('conductor', '👑',  MAP_POSITIONS.conductor);
+var secretary = makeChar('secretary', '👩‍💼', MAP_POSITIONS.secretary);
+conductor.alive = true;
+secretary.alive = true;
+
+// subagents start at door (off-screen), not alive
+var agents = PRESETS.map(function(p, i) {
+  var c = makeChar(p.id, p.emoji, MAP_POSITIONS.stations[i]);
+  c.x = MAP_POSITIONS.door.x;
+  c.y = MAP_POSITIONS.door.y;
+  return c;
+});
+
+function allChars() {
+  return [conductor, secretary].concat(agents);
+}
+
+// ─── character helpers ────────────────────────────────────────────────────
+function setState(c, state) {
+  c.state = state;
+  syncBadge(c.id, state, c.alive);
+}
+
+function moveTo(c, pos, onArrive) {
+  c.target    = pos;
+  c._onArrive = onArrive || null;
+}
+
+function say(c, text, ttl) {
+  c.bubble = { text: text, ttl: ttl || 2200 };
+}
+
+function syncBadge(id, state, alive) {
+  var el = document.getElementById('badge-' + id);
+  if (!el) return;
+  el.className = 'badge'
+    + (alive              ? ' alive'    : '')
+    + (state === 'talking'  ? ' talking'  : '')
+    + (state === 'toolcall' ? ' toolcall' : '')
+    + (state === 'waiting'  ? ' waiting'  : '');
+}
+
+// ─── update loop ──────────────────────────────────────────────────────────
+var lastTs = null;
+
+function update(dt) {
+  allChars().forEach(function(c) {
+    if (!c.alive && c.state !== 'entering') return;
+
+    // advance bob frame
+    c.frameTimer += dt;
+    var dur = FRAME_MS[c.state] || 450;
+    if (c.frameTimer >= dur) {
+      c.frame     = (c.frame + 1) % 4;
+      c.frameTimer -= dur;
+    }
+
+    // move toward target
+    if (c.target) {
+      var dx   = c.target.x - c.x;
+      var dy   = c.target.y - c.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 1.5) {
+        var spd = WALK_SPEED * dt / 1000;
+        c.x += dx / dist * spd;
+        c.y += dy / dist * spd;
+      } else {
+        c.x = c.target.x;
+        c.y = c.target.y;
+        c.target = null;
+        if (c._onArrive) { c._onArrive(); c._onArrive = null; }
+      }
+    }
+
+    // bubble timeout
+    if (c.bubble) {
+      c.bubble.ttl -= dt;
+      if (c.bubble.ttl <= 0) c.bubble = null;
+    }
+  });
+}
+
+// ─── draw loop ────────────────────────────────────────────────────────────
+function drawBubble(c) {
+  if (!c.bubble) return;
+  var text  = c.bubble.text;
+  var yOff  = BOB[c.frame];
+  var bx    = c.x;
+  var by    = c.y + yOff - 18;
+
+  ctx.font      = '7px Silkscreen, monospace';
+  var tw        = ctx.measureText(text).width;
+  var pw        = tw + 8;
+  var ph        = 12;
+
+  // clamp to canvas
+  var lx = Math.max(4, Math.min(316 - pw, bx - pw / 2));
+
+  // box
+  ctx.fillStyle = '#facc15';
+  ctx.fillRect(Math.floor(lx), Math.floor(by - ph), Math.ceil(pw), Math.ceil(ph));
+  // tail pixel
+  ctx.fillRect(Math.floor(bx) - 1, Math.floor(by), 3, 3);
+  // text
+  ctx.fillStyle = '#0a0a00';
+  ctx.textAlign    = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, Math.floor(lx + 4), Math.floor(by - ph / 2));
+}
+
+function drawChar(c) {
+  if (!c.alive && c.state !== 'entering' && c.state !== 'exiting') return;
+  var yOff = BOB[c.frame];
+  var cx   = Math.floor(c.x);
+  var cy   = Math.floor(c.y + yOff);
+
+  // status ring (toolcall = orange, waiting = blue)
+  if (c.state === 'toolcall') {
+    ctx.fillStyle = 'rgba(251,146,60,0.35)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 13, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (c.state === 'waiting') {
+    ctx.fillStyle = 'rgba(96,165,250,0.25)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // emoji
+  ctx.font          = '18px serif';
+  ctx.textAlign     = 'center';
+  ctx.textBaseline  = 'middle';
+  ctx.fillText(c.emoji, cx, cy);
+
+  // name label
+  ctx.font          = '6px Silkscreen, monospace';
+  ctx.textAlign     = 'center';
+  ctx.textBaseline  = 'top';
+  ctx.fillStyle     = c.state === 'talking' ? '#facc15' : '#3a4a7a';
+  ctx.fillText(c.id.toUpperCase(), cx, cy + 11);
+
+  drawBubble(c);
+}
+
+function render(ts) {
+  if (lastTs === null) lastTs = ts;
+  var dt  = Math.min(ts - lastTs, 80); // cap at 80ms to avoid spiral
+  lastTs  = ts;
+
+  update(dt);
+
+  ctx.imageSmoothingEnabled = false;
+  drawMap(ctx);
+
+  allChars().forEach(drawChar);
+
+  requestAnimationFrame(render);
+}
+
+// ─── demo sequencer (replaces WebSocket in preview) ──────────────────────
+// WebSocket events will look like:
+//   { type: "agent_spawn",  id: "s0", task: "find APIs" }
+//   { type: "agent_state",  id: "s0", state: "toolcall" }
+//   { type: "agent_state",  id: "s0", state: "waiting"  }
+//   { type: "conversation", from: "conductor", to: "s0", text: "summary?" }
+//   { type: "agent_gc",     id: "s0" }
+
+var demoLabel = document.getElementById('demo-label');
+
+function demoSpawn(agent) {
+  agent.alive = true;
+  agent.x     = MAP_POSITIONS.door.x;
+  agent.y     = MAP_POSITIONS.door.y;
+  setState(agent, 'entering');
+  syncBadge(agent.id, 'entering', true);
+  moveTo(agent, agent.home, function() {
+    setState(agent, 'idle');
+  });
+}
+
+function demoConverse(from, to, text, reply) {
+  // move toward each other
+  var mid = {
+    x: (from.x + to.x) / 2,
+    y: (from.y + to.y) / 2,
+  };
+  setState(from, 'talking');
+  setState(to,   'talking');
+  moveTo(from, { x: mid.x - 18, y: mid.y }, function() {
+    say(from, text, 2400);
+  });
+  moveTo(to, { x: mid.x + 18, y: mid.y }, function() {
+    if (reply) setTimeout(function() { say(to, reply, 2200); }, 1600);
+    setTimeout(function() {
+      moveTo(from, from.home, function() { setState(from, 'idle'); });
+      moveTo(to,   to.home,   function() { setState(to,   'idle'); });
+    }, reply ? 3800 : 2600);
+  });
+}
+
+function demoGC(agent) {
+  setState(agent, 'exiting');
+  moveTo(agent, MAP_POSITIONS.door, function() {
+    agent.alive = false;
+    setState(agent, 'idle');
+    syncBadge(agent.id, 'idle', false);
+  });
+}
+
+// demo timeline
+var demo = [
+  [  400, function() { demoLabel.textContent = 'demo: spawning scout…';    demoSpawn(agents[0]); }],
+  [ 1600, function() { demoLabel.textContent = 'demo: spawning coder…';    demoSpawn(agents[2]); }],
+  [ 2600, function() { demoLabel.textContent = 'demo: toolcall (fast bob)'; setState(agents[0], 'toolcall'); setState(agents[2], 'toolcall'); }],
+  [ 4800, function() { demoLabel.textContent = 'demo: llm wait (slow bob)'; setState(agents[0], 'waiting');  setState(agents[2], 'waiting');  }],
+  [ 7200, function() { demoLabel.textContent = 'demo: conversation';
+    demoConverse(conductor, agents[0], 'found anything?', 'yes — 3 hits'); }],
+  [11800, function() { demoLabel.textContent = 'demo: secretary plans with coder';
+    demoConverse(secretary, agents[2], 'review plan?', 'looks good'); }],
+  [16200, function() { demoLabel.textContent = 'demo: agent exits (gc)';   demoGC(agents[0]); }],
+  [18400, function() { demoLabel.textContent = 'demo: agent exits (gc)';   demoGC(agents[2]); }],
+  [20000, function() {
+    // restart
+    demo.forEach(function(e) { e[2] = false; });
+    demoStart = performance.now();
+    demoLabel.textContent = 'demo: restarting…';
+  }],
+];
+
+var demoStart = null;
+function tickDemo(ts) {
+  if (demoStart === null) demoStart = ts;
+  var elapsed = ts - demoStart;
+  demo.forEach(function(e) {
+    if (!e[2] && elapsed >= e[0]) { e[2] = true; e[1](); }
+  });
+  requestAnimationFrame(tickDemo);
+}
+
+// ─── init ─────────────────────────────────────────────────────────────────
+loadMapAsset(function() {
+  requestAnimationFrame(render);
+  requestAnimationFrame(tickDemo);
+});
+</script>
+</body>
+</html>

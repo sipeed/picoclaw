@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -94,6 +95,8 @@ type AgentLoop struct {
 	promptDirty      atomic.Bool   // true = rebuild needed on next GetSystemPrompt read
 	OnStateChange    func() // called on plan/session/skills mutations
 	OnUserMessage    func() // called when a real user message is processed
+	orchBroadcaster  *orch.Broadcaster  // nil when --orchestration not set
+	orchReporter     orch.AgentReporter // always non-nil (Noop when disabled)
 }
 
 // processOptions configures how a message is processed
@@ -114,9 +117,6 @@ type processOptions struct {
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, enableStats ...bool) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
-	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
-
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
 	fallbackChain := providers.NewFallbackChain(cooldown)
@@ -136,17 +136,57 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		statsTracker = stats.NewTracker(defaultAgent.Workspace)
 	}
 
-	return &AgentLoop{
-		bus:           msgBus,
-		cfg:           cfg,
-		registry:      registry,
-		state:         stateManager,
-		stats:         statsTracker,
-		summarizing:   sync.Map{},
-		fallback:      fallbackChain,
-		providerCache: providerCache,
-		sessions:      NewSessionTracker(),
+	// Determine if orchestration broadcaster is needed (any agent has subagents enabled).
+	var orchBroadcaster *orch.Broadcaster
+	var orchReporter orch.AgentReporter = orch.Noop
+	for _, id := range registry.ListAgentIDs() {
+		if a, ok := registry.GetAgent(id); ok && a.Subagents != nil && a.Subagents.Enabled {
+			orchBroadcaster = orch.NewBroadcaster()
+			orchReporter = orchBroadcaster
+			break
+		}
 	}
+
+	al := &AgentLoop{
+		bus:             msgBus,
+		cfg:             cfg,
+		registry:        registry,
+		state:           stateManager,
+		stats:           statsTracker,
+		summarizing:     sync.Map{},
+		fallback:        fallbackChain,
+		providerCache:   providerCache,
+		sessions:        NewSessionTracker(),
+		orchBroadcaster: orchBroadcaster,
+		orchReporter:    orchReporter,
+	}
+
+	// Register shared tools to all agents (needs al for reporter injection).
+	registerSharedTools(cfg, msgBus, registry, provider, al)
+
+	return al
+}
+
+// reporter returns the active AgentReporter (never nil).
+func (al *AgentLoop) reporter() orch.AgentReporter {
+	if al.orchReporter == nil {
+		return orch.Noop
+	}
+	return al.orchReporter
+}
+
+// SetOrchReporter wires a Broadcaster as the active reporter.
+// Called from cmd_gateway.go when --orchestration is set.
+// --orchestration なし → 呼ばれない → reporter() は Noop を返す。
+func (al *AgentLoop) SetOrchReporter(b *orch.Broadcaster) {
+	al.orchBroadcaster = b
+	al.orchReporter = b
+}
+
+// GetOrchBroadcaster returns the concrete Broadcaster for miniapp wiring.
+// Returns nil when orchestration is disabled.
+func (al *AgentLoop) GetOrchBroadcaster() *orch.Broadcaster {
+	return al.orchBroadcaster
 }
 
 func (al *AgentLoop) notifyStateChange() {
@@ -162,6 +202,7 @@ func registerSharedTools(
 	msgBus *bus.MessageBus,
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
+	al *AgentLoop,
 ) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -216,15 +257,17 @@ func registerSharedTools(
 		agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
 		agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
 
-		// Spawn tool with allowlist checker
-		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
-		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
-		spawnTool := tools.NewSpawnTool(subagentManager)
-		currentAgentID := agentID
-		spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
-			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
-		})
-		agent.Tools.Register(spawnTool)
+		// Spawn tool — only registered when orchestration is explicitly enabled.
+		if agent.Subagents != nil && agent.Subagents.Enabled {
+			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus, al.reporter())
+			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+			spawnTool := tools.NewSpawnTool(subagentManager)
+			currentAgentID := agentID
+			spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
+				return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+			})
+			agent.Tools.Register(spawnTool)
+		}
 
 		// Update context builder with the complete tools registry
 		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
@@ -712,6 +755,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		return "", fmt.Errorf("context cancelled while waiting for session lock")
 	}
 	defer al.releaseSessionLock(opts.SessionKey)
+
+	// Report session lifecycle to canvas.
+	al.reporter().ReportSpawn(opts.SessionKey, opts.Channel, opts.UserMessage)
+	defer al.reporter().ReportGC(opts.SessionKey, "completed")
 
 	// -0. Create cancellable child context and register active task
 	taskCtx, taskCancel := context.WithCancel(ctx)
@@ -1785,6 +1832,9 @@ func (al *AgentLoop) runLLMIteration(
 			return doCall(ctx, agent.Provider, primaryModel)
 		}
 
+		// Report waiting state to canvas before each LLM call.
+		al.reporter().ReportStateChange(opts.SessionKey, "waiting", "")
+
 		// Retry loop for context/token errors
 		maxRetries := 2
 		for retry := 0; retry <= maxRetries; retry++ {
@@ -2133,6 +2183,9 @@ func (al *AgentLoop) runLLMIteration(
 						})
 				}
 			}
+
+			// Report toolcall state to canvas.
+			al.reporter().ReportStateChange(opts.SessionKey, "toolcall", tc.Name)
 
 			toolStart := time.Now()
 			toolCtx := ctx
