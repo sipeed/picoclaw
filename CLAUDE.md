@@ -628,3 +628,71 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 3: **syscall + Split/Join 削減** (CPU + アロケーション)
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
+
+---
+
+## FEEDBACK — 改修計画レビュー
+
+> レビュー日 2026-02-24。改修計画の誤り・漏れ・改善点をまとめる。
+
+### F-1. telegram.go の 🔴 High 項目が Phase 0-1 から抜け落ちている
+
+`pkg/channels/telegram.go` の以下2関数は元レビューで 🔴 High と評価したが、計画のどのフェーズにも記載がない。
+
+| 関数 | 行 | 問題 |
+|------|----|------|
+| `extractCodeBlocks()` | L789-806 | codes スライス無容量 + ループ内 `fmt.Sprintf` |
+| `extractInlineCodes()` | L813-830 | 同上パターン |
+
+どちらも Phase 0-1 (strings.Builder 置き換え) に追加すること。
+
+### F-2. `wrapByDisplayWidth` の見送り理由が誤っている
+
+Phase 5 の見送り理由「runewidth ライブラリ依存」は不正確。現状のコードはどの外部ライブラリも使っていない。問題はループ内の `string(r)` (rune→string 変換) であり、修正は「rune のコードポイントを直接比較する」か「`displayWidth` 関数の引数を `rune` に変更する」だけで済む。ライブラリ不要。
+
+🔴 High 評価なので Phase 0-3 に移動すること。
+
+### F-3. Phase 3 の新関数名 `GetMemoryContextCached` が誤解を招く
+
+```go
+func (ms *MemoryStore) GetMemoryContextCached() string { ... }
+```
+
+この名前は「呼び出し間でキャッシュする」と読めるが、実際は「1回の呼び出し内で ReadLongTerm を1回だけ呼ぶ」というだけ。既存の `GetMemoryContext()` を直接リファクタリングすれば新関数は不要。
+
+推奨: `GetMemoryContext()` を content パススルー方式に書き直す。互換性のため残すべき public メソッド (`HasActivePlan()` 等) はそのまま保持。新関数の追加は不要。
+
+### F-4. Phase 3 の「Split が1回になる」という主張は不正確
+
+計画には「Split は `GetMemoryContext()` 内で1回のみ」と書かれているが、`GetMemoryContext()` 自身は `strings.Split` を呼ばない。`strings.Split` を呼ぶのは `extractPhaseContent()`, `GetPlanPhases()`, `MarkStep()`, `AddStep()` の各ヘルパー関数。
+
+content パススルーで解消されるのは **`ReadLongTerm()` の多重呼び出し** だけであり、Split の重複は別問題として残る。Split の統合には「`GetPlanPhases()` が1回 Split して `[]string` を内部ヘルパーに渡す」という追加リファクタが必要。計画に明記すること。
+
+### F-5. `session_tracker.go:125` が Phase 0-2 と Phase 1 に重複している
+
+Phase 0-2 に「`pkg/agent/session_tracker.go:125` — 容量ヒント付き」、Phase 1 に「`ListActive()` の戻り値を `[]*SessionEntry` に」が別々に記載されている。戻り値を `[]*SessionEntry` にすれば値コピーの問題も容量の問題も同時に解消されるため、Phase 1 で1回だけ対応すれば十分。Phase 0-2 から削除すること。
+
+### F-6. Phase 4-1 の主語が間違っている
+
+「`SessionTracker` (または stats 管理構造体) に dirty フラグ」と書かれているが、正しくは `stats.Tracker`。`SessionTracker` はセッション追跡の別の構造体 (`pkg/agent/session_tracker.go`)。混同に注意。
+
+### F-7. config/migration.go の容量ヒント計算が過大
+
+Phase 0-2 の提案「`make([]ModelConfig, 0, len(providers)*4)`」は providers の各フィールドを×4するが、`ConvertProvidersToModelList` が返す最大要素数は providers 数と同程度（約18）であり `*4` は過剰。`make([]ModelConfig, 0, 20)` または `make([]ModelConfig, 0, len(knownProviders))` で十分。
+
+### F-8. `AppendToday()` の write-behind が Phase 4 に含まれていない
+
+`AppendToday()` も「read → append → write」のパターンで、セッションに比べ頻度は低いが同じ write-behind の対象になりうる。Phase 4 の対象から意図的に外したなら理由を記載すること。
+
+### まとめ: 計画の修正項目
+
+| # | 対象フェーズ | 修正内容 |
+|---|------------|---------|
+| F-1 | Phase 0-1 | `extractCodeBlocks`, `extractInlineCodes` を追加 |
+| F-2 | Phase 0-3 へ移動 | `wrapByDisplayWidth` の見送り理由を訂正、Phase 0-3 に格上げ |
+| F-3 | Phase 3 | `GetMemoryContextCached` を廃止、`GetMemoryContext` を直接リファクタ |
+| F-4 | Phase 3 | Split 重複は別問題として明記、対応を追加 |
+| F-5 | Phase 0-2 | `session_tracker.go:125` の重複エントリを削除 |
+| F-6 | Phase 4-1 | `SessionTracker` → `stats.Tracker` に訂正 |
+| F-7 | Phase 0-2 | `*4` 容量ヒントを `20` に修正 |
+| F-8 | Phase 4 | `AppendToday()` の扱いを明記 |
