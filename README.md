@@ -11,20 +11,20 @@ Forked from [PicoClaw](https://github.com/sipeed/picoclaw).
 ```mermaid
 graph TB
     subgraph android["Android App (Kotlin)"]
-        ChatUI["Chat UI\n(Compose)"]
-        Overlay["Assistant\nOverlay"]
+        ChatUI["Chat UI<br/>(Compose)"]
+        Overlay["Assistant<br/>Overlay"]
     end
 
     subgraph backend["Go Backend (Termux)"]
         Agent["Agent Loop"]
-        Tools["Tool Loop\n(16+ tools)"]
+        Tools["Tool Loop<br/>(16+ tools)"]
         LLM["LLM"]
-        Services["MCP / Cron /\nSkills / Memory"]
-        Channels["Channels\n(Telegram, Discord, Slack, LINE etc.)"]
+        Services["MCP / Cron /<br/>Skills / Memory"]
+        Channels["Channels<br/>(Telegram, Discord, Slack, LINE etc.)"]
     end
 
-    ChatUI -- "WebSocket\nws://127.0.0.1:18793" --> Agent
-    Overlay -- "WebSocket\nws://127.0.0.1:18793" --> Agent
+    ChatUI -- "WebSocket<br/>ws://127.0.0.1:18793" --> Agent
+    Overlay -- "WebSocket<br/>ws://127.0.0.1:18793" --> Agent
     Agent --> LLM
     Agent --> Tools
     Tools --> Services

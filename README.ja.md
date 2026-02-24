@@ -9,20 +9,20 @@ Android 向け超軽量パーソナル AI アシスタント。Go バックエ�
 ```mermaid
 graph TB
     subgraph android["Android アプリ (Kotlin)"]
-        ChatUI["チャット UI\n(Compose)"]
-        Overlay["アシスタント\nオーバーレイ"]
+        ChatUI["チャット UI<br/>(Compose)"]
+        Overlay["アシスタント<br/>オーバーレイ"]
     end
 
     subgraph backend["Go バックエンド (Termux)"]
         Agent["エージェントループ"]
-        Tools["ツールループ\n(16以上)"]
+        Tools["ツールループ<br/>(16以上)"]
         LLM["LLM"]
-        Services["MCP / Cron /\nSkills / Memory"]
-        Channels["チャンネル\n(Telegram, Discord, Slack, LINE 等)"]
+        Services["MCP / Cron /<br/>Skills / Memory"]
+        Channels["チャンネル<br/>(Telegram, Discord, Slack, LINE 等)"]
     end
 
-    ChatUI -- "WebSocket\nws://127.0.0.1:18793" --> Agent
-    Overlay -- "WebSocket\nws://127.0.0.1:18793" --> Agent
+    ChatUI -- "WebSocket<br/>ws://127.0.0.1:18793" --> Agent
+    Overlay -- "WebSocket<br/>ws://127.0.0.1:18793" --> Agent
     Agent --> LLM
     Agent --> Tools
     Tools --> Services
