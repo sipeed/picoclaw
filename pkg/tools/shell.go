@@ -283,8 +283,8 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		cwd = override
 	}
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		if t.restrictToWorkspace && t.workingDir != "" {
-			resolvedWD, err := validatePath(wd, t.workingDir, true)
+		if t.restrictToWorkspace && cwd != "" {
+			resolvedWD, err := validatePath(wd, cwd, true)
 			if err != nil {
 				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
 			}
@@ -364,9 +364,11 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 		}
 	}
 
-	output := stdout.String()
+	var ob strings.Builder
+	ob.WriteString(stdout.String())
 	if stderr.Len() > 0 {
-		output += "\nSTDERR:\n" + stderr.String()
+		ob.WriteString("\nSTDERR:\n")
+		ob.WriteString(stderr.String())
 	}
 
 	if err != nil {
@@ -378,8 +380,9 @@ func (t *ExecTool) executeSync(ctx context.Context, command, cwd string) *ToolRe
 				IsError: true,
 			}
 		}
-		output += fmt.Sprintf("\nExit code: %v", err)
+		fmt.Fprintf(&ob, "\nExit code: %v", err)
 	}
+	output := ob.String()
 
 	if output == "" {
 		output = "(no output)"

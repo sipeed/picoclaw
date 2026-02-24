@@ -7,11 +7,17 @@ import (
 )
 
 type workspaceOverrideKey struct{}
+type overrideFsKey struct{}
 
-// WithWorkspaceOverride returns a context carrying a workspace override path.
-// Tools will resolve file operations against this path instead of the original workspace.
+// WithWorkspaceOverride returns a context carrying a workspace override path
+// and a pre-built sandboxFs for that workspace. Tools will resolve file
+// operations against this path instead of the original workspace.
+// The cached sandboxFs is reused across all resolveFS calls on the same context,
+// avoiding per-operation allocation.
 func WithWorkspaceOverride(ctx context.Context, workspace string) context.Context {
-	return context.WithValue(ctx, workspaceOverrideKey{}, workspace)
+	ctx = context.WithValue(ctx, workspaceOverrideKey{}, workspace)
+	ctx = context.WithValue(ctx, overrideFsKey{}, &sandboxFs{workspace: workspace})
+	return ctx
 }
 
 // WorkspaceOverrideFromCtx extracts the workspace override from context, or "".
@@ -24,7 +30,7 @@ func WorkspaceOverrideFromCtx(ctx context.Context) string {
 
 // resolveFS returns a fileSystem applying workspace override from context.
 // Paths under "memory/" are excluded (always use original workspace).
-// For sandboxFs: creates a temporary instance with the override workspace.
+// For sandboxFs: returns the cached override instance from context.
 // For hostFs (unrestricted): returns as-is.
 func resolveFS(ctx context.Context, fs fileSystem, path string) fileSystem {
 	override := WorkspaceOverrideFromCtx(ctx)
@@ -41,6 +47,10 @@ func resolveFS(ctx context.Context, fs fileSystem, path string) fileSystem {
 	if sfs, ok := fs.(*sandboxFs); ok {
 		if sfs.workspace == override {
 			return fs
+		}
+		// Use cached sandboxFs from context
+		if cached, ok := ctx.Value(overrideFsKey{}).(*sandboxFs); ok {
+			return cached
 		}
 		return &sandboxFs{workspace: override}
 	}

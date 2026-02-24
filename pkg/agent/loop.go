@@ -1271,11 +1271,23 @@ func formatCompactEntry(entry toolLogEntry) string {
 				args = string(argsRunes[:argsBudget-1]) + "\u2026"
 			}
 		}
-		return entry.Name + " " + args + " " + result
+		var sb strings.Builder
+		sb.Grow(len(entry.Name) + 1 + len(args) + 1 + len(result))
+		sb.WriteString(entry.Name)
+		sb.WriteByte(' ')
+		sb.WriteString(args)
+		sb.WriteByte(' ')
+		sb.WriteString(result)
+		return sb.String()
 	}
 
 	// No room for args or args empty
-	return entry.Name + " " + result
+	var sb strings.Builder
+	sb.Grow(len(entry.Name) + 1 + len(result))
+	sb.WriteString(entry.Name)
+	sb.WriteByte(' ')
+	sb.WriteString(result)
+	return sb.String()
 }
 
 // formatLatestEntry formats the latest entry command without its result marker.
@@ -1294,7 +1306,12 @@ func formatLatestEntry(entry toolLogEntry) string {
 				args = string(argsRunes[:argsBudget-1]) + "\u2026"
 			}
 		}
-		return entry.Name + " " + args
+		var sb strings.Builder
+		sb.Grow(len(entry.Name) + 1 + len(args))
+		sb.WriteString(entry.Name)
+		sb.WriteByte(' ')
+		sb.WriteString(args)
+		return sb.String()
 	}
 	return entry.Name
 }

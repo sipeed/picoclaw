@@ -239,10 +239,12 @@ func formatDirEntries(entries []os.DirEntry) *ToolResult {
 	var result strings.Builder
 	for _, entry := range entries {
 		if entry.IsDir() {
-			result.WriteString("DIR:  " + entry.Name() + "\n")
+			result.WriteString("DIR:  ")
 		} else {
-			result.WriteString("FILE: " + entry.Name() + "\n")
+			result.WriteString("FILE: ")
 		}
+		result.WriteString(entry.Name())
+		result.WriteByte('\n')
 	}
 	return NewToolResult(result.String())
 }
