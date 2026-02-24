@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/adhocore/gronx"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type CronSchedule struct {
@@ -330,17 +330,13 @@ func (cs *CronService) loadStore() error {
 }
 
 func (cs *CronService) saveStoreUnsafe() error {
-	dir := filepath.Dir(cs.storePath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-
 	data, err := json.MarshalIndent(cs.store, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(cs.storePath, data, 0o600)
+	// Use unified atomic write utility with explicit sync for flash storage reliability.
+	return utils.WriteFileAtomic(cs.storePath, data, 0o600)
 }
 
 func (cs *CronService) AddJob(

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type AuthCredential struct {
@@ -63,16 +65,13 @@ func LoadStore() (*AuthStore, error) {
 
 func SaveStore(store *AuthStore) error {
 	path := authFilePath()
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-
 	data, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+
+	// Use unified atomic write utility with explicit sync for flash storage reliability.
+	return utils.WriteFileAtomic(path, data, 0o600)
 }
 
 func GetCredential(provider string) (*AuthCredential, error) {

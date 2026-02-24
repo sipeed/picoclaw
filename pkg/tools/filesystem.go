@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // validatePath ensures the given path is within the workspace if restrict is true.
@@ -276,25 +278,9 @@ func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
 }
 
 func (h *hostFs) WriteFile(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create parent directories: %w", err)
-	}
-
-	// We use a "write-then-rename" pattern here to ensure an atomic write.
-	// This prevents the target file from being left in a truncated or partial state
-	// if the operation is interrupted, as the rename operation is atomic on Linux.
-	tmpPath := fmt.Sprintf("%s.%d.tmp", path, time.Now().UnixNano())
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-		os.Remove(tmpPath) // Ensure cleanup of partial/empty temp file
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to replace original file: %w", err)
-	}
-	return nil
+	// Use unified atomic write utility with explicit sync for flash storage reliability.
+	// Using 0o600 (owner read/write only) for secure default permissions.
+	return utils.WriteFileAtomic(path, data, 0o600)
 }
 
 // sandboxFs is a sandboxed fileSystem that operates within a strictly defined workspace using os.Root.
@@ -351,14 +337,33 @@ func (r *sandboxFs) WriteFile(path string, data []byte) error {
 			}
 		}
 
-		// We use a "write-then-rename" pattern here to ensure an atomic write.
-		// This prevents the target file from being left in a truncated or partial state
-		// if the operation is interrupted, as the rename operation is atomic on Linux.
-		tmpRelPath := fmt.Sprintf("%s.%d.tmp", relPath, time.Now().UnixNano())
+		// Use atomic write pattern with explicit sync for flash storage reliability.
+		// Using 0o600 (owner read/write only) for secure default permissions.
+		tmpRelPath := fmt.Sprintf(".tmp-%d.tmp", time.Now().UnixNano())
 
-		if err := root.WriteFile(tmpRelPath, data, 0o644); err != nil {
-			root.Remove(tmpRelPath) // Ensure cleanup of partial/empty temp file
-			return fmt.Errorf("failed to write to temp file: %w", err)
+		tmpFile, err := root.OpenFile(tmpRelPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		if err != nil {
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to open temp file: %w", err)
+		}
+
+		if _, err := tmpFile.Write(data); err != nil {
+			tmpFile.Close()
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to write temp file: %w", err)
+		}
+
+		// CRITICAL: Force sync to storage medium before rename.
+		// This ensures data is physically written to disk, not just cached.
+		if err := tmpFile.Sync(); err != nil {
+			tmpFile.Close()
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to sync temp file: %w", err)
+		}
+
+		if err := tmpFile.Close(); err != nil {
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to close temp file: %w", err)
 		}
 
 		if err := root.Rename(tmpRelPath, relPath); err != nil {

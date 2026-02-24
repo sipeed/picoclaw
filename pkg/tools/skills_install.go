@@ -197,5 +197,6 @@ func writeOriginMeta(targetDir, registryName, slug, version string) error {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(targetDir, ".skill-origin.json"), data, 0o644)
+	// Use unified atomic write utility with explicit sync for flash storage reliability.
+	return utils.WriteFileAtomic(filepath.Join(targetDir, ".skill-origin.json"), data, 0o600)
 }
