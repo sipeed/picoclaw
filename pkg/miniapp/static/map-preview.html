@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orchestration Room — Preview</title>
+  <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #060810;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 16px;
+      padding: 24px;
+    }
+
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      /* 2× for retina preview */
+      width: 320px;
+      height: 320px;
+      border: 1px solid #1a1f2e;
+      display: block;
+    }
+
+    .legend {
+      font-family: 'Silkscreen', monospace;
+      font-size: 9px;
+      color: #3a4259;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .legend span { color: #64748b; }
+  </style>
+  <script src="map.js"></script>
+</head>
+<body>
+  <canvas id="c" width="320" height="320"></canvas>
+
+  <div class="legend">
+    <span>👑 conductor</span>
+    <span>👩‍💼 secretary</span>
+    <span>🔍 scout</span>
+    <span>📊 analyst</span>
+    <span>💻 coder</span>
+    <span>🔧 worker</span>
+    <span>🎯 coordinator</span>
+    <span>🚪 door</span>
+  </div>
+
+  <script>
+    var canvas = document.getElementById('c');
+    var ctx    = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    var EMOJIS = {
+      conductor: '👑',
+      secretary: '👩‍💼',
+      meeting:   null,
+      stations:  ['🔍', '📊', '💻', '🔧', '🎯'],
+    };
+
+    function drawCharacters() {
+      ctx.font = '20px serif';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+
+      // permanent characters
+      ctx.fillText(EMOJIS.conductor, MAP_POSITIONS.conductor.x, MAP_POSITIONS.conductor.y);
+      ctx.fillText(EMOJIS.secretary, MAP_POSITIONS.secretary.x, MAP_POSITIONS.secretary.y);
+
+      // agents at their stations
+      MAP_POSITIONS.stations.forEach(function(pos, i) {
+        ctx.fillText(EMOJIS.stations[i], pos.x, pos.y);
+      });
+
+      // door marker
+      ctx.font = '14px serif';
+      ctx.fillText('🚪', MAP_POSITIONS.door.x, MAP_POSITIONS.door.y - 8);
+    }
+
+    // load map.png if it exists, otherwise use procedural fallback
+    loadMapAsset(function() {
+      drawMap(ctx);
+      drawCharacters();
+    });
+  </script>
+</body>
+</html>
