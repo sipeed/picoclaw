@@ -290,9 +290,8 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		// Match absolute paths: Unix (starts with / after space/start/quotes/=/:) or Windows (X:\)
-		// This regex is careful not to match scoped packages like @mastra/core
-		pathPattern := regexp.MustCompile(`(?:\s|^|["'|&;=:])(/[^\s\"'|&;:]+)|([A-Za-z]:\\[^\\\"'|&;:]+)`)
+		// Match absolute paths: Unix (starts with /) or Windows (X:\)
+		pathPattern := regexp.MustCompile(`(?:\s|^|["'|&;])(/[^\s\"'|&;:]+)|([A-Za-z]:\\[^\\\"'|&;:]+)`)
 		matches := pathPattern.FindAllStringSubmatch(cmd, -1)
 
 		for _, match := range matches {
