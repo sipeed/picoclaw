@@ -18,6 +18,7 @@ import (
 type LeaderElection struct {
 	localNodeID string
 	membership  *MembershipManager
+	config      LeaderElectionConfig
 
 	mu                 sync.RWMutex
 	currentLeader      string
@@ -28,10 +29,11 @@ type LeaderElection struct {
 }
 
 // NewLeaderElection creates a new leader election instance.
-func NewLeaderElection(nodeID string, membership *MembershipManager) *LeaderElection {
+func NewLeaderElection(nodeID string, membership *MembershipManager, config LeaderElectionConfig) *LeaderElection {
 	return &LeaderElection{
 		localNodeID:    nodeID,
 		membership:     membership,
+		config:         config,
 		leaderChangeCh: make(chan string, 10),
 		stopCh:         make(chan struct{}),
 	}
@@ -72,7 +74,11 @@ func (le *LeaderElection) LeaderChanges() <-chan string {
 
 // electionChecker periodically checks if we should become leader.
 func (le *LeaderElection) electionChecker() {
-	ticker := time.NewTicker(time.Second * 5)
+	interval := le.config.ElectionInterval.Duration
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -91,17 +97,24 @@ func (le *LeaderElection) checkElection() {
 	defer le.mu.Unlock()
 
 	members := le.membership.GetMembers()
-	if len(members) == 0 {
-		// No other members, we become leader
+
+	// Filter to only alive nodes for leader candidacy
+	aliveMembers := make([]*NodeWithState, 0, len(members))
+	for _, m := range members {
+		if m.State != nil && m.State.Status == NodeStatusAlive {
+			aliveMembers = append(aliveMembers, m)
+		}
+	}
+
+	if len(aliveMembers) == 0 {
+		// No alive members in view (including self not yet registered), become leader as fallback
 		le.becomeLeader()
 		return
 	}
 
 	// Find the node with the lowest ID (simple deterministic leader selection)
-	var candidateID string
-	candidateID = le.localNodeID
-
-	for _, m := range members {
+	candidateID := le.localNodeID
+	for _, m := range aliveMembers {
 		if m.Node.ID < candidateID {
 			candidateID = m.Node.ID
 		}
@@ -109,21 +122,12 @@ func (le *LeaderElection) checkElection() {
 
 	// Update current leader
 	if le.currentLeader != candidateID {
-		oldLeader := le.currentLeader
 		le.currentLeader = candidateID
 
 		if candidateID == le.localNodeID {
 			le.becomeLeader()
 		} else {
 			le.becomeFollower()
-		}
-
-		logger.InfoCF("swarm", "Leader changed", map[string]any{"old_leader": oldLeader, "new_leader": candidateID})
-
-		// Notify followers of leader change
-		select {
-		case le.leaderChangeCh <- candidateID:
-		default:
 		}
 	}
 }
@@ -134,25 +138,42 @@ func (le *LeaderElection) becomeLeader() {
 		le.isLeader = true
 		logger.InfoCF("swarm", "This node is now the leader", map[string]any{"node_id": le.localNodeID})
 
-		// Notify listeners
+		// Notify listeners (non-blocking)
 		select {
 		case le.leaderChangeCh <- le.localNodeID:
 		default:
+			logger.WarnC("swarm", "Leader change notification dropped, channel full")
 		}
 	}
 }
 
 // becomeFollower marks this node as a follower.
 func (le *LeaderElection) becomeFollower() {
-	if le.isLeader {
-		le.isLeader = false
-		logger.InfoCF("swarm", "This node is now a follower", map[string]any{"node_id": le.localNodeID})
+	wasLeader := le.isLeader
+	le.isLeader = false
+
+	if wasLeader {
+		logger.InfoCF("swarm", "This node is now a follower", map[string]any{
+			"node_id":    le.localNodeID,
+			"new_leader": le.currentLeader,
+		})
+
+		// Notify listeners of leader change (non-blocking)
+		select {
+		case le.leaderChangeCh <- le.currentLeader:
+		default:
+			logger.WarnC("swarm", "Leader change notification dropped, channel full")
+		}
 	}
 }
 
 // leaderMonitor monitors if the current leader is still alive.
 func (le *LeaderElection) leaderMonitor() {
-	ticker := time.NewTicker(time.Second * 10)
+	interval := le.config.LeaderHeartbeatTimeout.Duration
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -176,11 +197,20 @@ func (le *LeaderElection) monitorLeader() {
 		return
 	}
 
-	// Check if leader is still in the membership
-	if _, exists := le.membership.GetNode(leaderID); !exists {
+	// Check if leader is still in the membership and healthy
+	needReelection := false
+	node, exists := le.membership.GetNode(leaderID)
+	if !exists {
 		logger.WarnCF("swarm", "Leader no longer in membership, triggering reelection",
 			map[string]any{"leader_id": leaderID})
-		// Trigger reelection by clearing current leader
+		needReelection = true
+	} else if node.State != nil && node.State.Status != NodeStatusAlive {
+		logger.WarnCF("swarm", "Leader is no longer alive, triggering reelection",
+			map[string]any{"leader_id": leaderID, "status": node.State.Status})
+		needReelection = true
+	}
+
+	if needReelection {
 		le.mu.Lock()
 		le.currentLeader = ""
 		le.mu.Unlock()

@@ -134,8 +134,8 @@ func (st *SessionTransfer) TransferSession(ctx context.Context, targetNode *Node
 // sendTransfer sends a transfer message to a target node.
 func (st *SessionTransfer) sendTransfer(targetNode *NodeInfo, payload *TransferPayload) error {
 	msg := map[string]any{
-		"type":    "session_transfer",
-		"payload": payload,
+		MsgFieldType:    RPCTypeSessionTransfer,
+		MsgFieldPayload: payload,
 	}
 
 	data, err := json.Marshal(msg)
@@ -157,8 +157,8 @@ func (st *SessionTransfer) sendTransfer(targetNode *NodeInfo, payload *TransferP
 // SendAck sends an acknowledgment for a received transfer.
 func (st *SessionTransfer) SendAck(targetNode *NodeInfo, transferID string, accepted bool) error {
 	msg := map[string]any{
-		"type": "session_transfer_ack",
-		"payload": map[string]any{
+		MsgFieldType: RPCTypeSessionTransferAck,
+		MsgFieldPayload: map[string]any{
 			"transfer_id": transferID,
 			"accepted":    accepted,
 			"node_id":     st.localNode.ID,
@@ -207,12 +207,15 @@ func (st *SessionTransfer) handleMessage(data []byte, addr *net.UDPAddr) {
 		return
 	}
 
-	msgType, _ := msg["type"].(string)
+	msgType, ok := msg[MsgFieldType].(string)
+	if !ok {
+		return
+	}
 
-	switch msgType {
-	case "session_transfer":
+	switch RPCMessageType(msgType) {
+	case RPCTypeSessionTransfer:
 		st.handleTransfer(data, addr)
-	case "session_transfer_ack":
+	case RPCTypeSessionTransferAck:
 		st.handleTransferAck(data)
 	}
 }
@@ -224,7 +227,7 @@ func (st *SessionTransfer) handleTransfer(data []byte, addr *net.UDPAddr) {
 		return
 	}
 
-	payloadData, _ := json.Marshal(msg["payload"])
+	payloadData, _ := json.Marshal(msg[MsgFieldPayload])
 	var payload TransferPayload
 	if err := json.Unmarshal(payloadData, &payload); err != nil {
 		return
@@ -270,7 +273,10 @@ func (st *SessionTransfer) handleTransferAck(data []byte) {
 		return
 	}
 
-	payload, _ := msg["payload"].(map[string]any)
+	payload, ok := msg[MsgFieldPayload].(map[string]any)
+	if !ok {
+		return
+	}
 	transferID, _ := payload["transfer_id"].(string)
 	accepted, _ := payload["accepted"].(bool)
 

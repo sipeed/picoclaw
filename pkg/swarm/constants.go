@@ -8,6 +8,42 @@ package swarm
 
 import "time"
 
+// GossipMessageType represents the type of a gossip protocol message.
+type GossipMessageType string
+
+const (
+	GossipTypePing   GossipMessageType = "ping"
+	GossipTypePong   GossipMessageType = "pong"
+	GossipTypeJoin   GossipMessageType = "join"
+	GossipTypeUpdate GossipMessageType = "update"
+	GossipTypeSync   GossipMessageType = "sync"
+)
+
+// RPCMessageType represents the type of an RPC message between nodes.
+type RPCMessageType string
+
+const (
+	RPCTypeHandoffRequest      RPCMessageType = "handoff_request"
+	RPCTypeHandoffResponse     RPCMessageType = "handoff_response"
+	RPCTypeSessionTransfer     RPCMessageType = "session_transfer"
+	RPCTypeSessionTransferAck  RPCMessageType = "session_transfer_ack"
+)
+
+// LoadTrend represents the direction of load change over time.
+type LoadTrend string
+
+const (
+	LoadTrendIncreasing LoadTrend = "increasing"
+	LoadTrendDecreasing LoadTrend = "decreasing"
+	LoadTrendStable     LoadTrend = "stable"
+)
+
+// RPC message field keys used in map-based message encoding.
+const (
+	MsgFieldType    = "type"
+	MsgFieldPayload = "payload"
+)
+
 const (
 	// Default values for configurable parameters
 

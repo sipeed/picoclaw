@@ -234,13 +234,13 @@ func (lm *LoadMonitor) OnThreshold(callback func(float64)) {
 	lm.onThreshold = append(lm.onThreshold, callback)
 }
 
-// GetTrend returns the load trend: "increasing", "decreasing", or "stable".
-func (lm *LoadMonitor) GetTrend() string {
+// GetTrend returns the load trend.
+func (lm *LoadMonitor) GetTrend() LoadTrend {
 	lm.mu.RLock()
 	defer lm.mu.RUnlock()
 
 	if len(lm.samples) < 3 {
-		return "stable"
+		return LoadTrendStable
 	}
 
 	// Simple linear regression to detect trend
@@ -258,11 +258,11 @@ func (lm *LoadMonitor) GetTrend() string {
 	slope := (n*sumXY - sumX*sumY) / (n * (n - 1) * (2*n - 1) / 6)
 
 	if slope > TrendIncreasingThreshold {
-		return "increasing"
+		return LoadTrendIncreasing
 	} else if slope < TrendDecreasingThreshold {
-		return "decreasing"
+		return LoadTrendDecreasing
 	}
-	return "stable"
+	return LoadTrendStable
 }
 
 // Helper functions for normalization

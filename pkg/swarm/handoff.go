@@ -291,8 +291,8 @@ func (hc *HandoffCoordinator) findTargetNode(req *HandoffRequest) (*NodeWithStat
 func (hc *HandoffCoordinator) sendHandoffRequest(req *HandoffRequest, target *NodeWithState) error {
 	// Handoff message type
 	msg := map[string]any{
-		"type":    "handoff_request",
-		"payload": req,
+		MsgFieldType:    RPCTypeHandoffRequest,
+		MsgFieldPayload: req,
 	}
 
 	data, err := json.Marshal(msg)
@@ -369,12 +369,15 @@ func (hc *HandoffCoordinator) handleMessage(data []byte, addr *net.UDPAddr) {
 		return
 	}
 
-	msgType, _ := msg["type"].(string)
+	msgType, ok := msg[MsgFieldType].(string)
+	if !ok {
+		return
+	}
 
-	switch msgType {
-	case "handoff_request":
+	switch RPCMessageType(msgType) {
+	case RPCTypeHandoffRequest:
 		hc.handleHandoffRequest(data, addr)
-	case "handoff_response":
+	case RPCTypeHandoffResponse:
 		hc.handleHandoffResponse(data)
 	}
 }
@@ -386,7 +389,7 @@ func (hc *HandoffCoordinator) handleHandoffRequest(data []byte, addr *net.UDPAdd
 		return
 	}
 
-	payloadData, _ := json.Marshal(msg["payload"])
+	payloadData, _ := json.Marshal(msg[MsgFieldPayload])
 	var req HandoffRequest
 	if err := json.Unmarshal(payloadData, &req); err != nil {
 		return
@@ -414,8 +417,8 @@ func (hc *HandoffCoordinator) handleHandoffRequest(data []byte, addr *net.UDPAdd
 
 	// Send response
 	respMsg := map[string]any{
-		"type":    "handoff_response",
-		"payload": response,
+		MsgFieldType:    RPCTypeHandoffResponse,
+		MsgFieldPayload: response,
 	}
 
 	respData, _ := json.Marshal(respMsg)
@@ -442,7 +445,7 @@ func (hc *HandoffCoordinator) handleHandoffResponse(data []byte) {
 		return
 	}
 
-	payloadData, _ := json.Marshal(msg["payload"])
+	payloadData, _ := json.Marshal(msg[MsgFieldPayload])
 	var resp HandoffResponse
 	if err := json.Unmarshal(payloadData, &resp); err != nil {
 		return

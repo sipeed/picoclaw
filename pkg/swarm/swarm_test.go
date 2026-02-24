@@ -422,3 +422,188 @@ func TestSessionTransfer(t *testing.T) {
 		assert.Equal(t, 0, len(transfers))
 	})
 }
+
+func TestLeaderElection(t *testing.T) {
+	// Helper to create a discovery service with membership for testing
+	newTestDiscovery := func(t *testing.T, nodeID string, port int) *DiscoveryService {
+		t.Helper()
+		cfg := &Config{
+			NodeID:   nodeID,
+			BindAddr: "127.0.0.1",
+			BindPort: port,
+			RPC:      RPCConfig{Port: port + 1},
+			Discovery: DiscoveryConfig{
+				GossipInterval:  Duration{100 * time.Millisecond},
+				NodeTimeout:     Duration{500 * time.Millisecond},
+				DeadNodeTimeout: Duration{2 * time.Second},
+			},
+		}
+		ds, err := NewDiscoveryService(cfg)
+		require.NoError(t, err)
+		// Register the local node into membership so checkElection sees it
+		ds.membership.UpdateNode(ds.localNode)
+		return ds
+	}
+
+	defaultConfig := LeaderElectionConfig{
+		Enabled:                true,
+		ElectionInterval:       Duration{100 * time.Millisecond},
+		LeaderHeartbeatTimeout: Duration{200 * time.Millisecond},
+	}
+
+	t.Run("SingleNodeBecomesLeader", func(t *testing.T) {
+		ds := newTestDiscovery(t, "node-a", 18100)
+
+		le := NewLeaderElection(ds.localNode.ID, ds.membership, defaultConfig)
+
+		le.checkElection()
+
+		assert.True(t, le.IsLeader())
+		assert.Equal(t, "node-a", le.GetLeader())
+	})
+
+	t.Run("LowestIDBecomesLeader", func(t *testing.T) {
+		ds := newTestDiscovery(t, "node-c", 18110)
+
+		// Add two remote alive nodes
+		ds.membership.UpdateNode(&NodeInfo{
+			ID:        "node-a",
+			Addr:      "192.168.1.1",
+			Port:      7947,
+			LoadScore: 0.5,
+			Timestamp: time.Now().UnixNano(),
+		})
+		ds.membership.UpdateNode(&NodeInfo{
+			ID:        "node-b",
+			Addr:      "192.168.1.2",
+			Port:      7947,
+			LoadScore: 0.3,
+			Timestamp: time.Now().UnixNano(),
+		})
+
+		le := NewLeaderElection("node-c", ds.membership, defaultConfig)
+
+		le.checkElection()
+
+		// node-a has the lowest ID
+		assert.False(t, le.IsLeader())
+		assert.Equal(t, "node-a", le.GetLeader())
+	})
+
+	t.Run("DeadNodeNotElected", func(t *testing.T) {
+		ds := newTestDiscovery(t, "node-c", 18120)
+
+		// Add node-a (lowest ID) but mark it dead
+		ds.membership.UpdateNode(&NodeInfo{
+			ID:        "node-a",
+			Addr:      "192.168.1.1",
+			Port:      7947,
+			LoadScore: 0.2,
+			Timestamp: time.Now().UnixNano(),
+		})
+		ds.membership.MarkDead("node-a")
+
+		// Add node-b as alive
+		ds.membership.UpdateNode(&NodeInfo{
+			ID:        "node-b",
+			Addr:      "192.168.1.2",
+			Port:      7947,
+			LoadScore: 0.3,
+			Timestamp: time.Now().UnixNano(),
+		})
+
+		le := NewLeaderElection("node-c", ds.membership, defaultConfig)
+
+		le.checkElection()
+
+		// node-a is dead, so node-b (next lowest alive ID) should be leader
+		assert.Equal(t, "node-b", le.GetLeader())
+		assert.False(t, le.IsLeader())
+	})
+
+	t.Run("SuspectNodeNotElected", func(t *testing.T) {
+		ds := newTestDiscovery(t, "node-c", 18130)
+
+		// Add node-a (lowest ID) but mark it suspect
+		ds.membership.UpdateNode(&NodeInfo{
+			ID:        "node-a",
+			Addr:      "192.168.1.1",
+			Port:      7947,
+			LoadScore: 0.2,
+			Timestamp: time.Now().UnixNano(),
+		})
+		ds.membership.MarkSuspect("node-a")
+
+		le := NewLeaderElection("node-c", ds.membership, defaultConfig)
+
+		le.checkElection()
+
+		// node-a is suspect, local node-c should be leader
+		assert.Equal(t, "node-c", le.GetLeader())
+		assert.True(t, le.IsLeader())
+	})
+
+	t.Run("LeaderReelectionOnLeaderDeath", func(t *testing.T) {
+		ds := newTestDiscovery(t, "node-b", 18140)
+
+		// Add node-a as alive leader
+		ds.membership.UpdateNode(&NodeInfo{
+			ID:        "node-a",
+			Addr:      "192.168.1.1",
+			Port:      7947,
+			LoadScore: 0.2,
+			Timestamp: time.Now().UnixNano(),
+		})
+
+		le := NewLeaderElection("node-b", ds.membership, defaultConfig)
+
+		le.checkElection()
+		assert.Equal(t, "node-a", le.GetLeader())
+		assert.False(t, le.IsLeader())
+
+		// Now mark node-a as dead
+		ds.membership.MarkDead("node-a")
+
+		// monitorLeader should detect and trigger reelection
+		le.monitorLeader()
+
+		// node-b should now be leader
+		assert.Equal(t, "node-b", le.GetLeader())
+		assert.True(t, le.IsLeader())
+	})
+
+	t.Run("NoDoubleNotification", func(t *testing.T) {
+		ds := newTestDiscovery(t, "node-a", 18150)
+
+		le := NewLeaderElection("node-a", ds.membership, defaultConfig)
+
+		// First election — should produce exactly one notification
+		le.checkElection()
+		assert.True(t, le.IsLeader())
+
+		// Drain the channel
+		count := 0
+		for {
+			select {
+			case <-le.LeaderChanges():
+				count++
+			default:
+				goto done
+			}
+		}
+	done:
+		assert.Equal(t, 1, count, "should receive exactly one leader change notification")
+	})
+
+	t.Run("GetState", func(t *testing.T) {
+		ds := newTestDiscovery(t, "node-a", 18160)
+
+		le := NewLeaderElection("node-a", ds.membership, defaultConfig)
+		le.checkElection()
+
+		state := le.GetState()
+		assert.Equal(t, "node-a", state.LeaderID)
+		assert.True(t, state.IsLeader)
+		assert.GreaterOrEqual(t, state.MemberCount, 1)
+	})
+}

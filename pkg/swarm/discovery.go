@@ -282,7 +282,7 @@ func (ds *DiscoveryService) gossipLoop() {
 
 // GossipMessage represents a gossip message.
 type GossipMessage struct {
-	Type      string      `json:"type"` // "ping", "pong", "join", "update"
+	Type      GossipMessageType `json:"type"` // ping, pong, join, update, sync
 	FromNode  string      `json:"from_node"`
 	SeqNum    uint64      `json:"seq_num"`
 	Timestamp int64       `json:"timestamp"`
@@ -312,15 +312,15 @@ func (ds *DiscoveryService) handleGossip(data []byte, addr *net.UDPAddr) {
 	}
 
 	switch msg.Type {
-	case "ping":
+	case GossipTypePing:
 		ds.handlePing(msg, addr)
-	case "pong":
+	case GossipTypePong:
 		ds.handlePong(msg)
-	case "join":
+	case GossipTypeJoin:
 		ds.handleJoin(msg, addr)
-	case "update":
+	case GossipTypeUpdate:
 		ds.handleUpdate(msg)
-	case "sync":
+	case GossipTypeSync:
 		ds.handleSync(msg, addr)
 	}
 }
@@ -329,7 +329,7 @@ func (ds *DiscoveryService) handleGossip(data []byte, addr *net.UDPAddr) {
 func (ds *DiscoveryService) handlePing(msg GossipMessage, addr *net.UDPAddr) {
 	// Respond with pong
 	pong := GossipMessage{
-		Type:      "pong",
+		Type:      GossipTypePong,
 		FromNode:  ds.localNode.ID,
 		Timestamp: time.Now().UnixNano(),
 	}
@@ -372,7 +372,7 @@ func (ds *DiscoveryService) handleJoin(msg GossipMessage, addr *net.UDPAddr) {
 	}
 
 	response := GossipMessage{
-		Type:      "sync",
+		Type:      GossipTypeSync,
 		FromNode:  ds.localNode.ID,
 		Timestamp: time.Now().UnixNano(),
 		Nodes:     nodes,
@@ -432,7 +432,7 @@ func (ds *DiscoveryService) broadcastUpdate() {
 	}
 
 	msg := GossipMessage{
-		Type:      "update",
+		Type:      GossipTypeUpdate,
 		FromNode:  ds.localNode.ID,
 		SeqNum:    ds.seqNum,
 		Timestamp: time.Now().UnixNano(),
@@ -479,7 +479,7 @@ func (ds *DiscoveryService) sendJoin(ctx context.Context, addr string) error {
 	}
 
 	msg := GossipMessage{
-		Type:      "join",
+		Type:      GossipTypeJoin,
 		FromNode:  ds.localNode.ID,
 		Timestamp: time.Now().UnixNano(),
 		Nodes:     []*NodeInfo{ds.localNode},
