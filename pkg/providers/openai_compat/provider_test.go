@@ -637,6 +637,7 @@ func TestChatStream_EarlyCancel(t *testing.T) {
 	p := NewProviderWithOptions("key", server.URL, "", Options{Stream: true})
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ch, err := p.ChatStream(ctx, []Message{{Role: "user", Content: "hi"}}, nil, "test", nil)
 	if err != nil {
 		t.Fatalf("ChatStream() error = %v", err)
