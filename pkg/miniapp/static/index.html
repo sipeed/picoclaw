@@ -84,7 +84,7 @@
     top: 2px;
     bottom: 2px;
     left: 2px;
-    width: calc(100%/6 - 2px);
+    width: calc(100%/7 - 2px);
     border-radius: 8px;
     background: var(--tab-pill-bg);
     box-shadow: 0 0.5px 2px rgba(0,0,0,0.12), 0 0.5px 1px rgba(0,0,0,0.08);
@@ -768,7 +768,30 @@
     cursor: pointer;
   }
 
+  /* ── Orch panel ── */
+  .orch-room-row { display:flex; align-items:flex-start; padding:12px 0; }
+  .orch-side { display:flex; flex-direction:column; align-items:center; gap:12px; padding-top:20px; width:40px; flex-shrink:0; }
+  .orch-badge { display:flex; flex-direction:column; align-items:center; gap:3px; opacity:0.3; transition:opacity 0.3s; }
+  .orch-badge.alive   { opacity:1; }
+  .orch-badge.alive   .orch-badge-label { color:#4a6ac0; }
+  .orch-badge.alive   .orch-badge-dot   { background:#4ade80; }
+  .orch-badge.toolcall .orch-badge-dot  { background:#fb923c; animation:orch-blink 0.2s step-end infinite; }
+  .orch-badge.waiting  .orch-badge-dot  { background:#60a5fa; }
+  .orch-badge.talking  .orch-badge-label{ color:#facc15; }
+  .orch-badge.talking  .orch-badge-dot  { background:#facc15; animation:orch-blink 0.6s step-end infinite; }
+  .orch-badge-emoji  { font-size:16px; line-height:1; }
+  .orch-badge-label  { font-size:7px; color:var(--hint); letter-spacing:0.05em; text-transform:uppercase; }
+  .orch-badge-dot    { width:4px; height:4px; border-radius:50%; background:var(--hint); }
+  @keyframes orch-blink { 50% { opacity:0; } }
+  .orch-canvas-wrap { flex:1; min-width:0; border-radius:12px; overflow:hidden; background:#060810; }
+  .orch-canvas-wrap canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; width:100%; aspect-ratio:1/1; }
+  .orch-status { text-align:center; font-size:11px; color:var(--hint); padding:6px 0 4px; }
+  .orch-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--hint); margin-right:4px; vertical-align:middle; }
+  .orch-dot.on { background:#4ade80; }
+
 </style>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
+<script src="map.js"></script>
 </head>
 <body>
 
@@ -781,6 +804,7 @@
     <button class="tab" data-panel="session">Session</button>
     <button class="tab" data-panel="config">Config</button>
     <button class="tab" data-panel="dev">Dev</button>
+    <button class="tab" data-panel="orch">Orch</button>
   </div>
 </div>
 
@@ -852,6 +876,57 @@
   </div>
 </div>
 
+<div id="orch" class="panel">
+  <div class="orch-room-row">
+    <div class="orch-side" id="orch-panel-left">
+      <div class="orch-badge alive" id="orch-badge-conductor">
+        <div class="orch-badge-emoji">👑</div>
+        <div class="orch-badge-label">CNDR</div>
+        <div class="orch-badge-dot"></div>
+      </div>
+      <div class="orch-badge alive" id="orch-badge-secretary">
+        <div class="orch-badge-emoji">👩‍💼</div>
+        <div class="orch-badge-label">SEC</div>
+        <div class="orch-badge-dot"></div>
+      </div>
+    </div>
+    <div class="orch-canvas-wrap">
+      <canvas id="orch-canvas" width="320" height="320"></canvas>
+    </div>
+    <div class="orch-side" id="orch-panel-right">
+      <div class="orch-badge" id="orch-badge-s0">
+        <div class="orch-badge-emoji">🔍</div>
+        <div class="orch-badge-label">SCOUT</div>
+        <div class="orch-badge-dot"></div>
+      </div>
+      <div class="orch-badge" id="orch-badge-s1">
+        <div class="orch-badge-emoji">📊</div>
+        <div class="orch-badge-label">ANLY</div>
+        <div class="orch-badge-dot"></div>
+      </div>
+      <div class="orch-badge" id="orch-badge-s2">
+        <div class="orch-badge-emoji">💻</div>
+        <div class="orch-badge-label">CODE</div>
+        <div class="orch-badge-dot"></div>
+      </div>
+      <div class="orch-badge" id="orch-badge-s3">
+        <div class="orch-badge-emoji">🔧</div>
+        <div class="orch-badge-label">WRKR</div>
+        <div class="orch-badge-dot"></div>
+      </div>
+      <div class="orch-badge" id="orch-badge-s4">
+        <div class="orch-badge-emoji">🎯</div>
+        <div class="orch-badge-label">CORD</div>
+        <div class="orch-badge-dot"></div>
+      </div>
+    </div>
+  </div>
+  <div class="orch-status">
+    <span class="orch-dot" id="orch-status-dot"></span>
+    <span id="orch-status-text">Connecting…</span>
+  </div>
+</div>
+
 <div class="send-bar hidden" id="send-bar">
   <input id="skill-msg" class="send-input glass glass-interactive" placeholder="Message for skill...">
   <button class="send-btn" id="send-skill-btn" onclick="sendSkillCommand()">Send</button>
@@ -894,6 +969,8 @@ tabs.forEach((tab, index) => {
     if (p === 'dev' && !fresh) loadDev();
     if (p === 'config') connectLogsWs();
     else disconnectLogsWs();
+    if (p === 'orch') connectOrchWs();
+    else disconnectOrchWs();
   });
 });
 
@@ -1716,6 +1793,190 @@ document.querySelector('.log-filter-chips').addEventListener('click', function(e
   disconnectLogsWs();
   connectLogsWs();
 });
+
+// ─── Orchestration room ───────────────────────────────────────────────────
+var orchCanvas = null, orchCtx = null, orchInited = false;
+var orchWs = null, orchReconnectTimer = null;
+var _orchLastTs = null;
+var _orchBOB      = [0, -1, -2, -1];
+var _orchFRAME_MS = {idle:450, waiting:650, toolcall:90, talking:280, entering:220, exiting:220};
+var _orchWALK     = 55;
+var _orchConductor, _orchSecretary, _orchSubagents, _orchSlots, _orchFreeSlots;
+
+function _orchMakeChar(id, emoji, home) {
+  return {id:id, emoji:emoji, x:home.x, y:home.y, home:home, target:null, state:'idle',
+          frame:0, frameTimer:0, bubble:null, alive:false, _onArrive:null};
+}
+function _orchInitChars() {
+  _orchConductor = _orchMakeChar('conductor', '👑',  MAP_POSITIONS.conductor);
+  _orchSecretary = _orchMakeChar('secretary', '👩‍💼', MAP_POSITIONS.secretary);
+  _orchConductor.alive = true; _orchSecretary.alive = true;
+  var ps = [{id:'s0',emoji:'🔍'},{id:'s1',emoji:'📊'},{id:'s2',emoji:'💻'},
+            {id:'s3',emoji:'🔧'},{id:'s4',emoji:'🎯'}];
+  _orchSubagents = ps.map(function(p,i){
+    var c = _orchMakeChar(p.id, p.emoji, MAP_POSITIONS.stations[i]);
+    c.x = MAP_POSITIONS.door.x; c.y = MAP_POSITIONS.door.y; return c;
+  });
+  _orchSlots = {}; _orchFreeSlots = _orchSubagents.slice();
+}
+function _orchAllChars() { return [_orchConductor, _orchSecretary].concat(_orchSubagents); }
+
+function _orchSyncBadge(id, state, alive) {
+  var el = document.getElementById('orch-badge-' + id); if (!el) return;
+  el.className = 'orch-badge'
+    + (alive             ? ' alive'    : '')
+    + (state==='talking' ? ' talking'  : '')
+    + (state==='toolcall'? ' toolcall' : '')
+    + (state==='waiting' ? ' waiting'  : '');
+}
+function _orchSetState(c, state) { c.state=state; _orchSyncBadge(c.id, state, c.alive); }
+function _orchMoveTo(c, pos, cb) { c.target=pos; c._onArrive=cb||null; }
+function _orchSay(c, text, ttl)  { c.bubble={text:text, ttl:ttl||2200}; }
+
+function _orchCharForId(id) {
+  if (id === 'heartbeat') return _orchSecretary;
+  if (_orchSlots[id])     return _orchSlots[id];
+  return _orchConductor;
+}
+function _orchSpawn(id) {
+  if (/^subagent-/.test(id)) {
+    var c = _orchFreeSlots.shift(); if (!c) return;
+    _orchSlots[id]=c; c.alive=true;
+    c.x=MAP_POSITIONS.door.x; c.y=MAP_POSITIONS.door.y;
+    _orchSetState(c,'entering');
+    _orchMoveTo(c, c.home, function(){ _orchSetState(c,'idle'); });
+  } else {
+    var ch = _orchCharForId(id); ch.alive=true; _orchSetState(ch,'waiting');
+  }
+}
+function _orchGC(id) {
+  if (/^subagent-/.test(id)) {
+    var c=_orchSlots[id]; if (!c) return;
+    delete _orchSlots[id]; _orchFreeSlots.push(c);
+    _orchSetState(c,'exiting');
+    _orchMoveTo(c, MAP_POSITIONS.door, function(){ c.alive=false; _orchSetState(c,'idle'); });
+  } else {
+    var ch=_orchCharForId(id); ch.alive=false; _orchSetState(ch,'idle');
+  }
+}
+function _orchConverse(fromId, toId, text) {
+  var from=_orchCharForId(fromId), to=_orchCharForId(toId);
+  if (!from||!to||from===to) return;
+  var label=(text||'').slice(0,18);
+  var mid={x:(from.x+to.x)/2, y:(from.y+to.y)/2};
+  _orchSetState(from,'talking'); _orchSetState(to,'talking');
+  _orchMoveTo(from, {x:mid.x-18,y:mid.y}, function(){ _orchSay(from,label,2400); });
+  _orchMoveTo(to,   {x:mid.x+18,y:mid.y}, function(){
+    setTimeout(function(){
+      _orchMoveTo(from, from.home, function(){ _orchSetState(from,'idle'); });
+      _orchMoveTo(to,   to.home,   function(){ _orchSetState(to,  'idle'); });
+    }, 2600);
+  });
+}
+function _orchUpdate(dt) {
+  _orchAllChars().forEach(function(c){
+    if (!c.alive && c.state!=='entering') return;
+    c.frameTimer+=dt;
+    var dur=_orchFRAME_MS[c.state]||450;
+    if (c.frameTimer>=dur){ c.frame=(c.frame+1)%4; c.frameTimer-=dur; }
+    if (c.target){
+      var dx=c.target.x-c.x, dy=c.target.y-c.y, dist=Math.sqrt(dx*dx+dy*dy);
+      if (dist>1.5){ var spd=_orchWALK*dt/1000; c.x+=dx/dist*spd; c.y+=dy/dist*spd; }
+      else { c.x=c.target.x; c.y=c.target.y; c.target=null; if(c._onArrive){c._onArrive();c._onArrive=null;} }
+    }
+    if (c.bubble){ c.bubble.ttl-=dt; if(c.bubble.ttl<=0) c.bubble=null; }
+  });
+}
+function _orchDrawBubble(c) {
+  if (!c.bubble) return;
+  var yOff=_orchBOB[c.frame], bx=c.x, by=c.y+yOff-18;
+  orchCtx.font='7px Silkscreen,monospace';
+  var tw=orchCtx.measureText(c.bubble.text).width, pw=tw+8, ph=12;
+  var lx=Math.max(4,Math.min(316-pw, bx-pw/2));
+  orchCtx.fillStyle='#facc15';
+  orchCtx.fillRect(Math.floor(lx),Math.floor(by-ph),Math.ceil(pw),Math.ceil(ph));
+  orchCtx.fillRect(Math.floor(bx)-1,Math.floor(by),3,3);
+  orchCtx.fillStyle='#0a0a00'; orchCtx.textAlign='left'; orchCtx.textBaseline='middle';
+  orchCtx.fillText(c.bubble.text, Math.floor(lx+4), Math.floor(by-ph/2));
+}
+function _orchDrawChar(c) {
+  if (!c.alive && c.state!=='entering' && c.state!=='exiting') return;
+  var yOff=_orchBOB[c.frame], cx=Math.floor(c.x), cy=Math.floor(c.y+yOff);
+  if (c.state==='toolcall'){
+    orchCtx.fillStyle='rgba(251,146,60,0.35)'; orchCtx.beginPath();
+    orchCtx.arc(cx,cy,13,0,Math.PI*2); orchCtx.fill();
+  } else if (c.state==='waiting'){
+    orchCtx.fillStyle='rgba(96,165,250,0.25)'; orchCtx.beginPath();
+    orchCtx.arc(cx,cy,11,0,Math.PI*2); orchCtx.fill();
+  }
+  orchCtx.font='18px serif'; orchCtx.textAlign='center'; orchCtx.textBaseline='middle';
+  orchCtx.fillText(c.emoji, cx, cy);
+  orchCtx.font='6px Silkscreen,monospace'; orchCtx.textAlign='center'; orchCtx.textBaseline='top';
+  orchCtx.fillStyle=c.state==='talking'?'#facc15':'#3a4a7a';
+  orchCtx.fillText(c.id.toUpperCase(), cx, cy+11);
+  _orchDrawBubble(c);
+}
+function _orchRender(ts) {
+  if (_orchLastTs===null) _orchLastTs=ts;
+  var dt=Math.min(ts-_orchLastTs,80); _orchLastTs=ts;
+  _orchUpdate(dt);
+  orchCtx.imageSmoothingEnabled=false;
+  drawMap(orchCtx);
+  _orchAllChars().forEach(_orchDrawChar);
+  requestAnimationFrame(_orchRender);
+}
+function orchInit() {
+  if (orchInited) return; orchInited=true;
+  orchCanvas=document.getElementById('orch-canvas');
+  orchCtx=orchCanvas.getContext('2d');
+  orchCtx.imageSmoothingEnabled=false;
+  _orchInitChars();
+  loadMapAsset(function(){ _orchLastTs=null; requestAnimationFrame(_orchRender); });
+}
+function connectOrchWs() {
+  orchInit();
+  if (orchWs && orchWs.readyState<=1) return;
+  var proto=location.protocol==='https:'?'wss:':'ws:';
+  var url=proto+'//'+location.host+'/miniapp/api/orchestration/ws?initData='+encodeURIComponent(initData);
+  orchWs=new WebSocket(url);
+  orchWs.onopen=function(){
+    document.getElementById('orch-status-dot').classList.add('on');
+    document.getElementById('orch-status-text').textContent='Live';
+  };
+  orchWs.onmessage=function(e){
+    var msg; try{ msg=JSON.parse(e.data); }catch(_){ return; }
+    if (msg.type==='init') {
+      (msg.agents||[]).forEach(function(info){
+        _orchSpawn(info.id);
+        if (info.state && info.state!=='idle'){
+          var c=_orchCharForId(info.id); if(c) _orchSetState(c, info.state);
+        }
+      });
+    } else if (msg.type==='event') {
+      var ev=msg.event||{};
+      if (ev.type==='agent_spawn')  _orchSpawn(ev.id);
+      if (ev.type==='agent_state')  { var c=_orchCharForId(ev.id); if(c) _orchSetState(c,ev.state); }
+      if (ev.type==='agent_gc')     _orchGC(ev.id);
+      if (ev.type==='conversation') _orchConverse(ev.from, ev.to, ev.text);
+    }
+  };
+  orchWs.onclose=function(){
+    document.getElementById('orch-status-dot').classList.remove('on');
+    document.getElementById('orch-status-text').textContent='Disconnected';
+    orchWs=null;
+    var at=document.querySelector('.tab.active');
+    if (at && at.dataset.panel==='orch') orchReconnectTimer=setTimeout(connectOrchWs,3000);
+  };
+  orchWs.onerror=function(){};
+}
+function disconnectOrchWs() {
+  if (orchReconnectTimer){ clearTimeout(orchReconnectTimer); orchReconnectTimer=null; }
+  if (orchWs){ orchWs.close(); orchWs=null; }
+  var dot=document.getElementById('orch-status-dot');
+  var txt=document.getElementById('orch-status-text');
+  if (dot) dot.classList.remove('on');
+  if (txt) txt.textContent='Offline';
+}
 
 async function saveLogSnapshot() {
   try {
