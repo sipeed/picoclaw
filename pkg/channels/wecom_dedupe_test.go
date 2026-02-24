@@ -60,14 +60,19 @@ func TestMarkMessageProcessed_RotationClearsMapAtBoundary(t *testing.T) {
 		t.Fatalf("expected map size 1 after first insert, got %d", len(processed))
 	}
 
-	// Inserting second unique message exceeds maxEntries and should reset map.
+	// Inserting second unique message exceeds maxEntries and should reset map, but keep the new message.
 	if ok := markMessageProcessed(&mu, &processed, "msg-2", 1); !ok {
 		t.Fatalf("second unique message should be accepted")
 	}
-	if len(processed) != 0 {
-		t.Fatalf("expected map to be reset after rotation, got size %d", len(processed))
+	if len(processed) != 1 {
+		t.Fatalf("expected map to retain current message after rotation, got size %d", len(processed))
 	}
-	if processed["msg-2"] {
-		t.Fatalf("expected current message marker to be cleared after rotation")
+	if !processed["msg-2"] {
+		t.Fatalf("expected current message marker to be retained after rotation")
+	}
+
+	// Because msg-2 was retained, an immediate duplicate should be rejected.
+	if ok := markMessageProcessed(&mu, &processed, "msg-2", 1); ok {
+		t.Fatalf("duplicate message immediately after rotation should be rejected")
 	}
 }
