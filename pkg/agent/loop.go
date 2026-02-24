@@ -390,6 +390,11 @@ func (al *AgentLoop) Close() {
 	if al.stats != nil {
 		al.stats.Close()
 	}
+	for _, agentID := range al.registry.ListAgentIDs() {
+		if agent, ok := al.registry.GetAgent(agentID); ok {
+			agent.Sessions.Close()
+		}
+	}
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
@@ -999,9 +1004,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		finalContent = opts.DefaultResponse
 	}
 
-	// 6. Save final assistant message to session
+	// 6. Save final assistant message to session (deferred write-behind)
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
-	agent.Sessions.Save(opts.SessionKey)
+	agent.Sessions.MarkDirty(opts.SessionKey)
 
 	// 7. Optional: summarization
 	if opts.EnableSummary {
