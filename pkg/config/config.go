@@ -503,6 +503,19 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+
+	if _, hasModelList := raw["model_list"]; !hasModelList {
+		// only set the default model list if the config file doesn't have the old providers config either
+		if _, hasProviders := raw["providers"]; !hasProviders {
+			cfg.ModelList = DefaultModelList()
+		}
+		// otherwise, ConvertProvidersToModelList(cfg) will handle the default model list based on the providers config
+	}
+
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
