@@ -14,6 +14,31 @@ import (
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
+const orchestrationGuidance = `## Orchestration
+
+You are the conductor, not the performer. Prefer delegation over doing everything inline.
+
+Use **spawn** (non-blocking) when:
+- Tasks can run in parallel or in the background
+- Multiple independent tasks can run simultaneously — spawn each one
+- You don't need the result to decide the next step
+- The operation is long-running (builds, fetches, analysis, file processing)
+
+Use **subagent** (blocking) when:
+- You need the result before you can continue
+- Correctness of the next step depends on the outcome
+
+Do inline only when:
+- It's a single fast tool call (read a file, quick search)
+- Delegation overhead clearly outweighs the benefit
+
+Default bias: if a task involves more than 2-3 tool calls or can run independently, delegate it.
+When you spawn, immediately plan what comes next — blocking means you've stopped thinking.
+Fork aggressively: explore multiple directions simultaneously.
+
+After spawning, record the assignment in ## Orchestration > Delegated in MEMORY.md.
+When results come back, synthesize and decide the next fork.`
+
 type ContextBuilder struct {
 	workspace    string
 	workDir      string              // session-specific working directory (worktree or project subdir)
@@ -158,6 +183,13 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 
 	// Core identity section
 	parts = append(parts, cb.getIdentity())
+
+	// Orchestration guidance — injected only when spawn tool is registered
+	if cb.tools != nil {
+		if _, hasSpawn := cb.tools.Get("spawn"); hasSpawn {
+			parts = append(parts, orchestrationGuidance)
+		}
+	}
 
 	// Bootstrap files
 	bootstrapContent := cb.LoadBootstrapFiles()
