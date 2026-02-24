@@ -428,6 +428,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 4. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
+		// Show the error to user via channel before returning
+		if !constants.IsInternalChannel(opts.Channel) {
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel: opts.Channel,
+				ChatID:  opts.ChatID,
+				Content: fmt.Sprintf("⚠️ Error processing message: %s", err.Error()),
+			})
+		}
 		return "", err
 	}
 

@@ -169,15 +169,15 @@ func (fc *FallbackChain) Execute(
 		failErr := ClassifyError(err, candidate.Provider, candidate.Model)
 
 		if failErr == nil {
-			// Unclassifiable error: do not fallback, return immediately.
-			result.Attempts = append(result.Attempts, FallbackAttempt{
+			// Unclassifiable error: treat as retriable with "unknown" reason.
+			// This allows fallback to next candidate instead of aborting.
+			// Examples: connection reset, DNS failures, unexpected API responses.
+			failErr = &FailoverError{
+				Reason:   FailoverUnknown,
 				Provider: candidate.Provider,
 				Model:    candidate.Model,
-				Error:    err,
-				Duration: elapsed,
-			})
-			return nil, fmt.Errorf("fallback: unclassified error from %s/%s: %w",
-				candidate.Provider, candidate.Model, err)
+				Wrapped:  err,
+			}
 		}
 
 		// Non-retriable error: abort immediately.

@@ -259,18 +259,56 @@ func TestFallback_UnclassifiedError(t *testing.T) {
 		makeCandidate("anthropic", "claude"),
 	}
 
-	attempt := 0
 	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
-		attempt++
 		return nil, errors.New("completely unknown internal error")
 	}
 
 	_, err := fc.Execute(context.Background(), candidates, run)
 	if err == nil {
-		t.Fatal("expected error for unclassified error")
+		t.Fatal("expected error when all candidates fail with unclassified error")
 	}
-	if attempt != 1 {
-		t.Errorf("attempt = %d, want 1 (should not fallback on unclassified)", attempt)
+	// Unclassified errors should now be treated as retriable (FailoverUnknown),
+	// so both candidates should be tried before exhaustion.
+	var exhausted *FallbackExhaustedError
+	if !errors.As(err, &exhausted) {
+		t.Fatalf("expected FallbackExhaustedError, got %T: %v", err, err)
+	}
+	if len(exhausted.Attempts) != 2 {
+		t.Errorf("attempts = %d, want 2 (both candidates should be tried)", len(exhausted.Attempts))
+	}
+}
+
+func TestFallback_UnclassifiedError_FallbackSucceeds(t *testing.T) {
+	ct := NewCooldownTracker()
+	fc := NewFallbackChain(ct)
+
+	candidates := []FallbackCandidate{
+		makeCandidate("sumo", "seed-mini"),
+		makeCandidate("groq", "llama-3"),
+	}
+
+	attempt := 0
+	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		attempt++
+		if attempt == 1 {
+			// Simulate unclassified error (e.g. connection reset)
+			return nil, errors.New("read tcp: connection reset by peer")
+		}
+		return &LLMResponse{Content: "fallback response", FinishReason: "stop"}, nil
+	}
+
+	result, err := fc.Execute(context.Background(), candidates, run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Provider != "groq" {
+		t.Errorf("provider = %q, want groq (fallback)", result.Provider)
+	}
+	if result.Response.Content != "fallback response" {
+		t.Errorf("content = %q, want 'fallback response'", result.Response.Content)
+	}
+	if len(result.Attempts) != 1 {
+		t.Errorf("attempts = %d, want 1 (failed first candidate recorded)", len(result.Attempts))
 	}
 }
 
