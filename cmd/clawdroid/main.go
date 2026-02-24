@@ -866,7 +866,7 @@ func skillsHelp() {
 	fmt.Println("  clawdroid skills list")
 	fmt.Println("  clawdroid skills install-builtin")
 	fmt.Println("  clawdroid skills list-builtin")
-	fmt.Println("  clawdroid skills remove weather")
+	fmt.Println("  clawdroid skills remove <name>")
 }
 
 func skillsListCmd(loader *skills.SkillsLoader) {
@@ -910,12 +910,7 @@ func skillsInstallBuiltinCmd(dataDir string) {
 
 	fmt.Printf("Copying builtin skills to workspace...\n")
 
-	skillsToInstall := []string{
-		"weather",
-		"news",
-		"stock",
-		"calculator",
-	}
+	skillsToInstall := []string{}
 
 	for _, skillName := range skillsToInstall {
 		builtinPath := filepath.Join(builtinSkillsDir, skillName)
