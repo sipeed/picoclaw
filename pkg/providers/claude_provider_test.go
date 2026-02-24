@@ -8,6 +8,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+
 	anthropicprovider "github.com/sipeed/picoclaw/pkg/providers/anthropic"
 )
 
@@ -22,19 +23,19 @@ func TestClaudeProvider_ChatRoundTrip(t *testing.T) {
 			return
 		}
 
-		var reqBody map[string]interface{}
+		var reqBody map[string]any
 		json.NewDecoder(r.Body).Decode(&reqBody)
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"id":          "msg_test",
 			"type":        "message",
 			"role":        "assistant",
 			"model":       reqBody["model"],
 			"stop_reason": "end_turn",
-			"content": []map[string]interface{}{
+			"content": []map[string]any{
 				{"type": "text", "text": "Hello! How can I help you?"},
 			},
-			"usage": map[string]interface{}{
+			"usage": map[string]any{
 				"input_tokens":  15,
 				"output_tokens": 8,
 			},
@@ -48,7 +49,7 @@ func TestClaudeProvider_ChatRoundTrip(t *testing.T) {
 	provider := newClaudeProviderWithDelegate(delegate)
 
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{"max_tokens": 1024})
+	resp, err := provider.Chat(t.Context(), messages, nil, "claude-sonnet-4.6", map[string]any{"max_tokens": 1024})
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -65,8 +66,8 @@ func TestClaudeProvider_ChatRoundTrip(t *testing.T) {
 
 func TestClaudeProvider_GetDefaultModel(t *testing.T) {
 	p := NewClaudeProvider("test-token")
-	if got := p.GetDefaultModel(); got != "claude-sonnet-4-5-20250929" {
-		t.Errorf("GetDefaultModel() = %q, want %q", got, "claude-sonnet-4-5-20250929")
+	if got := p.GetDefaultModel(); got != "claude-sonnet-4.6" {
+		t.Errorf("GetDefaultModel() = %q, want %q", got, "claude-sonnet-4.6")
 	}
 }
 

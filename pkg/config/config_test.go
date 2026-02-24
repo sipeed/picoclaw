@@ -55,7 +55,7 @@ func TestAgentModelConfig_MarshalObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	json.Unmarshal(data, &result)
 	if result["primary"] != "claude-opus" {
 		t.Errorf("primary = %v", result["primary"])
@@ -237,8 +237,8 @@ func TestDefaultConfig_MaxToolIterations(t *testing.T) {
 func TestDefaultConfig_Temperature(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Agents.Defaults.Temperature == 0 {
-		t.Error("Temperature should not be zero")
+	if cfg.Agents.Defaults.Temperature != nil {
+		t.Error("Temperature should be nil when not provided")
 	}
 }
 
@@ -246,7 +246,7 @@ func TestDefaultConfig_Temperature(t *testing.T) {
 func TestDefaultConfig_Gateway(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -319,7 +319,7 @@ func TestSaveConfig_FilePermissions(t *testing.T) {
 	}
 
 	perm := info.Mode().Perm()
-	if perm != 0600 {
+	if perm != 0o600 {
 		t.Errorf("config file has permission %04o, want 0600", perm)
 	}
 }
@@ -334,8 +334,8 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.Model == "" {
 		t.Error("Model should not be empty")
 	}
-	if cfg.Agents.Defaults.Temperature == 0 {
-		t.Error("Temperature should have default value")
+	if cfg.Agents.Defaults.Temperature != nil {
+		t.Error("Temperature should be nil when not provided")
 	}
 	if cfg.Agents.Defaults.MaxTokens == 0 {
 		t.Error("MaxTokens should not be zero")
@@ -343,7 +343,7 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.MaxToolIterations == 0 {
 		t.Error("MaxToolIterations should not be zero")
 	}
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {

@@ -82,7 +82,7 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
+3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md`,
 		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
 }
 
@@ -98,7 +98,9 @@ func (cb *ContextBuilder) buildToolsSection() string {
 
 	var sb strings.Builder
 	sb.WriteString("## Available Tools\n\n")
-	sb.WriteString("**CRITICAL**: You MUST use tools to perform actions. Do NOT pretend to execute commands or schedule tasks.\n\n")
+	sb.WriteString(
+		"**CRITICAL**: You MUST use tools to perform actions. Do NOT pretend to execute commands or schedule tasks.\n\n",
+	)
 	sb.WriteString("You have access to the following tools:\n\n")
 	for _, s := range summaries {
 		sb.WriteString(s)
@@ -158,18 +160,24 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 		"IDENTITY.md",
 	}
 
-	var result string
+	var sb strings.Builder
 	for _, filename := range bootstrapFiles {
 		filePath := filepath.Join(cb.workspace, filename)
 		if data, err := os.ReadFile(filePath); err == nil {
-			result += fmt.Sprintf("## %s\n\n%s\n\n", filename, string(data))
+			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
 		}
 	}
 
-	return result
+	return sb.String()
 }
 
-func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID string) []providers.Message {
+func (cb *ContextBuilder) BuildMessages(
+	history []providers.Message,
+	summary string,
+	currentMessage string,
+	media []string,
+	channel, chatID string,
+) []providers.Message {
 	messages := []providers.Message{}
 
 	systemPrompt := cb.BuildSystemPrompt()
@@ -201,16 +209,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
 	}
 
-	// This fix prevents the session memory from LLM failure due to elimination of toolu_IDs required from LLM
-	// --- INICIO DEL FIX ---
-	// Diegox-17
-	for len(history) > 0 && (history[0].Role == "tool") {
-		logger.DebugCF("agent", "Removing orphaned tool message from history to prevent LLM error",
-			map[string]any{"role": history[0].Role})
-		history = history[1:]
-	}
-	// Diegox-17
-	// --- FIN DEL FIX ---
+	history = sanitizeHistoryForProvider(history)
 
 	messages = append(messages, providers.Message{
 		Role:    "system",
@@ -219,15 +218,66 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	messages = append(messages, history...)
 
-	messages = append(messages, providers.Message{
-		Role:    "user",
-		Content: currentMessage,
-	})
+	if strings.TrimSpace(currentMessage) != "" {
+		messages = append(messages, providers.Message{
+			Role:    "user",
+			Content: currentMessage,
+		})
+	}
 
 	return messages
 }
 
-func (cb *ContextBuilder) AddToolResult(messages []providers.Message, toolCallID, toolName, result string) []providers.Message {
+func sanitizeHistoryForProvider(history []providers.Message) []providers.Message {
+	if len(history) == 0 {
+		return history
+	}
+
+	sanitized := make([]providers.Message, 0, len(history))
+	for _, msg := range history {
+		switch msg.Role {
+		case "tool":
+			if len(sanitized) == 0 {
+				logger.DebugCF("agent", "Dropping orphaned leading tool message", map[string]any{})
+				continue
+			}
+			last := sanitized[len(sanitized)-1]
+			if last.Role != "assistant" || len(last.ToolCalls) == 0 {
+				logger.DebugCF("agent", "Dropping orphaned tool message", map[string]any{})
+				continue
+			}
+			sanitized = append(sanitized, msg)
+
+		case "assistant":
+			if len(msg.ToolCalls) > 0 {
+				if len(sanitized) == 0 {
+					logger.DebugCF("agent", "Dropping assistant tool-call turn at history start", map[string]any{})
+					continue
+				}
+				prev := sanitized[len(sanitized)-1]
+				if prev.Role != "user" && prev.Role != "tool" {
+					logger.DebugCF(
+						"agent",
+						"Dropping assistant tool-call turn with invalid predecessor",
+						map[string]any{"prev_role": prev.Role},
+					)
+					continue
+				}
+			}
+			sanitized = append(sanitized, msg)
+
+		default:
+			sanitized = append(sanitized, msg)
+		}
+	}
+
+	return sanitized
+}
+
+func (cb *ContextBuilder) AddToolResult(
+	messages []providers.Message,
+	toolCallID, toolName, result string,
+) []providers.Message {
 	messages = append(messages, providers.Message{
 		Role:       "tool",
 		Content:    result,
@@ -236,7 +286,11 @@ func (cb *ContextBuilder) AddToolResult(messages []providers.Message, toolCallID
 	return messages
 }
 
-func (cb *ContextBuilder) AddAssistantMessage(messages []providers.Message, content string, toolCalls []map[string]any) []providers.Message {
+func (cb *ContextBuilder) AddAssistantMessage(
+	messages []providers.Message,
+	content string,
+	toolCalls []map[string]any,
+) []providers.Message {
 	msg := providers.Message{
 		Role:    "assistant",
 		Content: content,

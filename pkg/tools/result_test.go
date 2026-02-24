@@ -192,7 +192,7 @@ func TestToolResultJSONStructure(t *testing.T) {
 	}
 
 	// Verify JSON structure
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("Failed to parse JSON: %v", err)
 	}
