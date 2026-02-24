@@ -195,5 +195,12 @@ func getConfigPath() string {
 }
 
 func loadConfig() (*config.Config, error) {
-	return config.LoadConfig(getConfigPath())
+	return loadConfigFromPath("")
+}
+
+func loadConfigFromPath(path string) (*config.Config, error) {
+	if path == "" {
+		path = getConfigPath()
+	}
+	return config.LoadConfig(path)
 }

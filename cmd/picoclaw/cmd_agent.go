@@ -24,6 +24,7 @@ func agentCmd() {
 	message := ""
 	sessionKey := "cli:default"
 	modelOverride := ""
+	configPath := ""
 
 	args := os.Args[2:]
 	for i := 0; i < len(args); i++ {
@@ -46,10 +47,24 @@ func agentCmd() {
 				modelOverride = args[i+1]
 				i++
 			}
+		case "-c", "--config":
+			if i+1 < len(args) {
+				configPath = args[i+1]
+				i++
+			} else {
+				fmt.Println("Error: -c/--config requires a file path")
+				os.Exit(1)
+			}
+		default:
+			if strings.HasPrefix(args[i], "--config=") {
+				configPath = strings.TrimPrefix(args[i], "--config=")
+			} else if strings.HasPrefix(args[i], "-c=") {
+				configPath = strings.TrimPrefix(args[i], "-c=")
+			}
 		}
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := loadConfigFromPath(configPath)
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)

@@ -29,17 +29,31 @@ import (
 )
 
 func gatewayCmd() {
-	// Check for --debug flag
+	configPath := ""
 	args := os.Args[2:]
-	for _, arg := range args {
-		if arg == "--debug" || arg == "-d" {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--debug" || args[i] == "-d" {
 			logger.SetLevel(logger.DEBUG)
 			fmt.Println("🔍 Debug mode enabled")
-			break
+			continue
+		}
+		if args[i] == "-c" || args[i] == "--config" {
+			if i+1 < len(args) {
+				configPath = args[i+1]
+				i++
+				continue
+			}
+			fmt.Println("Error: -c/--config requires a file path")
+			os.Exit(1)
+		}
+		if strings.HasPrefix(args[i], "--config=") {
+			configPath = strings.TrimPrefix(args[i], "--config=")
+		} else if strings.HasPrefix(args[i], "-c=") {
+			configPath = strings.TrimPrefix(args[i], "-c=")
 		}
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := loadConfigFromPath(configPath)
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
