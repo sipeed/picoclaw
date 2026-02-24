@@ -523,7 +523,7 @@ RAM 制約がない前提での推奨順:
 | ファイル | 変更 | 注意 |
 |----------|------|------|
 | `pkg/agent/session_tracker.go:125` | `ListActive()` の戻り値を `[]*SessionEntry` に | 呼び出し側 (`cmd_gateway.go`, `miniapp.go`) の型合わせ |
-| `pkg/logger/logger.go:88-92` | `recent()` の戻り値を `[]*LogEntry` 検討 | JSON シリアライズへの影響確認 |
+| `pkg/logger/logger.go:88-92` | リングバッファ内部型を `[]*LogEntry` に変更 + `visit(fn)` メソッド追加。`RecentLogs()` を visit ベースに書き換え (フィルタで弾くエントリのコピーを排除) | `add()` 毎に1ヒープアロケーション増だがログI/Oパスなので許容。ミューテーション系 (`MarkStep` 等) の Split は対象外 |
 | `pkg/skills/registry.go:132-133` | `SearchAll()` 内の registries コピーをポインタスライスに | ロック範囲の再確認 |
 
 **コミット**: 1つにまとめる。
@@ -539,10 +539,12 @@ RAM 制約がない前提での推奨順:
 `pkg/providers/openai_compat/provider.go` L274, 362, 621
 — ストリーム完了時に1回だけ Unmarshal するよう制御フローを整理。
 
-#### 2-2. codex/claude CLI の Parameters 重複 Marshal
+#### 2-2. codex CLI の Parameters 重複 Marshal
 
-`pkg/providers/codex_cli_provider.go:154-155`, `pkg/providers/claude_cli_provider.go:133`
+`pkg/providers/codex_cli_provider.go:154-155`
 — ツール定義はループ外で1回 Marshal してキャッシュ、またはループ内で `json.RawMessage` 直接書き込み。
+
+※ `claude_cli_provider.go:133` の `string(paramsJSON)` → `sb.Write(paramsJSON)` は byte/string 変換の問題であり Phase 0-3 で対応済み。
 
 **コミット**: 2-1, 2-2 を個別。
 
@@ -569,12 +571,16 @@ func (ms *MemoryStore) GetMemoryContext() string {
 
 既存の public メソッド (`HasActivePlan()`, `GetPlanStatus()` 等) は互換性のため残す（単体テスト・CLI から個別に呼ばれる）。
 
-#### 3-2. Split 重複の統合 (content パススルーとは別問題)
+`FormatPlanDisplay()` も同じ多重 `ReadLongTerm()` 問題を持つ（`HasActivePlan`, `GetPlanStatus`, `GetCurrentPhase`, `GetPlanPhases` を個別に呼ぶ）。同様に content パススルー方式にリファクタする。
+
+#### 3-2. Split 重複の統合 (読み取りパスのみ)
 
 content パススルーで解消されるのは `ReadLongTerm()` の多重呼び出しのみ。
-`extractPhaseContent()`, `GetPlanPhases()`, `MarkStep()`, `AddStep()` が個別に `strings.Split` する問題は残る。
+`extractPhaseContent()`, `GetPlanPhases()` 等が個別に `strings.Split` する問題は残る。
 
-対応: `GetMemoryContext()` 内で1回 `strings.Split(content, "\n")` し、`[]string` (行スライス) を受け取る内部ヘルパーを追加。既存の `content string` を受け取るヘルパーは互換性のため残す。
+対応: `GetMemoryContext()` / `FormatPlanDisplay()` 内で1回 `strings.Split(content, "\n")` し、`[]string` (行スライス) を受け取る内部ヘルパーを追加。既存の `content string` を受け取るヘルパーは互換性のため残す。
+
+**効果範囲の限定**: この統合が効くのは読み取り専用メソッド (`GetPlanContext`, `GetReviewContext`, `FormatPlanDisplay` 等) のみ。ミューテーション系 (`MarkStep`, `AddStep`) は `GetMemoryContext()` を経由せず直接 `ReadLongTerm()` + `Split` + `WriteLongTerm()` を実行するため、この Phase では対象外。ミューテーション系の Split 統合には ParsedPlan インメモリモデル (Phase 5) が必要。
 
 **コミット**: 1つ。
 
@@ -636,151 +642,4 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 3: **syscall + Split/Join 削減** (CPU + アロケーション)
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
-
----
-
-## FEEDBACK — 第2回レビュー
-
-> レビュー日 2026-02-24。前回指摘 F-1〜F-8 の反映を確認した上で、新たに発見した問題を記載。
-
-**前回指摘の反映確認**:
-F-1 ✅ F-2 ✅ F-3 ✅ F-4 ✅ F-5 ✅ F-6 ✅ F-7 ✅ F-8 ✅ — 全8件が正しく反映されている。
-
----
-
-### G-1. Phase 1: `recent()` → `[]*LogEntry` の実現方法を修正
-
-**当初の指摘**: `entries []LogEntry` のまま `[]*LogEntry` を返すとデータレース
-**訂正**: リングバッファの内部型を `[]*LogEntry` に変えることで、安全にポインタを返せる。
-
-```
-現状: entries [ LogEntry | LogEntry | LogEntry ]
-      add() → スロットの値を上書き → 返したポインタ先が破壊される (危険)
-
-変更後: entries [ *LogEntry | *LogEntry | *LogEntry ]
-        add()   → スロットのポインタを差し替えるだけ
-                  古い *LogEntry オブジェクト自体は誰も上書きしない
-        recent() → ポインタだけコピーして返す (ロック解放後も安全)
-```
-
-```go
-// 変更後のイメージ
-type logRingBuffer struct {
-    entries []*LogEntry  // ポインタを保持
-    ...
-}
-func (rb *logRingBuffer) add(e LogEntry) {
-    rb.mu.Lock()
-    rb.entries[rb.head] = &e  // 新規アロケーション、スロットはポインタ差し替え
-    ...
-}
-func (rb *logRingBuffer) recent(limit int) []*LogEntry {
-    rb.mu.RLock()
-    defer rb.mu.RUnlock()
-    result := make([]*LogEntry, n)
-    for i := 0; i < n; i++ {
-        result[i] = rb.entries[...]  // ポインタのコピーのみ、LogEntry 構造体のコピーなし
-    }
-    return result  // 指し先は不変 → ロック解放後も安全に読める
-}
-```
-
-**トレードオフ**: `add()` 毎に1ヒープアロケーション増加。ただしログ書き込みはすでにI/Oを伴うパスなので許容範囲。`recent()` 側では LogEntry 構造体のコピーが不要になり、頻繁な読み取り（Mini App ストリーム等）でアロケーション削減の恩恵が出る。
-
-Go には言語レベルの readonly 参照がないため「書き込み禁止の窓」は慣習的な保証になるが、LogEntry を logger パッケージ内でのみ生成・変更する設計であれば実質的に安全。
-
-Phase 1 の変更内容を「`entries` の型を `[]*LogEntry` に変更 + `recent()` の戻り値を `[]*LogEntry` に変更」に更新すること。
-
-#### さらに踏み込む: visitor パターンで中間スライスも排除
-
-`*LogEntry` 保持案はポインタコピーは残る。`RecentLogs()` の実装を見ると、さらに削減できる余地がある。
-
-```
-現状:
-  ring(100件) → recent(0) → snapshot[]LogEntry(100件全コピー)
-                                  → filter/sanitize → result[M件]
-                                    ↑フィルタで弾く分まで全コピーするのが無駄
-
-visitor パターン:
-  ring(100件) → visit(callback) ─ フィルタを通ったM件だけコピー → result[M件]
-                  RLock 中に *LogEntry を直接渡す、中間スライス不要
-```
-
-```go
-// ring buffer に visit() を追加
-func (rb *logRingBuffer) visit(fn func(*LogEntry) bool) {
-    rb.mu.RLock()
-    defer rb.mu.RUnlock()
-    n := rb.count
-    start := (rb.head - n + len(rb.entries)) % len(rb.entries)
-    for i := n - 1; i >= 0; i-- { // 新しい順にイテレート
-        if !fn(&rb.entries[(start+i)%len(rb.entries)]) {
-            return
-        }
-    }
-}
-
-// RecentLogs: 中間スライスなし、フィルタを通った分だけコピー
-func RecentLogs(minLevel LogLevel, component string, limit int) []LogEntry {
-    result := make([]LogEntry, 0, limit)
-    ringBuf.visit(func(e *LogEntry) bool {
-        if len(result) >= limit {
-            return false
-        }
-        if lvl, ok := levelFromName[e.Level]; ok && lvl < minLevel {
-            return true // コピーせずスキップ
-        }
-        if component != "" && e.Component != component {
-            return true // コピーせずスキップ
-        }
-        sanitized := *e // フィルタを通った分だけコピー
-        sanitized.Caller = ""
-        sanitized.Fields = SanitizeFields(e.Fields)
-        result = append(result, sanitized)
-        return true
-    })
-    // visit が新しい順にイテレートするので reverse 不要
-    return result
-}
-```
-
-**避けられないコピー**: `e.Caller = ""` と `SanitizeFields()` でエントリを変更するため、返すエントリは必ず新しい値として生成が必要。コピー自体はゼロにならないが、**フィルタで弾くエントリのコピーは完全になくなる**。
-
-**制約**: `visit()` は RLock を保持したまま callback を呼ぶ。callback 内でポインタを保存・持ち出してはいけない（`*e` として即コピーするのは安全）。
-
-**最終的な Phase 1 の変更内容**: `recent()` を残しつつ `visit()` を追加 → `RecentLogs()` を `visit()` ベースに書き換え。`recent()` は既存テストとの互換のため残す。
-
-### G-2. Phase 3-1: `FormatPlanDisplay()` が修正対象に含まれていない
-
-`GetMemoryContext()` 以外にも `FormatPlanDisplay()` が同じ多重 `ReadLongTerm()` 問題を持つ。呼び出しチェーンは以下の通り:
-
-```
-FormatPlanDisplay()
-  ├─ ReadLongTerm()          (直接呼び出し, L657)
-  ├─ HasActivePlan()       → ReadLongTerm()
-  ├─ GetPlanStatus()       → ReadLongTerm()
-  ├─ GetCurrentPhase()     → ReadLongTerm()
-  └─ GetPlanPhases()       → ReadLongTerm()  (さらに内部で extractPhaseContent → Split)
-```
-
-CLI の `/plan status` コマンドはこの関数を呼ぶ。Phase 3-1 の content パススルーリファクタの対象に `FormatPlanDisplay()` も含めること。
-
-### G-3. Phase 3-2: Split 統合は `MarkStep()` / `AddStep()` に効かない
-
-Phase 3-2 の対応は「`GetMemoryContext()` 内で1回 Split して `[]string` を内部ヘルパーに渡す」だが、`MarkStep()` と `AddStep()` は `GetMemoryContext()` を経由せずエージェントのツール実行パスから直接呼ばれる。これらは常に自前で `ReadLongTerm()` + `strings.Split()` + `WriteLongTerm()` を実行する — これは変更後も変わらない。
-
-変更が効くのは `GetPlanContext()` / `GetReviewContext()` などの**読み取り専用メソッド**が呼ぶヘルパー群のみ。ミューテーション系メソッドの Split 重複を本当に解消するには ParsedPlan インメモリモデル（Phase 5）が必要。Phase 3-2 の成果を過大評価しないよう説明文を修正すること。
-
-### G-4. `claude_cli_provider.go:133` が Phase 0-3 と Phase 2-2 に重複
-
-同一行 `pkg/providers/claude_cli_provider.go:133` が両フェーズに記載されている。実装時に2つのコミットが同じ行を異なる意図で変更しようとして競合する可能性がある。いずれか一方のフェーズに統合すること（変換の削減なので Phase 0-3 が自然）。
-
-### まとめ: 今回の修正項目
-
-| # | 対象フェーズ | 修正内容 |
-|---|------------|---------|
-| G-1 | Phase 1 | `recent()` → `[]*LogEntry` を計画から削除（データレースリスク） |
-| G-2 | Phase 3-1 | `FormatPlanDisplay()` を修正対象に追加 |
-| G-3 | Phase 3-2 | Split 統合の効果範囲を「読み取りパスのみ」に限定して説明を修正 |
-| G-4 | Phase 0-3 / 2-2 | `claude_cli_provider.go:133` の重複エントリを Phase 0-3 に統合 |
 
