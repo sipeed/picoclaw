@@ -41,7 +41,7 @@ func TestClassifyError_StatusCodes(t *testing.T) {
 		{402, FailoverBilling},
 		{408, FailoverTimeout},
 		{429, FailoverRateLimit},
-		// 400 is intentionally NOT here - classified by message patterns, not status code
+		{400, FailoverModelInvalid},
 		{500, FailoverTimeout},
 		{502, FailoverTimeout},
 		{503, FailoverTimeout},

@@ -182,11 +182,13 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 }
 
 // classifyByStatus maps HTTP status codes to FailoverReason.
-// NOTE: 400 is intentionally NOT mapped here. Status 400 is too broad
-// (model-invalid, format errors, unknown API errors all return 400).
-// Instead, 400 errors are classified by message patterns in classifyByMessage.
+// NOTE: 400 maps to FailoverModelInvalid (retriable) — not FailoverFormat.
+// This ensures all 400 errors show a warning and fallback to the next model.
+// Specific 400 patterns (like model-invalid) are caught earlier by message matching.
 func classifyByStatus(status int) FailoverReason {
 	switch {
+	case status == 400:
+		return FailoverModelInvalid
 	case status == 401 || status == 403:
 		return FailoverAuth
 	case status == 402:
