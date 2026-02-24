@@ -330,23 +330,12 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 
 	// Message deduplication: Use msg_id to prevent duplicate processing
 	msgID := msg.MsgID
-	c.msgMu.Lock()
-	if c.processedMsgs[msgID] {
-		c.msgMu.Unlock()
+	if !markMessageProcessed(&c.msgMu, &c.processedMsgs, msgID, wecomMaxProcessedMessages) {
 		logger.DebugCF("wecom", "Skipping duplicate message", map[string]any{
 			"msg_id": msgID,
 		})
 		return
 	}
-	c.processedMsgs[msgID] = true
-	// Clean up old messages while still holding the lock to avoid a data race
-	// on len(). Reset the map but re-insert the current msgID so it remains
-	// deduplicated.
-	if len(c.processedMsgs) > 1000 {
-		c.processedMsgs = make(map[string]bool)
-		c.processedMsgs[msgID] = true
-	}
-	c.msgMu.Unlock()
 
 	senderID := msg.From.UserID
 
