@@ -439,7 +439,11 @@ const devProxyScript = `<script data-dev-proxy>
     _timer=null;
     if(!_buf.length)return;
     var batch=_buf.splice(0,20);
-    try{navigator.sendBeacon('/miniapp/dev/console',JSON.stringify(batch));}catch(e){}
+    var payload=JSON.stringify(batch);
+    try{
+      if(navigator.sendBeacon&&navigator.sendBeacon('/miniapp/dev/console',new Blob([payload],{type:'application/json'})))return;
+    }catch(e){}
+    try{fetch('/miniapp/dev/console',{method:'POST',headers:{'Content-Type':'application/json'},body:payload,keepalive:true});}catch(e){}
   }
   function _cap(level,args){
     var msg=Array.prototype.map.call(args,function(a){
