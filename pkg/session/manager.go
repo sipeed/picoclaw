@@ -23,12 +23,19 @@ type SessionManager struct {
 	sessions map[string]*Session
 	mu       sync.RWMutex
 	storage  string
+
+	// Write-behind: dirty keys are flushed periodically to reduce disk writes.
+	dirtyMu   sync.Mutex
+	dirtyKeys map[string]bool
+	done      chan struct{}
 }
 
 func NewSessionManager(storage string) *SessionManager {
 	sm := &SessionManager{
-		sessions: make(map[string]*Session),
-		storage:  storage,
+		sessions:  make(map[string]*Session),
+		storage:   storage,
+		dirtyKeys: make(map[string]bool),
+		done:      make(chan struct{}),
 	}
 
 	if storage != "" {
@@ -36,6 +43,7 @@ func NewSessionManager(storage string) *SessionManager {
 		sm.loadSessions()
 	}
 
+	go sm.flushLoop()
 	return sm
 }
 
@@ -352,5 +360,52 @@ func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 		copy(msgs, history)
 		session.Messages = msgs
 		session.Updated = time.Now()
+	}
+}
+
+// MarkDirty marks a session key for deferred persistence.
+// The session will be written to disk on the next periodic flush or on Close().
+func (sm *SessionManager) MarkDirty(key string) {
+	sm.dirtyMu.Lock()
+	sm.dirtyKeys[key] = true
+	sm.dirtyMu.Unlock()
+}
+
+// FlushDirty writes all dirty sessions to disk.
+func (sm *SessionManager) FlushDirty() {
+	sm.dirtyMu.Lock()
+	keys := make([]string, 0, len(sm.dirtyKeys))
+	for k := range sm.dirtyKeys {
+		keys = append(keys, k)
+	}
+	sm.dirtyKeys = make(map[string]bool)
+	sm.dirtyMu.Unlock()
+
+	for _, k := range keys {
+		sm.Save(k)
+	}
+}
+
+// Close stops the background flush goroutine and writes all dirty sessions.
+func (sm *SessionManager) Close() {
+	select {
+	case <-sm.done:
+		return // already closed
+	default:
+	}
+	close(sm.done)
+	sm.FlushDirty()
+}
+
+func (sm *SessionManager) flushLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			sm.FlushDirty()
+		case <-sm.done:
+			return
+		}
 	}
 }
