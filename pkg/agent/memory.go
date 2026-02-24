@@ -268,12 +268,15 @@ type PlanStep struct {
 
 // GetPlanPhases parses MEMORY.md and returns all phases with their steps.
 func (ms *MemoryStore) GetPlanPhases() []PlanPhase {
-	content := ms.ReadLongTerm()
+	return ms.getPlanPhasesFrom(ms.ReadLongTerm())
+}
+
+func (ms *MemoryStore) getPlanPhasesFrom(content string) []PlanPhase {
 	if !reActivePlan.MatchString(content) {
 		return nil
 	}
 
-	totalPhases := ms.GetTotalPhases()
+	totalPhases := maxPhaseNumber(content)
 	phases := make([]PlanPhase, 0, totalPhases)
 
 	for p := 1; p <= totalPhases; p++ {
@@ -495,8 +498,10 @@ func BuildInterviewSeed(task, workDir string) string {
 // GetInterviewContext returns context for injection during the interviewing phase.
 // Includes the full seed + interview guide + target format template.
 func (ms *MemoryStore) GetInterviewContext() string {
-	content := ms.ReadLongTerm()
+	return ms.getInterviewContextFrom(ms.ReadLongTerm())
+}
 
+func (ms *MemoryStore) getInterviewContextFrom(content string) string {
 	var sb strings.Builder
 	sb.WriteString("## Active Plan (interviewing)\n\n")
 	sb.WriteString(content)
@@ -543,8 +548,10 @@ func (ms *MemoryStore) GetInterviewContext() string {
 // GetReviewContext returns context for injection during the review phase.
 // Shows the full plan and instructs the AI to wait for user approval.
 func (ms *MemoryStore) GetReviewContext() string {
-	content := ms.ReadLongTerm()
+	return ms.getReviewContextFrom(ms.ReadLongTerm())
+}
 
+func (ms *MemoryStore) getReviewContextFrom(content string) string {
 	var sb strings.Builder
 	sb.WriteString("## Active Plan (awaiting approval)\n\n")
 	sb.WriteString(content)
@@ -558,9 +565,15 @@ func (ms *MemoryStore) GetReviewContext() string {
 // Only the current phase is shown in detail; completed phases are compressed
 // to one-line summaries; future phases are omitted.
 func (ms *MemoryStore) GetPlanContext() string {
-	content := ms.ReadLongTerm()
-	currentPhase := ms.GetCurrentPhase()
-	totalPhases := ms.GetTotalPhases()
+	return ms.getPlanContextFrom(ms.ReadLongTerm())
+}
+
+func (ms *MemoryStore) getPlanContextFrom(content string) string {
+	var currentPhase int
+	if m := rePhase.FindStringSubmatch(content); len(m) >= 2 {
+		currentPhase, _ = strconv.Atoi(m[1])
+	}
+	totalPhases := maxPhaseNumber(content)
 
 	taskLine := ""
 	if m := reTaskLine.FindStringSubmatch(content); len(m) >= 2 {
@@ -569,18 +582,18 @@ func (ms *MemoryStore) GetPlanContext() string {
 
 	var sb strings.Builder
 	sb.WriteString("## Active Plan\n")
-	sb.WriteString(fmt.Sprintf("Task: %s | Phase %d/%d\n", taskLine, currentPhase, totalPhases))
+	fmt.Fprintf(&sb, "Task: %s | Phase %d/%d\n", taskLine, currentPhase, totalPhases)
 
 	// Completed phases: one-line summaries
 	for p := 1; p < currentPhase; p++ {
 		title := ms.getPhaseTitle(content, p)
-		sb.WriteString(fmt.Sprintf("Done: Phase %d (%s)\n", p, title))
+		fmt.Fprintf(&sb, "Done: Phase %d (%s)\n", p, title)
 	}
 
 	// Current phase: full detail
 	if currentPhase > 0 {
 		title := ms.getPhaseTitle(content, currentPhase)
-		sb.WriteString(fmt.Sprintf("### Current: Phase %d — %s\n", currentPhase, title))
+		fmt.Fprintf(&sb, "### Current: Phase %d — %s\n", currentPhase, title)
 		phaseContent := ms.extractPhaseContent(content, currentPhase)
 		sb.WriteString(strings.TrimSpace(phaseContent))
 		sb.WriteString("\n")
@@ -603,6 +616,21 @@ func (ms *MemoryStore) GetPlanContext() string {
 	}
 
 	return sb.String()
+}
+
+// maxPhaseNumber returns the highest phase number found in content.
+func maxPhaseNumber(content string) int {
+	matches := rePhaseHeader.FindAllStringSubmatch(content, -1)
+	max := 0
+	for _, m := range matches {
+		if len(m) >= 2 {
+			n, _ := strconv.Atoi(m[1])
+			if n > max {
+				max = n
+			}
+		}
+	}
+	return max
 }
 
 // getPhaseTitle extracts the title of a phase from "## Phase N: Title".
@@ -654,7 +682,7 @@ func (ms *MemoryStore) extractCommandsSection(content string) string {
 // FormatPlanDisplay returns a user-facing display of the full plan with emoji indicators.
 func (ms *MemoryStore) FormatPlanDisplay() string {
 	content := ms.ReadLongTerm()
-	if !ms.HasActivePlan() {
+	if !reActivePlan.MatchString(content) {
 		return "No active plan."
 	}
 
@@ -662,9 +690,15 @@ func (ms *MemoryStore) FormatPlanDisplay() string {
 	if m := reTaskLine.FindStringSubmatch(content); len(m) >= 2 {
 		taskLine = strings.TrimSpace(m[1])
 	}
-	status := ms.GetPlanStatus()
-	currentPhase := ms.GetCurrentPhase()
-	phases := ms.GetPlanPhases()
+	var status string
+	if m := reStatus.FindStringSubmatch(content); len(m) >= 2 {
+		status = strings.TrimSpace(m[1])
+	}
+	var currentPhase int
+	if m := rePhase.FindStringSubmatch(content); len(m) >= 2 {
+		currentPhase, _ = strconv.Atoi(m[1])
+	}
+	phases := ms.getPlanPhasesFrom(content)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Plan: %s\n", taskLine))
@@ -725,16 +759,21 @@ func (ms *MemoryStore) GetMemoryContext() string {
 	var parts []string
 
 	longTerm := ms.ReadLongTerm()
+	hasActivePlan := longTerm != "" && reActivePlan.MatchString(longTerm)
+
 	if longTerm != "" {
-		if ms.HasActivePlan() {
-			status := ms.GetPlanStatus()
+		if hasActivePlan {
+			var status string
+			if m := reStatus.FindStringSubmatch(longTerm); len(m) >= 2 {
+				status = strings.TrimSpace(m[1])
+			}
 			switch status {
 			case "interviewing":
-				parts = append(parts, ms.GetInterviewContext())
+				parts = append(parts, ms.getInterviewContextFrom(longTerm))
 			case "review":
-				parts = append(parts, ms.GetReviewContext())
+				parts = append(parts, ms.getReviewContextFrom(longTerm))
 			default:
-				parts = append(parts, ms.GetPlanContext())
+				parts = append(parts, ms.getPlanContextFrom(longTerm))
 			}
 		} else {
 			parts = append(parts, "## Long-term Memory\n\n"+longTerm)
@@ -742,7 +781,7 @@ func (ms *MemoryStore) GetMemoryContext() string {
 	}
 
 	// Suppress daily notes when a plan is active to save context
-	if !ms.HasActivePlan() {
+	if !hasActivePlan {
 		recentNotes := ms.GetRecentDailyNotes(3)
 		if recentNotes != "" {
 			parts = append(parts, "## Recent Daily Notes\n\n"+recentNotes)
