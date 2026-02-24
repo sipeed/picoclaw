@@ -204,10 +204,8 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 					continue
 				}
 
-				contextPrefix := fmt.Sprintf("[Command mode context: working directory is %s]\n\n", cmdWorkingDir)
-
 				ctx := context.Background()
-				response, err := agentLoop.ProcessDirect(ctx, contextPrefix+initialMsg, hipicoSessionKey)
+				response, err := agentLoop.ProcessDirectWithWorkDir(ctx, initialMsg, hipicoSessionKey, cmdWorkingDir)
 				if err != nil {
 					fmt.Printf("Error: %v\n", err)
 					continue
@@ -295,10 +293,8 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 					continue
 				}
 
-				contextPrefix := fmt.Sprintf("[Command mode context: working directory is %s]\n\n", cmdWorkingDir)
-
 				ctx := context.Background()
-				response, err := agentLoop.ProcessDirect(ctx, contextPrefix+initialMsg, hipicoSessionKey)
+				response, err := agentLoop.ProcessDirectWithWorkDir(ctx, initialMsg, hipicoSessionKey, cmdWorkingDir)
 				if err != nil {
 					fmt.Printf("Error: %v\n", err)
 					continue
