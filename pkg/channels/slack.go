@@ -22,8 +22,8 @@ type SlackChannel struct {
 	config       config.SlackConfig
 	api          *slack.Client
 	socketClient *socketmode.Client
-	botUserID string
-	ctx       context.Context
+	botUserID    string
+	ctx          context.Context
 	cancel       context.CancelFunc
 	pendingAcks  sync.Map
 }

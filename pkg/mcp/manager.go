@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/KarakuriAgent/clawdroid/pkg/config"
 	"github.com/KarakuriAgent/clawdroid/pkg/logger"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ServerInstance manages a connected MCP server session.

@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chzyer/readline"
 	"github.com/KarakuriAgent/clawdroid/pkg/agent"
 	"github.com/KarakuriAgent/clawdroid/pkg/bus"
 	"github.com/KarakuriAgent/clawdroid/pkg/channels"
@@ -31,6 +30,7 @@ import (
 	"github.com/KarakuriAgent/clawdroid/pkg/providers"
 	"github.com/KarakuriAgent/clawdroid/pkg/skills"
 	"github.com/KarakuriAgent/clawdroid/pkg/tools"
+	"github.com/chzyer/readline"
 )
 
 //go:generate cp -r ../../workspace .

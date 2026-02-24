@@ -38,7 +38,7 @@ type AgentLoop struct {
 	model          string
 	maxTokens      int     // Maximum tokens for API response
 	temperature    float64 // Temperature for LLM (0 = not sent)
-	contextWindow  int // Maximum context window size in tokens (for summarization)
+	contextWindow  int     // Maximum context window size in tokens (for summarization)
 	maxIterations  int
 	sessions       *session.SessionManager
 	state          *state.Manager

@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
 	"github.com/KarakuriAgent/clawdroid/pkg/bus"
 	"github.com/KarakuriAgent/clawdroid/pkg/config"
 	"github.com/KarakuriAgent/clawdroid/pkg/logger"
 	"github.com/KarakuriAgent/clawdroid/pkg/utils"
+	"github.com/bwmarrin/discordgo"
 )
 
 const (
@@ -20,9 +20,9 @@ const (
 
 type DiscordChannel struct {
 	*BaseChannel
-	session     *discordgo.Session
-	config config.DiscordConfig
-	ctx    context.Context
+	session *discordgo.Session
+	config  config.DiscordConfig
+	ctx     context.Context
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -36,8 +36,8 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 	return &DiscordChannel{
 		BaseChannel: base,
 		session:     session,
-		config: cfg,
-		ctx:    context.Background(),
+		config:      cfg,
+		ctx:         context.Background(),
 	}, nil
 }
 

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/KarakuriAgent/clawdroid/pkg/logger"
+	"github.com/google/uuid"
 )
 
 const maxImageFileSize = 50 * 1024 * 1024 // 50MB
