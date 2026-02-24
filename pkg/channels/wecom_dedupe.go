@@ -19,9 +19,9 @@ func markMessageProcessed(msgMu *sync.RWMutex, processedMsgs *map[string]bool, m
 	}
 	(*processedMsgs)[msgID] = true
 
-	// Keep the newest message marker when rotating to bound memory growth.
+	// Keep existing behavior: when over limit, reset dedupe map entirely.
 	if len(*processedMsgs) > maxEntries {
-		*processedMsgs = map[string]bool{msgID: true}
+		*processedMsgs = make(map[string]bool)
 	}
 
 	return true
