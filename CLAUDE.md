@@ -28,6 +28,164 @@ Lint: `golangci-lint run`
 - **Mini App log viewer has no frontend tests**: `renderLogs()` in `pkg/miniapp/static/index.html` is inline vanilla JS with no unit/E2E test coverage. Backend (Go) tests cover `RecentLogs`, `SanitizeFields`, and JSON serialization, but nothing verifies the JS rendering. This allowed the Fields display bug (fields sent but not rendered) to ship undetected.
 - **No human intervention for heartbeat worktrees**: Heartbeat sessions create git worktrees (`.worktrees/heartbeat-YYYYMMDD/`) but there is no CLI or Mini App command to list, inspect, or manually dispose them. Need a `/plan worktrees` command (or similar) that shows active worktrees with branch/commit info and allows manual merge/dispose. `PruneOrphaned` on startup only removes directories without auto-committing first, so uncommitted changes in orphaned worktrees are silently lost.
 
+## Subagent Container Design
+
+> Designed 2026-02-25 on branch `sub-agent-technical-breakdown`.
+
+### 背景・動機
+
+現状の `SubagentManager.runTask()` はtask文字列を3行のsystem promptと共に裸のLLMに投げるだけ。
+コンテキスト注入・write sandbox・ライフサイクル管理がなく、conductorとしての自覚もない。
+
+**2つの根本問題:**
+1. subagentが受け取れるのはtask文字列のみ (workspace, plan context, 制約が伝わらない)
+2. write先の制限がなく、exec も無制限
+
+### 設計方針
+
+**透過的隔離**: AI は自分が隔離されていることに気づかずに振る舞う。
+worktreeのworkDirが透過的にツール呼び出しの基点となり、picoclaw側でCoW的にファイルを引き渡せる。
+
+**チャネルベースのライフサイクル管理**: goroutineとchannelでコンテナのステートを表現する。
+
+```
+Conductor goroutine
+    │  ContainerRequest (task, preset, environment)
+    ▼
+Container goroutine: provision → run → finalize
+    │  ContainerResult (output, commitRef, error)
+    ▼
+Conductor goroutine
+```
+
+```go
+type ContainerRequest struct {
+    Task        string
+    Preset      string
+    Environment SubagentEnvironment
+}
+
+type ContainerResult struct {
+    Output    string
+    CommitRef string  // worktreeに変更があれば
+    Err       error
+}
+```
+
+spawn (async) はresult channelを返して即リターン、subagent (sync) はその場でブロック。
+この違いがconductorとしてのspawn vs subagentの使い分けに自然に対応する。
+
+### SubagentEnvironment (context injection)
+
+```go
+type SubagentEnvironment struct {
+    Workspace    string   // 自動注入
+    WorktreeDir  string   // 自動注入 (write先、workDirとして透過的に機能)
+    Background   string   // conductorが自由記述
+    Constraints  string   // conductorが制約を記述
+    ContextFiles []string // 読むべきファイルリスト
+    PlanSummary  string   // active planの要約 (オプション)
+}
+```
+
+### SandboxConfig
+
+```go
+type SandboxConfig struct {
+    Preset           string
+    WriteRoot        string          // write系ツールのパス制限
+    AllowedTools     map[string]bool
+    ExecPolicy       *ExecPolicy     // nil = exec不可
+    SpawnablePresets []string        // nil = spawn不可
+}
+
+type ExecPolicy struct {
+    AllowPattern string // マッチしたコマンドだけ実行可 (先頭一致regex)
+}
+```
+
+enforcement は ToolRegistry.Execute() の入口で一括チェック (Option B)。
+subagentは普通にtool callするつもりで透過的にsandboxedになる。
+
+### Presets (5種)
+
+| preset | write | exec | spawn |
+|---|---|---|---|
+| `scout` | ✗ | ✗ | ✗ |
+| `analyst` | ✗ | go test/vet, git log/diff, curl/grep | ✗ |
+| `coder` | ✓ sandbox | test/lint/fmt (pnpm/bun/uv run 含む) | ✗ |
+| `worker` | ✓ sandbox | pnpm/bun/uv/go/cargo のビルド・パッケージ管理 | ✗ |
+| `coordinator` | ✓ sandbox | go/pnpm/bun/curl 系 | scout/analyst/coder/worker のみ |
+
+**Presetの境界:**
+- `coder` = 書いて自分で検証できる (package追加・deploy不可)
+- `worker` = インフラも含めてやりきる (package install, CI pipeline等)
+- `coordinator` = coordinatorをspawnできない (深さ自然制限)
+
+**npm は全presetで禁止**: git worktreeにnode_modulesが作られると大量ファイルが生じるため。
+pnpmはsymbolic linkで済む、bunも同様。
+
+#### exec allowlist regex
+
+```go
+var presetExecPatterns = map[string]string{
+    "scout": ``,
+    "analyst": `^(go\s+(test|vet)|git\s+(log|diff|status)|curl|wget|grep|find)\b`,
+    "coder": `^(` +
+        `go\s+(test|vet|fmt)|gofmt|goimports|golangci-lint|` +
+        `prettier|eslint|` +
+        `black|ruff|` +
+        `cargo\s+(test|fmt|clippy)|` +
+        `pnpm\s+(test|run\s+(test|lint|format))|` +
+        `bun\s+(test|run\s+(test|lint|format))|` +
+        `uv\s+run\s+` +
+        `)\b`,
+    "worker": `^(` +
+        `go\s+|` +
+        `pnpm\s+(install|add|run|test|build)|` +
+        `bun\s+(install|add|run|test|build)|` +
+        `uv\s+(run|sync|add|pip\s+install)|` +
+        `pip\s+install|` +
+        `cargo\s+` +
+        `)\b`,
+    "coordinator": `^(go\s+|pnpm\s+|bun\s+|curl|wget)\b`,
+}
+```
+
+### Conductor の自覚 (system prompt)
+
+`pkg/agent/context.go` の `getIdentity()` に追加予定:
+
+```
+You are picoclaw, a conductor AI agent. Your role is to orchestrate:
+break work into tasks, delegate them to subagents, and synthesize results.
+
+## Orchestration
+
+Use `spawn` (non-blocking) when:
+- Tasks can run in parallel or in the background
+- You don't need the result to decide the next step
+
+Use `subagent` (blocking) when:
+- You need the result before continuing
+
+Default bias: if a task involves more than 2-3 tool calls or can run independently, delegate it.
+```
+
+### 実装ファイル構成 (予定)
+
+```
+pkg/tools/
+  container.go      — SubagentContainer, ContainerRequest, ContainerResult, SubagentEnvironment
+  sandbox.go        — SandboxConfig, ExecPolicy, preset定義
+  orchestrator.go   — Orchestrator (SubagentManagerを置き換え)
+  spawn.go          — preset パラメータ追加
+pkg/agent/
+  context.go        — conductor identity + orchestration guidance 追加
+```
+
+---
+
 ## Memory Optimization Candidates
 
 > Reviewed 2026-02-24 on branch `memory-optimization-review`. False positives included intentionally.
