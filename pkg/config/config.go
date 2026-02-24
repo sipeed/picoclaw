@@ -453,6 +453,9 @@ type WebToolsConfig struct {
 	Tavily     TavilyConfig     `json:"tavily"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 	Perplexity PerplexityConfig `json:"perplexity"`
+	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
+	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
+	Proxy string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_WEB_PROXY"`
 }
 
 type CronToolsConfig struct {
