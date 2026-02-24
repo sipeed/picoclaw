@@ -31,10 +31,13 @@ type Stats struct {
 }
 
 // Tracker accumulates LLM usage statistics with mutex-protected atomic persistence.
+// Write-behind: stats are flushed to disk periodically (every 5 minutes) and on Close(),
+// not on every RecordUsage/RecordPrompt call, to reduce microSD write wear.
 type Tracker struct {
 	mu        sync.Mutex
 	stats     Stats
 	stateFile string
+	done      chan struct{} // closed by Close() to stop the flush goroutine
 }
 
 // NewTracker creates a tracker that persists to {workspace}/state/stats.json.
@@ -44,6 +47,7 @@ func NewTracker(workspace string) *Tracker {
 
 	t := &Tracker{
 		stateFile: filepath.Join(stateDir, "stats.json"),
+		done:      make(chan struct{}),
 	}
 	t.load()
 
@@ -54,10 +58,14 @@ func NewTracker(workspace string) *Tracker {
 
 	// Lazy day-roll on startup
 	t.rollDay()
+
+	// Start periodic flush goroutine
+	go t.flushLoop()
 	return t
 }
 
 // RecordUsage records tokens from a single LLM call.
+// Stats are kept in memory and flushed to disk periodically.
 func (t *Tracker) RecordUsage(prompt, completion, total int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -73,11 +81,10 @@ func (t *Tracker) RecordUsage(prompt, completion, total int) {
 	t.stats.TotalCompletionTokens += int64(completion)
 	t.stats.TotalTokens += int64(total)
 	t.stats.TotalRequests++
-
-	t.save()
 }
 
 // RecordPrompt increments the user-message counter.
+// Stats are kept in memory and flushed to disk periodically.
 func (t *Tracker) RecordPrompt() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -86,8 +93,6 @@ func (t *Tracker) RecordPrompt() {
 
 	t.stats.Today.Prompts++
 	t.stats.TotalPrompts++
-
-	t.save()
 }
 
 // GetStats returns a snapshot of the current statistics.
@@ -135,6 +140,36 @@ func (t *Tracker) save() {
 	}
 	if err := os.Rename(tmp, t.stateFile); err != nil {
 		os.Remove(tmp)
+	}
+}
+
+// Close stops the periodic flush goroutine and writes final stats to disk.
+// Must be called on shutdown to avoid data loss.
+func (t *Tracker) Close() {
+	select {
+	case <-t.done:
+		return // already closed
+	default:
+	}
+	close(t.done)
+	t.mu.Lock()
+	t.save()
+	t.mu.Unlock()
+}
+
+// flushLoop periodically writes stats to disk.
+func (t *Tracker) flushLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			t.mu.Lock()
+			t.save()
+			t.mu.Unlock()
+		case <-t.done:
+			return
+		}
 	}
 }
 

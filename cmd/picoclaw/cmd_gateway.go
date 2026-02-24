@@ -288,6 +288,7 @@ func gatewayCmd() {
 	heartbeatService.Stop()
 	cronService.Stop()
 	agentLoop.Stop()
+	agentLoop.Close()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
 }
