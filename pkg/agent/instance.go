@@ -131,7 +131,7 @@ func NewAgentInstance(
 	}
 
 	// Startup cleanup: prune orphaned worktrees
-	worktreesDir := filepath.Join(workspace, ".picoclaw", "worktrees")
+	worktreesDir := filepath.Join(workspace, ".worktrees")
 	if repoRoot := git.FindRepoRoot(workspace); repoRoot != "" {
 		git.PruneOrphaned(repoRoot, worktreesDir)
 	}
@@ -208,7 +208,7 @@ func resolvePlanFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentDe
 // ActivateWorktree creates a worktree for a session.
 // projectDir is the git repository to create the worktree in.
 // If empty, falls back to ai.Workspace.
-// Worktree path: <workspace>/.picoclaw/worktrees/<branch-basename>/
+// Worktree path: <workspace>/.worktrees/<branch-basename>/
 func (ai *AgentInstance) ActivateWorktree(sessionKey, taskName, projectDir string) (*git.WorktreeInfo, error) {
 	if projectDir == "" {
 		projectDir = ai.Workspace
@@ -220,7 +220,7 @@ func (ai *AgentInstance) ActivateWorktree(sessionKey, taskName, projectDir strin
 
 	branchName := git.SanitizeBranchName(taskName)
 	baseName := git.BranchBaseName(branchName)
-	wtPath := filepath.Join(ai.Workspace, ".picoclaw", "worktrees", baseName)
+	wtPath := filepath.Join(ai.Workspace, ".worktrees", baseName)
 
 	wt, err := git.CreateWorktree(repoRoot, wtPath, branchName)
 	if err != nil {
