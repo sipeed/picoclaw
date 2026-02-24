@@ -51,31 +51,31 @@ func (c *QQChannel) Start(ctx context.Context) error {
 
 	logger.InfoC("qq", "Starting QQ bot (WebSocket mode)")
 
-	// 创建 token source
+	// create token source
 	credentials := &token.QQBotCredentials{
 		AppID:     c.config.AppID,
 		AppSecret: c.config.AppSecret,
 	}
 	c.tokenSource = token.NewQQBotTokenSource(credentials)
 
-	// 创建子 context
+	// create child context
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	// 启动自动刷新 token 协程
+	// start auto-refresh token goroutine
 	if err := token.StartRefreshAccessToken(c.ctx, c.tokenSource); err != nil {
 		return fmt.Errorf("failed to start token refresh: %w", err)
 	}
 
-	// 初始化 OpenAPI 客户端
+	// initialize OpenAPI client
 	c.api = botgo.NewOpenAPI(c.config.AppID, c.tokenSource).WithTimeout(5 * time.Second)
 
-	// 注册事件处理器
+	// register event handlers
 	intent := event.RegisterHandlers(
 		c.handleC2CMessage(),
 		c.handleGroupATMessage(),
 	)
 
-	// 获取 WebSocket 接入点
+	// get WebSocket endpoint
 	wsInfo, err := c.api.WS(c.ctx, nil, "")
 	if err != nil {
 		return fmt.Errorf("failed to get websocket info: %w", err)
@@ -85,10 +85,10 @@ func (c *QQChannel) Start(ctx context.Context) error {
 		"shards": wsInfo.Shards,
 	})
 
-	// 创建并保存 sessionManager
+	// create and save sessionManager
 	c.sessionManager = botgo.NewSessionManager()
 
-	// 在 goroutine 中启动 WebSocket 连接，避免阻塞
+	// start WebSocket connection in goroutine to avoid blocking
 	go func() {
 		if err := c.sessionManager.Start(wsInfo, c.tokenSource, &intent); err != nil {
 			logger.ErrorCF("qq", "WebSocket session error", map[string]any{
@@ -120,12 +120,12 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		return channels.ErrNotRunning
 	}
 
-	// 构造消息
+	// construct message
 	msgToCreate := &dto.MessageToCreate{
 		Content: msg.Content,
 	}
 
-	// C2C 消息发送
+	// send C2C message
 	_, err := c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
 	if err != nil {
 		logger.ErrorCF("qq", "Failed to send C2C message", map[string]any{
@@ -137,15 +137,15 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	return nil
 }
 
-// handleC2CMessage 处理 QQ 私聊消息
+// handleC2CMessage handles QQ private messages
 func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 	return func(event *dto.WSPayload, data *dto.WSC2CMessageData) error {
-		// 去重检查
+		// deduplication check
 		if c.isDuplicate(data.ID) {
 			return nil
 		}
 
-		// 提取用户信息
+		// extract user info
 		var senderID string
 		if data.Author != nil && data.Author.ID != "" {
 			senderID = data.Author.ID
@@ -154,7 +154,7 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 			return nil
 		}
 
-		// 提取消息内容
+		// extract message content
 		content := data.Content
 		if content == "" {
 			logger.DebugC("qq", "Received empty message, ignoring")
@@ -194,15 +194,15 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 	}
 }
 
-// handleGroupATMessage 处理群@消息
+// handleGroupATMessage handles QQ group @ messages
 func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 	return func(event *dto.WSPayload, data *dto.WSGroupATMessageData) error {
-		// 去重检查
+		// deduplication check
 		if c.isDuplicate(data.ID) {
 			return nil
 		}
 
-		// 提取用户信息
+		// extract user info
 		var senderID string
 		if data.Author != nil && data.Author.ID != "" {
 			senderID = data.Author.ID
@@ -211,7 +211,7 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			return nil
 		}
 
-		// 提取消息内容（去掉 @ 机器人部分）
+		// extract message content (remove @ bot part)
 		content := data.Content
 		if content == "" {
 			logger.DebugC("qq", "Received empty group message, ignoring")

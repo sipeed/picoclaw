@@ -252,7 +252,7 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 
-	// 检查白名单，避免为被拒绝的用户下载附件
+	// check allowlist to avoid downloading attachments for rejected users
 	sender := bus.SenderInfo{
 		Platform:    "slack",
 		PlatformID:  ev.User,
