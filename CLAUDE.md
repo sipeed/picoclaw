@@ -684,3 +684,21 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 
 ---
 
+## FEEDBACK — 第12回レビュー (ラウンド Q)
+
+### Q-1: B テーブル `telegram.go:832-861` の記述が実装済み部分を含んでいる
+
+B テーブルの当該行:
+> `extractMarkdownTables()` — out / tables スライスに容量ヒント
+
+コードを確認すると `out` は既に `make([]string, 0, len(lines))` (L834) で容量ヒント付き実装済み。未対応は `tables` (L835 `make([]string, 0)`) のみ。
+
+```go
+// telegram.go:834-835 現状
+out := make([]string, 0, len(lines))  // ← 実装済み
+tables := make([]string, 0)           // ← 容量ヒントなし (対象)
+```
+
+Phase 0-2 の記述 ("tables スライスに容量ヒント") は正しい。
+B テーブルの記述を `toolloop.go:87-96` と同様に "out は実装済み、tables のみ対象" と修正すること。
+
