@@ -56,7 +56,7 @@ func agentCmd() {
 	}
 
 	if modelOverride != "" {
-		cfg.Agents.Defaults.Model = modelOverride
+		cfg.Agents.Defaults.ModelName = modelOverride
 	}
 
 	provider, modelID, err := providers.CreateProvider(cfg)
@@ -66,7 +66,7 @@ func agentCmd() {
 	}
 	// Use the resolved model ID from provider creation
 	if modelID != "" {
-		cfg.Agents.Defaults.Model = modelID
+		cfg.Agents.Defaults.ModelName = modelID
 	}
 
 	msgBus := bus.NewMessageBus()
