@@ -676,3 +676,31 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
 
+---
+
+## FEEDBACK — 第6回レビュー (K)
+
+> レビュー日: 2026-02-24。`pkg/agent/memory.go` と Phase 3-1 スニペットを照合。
+
+### K-1. Phase 3-1: `FormatPlanDisplay()` スニペットが `GetCurrentPhase()` のインライン化を省略している
+
+**指摘内容**: `FormatPlanDisplay()` の Phase 3-1 修正スニペットは `HasActivePlan` (L658)・`GetPlanStatus` (L666)・`GetPlanPhases` (L668) を修正しているが、**L667 の `GetCurrentPhase()`** が漏れている。
+
+```go
+// FormatPlanDisplay() — 現在の呼び出し
+status       := ms.GetPlanStatus()    // L666 — スニペットで修正済み
+currentPhase := ms.GetCurrentPhase()  // L667 — スニペットに出てこない → ReadLongTerm() が残る
+phases       := ms.GetPlanPhases()    // L668 — getPlanPhasesFrom(content) で修正済み
+```
+
+`currentPhase` は L672 (`Phase %d/%d`) と L676-680 (フェーズ絵文字判定) で使われており、省略できない値。`rePhase` はパッケージ変数として存在するのでインライン化は1行:
+
+```go
+var currentPhase int
+if m := rePhase.FindStringSubmatch(content); len(m) >= 2 {
+    currentPhase, _ = strconv.Atoi(m[1])
+}
+```
+
+**影響**: この漏れがあると Phase 3-1 適用後も `FormatPlanDisplay()` に `ReadLongTerm()` が2回残る (L657 + `GetCurrentPhase()` 内部)。スニペットに上記を追加して1回に統一する。
+
