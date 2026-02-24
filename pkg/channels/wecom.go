@@ -339,14 +339,11 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 		return
 	}
 	c.processedMsgs[msgID] = true
-	c.msgMu.Unlock()
-
 	// Clean up old messages periodically (keep last 1000)
 	if len(c.processedMsgs) > 1000 {
-		c.msgMu.Lock()
 		c.processedMsgs = make(map[string]bool)
-		c.msgMu.Unlock()
 	}
+	c.msgMu.Unlock()
 
 	senderID := msg.From.UserID
 
