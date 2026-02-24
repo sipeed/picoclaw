@@ -31,7 +31,7 @@ func TestLoadProfile(t *testing.T) {
 			"neuroticism": 0.1
 		}
 	}`
-	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o644))
 
 	p, err := LoadProfile(path)
 	require.NoError(t, err)
@@ -51,7 +51,7 @@ func TestLoadProfileInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "aieos.json")
 
-	require.NoError(t, os.WriteFile(path, []byte(`{bad json`), 0644))
+	require.NoError(t, os.WriteFile(path, []byte(`{bad json`), 0o644))
 
 	_, err := LoadProfile(path)
 	assert.Error(t, err)
@@ -63,7 +63,7 @@ func TestLoadProfileMissingVersion(t *testing.T) {
 	path := filepath.Join(dir, "aieos.json")
 
 	data := `{"identity": {"name": "Agent"}}`
-	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o644))
 
 	_, err := LoadProfile(path)
 	assert.Error(t, err)
@@ -75,7 +75,7 @@ func TestLoadProfileMissingName(t *testing.T) {
 	path := filepath.Join(dir, "aieos.json")
 
 	data := `{"version": "1.1", "identity": {}}`
-	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o644))
 
 	_, err := LoadProfile(path)
 	assert.Error(t, err)
@@ -94,7 +94,7 @@ func TestProfileExists(t *testing.T) {
 	assert.False(t, ProfileExists(dir))
 
 	path := filepath.Join(dir, "aieos.json")
-	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0644))
+	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0o644))
 
 	assert.True(t, ProfileExists(dir))
 }
@@ -125,7 +125,7 @@ func TestLoadProfileOCEANOutOfRange(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "aieos.json")
-			require.NoError(t, os.WriteFile(path, []byte(tt.json), 0644))
+			require.NoError(t, os.WriteFile(path, []byte(tt.json), 0o644))
 
 			_, err := LoadProfile(path)
 			assert.Error(t, err)
@@ -139,7 +139,7 @@ func TestLoadProfileOCEANValidBoundary(t *testing.T) {
 	path := filepath.Join(dir, "aieos.json")
 
 	data := `{"version":"1.1","identity":{"name":"A"},"psychology":{"openness":0.0,"conscientiousness":1.0,"extraversion":0.5,"agreeableness":0.0,"neuroticism":1.0}}`
-	require.NoError(t, os.WriteFile(path, []byte(data), 0644))
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o644))
 
 	p, err := LoadProfile(path)
 	require.NoError(t, err)

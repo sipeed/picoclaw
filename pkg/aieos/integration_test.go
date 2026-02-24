@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/aieos"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sipeed/picoclaw/pkg/aieos"
 )
 
 // TestIntegration_FullPipeline tests the complete pipeline:
@@ -57,7 +58,7 @@ func TestIntegration_FallbackWhenNoAIEOS(t *testing.T) {
 func TestIntegration_FallbackOnInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "aieos.json")
-	require.NoError(t, os.WriteFile(path, []byte(`{invalid`), 0644))
+	require.NoError(t, os.WriteFile(path, []byte(`{invalid`), 0o644))
 
 	require.True(t, aieos.ProfileExists(dir))
 

@@ -153,7 +153,13 @@ func renderLinguistics(ling *Linguistics) string {
 	}
 
 	if len(ling.Idiolect) > 0 {
-		lines = append(lines, fmt.Sprintf("Use these characteristic phrases when appropriate: %s.", strings.Join(ling.Idiolect, ", ")))
+		lines = append(
+			lines,
+			fmt.Sprintf(
+				"Use these characteristic phrases when appropriate: %s.",
+				strings.Join(ling.Idiolect, ", "),
+			),
+		)
 	}
 
 	return strings.Join(lines, "\n") + "\n"
