@@ -518,7 +518,21 @@ func (al *AgentLoop) runLLMIteration(
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
+						candProvider := agent.Provider
+						candModelID := model
+
+						// Attempt to dynamically route to the correct provider defined in model_list
+						if modelCfg, err := al.cfg.GetModelConfig(model); err == nil {
+							if modelCfg.Workspace == "" {
+								modelCfg.Workspace = al.cfg.WorkspacePath()
+							}
+							if p, mID, err := providers.CreateProviderFromConfig(modelCfg); err == nil {
+								candProvider = p
+								candModelID = mID
+							}
+						}
+
+						return candProvider.Chat(ctx, messages, providerToolDefs, candModelID, map[string]any{
 							"max_tokens":  agent.MaxTokens,
 							"temperature": agent.Temperature,
 						})
