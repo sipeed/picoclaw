@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -78,6 +79,88 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
 		if item.Description != "" {
 			lines = append(lines, fmt.Sprintf("   %s", item.Description))
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
+type TavilySearchProvider struct {
+	apiKey  string
+	baseURL string
+}
+
+func (p *TavilySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := p.baseURL
+	if searchURL == "" {
+		searchURL = "https://api.tavily.com/search"
+	}
+
+	payload := map[string]any{
+		"api_key":             p.apiKey,
+		"query":               query,
+		"search_depth":        "advanced",
+		"include_answer":      false,
+		"include_images":      false,
+		"include_raw_content": false,
+		"max_results":         count,
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", userAgent)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("tavily api error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp struct {
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"results"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	results := searchResp.Results
+	if len(results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Results for: %s (via Tavily)", query))
+	for i, item := range results {
+		if i >= count {
+			break
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+		if item.Content != "" {
+			lines = append(lines, fmt.Sprintf("   %s", item.Content))
 		}
 	}
 
@@ -176,6 +259,77 @@ func stripTags(content string) string {
 	return re.ReplaceAllString(content, "")
 }
 
+type PerplexitySearchProvider struct {
+	apiKey string
+}
+
+func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := "https://api.perplexity.ai/chat/completions"
+
+	payload := map[string]any{
+		"model": "sonar",
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": "You are a search assistant. Provide concise search results with titles, URLs, and brief descriptions in the following format:\n1. Title\n   URL\n   Description\n\nDo not add extra commentary.",
+			},
+			{
+				"role":    "user",
+				"content": fmt.Sprintf("Search for: %s. Provide up to %d relevant results.", query, count),
+			},
+		},
+		"max_tokens": 1000,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, strings.NewReader(string(payloadBytes)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("User-Agent", userAgent)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Perplexity API error: %s", string(body))
+	}
+
+	var searchResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(searchResp.Choices) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
+}
+
 type WebSearchTool struct {
 	provider   SearchProvider
 	maxResults int
@@ -185,19 +339,39 @@ type WebSearchToolOptions struct {
 	BraveAPIKey          string
 	BraveMaxResults      int
 	BraveEnabled         bool
+	TavilyAPIKey         string
+	TavilyBaseURL        string
+	TavilyMaxResults     int
+	TavilyEnabled        bool
 	DuckDuckGoMaxResults int
 	DuckDuckGoEnabled    bool
+	PerplexityAPIKey     string
+	PerplexityMaxResults int
+	PerplexityEnabled    bool
 }
 
 func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Brave > DuckDuckGo
-	if opts.BraveEnabled && opts.BraveAPIKey != "" {
+	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
+	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
+		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey}
+		if opts.PerplexityMaxResults > 0 {
+			maxResults = opts.PerplexityMaxResults
+		}
+	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
 		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey}
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
+		}
+	} else if opts.TavilyEnabled && opts.TavilyAPIKey != "" {
+		provider = &TavilySearchProvider{
+			apiKey:  opts.TavilyAPIKey,
+			baseURL: opts.TavilyBaseURL,
+		}
+		if opts.TavilyMaxResults > 0 {
+			maxResults = opts.TavilyMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
 		provider = &DuckDuckGoSearchProvider{}
@@ -222,15 +396,15 @@ func (t *WebSearchTool) Description() string {
 	return "Search the web for current information. Returns titles, URLs, and snippets from search results."
 }
 
-func (t *WebSearchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *WebSearchTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
+		"properties": map[string]any{
+			"query": map[string]any{
 				"type":        "string",
 				"description": "Search query",
 			},
-			"count": map[string]interface{}{
+			"count": map[string]any{
 				"type":        "integer",
 				"description": "Number of results (1-10)",
 				"minimum":     1.0,
@@ -241,7 +415,7 @@ func (t *WebSearchTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	query, ok := args["query"].(string)
 	if !ok {
 		return ErrorResult("query is required")
@@ -286,15 +460,15 @@ func (t *WebFetchTool) Description() string {
 	return "Fetch a URL and extract readable content (HTML to text). Use this to get weather info, news, articles, or any web content."
 }
 
-func (t *WebFetchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *WebFetchTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"url": map[string]interface{}{
+		"properties": map[string]any{
+			"url": map[string]any{
 				"type":        "string",
 				"description": "URL to fetch",
 			},
-			"maxChars": map[string]interface{}{
+			"maxChars": map[string]any{
 				"type":        "integer",
 				"description": "Maximum characters to extract",
 				"minimum":     100.0,
@@ -304,7 +478,7 @@ func (t *WebFetchTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	urlStr, ok := args["url"].(string)
 	if !ok {
 		return ErrorResult("url is required")
@@ -369,7 +543,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	var text, extractor string
 
 	if strings.Contains(contentType, "application/json") {
-		var jsonData interface{}
+		var jsonData any
 		if err := json.Unmarshal(body, &jsonData); err == nil {
 			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
 			text = string(formatted)
@@ -392,7 +566,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 		text = text[:maxChars]
 	}
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		"url":       urlStr,
 		"status":    resp.StatusCode,
 		"extractor": extractor,
@@ -404,7 +578,13 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	resultJSON, _ := json.MarshalIndent(result, "", "  ")
 
 	return &ToolResult{
-		ForLLM:  fmt.Sprintf("Fetched %d bytes from %s (extractor: %s, truncated: %v)", len(text), urlStr, extractor, truncated),
+		ForLLM: fmt.Sprintf(
+			"Fetched %d bytes from %s (extractor: %s, truncated: %v)",
+			len(text),
+			urlStr,
+			extractor,
+			truncated,
+		),
 		ForUser: string(resultJSON),
 	}
 }
@@ -419,8 +599,10 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 
 	result = strings.TrimSpace(result)
 
-	re = regexp.MustCompile(`\s+`)
-	result = re.ReplaceAllLiteralString(result, " ")
+	re = regexp.MustCompile(`[^\S\n]+`)
+	result = re.ReplaceAllString(result, " ")
+	re = regexp.MustCompile(`\n{3,}`)
+	result = re.ReplaceAllString(result, "\n\n")
 
 	lines := strings.Split(result, "\n")
 	var cleanLines []string

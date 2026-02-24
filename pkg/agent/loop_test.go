@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,20 +13,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
-
-// mockProvider is a simple mock LLM provider for testing
-type mockProvider struct{}
-
-func (m *mockProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]interface{}) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{
-		Content:   "Mock response",
-		ToolCalls: []providers.ToolCall{},
-	}, nil
-}
-
-func (m *mockProvider) GetDefaultModel() string {
-	return "mock-model"
-}
 
 func TestRecordLastChannel(t *testing.T) {
 	// Create temp workspace
@@ -184,7 +171,7 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	// Verify tool is registered by checking it doesn't panic on GetStartupInfo
 	// (actual tool retrieval is tested in tools package tests)
 	info := al.GetStartupInfo()
-	toolsInfo := info["tools"].(map[string]interface{})
+	toolsInfo := info["tools"].(map[string]any)
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
@@ -259,7 +246,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	al.RegisterTool(testTool)
 
 	info := al.GetStartupInfo()
-	toolsInfo := info["tools"].(map[string]interface{})
+	toolsInfo := info["tools"].(map[string]any)
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
@@ -306,7 +293,7 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 		t.Fatal("Expected 'tools' key in startup info")
 	}
 
-	toolsMap, ok := toolsInfo.(map[string]interface{})
+	toolsMap, ok := toolsInfo.(map[string]any)
 	if !ok {
 		t.Fatal("Expected 'tools' to be a map")
 	}
@@ -362,7 +349,13 @@ type simpleMockProvider struct {
 	response string
 }
 
-func (m *simpleMockProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]interface{}) (*providers.LLMResponse, error) {
+func (m *simpleMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
 	return &providers.LLMResponse{
 		Content:   m.response,
 		ToolCalls: []providers.ToolCall{},
@@ -384,14 +377,14 @@ func (m *mockCustomTool) Description() string {
 	return "Mock custom tool for testing"
 }
 
-func (m *mockCustomTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (m *mockCustomTool) Parameters() map[string]any {
+	return map[string]any{
 		"type":       "object",
-		"properties": map[string]interface{}{},
+		"properties": map[string]any{},
 	}
 }
 
-func (m *mockCustomTool) Execute(ctx context.Context, args map[string]interface{}) *tools.ToolResult {
+func (m *mockCustomTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
 	return tools.SilentResult("Custom tool executed")
 }
 
@@ -409,14 +402,14 @@ func (m *mockContextualTool) Description() string {
 	return "Mock contextual tool"
 }
 
-func (m *mockContextualTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (m *mockContextualTool) Parameters() map[string]any {
+	return map[string]any{
 		"type":       "object",
-		"properties": map[string]interface{}{},
+		"properties": map[string]any{},
 	}
 }
 
-func (m *mockContextualTool) Execute(ctx context.Context, args map[string]interface{}) *tools.ToolResult {
+func (m *mockContextualTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
 	return tools.SilentResult("Contextual tool executed")
 }
 
@@ -525,5 +518,116 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 	// User-facing tool should include the output in final response
 	if response != "Command output: hello world" {
 		t.Errorf("Expected 'Command output: hello world', got: %s", response)
+	}
+}
+
+// failFirstMockProvider fails on the first N calls with a specific error
+type failFirstMockProvider struct {
+	failures    int
+	currentCall int
+	failError   error
+	successResp string
+}
+
+func (m *failFirstMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.currentCall++
+	if m.currentCall <= m.failures {
+		return nil, m.failError
+	}
+	return &providers.LLMResponse{
+		Content:   m.successResp,
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *failFirstMockProvider) GetDefaultModel() string {
+	return "mock-fail-model"
+}
+
+// TestAgentLoop_ContextExhaustionRetry verify that the agent retries on context errors
+func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+
+	// Create a provider that fails once with a context error
+	contextErr := fmt.Errorf("InvalidParameter: Total tokens of image and text exceed max message tokens")
+	provider := &failFirstMockProvider{
+		failures:    1,
+		failError:   contextErr,
+		successResp: "Recovered from context error",
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	// Inject some history to simulate a full context
+	sessionKey := "test-session-context"
+	// Create dummy history
+	history := []providers.Message{
+		{Role: "system", Content: "System prompt"},
+		{Role: "user", Content: "Old message 1"},
+		{Role: "assistant", Content: "Old response 1"},
+		{Role: "user", Content: "Old message 2"},
+		{Role: "assistant", Content: "Old response 2"},
+		{Role: "user", Content: "Trigger message"},
+	}
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	defaultAgent.Sessions.SetHistory(sessionKey, history)
+
+	// Call ProcessDirectWithChannel
+	// Note: ProcessDirectWithChannel calls processMessage which will execute runLLMIteration
+	response, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"Trigger message",
+		sessionKey,
+		"test",
+		"test-chat",
+	)
+	if err != nil {
+		t.Fatalf("Expected success after retry, got error: %v", err)
+	}
+
+	if response != "Recovered from context error" {
+		t.Errorf("Expected 'Recovered from context error', got '%s'", response)
+	}
+
+	// We expect 2 calls: 1st failed, 2nd succeeded
+	if provider.currentCall != 2 {
+		t.Errorf("Expected 2 calls (1 fail + 1 success), got %d", provider.currentCall)
+	}
+
+	// Check final history length
+	finalHistory := defaultAgent.Sessions.GetHistory(sessionKey)
+	// We verify that the history has been modified (compressed)
+	// Original length: 6
+	// Expected behavior: compression drops ~50% of history (mid slice)
+	// We can assert that the length is NOT what it would be without compression.
+	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
+	if len(finalHistory) >= 8 {
+		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
 	}
 }

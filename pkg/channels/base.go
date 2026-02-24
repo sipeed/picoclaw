@@ -2,7 +2,6 @@ package channels
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -18,14 +17,14 @@ type Channel interface {
 }
 
 type BaseChannel struct {
-	config    interface{}
+	config    any
 	bus       *bus.MessageBus
 	running   bool
 	name      string
 	allowList []string
 }
 
-func NewBaseChannel(name string, config interface{}, bus *bus.MessageBus, allowList []string) *BaseChannel {
+func NewBaseChannel(name string, config any, bus *bus.MessageBus, allowList []string) *BaseChannel {
 	return &BaseChannel{
 		config:    config,
 		bus:       bus,
@@ -87,17 +86,13 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 		return
 	}
 
-	// Build session key: channel:chatID
-	sessionKey := fmt.Sprintf("%s:%s", c.name, chatID)
-
 	msg := bus.InboundMessage{
-		Channel:    c.name,
-		SenderID:   senderID,
-		ChatID:     chatID,
-		Content:    content,
-		Media:      media,
-		SessionKey: sessionKey,
-		Metadata:   metadata,
+		Channel:  c.name,
+		SenderID: senderID,
+		ChatID:   chatID,
+		Content:  content,
+		Media:    media,
+		Metadata: metadata,
 	}
 
 	c.bus.PublishInbound(msg)
