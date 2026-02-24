@@ -30,7 +30,7 @@ type LLMProvider interface {
 	GetDefaultModel() string
 }
 
-type SessionProvider interface {
+type StatefulProvider interface {
 	LLMProvider
 	Close()
 }

@@ -211,10 +211,10 @@ func gatewayCmd() {
 	<-sigChan
 
 	fmt.Println("\nShutting down...")
-	cancel()
-	if cp, ok := provider.(providers.SessionProvider); ok {
+	if cp, ok := provider.(providers.StatefulProvider); ok {
 		cp.Close()
 	}
+	cancel()
 	healthServer.Stop(context.Background())
 	deviceService.Stop()
 	heartbeatService.Stop()

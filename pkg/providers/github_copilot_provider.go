@@ -94,19 +94,24 @@ func (p *GitHubCopilotProvider) Chat(
 		return nil, fmt.Errorf("marshal messages: %w", err)
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	session := p.session
+	p.mu.Unlock()
 
-	resp, err := p.session.SendAndWait(ctx, copilot.MessageOptions{
+	if session == nil {
+		return nil, fmt.Errorf("provider closed")
+	}
+
+	resp, err := session.SendAndWait(ctx, copilot.MessageOptions{
 		Prompt: string(fullcontent),
 	})
-	if err != nil {
-		return nil, err
-	}
 
-	var content string
-	if resp != nil && resp.Data.Content != nil {
-		content = *resp.Data.Content
+	if resp == nil {
+		return nil, fmt.Errorf("empty response from copilot")
 	}
+	if resp.Data.Content == nil {
+		return nil, fmt.Errorf("no content in copilot response")
+	}
+	content := *resp.Data.Content
 
 	return &LLMResponse{
 		FinishReason: "stop",
