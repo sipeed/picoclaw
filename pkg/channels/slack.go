@@ -200,7 +200,7 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 
-	// 检查白名单，避免为被拒绝的用户下载附件
+	// check allowlist to avoid downloading attachments for rejected users
 	if !c.IsAllowed(ev.User) {
 		logger.DebugCF("slack", "Message rejected by allowlist", map[string]any{
 			"user_id": ev.User,
@@ -232,9 +232,9 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	content = c.stripBotMention(content)
 
 	var mediaPaths []string
-	localFiles := []string{} // 跟踪需要清理的本地文件
+	localFiles := []string{} // track local files that need cleanup
 
-	// 确保临时文件在函数返回时被清理
+	// ensure temp files are cleaned up when function returns
 	defer func() {
 		for _, file := range localFiles {
 			if err := os.Remove(file); err != nil {

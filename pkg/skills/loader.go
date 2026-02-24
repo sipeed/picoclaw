@@ -55,9 +55,9 @@ func (info SkillInfo) validate() error {
 
 type SkillsLoader struct {
 	workspace       string
-	workspaceSkills string // workspace skills (项目级别)
-	globalSkills    string // 全局 skills (~/.picoclaw/skills)
-	builtinSkills   string // 内置 skills
+	workspaceSkills string // workspace skills (project-level)
+	globalSkills    string // global skills (~/.picoclaw/skills)
+	builtinSkills   string // builtin skills
 }
 
 func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string) *SkillsLoader {
@@ -120,7 +120,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 }
 
 func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
-	// 1. 优先从 workspace skills 加载（项目级别）
+	// 1. load from workspace skills first (project-level)
 	if sl.workspaceSkills != "" {
 		skillFile := filepath.Join(sl.workspaceSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {
@@ -128,7 +128,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 		}
 	}
 
-	// 2. 其次从全局 skills 加载 (~/.picoclaw/skills)
+	// 2. then load from global skills (~/.picoclaw/skills)
 	if sl.globalSkills != "" {
 		skillFile := filepath.Join(sl.globalSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {
@@ -136,7 +136,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 		}
 	}
 
-	// 3. 最后从内置 skills 加载
+	// 3. finally load from builtin skills
 	if sl.builtinSkills != "" {
 		skillFile := filepath.Join(sl.builtinSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {
