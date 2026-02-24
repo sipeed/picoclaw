@@ -683,3 +683,21 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 
 ---
 
+## FEEDBACK — 第11回レビュー (ラウンド P)
+
+### P-1: Phase 0-2「カテゴリ B 残り」に 🟡 項目が 2 件漏れている
+
+B カテゴリ候補テーブルに 🟡 が 6 件あるが、Phase 0-2 には 4 件しか入っていない。
+未収録の 2 件:
+
+| ファイル | 行 | 内容 |
+|----------|----|------|
+| `pkg/tools/toolloop.go` | 87-96 | `RunToolLoop()` — `normalizedToolCalls` / `toolNames` を `make([]T, 0, 推定値)` に |
+| `pkg/channels/telegram.go` | 832-861 | `extractMarkdownTables()` — `out` / `tables` スライスに容量ヒント |
+
+加えて 🟢 の `pkg/agent/session_tracker.go:121`（`ListActive()` result スライス）も Phase 0-2 に未収録。
+こちらはアクティブセッション数が事前不明なため静的見積もりになる点で意図的除外の可能性があるが、
+理由が計画に明示されていない。
+
+対応: Phase 0-2 テーブルに上記 2 件 (🟡) を追加。`session_tracker.go:121` は除外するなら B テーブルの行に注記を付けるか削除すること。
+
