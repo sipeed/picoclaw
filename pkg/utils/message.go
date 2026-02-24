@@ -106,6 +106,10 @@ func SplitMessage(content string, maxLen int) []string {
 						msgEndOffset = startIndex + innerLimit
 					}
 
+					if msgEndOffset > len(runes) {
+						msgEndOffset = len(runes)
+					}
+
 					chunkStr := string(runes[startIndex:msgEndOffset])
 					messages = append(messages, strings.TrimRight(chunkStr, " \t\n\r")+"\n```")
 
@@ -138,6 +142,9 @@ func SplitMessage(content string, maxLen int) []string {
 				} else {
 					// Hard split inside (last resort)
 					msgEndOffset = startIndex + maxLen - 5
+					if msgEndOffset > len(runes) {
+						msgEndOffset = len(runes)
+					}
 					chunkStr := string(runes[startIndex:msgEndOffset])
 					messages = append(messages, strings.TrimRight(chunkStr, " \t\n\r")+"\n```")
 

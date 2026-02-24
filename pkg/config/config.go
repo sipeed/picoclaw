@@ -195,10 +195,9 @@ type ChannelsConfig struct {
 }
 
 type WhatsAppConfig struct {
-	Enabled          bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL        string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
-	AllowFrom        FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
-	MaxMessageLength int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_WHATSAPP_MAX_MESSAGE_LENGTH"`
+	Enabled   bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
+	BridgeURL string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
 }
 
 type TelegramConfig struct {
@@ -216,7 +215,6 @@ type FeishuConfig struct {
 	EncryptKey        string              `json:"encrypt_key"        env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
 	VerificationToken string              `json:"verification_token" env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
 	AllowFrom         FlexibleStringSlice `json:"allow_from"         env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
-	MaxMessageLength  int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_FEISHU_MAX_MESSAGE_LENGTH"`
 }
 
 type DiscordConfig struct {
@@ -235,19 +233,17 @@ type MaixCamConfig struct {
 }
 
 type QQConfig struct {
-	Enabled          bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID            string              `json:"app_id"     env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret        string              `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom        FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
-	MaxMessageLength int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
+	Enabled   bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID     string              `json:"app_id"     env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	AppSecret string              `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
 }
 
 type DingTalkConfig struct {
-	Enabled          bool                `json:"enabled"       env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
-	ClientID         string              `json:"client_id"     env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret     string              `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
-	AllowFrom        FlexibleStringSlice `json:"allow_from"    env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
-	MaxMessageLength int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_DINGTALK_MAX_MESSAGE_LENGTH"`
+	Enabled      bool                `json:"enabled"       env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
+	ClientID     string              `json:"client_id"     env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
+	ClientSecret string              `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	AllowFrom    FlexibleStringSlice `json:"allow_from"    env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
 type SlackConfig struct {
@@ -276,7 +272,6 @@ type OneBotConfig struct {
 	ReconnectInterval  int                 `json:"reconnect_interval"   env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
 	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
-	MaxMessageLength   int                 `json:"max_message_length,omitempty" env:"PICOCLAW_CHANNELS_ONEBOT_MAX_MESSAGE_LENGTH"`
 }
 
 type WeComConfig struct {
