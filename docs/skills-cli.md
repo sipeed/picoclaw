@@ -11,7 +11,7 @@ Some features (e.g. `reinstall`, `repo@branch`, optional `subpath`) may require 
 | Subcommand | Usage | Description |
 |------------|--------|-------------|
 | list | `picoclaw skills list` | List installed skills |
-| install | `picoclaw skills install <repo> [subpath]` or `install --registry <name> <slug>` | Install from GitHub or a registry |
+| install | `picoclaw skills install <repo> [subpath]`, `install <path-or-url> [name]`, or `install --registry <name> <slug>` | Install from GitHub, from a .zip/.tar.gz/.tgz file or URL, or from a registry |
 | reinstall | `picoclaw skills reinstall <repo> [subpath]` | Overwrite install (remove then install) |
 | install-builtin | `picoclaw skills install-builtin` | Copy built-in skills into the workspace |
 | list-builtin | `picoclaw skills list-builtin` | List available built-in skills |
@@ -55,6 +55,34 @@ picoclaw skills install owner/repo@v1
 
 # Overwrite an existing install
 picoclaw skills reinstall sipeed/picoclaw-skills k8s-report
+```
+
+---
+
+## Install from archive (zip / tar.gz / tgz)
+
+You can install a skill from a **local file** or **HTTP(S) URL** that points to a `.zip`, `.tar.gz`, or `.tgz` archive. The archive must contain a `SKILL.md` at the root (or as the only file under a single top-level directory, which is normalized automatically).
+
+**Usage:** `picoclaw skills install <path-or-url> [name]`
+
+- **path-or-url** — A local path (e.g. `./skill.zip`, `/tmp/skill.tar.gz`) or a URL (e.g. `https://example.com/skill.zip`). To avoid conflicting with GitHub repo names like `owner/repo.zip`, the installer treats an argument as an archive only when it **looks like a path or URL** (starts with `./`, `/`, `\`, or `http://`/`https://`) **and** has an archive extension.
+- **name** — Optional. The skill name under `workspace/skills/`. If omitted, it is derived from the file or URL name (e.g. `skill.zip` → `skill`).
+
+**Supported formats:** `.zip`, `.tar.gz`, `.tgz`.
+
+**Reinstall:** Use `picoclaw skills reinstall <path-or-url> [name]` to overwrite an existing skill installed from an archive.
+
+**Examples:**
+
+```bash
+# Install from a local zip file (skill name = my-skill from filename)
+picoclaw skills install ./my-skill.zip
+
+# Install from a URL and set skill name explicitly
+picoclaw skills install https://example.com/skill.tar.gz my-skill
+
+# Overwrite existing install
+picoclaw skills reinstall ./skill.zip
 ```
 
 ---

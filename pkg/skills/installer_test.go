@@ -1,6 +1,8 @@
 package skills
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +13,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func createZipWithSkill(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range files {
+		w, err := zw.Create(name)
+		require.NoError(t, err)
+		_, err = w.Write([]byte(content))
+		require.NoError(t, err)
+	}
+	require.NoError(t, zw.Close())
+	return buf.Bytes()
+}
 
 func TestParseInstallSpec(t *testing.T) {
 	tests := []struct {
@@ -91,6 +107,65 @@ func TestInstallFromGitHubEx_already_exists(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = si.InstallFromGitHubEx(ctx, "sipeed/picoclaw-skills", "main", "", false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already exists")
+	assert.Contains(t, err.Error(), "reinstall")
+}
+
+func TestInstallFromArchive_zip(t *testing.T) {
+	zipData := createZipWithSkill(t, map[string]string{
+		"SKILL.md": "# Archive Skill",
+	})
+	zipPath := filepath.Join(t.TempDir(), "skill.zip")
+	require.NoError(t, os.WriteFile(zipPath, zipData, 0o644))
+
+	dir := t.TempDir()
+	si := NewSkillInstaller(dir)
+	ctx := context.Background()
+
+	skillName, err := si.InstallFromArchive(ctx, zipPath, "", false)
+	require.NoError(t, err)
+	assert.Equal(t, "skill", skillName)
+
+	content, err := os.ReadFile(filepath.Join(dir, "skills", "skill", "SKILL.md"))
+	require.NoError(t, err)
+	assert.Equal(t, "# Archive Skill", string(content))
+}
+
+func TestInstallFromArchive_zip_singleRootDir_normalized(t *testing.T) {
+	// Archive with single top-level dir (e.g. my-skill/SKILL.md) should be normalized so SKILL.md is at skillDir root.
+	zipData := createZipWithSkill(t, map[string]string{
+		"my-skill/SKILL.md": "# Normalized Skill",
+	})
+	zipPath := filepath.Join(t.TempDir(), "my-skill.zip")
+	require.NoError(t, os.WriteFile(zipPath, zipData, 0o644))
+
+	dir := t.TempDir()
+	si := NewSkillInstaller(dir)
+	ctx := context.Background()
+
+	skillName, err := si.InstallFromArchive(ctx, zipPath, "my-skill", false)
+	require.NoError(t, err)
+	assert.Equal(t, "my-skill", skillName)
+
+	content, err := os.ReadFile(filepath.Join(dir, "skills", "my-skill", "SKILL.md"))
+	require.NoError(t, err)
+	assert.Equal(t, "# Normalized Skill", string(content))
+}
+
+func TestInstallFromArchive_already_exists(t *testing.T) {
+	zipData := createZipWithSkill(t, map[string]string{"SKILL.md": "# Skill"})
+	zipPath := filepath.Join(t.TempDir(), "dup.zip")
+	require.NoError(t, os.WriteFile(zipPath, zipData, 0o644))
+
+	dir := t.TempDir()
+	si := NewSkillInstaller(dir)
+	ctx := context.Background()
+
+	_, err := si.InstallFromArchive(ctx, zipPath, "dup", false)
+	require.NoError(t, err)
+
+	_, err = si.InstallFromArchive(ctx, zipPath, "dup", false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already exists")
 	assert.Contains(t, err.Error(), "reinstall")

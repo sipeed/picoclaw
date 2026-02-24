@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,7 @@ func skillsHelp() {
 	fmt.Println("\nSkills commands:")
 	fmt.Println("  list                    List installed skills")
 	fmt.Println("  install <repo> [subpath]  Install skill from GitHub (repo: owner/repo or owner/repo@branch; subpath e.g. skills/kanban-ai)")
+	fmt.Println("  install <path-or-url> [name]  Install from .zip / .tar.gz / .tgz (file path or URL)")
 	fmt.Println("  reinstall <repo> [subpath]  Overwrite existing skill (same args as install)")
 	fmt.Println("  install-builtin         Install all builtin skills to workspace")
 	fmt.Println("  list-builtin            List available builtin skills")
@@ -82,10 +84,9 @@ func skillsHelp() {
 	fmt.Println("Examples:")
 	fmt.Println("  picoclaw skills list")
 	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills")
-	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills@test")
 	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills weather")
-	fmt.Println("  picoclaw skills reinstall sipeed/picoclaw-skills k8s-report")
-	fmt.Println("  picoclaw skills install-builtin")
+	fmt.Println("  picoclaw skills install ./skill.zip")
+	fmt.Println("  picoclaw skills install https://example.com/skill.tar.gz my-skill")
 	fmt.Println("  picoclaw skills install --registry clawhub github")
 	fmt.Println("  picoclaw skills remove weather")
 }
@@ -108,6 +109,39 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 	}
 }
 
+// isArchiveInstallArg returns true when arg looks like a path or URL to an archive (.zip, .tar.gz, .tgz),
+// so we treat it as archive install and avoid conflicting with GitHub repo names like owner/repo.zip.
+func isArchiveInstallArg(arg string) bool {
+	arg = strings.TrimSpace(arg)
+	if arg == "" {
+		return false
+	}
+	// Extension: path or URL path must end with .zip, .tar.gz, or .tgz.
+	base := arg
+	if u, err := url.Parse(arg); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		base = filepath.Base(u.Path)
+	} else {
+		base = filepath.Base(arg)
+	}
+	lower := strings.ToLower(base)
+	hasExt := strings.HasSuffix(lower, ".zip") || strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz")
+	if !hasExt {
+		return false
+	}
+	// Path or protocol: starts with ./, /, \, or http(s)://, or is an existing file.
+	if strings.HasPrefix(arg, "./") || strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, "\\") {
+		return true
+	}
+	if strings.HasPrefix(strings.ToLower(arg), "http://") || strings.HasPrefix(strings.ToLower(arg), "https://") {
+		return true
+	}
+	info, err := os.Stat(arg)
+	if err == nil && info.Mode().IsRegular() {
+		return true
+	}
+	return false
+}
+
 func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config, force bool) {
 	if len(os.Args) < 4 {
 		verb := "install"
@@ -115,6 +149,7 @@ func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config, forc
 			verb = "reinstall"
 		}
 		fmt.Printf("Usage: picoclaw skills %s <repo> [subpath]\n", verb)
+		fmt.Printf("       picoclaw skills %s <path-or-url> [name]   (for .zip / .tar.gz / .tgz)\n", verb)
 		fmt.Println("       picoclaw skills install --registry <name> <slug>")
 		fmt.Println("  repo: owner/repo or owner/repo@branch (branch defaults to main)")
 		fmt.Println("  subpath: optional path in repo (e.g. weather or skills/kanban-ai)")
@@ -131,6 +166,29 @@ func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config, forc
 		registryName := os.Args[4]
 		slug := os.Args[5]
 		skillsInstallFromRegistry(cfg, registryName, slug)
+		return
+	}
+
+	// Archive path or URL: .zip / .tar.gz / .tgz (path or URL only, to avoid conflict with GitHub repo names).
+	arg := os.Args[3]
+	if isArchiveInstallArg(arg) {
+		var skillName string
+		if len(os.Args) >= 5 {
+			skillName = strings.TrimSpace(os.Args[4])
+		}
+		if force {
+			fmt.Printf("Reinstalling skill from %s...\n", arg)
+		} else {
+			fmt.Printf("Installing skill from %s...\n", arg)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		installedName, err := installer.InstallFromArchive(ctx, arg, skillName, force)
+		if err != nil {
+			fmt.Printf("\u2717 Failed to install skill: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("\u2713 Skill '%s' installed successfully!\n", installedName)
 		return
 	}
 

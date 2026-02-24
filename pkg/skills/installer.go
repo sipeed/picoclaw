@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type SkillInstaller struct {
@@ -329,6 +332,157 @@ func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, spec string) er
 	}
 	_, err = si.InstallFromGitHubEx(ctx, repo, branch, "", false)
 	return err
+}
+
+const maxArchiveDownloadBytes = 50 * 1024 * 1024 // 50MB
+
+// archiveExt returns the archive extension from a path or URL (e.g. ".zip", ".tar.gz", ".tgz"), or "".
+func archiveExt(pathOrURL string) string {
+	base := pathOrURL
+	if u, err := url.Parse(pathOrURL); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		base = filepath.Base(u.Path)
+	} else {
+		base = filepath.Base(pathOrURL)
+	}
+	base = strings.ToLower(base)
+	if strings.HasSuffix(base, ".tar.gz") {
+		return ".tar.gz"
+	}
+	if strings.HasSuffix(base, ".tgz") {
+		return ".tgz"
+	}
+	if strings.HasSuffix(base, ".zip") {
+		return ".zip"
+	}
+	return ""
+}
+
+// skillNameFromArchivePath derives skill name from path or URL by stripping archive extension.
+func skillNameFromArchivePath(pathOrURL string) string {
+	base := pathOrURL
+	if u, err := url.Parse(pathOrURL); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		base = filepath.Base(u.Path)
+	} else {
+		base = filepath.Base(pathOrURL)
+	}
+	base = strings.TrimSuffix(strings.ToLower(base), ".tar.gz")
+	base = strings.TrimSuffix(base, ".tgz")
+	base = strings.TrimSuffix(base, ".zip")
+	return base
+}
+
+// InstallFromArchive installs a skill from a .zip, .tar.gz, or .tgz file (local path or http(s) URL).
+// If skillName is empty, it is derived from the archive path/URL. If force is true, existing skill dir is removed first.
+func (si *SkillInstaller) InstallFromArchive(ctx context.Context, archivePathOrURL, skillName string, force bool) (string, error) {
+	archivePathOrURL = strings.TrimSpace(archivePathOrURL)
+	if archivePathOrURL == "" {
+		return "", fmt.Errorf("empty archive path or URL")
+	}
+
+	ext := archiveExt(archivePathOrURL)
+	if ext == "" {
+		return "", fmt.Errorf("unsupported archive format (need .zip, .tar.gz, or .tgz)")
+	}
+
+	var localPath string
+	isURL := strings.HasPrefix(strings.ToLower(archivePathOrURL), "http://") || strings.HasPrefix(strings.ToLower(archivePathOrURL), "https://")
+	if isURL {
+		req, err := http.NewRequestWithContext(ctx, "GET", archivePathOrURL, nil)
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+		client := &http.Client{Timeout: 60 * time.Second}
+		tmpPath, err := utils.DownloadToFile(ctx, client, req, maxArchiveDownloadBytes)
+		if err != nil {
+			return "", fmt.Errorf("download failed: %w", err)
+		}
+		defer os.Remove(tmpPath)
+		localPath = tmpPath
+	} else {
+		if _, err := os.Stat(archivePathOrURL); err != nil {
+			return "", fmt.Errorf("archive file not found: %w", err)
+		}
+		localPath = archivePathOrURL
+	}
+
+	if skillName == "" {
+		skillName = skillNameFromArchivePath(archivePathOrURL)
+	}
+	if skillName == "" {
+		return "", fmt.Errorf("could not derive skill name from path or URL")
+	}
+
+	skillDir := filepath.Join(si.workspace, "skills", skillName)
+	if _, err := os.Stat(skillDir); err == nil {
+		if !force {
+			return "", fmt.Errorf("skill '%s' already exists (use reinstall to overwrite)", skillName)
+		}
+		if err := os.RemoveAll(skillDir); err != nil {
+			return "", fmt.Errorf("failed to remove existing skill: %w", err)
+		}
+	}
+
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create skill directory: %w", err)
+	}
+
+	switch ext {
+	case ".zip":
+		if err := utils.ExtractZipFile(localPath, skillDir); err != nil {
+			os.RemoveAll(skillDir)
+			return "", err
+		}
+	case ".tar.gz", ".tgz":
+		if err := utils.ExtractTarGzFile(localPath, skillDir); err != nil {
+			os.RemoveAll(skillDir)
+			return "", err
+		}
+	default:
+		os.RemoveAll(skillDir)
+		return "", fmt.Errorf("unsupported archive format: %s", ext)
+	}
+
+	// Normalize: if skillDir contains only one directory and SKILL.md is not at root, move contents up.
+	if err := normalizeSingleRootDir(skillDir); err != nil {
+		os.RemoveAll(skillDir)
+		return "", err
+	}
+
+	skillMD := filepath.Join(skillDir, "SKILL.md")
+	if _, err := os.Stat(skillMD); err != nil {
+		os.RemoveAll(skillDir)
+		return "", fmt.Errorf("SKILL.md not found in archive (invalid skill package)")
+	}
+
+	return skillName, nil
+}
+
+// normalizeSingleRootDir moves the contents of a single top-level directory up into skillDir and removes that directory.
+func normalizeSingleRootDir(skillDir string) error {
+	entries, err := os.ReadDir(skillDir)
+	if err != nil {
+		return err
+	}
+	if len(entries) != 1 || !entries[0].IsDir() {
+		return nil
+	}
+	skillMD := filepath.Join(skillDir, "SKILL.md")
+	if _, err := os.Stat(skillMD); err == nil {
+		return nil
+	}
+	inner := filepath.Join(skillDir, entries[0].Name())
+	innerEntries, err := os.ReadDir(inner)
+	if err != nil {
+		return err
+	}
+	for _, e := range innerEntries {
+		src := filepath.Join(inner, e.Name())
+		dst := filepath.Join(skillDir, e.Name())
+		if err := os.Rename(src, dst); err != nil {
+			return fmt.Errorf("move %q to skill root: %w", e.Name(), err)
+		}
+	}
+	return os.Remove(inner)
 }
 
 func (si *SkillInstaller) Uninstall(skillName string) error {
