@@ -625,7 +625,7 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 
 // findMatches finds all ModelConfig entries with the given model_name.
 func (c *Config) findMatches(modelName string) []ModelConfig {
-	var matches []ModelConfig
+	matches := make([]ModelConfig, 0, 4)
 	for i := range c.ModelList {
 		if c.ModelList[i].ModelName == modelName {
 			matches = append(matches, c.ModelList[i])

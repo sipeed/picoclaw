@@ -833,7 +833,7 @@ func extractInlineCodes(text string) inlineCodeMatch {
 func extractMarkdownTables(text string) tableBlockMatch {
 	lines := strings.Split(text, "\n")
 	out := make([]string, 0, len(lines))
-	tables := make([]string, 0)
+	tables := make([]string, 0, 4)
 	placeholderIdx := 0
 
 	for i := 0; i < len(lines); {
@@ -845,7 +845,7 @@ func extractMarkdownTables(text string) tableBlockMatch {
 			}
 			block := lines[start:i]
 			formatted := formatMarkdownTable(block)
-			placeholder := fmt.Sprintf("\x00TB%d\x00", placeholderIdx)
+			placeholder := "\x00TB" + strconv.Itoa(placeholderIdx) + "\x00"
 			placeholderIdx++
 			tables = append(tables, formatted)
 			out = append(out, placeholder)

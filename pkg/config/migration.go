@@ -45,7 +45,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 
 	p := cfg.Providers
 
-	var result []ModelConfig
+	result := make([]ModelConfig, 0, 20)
 
 	// Track if we've applied the legacy model name fix (only for first provider)
 	legacyModelNameApplied := false

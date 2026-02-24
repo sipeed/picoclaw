@@ -70,7 +70,7 @@ func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string
 }
 
 func (sl *SkillsLoader) ListSkills() []SkillInfo {
-	skills := make([]SkillInfo, 0)
+	skills := make([]SkillInfo, 0, 20)
 
 	if sl.workspaceSkills != "" {
 		if dirs, err := os.ReadDir(sl.workspaceSkills); err == nil {
