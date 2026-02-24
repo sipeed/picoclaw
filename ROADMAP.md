@@ -54,7 +54,7 @@
 
 
 * **Skill Marketplace**
-  * [**Discovery skills**](https://github.com/sipeed/picoclaw/issues/287): Implement `find_skill` to automatically discover and install skills from the [GitHub Skills Repo](https://github.com/openclaw/skills) or other registries.
+  * [**Discovery skills**](https://github.com/sipeed/picoclaw/issues/287): Implement `find_skill` to automatically discover and install skills from the [GitHub Skills Repo] or other registries.
 
 
 
