@@ -1,0 +1,148 @@
+package aieos
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestLoadProfile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aieos.json")
+
+	data := `{
+		"version": "1.1",
+		"identity": {
+			"name": "TestAgent",
+			"description": "A test agent",
+			"purpose": "Testing"
+		},
+		"capabilities": [
+			{"name": "search", "description": "Web search"}
+		],
+		"psychology": {
+			"openness": 0.8,
+			"conscientiousness": 0.9,
+			"extraversion": 0.5,
+			"agreeableness": 0.85,
+			"neuroticism": 0.1
+		}
+	}`
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o644))
+
+	p, err := LoadProfile(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, "1.1", p.Version)
+	assert.Equal(t, "TestAgent", p.Identity.Name)
+	assert.Equal(t, "A test agent", p.Identity.Description)
+	assert.Equal(t, "Testing", p.Identity.Purpose)
+	assert.Len(t, p.Capabilities, 1)
+	assert.Equal(t, "search", p.Capabilities[0].Name)
+	require.NotNil(t, p.Psychology)
+	assert.Equal(t, 0.8, p.Psychology.Openness)
+	assert.Equal(t, 0.1, p.Psychology.Neuroticism)
+}
+
+func TestLoadProfileInvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aieos.json")
+
+	require.NoError(t, os.WriteFile(path, []byte(`{bad json`), 0o644))
+
+	_, err := LoadProfile(path)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parse profile")
+}
+
+func TestLoadProfileMissingVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aieos.json")
+
+	data := `{"identity": {"name": "Agent"}}`
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o644))
+
+	_, err := LoadProfile(path)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "version is required")
+}
+
+func TestLoadProfileMissingName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aieos.json")
+
+	data := `{"version": "1.1", "identity": {}}`
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o644))
+
+	_, err := LoadProfile(path)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "identity.name is required")
+}
+
+func TestLoadProfileFileNotFound(t *testing.T) {
+	_, err := LoadProfile("/nonexistent/aieos.json")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read profile")
+}
+
+func TestProfileExists(t *testing.T) {
+	dir := t.TempDir()
+
+	assert.False(t, ProfileExists(dir))
+
+	path := filepath.Join(dir, "aieos.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0o644))
+
+	assert.True(t, ProfileExists(dir))
+}
+
+func TestDefaultProfilePath(t *testing.T) {
+	got := DefaultProfilePath("/home/user/workspace")
+	assert.Equal(t, "/home/user/workspace/aieos.json", got)
+}
+
+func TestLoadProfileOCEANOutOfRange(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want string
+	}{
+		{
+			name: "openness too high",
+			json: `{"version":"1.1","identity":{"name":"A"},"psychology":{"openness":1.5}}`,
+			want: "psychology.openness must be in [0.0, 1.0]",
+		},
+		{
+			name: "neuroticism negative",
+			json: `{"version":"1.1","identity":{"name":"A"},"psychology":{"neuroticism":-0.1}}`,
+			want: "psychology.neuroticism must be in [0.0, 1.0]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "aieos.json")
+			require.NoError(t, os.WriteFile(path, []byte(tt.json), 0o644))
+
+			_, err := LoadProfile(path)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestLoadProfileOCEANValidBoundary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aieos.json")
+
+	data := `{"version":"1.1","identity":{"name":"A"},"psychology":{"openness":0.0,"conscientiousness":1.0,"extraversion":0.5,"agreeableness":0.0,"neuroticism":1.0}}`
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o644))
+
+	p, err := LoadProfile(path)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, p.Psychology.Openness)
+	assert.Equal(t, 1.0, p.Psychology.Conscientiousness)
+}

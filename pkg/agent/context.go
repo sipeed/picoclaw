@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/aieos"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -16,6 +17,7 @@ import (
 
 type ContextBuilder struct {
 	workspace    string
+	profilePath  string // Optional override for aieos.json path
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
 	tools        *tools.ToolRegistry // Direct reference to tool registry
@@ -108,16 +110,26 @@ func (cb *ContextBuilder) buildToolsSection() string {
 	return sb.String()
 }
 
+// SetProfilePath sets a custom path for the AIEOS profile, overriding the default workspace location.
+func (cb *ContextBuilder) SetProfilePath(path string) {
+	cb.profilePath = path
+}
+
 func (cb *ContextBuilder) BuildSystemPrompt() string {
 	parts := []string{}
 
 	// Core identity section
 	parts = append(parts, cb.getIdentity())
 
-	// Bootstrap files
-	bootstrapContent := cb.LoadBootstrapFiles()
-	if bootstrapContent != "" {
-		parts = append(parts, bootstrapContent)
+	// AIEOS profile (preferred) or legacy .md bootstrap files (fallback)
+	if aieosContent := cb.loadAIEOSProfile(); aieosContent != "" {
+		parts = append(parts, aieosContent)
+	} else {
+		bootstrapContent := cb.LoadBootstrapFiles()
+		if bootstrapContent != "" {
+			logger.WarnCF("agent", "Using deprecated .md bootstrap files. Migrate to aieos.json.", nil)
+			parts = append(parts, bootstrapContent)
+		}
 	}
 
 	// Skills - show summary, AI can read full content with read_file tool
@@ -305,6 +317,29 @@ func (cb *ContextBuilder) loadSkills() string {
 	}
 
 	return "# Skill Definitions\n\n" + content
+}
+
+// loadAIEOSProfile attempts to load and render an AIEOS profile.
+// Returns the rendered text, or empty string if no profile is found or on error.
+func (cb *ContextBuilder) loadAIEOSProfile() string {
+	path := cb.profilePath
+	if path == "" {
+		if !aieos.ProfileExists(cb.workspace) {
+			return ""
+		}
+		path = aieos.DefaultProfilePath(cb.workspace)
+	}
+
+	profile, err := aieos.LoadProfile(path)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to load AIEOS profile, falling back to .md files", map[string]any{
+			"path":  path,
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	return aieos.RenderToPrompt(profile)
 }
 
 // GetSkillsInfo returns information about loaded skills.
