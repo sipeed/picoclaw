@@ -37,14 +37,18 @@ type SubagentManager struct {
 	hasMaxTokens   bool
 	hasTemperature bool
 	nextID         int
-	broadcaster    *orch.Broadcaster
+	reporter       orch.AgentReporter
 }
 
 func NewSubagentManager(
 	provider providers.LLMProvider,
 	defaultModel, workspace string,
 	bus *bus.MessageBus,
+	reporter orch.AgentReporter,
 ) *SubagentManager {
+	if reporter == nil {
+		reporter = orch.Noop
+	}
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
@@ -54,14 +58,8 @@ func NewSubagentManager(
 		tools:         NewToolRegistry(),
 		maxIterations: 10,
 		nextID:        1,
-		broadcaster:   orch.NewBroadcaster(),
+		reporter:      reporter,
 	}
-}
-
-// GetBroadcaster returns the Broadcaster so the miniapp handler can
-// subscribe to real-time orchestration events.
-func (sm *SubagentManager) GetBroadcaster() *orch.Broadcaster {
-	return sm.broadcaster
 }
 
 // SetLLMOptions sets max tokens and temperature for subagent LLM calls.
@@ -112,12 +110,7 @@ func (sm *SubagentManager) Spawn(
 	}
 	sm.tasks[taskID] = subagentTask
 
-	sm.broadcaster.Publish(orch.Event{
-		Type:  "agent_spawn",
-		ID:    taskID,
-		Label: label,
-		Task:  task,
-	})
+	sm.reporter.ReportSpawn(taskID, label, task)
 
 	// Start task in background with context cancellation support
 	go sm.runTask(ctx, subagentTask, callback)
@@ -130,7 +123,6 @@ func (sm *SubagentManager) Spawn(
 
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {
 	task.Status = "running"
-	task.Created = time.Now().UnixMilli()
 
 	// Build system prompt for subagent
 	systemPrompt := `You are a subagent. Complete the given task independently and report the result.
@@ -181,12 +173,7 @@ After completing the task, provide a clear summary of what was done.`
 	}
 
 	// Notify conductor that the subagent is starting
-	sm.broadcaster.Publish(orch.Event{
-		Type: "conversation",
-		From: "conductor",
-		To:   task.ID,
-		Text: task.Task,
-	})
+	sm.reporter.ReportConversation("conductor", task.ID, task.Task)
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
 		Provider:      sm.provider,
@@ -194,14 +181,8 @@ After completing the task, provide a clear summary of what was done.`
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
-		OnStateChange: func(state, tool string) {
-			sm.broadcaster.Publish(orch.Event{
-				Type:  "agent_state",
-				ID:    task.ID,
-				State: state,
-				Tool:  tool,
-			})
-		},
+		Reporter:      sm.reporter,
+		AgentID:       task.ID,
 	}, messages, task.OriginChannel, task.OriginChatID)
 
 	sm.mu.Lock()
@@ -224,11 +205,7 @@ After completing the task, provide a clear summary of what was done.`
 			task.Result = "Task cancelled during execution"
 			gcReason = "cancelled"
 		}
-		sm.broadcaster.Publish(orch.Event{
-			Type:   "agent_gc",
-			ID:     task.ID,
-			Reason: gcReason,
-		})
+		sm.reporter.ReportGC(task.ID, gcReason)
 		result = &ToolResult{
 			ForLLM:  task.Result,
 			ForUser: "",
@@ -241,17 +218,8 @@ After completing the task, provide a clear summary of what was done.`
 		task.Status = "completed"
 		task.Result = loopResult.Content
 		// Notify conductor of the result
-		sm.broadcaster.Publish(orch.Event{
-			Type: "conversation",
-			From: task.ID,
-			To:   "conductor",
-			Text: loopResult.Content,
-		})
-		sm.broadcaster.Publish(orch.Event{
-			Type:   "agent_gc",
-			ID:     task.ID,
-			Reason: "completed",
-		})
+		sm.reporter.ReportConversation(task.ID, "conductor", loopResult.Content)
+		sm.reporter.ReportGC(task.ID, "completed")
 		result = &ToolResult{
 			ForLLM: fmt.Sprintf(
 				"Subagent '%s' completed (iterations: %d): %s",

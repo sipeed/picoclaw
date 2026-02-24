@@ -83,6 +83,26 @@ func (b *Broadcaster) Snapshot() []AgentInfo {
 	return out
 }
 
+// ReportSpawn implements AgentReporter.
+func (b *Broadcaster) ReportSpawn(id, label, task string) {
+	b.Publish(Event{Type: "agent_spawn", ID: id, Label: label, Task: task})
+}
+
+// ReportStateChange implements AgentReporter.
+func (b *Broadcaster) ReportStateChange(id, state, tool string) {
+	b.Publish(Event{Type: "agent_state", ID: id, State: state, Tool: tool})
+}
+
+// ReportConversation implements AgentReporter.
+func (b *Broadcaster) ReportConversation(from, to, text string) {
+	b.Publish(Event{Type: "conversation", From: from, To: to, Text: text})
+}
+
+// ReportGC implements AgentReporter.
+func (b *Broadcaster) ReportGC(id, reason string) {
+	b.Publish(Event{Type: "agent_gc", ID: id, Reason: reason})
+}
+
 // Publish updates internal agent state and fans out to all subscribers.
 func (b *Broadcaster) Publish(ev Event) {
 	if ev.Created == 0 {

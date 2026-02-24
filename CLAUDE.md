@@ -354,6 +354,77 @@ pkg/agent/
   context.go        — conductor identity + orchestration guidance 追加
 ```
 
+### AgentReporter 抽象化 (実装済み 2026-02-25)
+
+> branch `sub-agent-technical-breakdown`
+
+`Broadcaster` を `SubagentManager` 内部で生成する密結合を解消し、
+`orch.AgentReporter` インターフェースを中心に置くリファクタリングを実施。
+
+#### オーナーシップ
+
+```
+AgentLoop
+  ├─ owns: *orch.Broadcaster  (orchBroadcaster — nil when disabled)
+  └─ holds: orch.AgentReporter (orchReporter = Broadcaster or Noop)
+       ├─ passes to → SubagentManager.reporter
+       │               └─ passes to → ToolLoopConfig.Reporter
+       └─ calls directly for main/heartbeat sessions
+            ├─ runAgentLoop: ReportSpawn / ReportGC
+            └─ runLLMIteration: ReportStateChange
+
+cmd_gateway.go
+  └─ agentLoop.GetOrchBroadcaster() → handler.SetOrchBroadcaster()
+
+miniapp.Handler
+  └─ borrows *orch.Broadcaster for Subscribe/Snapshot (WS 配信)
+```
+
+#### インターフェース (`pkg/orch/reporter.go`)
+
+```go
+type AgentReporter interface {
+    ReportSpawn(id, label, task string)
+    ReportStateChange(id, state, tool string)
+    ReportConversation(from, to, text string)
+    ReportGC(id, reason string)
+}
+var Noop AgentReporter = &noopReporter{} // nil-free; 全メソッドが no-op
+```
+
+`Broadcaster` は `AgentReporter` を満たす (`ReportSpawn` 等が `Publish` のラッパー)。
+
+#### Noop パターン
+
+```
+--orchestration なし: orchReporter = orch.Noop → 全 Report* が空振り (panic なし)
+--orchestration あり: orchReporter = *Broadcaster → WS 配信
+```
+
+呼び出し側は `if reporter != nil` チェック不要。
+
+#### イベント発火の責任分担
+
+| 発火元 | イベント | 経由 |
+|--------|---------|------|
+| `runAgentLoop` | `ReportSpawn` / `ReportGC` | `al.reporter()` |
+| `runLLMIteration` | `ReportStateChange("waiting"/"toolcall")` | `al.reporter()` |
+| `SubagentManager.Spawn` | `ReportSpawn` | `sm.reporter` |
+| `SubagentManager.runTask` | `ReportConversation` / `ReportGC` | `sm.reporter` |
+| `RunToolLoop` | `ReportStateChange` | `config.Reporter` |
+
+main / heartbeat / subagent の全セッションが同一 Broadcaster に発火するため、
+canvas には全エージェントが統一して表示される。
+
+#### 変更ファイル
+
+- `pkg/orch/reporter.go` — **新規** インターフェース + Noop
+- `pkg/orch/broadcaster.go` — `ReportSpawn/StateChange/Conversation/GC` 追加
+- `pkg/tools/toolloop.go` — `OnStateChange func` → `Reporter AgentReporter + AgentID`
+- `pkg/tools/subagent.go` — constructor に `reporter` 受け取り、内部 broadcaster 廃止、`GetBroadcaster()` 削除
+- `pkg/agent/loop.go` — `orchBroadcaster`/`orchReporter` フィールド追加、`SetOrchReporter`/`GetOrchBroadcaster` 追加、`registerSharedTools` シグネチャに `al *AgentLoop` 追加
+- `cmd/picoclaw/cmd_gateway.go` — `GetOrchBroadcaster()` → `handler.SetOrchBroadcaster()`
+
 ---
 
 ## Memory Optimization Notes
