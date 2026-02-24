@@ -47,3 +47,8 @@ func FormatBuildInfo() (build string, goVer string) {
 	}
 	return
 }
+
+// GetVersion returns the version string
+func GetVersion() string {
+	return version
+}

@@ -55,17 +55,11 @@ func cronRemoveCmd(storePath, jobID string) {
 	}
 }
 
-func cronEnableCmd(storePath string, disable bool, jobID string) {
+func cronSetJobEnabled(storePath, jobID string, enabled bool) {
 	cs := cron.NewCronService(storePath, nil)
-	enabled := !disable
-
 	job := cs.EnableJob(jobID, enabled)
 	if job != nil {
-		status := "enabled"
-		if disable {
-			status = "disabled"
-		}
-		fmt.Printf("✓ Job '%s' %s\n", job.Name, status)
+		fmt.Printf("✓ Job '%s' enabled\n", job.Name)
 	} else {
 		fmt.Printf("✗ Job %s not found\n", jobID)
 	}

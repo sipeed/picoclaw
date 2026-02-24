@@ -24,20 +24,8 @@ func newAddCommand(storePath func() string) *cobra.Command {
 		Short: "Add a new scheduled job",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if name == "" {
-				return fmt.Errorf("--name is required")
-			}
-
-			if message == "" {
-				return fmt.Errorf("--message is required")
-			}
-
 			if every <= 0 && cronExp == "" {
 				return fmt.Errorf("either --every or --cron must be specified")
-			}
-
-			if every > 0 && cronExp != "" {
-				return fmt.Errorf("--every and --cron are mutually exclusive")
 			}
 
 			var schedule cron.CronSchedule
@@ -70,6 +58,7 @@ func newAddCommand(storePath func() string) *cobra.Command {
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("message")
+	cmd.MarkFlagsMutuallyExclusive("every", "cron")
 
 	return cmd
 }

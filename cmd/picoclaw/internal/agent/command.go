@@ -17,11 +17,6 @@ func NewAgentCommand() *cobra.Command {
 		Short: "Interact with the agent directly",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			debug, _ = cmd.Flags().GetBool("debug")
-			message, _ = cmd.Flags().GetString("message")
-			sessionKey, _ = cmd.Flags().GetString("session")
-			model, _ = cmd.Flags().GetString("model")
-
 			return agentCmd(message, sessionKey, model, debug)
 		},
 	}

@@ -24,12 +24,10 @@ func authLoginCmd(provider string, useDeviceCode bool) error {
 	case "anthropic":
 		return authLoginPasteToken(provider)
 	case "google-antigravity", "antigravity":
-		authLoginGoogleAntigravity()
+		return authLoginGoogleAntigravity()
 	default:
 		return fmt.Errorf("unsupported provider: %s (%s)", provider, supportedProvidersMsg)
 	}
-
-	return nil
 }
 
 func authLoginOpenAI(useDeviceCode bool) error {
@@ -80,7 +78,7 @@ func authLoginOpenAI(useDeviceCode bool) error {
 		appCfg.Agents.Defaults.Model = "gpt-5.2"
 
 		if err = config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
-			return fmt.Errorf("warning: could not update config: %w", err)
+			return fmt.Errorf("could not update config: %w", err)
 		}
 	}
 
@@ -93,13 +91,12 @@ func authLoginOpenAI(useDeviceCode bool) error {
 	return nil
 }
 
-func authLoginGoogleAntigravity() {
+func authLoginGoogleAntigravity() error {
 	cfg := auth.GoogleAntigravityOAuthConfig()
 
 	cred, err := auth.LoginBrowser(cfg)
 	if err != nil {
-		fmt.Printf("Login failed: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("login failed: %w", err)
 	}
 
 	cred.Provider = "google-antigravity"
@@ -124,8 +121,7 @@ func authLoginGoogleAntigravity() {
 	}
 
 	if err = auth.SetCredential("google-antigravity", cred); err != nil {
-		fmt.Printf("Failed to save credentials: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 
 	appCfg, err := internal.LoadConfig()
@@ -163,6 +159,8 @@ func authLoginGoogleAntigravity() {
 	fmt.Println("\n✓ Google Antigravity login successful!")
 	fmt.Println("Default model set to: gemini-flash")
 	fmt.Println("Try it: picoclaw agent -m \"Hello world\"")
+
+	return nil
 }
 
 func fetchGoogleUserEmail(accessToken string) (string, error) {
@@ -248,7 +246,7 @@ func authLoginPasteToken(provider string) error {
 			appCfg.Agents.Defaults.Model = "gpt-5.2"
 		}
 		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
-			return fmt.Errorf("warning: could not update config: %w", err)
+			return fmt.Errorf("could not update config: %w", err)
 		}
 	}
 
@@ -330,7 +328,9 @@ func authStatusCmd() error {
 	}
 
 	if len(store.Credentials) == 0 {
-		return fmt.Errorf("no authenticated providers. run: picoclaw auth login --provider <name>")
+		fmt.Println("No authenticated providers.")
+		fmt.Println("Run: picoclaw auth login --provider <name>")
+		return nil
 	}
 
 	fmt.Println("\nAuthenticated Providers:")

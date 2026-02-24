@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	internal2 "github.com/sipeed/picoclaw/cmd/picoclaw/internal"
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
@@ -23,7 +23,7 @@ func NewSkillsCommand() *cobra.Command {
 		Use:   "skills",
 		Short: "Manage skills",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := internal2.LoadConfig()
+			cfg, err := internal.LoadConfig()
 			if err != nil {
 				return fmt.Errorf("error loading config: %w", err)
 			}
@@ -32,7 +32,7 @@ func NewSkillsCommand() *cobra.Command {
 			d.installer = skills.NewSkillInstaller(d.workspace)
 
 			// get global config directory and builtin skills directory
-			globalDir := filepath.Dir(internal2.GetConfigPath())
+			globalDir := filepath.Dir(internal.GetConfigPath())
 			globalSkillsDir := filepath.Join(globalDir, "skills")
 			builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
 			d.skillsLoader = skills.NewSkillsLoader(d.workspace, globalSkillsDir, builtinSkillsDir)

@@ -91,3 +91,7 @@ func TestGetConfigPath_Windows(t *testing.T) {
 
 	require.True(t, strings.EqualFold(got, want), "GetConfigPath() = %q, want %q", got, want)
 }
+
+func TestGetVersion(t *testing.T) {
+	assert.Equal(t, "dev", GetVersion())
+}

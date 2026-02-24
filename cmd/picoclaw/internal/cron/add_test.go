@@ -41,3 +41,17 @@ func TestNewAddSubcommand(t *testing.T) {
 	require.NotEmpty(t, val)
 	assert.Equal(t, "true", val[0])
 }
+
+func TestNewAddCommandEveryAndCronMutuallyExclusive(t *testing.T) {
+	cmd := newAddCommand(func() string { return "testing" })
+
+	cmd.SetArgs([]string{
+		"--name", "job",
+		"--message", "hello",
+		"--every", "10",
+		"--cron", "0 9 * * *",
+	})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+}

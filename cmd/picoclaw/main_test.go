@@ -1,11 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 )
 
 func TestNewPicoclawCommand(t *testing.T) {
@@ -13,8 +16,10 @@ func TestNewPicoclawCommand(t *testing.T) {
 
 	require.NotNil(t, cmd)
 
+	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant v%s\n\n", internal.Logo, internal.GetVersion())
+
 	assert.Equal(t, "picoclaw", cmd.Use)
-	assert.Equal(t, "picoclaw — Personal AI Assistant", cmd.Short)
+	assert.Equal(t, short, cmd.Short)
 
 	assert.True(t, cmd.HasSubCommands())
 	assert.True(t, cmd.HasAvailableSubCommands())

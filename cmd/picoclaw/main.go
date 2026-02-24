@@ -7,10 +7,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/agent"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/auth"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cron"
@@ -23,9 +25,11 @@ import (
 )
 
 func NewPicoclawCommand() *cobra.Command {
+	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant v%s\n\n", internal.Logo, internal.GetVersion())
+
 	cmd := &cobra.Command{
 		Use:     "picoclaw",
-		Short:   "picoclaw — Personal AI Assistant",
+		Short:   short,
 		Example: "picoclaw list",
 	}
 

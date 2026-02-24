@@ -20,6 +20,8 @@ func NewCronCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
+		// Resolve storePath at execution time so it reflects the current config
+		// and is shared across all subcommands.
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := internal.LoadConfig()
 			if err != nil {
