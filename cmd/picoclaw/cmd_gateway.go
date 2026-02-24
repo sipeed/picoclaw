@@ -37,6 +37,7 @@ func gatewayCmd() {
 	// Check for --debug and --stats flags
 	args := os.Args[2:]
 	enableStats := false
+	orchestrationEnabled := false
 	for _, arg := range args {
 		if arg == "--debug" || arg == "-d" {
 			logger.SetLevel(logger.DEBUG)
@@ -44,6 +45,9 @@ func gatewayCmd() {
 		}
 		if arg == "--stats" {
 			enableStats = true
+		}
+		if arg == "--orchestration" {
+			orchestrationEnabled = true
 		}
 	}
 
@@ -58,6 +62,10 @@ func gatewayCmd() {
 		fmt.Printf("Error creating provider: %v\n", err)
 		os.Exit(1)
 	}
+	if orchestrationEnabled {
+		cfg.Agents.Defaults.Orchestration = true
+	}
+
 	// Use the resolved model ID from provider creation
 	if modelID != "" {
 		cfg.Agents.Defaults.Model = modelID
