@@ -662,34 +662,40 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 
 ### I-1. Phase 4-1: stats.Tracker に dirty フラグは不要
 
-**指摘内容**: Phase 4-1 に「dirty フラグ + タイマー (5分)」と記述しているが、`stats.Tracker` の状態を更新するのは `RecordUsage()` と `RecordPrompt()` の2関数のみ。どちらを一度でも呼べば常にデータは「更新済み」であり、フラグで dirty/clean を区別する意味がない。
+**指摘内容**: Phase 4-1 に「dirty フラグ + タイマー (5分)」と記述しているが、`stats.Tracker` でカウンタを更新するのは `RecordUsage()` と `RecordPrompt()` の2関数のみ（`Reset()` は意味的チェックポイントなので別扱い）。どちらを呼んだ後も常にデータは「更新済み」であり、フラグで dirty/clean を区別する意味がない。
 
 **現状コード** (`pkg/stats/tracker.go`):
 
 ```go
+// L61-78
 func (t *Tracker) RecordUsage(...) {
     t.mu.Lock()
     defer t.mu.Unlock()
-    // カウンタ更新
-    t.save()  // ← ここを外すだけ
+    // カウンタ更新 (L67-75)
+    t.save()  // L77 ← 削除対象
 }
 
-func (t *Tracker) RecordPrompt(...) {
+// L81-91
+func (t *Tracker) RecordPrompt() {
     t.mu.Lock()
     defer t.mu.Unlock()
-    // カウンタ更新
-    t.save()  // ← ここも外すだけ
+    // カウンタ更新 (L85-88)
+    t.save()  // L90 ← 削除対象
 }
+
+// L103-112: Reset() は save() を L111 で呼ぶが、意味的チェックポイントなので即時維持
 ```
 
+**注意**: `Reset()` (L103) も `save()` を呼ぶ (L111)。これは意図的な意味的チェックポイントであり、write-behind の対象外。「ONLY writers」という言い方は厳密には誤り。
+
 **正しい実装**: dirty フラグを追加せず、単純に:
-1. `RecordUsage()` / `RecordPrompt()` 内の `t.save()` 呼び出しを削除
+1. `RecordUsage()` L77 / `RecordPrompt()` L90 の `t.save()` 呼び出しを削除
 2. 起動時にタイマー goroutine 1本 (`time.NewTicker(5 * time.Minute)` → `t.save()`)
-3. `Close()` メソッドでタイマー停止 + `t.save()`
+3. `Close()` メソッドを新規追加: タイマー停止 + `t.save()` (現在 `Close()` は存在しない)
 
-一度もデータ更新されていない場合にタイマーが `save()` を呼ぶリスクがあるが、`Tracker` は起動時にファイルをロードするため「同じ内容を上書きするだけ」で実害なし。
+タイマーが「一度も更新されていないのに save()」を呼ぶリスクがあるが、`NewTracker()` が `load()` → 即 `save()` する設計にしない限り無害（同じ内容の上書き）。
 
-**計画の修正箇所**: Phase 4-1 の「dirty フラグ」という記述を削除し、「`save()` 呼び出しを `RecordUsage`/`RecordPrompt` から除去 + 定期タイマー」に単純化する。
+**計画の修正箇所**: Phase 4-1 の「dirty フラグ」という記述を削除し、「`save()` 呼び出しを L77/L90 から除去 + 定期タイマー + `Close()` 新規追加」に単純化する。
 
 ---
 
@@ -697,37 +703,65 @@ func (t *Tracker) RecordPrompt(...) {
 
 **指摘内容**: Phase 3-1 のコードスニペットに `hasActivePlanFrom(content)` や `getPlanStatusFrom(content)` が登場するが、これらの関数は **現在存在しない**。計画を読んだだけでは「既存関数の内部リファクタ」と誤解しやすく、必要な作業量が過小評価される。
 
-**現状の `pkg/agent/memory.go`**:
+**現状の各 public メソッド** (`pkg/agent/memory.go`):
 
 ```go
-// 既存 public メソッド — それぞれ独立して ReadLongTerm() を呼ぶ
+// L148-151: HasActivePlan() — ReadLongTerm() を L149 で呼ぶ
 func (ms *MemoryStore) HasActivePlan() bool {
-    content := ms.ReadLongTerm()  // ← 内部で読む
-    return strings.Contains(content, "# Plan:") && ...
+    content := ms.ReadLongTerm()          // L149
+    return reActivePlan.MatchString(content)
 }
 
+// L154-161: GetPlanStatus() — ReadLongTerm() を L155 で呼ぶ
 func (ms *MemoryStore) GetPlanStatus() string {
-    content := ms.ReadLongTerm()  // ← 内部で読む
+    content := ms.ReadLongTerm()          // L155
+    m := reStatus.FindStringSubmatch(content)
     ...
 }
-// GetCurrentPhase(), GetTotalPhases(), GetPlanPhases(), FormatPlanDisplay() も同様
+
+// GetCurrentPhase() L164, GetTotalPhases() L175 も同様
+// GetPlanPhases() L270 は ReadLongTerm() (L271) + GetTotalPhases() (L276) で 2回読む
 ```
 
-既存の public メソッドを `GetMemoryContext()` 内から呼ぶと各々が `ReadLongTerm()` を呼ぶため、content passthrough の目的が失われる。
+既存の public メソッドを `GetMemoryContext()` や `FormatPlanDisplay()` 内から呼ぶと各々が `ReadLongTerm()` を呼ぶため、content passthrough の目的が失われる。
 
-**必要な実装**: `content string` を受け取る private ヘルパー関数群を新規作成する必要がある:
+**特に致命的な即時矛盾 (今すぐ直せるレベル)**:
 
 ```go
-// 新規作成が必要な関数群 (現在は存在しない)
-func hasActivePlanFrom(content string) bool         { ... }
-func getPlanStatusFrom(content string) string       { ... }
-func getCurrentPhaseFrom(content string) int        { ... }
-func getTotalPhasesFrom(content string) int         { ... }
-func getPlanPhasesFrom(content string) []PlanPhase  { ... }
-func formatPlanDisplayFrom(content string) string   { ... }
+// GetMemoryContext() L725-746
+func (ms *MemoryStore) GetMemoryContext() string {
+    longTerm := ms.ReadLongTerm()     // L728 — ここで読む
+    if longTerm != "" {
+        if ms.HasActivePlan() {       // L730 — HasActivePlan() がまた ReadLongTerm() を呼ぶ！
+                                      //         longTerm は L728 にあるのに
 ```
 
-既存の public メソッド (`HasActivePlan()` 等) は互換性のため残し、内部で上記 private 関数を呼ぶ形に書き換える。
+```go
+// FormatPlanDisplay() L656-668
+func (ms *MemoryStore) FormatPlanDisplay() string {
+    content := ms.ReadLongTerm()      // L657 — ここで読む
+    if !ms.HasActivePlan() {          // L658 — HasActivePlan() がまた ReadLongTerm() を呼ぶ！
+                                      //         content は L657 にあるのに
+    ...
+    status := ms.GetPlanStatus()      // L666 — また ReadLongTerm()
+    currentPhase := ms.GetCurrentPhase()  // L667 — また ReadLongTerm()
+    phases := ms.GetPlanPhases()      // L668 — また ReadLongTerm() (+GetTotalPhases() でもう1回)
+```
 
-**計画の修正箇所**: Phase 3-1 に「既存の public メソッドは内部で `ReadLongTerm()` を呼ぶため再利用不可。`content string` を受け取る private ヘルパー関数群を新規作成し、public メソッドをそれらのラッパーに書き換える」という注記を追加する。
+**補足 — パターンは既に確立されている**: `extractPhaseContent(content string, phase int)` (L231-253) という「content を受け取る private ヘルパー」が既に存在する。同じパターンを `HasActivePlan`, `GetPlanStatus` 等にも適用するのがこの Phase の作業。
+
+**必要な実装**: `content string` を受け取る private ヘルパー関数群を新規作成する:
+
+```go
+// 新規作成が必要 (現在は存在しない)
+func hasActivePlanFrom(content string) bool        { return reActivePlan.MatchString(content) }
+func getPlanStatusFrom(content string) string      { /* reStatus から抽出 */ }
+func getCurrentPhaseFrom(content string) int       { /* rePhase から抽出 */ }
+func getTotalPhasesFrom(content string) int        { /* rePhaseHeader から算出 */ }
+func getPlanPhasesFrom(content string) []PlanPhase { /* extractPhaseContent を使う */ }
+```
+
+既存の public メソッド (`HasActivePlan()` L148 等) は互換性のため残し、内部で上記を呼ぶラッパーに書き換える。`GetMemoryContext()` L730 と `FormatPlanDisplay()` L658 は `ReadLongTerm()` の戻り値が手元にあるため、public メソッドを経由せず private ヘルパーを直接呼ぶ。
+
+**計画の修正箇所**: Phase 3-1 に「既存の public メソッドは内部で `ReadLongTerm()` を呼ぶため再利用不可。`content string` を受け取る private ヘルパー群を新規作成 (L231 の `extractPhaseContent` と同パターン) し、public メソッドをラッパーに書き換える」を追記する。
 
