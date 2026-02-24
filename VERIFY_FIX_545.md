@@ -66,56 +66,5 @@ Iteration 2:
 ├─ Break: Exit loop immediately ← FIX APPLIED!
 └─ Return: finalContent, iteration=2, nil
 
-RESULT: Message sent ONCE ✓
-```
 
-## Verification Checklist
 
-✅ **Import check**: `encoding/json` imported at line 10
-✅ **Structure check**: `Message.ToolCalls` field exists (type `[]ToolCall`)
-✅ **Field check**: `ToolCall.Name` and `ToolCall.Arguments` fields exist
-✅ **Logic check**: Dedup detection before tool execution (correct position)
-✅ **Initialization check**: `finalContent` initialized as empty string at line 478
-✅ **Return check**: `return finalContent, iteration, nil` at line 758
-✅ **Break behavior**: Early return ensures code doesn't reach normal break
-✅ **Fallback message**: Default message provided if `response.Content` is empty
-
-## Edge Cases Handled
-
-| Case | Before | After | Status |
-|------|--------|-------|--------|
-| First iteration | Skipped | Skipped (iteration > 1 check) | ✓ |
-| Different tool names | Would loop | Dedup fails, normal flow | ✓ |
-| Different arguments | Would loop | Dedup fails, normal flow | ✓ |
-| Same tool + args | Repeated 15x | Breaks at iteration 2 | ✓ |
-| Empty response | Normal flow | Uses default fallback | ✓ |
-
-## Test Scenario from Issue #545
-
-**Given:**
-- Service health check task via subagent
-- `max_tool_iterations: 15`
-- LLM set to call `message()` tool repeatedly
-
-**Expected (After Fix):**
-- Iteration 1: Message tool called → executed
-- Iteration 2: Duplicate detected → loop breaks
-- User receives: 1 message ✓
-
-**Old behavior (Before Fix):**
-- User receives: 15 messages ✗
-
-## Performance Impact
-
-- **Minimal overhead**: One additional JSON marshaling per iteration (only when iteration > 1)
-- **Early exit**: Saves 13+ LLM iterations, reducing API calls and latency
-- **Memory**: No additional allocations for typical cases
-
-## Logging
-
-The fix adds a single info log when duplicate is detected:
-```
-[INFO] agent: Detected duplicate tool call, breaking iteration loop {agent_id=main, tool=message, iteration=2}
-```
-
-This helps operators understand why iterations stopped early.
