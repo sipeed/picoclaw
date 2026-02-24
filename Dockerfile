@@ -3,7 +3,7 @@
 # ============================================================
 FROM golang:1.25-alpine AS builder
 
-RUN apk add --no-cache git make
+RUN apk add --no-cache git bash
 
 WORKDIR /src
 
@@ -13,7 +13,7 @@ RUN go mod download
 
 # Copy source and build
 COPY . .
-RUN make build
+RUN scripts/build.sh
 
 # ============================================================
 # Stage 2: Minimal runtime image

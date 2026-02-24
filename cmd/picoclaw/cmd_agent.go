@@ -25,9 +25,8 @@ import (
 
 // Interactive mode identifiers
 const (
-	modePico   = "pico"   // Chat mode (default) - input goes to AI agent
-	modeCmd    = "cmd"    // Command mode - input executed as shell commands
-	modeHiPico = "hipico" // AI-assisted mode within cmd - multi-turn AI conversation
+	modePico = "pico" // Chat mode (default) - input goes to AI agent
+	modeCmd  = "cmd"  // Command mode - input executed as shell commands
 )
 
 // cmdWorkingDir tracks the current working directory for command mode.
@@ -108,12 +107,11 @@ func agentCmd() {
 		fmt.Printf("\n%s %s\n", logo, response)
 	} else {
 		fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n", logo)
-		fmt.Println("  /help    - show detailed help")
-		fmt.Println("  /usage   - show model info and token usage")
-		fmt.Println("  /cmd     - switch to command mode")
-		fmt.Println("  /pico    - switch to chat mode")
-		fmt.Println("  /hipico  - AI assistance in command mode")
-		fmt.Println("  /byepico - end AI assistance")
+		fmt.Println("  :help    - show detailed help")
+		fmt.Println("  :usage   - show model info and token usage")
+		fmt.Println("  :cmd     - switch to command mode")
+		fmt.Println("  :pico    - switch to chat mode")
+		fmt.Println("  :hipico  - ask AI for help (from command mode)")
 		fmt.Println()
 		interactiveMode(agentLoop, sessionKey)
 	}
@@ -122,7 +120,6 @@ func agentCmd() {
 func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	chatPrompt := fmt.Sprintf("%s You: ", logo)
 	cmdPrompt := "$ "
-	hipicoPrompt := fmt.Sprintf("%s> ", logo)
 
 	mode := modePico
 
@@ -164,22 +161,22 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			return
 		}
 
-		// /help and /usage work in all modes
-		if input == "/help" {
+		// :help and :usage work in all modes
+		if input == ":help" {
 			printInteractiveHelp()
 			continue
 		}
-		if input == "/usage" {
+		if input == ":usage" {
 			printUsage(agentLoop)
 			continue
 		}
 
 		switch mode {
 		case modePico:
-			if input == "/cmd" {
+			if input == ":cmd" {
 				mode = modeCmd
 				rl.SetPrompt(cmdPrompt)
-				fmt.Println("Switched to command mode. Type /pico to return to chat.")
+				fmt.Println("Switched to command mode. Type :pico to return to chat.")
 				continue
 			}
 
@@ -192,64 +189,34 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			fmt.Printf("\n%s %s\n\n", logo, response)
 
 		case modeCmd:
-			if input == "/pico" {
+			if input == ":pico" {
 				mode = modePico
 				rl.SetPrompt(chatPrompt)
-				fmt.Println("Switched to chat mode. Type /cmd to return to command mode.")
+				fmt.Println("Switched to chat mode. Type :cmd to return to command mode.")
 				continue
 			}
 
-			if strings.HasPrefix(input, "/hipico") {
-				initialMsg := strings.TrimSpace(strings.TrimPrefix(input, "/hipico"))
+			if strings.HasPrefix(input, ":hipico") {
+				initialMsg := strings.TrimSpace(strings.TrimPrefix(input, ":hipico"))
 				if initialMsg == "" {
-					fmt.Println("Usage: /hipico <message>")
-					fmt.Println("Example: /hipico check the log files for error messages")
+					fmt.Println("Usage: :hipico <message>")
+					fmt.Println("Example: :hipico check the log files for error messages")
 					continue
 				}
 
-				mode = modeHiPico
-				rl.SetPrompt(hipicoPrompt)
-
 				contextPrefix := fmt.Sprintf("[Command mode context: working directory is %s]\n\n", cmdWorkingDir)
-
-				fmt.Printf("\n%s AI assistance started. Type /byepico to end.\n\n", logo)
 
 				ctx := context.Background()
 				response, err := agentLoop.ProcessDirect(ctx, contextPrefix+initialMsg, hipicoSessionKey)
 				if err != nil {
 					fmt.Printf("Error: %v\n", err)
-					mode = modeCmd
-					rl.SetPrompt(cmdPrompt)
 					continue
 				}
-				fmt.Printf("%s %s\n\n", logo, response)
+				fmt.Printf("\n%s %s\n\n", logo, response)
 				continue
 			}
 
 			executeShellCommand(input)
-
-		case modeHiPico:
-			if input == "/byepico" {
-				mode = modeCmd
-				rl.SetPrompt(cmdPrompt)
-				fmt.Println("AI assistance ended. Back to command mode.")
-				continue
-			}
-
-			if input == "/pico" {
-				mode = modePico
-				rl.SetPrompt(chatPrompt)
-				fmt.Println("AI assistance ended. Switched to chat mode.")
-				continue
-			}
-
-			ctx := context.Background()
-			response, err := agentLoop.ProcessDirect(ctx, input, hipicoSessionKey)
-			if err != nil {
-				fmt.Printf("Error: %v\n", err)
-				continue
-			}
-			fmt.Printf("\n%s %s\n\n", logo, response)
 		}
 	}
 }
@@ -265,8 +232,6 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			fmt.Printf("%s You: ", logo)
 		case modeCmd:
 			fmt.Print("$ ")
-		case modeHiPico:
-			fmt.Printf("%s> ", logo)
 		}
 
 		line, err := reader.ReadString('\n')
@@ -289,21 +254,21 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			return
 		}
 
-		// /help and /usage work in all modes
-		if input == "/help" {
+		// :help and :usage work in all modes
+		if input == ":help" {
 			printInteractiveHelp()
 			continue
 		}
-		if input == "/usage" {
+		if input == ":usage" {
 			printUsage(agentLoop)
 			continue
 		}
 
 		switch mode {
 		case modePico:
-			if input == "/cmd" {
+			if input == ":cmd" {
 				mode = modeCmd
-				fmt.Println("Switched to command mode. Type /pico to return to chat.")
+				fmt.Println("Switched to command mode. Type :pico to return to chat.")
 				continue
 			}
 
@@ -316,57 +281,33 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			fmt.Printf("\n%s %s\n\n", logo, response)
 
 		case modeCmd:
-			if input == "/pico" {
+			if input == ":pico" {
 				mode = modePico
-				fmt.Println("Switched to chat mode. Type /cmd to return to command mode.")
+				fmt.Println("Switched to chat mode. Type :cmd to return to command mode.")
 				continue
 			}
 
-			if strings.HasPrefix(input, "/hipico") {
-				initialMsg := strings.TrimSpace(strings.TrimPrefix(input, "/hipico"))
+			if strings.HasPrefix(input, ":hipico") {
+				initialMsg := strings.TrimSpace(strings.TrimPrefix(input, ":hipico"))
 				if initialMsg == "" {
-					fmt.Println("Usage: /hipico <message>")
-					fmt.Println("Example: /hipico check the log files for error messages")
+					fmt.Println("Usage: :hipico <message>")
+					fmt.Println("Example: :hipico check the log files for error messages")
 					continue
 				}
 
-				mode = modeHiPico
 				contextPrefix := fmt.Sprintf("[Command mode context: working directory is %s]\n\n", cmdWorkingDir)
-				fmt.Printf("\n%s AI assistance started. Type /byepico to end.\n\n", logo)
 
 				ctx := context.Background()
 				response, err := agentLoop.ProcessDirect(ctx, contextPrefix+initialMsg, hipicoSessionKey)
 				if err != nil {
 					fmt.Printf("Error: %v\n", err)
-					mode = modeCmd
 					continue
 				}
-				fmt.Printf("%s %s\n\n", logo, response)
+				fmt.Printf("\n%s %s\n\n", logo, response)
 				continue
 			}
 
 			executeShellCommand(input)
-
-		case modeHiPico:
-			if input == "/byepico" {
-				mode = modeCmd
-				fmt.Println("AI assistance ended. Back to command mode.")
-				continue
-			}
-
-			if input == "/pico" {
-				mode = modePico
-				fmt.Println("AI assistance ended. Switched to chat mode.")
-				continue
-			}
-
-			ctx := context.Background()
-			response, err := agentLoop.ProcessDirect(ctx, input, hipicoSessionKey)
-			if err != nil {
-				fmt.Printf("Error: %v\n", err)
-				continue
-			}
-			fmt.Printf("\n%s %s\n\n", logo, response)
 		}
 	}
 }
@@ -376,7 +317,7 @@ func printInteractiveHelp() {
 	fmt.Printf(`%s PicoClaw Interactive Mode Help
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PicoClaw has three interactive modes:
+PicoClaw has two interactive modes:
 
   1. Chat Mode (default)
      Talk to the AI agent directly. Your input is sent as a message
@@ -385,23 +326,19 @@ PicoClaw has three interactive modes:
   2. Command Mode
      Execute shell commands directly, like a terminal. Supports cd,
      pipes, redirects, and all standard shell features.
-
-  3. AI-Assisted Command Mode
-     A multi-turn AI conversation within command mode. The AI is aware
-     of your current working directory and can help with system tasks.
+     Use :hipico to ask AI for one-shot help within command mode.
 
 Commands (available in all modes):
-  /help      Show this help message
-  /usage     Show model info and token usage
+  :help      Show this help message
+  :usage     Show model info and token usage
   exit       Exit PicoClaw
   quit       Exit PicoClaw
   Ctrl+C     Exit PicoClaw
 
 Mode switching:
-  /cmd       Switch to command mode        (from chat mode)
-  /pico      Switch to chat mode           (from command / AI-assisted mode)
-  /hipico <msg>  Start AI-assisted mode    (from command mode)
-  /byepico   End AI assistance             (from AI-assisted mode)
+  :cmd           Switch to command mode     (from chat mode)
+  :pico          Switch to chat mode        (from command mode)
+  :hipico <msg>  Ask AI for help            (from command mode, one-shot)
 
 Examples:
   Chat mode:
@@ -412,12 +349,11 @@ Examples:
     $ cd /tmp
     $ cat error.log | grep "FATAL"
 
-  AI-assisted mode (enter from command mode):
-    $ /hipico check the log files for errors
-    %s> show me more details on line 42
-    %s> /byepico
+  AI help (one-shot, from command mode):
+    $ :hipico check the log files for errors
+    $ :hipico what does this error mean in syslog
 
-`, logo, logo, logo, logo)
+`, logo, logo)
 }
 
 // printUsage displays current model information and accumulated token usage.
