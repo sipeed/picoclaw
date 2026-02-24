@@ -637,3 +637,67 @@ Phase 0 ──→ Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4
 - Phase 4: **ディスク書き込み削減** (microSD 寿命保護)
 - Phase 5: 必要に応じて個別判断
 
+---
+
+## FEEDBACK — 第2回レビュー
+
+> レビュー日 2026-02-24。前回指摘 F-1〜F-8 の反映を確認した上で、新たに発見した問題を記載。
+
+**前回指摘の反映確認**:
+F-1 ✅ F-2 ✅ F-3 ✅ F-4 ✅ F-5 ✅ F-6 ✅ F-7 ✅ F-8 ✅ — 全8件が正しく反映されている。
+
+---
+
+### G-1. Phase 1: `recent()` → `[]*LogEntry` はデータレースになる 🚨
+
+```go
+// logger.go (現状 — 正しい)
+func (rb *logRingBuffer) recent(limit int) []LogEntry {
+    rb.mu.RLock()
+    defer rb.mu.RUnlock()
+    result := make([]LogEntry, n)
+    for i := 0; i < n; i++ {
+        result[i] = rb.entries[...]  // ← RLock 中に値コピー
+    }
+    return result  // 返した後は rb.entries が上書きされても安全
+}
+```
+
+`rb.entries` はリングバッファの内部配列で、`add()` が呼ばれると古いエントリが上書きされる。現在の実装は RLock 中に値コピーして返すため安全。
+
+`[]*LogEntry` に変更するとリングバッファ内部へのポインタを返すことになる。呼び出し側がそのポインタを保持している間に新しいログが `add()` されると、ポインタ先が上書きされてデータレースが発生する。この変更は**正確性を壊す**。Phase 1 から削除すること。
+
+### G-2. Phase 3-1: `FormatPlanDisplay()` が修正対象に含まれていない
+
+`GetMemoryContext()` 以外にも `FormatPlanDisplay()` が同じ多重 `ReadLongTerm()` 問題を持つ。呼び出しチェーンは以下の通り:
+
+```
+FormatPlanDisplay()
+  ├─ ReadLongTerm()          (直接呼び出し, L657)
+  ├─ HasActivePlan()       → ReadLongTerm()
+  ├─ GetPlanStatus()       → ReadLongTerm()
+  ├─ GetCurrentPhase()     → ReadLongTerm()
+  └─ GetPlanPhases()       → ReadLongTerm()  (さらに内部で extractPhaseContent → Split)
+```
+
+CLI の `/plan status` コマンドはこの関数を呼ぶ。Phase 3-1 の content パススルーリファクタの対象に `FormatPlanDisplay()` も含めること。
+
+### G-3. Phase 3-2: Split 統合は `MarkStep()` / `AddStep()` に効かない
+
+Phase 3-2 の対応は「`GetMemoryContext()` 内で1回 Split して `[]string` を内部ヘルパーに渡す」だが、`MarkStep()` と `AddStep()` は `GetMemoryContext()` を経由せずエージェントのツール実行パスから直接呼ばれる。これらは常に自前で `ReadLongTerm()` + `strings.Split()` + `WriteLongTerm()` を実行する — これは変更後も変わらない。
+
+変更が効くのは `GetPlanContext()` / `GetReviewContext()` などの**読み取り専用メソッド**が呼ぶヘルパー群のみ。ミューテーション系メソッドの Split 重複を本当に解消するには ParsedPlan インメモリモデル（Phase 5）が必要。Phase 3-2 の成果を過大評価しないよう説明文を修正すること。
+
+### G-4. `claude_cli_provider.go:133` が Phase 0-3 と Phase 2-2 に重複
+
+同一行 `pkg/providers/claude_cli_provider.go:133` が両フェーズに記載されている。実装時に2つのコミットが同じ行を異なる意図で変更しようとして競合する可能性がある。いずれか一方のフェーズに統合すること（変換の削減なので Phase 0-3 が自然）。
+
+### まとめ: 今回の修正項目
+
+| # | 対象フェーズ | 修正内容 |
+|---|------------|---------|
+| G-1 | Phase 1 | `recent()` → `[]*LogEntry` を計画から削除（データレースリスク） |
+| G-2 | Phase 3-1 | `FormatPlanDisplay()` を修正対象に追加 |
+| G-3 | Phase 3-2 | Split 統合の効果範囲を「読み取りパスのみ」に限定して説明を修正 |
+| G-4 | Phase 0-3 / 2-2 | `claude_cli_provider.go:133` の重複エントリを Phase 0-3 に統合 |
+
