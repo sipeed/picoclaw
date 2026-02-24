@@ -90,6 +90,7 @@ type AgentLoop struct {
 	sessionLocks     sync.Map // sessionKey → *sessionSemaphore
 	activeTasks      sync.Map // sessionKey → *activeTask
 	sessions         *SessionTracker
+	lastSystemPrompt atomic.Value // string — last system prompt sent to LLM
 	OnStateChange    func() // called on plan/session/skills mutations
 	OnUserMessage    func() // called when a real user message is processed
 }
@@ -810,6 +811,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 1. Update tool contexts
 	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
 
+	// 1a. Set session-specific working directory for bootstrap file lookup
+	agent.ContextBuilder.SetWorkDir(agent.EffectiveWorkspace(opts.SessionKey))
+
 	// 1b. Inject peer session awareness into system prompt
 	projectPath := agent.ContextBuilder.GetPlanWorkDir()
 	if projectPath == "" {
@@ -902,6 +906,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 4. Record user prompt for stats
 	if al.stats != nil {
 		al.stats.RecordPrompt()
+	}
+
+	// Capture the finalized system prompt for Mini App inspection
+	if len(messages) > 0 {
+		al.lastSystemPrompt.Store(messages[0].Content)
 	}
 
 	// 5. Run LLM iteration loop
@@ -2448,6 +2457,33 @@ func (al *AgentLoop) GetSessionStats() *stats.Stats {
 	}
 	s := al.stats.GetStats()
 	return &s
+}
+
+// GetContextInfo returns the bootstrap file resolution and directory context for the default agent.
+func (al *AgentLoop) GetContextInfo() (workDir, planWorkDir, workspace string, bootstrap []BootstrapFileInfo) {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", "", "", nil
+	}
+	workspace = agent.Workspace
+	planWorkDir = agent.ContextBuilder.GetPlanWorkDir()
+	workDir = agent.ContextBuilder.workDir
+	bootstrap = agent.ContextBuilder.ResolveBootstrapPaths()
+	return
+}
+
+// GetSystemPrompt returns the system prompt last sent to the LLM.
+// Falls back to building from current state if no LLM call has occurred yet.
+func (al *AgentLoop) GetSystemPrompt() string {
+	if v := al.lastSystemPrompt.Load(); v != nil {
+		return v.(string)
+	}
+	// Fallback: no LLM call yet — build from current state
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return ""
+	}
+	return agent.ContextBuilder.BuildSystemPrompt()
 }
 
 // formatMessagesForLog formats messages for logging
