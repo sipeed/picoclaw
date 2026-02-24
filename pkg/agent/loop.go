@@ -811,8 +811,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 1. Update tool contexts
 	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
 
-	// 1a. Set session-specific working directory for bootstrap file lookup
-	agent.ContextBuilder.SetWorkDir(agent.EffectiveWorkspace(opts.SessionKey))
+	// 1a. Set session-specific working directory for bootstrap file lookup.
+	// Prefer the tool-detected project directory (touch_dir) from the session tracker,
+	// resolved as an absolute path under workspace. Fall back to worktree or workspace.
+	if active := al.sessions.ListActive(); len(active) > 0 && active[0].SessionKey == opts.SessionKey && active[0].TouchDir != "" {
+		agent.ContextBuilder.SetWorkDir(filepath.Join(agent.Workspace, active[0].TouchDir))
+	} else {
+		agent.ContextBuilder.SetWorkDir(agent.EffectiveWorkspace(opts.SessionKey))
+	}
 
 	// 1b. Inject peer session awareness into system prompt
 	projectPath := agent.ContextBuilder.GetPlanWorkDir()
