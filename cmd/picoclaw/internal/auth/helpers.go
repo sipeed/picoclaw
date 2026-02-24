@@ -75,7 +75,7 @@ func authLoginOpenAI(useDeviceCode bool) error {
 		}
 
 		// Update default model to use OpenAI
-		appCfg.Agents.Defaults.Model = "gpt-5.2"
+		appCfg.Agents.Defaults.ModelName = "gpt-5.2"
 
 		if err = config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
 			return fmt.Errorf("could not update config: %w", err)
@@ -149,7 +149,7 @@ func authLoginGoogleAntigravity() error {
 		}
 
 		// Update default model
-		appCfg.Agents.Defaults.Model = "gemini-flash"
+		appCfg.Agents.Defaults.ModelName = "gemini-flash"
 
 		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
 			fmt.Printf("Warning: could not update config: %v\n", err)
@@ -223,7 +223,7 @@ func authLoginPasteToken(provider string) error {
 				})
 			}
 			// Update default model
-			appCfg.Agents.Defaults.Model = "claude-sonnet-4.6"
+			appCfg.Agents.Defaults.ModelName = "claude-sonnet-4.6"
 		case "openai":
 			appCfg.Providers.OpenAI.AuthMethod = "token"
 			// Update ModelList
@@ -243,7 +243,7 @@ func authLoginPasteToken(provider string) error {
 				})
 			}
 			// Update default model
-			appCfg.Agents.Defaults.Model = "gpt-5.2"
+			appCfg.Agents.Defaults.ModelName = "gpt-5.2"
 		}
 		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
 			return fmt.Errorf("could not update config: %w", err)
@@ -251,7 +251,10 @@ func authLoginPasteToken(provider string) error {
 	}
 
 	fmt.Printf("Token saved for %s!\n", provider)
-	fmt.Printf("Default model set to: %s\n", appCfg.Agents.Defaults.Model)
+
+	if appCfg != nil {
+		fmt.Printf("Default model set to: %s\n", appCfg.Agents.Defaults.GetModelName())
+	}
 
 	return nil
 }
