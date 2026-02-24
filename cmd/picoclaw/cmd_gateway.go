@@ -122,8 +122,13 @@ func gatewayCmd() {
 		return tools.SilentResult(response)
 	})
 
-	// Create media store for file lifecycle management
-	mediaStore := media.NewFileMediaStore()
+	// Create media store for file lifecycle management with TTL cleanup
+	mediaStore := media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
+		Enabled:  cfg.Tools.MediaCleanup.Enabled,
+		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
+		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
+	})
+	mediaStore.Start()
 
 	channelManager, err := channels.NewManager(cfg, msgBus, mediaStore)
 	if err != nil {
@@ -200,6 +205,7 @@ func gatewayCmd() {
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
+	mediaStore.Stop()
 	agentLoop.Stop()
 	fmt.Println("✓ Gateway stopped")
 }

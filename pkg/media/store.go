@@ -2,8 +2,10 @@ package media
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -35,8 +37,16 @@ type MediaStore interface {
 
 // mediaEntry holds the path and metadata for a stored media file.
 type mediaEntry struct {
-	path string
-	meta MediaMeta
+	path     string
+	meta     MediaMeta
+	storedAt time.Time
+}
+
+// MediaCleanerConfig configures the background TTL cleanup.
+type MediaCleanerConfig struct {
+	Enabled  bool
+	MaxAge   time.Duration
+	Interval time.Duration
 }
 
 // FileMediaStore is a pure in-memory implementation of MediaStore.
@@ -45,13 +55,33 @@ type FileMediaStore struct {
 	mu          sync.RWMutex
 	refs        map[string]mediaEntry
 	scopeToRefs map[string]map[string]struct{}
+	refToScope  map[string]string
+
+	cleanerCfg MediaCleanerConfig
+	stop       chan struct{}
+	once       sync.Once
+	nowFunc    func() time.Time // for testing
 }
 
-// NewFileMediaStore creates a new FileMediaStore.
+// NewFileMediaStore creates a new FileMediaStore without background cleanup.
 func NewFileMediaStore() *FileMediaStore {
 	return &FileMediaStore{
 		refs:        make(map[string]mediaEntry),
 		scopeToRefs: make(map[string]map[string]struct{}),
+		refToScope:  make(map[string]string),
+		nowFunc:     time.Now,
+	}
+}
+
+// NewFileMediaStoreWithCleanup creates a FileMediaStore with TTL-based background cleanup.
+func NewFileMediaStoreWithCleanup(cfg MediaCleanerConfig) *FileMediaStore {
+	return &FileMediaStore{
+		refs:        make(map[string]mediaEntry),
+		scopeToRefs: make(map[string]map[string]struct{}),
+		refToScope:  make(map[string]string),
+		cleanerCfg:  cfg,
+		stop:        make(chan struct{}),
+		nowFunc:     time.Now,
 	}
 }
 
@@ -66,11 +96,12 @@ func (s *FileMediaStore) Store(localPath string, meta MediaMeta, scope string) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.refs[ref] = mediaEntry{path: localPath, meta: meta}
+	s.refs[ref] = mediaEntry{path: localPath, meta: meta, storedAt: s.nowFunc()}
 	if s.scopeToRefs[scope] == nil {
 		s.scopeToRefs[scope] = make(map[string]struct{})
 	}
 	s.scopeToRefs[scope][ref] = struct{}{}
+	s.refToScope[ref] = scope
 
 	return ref, nil
 }
@@ -115,9 +146,79 @@ func (s *FileMediaStore) ReleaseAll(scope string) error {
 				// Log but continue — best effort cleanup
 			}
 			delete(s.refs, ref)
+			delete(s.refToScope, ref)
 		}
 	}
 
 	delete(s.scopeToRefs, scope)
 	return nil
+}
+
+// CleanExpired removes all entries older than MaxAge.
+// Both the file on disk and the in-memory references are deleted atomically
+// under the same mutex, preventing dangling references.
+func (s *FileMediaStore) CleanExpired() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cutoff := s.nowFunc().Add(-s.cleanerCfg.MaxAge)
+	removed := 0
+
+	for ref, entry := range s.refs {
+		if entry.storedAt.Before(cutoff) {
+			if err := os.Remove(entry.path); err != nil && !os.IsNotExist(err) {
+				// Log but continue — best effort cleanup
+			}
+
+			scope := s.refToScope[ref]
+			if scopeRefs, ok := s.scopeToRefs[scope]; ok {
+				delete(scopeRefs, ref)
+				if len(scopeRefs) == 0 {
+					delete(s.scopeToRefs, scope)
+				}
+			}
+
+			delete(s.refs, ref)
+			delete(s.refToScope, ref)
+			removed++
+		}
+	}
+
+	return removed
+}
+
+// Start begins the background cleanup goroutine if cleanup is enabled.
+func (s *FileMediaStore) Start() {
+	if !s.cleanerCfg.Enabled || s.stop == nil {
+		return
+	}
+
+	log.Printf("[media] cleanup enabled: interval=%s, max_age=%s",
+		s.cleanerCfg.Interval, s.cleanerCfg.MaxAge)
+
+	go func() {
+		ticker := time.NewTicker(s.cleanerCfg.Interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if n := s.CleanExpired(); n > 0 {
+					log.Printf("[media] cleanup: removed %d expired entries", n)
+				}
+			case <-s.stop:
+				return
+			}
+		}
+	}()
+}
+
+// Stop terminates the background cleanup goroutine.
+func (s *FileMediaStore) Stop() {
+	if s.stop == nil {
+		return
+	}
+	s.once.Do(func() {
+		close(s.stop)
+	})
 }
