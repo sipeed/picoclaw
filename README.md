@@ -600,6 +600,8 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 └── USER.md           # User preferences
 ```
 
+To manage skills (install, list, remove, and more), see the [Skills CLI Reference](docs/skills-cli.md).
+
 ### 🔒 Security Sandbox
 
 PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.

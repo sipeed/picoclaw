@@ -16,10 +16,63 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+func skillsCmd() {
+	if len(os.Args) < 3 {
+		skillsHelp()
+		return
+	}
+
+	subcommand := os.Args[2]
+
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	workspace := cfg.WorkspacePath()
+	installer := skills.NewSkillInstaller(workspace)
+	globalDir := filepath.Dir(getConfigPath())
+	globalSkillsDir := filepath.Join(globalDir, "skills")
+	builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
+	skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
+
+	switch subcommand {
+	case "list":
+		skillsListCmd(skillsLoader)
+	case "install":
+		skillsInstallCmd(installer, cfg, false)
+	case "reinstall":
+		skillsInstallCmd(installer, cfg, true)
+	case "remove", "uninstall":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: picoclaw skills remove <skill-name>")
+			return
+		}
+		skillsRemoveCmd(installer, os.Args[3])
+	case "install-builtin":
+		skillsInstallBuiltinCmd(workspace)
+	case "list-builtin":
+		skillsListBuiltinCmd()
+	case "search":
+		skillsSearchCmd(installer)
+	case "show":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: picoclaw skills show <skill-name>")
+			return
+		}
+		skillsShowCmd(skillsLoader, os.Args[3])
+	default:
+		fmt.Printf("Unknown skills command: %s\n", subcommand)
+		skillsHelp()
+	}
+}
+
 func skillsHelp() {
 	fmt.Println("\nSkills commands:")
 	fmt.Println("  list                    List installed skills")
-	fmt.Println("  install <repo>          Install skill from GitHub")
+	fmt.Println("  install <repo> [subpath]  Install skill from GitHub (repo: owner/repo or owner/repo@branch; subpath e.g. skills/kanban-ai)")
+	fmt.Println("  reinstall <repo> [subpath]  Overwrite existing skill (same args as install)")
 	fmt.Println("  install-builtin         Install all builtin skills to workspace")
 	fmt.Println("  list-builtin            List available builtin skills")
 	fmt.Println("  remove <name>           Remove installed skill")
@@ -28,11 +81,13 @@ func skillsHelp() {
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  picoclaw skills list")
-	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills/weather")
+	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills")
+	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills@test")
+	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills weather")
+	fmt.Println("  picoclaw skills reinstall sipeed/picoclaw-skills k8s-report")
 	fmt.Println("  picoclaw skills install-builtin")
-	fmt.Println("  picoclaw skills list-builtin")
-	fmt.Println("  picoclaw skills remove weather")
 	fmt.Println("  picoclaw skills install --registry clawhub github")
+	fmt.Println("  picoclaw skills remove weather")
 }
 
 func skillsListCmd(loader *skills.SkillsLoader) {
@@ -53,10 +108,16 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 	}
 }
 
-func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config) {
+func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config, force bool) {
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw skills install <github-repo>")
+		verb := "install"
+		if force {
+			verb = "reinstall"
+		}
+		fmt.Printf("Usage: picoclaw skills %s <repo> [subpath]\n", verb)
 		fmt.Println("       picoclaw skills install --registry <name> <slug>")
+		fmt.Println("  repo: owner/repo or owner/repo@branch (branch defaults to main)")
+		fmt.Println("  subpath: optional path in repo (e.g. weather or skills/kanban-ai)")
 		return
 	}
 
@@ -73,19 +134,39 @@ func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config) {
 		return
 	}
 
-	// Default: install from GitHub (backward compatible).
-	repo := os.Args[3]
-	fmt.Printf("Installing skill from %s...\n", repo)
+	// GitHub path: <repo> [subpath]
+	spec := os.Args[3]
+	repo, branch, err := skills.ParseInstallSpec(spec)
+	if err != nil {
+		fmt.Printf("\u2717 Invalid install spec: %v\n", err)
+		os.Exit(1)
+	}
+
+	var subpath string
+	if len(os.Args) >= 5 {
+		subpath = strings.TrimSpace(os.Args[4])
+	}
+
+	display := spec
+	if subpath != "" {
+		display = spec + " " + subpath
+	}
+	if force {
+		fmt.Printf("Reinstalling skill from %s...\n", display)
+	} else {
+		fmt.Printf("Installing skill from %s...\n", display)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := installer.InstallFromGitHub(ctx, repo); err != nil {
+	skillName, err := installer.InstallFromGitHubEx(ctx, repo, branch, subpath, force)
+	if err != nil {
 		fmt.Printf("\u2717 Failed to install skill: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\u2713 Skill '%s' installed successfully!\n", filepath.Base(repo))
+	fmt.Printf("\u2713 Skill '%s' installed successfully!\n", skillName)
 }
 
 // skillsInstallFromRegistry installs a skill from a named registry (e.g. clawhub).
