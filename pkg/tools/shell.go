@@ -185,6 +185,13 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		cmd.Dir = cwd
 	}
 
+	// Inherit parent env and inject TZ from config timezone (time.Local).
+	// This ensures shell scripts use the same timezone as the Go process.
+	cmd.Env = os.Environ()
+	if tz := time.Local.String(); tz != "Local" && tz != "" {
+		cmd.Env = append(cmd.Env, "TZ="+tz)
+	}
+
 	prepareCommandForTermination(cmd)
 
 	var stdout, stderr bytes.Buffer
