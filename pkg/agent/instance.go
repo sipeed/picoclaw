@@ -91,6 +91,15 @@ func NewAgentInstance(
 		skillsFilter = agentCfg.Skills
 	}
 
+	// Apply defaults.Orchestration: if the flag is set, ensure orchestration is enabled.
+	if defaults.Orchestration {
+		if subagents == nil {
+			subagents = &config.SubagentsConfig{Enabled: true}
+		} else {
+			subagents.Enabled = true
+		}
+	}
+
 	maxIter := defaults.MaxToolIterations
 	if maxIter == 0 {
 		maxIter = 20
