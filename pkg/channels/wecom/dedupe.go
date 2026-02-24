@@ -14,14 +14,18 @@ func markMessageProcessed(msgMu *sync.RWMutex, processedMsgs *map[string]bool, m
 	msgMu.Lock()
 	defer msgMu.Unlock()
 
+	if *processedMsgs == nil {
+		*processedMsgs = make(map[string]bool)
+	}
+
 	if (*processedMsgs)[msgID] {
 		return false
 	}
 	(*processedMsgs)[msgID] = true
 
-	// Keep existing behavior: when over limit, reset dedupe map entirely.
+	// When over limit, reset dedupe map but keep the current message.
 	if len(*processedMsgs) > maxEntries {
-		*processedMsgs = make(map[string]bool)
+		*processedMsgs = map[string]bool{msgID: true}
 	}
 
 	return true
