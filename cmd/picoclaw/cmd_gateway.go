@@ -396,6 +396,24 @@ func (p *agentLoopDataProvider) GetActiveSessions() []miniapp.SessionInfo {
 	return result
 }
 
+func (p *agentLoopDataProvider) GetContextInfo() miniapp.ContextInfo {
+	workDir, planWorkDir, workspace, bootstrap := p.loop.GetContextInfo()
+	files := make([]miniapp.BootstrapFileInfo, len(bootstrap))
+	for i, b := range bootstrap {
+		files[i] = miniapp.BootstrapFileInfo{Name: b.Name, Path: b.Path, Scope: b.Scope}
+	}
+	return miniapp.ContextInfo{
+		WorkDir:     workDir,
+		PlanWorkDir: planWorkDir,
+		Workspace:   workspace,
+		Bootstrap:   files,
+	}
+}
+
+func (p *agentLoopDataProvider) GetSystemPrompt() string {
+	return p.loop.GetSystemPrompt()
+}
+
 func (p *agentLoopDataProvider) GetGitRepos() []miniapp.GitRepoSummary {
 	if time.Since(p.gitReposCacheAt) < gitCacheTTL {
 		return p.gitReposCache

@@ -98,6 +98,21 @@ type GitChange struct {
 	Path   string `json:"path"`
 }
 
+// BootstrapFileInfo describes a resolved bootstrap file for the context API.
+type BootstrapFileInfo struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	Scope string `json:"scope"`
+}
+
+// ContextInfo describes the agent's directory context and bootstrap file resolution.
+type ContextInfo struct {
+	WorkDir     string              `json:"work_dir"`
+	PlanWorkDir string              `json:"plan_work_dir"`
+	Workspace   string              `json:"workspace"`
+	Bootstrap   []BootstrapFileInfo `json:"bootstrap"`
+}
+
 // DataProvider is the read-only interface to agent state for the Mini App API.
 type DataProvider interface {
 	ListSkills() []skills.SkillInfo
@@ -106,6 +121,8 @@ type DataProvider interface {
 	GetActiveSessions() []SessionInfo
 	GetGitRepos() []GitRepoSummary
 	GetGitRepoDetail(name string) GitInfo
+	GetContextInfo() ContextInfo
+	GetSystemPrompt() string
 }
 
 // CommandSender injects a command into the message bus on behalf of a user.
@@ -516,6 +533,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/session", h.requireAuth(h.apiSession))
 	mux.HandleFunc("/miniapp/api/sessions", h.requireAuth(h.apiSessions))
 	mux.HandleFunc("/miniapp/api/command", h.requireAuth(h.apiCommand))
+	mux.HandleFunc("/miniapp/api/context", h.requireAuth(h.apiContext))
+	mux.HandleFunc("/miniapp/api/prompt", h.requireAuth(h.apiPrompt))
 	mux.HandleFunc("/miniapp/api/git", h.requireAuth(h.apiGit))
 	mux.HandleFunc("/miniapp/api/dev", h.requireAuth(h.apiDev))
 	mux.HandleFunc("/miniapp/api/events", h.requireAuth(h.apiEvents))
@@ -602,6 +621,14 @@ func (h *Handler) apiSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s)
+}
+
+func (h *Handler) apiContext(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, h.provider.GetContextInfo())
+}
+
+func (h *Handler) apiPrompt(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]string{"prompt": h.provider.GetSystemPrompt()})
 }
 
 func (h *Handler) apiGit(w http.ResponseWriter, r *http.Request) {
@@ -759,7 +786,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 	ch := h.notifier.Subscribe()
 	defer h.notifier.Unsubscribe(ch)
 
-	var lastPlan, lastSession, lastSkills, lastDev []byte
+	var lastPlan, lastSession, lastSkills, lastDev, lastContext []byte
 
 	// Send initial state immediately
 	sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
@@ -768,6 +795,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 		&lastSession)
 	sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 	sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
+	sendSSEIfChanged(w, flusher, "context", h.provider.GetContextInfo(), &lastContext)
 
 	for {
 		select {
@@ -782,6 +810,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 				&lastSession)
 			sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 			sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
+			sendSSEIfChanged(w, flusher, "context", h.provider.GetContextInfo(), &lastContext)
 		}
 	}
 }

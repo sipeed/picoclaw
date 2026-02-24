@@ -16,6 +16,7 @@ import (
 
 type ContextBuilder struct {
 	workspace    string
+	workDir      string              // session-specific working directory (worktree or project subdir)
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
 	tools        *tools.ToolRegistry // Direct reference to tool registry
@@ -47,6 +48,12 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 // SetToolsRegistry sets the tools registry for dynamic tool summary generation.
 func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
 	cb.tools = registry
+}
+
+// SetWorkDir sets the session-specific working directory (e.g., worktree path
+// or project subdirectory). Bootstrap files found here take priority over workspace.
+func (cb *ContextBuilder) SetWorkDir(dir string) {
+	cb.workDir = dir
 }
 
 // SetPeerNote sets the peer session awareness note for the current call.
@@ -190,23 +197,86 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 	return strings.Join(parts, "\n\n---\n\n")
 }
 
-func (cb *ContextBuilder) LoadBootstrapFiles() string {
-	bootstrapFiles := []string{
-		"AGENTS.md",
-		"SOUL.md",
-		"USER.md",
-		"IDENTITY.md",
+// BootstrapFileInfo describes a resolved bootstrap file.
+type BootstrapFileInfo struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`  // empty = not found
+	Scope string `json:"scope"` // "project" or "global"
+}
+
+// bootstrapFileSpec defines the search scope for each bootstrap file.
+type bootstrapFileSpec struct {
+	Name  string
+	Scope string // "project" = workDir→planWorkDir→workspace, "global" = workspace only
+}
+
+var bootstrapSpecs = []bootstrapFileSpec{
+	{Name: "AGENTS.md", Scope: "project"},
+	{Name: "IDENTITY.md", Scope: "project"},
+	{Name: "SOUL.md", Scope: "global"},
+	{Name: "USER.md", Scope: "global"},
+}
+
+// bootstrapProjectDirs returns de-duplicated search directories for project-scoped files.
+func (cb *ContextBuilder) bootstrapProjectDirs() []string {
+	seen := map[string]bool{}
+	var dirs []string
+	for _, d := range []string{cb.workDir, cb.memory.GetPlanWorkDir(), cb.workspace} {
+		if d != "" && !seen[d] {
+			seen[d] = true
+			dirs = append(dirs, d)
+		}
 	}
+	return dirs
+}
+
+func (cb *ContextBuilder) LoadBootstrapFiles() string {
+	projectDirs := cb.bootstrapProjectDirs()
 
 	var sb strings.Builder
-	for _, filename := range bootstrapFiles {
-		filePath := filepath.Join(cb.workspace, filename)
-		if data, err := os.ReadFile(filePath); err == nil {
-			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
+	for _, spec := range bootstrapSpecs {
+		var dirs []string
+		if spec.Scope == "global" {
+			dirs = []string{cb.workspace}
+		} else {
+			dirs = projectDirs
+		}
+		for _, dir := range dirs {
+			filePath := filepath.Join(dir, spec.Name)
+			if data, err := os.ReadFile(filePath); err == nil {
+				fmt.Fprintf(&sb, "## %s\n\n%s\n\n", spec.Name, data)
+				break
+			}
 		}
 	}
 
 	return sb.String()
+}
+
+// ResolveBootstrapPaths returns path resolution info for each bootstrap file
+// using the same search logic as LoadBootstrapFiles.
+func (cb *ContextBuilder) ResolveBootstrapPaths() []BootstrapFileInfo {
+	projectDirs := cb.bootstrapProjectDirs()
+
+	result := make([]BootstrapFileInfo, 0, len(bootstrapSpecs))
+	for _, spec := range bootstrapSpecs {
+		info := BootstrapFileInfo{Name: spec.Name, Scope: spec.Scope}
+		var dirs []string
+		if spec.Scope == "global" {
+			dirs = []string{cb.workspace}
+		} else {
+			dirs = projectDirs
+		}
+		for _, dir := range dirs {
+			filePath := filepath.Join(dir, spec.Name)
+			if _, err := os.Stat(filePath); err == nil {
+				info.Path = filePath
+				break
+			}
+		}
+		result = append(result, info)
+	}
+	return result
 }
 
 func (cb *ContextBuilder) BuildMessages(
