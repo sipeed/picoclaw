@@ -167,11 +167,11 @@ mkdir -p skills/reminder/data && echo 'NTFY_TOPIC="https://ntfy.sh/USER_TOPIC"' 
 
 ## ntfy Push Notification
 
-Gunakan shared helper script. **WAJIB source config sendiri sebelum panggil ntfy_send.sh**:
+Gunakan helper script milik skill ini. **WAJIB source config sendiri sebelum panggil ntfy_send.sh**:
 
 ```bash
 # Semua perintah ntfy harus diawali source config
-source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC="$NTFY_TOPIC" bash skills/shared/scripts/ntfy_send.sh "MESSAGE" --title "JUDUL" --tags alarm_clock
+source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC="$NTFY_TOPIC" bash skills/reminder/scripts/ntfy_send.sh "MESSAGE" --title "JUDUL" --tags alarm_clock
 ```
 
 > **JANGAN pakai curl langsung** ke ntfy. Selalu gunakan `ntfy_send.sh` agar URL dibaca dari config.
@@ -186,7 +186,7 @@ source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC="$NTFY_TOPIC" bash
 ```
 **Job 2 — ntfy push:**
 ```json
-{"action": "add", "message": "ntfy: meeting", "command": "source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC=\"$NTFY_TOPIC\" bash skills/shared/scripts/ntfy_send.sh 'Meeting dengan tim marketing!' --title Reminder --tags alarm_clock", "at_seconds": 600}
+{"action": "add", "message": "ntfy: meeting", "command": "source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC=\"$NTFY_TOPIC\" bash skills/reminder/scripts/ntfy_send.sh 'Meeting dengan tim marketing!' --title Reminder --tags alarm_clock", "at_seconds": 600}
 ```
 
 ### Recurring reminder (2 jobs)
@@ -197,7 +197,7 @@ source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC="$NTFY_TOPIC" bash
 ```
 **Job 2 — ntfy push:**
 ```json
-{"action": "add", "message": "ntfy: minum air", "command": "source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC=\"$NTFY_TOPIC\" bash skills/shared/scripts/ntfy_send.sh 'Jangan lupa minum air!' --title Hydration --tags droplet", "every_seconds": 3600}
+{"action": "add", "message": "ntfy: minum air", "command": "source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC=\"$NTFY_TOPIC\" bash skills/reminder/scripts/ntfy_send.sh 'Jangan lupa minum air!' --title Hydration --tags droplet", "every_seconds": 3600}
 ```
 
 ### Daily cron reminder (2 jobs)
@@ -208,7 +208,7 @@ source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC="$NTFY_TOPIC" bash
 ```
 **Job 2 — ntfy push:**
 ```json
-{"action": "add", "message": "ntfy: daily review", "command": "source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC=\"$NTFY_TOPIC\" bash skills/shared/scripts/ntfy_send.sh 'Saatnya review laporan harian' --title 'Daily Review' --tags memo", "cron_expr": "0 17 * * 1-5"}
+{"action": "add", "message": "ntfy: daily review", "command": "source skills/reminder/data/ntfy.conf 2>/dev/null; NTFY_TOPIC=\"$NTFY_TOPIC\" bash skills/reminder/scripts/ntfy_send.sh 'Saatnya review laporan harian' --title 'Daily Review' --tags memo", "cron_expr": "0 17 * * 1-5"}
 ```
 
 ### Daily report via agent (1 job only, no ntfy)

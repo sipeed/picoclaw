@@ -19,8 +19,8 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DATA_DIR="${PRAYER_DATA_DIR:-$SKILL_DIR/data}"
 CONFIG_FILE="$DATA_DIR/config"
 
-# Locate shared ntfy_send.sh relative to this script
-NTFY_SEND="${SCRIPT_DIR}/../../shared/scripts/ntfy_send.sh"
+# ntfy_send.sh lives alongside this script
+NTFY_SEND="${SCRIPT_DIR}/ntfy_send.sh"
 
 mkdir -p "$DATA_DIR"
 
