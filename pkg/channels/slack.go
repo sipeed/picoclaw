@@ -49,7 +49,7 @@ func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*Slack
 
 	socketClient := socketmode.New(api)
 
-	base := NewBaseChannel("slack", cfg, messageBus, cfg.AllowFrom)
+	base := NewBaseChannel("slack", cfg, messageBus, cfg.AllowFrom, cfg.ReasoningChannelID)
 
 	return &SlackChannel{
 		BaseChannel:  base,

@@ -50,6 +50,7 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "proxy": "",
+      "reasoning_channel_id": "-1001234567890",
       "allow_from": [
         "YOUR_USER_ID"
       ]
@@ -57,6 +58,7 @@
     "discord": {
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",
+      "reasoning_channel_id": "123456789012345678",
       "allow_from": [],
       "mention_only": false
     },
@@ -64,17 +66,20 @@
       "enabled": false,
       "app_id": "YOUR_QQ_APP_ID",
       "app_secret": "YOUR_QQ_APP_SECRET",
+      "reasoning_channel_id": "group-123456",
       "allow_from": []
     },
     "maixcam": {
       "enabled": false,
       "host": "0.0.0.0",
       "port": 18790,
+      "reasoning_channel_id": "maixcam-room-1",
       "allow_from": []
     },
     "whatsapp": {
       "enabled": false,
       "bridge_url": "ws://localhost:3001",
+      "reasoning_channel_id": "12025550123@c.us",
       "allow_from": []
     },
     "feishu": {
@@ -83,18 +88,21 @@
       "app_secret": "",
       "encrypt_key": "",
       "verification_token": "",
+      "reasoning_channel_id": "oc_reasoning_chat_id",
       "allow_from": []
     },
     "dingtalk": {
       "enabled": false,
       "client_id": "YOUR_CLIENT_ID",
       "client_secret": "YOUR_CLIENT_SECRET",
+      "reasoning_channel_id": "cid_reasoning_group",
       "allow_from": []
     },
     "slack": {
       "enabled": false,
       "bot_token": "xoxb-YOUR-BOT-TOKEN",
       "app_token": "xapp-YOUR-APP-TOKEN",
+      "reasoning_channel_id": "C0123456789",
       "allow_from": []
     },
     "line": {
@@ -104,6 +112,7 @@
       "webhook_host": "0.0.0.0",
       "webhook_port": 18791,
       "webhook_path": "/webhook/line",
+      "reasoning_channel_id": "U0123456789abcdef0123456789abcd",
       "allow_from": []
     },
     "onebot": {
@@ -112,6 +121,7 @@
       "access_token": "",
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
+      "reasoning_channel_id": "123456789",
       "allow_from": []
     },
     "wecom": {
@@ -123,6 +133,7 @@
       "webhook_host": "0.0.0.0",
       "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
+      "reasoning_channel_id": "wecom-group-001",
       "allow_from": [],
       "reply_timeout": 5
     },
@@ -137,6 +148,7 @@
       "webhook_host": "0.0.0.0",
       "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
+      "reasoning_channel_id": "wecom-user-001",
       "allow_from": [],
       "reply_timeout": 5
     }

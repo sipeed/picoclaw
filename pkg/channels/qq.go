@@ -31,7 +31,7 @@ type QQChannel struct {
 }
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
-	base := NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom)
+	base := NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom, cfg.ReasoningChannelID)
 
 	return &QQChannel{
 		BaseChannel:  base,

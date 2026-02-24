@@ -14,28 +14,41 @@ type Channel interface {
 	Send(ctx context.Context, msg bus.OutboundMessage) error
 	IsRunning() bool
 	IsAllowed(senderID string) bool
+	ReasoningChannelID() string
 }
 
 type BaseChannel struct {
-	config    any
-	bus       *bus.MessageBus
-	running   bool
-	name      string
-	allowList []string
+	config             any
+	bus                *bus.MessageBus
+	running            bool
+	name               string
+	allowList          []string
+	reasoningChannelID string
 }
 
-func NewBaseChannel(name string, config any, bus *bus.MessageBus, allowList []string) *BaseChannel {
+func NewBaseChannel(
+	name string,
+	config any,
+	bus *bus.MessageBus,
+	allowList []string,
+	reasoningChannelID string,
+) *BaseChannel {
 	return &BaseChannel{
-		config:    config,
-		bus:       bus,
-		name:      name,
-		allowList: allowList,
-		running:   false,
+		config:             config,
+		bus:                bus,
+		name:               name,
+		allowList:          allowList,
+		reasoningChannelID: reasoningChannelID,
+		running:            false,
 	}
 }
 
 func (c *BaseChannel) Name() string {
 	return c.name
+}
+
+func (c *BaseChannel) ReasoningChannelID() string {
+	return c.reasoningChannelID
 }
 
 func (c *BaseChannel) IsRunning() bool {
@@ -81,7 +94,11 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 	return false
 }
 
-func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []string, metadata map[string]string) {
+func (c *BaseChannel) HandleMessage(
+	senderID, chatID, content string,
+	media []string,
+	metadata map[string]string,
+) {
 	if !c.IsAllowed(senderID) {
 		return
 	}

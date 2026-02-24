@@ -39,7 +39,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}
 
-	base := NewBaseChannel("discord", cfg, bus, cfg.AllowFrom)
+	base := NewBaseChannel("discord", cfg, bus, cfg.AllowFrom, cfg.ReasoningChannelID)
 
 	return &DiscordChannel{
 		BaseChannel: base,
