@@ -70,7 +70,7 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("new_text is required")
 	}
 
-	if err := editFile(t.fs, path, oldText, newText); err != nil {
+	if err := editFile(resolveFS(ctx, t.fs, path), path, oldText, newText); err != nil {
 		return ErrorResult(err.Error())
 	}
 	return SilentResult(fmt.Sprintf("File edited: %s", path))
@@ -126,7 +126,7 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *Tool
 		return ErrorResult("content is required")
 	}
 
-	if err := appendFile(t.fs, path, content); err != nil {
+	if err := appendFile(resolveFS(ctx, t.fs, path), path, content); err != nil {
 		return ErrorResult(err.Error())
 	}
 	return SilentResult(fmt.Sprintf("Appended to %s", path))

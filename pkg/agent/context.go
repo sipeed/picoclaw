@@ -19,6 +19,7 @@ type ContextBuilder struct {
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
 	tools        *tools.ToolRegistry // Direct reference to tool registry
+	peerNote     string              // set per-call from loop.go for peer session awareness
 }
 
 func getGlobalConfigDir() string {
@@ -46,6 +47,11 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 // SetToolsRegistry sets the tools registry for dynamic tool summary generation.
 func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
 	cb.tools = registry
+}
+
+// SetPeerNote sets the peer session awareness note for the current call.
+func (cb *ContextBuilder) SetPeerNote(note string) {
+	cb.peerNote = note
 }
 
 func (cb *ContextBuilder) getIdentity() string {
@@ -167,6 +173,11 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 		if status := cb.tools.GetRuntimeStatus(); status != "" {
 			parts = append(parts, status)
 		}
+	}
+
+	// Peer session coordination
+	if cb.peerNote != "" {
+		parts = append(parts, "## Active Sessions\n\n"+cb.peerNote)
 	}
 
 	// Memory context
@@ -447,6 +458,11 @@ func (cb *ContextBuilder) SetPlanStatus(status string) error {
 // GetPlanWorkDir returns the WorkDir from the plan metadata, or "".
 func (cb *ContextBuilder) GetPlanWorkDir() string {
 	return cb.memory.GetPlanWorkDir()
+}
+
+// GetPlanTaskName returns the task description from the plan metadata, or "".
+func (cb *ContextBuilder) GetPlanTaskName() string {
+	return cb.memory.GetPlanTaskName()
 }
 
 // GetSkillsInfo returns information about loaded skills.

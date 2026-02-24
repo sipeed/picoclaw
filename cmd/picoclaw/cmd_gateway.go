@@ -381,12 +381,15 @@ func (p *agentLoopDataProvider) GetActiveSessions() []miniapp.SessionInfo {
 	result := make([]miniapp.SessionInfo, len(entries))
 	for i, e := range entries {
 		result[i] = miniapp.SessionInfo{
-			SessionKey: e.SessionKey,
-			Channel:    e.Channel,
-			ChatID:     e.ChatID,
-			TouchDir:   e.TouchDir,
-			LastSeenAt: e.LastSeenAt.Format(time.RFC3339),
-			AgeSec:     int(time.Since(e.LastSeenAt).Seconds()),
+			SessionKey:  e.SessionKey,
+			Channel:     e.Channel,
+			ChatID:      e.ChatID,
+			TouchDir:    e.TouchDir,
+			ProjectPath: e.ProjectPath,
+			Purpose:     e.Purpose,
+			Branch:      e.Branch,
+			LastSeenAt:  e.LastSeenAt.Format(time.RFC3339),
+			AgeSec:      int(time.Since(e.LastSeenAt).Seconds()),
 		}
 	}
 	return result
