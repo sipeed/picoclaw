@@ -19,6 +19,30 @@ Lint: `golangci-lint run`
 - **Interview tool filtering**: `interviewAllowedTools` in `pkg/agent/loop.go` is the single source of truth for tools available during interview/review phases. Both `filterInterviewTools` (strips definitions before LLM call) and `isToolAllowedDuringInterview` (argument-level gating) reference this map.
 - **History clear**: `/plan start clear` wipes session history and summary on transition to executing. The Mini App review UI offers two sliders: standard approve and approve-with-clear.
 
+## Mini App — Static File Serving
+
+現状は `pkg/miniapp/static/` 以下のファイルを `//go:embed` でバイナリに焼いて個別ルートで配信している。
+
+```
+pkg/miniapp/static/
+  index.html   ← すべての JS/CSS をインライン
+  map.js       ← オーケストレーションルーム描画
+```
+
+Go 側: `//go:embed static/index.html static/map.js` + `/miniapp/map.js` ルート。
+
+### バンドラ導入の検討事項
+
+- ビルドステップ（Vite / esbuild 等）を挟む場合、成果物ディレクトリ（`static/dist/` 等）を embed する形になる
+- Go 側は `//go:embed static` でディレクトリごと embed し、`http.FS` で一括配信すれば個別ルートが不要になる
+- `serveMapJS` など個別ルートは汎用 static ファイルサーバーに統合できる
+- `serveIndex` での `ORCH_ENABLED` 注入は、テンプレートエンジンまたはビルド時の環境変数注入に移行する必要がある
+
+### 現時点でやっておける布石（任意）
+
+- `/miniapp/` 以下を `http.FileServer(http.FS(staticFS))` で一括配信するよう `serveStatic` ハンドラを汎用化する
+- これにより `map.js`・将来の `assets/*.js` もルート追加なしに自動配信される
+
 ## Known Gaps
 
 - **Mini App log viewer has no frontend tests**: `renderLogs()` in `pkg/miniapp/static/index.html` is inline vanilla JS with no unit/E2E test coverage. Backend (Go) tests cover `RecentLogs`, `SanitizeFields`, and JSON serialization, but nothing verifies the JS rendering. This allowed the Fields display bug (fields sent but not rendered) to ship undetected.
