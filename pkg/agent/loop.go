@@ -524,8 +524,9 @@ func (al *AgentLoop) runLLMIteration(
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
-							"max_tokens":  agent.MaxTokens,
-							"temperature": agent.Temperature,
+							"max_tokens":       agent.MaxTokens,
+							"temperature":      agent.Temperature,
+							"prompt_cache_key": agent.ID,
 						})
 					},
 				)
@@ -540,8 +541,9 @@ func (al *AgentLoop) runLLMIteration(
 				return fbResult.Response, nil
 			}
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
-				"max_tokens":  agent.MaxTokens,
-				"temperature": agent.Temperature,
+				"max_tokens":       agent.MaxTokens,
+				"temperature":      agent.Temperature,
+				"prompt_cache_key": agent.ID,
 			})
 		}
 
@@ -962,8 +964,9 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 			nil,
 			agent.Model,
 			map[string]any{
-				"max_tokens":  1024,
-				"temperature": 0.3,
+				"max_tokens":       1024,
+				"temperature":      0.3,
+				"prompt_cache_key": agent.ID,
 			},
 		)
 		if err == nil {
@@ -1012,8 +1015,9 @@ func (al *AgentLoop) summarizeBatch(
 		nil,
 		agent.Model,
 		map[string]any{
-			"max_tokens":  1024,
-			"temperature": 0.3,
+			"max_tokens":       1024,
+			"temperature":      0.3,
+			"prompt_cache_key": agent.ID,
 		},
 	)
 	if err != nil {

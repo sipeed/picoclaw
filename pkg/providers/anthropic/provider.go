@@ -113,7 +113,20 @@ func buildParams(
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
-			system = append(system, anthropic.TextBlockParam{Text: msg.Content})
+			// Prefer structured SystemParts for per-block cache_control.
+			// This enables LLM-side KV cache reuse: the static block's prefix
+			// hash stays stable across requests while dynamic parts change freely.
+			if len(msg.SystemParts) > 0 {
+				for _, part := range msg.SystemParts {
+					block := anthropic.TextBlockParam{Text: part.Text}
+					if part.CacheControl != nil && part.CacheControl.Type == "ephemeral" {
+						block.CacheControl = anthropic.NewCacheControlEphemeralParam()
+					}
+					system = append(system, block)
+				}
+			} else {
+				system = append(system, anthropic.TextBlockParam{Text: msg.Content})
+			}
 		case "user":
 			if msg.ToolCallID != "" {
 				anthropicMessages = append(anthropicMessages,
