@@ -49,9 +49,13 @@ const (
 
 type EmailChannel struct {
 	*channels.BaseChannel
-	config      config.EmailConfig
-	imapClient  *client.Client
-	lastUID     uint32
+	config     config.EmailConfig
+	imapClient *client.Client
+	lastUID    uint32
+	// checkEmailMutex
+	// maybe multiple goroutine check email at the same time, use mutex to avoid duplicate check
+	checkEmailMutex sync.Mutex
+
 	mu          sync.Mutex
 	cancel      context.CancelFunc
 	checkTicker *time.Ticker
@@ -580,6 +584,9 @@ func (c *EmailChannel) runIdleLoop(ctx context.Context, pollInterval time.Durati
 }
 
 func (c *EmailChannel) CheckNewEmails(ctx context.Context) {
+	// the lock is to avoid duplicate check email, maybe multiple goroutine check email at the same time
+	c.checkEmailMutex.Lock()
+	defer c.checkEmailMutex.Unlock()
 	for {
 		if err := ctx.Err(); err != nil {
 			return
