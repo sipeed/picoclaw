@@ -405,3 +405,18 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
 	}
 }
+
+// TestWebTool_WebSearch_Description verifies that the Description method contains the current date format
+func TestWebTool_WebSearch_Description(t *testing.T) {
+	tool := NewWebSearchTool(WebSearchToolOptions{DuckDuckGoEnabled: true})
+	desc := tool.Description()
+
+	if !strings.Contains(desc, "Today's date is") {
+		t.Errorf("Expected Description to contain 'Today's date is', got: %s", desc)
+	}
+	
+	// Should at least contain a 20XX year (simple verification it is injecting the date)
+	if !strings.Contains(desc, "202") {
+		t.Errorf("Expected Description to contain '202X' year, got: %s", desc)
+	}
+}
