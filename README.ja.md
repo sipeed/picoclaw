@@ -183,6 +183,7 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
@@ -220,6 +221,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **新機能**: `model_list` 形式により、プロバイダーをコード変更なしで追加できます。詳細は [モデル設定](#モデル設定-model_list) を参照してください。
+> `request_timeout` は任意の秒単位設定です。省略または `<= 0` の場合、PicoClaw はデフォルトのタイムアウト（120秒）を使用します。
 
 **3. API キーの取得**
 
@@ -917,6 +921,17 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 }
 ```
 > OAuth認証を設定するには、`picoclaw auth login --provider anthropic` を実行してください。
+
+**カスタムプロキシ/API**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### ロードバランシング
 

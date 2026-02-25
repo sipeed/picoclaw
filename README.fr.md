@@ -221,6 +221,7 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
@@ -251,6 +252,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **Nouveau** : Le format de configuration `model_list` permet d'ajouter des fournisseurs sans modifier le code. Voir [Configuration de Modèle](#configuration-de-modèle-model_list) pour plus de détails.
+> `request_timeout` est optionnel et s'exprime en secondes. S'il est omis ou défini à `<= 0`, PicoClaw utilise le délai d'expiration par défaut (120s).
 
 **3. Obtenir des Clés API**
 
@@ -978,6 +982,17 @@ Cette conception permet également le **support multi-agent** avec une sélectio
 }
 ```
 > Exécutez `picoclaw auth login --provider anthropic` pour configurer les identifiants OAuth.
+
+**Proxy/API personnalisée**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### Équilibrage de Charge
 
