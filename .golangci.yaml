@@ -28,9 +28,7 @@ linters:
     - wsl_v5
 
     # TODO: Disabled, because they are failing at the moment, we should fix them and enable (step by step)
-    - bodyclose
     - contextcheck
-    - dogsled
     - embeddedstructfieldcheck
     - errcheck
     - errchkjson
@@ -45,21 +43,16 @@ linters:
     - gocritic
     - gocyclo
     - godox
-    - goprintffuncname
     - gosec
     - ineffassign
     - lll
     - maintidx
-    - misspell
     - mnd
     - modernize
-    - nakedret
     - nestif
     - nilnil
     - paralleltest
     - perfsprint
-    - prealloc
-    - predeclared
     - revive
     - staticcheck
     - tagalign
@@ -68,8 +61,6 @@ linters:
     - unparam
     - usestdlibvars
     - usetesting
-    - wastedassign
-    - whitespace
   settings:
     errcheck:
       check-type-assertions: true

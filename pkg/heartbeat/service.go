@@ -166,7 +166,7 @@ func (hs *HeartbeatService) executeHeartbeat() {
 	}
 
 	if handler == nil {
-		hs.logError("Heartbeat handler not configured")
+		hs.logErrorf("Heartbeat handler not configured")
 		return
 	}
 
@@ -175,23 +175,23 @@ func (hs *HeartbeatService) executeHeartbeat() {
 	channel, chatID := hs.parseLastChannel(lastChannel)
 
 	// Debug log for channel resolution
-	hs.logInfo("Resolved channel: %s, chatID: %s (from lastChannel: %s)", channel, chatID, lastChannel)
+	hs.logInfof("Resolved channel: %s, chatID: %s (from lastChannel: %s)", channel, chatID, lastChannel)
 
 	result := handler(prompt, channel, chatID)
 
 	if result == nil {
-		hs.logInfo("Heartbeat handler returned nil result")
+		hs.logInfof("Heartbeat handler returned nil result")
 		return
 	}
 
 	// Handle different result types
 	if result.IsError {
-		hs.logError("Heartbeat error: %s", result.ForLLM)
+		hs.logErrorf("Heartbeat error: %s", result.ForLLM)
 		return
 	}
 
 	if result.Async {
-		hs.logInfo("Async task started: %s", result.ForLLM)
+		hs.logInfof("Async task started: %s", result.ForLLM)
 		logger.InfoCF("heartbeat", "Async heartbeat task started",
 			map[string]any{
 				"message": result.ForLLM,
@@ -201,7 +201,7 @@ func (hs *HeartbeatService) executeHeartbeat() {
 
 	// Check if silent
 	if result.Silent {
-		hs.logInfo("Heartbeat OK - silent")
+		hs.logInfof("Heartbeat OK - silent")
 		return
 	}
 
@@ -212,7 +212,7 @@ func (hs *HeartbeatService) executeHeartbeat() {
 		hs.sendResponse(result.ForLLM)
 	}
 
-	hs.logInfo("Heartbeat completed: %s", result.ForLLM)
+	hs.logInfof("Heartbeat completed: %s", result.ForLLM)
 }
 
 // buildPrompt builds the heartbeat prompt from HEARTBEAT.md
@@ -225,7 +225,7 @@ func (hs *HeartbeatService) buildPrompt() string {
 			hs.createDefaultHeartbeatTemplate()
 			return ""
 		}
-		hs.logError("Error reading HEARTBEAT.md: %v", err)
+		hs.logErrorf("Error reading HEARTBEAT.md: %v", err)
 		return ""
 	}
 
@@ -276,9 +276,9 @@ Add your heartbeat tasks below this line:
 `
 
 	if err := os.WriteFile(heartbeatPath, []byte(defaultContent), 0o644); err != nil {
-		hs.logError("Failed to create default HEARTBEAT.md: %v", err)
+		hs.logErrorf("Failed to create default HEARTBEAT.md: %v", err)
 	} else {
-		hs.logInfo("Created default HEARTBEAT.md template")
+		hs.logInfof("Created default HEARTBEAT.md template")
 	}
 }
 
@@ -289,14 +289,14 @@ func (hs *HeartbeatService) sendResponse(response string) {
 	hs.mu.RUnlock()
 
 	if msgBus == nil {
-		hs.logInfo("No message bus configured, heartbeat result not sent")
+		hs.logInfof("No message bus configured, heartbeat result not sent")
 		return
 	}
 
 	// Get last channel from state
 	lastChannel := hs.state.GetLastChannel()
 	if lastChannel == "" {
-		hs.logInfo("No last channel recorded, heartbeat result not sent")
+		hs.logInfof("No last channel recorded, heartbeat result not sent")
 		return
 	}
 
@@ -313,7 +313,7 @@ func (hs *HeartbeatService) sendResponse(response string) {
 		Content: response,
 	})
 
-	hs.logInfo("Heartbeat result sent to %s", platform)
+	hs.logInfof("Heartbeat result sent to %s", platform)
 }
 
 // parseLastChannel parses the last channel string into platform and userID.
@@ -326,7 +326,7 @@ func (hs *HeartbeatService) parseLastChannel(lastChannel string) (platform, user
 	// Parse channel format: "platform:user_id" (e.g., "telegram:123456")
 	parts := strings.SplitN(lastChannel, ":", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		hs.logError("Invalid last channel format: %s", lastChannel)
+		hs.logErrorf("Invalid last channel format: %s", lastChannel)
 		return "", ""
 	}
 
@@ -334,25 +334,25 @@ func (hs *HeartbeatService) parseLastChannel(lastChannel string) (platform, user
 
 	// Skip internal channels
 	if constants.IsInternalChannel(platform) {
-		hs.logInfo("Skipping internal channel: %s", platform)
+		hs.logInfof("Skipping internal channel: %s", platform)
 		return "", ""
 	}
 
 	return platform, userID
 }
 
-// logInfo logs an informational message to the heartbeat log
-func (hs *HeartbeatService) logInfo(format string, args ...any) {
-	hs.log("INFO", format, args...)
+// logInfof logs an informational message to the heartbeat log
+func (hs *HeartbeatService) logInfof(format string, args ...any) {
+	hs.logf("INFO", format, args...)
 }
 
-// logError logs an error message to the heartbeat log
-func (hs *HeartbeatService) logError(format string, args ...any) {
-	hs.log("ERROR", format, args...)
+// logErrorf logs an error message to the heartbeat log
+func (hs *HeartbeatService) logErrorf(format string, args ...any) {
+	hs.logf("ERROR", format, args...)
 }
 
-// log writes a message to the heartbeat log file
-func (hs *HeartbeatService) log(level, format string, args ...any) {
+// logf writes a message to the heartbeat log file
+func (hs *HeartbeatService) logf(level, format string, args ...any) {
 	logFile := filepath.Join(hs.workspace, "heartbeat.log")
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
