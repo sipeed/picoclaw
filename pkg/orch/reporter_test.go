@@ -10,8 +10,8 @@ var _ AgentReporter = (*Broadcaster)(nil)
 // orchestration mode.
 func TestNoop_AllMethods_NoPanic(t *testing.T) {
 	Noop.ReportSpawn("id", "label", "task")
-	Noop.ReportStateChange("id", "waiting", "")
-	Noop.ReportStateChange("id", "toolcall", "bash")
+	Noop.ReportStateChange("id", AgentStateWaiting, "")
+	Noop.ReportStateChange("id", AgentStateToolCall, "bash")
 	Noop.ReportConversation("conductor", "sub-1", "do something")
 	Noop.ReportGC("id", "completed")
 }
@@ -49,9 +49,9 @@ func TestBroadcaster_ReportStateChange_MapsToAgentStateEvent(t *testing.T) {
 	b.ReportSpawn("agent-1", "coder", "implement it")
 	<-sub.Ch // consume spawn
 
-	b.ReportStateChange("agent-1", "toolcall", "bash")
+	b.ReportStateChange("agent-1", AgentStateToolCall, "bash")
 	ev := <-sub.Ch
-	if ev.Type != "agent_state" || ev.State != "toolcall" || ev.Tool != "bash" {
+	if ev.Type != "agent_state" || ev.State != string(AgentStateToolCall) || ev.Tool != "bash" {
 		t.Fatalf("unexpected event: %+v", ev)
 	}
 	snap := b.Snapshot()

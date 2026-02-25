@@ -17,14 +17,14 @@ type reporterSpy struct {
 }
 
 type spyCall struct {
-	state string
+	state orch.AgentState
 	tool  string
 }
 
-func (r *reporterSpy) ReportSpawn(id, label, task string)       {}
-func (r *reporterSpy) ReportConversation(from, to, text string) {}
-func (r *reporterSpy) ReportGC(id, reason string)               {}
-func (r *reporterSpy) ReportStateChange(id, state, tool string) {
+func (r *reporterSpy) ReportSpawn(id, label, task string)                        {}
+func (r *reporterSpy) ReportConversation(from, to, text string)                  {}
+func (r *reporterSpy) ReportGC(id, reason string)                                {}
+func (r *reporterSpy) ReportStateChange(id string, state orch.AgentState, tool string) {
 	r.mu.Lock()
 	r.calls = append(r.calls, spyCall{state, tool})
 	r.mu.Unlock()
@@ -117,7 +117,7 @@ func TestToolLoop_Reporter_WaitingBeforeLLM(t *testing.T) {
 	if len(calls) == 0 {
 		t.Fatal("expected at least one ReportStateChange call")
 	}
-	if calls[0].state != "waiting" {
+	if calls[0].state != orch.AgentStateWaiting {
 		t.Fatalf("first call must be state=waiting, got %+v", calls[0])
 	}
 }
@@ -152,13 +152,13 @@ func TestToolLoop_Reporter_ToolcallOrderedAfterWaiting(t *testing.T) {
 	if len(calls) < 3 {
 		t.Fatalf("expected at least 3 calls, got %d: %+v", len(calls), calls)
 	}
-	if calls[0].state != "waiting" {
+	if calls[0].state != orch.AgentStateWaiting {
 		t.Fatalf("calls[0] must be waiting, got %+v", calls[0])
 	}
-	if calls[1].state != "toolcall" || calls[1].tool != "echo_tool" {
+	if calls[1].state != orch.AgentStateToolCall || calls[1].tool != "echo_tool" {
 		t.Fatalf("calls[1] must be toolcall(echo_tool), got %+v", calls[1])
 	}
-	if calls[2].state != "waiting" {
+	if calls[2].state != orch.AgentStateWaiting {
 		t.Fatalf("calls[2] must be waiting (2nd LLM iteration), got %+v", calls[2])
 	}
 }
