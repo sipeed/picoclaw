@@ -462,7 +462,64 @@ func (al *AgentLoop) startNewSessionForMessage(msg bus.InboundMessage) (string, 
 	overrideKey := buildSessionOverrideKey(msg.Channel, msg.ChatID, agent.ID)
 	al.sessionOverride.Set(overrideKey, newSessionKey)
 
+	// Clean up the old session file from disk to prevent unbounded accumulation.
+	if sessionKey != "" {
+		if err := agent.Sessions.Delete(sessionKey); err != nil {
+			logger.WarnCF("agent", "Failed to delete old session file", map[string]any{
+				"session_key": sessionKey,
+				"error":       err.Error(),
+			})
+		}
+	}
+
 	return formatNewSessionResponse(al.cfg, agent), nil
+}
+
+// clearSessionForMessage clears the current session history and summary in-place,
+// keeping the same session key. Unlike startNewSessionForMessage, this does not
+// create a new session key or set an override.
+func (al *AgentLoop) clearSessionForMessage(msg bus.InboundMessage) (string, error) {
+	if constants.IsInternalChannel(msg.Channel) {
+		return "", fmt.Errorf("clear command is not supported in internal channels")
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel:    msg.Channel,
+		AccountID:  msg.Metadata["account_id"],
+		Peer:       extractPeer(msg),
+		ParentPeer: extractParentPeer(msg),
+		GuildID:    msg.Metadata["guild_id"],
+		TeamID:     msg.Metadata["team_id"],
+	})
+
+	agent, ok := al.registry.GetAgent(route.AgentID)
+	if !ok {
+		agent = al.registry.GetDefaultAgent()
+	}
+	if agent == nil {
+		return "", fmt.Errorf("no agent available to clear session")
+	}
+
+	// Resolve the active session key, honoring any existing override.
+	sessionKey := route.SessionKey
+	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
+		sessionKey = msg.SessionKey
+	}
+	if override, ok := al.sessionOverride.Get(buildSessionOverrideKey(msg.Channel, msg.ChatID, agent.ID)); ok {
+		sessionKey = override
+	}
+
+	if sessionKey == "" {
+		return "", fmt.Errorf("no active session to clear")
+	}
+
+	agent.Sessions.ClearSession(sessionKey)
+
+	if err := agent.Sessions.Save(sessionKey); err != nil {
+		return "", err
+	}
+
+	return "Conversation history cleared.", nil
 }
 
 func formatNewSessionResponse(cfg *config.Config, agent *AgentInstance) string {
@@ -1156,13 +1213,25 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	args := parts[1:]
 
 	switch cmd {
-	case "/new", "/clear":
+	case "/new":
 		if len(args) > 0 {
-			return fmt.Sprintf("Usage: %s", cmd), true
+			return "Usage: /new", true
 		}
 		response, err := al.startNewSessionForMessage(msg)
 		if err != nil {
-			return fmt.Sprintf("Error: %v", err), true
+			logger.ErrorCF("agent", "Failed to start new session", map[string]any{"error": err.Error()})
+			return "Sorry, I couldn't start a new session. Please try again.", true
+		}
+		return response, true
+
+	case "/clear":
+		if len(args) > 0 {
+			return "Usage: /clear", true
+		}
+		response, err := al.clearSessionForMessage(msg)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to clear session", map[string]any{"error": err.Error()})
+			return "Sorry, I couldn't clear the conversation. Please try again.", true
 		}
 		return response, true
 

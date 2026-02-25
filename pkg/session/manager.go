@@ -265,6 +265,43 @@ func (sm *SessionManager) loadSessions() error {
 	return nil
 }
 
+// Delete removes a session from memory and deletes its file from disk.
+func (sm *SessionManager) Delete(key string) error {
+	sm.mu.Lock()
+	delete(sm.sessions, key)
+	sm.mu.Unlock()
+
+	if sm.storage == "" {
+		return nil
+	}
+
+	filename := sanitizeFilename(key)
+	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
+		return os.ErrInvalid
+	}
+
+	sessionPath := filepath.Join(sm.storage, filename+".json")
+	if err := os.Remove(sessionPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// ClearSession resets a session's messages and summary in-place, keeping the same key.
+func (sm *SessionManager) ClearSession(key string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, ok := sm.sessions[key]
+	if !ok {
+		return
+	}
+
+	session.Messages = []providers.Message{}
+	session.Summary = ""
+	session.Updated = time.Now()
+}
+
 // SetHistory updates the messages of a session.
 func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 	sm.mu.Lock()

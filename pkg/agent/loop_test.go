@@ -429,9 +429,11 @@ func TestNewSessionCommand_SuccessAndIsolation(t *testing.T) {
 	if len(newHistory) != 2 {
 		t.Fatalf("Expected new session history to have 2 messages, got %d", len(newHistory))
 	}
+
+	// After /new, the old session is deleted to prevent unbounded disk accumulation.
 	oldHistoryAfter := agent.Sessions.GetHistory(oldKey)
-	if len(oldHistoryAfter) != len(oldHistory) {
-		t.Fatalf("Expected old session history to remain unchanged")
+	if len(oldHistoryAfter) != 0 {
+		t.Fatalf("Expected old session to be deleted after /new, got %d messages", len(oldHistoryAfter))
 	}
 }
 
@@ -501,7 +503,7 @@ func TestNewSessionCommand_RejectsArgs(t *testing.T) {
 	}
 }
 
-func TestNewSessionCommand_PreservesOldSessionOnDisk(t *testing.T) {
+func TestNewSessionCommand_DeletesOldSessionFromDisk(t *testing.T) {
 	provider := &simpleMockProvider{response: "OK"}
 	al, tmpDir := newTestAgentLoop(t, provider)
 	defer os.RemoveAll(tmpDir)
@@ -524,7 +526,6 @@ func TestNewSessionCommand_PreservesOldSessionOnDisk(t *testing.T) {
 	filename := strings.ReplaceAll(oldKey, ":", "_") + ".json"
 	sessionsDir := filepath.Join(agent.Workspace, "sessions")
 	filePath := filepath.Join(sessionsDir, filename)
-	_ = os.Remove(filePath)
 
 	_ = helper.executeAndGetResponse(t, ctx, bus.InboundMessage{
 		Channel:  "test",
@@ -533,12 +534,134 @@ func TestNewSessionCommand_PreservesOldSessionOnDisk(t *testing.T) {
 		Content:  "/new",
 	})
 
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		t.Fatalf("Expected session file to exist after /new: %v", err)
+	// After /new, the old session file should be deleted from disk to prevent
+	// unbounded accumulation of session files.
+	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+		t.Fatalf("Expected old session file to be deleted after /new, but it still exists")
 	}
-	if !strings.Contains(string(data), "hello") {
-		t.Fatalf("Expected session file to contain prior message")
+}
+
+func TestClearCommand_ClearsHistoryInPlace(t *testing.T) {
+	provider := &simpleMockProvider{response: "OK"}
+	al, tmpDir := newTestAgentLoop(t, provider)
+	defer os.RemoveAll(tmpDir)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	helper := testHelper{al: al}
+	ctx := context.Background()
+
+	// Send a message to populate history
+	_ = helper.executeAndGetResponse(t, ctx, bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello",
+	})
+
+	oldKey := strings.ToLower(routing.BuildAgentMainSessionKey(agent.ID))
+	oldHistory := agent.Sessions.GetHistory(oldKey)
+	if len(oldHistory) == 0 {
+		t.Fatalf("Expected session history to be populated before /clear")
+	}
+
+	// Set a summary to verify it gets cleared too
+	agent.Sessions.SetSummary(oldKey, "Test summary")
+
+	// Use /clear
+	response := helper.executeAndGetResponse(t, ctx, bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/clear",
+	})
+	if response != "Conversation history cleared." {
+		t.Fatalf("Expected clear confirmation, got %q", response)
+	}
+
+	// Verify: same session key, no override set
+	overrideKey := buildSessionOverrideKey("test", "chat1", agent.ID)
+	if _, ok := al.sessionOverride.Get(overrideKey); ok {
+		t.Fatalf("Expected /clear NOT to set a session override")
+	}
+
+	// Verify: history is empty
+	clearedHistory := agent.Sessions.GetHistory(oldKey)
+	if len(clearedHistory) != 0 {
+		t.Fatalf("Expected session history to be cleared, got %d messages", len(clearedHistory))
+	}
+
+	// Verify: summary is empty
+	if agent.Sessions.GetSummary(oldKey) != "" {
+		t.Fatalf("Expected session summary to be cleared")
+	}
+}
+
+func TestClearCommand_RejectsArgs(t *testing.T) {
+	provider := &simpleMockProvider{response: "OK"}
+	al, tmpDir := newTestAgentLoop(t, provider)
+	defer os.RemoveAll(tmpDir)
+
+	helper := testHelper{al: al}
+	ctx := context.Background()
+	response := helper.executeAndGetResponse(t, ctx, bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/clear extra",
+	})
+	if response != "Usage: /clear" {
+		t.Fatalf("Expected usage response, got %q", response)
+	}
+}
+
+func TestClearCommand_SubsequentMessagesUseSameSession(t *testing.T) {
+	provider := &simpleMockProvider{response: "OK"}
+	al, tmpDir := newTestAgentLoop(t, provider)
+	defer os.RemoveAll(tmpDir)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	helper := testHelper{al: al}
+	ctx := context.Background()
+
+	// Send a message, then clear, then send another
+	_ = helper.executeAndGetResponse(t, ctx, bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "first message",
+	})
+
+	sessionKey := strings.ToLower(routing.BuildAgentMainSessionKey(agent.ID))
+
+	_ = helper.executeAndGetResponse(t, ctx, bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/clear",
+	})
+
+	_ = helper.executeAndGetResponse(t, ctx, bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "second message",
+	})
+
+	// History should only contain the post-clear message exchange
+	history := agent.Sessions.GetHistory(sessionKey)
+	if len(history) != 2 {
+		t.Fatalf("Expected 2 messages (post-clear user+assistant), got %d", len(history))
+	}
+	if history[0].Content != "second message" {
+		t.Fatalf("Expected first post-clear message to be 'second message', got %q", history[0].Content)
 	}
 }
 
