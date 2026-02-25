@@ -115,7 +115,7 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 	TaskID          string // Unique task ID for background task status tracking
 	Background      bool   // If true, this is a background task (cron/heartbeat) — enables live task notifications
-	SystemMessage   bool   // If true, this is a system/subagent message — suppress plan nudge, use SkipPlaceholder
+	SystemMessage   bool   // If true, this is a system message (subagent result) — skip placeholder and plan nudge
 }
 
 const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
@@ -800,25 +800,41 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		return "", nil
 	}
 
-	// Use default agent for system messages
+	// Inject subagent result into session history without running a full LLM loop.
+	// The conductor will see the result on its next turn. This avoids:
+	// - Flooding the chat with a response for every subagent completion
+	// - Consuming the Telegram "Thinking..." placeholder
+	// - Wasting LLM tokens on processing each result individually
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for system message")
 	}
 
-	// Use the origin session for context
 	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
+	historyMsg := fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content)
+	agent.Sessions.AddMessage(sessionKey, "user", historyMsg)
+	agent.Sessions.MarkDirty(sessionKey)
 
-	return al.runAgentLoop(ctx, agent, processOptions{
-		SessionKey:      sessionKey,
+	// Send a brief notification (SkipPlaceholder to avoid corrupting status messages)
+	label := msg.SenderID
+	if idx := strings.LastIndex(label, ":"); idx >= 0 {
+		label = label[idx+1:]
+	}
+	_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 		Channel:         originChannel,
 		ChatID:          originChatID,
-		UserMessage:     fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content),
-		DefaultResponse: "Background task completed.",
-		EnableSummary:   false,
-		SendResponse:    true,
-		SystemMessage:   true,
+		Content:         fmt.Sprintf("📋 %s completed.", label),
+		SkipPlaceholder: true,
 	})
+
+	logger.InfoCF("agent", "Subagent result injected into session history",
+		map[string]any{
+			"sender_id":   msg.SenderID,
+			"session_key": sessionKey,
+			"content_len": len(content),
+		})
+
+	return "", nil
 }
 
 // acquireSessionLock gets or creates a per-session semaphore and acquires it.
@@ -1230,7 +1246,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			Channel:         opts.Channel,
 			ChatID:          opts.ChatID,
 			Content:         finalContent,
-			SkipPlaceholder: opts.SystemMessage,
+			SkipPlaceholder: opts.SystemMessage, // suppress Telegram "Thinking..." for system messages
 		})
 	}
 
@@ -2285,7 +2301,7 @@ func (al *AgentLoop) runLLMIteration(
 				curUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
 			}
 			if curUnchecked > 0 && !planMarkNudged &&
-				planSnapshot == "executing" && !opts.SystemMessage {
+				planSnapshot == "executing" {
 				planMarkNudged = true
 				messages = append(messages, providers.Message{
 					Role:    "assistant",
