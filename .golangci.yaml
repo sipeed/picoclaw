@@ -53,7 +53,6 @@ linters:
     - nilnil
     - paralleltest
     - perfsprint
-    - prealloc
     - predeclared
     - revive
     - staticcheck
