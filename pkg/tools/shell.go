@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/constants"
 )
 
 type ExecTool struct {
@@ -23,6 +24,7 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
 	restrictToWorkspace bool
+	allowRemote         bool
 }
 
 var (
@@ -100,10 +102,12 @@ func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
 	customAllowPatterns := make([]*regexp.Regexp, 0)
+	allowRemote := true
 
 	if config != nil {
 		execConfig := config.Tools.Exec
 		enableDenyPatterns := execConfig.EnableDenyPatterns
+		allowRemote = execConfig.AllowRemote
 		if enableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			if len(execConfig.CustomDenyPatterns) > 0 {
@@ -143,6 +147,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
 		restrictToWorkspace: restrict,
+		allowRemote:         allowRemote,
 	}, nil
 }
 
@@ -175,6 +180,19 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	command, ok := args["command"].(string)
 	if !ok {
 		return ErrorResult("command is required")
+	}
+
+	// GHSA-pv8c-p6jf-3fpp: block exec from remote channels (e.g. Telegram webhooks)
+	// unless explicitly opted-in via config. Fail-closed: empty channel = blocked.
+	if !t.allowRemote {
+		channel := ToolChannel(ctx)
+		if channel == "" {
+			channel, _ = args["__channel"].(string)
+		}
+		channel = strings.TrimSpace(channel)
+		if channel == "" || !constants.IsInternalChannel(channel) {
+			return ErrorResult("exec is restricted to internal channels")
+		}
 	}
 
 	cwd := t.workingDir
