@@ -11,6 +11,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+// maxStoredMessages is the maximum number of messages to persist per session (safety cap to limit file size).
+// Older messages are dropped only at write time; in-memory session may hold more until next Save.
+const maxStoredMessages = 500
+
 type Session struct {
 	Key      string              `json:"key"`
 	Messages []providers.Message `json:"messages"`
@@ -184,8 +188,12 @@ func (sm *SessionManager) Save(key string) error {
 		Updated: stored.Updated,
 	}
 	if len(stored.Messages) > 0 {
-		snapshot.Messages = make([]providers.Message, len(stored.Messages))
-		copy(snapshot.Messages, stored.Messages)
+		toStore := stored.Messages
+		if len(toStore) > maxStoredMessages {
+			toStore = toStore[len(toStore)-maxStoredMessages:]
+		}
+		snapshot.Messages = make([]providers.Message, len(toStore))
+		copy(snapshot.Messages, toStore)
 	} else {
 		snapshot.Messages = []providers.Message{}
 	}
