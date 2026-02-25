@@ -119,7 +119,11 @@ func (t *SPITool) list() *ToolResult {
 	return SilentResult(fmt.Sprintf("Found %d SPI device(s):\n%s", len(devices), string(result)))
 }
 
+// Helper function for SPI operations (used by platform-specific implementations)
+
 // parseSPIArgs extracts and validates common SPI parameters
+//
+//nolint:unused // Used by spi_linux.go
 func parseSPIArgs(args map[string]any) (device string, speed uint32, mode uint8, bits uint8, errMsg string) {
 	dev, ok := args["device"].(string)
 	if !ok || dev == "" {

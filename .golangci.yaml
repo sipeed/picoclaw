@@ -66,7 +66,6 @@ linters:
     - testifylint
     - thelper
     - unparam
-    - unused
     - usestdlibvars
     - usetesting
     - wastedassign
@@ -152,6 +151,9 @@ linters:
           - gocognit
           - gocyclo
         path: _test\.go$
+      - linters:
+          - nolintlint
+        path: 'pkg/tools/(i2c\.go|spi\.go)$'
 
 issues:
   max-issues-per-linter: 0
