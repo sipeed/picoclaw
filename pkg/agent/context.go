@@ -78,7 +78,9 @@ Your workspace is at: %s
 
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
 
-4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
+4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
+
+5. **Current Date Context** - When using the web_search tool, you MUST use the Current Time in the system context to construct accurate date-specific queries.`,
 		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
 }
 

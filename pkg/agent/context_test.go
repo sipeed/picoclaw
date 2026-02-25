@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
@@ -205,5 +207,48 @@ func assertRoles(t *testing.T, msgs []providers.Message, expected ...string) {
 		if msgs[i].Role != exp {
 			t.Errorf("message[%d]: got role %q, want %q", i, msgs[i].Role, exp)
 		}
+	}
+}
+
+func TestContextBuilder_WebSearchDateContext(t *testing.T) {
+	cb := NewContextBuilder(t.TempDir())
+
+	systemPrompt := cb.BuildSystemPrompt()
+
+	expectedInstruction := "**Current Date Context** - When using the web_search tool, you MUST use the Current Time in the system context to construct accurate date-specific queries."
+
+	if !strings.Contains(systemPrompt, expectedInstruction) {
+		t.Errorf("Expected system prompt to contain web_search date instruction, got:\n%s", systemPrompt)
+	}
+}
+
+func TestContextBuilder_TimeInjection(t *testing.T) {
+	cb := NewContextBuilder(t.TempDir())
+	// Note: BuildMessages includes the dynamic context (time)
+	messages := cb.BuildMessages(nil, "", "hello", nil, "discord", "123")
+
+	if len(messages) == 0 {
+		t.Fatal("Expected messages, got none")
+	}
+
+	systemPrompt := messages[0].Content
+
+	// Verify the Current Time header exists
+	if !strings.Contains(systemPrompt, "## Current Time") {
+		t.Error("Expected system prompt to contain '## Current Time' header")
+	}
+
+	// Verify it contains the current date year (e.g. "2026-")
+	currentYearStr := time.Now().Format("2006-")
+	if !strings.Contains(systemPrompt, currentYearStr) {
+		t.Errorf("Expected system prompt to contain current year prefix %q", currentYearStr)
+	}
+
+	// Verify the relative ordering: Rule 5 should be in the static part (first),
+	// and Current Time should be in the dynamic part (second).
+	rulePos := strings.Index(systemPrompt, "Current Date Context")
+	timePos := strings.Index(systemPrompt, "## Current Time")
+	if rulePos == -1 || timePos == -1 || rulePos > timePos {
+		t.Errorf("Expected 'Current Date Context' to appear before '## Current Time'. rulePos=%d, timePos=%d", rulePos, timePos)
 	}
 }

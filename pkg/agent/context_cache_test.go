@@ -262,9 +262,9 @@ func TestCacheStability(t *testing.T) {
 		}
 	}
 
-	// Static prompt must NOT contain per-request data
-	if strings.Contains(results[0], "Current Time") {
-		t.Error("static cached prompt should not contain time (added dynamically)")
+	// Static prompt must NOT contain per-request data (the header/block itself)
+	if strings.Contains(results[0], "## Current Time") {
+		t.Error("static cached prompt should not contain time block (added dynamically)")
 	}
 }
 
