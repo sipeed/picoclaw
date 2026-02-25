@@ -174,7 +174,10 @@ func (c *OneBotChannel) connect() error {
 		header["Authorization"] = []string{"Bearer " + c.config.AccessToken}
 	}
 
-	conn, _, err := dialer.Dial(c.config.WSUrl, header)
+	conn, resp, err := dialer.Dial(c.config.WSUrl, header)
+	if resp != nil {
+		resp.Body.Close()
+	}
 	if err != nil {
 		return err
 	}

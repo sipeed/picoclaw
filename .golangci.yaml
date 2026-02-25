@@ -28,7 +28,6 @@ linters:
     - wsl_v5
 
     # TODO: Disabled, because they are failing at the moment, we should fix them and enable (step by step)
-    - bodyclose
     - contextcheck
     - dogsled
     - embeddedstructfieldcheck
