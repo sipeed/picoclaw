@@ -698,7 +698,6 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 			textParts = append(textParts, "[forward message]")
 
 		default:
-
 		}
 	}
 

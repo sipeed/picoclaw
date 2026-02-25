@@ -44,7 +44,6 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 			Hooks: &copilot.SessionHooks{},
 		})
 		if err != nil {
-
 			client.Stop()
 			return nil, fmt.Errorf("create session failed: %w", err)
 		}
