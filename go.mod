@@ -33,6 +33,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/smartystreets/assertions v1.2.0 // indirect
 	github.com/smartystreets/goconvey v1.7.2 // indirect
+	golang.org/x/time v0.14.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

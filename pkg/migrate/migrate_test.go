@@ -58,10 +58,10 @@ func TestConvertKeysToSnake(t *testing.T) {
 		t.Fatal("expected map[string]interface{}")
 	}
 
-	if _, ok := m["api_key"]; !ok {
+	if _, ok = m["api_key"]; !ok {
 		t.Error("expected key 'api_key' after conversion")
 	}
-	if _, ok := m["api_base"]; !ok {
+	if _, ok = m["api_base"]; !ok {
 		t.Error("expected key 'api_base' after conversion")
 	}
 
@@ -69,10 +69,10 @@ func TestConvertKeysToSnake(t *testing.T) {
 	if !ok {
 		t.Fatal("expected nested map")
 	}
-	if _, ok := nested["max_tokens"]; !ok {
+	if _, ok = nested["max_tokens"]; !ok {
 		t.Error("expected key 'max_tokens' in nested map")
 	}
-	if _, ok := nested["allow_from"]; !ok {
+	if _, ok = nested["allow_from"]; !ok {
 		t.Error("expected key 'allow_from' in nested map")
 	}
 
@@ -108,7 +108,7 @@ func TestLoadOpenClawConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+	if err = os.WriteFile(configPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 

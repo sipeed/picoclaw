@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -38,6 +40,7 @@ type AgentLoop struct {
 	summarizing    sync.Map
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
+	mediaStore     media.MediaStore
 }
 
 // processOptions configures how a message is processed
@@ -97,6 +100,10 @@ func registerSharedTools(
 			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
 			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+			TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
+			TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
+			TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
+			TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 			DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 			DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
 			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
@@ -114,12 +121,13 @@ func registerSharedTools(
 		// Message tool
 		messageTool := tools.NewMessageTool()
 		messageTool.SetSendCallback(func(channel, chatID, content string) error {
-			msgBus.PublishOutbound(bus.OutboundMessage{
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer pubCancel()
+			return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 				Channel: channel,
 				ChatID:  chatID,
 				Content: content,
 			})
-			return nil
 		})
 		agent.Tools.Register(messageTool)
 
@@ -163,33 +171,49 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
-			response, err := al.processMessage(ctx, msg)
-			if err != nil {
-				response = fmt.Sprintf("Error processing message: %v", err)
-			}
+			// Process message
+			func() {
+				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
+				// Currently disabled because files are deleted before the LLM can access their content.
+				// defer func() {
+				// 	if al.mediaStore != nil && msg.MediaScope != "" {
+				// 		if releaseErr := al.mediaStore.ReleaseAll(msg.MediaScope); releaseErr != nil {
+				// 			logger.WarnCF("agent", "Failed to release media", map[string]any{
+				// 				"scope": msg.MediaScope,
+				// 				"error": releaseErr.Error(),
+				// 			})
+				// 		}
+				// 	}
+				// }()
 
-			if response != "" {
-				// Check if the message tool already sent a response during this round.
-				// If so, skip publishing to avoid duplicate messages to the user.
-				// Use default agent's tools to check (message tool is shared).
-				alreadySent := false
-				defaultAgent := al.registry.GetDefaultAgent()
-				if defaultAgent != nil {
-					if tool, ok := defaultAgent.Tools.Get("message"); ok {
-						if mt, ok := tool.(*tools.MessageTool); ok {
-							alreadySent = mt.HasSentInRound()
+				response, err := al.processMessage(ctx, msg)
+				if err != nil {
+					response = fmt.Sprintf("Error processing message: %v", err)
+				}
+
+				if response != "" {
+					// Check if the message tool already sent a response during this round.
+					// If so, skip publishing to avoid duplicate messages to the user.
+					// Use default agent's tools to check (message tool is shared).
+					alreadySent := false
+					defaultAgent := al.registry.GetDefaultAgent()
+					if defaultAgent != nil {
+						if tool, ok := defaultAgent.Tools.Get("message"); ok {
+							if mt, ok := tool.(*tools.MessageTool); ok {
+								alreadySent = mt.HasSentInRound()
+							}
 						}
 					}
-				}
 
-				if !alreadySent {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: msg.Channel,
-						ChatID:  msg.ChatID,
-						Content: response,
-					})
+					if !alreadySent {
+						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+							Channel: msg.Channel,
+							ChatID:  msg.ChatID,
+							Content: response,
+						})
+					}
 				}
-			}
+			}()
 		}
 	}
 
@@ -210,6 +234,41 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+}
+
+// SetMediaStore injects a MediaStore for media lifecycle management.
+func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
+	al.mediaStore = s
+}
+
+// inferMediaType determines the media type ("image", "audio", "video", "file")
+// from a filename and MIME content type.
+func inferMediaType(filename, contentType string) string {
+	ct := strings.ToLower(contentType)
+	fn := strings.ToLower(filename)
+
+	if strings.HasPrefix(ct, "image/") {
+		return "image"
+	}
+	if strings.HasPrefix(ct, "audio/") || ct == "application/ogg" {
+		return "audio"
+	}
+	if strings.HasPrefix(ct, "video/") {
+		return "video"
+	}
+
+	// Fallback: infer from extension
+	ext := filepath.Ext(fn)
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+		return "image"
+	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
+		return "audio"
+	case ".mp4", ".avi", ".mov", ".webm", ".mkv":
+		return "video"
+	}
+
+	return "file"
 }
 
 // RecordLastChannel records the last active channel for this workspace.
@@ -446,7 +505,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 8. Optional: send response via bus
 	if opts.SendResponse {
-		al.bus.PublishOutbound(bus.OutboundMessage{
+		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
 			Content: finalContent,
@@ -561,7 +620,7 @@ func (al *AgentLoop) runLLMIteration(
 				})
 
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
-					al.bus.PublishOutbound(bus.OutboundMessage{
+					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 						Channel: opts.Channel,
 						ChatID:  opts.ChatID,
 						Content: "Context window exceeded. Compressing history and retrying...",
@@ -690,7 +749,7 @@ func (al *AgentLoop) runLLMIteration(
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
-				al.bus.PublishOutbound(bus.OutboundMessage{
+				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel: opts.Channel,
 					ChatID:  opts.ChatID,
 					Content: toolResult.ForUser,
@@ -700,6 +759,28 @@ func (al *AgentLoop) runLLMIteration(
 						"tool":        tc.Name,
 						"content_len": len(toolResult.ForUser),
 					})
+			}
+
+			// If tool returned media refs, publish them as outbound media
+			if len(toolResult.Media) > 0 && opts.SendResponse {
+				parts := make([]bus.MediaPart, 0, len(toolResult.Media))
+				for _, ref := range toolResult.Media {
+					part := bus.MediaPart{Ref: ref}
+					// Populate metadata from MediaStore when available
+					if al.mediaStore != nil {
+						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+							part.Filename = meta.Filename
+							part.ContentType = meta.ContentType
+							part.Type = inferMediaType(meta.Filename, meta.ContentType)
+						}
+					}
+					parts = append(parts, part)
+				}
+				al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
+					Channel: opts.Channel,
+					ChatID:  opts.ChatID,
+					Parts:   parts,
+				})
 			}
 
 			// Determine content for LLM based on tool result
@@ -755,7 +836,9 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
 				if !constants.IsInternalChannel(channel) {
-					al.bus.PublishOutbound(bus.OutboundMessage{
+					pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer pubCancel()
+					al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
 						Channel: channel,
 						ChatID:  chatID,
 						Content: "Memory threshold reached. Optimizing conversation history...",
@@ -1118,21 +1201,20 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	return "", false
 }
 
-// extractPeer extracts the routing peer from inbound message metadata.
+// extractPeer extracts the routing peer from the inbound message's structured Peer field.
 func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
-	peerKind := msg.Metadata["peer_kind"]
-	if peerKind == "" {
+	if msg.Peer.Kind == "" {
 		return nil
 	}
-	peerID := msg.Metadata["peer_id"]
+	peerID := msg.Peer.ID
 	if peerID == "" {
-		if peerKind == "direct" {
+		if msg.Peer.Kind == "direct" {
 			peerID = msg.SenderID
 		} else {
 			peerID = msg.ChatID
 		}
 	}
-	return &routing.RoutePeer{Kind: peerKind, ID: peerID}
+	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
 }
 
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.

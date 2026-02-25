@@ -90,7 +90,7 @@ func (c *EmailChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to connect to IMAP server: %w", err)
 	}
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoC("email", "Email channel started")
 
 	c.loopWg.Add(1)
@@ -119,7 +119,7 @@ func (c *EmailChannel) Stop(ctx context.Context) error {
 
 	c.loopWg.Wait() // wait for checkLoop goroutine to exit
 
-	c.setRunning(false)
+	c.SetRunning(false)
 	logger.InfoC("email", "Email channel stopped")
 	return nil
 }

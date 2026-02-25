@@ -70,6 +70,7 @@ func agentCmd() {
 	}
 
 	msgBus := bus.NewMessageBus()
+	defer msgBus.Close()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
 	// Print agent startup info (only for interactive mode)
@@ -148,7 +149,7 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print(fmt.Sprintf("%s You: ", logo))
+		fmt.Printf("%s You: ", logo)
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
