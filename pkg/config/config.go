@@ -335,6 +335,7 @@ type ProvidersConfig struct {
 	Antigravity   ProviderConfig       `json:"antigravity"`
 	Qwen          ProviderConfig       `json:"qwen"`
 	Mistral       ProviderConfig       `json:"mistral"`
+	Deepgram      ProviderConfig       `json:"deepgram"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -357,7 +358,8 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
 		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
 		p.Qwen.APIKey == "" && p.Qwen.APIBase == "" &&
-		p.Mistral.APIKey == "" && p.Mistral.APIBase == ""
+		p.Mistral.APIKey == "" && p.Mistral.APIBase == "" &&
+		p.Deepgram.APIKey == "" && p.Deepgram.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
@@ -674,7 +676,8 @@ func (c *Config) HasProvidersConfig() bool {
 		v.GitHubCopilot.APIKey != "" || v.GitHubCopilot.APIBase != "" ||
 		v.Antigravity.APIKey != "" || v.Antigravity.APIBase != "" ||
 		v.Qwen.APIKey != "" || v.Qwen.APIBase != "" ||
-		v.Mistral.APIKey != "" || v.Mistral.APIBase != ""
+		v.Mistral.APIKey != "" || v.Mistral.APIBase != "" ||
+		v.Deepgram.APIKey != "" || v.Deepgram.APIBase != ""
 }
 
 // ValidateModelList validates all ModelConfig entries in the model_list.
