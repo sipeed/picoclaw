@@ -36,7 +36,7 @@ type providerSelection struct {
 }
 
 func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
-	model := cfg.Agents.Defaults.Model
+	model := cfg.Agents.Defaults.GetModelName()
 	providerName := strings.ToLower(cfg.Agents.Defaults.Provider)
 	lowerModel := strings.ToLower(model)
 

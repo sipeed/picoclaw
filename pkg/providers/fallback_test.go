@@ -17,12 +17,6 @@ func successRun(content string) func(ctx context.Context, provider, model string
 	}
 }
 
-func failRun(err error) func(ctx context.Context, provider, model string) (*LLMResponse, error) {
-	return func(ctx context.Context, provider, model string) (*LLMResponse, error) {
-		return nil, err
-	}
-}
-
 func TestFallback_SingleCandidate_Success(t *testing.T) {
 	ct := NewCooldownTracker()
 	fc := NewFallbackChain(ct)

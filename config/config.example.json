@@ -3,7 +3,7 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model": "gpt4",
+      "model_name": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -217,7 +217,8 @@
         "enabled": false,
         "api_key": "pplx-xxx",
         "max_results": 5
-      }
+      },
+      "proxy": ""
     },
     "cron": {
       "exec_timeout_minutes": 5

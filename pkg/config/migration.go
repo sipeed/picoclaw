@@ -41,7 +41,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 
 	// Get user's configured provider and model
 	userProvider := strings.ToLower(cfg.Agents.Defaults.Provider)
-	userModel := cfg.Agents.Defaults.Model
+	userModel := cfg.Agents.Defaults.GetModelName()
 
 	p := cfg.Providers
 
