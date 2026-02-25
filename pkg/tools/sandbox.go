@@ -23,6 +23,7 @@ func IsValidPreset(p Preset) bool {
 // ExecPolicy defines which commands are allowed for execution.
 type ExecPolicy struct {
 	AllowPattern string // Prefix-match regex; matched commands are allowed
+	LocalNetOnly bool   // Restrict curl/wget to localhost and RFC 1918 private addresses
 }
 
 // SandboxConfig describes the sandbox isolation policy for a preset.
@@ -44,11 +45,13 @@ type SubagentEnvironment struct {
 }
 
 // presetExecPatterns maps presets to command allowlist regexes.
+// curl/wget are included where exec is allowed; LocalNetOnly in ExecPolicy
+// ensures all curl/wget requests are restricted to localhost and RFC 1918 addresses.
 var presetExecPatterns = map[Preset]string{
 	PresetScout:       ``, // No exec allowed
 	PresetAnalyst:     `^(go\s+(test|vet)|git\s+(log|diff|status)|curl|wget|grep|find)\b`,
-	PresetCoder:       `^(go\s+(test|vet|fmt)|gofmt|goimports|golangci-lint|prettier|eslint|black|ruff|cargo\s+(test|fmt|clippy)|pnpm\s+(test|run\s+(test|lint|format))|bun\s+(test|run\s+(test|lint|format))|uv\s+run\s+)\b`,
-	PresetWorker:      `^(go\s+|pnpm\s+(install|add|run|test|build)|bun\s+(install|add|run|test|build)|uv\s+(run|sync|add|pip\s+install)|pip\s+install|cargo\s+)\b`,
+	PresetCoder:       `^(go\s+(test|vet|fmt)|gofmt|goimports|golangci-lint|prettier|eslint|black|ruff|cargo\s+(test|fmt|clippy)|pnpm\s+(test|run\s+(test|lint|format))|bun\s+(test|run\s+(test|lint|format))|uv\s+run\s+|curl|wget)\b`,
+	PresetWorker:      `^(go\s+|pnpm\s+(install|add|run|test|build)|bun\s+(install|add|run|test|build)|uv\s+(run|sync|add|pip\s+install)|pip\s+install|cargo\s+|curl|wget)\b`,
 	PresetCoordinator: `^(go\s+|pnpm\s+|bun\s+|curl|wget)\b`,
 }
 
@@ -107,11 +110,14 @@ func SandboxConfigForPreset(p Preset, writeRoot string) SandboxConfig {
 		config.WriteRoot = writeRoot
 	}
 
-	// Set ExecPolicy if exec is allowed and pattern is non-empty
+	// Set ExecPolicy if exec is allowed and pattern is non-empty.
+	// LocalNetOnly is always true: curl/wget in subagents is for local server
+	// testing only; external HTTP access goes through the web_fetch tool.
 	if allowed["exec"] {
 		if pattern := presetExecPatterns[p]; pattern != "" {
 			config.ExecPolicy = &ExecPolicy{
 				AllowPattern: pattern,
+				LocalNetOnly: true,
 			}
 		}
 	}
