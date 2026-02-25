@@ -15,8 +15,16 @@ type Session struct {
 	Key      string              `json:"key"`
 	Messages []providers.Message `json:"messages"`
 	Summary  string              `json:"summary,omitempty"`
+	Label    string              `json:"label,omitempty"`
 	Created  time.Time           `json:"created"`
 	Updated  time.Time           `json:"updated"`
+}
+
+// SessionMeta is a lightweight session entry for listing (e.g. sessions.list).
+type SessionMeta struct {
+	Key       string
+	UpdatedAt time.Time
+	Label     string
 }
 
 type SessionManager struct {
@@ -180,6 +188,7 @@ func (sm *SessionManager) Save(key string) error {
 	snapshot := Session{
 		Key:     stored.Key,
 		Summary: stored.Summary,
+		Label:   stored.Label,
 		Created: stored.Created,
 		Updated: stored.Updated,
 	}
@@ -263,6 +272,49 @@ func (sm *SessionManager) loadSessions() error {
 	}
 
 	return nil
+}
+
+// ListSessions returns metadata for all sessions (key, updated time, label) for listing.
+func (sm *SessionManager) ListSessions() []SessionMeta {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	out := make([]SessionMeta, 0, len(sm.sessions))
+	for _, s := range sm.sessions {
+		out = append(out, SessionMeta{
+			Key:       s.Key,
+			UpdatedAt: s.Updated,
+			Label:     s.Label,
+		})
+	}
+	return out
+}
+
+// Delete removes a session from memory and deletes its storage file.
+func (sm *SessionManager) Delete(key string) error {
+	sm.mu.Lock()
+	delete(sm.sessions, key)
+	sm.mu.Unlock()
+	if sm.storage == "" {
+		return nil
+	}
+	filename := sanitizeFilename(key)
+	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
+		return nil
+	}
+	sessionPath := filepath.Join(sm.storage, filename+".json")
+	_ = os.Remove(sessionPath)
+	return nil
+}
+
+// SetLabel sets the label for a session and updates its Updated time.
+func (sm *SessionManager) SetLabel(key string, label string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	session, ok := sm.sessions[key]
+	if ok {
+		session.Label = label
+		session.Updated = time.Now()
+	}
 }
 
 // SetHistory updates the messages of a session.

@@ -173,10 +173,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				response = fmt.Sprintf("Error processing message: %v", err)
 			}
 
-			if response != "" {
+			if response != "" && msg.Channel != "web" {
+				// Web channel already got final response in processMessage (state "final"); only publish for other channels.
 				// Check if the message tool already sent a response during this round.
-				// If so, skip publishing to avoid duplicate messages to the user.
-				// Use default agent's tools to check (message tool is shared).
 				alreadySent := false
 				defaultAgent := al.registry.GetDefaultAgent()
 				if defaultAgent != nil {
@@ -186,7 +185,6 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						}
 					}
 				}
-
 				if !alreadySent {
 					al.bus.PublishOutbound(bus.OutboundMessage{
 						Channel: msg.Channel,
@@ -199,6 +197,11 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// GetRegistry returns the agent registry for gateway/session resolution.
+func (al *AgentLoop) GetRegistry() *AgentRegistry {
+	return al.registry
 }
 
 func (al *AgentLoop) Stop() {
@@ -324,6 +327,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"matched_by":  route.MatchedBy,
 		})
 
+	sendResponse := msg.Channel == "web"
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
@@ -331,7 +335,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		UserMessage:     msg.Content,
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   true,
-		SendResponse:    false,
+		SendResponse:    sendResponse,
 	})
 }
 
@@ -449,13 +453,20 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		al.maybeSummarize(agent, opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
-	// 8. Optional: send response via bus
+	// 8. Optional: send response via bus (e.g. web gateway for WebClaw)
 	if opts.SendResponse {
-		al.bus.PublishOutbound(bus.OutboundMessage{
+		out := bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
 			Content: finalContent,
-		})
+			State:   "final",
+		}
+		if opts.Channel == "web" {
+			if idx := strings.LastIndex(opts.ChatID, "|"); idx >= 0 && idx < len(opts.ChatID)-1 {
+				out.RunID = opts.ChatID[idx+1:]
+			}
+		}
+		al.bus.PublishOutbound(out)
 	}
 
 	// 9. Log response

@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/devices"
+	"github.com/sipeed/picoclaw/pkg/gateway"
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -29,14 +30,25 @@ import (
 )
 
 func gatewayCmd() {
-	// Check for --debug flag
 	args := os.Args[2:]
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			gatewayHelp()
+			os.Exit(0)
+		}
+	}
+
+	// Parse flags: default WebSocket on; --no-websocket for health-only
+	enableWebSocket := true
 	for _, arg := range args {
 		if arg == "--debug" || arg == "-d" {
 			logger.SetLevel(logger.DEBUG)
 			fmt.Println("🔍 Debug mode enabled")
-			break
 		}
+		if arg == "--no-websocket" {
+			enableWebSocket = false
+		}
+		// --enable-websocket is a no-op (WebSocket is on by default)
 	}
 
 	cfg, err := loadConfig()
@@ -196,13 +208,24 @@ func gatewayCmd() {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
-	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
-	go func() {
-		if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("health", "Health server error", map[string]any{"error": err.Error()})
-		}
-	}()
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	var healthServer *health.Server
+	if enableWebSocket {
+		gw := gateway.NewServer(&cfg.Gateway, agentLoop.GetRegistry(), msgBus)
+		go func() {
+			if err := gw.Start(ctx); err != nil && err != http.ErrServerClosed {
+				logger.ErrorCF("gateway", "Gateway server error", map[string]any{"error": err.Error()})
+			}
+		}()
+		fmt.Printf("✓ WebSocket Gateway and health at http://%s:%d (/, /health, /ready)\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	} else {
+		healthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+		go func() {
+			if err := healthServer.Start(); err != nil && err != http.ErrServerClosed {
+				logger.ErrorCF("health", "Health server error", map[string]any{"error": err.Error()})
+			}
+		}()
+		fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	}
 
 	go agentLoop.Run(ctx)
 
@@ -215,13 +238,29 @@ func gatewayCmd() {
 		cp.Close()
 	}
 	cancel()
-	healthServer.Stop(context.Background())
+	if healthServer != nil {
+		healthServer.Stop(context.Background())
+	}
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
+}
+
+func gatewayHelp() {
+	fmt.Println("\nStart the PicoClaw gateway (channels, agent, health). WebSocket gateway is enabled by default.")
+	fmt.Println()
+	fmt.Println("Usage: picoclaw gateway [options]")
+	fmt.Println()
+	fmt.Println("Options:")
+	fmt.Println("  -d, --debug        Enable debug logging")
+	fmt.Println("  --no-websocket     Only serve /health and /ready (no WebSocket gateway)")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  picoclaw gateway              Start with WebSocket gateway and health endpoints")
+	fmt.Println("  picoclaw gateway --no-websocket   Health endpoints only")
 }
 
 func setupCronTool(
