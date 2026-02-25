@@ -1,3 +1,9 @@
 #!/bin/sh
+set -e
 
-init && picoclaw "$@"
+if ! init; then
+    echo "Init script failed, aborting" >&2
+    exit 1
+fi
+
+exec picoclaw "$@"

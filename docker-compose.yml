@@ -1,6 +1,6 @@
 configs:
   init_script:
-    file: /path/to/your/init/script
+    file: ./container/init
 
 services:
   # ─────────────────────────────────────────────
