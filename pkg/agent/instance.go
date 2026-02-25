@@ -47,6 +47,9 @@ func NewAgentInstance(
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
+	if agentCfg != nil && agentCfg.RestrictToWorkspace != nil {
+		restrict = *agentCfg.RestrictToWorkspace
+	}
 	toolsRegistry := tools.NewToolRegistry()
 	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
