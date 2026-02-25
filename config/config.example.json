@@ -217,7 +217,8 @@
         "enabled": false,
         "api_key": "pplx-xxx",
         "max_results": 5
-      }
+      },
+      "proxy": ""
     },
     "cron": {
       "exec_timeout_minutes": 5

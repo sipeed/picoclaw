@@ -203,6 +203,9 @@ func gatewayCmd(debug bool) error {
 	<-sigChan
 
 	fmt.Println("\nShutting down...")
+	if cp, ok := provider.(providers.StatefulProvider); ok {
+		cp.Close()
+	}
 	cancel()
 	healthServer.Stop(context.Background())
 	deviceService.Stop()
