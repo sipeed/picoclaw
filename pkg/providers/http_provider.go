@@ -8,6 +8,7 @@ package providers
 
 import (
 	"context"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
 )
@@ -31,12 +32,12 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	requestTimeoutSeconds int,
 ) *HTTPProvider {
 	return &HTTPProvider{
-		delegate: openai_compat.NewProviderWithMaxTokensFieldAndTimeout(
+		delegate: openai_compat.NewProvider(
 			apiKey,
 			apiBase,
 			proxy,
-			maxTokensField,
-			requestTimeoutSeconds,
+			openai_compat.WithMaxTokensField(maxTokensField),
+			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
 		),
 	}
 }

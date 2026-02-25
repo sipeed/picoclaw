@@ -340,3 +340,24 @@ func TestProvider_RequestTimeoutOverride(t *testing.T) {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, 300*time.Second)
 	}
 }
+
+func TestProvider_FunctionalOptionMaxTokensField(t *testing.T) {
+	p := NewProvider("key", "https://example.com/v1", "", WithMaxTokensField("max_completion_tokens"))
+	if p.maxTokensField != "max_completion_tokens" {
+		t.Fatalf("maxTokensField = %q, want %q", p.maxTokensField, "max_completion_tokens")
+	}
+}
+
+func TestProvider_FunctionalOptionRequestTimeout(t *testing.T) {
+	p := NewProvider("key", "https://example.com/v1", "", WithRequestTimeout(45*time.Second))
+	if p.httpClient.Timeout != 45*time.Second {
+		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, 45*time.Second)
+	}
+}
+
+func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
+	p := NewProvider("key", "https://example.com/v1", "", WithRequestTimeout(-1*time.Second))
+	if p.httpClient.Timeout != defaultRequestTimeout {
+		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
+	}
+}

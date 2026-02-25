@@ -34,27 +34,27 @@ type Provider struct {
 	httpClient     *http.Client
 }
 
+type Option func(*Provider)
+
 const defaultRequestTimeout = 120 * time.Second
 
-func NewProvider(apiKey, apiBase, proxy string) *Provider {
-	return NewProviderWithMaxTokensField(apiKey, apiBase, proxy, "")
-}
-
-func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
-	return NewProviderWithMaxTokensFieldAndTimeout(apiKey, apiBase, proxy, maxTokensField, 0)
-}
-
-func NewProviderWithMaxTokensFieldAndTimeout(
-	apiKey, apiBase, proxy, maxTokensField string,
-	requestTimeoutSeconds int,
-) *Provider {
-	timeout := defaultRequestTimeout
-	if requestTimeoutSeconds > 0 {
-		timeout = time.Duration(requestTimeoutSeconds) * time.Second
+func WithMaxTokensField(maxTokensField string) Option {
+	return func(p *Provider) {
+		p.maxTokensField = maxTokensField
 	}
+}
 
+func WithRequestTimeout(timeout time.Duration) Option {
+	return func(p *Provider) {
+		if timeout > 0 {
+			p.httpClient.Timeout = timeout
+		}
+	}
+}
+
+func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout: defaultRequestTimeout,
 	}
 
 	if proxy != "" {
@@ -68,12 +68,36 @@ func NewProviderWithMaxTokensFieldAndTimeout(
 		}
 	}
 
-	return &Provider{
-		apiKey:         apiKey,
-		apiBase:        strings.TrimRight(apiBase, "/"),
-		maxTokensField: maxTokensField,
-		httpClient:     client,
+	p := &Provider{
+		apiKey:     apiKey,
+		apiBase:    strings.TrimRight(apiBase, "/"),
+		httpClient: client,
 	}
+
+	for _, opt := range opts {
+		if opt != nil {
+			opt(p)
+		}
+	}
+
+	return p
+}
+
+func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
+	return NewProvider(apiKey, apiBase, proxy, WithMaxTokensField(maxTokensField))
+}
+
+func NewProviderWithMaxTokensFieldAndTimeout(
+	apiKey, apiBase, proxy, maxTokensField string,
+	requestTimeoutSeconds int,
+) *Provider {
+	return NewProvider(
+		apiKey,
+		apiBase,
+		proxy,
+		WithMaxTokensField(maxTokensField),
+		WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+	)
 }
 
 func (p *Provider) Chat(
