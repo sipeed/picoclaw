@@ -1069,16 +1069,45 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		al.promptDirty.Store(false)
 	}
 
-	// 5. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts, task, preStatus)
-	if err != nil {
-		return "", err
-	}
+	// 5. Run LLM iteration loop (with automatic phase transitions)
+	var finalContent string
+	var iteration int
+	const maxPhaseTransitions = 10
 
-	// 5a. Auto-advance plan phases after LLM iteration
-	postStatus := agent.ContextBuilder.GetPlanStatus()
-	if agent.ContextBuilder.HasActivePlan() &&
-		(postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
+	for phaseLoop := 0; ; phaseLoop++ {
+		// On phase transition: rebuild system prompt with new phase context + nudge
+		if phaseLoop > 0 {
+			messages = agent.ContextBuilder.BuildMessages(
+				agent.Sessions.GetHistory(opts.SessionKey),
+				agent.Sessions.GetSummary(opts.SessionKey),
+				"", nil, opts.Channel, opts.ChatID,
+			)
+			messages = append(messages, providers.Message{
+				Role:    "user",
+				Content: fmt.Sprintf("[System] Phase %d is now active. Continue working on the next steps.", agent.ContextBuilder.GetCurrentPhase()),
+			})
+			if len(messages) > 0 {
+				al.lastSystemPrompt.Store(messages[0].Content)
+			}
+		}
+
+		curPlanStatus := preStatus
+		if phaseLoop > 0 {
+			curPlanStatus = agent.ContextBuilder.GetPlanStatus()
+		}
+
+		var err error
+		finalContent, iteration, err = al.runLLMIteration(ctx, agent, messages, opts, task, curPlanStatus)
+		if err != nil {
+			return "", err
+		}
+
+		// 5a. Auto-advance plan phases after LLM iteration
+		postStatus := agent.ContextBuilder.GetPlanStatus()
+		if !agent.ContextBuilder.HasActivePlan() || !(postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
+			break
+		}
+
 		// Intercept: if AI changed status to executing or review without user approval
 		// (from interviewing or review), validate and hold at "review".
 		if preStatus == "interviewing" || (preStatus == "review" && postStatus == "executing") {
@@ -1086,7 +1115,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 				_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 				logger.WarnCF("agent", "Reverted plan to interviewing: "+err.Error(),
 					map[string]any{"agent_id": agent.ID})
-				// Inject rejection into session history so LLM sees it next iteration
 				rejectionMsg := "[System] Plan rejected: " + err.Error() + ". Fix and try again."
 				agent.Sessions.AddMessage(opts.SessionKey, "user", rejectionMsg)
 			} else {
@@ -1102,13 +1130,17 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					})
 				}
 			}
-		} else if postStatus == "executing" && agent.ContextBuilder.GetTotalPhases() == 0 {
-			// Safeguard: executing but no phases (shouldn't happen, but be safe).
+			break
+		}
+
+		if postStatus == "executing" && agent.ContextBuilder.GetTotalPhases() == 0 {
 			_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 			logger.WarnCF("agent", "Reverted plan to interviewing: no phases defined",
 				map[string]any{"agent_id": agent.ID})
-		} else if agent.ContextBuilder.IsPlanComplete() {
-			// Mark plan as completed (keep memory for review; user can /plan clear)
+			break
+		}
+
+		if agent.ContextBuilder.IsPlanComplete() {
 			total := agent.ContextBuilder.GetTotalPhases()
 			_ = agent.ContextBuilder.SetCurrentPhase(total)
 			if preStatus != "completed" {
@@ -1133,7 +1165,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					})
 				}
 			}
-		} else if agent.ContextBuilder.IsCurrentPhaseComplete() {
+			break
+		}
+
+		if agent.ContextBuilder.IsCurrentPhaseComplete() {
+			if phaseLoop >= maxPhaseTransitions {
+				logger.WarnCF("agent", "Max phase transitions reached, stopping",
+					map[string]interface{}{"agent_id": agent.ID, "transitions": phaseLoop})
+				break
+			}
 			prev := agent.ContextBuilder.GetCurrentPhase()
 			_ = agent.ContextBuilder.AdvancePhase()
 			next := agent.ContextBuilder.GetCurrentPhase()
@@ -1145,7 +1185,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					SkipPlaceholder: true,
 				})
 			}
+			al.notifyStateChange()
+			continue
 		}
+
+		break
 	}
 
 	al.notifyStateChange()
