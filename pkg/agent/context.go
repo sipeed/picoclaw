@@ -14,14 +14,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 type ContextBuilder struct {
 	workspace    string
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
-	tools        *tools.ToolRegistry // Direct reference to tool registry
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -59,16 +57,8 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	}
 }
 
-// SetToolsRegistry sets the tools registry for dynamic tool summary generation.
-func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
-	cb.tools = registry
-}
-
 func (cb *ContextBuilder) getIdentity() string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
-
-	// Build tools section dynamically
-	toolsSection := cb.buildToolsSection()
 
 	return fmt.Sprintf(`# picoclaw 🦞
 
@@ -80,8 +70,6 @@ Your workspace is at: %s
 - Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
 - Skills: %s/skills/{skill-name}/SKILL.md
 
-%s
-
 ## Important Rules
 
 1. **ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it.
@@ -91,31 +79,7 @@ Your workspace is at: %s
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
-		workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
-}
-
-func (cb *ContextBuilder) buildToolsSection() string {
-	if cb.tools == nil {
-		return ""
-	}
-
-	summaries := cb.tools.GetSummaries()
-	if len(summaries) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-	sb.WriteString("## Available Tools\n\n")
-	sb.WriteString(
-		"**CRITICAL**: You MUST use tools to perform actions. Do NOT pretend to execute commands or schedule tasks.\n\n",
-	)
-	sb.WriteString("You have access to the following tools:\n\n")
-	for _, s := range summaries {
-		sb.WriteString(s)
-		sb.WriteString("\n")
-	}
-
-	return sb.String()
+		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
@@ -321,7 +285,7 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 //   - absent at cache time,  exists now -> changed (created)
 //   - absent at cache time,  gone now   -> no change
 func (cb *ContextBuilder) fileChangedSince(path string) bool {
-	// Defensive: if existedAtCache was never initialised, treat as changed
+	// Defensive: if existedAtCache was never initialized, treat as changed
 	// so the cache rebuilds rather than silently serving stale data.
 	if cb.existedAtCache == nil {
 		return true
