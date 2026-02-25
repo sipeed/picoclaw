@@ -1826,6 +1826,7 @@ function _orchInitChars() {
   _orchSecretary = _orchMakeChar('secretary', '👩‍💼', MAP_POSITIONS.secretary);
   _orchHeartbeat = _orchMakeChar('heartbeat', '🕊️',  MAP_POSITIONS.heartbeat);
   _orchConductor.alive = true; _orchSecretary.alive = true; _orchHeartbeat.alive = true;
+  _orchConductor.statusText = null;
   _orchHeartbeat.facing = 1; _orchHeartbeat.flipTimer = 0;
   var ps = [{id:'s0',emoji:'🔍'},{id:'s1',emoji:'📊'},{id:'s2',emoji:'💻'},
             {id:'s3',emoji:'🔧'},{id:'s4',emoji:'🎯'}];
@@ -1845,7 +1846,15 @@ function _orchSyncBadge(id, state, alive) {
     + (state==='toolcall'? ' toolcall' : '')
     + (state==='waiting' ? ' waiting'  : '');
 }
-function _orchSetState(c, state) { c.state=state; _orchSyncBadge(c.id, state, c.alive); }
+function _orchSetState(c, state, tool) {
+  c.state=state; _orchSyncBadge(c.id, state, c.alive);
+  if (c === _orchConductor) {
+    if      (state==='waiting')      c.statusText='🤔';
+    else if (state==='toolcall')     c.statusText='⌨';
+    else if (state==='user_waiting') c.statusText='⏳';
+    else                             c.statusText=null;
+  }
+}
 function _orchMoveTo(c, pos, cb) { c.target=pos; c._onArrive=cb||null; }
 function _orchSay(c, text, ttl)  { c.bubble={text:text, ttl:ttl||2200}; }
 
@@ -1876,6 +1885,9 @@ function _orchGC(id) {
     if (ch === _orchHeartbeat) {
       // Heartbeat pigeon is permanent — keep alive, just return to idle.
       _orchSetState(ch,'idle');
+    } else if (ch === _orchConductor) {
+      // Conductor is permanent — keep alive, show ⏳ waiting for user.
+      _orchSetState(ch,'user_waiting');
     } else {
       ch.alive=false; _orchSetState(ch,'idle');
     }
@@ -1920,6 +1932,12 @@ function _orchUpdate(dt) {
     }
   });
 }
+function _orchDrawStatus(c) {
+  if (!c.statusText) return;
+  var yOff=_orchBOB[c.frame], cx=Math.floor(c.x), cy=Math.floor(c.y+yOff)-20;
+  orchCtx.font='11px serif'; orchCtx.textAlign='center'; orchCtx.textBaseline='middle';
+  orchCtx.fillText(c.statusText, cx, cy);
+}
 function _orchDrawBubble(c) {
   if (!c.bubble) return;
   var yOff=_orchBOB[c.frame], bx=c.x, by=c.y+yOff-18;
@@ -1941,6 +1959,9 @@ function _orchDrawChar(c) {
   } else if (c.state==='waiting'){
     orchCtx.fillStyle='rgba(96,165,250,0.25)'; orchCtx.beginPath();
     orchCtx.arc(cx,cy,11,0,Math.PI*2); orchCtx.fill();
+  } else if (c.state==='user_waiting'){
+    orchCtx.fillStyle='rgba(167,139,250,0.18)'; orchCtx.beginPath();
+    orchCtx.arc(cx,cy,10,0,Math.PI*2); orchCtx.fill();
   }
   orchCtx.font='18px serif'; orchCtx.textAlign='center'; orchCtx.textBaseline='middle';
   if (c.facing === -1) {
@@ -1954,6 +1975,7 @@ function _orchDrawChar(c) {
   orchCtx.font='6px Silkscreen,monospace'; orchCtx.textAlign='center'; orchCtx.textBaseline='top';
   orchCtx.fillStyle=c.state==='talking'?'#facc15':'#3a4a7a';
   orchCtx.fillText(c.id.toUpperCase(), cx, cy+11);
+  _orchDrawStatus(c);
   _orchDrawBubble(c);
 }
 function _orchRender(ts) {
@@ -1995,7 +2017,7 @@ function connectOrchWs() {
     } else if (msg.type==='event') {
       var ev=msg.event||{};
       if (ev.type==='agent_spawn')  _orchSpawn(ev.id);
-      if (ev.type==='agent_state')  { var c=_orchCharForId(ev.id); if(c) _orchSetState(c,ev.state); }
+      if (ev.type==='agent_state')  { var c=_orchCharForId(ev.id); if(c) _orchSetState(c,ev.state,ev.tool); }
       if (ev.type==='agent_gc')     _orchGC(ev.id);
       if (ev.type==='conversation') _orchConverse(ev.from, ev.to, ev.text);
     }
