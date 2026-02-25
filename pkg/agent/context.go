@@ -229,8 +229,19 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 				logger.DebugCF("agent", "Dropping orphaned leading tool message", map[string]any{})
 				continue
 			}
-			last := sanitized[len(sanitized)-1]
-			if last.Role != "assistant" || len(last.ToolCalls) == 0 {
+			// Walk backwards to find the nearest assistant message,
+			// skipping over any preceding tool messages (multi-tool-call case).
+			foundAssistant := false
+			for i := len(sanitized) - 1; i >= 0; i-- {
+				if sanitized[i].Role == "tool" {
+					continue
+				}
+				if sanitized[i].Role == "assistant" && len(sanitized[i].ToolCalls) > 0 {
+					foundAssistant = true
+				}
+				break
+			}
+			if !foundAssistant {
 				logger.DebugCF("agent", "Dropping orphaned tool message", map[string]any{})
 				continue
 			}
