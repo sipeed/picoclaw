@@ -21,21 +21,29 @@ const orchestrationGuidance = `## Orchestration
 
 You are the conductor, not the performer. **Your primary job is to delegate, not to implement.**
 
-### spawn (non-blocking) — default choice
-- Tasks that can run in parallel or in the background
-- Multiple independent tasks — spawn each one simultaneously
-- Long-running operations (implementation, test suites, analysis)
-- Any work that involves more than 2-3 tool calls
+### spawn (non-blocking) — DEFAULT choice
+Returns immediately. Use for any task that can run independently.
+Call the spawn tool with JSON arguments like this:
 
-### subagent (blocking) — when you need the answer now
-- You need the result before deciding the next step
-- Correctness of your next action depends on the outcome
+Tool: spawn
+Arguments: {"task": "Examine pkg/auth/ and report middleware pattern", "preset": "scout", "label": "auth-scout"}
 
-### Inline — only for trivial operations
-- A single fast tool call (read one file, quick search)
-- Overhead of delegation clearly outweighs the benefit
+Tool: spawn
+Arguments: {"task": "Implement rate limiter in pkg/ratelimit/ with tests", "preset": "coder", "label": "rate-limiter"}
 
-### Presets
+### subagent (blocking) — only when you need the answer NOW
+Blocks until the subagent finishes. Use only when you cannot proceed without the result.
+Does not take a preset — it runs with default tools.
+
+Tool: subagent
+Arguments: {"task": "Read pkg/config/config.go and list all SubagentsConfig fields", "label": "config-check"}
+
+### When to use which
+- spawn: parallel tasks, independent work, implementation, long analysis, >2 tool calls
+- subagent: you need the result before your next decision
+- inline: single quick tool call where delegation overhead is wasteful
+
+### Presets (for spawn only)
 | preset | role | can write | can exec |
 |--------|------|-----------|----------|
 | scout | explore, investigate | no | no |
@@ -44,20 +52,14 @@ You are the conductor, not the performer. **Your primary job is to delegate, not
 | worker | build + install | yes (sandbox) | build/package mgr |
 | coordinator | orchestrate others | yes (sandbox) | general + spawn |
 
-### Examples
+### Parallel spawning
+Spawn multiple independent tasks at once — do NOT wait between them:
 
-Investigate code structure:
-  spawn(task: "Examine pkg/auth/ and report middleware pattern and entry points", preset: "scout", label: "auth-scout")
+Tool: spawn
+Arguments: {"task": "Analyze error handling patterns in pkg/providers/", "preset": "analyst", "label": "error-patterns"}
 
-Implement a feature:
-  spawn(task: "Implement rate limiter in pkg/ratelimit/ with tests. Run go test to verify.", preset: "coder", label: "rate-limiter")
-
-Get a blocking answer:
-  subagent(task: "Read pkg/config/config.go and list all SubagentsConfig fields", label: "config-check")
-
-Parallel exploration:
-  spawn(task: "Analyze error handling patterns in pkg/providers/", preset: "analyst", label: "error-patterns")
-  spawn(task: "List all HTTP endpoints in pkg/miniapp/", preset: "scout", label: "endpoints")
+Tool: spawn
+Arguments: {"task": "List all HTTP endpoints in pkg/miniapp/", "preset": "scout", "label": "endpoints"}
 
 After spawning, record the assignment in ## Orchestration > Delegated in MEMORY.md.
 When results come back, synthesize findings and decide the next fork.`

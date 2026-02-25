@@ -93,8 +93,11 @@ func TestSubagentTool_Description(t *testing.T) {
 	if desc == "" {
 		t.Error("Description should not be empty")
 	}
-	if !strings.Contains(desc, "subagent") {
-		t.Errorf("Description should mention 'subagent', got: %s", desc)
+	if !strings.Contains(desc, "BLOCK") {
+		t.Errorf("Description should mention 'BLOCK', got: %s", desc)
+	}
+	if !strings.Contains(desc, "spawn") {
+		t.Errorf("Description should contrast with spawn, got: %s", desc)
 	}
 }
 
@@ -259,9 +262,12 @@ func TestSubagentTool_Execute_MissingTask(t *testing.T) {
 		t.Error("Expected error for missing task parameter")
 	}
 
-	// ForLLM should contain error message
-	if !strings.Contains(result.ForLLM, "task is required") {
-		t.Errorf("Error message should mention 'task is required', got: %s", result.ForLLM)
+	// ForLLM should contain helpful error with example
+	if !strings.Contains(result.ForLLM, `"task"`) {
+		t.Errorf("Error message should mention '\"task\"', got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "Example") {
+		t.Errorf("Error message should include usage example, got: %s", result.ForLLM)
 	}
 
 	// Err should be set
@@ -286,8 +292,8 @@ func TestSubagentTool_Execute_NilManager(t *testing.T) {
 		t.Error("Expected error for nil manager")
 	}
 
-	if !strings.Contains(result.ForLLM, "Subagent manager not configured") {
-		t.Errorf("Error message should mention manager not configured, got: %s", result.ForLLM)
+	if !strings.Contains(result.ForLLM, "not available in this session") {
+		t.Errorf("Error message should mention 'not available in this session', got: %s", result.ForLLM)
 	}
 }
 

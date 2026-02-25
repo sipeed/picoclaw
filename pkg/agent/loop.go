@@ -1270,9 +1270,15 @@ func buildOrchReminder(iteration int) (providers.Message, bool) {
 	if iteration != 1 && iteration%3 != 0 {
 		return providers.Message{}, false
 	}
-	content := "[System] ORCHESTRATION mode active. Delegate plan steps to subagents using spawn (async) or subagent (blocking). " +
-		"Do NOT implement steps inline unless they are trivial single-tool-call tasks. " +
-		"Spawn multiple independent steps in parallel for maximum throughput."
+	content := `[System] ORCHESTRATION mode active. You MUST delegate plan steps to subagents.
+Use spawn (non-blocking, returns immediately) or subagent (blocking, waits for result).
+Do NOT implement steps inline unless they are a single trivial tool call.
+
+To delegate, call the tool with JSON arguments:
+  Tool: spawn  Arguments: {"task": "...", "preset": "scout", "label": "..."}
+  Tool: subagent  Arguments: {"task": "...", "label": "..."}
+
+Spawn multiple independent steps in parallel for maximum throughput.`
 	return providers.Message{Role: "user", Content: content}, true
 }
 

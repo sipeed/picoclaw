@@ -227,8 +227,45 @@ func (r *ToolRegistry) GetRuntimeStatus() string {
 	return strings.Join(parts, "\n\n")
 }
 
+// buildParamHint extracts parameter names from a JSON schema and returns
+// a hint string like "(task, label?, preset?)". Required params are bare,
+// optional params have a trailing "?".
+func buildParamHint(schema map[string]any) string {
+	props, _ := schema["properties"].(map[string]any)
+	if len(props) == 0 {
+		return ""
+	}
+
+	reqSlice, _ := schema["required"].([]string)
+	reqSet := make(map[string]bool, len(reqSlice))
+	for _, r := range reqSlice {
+		reqSet[r] = true
+	}
+
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	parts := make([]string, 0, len(names))
+	// Required params first, then optional
+	for _, name := range names {
+		if reqSet[name] {
+			parts = append(parts, name)
+		}
+	}
+	for _, name := range names {
+		if !reqSet[name] {
+			parts = append(parts, name+"?")
+		}
+	}
+
+	return "(" + strings.Join(parts, ", ") + ")"
+}
+
 // GetSummaries returns human-readable summaries of all registered tools.
-// Returns a slice of "name - description" strings.
+// Returns a slice of "- `name`(params) - description" strings.
 func (r *ToolRegistry) GetSummaries() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -237,7 +274,8 @@ func (r *ToolRegistry) GetSummaries() []string {
 	summaries := make([]string, 0, len(sorted))
 	for _, name := range sorted {
 		tool := r.tools[name]
-		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", tool.Name(), tool.Description()))
+		hint := buildParamHint(tool.Parameters())
+		summaries = append(summaries, fmt.Sprintf("- `%s`%s - %s", tool.Name(), hint, tool.Description()))
 	}
 	return summaries
 }
