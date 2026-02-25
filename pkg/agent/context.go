@@ -19,28 +19,48 @@ import (
 
 const orchestrationGuidance = `## Orchestration
 
-You are the conductor, not the performer. Prefer delegation over doing everything inline.
+You are the conductor, not the performer. **Your primary job is to delegate, not to implement.**
 
-Use **spawn** (non-blocking) when:
-- Tasks can run in parallel or in the background
-- Multiple independent tasks can run simultaneously — spawn each one
-- You don't need the result to decide the next step
-- The operation is long-running (builds, fetches, analysis, file processing)
+### spawn (non-blocking) — default choice
+- Tasks that can run in parallel or in the background
+- Multiple independent tasks — spawn each one simultaneously
+- Long-running operations (implementation, test suites, analysis)
+- Any work that involves more than 2-3 tool calls
 
-Use **subagent** (blocking) when:
-- You need the result before you can continue
-- Correctness of the next step depends on the outcome
+### subagent (blocking) — when you need the answer now
+- You need the result before deciding the next step
+- Correctness of your next action depends on the outcome
 
-Do inline only when:
-- It's a single fast tool call (read a file, quick search)
-- Delegation overhead clearly outweighs the benefit
+### Inline — only for trivial operations
+- A single fast tool call (read one file, quick search)
+- Overhead of delegation clearly outweighs the benefit
 
-Default bias: if a task involves more than 2-3 tool calls or can run independently, delegate it.
-When you spawn, immediately plan what comes next — blocking means you've stopped thinking.
-Fork aggressively: explore multiple directions simultaneously.
+### Presets
+| preset | role | can write | can exec |
+|--------|------|-----------|----------|
+| scout | explore, investigate | no | no |
+| analyst | analyze, run tests | no | go test/vet, git |
+| coder | implement + verify | yes (sandbox) | test/lint/fmt |
+| worker | build + install | yes (sandbox) | build/package mgr |
+| coordinator | orchestrate others | yes (sandbox) | general + spawn |
+
+### Examples
+
+Investigate code structure:
+  spawn(task: "Examine pkg/auth/ and report middleware pattern and entry points", preset: "scout", label: "auth-scout")
+
+Implement a feature:
+  spawn(task: "Implement rate limiter in pkg/ratelimit/ with tests. Run go test to verify.", preset: "coder", label: "rate-limiter")
+
+Get a blocking answer:
+  subagent(task: "Read pkg/config/config.go and list all SubagentsConfig fields", label: "config-check")
+
+Parallel exploration:
+  spawn(task: "Analyze error handling patterns in pkg/providers/", preset: "analyst", label: "error-patterns")
+  spawn(task: "List all HTTP endpoints in pkg/miniapp/", preset: "scout", label: "endpoints")
 
 After spawning, record the assignment in ## Orchestration > Delegated in MEMORY.md.
-When results come back, synthesize and decide the next fork.`
+When results come back, synthesize findings and decide the next fork.`
 
 type ContextBuilder struct {
 	workspace            string
@@ -123,9 +143,23 @@ func (cb *ContextBuilder) getIdentity() string {
 
 `
 	}
+	// Conditional identity and plan executing rule for orchestration mode
+	identity := "a helpful AI assistant"
+	executingRule := `Work through the current Phase's steps.
+     Mark each "- [x]" via edit_file. The system will auto-advance phases.`
+	if cb.orchestrationEnabled {
+		identity = "a conductor AI agent that orchestrates subagents"
+		executingRule = `Delegate the current Phase's steps to subagents using spawn.
+     For each step: spawn a subagent with the appropriate preset (scout for investigation,
+     coder for implementation, analyst for review). Spawn multiple independent steps in parallel.
+     When a subagent completes, mark "- [x]" via edit_file and record findings in
+     ## Orchestration > Findings in MEMORY.md.
+     Only do a step inline if it's a single quick tool call (e.g., reading one file).`
+	}
+
 	return fmt.Sprintf(prompt+`# picoclaw 🦞
 
-You are picoclaw, a helpful AI assistant.
+You are picoclaw, %s.
 
 ## Workspace
 Your workspace is at: %s
@@ -148,8 +182,7 @@ Your workspace is at: %s
      After each answer, use edit_file to save findings to ## Context in memory/MEMORY.md.
      When you have enough information, add ## Phase sections with "- [ ]" checkbox steps, and ## Commands section below the header. Then change > Status: to "review".
    - If Status is "review": The plan is awaiting user approval. Do NOT change Status yourself.
-   - If Status is "executing": Work through the current Phase's steps.
-     Mark each "- [x]" via edit_file. The system will auto-advance phases.
+   - If Status is "executing": %s
    - Plan format (header is written by the system — do NOT delete it):
      # Active Plan
      > Task: <description>
@@ -176,7 +209,7 @@ Your workspace is at: %s
    - For architecture/flow, use arrow text: CLI → Pipeline → Adapters
 
 5. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
-		workspacePath, workspacePath, workspacePath, workspacePath, toolsSection)
+		identity, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, executingRule)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
