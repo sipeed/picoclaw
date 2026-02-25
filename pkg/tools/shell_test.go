@@ -272,3 +272,15 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 		)
 	}
 }
+
+// TestShellTool_RestrictToWorkspace_AllowsDomainURLWithoutScheme verifies
+// URL-like domain paths (without scheme) are not treated as local absolute paths.
+func TestShellTool_RestrictToWorkspace_AllowsDomainURLWithoutScheme(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+
+	guardError := tool.guardCommand(`curl -s "wttr.in/Nanjing?format=3"`, tmpDir)
+	if guardError != "" {
+		t.Fatalf("expected domain URL to pass safety guard, got: %s", guardError)
+	}
+}
