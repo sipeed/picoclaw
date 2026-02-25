@@ -156,7 +156,7 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 		return exchangeCodeForTokens(cfg, result.code, pkce.CodeVerifier, redirectURI)
 	case manualInput := <-manualCh:
 		if manualInput == "" {
-			return nil, fmt.Errorf("manual input cancelled")
+			return nil, fmt.Errorf("manual input canceled")
 		}
 		// Extract code from URL if it's a full URL
 		code := manualInput
