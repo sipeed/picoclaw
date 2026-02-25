@@ -384,7 +384,7 @@ func (t *SubagentTool) Name() string {
 }
 
 func (t *SubagentTool) Description() string {
-	return "Execute a subagent task synchronously and return the result. Use this for delegating specific tasks to an independent agent instance. Returns execution summary to user and full details to LLM."
+	return "Run a task in a subagent and BLOCK until it completes, returning the result directly. Use when you need the answer before deciding your next step. For background/parallel tasks, use spawn instead."
 }
 
 func (t *SubagentTool) Parameters() map[string]any {
@@ -412,13 +412,15 @@ func (t *SubagentTool) SetContext(channel, chatID string) {
 func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok {
-		return ErrorResult("task is required").WithError(fmt.Errorf("task parameter is required"))
+		return ErrorResult(`Required parameter "task" (string) is missing. Example: {"task": "describe what you need done"}`).
+			WithError(fmt.Errorf("task parameter is required"))
 	}
 
 	label, _ := args["label"].(string)
 
 	if t.manager == nil {
-		return ErrorResult("Subagent manager not configured").WithError(fmt.Errorf("manager is nil"))
+		return ErrorResult("subagent tool is not available in this session (orchestration may be disabled)").
+			WithError(fmt.Errorf("manager is nil"))
 	}
 
 	// Build messages for subagent
