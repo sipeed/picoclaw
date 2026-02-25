@@ -14,7 +14,7 @@
     <a href="https://x.com/SipeedIO"><img src="https://img.shields.io/badge/X_(Twitter)-SipeedIO-black?style=flat&logo=x&logoColor=white" alt="Twitter"></a>
   </p>
 
-**中文** | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [English](README.md)
+**中文** | [English](README.md)
 
 </div>
 
@@ -50,9 +50,16 @@
 > - **注意:** picoclaw正在初期的快速功能开发阶段，可能有尚未修复的网络安全问题，在1.0正式版发布前，请不要将其部署到生产环境中
 > - **注意:** picoclaw最近合并了大量PRs，近期版本可能内存占用较大(10~20MB)，我们将在功能较为收敛后进行资源占用优化.
 
+## 📚 文档导航
+
+推荐从统一入口快速定位文档：
+
+- 中文: [docs/README.zh.md](docs/README.zh.md)
+- English: [docs/README.md](docs/README.md)
+
 ## 📢 新闻 (News)
 
-2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](docs/ROADMAP.md), 期待你的参与！
+2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](ROADMAP.md), 期待你的参与！
 
 2026-02-13 🎉 **PicoClaw 在 4 天内突破 5000 Stars！** 感谢社区的支持！由于正值中国春节假期，PR 和 Issue 涌入较多，我们正在利用这段时间敲定 **项目路线图 (Roadmap)** 并组建 **开发者群组**，以便加速 PicoClaw 的开发。
 🚀 **行动号召：** 请在 GitHub Discussions 中提交您的功能请求 (Feature Requests)。我们将在接下来的周会上进行审查和优先级排序。
@@ -421,7 +428,7 @@ Agent 读取 HEARTBEAT.md
 | 提供商               | 用途                         | 获取 API Key                                                         |
 | -------------------- | ---------------------------- | -------------------------------------------------------------------- |
 | `gemini`             | LLM (Gemini 直连)            | [aistudio.google.com](https://aistudio.google.com)                   |
-| `zhipu`              | LLM (智谱直连)               | [bigmodel.cn](bigmodel.cn)                                           |
+| `zhipu`              | LLM (智谱直连)               | [bigmodel.cn](https://bigmodel.cn)                                   |
 | `openrouter(待测试)` | LLM (推荐，可访问所有模型)   | [openrouter.ai](https://openrouter.ai)                               |
 | `anthropic(待测试)`  | LLM (Claude 直连)            | [console.anthropic.com](https://console.anthropic.com)               |
 | `openai(待测试)`     | LLM (GPT 直连)               | [platform.openai.com](https://platform.openai.com)                   |

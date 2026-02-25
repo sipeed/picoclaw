@@ -1,6 +1,6 @@
 # Contributing to PicoClaw
 
-Thank you for your interest in contributing to PicoClaw! This project is a community-driven effort to build the lightweight and versatile personal AI assistant. We welcome contributions of all kinds: bug fixes, features, documentation, translations, and testing.
+Thank you for your interest in contributing to PicoClaw! This project is a community-driven effort to build the lightweight and versatile personal AI assistant. We welcome contributions of all kinds: bug fixes, features, documentation, and testing.
 
 PicoClaw itself was substantially developed with AI assistance — we embrace this approach and have built our contribution process around it.
 
@@ -30,8 +30,10 @@ We are committed to maintaining a welcoming and respectful community. Be kind, c
 - **Bug reports** — Open an issue using the bug report template.
 - **Feature requests** — Open an issue using the feature request template; discuss before implementing.
 - **Code** — Fix bugs or implement features. See the workflow below.
-- **Documentation** — Improve READMEs, docs, inline comments, or translations.
+- **Documentation** — Improve READMEs, docs, inline comments, or EN/ZH documentation consistency.
 - **Testing** — Run PicoClaw on new hardware, channels, or LLM providers and report your results.
+
+Documentation language policy: English and Chinese only.
 
 For substantial new features, please open an issue first to discuss the design before writing code. This prevents wasted effort and ensures alignment with the project's direction.
 
