@@ -117,13 +117,19 @@ func (t *I2CTool) detect() *ToolResult {
 	return SilentResult(fmt.Sprintf("Found %d I2C bus(es):\n%s", len(buses), string(result)))
 }
 
+// Helper functions for I2C operations (used by platform-specific implementations)
+
 // isValidBusID checks that a bus identifier is a simple number (prevents path injection)
+//
+//nolint:unused // Used by i2c_linux.go
 func isValidBusID(id string) bool {
 	matched, _ := regexp.MatchString(`^\d+$`, id)
 	return matched
 }
 
 // parseI2CAddress extracts and validates an I2C address from args
+//
+//nolint:unused // Used by i2c_linux.go
 func parseI2CAddress(args map[string]any) (int, *ToolResult) {
 	addrFloat, ok := args["address"].(float64)
 	if !ok {
@@ -137,6 +143,8 @@ func parseI2CAddress(args map[string]any) (int, *ToolResult) {
 }
 
 // parseI2CBus extracts and validates an I2C bus from args
+//
+//nolint:unused // Used by i2c_linux.go
 func parseI2CBus(args map[string]any) (string, *ToolResult) {
 	bus, ok := args["bus"].(string)
 	if !ok || bus == "" {

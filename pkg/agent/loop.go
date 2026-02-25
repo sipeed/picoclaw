@@ -106,10 +106,11 @@ func registerSharedTools(
 			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+			Proxy:                cfg.Tools.Web.Proxy,
 		}); searchTool != nil {
 			agent.Tools.Register(searchTool)
 		}
-		agent.Tools.Register(tools.NewWebFetchTool(50000))
+		agent.Tools.Register(tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy))
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		agent.Tools.Register(tools.NewI2CTool())
@@ -626,8 +627,9 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
+			Role:             "assistant",
+			Content:          response.Content,
+			ReasoningContent: response.ReasoningContent,
 		}
 		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)

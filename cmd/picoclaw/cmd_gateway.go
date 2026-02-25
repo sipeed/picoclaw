@@ -52,7 +52,7 @@ func gatewayCmd() {
 	}
 	// Use the resolved model ID from provider creation
 	if modelID != "" {
-		cfg.Agents.Defaults.Model = modelID
+		cfg.Agents.Defaults.ModelName = modelID
 	}
 
 	msgBus := bus.NewMessageBus()
@@ -211,6 +211,9 @@ func gatewayCmd() {
 	<-sigChan
 
 	fmt.Println("\nShutting down...")
+	if cp, ok := provider.(providers.StatefulProvider); ok {
+		cp.Close()
+	}
 	cancel()
 	healthServer.Stop(context.Background())
 	deviceService.Stop()
