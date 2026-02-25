@@ -40,21 +40,21 @@ builds:
       - goos: windows
         goarch: arm
 
-#dockers_v2:
-#  - id: picoclaw
-#    dockerfile: Dockerfile.goreleaser
-#    ids:
-#      - picoclaw
-#    images:
-#      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
-#      - "docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}"
-#    tags:
-#      - "{{ .Tag }}"
-#      - "latest"
-#    platforms:
-#      - linux/amd64
-#      - linux/arm64
-#      - linux/riscv64
+dockers_v2:
+  - id: picoclaw
+    dockerfile: Dockerfile.goreleaser
+    ids:
+      - picoclaw
+    images:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
+      - "docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}"
+    tags:
+      - "{{ .Tag }}"
+      - "latest"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+      - linux/riscv64
 
 archives:
   - formats: [tar.gz]
