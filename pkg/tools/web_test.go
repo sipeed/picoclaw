@@ -490,16 +490,16 @@ func TestNewWebFetchToolWithProxy(t *testing.T) {
 }
 
 func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
-	t.Run("perplexity", func(t *testing.T) {
+	t.Run("grok", func(t *testing.T) {
 		tool := NewWebSearchTool(WebSearchToolOptions{
-			PerplexityEnabled:    true,
-			PerplexityAPIKey:     "k",
-			PerplexityMaxResults: 3,
-			Proxy:                "http://127.0.0.1:7890",
+			GrokEnabled:    true,
+			GrokAPIKey:     "k",
+			GrokMaxResults: 3,
+			Proxy:          "http://127.0.0.1:7890",
 		})
-		p, ok := tool.provider.(*PerplexitySearchProvider)
+		p, ok := tool.provider.(*GrokSearchProvider)
 		if !ok {
-			t.Fatalf("provider type = %T, want *PerplexitySearchProvider", tool.provider)
+			t.Fatalf("provider type = %T, want *GrokSearchProvider", tool.provider)
 		}
 		if p.proxy != "http://127.0.0.1:7890" {
 			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
