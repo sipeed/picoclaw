@@ -312,6 +312,7 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 		execTool := sm.execTool
 		if config.ExecPolicy != nil {
 			_ = execTool.SetAllowPatterns([]string{config.ExecPolicy.AllowPattern})
+			execTool.SetLocalNetOnly(config.ExecPolicy.LocalNetOnly)
 		}
 		registry.Register(execTool)
 

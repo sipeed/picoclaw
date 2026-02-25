@@ -128,6 +128,8 @@ func TestSandboxConfigForPreset_Coder(t *testing.T) {
 	}
 	if config.ExecPolicy == nil {
 		t.Errorf("ExecPolicy: got nil, want non-nil")
+	} else if !config.ExecPolicy.LocalNetOnly {
+		t.Errorf("ExecPolicy.LocalNetOnly: got false, want true")
 	}
 	if config.SpawnablePresets != nil {
 		t.Errorf("SpawnablePresets: got non-nil, want nil")
@@ -146,6 +148,8 @@ func TestSandboxConfigForPreset_Coordinator(t *testing.T) {
 	}
 	if config.ExecPolicy == nil {
 		t.Errorf("ExecPolicy: got nil, want non-nil")
+	} else if !config.ExecPolicy.LocalNetOnly {
+		t.Errorf("ExecPolicy.LocalNetOnly: got false, want true")
 	}
 	if config.SpawnablePresets == nil {
 		t.Errorf("SpawnablePresets: got nil, want non-nil")
@@ -186,6 +190,9 @@ func TestPresetExecPatterns_Coder(t *testing.T) {
 		{"go build ./...", false},
 		{"npm install", false},
 		{"pnpm test", true},
+		// curl/wget are in the allowlist; LocalNetOnly enforcement is at runtime
+		{"curl http://localhost:3000/health", true},
+		{"wget http://127.0.0.1:8080/status", true},
 	}
 
 	for _, tt := range tests {

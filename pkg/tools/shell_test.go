@@ -983,3 +983,97 @@ func TestExecTool_Bg_RingBufferOverflow(t *testing.T) {
 		t.Errorf("ring buffer exceeded max size: %d > %d", bufLen, bgRingBufSize)
 	}
 }
+
+// TestIsLocalHost verifies localhost and RFC 1918 detection using net package.
+func TestIsLocalHost(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		// Loopback / localhost
+		{"localhost", true},
+		{"LOCALHOST", true},
+		{"127.0.0.1", true},
+		{"127.0.0.2", true},
+		{"::1", true},
+		// RFC 1918 private ranges
+		{"10.0.0.1", true},
+		{"10.255.255.255", true},
+		{"172.16.0.1", true},
+		{"172.31.255.255", true},
+		{"192.168.0.1", true},
+		{"192.168.1.100", true},
+		// Public addresses
+		{"8.8.8.8", false},
+		{"1.1.1.1", false},
+		{"example.com", false},
+		{"api.github.com", false},
+		// Edge: non-private but routable private-looking address
+		{"172.15.255.255", false}, // just below 172.16/12
+		{"172.32.0.0", false},     // just above 172.31/12
+	}
+
+	for _, tt := range tests {
+		got := isLocalHost(tt.host)
+		if got != tt.want {
+			t.Errorf("isLocalHost(%q) = %v, want %v", tt.host, got, tt.want)
+		}
+	}
+}
+
+// TestCheckCurlLocalNet verifies URL-level enforcement for curl/wget commands.
+func TestCheckCurlLocalNet(t *testing.T) {
+	tests := []struct {
+		cmd     string
+		wantErr bool
+	}{
+		// Allowed: localhost and private IPs
+		{"curl http://localhost:3000/health", false},
+		{"curl -v http://127.0.0.1:8080/api/status", false},
+		{"wget http://192.168.1.10/file.bin", false},
+		{"curl -X POST http://10.0.0.5:9000/webhook", false},
+		// Blocked: public addresses
+		{"curl http://example.com", true},
+		{"wget https://releases.github.com/v1.tar.gz", true},
+		{"curl http://8.8.8.8/data", true},
+		// Allowed: no http URL (e.g. --help, --version — no network access)
+		{"curl --help", false},
+		{"curl --version", false},
+		{"wget --help", false},
+	}
+
+	for _, tt := range tests {
+		errMsg := checkCurlLocalNet(tt.cmd)
+		gotErr := errMsg != ""
+		if gotErr != tt.wantErr {
+			t.Errorf("checkCurlLocalNet(%q): gotErr=%v wantErr=%v (msg: %q)",
+				tt.cmd, gotErr, tt.wantErr, errMsg)
+		}
+	}
+}
+
+// TestExecTool_LocalNetOnly verifies curl/wget blocking via SetLocalNetOnly.
+func TestExecTool_LocalNetOnly(t *testing.T) {
+	tool := NewExecTool("", false)
+	tool.SetLocalNetOnly(true)
+
+	tests := []struct {
+		cmd     string
+		wantErr bool
+	}{
+		{"curl http://localhost:3000", false},
+		{"curl http://example.com", true},
+		{"echo hello", false}, // non-curl not affected
+	}
+
+	ctx := context.Background()
+	for _, tt := range tests {
+		result := tool.Execute(ctx, map[string]any{"command": tt.cmd})
+		if tt.wantErr && !result.IsError {
+			t.Errorf("cmd %q: expected blocked, but succeeded", tt.cmd)
+		}
+		if !tt.wantErr && result.IsError && strings.Contains(result.ForLLM, "safety guard") {
+			t.Errorf("cmd %q: expected allowed, but safety guard blocked: %s", tt.cmd, result.ForLLM)
+		}
+	}
+}
