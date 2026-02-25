@@ -80,15 +80,18 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 	agentID, _ := args["agent_id"].(string)
 	preset, _ := args["preset"].(string)
 
-	// Check allowlist if targeting a specific agent or preset
-	checkTarget := agentID
-	if checkTarget == "" && preset != "" {
-		checkTarget = preset
-	}
-	if checkTarget != "" && t.allowlistCheck != nil {
-		if !t.allowlistCheck(checkTarget) {
-			return ErrorResult(fmt.Sprintf("preset %q is not allowed. Available presets: scout, analyst, coder, worker, coordinator", preset))
+	// Check allowlist if targeting a specific agent ID.
+	// Presets (scout, analyst, etc.) are NOT agent IDs — they are validated
+	// separately by IsValidPreset() in the subagent manager.
+	if agentID != "" && t.allowlistCheck != nil {
+		if !t.allowlistCheck(agentID) {
+			return ErrorResult(fmt.Sprintf("agent %q is not in the allowed agents list", agentID))
 		}
+	}
+
+	// Validate preset name if provided
+	if preset != "" && !IsValidPreset(Preset(preset)) {
+		return ErrorResult(fmt.Sprintf("preset %q is not valid. Available presets: scout, analyst, coder, worker, coordinator", preset))
 	}
 
 	if t.manager == nil {
