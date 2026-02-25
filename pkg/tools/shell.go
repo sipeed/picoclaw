@@ -777,6 +777,12 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				if isExecutable(p) {
 					continue
 				}
+				// Allow character/block device files (e.g. /dev/null used by
+				// "curl -o /dev/null"). These are not regular files and pose
+				// no workspace-escape risk.
+				if info, statErr := os.Stat(p); statErr == nil && info.Mode()&os.ModeDevice != 0 {
+					continue
+				}
 				// Agent CLI slash commands: skip non-existent paths
 				// (e.g., "/review" is a command, not a file).
 				if agentCLI {
