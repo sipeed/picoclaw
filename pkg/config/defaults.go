@@ -320,5 +320,39 @@ func DefaultConfig() *Config {
 			Enabled:    false,
 			MonitorUSB: true,
 		},
+		Security: SecurityConfig{
+			SSRF: SSRFConfig{
+				Enabled:                true,
+				BlockPrivateIPs:        true,
+				BlockMetadataEndpoints: true,
+				BlockLocalhost:         true,
+				AllowedHosts:           []string{},
+				DNSRebindingProtection: true,
+			},
+			AuditLogging: AuditLoggingConfig{
+				Enabled:           true,
+				LogToolExecutions: true,
+				LogAuthEvents:     true,
+				LogConfigChanges:  true,
+				RetentionDays:     30,
+			},
+			RateLimiting: RateLimitingConfig{
+				Enabled:                 false, // Off by default for single-user use
+				RequestsPerMinute:       60,
+				ToolExecutionsPerMinute: 30,
+				PerUserLimit:            true,
+			},
+			CredentialEncryption: CredentialEncryptionConfig{
+				Enabled:     true,
+				UseKeychain: true,
+				Algorithm:   "chacha20-poly1305",
+			},
+			PromptInjection: PromptInjectionConfig{
+				Enabled:                 true,
+				SanitizeUserInput:       true,
+				DetectInjectionPatterns: true,
+				CustomBlockPatterns:     []string{},
+			},
+		},
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -24,7 +25,26 @@ func GetConfigPath() string {
 }
 
 func LoadConfig() (*config.Config, error) {
-	return config.LoadConfig(GetConfigPath())
+	cfg, err := config.LoadConfig(GetConfigPath())
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize secure store with config settings
+	if err := initSecureStore(cfg); err != nil {
+		return nil, fmt.Errorf("initializing secure store: %w", err)
+	}
+
+	return cfg, nil
+}
+
+// initSecureStore initializes the secure credential store based on config.
+func initSecureStore(cfg *config.Config) error {
+	return auth.InitSecureStore(auth.SecureStoreConfig{
+		Enabled:     cfg.Security.CredentialEncryption.Enabled,
+		UseKeychain: cfg.Security.CredentialEncryption.UseKeychain,
+		Algorithm:   cfg.Security.CredentialEncryption.Algorithm,
+	})
 }
 
 // FormatVersion returns the version string with optional git commit

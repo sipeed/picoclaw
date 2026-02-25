@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/redaction"
 )
 
 type LogLevel int
@@ -34,6 +36,9 @@ var (
 	logger       *Logger
 	once         sync.Once
 	mu           sync.RWMutex
+
+	// redactionEnabled controls whether log messages are redacted for privacy
+	redactionEnabled = true
 )
 
 type Logger struct {
@@ -99,6 +104,14 @@ func DisableFileLogging() {
 func logMessage(level LogLevel, component string, message string, fields map[string]any) {
 	if level < currentLevel {
 		return
+	}
+
+	// Apply redaction to message and fields for privacy
+	if redactionEnabled {
+		message = redaction.Redact(message)
+		if fields != nil {
+			fields = redaction.RedactFields(fields)
+		}
 	}
 
 	entry := LogEntry{
@@ -238,4 +251,23 @@ func FatalF(message string, fields map[string]any) {
 
 func FatalCF(component string, message string, fields map[string]any) {
 	logMessage(FATAL, component, message, fields)
+}
+
+// SetRedactionEnabled enables or disables log redaction for privacy.
+func SetRedactionEnabled(enabled bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	redactionEnabled = enabled
+}
+
+// IsRedactionEnabled returns whether log redaction is enabled.
+func IsRedactionEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return redactionEnabled
+}
+
+// ConfigureRedaction sets up the global redaction configuration.
+func ConfigureRedaction(config redaction.Config) {
+	redaction.SetGlobalConfig(config)
 }

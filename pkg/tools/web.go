@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/ssrf"
 )
 
 const (
@@ -491,8 +493,9 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolR
 }
 
 type WebFetchTool struct {
-	maxChars int
-	proxy    string
+	maxChars  int
+	proxy     string
+	ssrfGuard *ssrf.Guard
 }
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {
@@ -500,7 +503,8 @@ func NewWebFetchTool(maxChars int) *WebFetchTool {
 		maxChars = 50000
 	}
 	return &WebFetchTool{
-		maxChars: maxChars,
+		maxChars:  maxChars,
+		ssrfGuard: ssrf.NewGuard(ssrf.DefaultConfig()),
 	}
 }
 
@@ -509,8 +513,21 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string) *WebFetchTool {
 		maxChars = 50000
 	}
 	return &WebFetchTool{
-		maxChars: maxChars,
-		proxy:    proxy,
+		maxChars:  maxChars,
+		proxy:     proxy,
+		ssrfGuard: ssrf.NewGuard(ssrf.DefaultConfig()),
+	}
+}
+
+// NewWebFetchToolWithSSRF creates a WebFetchTool with custom SSRF configuration.
+func NewWebFetchToolWithSSRF(maxChars int, proxy string, ssrfConfig ssrf.Config) *WebFetchTool {
+	if maxChars <= 0 {
+		maxChars = 50000
+	}
+	return &WebFetchTool{
+		maxChars:  maxChars,
+		proxy:     proxy,
+		ssrfGuard: ssrf.NewGuard(ssrfConfig),
 	}
 }
 
@@ -546,6 +563,13 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("url is required")
 	}
 
+	// SSRF protection check
+	if t.ssrfGuard != nil {
+		if err := t.ssrfGuard.CheckURL(ctx, urlStr); err != nil {
+			return ErrorResult(fmt.Sprintf("SSRF protection: %v", err))
+		}
+	}
+
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("invalid URL: %v", err))
@@ -578,10 +602,16 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult(fmt.Sprintf("failed to create HTTP client: %v", err))
 	}
 
-	// Configure redirect handling
+	// Configure redirect handling with SSRF protection
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
 			return fmt.Errorf("stopped after 5 redirects")
+		}
+		// Check redirect URL for SSRF
+		if t.ssrfGuard != nil {
+			if err := t.ssrfGuard.CheckURL(ctx, req.URL.String()); err != nil {
+				return fmt.Errorf("redirect blocked by SSRF protection: %v", err)
+			}
 		}
 		return nil
 	}
