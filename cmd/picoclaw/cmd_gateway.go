@@ -234,6 +234,9 @@ func gatewayCmd() {
 	<-sigChan
 
 	fmt.Println("\nShutting down...")
+	if cp, ok := provider.(providers.StatefulProvider); ok {
+		cp.Close()
+	}
 	cancel()
 	if healthServer != nil {
 		healthServer.Stop(context.Background())
