@@ -66,6 +66,26 @@ archives:
       - goos: windows
         formats: [zip]
 
+nfpms:
+  - id: picoclaw
+    package_name: picoclaw
+    file_name_template: >-
+      {{ .PackageName }}_
+      {{- .Version }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "arm64" }}aarch64
+      {{- else if eq .Arch "arm" }}armv{{ .Arm }}
+      {{- else }}{{ .Arch }}{{ end }}
+    vendor: picoclaw
+    homepage: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw
+    maintainer: picoclaw contributors
+    description: picoclaw - a tool for managing and running tasks
+    license: MIT
+    formats:
+      - rpm
+      - deb
+    bindir: /usr/bin
+
 changelog:
   sort: asc
   filters:
