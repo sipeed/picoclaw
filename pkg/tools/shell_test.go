@@ -573,15 +573,12 @@ func TestGuardCommand_DenyPattern_IncludesPattern(t *testing.T) {
 	}
 }
 
-// TestGuardCommand_Allowlist_ShowsPatterns verifies that allowlist violation
-// messages include all configured patterns.
-func TestGuardCommand_Allowlist_ShowsPatterns(t *testing.T) {
+// TestGuardCommand_Allowlist_ShowsRules verifies that allowlist violation
+// messages include all configured rules.
+func TestGuardCommand_Allowlist_ShowsRules(t *testing.T) {
 	workspace := t.TempDir()
 	tool, _ := NewExecTool(workspace, true)
-	err := tool.SetAllowPatterns([]string{`^go\b`, `^git\b`})
-	if err != nil {
-		t.Fatalf("SetAllowPatterns failed: %v", err)
-	}
+	tool.SetAllowRules([]string{"go test", "git"})
 
 	result := tool.guardCommand("curl http://example.com", workspace)
 	if result == "" {
@@ -590,8 +587,8 @@ func TestGuardCommand_Allowlist_ShowsPatterns(t *testing.T) {
 	if !strings.Contains(result, "not in allowlist") {
 		t.Errorf("expected 'not in allowlist' in message, got: %s", result)
 	}
-	if !strings.Contains(result, `^go\b`) || !strings.Contains(result, `^git\b`) {
-		t.Errorf("expected allowlist patterns in message, got: %s", result)
+	if !strings.Contains(result, "go test") || !strings.Contains(result, "git") {
+		t.Errorf("expected allowlist rules in message, got: %s", result)
 	}
 }
 
@@ -1054,7 +1051,7 @@ func TestCheckCurlLocalNet(t *testing.T) {
 
 // TestExecTool_LocalNetOnly verifies curl/wget blocking via SetLocalNetOnly.
 func TestExecTool_LocalNetOnly(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	tool.SetLocalNetOnly(true)
 
 	tests := []struct {

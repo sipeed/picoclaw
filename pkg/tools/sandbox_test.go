@@ -173,7 +173,10 @@ func TestPresetAllowRules_Coder(t *testing.T) {
 		t.Fatalf("coder rules missing or empty")
 	}
 
-	exec := NewExecTool(t.TempDir(), true)
+	exec, err := NewExecTool(t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
 	exec.SetAllowRules(rules)
 
 	tests := []struct {
@@ -224,7 +227,10 @@ func TestPresetAllowRules_Analyst(t *testing.T) {
 		t.Fatalf("analyst rules missing or empty")
 	}
 
-	exec := NewExecTool(t.TempDir(), true)
+	exec, err := NewExecTool(t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
 	exec.SetAllowRules(rules)
 
 	tests := []struct {
@@ -264,7 +270,10 @@ func TestPresetAllowRules_Worker(t *testing.T) {
 		t.Fatalf("worker rules missing or empty")
 	}
 
-	exec := NewExecTool(t.TempDir(), true)
+	exec, err := NewExecTool(t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
 	exec.SetAllowRules(rules)
 
 	tests := []struct {
@@ -306,7 +315,10 @@ func TestPresetAllowRules_Coordinator(t *testing.T) {
 		t.Fatalf("coordinator rules missing or empty")
 	}
 
-	exec := NewExecTool(t.TempDir(), true)
+	exec, err := NewExecTool(t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
 	exec.SetAllowRules(rules)
 
 	tests := []struct {

@@ -3,6 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +24,10 @@ type SubagentTask struct {
 	Status        string
 	Result        string
 	Created       int64
+	CompletedAt   int64          `json:"-"`
+	Iterations    int            `json:"-"`
+	ToolCalls     int            `json:"-"`
+	ToolStats     map[string]int `json:"-"`
 }
 
 type SubagentManager struct {
@@ -241,14 +248,19 @@ After completing, provide a clear summary of what was done and how it was verifi
 	} else {
 		task.Status = "completed"
 		task.Result = loopResult.Content
+		task.CompletedAt = time.Now().UnixMilli()
+		task.Iterations = loopResult.Iterations
+		task.ToolCalls = loopResult.ToolCalls
+		task.ToolStats = loopResult.ToolStats
 		// Notify conductor of the result
 		sm.reporter.ReportConversation(task.ID, "conductor", loopResult.Content)
 		sm.reporter.ReportGC(task.ID, "completed")
 		result = &ToolResult{
 			ForLLM: fmt.Sprintf(
-				"Subagent '%s' completed (iterations: %d): %s",
+				"Subagent '%s' completed (iterations: %d, tool calls: %d): %s",
 				task.Label,
 				loopResult.Iterations,
+				loopResult.ToolCalls,
 				loopResult.Content,
 			),
 			ForUser: loopResult.Content,
@@ -261,14 +273,23 @@ After completing, provide a clear summary of what was done and how it was verifi
 	// Send announce message back to main agent
 	if sm.bus != nil {
 		announceContent := fmt.Sprintf("Task '%s' completed.\n\nResult:\n%s", task.Label, task.Result)
+		metadata := map[string]string{
+			"duration_ms": strconv.FormatInt(task.CompletedAt-task.Created, 10),
+			"iterations":  strconv.Itoa(task.Iterations),
+			"tool_calls":  strconv.Itoa(task.ToolCalls),
+		}
+		if len(task.ToolStats) > 0 {
+			metadata["tool_stats"] = formatToolStats(task.ToolStats)
+		}
 		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer pubCancel()
 		sm.bus.PublishInbound(pubCtx, bus.InboundMessage{
 			Channel:  "system",
 			SenderID: fmt.Sprintf("subagent:%s", task.ID),
 			// Format: "original_channel:original_chat_id" for routing back
-			ChatID:  fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
-			Content: announceContent,
+			ChatID:   fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
+			Content:  announceContent,
+			Metadata: metadata,
 		})
 	}
 }
@@ -481,8 +502,8 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if labelStr == "" {
 		labelStr = "(unnamed)"
 	}
-	llmContent := fmt.Sprintf("Subagent task completed:\nLabel: %s\nIterations: %d\nResult: %s",
-		labelStr, loopResult.Iterations, loopResult.Content)
+	llmContent := fmt.Sprintf("Subagent task completed:\nLabel: %s\nIterations: %d\nTool calls: %d\nResult: %s",
+		labelStr, loopResult.Iterations, loopResult.ToolCalls, loopResult.Content)
 
 	return &ToolResult{
 		ForLLM:  llmContent,
@@ -491,4 +512,19 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		IsError: false,
 		Async:   false,
 	}
+}
+
+// formatToolStats formats a tool stats map as a compact string: "exec:3,read_file:5".
+// Keys are sorted alphabetically for deterministic output.
+func formatToolStats(stats map[string]int) string {
+	keys := make([]string, 0, len(stats))
+	for k := range stats {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+":"+strconv.Itoa(stats[k]))
+	}
+	return strings.Join(parts, ",")
 }
