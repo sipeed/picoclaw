@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // TestShellTool_Success verifies successful command execution
@@ -243,6 +245,82 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 	}
 	if !strings.Contains(result.ForLLM, "blocked") {
 		t.Errorf("expected 'blocked' in error, got: %s", result.ForLLM)
+	}
+}
+
+// TestShellTool_RemoteChannelBlockedByDefault verifies exec is blocked for remote channels
+func TestShellTool_RemoteChannelBlockedByDefault(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tools.Exec.EnableDenyPatterns = true
+	cfg.Tools.Exec.AllowRemote = false
+
+	tool := NewExecToolWithConfig("", false, cfg)
+	result := tool.Execute(context.Background(), map[string]any{
+		"command":    "echo hi",
+		"__channel":  "telegram",
+		"__chat_id":  "chat-1",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected remote-channel exec to be blocked")
+	}
+	if !strings.Contains(result.ForLLM, "restricted to internal channels") {
+		t.Errorf("expected 'restricted to internal channels' message, got: %s", result.ForLLM)
+	}
+}
+
+// TestShellTool_InternalChannelAllowed verifies exec is allowed for internal channels
+func TestShellTool_InternalChannelAllowed(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tools.Exec.EnableDenyPatterns = true
+	cfg.Tools.Exec.AllowRemote = false
+
+	tool := NewExecToolWithConfig("", false, cfg)
+	result := tool.Execute(context.Background(), map[string]any{
+		"command":    "echo hi",
+		"__channel":  "cli",
+		"__chat_id":  "direct",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected internal channel exec to succeed, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "hi") {
+		t.Errorf("expected output to contain 'hi', got: %s", result.ForLLM)
+	}
+}
+
+// TestShellTool_EmptyChannelBlockedWhenNotAllowRemote verifies fail-closed when no channel context
+func TestShellTool_EmptyChannelBlockedWhenNotAllowRemote(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tools.Exec.EnableDenyPatterns = true
+	cfg.Tools.Exec.AllowRemote = false
+
+	tool := NewExecToolWithConfig("", false, cfg)
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "echo hi",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected exec with empty channel to be blocked when allowRemote=false")
+	}
+}
+
+// TestShellTool_AllowRemoteBypassesChannelCheck verifies allowRemote=true permits any channel
+func TestShellTool_AllowRemoteBypassesChannelCheck(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tools.Exec.EnableDenyPatterns = true
+	cfg.Tools.Exec.AllowRemote = true
+
+	tool := NewExecToolWithConfig("", false, cfg)
+	result := tool.Execute(context.Background(), map[string]any{
+		"command":    "echo hi",
+		"__channel":  "telegram",
+		"__chat_id":  "chat-1",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected allowRemote=true to permit remote channel, got: %s", result.ForLLM)
 	}
 }
 

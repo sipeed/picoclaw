@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -362,6 +363,130 @@ func TestWebTool_WebFetch_PrivateHostAllowedForTests(t *testing.T) {
 
 	if result.IsError {
 		t.Errorf("expected success when private host access is allowed in tests, got %q", result.ForLLM)
+	}
+}
+
+// TestWebFetch_BlocksIPv4MappedIPv6Loopback verifies ::ffff:127.0.0.1 is blocked
+func TestWebFetch_BlocksIPv4MappedIPv6Loopback(t *testing.T) {
+	tool := NewWebFetchTool(50000)
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://[::ffff:127.0.0.1]:0",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for IPv4-mapped IPv6 loopback URL, got success")
+	}
+}
+
+// TestWebFetch_BlocksMetadataIP verifies 169.254.169.254 is blocked
+func TestWebFetch_BlocksMetadataIP(t *testing.T) {
+	tool := NewWebFetchTool(50000)
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://169.254.169.254/latest/meta-data",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for cloud metadata IP, got success")
+	}
+}
+
+// TestWebFetch_BlocksIPv6UniqueLocal verifies fc00::/7 addresses are blocked
+func TestWebFetch_BlocksIPv6UniqueLocal(t *testing.T) {
+	tool := NewWebFetchTool(50000)
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://[fd00::1]:0",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for IPv6 unique local address, got success")
+	}
+}
+
+// TestWebFetch_Blocks6to4 verifies 2002::/16 addresses are blocked (may embed private IPv4)
+func TestWebFetch_Blocks6to4(t *testing.T) {
+	tool := NewWebFetchTool(50000)
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://[2002:7f00:0001::1]:0",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for 6to4 address, got success")
+	}
+}
+
+// TestWebFetch_BlocksTeredo verifies 2001:0000::/32 addresses are blocked
+func TestWebFetch_BlocksTeredo(t *testing.T) {
+	tool := NewWebFetchTool(50000)
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://[2001:0000::1]:0",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for Teredo tunnel address, got success")
+	}
+}
+
+// TestWebFetch_RedirectToPrivateBlocked verifies redirects to private IPs are blocked
+func TestWebFetch_RedirectToPrivateBlocked(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Redirect to a private IP
+		http.Redirect(w, r, "http://10.0.0.1/secret", http.StatusFound)
+	}))
+	defer server.Close()
+
+	// Temporarily disable private host allowance for the redirect check
+	allowPrivateWebFetchHosts.Store(false)
+	defer allowPrivateWebFetchHosts.Store(true)
+
+	tool := NewWebFetchTool(50000)
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": server.URL,
+	})
+
+	if !result.IsError {
+		t.Error("expected error when redirecting to private IP, got success")
+	}
+}
+
+// TestIsPrivateOrRestrictedIP_Table tests IP classification logic
+func TestIsPrivateOrRestrictedIP_Table(t *testing.T) {
+	tests := []struct {
+		ip      string
+		blocked bool
+		desc    string
+	}{
+		{"127.0.0.1", true, "IPv4 loopback"},
+		{"10.0.0.1", true, "IPv4 private class A"},
+		{"172.16.0.1", true, "IPv4 private class B"},
+		{"192.168.1.1", true, "IPv4 private class C"},
+		{"169.254.169.254", true, "link-local / cloud metadata"},
+		{"100.64.0.1", true, "carrier-grade NAT"},
+		{"0.0.0.0", true, "unspecified"},
+		{"8.8.8.8", false, "public DNS"},
+		{"1.1.1.1", false, "public DNS"},
+		{"::1", true, "IPv6 loopback"},
+		{"::ffff:127.0.0.1", true, "IPv4-mapped IPv6 loopback"},
+		{"::ffff:10.0.0.1", true, "IPv4-mapped IPv6 private"},
+		{"fc00::1", true, "IPv6 unique local"},
+		{"fd00::1", true, "IPv6 unique local"},
+		{"2002:7f00:0001::1", true, "6to4 with embedded 127.x"},
+		{"2001:0000::1", true, "Teredo"},
+		{"2607:f8b0:4004:800::200e", false, "public IPv6 (Google)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			ip := net.ParseIP(tt.ip)
+			if ip == nil {
+				t.Fatalf("failed to parse IP: %s", tt.ip)
+			}
+			got := isPrivateOrRestrictedIP(ip)
+			if got != tt.blocked {
+				t.Errorf("isPrivateOrRestrictedIP(%s) = %v, want %v", tt.ip, got, tt.blocked)
+			}
+		})
 	}
 }
 
