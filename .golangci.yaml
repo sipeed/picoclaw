@@ -47,7 +47,6 @@ linters:
     - godox
     - goprintffuncname
     - gosec
-    - govet
     - ineffassign
     - lll
     - maintidx
@@ -67,7 +66,6 @@ linters:
     - testifylint
     - thelper
     - unparam
-    - unused
     - usestdlibvars
     - usetesting
     - wastedassign
@@ -153,6 +151,9 @@ linters:
           - gocognit
           - gocyclo
         path: _test\.go$
+      - linters:
+          - nolintlint
+        path: 'pkg/tools/(i2c\.go|spi\.go)$'
 
 issues:
   max-issues-per-linter: 0
@@ -160,12 +161,11 @@ issues:
 
 formatters:
   enable:
+    - gci
+    - gofmt
+    - gofumpt
     - goimports
-  # TODO: Disabled, because they are failing at the moment, we should fix them and enable (step by step)
-  #    - gci
-  #    - gofmt
-  #    - gofumpt
-  #    - golines
+    - golines
   settings:
     gci:
       sections:

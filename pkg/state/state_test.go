@@ -98,7 +98,7 @@ func TestAtomicity_NoCorruptionOnInterrupt(t *testing.T) {
 
 	// Simulate a crash scenario by manually creating a corrupted temp file
 	tempFile := filepath.Join(tmpDir, "state", "state.json.tmp")
-	err = os.WriteFile(tempFile, []byte("corrupted data"), 0644)
+	err = os.WriteFile(tempFile, []byte("corrupted data"), 0o644)
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}

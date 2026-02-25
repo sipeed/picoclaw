@@ -1,23 +1,35 @@
 package protocoltypes
 
 type ToolCall struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type,omitempty"`
-	Function  *FunctionCall          `json:"function,omitempty"`
-	Name      string                 `json:"name,omitempty"`
-	Arguments map[string]interface{} `json:"arguments,omitempty"`
+	ID               string         `json:"id"`
+	Type             string         `json:"type,omitempty"`
+	Function         *FunctionCall  `json:"function,omitempty"`
+	Name             string         `json:"-"`
+	Arguments        map[string]any `json:"-"`
+	ThoughtSignature string         `json:"-"` // Internal use only
+	ExtraContent     *ExtraContent  `json:"extra_content,omitempty"`
+}
+
+type ExtraContent struct {
+	Google *GoogleExtra `json:"google,omitempty"`
+}
+
+type GoogleExtra struct {
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 type FunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	Name             string `json:"name"`
+	Arguments        string `json:"arguments"`
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 type LLMResponse struct {
-	Content      string     `json:"content"`
-	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
-	FinishReason string     `json:"finish_reason"`
-	Usage        *UsageInfo `json:"usage,omitempty"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	FinishReason     string     `json:"finish_reason"`
+	Usage            *UsageInfo `json:"usage,omitempty"`
 }
 
 type UsageInfo struct {
@@ -27,10 +39,11 @@ type UsageInfo struct {
 }
 
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
 
 type ToolDefinition struct {
@@ -39,7 +52,7 @@ type ToolDefinition struct {
 }
 
 type ToolFunctionDefinition struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
 }
