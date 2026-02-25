@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh issue view:*)",
+      "Bash(cd /d/vscode/ai/picoclaw && go vet ./pkg/agent/ 2>&1)",
+      "Bash(cd:*)",
+      "Bash(cp:*)",
+      "Bash(ls:*)",
+      "Bash(head:*)",
+      "Bash(wc:*)",
+      "WebFetch(domain:docs.astral.sh)",
+      "WebFetch(domain:github.com)",
+      "Bash(cd /d/vscode/ai/picoclaw && go vet ./pkg/agent/... ./pkg/channels/... ./pkg/bus/... 2>&1)",
+      "Bash(go list:*)",
+      "Bash(go mod:*)",
+      "Bash(go env:*)",
+      "Bash(cd /d/vscode/ai/picoclaw && go vet ./pkg/miniapp/... ./pkg/logger/... 2>&1)",
+      "Bash(cd /d/vscode/ai/picoclaw && go vet ./pkg/logger/... ./pkg/miniapp/... 2>&1)",
+      "Bash(cd /d/vscode/ai/picoclaw && go vet ./pkg/agent/... 2>&1)",
+      "WebSearch",
+      "Bash(gh api:*)",
+      "Bash(gh run:*)",
+      "Bash(gh pr:*)",
+      "Bash(gofmt:*)"
+    ]
+  },
+  "remote": {
+    "defaultEnvironmentId": "env_011CUpDfW35pH2YVfqef4sHE"
+  }
+}

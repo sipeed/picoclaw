@@ -163,6 +163,51 @@ func TestToolLoop_Reporter_ToolcallOrderedAfterWaiting(t *testing.T) {
 	}
 }
 
+// TestToolLoop_ToolCallStats verifies that ToolLoopResult.ToolCalls and
+// ToolStats are populated correctly after a tool call iteration.
+func TestToolLoop_ToolCallStats(t *testing.T) {
+	reg := NewToolRegistry()
+	reg.Register(&echoTool{})
+
+	result, err := RunToolLoop(context.Background(), ToolLoopConfig{
+		Provider:      &sequenceMockProvider{},
+		Model:         "test",
+		Tools:         reg,
+		MaxIterations: 5,
+	}, []providers.Message{{Role: "user", Content: "do it"}}, "cli", "direct")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ToolCalls != 1 {
+		t.Errorf("ToolCalls = %d, want 1", result.ToolCalls)
+	}
+	if result.ToolStats["echo_tool"] != 1 {
+		t.Errorf("ToolStats[echo_tool] = %d, want 1", result.ToolStats["echo_tool"])
+	}
+	if result.Iterations != 2 {
+		t.Errorf("Iterations = %d, want 2", result.Iterations)
+	}
+}
+
+// TestToolLoop_NoToolCalls_ZeroStats verifies that a direct answer (no tool
+// calls) produces zero ToolCalls and an empty ToolStats map.
+func TestToolLoop_NoToolCalls_ZeroStats(t *testing.T) {
+	result, err := RunToolLoop(context.Background(), ToolLoopConfig{
+		Provider:      &MockLLMProvider{},
+		Model:         "test",
+		MaxIterations: 1,
+	}, []providers.Message{{Role: "user", Content: "hi"}}, "cli", "direct")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ToolCalls != 0 {
+		t.Errorf("ToolCalls = %d, want 0", result.ToolCalls)
+	}
+	if len(result.ToolStats) != 0 {
+		t.Errorf("ToolStats = %v, want empty", result.ToolStats)
+	}
+}
+
 // TestToolLoop_Reporter_NoopImplementsInterface is a compile-time check that
 // orch.Noop satisfies the orch.AgentReporter interface accepted by
 // ToolLoopConfig.Reporter. If Noop ever stops implementing the interface the

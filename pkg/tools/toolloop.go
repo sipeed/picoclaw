@@ -36,6 +36,8 @@ type ToolLoopConfig struct {
 type ToolLoopResult struct {
 	Content    string
 	Iterations int
+	ToolCalls  int            // total tool call count across all iterations
+	ToolStats  map[string]int // tool name → call count
 }
 
 // RunToolLoop executes the LLM + tool call iteration loop.
@@ -52,6 +54,8 @@ func RunToolLoop(
 	}
 
 	iteration := 0
+	totalToolCalls := 0
+	toolStats := map[string]int{}
 	var finalContent string
 
 	for iteration < config.MaxIterations {
@@ -144,6 +148,8 @@ func RunToolLoop(
 					"iteration": iteration,
 				})
 			reporter.ReportStateChange(config.AgentID, orch.AgentStateToolCall, tc.Name)
+			totalToolCalls++
+			toolStats[tc.Name]++
 
 			// Execute tool (no async callback for subagents - they run independently)
 			var toolResult *ToolResult
@@ -172,5 +178,7 @@ func RunToolLoop(
 	return &ToolLoopResult{
 		Content:    finalContent,
 		Iterations: iteration,
+		ToolCalls:  totalToolCalls,
+		ToolStats:  toolStats,
 	}, nil
 }

@@ -820,10 +820,11 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	if idx := strings.LastIndex(label, ":"); idx >= 0 {
 		label = label[idx+1:]
 	}
+	notification := formatSubagentCompletion(label, msg.Metadata)
 	_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 		Channel:         originChannel,
 		ChatID:          originChatID,
-		Content:         fmt.Sprintf("📋 %s completed.", label),
+		Content:         notification,
 		SkipPlaceholder: true,
 	})
 
@@ -835,6 +836,56 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		})
 
 	return "", nil
+}
+
+// formatSubagentCompletion builds the user-facing notification for a completed subagent.
+// If metadata contains duration_ms and tool_calls it produces e.g.:
+//
+//	"📋 scout-1 completed (3.2s, 5 tool calls)."
+//
+// Without metadata it falls back to the plain "📋 scout-1 completed." format.
+func formatSubagentCompletion(label string, metadata map[string]string) string {
+	if len(metadata) == 0 {
+		return fmt.Sprintf("📋 %s completed.", label)
+	}
+	durationMs, _ := strconv.ParseInt(metadata["duration_ms"], 10, 64)
+	toolCalls, _ := strconv.Atoi(metadata["tool_calls"])
+
+	if durationMs <= 0 && toolCalls <= 0 {
+		return fmt.Sprintf("📋 %s completed.", label)
+	}
+
+	parts := make([]string, 0, 2)
+	if durationMs > 0 {
+		parts = append(parts, formatDurationMs(durationMs))
+	}
+	if toolCalls > 0 {
+		if toolCalls == 1 {
+			parts = append(parts, "1 tool call")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d tool calls", toolCalls))
+		}
+	}
+	return fmt.Sprintf("📋 %s completed (%s).", label, strings.Join(parts, ", "))
+}
+
+// formatDurationMs converts milliseconds to a human-readable duration string.
+// Examples: 800 → "0.8s", 1200 → "1.2s", 65000 → "1m5s", 3661000 → "61m1s".
+func formatDurationMs(ms int64) string {
+	if ms < 1000 {
+		return fmt.Sprintf("%dms", ms)
+	}
+	totalSec := ms / 1000
+	if totalSec < 60 {
+		tenths := (ms % 1000) / 100
+		return fmt.Sprintf("%d.%ds", totalSec, tenths)
+	}
+	min := totalSec / 60
+	sec := totalSec % 60
+	if sec == 0 {
+		return fmt.Sprintf("%dm", min)
+	}
+	return fmt.Sprintf("%dm%ds", min, sec)
 }
 
 // acquireSessionLock gets or creates a per-session semaphore and acquires it.
