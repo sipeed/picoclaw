@@ -299,8 +299,18 @@ func (c *EmailChannel) connect() error {
 	if mailbox == "" {
 		mailbox = "INBOX"
 	}
-
-	status, err := cl.Select(mailbox, false)
+	if c.checkIsWangYiEmail() {
+		// wangyi is not follow the IMAPz specification, it requires to use ID COMMAND to select mailbox, you need to add ID COMMAND to the select command
+		// if not, it will return  "SELECT Unsafe Login. Please contact kefu@1888.com for help" error
+		cmd := &imap.Command{Name: "ID", Arguments: []any{
+			[]any{"name", "picoclaw", "version", "1.0"},
+		}}
+		_, idErr := cl.Execute(cmd, nil)
+		if idErr != nil {
+			return fmt.Errorf("failed to execute ID COMMAND: %w", idErr)
+		}
+	}
+	status, err := cl.Select(mailbox, true)
 	if err != nil {
 		if strings.Contains(err.Error(), "Unsafe Login") || strings.Contains(err.Error(), "不安全") { //nolint:gosmopolitan
 			return fmt.Errorf(
@@ -333,6 +343,13 @@ func (c *EmailChannel) connect() error {
 	})
 
 	return nil
+}
+
+func (c *EmailChannel) checkIsWangYiEmail() bool {
+	server := strings.ToLower(c.config.IMAPServer)
+	return strings.Contains(server, "163.com") ||
+		strings.Contains(server, "126.com") ||
+		strings.Contains(server, "yeah.net")
 }
 
 // syncLastUID fetches the mailbox max UID and sets lastUID so only mail after connect is processed.
@@ -594,7 +611,7 @@ func (c *EmailChannel) CheckNewEmails(ctx context.Context) {
 			criteria.Uid = seqset
 		}
 
-		uids, err := cl.UidSearch(criteria)
+		searchUids, err := cl.UidSearch(criteria)
 		if err != nil {
 			logger.ErrorCF("email", "Failed to search emails", map[string]any{
 				"error": err.Error(),
@@ -608,6 +625,14 @@ func (c *EmailChannel) CheckNewEmails(ctx context.Context) {
 			continue
 		}
 
+		// a new email may correspond to multiple IMAP updates
+		// use max uid to avoid duplicate
+		uids := make([]uint32, 0, len(searchUids))
+		for _, uid := range searchUids {
+			if uid > lastUID {
+				uids = append(uids, uid)
+			}
+		}
 		if len(uids) == 0 {
 			return
 		}
