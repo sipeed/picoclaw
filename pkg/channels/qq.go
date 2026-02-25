@@ -27,7 +27,30 @@ type QQChannel struct {
 	cancel         context.CancelFunc
 	sessionManager botgo.SessionManager
 	processedIDs   map[string]bool
+	lastMsgIDs     map[string]string
+	msgSeqByChat   map[string]uint32
+	chatKindByID   map[string]string
 	mu             sync.RWMutex
+}
+
+const (
+	qqChatKindDirect = "direct"
+	qqChatKindGroup  = "group"
+)
+
+type qqC2CMessageToCreate struct {
+	Content string `json:"content,omitempty"`
+	MsgType int    `json:"msg_type"`
+	MsgID   string `json:"msg_id,omitempty"`
+	MsgSeq  uint32 `json:"msg_seq,omitempty"`
+}
+
+func (m qqC2CMessageToCreate) GetEventID() string {
+	return ""
+}
+
+func (m qqC2CMessageToCreate) GetSendType() dto.SendType {
+	return dto.Text
 }
 
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
@@ -37,6 +60,9 @@ func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, 
 		BaseChannel:  base,
 		config:       cfg,
 		processedIDs: make(map[string]bool),
+		lastMsgIDs:   make(map[string]string),
+		msgSeqByChat: make(map[string]uint32),
+		chatKindByID: make(map[string]string),
 	}, nil
 }
 
@@ -117,15 +143,21 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	}
 
 	// construct message
-	msgToCreate := &dto.MessageToCreate{
-		Content: msg.Content,
-	}
+	msgToCreate := c.buildC2CMessage(msg.ChatID, msg.Content)
 
-	// send C2C message
-	_, err := c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
+	chatKind := c.resolveChatKind(msg.ChatID)
+
+	var err error
+	if chatKind == qqChatKindGroup {
+		_, err = c.api.PostGroupMessage(ctx, msg.ChatID, msgToCreate)
+	} else {
+		_, err = c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
+	}
 	if err != nil {
-		logger.ErrorCF("qq", "Failed to send C2C message", map[string]any{
+		logger.ErrorCF("qq", "Failed to send QQ message", map[string]any{
 			"error": err.Error(),
+			"chat":  msg.ChatID,
+			"kind":  chatKind,
 		})
 		return err
 	}
@@ -168,6 +200,8 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 			"peer_kind":  "direct",
 			"peer_id":    senderID,
 		}
+
+		c.recordInboundMessage(senderID, data.ID, qqChatKindDirect)
 
 		c.HandleMessage(senderID, senderID, content, []string{}, metadata)
 
@@ -213,6 +247,8 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			"peer_id":    data.GroupID,
 		}
 
+		c.recordInboundMessage(data.GroupID, data.ID, qqChatKindGroup)
+
 		c.HandleMessage(senderID, data.GroupID, content, []string{}, metadata)
 
 		return nil
@@ -244,4 +280,48 @@ func (c *QQChannel) isDuplicate(messageID string) bool {
 	}
 
 	return false
+}
+
+func (c *QQChannel) recordInboundMessage(chatID, messageID, chatKind string) {
+	if chatID == "" || messageID == "" {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.lastMsgIDs[chatID] = messageID
+	c.msgSeqByChat[chatID] = 0
+	if chatKind != "" {
+		c.chatKindByID[chatID] = chatKind
+	}
+}
+
+func (c *QQChannel) buildC2CMessage(chatID, content string) *qqC2CMessageToCreate {
+	msg := &qqC2CMessageToCreate{
+		Content: content,
+		MsgType: int(dto.TextMsg),
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if lastMsgID := c.lastMsgIDs[chatID]; lastMsgID != "" {
+		c.msgSeqByChat[chatID]++
+		msg.MsgID = lastMsgID
+		msg.MsgSeq = c.msgSeqByChat[chatID]
+	}
+
+	return msg
+}
+
+func (c *QQChannel) resolveChatKind(chatID string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if kind := c.chatKindByID[chatID]; kind != "" {
+		return kind
+	}
+
+	return qqChatKindDirect
 }
