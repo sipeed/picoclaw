@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/emersion/go-imap"
@@ -59,7 +60,14 @@ type EmailChannel struct {
 	loopWg sync.WaitGroup
 
 	// reconnect control
-	reconnectClientVersion int
+	//
+	// reconnectClientVersion is an atomic counter incremented on every successful reconnect.
+	// Before acquiring reconnectMutex a goroutine snapshots the counter; after acquiring
+	// the lock it re-reads and compares: if the value is unchanged the goroutine is the
+	// first to hold the lock since the connection broke, so it performs the reconnect;
+	// if the value has changed another goroutine already reconnected, so it exits early.
+	// Using atomic.Int64 makes the pre-lock Load() race-free.
+	reconnectClientVersion atomic.Int64
 	reconnectMutex         sync.Mutex
 }
 
@@ -374,25 +382,29 @@ func (c *EmailChannel) closeIMAPClient() {
 }
 
 // reconnectWithBackoff closes the current IMAP client and reconnects with exponential backoff until success or ctx is done.
-// when muti goroutine reconnect, only one goroutine can reconnect at a time, other goroutine will wait for the reconnect success.
+// At most one goroutine performs the actual reconnect; the rest detect the version bump and exit early.
 func (c *EmailChannel) reconnectWithBackoff(ctx context.Context) error {
-	currentClientVersion := c.reconnectClientVersion
-	// singleflight reconnect, only one goroutine can reconnect at a time
+	// Snapshot the version atomically BEFORE acquiring the mutex.
+	// This read is always race-free because reconnectClientVersion is an atomic.Int64.
+	currentClientVersion := c.reconnectClientVersion.Load()
+
 	c.reconnectMutex.Lock()
 	defer c.reconnectMutex.Unlock()
-	if currentClientVersion != c.reconnectClientVersion {
-		// other goroutine has already reconnect, check state is selected
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	// Re-read the version under the mutex.
+	// If it differs from our snapshot, another goroutine incremented it and already
+	// performed a reconnect while we were waiting — no need to reconnect again.
+	if c.reconnectClientVersion.Load() != currentClientVersion {
 		c.mu.Lock()
 		isOk := c.imapClient != nil && c.imapClient.State() == imap.SelectedState
 		c.mu.Unlock()
 		if isOk {
 			return nil
 		}
+		// Version changed but client is still broken; fall through and reconnect anyway.
 	}
-	c.reconnectClientVersion++
 
 	c.closeIMAPClient()
 	backoff := reconnectBackoffInitial
@@ -402,6 +414,9 @@ func (c *EmailChannel) reconnectWithBackoff(ctx context.Context) error {
 		}
 		err := c.connect()
 		if err == nil {
+			// Increment only on success so goroutines still waiting on the mutex
+			// can distinguish "reconnect succeeded" from "reconnect failed".
+			c.reconnectClientVersion.Add(1)
 			return nil
 		}
 		logger.ErrorCF("email", "IMAP reconnect failed, retrying with backoff", map[string]any{
