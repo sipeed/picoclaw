@@ -44,6 +44,8 @@ ifeq ($(UNAME_S),Linux)
 		ARCH=amd64
 	else ifeq ($(UNAME_M),aarch64)
 		ARCH=arm64
+	else ifeq ($(UNAME_M),armv81)
+		ARCH=arm64
 	else ifeq ($(UNAME_M),loongarch64)
 		ARCH=loong64
 	else ifeq ($(UNAME_M),riscv64)
