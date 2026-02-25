@@ -147,6 +147,191 @@ func TestSplitMessage(t *testing.T) {
 	}
 }
 
+// --- Helper function tests for index-based rune operations ---
+
+func TestFindLastNewlineInRange(t *testing.T) {
+	runes := []rune("aaa\nbbb\nccc")
+	// Indices:        0123 4567 89 10
+
+	tests := []struct {
+		name         string
+		start, end   int
+		searchWindow int
+		want         int
+	}{
+		{"finds last newline in full range", 0, 11, 200, 7},
+		{"finds newline within search window", 0, 11, 4, 7},
+		{"narrow window misses newline outside window", 4, 11, 3, 3}, // returns start-1 (not found)
+		{"no newline in range", 0, 3, 200, -1},                       // start-1 = -1
+		{"range limited to first segment", 0, 4, 200, 3},
+		{"search window of 1 at newline", 0, 8, 1, 7},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := findLastNewlineInRange(runes, tc.start, tc.end, tc.searchWindow)
+			if got != tc.want {
+				t.Errorf("findLastNewlineInRange(runes, %d, %d, %d) = %d, want %d",
+					tc.start, tc.end, tc.searchWindow, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFindLastSpaceInRange(t *testing.T) {
+	runes := []rune("abc def\tghi")
+	// Indices:        0123 4567 89 10
+
+	tests := []struct {
+		name         string
+		start, end   int
+		searchWindow int
+		want         int
+	}{
+		{"finds tab as last space/tab", 0, 11, 200, 7},
+		{"finds space when tab out of window", 0, 7, 200, 3},
+		{"no space in range", 0, 3, 200, -1},
+		{"narrow window finds tab", 5, 11, 4, 7},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := findLastSpaceInRange(runes, tc.start, tc.end, tc.searchWindow)
+			if got != tc.want {
+				t.Errorf("findLastSpaceInRange(runes, %d, %d, %d) = %d, want %d",
+					tc.start, tc.end, tc.searchWindow, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFindNewlineFrom(t *testing.T) {
+	runes := []rune("hello\nworld\n")
+
+	tests := []struct {
+		name string
+		from int
+		want int
+	}{
+		{"from start", 0, 5},
+		{"from after first newline", 6, 11},
+		{"from past all newlines", 12, -1},
+		{"from newline itself", 5, 5},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := findNewlineFrom(runes, tc.from)
+			if got != tc.want {
+				t.Errorf("findNewlineFrom(runes, %d) = %d, want %d", tc.from, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFindLastUnclosedCodeBlockInRange(t *testing.T) {
+	tests := []struct {
+		name       string
+		content    string
+		start, end int
+		want       int
+	}{
+		{
+			name:    "no code blocks",
+			content: "hello world",
+			start:   0, end: 11,
+			want: -1,
+		},
+		{
+			name:    "complete code block",
+			content: "```go\ncode\n```",
+			start:   0, end: 14,
+			want: -1,
+		},
+		{
+			name:    "unclosed code block",
+			content: "text\n```go\ncode here",
+			start:   0, end: 20,
+			want: 5,
+		},
+		{
+			name:    "closed then unclosed",
+			content: "```a\n```\n```b\ncode",
+			start:   0, end: 17,
+			want: 9,
+		},
+		{
+			name:    "search within subrange",
+			content: "```a\n```\n```b\ncode",
+			start:   9, end: 17,
+			want: 9,
+		},
+		{
+			name:    "subrange with no code blocks",
+			content: "```a\n```\nhello",
+			start:   9, end: 14,
+			want: -1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runes := []rune(tc.content)
+			got := findLastUnclosedCodeBlockInRange(runes, tc.start, tc.end)
+			if got != tc.want {
+				t.Errorf("findLastUnclosedCodeBlockInRange(%q, %d, %d) = %d, want %d",
+					tc.content, tc.start, tc.end, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFindNextClosingCodeBlockInRange(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		startIdx int
+		end      int
+		want     int
+	}{
+		{
+			name:     "finds closing fence",
+			content:  "code\n```\nmore",
+			startIdx: 0, end: 13,
+			want: 8, // position after ```
+		},
+		{
+			name:     "no closing fence",
+			content:  "just code here",
+			startIdx: 0, end: 14,
+			want: -1,
+		},
+		{
+			name:     "fence at start of search",
+			content:  "```end",
+			startIdx: 0, end: 6,
+			want: 3,
+		},
+		{
+			name:     "fence outside range",
+			content:  "code\n```",
+			startIdx: 0, end: 4,
+			want: -1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runes := []rune(tc.content)
+			got := findNextClosingCodeBlockInRange(runes, tc.startIdx, tc.end)
+			if got != tc.want {
+				t.Errorf("findNextClosingCodeBlockInRange(%q, %d, %d) = %d, want %d",
+					tc.content, tc.startIdx, tc.end, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSplitMessage_CodeBlockIntegrity(t *testing.T) {
 	// Focused test for the core requirement: splitting inside a code block preserves syntax highlighting
 

@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	fastIDCounter uint64
-	fastIDPrefix  string
+	uniqueIDCounter uint64
+	uniqueIDPrefix  string
 )
 
 func init() {
@@ -29,14 +29,15 @@ func init() {
 		// fallback to time-based prefix
 		binary.BigEndian.PutUint64(b[:], uint64(time.Now().UnixNano()))
 	}
-	fastIDPrefix = hex.EncodeToString(b[:])
+	uniqueIDPrefix = hex.EncodeToString(b[:])
 }
 
-// fastID generates a unique ID using a random prefix and an atomic counter.
-// Much cheaper than uuid.New() which calls crypto/rand.Read on every invocation.
-func fastID() string {
-	n := atomic.AddUint64(&fastIDCounter, 1)
-	return fastIDPrefix + strconv.FormatUint(n, 16)
+// uniqueID generates a process-unique ID using a random prefix and an atomic counter.
+// This ID is intended for internal correlation (e.g. media scope keys) and is NOT
+// cryptographically secure — it must not be used in contexts where unpredictability matters.
+func uniqueID() string {
+	n := atomic.AddUint64(&uniqueIDCounter, 1)
+	return uniqueIDPrefix + strconv.FormatUint(n, 16)
 }
 
 type Channel interface {
@@ -289,7 +290,7 @@ func (c *BaseChannel) GetPlaceholderRecorder() PlaceholderRecorder {
 func BuildMediaScope(channel, chatID, messageID string) string {
 	id := messageID
 	if id == "" {
-		id = fastID()
+		id = uniqueID()
 	}
 	return channel + ":" + chatID + ":" + id
 }
