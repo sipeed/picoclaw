@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // rrCounter is a global counter for round-robin load balancing across models.
@@ -558,7 +560,7 @@ func SaveConfig(path string, cfg *Config) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0o600)
+	return utils.WritePrivateFile(path, data)
 }
 
 func (c *Config) WorkspacePath() string {

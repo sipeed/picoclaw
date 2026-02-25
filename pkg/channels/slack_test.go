@@ -1,7 +1,13 @@
 package channels
 
 import (
+	"context"
 	"testing"
+	"time"
+
+	"github.com/slack-go/slack"
+	"github.com/slack-go/slack/slackevents"
+	"github.com/slack-go/slack/socketmode"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -171,4 +177,75 @@ func TestSlackChannelIsAllowed(t *testing.T) {
 			t.Error("non-allowed user should be blocked")
 		}
 	})
+}
+
+func TestSlackAppMentionRejectsUsersOutsideAllowlist(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	cfg := config.SlackConfig{
+		BotToken:  "xoxb-test",
+		AppToken:  "xapp-test",
+		AllowFrom: []string{"U_ALLOWED"},
+	}
+
+	ch, err := NewSlackChannel(cfg, msgBus)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ch.botUserID = "U_BOT"
+	ch.api = nil
+
+	ev := &slackevents.AppMentionEvent{
+		User:      "U_BLOCKED",
+		Channel:   "C123456",
+		TimeStamp: "1700000000.000001",
+		Text:      "<@U_BOT> hello",
+	}
+
+	ch.handleAppMention(ev)
+
+	chatID := "C123456/1700000000.000001"
+	if _, ok := ch.pendingAcks.Load(chatID); ok {
+		t.Fatalf("blocked user should not create pending ack for chat %s", chatID)
+	}
+
+	assertNoInboundMessage(t, msgBus)
+}
+
+func TestSlackSlashCommandRejectsUsersOutsideAllowlist(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	cfg := config.SlackConfig{
+		BotToken:  "xoxb-test",
+		AppToken:  "xapp-test",
+		AllowFrom: []string{"U_ALLOWED"},
+	}
+
+	ch, err := NewSlackChannel(cfg, msgBus)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	event := socketmode.Event{
+		Data: slack.SlashCommand{
+			UserID:    "U_BLOCKED",
+			ChannelID: "C123456",
+			Command:   "/picoclaw",
+			Text:      "hello",
+		},
+	}
+
+	ch.handleSlashCommand(event)
+
+	assertNoInboundMessage(t, msgBus)
+}
+
+func assertNoInboundMessage(t *testing.T, msgBus *bus.MessageBus) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	if msg, ok := msgBus.ConsumeInbound(ctx); ok {
+		t.Fatalf("expected no inbound message, got %+v", msg)
+	}
 }

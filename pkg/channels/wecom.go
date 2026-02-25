@@ -37,7 +37,7 @@ type WeComBotChannel struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	processedMsgs map[string]bool // Message deduplication: msg_id -> processed
-	msgMu         sync.RWMutex
+	msgMu         *sync.RWMutex
 }
 
 // WeComBotMessage represents the JSON message structure from WeCom Bot (AIBOT)
@@ -102,6 +102,7 @@ func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*We
 		BaseChannel:   base,
 		config:        cfg,
 		processedMsgs: make(map[string]bool),
+		msgMu:         &sync.RWMutex{},
 	}, nil
 }
 
@@ -330,6 +331,12 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 
 	// Message deduplication: Use msg_id to prevent duplicate processing
 	msgID := msg.MsgID
+	if c.msgMu == nil {
+		c.msgMu = &sync.RWMutex{}
+	}
+	if c.processedMsgs == nil {
+		c.processedMsgs = make(map[string]bool)
+	}
 	c.msgMu.Lock()
 	if c.processedMsgs[msgID] {
 		c.msgMu.Unlock()
@@ -339,14 +346,15 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 		return
 	}
 	c.processedMsgs[msgID] = true
-	c.msgMu.Unlock()
 
-	// Clean up old messages periodically (keep last 1000)
+	// Clean up old messages periodically (keep last 1000).
+	// Keep the current message id in the new map to preserve dedup behavior.
 	if len(c.processedMsgs) > 1000 {
-		c.msgMu.Lock()
-		c.processedMsgs = make(map[string]bool)
-		c.msgMu.Unlock()
+		c.processedMsgs = map[string]bool{
+			msgID: true,
+		}
 	}
+	c.msgMu.Unlock()
 
 	senderID := msg.From.UserID
 
