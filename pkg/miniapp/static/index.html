@@ -889,6 +889,11 @@
         <div class="orch-badge-label">SEC</div>
         <div class="orch-badge-dot"></div>
       </div>
+      <div class="orch-badge alive" id="orch-badge-heartbeat">
+        <div class="orch-badge-emoji">🕊️</div>
+        <div class="orch-badge-label">HB</div>
+        <div class="orch-badge-dot"></div>
+      </div>
     </div>
     <div class="orch-canvas-wrap">
       <canvas id="orch-canvas" width="320" height="320"></canvas>
@@ -1810,7 +1815,7 @@ var _orchLastTs = null;
 var _orchBOB      = [0, -1, -2, -1];
 var _orchFRAME_MS = {idle:450, waiting:650, toolcall:90, talking:280, entering:220, exiting:220};
 var _orchWALK     = 55;
-var _orchConductor, _orchSecretary, _orchSubagents, _orchSlots, _orchFreeSlots;
+var _orchConductor, _orchSecretary, _orchHeartbeat, _orchSubagents, _orchSlots, _orchFreeSlots;
 
 function _orchMakeChar(id, emoji, home) {
   return {id:id, emoji:emoji, x:home.x, y:home.y, home:home, target:null, state:'idle',
@@ -1819,7 +1824,9 @@ function _orchMakeChar(id, emoji, home) {
 function _orchInitChars() {
   _orchConductor = _orchMakeChar('conductor', '👑',  MAP_POSITIONS.conductor);
   _orchSecretary = _orchMakeChar('secretary', '👩‍💼', MAP_POSITIONS.secretary);
-  _orchConductor.alive = true; _orchSecretary.alive = true;
+  _orchHeartbeat = _orchMakeChar('heartbeat', '🕊️',  MAP_POSITIONS.heartbeat);
+  _orchConductor.alive = true; _orchSecretary.alive = true; _orchHeartbeat.alive = true;
+  _orchHeartbeat.facing = 1; _orchHeartbeat.flipTimer = 0;
   var ps = [{id:'s0',emoji:'🔍'},{id:'s1',emoji:'📊'},{id:'s2',emoji:'💻'},
             {id:'s3',emoji:'🔧'},{id:'s4',emoji:'🎯'}];
   _orchSubagents = ps.map(function(p,i){
@@ -1828,7 +1835,7 @@ function _orchInitChars() {
   });
   _orchSlots = {}; _orchFreeSlots = _orchSubagents.slice();
 }
-function _orchAllChars() { return [_orchConductor, _orchSecretary].concat(_orchSubagents); }
+function _orchAllChars() { return [_orchConductor, _orchSecretary, _orchHeartbeat].concat(_orchSubagents); }
 
 function _orchSyncBadge(id, state, alive) {
   var el = document.getElementById('orch-badge-' + id); if (!el) return;
@@ -1843,7 +1850,7 @@ function _orchMoveTo(c, pos, cb) { c.target=pos; c._onArrive=cb||null; }
 function _orchSay(c, text, ttl)  { c.bubble={text:text, ttl:ttl||2200}; }
 
 function _orchCharForId(id) {
-  if (id === 'heartbeat') return _orchSecretary;
+  if (id === 'heartbeat') return _orchHeartbeat;
   if (_orchSlots[id])     return _orchSlots[id];
   return _orchConductor;
 }
@@ -1865,7 +1872,13 @@ function _orchGC(id) {
     _orchSetState(c,'exiting');
     _orchMoveTo(c, MAP_POSITIONS.door, function(){ c.alive=false; _orchSetState(c,'idle'); });
   } else {
-    var ch=_orchCharForId(id); ch.alive=false; _orchSetState(ch,'idle');
+    var ch=_orchCharForId(id);
+    if (ch === _orchHeartbeat) {
+      // Heartbeat pigeon is permanent — keep alive, just return to idle.
+      _orchSetState(ch,'idle');
+    } else {
+      ch.alive=false; _orchSetState(ch,'idle');
+    }
   }
 }
 function _orchConverse(fromId, toId, text) {
@@ -1894,6 +1907,17 @@ function _orchUpdate(dt) {
       else { c.x=c.target.x; c.y=c.target.y; c.target=null; if(c._onArrive){c._onArrive();c._onArrive=null;} }
     }
     if (c.bubble){ c.bubble.ttl-=dt; if(c.bubble.ttl<=0) c.bubble=null; }
+    // Heartbeat pigeon: face movement direction; flip periodically when stationary.
+    if (c === _orchHeartbeat) {
+      if (c.target) {
+        var pdx = c.target.x - c.x;
+        if (Math.abs(pdx) > 1) c.facing = pdx > 0 ? 1 : -1;
+      } else {
+        var flipRate = c.state==='toolcall' ? 280 : c.state==='waiting' ? 480 : 720;
+        c.flipTimer += dt;
+        if (c.flipTimer >= flipRate) { c.flipTimer -= flipRate; c.facing = -c.facing; }
+      }
+    }
   });
 }
 function _orchDrawBubble(c) {
@@ -1919,7 +1943,14 @@ function _orchDrawChar(c) {
     orchCtx.arc(cx,cy,11,0,Math.PI*2); orchCtx.fill();
   }
   orchCtx.font='18px serif'; orchCtx.textAlign='center'; orchCtx.textBaseline='middle';
-  orchCtx.fillText(c.emoji, cx, cy);
+  if (c.facing === -1) {
+    orchCtx.save();
+    orchCtx.translate(cx, cy); orchCtx.scale(-1, 1);
+    orchCtx.fillText(c.emoji, 0, 0);
+    orchCtx.restore();
+  } else {
+    orchCtx.fillText(c.emoji, cx, cy);
+  }
   orchCtx.font='6px Silkscreen,monospace'; orchCtx.textAlign='center'; orchCtx.textBaseline='top';
   orchCtx.fillStyle=c.state==='talking'?'#facc15':'#3a4a7a';
   orchCtx.fillText(c.id.toUpperCase(), cx, cy+11);
