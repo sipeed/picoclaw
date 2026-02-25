@@ -208,6 +208,11 @@ func buildCodexParams(
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
+			// Use the full concatenated system prompt (static + dynamic + summary)
+			// as instructions. This keeps behavior consistent with Anthropic and
+			// OpenAI-compat adapters where the complete system context lives in
+			// one place. Prefix caching is handled by prompt_cache_key below,
+			// not by splitting content across instructions vs input messages.
 			instructions = msg.Content
 		case "user":
 			if msg.ToolCallID != "" {
@@ -287,6 +292,13 @@ func buildCodexParams(
 	} else {
 		// ChatGPT Codex backend requires instructions to be present.
 		params.Instructions = openai.Opt(defaultCodexInstructions)
+	}
+
+	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
+	// and reuse prefix KV cache across calls with the same key.
+	// See: https://platform.openai.com/docs/guides/prompt-caching
+	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
+		params.PromptCacheKey = openai.Opt(cacheKey)
 	}
 
 	if len(tools) > 0 || enableWebSearch {
