@@ -149,9 +149,6 @@ func registerSharedTools(
 			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 		})
 		agent.Tools.Register(spawnTool)
-
-		// Update context builder with the complete tools registry
-		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
 	}
 }
 
