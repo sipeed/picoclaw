@@ -191,7 +191,7 @@ func TestLogPath(t *testing.T) {
 	hs := NewHeartbeatService(tmpDir, 30, true)
 
 	// Write a log entry
-	hs.log("INFO", "Test log entry")
+	hs.logf("INFO", "Test log entry")
 
 	// Verify log file exists at workspace root
 	expectedLogPath := filepath.Join(tmpDir, "heartbeat.log")

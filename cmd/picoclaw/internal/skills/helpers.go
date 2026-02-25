@@ -1,39 +1,19 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// License: MIT
-
-package main
+package skills
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
-
-func skillsHelp() {
-	fmt.Println("\nSkills commands:")
-	fmt.Println("  list                    List installed skills")
-	fmt.Println("  install <repo>          Install skill from GitHub")
-	fmt.Println("  install-builtin         Install all builtin skills to workspace")
-	fmt.Println("  list-builtin            List available builtin skills")
-	fmt.Println("  remove <name>           Remove installed skill")
-	fmt.Println("  search                  Search available skills")
-	fmt.Println("  show <name>             Show skill details")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  picoclaw skills list")
-	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills/weather")
-	fmt.Println("  picoclaw skills install-builtin")
-	fmt.Println("  picoclaw skills list-builtin")
-	fmt.Println("  picoclaw skills remove weather")
-	fmt.Println("  picoclaw skills install --registry clawhub github")
-}
 
 func skillsListCmd(loader *skills.SkillsLoader) {
 	allSkills := loader.ListSkills()
@@ -53,53 +33,31 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 	}
 }
 
-func skillsInstallCmd(installer *skills.SkillInstaller, cfg *config.Config) {
-	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw skills install <github-repo>")
-		fmt.Println("       picoclaw skills install --registry <name> <slug>")
-		return
-	}
-
-	// Check for --registry flag.
-	if os.Args[3] == "--registry" {
-		if len(os.Args) < 6 {
-			fmt.Println("Usage: picoclaw skills install --registry <name> <slug>")
-			fmt.Println("Example: picoclaw skills install --registry clawhub github")
-			return
-		}
-		registryName := os.Args[4]
-		slug := os.Args[5]
-		skillsInstallFromRegistry(cfg, registryName, slug)
-		return
-	}
-
-	// Default: install from GitHub (backward compatible).
-	repo := os.Args[3]
+func skillsInstallCmd(installer *skills.SkillInstaller, repo string) error {
 	fmt.Printf("Installing skill from %s...\n", repo)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := installer.InstallFromGitHub(ctx, repo); err != nil {
-		fmt.Printf("\u2717 Failed to install skill: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to install skill: %w", err)
 	}
 
 	fmt.Printf("\u2713 Skill '%s' installed successfully!\n", filepath.Base(repo))
+
+	return nil
 }
 
 // skillsInstallFromRegistry installs a skill from a named registry (e.g. clawhub).
-func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
+func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) error {
 	err := utils.ValidateSkillIdentifier(registryName)
 	if err != nil {
-		fmt.Printf("\u2717 Invalid registry name: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("✗  invalid registry name: %w", err)
 	}
 
 	err = utils.ValidateSkillIdentifier(slug)
 	if err != nil {
-		fmt.Printf("\u2717 Invalid slug: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("✗  invalid slug: %w", err)
 	}
 
 	fmt.Printf("Installing skill '%s' from %s registry...\n", slug, registryName)
@@ -111,24 +69,21 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
 
 	registry := registryMgr.GetRegistry(registryName)
 	if registry == nil {
-		fmt.Printf("\u2717 Registry '%s' not found or not enabled. Check your config.json.\n", registryName)
-		os.Exit(1)
+		return fmt.Errorf("✗  registry '%s' not found or not enabled. check your config.json.", registryName)
 	}
 
 	workspace := cfg.WorkspacePath()
 	targetDir := filepath.Join(workspace, "skills", slug)
 
 	if _, err = os.Stat(targetDir); err == nil {
-		fmt.Printf("\u2717 Skill '%s' already installed at %s\n", slug, targetDir)
-		os.Exit(1)
+		return fmt.Errorf("\u2717 skill '%s' already installed at %s", slug, targetDir)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	if err = os.MkdirAll(filepath.Join(workspace, "skills"), 0o755); err != nil {
-		fmt.Printf("\u2717 Failed to create skills directory: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("\u2717 failed to create skills directory: %v", err)
 	}
 
 	result, err := registry.DownloadAndInstall(ctx, slug, "", targetDir)
@@ -137,8 +92,7 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
 		if rmErr != nil {
 			fmt.Printf("\u2717 Failed to remove partial install: %v\n", rmErr)
 		}
-		fmt.Printf("\u2717 Failed to install skill: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("✗ failed to install skill: %w", err)
 	}
 
 	if result.IsMalwareBlocked {
@@ -146,8 +100,8 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
 		if rmErr != nil {
 			fmt.Printf("\u2717 Failed to remove partial install: %v\n", rmErr)
 		}
-		fmt.Printf("\u2717 Skill '%s' is flagged as malicious and cannot be installed.\n", slug)
-		os.Exit(1)
+
+		return fmt.Errorf("\u2717 Skill '%s' is flagged as malicious and cannot be installed.\n", slug)
 	}
 
 	if result.IsSuspicious {
@@ -158,6 +112,8 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) {
 	if result.Summary != "" {
 		fmt.Printf("  %s\n", result.Summary)
 	}
+
+	return nil
 }
 
 func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
@@ -208,7 +164,7 @@ func skillsInstallBuiltinCmd(workspace string) {
 }
 
 func skillsListBuiltinCmd() {
-	cfg, err := loadConfig()
+	cfg, err := internal.LoadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		return
@@ -302,4 +258,38 @@ func skillsShowCmd(loader *skills.SkillsLoader, skillName string) {
 	fmt.Printf("\n📦 Skill: %s\n", skillName)
 	fmt.Println("----------------------")
 	fmt.Println(content)
+}
+
+func copyDirectory(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		dstPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+
+		srcFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer srcFile.Close()
+
+		dstFile, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode())
+		if err != nil {
+			return err
+		}
+		defer dstFile.Close()
+
+		_, err = io.Copy(dstFile, srcFile)
+		return err
+	})
 }
