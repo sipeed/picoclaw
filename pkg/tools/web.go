@@ -630,6 +630,11 @@ func (t *WebFetchTool) Parameters() map[string]any {
 				"description": "Maximum characters to extract",
 				"minimum":     100.0,
 			},
+			"llmMaxChars": map[string]any{
+				"type":        "integer",
+				"description": "Maximum characters included in LLM-facing content (defaults to maxChars)",
+				"minimum":     100.0,
+			},
 		},
 		"required": []string{"url"},
 	}
@@ -655,9 +660,15 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	maxChars := t.maxChars
-	if mc, ok := args["maxChars"].(float64); ok {
-		if int(mc) > 100 {
-			maxChars = int(mc)
+	if raw, ok := args["maxChars"]; ok {
+		if mc, err := toInt(raw); err == nil && mc > 100 {
+			maxChars = mc
+		}
+	}
+	llmMaxChars := maxChars
+	if raw, ok := args["llmMaxChars"]; ok {
+		if mc, err := toInt(raw); err == nil && mc > 100 {
+			llmMaxChars = mc
 		}
 	}
 
@@ -719,6 +730,12 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if truncated {
 		text = text[:maxChars]
 	}
+	llmText := text
+	llmTruncated := false
+	if len(llmText) > llmMaxChars {
+		llmText = llmText[:llmMaxChars]
+		llmTruncated = true
+	}
 
 	result := map[string]any{
 		"url":       urlStr,
@@ -730,15 +747,18 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	llmPayload := map[string]any{
+		"url":          urlStr,
+		"status":       resp.StatusCode,
+		"extractor":    extractor,
+		"sourceLength": len(text),
+		"truncated":    truncated || llmTruncated,
+		"text":         llmText,
+	}
+	llmJSON, _ := json.MarshalIndent(llmPayload, "", "  ")
 
 	return &ToolResult{
-		ForLLM: fmt.Sprintf(
-			"Fetched %d bytes from %s (extractor: %s, truncated: %v)",
-			len(text),
-			urlStr,
-			extractor,
-			truncated,
-		),
+		ForLLM:  string(llmJSON),
 		ForUser: string(resultJSON),
 	}
 }

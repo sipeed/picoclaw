@@ -37,9 +37,9 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 		t.Errorf("Expected ForUser to contain 'Test Page', got: %s", result.ForUser)
 	}
 
-	// ForLLM should contain summary
-	if !strings.Contains(result.ForLLM, "bytes") && !strings.Contains(result.ForLLM, "extractor") {
-		t.Errorf("Expected ForLLM to contain summary, got: %s", result.ForLLM)
+	// ForLLM should contain extracted content for model-side reasoning
+	if !strings.Contains(result.ForLLM, "Test Page") {
+		t.Errorf("Expected ForLLM to contain fetched content, got: %s", result.ForLLM)
 	}
 }
 
@@ -171,6 +171,43 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	// Should be marked as truncated
 	if truncated, ok := resultMap["truncated"].(bool); !ok || !truncated {
 		t.Errorf("Expected 'truncated' to be true in result")
+	}
+}
+
+func TestWebTool_WebFetch_LLMTruncation(t *testing.T) {
+	longContent := strings.Repeat("abc", 2000)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(longContent))
+	}))
+	defer server.Close()
+
+	tool := NewWebFetchTool(12000)
+	ctx := context.Background()
+	args := map[string]any{
+		"url":         server.URL,
+		"maxChars":    6000,
+		"llmMaxChars": 500,
+	}
+
+	result := tool.Execute(ctx, args)
+	if result.IsError {
+		t.Fatalf("Expected success, got IsError=true: %s", result.ForLLM)
+	}
+
+	var llmResult map[string]any
+	if err := json.Unmarshal([]byte(result.ForLLM), &llmResult); err != nil {
+		t.Fatalf("failed to decode ForLLM JSON: %v", err)
+	}
+
+	text, ok := llmResult["text"].(string)
+	if !ok {
+		t.Fatalf("expected text field in ForLLM payload, got: %v", llmResult)
+	}
+	if len(text) > 600 {
+		t.Fatalf("expected LLM text to be truncated to ~500 chars, got len=%d", len(text))
 	}
 }
 
