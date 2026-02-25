@@ -38,7 +38,9 @@ func NewManager(workspace string) *Manager {
 	oldStateFile := filepath.Join(workspace, "state.json")
 
 	// Create state directory if it doesn't exist
-	os.MkdirAll(stateDir, 0o755)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		log.Printf("[WARN] state: failed to create state directory %s: %v", stateDir, err)
+	}
 
 	sm := &Manager{
 		workspace: workspace,
@@ -139,7 +141,7 @@ func (sm *Manager) saveAtomic() error {
 	}
 
 	// Write to temp file
-	if err := os.WriteFile(tempFile, data, 0o644); err != nil {
+	if err := os.WriteFile(tempFile, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 
@@ -148,6 +150,11 @@ func (sm *Manager) saveAtomic() error {
 		// Cleanup temp file if rename fails
 		os.Remove(tempFile)
 		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	// Ensure restrictive permissions even when replacing existing files.
+	if err := os.Chmod(sm.stateFile, 0o600); err != nil {
+		return fmt.Errorf("failed to set state file permissions: %w", err)
 	}
 
 	return nil

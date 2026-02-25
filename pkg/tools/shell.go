@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/constants"
 )
 
 type ExecTool struct {
@@ -22,6 +23,9 @@ type ExecTool struct {
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
 	restrictToWorkspace bool
+	allowRemote         bool
+	channel             string
+	chatID              string
 }
 
 var defaultDenyPatterns = []*regexp.Regexp{
@@ -75,11 +79,13 @@ func NewExecTool(workingDir string, restrict bool) *ExecTool {
 
 func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
 	denyPatterns := make([]*regexp.Regexp, 0)
+	allowRemote := true
 
 	enableDenyPatterns := true
 	if config != nil {
 		execConfig := config.Tools.Exec
 		enableDenyPatterns = execConfig.EnableDenyPatterns
+		allowRemote = execConfig.AllowRemote
 		if enableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			if len(execConfig.CustomDenyPatterns) > 0 {
@@ -107,6 +113,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
 		restrictToWorkspace: restrict,
+		allowRemote:         allowRemote,
 	}
 }
 
@@ -139,6 +146,13 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	command, ok := args["command"].(string)
 	if !ok {
 		return ErrorResult("command is required")
+	}
+
+	if !t.allowRemote {
+		channel := strings.TrimSpace(t.channel)
+		if channel == "" || !constants.IsInternalChannel(channel) {
+			return ErrorResult("exec is restricted to internal channels")
+		}
 	}
 
 	cwd := t.workingDir
@@ -330,4 +344,9 @@ func (t *ExecTool) SetAllowPatterns(patterns []string) error {
 		t.allowPatterns = append(t.allowPatterns, re)
 	}
 	return nil
+}
+
+func (t *ExecTool) SetContext(channel, chatID string) {
+	t.channel = channel
+	t.chatID = chatID
 }

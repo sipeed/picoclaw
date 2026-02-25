@@ -12,6 +12,8 @@ import (
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -45,6 +47,8 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 
 // TestWebTool_WebFetch_JSON verifies JSON content handling
 func TestWebTool_WebFetch_JSON(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	testData := map[string]string{"key": "value", "number": "123"}
 	expectedJSON, _ := json.MarshalIndent(testData, "", "  ")
 
@@ -137,6 +141,8 @@ func TestWebTool_WebFetch_MissingURL(t *testing.T) {
 
 // TestWebTool_WebFetch_Truncation verifies content truncation
 func TestWebTool_WebFetch_Truncation(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	longContent := strings.Repeat("x", 20000)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +210,8 @@ func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
 
 // TestWebTool_WebFetch_HTMLExtraction verifies HTML text extraction
 func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -311,6 +319,49 @@ func TestWebFetchTool_extractText(t *testing.T) {
 			got := tool.extractText(tt.input)
 			tt.wantFunc(t, got)
 		})
+	}
+}
+
+func withPrivateWebFetchHostsAllowed(t *testing.T) {
+	t.Helper()
+	previous := allowPrivateWebFetchHosts
+	allowPrivateWebFetchHosts = true
+	t.Cleanup(func() {
+		allowPrivateWebFetchHosts = previous
+	})
+}
+
+func TestWebTool_WebFetch_PrivateHostBlocked(t *testing.T) {
+	tool := NewWebFetchTool(50000)
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://127.0.0.1:0",
+	})
+
+	if !result.IsError {
+		t.Errorf("expected error for private host URL, got success")
+	}
+	if !strings.Contains(result.ForLLM, "private or local network") && !strings.Contains(result.ForUser, "private or local network") {
+		t.Errorf("expected private host block message, got %q", result.ForLLM)
+	}
+}
+
+func TestWebTool_WebFetch_PrivateHostAllowedForTests(t *testing.T) {
+	withPrivateWebFetchHostsAllowed(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	tool := NewWebFetchTool(50000)
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": server.URL,
+	})
+
+	if result.IsError {
+		t.Errorf("expected success when private host access is allowed in tests, got %q", result.ForLLM)
 	}
 }
 

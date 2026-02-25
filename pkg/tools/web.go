@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -495,6 +496,10 @@ type WebFetchTool struct {
 	proxy    string
 }
 
+// allowPrivateWebFetchHosts controls whether loopback/private hosts are allowed.
+// This is false in normal runtime to reduce SSRF exposure, and tests can override it temporarily.
+var allowPrivateWebFetchHosts = false
+
 func NewWebFetchTool(maxChars int) *WebFetchTool {
 	if maxChars <= 0 {
 		maxChars = 50000
@@ -559,6 +564,10 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("missing domain in URL")
 	}
 
+	if isPrivateFetchHost(parsedURL.Hostname()) {
+		return ErrorResult("fetching private or local network hosts is not allowed")
+	}
+
 	maxChars := t.maxChars
 	if mc, ok := args["maxChars"].(float64); ok {
 		if int(mc) > 100 {
@@ -573,17 +582,42 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	req.Header.Set("User-Agent", userAgent)
 
-	client, err := createHTTPClient(t.proxy, 60*time.Second)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to create HTTP client: %v", err))
+	// Build transport with SSRF-safe dial context.
+	dialer := &net.Dialer{
+		Timeout:   15 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	transport := &http.Transport{
+		MaxIdleConns:        10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  false,
+		TLSHandshakeTimeout: 15 * time.Second,
+		DialContext:         newSafeDialContext(dialer),
 	}
 
-	// Configure redirect handling
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return fmt.Errorf("stopped after 5 redirects")
+	// Preserve proxy support from upstream.
+	if t.proxy != "" {
+		proxy, err := url.Parse(t.proxy)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("invalid proxy URL: %v", err))
 		}
-		return nil
+		transport.Proxy = http.ProxyURL(proxy)
+	} else {
+		transport.Proxy = http.ProxyFromEnvironment
+	}
+
+	client := &http.Client{
+		Timeout:   60 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("stopped after 5 redirects")
+			}
+			if isPrivateFetchHost(req.URL.Hostname()) {
+				return fmt.Errorf("redirect target is private or local network host")
+			}
+			return nil
+		},
 	}
 
 	resp, err := client.Do(req)
@@ -673,4 +707,115 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	}
 
 	return strings.Join(cleanLines, "\n")
+}
+
+func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		if allowPrivateWebFetchHosts {
+			return dialer.DialContext(ctx, network, address)
+		}
+
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("invalid target address %q: %w", address, err)
+		}
+		if host == "" {
+			return nil, fmt.Errorf("empty target host")
+		}
+
+		if ip := net.ParseIP(host); ip != nil {
+			if isPrivateOrRestrictedIP(ip) {
+				return nil, fmt.Errorf("blocked private or local target: %s", host)
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		}
+
+		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve %s: %w", host, err)
+		}
+
+		attempted := 0
+		var lastErr error
+		for _, ipAddr := range ipAddrs {
+			if isPrivateOrRestrictedIP(ipAddr.IP) {
+				continue
+			}
+			attempted++
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ipAddr.IP.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+
+		if attempted == 0 {
+			return nil, fmt.Errorf("all resolved addresses for %s are private or restricted", host)
+		}
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed connecting to public addresses for %s: %w", host, lastErr)
+		}
+		return nil, fmt.Errorf("failed connecting to public addresses for %s", host)
+	}
+}
+
+func isPrivateFetchHost(host string) bool {
+	if allowPrivateWebFetchHosts {
+		return false
+	}
+
+	canonicalHost := strings.ToLower(strings.TrimSpace(host))
+	if canonicalHost == "" {
+		return true
+	}
+
+	if canonicalHost == "localhost" || strings.HasSuffix(canonicalHost, ".localhost") {
+		return true
+	}
+
+	ip := net.ParseIP(canonicalHost)
+	if ip != nil {
+		return isPrivateOrRestrictedIP(ip)
+	}
+
+	ips, err := net.LookupIP(canonicalHost)
+	if err != nil {
+		return true
+	}
+
+	for _, resolved := range ips {
+		if isPrivateOrRestrictedIP(resolved) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isPrivateOrRestrictedIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() {
+		return true
+	}
+
+	if ip4 := ip.To4(); ip4 != nil {
+		// IPv4 private, loopback, link-local, and carrier-grade NAT ranges.
+		if ip4[0] == 10 ||
+			ip4[0] == 127 ||
+			ip4[0] == 0 ||
+			(ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31) ||
+			(ip4[0] == 192 && ip4[1] == 168) ||
+			(ip4[0] == 169 && ip4[1] == 254) ||
+			(ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127) {
+			return true
+		}
+		return false
+	}
+
+	// IPv6 unique local addresses (fc00::/7)
+	return len(ip) == net.IPv6len && (ip[0]&0xfe) == 0xfc
 }

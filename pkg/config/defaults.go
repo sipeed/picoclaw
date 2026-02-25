@@ -297,6 +297,7 @@ func DefaultConfig() *Config {
 			},
 			Exec: ExecConfig{
 				EnableDenyPatterns: true,
+				AllowRemote:        false,
 			},
 			Skills: SkillsToolsConfig{
 				Registries: SkillsRegistriesConfig{
