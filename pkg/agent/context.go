@@ -285,7 +285,7 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 //   - absent at cache time,  exists now -> changed (created)
 //   - absent at cache time,  gone now   -> no change
 func (cb *ContextBuilder) fileChangedSince(path string) bool {
-	// Defensive: if existedAtCache was never initialised, treat as changed
+	// Defensive: if existedAtCache was never initialized, treat as changed
 	// so the cache rebuilds rather than silently serving stale data.
 	if cb.existedAtCache == nil {
 		return true
