@@ -1920,22 +1920,33 @@ function _orchConverse(fromId, toId, text) {
 function _orchUpdate(dt) {
   _orchAllChars().forEach(function(c){
     if (!c.alive && c.state!=='entering') return;
-    c.frameTimer+=dt;
-    var dur=_orchFRAME_MS[c.state]||450;
-    if (c.frameTimer>=dur){ c.frame=(c.frame+1)%4; c.frameTimer-=dur; }
+    // Frame animation (bob): pigeon uses state-specific timing instead of shared table.
+    if (c === _orchHeartbeat) {
+      if (c.state === 'idle') {
+        c.frame = 0; // pin still — no bob when inactive
+      } else {
+        c.frameTimer += dt;
+        var pDur = c.state==='toolcall' ? 130 : 380;
+        if (c.frameTimer >= pDur) { c.frame=(c.frame+1)%4; c.frameTimer-=pDur; }
+      }
+    } else {
+      c.frameTimer+=dt;
+      var dur=_orchFRAME_MS[c.state]||450;
+      if (c.frameTimer>=dur){ c.frame=(c.frame+1)%4; c.frameTimer-=dur; }
+    }
     if (c.target){
       var dx=c.target.x-c.x, dy=c.target.y-c.y, dist=Math.sqrt(dx*dx+dy*dy);
       if (dist>1.5){ var spd=_orchWALK*dt/1000; c.x+=dx/dist*spd; c.y+=dy/dist*spd; }
       else { c.x=c.target.x; c.y=c.target.y; c.target=null; if(c._onArrive){c._onArrive();c._onArrive=null;} }
     }
     if (c.bubble){ c.bubble.ttl-=dt; if(c.bubble.ttl<=0) c.bubble=null; }
-    // Heartbeat pigeon: face movement direction; flip periodically when stationary.
+    // Heartbeat pigeon: direction flip rate reflects activity level.
     if (c === _orchHeartbeat) {
       if (c.target) {
         var pdx = c.target.x - c.x;
         if (Math.abs(pdx) > 1) c.facing = pdx > 0 ? 1 : -1;
       } else {
-        var flipRate = c.state==='toolcall' ? 280 : c.state==='waiting' ? 480 : 720;
+        var flipRate = c.state==='toolcall' ? 280 : c.state==='waiting' ? 600 : 2800;
         c.flipTimer += dt;
         if (c.flipTimer >= flipRate) { c.flipTimer -= flipRate; c.facing = -c.facing; }
       }
