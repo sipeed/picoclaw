@@ -89,8 +89,8 @@ func (b *Broadcaster) ReportSpawn(id, label, task string) {
 }
 
 // ReportStateChange implements AgentReporter.
-func (b *Broadcaster) ReportStateChange(id, state, tool string) {
-	b.Publish(Event{Type: "agent_state", ID: id, State: state, Tool: tool})
+func (b *Broadcaster) ReportStateChange(id string, state AgentState, tool string) {
+	b.Publish(Event{Type: "agent_state", ID: id, State: string(state), Tool: tool})
 }
 
 // ReportConversation implements AgentReporter.

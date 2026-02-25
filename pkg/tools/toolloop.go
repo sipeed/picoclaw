@@ -75,7 +75,7 @@ func RunToolLoop(
 			llmOpts = map[string]any{}
 		}
 		// 3. Call LLM  (hook: waiting for response)
-		reporter.ReportStateChange(config.AgentID, "waiting", "")
+		reporter.ReportStateChange(config.AgentID, orch.AgentStateWaiting, "")
 		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
@@ -143,7 +143,7 @@ func RunToolLoop(
 					"tool":      tc.Name,
 					"iteration": iteration,
 				})
-			reporter.ReportStateChange(config.AgentID, "toolcall", tc.Name)
+			reporter.ReportStateChange(config.AgentID, orch.AgentStateToolCall, tc.Name)
 
 			// Execute tool (no async callback for subagents - they run independently)
 			var toolResult *ToolResult

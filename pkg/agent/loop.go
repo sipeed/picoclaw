@@ -1091,6 +1091,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 				agent.Sessions.AddMessage(opts.SessionKey, "user", rejectionMsg)
 			} else {
 				_ = agent.ContextBuilder.SetPlanStatus("review")
+				al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStatePlanReview, "")
 				if !constants.IsInternalChannel(opts.Channel) {
 					planDisplay := agent.ContextBuilder.FormatPlanDisplay()
 					_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
@@ -1112,6 +1113,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			_ = agent.ContextBuilder.SetCurrentPhase(total)
 			if preStatus != "completed" {
 				_ = agent.ContextBuilder.SetPlanStatus("completed")
+				al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStatePlanCompleted, "")
 
 				// Deactivate worktree on plan completion
 				commitMsg := "plan: " + agent.ContextBuilder.Memory().GetPlanTaskName()
@@ -2070,7 +2072,7 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		// Report waiting state to canvas before each LLM call.
-		al.reporter().ReportStateChange(opts.SessionKey, "waiting", "")
+		al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStateWaiting, "")
 
 		// Retry loop for context/token errors
 		maxRetries := 2
@@ -2462,7 +2464,7 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			// Report toolcall state to canvas.
-			al.reporter().ReportStateChange(opts.SessionKey, "toolcall", tc.Name)
+			al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStateToolCall, tc.Name)
 
 			toolStart := time.Now()
 			toolCtx := ctx
@@ -3362,6 +3364,7 @@ func (al *AgentLoop) handlePlanCommand(args []string, sessionKey string) (string
 		if err := agent.ContextBuilder.SetPlanStatus("executing"); err != nil {
 			return fmt.Sprintf("Error: %v", err), true
 		}
+		al.reporter().ReportStateChange(sessionKey, orch.AgentStatePlanExecuting, "")
 		al.planStartPending = true
 		clearHistory := len(args) > 1 && args[1] == "clear"
 		al.planClearHistory = clearHistory

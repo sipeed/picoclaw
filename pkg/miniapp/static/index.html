@@ -1849,10 +1849,14 @@ function _orchSyncBadge(id, state, alive) {
 function _orchSetState(c, state, tool) {
   c.state=state; _orchSyncBadge(c.id, state, c.alive);
   if (c === _orchConductor) {
-    if      (state==='waiting')      c.statusText='🤔';
-    else if (state==='toolcall')     c.statusText='⌨';
-    else if (state==='user_waiting') c.statusText='⏳';
-    else                             c.statusText=null;
+    if      (state==='waiting')           c.statusText='🤔';
+    else if (state==='toolcall')          c.statusText='⌨';
+    else if (state==='user_waiting')      c.statusText='⏳';
+    else if (state==='plan_interviewing') c.statusText='📋';
+    else if (state==='plan_review')       c.statusText='🔍';
+    else if (state==='plan_executing')    c.statusText='▶️';
+    else if (state==='plan_completed')    c.statusText='✅';
+    else                                  c.statusText=null;
   }
 }
 function _orchMoveTo(c, pos, cb) { c.target=pos; c._onArrive=cb||null; }
@@ -1959,8 +1963,11 @@ function _orchDrawChar(c) {
   } else if (c.state==='waiting'){
     orchCtx.fillStyle='rgba(96,165,250,0.25)'; orchCtx.beginPath();
     orchCtx.arc(cx,cy,11,0,Math.PI*2); orchCtx.fill();
-  } else if (c.state==='user_waiting'){
+  } else if (c.state==='user_waiting' || c.state==='plan_review'){
     orchCtx.fillStyle='rgba(167,139,250,0.18)'; orchCtx.beginPath();
+    orchCtx.arc(cx,cy,10,0,Math.PI*2); orchCtx.fill();
+  } else if (c.state==='plan_executing'){
+    orchCtx.fillStyle='rgba(74,222,128,0.18)'; orchCtx.beginPath();
     orchCtx.arc(cx,cy,10,0,Math.PI*2); orchCtx.fill();
   }
   orchCtx.font='18px serif'; orchCtx.textAlign='center'; orchCtx.textBaseline='middle';
