@@ -1824,8 +1824,8 @@ function _orchMakeChar(id, emoji, home) {
 function _orchInitChars() {
   _orchConductor = _orchMakeChar('conductor', '👑',  MAP_POSITIONS.conductor);
   _orchSecretary = _orchMakeChar('secretary', '👩‍💼', MAP_POSITIONS.secretary);
-  _orchHeartbeat = _orchMakeChar('heartbeat', '🕊️',  MAP_POSITIONS.heartbeat);
-  _orchConductor.alive = true; _orchSecretary.alive = true; _orchHeartbeat.alive = true;
+  _orchHeartbeat = _orchMakeChar('heartbeat', '🕊️',  MAP_POSITIONS.heartbeat || {x:230,y:58});
+  _orchConductor.alive = true; _orchSecretary.alive = false; _orchHeartbeat.alive = true;
   _orchConductor.statusText = null;
   _orchHeartbeat.facing = 1; _orchHeartbeat.flipTimer = 0;
   var ps = [{id:'s0',emoji:'🔍'},{id:'s1',emoji:'📊'},{id:'s2',emoji:'💻'},
@@ -1857,6 +1857,12 @@ function _orchSetState(c, state, tool) {
     else if (state==='plan_executing')    c.statusText='▶️';
     else if (state==='plan_completed')    c.statusText='✅';
     else                                  c.statusText=null;
+    // Secretary appears only during plan mode.
+    var inPlan = state.indexOf('plan_')===0;
+    if (_orchSecretary.alive !== inPlan) {
+      _orchSecretary.alive = inPlan;
+      _orchSyncBadge('secretary', _orchSecretary.state, _orchSecretary.alive);
+    }
   }
 }
 function _orchMoveTo(c, pos, cb) { c.target=pos; c._onArrive=cb||null; }
