@@ -122,7 +122,7 @@ type ExecTool struct {
 	workingDir          string
 	timeout             time.Duration
 	denyPatterns        []*regexp.Regexp
-	allowPatterns       []*regexp.Regexp
+	allowRules          [][]string // pre-split command prefix allowlist
 	restrictToWorkspace bool
 	localNetOnly        bool // restrict curl/wget to localhost + RFC 1918
 
@@ -217,7 +217,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		workingDir:          workingDir,
 		timeout:             5 * time.Minute,
 		denyPatterns:        denyPatterns,
-		allowPatterns:       nil,
+		allowRules:          nil,
 		restrictToWorkspace: restrict,
 		bgProcesses:         make(map[string]*bgProcess),
 		bgCtx:               bgCtx,
@@ -708,22 +708,15 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		}
 	}
 
-	if len(t.allowPatterns) > 0 {
-		allowed := false
-		for _, pattern := range t.allowPatterns {
-			if pattern.MatchString(lower) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
+	if len(t.allowRules) > 0 {
+		if !matchAllowRules(lower, t.allowRules) {
 			var b strings.Builder
 			b.WriteString("Command blocked: not in allowlist [")
-			for i, p := range t.allowPatterns {
+			for i, rule := range t.allowRules {
 				if i > 0 {
 					b.WriteByte(',')
 				}
-				b.WriteString(p.String())
+				b.WriteString(strings.Join(rule, " "))
 			}
 			b.WriteByte(']')
 			return b.String()
@@ -847,16 +840,38 @@ func (t *ExecTool) SetRestrictToWorkspace(restrict bool) {
 	t.restrictToWorkspace = restrict
 }
 
-func (t *ExecTool) SetAllowPatterns(patterns []string) error {
-	t.allowPatterns = make([]*regexp.Regexp, 0, len(patterns))
-	for _, p := range patterns {
-		re, err := regexp.Compile(p)
-		if err != nil {
-			return fmt.Errorf("invalid allow pattern %q: %w", p, err)
+// SetAllowRules sets the command prefix allowlist.
+// Each rule is a space-separated command prefix (e.g. "go test", "pnpm run lint").
+// A command is allowed if its first N words match any rule's N words exactly.
+func (t *ExecTool) SetAllowRules(rules []string) {
+	t.allowRules = make([][]string, 0, len(rules))
+	for _, r := range rules {
+		words := strings.Fields(strings.ToLower(r))
+		if len(words) > 0 {
+			t.allowRules = append(t.allowRules, words)
 		}
-		t.allowPatterns = append(t.allowPatterns, re)
 	}
-	return nil
+}
+
+// matchAllowRules checks if cmd matches any prefix in the allowlist.
+func matchAllowRules(cmd string, rules [][]string) bool {
+	cmdWords := strings.Fields(cmd)
+	for _, ruleWords := range rules {
+		if len(cmdWords) < len(ruleWords) {
+			continue
+		}
+		match := true
+		for i, rw := range ruleWords {
+			if cmdWords[i] != rw {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *ExecTool) SetLocalNetOnly(v bool) {

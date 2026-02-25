@@ -22,8 +22,8 @@ func IsValidPreset(p Preset) bool {
 
 // ExecPolicy defines which commands are allowed for execution.
 type ExecPolicy struct {
-	AllowPattern string // Prefix-match regex; matched commands are allowed
-	LocalNetOnly bool   // Restrict curl/wget to localhost and RFC 1918 private addresses
+	AllowRules   []string // Command prefix allowlist (e.g., "go test", "pnpm run test")
+	LocalNetOnly bool     // Restrict curl/wget to localhost and RFC 1918 private addresses
 }
 
 // SandboxConfig describes the sandbox isolation policy for a preset.
@@ -44,15 +44,43 @@ type SubagentEnvironment struct {
 	ContextFiles []string // Files to provide as context
 }
 
-// presetExecPatterns maps presets to command allowlist regexes.
+// presetAllowRules maps presets to command prefix allowlists.
+// Each entry is a command prefix: the first N words of the executed command
+// must match exactly. e.g. "go test" allows "go test ./..." but not "go build".
+// A single word like "curl" allows any arguments.
 // curl/wget are included where exec is allowed; LocalNetOnly in ExecPolicy
 // ensures all curl/wget requests are restricted to localhost and RFC 1918 addresses.
-var presetExecPatterns = map[Preset]string{
-	PresetScout:       ``, // No exec allowed
-	PresetAnalyst:     `^(go\s+(test|vet)|git\s+(log|diff|status)|curl|wget|grep|find)\b`,
-	PresetCoder:       `^(go\s+(test|vet|fmt)|gofmt|goimports|golangci-lint|prettier|eslint|black|ruff|cargo\s+(test|fmt|clippy)|pnpm\s+(test|run\s+(test|lint|format))|bun\s+(test|run\s+(test|lint|format))|uv\s+run\s+|curl|wget)\b`,
-	PresetWorker:      `^(go\s+|pnpm\s+(install|add|run|test|build)|bun\s+(install|add|run|test|build)|uv\s+(run|sync|add|pip\s+install)|pip\s+install|cargo\s+|curl|wget)\b`,
-	PresetCoordinator: `^(go\s+|pnpm\s+|bun\s+|curl|wget)\b`,
+var presetAllowRules = map[Preset][]string{
+	PresetScout: nil, // No exec allowed
+	PresetAnalyst: {
+		"go test", "go vet",
+		"git log", "git diff", "git status",
+		"curl", "wget", "grep", "find",
+	},
+	PresetCoder: {
+		"go test", "go vet", "go fmt",
+		"gofmt", "goimports", "golangci-lint",
+		"prettier", "eslint", "black", "ruff",
+		"cargo test", "cargo fmt", "cargo clippy",
+		"pnpm test", "pnpm run test", "pnpm run lint", "pnpm run format",
+		"bun test", "bun run test", "bun run lint", "bun run format",
+		"uv run",
+		"curl", "wget",
+	},
+	PresetWorker: {
+		"go",
+		"pnpm install", "pnpm add", "pnpm run", "pnpm test", "pnpm build",
+		"bun install", "bun add", "bun run", "bun test", "bun build",
+		"uv run", "uv sync", "uv add", "uv pip install",
+		"pip install",
+		"cargo",
+		"curl", "wget",
+	},
+	PresetCoordinator: {
+		"go",
+		"pnpm", "bun",
+		"curl", "wget",
+	},
 }
 
 // presetSpawnablePresets maps presets to which presets they can spawn.
@@ -110,13 +138,13 @@ func SandboxConfigForPreset(p Preset, writeRoot string) SandboxConfig {
 		config.WriteRoot = writeRoot
 	}
 
-	// Set ExecPolicy if exec is allowed and pattern is non-empty.
+	// Set ExecPolicy if exec is allowed and rules are defined.
 	// LocalNetOnly is always true: curl/wget in subagents is for local server
 	// testing only; external HTTP access goes through the web_fetch tool.
 	if allowed["exec"] {
-		if pattern := presetExecPatterns[p]; pattern != "" {
+		if rules := presetAllowRules[p]; len(rules) > 0 {
 			config.ExecPolicy = &ExecPolicy{
-				AllowPattern: pattern,
+				AllowRules:   rules,
 				LocalNetOnly: true,
 			}
 		}

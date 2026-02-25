@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"regexp"
 	"testing"
 )
 
@@ -167,17 +166,15 @@ func TestSandboxConfigForPreset_Coordinator(t *testing.T) {
 	}
 }
 
-// TestPresetExecPatterns_Coder validates coder exec allowlist.
-func TestPresetExecPatterns_Coder(t *testing.T) {
-	pattern, ok := presetExecPatterns[PresetCoder]
-	if !ok || pattern == "" {
-		t.Fatalf("coder pattern missing or empty")
+// TestPresetAllowRules_Coder validates coder exec allowlist.
+func TestPresetAllowRules_Coder(t *testing.T) {
+	rules := presetAllowRules[PresetCoder]
+	if len(rules) == 0 {
+		t.Fatalf("coder rules missing or empty")
 	}
 
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		t.Fatalf("failed to compile pattern: %v", err)
-	}
+	exec := NewExecTool(t.TempDir(), true)
+	exec.SetAllowRules(rules)
 
 	tests := []struct {
 		cmd    string
@@ -185,35 +182,50 @@ func TestPresetExecPatterns_Coder(t *testing.T) {
 	}{
 		{"go test ./...", true},
 		{"go vet ./...", true},
+		{"go fmt ./...", true},
 		{"gofmt -w file.go", true},
 		{"golangci-lint run", true},
-		{"go build ./...", false},
-		{"npm install", false},
+		{"cargo test", true},
+		{"cargo fmt", true},
+		{"cargo clippy", true},
 		{"pnpm test", true},
+		{"pnpm run test", true},
+		{"pnpm run lint", true},
+		{"pnpm run format", true},
+		{"bun test", true},
+		{"bun run test", true},
+		{"uv run pytest", true},
 		// curl/wget are in the allowlist; LocalNetOnly enforcement is at runtime
 		{"curl http://localhost:3000/health", true},
 		{"wget http://127.0.0.1:8080/status", true},
+		// blocked
+		{"go build ./...", false},
+		{"npm install", false},
+		{"pnpm install", false},
+		{"pnpm run build", false},
+		{"cargo build", false},
+		{"pwd", false},
+		{"ls", false},
 	}
 
 	for _, tt := range tests {
-		gotOK := re.MatchString(tt.cmd)
+		result := exec.guardCommand(tt.cmd, t.TempDir())
+		gotOK := result == ""
 		if gotOK != tt.wantOK {
-			t.Errorf("cmd %q: got %v, want %v", tt.cmd, gotOK, tt.wantOK)
+			t.Errorf("cmd %q: got allowed=%v, want %v (guard: %q)", tt.cmd, gotOK, tt.wantOK, result)
 		}
 	}
 }
 
-// TestPresetExecPatterns_Analyst validates analyst exec allowlist.
-func TestPresetExecPatterns_Analyst(t *testing.T) {
-	pattern, ok := presetExecPatterns[PresetAnalyst]
-	if !ok || pattern == "" {
-		t.Fatalf("analyst pattern missing or empty")
+// TestPresetAllowRules_Analyst validates analyst exec allowlist.
+func TestPresetAllowRules_Analyst(t *testing.T) {
+	rules := presetAllowRules[PresetAnalyst]
+	if len(rules) == 0 {
+		t.Fatalf("analyst rules missing or empty")
 	}
 
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		t.Fatalf("failed to compile pattern: %v", err)
-	}
+	exec := NewExecTool(t.TempDir(), true)
+	exec.SetAllowRules(rules)
 
 	tests := []struct {
 		cmd    string
@@ -223,16 +235,103 @@ func TestPresetExecPatterns_Analyst(t *testing.T) {
 		{"go vet ./...", true},
 		{"git log --oneline", true},
 		{"git diff HEAD", true},
+		{"git status", true},
 		{"grep pattern file", true},
+		{"find . -name '*.go'", true},
 		{"curl http://example.com", true},
+		// blocked
 		{"go build ./...", false},
 		{"npm install", false},
+		{"git push", false},
+		{"git checkout", false},
+		{"pwd", false},
+		{"ls", false},
 	}
 
 	for _, tt := range tests {
-		gotOK := re.MatchString(tt.cmd)
+		result := exec.guardCommand(tt.cmd, t.TempDir())
+		gotOK := result == ""
 		if gotOK != tt.wantOK {
-			t.Errorf("cmd %q: got %v, want %v", tt.cmd, gotOK, tt.wantOK)
+			t.Errorf("cmd %q: got allowed=%v, want %v (guard: %q)", tt.cmd, gotOK, tt.wantOK, result)
+		}
+	}
+}
+
+// TestPresetAllowRules_Worker validates worker exec allowlist.
+func TestPresetAllowRules_Worker(t *testing.T) {
+	rules := presetAllowRules[PresetWorker]
+	if len(rules) == 0 {
+		t.Fatalf("worker rules missing or empty")
+	}
+
+	exec := NewExecTool(t.TempDir(), true)
+	exec.SetAllowRules(rules)
+
+	tests := []struct {
+		cmd    string
+		wantOK bool
+	}{
+		{"go build ./...", true},
+		{"go test ./...", true},
+		{"pnpm install", true},
+		{"pnpm add lodash", true},
+		{"pnpm run dev", true},
+		{"bun install", true},
+		{"bun build", true},
+		{"uv run pytest", true},
+		{"uv sync", true},
+		{"uv pip install flask", true},
+		{"pip install flask", true},
+		{"cargo build", true},
+		{"cargo test", true},
+		{"curl http://localhost:8080", true},
+		// blocked
+		{"npm install", false},
+		{"pwd", false},
+	}
+
+	for _, tt := range tests {
+		result := exec.guardCommand(tt.cmd, t.TempDir())
+		gotOK := result == ""
+		if gotOK != tt.wantOK {
+			t.Errorf("cmd %q: got allowed=%v, want %v (guard: %q)", tt.cmd, gotOK, tt.wantOK, result)
+		}
+	}
+}
+
+// TestPresetAllowRules_Coordinator validates coordinator exec allowlist.
+func TestPresetAllowRules_Coordinator(t *testing.T) {
+	rules := presetAllowRules[PresetCoordinator]
+	if len(rules) == 0 {
+		t.Fatalf("coordinator rules missing or empty")
+	}
+
+	exec := NewExecTool(t.TempDir(), true)
+	exec.SetAllowRules(rules)
+
+	tests := []struct {
+		cmd    string
+		wantOK bool
+	}{
+		{"go build ./...", true},
+		{"go test ./...", true},
+		{"pnpm install", true},
+		{"pnpm run dev", true},
+		{"bun install", true},
+		{"bun run dev", true},
+		{"curl http://localhost:8080", true},
+		{"wget http://127.0.0.1:3000", true},
+		// blocked
+		{"npm install", false},
+		{"cargo build", false},
+		{"pwd", false},
+	}
+
+	for _, tt := range tests {
+		result := exec.guardCommand(tt.cmd, t.TempDir())
+		gotOK := result == ""
+		if gotOK != tt.wantOK {
+			t.Errorf("cmd %q: got allowed=%v, want %v (guard: %q)", tt.cmd, gotOK, tt.wantOK, result)
 		}
 	}
 }
