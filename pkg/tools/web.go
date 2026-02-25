@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -498,7 +499,7 @@ type WebFetchTool struct {
 
 // allowPrivateWebFetchHosts controls whether loopback/private hosts are allowed.
 // This is false in normal runtime to reduce SSRF exposure, and tests can override it temporarily.
-var allowPrivateWebFetchHosts = false
+var allowPrivateWebFetchHosts atomic.Bool
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {
 	if maxChars <= 0 {
@@ -711,7 +712,7 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 
 func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		if allowPrivateWebFetchHosts {
+		if allowPrivateWebFetchHosts.Load() {
 			return dialer.DialContext(ctx, network, address)
 		}
 
@@ -760,11 +761,12 @@ func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string
 }
 
 func isPrivateFetchHost(host string) bool {
-	if allowPrivateWebFetchHosts {
+	if allowPrivateWebFetchHosts.Load() {
 		return false
 	}
 
 	canonicalHost := strings.ToLower(strings.TrimSpace(host))
+	canonicalHost = strings.TrimSuffix(canonicalHost, ".")
 	if canonicalHost == "" {
 		return true
 	}
@@ -816,6 +818,20 @@ func isPrivateOrRestrictedIP(ip net.IP) bool {
 		return false
 	}
 
-	// IPv6 unique local addresses (fc00::/7)
-	return len(ip) == net.IPv6len && (ip[0]&0xfe) == 0xfc
+	if len(ip) == net.IPv6len {
+		// IPv6 unique local addresses (fc00::/7)
+		if (ip[0] & 0xfe) == 0xfc {
+			return true
+		}
+		// 6to4 addresses (2002::/16) can embed private IPv4 targets.
+		if ip[0] == 0x20 && ip[1] == 0x02 {
+			return true
+		}
+		// Teredo tunneling addresses (2001:0000::/32) can encapsulate private endpoints.
+		if ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x00 && ip[3] == 0x00 {
+			return true
+		}
+	}
+
+	return false
 }

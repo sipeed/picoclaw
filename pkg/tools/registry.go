@@ -77,8 +77,19 @@ func (r *ToolRegistry) ExecuteWithContext(
 			})
 	}
 
+	toolArgs := args
+	if channel != "" || chatID != "" {
+		toolArgs = make(map[string]interface{}, len(args)+2)
+		for k, v := range args {
+			toolArgs[k] = v
+		}
+		// Internal runtime context for auth/policy checks in tools.
+		toolArgs["__channel"] = channel
+		toolArgs["__chat_id"] = chatID
+	}
+
 	start := time.Now()
-	result := tool.Execute(ctx, args)
+	result := tool.Execute(ctx, toolArgs)
 	duration := time.Since(start)
 
 	// Log based on result type

@@ -24,8 +24,6 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	restrictToWorkspace bool
 	allowRemote         bool
-	channel             string
-	chatID              string
 }
 
 var defaultDenyPatterns = []*regexp.Regexp{
@@ -149,7 +147,8 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 
 	if !t.allowRemote {
-		channel := strings.TrimSpace(t.channel)
+		channel, _ := args["__channel"].(string)
+		channel = strings.TrimSpace(channel)
 		if channel == "" || !constants.IsInternalChannel(channel) {
 			return ErrorResult("exec is restricted to internal channels")
 		}
@@ -344,9 +343,4 @@ func (t *ExecTool) SetAllowPatterns(patterns []string) error {
 		t.allowPatterns = append(t.allowPatterns, re)
 	}
 	return nil
-}
-
-func (t *ExecTool) SetContext(channel, chatID string) {
-	t.channel = channel
-	t.chatID = chatID
 }

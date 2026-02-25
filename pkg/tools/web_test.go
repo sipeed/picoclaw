@@ -324,10 +324,10 @@ func TestWebFetchTool_extractText(t *testing.T) {
 
 func withPrivateWebFetchHostsAllowed(t *testing.T) {
 	t.Helper()
-	previous := allowPrivateWebFetchHosts
-	allowPrivateWebFetchHosts = true
+	previous := allowPrivateWebFetchHosts.Load()
+	allowPrivateWebFetchHosts.Store(true)
 	t.Cleanup(func() {
-		allowPrivateWebFetchHosts = previous
+		allowPrivateWebFetchHosts.Store(previous)
 	})
 }
 
