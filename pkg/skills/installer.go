@@ -31,14 +31,30 @@ type BuiltinSkill struct {
 
 const maxRetries = 3
 
+func shouldRetry(statusCode int) bool {
+	return statusCode == http.StatusTooManyRequests ||
+		statusCode >= 500
+}
+
 func doRequestWithRetry(client *http.Client, req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	var err error
+
 	for i := range maxRetries {
-		resp, err = client.Do(req)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			break
+		if i > 0 && resp != nil {
+			resp.Body.Close()
 		}
+
+		resp, err = client.Do(req)
+		if err == nil {
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+			if !shouldRetry(resp.StatusCode) {
+				break
+			}
+		}
+
 		if i < maxRetries-1 {
 			time.Sleep(time.Second * time.Duration(i+1))
 		}
