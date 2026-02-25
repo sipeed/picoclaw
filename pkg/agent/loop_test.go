@@ -2991,3 +2991,91 @@ func TestHandleReasoning(t *testing.T) {
 		}
 	})
 }
+
+func TestFormatDurationMs(t *testing.T) {
+	tests := []struct {
+		ms   int64
+		want string
+	}{
+		{0, "0ms"},
+		{500, "500ms"},
+		{999, "999ms"},
+		{1000, "1.0s"},
+		{1200, "1.2s"},
+		{3500, "3.5s"},
+		{59900, "59.9s"},
+		{60000, "1m"},
+		{61000, "1m1s"},
+		{65000, "1m5s"},
+		{120000, "2m"},
+		{3661000, "61m1s"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%dms", tt.ms), func(t *testing.T) {
+			got := formatDurationMs(tt.ms)
+			if got != tt.want {
+				t.Errorf("formatDurationMs(%d) = %q, want %q", tt.ms, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatSubagentCompletion(t *testing.T) {
+	tests := []struct {
+		name     string
+		label    string
+		metadata map[string]string
+		want     string
+	}{
+		{
+			"no metadata",
+			"scout-1",
+			nil,
+			"📋 scout-1 completed.",
+		},
+		{
+			"empty metadata",
+			"scout-1",
+			map[string]string{},
+			"📋 scout-1 completed.",
+		},
+		{
+			"duration and tool calls",
+			"scout-1",
+			map[string]string{"duration_ms": "3200", "tool_calls": "5"},
+			"📋 scout-1 completed (3.2s, 5 tool calls).",
+		},
+		{
+			"single tool call",
+			"coder-1",
+			map[string]string{"duration_ms": "1200", "tool_calls": "1"},
+			"📋 coder-1 completed (1.2s, 1 tool call).",
+		},
+		{
+			"duration only",
+			"scout-2",
+			map[string]string{"duration_ms": "65000", "tool_calls": "0"},
+			"📋 scout-2 completed (1m5s).",
+		},
+		{
+			"tool calls only",
+			"scout-3",
+			map[string]string{"duration_ms": "0", "tool_calls": "10"},
+			"📋 scout-3 completed (10 tool calls).",
+		},
+		{
+			"zero everything",
+			"scout-4",
+			map[string]string{"duration_ms": "0", "tool_calls": "0"},
+			"📋 scout-4 completed.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatSubagentCompletion(tt.label, tt.metadata)
+			if got != tt.want {
+				t.Errorf("formatSubagentCompletion(%q, %v) = %q, want %q", tt.label, tt.metadata, got, tt.want)
+			}
+		})
+	}
+}
