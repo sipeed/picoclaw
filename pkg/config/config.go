@@ -47,16 +47,18 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty"`
-	Session   SessionConfig   `json:"session,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
+	Agents        AgentsConfig        `json:"agents"`
+	Bindings      []AgentBinding      `json:"bindings,omitempty"`
+	Session       SessionConfig       `json:"session,omitempty"`
+	Channels      ChannelsConfig      `json:"channels"`
+	Providers     ProvidersConfig     `json:"providers,omitempty"`
+	ModelList     []ModelConfig       `json:"model_list"` // New model-centric provider configuration
+	Gateway       GatewayConfig       `json:"gateway"`
+	Tools         ToolsConfig         `json:"tools"`
+	Heartbeat     HeartbeatConfig     `json:"heartbeat"`
+	Devices       DevicesConfig       `json:"devices"`
+	Orchestration OrchestrationConfig `json:"orchestration,omitempty"`
+	Audit         AuditConfig         `json:"audit,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -167,17 +169,17 @@ type SessionConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace           string   `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool     `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string   `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	ModelName           string   `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
-	Model               string   `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
-	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
-	ImageModel          string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
-	MaxTokens           int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace           string                       `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool                         `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Provider            string                       `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	ModelName           string                       `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model               string                       `json:"model,omitempty"                 env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
+	ModelFallbacks      []string                     `json:"model_fallbacks,omitempty"`
+	ImageModel          string                       `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks []string                     `json:"image_model_fallbacks,omitempty"`
+	MaxTokens           int                          `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature         *float64                     `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int                          `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	Compaction          AgentCompactionConfig        `json:"compaction,omitempty"`
 	ContextPruning      AgentContextPruningConfig    `json:"context_pruning,omitempty"`
 	BootstrapSnapshot   AgentBootstrapSnapshotConfig `json:"bootstrap_snapshot,omitempty"`
@@ -352,6 +354,33 @@ type HeartbeatConfig struct {
 type DevicesConfig struct {
 	Enabled    bool `json:"enabled"     env:"PICOCLAW_DEVICES_ENABLED"`
 	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
+}
+
+type OrchestrationConfig struct {
+	Enabled                   bool `json:"enabled"                      env:"PICOCLAW_ORCHESTRATION_ENABLED"`
+	MaxSpawnDepth             int  `json:"max_spawn_depth"              env:"PICOCLAW_ORCHESTRATION_MAX_SPAWN_DEPTH"`
+	MaxParallelWorkers        int  `json:"max_parallel_workers"         env:"PICOCLAW_ORCHESTRATION_MAX_PARALLEL_WORKERS"`
+	MaxTasksPerAgent          int  `json:"max_tasks_per_agent"          env:"PICOCLAW_ORCHESTRATION_MAX_TASKS_PER_AGENT"`
+	DefaultTaskTimeoutSeconds int  `json:"default_task_timeout_seconds" env:"PICOCLAW_ORCHESTRATION_DEFAULT_TASK_TIMEOUT_SECONDS"`
+	RetryLimitPerTask         int  `json:"retry_limit_per_task"         env:"PICOCLAW_ORCHESTRATION_RETRY_LIMIT_PER_TASK"`
+}
+
+type AuditConfig struct {
+	Enabled             bool                  `json:"enabled"               env:"PICOCLAW_AUDIT_ENABLED"`
+	IntervalMinutes     int                   `json:"interval_minutes"      env:"PICOCLAW_AUDIT_INTERVAL_MINUTES"`
+	LookbackMinutes     int                   `json:"lookback_minutes"      env:"PICOCLAW_AUDIT_LOOKBACK_MINUTES"`
+	Supervisor          AuditSupervisorConfig `json:"supervisor"`
+	MinConfidence       float64               `json:"min_confidence"        env:"PICOCLAW_AUDIT_MIN_CONFIDENCE"`
+	InconsistencyPolicy string                `json:"inconsistency_policy"  env:"PICOCLAW_AUDIT_INCONSISTENCY_POLICY"`
+	AutoRemediation     string                `json:"auto_remediation"      env:"PICOCLAW_AUDIT_AUTO_REMEDIATION"`
+	NotifyChannel       string                `json:"notify_channel"        env:"PICOCLAW_AUDIT_NOTIFY_CHANNEL"`
+}
+
+type AuditSupervisorConfig struct {
+	Enabled     bool              `json:"enabled"     env:"PICOCLAW_AUDIT_SUPERVISOR_ENABLED"`
+	Model       *AgentModelConfig `json:"model,omitempty"`
+	Temperature *float64          `json:"temperature,omitempty" env:"PICOCLAW_AUDIT_SUPERVISOR_TEMPERATURE"`
+	MaxTokens   int               `json:"max_tokens,omitempty"  env:"PICOCLAW_AUDIT_SUPERVISOR_MAX_TOKENS"`
 }
 
 type ProvidersConfig struct {

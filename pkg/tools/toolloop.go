@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -23,12 +24,25 @@ type ToolLoopConfig struct {
 	Tools         *ToolRegistry
 	MaxIterations int
 	LLMOptions    map[string]any
+	SenderID      string
 }
 
 // ToolLoopResult contains the result of running the tool loop.
 type ToolLoopResult struct {
 	Content    string
 	Iterations int
+	Trace      []ToolExecutionTrace
+}
+
+// ToolExecutionTrace captures a single tool execution inside the loop.
+type ToolExecutionTrace struct {
+	Iteration  int
+	ToolName   string
+	Arguments  map[string]any
+	Result     string
+	IsError    bool
+	DurationMS int64
+	ToolCallID string
 }
 
 // RunToolLoop executes the LLM + tool call iteration loop.
@@ -41,6 +55,7 @@ func RunToolLoop(
 ) (*ToolLoopResult, error) {
 	iteration := 0
 	var finalContent string
+	trace := make([]ToolExecutionTrace, 0)
 
 	for iteration < config.MaxIterations {
 		iteration++
@@ -123,6 +138,7 @@ func RunToolLoop(
 
 		// 7. Execute tool calls
 		for _, tc := range normalizedToolCalls {
+			start := time.Now()
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
 			logger.InfoCF("toolloop", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
@@ -134,7 +150,15 @@ func RunToolLoop(
 			// Execute tool (no async callback for subagents - they run independently)
 			var toolResult *ToolResult
 			if config.Tools != nil {
-				toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, "", nil)
+				toolResult = config.Tools.ExecuteWithContext(
+					ctx,
+					tc.Name,
+					tc.Arguments,
+					channel,
+					chatID,
+					config.SenderID,
+					nil,
+				)
 			} else {
 				toolResult = ErrorResult("No tools available")
 			}
@@ -144,6 +168,16 @@ func RunToolLoop(
 			if contentForLLM == "" && toolResult.Err != nil {
 				contentForLLM = toolResult.Err.Error()
 			}
+
+			trace = append(trace, ToolExecutionTrace{
+				Iteration:  iteration,
+				ToolName:   tc.Name,
+				Arguments:  tc.Arguments,
+				Result:     contentForLLM,
+				IsError:    toolResult.IsError,
+				DurationMS: time.Since(start).Milliseconds(),
+				ToolCallID: tc.ID,
+			})
 
 			// Add tool result message
 			toolResultMsg := providers.Message{
@@ -158,5 +192,6 @@ func RunToolLoop(
 	return &ToolLoopResult{
 		Content:    finalContent,
 		Iterations: iteration,
+		Trace:      trace,
 	}, nil
 }

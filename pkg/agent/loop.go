@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,6 +35,7 @@ type AgentLoop struct {
 	cfg            *config.Config
 	registry       *AgentRegistry
 	state          *state.Manager
+	taskLedger     *tools.TaskLedger
 	running        atomic.Bool
 	summarizing    sync.Map
 	fallback       *providers.FallbackChain
@@ -63,21 +65,25 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	// Create state manager using default agent's workspace for channel recording
 	defaultAgent := registry.GetDefaultAgent()
 	var stateManager *state.Manager
+	ledgerPath := filepath.Join(cfg.WorkspacePath(), "tasks", "ledger.json")
 	if defaultAgent != nil {
 		stateManager = state.NewManager(defaultAgent.Workspace)
+		ledgerPath = filepath.Join(defaultAgent.Workspace, "tasks", "ledger.json")
 	}
+	taskLedger := tools.NewTaskLedger(ledgerPath)
 
 	al := &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
 		registry:    registry,
 		state:       stateManager,
+		taskLedger:  taskLedger,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
 	}
 
 	// Register shared tools to all agents.
-	registerSharedTools(cfg, msgBus, registry, provider, al)
+	registerSharedTools(cfg, msgBus, registry, provider, al, taskLedger)
 
 	return al
 }
@@ -89,6 +95,7 @@ func registerSharedTools(
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
 	sessionsExecutor tools.SessionsSendExecutor,
+	taskLedger *tools.TaskLedger,
 ) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -155,9 +162,23 @@ func registerSharedTools(
 		// Spawn/session tools with allowlist checker.
 		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
 		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+		subagentManager.SetLimits(
+			cfg.Orchestration.MaxParallelWorkers,
+			cfg.Orchestration.MaxTasksPerAgent,
+			cfg.Orchestration.MaxSpawnDepth,
+		)
+		subagentManager.SetTools(agent.Tools)
+		currentAgentID := agentID
+		subagentManager.SetExecutionResolver(func(targetAgentID string) (tools.SubagentExecutionConfig, error) {
+			return resolveSubagentExecution(cfg, registry, provider, currentAgentID, targetAgentID)
+		})
+		if taskLedger != nil {
+			subagentManager.SetEventHandler(func(event tools.SubagentTaskEvent) {
+				handleSubagentTaskEvent(taskLedger, cfg, event)
+			})
+		}
 		spawnTool := tools.NewSpawnTool(subagentManager)
 		sessionsSpawnTool := tools.NewSessionsSpawnTool(subagentManager)
-		currentAgentID := agentID
 		allowlist := func(targetAgentID string) bool {
 			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 		}
@@ -179,8 +200,106 @@ func registerSharedTools(
 	}
 }
 
+func resolveSubagentExecution(
+	cfg *config.Config,
+	registry *AgentRegistry,
+	fallbackProvider providers.LLMProvider,
+	parentAgentID, targetAgentID string,
+) (tools.SubagentExecutionConfig, error) {
+	selectedAgentID := parentAgentID
+	if strings.TrimSpace(targetAgentID) != "" {
+		selectedAgentID = targetAgentID
+	}
+
+	targetAgent, ok := registry.GetAgent(selectedAgentID)
+	if !ok || targetAgent == nil {
+		return tools.SubagentExecutionConfig{}, fmt.Errorf("target agent %q not found", selectedAgentID)
+	}
+
+	execution := tools.SubagentExecutionConfig{
+		Provider: fallbackProvider,
+		Model:    targetAgent.Model,
+		Tools:    targetAgent.Tools,
+	}
+
+	modelCfg, err := cfg.GetModelConfig(targetAgent.Model)
+	if err != nil {
+		if execution.Provider != nil {
+			return execution, nil
+		}
+		return tools.SubagentExecutionConfig{}, err
+	}
+
+	cfgCopy := *modelCfg
+	if cfgCopy.Workspace == "" {
+		cfgCopy.Workspace = targetAgent.Workspace
+	}
+
+	resolvedProvider, resolvedModel, err := providers.CreateProviderFromConfig(&cfgCopy)
+	if err != nil {
+		if execution.Provider != nil {
+			return execution, nil
+		}
+		return tools.SubagentExecutionConfig{}, err
+	}
+	if resolvedProvider != nil {
+		execution.Provider = resolvedProvider
+	}
+	if resolvedModel != "" {
+		execution.Model = resolvedModel
+	}
+	return execution, nil
+}
+
+func handleSubagentTaskEvent(ledger *tools.TaskLedger, cfg *config.Config, event tools.SubagentTaskEvent) {
+	if ledger == nil {
+		return
+	}
+	task := event.Task
+	status := tools.TaskStatus(task.Status)
+	if status == "" {
+		status = tools.TaskStatusPlanned
+	}
+
+	var deadline *int64
+	if cfg != nil && cfg.Orchestration.DefaultTaskTimeoutSeconds > 0 {
+		d := task.Created + int64(cfg.Orchestration.DefaultTaskTimeoutSeconds)*1000
+		deadline = &d
+	}
+
+	_ = ledger.UpsertTask(tools.TaskLedgerEntry{
+		ID:            task.ID,
+		ParentTaskID:  task.ParentTaskID,
+		AgentID:       task.AgentID,
+		Source:        "spawn",
+		Intent:        task.Task,
+		OriginChannel: task.OriginChannel,
+		OriginChatID:  task.OriginChatID,
+		Status:        status,
+		CreatedAtMS:   task.Created,
+		DeadlineAtMS:  deadline,
+		Result:        task.Result,
+		Error:         event.Err,
+	})
+
+	for _, tr := range event.Trace {
+		_ = ledger.AddEvidence(task.ID, tools.TaskEvidence{
+			TimestampMS:   event.Timestamp,
+			Iteration:     tr.Iteration,
+			ToolName:      tr.ToolName,
+			Arguments:     tr.Arguments,
+			ResultPreview: utils.Truncate(tr.Result, 400),
+			IsError:       tr.IsError,
+			DurationMS:    tr.DurationMS,
+		})
+	}
+}
+
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
+	if al.cfg != nil && al.cfg.Audit.Enabled {
+		go al.runAuditLoop(ctx)
+	}
 
 	for al.running.Load() {
 		select {
@@ -239,6 +358,10 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+}
+
+func (al *AgentLoop) GetTaskLedger() *tools.TaskLedger {
+	return al.taskLedger
 }
 
 // RecordLastChannel records the last active channel for this workspace.

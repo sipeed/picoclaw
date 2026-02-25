@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -12,6 +14,24 @@ import (
 // MockLLMProvider is a test implementation of LLMProvider
 type MockLLMProvider struct {
 	lastOptions map[string]any
+}
+
+type staticMockProvider struct {
+	content string
+}
+
+func (m *staticMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	return &providers.LLMResponse{Content: m.content}, nil
+}
+
+func (m *staticMockProvider) GetDefaultModel() string {
+	return "static-model"
 }
 
 func (m *MockLLMProvider) Chat(
@@ -346,5 +366,108 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 	// ForLLM should have full content
 	if !strings.Contains(result.ForLLM, longTask[:50]) {
 		t.Error("ForLLM should contain reference to original task")
+	}
+}
+
+func TestSubagentManager_ExecutionResolverUsedBySpawn(t *testing.T) {
+	defaultProvider := &staticMockProvider{content: "default-provider-result"}
+	manager := NewSubagentManager(defaultProvider, "default-model", t.TempDir(), nil)
+
+	var resolvedAgentID string
+	manager.SetExecutionResolver(func(targetAgentID string) (SubagentExecutionConfig, error) {
+		resolvedAgentID = targetAgentID
+		return SubagentExecutionConfig{
+			Provider: &staticMockProvider{content: "resolved-provider-result"},
+			Model:    "resolved-model",
+			Tools:    NewToolRegistry(),
+		}, nil
+	})
+
+	done := make(chan *ToolResult, 1)
+	_, err := manager.Spawn(
+		context.Background(),
+		"test task",
+		"resolver-test",
+		"agent-worker",
+		"cli",
+		"direct",
+		func(ctx context.Context, result *ToolResult) {
+			done <- result
+		},
+	)
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+
+	select {
+	case result := <-done:
+		if result == nil {
+			t.Fatal("expected callback result")
+		}
+		if result.IsError {
+			t.Fatalf("expected success result, got error: %s", result.ForLLM)
+		}
+		if !strings.Contains(result.ForUser, "resolved-provider-result") {
+			t.Fatalf("expected resolved provider result, got: %s", result.ForUser)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for spawn callback")
+	}
+
+	if resolvedAgentID != "agent-worker" {
+		t.Fatalf("resolver target agent id = %q, want %q", resolvedAgentID, "agent-worker")
+	}
+}
+
+func TestSubagentManager_EventHandlerLifecycle(t *testing.T) {
+	manager := NewSubagentManager(&staticMockProvider{content: "ok"}, "default-model", t.TempDir(), nil)
+	manager.SetExecutionResolver(func(targetAgentID string) (SubagentExecutionConfig, error) {
+		return SubagentExecutionConfig{
+			Provider: &staticMockProvider{content: "ok"},
+			Model:    "model",
+			Tools:    NewToolRegistry(),
+		}, nil
+	})
+
+	var mu sync.Mutex
+	seen := map[SubagentTaskEventType]bool{}
+	manager.SetEventHandler(func(event SubagentTaskEvent) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen[event.Type] = true
+	})
+
+	done := make(chan struct{}, 1)
+	_, err := manager.Spawn(
+		context.Background(),
+		"event task",
+		"event-test",
+		"",
+		"cli",
+		"direct",
+		func(ctx context.Context, result *ToolResult) {
+			done <- struct{}{}
+		},
+	)
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for spawn callback")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !seen[SubagentTaskCreated] {
+		t.Fatalf("expected created event, got %+v", seen)
+	}
+	if !seen[SubagentTaskRunning] {
+		t.Fatalf("expected running event, got %+v", seen)
+	}
+	if !seen[SubagentTaskCompleted] {
+		t.Fatalf("expected completed event, got %+v", seen)
 	}
 }

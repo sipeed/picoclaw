@@ -361,6 +361,74 @@ func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_OrchestrationAndAuditDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Orchestration.MaxSpawnDepth != 3 {
+		t.Fatalf("MaxSpawnDepth = %d, want 3", cfg.Orchestration.MaxSpawnDepth)
+	}
+	if cfg.Orchestration.DefaultTaskTimeoutSeconds != 180 {
+		t.Fatalf(
+			"DefaultTaskTimeoutSeconds = %d, want 180",
+			cfg.Orchestration.DefaultTaskTimeoutSeconds,
+		)
+	}
+	if cfg.Audit.IntervalMinutes != 30 {
+		t.Fatalf("Audit.IntervalMinutes = %d, want 30", cfg.Audit.IntervalMinutes)
+	}
+	if cfg.Audit.LookbackMinutes != 180 {
+		t.Fatalf("Audit.LookbackMinutes = %d, want 180", cfg.Audit.LookbackMinutes)
+	}
+	if cfg.Audit.Supervisor.Model == nil || cfg.Audit.Supervisor.Model.Primary == "" {
+		t.Fatal("Audit supervisor model should be initialized in defaults")
+	}
+}
+
+func TestConfig_UnmarshalAuditAndOrchestration(t *testing.T) {
+	jsonData := `{
+		"orchestration": {
+			"enabled": true,
+			"max_spawn_depth": 4,
+			"max_parallel_workers": 2
+		},
+		"audit": {
+			"enabled": true,
+			"interval_minutes": 15,
+			"lookback_minutes": 60,
+			"min_confidence": 0.85,
+			"supervisor": {
+				"enabled": true,
+				"model": {
+					"primary": "gpt-5.2",
+					"fallbacks": ["claude-sonnet-4.6"]
+				},
+				"max_tokens": 1024
+			}
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if !cfg.Orchestration.Enabled {
+		t.Fatal("orchestration.enabled should be true")
+	}
+	if cfg.Orchestration.MaxSpawnDepth != 4 {
+		t.Fatalf("max_spawn_depth = %d, want 4", cfg.Orchestration.MaxSpawnDepth)
+	}
+	if !cfg.Audit.Enabled {
+		t.Fatal("audit.enabled should be true")
+	}
+	if cfg.Audit.MinConfidence != 0.85 {
+		t.Fatalf("min_confidence = %v, want 0.85", cfg.Audit.MinConfidence)
+	}
+	if cfg.Audit.Supervisor.Model == nil || cfg.Audit.Supervisor.Model.Primary != "gpt-5.2" {
+		t.Fatalf("unexpected supervisor model: %+v", cfg.Audit.Supervisor.Model)
+	}
+}
+
 func TestDefaultConfig_MemoryVectorDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	mv := cfg.Agents.Defaults.MemoryVector

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 type SubagentTask struct {
 	ID            string
+	ParentTaskID  string
 	Task          string
 	Label         string
 	AgentID       string
@@ -20,7 +22,36 @@ type SubagentTask struct {
 	Status        string
 	Result        string
 	Created       int64
+	Depth         int
 }
+
+type SubagentExecutionConfig struct {
+	Provider providers.LLMProvider
+	Model    string
+	Tools    *ToolRegistry
+}
+
+type SubagentExecutionResolver func(targetAgentID string) (SubagentExecutionConfig, error)
+
+type SubagentTaskEventType string
+
+const (
+	SubagentTaskCreated   SubagentTaskEventType = "created"
+	SubagentTaskRunning   SubagentTaskEventType = "running"
+	SubagentTaskCompleted SubagentTaskEventType = "completed"
+	SubagentTaskFailed    SubagentTaskEventType = "failed"
+	SubagentTaskCancelled SubagentTaskEventType = "cancelled"
+)
+
+type SubagentTaskEvent struct {
+	Type      SubagentTaskEventType
+	Task      SubagentTask
+	Trace     []ToolExecutionTrace
+	Err       string
+	Timestamp int64
+}
+
+type SubagentTaskEventHandler func(event SubagentTaskEvent)
 
 type SubagentManager struct {
 	tasks          map[string]*SubagentTask
@@ -36,6 +67,12 @@ type SubagentManager struct {
 	hasMaxTokens   bool
 	hasTemperature bool
 	nextID         int
+	resolver       SubagentExecutionResolver
+	eventHandler   SubagentTaskEventHandler
+	maxConcurrent  int
+	maxTasks       int
+	maxDepth       int
+	taskCancels    map[string]context.CancelFunc
 }
 
 func NewSubagentManager(
@@ -52,6 +89,7 @@ func NewSubagentManager(
 		tools:         NewToolRegistry(),
 		maxIterations: 10,
 		nextID:        1,
+		taskCancels:   make(map[string]context.CancelFunc),
 	}
 }
 
@@ -80,6 +118,33 @@ func (sm *SubagentManager) RegisterTool(tool Tool) {
 	sm.tools.Register(tool)
 }
 
+// SetExecutionResolver sets a resolver used to pick provider/model/tools for each task.
+// If not set, the manager falls back to its default provider/model/tools.
+func (sm *SubagentManager) SetExecutionResolver(resolver SubagentExecutionResolver) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.resolver = resolver
+}
+
+// SetEventHandler sets a callback that receives task lifecycle events.
+func (sm *SubagentManager) SetEventHandler(handler SubagentTaskEventHandler) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.eventHandler = handler
+}
+
+// SetLimits sets orchestration limits for this manager.
+// maxConcurrent <= 0 means unlimited.
+// maxTasks <= 0 means unlimited.
+// maxDepth <= 0 means unlimited.
+func (sm *SubagentManager) SetLimits(maxConcurrent, maxTasks, maxDepth int) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.maxConcurrent = maxConcurrent
+	sm.maxTasks = maxTasks
+	sm.maxDepth = maxDepth
+}
+
 func (sm *SubagentManager) Spawn(
 	ctx context.Context,
 	task, label, agentID, originChannel, originChatID string,
@@ -105,11 +170,51 @@ func (sm *SubagentManager) SpawnTask(
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
+	if sm.maxTasks > 0 {
+		active := 0
+		for _, item := range sm.tasks {
+			if !isTerminalTaskStatus(item.Status) {
+				active++
+			}
+		}
+		if active >= sm.maxTasks {
+			return nil, fmt.Errorf("max task limit reached (%d)", sm.maxTasks)
+		}
+	}
+	if sm.maxConcurrent > 0 {
+		running := 0
+		for _, item := range sm.tasks {
+			if item.Status == "running" {
+				running++
+			}
+		}
+		if running >= sm.maxConcurrent {
+			return nil, fmt.Errorf("max concurrent task limit reached (%d)", sm.maxConcurrent)
+		}
+	}
+
+	depth := 1
+	parentTaskID := ""
+	senderID := toolExecutionSenderID(ctx)
+	if strings.HasPrefix(strings.ToLower(senderID), "subagent:") {
+		parentID := strings.TrimSpace(senderID[len("subagent:"):])
+		parentTaskID = parentID
+		if parent, ok := sm.tasks[parentID]; ok && parent.Depth > 0 {
+			depth = parent.Depth + 1
+		} else {
+			depth = 2
+		}
+	}
+	if sm.maxDepth > 0 && depth > sm.maxDepth {
+		return nil, fmt.Errorf("max spawn depth reached (%d)", sm.maxDepth)
+	}
+
 	taskID := fmt.Sprintf("subagent-%d", sm.nextID)
 	sm.nextID++
 
 	subagentTask := &SubagentTask{
 		ID:            taskID,
+		ParentTaskID:  parentTaskID,
 		Task:          task,
 		Label:         label,
 		AgentID:       agentID,
@@ -117,19 +222,36 @@ func (sm *SubagentManager) SpawnTask(
 		OriginChatID:  originChatID,
 		Status:        "running",
 		Created:       time.Now().UnixMilli(),
+		Depth:         depth,
 	}
 	sm.tasks[taskID] = subagentTask
+	taskCtx, cancel := context.WithCancel(ctx)
+	sm.taskCancels[taskID] = cancel
+	snapshot := *subagentTask
 
 	// Start task in background with context cancellation support.
-	go sm.runTask(ctx, subagentTask, callback)
-
-	snapshot := *subagentTask
+	go sm.runTask(taskCtx, subagentTask, callback)
+	go sm.emitEvent(SubagentTaskEvent{
+		Type:      SubagentTaskCreated,
+		Task:      snapshot,
+		Timestamp: time.Now().UnixMilli(),
+	})
 	return &snapshot, nil
 }
 
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {
+	defer sm.clearTaskCancel(task.ID)
+
+	sm.mu.Lock()
 	task.Status = "running"
 	task.Created = time.Now().UnixMilli()
+	snapshot := *task
+	sm.mu.Unlock()
+	sm.emitEvent(SubagentTaskEvent{
+		Type:      SubagentTaskRunning,
+		Task:      snapshot,
+		Timestamp: time.Now().UnixMilli(),
+	})
 
 	// Build system prompt for subagent
 	systemPrompt := `You are a subagent. Complete the given task independently and report the result.
@@ -151,22 +273,78 @@ After completing the task, provide a clear summary of what was done.`
 	select {
 	case <-ctx.Done():
 		sm.mu.Lock()
-		task.Status = "canceled"
-		task.Result = "Task canceled before execution"
+		task.Status = "cancelled"
+		task.Result = "Task cancelled before execution"
+		snapshot = *task
 		sm.mu.Unlock()
+		sm.emitEvent(SubagentTaskEvent{
+			Type:      SubagentTaskCancelled,
+			Task:      snapshot,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		sm.cancelTaskTree(task.ID)
 		return
 	default:
 	}
 
 	// Run tool loop with access to tools
 	sm.mu.RLock()
-	tools := sm.tools
 	maxIter := sm.maxIterations
 	maxTokens := sm.maxTokens
 	temperature := sm.temperature
 	hasMaxTokens := sm.hasMaxTokens
 	hasTemperature := sm.hasTemperature
+	resolver := sm.resolver
+	defaultTools := sm.tools
+	defaultProvider := sm.provider
+	defaultModel := sm.defaultModel
 	sm.mu.RUnlock()
+
+	execution := SubagentExecutionConfig{
+		Provider: defaultProvider,
+		Model:    defaultModel,
+		Tools:    defaultTools,
+	}
+	if resolver != nil {
+		resolved, err := resolver(task.AgentID)
+		if err != nil {
+			sm.mu.Lock()
+			task.Status = "failed"
+			task.Result = fmt.Sprintf("Error: %v", err)
+			snapshot = *task
+			sm.mu.Unlock()
+			sm.emitEvent(SubagentTaskEvent{
+				Type:      SubagentTaskFailed,
+				Task:      snapshot,
+				Err:       err.Error(),
+				Timestamp: time.Now().UnixMilli(),
+			})
+			if callback != nil {
+				callback(ctx, &ToolResult{
+					ForLLM:  task.Result,
+					IsError: true,
+					Err:     err,
+				})
+			}
+			if sm.bus != nil {
+				sm.publishTaskAnnouncement(snapshot, task.Status)
+			}
+			sm.cancelTaskTree(task.ID)
+			return
+		}
+		if resolved.Provider != nil {
+			execution.Provider = resolved.Provider
+		}
+		if resolved.Model != "" {
+			execution.Model = resolved.Model
+		}
+		if resolved.Tools != nil {
+			execution.Tools = resolved.Tools
+		}
+	}
+	if execution.Tools == nil {
+		execution.Tools = NewToolRegistry()
+	}
 
 	var llmOptions map[string]any
 	if hasMaxTokens || hasTemperature {
@@ -180,31 +358,34 @@ After completing the task, provide a clear summary of what was done.`
 	}
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
-		Provider:      sm.provider,
-		Model:         sm.defaultModel,
-		Tools:         tools,
+		Provider:      execution.Provider,
+		Model:         execution.Model,
+		Tools:         execution.Tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
+		SenderID:      fmt.Sprintf("subagent:%s", task.ID),
 	}, messages, task.OriginChannel, task.OriginChatID)
 
-	sm.mu.Lock()
 	var result *ToolResult
-	defer func() {
-		sm.mu.Unlock()
-		// Call callback if provided and result is set
-		if callback != nil && result != nil {
-			callback(ctx, result)
-		}
-	}()
+	event := SubagentTaskEvent{
+		Task:      *task,
+		Timestamp: time.Now().UnixMilli(),
+	}
+	if loopResult != nil {
+		event.Trace = loopResult.Trace
+	}
 
 	if err != nil {
+		sm.mu.Lock()
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
-		// Check if it was canceled
-		if ctx.Err() != nil {
-			task.Status = "canceled"
-			task.Result = "Task canceled during execution"
-		}
+			// Check if it was cancelled
+			if ctx.Err() != nil {
+				task.Status = "cancelled"
+				task.Result = "Task cancelled during execution"
+			}
+		snapshot = *task
+		sm.mu.Unlock()
 		result = &ToolResult{
 			ForLLM:  task.Result,
 			ForUser: "",
@@ -213,9 +394,20 @@ After completing the task, provide a clear summary of what was done.`
 			Async:   false,
 			Err:     err,
 		}
+		event.Task = snapshot
+		event.Err = err.Error()
+		if task.Status == "cancelled" {
+			event.Type = SubagentTaskCancelled
+		} else {
+			event.Type = SubagentTaskFailed
+		}
+		sm.cancelTaskTree(task.ID)
 	} else {
+		sm.mu.Lock()
 		task.Status = "completed"
 		task.Result = loopResult.Content
+		snapshot = *task
+		sm.mu.Unlock()
 		result = &ToolResult{
 			ForLLM: fmt.Sprintf(
 				"Subagent '%s' completed (iterations: %d): %s",
@@ -228,18 +420,19 @@ After completing the task, provide a clear summary of what was done.`
 			IsError: false,
 			Async:   false,
 		}
+		event.Type = SubagentTaskCompleted
+		event.Task = snapshot
+	}
+	sm.emitEvent(event)
+
+	// Call callback if provided and result is set.
+	if callback != nil && result != nil {
+		callback(ctx, result)
 	}
 
 	// Send announce message back to main agent
 	if sm.bus != nil {
-		announceContent := fmt.Sprintf("Task '%s' completed.\n\nResult:\n%s", task.Label, task.Result)
-		sm.bus.PublishInbound(bus.InboundMessage{
-			Channel:  "system",
-			SenderID: fmt.Sprintf("subagent:%s", task.ID),
-			// Format: "original_channel:original_chat_id" for routing back
-			ChatID:  fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
-			Content: announceContent,
-		})
+		sm.publishTaskAnnouncement(snapshot, task.Status)
 	}
 }
 
@@ -247,7 +440,11 @@ func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	task, ok := sm.tasks[taskID]
-	return task, ok
+	if !ok {
+		return nil, false
+	}
+	snapshot := *task
+	return &snapshot, true
 }
 
 func (sm *SubagentManager) ListTasks() []*SubagentTask {
@@ -256,9 +453,83 @@ func (sm *SubagentManager) ListTasks() []*SubagentTask {
 
 	tasks := make([]*SubagentTask, 0, len(sm.tasks))
 	for _, task := range sm.tasks {
-		tasks = append(tasks, task)
+		snapshot := *task
+		tasks = append(tasks, &snapshot)
 	}
 	return tasks
+}
+
+func (sm *SubagentManager) emitEvent(event SubagentTaskEvent) {
+	sm.mu.RLock()
+	handler := sm.eventHandler
+	sm.mu.RUnlock()
+	if handler == nil {
+		return
+	}
+	handler(event)
+}
+
+func (sm *SubagentManager) publishTaskAnnouncement(task SubagentTask, status string) {
+	if sm.bus == nil {
+		return
+	}
+	state := "completed"
+	if status == "failed" {
+		state = "failed"
+	} else if status == "cancelled" {
+		state = "cancelled"
+	}
+	announceContent := fmt.Sprintf("Task '%s' %s.\n\nResult:\n%s", task.Label, state, task.Result)
+	sm.bus.PublishInbound(bus.InboundMessage{
+		Channel:  "system",
+		SenderID: fmt.Sprintf("subagent:%s", task.ID),
+		// Format: "original_channel:original_chat_id" for routing back
+		ChatID:  fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
+		Content: announceContent,
+	})
+}
+
+func (sm *SubagentManager) clearTaskCancel(taskID string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	delete(sm.taskCancels, taskID)
+}
+
+func (sm *SubagentManager) cancelTaskTree(parentTaskID string) {
+	queue := []string{strings.TrimSpace(parentTaskID)}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		var children []string
+		var cancels []context.CancelFunc
+
+		sm.mu.RLock()
+		for taskID, task := range sm.tasks {
+			if task.ParentTaskID != current {
+				continue
+			}
+			children = append(children, taskID)
+			if cancel, ok := sm.taskCancels[taskID]; ok {
+				cancels = append(cancels, cancel)
+			}
+		}
+		sm.mu.RUnlock()
+
+		for _, cancel := range cancels {
+			cancel()
+		}
+		queue = append(queue, children...)
+	}
+}
+
+func isTerminalTaskStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "completed", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
 }
 
 // SubagentTool executes a subagent task synchronously and returns the result.
@@ -298,6 +569,10 @@ func (t *SubagentTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
+			"agent_id": map[string]any{
+				"type":        "string",
+				"description": "Optional target agent ID to delegate the task to",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -315,6 +590,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	label, _ := args["label"].(string)
+	agentID, _ := args["agent_id"].(string)
 
 	if t.manager == nil {
 		return ErrorResult("Subagent manager not configured").WithError(fmt.Errorf("manager is nil"))
@@ -335,13 +611,37 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	// Use RunToolLoop to execute with tools (same as async SpawnTool)
 	sm := t.manager
 	sm.mu.RLock()
-	tools := sm.tools
 	maxIter := sm.maxIterations
 	maxTokens := sm.maxTokens
 	temperature := sm.temperature
 	hasMaxTokens := sm.hasMaxTokens
 	hasTemperature := sm.hasTemperature
+	resolver := sm.resolver
+	execution := SubagentExecutionConfig{
+		Provider: sm.provider,
+		Model:    sm.defaultModel,
+		Tools:    sm.tools,
+	}
 	sm.mu.RUnlock()
+
+	if resolver != nil {
+		resolved, resolveErr := resolver(agentID)
+		if resolveErr != nil {
+			return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", resolveErr)).WithError(resolveErr)
+		}
+		if resolved.Provider != nil {
+			execution.Provider = resolved.Provider
+		}
+		if resolved.Model != "" {
+			execution.Model = resolved.Model
+		}
+		if resolved.Tools != nil {
+			execution.Tools = resolved.Tools
+		}
+	}
+	if execution.Tools == nil {
+		execution.Tools = NewToolRegistry()
+	}
 
 	var llmOptions map[string]any
 	if hasMaxTokens || hasTemperature {
@@ -355,9 +655,9 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
-		Provider:      sm.provider,
-		Model:         sm.defaultModel,
-		Tools:         tools,
+		Provider:      execution.Provider,
+		Model:         execution.Model,
+		Tools:         execution.Tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
 	}, messages, t.originChannel, t.originChatID)

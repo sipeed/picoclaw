@@ -277,6 +277,34 @@
     "enabled": false,
     "monitor_usb": true
   },
+  "orchestration": {
+    "enabled": false,
+    "max_spawn_depth": 3,
+    "max_parallel_workers": 4,
+    "max_tasks_per_agent": 20,
+    "default_task_timeout_seconds": 180,
+    "retry_limit_per_task": 2
+  },
+  "audit": {
+    "enabled": false,
+    "interval_minutes": 30,
+    "lookback_minutes": 180,
+    "min_confidence": 0.75,
+    "inconsistency_policy": "strict",
+    "auto_remediation": "safe_only",
+    "notify_channel": "last_active",
+    "supervisor": {
+      "enabled": false,
+      "model": {
+        "primary": "gpt-5.2",
+        "fallbacks": [
+          "claude-sonnet-4.6"
+        ]
+      },
+      "temperature": 0.0,
+      "max_tokens": 2048
+    }
+  },
   "gateway": {
     "host": "127.0.0.1",
     "port": 18790

@@ -351,5 +351,30 @@ func DefaultConfig() *Config {
 			Enabled:    false,
 			MonitorUSB: true,
 		},
+		Orchestration: OrchestrationConfig{
+			Enabled:                   false,
+			MaxSpawnDepth:             3,
+			MaxParallelWorkers:        4,
+			MaxTasksPerAgent:          20,
+			DefaultTaskTimeoutSeconds: 180,
+			RetryLimitPerTask:         2,
+		},
+		Audit: AuditConfig{
+			Enabled:             false,
+			IntervalMinutes:     30,
+			LookbackMinutes:     180,
+			MinConfidence:       0.75,
+			InconsistencyPolicy: "strict",
+			AutoRemediation:     "safe_only",
+			NotifyChannel:       "last_active",
+			Supervisor: AuditSupervisorConfig{
+				Enabled: false,
+				Model: &AgentModelConfig{
+					Primary:   "gpt-5.2",
+					Fallbacks: []string{"claude-sonnet-4.6"},
+				},
+				MaxTokens: 2048,
+			},
+		},
 	}
 }
