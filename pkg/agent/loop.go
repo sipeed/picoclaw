@@ -1400,25 +1400,30 @@ func (al *AgentLoop) executeCmdMode(ctx context.Context, agent *AgentInstance, c
 }
 
 // handleCdCommand handles the cd command in command mode, updating per-session working directory.
+// Special paths (cd, cd ~, cd /, cd /xxx) are redirected to the workspace directory for safety.
 func (al *AgentLoop) handleCdCommand(content, sessionKey string, agent *AgentInstance) string {
 	parts := strings.Fields(content)
+	workspace := agent.Workspace
 	var target string
 
-	if len(parts) < 2 || parts[1] == "~" {
-		home, _ := os.UserHomeDir()
-		target = home
+	if len(parts) < 2 || parts[1] == "~" || parts[1] == "/" {
+		// cd, cd ~, cd / → always go to workspace
+		target = workspace
 	} else {
 		target = parts[1]
-		// Expand ~ prefix
+		// Expand ~ prefix: treat ~ as workspace root (not $HOME)
 		if strings.HasPrefix(target, "~/") {
-			home, _ := os.UserHomeDir()
-			target = home + target[1:]
+			target = workspace + target[1:]
+		}
+		// Absolute paths (e.g. cd /etc) → redirect to workspace
+		if filepath.IsAbs(target) {
+			target = workspace
 		}
 		// Resolve relative paths
 		if !filepath.IsAbs(target) {
 			currentDir := al.getSessionWorkDir(sessionKey)
 			if currentDir == "" {
-				currentDir = agent.Workspace
+				currentDir = workspace
 			}
 			target = filepath.Join(currentDir, target)
 		}
