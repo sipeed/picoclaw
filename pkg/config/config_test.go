@@ -361,6 +361,24 @@ func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_MemoryVectorDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	mv := cfg.Agents.Defaults.MemoryVector
+
+	if !mv.Enabled {
+		t.Fatal("memory vector should be enabled by default")
+	}
+	if mv.Dimensions <= 0 {
+		t.Fatal("memory vector dimensions should be > 0")
+	}
+	if mv.TopK <= 0 {
+		t.Fatal("memory vector top_k should be > 0")
+	}
+	if mv.MinScore < 0 || mv.MinScore >= 1 {
+		t.Fatal("memory vector min_score should be in [0,1)")
+	}
+}
+
 func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")

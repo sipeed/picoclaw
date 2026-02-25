@@ -6,7 +6,35 @@
       "model_name": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "compaction": {
+        "mode": "safeguard",
+        "reserve_tokens": 2048,
+        "keep_recent_tokens": 2048,
+        "max_history_share": 0.5,
+        "memory_flush": {
+          "enabled": true,
+          "soft_threshold_tokens": 1500
+        }
+      },
+      "context_pruning": {
+        "mode": "tools_only",
+        "include_old_chitchat": true,
+        "soft_tool_result_chars": 2000,
+        "hard_tool_result_chars": 350,
+        "trigger_ratio": 0.8
+      },
+      "bootstrap_snapshot": {
+        "enabled": true
+      },
+      "memory_vector": {
+        "enabled": true,
+        "dimensions": 256,
+        "top_k": 6,
+        "min_score": 0.15,
+        "max_context_chars": 1800,
+        "recent_daily_days": 14
+      }
     }
   },
   "model_list": [

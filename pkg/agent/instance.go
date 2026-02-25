@@ -15,22 +15,40 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID             string
-	Name           string
-	Model          string
-	Fallbacks      []string
-	Workspace      string
-	MaxIterations  int
-	MaxTokens      int
-	Temperature    float64
-	ContextWindow  int
-	Provider       providers.LLMProvider
-	Sessions       *session.SessionManager
-	ContextBuilder *ContextBuilder
-	Tools          *tools.ToolRegistry
-	Subagents      *config.SubagentsConfig
-	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
+	ID                            string
+	Name                          string
+	Model                         string
+	Fallbacks                     []string
+	Workspace                     string
+	MaxIterations                 int
+	MaxTokens                     int
+	Temperature                   float64
+	ContextWindow                 int
+	Provider                      providers.LLMProvider
+	Sessions                      *session.SessionManager
+	ContextBuilder                *ContextBuilder
+	Tools                         *tools.ToolRegistry
+	Subagents                     *config.SubagentsConfig
+	SkillsFilter                  []string
+	Candidates                    []providers.FallbackCandidate
+	CompactionMode                string
+	CompactionReserveTokens       int
+	CompactionKeepRecentTokens    int
+	CompactionMaxHistoryShare     float64
+	MemoryFlushEnabled            bool
+	MemoryFlushSoftThreshold      int
+	ContextPruningMode            string
+	ContextPruningIncludeChitChat bool
+	ContextPruningSoftToolChars   int
+	ContextPruningHardToolChars   int
+	ContextPruningTriggerRatio    float64
+	BootstrapSnapshotEnabled      bool
+	MemoryVectorEnabled           bool
+	MemoryVectorDimensions        int
+	MemoryVectorTopK              int
+	MemoryVectorMinScore          float64
+	MemoryVectorMaxContextChars   int
+	MemoryVectorRecentDailyDays   int
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -91,6 +109,110 @@ func NewAgentInstance(
 		temperature = *defaults.Temperature
 	}
 
+	compactionMode := strings.TrimSpace(defaults.Compaction.Mode)
+	if compactionMode == "" {
+		compactionMode = "safeguard"
+	}
+
+	compactionReserveTokens := defaults.Compaction.ReserveTokens
+	if compactionReserveTokens <= 0 {
+		compactionReserveTokens = 2048
+	}
+
+	compactionKeepRecentTokens := defaults.Compaction.KeepRecentTokens
+	if compactionKeepRecentTokens <= 0 {
+		compactionKeepRecentTokens = 2048
+	}
+
+	compactionMaxHistoryShare := defaults.Compaction.MaxHistoryShare
+	if compactionMaxHistoryShare <= 0 || compactionMaxHistoryShare > 0.9 {
+		compactionMaxHistoryShare = 0.5
+	}
+
+	memoryFlushEnabled := defaults.Compaction.MemoryFlush.Enabled
+	// Preserve default behavior if omitted from config.
+	if !defaults.Compaction.MemoryFlush.Enabled && defaults.Compaction.MemoryFlush.SoftThresholdTokens == 0 {
+		memoryFlushEnabled = true
+	}
+
+	memoryFlushSoftThreshold := defaults.Compaction.MemoryFlush.SoftThresholdTokens
+	if memoryFlushSoftThreshold <= 0 {
+		memoryFlushSoftThreshold = 1500
+	}
+
+	contextPruningMode := strings.TrimSpace(defaults.ContextPruning.Mode)
+	if contextPruningMode == "" {
+		contextPruningMode = "tools_only"
+	}
+
+	contextPruningSoftToolChars := defaults.ContextPruning.SoftToolResultChars
+	if contextPruningSoftToolChars <= 0 {
+		contextPruningSoftToolChars = 2000
+	}
+
+	contextPruningHardToolChars := defaults.ContextPruning.HardToolResultChars
+	if contextPruningHardToolChars <= 0 {
+		contextPruningHardToolChars = 350
+	}
+
+	contextPruningTriggerRatio := defaults.ContextPruning.TriggerRatio
+	if contextPruningTriggerRatio <= 0 || contextPruningTriggerRatio >= 1 {
+		contextPruningTriggerRatio = 0.8
+	}
+
+	bootstrapSnapshotEnabled := defaults.BootstrapSnapshot.Enabled
+
+	memoryVectorEnabled := defaults.MemoryVector.Enabled
+	memoryVectorDimensions := defaults.MemoryVector.Dimensions
+	if memoryVectorDimensions <= 0 {
+		memoryVectorDimensions = defaultMemoryVectorDimensions
+	}
+
+	memoryVectorTopK := defaults.MemoryVector.TopK
+	if memoryVectorTopK <= 0 {
+		memoryVectorTopK = defaultMemoryVectorTopK
+	}
+
+	memoryVectorMinScore := defaults.MemoryVector.MinScore
+	if memoryVectorMinScore < 0 || memoryVectorMinScore >= 1 {
+		memoryVectorMinScore = defaultMemoryVectorMinScore
+	}
+
+	memoryVectorMaxContextChars := defaults.MemoryVector.MaxContextChars
+	if memoryVectorMaxContextChars <= 0 {
+		memoryVectorMaxContextChars = defaultMemoryVectorMaxContextChars
+	}
+
+	memoryVectorRecentDailyDays := defaults.MemoryVector.RecentDailyDays
+	if memoryVectorRecentDailyDays <= 0 {
+		memoryVectorRecentDailyDays = defaultMemoryVectorRecentDailyDays
+	}
+
+	contextBuilder.SetRuntimeSettings(ContextRuntimeSettings{
+		ContextWindowTokens:      maxTokens,
+		PruningMode:              contextPruningMode,
+		IncludeOldChitChat:       defaults.ContextPruning.IncludeOldChitChat,
+		SoftToolResultChars:      contextPruningSoftToolChars,
+		HardToolResultChars:      contextPruningHardToolChars,
+		TriggerRatio:             contextPruningTriggerRatio,
+		BootstrapSnapshotEnabled: bootstrapSnapshotEnabled,
+		MemoryVectorEnabled:      memoryVectorEnabled,
+		MemoryVectorDimensions:   memoryVectorDimensions,
+		MemoryVectorTopK:         memoryVectorTopK,
+		MemoryVectorMinScore:     memoryVectorMinScore,
+		MemoryVectorMaxChars:     memoryVectorMaxContextChars,
+		MemoryVectorRecentDays:   memoryVectorRecentDailyDays,
+	})
+
+	if memoryVectorEnabled {
+		toolsRegistry.Register(NewMemorySearchTool(
+			contextBuilder.memory,
+			memoryVectorTopK,
+			memoryVectorMinScore,
+		))
+		toolsRegistry.Register(NewMemoryGetTool(contextBuilder.memory))
+	}
+
 	// Resolve fallback candidates
 	modelCfg := providers.ModelConfig{
 		Primary:   model,
@@ -99,22 +221,40 @@ func NewAgentInstance(
 	candidates := providers.ResolveCandidates(modelCfg, defaults.Provider)
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		MaxTokens:      maxTokens,
-		Temperature:    temperature,
-		ContextWindow:  maxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
+		ID:                            agentID,
+		Name:                          agentName,
+		Model:                         model,
+		Fallbacks:                     fallbacks,
+		Workspace:                     workspace,
+		MaxIterations:                 maxIter,
+		MaxTokens:                     maxTokens,
+		Temperature:                   temperature,
+		ContextWindow:                 maxTokens,
+		Provider:                      provider,
+		Sessions:                      sessionsManager,
+		ContextBuilder:                contextBuilder,
+		Tools:                         toolsRegistry,
+		Subagents:                     subagents,
+		SkillsFilter:                  skillsFilter,
+		Candidates:                    candidates,
+		CompactionMode:                compactionMode,
+		CompactionReserveTokens:       compactionReserveTokens,
+		CompactionKeepRecentTokens:    compactionKeepRecentTokens,
+		CompactionMaxHistoryShare:     compactionMaxHistoryShare,
+		MemoryFlushEnabled:            memoryFlushEnabled,
+		MemoryFlushSoftThreshold:      memoryFlushSoftThreshold,
+		ContextPruningMode:            contextPruningMode,
+		ContextPruningIncludeChitChat: defaults.ContextPruning.IncludeOldChitChat,
+		ContextPruningSoftToolChars:   contextPruningSoftToolChars,
+		ContextPruningHardToolChars:   contextPruningHardToolChars,
+		ContextPruningTriggerRatio:    contextPruningTriggerRatio,
+		BootstrapSnapshotEnabled:      bootstrapSnapshotEnabled,
+		MemoryVectorEnabled:           memoryVectorEnabled,
+		MemoryVectorDimensions:        memoryVectorDimensions,
+		MemoryVectorTopK:              memoryVectorTopK,
+		MemoryVectorMinScore:          memoryVectorMinScore,
+		MemoryVectorMaxContextChars:   memoryVectorMaxContextChars,
+		MemoryVectorRecentDailyDays:   memoryVectorRecentDailyDays,
 	}
 }
 

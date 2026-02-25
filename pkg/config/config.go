@@ -178,6 +178,44 @@ type AgentDefaults struct {
 	MaxTokens           int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature         *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations   int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Compaction          AgentCompactionConfig        `json:"compaction,omitempty"`
+	ContextPruning      AgentContextPruningConfig    `json:"context_pruning,omitempty"`
+	BootstrapSnapshot   AgentBootstrapSnapshotConfig `json:"bootstrap_snapshot,omitempty"`
+	MemoryVector        AgentMemoryVectorConfig      `json:"memory_vector,omitempty"`
+}
+
+type AgentCompactionConfig struct {
+	Mode             string                           `json:"mode,omitempty"`
+	ReserveTokens    int                              `json:"reserve_tokens,omitempty"`
+	KeepRecentTokens int                              `json:"keep_recent_tokens,omitempty"`
+	MaxHistoryShare  float64                          `json:"max_history_share,omitempty"`
+	MemoryFlush      AgentCompactionMemoryFlushConfig `json:"memory_flush,omitempty"`
+}
+
+type AgentCompactionMemoryFlushConfig struct {
+	Enabled             bool `json:"enabled,omitempty"`
+	SoftThresholdTokens int  `json:"soft_threshold_tokens,omitempty"`
+}
+
+type AgentContextPruningConfig struct {
+	Mode                string  `json:"mode,omitempty"`
+	IncludeOldChitChat  bool    `json:"include_old_chitchat,omitempty"`
+	SoftToolResultChars int     `json:"soft_tool_result_chars,omitempty"`
+	HardToolResultChars int     `json:"hard_tool_result_chars,omitempty"`
+	TriggerRatio        float64 `json:"trigger_ratio,omitempty"`
+}
+
+type AgentBootstrapSnapshotConfig struct {
+	Enabled bool `json:"enabled,omitempty"`
+}
+
+type AgentMemoryVectorConfig struct {
+	Enabled         bool    `json:"enabled,omitempty"`
+	Dimensions      int     `json:"dimensions,omitempty"`
+	TopK            int     `json:"top_k,omitempty"`
+	MinScore        float64 `json:"min_score,omitempty"`
+	MaxContextChars int     `json:"max_context_chars,omitempty"`
+	RecentDailyDays int     `json:"recent_daily_days,omitempty"`
 }
 
 // GetModelName returns the effective model name for the agent defaults.

@@ -478,7 +478,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		history = agent.Sessions.GetHistory(opts.SessionKey)
 		summary = agent.Sessions.GetSummary(opts.SessionKey)
 	}
-	messages := agent.ContextBuilder.BuildMessages(
+	messages := agent.ContextBuilder.BuildMessagesForSession(
+		opts.SessionKey,
 		history,
 		summary,
 		opts.UserMessage,
@@ -639,10 +640,41 @@ func (al *AgentLoop) runLLMIteration(
 					})
 				}
 
-				al.forceCompression(agent, opts.SessionKey)
+				compactionCtx, cancel := al.safeCompactionContext()
+				currentTokens := al.estimateTokens(agent.Sessions.GetHistory(opts.SessionKey))
+				if flushed, flushErr := al.maybeFlushMemoryBeforeCompaction(
+					compactionCtx,
+					agent,
+					opts.SessionKey,
+					currentTokens,
+				); flushErr != nil {
+					logger.WarnCF("agent", "Pre-compaction memory flush failed", map[string]any{
+						"error": flushErr.Error(),
+					})
+				} else if flushed {
+					logger.InfoCF("agent", "Pre-compaction memory flush completed", map[string]any{
+						"session_key": opts.SessionKey,
+					})
+				}
+
+				compacted, compactErr := al.compactWithSafeguard(compactionCtx, agent, opts.SessionKey)
+				cancel()
+				if compactErr != nil {
+					logger.WarnCF("agent", "Compaction safeguard cancelled", map[string]any{
+						"error": compactErr.Error(),
+					})
+					break
+				}
+				if !compacted {
+					logger.WarnCF("agent", "Compaction safeguard skipped; preserving history", map[string]any{
+						"session_key": opts.SessionKey,
+					})
+					continue
+				}
 				newHistory := agent.Sessions.GetHistory(opts.SessionKey)
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
-				messages = agent.ContextBuilder.BuildMessages(
+				messages = agent.ContextBuilder.BuildMessagesForSession(
+					opts.SessionKey,
 					newHistory, newSummary, "",
 					nil, opts.Channel, opts.ChatID,
 				)
@@ -832,13 +864,48 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := agent.ContextWindow * 75 / 100
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	if len(newHistory) > 100 || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
 				logger.Debug("Memory threshold reached. Optimizing conversation history...")
-				al.summarizeSession(agent, sessionKey)
+				if !constants.IsInternalChannel(channel) {
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel: channel,
+						ChatID:  chatID,
+						Content: "Memory threshold reached. Optimizing conversation history...",
+					})
+				}
+				ctx, cancel := al.safeCompactionContext()
+				defer cancel()
+
+				if flushed, err := al.maybeFlushMemoryBeforeCompaction(
+					ctx,
+					agent,
+					sessionKey,
+					tokenEstimate,
+				); err != nil {
+					logger.WarnCF("agent", "Background memory flush failed", map[string]any{
+						"session_key": sessionKey,
+						"error":       err.Error(),
+					})
+				} else if flushed {
+					logger.InfoCF("agent", "Background memory flush completed", map[string]any{
+						"session_key": sessionKey,
+					})
+				}
+
+				if compacted, err := al.compactWithSafeguard(ctx, agent, sessionKey); err != nil {
+					logger.WarnCF("agent", "Background compaction cancelled", map[string]any{
+						"session_key": sessionKey,
+						"error":       err.Error(),
+					})
+				} else if compacted {
+					logger.InfoCF("agent", "Background compaction completed", map[string]any{
+						"session_key": sessionKey,
+					})
+				}
 			}()
 		}
 	}
@@ -1099,11 +1166,25 @@ func (al *AgentLoop) summarizeBatch(
 // Uses a safe heuristic of 2.5 characters per token to account for CJK and other
 // overheads better than the previous 3 chars/token.
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
-	totalChars := 0
+	total := 0
 	for _, m := range messages {
-		totalChars += utf8.RuneCountInString(m.Content)
+		total += al.estimateMessageTokens(m)
 	}
-	// 2.5 chars per token = totalChars * 2 / 5
+	return total
+}
+
+func (al *AgentLoop) estimateMessageTokens(msg providers.Message) int {
+	totalChars := utf8.RuneCountInString(msg.Content)
+	for _, tc := range msg.ToolCalls {
+		totalChars += utf8.RuneCountInString(tc.Name)
+		if tc.Function != nil {
+			totalChars += utf8.RuneCountInString(tc.Function.Name)
+			totalChars += utf8.RuneCountInString(tc.Function.Arguments)
+		}
+	}
+	if totalChars == 0 {
+		return 0
+	}
 	return totalChars * 2 / 5
 }
 

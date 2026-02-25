@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -149,33 +150,44 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 
 	var schedule cron.CronSchedule
 
-	// Check for at_seconds (one-time), every_seconds (recurring), or cron_expr
-	atSeconds, hasAt := args["at_seconds"].(float64)
-	everySeconds, hasEvery := args["every_seconds"].(float64)
-	cronExpr, hasCron := args["cron_expr"].(string)
+	// Check for at_seconds (one-time), every_seconds (recurring), or cron_expr.
+	// Some model providers emit unused numeric args as 0. Treat 0 as "unset" to avoid
+	// mistakenly creating an immediate "at" schedule that fails validation.
+	atSeconds, hasAt, err := parsePositiveSecondsArg(args, "at_seconds")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	everySeconds, hasEvery, err := parsePositiveSecondsArg(args, "every_seconds")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	cronExpr, _ := args["cron_expr"].(string)
+	cronExpr = strings.TrimSpace(cronExpr)
+	hasCron := cronExpr != ""
 	timezone, _ := args["timezone"].(string)
 
-	// Priority: at_seconds > every_seconds > cron_expr
-	if hasAt {
-		atMS := time.Now().UnixMilli() + int64(atSeconds)*1000
-		schedule = cron.CronSchedule{
-			Kind: "at",
-			AtMS: &atMS,
-		}
-	} else if hasEvery {
-		everyMS := int64(everySeconds) * 1000
-		schedule = cron.CronSchedule{
-			Kind:    "every",
-			EveryMS: &everyMS,
-		}
-	} else if hasCron {
+	// Priority: cron_expr > every_seconds > at_seconds
+	// This is resilient when LLMs include unused defaults (e.g. at_seconds=0).
+	if hasCron {
 		schedule = cron.CronSchedule{
 			Kind: "cron",
 			Expr: cronExpr,
 			TZ:   timezone,
 		}
+	} else if hasEvery {
+		everyMS := everySeconds * 1000
+		schedule = cron.CronSchedule{
+			Kind:    "every",
+			EveryMS: &everyMS,
+		}
+	} else if hasAt {
+		atMS := time.Now().UnixMilli() + atSeconds*1000
+		schedule = cron.CronSchedule{
+			Kind: "at",
+			AtMS: &atMS,
+		}
 	} else {
-		return ErrorResult("one of at_seconds, every_seconds, or cron_expr is required")
+		return ErrorResult("one of at_seconds (>0), every_seconds (>0), or cron_expr is required")
 	}
 
 	// Read deliver parameter, default to true
@@ -215,6 +227,25 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 	}
 
 	return SilentResult(fmt.Sprintf("Cron job added: %s (id: %s)", job.Name, job.ID))
+}
+
+func parsePositiveSecondsArg(args map[string]any, key string) (int64, bool, error) {
+	raw, exists := args[key]
+	if !exists || raw == nil {
+		return 0, false, nil
+	}
+
+	n, err := toInt(raw)
+	if err != nil {
+		return 0, false, fmt.Errorf("%s must be an integer", key)
+	}
+	if n < 0 {
+		return 0, false, fmt.Errorf("%s must be >= 0", key)
+	}
+	if n == 0 {
+		return 0, false, nil
+	}
+	return int64(n), true, nil
 }
 
 func (t *CronTool) listJobs() *ToolResult {

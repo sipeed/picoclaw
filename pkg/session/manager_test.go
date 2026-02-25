@@ -116,3 +116,31 @@ func TestListSessionSnapshots_SortedByUpdatedDesc(t *testing.T) {
 		t.Fatalf("snapshot mutation leaked into manager state, got %q", history[0].Content)
 	}
 }
+
+func TestCompactionStateLifecycle(t *testing.T) {
+	sm := NewSessionManager(t.TempDir())
+	key := "agent:main:main"
+	sm.AddMessage(key, "user", "hello")
+
+	count, flushedCount, flushAt := sm.GetCompactionState(key)
+	if count != 0 || flushedCount != 0 || !flushAt.IsZero() {
+		t.Fatalf("initial compaction state unexpected: count=%d flushed=%d flushAt=%v", count, flushedCount, flushAt)
+	}
+
+	next := sm.IncrementCompactionCount(key)
+	if next != 1 {
+		t.Fatalf("IncrementCompactionCount = %d, want 1", next)
+	}
+
+	sm.MarkMemoryFlush(key, next)
+	count, flushedCount, flushAt = sm.GetCompactionState(key)
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+	if flushedCount != 1 {
+		t.Fatalf("flushedCount = %d, want 1", flushedCount)
+	}
+	if flushAt.IsZero() {
+		t.Fatal("flushAt should be set")
+	}
+}

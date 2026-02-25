@@ -17,6 +17,34 @@ func DefaultConfig() *Config {
 				MaxTokens:           8192,
 				Temperature:         nil, // nil means use provider default
 				MaxToolIterations:   20,
+				Compaction: AgentCompactionConfig{
+					Mode:             "safeguard",
+					ReserveTokens:    2048,
+					KeepRecentTokens: 2048,
+					MaxHistoryShare:  0.5,
+					MemoryFlush: AgentCompactionMemoryFlushConfig{
+						Enabled:             true,
+						SoftThresholdTokens: 1500,
+					},
+				},
+				ContextPruning: AgentContextPruningConfig{
+					Mode:                "tools_only",
+					IncludeOldChitChat:  true,
+					SoftToolResultChars: 2000,
+					HardToolResultChars: 350,
+					TriggerRatio:        0.8,
+				},
+				BootstrapSnapshot: AgentBootstrapSnapshotConfig{
+					Enabled: true,
+				},
+				MemoryVector: AgentMemoryVectorConfig{
+					Enabled:         true,
+					Dimensions:      256,
+					TopK:            6,
+					MinScore:        0.15,
+					MaxContextChars: 1800,
+					RecentDailyDays: 14,
+				},
 			},
 		},
 		Bindings: []AgentBinding{},

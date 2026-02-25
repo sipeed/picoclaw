@@ -13,11 +13,14 @@ import (
 )
 
 type Session struct {
-	Key      string              `json:"key"`
-	Messages []providers.Message `json:"messages"`
-	Summary  string              `json:"summary,omitempty"`
-	Created  time.Time           `json:"created"`
-	Updated  time.Time           `json:"updated"`
+	Key                        string              `json:"key"`
+	Messages                   []providers.Message `json:"messages"`
+	Summary                    string              `json:"summary,omitempty"`
+	CompactionCount            int                 `json:"compaction_count,omitempty"`
+	MemoryFlushAt              time.Time           `json:"memory_flush_at,omitempty"`
+	MemoryFlushCompactionCount int                 `json:"memory_flush_compaction_count,omitempty"`
+	Created                    time.Time           `json:"created"`
+	Updated                    time.Time           `json:"updated"`
 }
 
 type SessionManager struct {
@@ -146,6 +149,43 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	session.Updated = time.Now()
 }
 
+func (sm *SessionManager) IncrementCompactionCount(key string) int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, ok := sm.sessions[key]
+	if !ok {
+		return 0
+	}
+	session.CompactionCount++
+	session.Updated = time.Now()
+	return session.CompactionCount
+}
+
+func (sm *SessionManager) MarkMemoryFlush(key string, compactionCount int) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, ok := sm.sessions[key]
+	if !ok {
+		return
+	}
+	session.MemoryFlushAt = time.Now()
+	session.MemoryFlushCompactionCount = compactionCount
+	session.Updated = time.Now()
+}
+
+func (sm *SessionManager) GetCompactionState(key string) (count int, flushCount int, flushAt time.Time) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	session, ok := sm.sessions[key]
+	if !ok {
+		return 0, 0, time.Time{}
+	}
+	return session.CompactionCount, session.MemoryFlushCompactionCount, session.MemoryFlushAt
+}
+
 // sanitizeFilename converts a session key into a cross-platform safe filename.
 // Session keys use "channel:chatID" (e.g. "telegram:123456") but ':' is the
 // volume separator on Windows, so filepath.Base would misinterpret the key.
@@ -179,10 +219,13 @@ func (sm *SessionManager) Save(key string) error {
 	}
 
 	snapshot := Session{
-		Key:     stored.Key,
-		Summary: stored.Summary,
-		Created: stored.Created,
-		Updated: stored.Updated,
+		Key:                        stored.Key,
+		Summary:                    stored.Summary,
+		CompactionCount:            stored.CompactionCount,
+		MemoryFlushAt:              stored.MemoryFlushAt,
+		MemoryFlushCompactionCount: stored.MemoryFlushCompactionCount,
+		Created:                    stored.Created,
+		Updated:                    stored.Updated,
 	}
 	if len(stored.Messages) > 0 {
 		snapshot.Messages = make([]providers.Message, len(stored.Messages))
@@ -293,10 +336,13 @@ func (sm *SessionManager) GetSessionSnapshot(key string) (*Session, bool) {
 	}
 
 	snapshot := Session{
-		Key:     stored.Key,
-		Summary: stored.Summary,
-		Created: stored.Created,
-		Updated: stored.Updated,
+		Key:                        stored.Key,
+		Summary:                    stored.Summary,
+		CompactionCount:            stored.CompactionCount,
+		MemoryFlushAt:              stored.MemoryFlushAt,
+		MemoryFlushCompactionCount: stored.MemoryFlushCompactionCount,
+		Created:                    stored.Created,
+		Updated:                    stored.Updated,
 	}
 	if len(stored.Messages) > 0 {
 		snapshot.Messages = make([]providers.Message, len(stored.Messages))
@@ -316,10 +362,13 @@ func (sm *SessionManager) ListSessionSnapshots() []Session {
 	snapshots := make([]Session, 0, len(sm.sessions))
 	for _, stored := range sm.sessions {
 		snapshot := Session{
-			Key:     stored.Key,
-			Summary: stored.Summary,
-			Created: stored.Created,
-			Updated: stored.Updated,
+			Key:                        stored.Key,
+			Summary:                    stored.Summary,
+			CompactionCount:            stored.CompactionCount,
+			MemoryFlushAt:              stored.MemoryFlushAt,
+			MemoryFlushCompactionCount: stored.MemoryFlushCompactionCount,
+			Created:                    stored.Created,
+			Updated:                    stored.Updated,
 		}
 		if len(stored.Messages) > 0 {
 			snapshot.Messages = make([]providers.Message, len(stored.Messages))
