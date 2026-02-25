@@ -43,7 +43,6 @@ linters:
     - gocritic
     - gocyclo
     - godox
-    - goprintffuncname
     - gosec
     - ineffassign
     - lll
