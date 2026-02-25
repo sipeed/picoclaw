@@ -14,7 +14,6 @@ import (
 	"runtime"
 
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 var (
@@ -116,54 +115,7 @@ func main() {
 	case "cron":
 		cronCmd()
 	case "skills":
-		if len(os.Args) < 3 {
-			skillsHelp()
-			return
-		}
-
-		subcommand := os.Args[2]
-
-		cfg, err := loadConfig()
-		if err != nil {
-			fmt.Printf("Error loading config: %v\n", err)
-			os.Exit(1)
-		}
-
-		workspace := cfg.WorkspacePath()
-		installer := skills.NewSkillInstaller(workspace)
-		// get global config directory and builtin skills directory
-		globalDir := filepath.Dir(getConfigPath())
-		globalSkillsDir := filepath.Join(globalDir, "skills")
-		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
-		skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
-
-		switch subcommand {
-		case "list":
-			skillsListCmd(skillsLoader)
-		case "install":
-			skillsInstallCmd(installer, cfg)
-		case "remove", "uninstall":
-			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills remove <skill-name>")
-				return
-			}
-			skillsRemoveCmd(installer, os.Args[3])
-		case "install-builtin":
-			skillsInstallBuiltinCmd(workspace)
-		case "list-builtin":
-			skillsListBuiltinCmd()
-		case "search":
-			skillsSearchCmd(installer)
-		case "show":
-			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills show <skill-name>")
-				return
-			}
-			skillsShowCmd(skillsLoader, os.Args[3])
-		default:
-			fmt.Printf("Unknown skills command: %s\n", subcommand)
-			skillsHelp()
-		}
+		skillsCmd()
 	case "version", "--version", "-v":
 		printVersion()
 	default:
