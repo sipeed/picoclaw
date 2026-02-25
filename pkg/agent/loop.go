@@ -115,6 +115,7 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 	TaskID          string // Unique task ID for background task status tracking
 	Background      bool   // If true, this is a background task (cron/heartbeat) — enables live task notifications
+	SystemMessage   bool   // If true, this is a system/subagent message — suppress plan nudge, use SkipPlaceholder
 }
 
 const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
@@ -816,6 +817,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		DefaultResponse: "Background task completed.",
 		EnableSummary:   false,
 		SendResponse:    true,
+		SystemMessage:   true,
 	})
 }
 
@@ -1225,9 +1227,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 8. Optional: send response via bus
 	if opts.SendResponse {
 		_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Channel: opts.Channel,
-			ChatID:  opts.ChatID,
-			Content: finalContent,
+			Channel:         opts.Channel,
+			ChatID:          opts.ChatID,
+			Content:         finalContent,
+			SkipPlaceholder: opts.SystemMessage,
 		})
 	}
 
@@ -2282,7 +2285,7 @@ func (al *AgentLoop) runLLMIteration(
 				curUnchecked = strings.Count(agent.ContextBuilder.ReadMemory(), "- [ ]")
 			}
 			if curUnchecked > 0 && !planMarkNudged &&
-				planSnapshot == "executing" {
+				planSnapshot == "executing" && !opts.SystemMessage {
 				planMarkNudged = true
 				messages = append(messages, providers.Message{
 					Role:    "assistant",
