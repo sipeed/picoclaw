@@ -419,9 +419,18 @@ func (c *ModelConfig) Validate() error {
 	return nil
 }
 
+// WebSessionAgentBinding maps a session key prefix to an agent ID for web channel.
+type WebSessionAgentBinding struct {
+	SessionKeyPrefix string `json:"session_key_prefix"`
+	AgentID         string `json:"agent_id"`
+}
+
 type GatewayConfig struct {
-	Host string `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
-	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
+	Host                    string                   `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
+	Port                    int                      `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
+	Token                   string                   `json:"token" env:"PICOCLAW_GATEWAY_TOKEN"`
+	Password                string                   `json:"password" env:"PICOCLAW_GATEWAY_PASSWORD"`
+	WebSessionAgentBindings []WebSessionAgentBinding `json:"web_session_agent_bindings,omitempty"`
 }
 
 type BraveConfig struct {
