@@ -48,7 +48,7 @@ type CacheControl struct {
 // Adapters that understand SystemParts can use these blocks to set
 // per-block cache control (e.g. Anthropic's cache_control: ephemeral).
 type ContentBlock struct {
-	Type         string        `json:"type"`                    // "text"
+	Type         string        `json:"type"` // "text"
 	Text         string        `json:"text"`
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
 }
