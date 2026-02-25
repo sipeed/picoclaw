@@ -163,7 +163,7 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 
 	client, err := createHTTPClient(p.proxy, 10*time.Second)
 	if err != nil {
-		return "", fmt.Errorf("failed to create http client: %w", err)
+		return "", fmt.Errorf("failed to create HTTP client: %w", err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
