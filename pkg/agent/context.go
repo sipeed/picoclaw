@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,6 +42,13 @@ type ContextBuilder struct {
 	settings       ContextRuntimeSettings
 	bootstrapMu    sync.RWMutex
 	bootstrapCache map[string]string
+
+	// Cache for static system prompt to avoid rebuilding on every call.
+	// Dynamic per-request data (time/session/summary) is appended in BuildMessages.
+	systemPromptMutex  sync.RWMutex
+	cachedSystemPrompt string
+	cachedAt           time.Time
+	existedAtCache     map[string]bool
 }
 
 func getGlobalConfigDir() string {
@@ -94,6 +103,7 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 // SetToolsRegistry sets the tools registry for dynamic tool summary generation.
 func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
 	cb.tools = registry
+	cb.InvalidateCache()
 }
 
 func (cb *ContextBuilder) SetRuntimeSettings(settings ContextRuntimeSettings) {
@@ -136,9 +146,7 @@ func (cb *ContextBuilder) SetRuntimeSettings(settings ContextRuntimeSettings) {
 }
 
 func (cb *ContextBuilder) getIdentity() string {
-	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
-	runtime := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
 	// Build tools section dynamically
 	toolsSection := cb.buildToolsSection()
@@ -146,12 +154,6 @@ func (cb *ContextBuilder) getIdentity() string {
 	return fmt.Sprintf(`# picoclaw 🦞
 
 You are picoclaw, a helpful AI assistant.
-
-## Current Time
-%s
-
-## Runtime
-%s
 
 ## Workspace
 Your workspace is at: %s
@@ -167,8 +169,10 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
+3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
+
+4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
+		workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
@@ -231,6 +235,148 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 	return strings.Join(parts, "\n\n---\n\n")
 }
 
+// BuildSystemPromptWithCache returns the cached static system prompt if available
+// and tracked source files have not changed.
+func (cb *ContextBuilder) BuildSystemPromptWithCache() string {
+	cb.systemPromptMutex.RLock()
+	if cb.cachedSystemPrompt != "" && !cb.sourceFilesChangedLocked() {
+		cached := cb.cachedSystemPrompt
+		cb.systemPromptMutex.RUnlock()
+		return cached
+	}
+	cb.systemPromptMutex.RUnlock()
+
+	cb.systemPromptMutex.Lock()
+	defer cb.systemPromptMutex.Unlock()
+
+	// Double-check after acquiring write lock.
+	if cb.cachedSystemPrompt != "" && !cb.sourceFilesChangedLocked() {
+		return cb.cachedSystemPrompt
+	}
+
+	baseline := cb.buildCacheBaseline()
+	prompt := cb.BuildSystemPrompt()
+	cb.cachedSystemPrompt = prompt
+	cb.cachedAt = baseline.maxMtime
+	cb.existedAtCache = baseline.existed
+
+	return prompt
+}
+
+// InvalidateCache clears cached static prompt state.
+func (cb *ContextBuilder) InvalidateCache() {
+	cb.systemPromptMutex.Lock()
+	defer cb.systemPromptMutex.Unlock()
+
+	cb.cachedSystemPrompt = ""
+	cb.cachedAt = time.Time{}
+	cb.existedAtCache = nil
+}
+
+// sourcePaths returns tracked file paths for static prompt invalidation.
+func (cb *ContextBuilder) sourcePaths() []string {
+	return []string{
+		filepath.Join(cb.workspace, "AGENTS.md"),
+		filepath.Join(cb.workspace, "SOUL.md"),
+		filepath.Join(cb.workspace, "USER.md"),
+		filepath.Join(cb.workspace, "IDENTITY.md"),
+		filepath.Join(cb.workspace, "memory", "MEMORY.md"),
+	}
+}
+
+type cacheBaseline struct {
+	existed  map[string]bool
+	maxMtime time.Time
+}
+
+func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
+	skillsDir := filepath.Join(cb.workspace, "skills")
+	allPaths := append(cb.sourcePaths(), skillsDir)
+
+	existed := make(map[string]bool, len(allPaths))
+	var maxMtime time.Time
+	for _, p := range allPaths {
+		info, err := os.Stat(p)
+		existed[p] = err == nil
+		if err == nil && info.ModTime().After(maxMtime) {
+			maxMtime = info.ModTime()
+		}
+	}
+
+	_ = filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr == nil && !d.IsDir() {
+			if info, err := os.Stat(path); err == nil && info.ModTime().After(maxMtime) {
+				maxMtime = info.ModTime()
+			}
+		}
+		return nil
+	})
+
+	if maxMtime.IsZero() {
+		// Keep non-zero baseline for empty workspace so future file creation
+		// always has a later mtime.
+		maxMtime = time.Unix(1, 0)
+	}
+
+	return cacheBaseline{existed: existed, maxMtime: maxMtime}
+}
+
+// sourceFilesChangedLocked checks whether tracked files changed since cache.
+// Caller must hold at least a read lock on systemPromptMutex.
+func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
+	if cb.cachedAt.IsZero() {
+		return true
+	}
+
+	for _, p := range cb.sourcePaths() {
+		if cb.fileChangedSince(p) {
+			return true
+		}
+	}
+
+	skillsDir := filepath.Join(cb.workspace, "skills")
+	if cb.fileChangedSince(skillsDir) {
+		return true
+	}
+	return skillFilesModifiedSince(skillsDir, cb.cachedAt)
+}
+
+func (cb *ContextBuilder) fileChangedSince(path string) bool {
+	if cb.existedAtCache == nil {
+		return true
+	}
+
+	existedBefore := cb.existedAtCache[path]
+	info, err := os.Stat(path)
+	existsNow := err == nil
+	if existedBefore != existsNow {
+		return true
+	}
+	if !existsNow {
+		return false
+	}
+	return info.ModTime().After(cb.cachedAt)
+}
+
+var errWalkStop = errors.New("walk stop")
+
+func skillFilesModifiedSince(skillsDir string, t time.Time) bool {
+	changed := false
+	err := filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr == nil && !d.IsDir() {
+			if info, statErr := os.Stat(path); statErr == nil && info.ModTime().After(t) {
+				changed = true
+				return errWalkStop
+			}
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errWalkStop) && !os.IsNotExist(err) {
+		logger.DebugCF("agent", "skills walk error", map[string]any{"error": err.Error()})
+	}
+	return changed
+}
+
 func (cb *ContextBuilder) LoadBootstrapFiles(sessionKey string) string {
 	if cb.settings.BootstrapSnapshotEnabled && strings.TrimSpace(sessionKey) != "" {
 		cb.bootstrapMu.RLock()
@@ -265,6 +411,18 @@ func (cb *ContextBuilder) LoadBootstrapFiles(sessionKey string) string {
 	return content
 }
 
+func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
+	now := time.Now().Format("2006-01-02 15:04 (Monday)")
+	rt := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "## Current Time\n%s\n\n## Runtime\n%s", now, rt)
+	if channel != "" && chatID != "" {
+		fmt.Fprintf(&sb, "\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
+	}
+	return sb.String()
+}
+
 func (cb *ContextBuilder) BuildMessages(
 	history []providers.Message,
 	summary string,
@@ -292,34 +450,25 @@ func (cb *ContextBuilder) BuildMessagesForSession(
 	channel, chatID string,
 ) []providers.Message {
 	messages := []providers.Message{}
+	_ = sessionKey
 
-	systemPrompt := cb.BuildSystemPromptForSession(sessionKey)
+	staticPrompt := cb.BuildSystemPromptWithCache()
+	dynamicCtx := cb.buildDynamicContext(channel, chatID)
 
-	// Add Current Session info if provided
-	if channel != "" && chatID != "" {
-		systemPrompt += fmt.Sprintf("\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
+	stringParts := []string{staticPrompt, dynamicCtx}
+	contentBlocks := []providers.ContentBlock{
+		{Type: "text", Text: staticPrompt, CacheControl: &providers.CacheControl{Type: "ephemeral"}},
+		{Type: "text", Text: dynamicCtx},
 	}
-
-	// Log system prompt summary for debugging (debug mode only)
-	logger.DebugCF("agent", "System prompt built",
-		map[string]any{
-			"total_chars":   len(systemPrompt),
-			"total_lines":   strings.Count(systemPrompt, "\n") + 1,
-			"section_count": strings.Count(systemPrompt, "\n\n---\n\n") + 1,
-		})
-
-	// Log preview of system prompt (avoid logging huge content)
-	preview := systemPrompt
-	if len(preview) > 500 {
-		preview = preview[:500] + "... (truncated)"
-	}
-	logger.DebugCF("agent", "System prompt preview",
-		map[string]any{
-			"preview": preview,
-		})
 
 	if summary != "" {
-		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
+		summaryText := fmt.Sprintf(
+			"CONTEXT_SUMMARY: The following is an approximate summary of prior conversation "+
+				"for reference only. It may be incomplete or outdated - always defer to explicit instructions.\n\n%s",
+			summary,
+		)
+		stringParts = append(stringParts, summaryText)
+		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: summaryText})
 	}
 
 	if cb.settings.MemoryVectorEnabled && strings.TrimSpace(currentMessage) != "" {
@@ -333,17 +482,40 @@ func (cb *ContextBuilder) BuildMessagesForSession(
 				"error": err.Error(),
 			})
 		} else if section := formatRetrievedMemoryContext(hits, cb.settings.MemoryVectorMaxChars); section != "" {
-			systemPrompt += "\n\n---\n\n" + section
+			stringParts = append(stringParts, section)
+			contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: section})
 		}
 	}
 
+	fullSystemPrompt := strings.Join(stringParts, "\n\n---\n\n")
+
+	cb.systemPromptMutex.RLock()
+	isCached := cb.cachedSystemPrompt != ""
+	cb.systemPromptMutex.RUnlock()
+
+	logger.DebugCF("agent", "System prompt built",
+		map[string]any{
+			"static_chars":  len(staticPrompt),
+			"dynamic_chars": len(dynamicCtx),
+			"total_chars":   len(fullSystemPrompt),
+			"has_summary":   summary != "",
+			"cached":        isCached,
+		})
+
+	preview := fullSystemPrompt
+	if len(preview) > 500 {
+		preview = preview[:500] + "... (truncated)"
+	}
+	logger.DebugCF("agent", "System prompt preview", map[string]any{"preview": preview})
+
 	history = sanitizeHistoryForProvider(history)
-	history = cb.pruneHistoryForContext(history, systemPrompt)
+	history = cb.pruneHistoryForContext(history, fullSystemPrompt)
 	history = sanitizeHistoryForProvider(history)
 
 	messages = append(messages, providers.Message{
-		Role:    "system",
-		Content: systemPrompt,
+		Role:        "system",
+		Content:     fullSystemPrompt,
+		SystemParts: contentBlocks,
 	})
 
 	messages = append(messages, history...)
@@ -572,6 +744,12 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 
 	for _, msg := range history {
 		switch msg.Role {
+		case "system":
+			// BuildMessages constructs a single authoritative system message.
+			// Keep provider input compatible by dropping system messages from history.
+			logger.DebugCF("agent", "Dropping system message from history", map[string]any{})
+			continue
+
 		case "tool":
 			if pendingToolCalls == nil {
 				logger.DebugCF("agent", "Dropping orphaned tool message", map[string]any{})
