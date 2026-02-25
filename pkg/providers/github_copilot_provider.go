@@ -101,7 +101,7 @@ func (p *GitHubCopilotProvider) Chat(
 		return nil, fmt.Errorf("provider closed")
 	}
 
-	resp, err := session.SendAndWait(ctx, copilot.MessageOptions{
+	resp, _ := session.SendAndWait(ctx, copilot.MessageOptions{
 		Prompt: string(fullcontent),
 	})
 

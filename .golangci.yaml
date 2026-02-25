@@ -61,7 +61,6 @@ linters:
     - unparam
     - usestdlibvars
     - usetesting
-    - wastedassign
     - whitespace
   settings:
     errcheck:
