@@ -393,7 +393,7 @@ func (t *WebSearchTool) Name() string {
 }
 
 func (t *WebSearchTool) Description() string {
-	return "Search the web for current information. Returns titles, URLs, and snippets from search results."
+	return fmt.Sprintf("Search the web for current information. Returns titles, URLs, and snippets from search results. Today's date is %s. Use this when you need to construct date-specific search queries.", time.Now().Format("2006-01-02"))
 }
 
 func (t *WebSearchTool) Parameters() map[string]any {
