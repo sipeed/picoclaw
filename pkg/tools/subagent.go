@@ -300,7 +300,7 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 
 	// Register exec and bg_monitor if allowed.
 	// Each subagent gets its own ExecTool to avoid mutating the shared instance's
-	// allowPatterns (which would leak sandbox restrictions to the conductor).
+	// allowRules (which would leak sandbox restrictions to the conductor).
 	if config.AllowedTools["exec"] {
 		execWorkDir := writeRoot
 		if execWorkDir == "" {
@@ -312,7 +312,7 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 			return registry
 		}
 		if config.ExecPolicy != nil {
-			_ = execTool.SetAllowPatterns([]string{config.ExecPolicy.AllowPattern})
+			execTool.SetAllowRules(config.ExecPolicy.AllowRules)
 			execTool.SetLocalNetOnly(config.ExecPolicy.LocalNetOnly)
 		}
 		registry.Register(execTool)
