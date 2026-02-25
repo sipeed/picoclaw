@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -229,6 +230,9 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 
 	entries, err := t.fs.ReadDir(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrorResult(fmt.Sprintf("directory does not exist: %s", path))
+		}
 		return ErrorResult(fmt.Sprintf("failed to read directory: %v", err))
 	}
 	return formatDirEntries(entries)

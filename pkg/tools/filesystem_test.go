@@ -232,8 +232,9 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 		t.Errorf("Expected error for non-existent directory, got IsError=false")
 	}
 
-	// Should contain error message
-	if !strings.Contains(result.ForLLM, "failed to read") && !strings.Contains(result.ForUser, "failed to read") {
+	// Should contain error message (either "directory does not exist" or "failed to read")
+	msg := result.ForLLM + result.ForUser
+	if !strings.Contains(msg, "directory does not exist") && !strings.Contains(msg, "failed to read") {
 		t.Errorf("Expected error message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
 	}
 }

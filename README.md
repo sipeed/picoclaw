@@ -1112,7 +1112,8 @@ picoclaw agent -m "Hello"
 | `picoclaw onboard`        | Initialize config & workspace |
 | `picoclaw agent -m "..."` | Chat with the agent           |
 | `picoclaw agent`          | Interactive chat mode         |
-| `picoclaw gateway`        | Start the gateway             |
+| `picoclaw gateway`        | Start the gateway (foreground)|
+| `picoclaw service`        | Background gateway (launchd/systemd); see [Service docs](docs/service.md) |
 | `picoclaw status`         | Show status                   |
 | `picoclaw cron list`      | List all scheduled jobs       |
 | `picoclaw cron add ...`   | Add a scheduled job           |
@@ -1178,7 +1179,7 @@ Some providers (like Zhipu) have content filtering. Try rephrasing your query or
 
 ### Telegram bot says "Conflict: terminated by other getUpdates"
 
-This happens when another instance of the bot is running. Make sure only one `picoclaw gateway` is running at a time.
+This happens when another instance of the bot is running. Make sure only one gateway is running: either stop the background service (`picoclaw service stop`) or do not start a second `picoclaw gateway`. See [Service docs](docs/service.md) for background service usage.
 
 ---
 
