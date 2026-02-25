@@ -65,7 +65,6 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
-
 	switch protocol {
 	case "openai":
 		// OpenAI with OAuth/token auth (Codex-style)
@@ -116,7 +115,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensField(cfg.APIKey, apiBase, cfg.Proxy, cfg.MaxTokensField), modelID, nil
+		return NewHTTPProviderWithProtocol(cfg.APIKey, apiBase, cfg.Proxy, "anthropic"), modelID, nil
 
 	case "antigravity":
 		return NewAntigravityProvider(), modelID, nil
