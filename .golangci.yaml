@@ -49,7 +49,6 @@ linters:
     - maintidx
     - mnd
     - modernize
-    - nakedret
     - nestif
     - nilnil
     - paralleltest
