@@ -313,7 +313,7 @@ func (c *OneBotChannel) sendAPIRequest(action string, params any, timeout time.D
 	case <-time.After(timeout):
 		return nil, fmt.Errorf("API request %s timed out after %v", action, timeout)
 	case <-c.ctx.Done():
-		return nil, fmt.Errorf("context cancelled")
+		return nil, fmt.Errorf("context canceled")
 	}
 }
 

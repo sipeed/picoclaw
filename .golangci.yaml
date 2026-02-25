@@ -47,7 +47,6 @@ linters:
     - ineffassign
     - lll
     - maintidx
-    - misspell
     - mnd
     - modernize
     - nakedret
