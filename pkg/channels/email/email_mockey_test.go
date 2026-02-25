@@ -1,9 +1,9 @@
 //go:build mockey
 
-package channels
+package email
 
 // Tests in this file use github.com/bytedance/mockey and require -gcflags="all=-N -l" to run.
-// Run with: go test -tags=mockey -gcflags="all=-N -l" ./pkg/channels/...
+// Run with: go test -tags=mockey -gcflags="all=-N -l" ./pkg/channels/email/...
 // Without -tags=mockey they are not compiled; without -gcflags they may fail due to Mockey.
 
 import (
@@ -35,16 +35,15 @@ func TestEmailChannel_checkNewEmails(t *testing.T) {
 	// mock connect to return mockClient
 	mockey.PatchConvey("checkNewEmails", t, func() {
 		// --------------- mock start ---------------
-		c := &EmailChannel{
-			BaseChannel: &BaseChannel{
-				bus: bus.NewMessageBus(),
-			},
-			config: config.EmailConfig{
-				Enabled:   true,
-				AllowFrom: config.FlexibleStringSlice{},
-			},
-			lastUID: 20,
+		msgBus := bus.NewMessageBus()
+		c, err := NewEmailChannel(config.EmailConfig{
+			Enabled:   true,
+			AllowFrom: config.FlexibleStringSlice{},
+		}, msgBus)
+		if err != nil {
+			t.Fatal(err)
 		}
+		c.lastUID = 20
 		mockClient := &client.Client{}
 		c.imapClient = mockClient
 		// mock login and select to return mockClient
@@ -97,7 +96,7 @@ func TestEmailChannel_checkNewEmails(t *testing.T) {
 		c.CheckNewEmails(context.Background())
 		timeoutCtx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		messge, ok := c.bus.ConsumeInbound(timeoutCtx)
+		messge, ok := msgBus.ConsumeInbound(timeoutCtx)
 		assert.True(t, ok)
 		assert.True(t, strings.Contains(messge.Content, "Hello world"))
 	})
@@ -115,19 +114,17 @@ func TestEmailChannel_runIdleLoop(t *testing.T) {
 	mockey.PatchConvey("runIdleLoop", t, func() {
 		// --------------- mock start ---------------
 		hasCheckEmail := false
-		c := &EmailChannel{
-			BaseChannel: &BaseChannel{
-				bus: bus.NewMessageBus(),
-			},
-			config: config.EmailConfig{
-				Enabled:   true,
-				AllowFrom: config.FlexibleStringSlice{},
-			},
-			lastUID: 20,
+		msgBus := bus.NewMessageBus()
+		c, err := NewEmailChannel(config.EmailConfig{
+			Enabled:   true,
+			AllowFrom: config.FlexibleStringSlice{},
+		}, msgBus)
+		if err != nil {
+			t.Fatal(err)
 		}
+		c.lastUID = 20
 		mockClient := &client.Client{}
 		c.imapClient = mockClient
-		// mock login and select to return mockClient
 		mockey.Mock(mockey.GetMethod(c, "CheckNewEmails")).To(func(*EmailChannel, context.Context) {
 			hasCheckEmail = true
 		}).Build()
@@ -164,20 +161,18 @@ func TestEmailChannel_lifecycleCheck(t *testing.T) {
 
 	mockey.PatchConvey("lifecycle test", t, func() {
 		// --------------- mock start ---------------
-		c := &EmailChannel{
-			BaseChannel: &BaseChannel{
-				bus: bus.NewMessageBus(),
-			},
-			config: config.EmailConfig{
-				Enabled:       true,
-				CheckInterval: 1,
-				ForcedPolling: true,
-				IMAPServer:    "imap.example.com",
-				Username:      "testuser",
-				Password:      "testpassword",
-			},
+		msgBus := bus.NewMessageBus()
+		c, err := NewEmailChannel(config.EmailConfig{
+			Enabled:       true,
+			CheckInterval: 1,
+			ForcedPolling: true,
+			IMAPServer:    "imap.example.com",
+			Username:      "testuser",
+			Password:      "testpassword",
+		}, msgBus)
+		if err != nil {
+			t.Fatal(err)
 		}
-		// mock login and select to return mockClient
 		mockey.Mock(mockey.GetMethod(c, "connect")).To(func(*EmailChannel) error {
 			return nil
 		}).Build()
@@ -186,7 +181,7 @@ func TestEmailChannel_lifecycleCheck(t *testing.T) {
 		}).Build()
 		// --------------- mock end ---------------
 		ctx := context.Background()
-		err := c.Start(ctx)
+		err = c.Start(ctx)
 		assert.NoError(t, err)
 		wg := sync.WaitGroup{}
 		wg.Add(1)

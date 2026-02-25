@@ -1,4 +1,4 @@
-package channels
+package email
 
 import (
 	"bytes"
@@ -23,7 +23,9 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -45,7 +47,7 @@ const (
 )
 
 type EmailChannel struct {
-	*BaseChannel
+	*channels.BaseChannel
 	config      config.EmailConfig
 	imapClient  *client.Client
 	lastUID     uint32
@@ -62,7 +64,7 @@ type EmailChannel struct {
 }
 
 func NewEmailChannel(cfg config.EmailConfig, bus *bus.MessageBus) (*EmailChannel, error) {
-	base := NewBaseChannel("email", cfg, bus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("email", cfg, bus, cfg.AllowFrom)
 	return &EmailChannel{
 		BaseChannel: base,
 		config:      cfg,
@@ -182,14 +184,14 @@ func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 	if c.config.SMTPUseTLS {
 		// Port 465: implicit TLS
 		tlsConfig := &tls.Config{ServerName: host}
-		conn, err := tls.Dial("tcp", addr, tlsConfig)
-		if err != nil {
-			return fmt.Errorf("smtp tls dial: %w", err)
+		conn, tlserr := tls.Dial("tcp", addr, tlsConfig)
+		if tlserr != nil {
+			return fmt.Errorf("smtp tls dial: %w", tlserr)
 		}
 		defer conn.Close()
-		client, err := smtp.NewClient(conn, host)
-		if err != nil {
-			return fmt.Errorf("smtp new client: %w", err)
+		client, newClientErr := smtp.NewClient(conn, host)
+		if newClientErr != nil {
+			return fmt.Errorf("smtp new client: %w", newClientErr)
 		}
 		defer client.Close()
 		auth := smtp.PlainAuth("", c.config.Username, c.config.Password, host)
@@ -202,9 +204,9 @@ func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		if err = client.Rcpt(toRaw); err != nil {
 			return fmt.Errorf("smtp rcpt: %w", err)
 		}
-		w, err := client.Data()
-		if err != nil {
-			return fmt.Errorf("smtp data: %w", err)
+		w, dataErr := client.Data()
+		if dataErr != nil {
+			return fmt.Errorf("smtp data: %w", dataErr)
 		}
 		if _, err = w.Write(body); err != nil {
 			_ = w.Close()
@@ -275,9 +277,9 @@ func (c *EmailChannel) connect() error {
 	}
 
 	// Login
-	if err := cl.Login(c.config.Username, c.config.Password); err != nil {
+	if loginErr := cl.Login(c.config.Username, c.config.Password); loginErr != nil {
 		cl.Logout()
-		return err
+		return loginErr
 	}
 
 	c.mu.Lock()
@@ -617,7 +619,7 @@ func (c *EmailChannel) CheckNewEmails(ctx context.Context) {
 			}
 
 			// Process the message
-			c.processEmail(msg)
+			c.processEmail(ctx, msg)
 
 			// Mark as seen after fully read
 			seenSet := new(imap.SeqSet)
@@ -660,7 +662,7 @@ func (c *EmailChannel) CheckNewEmails(ctx context.Context) {
 	}
 }
 
-func (c *EmailChannel) processEmail(msg *imap.Message) {
+func (c *EmailChannel) processEmail(ctx context.Context, msg *imap.Message) {
 	if msg == nil {
 		return
 	}
@@ -683,8 +685,15 @@ func (c *EmailChannel) processEmail(msg *imap.Message) {
 		senderID = "unknown"
 	}
 
-	// Check allowlist
-	if !c.IsAllowed(senderID) {
+	// SenderInfo for allow-list and routing (canonical format: email:addr)
+	senderInfo := bus.SenderInfo{
+		Platform:    "email",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("email", senderID),
+	}
+
+	// Check allowlist (HandleMessage will also check; we avoid duplicate work by passing SenderInfo)
+	if !c.IsAllowedSender(senderInfo) {
 		logger.DebugCF("email", "Email from unauthorized sender", map[string]any{
 			"sender": senderID,
 		})
@@ -697,14 +706,16 @@ func (c *EmailChannel) processEmail(msg *imap.Message) {
 		content = "[empty email body]"
 	}
 
-	// ChatID is sender email
+	// ChatID is sender email (1:1 conversation)
 	chatID := senderID
+	messageID := fmt.Sprintf("%d", msg.Uid)
 
 	// Build metadata
 	metadata := map[string]string{
 		"subject":    envelope.Subject,
-		"message_id": fmt.Sprintf("%d", msg.Uid),
+		"message_id": messageID,
 		"date":       envelope.Date.Format(time.RFC3339),
+		"platform":   "email",
 	}
 
 	if len(envelope.To) > 0 {
@@ -712,14 +723,15 @@ func (c *EmailChannel) processEmail(msg *imap.Message) {
 		metadata["to"] = fmt.Sprintf("%s@%s", to.MailboxName, to.HostName)
 	}
 
-	logger.InfoCF("email", "Email received", map[string]any{
+	logger.DebugCF("email", "Received message", map[string]any{
 		"sender_id": senderID,
 		"subject":   envelope.Subject,
-		"preview":   utils.Truncate(content, 80),
+		"preview":   utils.Truncate(content, 50),
 	})
 
 	// Publish to message bus (attachment local paths in mediaPaths)
-	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
+	peer := bus.Peer{Kind: "direct", ID: senderID}
+	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, senderInfo)
 }
 
 // extractEmailBodyAndAttachments parses body and saves attachments to AttachmentDir; returns body text and local paths.
