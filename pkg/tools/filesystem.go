@@ -99,6 +99,10 @@ func (t *ReadFileTool) Name() string {
 	return "read_file"
 }
 
+func (t *ReadFileTool) ParallelPolicy() ToolParallelPolicy {
+	return ToolParallelReadOnly
+}
+
 func (t *ReadFileTool) Description() string {
 	return "Read the contents of a file"
 }
@@ -202,6 +206,10 @@ func NewListDirTool(workspace string, restrict bool) *ListDirTool {
 
 func (t *ListDirTool) Name() string {
 	return "list_dir"
+}
+
+func (t *ListDirTool) ParallelPolicy() ToolParallelPolicy {
+	return ToolParallelReadOnly
 }
 
 func (t *ListDirTool) Description() string {

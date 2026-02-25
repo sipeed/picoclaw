@@ -167,6 +167,12 @@ func registerSharedTools(
 			cfg.Orchestration.MaxTasksPerAgent,
 			cfg.Orchestration.MaxSpawnDepth,
 		)
+		subagentManager.SetToolCallParallelism(
+			cfg.Orchestration.ToolCallsParallelEnabled,
+			cfg.Orchestration.MaxToolCallConcurrency,
+			cfg.Orchestration.ParallelToolsMode,
+			cfg.Orchestration.ToolParallelOverrides,
+		)
 		subagentManager.SetTools(agent.Tools)
 		currentAgentID := agentID
 		subagentManager.SetExecutionResolver(func(targetAgentID string) (tools.SubagentExecutionConfig, error) {
@@ -879,44 +885,48 @@ func (al *AgentLoop) runLLMIteration(
 		// Save assistant message with tool calls to session
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
-		// Execute tool calls
-		for _, tc := range normalizedToolCalls {
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := utils.Truncate(string(argsJSON), 200)
-			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-				map[string]any{
-					"agent_id":  agent.ID,
-					"tool":      tc.Name,
-					"iteration": iteration,
-				})
+		parallelCfg := tools.ToolCallParallelConfig{
+			Enabled:        al.cfg != nil && al.cfg.Orchestration.ToolCallsParallelEnabled,
+			MaxConcurrency: 0,
+			Mode:           "",
+		}
+		if al.cfg != nil {
+			parallelCfg.MaxConcurrency = al.cfg.Orchestration.MaxToolCallConcurrency
+			parallelCfg.Mode = al.cfg.Orchestration.ParallelToolsMode
+			parallelCfg.ToolPolicyOverrides = al.cfg.Orchestration.ToolParallelOverrides
+		}
 
-			// Create async callback for tools that implement AsyncTool
-			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
-			// Instead, they notify the agent via PublishInbound, and the agent decides
-			// whether to forward the result to the user (in processSystemMessage).
-			asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
-				// Log the async completion but don't send directly to user
-				// The agent will handle user notification via processSystemMessage
-				if !result.Silent && result.ForUser != "" {
-					logger.InfoCF("agent", "Async tool completed, agent will handle notification",
-						map[string]any{
-							"tool":        tc.Name,
-							"content_len": len(result.ForUser),
-						})
+		toolExecutions := tools.ExecuteToolCalls(ctx, agent.Tools, normalizedToolCalls, tools.ToolCallExecutionOptions{
+			Channel:   opts.Channel,
+			ChatID:    opts.ChatID,
+			SenderID:  opts.SenderID,
+			Iteration: iteration,
+			LogScope:  "agent",
+			Parallel:  parallelCfg,
+			// Create async callback for tools that implement AsyncTool.
+			// Following openclaw's design, async tools do not send results directly
+			// to users. The agent handles user notification via processSystemMessage.
+			AsyncCallbackForCall: func(call providers.ToolCall) tools.AsyncCallback {
+				return func(callbackCtx context.Context, result *tools.ToolResult) {
+					if result == nil {
+						return
+					}
+					if !result.Silent && result.ForUser != "" {
+						logger.InfoCF("agent", "Async tool completed, agent will handle notification",
+							map[string]any{
+								"tool":        call.Name,
+								"content_len": len(result.ForUser),
+							})
+					}
 				}
-			}
+			},
+		})
 
-			toolResult := agent.Tools.ExecuteWithContext(
-				ctx,
-				tc.Name,
-				tc.Arguments,
-				opts.Channel,
-				opts.ChatID,
-				opts.SenderID,
-				asyncCallback,
-			)
+		for _, executed := range toolExecutions {
+			toolResult := executed.Result
+			tc := executed.ToolCall
 
-			// Send ForUser content to user immediately if not Silent
+			// Send ForUser content to user immediately if not Silent.
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
 				al.bus.PublishOutbound(bus.OutboundMessage{
 					Channel: opts.Channel,

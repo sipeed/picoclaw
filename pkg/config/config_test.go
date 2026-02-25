@@ -367,11 +367,26 @@ func TestDefaultConfig_OrchestrationAndAuditDefaults(t *testing.T) {
 	if cfg.Orchestration.MaxSpawnDepth != 3 {
 		t.Fatalf("MaxSpawnDepth = %d, want 3", cfg.Orchestration.MaxSpawnDepth)
 	}
+	if cfg.Orchestration.MaxParallelWorkers != 8 {
+		t.Fatalf("MaxParallelWorkers = %d, want 8", cfg.Orchestration.MaxParallelWorkers)
+	}
 	if cfg.Orchestration.DefaultTaskTimeoutSeconds != 180 {
 		t.Fatalf(
 			"DefaultTaskTimeoutSeconds = %d, want 180",
 			cfg.Orchestration.DefaultTaskTimeoutSeconds,
 		)
+	}
+	if !cfg.Orchestration.ToolCallsParallelEnabled {
+		t.Fatal("ToolCallsParallelEnabled should be true by default")
+	}
+	if cfg.Orchestration.MaxToolCallConcurrency != 8 {
+		t.Fatalf("MaxToolCallConcurrency = %d, want 8", cfg.Orchestration.MaxToolCallConcurrency)
+	}
+	if cfg.Orchestration.ParallelToolsMode != "read_only_only" {
+		t.Fatalf("ParallelToolsMode = %q, want %q", cfg.Orchestration.ParallelToolsMode, "read_only_only")
+	}
+	if len(cfg.Orchestration.ToolParallelOverrides) != 0 {
+		t.Fatalf("ToolParallelOverrides len = %d, want 0", len(cfg.Orchestration.ToolParallelOverrides))
 	}
 	if cfg.Audit.IntervalMinutes != 30 {
 		t.Fatalf("Audit.IntervalMinutes = %d, want 30", cfg.Audit.IntervalMinutes)
@@ -389,7 +404,14 @@ func TestConfig_UnmarshalAuditAndOrchestration(t *testing.T) {
 		"orchestration": {
 			"enabled": true,
 			"max_spawn_depth": 4,
-			"max_parallel_workers": 2
+			"max_parallel_workers": 2,
+			"tool_calls_parallel_enabled": false,
+			"max_tool_call_concurrency": 3,
+			"parallel_tools_mode": "all",
+			"tool_parallel_overrides": {
+				"write_file": "serial_only",
+				"exec": "parallel_read_only"
+			}
 		},
 		"audit": {
 			"enabled": true,
@@ -417,6 +439,30 @@ func TestConfig_UnmarshalAuditAndOrchestration(t *testing.T) {
 	}
 	if cfg.Orchestration.MaxSpawnDepth != 4 {
 		t.Fatalf("max_spawn_depth = %d, want 4", cfg.Orchestration.MaxSpawnDepth)
+	}
+	if cfg.Orchestration.MaxParallelWorkers != 2 {
+		t.Fatalf("max_parallel_workers = %d, want 2", cfg.Orchestration.MaxParallelWorkers)
+	}
+	if cfg.Orchestration.ToolCallsParallelEnabled {
+		t.Fatal("tool_calls_parallel_enabled should be false")
+	}
+	if cfg.Orchestration.MaxToolCallConcurrency != 3 {
+		t.Fatalf("max_tool_call_concurrency = %d, want 3", cfg.Orchestration.MaxToolCallConcurrency)
+	}
+	if cfg.Orchestration.ParallelToolsMode != "all" {
+		t.Fatalf("parallel_tools_mode = %q, want %q", cfg.Orchestration.ParallelToolsMode, "all")
+	}
+	if cfg.Orchestration.ToolParallelOverrides["write_file"] != "serial_only" {
+		t.Fatalf(
+			"tool_parallel_overrides.write_file = %q, want %q",
+			cfg.Orchestration.ToolParallelOverrides["write_file"], "serial_only",
+		)
+	}
+	if cfg.Orchestration.ToolParallelOverrides["exec"] != "parallel_read_only" {
+		t.Fatalf(
+			"tool_parallel_overrides.exec = %q, want %q",
+			cfg.Orchestration.ToolParallelOverrides["exec"], "parallel_read_only",
+		)
 	}
 	if !cfg.Audit.Enabled {
 		t.Fatal("audit.enabled should be true")

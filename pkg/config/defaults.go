@@ -354,10 +354,14 @@ func DefaultConfig() *Config {
 		Orchestration: OrchestrationConfig{
 			Enabled:                   false,
 			MaxSpawnDepth:             3,
-			MaxParallelWorkers:        4,
+			MaxParallelWorkers:        8,
 			MaxTasksPerAgent:          20,
 			DefaultTaskTimeoutSeconds: 180,
 			RetryLimitPerTask:         2,
+			ToolCallsParallelEnabled:  true,
+			MaxToolCallConcurrency:    8,
+			ParallelToolsMode:         "read_only_only",
+			ToolParallelOverrides:     map[string]string{},
 		},
 		Audit: AuditConfig{
 			Enabled:             false,

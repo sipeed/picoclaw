@@ -357,12 +357,16 @@ type DevicesConfig struct {
 }
 
 type OrchestrationConfig struct {
-	Enabled                   bool `json:"enabled"                      env:"PICOCLAW_ORCHESTRATION_ENABLED"`
-	MaxSpawnDepth             int  `json:"max_spawn_depth"              env:"PICOCLAW_ORCHESTRATION_MAX_SPAWN_DEPTH"`
-	MaxParallelWorkers        int  `json:"max_parallel_workers"         env:"PICOCLAW_ORCHESTRATION_MAX_PARALLEL_WORKERS"`
-	MaxTasksPerAgent          int  `json:"max_tasks_per_agent"          env:"PICOCLAW_ORCHESTRATION_MAX_TASKS_PER_AGENT"`
-	DefaultTaskTimeoutSeconds int  `json:"default_task_timeout_seconds" env:"PICOCLAW_ORCHESTRATION_DEFAULT_TASK_TIMEOUT_SECONDS"`
-	RetryLimitPerTask         int  `json:"retry_limit_per_task"         env:"PICOCLAW_ORCHESTRATION_RETRY_LIMIT_PER_TASK"`
+	Enabled                   bool              `json:"enabled"                      env:"PICOCLAW_ORCHESTRATION_ENABLED"`
+	MaxSpawnDepth             int               `json:"max_spawn_depth"              env:"PICOCLAW_ORCHESTRATION_MAX_SPAWN_DEPTH"`
+	MaxParallelWorkers        int               `json:"max_parallel_workers"         env:"PICOCLAW_ORCHESTRATION_MAX_PARALLEL_WORKERS"`
+	MaxTasksPerAgent          int               `json:"max_tasks_per_agent"          env:"PICOCLAW_ORCHESTRATION_MAX_TASKS_PER_AGENT"`
+	DefaultTaskTimeoutSeconds int               `json:"default_task_timeout_seconds" env:"PICOCLAW_ORCHESTRATION_DEFAULT_TASK_TIMEOUT_SECONDS"`
+	RetryLimitPerTask         int               `json:"retry_limit_per_task"         env:"PICOCLAW_ORCHESTRATION_RETRY_LIMIT_PER_TASK"`
+	ToolCallsParallelEnabled  bool              `json:"tool_calls_parallel_enabled"  env:"PICOCLAW_ORCHESTRATION_TOOL_CALLS_PARALLEL_ENABLED"`
+	MaxToolCallConcurrency    int               `json:"max_tool_call_concurrency"    env:"PICOCLAW_ORCHESTRATION_MAX_TOOL_CALL_CONCURRENCY"`
+	ParallelToolsMode         string            `json:"parallel_tools_mode"          env:"PICOCLAW_ORCHESTRATION_PARALLEL_TOOLS_MODE"`
+	ToolParallelOverrides     map[string]string `json:"tool_parallel_overrides,omitempty"`
 }
 
 type AuditConfig struct {

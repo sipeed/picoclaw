@@ -538,6 +538,10 @@ func (t *WebSearchTool) Name() string {
 	return "web_search"
 }
 
+func (t *WebSearchTool) ParallelPolicy() ToolParallelPolicy {
+	return ToolParallelReadOnly
+}
+
 func (t *WebSearchTool) Description() string {
 	return "Search the web for current information. Returns titles, URLs, and snippets from search results."
 }
@@ -611,6 +615,10 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string) *WebFetchTool {
 
 func (t *WebFetchTool) Name() string {
 	return "web_fetch"
+}
+
+func (t *WebFetchTool) ParallelPolicy() ToolParallelPolicy {
+	return ToolParallelReadOnly
 }
 
 func (t *WebFetchTool) Description() string {

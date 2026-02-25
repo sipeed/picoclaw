@@ -33,6 +33,10 @@ func (t *SessionsListTool) Name() string {
 	return "sessions_list"
 }
 
+func (t *SessionsListTool) ParallelPolicy() ToolParallelPolicy {
+	return ToolParallelReadOnly
+}
+
 func (t *SessionsListTool) Description() string {
 	return "List known conversation sessions with metadata. Useful for debugging, navigation, and context inspection."
 }
@@ -167,6 +171,10 @@ func NewSessionsHistoryTool(sm *session.SessionManager) *SessionsHistoryTool {
 
 func (t *SessionsHistoryTool) Name() string {
 	return "sessions_history"
+}
+
+func (t *SessionsHistoryTool) ParallelPolicy() ToolParallelPolicy {
+	return ToolParallelReadOnly
 }
 
 func (t *SessionsHistoryTool) Description() string {

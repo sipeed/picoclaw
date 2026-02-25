@@ -73,6 +73,11 @@ type SubagentManager struct {
 	maxTasks       int
 	maxDepth       int
 	taskCancels    map[string]context.CancelFunc
+
+	toolCallsParallelEnabled bool
+	maxToolCallConcurrency   int
+	parallelToolsMode        string
+	toolPolicyOverrides      map[string]string
 }
 
 func NewSubagentManager(
@@ -143,6 +148,33 @@ func (sm *SubagentManager) SetLimits(maxConcurrent, maxTasks, maxDepth int) {
 	sm.maxConcurrent = maxConcurrent
 	sm.maxTasks = maxTasks
 	sm.maxDepth = maxDepth
+}
+
+// SetToolCallParallelism configures in-batch parallel tool execution for
+// subagent tool loops.
+func (sm *SubagentManager) SetToolCallParallelism(
+	enabled bool,
+	maxConcurrency int,
+	mode string,
+	toolPolicyOverrides map[string]string,
+) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.toolCallsParallelEnabled = enabled
+	sm.maxToolCallConcurrency = maxConcurrency
+	sm.parallelToolsMode = mode
+	sm.toolPolicyOverrides = clonePolicyOverrides(toolPolicyOverrides)
+}
+
+func clonePolicyOverrides(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func (sm *SubagentManager) Spawn(
@@ -298,6 +330,10 @@ After completing the task, provide a clear summary of what was done.`
 	defaultTools := sm.tools
 	defaultProvider := sm.provider
 	defaultModel := sm.defaultModel
+	toolCallsParallelEnabled := sm.toolCallsParallelEnabled
+	maxToolCallConcurrency := sm.maxToolCallConcurrency
+	parallelToolsMode := sm.parallelToolsMode
+	toolPolicyOverrides := clonePolicyOverrides(sm.toolPolicyOverrides)
 	sm.mu.RUnlock()
 
 	execution := SubagentExecutionConfig{
@@ -358,12 +394,16 @@ After completing the task, provide a clear summary of what was done.`
 	}
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
-		Provider:      execution.Provider,
-		Model:         execution.Model,
-		Tools:         execution.Tools,
-		MaxIterations: maxIter,
-		LLMOptions:    llmOptions,
-		SenderID:      fmt.Sprintf("subagent:%s", task.ID),
+		Provider:                 execution.Provider,
+		Model:                    execution.Model,
+		Tools:                    execution.Tools,
+		MaxIterations:            maxIter,
+		LLMOptions:               llmOptions,
+		SenderID:                 fmt.Sprintf("subagent:%s", task.ID),
+		ToolCallsParallelEnabled: toolCallsParallelEnabled,
+		MaxToolCallConcurrency:   maxToolCallConcurrency,
+		ParallelToolsMode:        parallelToolsMode,
+		ToolPolicyOverrides:      toolPolicyOverrides,
 	}, messages, task.OriginChannel, task.OriginChatID)
 
 	var result *ToolResult
@@ -617,6 +657,10 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	hasMaxTokens := sm.hasMaxTokens
 	hasTemperature := sm.hasTemperature
 	resolver := sm.resolver
+	toolCallsParallelEnabled := sm.toolCallsParallelEnabled
+	maxToolCallConcurrency := sm.maxToolCallConcurrency
+	parallelToolsMode := sm.parallelToolsMode
+	toolPolicyOverrides := clonePolicyOverrides(sm.toolPolicyOverrides)
 	execution := SubagentExecutionConfig{
 		Provider: sm.provider,
 		Model:    sm.defaultModel,
@@ -655,11 +699,15 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
-		Provider:      execution.Provider,
-		Model:         execution.Model,
-		Tools:         execution.Tools,
-		MaxIterations: maxIter,
-		LLMOptions:    llmOptions,
+		Provider:                 execution.Provider,
+		Model:                    execution.Model,
+		Tools:                    execution.Tools,
+		MaxIterations:            maxIter,
+		LLMOptions:               llmOptions,
+		ToolCallsParallelEnabled: toolCallsParallelEnabled,
+		MaxToolCallConcurrency:   maxToolCallConcurrency,
+		ParallelToolsMode:        parallelToolsMode,
+		ToolPolicyOverrides:      toolPolicyOverrides,
 	}, messages, t.originChannel, t.originChatID)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)

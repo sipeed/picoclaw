@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,65 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	defer r.mu.RUnlock()
 	tool, ok := r.tools[name]
 	return tool, ok
+}
+
+// ParallelPolicy returns the configured parallel policy for a tool.
+// Tools that do not implement ParallelPolicyProvider default to serial-only.
+func (r *ToolRegistry) ParallelPolicy(name string) ToolParallelPolicy {
+	tool, ok := r.Get(name)
+	if !ok || tool == nil {
+		return ToolParallelSerialOnly
+	}
+	provider, ok := tool.(ParallelPolicyProvider)
+	if !ok {
+		return ToolParallelSerialOnly
+	}
+	policy := provider.ParallelPolicy()
+	if policy == "" {
+		return ToolParallelSerialOnly
+	}
+	return policy
+}
+
+// IsParallelInstanceSafe reports whether one shared tool instance can be used
+// concurrently across multiple tool calls.
+func (r *ToolRegistry) IsParallelInstanceSafe(name string) bool {
+	tool, ok := r.Get(name)
+	if !ok || tool == nil {
+		return false
+	}
+	if safeTool, ok := tool.(ConcurrentSafeTool); ok {
+		return safeTool.SupportsConcurrentExecution()
+	}
+	// Conservative default: tools with mutable per-call hooks are not safe
+	// unless they explicitly opt in via ConcurrentSafeTool.
+	if _, ok := tool.(ContextualTool); ok {
+		return false
+	}
+	if _, ok := tool.(AsyncTool); ok {
+		return false
+	}
+	return true
+}
+
+// CanRunToolCallInParallel reports whether a tool call may run in parallel
+// under the given mode.
+//
+// Supported modes:
+// - "read_only_only" (default): only tools marked parallel_read_only are parallelized.
+// - "all": every tool is eligible.
+func (r *ToolRegistry) CanRunToolCallInParallel(name, mode string) bool {
+	if !r.IsParallelInstanceSafe(name) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case ParallelToolsModeAll:
+		return true
+	case "", ParallelToolsModeReadOnlyOnly:
+		return r.ParallelPolicy(name) == ToolParallelReadOnly
+	default:
+		return false
+	}
 }
 
 func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *ToolResult {

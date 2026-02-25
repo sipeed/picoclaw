@@ -10,11 +10,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // ToolLoopConfig configures the tool execution loop.
@@ -25,6 +23,11 @@ type ToolLoopConfig struct {
 	MaxIterations int
 	LLMOptions    map[string]any
 	SenderID      string
+
+	ToolCallsParallelEnabled bool
+	MaxToolCallConcurrency   int
+	ParallelToolsMode        string
+	ToolPolicyOverrides      map[string]string
 }
 
 // ToolLoopResult contains the result of running the tool loop.
@@ -136,32 +139,23 @@ func RunToolLoop(
 		}
 		messages = append(messages, assistantMsg)
 
-		// 7. Execute tool calls
-		for _, tc := range normalizedToolCalls {
-			start := time.Now()
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := utils.Truncate(string(argsJSON), 200)
-			logger.InfoCF("toolloop", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-				map[string]any{
-					"tool":      tc.Name,
-					"iteration": iteration,
-				})
+		toolExecutions := ExecuteToolCalls(ctx, config.Tools, normalizedToolCalls, ToolCallExecutionOptions{
+			Channel:   channel,
+			ChatID:    chatID,
+			SenderID:  config.SenderID,
+			Iteration: iteration,
+			LogScope:  "toolloop",
+			Parallel: ToolCallParallelConfig{
+				Enabled:             config.ToolCallsParallelEnabled,
+				MaxConcurrency:      config.MaxToolCallConcurrency,
+				Mode:                config.ParallelToolsMode,
+				ToolPolicyOverrides: config.ToolPolicyOverrides,
+			},
+		})
 
-			// Execute tool (no async callback for subagents - they run independently)
-			var toolResult *ToolResult
-			if config.Tools != nil {
-				toolResult = config.Tools.ExecuteWithContext(
-					ctx,
-					tc.Name,
-					tc.Arguments,
-					channel,
-					chatID,
-					config.SenderID,
-					nil,
-				)
-			} else {
-				toolResult = ErrorResult("No tools available")
-			}
+		for _, executed := range toolExecutions {
+			toolResult := executed.Result
+			tc := executed.ToolCall
 
 			// Determine content for LLM
 			contentForLLM := toolResult.ForLLM
@@ -175,7 +169,7 @@ func RunToolLoop(
 				Arguments:  tc.Arguments,
 				Result:     contentForLLM,
 				IsError:    toolResult.IsError,
-				DurationMS: time.Since(start).Milliseconds(),
+				DurationMS: executed.DurationMS,
 				ToolCallID: tc.ID,
 			})
 

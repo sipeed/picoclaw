@@ -280,10 +280,14 @@
   "orchestration": {
     "enabled": false,
     "max_spawn_depth": 3,
-    "max_parallel_workers": 4,
+    "max_parallel_workers": 8,
     "max_tasks_per_agent": 20,
     "default_task_timeout_seconds": 180,
-    "retry_limit_per_task": 2
+    "retry_limit_per_task": 2,
+    "tool_calls_parallel_enabled": true,
+    "max_tool_call_concurrency": 8,
+    "parallel_tools_mode": "read_only_only",
+    "tool_parallel_overrides": {}
   },
   "audit": {
     "enabled": false,

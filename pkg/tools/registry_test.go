@@ -45,6 +45,24 @@ func (m *mockAsyncRegistryTool) SetCallback(cb AsyncCallback) {
 	m.cb = cb
 }
 
+type mockConcurrentSafeTool struct {
+	mockRegistryTool
+	concurrentSafe bool
+}
+
+func (m *mockConcurrentSafeTool) SupportsConcurrentExecution() bool {
+	return m.concurrentSafe
+}
+
+type mockParallelRegistryTool struct {
+	mockRegistryTool
+	policy ToolParallelPolicy
+}
+
+func (m *mockParallelRegistryTool) ParallelPolicy() ToolParallelPolicy {
+	return m.policy
+}
+
 // --- helpers ---
 
 func newMockTool(name, desc string) *mockRegistryTool {
@@ -346,5 +364,73 @@ func TestToolRegistry_ConcurrentAccess(t *testing.T) {
 
 	if r.Count() == 0 {
 		t.Error("expected tools to be registered after concurrent access")
+	}
+}
+
+func TestToolRegistry_ParallelPolicy_DefaultSerial(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(newMockTool("default_serial", ""))
+
+	policy := r.ParallelPolicy("default_serial")
+	if policy != ToolParallelSerialOnly {
+		t.Fatalf("ParallelPolicy = %q, want %q", policy, ToolParallelSerialOnly)
+	}
+}
+
+func TestToolRegistry_ParallelPolicy_ReadOnly(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockParallelRegistryTool{
+		mockRegistryTool: *newMockTool("read_only", ""),
+		policy:           ToolParallelReadOnly,
+	})
+
+	policy := r.ParallelPolicy("read_only")
+	if policy != ToolParallelReadOnly {
+		t.Fatalf("ParallelPolicy = %q, want %q", policy, ToolParallelReadOnly)
+	}
+}
+
+func TestToolRegistry_CanRunToolCallInParallel(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockParallelRegistryTool{
+		mockRegistryTool: *newMockTool("read_only", ""),
+		policy:           ToolParallelReadOnly,
+	})
+	r.Register(newMockTool("serial", ""))
+
+	if !r.CanRunToolCallInParallel("read_only", ParallelToolsModeReadOnlyOnly) {
+		t.Fatal("read_only tool should be parallel-eligible in read_only_only mode")
+	}
+	if r.CanRunToolCallInParallel("serial", ParallelToolsModeReadOnlyOnly) {
+		t.Fatal("serial tool should not be parallel-eligible in read_only_only mode")
+	}
+	if !r.CanRunToolCallInParallel("serial", ParallelToolsModeAll) {
+		t.Fatal("serial tool should be parallel-eligible in all mode")
+	}
+	if r.CanRunToolCallInParallel("serial", "unknown_mode") {
+		t.Fatal("unknown mode should disable parallel eligibility")
+	}
+}
+
+func TestToolRegistry_CanRunToolCallInParallel_ContextualToolIsNotSafeByDefault(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockCtxTool{
+		mockRegistryTool: *newMockTool("ctx_tool", "contextual"),
+	})
+
+	if r.CanRunToolCallInParallel("ctx_tool", ParallelToolsModeAll) {
+		t.Fatal("contextual tool should not be parallel-eligible by default")
+	}
+}
+
+func TestToolRegistry_CanRunToolCallInParallel_ConcurrentSafeOverride(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockConcurrentSafeTool{
+		mockRegistryTool: *newMockTool("safe_tool", "safe"),
+		concurrentSafe:   true,
+	})
+
+	if !r.CanRunToolCallInParallel("safe_tool", ParallelToolsModeAll) {
+		t.Fatal("concurrent-safe tool should be parallel-eligible in all mode")
 	}
 }

@@ -20,6 +20,20 @@ This document describes how PicoClaw's subagent orchestration and periodic audit
   - When depth is exceeded, spawn is rejected with `max spawn depth reached`.
 - `max_parallel_workers`
   - Enforced as max concurrent running tasks per manager.
+- `tool_calls_parallel_enabled`
+  - Enables parallel execution for eligible tool calls in one LLM turn.
+- `max_tool_call_concurrency`
+  - Bounded worker count for one tool-call batch (`<=0` means no explicit cap).
+- `parallel_tools_mode`
+  - `read_only_only` (default): only tools marked `parallel_read_only` are parallelized.
+  - `all`: all tool calls are eligible only when the tool instance is concurrent-safe.
+- `tool_parallel_overrides`
+  - Optional per-tool override map.
+  - Values:
+    - `parallel_read_only`: force this tool to be parallel-eligible.
+    - `serial_only`: force this tool to execute serially.
+  - Overrides take precedence over built-in tool policy and mode defaults.
+  - Overrides do not bypass instance safety checks.
 - `max_tasks_per_agent`
   - Enforced as max active (non-terminal) tasks per manager.
 - `default_task_timeout_seconds`
@@ -109,4 +123,3 @@ Optional model checks:
 - Existing tools and loop behavior remain unchanged when `audit.enabled=false`.
 - New fields are additive and optional.
 - `spawn` and `subagent` retain previous parameter contract; `agent_id` is additive for `subagent`.
-

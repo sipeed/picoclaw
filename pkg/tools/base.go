@@ -69,6 +69,40 @@ type AsyncTool interface {
 	SetCallback(cb AsyncCallback)
 }
 
+// ToolParallelPolicy declares whether a tool is safe to run concurrently
+// within a single LLM tool-call batch.
+type ToolParallelPolicy string
+
+const (
+	// ToolParallelSerialOnly is the safe default for tools with side effects.
+	ToolParallelSerialOnly ToolParallelPolicy = "serial_only"
+	// ToolParallelReadOnly marks tools that are safe to run in parallel.
+	ToolParallelReadOnly ToolParallelPolicy = "parallel_read_only"
+)
+
+const (
+	// ParallelToolsModeReadOnlyOnly allows parallel execution only for tools
+	// explicitly marked as ToolParallelReadOnly.
+	ParallelToolsModeReadOnlyOnly = "read_only_only"
+	// ParallelToolsModeAll allows all tools to run in parallel.
+	ParallelToolsModeAll = "all"
+)
+
+// ParallelPolicyProvider is an optional interface that tools can implement
+// to opt into parallel batch execution.
+type ParallelPolicyProvider interface {
+	ParallelPolicy() ToolParallelPolicy
+}
+
+// ConcurrentSafeTool is an optional interface for tool instances that can
+// safely handle concurrent ExecuteWithContext calls on the same singleton object.
+//
+// Tools that rely on mutable per-call instance state (for example through
+// SetContext or SetCallback) should return false.
+type ConcurrentSafeTool interface {
+	SupportsConcurrentExecution() bool
+}
+
 func ToolToSchema(tool Tool) map[string]any {
 	return map[string]any{
 		"type": "function",
