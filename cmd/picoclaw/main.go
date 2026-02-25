@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -107,6 +108,8 @@ func main() {
 		agentCmd()
 	case "gateway":
 		gatewayCmd()
+	case "service":
+		serviceCmd()
 	case "status":
 		statusCmd()
 	case "migrate":
@@ -182,6 +185,7 @@ func printHelp() {
 	fmt.Println("  agent       Interact with the agent directly")
 	fmt.Println("  auth        Manage authentication (login, logout, status)")
 	fmt.Println("  gateway     Start picoclaw gateway")
+	fmt.Println("  service     Manage background gateway service (launchd/systemd)")
 	fmt.Println("  status      Show picoclaw status")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
@@ -196,4 +200,14 @@ func getConfigPath() string {
 
 func loadConfig() (*config.Config, error) {
 	return config.LoadConfig(getConfigPath())
+}
+
+func invokedCLIName() string {
+	if len(os.Args) > 0 {
+		name := filepath.Base(os.Args[0])
+		if strings.TrimSpace(name) != "" {
+			return name
+		}
+	}
+	return "picoclaw"
 }
