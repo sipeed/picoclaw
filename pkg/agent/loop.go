@@ -302,6 +302,9 @@ func registerSharedTools(
 				return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 			})
 			agent.Tools.Register(spawnTool)
+			// Register blocking subagent tool alongside spawn
+			subagentTool := tools.NewSubagentTool(subagentManager)
+			agent.Tools.Register(subagentTool)
 		}
 
 		// Update context builder with the complete tools registry
@@ -1256,6 +1259,18 @@ func buildPlanReminder(planStatus string) (providers.Message, bool) {
 	default:
 		return providers.Message{}, false
 	}
+	return providers.Message{Role: "user", Content: content}, true
+}
+
+// buildOrchReminder returns a reminder to use spawn/subagent during plan execution.
+// Fires on first iteration and every 3rd iteration to reinforce delegation behavior.
+func buildOrchReminder(iteration int) (providers.Message, bool) {
+	if iteration != 1 && iteration%3 != 0 {
+		return providers.Message{}, false
+	}
+	content := "[System] ORCHESTRATION mode active. Delegate plan steps to subagents using spawn (async) or subagent (blocking). " +
+		"Do NOT implement steps inline unless they are trivial single-tool-call tasks. " +
+		"Spawn multiple independent steps in parallel for maximum throughput."
 	return providers.Message{Role: "user", Content: content}, true
 }
 
@@ -2590,6 +2605,18 @@ func (al *AgentLoop) runLLMIteration(
 						"agent_id":    agent.ID,
 						"iteration":   iteration,
 						"plan_status": planSnapshot,
+					})
+			}
+		}
+
+		// Inject orchestration nudge during plan execution to encourage spawn usage.
+		if planSnapshot == "executing" && agent.Subagents != nil && agent.Subagents.Enabled {
+			if reminder, ok := buildOrchReminder(iteration); ok {
+				messages = append(messages, reminder)
+				logger.DebugCF("agent", "Injected orchestration nudge",
+					map[string]interface{}{
+						"agent_id":  agent.ID,
+						"iteration": iteration,
 					})
 			}
 		}
