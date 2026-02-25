@@ -106,8 +106,8 @@ func (p *CodexProvider) Chat(
 		if evt.Type == "response.completed" || evt.Type == "response.failed" || evt.Type == "response.incomplete" {
 			evtResp := evt.Response
 			if evtResp.ID != "" {
-				copy := evtResp
-				resp = &copy
+				evtRespCopy := evtResp
+				resp = &evtRespCopy
 			}
 		}
 	}
