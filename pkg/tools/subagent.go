@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -33,7 +32,6 @@ type SubagentManager struct {
 	workspace      string
 	tools          *ToolRegistry
 	webSearchOpts  WebSearchToolOptions
-	execTool       *ExecTool // Shared exec tool for all presets
 	maxIterations  int
 	maxTokens      int
 	temperature    float64
@@ -53,11 +51,6 @@ func NewSubagentManager(
 	if reporter == nil {
 		reporter = orch.Noop
 	}
-	// Create a shared exec tool for all presets
-	execTool, err := NewExecTool(workspace, true)
-	if err != nil {
-		log.Printf("subagent: failed to create exec tool: %v (exec disabled for subagents)", err)
-	}
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
@@ -66,7 +59,6 @@ func NewSubagentManager(
 		workspace:     workspace,
 		tools:         NewToolRegistry(),
 		webSearchOpts: webSearchOpts,
-		execTool:      execTool,
 		maxIterations: 10,
 		nextID:        1,
 		reporter:      reporter,
@@ -306,10 +298,19 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 		registry.Register(NewAppendFileTool(writeRoot, true))
 	}
 
-	// Register exec and bg_monitor if allowed
+	// Register exec and bg_monitor if allowed.
+	// Each subagent gets its own ExecTool to avoid mutating the shared instance's
+	// allowPatterns (which would leak sandbox restrictions to the conductor).
 	if config.AllowedTools["exec"] {
-		// Use the shared exec tool but set allow patterns
-		execTool := sm.execTool
+		execWorkDir := writeRoot
+		if execWorkDir == "" {
+			execWorkDir = sm.workspace
+		}
+		execTool, err := NewExecTool(execWorkDir, true)
+		if err != nil {
+			// exec disabled for this subagent; skip registration
+			return registry
+		}
 		if config.ExecPolicy != nil {
 			_ = execTool.SetAllowPatterns([]string{config.ExecPolicy.AllowPattern})
 			execTool.SetLocalNetOnly(config.ExecPolicy.LocalNetOnly)
