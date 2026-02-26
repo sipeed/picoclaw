@@ -11,7 +11,7 @@ import (
 // ErrBusClosed is returned when publishing to a closed MessageBus.
 var ErrBusClosed = errors.New("message bus closed")
 
-const defaultBusBufferSize = 16
+const defaultBusBufferSize = 64
 
 type MessageBus struct {
 	inbound       chan InboundMessage
