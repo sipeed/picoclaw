@@ -20,14 +20,26 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// feishuTypingEmoji 是收到消息后自动添加的表情类型，表示正在处理中
+// 飞书 emoji_type 使用 PascalCase 格式，参见：
+// https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-reaction/emojis-introduce
+const feishuTypingEmoji = "Typing"
+
+// feishuPendingReaction 存储待移除的表情回复信息
+type feishuPendingReaction struct {
+	messageID  string
+	reactionID string
+}
+
 type FeishuChannel struct {
 	*BaseChannel
 	config   config.FeishuConfig
 	client   *lark.Client
 	wsClient *larkws.Client
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	mu              sync.Mutex
+	cancel          context.CancelFunc
+	pendingReaction sync.Map // chatID -> feishuPendingReaction
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
@@ -125,6 +137,9 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		"chat_id": msg.ChatID,
 	})
 
+	// 回复完成后移除 Typing 表情
+	c.removePendingReaction(ctx, msg.ChatID)
+
 	return nil
 }
 
@@ -180,6 +195,12 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		"preview":   utils.Truncate(content, 80),
 	})
 
+	// 收到消息后异步添加 Typing 表情，表示正在处理（避免阻塞 WebSocket 事件回调）
+	messageID := stringValue(message.MessageId)
+	if messageID != "" {
+		go c.addTypingReaction(chatID, messageID)
+	}
+
 	c.HandleMessage(senderID, chatID, content, nil, metadata)
 	return nil
 }
@@ -217,6 +238,96 @@ func extractFeishuMessageContent(message *larkim.EventMessage) string {
 	}
 
 	return *message.Content
+}
+
+// addTypingReaction 给指定消息添加 Typing 表情，并缓存 reaction 信息
+func (c *FeishuChannel) addTypingReaction(chatID, messageID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	req := larkim.NewCreateMessageReactionReqBuilder().
+		MessageId(messageID).
+		Body(larkim.NewCreateMessageReactionReqBodyBuilder().
+			ReactionType(larkim.NewEmojiBuilder().
+EmojiType(feishuTypingEmoji).
+				Build()).
+			Build()).
+		Build()
+
+	resp, err := c.client.Im.V1.MessageReaction.Create(ctx, req)
+	if err != nil {
+		logger.WarnCF("feishu", "添加 Typing 表情失败", map[string]any{
+			"error":      err.Error(),
+			"message_id": messageID,
+		})
+		return
+	}
+	if !resp.Success() {
+		logger.WarnCF("feishu", "添加 Typing 表情失败", map[string]any{
+			"code":       resp.Code,
+			"msg":        resp.Msg,
+			"message_id": messageID,
+		})
+		return
+	}
+
+	reactionID := ""
+	if resp.Data != nil && resp.Data.ReactionId != nil {
+		reactionID = *resp.Data.ReactionId
+	}
+	if reactionID == "" {
+		return
+	}
+
+	c.pendingReaction.Store(chatID, feishuPendingReaction{
+		messageID:  messageID,
+		reactionID: reactionID,
+	})
+	logger.DebugCF("feishu", "Typing 表情已添加", map[string]any{
+		"message_id":  messageID,
+		"reaction_id": reactionID,
+	})
+}
+
+// removePendingReaction 移除之前添加的 Typing 表情
+func (c *FeishuChannel) removePendingReaction(ctx context.Context, chatID string) {
+	val, ok := c.pendingReaction.LoadAndDelete(chatID)
+	if !ok {
+		return
+	}
+	pending, ok := val.(feishuPendingReaction)
+	if !ok || pending.reactionID == "" {
+		return
+	}
+
+	req := larkim.NewDeleteMessageReactionReqBuilder().
+		MessageId(pending.messageID).
+		ReactionId(pending.reactionID).
+		Build()
+
+	resp, err := c.client.Im.V1.MessageReaction.Delete(ctx, req)
+	if err != nil {
+		logger.WarnCF("feishu", "移除 Typing 表情失败", map[string]any{
+			"error":       err.Error(),
+			"message_id":  pending.messageID,
+			"reaction_id": pending.reactionID,
+		})
+		return
+	}
+	if !resp.Success() {
+		logger.WarnCF("feishu", "移除 Typing 表情失败", map[string]any{
+			"code":        resp.Code,
+			"msg":         resp.Msg,
+			"message_id":  pending.messageID,
+			"reaction_id": pending.reactionID,
+		})
+		return
+	}
+
+	logger.DebugCF("feishu", "Typing 表情已移除", map[string]any{
+		"message_id":  pending.messageID,
+		"reaction_id": pending.reactionID,
+	})
 }
 
 func stringValue(v *string) string {
