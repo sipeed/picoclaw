@@ -33,13 +33,22 @@ type AntigravityProvider struct {
 }
 
 // NewAntigravityProvider creates a new Antigravity provider using stored auth credentials.
-func NewAntigravityProvider() *AntigravityProvider {
+// Returns an error if credentials are not available or invalid.
+func NewAntigravityProvider() (*AntigravityProvider, error) {
+	// Validate credentials exist before creating the provider
+	cred, err := getCredential("google-antigravity")
+	if err != nil {
+		return nil, fmt.Errorf("loading auth credentials: %w", err)
+	}
+	if cred == nil {
+		return nil, fmt.Errorf("no credentials for google-antigravity. Run: picoclaw auth login --provider google-antigravity")
+	}
 	return &AntigravityProvider{
 		tokenSource: createAntigravityTokenSource(),
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
-	}
+	}, nil
 }
 
 // Chat implements LLMProvider.Chat using the Cloud Code Assist v1internal API.

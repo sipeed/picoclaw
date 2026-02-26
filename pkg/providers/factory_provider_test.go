@@ -160,15 +160,14 @@ func TestCreateProviderFromConfig_Antigravity(t *testing.T) {
 		Model:     "antigravity/gemini-2.0-flash",
 	}
 
-	provider, modelID, err := CreateProviderFromConfig(cfg)
-	if err != nil {
-		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	// Antigravity requires OAuth credentials, which should fail in test environment
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for antigravity without credentials")
 	}
-	if provider == nil {
-		t.Fatal("CreateProviderFromConfig() returned nil provider")
-	}
-	if modelID != "gemini-2.0-flash" {
-		t.Errorf("modelID = %q, want %q", modelID, "gemini-2.0-flash")
+	// Verify error message mentions credentials
+	if !strings.Contains(err.Error(), "credentials") && !strings.Contains(err.Error(), "auth") {
+		t.Errorf("Expected credential-related error, got: %v", err)
 	}
 }
 
