@@ -22,6 +22,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// feishuTypingEmoji is the emoji_type used as a typing/thinking indicator.
+// Uses PascalCase format per Feishu API spec.
+const feishuTypingEmoji = "Typing"
+
 type FeishuChannel struct {
 	*channels.BaseChannel
 	config   config.FeishuConfig
@@ -200,8 +204,101 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		return nil
 	}
 
+	// Start typing indicator asynchronously to avoid blocking the WebSocket callback.
+	// The stop function is registered with PlaceholderRecorder so Manager.preSend
+	// can automatically stop it when the outbound reply is sent.
+	if messageID != "" {
+		go func() {
+			stop, err := c.StartTyping(context.Background(), messageID)
+			if err != nil {
+				logger.DebugCF("feishu", "Failed to start typing indicator", map[string]any{
+					"error":   err.Error(),
+					"chat_id": chatID,
+				})
+				return
+			}
+			if rec := c.GetPlaceholderRecorder(); rec != nil {
+				rec.RecordTypingStop("feishu", chatID, stop)
+			}
+		}()
+	}
+
 	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata, senderInfo)
 	return nil
+}
+
+// StartTyping adds a "Typing" emoji reaction to the given message
+// and returns a stop function that removes it.
+// Implements channels.TypingCapable.
+func (c *FeishuChannel) StartTyping(ctx context.Context, messageID string) (func(), error) {
+	req := larkim.NewCreateMessageReactionReqBuilder().
+		MessageId(messageID).
+		Body(larkim.NewCreateMessageReactionReqBodyBuilder().
+			ReactionType(larkim.NewEmojiBuilder().
+				EmojiType(feishuTypingEmoji).
+				Build()).
+			Build()).
+		Build()
+
+	resp, err := c.client.Im.V1.MessageReaction.Create(ctx, req)
+	if err != nil {
+		return func() {}, fmt.Errorf("feishu add reaction: %w", err)
+	}
+	if !resp.Success() {
+		return func() {}, fmt.Errorf("feishu add reaction: code=%d msg=%s", resp.Code, resp.Msg)
+	}
+
+	reactionID := ""
+	if resp.Data != nil && resp.Data.ReactionId != nil {
+		reactionID = *resp.Data.ReactionId
+	}
+	if reactionID == "" {
+		return func() {}, nil
+	}
+
+	logger.DebugCF("feishu", "Typing reaction added", map[string]any{
+		"message_id":  messageID,
+		"reaction_id": reactionID,
+	})
+
+	// The stop function is idempotent: safe to call multiple times.
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			delReq := larkim.NewDeleteMessageReactionReqBuilder().
+				MessageId(messageID).
+				ReactionId(reactionID).
+				Build()
+
+			delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			delResp, err := c.client.Im.V1.MessageReaction.Delete(delCtx, delReq)
+			if err != nil {
+				logger.DebugCF("feishu", "Failed to remove typing reaction", map[string]any{
+					"error":       err.Error(),
+					"message_id":  messageID,
+					"reaction_id": reactionID,
+				})
+				return
+			}
+			if !delResp.Success() {
+				logger.DebugCF("feishu", "Failed to remove typing reaction", map[string]any{
+					"code":        delResp.Code,
+					"msg":         delResp.Msg,
+					"message_id":  messageID,
+					"reaction_id": reactionID,
+				})
+				return
+			}
+			logger.DebugCF("feishu", "Typing reaction removed", map[string]any{
+				"message_id":  messageID,
+				"reaction_id": reactionID,
+			})
+		})
+	}
+
+	return stop, nil
 }
 
 func extractFeishuSenderID(sender *larkim.EventSender) string {
