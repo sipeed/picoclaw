@@ -326,11 +326,17 @@ func RefreshAccessToken(cred *AuthCredential, cfg OAuthProviderConfig) (*AuthCre
 		return nil, fmt.Errorf("no refresh token available")
 	}
 
+	// Use the same scopes as the original OAuth flow to prevent scope reduction
+	scope := cfg.Scopes
+	if scope == "" {
+		scope = "openid profile email"
+	}
+
 	data := url.Values{
 		"client_id":     {cfg.ClientID},
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {cred.RefreshToken},
-		"scope":         {"openid profile email"},
+		"scope":         {scope},
 	}
 	if cfg.ClientSecret != "" {
 		data.Set("client_secret", cfg.ClientSecret)
