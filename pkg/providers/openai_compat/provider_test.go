@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -327,6 +328,235 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ParsesMiniMaxToolCallsAndThinking(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "<think>\nThinking about the news...\n</think>\n\nI will search for the news.\n\n[TOOL_CALL]<invoke name=\"web_search\"><parameter name=\"count\">5</parameter><parameter name=\"query\">AI news</parameter></invoke></minimax:tool_call>",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "minimax-m2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if !strings.Contains(out.ReasoningContent, "Thinking about the news") {
+		t.Errorf("ReasoningContent = %q, want it to contain reasoning", out.ReasoningContent)
+	}
+	if out.Content != "I will search for the news." {
+		t.Errorf("Content = %q, want %q", out.Content, "I will search for the news.")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "web_search" {
+		t.Errorf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "web_search")
+	}
+	if out.ToolCalls[0].Arguments["query"] != "AI news" {
+		t.Errorf("ToolCalls[0].Arguments[query] = %v, want AI news", out.ToolCalls[0].Arguments["query"])
+	}
+	if out.ToolCalls[0].Arguments["count"] != "5" {
+		t.Errorf("ToolCalls[0].Arguments[count] = %v, want 5", out.ToolCalls[0].Arguments["count"])
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Errorf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+
+	// Verify tags are removed from content/reasoning
+	if strings.Contains(out.Content, "[TOOL_CALL]") {
+		t.Errorf("Content contains [TOOL_CALL]")
+	}
+	if strings.Contains(out.ReasoningContent, "<think>") {
+		t.Errorf("ReasoningContent contains <think>")
+	}
+}
+
+func TestProviderChat_ParsesMiniMaxMultipleToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "[TOOL_CALL]<invoke name=\"web_search\"><parameter name=\"query\">AI news</parameter></invoke></minimax:tool_call>\n\n[TOOL_CALL]<invoke name=\"translate\"><parameter name=\"text\">hello</parameter><parameter name=\"target_lang\">es</parameter></invoke></minimax:tool_call>",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "minimax-m2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 2 {
+		t.Fatalf("len(ToolCalls) = %d, want 2", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "web_search" || out.ToolCalls[1].Name != "translate" {
+		t.Errorf("ToolCall names mismatch")
+	}
+}
+
+func TestProviderChat_ParsesMiniMaxToolCallsWithSpecialCharsAndEmptyValues(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "[TOOL_CALL]<invoke name=\"web_search\"><parameter name=\"query\">AI \"news\" &amp; &lt;trends&gt;</parameter><parameter name=\"optional\"></parameter></invoke></minimax:tool_call>",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "minimax-m2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	query := out.ToolCalls[0].Arguments["query"].(string)
+	if query != `AI "news" & <trends>` {
+		t.Errorf("query = %q, want decoded XML special chars", query)
+	}
+
+	optionalVal, ok := out.ToolCalls[0].Arguments["optional"]
+	if !ok {
+		t.Fatalf(`optional argument missing; want present with value ""`)
+	} else if optionalStr, ok := optionalVal.(string); !ok || optionalStr != "" {
+		t.Errorf("optional = %#v, want empty string", optionalVal)
+	}
+}
+
+func TestProviderChat_MergesJSONAndMiniMaxToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "[TOOL_CALL]<invoke name=\"web_search\"><parameter name=\"query\">AI news</parameter></invoke></minimax:tool_call>",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call_1",
+								"type": "function",
+								"function": map[string]any{
+									"name":      "get_weather",
+									"arguments": `{"location":"San Francisco"}`,
+								},
+							},
+						},
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "minimax-m2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 2 {
+		t.Fatalf("len(ToolCalls) = %d, want 2 (1 JSON tool call + 1 MiniMax tool call)", len(out.ToolCalls))
+	}
+
+	// Verify both names exist
+	names := map[string]bool{out.ToolCalls[0].Name: true, out.ToolCalls[1].Name: true}
+	if !names["web_search"] || !names["get_weather"] {
+		t.Errorf("merged tool calls mismatch: %v", names)
+	}
+
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+}
+
+func TestProviderChat_ParsesMiniMaxToolCallsWithAlternativeClosingTag(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "[TOOL_CALL]<invoke name=\"web_search\"><parameter name=\"query\">AI news</parameter></invoke>[/minimax:tool_call]",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "minimax-m2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+}
+
+func TestProviderChat_ParsesMiniMaxToolCallsWithMalformedXML(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "[TOOL_CALL]<invoke name=\"web_search\"><parameter name=\"query\">AI news</minimax:tool_call>",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "minimax-m2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 0 {
+		t.Errorf("len(ToolCalls) = %d, want 0 for malformed XML", len(out.ToolCalls))
+	}
+}
+
+
 func TestProvider_RequestTimeoutDefault(t *testing.T) {
 	p := NewProviderWithMaxTokensFieldAndTimeout("key", "https://example.com/v1", "", "", 0)
 	if p.httpClient.Timeout != defaultRequestTimeout {
@@ -359,5 +589,52 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 	p := NewProvider("key", "https://example.com/v1", "", WithRequestTimeout(-1*time.Second))
 	if p.httpClient.Timeout != defaultRequestTimeout {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
+	}
+}
+
+func TestProviderChat_ParsesMiniMaxToolCallsGeneralization(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "[TOOL_CALL]<invoke name=\"shell_execute\"><parameter name=\"command\">ls -la</parameter><parameter name=\"timeout\">30</parameter></invoke></minimax:tool_call>\n" +
+							"[TOOL_CALL]<invoke name=\"read_file\"><parameter name=\"path\">/etc/passwd</parameter></invoke>[/minimax:tool_call]",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "minimax-m2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 2 {
+		t.Fatalf("len(ToolCalls) = %d, want 2", len(out.ToolCalls))
+	}
+
+	// Verify tool 1: shell_execute
+	tc1 := out.ToolCalls[0]
+	if tc1.Name != "shell_execute" {
+		t.Errorf("tc1.Name = %q, want shell_execute", tc1.Name)
+	}
+	if tc1.Arguments["command"] != "ls -la" || tc1.Arguments["timeout"] != "30" {
+		t.Errorf("tc1 arguments mismatch: %v", tc1.Arguments)
+	}
+
+	// Verify tool 2: read_file
+	tc2 := out.ToolCalls[1]
+	if tc2.Name != "read_file" {
+		t.Errorf("tc2.Name = %q, want read_file", tc2.Name)
+	}
+	if tc2.Arguments["path"] != "/etc/passwd" {
+		t.Errorf("tc2 arguments mismatch: %v", tc2.Arguments)
 	}
 }

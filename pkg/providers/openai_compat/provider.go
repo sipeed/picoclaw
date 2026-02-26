@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -13,6 +14,22 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
+)
+
+const (
+	thinkOpenTag  = "<think>"
+	thinkCloseTag = "</think>"
+	miniMaxOpen   = "[TOOL_CALL]"
+	miniMaxCloseA = "</minimax:tool_call>"
+	miniMaxCloseB = "[/minimax:tool_call]"
+	invokeOpen    = "<invoke name=\""
+	invokeClose   = "</invoke>"
+	paramOpen     = "<parameter name=\""
+	paramClose    = "</parameter>"
+
+	maxReasoningBlocks  = 10
+	maxMiniMaxToolCalls = 20
+	maxParameters       = 50
 )
 
 type (
@@ -231,7 +248,154 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	}
 
 	choice := apiResponse.Choices[0]
+	content := choice.Message.Content
+	reasoningContent := choice.Message.ReasoningContent
 	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
+
+	// --- 1. Extract reasoning blocks from content if present ---
+	// This handles models that put reasoning in the main content block.
+	// We handle multiple blocks and join them, with a safety limit.
+	for i := 0; i < maxReasoningBlocks; i++ {
+		start := strings.Index(content, thinkOpenTag)
+		if start == -1 {
+			break
+		}
+		// Search for the closing tag starting after the opening tag
+		endRel := strings.Index(content[start:], thinkCloseTag)
+		if endRel == -1 {
+			// Malformed or cut off; leave it to avoid data loss
+			break
+		}
+		end := start + endRel
+		extracted := strings.TrimSpace(content[start+len(thinkOpenTag) : end])
+		if reasoningContent == "" {
+			reasoningContent = extracted
+		} else if extracted != "" {
+			reasoningContent += "\n\n" + extracted
+		}
+		content = strings.TrimSpace(content[:start] + content[end+len(thinkCloseTag):])
+	}
+
+	// --- 2. Extract MiniMax-style [TOOL_CALL] XML if present ---
+	for miniMaxIdx := 0; miniMaxIdx < maxMiniMaxToolCalls; miniMaxIdx++ {
+		tagStart := strings.Index(content, miniMaxOpen)
+		if tagStart == -1 {
+			break
+		}
+
+		// Search for the earliest valid closing tag after the opening tag
+		angleIdx := strings.Index(content[tagStart:], miniMaxCloseA)
+		bracketIdx := strings.Index(content[tagStart:], miniMaxCloseB)
+
+		tagEndIdx := -1
+		tagLen := 0
+
+		if angleIdx != -1 && (bracketIdx == -1 || angleIdx < bracketIdx) {
+			tagEndIdx = tagStart + angleIdx
+			tagLen = len(miniMaxCloseA)
+		} else if bracketIdx != -1 {
+			tagEndIdx = tagStart + bracketIdx
+			tagLen = len(miniMaxCloseB)
+		}
+
+		// If no closing tag is found, the string is malformed or cut off. Break to avoid infinite loop.
+		if tagEndIdx == -1 {
+			break
+		}
+
+		// Calculate indices for XML content extraction
+		xmlBodyStart := tagStart + len(miniMaxOpen)
+		if xmlBodyStart > tagEndIdx {
+			break
+		}
+		xmlPart := content[xmlBodyStart:tagEndIdx]
+
+		// Very basic XML-ish parsing for MiniMax format
+		// Extract name: <invoke name="([^"]+)">
+		nameStart := strings.Index(xmlPart, invokeOpen)
+		if nameStart != -1 {
+			nameStart += len(invokeOpen)
+			nameEnd := strings.Index(xmlPart[nameStart:], "\"")
+			invokeEnd := strings.Index(xmlPart, invokeClose)
+
+			if nameEnd != -1 && invokeEnd != -1 {
+				toolName := xmlPart[nameStart : nameStart+nameEnd]
+				args := make(map[string]any)
+
+				// Extract parameters: <parameter name="([^"]+)">([^<]*)</parameter>
+				paramsPart := xmlPart[nameStart+nameEnd:]
+				malformedParams := false
+				for pCount := 0; pCount < maxParameters; pCount++ {
+					pStart := strings.Index(paramsPart, paramOpen)
+					if pStart == -1 {
+						break
+					}
+					pStart += len(paramOpen)
+					
+					// Bounds check for parameter name
+					if pStart >= len(paramsPart) {
+						malformedParams = true
+						break
+					}
+					pNameEnd := strings.Index(paramsPart[pStart:], "\"")
+					if pNameEnd == -1 {
+						malformedParams = true
+						break
+					}
+					pName := paramsPart[pStart : pStart+pNameEnd]
+					
+					// Search for value start ">"
+					valMarkerIdx := strings.Index(paramsPart[pStart+pNameEnd:], ">")
+					if valMarkerIdx == -1 {
+						malformedParams = true
+						break
+					}
+					valueStart := pStart + pNameEnd + valMarkerIdx + 1
+					if valueStart > len(paramsPart) {
+						malformedParams = true
+						break
+					}
+
+					// Search for closing </parameter>
+					valueEndMarkerIdx := strings.Index(paramsPart[valueStart:], paramClose)
+					if valueEndMarkerIdx == -1 {
+						malformedParams = true
+						break
+					}
+					valueEnd := valueStart + valueEndMarkerIdx
+					
+					// Extract and decode entities
+					value := html.UnescapeString(paramsPart[valueStart:valueEnd])
+					args[pName] = value
+
+					// Advance to the next parameter
+					nextParamStart := valueEnd + len(paramClose)
+					if nextParamStart > len(paramsPart) {
+						paramsPart = ""
+						break
+					}
+					paramsPart = paramsPart[nextParamStart:]
+				}
+
+				if !malformedParams {
+					toolCalls = append(toolCalls, ToolCall{
+						ID:        fmt.Sprintf("minimax-%d-%d", time.Now().UnixNano(), miniMaxIdx),
+						Name:      toolName,
+						Arguments: args,
+					})
+				}
+			}
+		}
+
+		content = strings.TrimSpace(content[:tagStart] + content[tagEndIdx+tagLen:])
+
+		// Override FinishReason so the loop agent knows to execute it
+		if choice.FinishReason != "tool_calls" {
+			choice.FinishReason = "tool_calls"
+		}
+	}
+
+	// --- 3. Process standard OpenAI JSON tool calls ---
 	for _, tc := range choice.Message.ToolCalls {
 		arguments := make(map[string]any)
 		name := ""
@@ -272,8 +436,8 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	}
 
 	return &LLMResponse{
-		Content:          choice.Message.Content,
-		ReasoningContent: choice.Message.ReasoningContent,
+		Content:          content,
+		ReasoningContent: reasoningContent,
 		ToolCalls:        toolCalls,
 		FinishReason:     choice.FinishReason,
 		Usage:            apiResponse.Usage,
