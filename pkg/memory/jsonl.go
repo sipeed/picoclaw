@@ -328,15 +328,16 @@ func (s *JSONLStore) TruncateHistory(
 		return err
 	}
 
-	// If the meta count might be stale (e.g. after a crash during
-	// addMsg), reconcile with the actual line count on disk.
-	if meta.Count == 0 {
-		n, countErr := countLines(s.jsonlPath(sessionKey))
-		if countErr != nil {
-			return countErr
-		}
-		meta.Count = n
+	// Always reconcile meta.Count with the actual line count on disk.
+	// A crash between the JSONL append and the meta update in addMsg
+	// leaves meta.Count stale (e.g. file has 101 lines but meta says
+	// 100). Counting lines is cheap — no unmarshal, just a scan — and
+	// TruncateHistory is not a hot path, so always re-count.
+	n, countErr := countLines(s.jsonlPath(sessionKey))
+	if countErr != nil {
+		return countErr
 	}
+	meta.Count = n
 
 	if keepLast <= 0 {
 		meta.Skip = meta.Count
