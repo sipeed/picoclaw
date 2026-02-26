@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,20 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
+)
+
+const (
+	// numLockShards is the fixed number of mutexes used to serialize
+	// per-session access. Using a sharded array instead of a map keeps
+	// memory bounded regardless of how many sessions are created over
+	// the lifetime of the process — important for a long-running daemon.
+	numLockShards = 64
+
+	// maxLineSize is the maximum size of a single JSON line in a .jsonl
+	// file. Tool results (read_file, web search, etc.) can be large, so
+	// we set a generous limit. The scanner starts at 64 KB and grows
+	// only as needed up to this cap.
+	maxLineSize = 10 * 1024 * 1024 // 10 MB
 )
 
 // sessionMeta holds per-session metadata stored in a .meta.json file.
@@ -37,7 +52,7 @@ type sessionMeta struct {
 // append-only, which is both fast and crash-safe.
 type JSONLStore struct {
 	dir   string
-	locks sync.Map // map[string]*sync.Mutex, one per session
+	locks [numLockShards]sync.Mutex
 }
 
 // NewJSONLStore creates a new JSONL-backed store rooted at dir.
@@ -49,10 +64,13 @@ func NewJSONLStore(dir string) (*JSONLStore, error) {
 	return &JSONLStore{dir: dir}, nil
 }
 
-// sessionLock returns (or creates) a per-session mutex.
+// sessionLock returns a mutex for the given session key.
+// Keys are mapped to a fixed pool of shards via FNV hash, so
+// memory usage is O(1) regardless of total session count.
 func (s *JSONLStore) sessionLock(key string) *sync.Mutex {
-	v, _ := s.locks.LoadOrStore(key, &sync.Mutex{})
-	return v.(*sync.Mutex)
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	return &s.locks[h.Sum32()%numLockShards]
 }
 
 func (s *JSONLStore) jsonlPath(key string) string {
@@ -126,8 +144,8 @@ func readMessages(path string, skip int) ([]providers.Message, error) {
 
 	var msgs []providers.Message
 	scanner := bufio.NewScanner(f)
-	// Allow up to 1 MB per line for messages with large content.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// Allow large lines for tool results (read_file, web search, etc.).
+	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
 
 	lineNum := 0
 	for scanner.Scan() {
@@ -172,7 +190,7 @@ func countLines(path string) (int, error) {
 
 	n := 0
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
 	for scanner.Scan() {
 		if len(scanner.Bytes()) > 0 {
 			n++
