@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"strconv"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -280,13 +281,17 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	if t.restrictToWorkspace {
-		for _, part := range strings.Split(cmd, " ") {
-			if part == "" {
-				continue
+		splitPattern := regexp.MustCompile(`("[^"]*"|'[^']*'|[\S]+)+`)
+		parts := splitPattern.FindAllString(cmd, -1)
+
+		for _, part := range parts {
+			unquoted, err := strconv.Unquote(part)
+			if err != nil {
+				unquoted = part
 			}
 
-			_, err := url.ParseRequestURI(strings.ReplaceAll(part, "\"", ""))
-			if err == nil {
+			u, err := url.ParseRequestURI(unquoted)
+			if err == nil && u.Scheme != "" && u.Host != "" {
 				continue
 			}
 			
