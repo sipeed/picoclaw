@@ -265,7 +265,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 			localFiles = append(localFiles, voicePath)
 			mediaPaths = append(mediaPaths, voicePath)
 
-			transcribedText := ""
+			var transcribedText string
 			if c.transcriber != nil && c.transcriber.IsAvailable() {
 				transcriberCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 				defer cancel()

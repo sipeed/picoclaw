@@ -1,24 +1,17 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// License: MIT
-
-package main
+package onboard
 
 import (
-	"embed"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-//go:generate cp -r ../../workspace .
-//go:embed workspace
-var embeddedFiles embed.FS
-
 func onboard() {
-	configPath := getConfigPath()
+	configPath := internal.GetConfigPath()
 
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("Config already exists at %s\n", configPath)
@@ -40,7 +33,7 @@ func onboard() {
 	workspace := cfg.WorkspacePath()
 	createWorkspaceTemplates(workspace)
 
-	fmt.Printf("%s picoclaw is ready!\n", logo)
+	fmt.Printf("%s picoclaw is ready!\n", internal.Logo)
 	fmt.Println("\nNext steps:")
 	fmt.Println("  1. Add your API key to", configPath)
 	fmt.Println("")
@@ -51,6 +44,13 @@ func onboard() {
 	fmt.Println("     See README.md for 17+ supported providers.")
 	fmt.Println("")
 	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
+}
+
+func createWorkspaceTemplates(workspace string) {
+	err := copyEmbeddedToTarget(workspace)
+	if err != nil {
+		fmt.Printf("Error copying workspace templates: %v\n", err)
+	}
 }
 
 func copyEmbeddedToTarget(targetDir string) error {
@@ -98,11 +98,4 @@ func copyEmbeddedToTarget(targetDir string) error {
 	})
 
 	return err
-}
-
-func createWorkspaceTemplates(workspace string) {
-	err := copyEmbeddedToTarget(workspace)
-	if err != nil {
-		fmt.Printf("Error copying workspace templates: %v\n", err)
-	}
 }

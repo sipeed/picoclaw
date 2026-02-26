@@ -77,7 +77,7 @@ func (p *Provider) Chat(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": messages,
+		"messages": stripSystemParts(messages),
 	}
 
 	if len(tools) > 0 {
@@ -108,6 +108,18 @@ func (p *Provider) Chat(
 			requestBody["temperature"] = 1.0
 		} else {
 			requestBody["temperature"] = temperature
+		}
+	}
+
+	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
+	// with the same key and reuse prefix KV cache across calls.
+	// The key is typically the agent ID — stable per agent, shared across requests.
+	// See: https://platform.openai.com/docs/guides/prompt-caching
+	// Prompt caching is only supported by OpenAI-native endpoints.
+	// Gemini and other providers reject unknown fields, so skip for non-OpenAI APIs.
+	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
+		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
+			requestBody["prompt_cache_key"] = cacheKey
 		}
 	}
 
@@ -228,6 +240,32 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		FinishReason:     choice.FinishReason,
 		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+// openaiMessage is the wire-format message for OpenAI-compatible APIs.
+// It mirrors protocoltypes.Message but omits SystemParts, which is an
+// internal field that would be unknown to third-party endpoints.
+type openaiMessage struct {
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// stripSystemParts converts []Message to []openaiMessage, dropping the
+// SystemParts field so it doesn't leak into the JSON payload sent to
+// OpenAI-compatible APIs (some strict endpoints reject unknown fields).
+func stripSystemParts(messages []Message) []openaiMessage {
+	out := make([]openaiMessage, len(messages))
+	for i, m := range messages {
+		out[i] = openaiMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCalls:  m.ToolCalls,
+			ToolCallID: m.ToolCallID,
+		}
+	}
+	return out
 }
 
 func normalizeModel(model, apiBase string) string {

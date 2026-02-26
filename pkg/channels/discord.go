@@ -233,7 +233,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 			if localPath != "" {
 				localFiles = append(localFiles, localPath)
 
-				transcribedText := ""
+				var transcribedText string
 				if c.transcriber != nil && c.transcriber.IsAvailable() {
 					ctx, cancel := context.WithTimeout(c.getContext(), transcriptionTimeout)
 					result, err := c.transcriber.Transcribe(ctx, localPath)
