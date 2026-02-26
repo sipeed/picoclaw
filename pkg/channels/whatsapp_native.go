@@ -146,7 +146,7 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 	}
 
 	c.runCtx, c.runCancel = context.WithCancel(ctx)
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoCF("channels", "WhatsApp native channel connected", nil)
 	return nil
 }
@@ -169,7 +169,7 @@ func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 	if container != nil {
 		_ = container.Close()
 	}
-	c.setRunning(false)
+	c.SetRunning(false)
 	return nil
 }
 
@@ -267,8 +267,21 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 		metadata["peer_id"] = senderID
 	}
 
+	peerKind := "direct"
+	if evt.Info.Chat.Server == types.GroupServer {
+		peerKind = "group"
+	}
+	peer := bus.Peer{Kind: peerKind, ID: chatID}
+	messageID := evt.Info.ID
+	sender := bus.SenderInfo{
+		Platform:    "whatsapp",
+		PlatformID:  senderID,
+		CanonicalID: "whatsapp:" + senderID,
+		DisplayName: evt.Info.PushName,
+	}
+
 	logger.DebugCF("channels", "WhatsApp message received", map[string]any{"sender_id": senderID, "content_preview": utils.Truncate(content, 50)})
-	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
+	c.HandleMessage(c.runCtx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, sender)
 }
 
 func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
