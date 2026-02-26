@@ -21,7 +21,7 @@ func DefaultConfig() *Config {
 		},
 		Bindings: []AgentBinding{},
 		Session: SessionConfig{
-			DMScope: "main",
+			DMScope: "per-channel-peer",
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
@@ -255,6 +255,14 @@ func DefaultConfig() *Config {
 				APIKey:    "ollama",
 			},
 
+			// Mistral AI - https://console.mistral.ai/api-keys
+			{
+				ModelName: "mistral-small",
+				Model:     "mistral/mistral-small-latest",
+				APIBase:   "https://api.mistral.ai/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
@@ -264,11 +272,12 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
+			Host: "127.0.0.1",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{
+				Proxy: "",
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",

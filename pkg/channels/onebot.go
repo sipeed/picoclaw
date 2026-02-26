@@ -174,7 +174,10 @@ func (c *OneBotChannel) connect() error {
 		header["Authorization"] = []string{"Bearer " + c.config.AccessToken}
 	}
 
-	conn, _, err := dialer.Dial(c.config.WSUrl, header)
+	conn, resp, err := dialer.Dial(c.config.WSUrl, header)
+	if resp != nil {
+		resp.Body.Close()
+	}
 	if err != nil {
 		return err
 	}
@@ -310,7 +313,7 @@ func (c *OneBotChannel) sendAPIRequest(action string, params any, timeout time.D
 	case <-time.After(timeout):
 		return nil, fmt.Errorf("API request %s timed out after %v", action, timeout)
 	case <-c.ctx.Done():
-		return nil, fmt.Errorf("context cancelled")
+		return nil, fmt.Errorf("context canceled")
 	}
 }
 
@@ -695,7 +698,6 @@ func (c *OneBotChannel) parseMessageSegments(raw json.RawMessage, selfID int64) 
 			textParts = append(textParts, "[forward message]")
 
 		default:
-
 		}
 	}
 

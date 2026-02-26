@@ -97,15 +97,20 @@ func registerSharedTools(
 			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
 			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+			TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
+			TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
+			TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
+			TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 			DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 			DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
 			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+			Proxy:                cfg.Tools.Web.Proxy,
 		}); searchTool != nil {
 			agent.Tools.Register(searchTool)
 		}
-		agent.Tools.Register(tools.NewWebFetchTool(50000))
+		agent.Tools.Register(tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy))
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		agent.Tools.Register(tools.NewI2CTool())
@@ -144,9 +149,6 @@ func registerSharedTools(
 			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 		})
 		agent.Tools.Register(spawnTool)
-
-		// Update context builder with the complete tools registry
-		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
 	}
 }
 
@@ -519,8 +521,9 @@ func (al *AgentLoop) runLLMIteration(
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
-							"max_tokens":  agent.MaxTokens,
-							"temperature": agent.Temperature,
+							"max_tokens":       agent.MaxTokens,
+							"temperature":      agent.Temperature,
+							"prompt_cache_key": agent.ID,
 						})
 					},
 				)
@@ -535,8 +538,9 @@ func (al *AgentLoop) runLLMIteration(
 				return fbResult.Response, nil
 			}
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
-				"max_tokens":  agent.MaxTokens,
-				"temperature": agent.Temperature,
+				"max_tokens":       agent.MaxTokens,
+				"temperature":      agent.Temperature,
+				"prompt_cache_key": agent.ID,
 			})
 		}
 
@@ -622,8 +626,9 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
+			Role:             "assistant",
+			Content:          response.Content,
+			ReasoningContent: response.ReasoningContent,
 		}
 		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
@@ -754,13 +759,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
-				if !constants.IsInternalChannel(channel) {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: channel,
-						ChatID:  chatID,
-						Content: "Memory threshold reached. Optimizing conversation history...",
-					})
-				}
+				logger.Debug("Memory threshold reached. Optimizing conversation history...")
 				al.summarizeSession(agent, sessionKey)
 			}()
 		}
@@ -794,7 +793,7 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	droppedCount := mid
 	keptConversation := conversation[mid:]
 
-	newHistory := make([]providers.Message, 0)
+	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
 
 	// Append compression note to the original system prompt instead of adding a new system message
 	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
@@ -956,8 +955,9 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 			nil,
 			agent.Model,
 			map[string]any{
-				"max_tokens":  1024,
-				"temperature": 0.3,
+				"max_tokens":       1024,
+				"temperature":      0.3,
+				"prompt_cache_key": agent.ID,
 			},
 		)
 		if err == nil {
@@ -1006,8 +1006,9 @@ func (al *AgentLoop) summarizeBatch(
 		nil,
 		agent.Model,
 		map[string]any{
-			"max_tokens":  1024,
-			"temperature": 0.3,
+			"max_tokens":       1024,
+			"temperature":      0.3,
+			"prompt_cache_key": agent.ID,
 		},
 	)
 	if err != nil {

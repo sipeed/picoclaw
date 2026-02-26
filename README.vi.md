@@ -50,7 +50,7 @@
 
 ## 📢 Tin tức
 
-2026-02-16 🎉 PicoClaw đạt 12K stars chỉ trong một tuần! Cảm ơn tất cả mọi người! PicoClaw đang phát triển nhanh hơn chúng tôi tưởng tượng. Do số lượng PR tăng cao, chúng tôi cấp thiết cần maintainer từ cộng đồng. Các vai trò tình nguyện viên và roadmap đã được công bố [tại đây](docs/picoclaw_community_roadmap_260216.md) — rất mong đón nhận sự tham gia của bạn!
+2026-02-16 🎉 PicoClaw đạt 12K stars chỉ trong một tuần! Cảm ơn tất cả mọi người! PicoClaw đang phát triển nhanh hơn chúng tôi tưởng tượng. Do số lượng PR tăng cao, chúng tôi cấp thiết cần maintainer từ cộng đồng. Các vai trò tình nguyện viên và roadmap đã được công bố [tại đây](docs/ROADMAP.md) — rất mong đón nhận sự tham gia của bạn!
 
 2026-02-13 🎉 PicoClaw đạt 5000 stars trong 4 ngày! Cảm ơn cộng đồng! Chúng tôi đang hoàn thiện **Lộ trình dự án (Roadmap)** và thiết lập **Nhóm phát triển** để đẩy nhanh tốc độ phát triển PicoClaw.  
 🚀 **Kêu gọi hành động:** Vui lòng gửi yêu cầu tính năng tại GitHub Discussions. Chúng tôi sẽ xem xét và ưu tiên trong cuộc họp hàng tuần.
@@ -152,6 +152,10 @@ vim config/config.json      # Thiết lập DISCORD_BOT_TOKEN, API keys, v.v.
 # 3. Build & Khởi động
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Người dùng Docker**: Theo mặc định, Gateway lắng nghe trên `127.0.0.1`, không thể truy cập từ máy chủ. Nếu bạn cần truy cập các endpoint kiểm tra sức khỏe hoặc mở cổng, hãy đặt `PICOCLAW_GATEWAY_HOST=0.0.0.0` trong môi trường của bạn hoặc cập nhật `config.json`.
+
+
 # 4. Xem logs
 docker compose logs -f picoclaw-gateway
 
@@ -198,12 +202,13 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
   "agents": {
     "defaults": {
-      "model": "gpt4"
+      "model_name": "gpt4"
     }
   },
   "channels": {
@@ -215,6 +220,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **Mới**: Định dạng cấu hình `model_list` cho phép thêm nhà cung cấp mà không cần thay đổi mã nguồn. Xem [Cấu hình Mô hình](#cấu-hình-mô-hình-model_list) để biết chi tiết.
+> `request_timeout` là tùy chọn và dùng đơn vị giây. Nếu bỏ qua hoặc đặt `<= 0`, PicoClaw sẽ dùng timeout mặc định (120s).
 
 **3. Lấy API Key**
 
@@ -939,6 +947,17 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 }
 ```
 > Chạy `picoclaw auth login --provider anthropic` để thiết lập thông tin xác thực OAuth.
+
+**Proxy/API tùy chỉnh**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### Cân bằng Tải tải
 
