@@ -2,12 +2,12 @@ package media
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // MediaMeta holds metadata about a stored media file.
@@ -148,9 +148,9 @@ func (s *FileMediaStore) ReleaseAll(scope string) error {
 	for ref := range refs {
 		if entry, exists := s.refs[ref]; exists {
 			paths = append(paths, entry.path)
-			delete(s.refs, ref)
-			delete(s.refToScope, ref)
 		}
+		delete(s.refs, ref)
+		delete(s.refToScope, ref)
 	}
 	delete(s.scopeToRefs, scope)
 	s.mu.Unlock()
@@ -158,7 +158,10 @@ func (s *FileMediaStore) ReleaseAll(scope string) error {
 	// Phase 2: delete files without holding the lock
 	for _, p := range paths {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			log.Printf("[media] release: failed to remove %s: %v", p, err)
+			logger.WarnCF("media", "release: failed to remove file", map[string]any{
+				"path":  p,
+				"error": err.Error(),
+			})
 		}
 	}
 
@@ -187,11 +190,12 @@ func (s *FileMediaStore) CleanExpired() int {
 		if entry.storedAt.Before(cutoff) {
 			expired = append(expired, expiredEntry{ref: ref, path: entry.path})
 
-			scope := s.refToScope[ref]
-			if scopeRefs, ok := s.scopeToRefs[scope]; ok {
-				delete(scopeRefs, ref)
-				if len(scopeRefs) == 0 {
-					delete(s.scopeToRefs, scope)
+			if scope, ok := s.refToScope[ref]; ok {
+				if scopeRefs, ok := s.scopeToRefs[scope]; ok {
+					delete(scopeRefs, ref)
+					if len(scopeRefs) == 0 {
+						delete(s.scopeToRefs, scope)
+					}
 				}
 			}
 
@@ -204,7 +208,10 @@ func (s *FileMediaStore) CleanExpired() int {
 	// Phase 2: delete files without holding the lock
 	for _, e := range expired {
 		if err := os.Remove(e.path); err != nil && !os.IsNotExist(err) {
-			log.Printf("[media] cleanup: failed to remove %s: %v", e.path, err)
+			logger.WarnCF("media", "cleanup: failed to remove file", map[string]any{
+				"path":  e.path,
+				"error": err.Error(),
+			})
 		}
 	}
 
@@ -218,14 +225,18 @@ func (s *FileMediaStore) Start() {
 		return
 	}
 	if s.cleanerCfg.Interval <= 0 || s.cleanerCfg.MaxAge <= 0 {
-		log.Printf("[media] cleanup: skipped (interval=%s, max_age=%s)",
-			s.cleanerCfg.Interval, s.cleanerCfg.MaxAge)
+		logger.WarnCF("media", "cleanup: skipped due to invalid config", map[string]any{
+			"interval": s.cleanerCfg.Interval.String(),
+			"max_age":  s.cleanerCfg.MaxAge.String(),
+		})
 		return
 	}
 
 	s.startOnce.Do(func() {
-		log.Printf("[media] cleanup enabled: interval=%s, max_age=%s",
-			s.cleanerCfg.Interval, s.cleanerCfg.MaxAge)
+		logger.InfoCF("media", "cleanup enabled", map[string]any{
+			"interval": s.cleanerCfg.Interval.String(),
+			"max_age":  s.cleanerCfg.MaxAge.String(),
+		})
 
 		go func() {
 			ticker := time.NewTicker(s.cleanerCfg.Interval)
@@ -235,7 +246,9 @@ func (s *FileMediaStore) Start() {
 				select {
 				case <-ticker.C:
 					if n := s.CleanExpired(); n > 0 {
-						log.Printf("[media] cleanup: removed %d expired entries", n)
+						logger.InfoCF("media", "cleanup: removed expired entries", map[string]any{
+							"count": n,
+						})
 					}
 				case <-s.stop:
 					return

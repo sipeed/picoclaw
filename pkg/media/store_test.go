@@ -134,6 +134,36 @@ func TestReleaseAllIdempotent(t *testing.T) {
 	}
 }
 
+func TestReleaseAllCleansMappingsIfRefsMissing(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileMediaStore()
+
+	path := createTempFile(t, dir, "file.jpg")
+	ref, err := store.Store(path, MediaMeta{Source: "test"}, "scope1")
+	if err != nil {
+		t.Fatalf("Store failed: %v", err)
+	}
+
+	// Simulate internal inconsistency: scopeToRefs/refToScope contains ref but refs map doesn't.
+	store.mu.Lock()
+	delete(store.refs, ref)
+	store.mu.Unlock()
+
+	if err := store.ReleaseAll("scope1"); err != nil {
+		t.Fatalf("ReleaseAll failed: %v", err)
+	}
+
+	// ReleaseAll should still clean mappings (even if it can't delete the file without the path).
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if _, ok := store.refToScope[ref]; ok {
+		t.Error("refToScope should not contain ref after ReleaseAll")
+	}
+	if _, ok := store.scopeToRefs["scope1"]; ok {
+		t.Error("scopeToRefs should not contain scope1 after ReleaseAll")
+	}
+}
+
 func TestStoreNonexistentFile(t *testing.T) {
 	store := NewFileMediaStore()
 
