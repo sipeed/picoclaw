@@ -413,3 +413,12 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 		t.Fatalf("Tools.Web.Proxy = %q, want %q", cfg.Tools.Web.Proxy, "http://127.0.0.1:7890")
 	}
 }
+
+// TestDefaultConfig_DMScope verifies the default dm_scope value
+func TestDefaultConfig_DMScope(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Session.DMScope != "per-channel-peer" {
+		t.Errorf("Session.DMScope = %q, want 'per-channel-peer'", cfg.Session.DMScope)
+	}
+}
