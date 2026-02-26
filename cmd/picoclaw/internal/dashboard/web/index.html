@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicoClaw Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans">
+    <div x-data="dashboard" class="min-h-screen flex flex-col" x-cloak>
+        <!-- Header -->
+        <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <span class="text-3xl">🦞</span>
+                <h1 class="text-xl font-bold tracking-tight">PicoClaw Dashboard</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <button @click="saveConfig" :disabled="saving" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 flex items-center">
+                    <template x-if="saving">
+                        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </template>
+                    <span x-text="saving ? 'Saving...' : 'Save Configuration'"></span>
+                </button>
+            </div>
+        </header>
+
+        <div class="flex-1 flex overflow-hidden">
+            <!-- Sidebar -->
+            <nav class="w-64 bg-white border-r border-gray-200 flex-shrink-0 overflow-y-auto">
+                <div class="p-4 space-y-1">
+                    <template x-for="item in menuItems" :key="item.id">
+                        <button @click="activeTab = item.id"
+                                :class="activeTab === item.id ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'"
+                                class="w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                            <span x-text="item.label"></span>
+                        </button>
+                    </template>
+                </div>
+            </nav>
+
+            <!-- Main Content -->
+            <main class="flex-1 overflow-y-auto p-8">
+                <div class="max-w-4xl mx-auto">
+                    <!-- Notifications -->
+                    <div x-show="notification"
+                         x-transition:enter="transition ease-out duration-300"
+                         x-transition:enter-start="opacity-0 transform -translate-y-2"
+                         x-transition:enter-end="opacity-100 transform translate-y-0"
+                         :class="notification?.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'"
+                         class="mb-6 p-4 rounded-md border flex items-center justify-between">
+                        <div class="flex items-center">
+                            <span x-text="notification?.message"></span>
+                        </div>
+                        <button @click="notification = null" class="text-gray-400 hover:text-gray-600">
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+
+                    <!-- General Settings -->
+                    <div x-show="activeTab === 'general'" class="space-y-6">
+                        <h2 class="text-2xl font-semibold">General Settings</h2>
+
+                        <div class="bg-white shadow rounded-lg p-6 space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Workspace Path</label>
+                                <input type="text" x-model="config.agents.defaults.workspace" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <p class="mt-1 text-xs text-gray-500">Default: ~/.picoclaw/workspace</p>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" x-model="config.agents.defaults.restrict_to_workspace" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                <label class="ml-2 block text-sm text-gray-900 font-medium">Restrict to Workspace</label>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Default Model</label>
+                                <select x-model="config.agents.defaults.model_name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                    <template x-for="model in (config.model_list || [])" :key="model.model_name">
+                                        <option :value="model.model_name" x-text="model.model_name"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Max Tokens</label>
+                                    <input type="number" x-model.number="config.agents.defaults.max_tokens" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Temperature</label>
+                                    <input type="number" step="0.1" x-model.number="config.agents.defaults.temperature" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Models -->
+                    <div x-show="activeTab === 'models'" class="space-y-6">
+                        <div class="flex items-center justify-between">
+                            <h2 class="text-2xl font-semibold">Model List</h2>
+                            <button @click="addModel" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
+                                + Add Model
+                            </button>
+                        </div>
+
+                        <div class="space-y-4">
+                            <template x-for="(model, index) in config.model_list" :key="index">
+                                <div class="bg-white shadow rounded-lg p-6 relative">
+                                    <button @click="removeModel(index)" class="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition-colors">
+                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </button>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">Model Name (Alias)</label>
+                                            <input type="text" x-model="model.model_name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="gpt4">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">Model Identifier</label>
+                                            <input type="text" x-model="model.model" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="openai/gpt-4">
+                                        </div>
+                                        <div class="col-span-2">
+                                            <label class="block text-sm font-medium text-gray-700">API Key</label>
+                                            <input type="password" x-model="model.api_key" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="sk-...">
+                                        </div>
+                                        <div class="col-span-2">
+                                            <label class="block text-sm font-medium text-gray-700">API Base (Optional)</label>
+                                            <input type="text" x-model="model.api_base" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="https://api.openai.com/v1">
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Channels -->
+                    <div x-show="activeTab === 'channels'" class="space-y-6">
+                        <h2 class="text-2xl font-semibold">Channels</h2>
+
+                        <div class="space-y-4">
+                            <!-- Telegram -->
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-lg font-medium">Telegram</h3>
+                                    <input type="checkbox" x-model="config.channels.telegram.enabled" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                </div>
+                                <div x-show="config.channels?.telegram?.enabled" class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Bot Token</label>
+                                        <input type="password" x-model="config.channels.telegram.token" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 sm:text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Allowed User IDs (comma separated)</label>
+                                        <input type="text" :value="(config.channels?.telegram?.allow_from || []).join(', ')" @input="config.channels.telegram.allow_from = $event.target.value.split(',').map(s => s.trim())" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 sm:text-sm">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Discord -->
+                            <div class="bg-white shadow rounded-lg p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-lg font-medium">Discord</h3>
+                                    <input type="checkbox" x-model="config.channels.discord.enabled" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                </div>
+                                <div x-show="config.channels?.discord?.enabled" class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Bot Token</label>
+                                        <input type="password" x-model="config.channels.discord.token" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 sm:text-sm">
+                                    </div>
+                                    <div class="flex items-center">
+                                        <input type="checkbox" x-model="config.channels.discord.mention_only" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                        <label class="ml-2 block text-sm text-gray-900">Mention Only</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- More channels can be added here -->
+                             <p class="text-sm text-gray-500 italic">More channels available in the raw config editor.</p>
+                        </div>
+                    </div>
+
+                    <!-- Tools -->
+                    <div x-show="activeTab === 'tools'" class="space-y-6">
+                        <h2 class="text-2xl font-semibold">Tools</h2>
+
+                        <!-- Web Search -->
+                        <div class="bg-white shadow rounded-lg p-6 space-y-4">
+                            <h3 class="text-lg font-medium border-b pb-2">Web Search</h3>
+
+                            <div class="grid grid-cols-2 gap-6">
+                                <div class="space-y-3">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-sm font-medium text-gray-700">Brave</span>
+                                        <input type="checkbox" x-model="config.tools.web.brave.enabled" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                    </div>
+                                    <input type="password" x-model="config.tools.web.brave.api_key" placeholder="API Key" class="w-full border border-gray-300 rounded-md shadow-sm p-2 sm:text-sm" x-show="config.tools.web.brave.enabled">
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-sm font-medium text-gray-700">DuckDuckGo</span>
+                                        <input type="checkbox" x-model="config.tools.web.duckduckgo.enabled" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Exec -->
+                        <div class="bg-white shadow rounded-lg p-6 space-y-4">
+                            <h3 class="text-lg font-medium border-b pb-2">Execution Safety</h3>
+                            <div class="flex items-center">
+                                <input type="checkbox" x-model="config.tools.exec.enable_deny_patterns" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                <label class="ml-2 block text-sm text-gray-900">Enable Deny Patterns</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Heartbeat -->
+                    <div x-show="activeTab === 'heartbeat'" class="space-y-6">
+                        <h2 class="text-2xl font-semibold">Heartbeat</h2>
+
+                        <div class="bg-white shadow rounded-lg p-6 space-y-4">
+                            <div class="flex items-center justify-between">
+                                <label class="block text-sm font-medium text-gray-700">Enabled</label>
+                                <input type="checkbox" x-model="config.heartbeat.enabled" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Interval (minutes)</label>
+                                <input type="number" x-model.number="config.heartbeat.interval" min="5" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 sm:text-sm">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Advanced -->
+                    <div x-show="activeTab === 'advanced'" class="space-y-6">
+                        <h2 class="text-2xl font-semibold">Advanced (Raw JSON)</h2>
+                        <div class="bg-white shadow rounded-lg p-6">
+                            <textarea x-model="rawConfig" class="w-full h-96 font-mono text-sm p-4 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" spellcheck="false"></textarea>
+                            <div class="mt-4 flex justify-end">
+                                <button @click="applyRawConfig" class="text-indigo-600 hover:text-indigo-900 text-sm font-medium">
+                                    Apply Raw JSON to Forms
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('dashboard', () => ({
+                activeTab: 'general',
+                config: null,
+                rawConfig: '',
+                saving: false,
+                notification: null,
+                menuItems: [
+                    { id: 'general', label: 'General' },
+                    { id: 'models', label: 'Models' },
+                    { id: 'channels', label: 'Channels' },
+                    { id: 'tools', label: 'Tools' },
+                    { id: 'heartbeat', label: 'Heartbeat' },
+                    { id: 'advanced', label: 'Advanced' },
+                ],
+
+                async init() {
+                    await this.fetchConfig();
+                },
+
+                async fetchConfig() {
+                    try {
+                        const response = await fetch('/api/config');
+                        this.config = await response.json();
+                        this.rawConfig = JSON.stringify(this.config, null, 2);
+                    } catch (err) {
+                        this.showNotification('error', 'Failed to load configuration');
+                    }
+                },
+
+                async saveConfig() {
+                    this.saving = true;
+                    try {
+                        // Sync raw config from form before saving
+                        this.rawConfig = JSON.stringify(this.config, null, 2);
+
+                        const response = await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: this.rawConfig
+                        });
+
+                        if (response.ok) {
+                            this.showNotification('success', 'Configuration saved successfully');
+                        } else {
+                            const error = await response.text();
+                            this.showNotification('error', 'Failed to save: ' + error);
+                        }
+                    } catch (err) {
+                        this.showNotification('error', 'Network error while saving');
+                    } finally {
+                        this.saving = false;
+                    }
+                },
+
+                applyRawConfig() {
+                    try {
+                        this.config = JSON.parse(this.rawConfig);
+                        this.showNotification('success', 'JSON applied to forms');
+                    } catch (err) {
+                        this.showNotification('error', 'Invalid JSON: ' + err.message);
+                    }
+                },
+
+                showNotification(type, message) {
+                    this.notification = { type, message };
+                    setTimeout(() => {
+                        if (this.notification?.message === message) {
+                            this.notification = null;
+                        }
+                    }, 5000);
+                },
+
+                addModel() {
+                    if (!this.config.model_list) this.config.model_list = [];
+                    this.config.model_list.push({
+                        model_name: '',
+                        model: '',
+                        api_key: '',
+                        api_base: ''
+                    });
+                },
+
+                removeModel(index) {
+                    this.config.model_list.splice(index, 1);
+                }
+            }));
+        });
+    </script>
+</body>
+</html>
