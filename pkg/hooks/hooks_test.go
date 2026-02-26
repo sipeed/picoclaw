@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 func TestNewHookRegistry(t *testing.T) {
@@ -93,6 +95,91 @@ func TestVoidHooksConcurrent(t *testing.T) {
 
 	if count.Load() != 5 {
 		t.Errorf("Expected 5 handlers called, got %d", count.Load())
+	}
+}
+
+func TestVoidHooksReceiveIsolatedMessageReceivedEvents(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnMessageReceived("mutator-a", 0, func(_ context.Context, e *MessageReceivedEvent) error {
+		e.Content = "changed-a"
+		e.Media[0] = "changed-media-a"
+		e.Metadata["k"] = "changed-a"
+		e.Metadata["new-a"] = "x"
+		return nil
+	})
+	r.OnMessageReceived("mutator-b", 1, func(_ context.Context, e *MessageReceivedEvent) error {
+		e.Content = "changed-b"
+		e.Media = append(e.Media, "extra")
+		e.Metadata["k"] = "changed-b"
+		e.Metadata["new-b"] = "y"
+		return nil
+	})
+
+	event := &MessageReceivedEvent{
+		Content:  "original",
+		Media:    []string{"m1"},
+		Metadata: map[string]string{"k": "v"},
+	}
+	r.TriggerMessageReceived(ctx, event)
+
+	if event.Content != "original" {
+		t.Fatalf("expected original content to remain unchanged, got %q", event.Content)
+	}
+	if len(event.Media) != 1 || event.Media[0] != "m1" {
+		t.Fatalf("expected original media to remain unchanged, got %#v", event.Media)
+	}
+	if got := event.Metadata["k"]; got != "v" {
+		t.Fatalf("expected metadata[k] to remain v, got %q", got)
+	}
+	if _, ok := event.Metadata["new-a"]; ok {
+		t.Fatal("unexpected mutation leaked from hook mutator-a")
+	}
+	if _, ok := event.Metadata["new-b"]; ok {
+		t.Fatal("unexpected mutation leaked from hook mutator-b")
+	}
+}
+
+func TestVoidHooksReceiveIsolatedAfterToolCallEvents(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnAfterToolCall("mutator-a", 0, func(_ context.Context, e *AfterToolCallEvent) error {
+		e.Args["k"] = "changed-a"
+		e.Result.ForLLM = "mutated-a"
+		return nil
+	})
+	r.OnAfterToolCall("mutator-b", 1, func(_ context.Context, e *AfterToolCallEvent) error {
+		e.Args["k"] = "changed-b"
+		e.Args["new"] = "v"
+		e.Result.ForUser = "mutated-b"
+		return nil
+	})
+
+	event := &AfterToolCallEvent{
+		ToolName: "shell",
+		Args:     map[string]any{"k": "original"},
+		Result: &tools.ToolResult{
+			ForLLM:  "for-llm",
+			ForUser: "for-user",
+		},
+	}
+
+	// Use a local copy so we can compare immutable expectations.
+	r.TriggerAfterToolCall(ctx, event)
+
+	if got := event.Args["k"]; got != "original" {
+		t.Fatalf("expected args[k] to remain original, got %#v", got)
+	}
+	if _, ok := event.Args["new"]; ok {
+		t.Fatal("unexpected args mutation leaked from hook")
+	}
+	if event.Result.ForLLM != "for-llm" {
+		t.Fatalf("expected original result.ForLLM to remain unchanged, got %q", event.Result.ForLLM)
+	}
+	if event.Result.ForUser != "for-user" {
+		t.Fatalf("expected original result.ForUser to remain unchanged, got %q", event.Result.ForUser)
 	}
 }
 
