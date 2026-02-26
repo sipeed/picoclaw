@@ -380,25 +380,23 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 
 	// Thinking indicator (LINE loading animation is 1:1 only).
 	// For group/room chats, LINE provides no equivalent API.
+	// Only start if PlaceholderRecorder is available to avoid wasted API calls.
 	if !isGroup {
-		typingCtx, typingCancel := context.WithTimeout(c.ctx, 5*time.Minute)
-		stop, err := c.StartTyping(typingCtx, chatID)
-		if err == nil {
-			var stopOnce sync.Once
-			stopFn := func() {
-				stopOnce.Do(func() {
-					stop()
-					typingCancel()
-				})
-			}
-			if rec := c.GetPlaceholderRecorder(); rec != nil {
+		if rec := c.GetPlaceholderRecorder(); rec != nil {
+			typingCtx, typingCancel := context.WithTimeout(c.ctx, 5*time.Minute)
+			stop, err := c.StartTyping(typingCtx, chatID)
+			if err == nil {
+				var stopOnce sync.Once
+				stopFn := func() {
+					stopOnce.Do(func() {
+						stop()
+						typingCancel()
+					})
+				}
 				rec.RecordTypingStop("line", chatID, stopFn)
 			} else {
-				// No recorder — stop immediately to avoid goroutine leaks.
-				stopFn()
+				typingCancel()
 			}
-		} else {
-			typingCancel()
 		}
 	}
 
@@ -627,7 +625,11 @@ func (c *LINEChannel) StartTyping(ctx context.Context, chatID string) (func(), e
 			case <-typingCtx.Done():
 				return
 			case <-ticker.C:
-				_ = c.sendLoading(typingCtx, chatID)
+				if err := c.sendLoading(typingCtx, chatID); err != nil {
+					logger.DebugCF("line", "Failed to refresh loading indicator", map[string]any{
+						"error": err.Error(),
+					})
+				}
 			}
 		}
 	}()
