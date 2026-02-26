@@ -82,6 +82,7 @@ type BaseChannel struct {
 	groupTrigger        config.GroupTriggerConfig
 	mediaStore          media.MediaStore
 	placeholderRecorder PlaceholderRecorder
+	owner               Channel // the concrete channel that embeds this BaseChannel
 }
 
 func NewBaseChannel(
@@ -257,6 +258,29 @@ func (c *BaseChannel) HandleMessage(
 		Metadata:   metadata,
 	}
 
+	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
+	// Each capability is independent — all three may fire for the same message.
+	if c.owner != nil && c.placeholderRecorder != nil {
+		// Typing — independent pipeline
+		if tc, ok := c.owner.(TypingCapable); ok {
+			if stop, err := tc.StartTyping(ctx, chatID); err == nil {
+				c.placeholderRecorder.RecordTypingStop(c.name, chatID, stop)
+			}
+		}
+		// Reaction — independent pipeline
+		if rc, ok := c.owner.(ReactionCapable); ok && messageID != "" {
+			if undo, err := rc.ReactToMessage(ctx, chatID, messageID); err == nil {
+				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)
+			}
+		}
+		// Placeholder — independent pipeline
+		if pc, ok := c.owner.(PlaceholderCapable); ok {
+			if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
+				c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
+			}
+		}
+	}
+
 	if err := c.bus.PublishInbound(ctx, msg); err != nil {
 		logger.ErrorCF("channels", "Failed to publish inbound message", map[string]any{
 			"channel": c.name,
@@ -284,6 +308,12 @@ func (c *BaseChannel) SetPlaceholderRecorder(r PlaceholderRecorder) {
 // GetPlaceholderRecorder returns the injected PlaceholderRecorder (may be nil).
 func (c *BaseChannel) GetPlaceholderRecorder() PlaceholderRecorder {
 	return c.placeholderRecorder
+}
+
+// SetOwner injects the concrete channel that embeds this BaseChannel.
+// This allows HandleMessage to auto-trigger TypingCapable / ReactionCapable / PlaceholderCapable.
+func (c *BaseChannel) SetOwner(ch Channel) {
+	c.owner = ch
 }
 
 // BuildMediaScope constructs a scope key for media lifecycle tracking.

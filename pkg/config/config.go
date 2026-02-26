@@ -288,7 +288,6 @@ type SlackConfig struct {
 	AllowFrom    FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
 	GroupTrigger GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing       TypingConfig        `json:"typing,omitempty"`
-	Placeholder  PlaceholderConfig   `json:"placeholder,omitempty"`
 }
 
 type LINEConfig struct {
@@ -301,7 +300,6 @@ type LINEConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 }
 
 type OneBotConfig struct {
@@ -313,7 +311,6 @@ type OneBotConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
 }
 
 type WeComConfig struct {
@@ -354,6 +351,7 @@ type PicoConfig struct {
 	WriteTimeout    int                 `json:"write_timeout,omitempty"`
 	MaxConnections  int                 `json:"max_connections,omitempty"`
 	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
+	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
 }
 
 type HeartbeatConfig struct {

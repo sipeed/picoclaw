@@ -23,21 +23,20 @@ import (
 
 type OneBotChannel struct {
 	*channels.BaseChannel
-	config          config.OneBotConfig
-	conn            *websocket.Conn
-	ctx             context.Context
-	cancel          context.CancelFunc
-	dedup           map[string]struct{}
-	dedupRing       []string
-	dedupIdx        int
-	mu              sync.Mutex
-	writeMu         sync.Mutex
-	echoCounter     int64
-	selfID          int64
-	pending         map[string]chan json.RawMessage
-	pendingMu       sync.Mutex
-	lastMessageID   sync.Map
-	pendingEmojiMsg sync.Map
+	config        config.OneBotConfig
+	conn          *websocket.Conn
+	ctx           context.Context
+	cancel        context.CancelFunc
+	dedup         map[string]struct{}
+	dedupRing     []string
+	dedupIdx      int
+	mu            sync.Mutex
+	writeMu       sync.Mutex
+	echoCounter   int64
+	selfID        int64
+	pending       map[string]chan json.RawMessage
+	pendingMu     sync.Mutex
+	lastMessageID sync.Map
 }
 
 type oneBotRawEvent struct {
@@ -127,6 +126,22 @@ func (c *OneBotChannel) setMsgEmojiLike(messageID string, emojiID int, set bool)
 			})
 		}
 	}()
+}
+
+// ReactToMessage implements channels.ReactionCapable.
+// It adds an emoji reaction (ID 289) to group messages and returns an undo function.
+// Private messages return a no-op since reactions are only meaningful in groups.
+func (c *OneBotChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
+	// Only react in group chats
+	if !strings.HasPrefix(chatID, "group:") {
+		return func() {}, nil
+	}
+
+	c.setMsgEmojiLike(messageID, 289, true)
+
+	return func() {
+		c.setMsgEmojiLike(messageID, 289, false)
+	}, nil
 }
 
 func (c *OneBotChannel) Start(ctx context.Context) error {
@@ -1043,18 +1058,6 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 	}
 
 	c.lastMessageID.Store(chatID, messageID)
-
-	if raw.MessageType == "group" && messageID != "" && messageID != "0" {
-		c.setMsgEmojiLike(messageID, 289, true)
-		c.pendingEmojiMsg.Store(chatID, messageID)
-		// Register emoji stop with Manager for outbound orchestration
-		if rec := c.GetPlaceholderRecorder(); rec != nil {
-			capturedMsgID := messageID
-			rec.RecordTypingStop("onebot", chatID, func() {
-				c.setMsgEmojiLike(capturedMsgID, 289, false)
-			})
-		}
-	}
 
 	senderInfo := bus.SenderInfo{
 		Platform:    "onebot",

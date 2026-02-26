@@ -44,6 +44,12 @@ type typingEntry struct {
 	createdAt time.Time
 }
 
+// reactionEntry wraps a reaction undo function with a creation timestamp for TTL eviction.
+type reactionEntry struct {
+	undo      func()
+	createdAt time.Time
+}
+
 // placeholderEntry wraps a placeholder ID with a creation timestamp for TTL eviction.
 type placeholderEntry struct {
 	id        string
@@ -68,17 +74,18 @@ type channelWorker struct {
 }
 
 type Manager struct {
-	channels     map[string]Channel
-	workers      map[string]*channelWorker
-	bus          *bus.MessageBus
-	config       *config.Config
-	mediaStore   media.MediaStore
-	dispatchTask *asyncTask
-	mux          *http.ServeMux
-	httpServer   *http.Server
-	mu           sync.RWMutex
-	placeholders sync.Map // "channel:chatID" → placeholderID (string)
-	typingStops  sync.Map // "channel:chatID" → func()
+	channels      map[string]Channel
+	workers       map[string]*channelWorker
+	bus           *bus.MessageBus
+	config        *config.Config
+	mediaStore    media.MediaStore
+	dispatchTask  *asyncTask
+	mux           *http.ServeMux
+	httpServer    *http.Server
+	mu            sync.RWMutex
+	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
+	typingStops   sync.Map // "channel:chatID" → func()
+	reactionUndos sync.Map // "channel:chatID" → reactionEntry
 }
 
 type asyncTask struct {
@@ -99,7 +106,14 @@ func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	m.typingStops.Store(key, typingEntry{stop: stop, createdAt: time.Now()})
 }
 
-// preSend handles typing stop and placeholder editing before sending a message.
+// RecordReactionUndo registers a reaction undo function for later invocation.
+// Implements PlaceholderRecorder.
+func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
+	key := channel + ":" + chatID
+	m.reactionUndos.Store(key, reactionEntry{undo: undo, createdAt: time.Now()})
+}
+
+// preSend handles typing stop, reaction undo, and placeholder editing before sending a message.
 // Returns true if the message was edited into a placeholder (skip Send).
 func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) bool {
 	key := name + ":" + msg.ChatID
@@ -111,7 +125,14 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		}
 	}
 
-	// 2. Try editing placeholder
+	// 2. Undo reaction
+	if v, loaded := m.reactionUndos.LoadAndDelete(key); loaded {
+		if entry, ok := v.(reactionEntry); ok {
+			entry.undo() // idempotent, safe
+		}
+	}
+
+	// 3. Try editing placeholder
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
@@ -170,6 +191,10 @@ func (m *Manager) initChannel(name, displayName string) {
 		// Inject PlaceholderRecorder if channel supports it
 		if setter, ok := ch.(interface{ SetPlaceholderRecorder(r PlaceholderRecorder) }); ok {
 			setter.SetPlaceholderRecorder(m)
+		}
+		// Inject owner reference so BaseChannel.HandleMessage can auto-trigger typing/reaction
+		if setter, ok := ch.(interface{ SetOwner(ch Channel) }); ok {
+			setter.SetOwner(ch)
 		}
 		m.channels[name] = ch
 		logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
@@ -685,6 +710,16 @@ func (m *Manager) runTTLJanitor(ctx context.Context) {
 					if now.Sub(entry.createdAt) > typingStopTTL {
 						if _, loaded := m.typingStops.LoadAndDelete(key); loaded {
 							entry.stop() // idempotent, safe
+						}
+					}
+				}
+				return true
+			})
+			m.reactionUndos.Range(func(key, value any) bool {
+				if entry, ok := value.(reactionEntry); ok {
+					if now.Sub(entry.createdAt) > typingStopTTL {
+						if _, loaded := m.reactionUndos.LoadAndDelete(key); loaded {
+							entry.undo() // idempotent, safe
 						}
 					}
 				}
