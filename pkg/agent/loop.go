@@ -519,11 +519,26 @@ func (al *AgentLoop) runLLMIteration(
 		callLLM := func() (*providers.LLMResponse, error) {
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
-					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
-							"max_tokens":       agent.MaxTokens,
-							"temperature":      agent.Temperature,
-							"prompt_cache_key": agent.ID,
+					func(ctx context.Context, providerName, model string) (*providers.LLMResponse, error) {
+						// Get the correct provider for this candidate
+						// This is critical: different candidates may use different providers
+						// (e.g., cerebras, ollama, openai), and each requires its own
+						// provider instance with the correct API endpoint configuration.
+						var provider providers.LLMProvider
+						if agent.ProviderRegistry != nil {
+							p, err := agent.ProviderRegistry.GetProvider(providerName)
+							if err != nil {
+								return nil, fmt.Errorf("failed to get provider for %q: %w", providerName, err)
+							}
+							provider = p
+						} else {
+							// Fallback to default provider if registry not available
+							// (this shouldn't happen in normal operation)
+							provider = agent.Provider
+						}
+						return provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
+							"max_tokens":  agent.MaxTokens,
+							"temperature": agent.Temperature,
 						})
 					},
 				)
@@ -538,9 +553,8 @@ func (al *AgentLoop) runLLMIteration(
 				return fbResult.Response, nil
 			}
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
-				"max_tokens":       agent.MaxTokens,
-				"temperature":      agent.Temperature,
-				"prompt_cache_key": agent.ID,
+				"max_tokens":  agent.MaxTokens,
+				"temperature": agent.Temperature,
 			})
 		}
 
@@ -1004,9 +1018,8 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 			nil,
 			agent.Model,
 			map[string]any{
-				"max_tokens":       1024,
-				"temperature":      0.3,
-				"prompt_cache_key": agent.ID,
+				"max_tokens":  1024,
+				"temperature": 0.3,
 			},
 		)
 		if err == nil {
@@ -1055,9 +1068,8 @@ func (al *AgentLoop) summarizeBatch(
 		nil,
 		agent.Model,
 		map[string]any{
-			"max_tokens":       1024,
-			"temperature":      0.3,
-			"prompt_cache_key": agent.ID,
+			"max_tokens":  1024,
+			"temperature": 0.3,
 		},
 	)
 	if err != nil {

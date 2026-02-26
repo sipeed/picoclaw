@@ -15,22 +15,23 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID             string
-	Name           string
-	Model          string
-	Fallbacks      []string
-	Workspace      string
-	MaxIterations  int
-	MaxTokens      int
-	Temperature    float64
-	ContextWindow  int
-	Provider       providers.LLMProvider
-	Sessions       *session.SessionManager
-	ContextBuilder *ContextBuilder
-	Tools          *tools.ToolRegistry
-	Subagents      *config.SubagentsConfig
-	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
+	ID               string
+	Name             string
+	Model            string
+	Fallbacks        []string
+	Workspace        string
+	MaxIterations    int
+	MaxTokens        int
+	Temperature      float64
+	ContextWindow    int
+	Provider         providers.LLMProvider              // Default provider for backward compatibility
+	ProviderRegistry *providers.ProviderRegistry        // Registry for multi-provider fallback
+	Sessions         *session.SessionManager
+	ContextBuilder   *ContextBuilder
+	Tools            *tools.ToolRegistry
+	Subagents        *config.SubagentsConfig
+	SkillsFilter     []string
+	Candidates       []providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -39,6 +40,7 @@ func NewAgentInstance(
 	defaults *config.AgentDefaults,
 	cfg *config.Config,
 	provider providers.LLMProvider,
+	providerRegistry *providers.ProviderRegistry,
 ) *AgentInstance {
 	workspace := resolveAgentWorkspace(agentCfg, defaults)
 	os.MkdirAll(workspace, 0o755)
@@ -99,22 +101,23 @@ func NewAgentInstance(
 	candidates := providers.ResolveCandidates(modelCfg, defaults.Provider)
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		MaxTokens:      maxTokens,
-		Temperature:    temperature,
-		ContextWindow:  maxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
+		ID:               agentID,
+		Name:             agentName,
+		Model:            model,
+		Fallbacks:        fallbacks,
+		Workspace:        workspace,
+		MaxIterations:    maxIter,
+		MaxTokens:        maxTokens,
+		Temperature:      temperature,
+		ContextWindow:    maxTokens,
+		Provider:         provider,
+		ProviderRegistry: providerRegistry,
+		Sessions:         sessionsManager,
+		ContextBuilder:   contextBuilder,
+		Tools:            toolsRegistry,
+		Subagents:        subagents,
+		SkillsFilter:     skillsFilter,
+		Candidates:       candidates,
 	}
 }
 

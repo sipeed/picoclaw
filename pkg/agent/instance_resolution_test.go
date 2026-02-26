@@ -133,7 +133,7 @@ func TestNewAgentInstance_ModelResolution(t *testing.T) {
 	// Use the existing mockProvider from mock_provider_test.go
 	provider := &mockProvider{}
 
-	instance := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+	instance := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider, nil)
 
 	require.NotNil(t, instance)
 
