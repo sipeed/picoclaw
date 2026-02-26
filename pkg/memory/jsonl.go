@@ -361,11 +361,6 @@ func (s *JSONLStore) SetHistory(
 	l.Lock()
 	defer l.Unlock()
 
-	err := s.rewriteJSONL(sessionKey, history)
-	if err != nil {
-		return err
-	}
-
 	meta, err := s.readMeta(sessionKey)
 	if err != nil {
 		return err
@@ -378,7 +373,16 @@ func (s *JSONLStore) SetHistory(
 	meta.Count = len(history)
 	meta.UpdatedAt = now
 
-	return s.writeMeta(sessionKey, meta)
+	// Write meta BEFORE rewriting the JSONL file. If we crash between
+	// the two writes, meta has Skip=0 and the old file is still intact,
+	// so GetHistory reads from line 1 — returning "too many" messages
+	// rather than losing data. The next SetHistory call corrects this.
+	err = s.writeMeta(sessionKey, meta)
+	if err != nil {
+		return err
+	}
+
+	return s.rewriteJSONL(sessionKey, history)
 }
 
 // Compact physically rewrites the JSONL file, dropping all logically
@@ -409,16 +413,21 @@ func (s *JSONLStore) Compact(
 		return err
 	}
 
-	err = s.rewriteJSONL(sessionKey, active)
-	if err != nil {
-		return err
-	}
-
+	// Write meta BEFORE rewriting the JSONL file. If the process
+	// crashes between the two writes, meta has Skip=0 and the old
+	// (uncompacted) file is still intact, so GetHistory reads from
+	// line 1 — returning previously-truncated messages rather than
+	// losing data. The next Compact or TruncateHistory corrects this.
 	meta.Skip = 0
 	meta.Count = len(active)
 	meta.UpdatedAt = time.Now()
 
-	return s.writeMeta(sessionKey, meta)
+	err = s.writeMeta(sessionKey, meta)
+	if err != nil {
+		return err
+	}
+
+	return s.rewriteJSONL(sessionKey, active)
 }
 
 // rewriteJSONL atomically replaces the JSONL file with the given messages.
