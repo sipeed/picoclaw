@@ -1,7 +1,7 @@
 package gateway
 
 import (
-	"encoding/json"
+	"crypto/subtle"
 	"net/http"
 	"strings"
 )
@@ -29,7 +29,7 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		token := authHeader[len(prefix):]
-		if token != apiKey {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) != 1 {
 			writeJSONError(w, http.StatusForbidden, "invalid token")
 			return
 		}
@@ -39,7 +39,5 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func writeJSONError(w http.ResponseWriter, code int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	writeJSON(w, code, map[string]string{"error": message})
 }

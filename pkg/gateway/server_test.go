@@ -962,22 +962,18 @@ func TestAuthMiddleware_CorrectToken_200(t *testing.T) {
 	}
 }
 
-func TestIsSecretKey(t *testing.T) {
-	tests := []struct {
-		key  string
-		want bool
-	}{
-		{"api_key", true},
-		{"gateway.api_key", true},
-		{"channels.telegram.token", true},
-		{"model", false},
-		{"gateway.port", false},
+func TestSecretKeys(t *testing.T) {
+	wantSecret := []string{"api_key", "token", "bot_token", "app_token", "channel_secret", "channel_access_token"}
+	for _, k := range wantSecret {
+		if !secretKeys[k] {
+			t.Errorf("secretKeys[%q] = false, want true", k)
+		}
 	}
 
-	for _, tc := range tests {
-		got := isSecretKey(tc.key)
-		if got != tc.want {
-			t.Errorf("isSecretKey(%q) = %v, want %v", tc.key, got, tc.want)
+	notSecret := []string{"model", "host", "port", "enabled"}
+	for _, k := range notSecret {
+		if secretKeys[k] {
+			t.Errorf("secretKeys[%q] = true, want false", k)
 		}
 	}
 }

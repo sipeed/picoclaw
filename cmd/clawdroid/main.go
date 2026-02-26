@@ -590,7 +590,10 @@ func gatewayCmd() {
 			fmt.Printf("Error finding executable: %v\n", err)
 			os.Exit(1)
 		}
-		syscall.Exec(exe, os.Args, os.Environ())
+		if err := syscall.Exec(exe, os.Args, os.Environ()); err != nil {
+			fmt.Printf("Error restarting: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }
 

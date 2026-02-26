@@ -3,10 +3,10 @@ package gateway
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/KarakuriAgent/clawdroid/pkg/config"
+	"github.com/KarakuriAgent/clawdroid/pkg/logger"
 )
 
 // handleGetSchema returns the configuration schema.
@@ -134,15 +134,7 @@ func restoreSecrets(incoming, current map[string]interface{}) {
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
-}
-
-// isSecretKey returns true if the given JSON key should be treated as a secret.
-// This is used by the handlers to check whether to mask a value, and is also
-// exposed for testing purposes.
-func isSecretKey(key string) bool {
-	// Check the leaf key (last segment after dots)
-	parts := strings.SplitN(key, ".", -1)
-	leaf := parts[len(parts)-1]
-	return secretKeys[leaf]
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		logger.ErrorCF("gateway", "failed to encode JSON response", map[string]interface{}{"error": err.Error()})
+	}
 }

@@ -48,8 +48,8 @@ var secretKeys = map[string]bool{
 func BuildSchema(defaultCfg *config.Config) SchemaResponse {
 	var sections []SchemaSection
 
-	cfgType := reflect.TypeOf(*defaultCfg)
-	cfgVal := reflect.ValueOf(*defaultCfg)
+	cfgType := reflect.TypeOf(defaultCfg).Elem()
+	cfgVal := reflect.ValueOf(defaultCfg).Elem()
 
 	for i := 0; i < cfgType.NumField(); i++ {
 		field := cfgType.Field(i)
