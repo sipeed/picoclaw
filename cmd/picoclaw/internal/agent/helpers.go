@@ -37,7 +37,7 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 		cfg.Agents.Defaults.ModelName = model
 	}
 
-	provider, modelID, err := providers.CreateProvider(cfg)
+	provider, _, err := providers.CreateProvider(cfg)
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
 	}
