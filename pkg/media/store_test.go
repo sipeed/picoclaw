@@ -386,6 +386,27 @@ func TestStartDisabledIsNoop(t *testing.T) {
 	store.Stop()
 }
 
+func TestStartZeroIntervalNoPanic(t *testing.T) {
+	store := NewFileMediaStoreWithCleanup(MediaCleanerConfig{
+		Enabled:  true,
+		MaxAge:   time.Minute,
+		Interval: 0,
+	})
+	// Zero interval should not panic (time.NewTicker panics on <= 0)
+	store.Start()
+	store.Stop()
+}
+
+func TestStartZeroMaxAgeNoPanic(t *testing.T) {
+	store := NewFileMediaStoreWithCleanup(MediaCleanerConfig{
+		Enabled:  true,
+		MaxAge:   0,
+		Interval: time.Minute,
+	})
+	store.Start()
+	store.Stop()
+}
+
 func TestConcurrentCleanupSafety(t *testing.T) {
 	dir := t.TempDir()
 	store := newTestStoreWithCleanup(50 * time.Millisecond)
