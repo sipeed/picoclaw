@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -37,7 +38,14 @@ func (c *AuthCredential) NeedsRefresh() bool {
 }
 
 func authFilePath() string {
-	home, _ := os.UserHomeDir()
+	home := os.Getenv("HOME")
+	if home == "" {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
+	}
 	return filepath.Join(home, ".picoclaw", "auth.json")
 }
 
@@ -75,40 +83,87 @@ func SaveStore(store *AuthStore) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
+// Global secure store instance with lazy initialization.
+var (
+	globalSecureStore *SecureStore
+	secureStoreOnce   sync.Once
+	secureStoreConfig SecureStoreConfig
+	storeMu           sync.RWMutex
+)
+
+// InitSecureStore initializes the global secure store with the given configuration.
+// This should be called once at application startup.
+func InitSecureStore(config SecureStoreConfig) error {
+	storeMu.Lock()
+	defer storeMu.Unlock()
+
+	var initErr error
+	secureStoreOnce.Do(func() {
+		secureStoreConfig = config
+		globalSecureStore, initErr = NewSecureStore(config)
+	})
+	return initErr
+}
+
+// ResetSecureStore resets the global secure store. For testing only.
+func ResetSecureStore() {
+	storeMu.Lock()
+	defer storeMu.Unlock()
+	globalSecureStore = nil
+	secureStoreOnce = sync.Once{}
+	secureStoreConfig = SecureStoreConfig{}
+}
+
+// getSecureStore returns the global secure store, initializing with defaults if needed.
+func getSecureStore() *SecureStore {
+	storeMu.RLock()
+	if globalSecureStore != nil {
+		storeMu.RUnlock()
+		return globalSecureStore
+	}
+	storeMu.RUnlock()
+
+	storeMu.Lock()
+	defer storeMu.Unlock()
+
+	if globalSecureStore == nil {
+		// Initialize with default config (no encryption for backward compatibility)
+		globalSecureStore, _ = NewSecureStore(SecureStoreConfig{
+			Enabled:     false,
+			UseKeychain: false,
+		})
+	}
+	return globalSecureStore
+}
+
+// GetCredential retrieves a credential from secure storage.
+// Falls back to plain file storage if secure storage is not initialized.
 func GetCredential(provider string) (*AuthCredential, error) {
-	store, err := LoadStore()
-	if err != nil {
-		return nil, err
-	}
-	cred, ok := store.Credentials[provider]
-	if !ok {
-		return nil, nil
-	}
-	return cred, nil
+	return getSecureStore().GetCredential(provider)
 }
 
+// SetCredential stores a credential in secure storage.
+// Falls back to plain file storage if secure storage is not initialized.
 func SetCredential(provider string, cred *AuthCredential) error {
-	store, err := LoadStore()
-	if err != nil {
-		return err
-	}
-	store.Credentials[provider] = cred
-	return SaveStore(store)
+	return getSecureStore().SetCredential(provider, cred)
 }
 
+// DeleteCredential removes a credential from secure storage.
 func DeleteCredential(provider string) error {
-	store, err := LoadStore()
-	if err != nil {
-		return err
-	}
-	delete(store.Credentials, provider)
-	return SaveStore(store)
+	return getSecureStore().DeleteCredential(provider)
 }
 
+// DeleteAllCredentials removes all credentials from secure storage.
 func DeleteAllCredentials() error {
-	path := authFilePath()
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
+	return getSecureStore().DeleteAllCredentials()
+}
+
+// MigrateCredentials migrates existing plain-text credentials to secure storage.
+func MigrateCredentials() error {
+	return getSecureStore().MigrateFromPlainStorage()
+}
+
+// ListProviders returns all providers with stored credentials.
+func ListProviders() ([]string, error) {
+	return getSecureStore().ListProviders()
 }
