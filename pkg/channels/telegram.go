@@ -38,13 +38,14 @@ var (
 
 type TelegramChannel struct {
 	*BaseChannel
-	bot          *telego.Bot
-	commands     TelegramCommander
-	config       *config.Config
-	chatIDs      map[string]int64
-	transcriber  *voice.GroqTranscriber
-	placeholders sync.Map // chatID -> messageID
-	stopThinking sync.Map // chatID -> thinkingCancel
+	bot            *telego.Bot
+	commands       TelegramCommander
+	config         *config.Config
+	chatIDs        map[string]int64
+	usernameCache  map[string]int64 // Cache username -> chat ID resolution
+	transcriber    *voice.GroqTranscriber
+	placeholders   sync.Map // chatID -> messageID
+	stopThinking   sync.Map // chatID -> thinkingCancel
 }
 
 type thinkingCancel struct {
@@ -88,19 +89,48 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	base := NewBaseChannel("telegram", telegramCfg, bus, telegramCfg.AllowFrom)
 
 	return &TelegramChannel{
-		BaseChannel:  base,
-		commands:     NewTelegramCommands(bot, cfg),
-		bot:          bot,
-		config:       cfg,
-		chatIDs:      make(map[string]int64),
-		transcriber:  nil,
-		placeholders: sync.Map{},
-		stopThinking: sync.Map{},
+		BaseChannel:   base,
+		commands:      NewTelegramCommands(bot, cfg),
+		bot:           bot,
+		config:        cfg,
+		chatIDs:       make(map[string]int64),
+		usernameCache: make(map[string]int64),
+		transcriber:   nil,
+		placeholders:  sync.Map{},
+		stopThinking:  sync.Map{},
 	}, nil
 }
 
 func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 	c.transcriber = transcriber
+}
+
+func (c *TelegramChannel) resolveUsername(ctx context.Context, username string) (int64, error) {
+	// Check cache first
+	chatID, exists := c.usernameCache[username]
+	if exists {
+		return chatID, nil
+	}
+
+	// Use getChat API to resolve username to chat ID
+	// Username must be prefixed with @ for the API
+	usernameWithAt := "@" + username
+	chat, err := c.bot.GetChat(ctx, &telego.GetChatParams{
+		ChatID: tu.Username(usernameWithAt),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to resolve username @%s: %w", username, err)
+	}
+
+	// Cache the result
+	c.usernameCache[username] = chat.ID
+
+	logger.DebugCF("telegram", "Resolved username to chat ID", map[string]any{
+		"username": username,
+		"chat_id":  chat.ID,
+	})
+
+	return chat.ID, nil
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -164,7 +194,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("telegram bot not running")
 	}
 
-	chatID, err := parseChatID(msg.ChatID)
+	chatID, err := c.parseChatID(ctx, msg.ChatID)
 	if err != nil {
 		return fmt.Errorf("invalid chat ID: %w", err)
 	}
@@ -427,10 +457,26 @@ func (c *TelegramChannel) downloadFile(ctx context.Context, fileID, ext string) 
 	return c.downloadFileWithInfo(file, ext)
 }
 
-func parseChatID(chatIDStr string) (int64, error) {
+func (c *TelegramChannel) parseChatID(ctx context.Context, chatIDStr string) (int64, error) {
+	// Strip @ prefix if present (username format)
+	chatIDStr = strings.TrimPrefix(chatIDStr, "@")
+
+	// Try parsing as numeric ID
 	var id int64
 	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
-	return id, err
+	if err == nil {
+		return id, nil
+	}
+
+	// If not an integer, try to resolve as username
+	chatID, err := c.resolveUsername(ctx, chatIDStr)
+	if err != nil {
+		return 0, fmt.Errorf("chat ID must be numeric (e.g., 123456789) or a valid username (@%s). "+
+			"Use your numeric user ID from https://t.me/getdivid or ensure the username is correct",
+			chatIDStr)
+	}
+
+	return chatID, nil
 }
 
 func markdownToTelegramHTML(text string) string {
