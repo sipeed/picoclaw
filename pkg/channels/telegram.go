@@ -38,14 +38,14 @@ var (
 
 type TelegramChannel struct {
 	*BaseChannel
-	bot            *telego.Bot
-	commands       TelegramCommander
-	config         *config.Config
-	chatIDs        map[string]int64
-	usernameCache  map[string]int64 // Cache username -> chat ID resolution
-	transcriber    *voice.GroqTranscriber
-	placeholders   sync.Map // chatID -> messageID
-	stopThinking   sync.Map // chatID -> thinkingCancel
+	bot           *telego.Bot
+	commands      TelegramCommander
+	config        *config.Config
+	chatIDs       map[string]int64
+	usernameCache map[string]int64 // Cache username -> chat ID resolution
+	transcriber   *voice.GroqTranscriber
+	placeholders  sync.Map // chatID -> messageID
+	stopThinking  sync.Map // chatID -> thinkingCancel
 }
 
 type thinkingCancel struct {
@@ -194,34 +194,41 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("telegram bot not running")
 	}
 
-	chatID, err := c.parseChatID(ctx, msg.ChatID)
+	chatID, err := parseChatID(msg.ChatID)
 	if err != nil {
 		return fmt.Errorf("invalid chat ID: %w", err)
 	}
 
-	// Stop thinking animation
-	if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
-		if cf, ok := stop.(*thinkingCancel); ok && cf != nil {
-			cf.Cancel()
+	// Check if this is a username target (for new conversations)
+	isUsername := strings.HasPrefix(msg.ChatID, "@")
+
+	// Stop thinking animation (only for numeric chat IDs)
+	if !isUsername {
+		if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
+			if cf, ok := stop.(*thinkingCancel); ok && cf != nil {
+				cf.Cancel()
+			}
+			c.stopThinking.Delete(msg.ChatID)
 		}
-		c.stopThinking.Delete(msg.ChatID)
 	}
 
 	htmlContent := markdownToTelegramHTML(msg.Content)
 
-	// Try to edit placeholder
-	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		c.placeholders.Delete(msg.ChatID)
-		editMsg := tu.EditMessageText(tu.ID(chatID), pID.(int), htmlContent)
-		editMsg.ParseMode = telego.ModeHTML
+	// Try to edit placeholder (skip for username targets - no previous message)
+	if !isUsername {
+		if pID, ok := c.placeholders.Load(msg.ChatID); ok {
+			c.placeholders.Delete(msg.ChatID)
+			editMsg := tu.EditMessageText(chatID, pID.(int), htmlContent)
+			editMsg.ParseMode = telego.ModeHTML
 
-		if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
-			return nil
+			if _, err = c.bot.EditMessageText(ctx, editMsg); err == nil {
+				return nil
+			}
+			// Fallback to new message if edit fails
 		}
-		// Fallback to new message if edit fails
 	}
 
-	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
+	tgMsg := tu.Message(chatID, htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 
 	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
@@ -457,26 +464,19 @@ func (c *TelegramChannel) downloadFile(ctx context.Context, fileID, ext string) 
 	return c.downloadFileWithInfo(file, ext)
 }
 
-func (c *TelegramChannel) parseChatID(ctx context.Context, chatIDStr string) (int64, error) {
-	// Strip @ prefix if present (username format)
-	chatIDStr = strings.TrimPrefix(chatIDStr, "@")
+func parseChatID(chatIDStr string) (telego.ChatID, error) {
+	// Check if it's a username (starts with @)
+	if strings.HasPrefix(chatIDStr, "@") {
+		return tu.Username(chatIDStr), nil
+	}
 
-	// Try parsing as numeric ID
+	// Otherwise, parse as numeric ID
 	var id int64
 	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
-	if err == nil {
-		return id, nil
-	}
-
-	// If not an integer, try to resolve as username
-	chatID, err := c.resolveUsername(ctx, chatIDStr)
 	if err != nil {
-		return 0, fmt.Errorf("chat ID must be numeric (e.g., 123456789) or a valid username (@%s). "+
-			"Use your numeric user ID from https://t.me/getdivid or ensure the username is correct",
-			chatIDStr)
+		return telego.ChatID{}, err
 	}
-
-	return chatID, nil
+	return tu.ID(id), nil
 }
 
 func markdownToTelegramHTML(text string) string {
