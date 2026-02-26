@@ -340,6 +340,20 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}, true
 			},
 		},
+		{
+			providerNames: []string{"picolm"},
+			protocol:      "picolm",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.PicoLM.Binary == "" && p.PicoLM.Model == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "picolm",
+					Model:     "picolm/picolm-local",
+					PicoLM:    p.PicoLM,
+				}, true
+			},
+		},
 	}
 
 	// Process each provider migration
