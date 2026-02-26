@@ -78,6 +78,17 @@ var (
 		substr("invalid request format"),
 	}
 
+	invalidModelPatterns = []errorPattern{
+		rxp(`not a valid model`),
+		rxp(`invalid model`),
+		rxp(`model .+ is not available`),
+		rxp(`model .+ does not exist`),
+		rxp(`unknown model`),
+		rxp(`model_not_found`),
+		substr("model not found"),
+		rxp(`model not supported`),
+	}
+
 	imageDimensionPatterns = []errorPattern{
 		rxp(`image dimensions exceed max`),
 	}
@@ -128,7 +139,20 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 		}
 	}
 
-	// Try HTTP status code extraction first.
+	// Message pattern matching FIRST (priority over status codes).
+	// This allows 400 errors with specific messages to be classified correctly.
+	// For example, 400 + "not a valid model ID" should be FailoverModel (retriable)
+	// not FailoverFormat (non-retriable).
+	if reason := classifyByMessage(msg); reason != "" {
+		return &FailoverError{
+			Reason:   reason,
+			Provider: provider,
+			Model:    model,
+			Wrapped:  err,
+		}
+	}
+
+	// Then try HTTP status code extraction (only if message didn't match).
 	if status := extractHTTPStatus(msg); status > 0 {
 		if reason := classifyByStatus(status); reason != "" {
 			return &FailoverError{
@@ -138,16 +162,6 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 				Status:   status,
 				Wrapped:  err,
 			}
-		}
-	}
-
-	// Message pattern matching (priority order from OpenClaw).
-	if reason := classifyByMessage(msg); reason != "" {
-		return &FailoverError{
-			Reason:   reason,
-			Provider: provider,
-			Model:    model,
-			Wrapped:  err,
 		}
 	}
 
@@ -190,6 +204,9 @@ func classifyByMessage(msg string) FailoverReason {
 	}
 	if matchesAny(msg, authPatterns) {
 		return FailoverAuth
+	}
+	if matchesAny(msg, invalidModelPatterns) {
+		return FailoverModel
 	}
 	if matchesAny(msg, formatPatterns) {
 		return FailoverFormat

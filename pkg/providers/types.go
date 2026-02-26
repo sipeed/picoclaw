@@ -47,6 +47,7 @@ const (
 	FailoverTimeout    FailoverReason = "timeout"
 	FailoverFormat     FailoverReason = "format"
 	FailoverOverloaded FailoverReason = "overloaded"
+	FailoverModel      FailoverReason = "model"
 	FailoverUnknown    FailoverReason = "unknown"
 )
 
@@ -70,6 +71,7 @@ func (e *FailoverError) Unwrap() error {
 
 // IsRetriable returns true if this error should trigger fallback to next candidate.
 // Non-retriable: Format errors (bad request structure, image dimension/size).
+// Retriable: Auth, rate_limit, billing, timeout, model, overloaded.
 func (e *FailoverError) IsRetriable() bool {
 	return e.Reason != FailoverFormat
 }

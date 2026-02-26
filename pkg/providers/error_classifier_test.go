@@ -335,3 +335,53 @@ func TestIsImageSizeError(t *testing.T) {
 		t.Error("should not match normal error")
 	}
 }
+
+func TestClassifyError_InvalidModelErrors(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      string
+		reason   FailoverReason
+		retriable bool
+	}{
+		{
+			name:     "antigravity invalid model 400",
+			msg:      "API request failed: Status: 400 Body: {\"error\":{\"message\":\"gemini-3-flash is not a valid model ID\",\"code\":400}}",
+			reason:   FailoverModel,
+			retriable: true,
+		},
+		{
+			name:     "openrouter invalid model",
+			msg:      "invalid model: gpt-5 does not exist",
+			reason:   FailoverModel,
+			retriable: true,
+		},
+		{
+			name:     "model not available",
+			msg:      "model claude-opus is not available",
+			reason:   FailoverModel,
+			retriable: true,
+		},
+		{
+			name:     "model not found",
+			msg:      "model not found: unknown-model-x",
+			reason:   FailoverModel,
+			retriable: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := errors.New(tt.msg)
+			result := ClassifyError(err, "test-provider", "test-model")
+			if result == nil {
+				t.Fatalf("expected non-nil error, got nil")
+			}
+			if result.Reason != tt.reason {
+				t.Errorf("reason = %q, want %q", result.Reason, tt.reason)
+			}
+			if result.IsRetriable() != tt.retriable {
+				t.Errorf("IsRetriable() = %v, want %v", result.IsRetriable(), tt.retriable)
+			}
+		})
+	}
+}
