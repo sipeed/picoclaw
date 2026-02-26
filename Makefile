@@ -126,7 +126,7 @@ clean:
 	@echo "Clean complete"
 
 ## vet: Run go vet for static analysis
-vet:
+vet: generate
 	@$(GO) vet ./...
 
 ## test: Test Go code
@@ -138,7 +138,7 @@ fmt:
 	@$(GOLANGCI_LINT) fmt
 
 ## lint: Run linters
-lint:
+lint: generate
 	@$(GOLANGCI_LINT) run
 
 ## deps: Download dependencies
