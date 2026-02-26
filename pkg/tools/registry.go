@@ -7,8 +7,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/sipeed/picoclaw/pkg/tools/append_file"
+	"github.com/sipeed/picoclaw/pkg/tools/edit_file"
+	"github.com/sipeed/picoclaw/pkg/tools/exec"
+	"github.com/sipeed/picoclaw/pkg/tools/find_skills"
+	"github.com/sipeed/picoclaw/pkg/tools/i2c"
+	"github.com/sipeed/picoclaw/pkg/tools/install_skill"
+	"github.com/sipeed/picoclaw/pkg/tools/list_dir"
+	"github.com/sipeed/picoclaw/pkg/tools/message"
+	"github.com/sipeed/picoclaw/pkg/tools/read_file"
+	"github.com/sipeed/picoclaw/pkg/tools/spi"
+	"github.com/sipeed/picoclaw/pkg/tools/web_fetch"
+	"github.com/sipeed/picoclaw/pkg/tools/web_search"
+	"github.com/sipeed/picoclaw/pkg/tools/write_file"
 )
 
 type ToolRegistry struct {
@@ -16,7 +31,98 @@ type ToolRegistry struct {
 	mu    sync.RWMutex
 }
 
-func NewToolRegistry() *ToolRegistry {
+func NewToolRegistry(cfg *config.Config, workspace string, restrict bool) *ToolRegistry {
+	toolsRegistry := &ToolRegistry{
+		tools: make(map[string]Tool),
+	}
+
+	// Handle nil config (for testing)
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+
+	// File tools - each with individual configuration
+	if cfg.Tools.ReadFile.Enabled {
+		toolsRegistry.Register(read_file.NewReadFileTool(workspace, restrict))
+	}
+	if cfg.Tools.WriteFile.Enabled {
+		toolsRegistry.Register(write_file.NewWriteFileTool(workspace, restrict))
+	}
+	if cfg.Tools.EditFile.Enabled {
+		toolsRegistry.Register(edit_file.NewEditFileTool(workspace, restrict))
+	}
+	if cfg.Tools.AppendFile.Enabled {
+		toolsRegistry.Register(append_file.NewAppendFileTool(workspace, restrict))
+	}
+	if cfg.Tools.ListDir.Enabled {
+		toolsRegistry.Register(list_dir.NewListDirTool(workspace, restrict))
+	}
+
+	// Exec tool
+	if cfg.Tools.Exec.Enabled {
+		toolsRegistry.Register(exec.NewExecToolWithConfig(workspace, restrict, cfg))
+	}
+
+	// Web tools
+	if searchTool := web_search.NewWebSearchTool(web_search.WebSearchToolOptions{
+		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
+		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
+		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+		TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
+		TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
+		TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
+		TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
+		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
+		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+		PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+		Proxy:                cfg.Tools.Web.Proxy,
+	}); searchTool != nil {
+		toolsRegistry.Register(searchTool)
+	}
+	toolsRegistry.Register(web_fetch.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy))
+
+	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
+	if cfg.Tools.I2C.Enabled {
+		toolsRegistry.Register(i2c.NewI2CTool())
+	}
+	if cfg.Tools.SPI.Enabled {
+		toolsRegistry.Register(spi.NewSPITool())
+	}
+
+	// Skill discovery and installation tools
+	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
+		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
+		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+	})
+	searchCache := skills.NewSearchCache(
+		cfg.Tools.Skills.SearchCache.MaxSize,
+		time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
+	)
+	if cfg.Tools.FindSkills.Enabled {
+		toolsRegistry.Register(find_skills.NewFindSkillsTool(registryMgr, searchCache))
+	}
+	if cfg.Tools.InstallSkill.Enabled {
+		toolsRegistry.Register(install_skill.NewInstallSkillTool(registryMgr, workspace))
+	}
+
+	// Message tool
+	if cfg.Tools.Message.Enabled {
+		toolsRegistry.Register(message.NewMessageTool())
+	}
+
+	// // Spawn tool
+	// if cfg.Tools.Spawn.Enabled {
+	// 	// Note: Spawn tool is registered separately in agent loop
+	// }
+
+	return toolsRegistry
+}
+
+// NewEmptyToolRegistry creates a tool registry without pre-registered tools.
+// This is useful for testing.
+func NewEmptyToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
 		tools: make(map[string]Tool),
 	}
@@ -119,6 +225,17 @@ func (r *ToolRegistry) sortedToolNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func ToolToSchema(tool Tool) map[string]any {
+	return map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":        tool.Name(),
+			"description": tool.Description(),
+			"parameters":  tool.Parameters(),
+		},
+	}
 }
 
 func (r *ToolRegistry) GetDefinitions() []map[string]any {

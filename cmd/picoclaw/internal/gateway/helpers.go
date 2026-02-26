@@ -24,6 +24,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	cron_tool "github.com/sipeed/picoclaw/pkg/tools/cron"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
@@ -232,14 +233,15 @@ func setupCronTool(
 	cronService := cron.NewCronService(cronStorePath, nil)
 
 	// Create and register CronTool
-	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
-	agentLoop.RegisterTool(cronTool)
+	if cfg.Tools.Cron.Enabled {
+		cronTool := cron_tool.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
+		agentLoop.RegisterTool(cronTool)
 
-	// Set the onJob handler
-	cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
-		result := cronTool.ExecuteJob(context.Background(), job)
-		return result, nil
-	})
-
+		// Set the onJob handler
+		cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
+			result := cronTool.ExecuteJob(context.Background(), job)
+			return result, nil
+		})
+	}
 	return cronService
 }
