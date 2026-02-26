@@ -49,7 +49,10 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 	dialer := websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
 
-	conn, _, err := dialer.Dial(c.url, nil)
+	conn, resp, err := dialer.Dial(c.url, nil)
+	if resp != nil {
+		resp.Body.Close()
+	}
 	if err != nil {
 		c.cancel()
 		return fmt.Errorf("failed to connect to WhatsApp bridge: %w", err)

@@ -766,66 +766,6 @@ func (c *WeComAppChannel) sendTextMessage(ctx context.Context, accessToken, user
 	return nil
 }
 
-// sendMarkdownMessage sends a markdown message to a user
-func (c *WeComAppChannel) sendMarkdownMessage(ctx context.Context, accessToken, userID, content string) error {
-	apiURL := fmt.Sprintf("%s/cgi-bin/message/send?access_token=%s", wecomAPIBase, accessToken)
-
-	msg := WeComMarkdownMessage{
-		ToUser:  userID,
-		MsgType: "markdown",
-		AgentID: c.config.AgentID,
-	}
-	msg.Markdown.Content = content
-
-	jsonData, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
-	}
-
-	// Use configurable timeout (default 5 seconds)
-	timeout := c.config.ReplyTimeout
-	if timeout <= 0 {
-		timeout = 5
-	}
-
-	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return channels.ClassifyNetError(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom_app API error: %s", string(body)))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	var sendResp WeComSendMessageResponse
-	if err := json.Unmarshal(body, &sendResp); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if sendResp.ErrCode != 0 {
-		return fmt.Errorf("API error: %s (code: %d)", sendResp.ErrMsg, sendResp.ErrCode)
-	}
-
-	return nil
-}
-
 // handleHealth handles health check requests
 func (c *WeComAppChannel) handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := map[string]any{

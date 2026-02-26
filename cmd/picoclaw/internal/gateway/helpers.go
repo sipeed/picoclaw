@@ -176,7 +176,6 @@ func gatewayCmd(debug bool) error {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
-
 	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	go agentLoop.Run(ctx)
