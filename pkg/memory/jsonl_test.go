@@ -423,6 +423,127 @@ func TestColonInKey(t *testing.T) {
 	}
 }
 
+func TestCompact_RemovesSkippedMessages(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	// Write 10 messages, then truncate to keep last 3.
+	for i := 0; i < 10; i++ {
+		err := store.AddMessage(ctx, "compact", "user", string(rune('a'+i)))
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+	}
+	err := store.TruncateHistory(ctx, "compact", 3)
+	if err != nil {
+		t.Fatalf("TruncateHistory: %v", err)
+	}
+
+	// Before compact: file still has 10 lines.
+	allOnDisk, err := readMessages(store.jsonlPath("compact"))
+	if err != nil {
+		t.Fatalf("readMessages: %v", err)
+	}
+	if len(allOnDisk) != 10 {
+		t.Fatalf("before compact: expected 10 on disk, got %d", len(allOnDisk))
+	}
+
+	// Compact.
+	err = store.Compact(ctx, "compact")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	// After compact: file should have only 3 lines.
+	allOnDisk, err = readMessages(store.jsonlPath("compact"))
+	if err != nil {
+		t.Fatalf("readMessages: %v", err)
+	}
+	if len(allOnDisk) != 3 {
+		t.Fatalf("after compact: expected 3 on disk, got %d", len(allOnDisk))
+	}
+
+	// GetHistory should still return the same 3 messages.
+	history, err := store.GetHistory(ctx, "compact")
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 3 {
+		t.Fatalf("expected 3, got %d", len(history))
+	}
+	if history[0].Content != "h" || history[2].Content != "j" {
+		t.Errorf("wrong content: %+v", history)
+	}
+}
+
+func TestCompact_NoOpWhenNoSkip(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	for i := 0; i < 5; i++ {
+		err := store.AddMessage(ctx, "noop", "user", "msg")
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+	}
+
+	// Compact without prior truncation — should be a no-op.
+	err := store.Compact(ctx, "noop")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	history, err := store.GetHistory(ctx, "noop")
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 5 {
+		t.Errorf("expected 5, got %d", len(history))
+	}
+}
+
+func TestCompact_ThenAppend(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	for i := 0; i < 8; i++ {
+		err := store.AddMessage(ctx, "cap", "user", string(rune('a'+i)))
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+	}
+
+	err := store.TruncateHistory(ctx, "cap", 2)
+	if err != nil {
+		t.Fatalf("TruncateHistory: %v", err)
+	}
+	err = store.Compact(ctx, "cap")
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	// Append after compaction should work correctly.
+	err = store.AddMessage(ctx, "cap", "user", "new")
+	if err != nil {
+		t.Fatalf("AddMessage after compact: %v", err)
+	}
+
+	history, err := store.GetHistory(ctx, "cap")
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 3 {
+		t.Fatalf("expected 3, got %d", len(history))
+	}
+	// g, h (kept from truncation), new (appended after compaction).
+	if history[0].Content != "g" {
+		t.Errorf("first = %q, want 'g'", history[0].Content)
+	}
+	if history[2].Content != "new" {
+		t.Errorf("last = %q, want 'new'", history[2].Content)
+	}
+}
+
 func TestCrashRecovery_PartialLine(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

@@ -328,7 +328,74 @@ func (s *JSONLStore) SetHistory(
 	l.Lock()
 	defer l.Unlock()
 
-	// Rewrite the JSONL file atomically (temp + rename).
+	err := s.rewriteJSONL(sessionKey, history)
+	if err != nil {
+		return err
+	}
+
+	meta, err := s.readMeta(sessionKey)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	if meta.CreatedAt.IsZero() {
+		meta.CreatedAt = now
+	}
+	meta.Skip = 0
+	meta.Count = len(history)
+	meta.UpdatedAt = now
+
+	return s.writeMeta(sessionKey, meta)
+}
+
+// Compact physically rewrites the JSONL file, dropping all logically
+// skipped lines. This reclaims disk space that accumulates after
+// repeated TruncateHistory calls.
+//
+// It is safe to call at any time; if there is nothing to compact
+// (skip == 0) the method returns immediately.
+func (s *JSONLStore) Compact(
+	_ context.Context, sessionKey string,
+) error {
+	l := s.sessionLock(sessionKey)
+	l.Lock()
+	defer l.Unlock()
+
+	meta, err := s.readMeta(sessionKey)
+	if err != nil {
+		return err
+	}
+	if meta.Skip == 0 {
+		return nil
+	}
+
+	all, err := readMessages(s.jsonlPath(sessionKey))
+	if err != nil {
+		return err
+	}
+
+	// Keep only the active (non-skipped) messages.
+	var active []providers.Message
+	if meta.Skip < len(all) {
+		active = all[meta.Skip:]
+	}
+
+	err = s.rewriteJSONL(sessionKey, active)
+	if err != nil {
+		return err
+	}
+
+	meta.Skip = 0
+	meta.Count = len(active)
+	meta.UpdatedAt = time.Now()
+
+	return s.writeMeta(sessionKey, meta)
+}
+
+// rewriteJSONL atomically replaces the JSONL file with the given messages.
+func (s *JSONLStore) rewriteJSONL(
+	sessionKey string, msgs []providers.Message,
+) error {
 	target := s.jsonlPath(sessionKey)
 	tmp := target + ".tmp"
 
@@ -337,7 +404,7 @@ func (s *JSONLStore) SetHistory(
 		return fmt.Errorf("memory: create jsonl tmp: %w", err)
 	}
 
-	for i, msg := range history {
+	for i, msg := range msgs {
 		line, marshalErr := json.Marshal(msg)
 		if marshalErr != nil {
 			f.Close()
@@ -364,21 +431,7 @@ func (s *JSONLStore) SetHistory(
 		_ = os.Remove(tmp)
 		return fmt.Errorf("memory: rename jsonl: %w", err)
 	}
-
-	// Reset metadata: skip=0, count=len(history).
-	meta, err := s.readMeta(sessionKey)
-	if err != nil {
-		return err
-	}
-	now := time.Now()
-	if meta.CreatedAt.IsZero() {
-		meta.CreatedAt = now
-	}
-	meta.Skip = 0
-	meta.Count = len(history)
-	meta.UpdatedAt = now
-
-	return s.writeMeta(sessionKey, meta)
+	return nil
 }
 
 func (s *JSONLStore) Close() error {
