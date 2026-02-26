@@ -19,7 +19,7 @@ func NewDashboardCommand() *cobra.Command {
 		Aliases: []string{"d", "ui"},
 		Short:   "Start the web-based configuration dashboard",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDashboard(host, port, !noBrowser)
+			return RunDashboard(host, port, !noBrowser)
 		},
 	}
 
