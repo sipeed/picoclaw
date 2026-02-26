@@ -28,6 +28,15 @@ func CreateProvider(cfg *config.Config) (LLMProvider, string, error) {
 		return nil, "", fmt.Errorf("no providers configured. Please add entries to model_list in your config")
 	}
 
+	// If no model is specified, use the first model from model_list
+	if model == "" {
+		if len(cfg.ModelList) > 0 {
+			model = cfg.ModelList[0].ModelName
+		} else {
+			return nil, "", fmt.Errorf("no model specified and no models in model_list. Please set model_name in agents.defaults or add models to model_list")
+		}
+	}
+
 	// Collect models to try: primary first, then fallbacks
 	modelsToTry := []string{model}
 	modelsToTry = append(modelsToTry, cfg.Agents.Defaults.ModelFallbacks...)

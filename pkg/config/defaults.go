@@ -13,7 +13,7 @@ func DefaultConfig() *Config {
 				Workspace:           "~/.picoclaw/workspace",
 				RestrictToWorkspace: true,
 				Provider:            "",
-				Model:               "glm-4.7",
+				Model:               "", // Require explicit model specification
 				MaxTokens:           8192,
 				Temperature:         nil, // nil means use provider default
 				MaxToolIterations:   20,
