@@ -314,6 +314,62 @@ func TestMigrateFromJSON_ColonInKey(t *testing.T) {
 	}
 }
 
+func TestMigrateFromJSON_RetryAfterCrash(t *testing.T) {
+	// Simulates a crash during migration: first run writes messages
+	// but doesn't rename the .json file. Second run must replace
+	// (not duplicate) the messages thanks to SetHistory semantics.
+	sessionsDir := t.TempDir()
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	writeJSONSession(t, sessionsDir, "retry.json", jsonSession{
+		Key: "retry",
+		Messages: []providers.Message{
+			{Role: "user", Content: "one"},
+			{Role: "assistant", Content: "two"},
+		},
+		Created: time.Now(),
+		Updated: time.Now(),
+	})
+
+	// First migration succeeds — writes messages and renames file.
+	count, err := MigrateFromJSON(ctx, sessionsDir, store)
+	if err != nil {
+		t.Fatalf("first migration: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1, got %d", count)
+	}
+
+	// Simulate "crash before rename": restore the .json file.
+	src := filepath.Join(sessionsDir, "retry.json.migrated")
+	dst := filepath.Join(sessionsDir, "retry.json")
+	if renameErr := os.Rename(src, dst); renameErr != nil {
+		t.Fatalf("restore .json: %v", renameErr)
+	}
+
+	// Second migration should re-import without duplicating messages.
+	count, err = MigrateFromJSON(ctx, sessionsDir, store)
+	if err != nil {
+		t.Fatalf("second migration: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1, got %d", count)
+	}
+
+	history, err := store.GetHistory(ctx, "retry")
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	// Must be exactly 2 messages (not 4 from duplication).
+	if len(history) != 2 {
+		t.Fatalf("expected 2 messages (no duplicates), got %d", len(history))
+	}
+	if history[0].Content != "one" || history[1].Content != "two" {
+		t.Errorf("unexpected messages: %+v", history)
+	}
+}
+
 func TestMigrateFromJSON_NonexistentDir(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

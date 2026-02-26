@@ -74,19 +74,20 @@ func MigrateFromJSON(
 			key = strings.TrimSuffix(name, ".json")
 		}
 
-		for _, msg := range sess.Messages {
-			addErr := store.AddFullMessage(ctx, key, msg)
-			if addErr != nil {
-				return migrated, fmt.Errorf(
-					"memory: migrate %s: add message: %w",
-					name, addErr,
-				)
-			}
+		// Use SetHistory (atomic replace) instead of per-message
+		// AddFullMessage. This makes migration idempotent: if the
+		// process crashes after writing messages but before the
+		// rename below, a retry replaces the partial data cleanly
+		// instead of duplicating messages.
+		if setErr := store.SetHistory(ctx, key, sess.Messages); setErr != nil {
+			return migrated, fmt.Errorf(
+				"memory: migrate %s: set history: %w",
+				name, setErr,
+			)
 		}
 
 		if sess.Summary != "" {
-			sumErr := store.SetSummary(ctx, key, sess.Summary)
-			if sumErr != nil {
+			if sumErr := store.SetSummary(ctx, key, sess.Summary); sumErr != nil {
 				return migrated, fmt.Errorf(
 					"memory: migrate %s: set summary: %w",
 					name, sumErr,
