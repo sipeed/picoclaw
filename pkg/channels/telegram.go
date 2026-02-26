@@ -232,12 +232,21 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	tgMsg.ParseMode = telego.ModeHTML
 
 	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
-			"error": err.Error(),
+		logger.ErrorCF("telegram", "Failed to send message", map[string]any{
+			"target":      msg.ChatID,
+			"is_username": isUsername,
+			"error":       err.Error(),
 		})
 		tgMsg.ParseMode = ""
 		_, err = c.bot.SendMessage(ctx, tgMsg)
-		return err
+		if err != nil {
+			logger.ErrorCF("telegram", "Failed to send message (plain text fallback also failed)", map[string]any{
+				"target":      msg.ChatID,
+				"is_username": isUsername,
+				"error":       err.Error(),
+			})
+			return fmt.Errorf("failed to send telegram message to %s: %w", msg.ChatID, err)
+		}
 	}
 
 	return nil
