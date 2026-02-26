@@ -9,16 +9,19 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
-type ToolCall = protocoltypes.ToolCall
-type FunctionCall = protocoltypes.FunctionCall
-type LLMResponse = protocoltypes.LLMResponse
-type UsageInfo = protocoltypes.UsageInfo
-type Message = protocoltypes.Message
-type ToolDefinition = protocoltypes.ToolDefinition
-type ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
+type (
+	ToolCall               = protocoltypes.ToolCall
+	FunctionCall           = protocoltypes.FunctionCall
+	LLMResponse            = protocoltypes.LLMResponse
+	UsageInfo              = protocoltypes.UsageInfo
+	Message                = protocoltypes.Message
+	ToolDefinition         = protocoltypes.ToolDefinition
+	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
+)
 
 const defaultBaseURL = "https://api.anthropic.com"
 
@@ -61,7 +64,13 @@ func NewProviderWithTokenSourceAndBaseURL(token string, tokenSource func() (stri
 	return p
 }
 
-func (p *Provider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *Provider) Chat(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
 	var opts []option.RequestOption
 	if p.tokenSource != nil {
 		tok, err := p.tokenSource()
@@ -92,14 +101,32 @@ func (p *Provider) BaseURL() string {
 	return p.baseURL
 }
 
-func buildParams(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (anthropic.MessageNewParams, error) {
+func buildParams(
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (anthropic.MessageNewParams, error) {
 	var system []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
 
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
-			system = append(system, anthropic.TextBlockParam{Text: msg.Content})
+			// Prefer structured SystemParts for per-block cache_control.
+			// This enables LLM-side KV cache reuse: the static block's prefix
+			// hash stays stable across requests while dynamic parts change freely.
+			if len(msg.SystemParts) > 0 {
+				for _, part := range msg.SystemParts {
+					block := anthropic.TextBlockParam{Text: part.Text}
+					if part.CacheControl != nil && part.CacheControl.Type == "ephemeral" {
+						block.CacheControl = anthropic.NewCacheControlEphemeralParam()
+					}
+					system = append(system, block)
+				}
+			} else {
+				system = append(system, anthropic.TextBlockParam{Text: msg.Content})
+			}
 		case "user":
 			if msg.ToolCallID != "" {
 				anthropicMessages = append(anthropicMessages,
@@ -170,7 +197,7 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 		if desc := t.Function.Description; desc != "" {
 			tool.Description = anthropic.String(desc)
 		}
-		if req, ok := t.Function.Parameters["required"].([]interface{}); ok {
+		if req, ok := t.Function.Parameters["required"].([]any); ok {
 			required := make([]string, 0, len(req))
 			for _, r := range req {
 				if s, ok := r.(string); ok {
@@ -195,10 +222,10 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 			content += tb.Text
 		case "tool_use":
 			tu := block.AsToolUse()
-			var args map[string]interface{}
+			var args map[string]any
 			if err := json.Unmarshal(tu.Input, &args); err != nil {
 				log.Printf("anthropic: failed to decode tool call input for %q: %v", tu.Name, err)
-				args = map[string]interface{}{"raw": string(tu.Input)}
+				args = map[string]any{"raw": string(tu.Input)}
 			}
 			toolCalls = append(toolCalls, ToolCall{
 				ID:        tu.ID,

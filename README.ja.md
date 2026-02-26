@@ -133,6 +133,10 @@ vim config/config.json      # DISCORD_BOT_TOKEN, プロバイダーの API キ�
 # 3. ビルドと起動
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Docker ユーザー**: デフォルトでは、Gateway は `127.0.0.1` でリッスンしており、ホストからアクセスできません。ヘルスチェックエンドポイントにアクセスしたり、ポートを公開したりする必要がある場合は、環境変数で `PICOCLAW_GATEWAY_HOST=0.0.0.0` を設定するか、`config.json` を更新してください。
+
+
 # 4. ログ確認
 docker compose logs -f picoclaw-gateway
 
@@ -162,7 +166,7 @@ docker compose --profile gateway up -d
 > [!TIP]
 > `~/.picoclaw/config.json` に API キーを設定してください。
 > API キーの取得先: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web 検索は **任意** です - 無料の [Brave Search API](https://brave.com/search/api) (月 2000 クエリ無料)
+> Web 検索は **任意** です - 無料の [Tavily API](https://tavily.com) (月 1000 クエリ無料) または [Brave Search API](https://brave.com/search/api) (月 2000 クエリ無料)
 
 **1. 初期化**
 
@@ -174,25 +178,35 @@ picoclaw onboard
 
 ```json
 {
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key",
+      "api_base": "https://api.openai.com/v1"
+    }
+  ],
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
-      "max_tokens": 8192,
-      "temperature": 0.7,
-      "max_tool_iterations": 20
+      "model_name": "gpt4"
     }
   },
-  "providers": {
-    "openrouter": {
-      "api_key": "xxx",
-      "api_base": "https://openrouter.ai/api/v1"
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "allow_from": []
     }
   },
   "tools": {
     "web": {
       "search": {
         "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "tavily": {
+        "enabled": false,
+        "api_key": "YOUR_TAVILY_API_KEY",
         "max_results": 5
       }
     },
@@ -209,12 +223,12 @@ picoclaw onboard
 
 **3. API キーの取得**
 
-- **LLM プロバイダー**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys) · [Qwen](https://dashscope.console.aliyun.com)
-- **Web 検索**（任意）: [Brave Search](https://brave.com/search/api) - 無料枠あり（月 2000 リクエスト）
+- **LLM プロバイダー**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+- **Web 検索**（任意）: [Tavily](https://tavily.com) - AI エージェント向けに最適化 (月 1000 リクエスト) · [Brave Search](https://brave.com/search/api) - 無料枠あり（月 2000 リクエスト）
 
 > **注意**: 完全な設定テンプレートは `config.example.json` を参照してください。
 
-**3. チャット**
+**4. チャット**
 
 ```bash
 picoclaw agent -m "What is 2+2?"
@@ -226,7 +240,7 @@ picoclaw agent -m "What is 2+2?"
 
 ## 💬 チャットアプリ
 
-Telegram、Discord、QQ、DingTalk、LINE で PicoClaw と会話できます
+Telegram、Discord、QQ、DingTalk、LINE、WeCom で PicoClaw と会話できます
 
 | チャネル | セットアップ |
 |---------|------------|
@@ -235,6 +249,7 @@ Telegram、Discord、QQ、DingTalk、LINE で PicoClaw と会話できます
 | **QQ** | 簡単（AppID + AppSecret） |
 | **DingTalk** | 普通（アプリ認証情報） |
 | **LINE** | 普通（認証情報 + Webhook URL） |
+| **WeCom** | 普通（CorpID + Webhook設定） |
 
 <details>
 <summary><b>Telegram</b>（推奨）</summary>
@@ -427,6 +442,87 @@ picoclaw gateway
 > グループチャットでは @メンション時のみ応答します。返信は元メッセージを引用する形式です。
 
 > **Docker Compose**: `picoclaw-gateway` サービスに `ports: ["18791:18791"]` を追加して Webhook ポートを公開してください。
+
+</details>
+
+<details>
+<summary><b>WeCom (企業微信)</b></summary>
+
+PicoClaw は2種類の WeCom 統合をサポートしています：
+
+**オプション1: WeCom Bot (智能ロボット)** - 簡単な設定、グループチャット対応
+**オプション2: WeCom App (自作アプリ)** - より多機能、アクティブメッセージング対応
+
+詳細な設定手順は [WeCom App Configuration Guide](docs/wecom-app-configuration.md) を参照してください。
+
+**クイックセットアップ - WeCom Bot:**
+
+**1. ボットを作成**
+
+* WeCom 管理コンソール → グループチャット → グループボットを追加
+* Webhook URL をコピー（形式: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`）
+
+**2. 設定**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**クイックセットアップ - WeCom App:**
+
+**1. アプリを作成**
+
+* WeCom 管理コンソール → アプリ管理 → アプリを作成
+* **AgentId** と **Secret** をコピー
+* "マイ会社" ページで **CorpID** をコピー
+
+**2. メッセージ受信を設定**
+
+* アプリ詳細で "メッセージを受信" → "APIを設定" をクリック
+* URL を `http://your-server:18792/webhook/wecom-app` に設定
+* **Token** と **EncodingAESKey** を生成
+
+**3. 設定**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. 起動**
+
+```bash
+picoclaw gateway
+```
+
+> **注意**: WeCom App は Webhook コールバック用にポート 18792 を開放する必要があります。本番環境では HTTPS 用のリバースプロキシを使用してください。
 
 </details>
 
@@ -682,10 +778,10 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
   },
   "providers": {
     "openrouter": {
-      "apiKey": "sk-or-v1-xxx"
+      "api_key": "sk-or-v1-xxx"
     },
     "groq": {
-      "apiKey": "gsk_xxx"
+      "api_key": "gsk_xxx"
     }
   },
   "channels": {
@@ -704,17 +800,17 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
     },
     "feishu": {
       "enabled": false,
-      "appId": "cli_xxx",
-      "appSecret": "xxx",
-      "encryptKey": "",
-      "verificationToken": "",
+      "app_id": "cli_xxx",
+      "app_secret": "xxx",
+      "encrypt_key": "",
+      "verification_token": "",
       "allow_from": []
     }
   },
   "tools": {
     "web": {
       "search": {
-        "apiKey": "BSA..."
+        "api_key": "BSA..."
       }
     },
     "cron": {
@@ -913,14 +1009,19 @@ Discord: https://discord.gg/V4sAZ9XWpN
 検索 API キーをまだ設定していない場合、これは正常です。PicoClaw は手動検索用の便利なリンクを提供します。
 
 Web 検索を有効にするには：
-1. [https://brave.com/search/api](https://brave.com/search/api) で無料の API キーを取得（月 2000 クエリ無料）
+1. [https://tavily.com](https://tavily.com) (月 1000 クエリ無料) または [https://brave.com/search/api](https://brave.com/search/api) で無料の API キーを取得（月 2000 クエリ無料）
 2. `~/.picoclaw/config.json` に追加：
    ```json
    {
      "tools": {
        "web": {
-         "search": {
+         "brave": {
+           "enabled": true,
            "api_key": "YOUR_BRAVE_API_KEY",
+           "max_results": 5
+         },
+         "duckduckgo": {
+           "enabled": true,
            "max_results": 5
          }
        }
@@ -946,5 +1047,6 @@ Web 検索を有効にするには：
 | **Zhipu** | 月 200K トークン | 中国ユーザー向け最適 |
 | **Qwen** | 無料枠あり | 通義千問 (Qwen) |
 | **Brave Search** | 月 2000 クエリ | Web 検索機能 |
+| **Tavily** | 月 1000 クエリ | AI エージェント検索最適化 |
 | **Groq** | 無料枠あり | 高速推論（Llama, Mixtral） |
 | **Cerebras** | 無料枠あり | 高速推論（Llama, Qwen など） |
