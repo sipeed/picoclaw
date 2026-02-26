@@ -191,6 +191,36 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	return nil
 }
 
+// StartTyping implements channels.TypingCapable.
+// It sends ChatAction(typing) immediately and then repeats every 4 seconds
+// (Telegram's typing indicator expires after ~5s) in a background goroutine.
+// The returned stop function is idempotent and cancels the goroutine.
+func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+	cid, err := parseChatID(chatID)
+	if err != nil {
+		return func() {}, err
+	}
+
+	// Send the first typing action immediately
+	_ = c.bot.SendChatAction(ctx, tu.ChatAction(tu.ID(cid), telego.ChatActionTyping))
+
+	typingCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				_ = c.bot.SendChatAction(typingCtx, tu.ChatAction(tu.ID(cid), telego.ChatActionTyping))
+			}
+		}
+	}()
+
+	return cancel, nil
+}
+
 // EditMessage implements channels.MessageEditor.
 func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	cid, err := parseChatID(chatID)
@@ -206,6 +236,33 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	editMsg.ParseMode = telego.ModeHTML
 	_, err = c.bot.EditMessageText(ctx, editMsg)
 	return err
+}
+
+// SendPlaceholder implements channels.PlaceholderCapable.
+// It sends a placeholder message (e.g. "Thinking... 💭") that will later be
+// edited to the actual response via EditMessage (channels.MessageEditor).
+func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	phCfg := c.config.Channels.Telegram.Placeholder
+	if !phCfg.Enabled {
+		return "", nil
+	}
+
+	text := phCfg.Text
+	if text == "" {
+		text = "Thinking... 💭"
+	}
+
+	cid, err := parseChatID(chatID)
+	if err != nil {
+		return "", err
+	}
+
+	pMsg, err := c.bot.SendMessage(ctx, tu.Message(tu.ID(cid), text))
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%d", pMsg.MessageID), nil
 }
 
 // SendMedia implements the channels.MediaSender interface.
@@ -419,30 +476,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"preview":   utils.Truncate(content, 50),
 	})
 
-	// Thinking indicator
-	err := c.bot.SendChatAction(ctx, tu.ChatAction(tu.ID(chatID), telego.ChatActionTyping))
-	if err != nil {
-		logger.ErrorCF("telegram", "Failed to send chat action", map[string]any{
-			"error": err.Error(),
-		})
-	}
-
-	// Create cancel function for thinking state and register with Manager
-	_, thinkCancel := context.WithTimeout(ctx, 5*time.Minute)
-	if rec := c.GetPlaceholderRecorder(); rec != nil {
-		rec.RecordTypingStop("telegram", chatIDStr, thinkCancel)
-	} else {
-		// No recorder — cancel immediately to avoid context leak
-		thinkCancel()
-	}
-
-	pMsg, err := c.bot.SendMessage(ctx, tu.Message(tu.ID(chatID), "Thinking... 💭"))
-	if err == nil {
-		pID := pMsg.MessageID
-		if rec := c.GetPlaceholderRecorder(); rec != nil {
-			rec.RecordPlaceholder("telegram", chatIDStr, fmt.Sprintf("%d", pID))
-		}
-	}
+	// Placeholder is now auto-triggered by BaseChannel.HandleMessage via PlaceholderCapable
 
 	peerKind := "direct"
 	peerID := fmt.Sprintf("%d", user.ID)

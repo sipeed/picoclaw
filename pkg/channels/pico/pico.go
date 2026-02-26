@@ -171,6 +171,32 @@ func (c *PicoChannel) StartTyping(ctx context.Context, chatID string) (func(), e
 	}, nil
 }
 
+// SendPlaceholder implements channels.PlaceholderCapable.
+// It sends a placeholder message via the Pico Protocol that will later be
+// edited to the actual response via EditMessage (channels.MessageEditor).
+func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	if !c.config.Placeholder.Enabled {
+		return "", nil
+	}
+
+	text := c.config.Placeholder.Text
+	if text == "" {
+		text = "Thinking... 💭"
+	}
+
+	msgID := uuid.New().String()
+	outMsg := newMessage(TypeMessageCreate, map[string]any{
+		"content":    text,
+		"message_id": msgID,
+	})
+
+	if err := c.broadcastToSession(chatID, outMsg); err != nil {
+		return "", err
+	}
+
+	return msgID, nil
+}
+
 // broadcastToSession sends a message to all connections with a matching session.
 func (c *PicoChannel) broadcastToSession(chatID string, msg PicoMessage) error {
 	// chatID format: "pico:<sessionID>"
@@ -412,14 +438,6 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		"session_id": sessionID,
 		"preview":    truncate(content, 50),
 	})
-
-	// Register typing with Manager
-	if rec := c.GetPlaceholderRecorder(); rec != nil {
-		stop, err := c.StartTyping(c.ctx, chatID)
-		if err == nil {
-			rec.RecordTypingStop("pico", chatID, stop)
-		}
-	}
 
 	sender := bus.SenderInfo{
 		Platform:    "pico",

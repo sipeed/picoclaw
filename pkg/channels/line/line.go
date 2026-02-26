@@ -378,28 +378,6 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 		return
 	}
 
-	// Thinking indicator (LINE loading animation is 1:1 only).
-	// For group/room chats, LINE provides no equivalent API.
-	// Only start if PlaceholderRecorder is available to avoid wasted API calls.
-	if !isGroup {
-		if rec := c.GetPlaceholderRecorder(); rec != nil {
-			typingCtx, typingCancel := context.WithTimeout(c.ctx, 5*time.Minute)
-			stop, err := c.StartTyping(typingCtx, chatID)
-			if err == nil {
-				var stopOnce sync.Once
-				stopFn := func() {
-					stopOnce.Do(func() {
-						stop()
-						typingCancel()
-					})
-				}
-				rec.RecordTypingStop("line", chatID, stopFn)
-			} else {
-				typingCancel()
-			}
-		}
-	}
-
 	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, mediaPaths, metadata, sender)
 }
 
@@ -598,12 +576,16 @@ func (c *LINEChannel) sendPush(ctx context.Context, to, content, quoteToken stri
 
 // StartTyping implements channels.TypingCapable using LINE's loading animation.
 //
-// NOTE: The LINE loading animation API only works for 1:1 chats. Callers must ensure
-// the provided chatID is a user chat ID (not a group/room ID).
-// There is no explicit "stop" API; we periodically re-send start requests to keep
-// the indicator alive, and stop by canceling the context.
+// NOTE: The LINE loading animation API only works for 1:1 chats.
+// Group/room chat IDs (starting with "C" or "R") are detected automatically;
+// for these, a no-op stop function is returned without calling the API.
 func (c *LINEChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
 	if chatID == "" {
+		return func() {}, nil
+	}
+
+	// Group/room chats: LINE loading animation is 1:1 only.
+	if strings.HasPrefix(chatID, "C") || strings.HasPrefix(chatID, "R") {
 		return func() {}, nil
 	}
 

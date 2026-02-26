@@ -200,6 +200,28 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 	return nil
 }
 
+// ReactToMessage implements channels.ReactionCapable.
+// It adds an "eyes" (👀) reaction to the inbound message and returns an undo function
+// that removes the reaction.
+func (c *SlackChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
+	channelID, _ := parseSlackChatID(chatID)
+	if channelID == "" {
+		return func() {}, nil
+	}
+
+	c.api.AddReaction("eyes", slack.ItemRef{
+		Channel:   channelID,
+		Timestamp: messageID,
+	})
+
+	return func() {
+		c.api.RemoveReaction("eyes", slack.ItemRef{
+			Channel:   channelID,
+			Timestamp: messageID,
+		})
+	}, nil
+}
+
 func (c *SlackChannel) eventLoop() {
 	for {
 		select {
@@ -273,23 +295,6 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	chatID := channelID
 	if threadTS != "" {
 		chatID = channelID + "/" + threadTS
-	}
-
-	c.api.AddReaction("eyes", slack.ItemRef{
-		Channel:   channelID,
-		Timestamp: messageTS,
-	})
-
-	// Register typing stop (remove "eyes" reaction) with Manager
-	if rec := c.GetPlaceholderRecorder(); rec != nil {
-		capturedChannelID := channelID
-		capturedMessageTS := messageTS
-		rec.RecordTypingStop("slack", chatID, func() {
-			c.api.RemoveReaction("eyes", slack.ItemRef{
-				Channel:   capturedChannelID,
-				Timestamp: capturedMessageTS,
-			})
-		})
 	}
 
 	c.pendingAcks.Store(chatID, slackMessageRef{
@@ -400,23 +405,6 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		chatID = channelID + "/" + threadTS
 	} else {
 		chatID = channelID + "/" + messageTS
-	}
-
-	c.api.AddReaction("eyes", slack.ItemRef{
-		Channel:   channelID,
-		Timestamp: messageTS,
-	})
-
-	// Register typing stop (remove "eyes" reaction) with Manager
-	if rec := c.GetPlaceholderRecorder(); rec != nil {
-		capturedChannelID := channelID
-		capturedMessageTS := messageTS
-		rec.RecordTypingStop("slack", chatID, func() {
-			c.api.RemoveReaction("eyes", slack.ItemRef{
-				Channel:   capturedChannelID,
-				Timestamp: capturedMessageTS,
-			})
-		})
 	}
 
 	c.pendingAcks.Store(chatID, slackMessageRef{

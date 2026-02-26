@@ -224,6 +224,27 @@ func (c *DiscordChannel) EditMessage(ctx context.Context, chatID string, message
 	return err
 }
 
+// SendPlaceholder implements channels.PlaceholderCapable.
+// It sends a placeholder message that will later be edited to the actual
+// response via EditMessage (channels.MessageEditor).
+func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	if !c.config.Placeholder.Enabled {
+		return "", nil
+	}
+
+	text := c.config.Placeholder.Text
+	if text == "" {
+		text = "Thinking... 💭"
+	}
+
+	msg, err := c.session.ChannelMessageSend(chatID, text)
+	if err != nil {
+		return "", err
+	}
+
+	return msg.ID, nil
+}
+
 func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content string) error {
 	// Use the passed ctx for timeout control
 	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
@@ -360,13 +381,6 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		content = "[media only]"
 	}
 
-	// Start typing after all early returns — guaranteed to have a matching Send()
-	c.startTyping(m.ChannelID)
-	// Register typing stop with Manager for outbound orchestration
-	if rec := c.GetPlaceholderRecorder(); rec != nil {
-		rec.RecordTypingStop("discord", m.ChannelID, func() { c.stopTyping(m.ChannelID) })
-	}
-
 	logger.DebugCF("discord", "Received message", map[string]any{
 		"sender_name": sender.DisplayName,
 		"sender_id":   senderID,
@@ -438,6 +452,13 @@ func (c *DiscordChannel) stopTyping(chatID string) {
 		close(stop)
 		delete(c.typingStop, chatID)
 	}
+}
+
+// StartTyping implements channels.TypingCapable.
+// It starts a continuous typing indicator and returns an idempotent stop function.
+func (c *DiscordChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+	c.startTyping(chatID)
+	return func() { c.stopTyping(chatID) }, nil
 }
 
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
