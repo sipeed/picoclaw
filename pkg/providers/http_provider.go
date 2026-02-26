@@ -38,6 +38,11 @@ func (p *HTTPProvider) Chat(
 	return p.delegate.Chat(ctx, messages, tools, model, options)
 }
 
+// SetSupportPromptCache enables or disables sending the prompt_cache_key field.
+func (p *HTTPProvider) SetSupportPromptCache(v bool) {
+	p.delegate.SetSupportPromptCache(v)
+}
+
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
 }
