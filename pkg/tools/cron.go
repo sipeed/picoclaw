@@ -327,7 +327,12 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	// Response is automatically sent via MessageBus by AgentLoop
-	_ = response // Will be sent by AgentLoop
+	if response != "" {
+		t.msgBus.PublishOutbound(bus.OutboundMessage{
+			Channel: channel,
+			ChatID:  chatID,
+			Content: response,
+		})
+	}
 	return "ok"
 }
