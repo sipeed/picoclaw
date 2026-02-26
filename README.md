@@ -877,6 +877,16 @@ This design also enables **multi-agent support** with flexible provider selectio
 }
 ```
 
+> **Zhipu GLM Coding Plan**: For the Zhipu GLM coding plan endpoint, specify a custom `api_base`:
+> ```json
+> {
+>   "model_name": "glm-4.7-coding",
+>   "model": "zhipu/glm-4.7",
+>   "api_key": "your-key",
+>   "api_base": "https://api.z.ai/api/paas/v4"
+> }
+> ```
+
 **DeepSeek**
 
 ```json

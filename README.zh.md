@@ -512,6 +512,16 @@ Agent 读取 HEARTBEAT.md
 }
 ```
 
+> **智谱 GLM 编码计划（GLM Coding Plan）**: 如需使用智谱 GLM 编码计划端点，可指定自定义 `api_base`：
+> ```json
+> {
+>   "model_name": "glm-4.7-coding",
+>   "model": "zhipu/glm-4.7",
+>   "api_key": "your-key",
+>   "api_base": "https://api.z.ai/api/paas/v4"
+> }
+> ```
+
 **DeepSeek**
 
 ```json
