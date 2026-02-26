@@ -38,16 +38,19 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile("`[^`]+`"),
 	regexp.MustCompile(`\|\s*sh\b`),
 	regexp.MustCompile(`\|\s*bash\b`),
+	regexp.MustCompile(`\|\s*/\S*(bash|sh|zsh|ksh|fish|csh|tcsh)\b`), // shell by full path: | /bin/bash, | /usr/bin/sh
 	regexp.MustCompile(`;\s*rm\s+-[rf]`),
 	regexp.MustCompile(`&&\s*rm\s+-[rf]`),
 	regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
 	regexp.MustCompile(`>\s*/dev/null\s*>&?\s*\d?`),
 	regexp.MustCompile(`<<\s*EOF`),
+	regexp.MustCompile(`<<<`), // here-string: bash <<< "rm -rf /"
 	regexp.MustCompile(`\$\(\s*cat\s+`),
 	regexp.MustCompile(`\$\(\s*curl\s+`),
 	regexp.MustCompile(`\$\(\s*wget\s+`),
 	regexp.MustCompile(`\$\(\s*which\s+`),
 	regexp.MustCompile(`\bsudo\b`),
+	regexp.MustCompile(`\bsu\b.*-c\b`), // su -c / su root -c as sudo alternative
 	regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
 	regexp.MustCompile(`\bchown\b`),
 	regexp.MustCompile(`\bpkill\b`),
@@ -66,7 +69,8 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bgit\s+force\b`),
 	regexp.MustCompile(`\bssh\b.*@`),
 	regexp.MustCompile(`\beval\b`),
-	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
+	regexp.MustCompile(`\bsource\s+\S+`),                             // was: \.sh\b — now catches any sourced file
+	regexp.MustCompile(`(?:^|&&|\|\||;)\s*\.\s+\S`),                  // dot-sourcing: . evil.sh / && . evil.sh
 }
 
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
