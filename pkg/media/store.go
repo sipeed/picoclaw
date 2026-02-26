@@ -132,26 +132,36 @@ func (s *FileMediaStore) ResolveWithMeta(ref string) (string, MediaMeta, error) 
 }
 
 // ReleaseAll removes all files under the given scope and cleans up mappings.
+// Phase 1 (under lock): remove entries from maps.
+// Phase 2 (no lock): delete files from disk.
 func (s *FileMediaStore) ReleaseAll(scope string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Phase 1: collect paths and remove from maps under lock
+	var paths []string
 
+	s.mu.Lock()
 	refs, ok := s.scopeToRefs[scope]
 	if !ok {
+		s.mu.Unlock()
 		return nil
 	}
 
 	for ref := range refs {
 		if entry, exists := s.refs[ref]; exists {
-			if err := os.Remove(entry.path); err != nil && !os.IsNotExist(err) {
-				// Log but continue — best effort cleanup
-			}
+			paths = append(paths, entry.path)
 			delete(s.refs, ref)
 			delete(s.refToScope, ref)
 		}
 	}
-
 	delete(s.scopeToRefs, scope)
+	s.mu.Unlock()
+
+	// Phase 2: delete files without holding the lock
+	for _, p := range paths {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("[media] release: failed to remove %s: %v", p, err)
+		}
+	}
+
 	return nil
 }
 
@@ -205,6 +215,11 @@ func (s *FileMediaStore) CleanExpired() int {
 // Safe to call multiple times; only the first call starts the goroutine.
 func (s *FileMediaStore) Start() {
 	if !s.cleanerCfg.Enabled || s.stop == nil {
+		return
+	}
+	if s.cleanerCfg.Interval <= 0 || s.cleanerCfg.MaxAge <= 0 {
+		log.Printf("[media] cleanup: skipped (interval=%s, max_age=%s)",
+			s.cleanerCfg.Interval, s.cleanerCfg.MaxAge)
 		return
 	}
 
