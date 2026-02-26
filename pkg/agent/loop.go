@@ -230,6 +230,17 @@ func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) error {
 		if agent, ok := al.registry.GetAgent(agentID); ok {
 			if tool, ok := agent.Tools.Get("message"); ok {
 				if mt, ok := tool.(*tools.MessageTool); ok {
+					if h == nil {
+						mt.SetSendCallback(func(_ context.Context, channel, chatID, content string) error {
+							al.bus.PublishOutbound(bus.OutboundMessage{
+								Channel: channel,
+								ChatID:  chatID,
+								Content: content,
+							})
+							return nil
+						})
+						continue
+					}
 					mt.SetSendCallback(func(ctx context.Context, channel, chatID, content string) error {
 						if sent, reason := al.sendOutbound(ctx, bus.OutboundMessage{
 							Channel: channel,

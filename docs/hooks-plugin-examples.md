@@ -134,4 +134,5 @@ Recommended ordering:
 
 - Hook panics are recovered internally; one bad hook does not crash the loop.
 - Hook errors are logged and execution continues unless `Cancel` is set.
+- Observe-only hooks (`message_received`, `after_tool_call`, `llm_input`, `llm_output`, `session_start`, `session_end`) must treat events as read-only.
 - Keep hook handlers fast and non-blocking to avoid latency impact.
