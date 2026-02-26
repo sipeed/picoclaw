@@ -654,20 +654,26 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 }
 
 func (t *WebFetchTool) extractText(htmlContent string) string {
+	// 首先移除 script 和 style 标签
 	re := regexp.MustCompile(`<script[\s\S]*?</script>`)
 	result := re.ReplaceAllLiteralString(htmlContent, "")
 	re = regexp.MustCompile(`<style[\s\S]*?</style>`)
 	result = re.ReplaceAllLiteralString(result, "")
-	re = regexp.MustCompile(`<[^>]+>`)
-	result = re.ReplaceAllLiteralString(result, "")
+	
+	// 处理 HTML 实体
+	result = t.decodeHTMLEntities(result)
+	
+	// 移除 HTML 标签，但保留一些结构信息
+	result = t.removeHTMLTags(result)
 
+	// 清理空白字符
 	result = strings.TrimSpace(result)
-
 	re = regexp.MustCompile(`[^\S\n]+`)
 	result = re.ReplaceAllString(result, " ")
 	re = regexp.MustCompile(`\n{3,}`)
 	result = re.ReplaceAllString(result, "\n\n")
 
+	// 移除空行
 	lines := strings.Split(result, "\n")
 	var cleanLines []string
 	for _, line := range lines {
@@ -678,4 +684,46 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	}
 
 	return strings.Join(cleanLines, "\n")
+}
+
+// decodeHTMLEntities 解码常见的 HTML 实体
+func (t *WebFetchTool) decodeHTMLEntities(s string) string {
+	entities := map[string]string{
+		"&amp;":  "&",
+		"&lt;":   "<",
+		"&gt;":   ">",
+		"&quot;": "\"",
+		"&#39;":  "'",
+		"&nbsp;": " ",
+		"&copy;": "©",
+		"&reg;":  "®",
+		"&trade;": "™",
+	}
+	
+	for entity, char := range entities {
+		s = strings.ReplaceAll(s, entity, char)
+	}
+	
+	return s
+}
+
+// removeHTMLTags 移除 HTML 标签，但尽量保留内容结构
+func (t *WebFetchTool) removeHTMLTags(s string) string {
+	// 对于块级元素，在移除前添加换行符，以保留结构
+	blockTags := []string{"div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "tr", "td", "th", "blockquote", "pre", "section", "article", "header", "footer"}
+	
+	for _, tag := range blockTags {
+		// 匹配开始标签
+		re := regexp.MustCompile(`<` + tag + `[^>]*>`)
+		s = re.ReplaceAllString(s, "\n")
+		// 匹配结束标签
+		re = regexp.MustCompile(`</` + tag + `>`)
+		s = re.ReplaceAllString(s, "\n")
+	}
+	
+	// 移除所有剩余的 HTML 标签
+	re = regexp.MustCompile(`<[^>]+>`)
+	s = re.ReplaceAllLiteralString(s, "")
+	
+	return s
 }
