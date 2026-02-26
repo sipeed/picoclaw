@@ -48,6 +48,7 @@ type Channel interface {
 	IsRunning() bool
 	IsAllowed(senderID string) bool
 	IsAllowedSender(sender bus.SenderInfo) bool
+	ReasoningChannelID() string
 }
 
 // BaseChannelOption is a functional option for configuring a BaseChannel.
@@ -63,6 +64,11 @@ func WithMaxMessageLength(n int) BaseChannelOption {
 // WithGroupTrigger sets the group trigger configuration for a channel.
 func WithGroupTrigger(gt config.GroupTriggerConfig) BaseChannelOption {
 	return func(c *BaseChannel) { c.groupTrigger = gt }
+}
+
+// WithReasoningChannelID sets the reasoning channel ID where thoughts should be sent.
+func WithReasoningChannelID(id string) BaseChannelOption {
+	return func(c *BaseChannel) { c.reasoningChannelID = id }
 }
 
 // MessageLengthProvider is an opt-in interface that channels implement
@@ -83,6 +89,7 @@ type BaseChannel struct {
 	mediaStore          media.MediaStore
 	placeholderRecorder PlaceholderRecorder
 	owner               Channel // the concrete channel that embeds this BaseChannel
+	reasoningChannelID  string
 }
 
 func NewBaseChannel(
@@ -152,6 +159,10 @@ func (c *BaseChannel) ShouldRespondInGroup(isMentioned bool, content string) (bo
 
 func (c *BaseChannel) Name() string {
 	return c.name
+}
+
+func (c *BaseChannel) ReasoningChannelID() string {
+	return c.reasoningChannelID
 }
 
 func (c *BaseChannel) IsRunning() bool {
