@@ -106,3 +106,86 @@ func TestSetHooksReturnsErrorWhenRunning(t *testing.T) {
 		t.Fatal("expected error when calling SetHooks while running")
 	}
 }
+
+func TestSetPluginManagerDoesNotPartiallyUpdateOnError(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-plugin-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
+	al.running.Store(true)
+
+	pm := plugin.NewManager()
+	if err := pm.Register(blockingPlugin{}); err != nil {
+		t.Fatalf("register plugin: %v", err)
+	}
+
+	if err := al.SetPluginManager(pm); err == nil {
+		t.Fatal("expected SetPluginManager to fail while running")
+	}
+	if al.pluginManager != nil {
+		t.Fatal("expected plugin manager to remain unchanged on SetPluginManager failure")
+	}
+}
+
+func TestBeforeToolCallHooksCannotLeaveToolArgsNil(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-plugin-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &nilArgsProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	captureTool := &nilArgsCaptureTool{}
+	al.RegisterTool(captureTool)
+
+	r := hooks.NewHookRegistry()
+	r.OnBeforeToolCall("force-nil-args", 0, func(_ context.Context, e *hooks.BeforeToolCallEvent) error {
+		if e.ToolName == "nil_args_tool" {
+			e.Args = nil
+		}
+		return nil
+	})
+	if setErr := al.SetHooks(r); setErr != nil {
+		t.Fatalf("SetHooks: %v", setErr)
+	}
+
+	resp, err := al.ProcessDirectWithChannel(context.Background(), "run nil args test", "s1", "cli", "direct")
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel: %v", err)
+	}
+	if resp != "done" {
+		t.Fatalf("expected final response 'done', got %q", resp)
+	}
+	if captureTool.receivedNil {
+		t.Fatal("expected tool args to be reinitialized to non-nil map")
+	}
+}

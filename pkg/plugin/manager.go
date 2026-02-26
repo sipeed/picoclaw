@@ -23,7 +23,7 @@ const APIVersion = "v1alpha1"
 type Plugin interface {
 	Name() string
 	APIVersion() string
-	Register(*hooks.HookRegistry) error
+	Register(registry *hooks.HookRegistry) error
 }
 
 // Manager owns a shared hook registry and loaded plugin metadata.

@@ -198,8 +198,8 @@ func normalizeLower(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
-func clampArgNumber(args map[string]any, key string, max int) {
-	if args == nil || max <= 0 {
+func clampArgNumber(args map[string]any, key string, limit int) {
+	if args == nil || limit <= 0 {
 		return
 	}
 	v, ok := args[key]
@@ -210,8 +210,8 @@ func clampArgNumber(args map[string]any, key string, max int) {
 	if !ok {
 		return
 	}
-	if n > max {
-		args[key] = max
+	if n > limit {
+		args[key] = limit
 	}
 }
 

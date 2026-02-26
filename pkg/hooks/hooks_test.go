@@ -295,9 +295,13 @@ func TestConcurrentRegistrationAndTrigger(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			r.OnMessageReceived(fmt.Sprintf("reg-hook-%d", idx), idx, func(_ context.Context, _ *MessageReceivedEvent) error {
-				return nil
-			})
+			r.OnMessageReceived(
+				fmt.Sprintf("reg-hook-%d", idx),
+				idx,
+				func(_ context.Context, _ *MessageReceivedEvent) error {
+					return nil
+				},
+			)
 		}(i)
 	}
 

@@ -161,7 +161,13 @@ func triggerVoid[T any](ctx context.Context, hooks []HookRegistration[T], event 
 
 // triggerModifying runs handlers sequentially by priority, stopping if Cancel is set.
 // The cancelCheck function inspects the event to determine if Cancel was set.
-func triggerModifying[T any](ctx context.Context, hooks []HookRegistration[T], event *T, hookName string, cancelCheck func(*T) bool) {
+func triggerModifying[T any](
+	ctx context.Context,
+	hooks []HookRegistration[T],
+	event *T,
+	hookName string,
+	cancelCheck func(*T) bool,
+) {
 	if len(hooks) == 0 {
 		return
 	}
