@@ -30,7 +30,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.icons.extended)
-    implementation("com.composables:icons-lucide-android:2.2.1")
+    implementation(libs.icons.lucide)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)

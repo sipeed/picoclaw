@@ -19,6 +19,7 @@ markdown-renderer = "0.39.0"
 navigation = "2.9.0"
 datastore = "1.1.7"
 camerax = "1.5.1"
+icons-lucide = "2.2.1"
 
 [libraries]
 # Compose
@@ -71,6 +72,9 @@ camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = 
 camerax-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
 camerax-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+
+# Icons
+icons-lucide = { group = "com.composables", name = "icons-lucide-android", version.ref = "icons-lucide" }
 
 # Markdown
 markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "markdown-renderer" }

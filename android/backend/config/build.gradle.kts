@@ -41,5 +41,7 @@ dependencies {
 
     implementation(libs.coroutines.android)
 
+    implementation(libs.icons.lucide)
+
     debugImplementation(libs.compose.ui.tooling)
 }
