@@ -200,6 +200,18 @@ docker compose --profile gateway build --no-cache
 docker compose --profile gateway up -d
 ```
 
+### Script de Inicialização Personalizado
+
+Você pode executar etapas de configuração personalizadas antes do PicoClaw iniciar, fornecendo um script de inicialização. Atualize o caminho `init_script` no `docker-compose.yml`:
+
+```yaml
+configs:
+  init_script:
+    file: /caminho/para/seu/script/de/inicializacao
+```
+
+O script é executado toda vez que o contêiner inicia, antes do PicoClaw. Sem arquivo configurado, o comportamento padrão é uma operação nula.
+
 ### 🚀 Início Rápido
 
 > [!TIP]

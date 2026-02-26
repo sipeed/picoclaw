@@ -161,6 +161,18 @@ docker compose --profile gateway build --no-cache
 docker compose --profile gateway up -d
 ```
 
+### カスタム Init スクリプト
+
+PicoClaw の起動前にカスタムセットアップを実行できます。`docker-compose.yml` の `init_script` パスを更新してください：
+
+```yaml
+configs:
+  init_script:
+    file: /path/to/your/init/script
+```
+
+このスクリプトはコンテナ起動のたびに、PicoClaw の前に実行されます。ファイルが設定されていない場合は何もしません。
+
 ### 🚀 クイックスタート（ネイティブ）
 
 > [!TIP]

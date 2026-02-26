@@ -203,6 +203,18 @@ docker compose --profile gateway up -d
 
 ```
 
+### 自定义初始化脚本
+
+您可以在 PicoClaw 启动前执行自定义初始化步骤。在 `docker-compose.yml` 中更新 `init_script` 的路径：
+
+```yaml
+configs:
+  init_script:
+    file: /path/to/your/init/script
+```
+
+该脚本在每次容器启动时、PicoClaw 运行前执行。若未配置文件，则默认为空操作。
+
 ### 🚀 快速开始
 
 > [!TIP]

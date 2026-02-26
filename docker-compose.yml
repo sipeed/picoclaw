@@ -1,3 +1,7 @@
+configs:
+  init_script:
+    file: ./container/init
+
 services:
   # ─────────────────────────────────────────────
   # PicoClaw Agent (one-shot query)
@@ -16,7 +20,11 @@ services:
     volumes:
       - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
       - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
-    entrypoint: ["picoclaw", "agent"]
+    configs:
+      - source: init_script
+        target: /usr/local/bin/init
+        mode: 0755
+    command: ["agent"]
     stdin_open: true
     tty: true
 
@@ -40,6 +48,10 @@ services:
       - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
       # Persistent workspace (sessions, memory, logs)
       - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
+    configs:
+      - source: init_script
+        target: /usr/local/bin/init
+        mode: 0755
     command: ["gateway"]
 
 volumes:
