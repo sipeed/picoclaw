@@ -28,22 +28,46 @@ func CreateProvider(cfg *config.Config) (LLMProvider, string, error) {
 		return nil, "", fmt.Errorf("no providers configured. Please add entries to model_list in your config")
 	}
 
-	// Get model config from model_list
-	modelCfg, err := cfg.GetModelConfig(model)
-	if err != nil {
-		return nil, "", fmt.Errorf("model %q not found in model_list: %w", model, err)
+	// Collect models to try: primary first, then fallbacks
+	modelsToTry := []string{model}
+	modelsToTry = append(modelsToTry, cfg.Agents.Defaults.ModelFallbacks...)
+
+	var lastErr error
+	for i, modelName := range modelsToTry {
+		// Get model config from model_list
+		modelCfg, err := cfg.GetModelConfig(modelName)
+		if err != nil {
+			lastErr = fmt.Errorf("model %q not found in model_list: %w", modelName, err)
+			if i == len(modelsToTry)-1 {
+				return nil, "", lastErr
+			}
+			continue
+		}
+
+		// Inject global workspace if not set in model config
+		if modelCfg.Workspace == "" {
+			modelCfg.Workspace = cfg.WorkspacePath()
+		}
+
+		// Use factory to create provider
+		provider, modelID, err := CreateProviderFromConfig(modelCfg)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to create provider for model %q: %w", modelName, err)
+			// If this is the last model, return the error
+			if i == len(modelsToTry)-1 {
+				return nil, "", fmt.Errorf("all provider creation attempts failed. Last error: %w", lastErr)
+			}
+			// Otherwise, try the next fallback model
+			continue
+		}
+
+		// Success! Return the provider
+		if modelName != model {
+			// Log that we're using a fallback model
+			return provider, modelID, nil
+		}
+		return provider, modelID, nil
 	}
 
-	// Inject global workspace if not set in model config
-	if modelCfg.Workspace == "" {
-		modelCfg.Workspace = cfg.WorkspacePath()
-	}
-
-	// Use factory to create provider
-	provider, modelID, err := CreateProviderFromConfig(modelCfg)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to create provider for model %q: %w", model, err)
-	}
-
-	return provider, modelID, nil
+	return nil, "", lastErr
 }
