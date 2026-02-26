@@ -1,7 +1,4 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// License: MIT
-
-package main
+package auth
 
 import (
 	"encoding/json"
@@ -12,92 +9,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-const supportedProvidersMsg = "Supported providers: openai, anthropic, google-antigravity"
+const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
 
-func authCmd() {
-	if len(os.Args) < 3 {
-		authHelp()
-		return
-	}
-
-	switch os.Args[2] {
-	case "login":
-		authLoginCmd()
-	case "logout":
-		authLogoutCmd()
-	case "status":
-		authStatusCmd()
-	case "models":
-		authModelsCmd()
-	default:
-		fmt.Printf("Unknown auth command: %s\n", os.Args[2])
-		authHelp()
-	}
-}
-
-func authHelp() {
-	fmt.Println("\nAuth commands:")
-	fmt.Println("  login       Login via OAuth or paste token")
-	fmt.Println("  logout      Remove stored credentials")
-	fmt.Println("  status      Show current auth status")
-	fmt.Println("  models      List available Antigravity models")
-	fmt.Println()
-	fmt.Println("Login options:")
-	fmt.Println("  --provider <name>    Provider to login with (openai, anthropic, google-antigravity)")
-	fmt.Println("  --device-code        Use device code flow (for headless environments)")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  picoclaw auth login --provider openai")
-	fmt.Println("  picoclaw auth login --provider openai --device-code")
-	fmt.Println("  picoclaw auth login --provider anthropic")
-	fmt.Println("  picoclaw auth login --provider google-antigravity")
-	fmt.Println("  picoclaw auth models")
-	fmt.Println("  picoclaw auth logout --provider openai")
-	fmt.Println("  picoclaw auth status")
-}
-
-func authLoginCmd() {
-	provider := ""
-	useDeviceCode := false
-
-	args := os.Args[3:]
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--provider", "-p":
-			if i+1 < len(args) {
-				provider = args[i+1]
-				i++
-			}
-		case "--device-code":
-			useDeviceCode = true
-		}
-	}
-
-	if provider == "" {
-		fmt.Println("Error: --provider is required")
-		fmt.Println(supportedProvidersMsg)
-		return
-	}
-
+func authLoginCmd(provider string, useDeviceCode bool) error {
 	switch provider {
 	case "openai":
-		authLoginOpenAI(useDeviceCode)
+		return authLoginOpenAI(useDeviceCode)
 	case "anthropic":
-		authLoginPasteToken(provider)
+		return authLoginPasteToken(provider)
 	case "google-antigravity", "antigravity":
-		authLoginGoogleAntigravity()
+		return authLoginGoogleAntigravity()
 	default:
-		fmt.Printf("Unsupported provider: %s\n", provider)
-		fmt.Println(supportedProvidersMsg)
+		return fmt.Errorf("unsupported provider: %s (%s)", provider, supportedProvidersMsg)
 	}
 }
 
-func authLoginOpenAI(useDeviceCode bool) {
+func authLoginOpenAI(useDeviceCode bool) error {
 	cfg := auth.OpenAIOAuthConfig()
 
 	var cred *auth.AuthCredential
@@ -110,16 +43,14 @@ func authLoginOpenAI(useDeviceCode bool) {
 	}
 
 	if err != nil {
-		fmt.Printf("Login failed: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("login failed: %w", err)
 	}
 
 	if err = auth.SetCredential("openai", cred); err != nil {
-		fmt.Printf("Failed to save credentials: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 
-	appCfg, err := loadConfig()
+	appCfg, err := internal.LoadConfig()
 	if err == nil {
 		// Update Providers (legacy format)
 		appCfg.Providers.OpenAI.AuthMethod = "oauth"
@@ -146,8 +77,8 @@ func authLoginOpenAI(useDeviceCode bool) {
 		// Update default model to use OpenAI
 		appCfg.Agents.Defaults.ModelName = "gpt-5.2"
 
-		if err := config.SaveConfig(getConfigPath(), appCfg); err != nil {
-			fmt.Printf("Warning: could not update config: %v\n", err)
+		if err = config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+			return fmt.Errorf("could not update config: %w", err)
 		}
 	}
 
@@ -156,15 +87,16 @@ func authLoginOpenAI(useDeviceCode bool) {
 		fmt.Printf("Account: %s\n", cred.AccountID)
 	}
 	fmt.Println("Default model set to: gpt-5.2")
+
+	return nil
 }
 
-func authLoginGoogleAntigravity() {
+func authLoginGoogleAntigravity() error {
 	cfg := auth.GoogleAntigravityOAuthConfig()
 
 	cred, err := auth.LoginBrowser(cfg)
 	if err != nil {
-		fmt.Printf("Login failed: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("login failed: %w", err)
 	}
 
 	cred.Provider = "google-antigravity"
@@ -189,11 +121,10 @@ func authLoginGoogleAntigravity() {
 	}
 
 	if err = auth.SetCredential("google-antigravity", cred); err != nil {
-		fmt.Printf("Failed to save credentials: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 
-	appCfg, err := loadConfig()
+	appCfg, err := internal.LoadConfig()
 	if err == nil {
 		// Update Providers (legacy format, for backward compatibility)
 		appCfg.Providers.Antigravity.AuthMethod = "oauth"
@@ -220,7 +151,7 @@ func authLoginGoogleAntigravity() {
 		// Update default model
 		appCfg.Agents.Defaults.ModelName = "gemini-flash"
 
-		if err := config.SaveConfig(getConfigPath(), appCfg); err != nil {
+		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
 			fmt.Printf("Warning: could not update config: %v\n", err)
 		}
 	}
@@ -228,6 +159,8 @@ func authLoginGoogleAntigravity() {
 	fmt.Println("\n✓ Google Antigravity login successful!")
 	fmt.Println("Default model set to: gemini-flash")
 	fmt.Println("Try it: picoclaw agent -m \"Hello world\"")
+
+	return nil
 }
 
 func fetchGoogleUserEmail(accessToken string) (string, error) {
@@ -258,19 +191,17 @@ func fetchGoogleUserEmail(accessToken string) (string, error) {
 	return userInfo.Email, nil
 }
 
-func authLoginPasteToken(provider string) {
+func authLoginPasteToken(provider string) error {
 	cred, err := auth.LoginPasteToken(provider, os.Stdin)
 	if err != nil {
-		fmt.Printf("Login failed: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("login failed: %w", err)
 	}
 
 	if err = auth.SetCredential(provider, cred); err != nil {
-		fmt.Printf("Failed to save credentials: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 
-	appCfg, err := loadConfig()
+	appCfg, err := internal.LoadConfig()
 	if err == nil {
 		switch provider {
 		case "anthropic":
@@ -314,36 +245,27 @@ func authLoginPasteToken(provider string) {
 			// Update default model
 			appCfg.Agents.Defaults.ModelName = "gpt-5.2"
 		}
-		if err := config.SaveConfig(getConfigPath(), appCfg); err != nil {
-			fmt.Printf("Warning: could not update config: %v\n", err)
+		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+			return fmt.Errorf("could not update config: %w", err)
 		}
 	}
 
 	fmt.Printf("Token saved for %s!\n", provider)
-	fmt.Printf("Default model set to: %s\n", appCfg.Agents.Defaults.GetModelName())
-}
 
-func authLogoutCmd() {
-	provider := ""
-
-	args := os.Args[3:]
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--provider", "-p":
-			if i+1 < len(args) {
-				provider = args[i+1]
-				i++
-			}
-		}
+	if appCfg != nil {
+		fmt.Printf("Default model set to: %s\n", appCfg.Agents.Defaults.GetModelName())
 	}
 
+	return nil
+}
+
+func authLogoutCmd(provider string) error {
 	if provider != "" {
 		if err := auth.DeleteCredential(provider); err != nil {
-			fmt.Printf("Failed to remove credentials: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to remove credentials: %w", err)
 		}
 
-		appCfg, err := loadConfig()
+		appCfg, err := internal.LoadConfig()
 		if err == nil {
 			// Clear AuthMethod in ModelList
 			for i := range appCfg.ModelList {
@@ -371,44 +293,46 @@ func authLogoutCmd() {
 			case "google-antigravity", "antigravity":
 				appCfg.Providers.Antigravity.AuthMethod = ""
 			}
-			config.SaveConfig(getConfigPath(), appCfg)
+			config.SaveConfig(internal.GetConfigPath(), appCfg)
 		}
 
 		fmt.Printf("Logged out from %s\n", provider)
-	} else {
-		if err := auth.DeleteAllCredentials(); err != nil {
-			fmt.Printf("Failed to remove credentials: %v\n", err)
-			os.Exit(1)
-		}
 
-		appCfg, err := loadConfig()
-		if err == nil {
-			// Clear all AuthMethods in ModelList
-			for i := range appCfg.ModelList {
-				appCfg.ModelList[i].AuthMethod = ""
-			}
-			// Clear all AuthMethods in Providers (legacy)
-			appCfg.Providers.OpenAI.AuthMethod = ""
-			appCfg.Providers.Anthropic.AuthMethod = ""
-			appCfg.Providers.Antigravity.AuthMethod = ""
-			config.SaveConfig(getConfigPath(), appCfg)
-		}
-
-		fmt.Println("Logged out from all providers")
+		return nil
 	}
+
+	if err := auth.DeleteAllCredentials(); err != nil {
+		return fmt.Errorf("failed to remove credentials: %w", err)
+	}
+
+	appCfg, err := internal.LoadConfig()
+	if err == nil {
+		// Clear all AuthMethods in ModelList
+		for i := range appCfg.ModelList {
+			appCfg.ModelList[i].AuthMethod = ""
+		}
+		// Clear all AuthMethods in Providers (legacy)
+		appCfg.Providers.OpenAI.AuthMethod = ""
+		appCfg.Providers.Anthropic.AuthMethod = ""
+		appCfg.Providers.Antigravity.AuthMethod = ""
+		config.SaveConfig(internal.GetConfigPath(), appCfg)
+	}
+
+	fmt.Println("Logged out from all providers")
+
+	return nil
 }
 
-func authStatusCmd() {
+func authStatusCmd() error {
 	store, err := auth.LoadStore()
 	if err != nil {
-		fmt.Printf("Error loading auth store: %v\n", err)
-		return
+		return fmt.Errorf("failed to load auth store: %w", err)
 	}
 
 	if len(store.Credentials) == 0 {
 		fmt.Println("No authenticated providers.")
 		fmt.Println("Run: picoclaw auth login --provider <name>")
-		return
+		return nil
 	}
 
 	fmt.Println("\nAuthenticated Providers:")
@@ -437,14 +361,16 @@ func authStatusCmd() {
 			fmt.Printf("    Expires: %s\n", cred.ExpiresAt.Format("2006-01-02 15:04"))
 		}
 	}
+
+	return nil
 }
 
-func authModelsCmd() {
+func authModelsCmd() error {
 	cred, err := auth.GetCredential("google-antigravity")
 	if err != nil || cred == nil {
-		fmt.Println("Not logged in to Google Antigravity.")
-		fmt.Println("Run: picoclaw auth login --provider google-antigravity")
-		return
+		return fmt.Errorf(
+			"not logged in to Google Antigravity.\nrun: picoclaw auth login --provider google-antigravity",
+		)
 	}
 
 	// Refresh token if needed
@@ -459,21 +385,18 @@ func authModelsCmd() {
 
 	projectID := cred.ProjectID
 	if projectID == "" {
-		fmt.Println("No project ID stored. Try logging in again.")
-		return
+		return fmt.Errorf("no project id stored. Try logging in again")
 	}
 
 	fmt.Printf("Fetching models for project: %s\n\n", projectID)
 
 	models, err := providers.FetchAntigravityModels(cred.AccessToken, projectID)
 	if err != nil {
-		fmt.Printf("Error fetching models: %v\n", err)
-		return
+		return fmt.Errorf("error fetching models: %w", err)
 	}
 
 	if len(models) == 0 {
-		fmt.Println("No models available.")
-		return
+		return fmt.Errorf("no models available")
 	}
 
 	fmt.Println("Available Antigravity Models:")
@@ -489,6 +412,8 @@ func authModelsCmd() {
 		}
 		fmt.Printf("  %s %s\n", status, name)
 	}
+
+	return nil
 }
 
 // isAntigravityModel checks if a model string belongs to antigravity provider

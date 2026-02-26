@@ -17,6 +17,8 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
+	ContentBlock           = protocoltypes.ContentBlock
+	CacheControl           = protocoltypes.CacheControl
 )
 
 type LLMProvider interface {
