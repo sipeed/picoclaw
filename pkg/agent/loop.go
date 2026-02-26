@@ -1369,15 +1369,9 @@ func (al *AgentLoop) executeCmdMode(ctx context.Context, agent *AgentInstance, c
 		workDir = agent.Workspace
 	}
 
-	// For ls commands, ensure -l flag so we can parse file types
-	execCmd := content
-	if isLsCommand(content) {
-		execCmd = ensureLsLong(content)
-	}
-
 	// Execute via ExecTool
 	result := agent.Tools.ExecuteWithContext(ctx, "exec", map[string]any{
-		"command":     execCmd,
+		"command":     content,
 		"working_dir": workDir,
 	}, channel, chatID, nil)
 
@@ -1387,8 +1381,8 @@ func (al *AgentLoop) executeCmdMode(ctx context.Context, agent *AgentInstance, c
 		output = "(no output)"
 	}
 
-	// Colorize ls output with emoji type indicators
-	if isLsCommand(content) {
+	// Colorize ls output with emoji type indicators (only when user explicitly used ls -l)
+	if isLsCommand(content) && hasLongFlag(content) {
 		output = formatLsOutput(output)
 	}
 
@@ -1716,20 +1710,14 @@ func isLsCommand(cmd string) bool {
 	return cmd == "ls" || strings.HasPrefix(cmd, "ls ")
 }
 
-// ensureLsLong injects -l into an ls command if not already present,
-// so the output always contains permission strings for type detection.
-func ensureLsLong(cmd string) string {
-	parts := strings.Fields(cmd)
-	for _, p := range parts[1:] {
+// hasLongFlag checks if an ls command already includes the -l flag.
+func hasLongFlag(cmd string) bool {
+	for _, p := range strings.Fields(cmd)[1:] {
 		if strings.HasPrefix(p, "-") && !strings.HasPrefix(p, "--") && strings.ContainsRune(p, 'l') {
-			return cmd // already has -l
+			return true
 		}
 	}
-	// "ls" → "ls -l", "ls -a /tmp" → "ls -l -a /tmp"
-	if len(parts) == 1 {
-		return "ls -l"
-	}
-	return "ls -l " + strings.Join(parts[1:], " ")
+	return false
 }
 
 // formatLsOutput adds emoji type indicators to ls -l style output lines.
