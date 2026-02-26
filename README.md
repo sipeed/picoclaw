@@ -1143,7 +1143,7 @@ discord: <https://discord.gg/V4sAZ9XWpN>
 
 ## 🐛 Troubleshooting
 
-### Web search says "API 配置问题"
+### Web search says "API key configuration issue"
 
 This is normal if you haven't configured a search API key yet. PicoClaw will provide helpful links for manual searching.
 
