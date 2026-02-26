@@ -274,7 +274,10 @@ func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey stri
 
 // ProcessDirectWithWorkDir processes a message with an explicit working directory context.
 // The workDir is injected into the system prompt so the AI resolves file paths relative to it.
-func (al *AgentLoop) ProcessDirectWithWorkDir(ctx context.Context, content, sessionKey, workDir string) (string, error) {
+func (al *AgentLoop) ProcessDirectWithWorkDir(
+	ctx context.Context,
+	content, sessionKey, workDir string,
+) (string, error) {
 	msg := bus.InboundMessage{
 		Channel:    "cli",
 		SenderID:   "cron",
@@ -1338,7 +1341,11 @@ func (al *AgentLoop) handleModeCommand(content, sessionKey string, agent *AgentI
 
 // executeCmdMode executes a shell command in command mode via ExecTool.
 // Output is formatted as a console code block for channel display.
-func (al *AgentLoop) executeCmdMode(ctx context.Context, agent *AgentInstance, content, sessionKey, channel, chatID string) (string, error) {
+func (al *AgentLoop) executeCmdMode(
+	ctx context.Context,
+	agent *AgentInstance,
+	content, sessionKey, channel, chatID string,
+) (string, error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return "", nil
@@ -1530,7 +1537,11 @@ func editShowFile(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Sprintf("File not found: %s\nUse :edit %s -m \"\"\" to create it.", shortenHomePath(path), filepath.Base(path))
+			return fmt.Sprintf(
+				"File not found: %s\nUse :edit %s -m \"\"\" to create it.",
+				shortenHomePath(path),
+				filepath.Base(path),
+			)
 		}
 		return fmt.Sprintf("Error reading file: %v", err)
 	}
