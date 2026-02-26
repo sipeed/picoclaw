@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
+
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
