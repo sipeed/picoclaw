@@ -59,7 +59,8 @@ type FileMediaStore struct {
 
 	cleanerCfg MediaCleanerConfig
 	stop       chan struct{}
-	once       sync.Once
+	startOnce  sync.Once
+	stopOnce   sync.Once
 	nowFunc    func() time.Time // for testing
 }
 
@@ -155,20 +156,26 @@ func (s *FileMediaStore) ReleaseAll(scope string) error {
 }
 
 // CleanExpired removes all entries older than MaxAge.
-// Both the file on disk and the in-memory references are deleted atomically
-// under the same mutex, preventing dangling references.
+// Phase 1 (under lock): identify expired entries and remove from maps.
+// Phase 2 (no lock): delete files from disk to minimize lock contention.
 func (s *FileMediaStore) CleanExpired() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if s.cleanerCfg.MaxAge <= 0 {
+		return 0
+	}
 
+	// Phase 1: collect expired entries under lock
+	type expiredEntry struct {
+		ref  string
+		path string
+	}
+
+	s.mu.Lock()
 	cutoff := s.nowFunc().Add(-s.cleanerCfg.MaxAge)
-	removed := 0
+	var expired []expiredEntry
 
 	for ref, entry := range s.refs {
 		if entry.storedAt.Before(cutoff) {
-			if err := os.Remove(entry.path); err != nil && !os.IsNotExist(err) {
-				// Log but continue — best effort cleanup
-			}
+			expired = append(expired, expiredEntry{ref: ref, path: entry.path})
 
 			scope := s.refToScope[ref]
 			if scopeRefs, ok := s.scopeToRefs[scope]; ok {
@@ -180,45 +187,56 @@ func (s *FileMediaStore) CleanExpired() int {
 
 			delete(s.refs, ref)
 			delete(s.refToScope, ref)
-			removed++
+		}
+	}
+	s.mu.Unlock()
+
+	// Phase 2: delete files without holding the lock
+	for _, e := range expired {
+		if err := os.Remove(e.path); err != nil && !os.IsNotExist(err) {
+			log.Printf("[media] cleanup: failed to remove %s: %v", e.path, err)
 		}
 	}
 
-	return removed
+	return len(expired)
 }
 
 // Start begins the background cleanup goroutine if cleanup is enabled.
+// Safe to call multiple times; only the first call starts the goroutine.
 func (s *FileMediaStore) Start() {
 	if !s.cleanerCfg.Enabled || s.stop == nil {
 		return
 	}
 
-	log.Printf("[media] cleanup enabled: interval=%s, max_age=%s",
-		s.cleanerCfg.Interval, s.cleanerCfg.MaxAge)
+	s.startOnce.Do(func() {
+		log.Printf("[media] cleanup enabled: interval=%s, max_age=%s",
+			s.cleanerCfg.Interval, s.cleanerCfg.MaxAge)
 
-	go func() {
-		ticker := time.NewTicker(s.cleanerCfg.Interval)
-		defer ticker.Stop()
+		go func() {
+			ticker := time.NewTicker(s.cleanerCfg.Interval)
+			defer ticker.Stop()
 
-		for {
-			select {
-			case <-ticker.C:
-				if n := s.CleanExpired(); n > 0 {
-					log.Printf("[media] cleanup: removed %d expired entries", n)
+			for {
+				select {
+				case <-ticker.C:
+					if n := s.CleanExpired(); n > 0 {
+						log.Printf("[media] cleanup: removed %d expired entries", n)
+					}
+				case <-s.stop:
+					return
 				}
-			case <-s.stop:
-				return
 			}
-		}
-	}()
+		}()
+	})
 }
 
 // Stop terminates the background cleanup goroutine.
+// Safe to call multiple times; only the first call closes the channel.
 func (s *FileMediaStore) Stop() {
 	if s.stop == nil {
 		return
 	}
-	s.once.Do(func() {
+	s.stopOnce.Do(func() {
 		close(s.stop)
 	})
 }

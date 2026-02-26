@@ -132,6 +132,7 @@ func gatewayCmd() {
 
 	channelManager, err := channels.NewManager(cfg, msgBus, mediaStore)
 	if err != nil {
+		mediaStore.Stop()
 		fmt.Printf("Error creating channel manager: %v\n", err)
 		os.Exit(1)
 	}
