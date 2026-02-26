@@ -9,6 +9,7 @@ package hooks
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -148,13 +149,59 @@ func cloneMapStringAny(src map[string]any) map[string]any {
 }
 
 func cloneAny(v any) any {
-	switch tv := v.(type) {
-	case map[string]any:
-		return cloneMapStringAny(tv)
-	case []any:
-		out := make([]any, len(tv))
-		for i := range tv {
-			out[i] = cloneAny(tv[i])
+	if v == nil {
+		return nil
+	}
+	cloned := cloneReflectValue(reflect.ValueOf(v))
+	if !cloned.IsValid() {
+		return nil
+	}
+	return cloned.Interface()
+}
+
+func cloneReflectValue(v reflect.Value) reflect.Value {
+	if !v.IsValid() {
+		return v
+	}
+
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return reflect.Zero(v.Type())
+		}
+		out := reflect.New(v.Type().Elem())
+		out.Elem().Set(cloneReflectValue(v.Elem()))
+		return out
+	case reflect.Interface:
+		if v.IsNil() {
+			return reflect.Zero(v.Type())
+		}
+		out := reflect.New(v.Type()).Elem()
+		out.Set(cloneReflectValue(v.Elem()))
+		return out
+	case reflect.Map:
+		if v.IsNil() {
+			return reflect.Zero(v.Type())
+		}
+		out := reflect.MakeMapWithSize(v.Type(), v.Len())
+		iter := v.MapRange()
+		for iter.Next() {
+			out.SetMapIndex(iter.Key(), cloneReflectValue(iter.Value()))
+		}
+		return out
+	case reflect.Slice:
+		if v.IsNil() {
+			return reflect.Zero(v.Type())
+		}
+		out := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		for i := range v.Len() {
+			out.Index(i).Set(cloneReflectValue(v.Index(i)))
+		}
+		return out
+	case reflect.Array:
+		out := reflect.New(v.Type()).Elem()
+		for i := range v.Len() {
+			out.Index(i).Set(cloneReflectValue(v.Index(i)))
 		}
 		return out
 	default:

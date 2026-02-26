@@ -3,7 +3,9 @@ package agent
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -187,5 +189,90 @@ func TestBeforeToolCallHooksCannotLeaveToolArgsNil(t *testing.T) {
 	}
 	if captureTool.receivedNil {
 		t.Fatal("expected tool args to be reinitialized to non-nil map")
+	}
+}
+
+func TestSetHooksNilRestoresDirectMessageCallback(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-plugin-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+	tool, ok := agent.Tools.Get("message")
+	if !ok {
+		t.Fatal("expected message tool")
+	}
+	mt, ok := tool.(*tools.MessageTool)
+	if !ok {
+		t.Fatal("expected message tool type")
+	}
+
+	reg := hooks.NewHookRegistry()
+	reg.OnMessageSending("block-all", 0, func(_ context.Context, e *hooks.MessageSendingEvent) error {
+		e.Cancel = true
+		e.CancelReason = "blocked-by-hook"
+		return nil
+	})
+	if err := al.SetHooks(reg); err != nil {
+		t.Fatalf("SetHooks(reg): %v", err)
+	}
+
+	blocked := mt.Execute(context.Background(), map[string]any{
+		"content": "first",
+		"channel": "cli",
+		"chat_id": "direct",
+	})
+	if !blocked.IsError {
+		t.Fatal("expected message tool call to fail while hooks are active")
+	}
+	if blocked.Err == nil || !strings.Contains(blocked.Err.Error(), "blocked-by-hook") {
+		t.Fatalf("expected hook cancel reason in error, got %#v", blocked.Err)
+	}
+
+	ctxNoMsg, cancelNoMsg := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelNoMsg()
+	if _, got := msgBus.SubscribeOutbound(ctxNoMsg); got {
+		t.Fatal("did not expect outbound message while hook cancellation is active")
+	}
+
+	if err := al.SetHooks(nil); err != nil {
+		t.Fatalf("SetHooks(nil): %v", err)
+	}
+
+	delivered := mt.Execute(context.Background(), map[string]any{
+		"content": "second",
+		"channel": "cli",
+		"chat_id": "direct",
+	})
+	if delivered.IsError {
+		t.Fatalf("expected message tool to succeed after SetHooks(nil), got %#v", delivered)
+	}
+
+	ctxMsg, cancelMsg := context.WithTimeout(context.Background(), time.Second)
+	defer cancelMsg()
+	msg, got := msgBus.SubscribeOutbound(ctxMsg)
+	if !got {
+		t.Fatal("expected outbound message after SetHooks(nil)")
+	}
+	if msg.Content != "second" || msg.Channel != "cli" || msg.ChatID != "direct" {
+		t.Fatalf("unexpected outbound message: %#v", msg)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -180,6 +181,48 @@ func TestVoidHooksReceiveIsolatedAfterToolCallEvents(t *testing.T) {
 	}
 	if event.Result.ForUser != "for-user" {
 		t.Fatalf("expected original result.ForUser to remain unchanged, got %q", event.Result.ForUser)
+	}
+}
+
+func TestVoidHooksReceiveIsolatedLLMInputToolSchema(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnLLMInput("mutator", 0, func(_ context.Context, e *LLMInputEvent) error {
+		required, ok := e.Tools[0].Function.Parameters["required"].([]string)
+		if !ok {
+			t.Fatal("required should be []string")
+		}
+		required[0] = "mutated"
+		e.Tools[0].Function.Parameters["required"] = append(required, "extra")
+		return nil
+	})
+
+	event := &LLMInputEvent{
+		AgentID: "a1",
+		Model:   "m1",
+		Tools: []providers.ToolDefinition{
+			{
+				Type: "function",
+				Function: providers.ToolFunctionDefinition{
+					Name: "message",
+					Parameters: map[string]any{
+						"type":     "object",
+						"required": []string{"content"},
+					},
+				},
+			},
+		},
+	}
+
+	r.TriggerLLMInput(ctx, event)
+
+	required, ok := event.Tools[0].Function.Parameters["required"].([]string)
+	if !ok {
+		t.Fatal("required should remain []string")
+	}
+	if len(required) != 1 || required[0] != "content" {
+		t.Fatalf("expected required to remain unchanged, got %#v", required)
 	}
 }
 
