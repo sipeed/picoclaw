@@ -1,27 +1,25 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// License: MIT
-
-package main
+package status
 
 import (
 	"fmt"
 	"os"
 
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/auth"
 )
 
 func statusCmd() {
-	cfg, err := loadConfig()
+	cfg, err := internal.LoadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		return
 	}
 
-	configPath := getConfigPath()
+	configPath := internal.GetConfigPath()
 
-	fmt.Printf("%s picoclaw Status\n", logo)
-	fmt.Printf("Version: %s\n", formatVersion())
-	build, _ := formatBuildInfo()
+	fmt.Printf("%s picoclaw Status\n", internal.Logo)
+	fmt.Printf("Version: %s\n", internal.FormatVersion())
+	build, _ := internal.FormatBuildInfo()
 	if build != "" {
 		fmt.Printf("Build: %s\n", build)
 	}
@@ -41,7 +39,7 @@ func statusCmd() {
 	}
 
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("Model: %s\n", cfg.Agents.Defaults.Model)
+		fmt.Printf("Model: %s\n", cfg.Agents.Defaults.GetModelName())
 
 		hasOpenRouter := cfg.Providers.OpenRouter.APIKey != ""
 		hasAnthropic := cfg.Providers.Anthropic.APIKey != ""

@@ -171,6 +171,10 @@ vim config/config.json      # Configurez DISCORD_BOT_TOKEN, clés API, etc.
 # 3. Compiler & Démarrer
 docker compose --profile gateway up -d
 
+> [!TIP]
+> **Utilisateurs Docker** : Par défaut, le Gateway écoute sur `127.0.0.1`, ce qui n'est pas accessible depuis l'hôte. Si vous avez besoin d'accéder aux endpoints de santé ou d'exposer des ports, définissez `PICOCLAW_GATEWAY_HOST=0.0.0.0` dans votre environnement ou mettez à jour `config.json`.
+
+
 # 4. Voir les logs
 docker compose logs -f picoclaw-gateway
 
@@ -217,12 +221,13 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
   "agents": {
     "defaults": {
-      "model": "gpt4"
+      "model_name": "gpt4"
     }
   },
   "channels": {
@@ -247,6 +252,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **Nouveau** : Le format de configuration `model_list` permet d'ajouter des fournisseurs sans modifier le code. Voir [Configuration de Modèle](#configuration-de-modèle-model_list) pour plus de détails.
+> `request_timeout` est optionnel et s'exprime en secondes. S'il est omis ou défini à `<= 0`, PicoClaw utilise le délai d'expiration par défaut (120s).
 
 **3. Obtenir des Clés API**
 
@@ -974,6 +982,17 @@ Cette conception permet également le **support multi-agent** avec une sélectio
 }
 ```
 > Exécutez `picoclaw auth login --provider anthropic` pour configurer les identifiants OAuth.
+
+**Proxy/API personnalisée**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### Équilibrage de Charge
 

@@ -173,6 +173,9 @@ vim config/config.json      # 设置 DISCORD_BOT_TOKEN, API keys 等
 # 3. 构建并启动
 docker compose --profile gateway up -d
 
+> [!TIP]
+**Docker 用户**: 默认情况下, Gateway监听 `127.0.0.1`，这使得这个端口未暴露到容器外。如果你需要通过端口映射访问健康检查接口, 请在环境变量中设置 `PICOCLAW_GATEWAY_HOST=0.0.0.0` 或修改 `config.json`。
+
 # 4. 查看日志
 docker compose logs -f picoclaw-gateway
 
@@ -221,7 +224,7 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "gpt4",
+      "model_name": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -231,7 +234,8 @@ picoclaw onboard
     {
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
-      "api_key": "your-api-key"
+      "api_key": "your-api-key",
+      "request_timeout": 300
     },
     {
       "model_name": "claude-sonnet-4.6",
@@ -260,6 +264,7 @@ picoclaw onboard
 ```
 
 > **新功能**: `model_list` 配置格式支持零代码添加 provider。详见[模型配置](#模型配置-model_list)章节。
+> `request_timeout` 为可选项，单位为秒。若省略或设置为 `<= 0`，PicoClaw 使用默认超时（120 秒）。
 
 **3. 获取 API Key**
 
@@ -547,7 +552,8 @@ Agent 读取 HEARTBEAT.md
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-..."
+  "api_key": "sk-...",
+  "request_timeout": 300
 }
 ```
 
