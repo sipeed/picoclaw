@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -478,9 +480,22 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	}
 
 	count := t.maxResults
-	if c, ok := args["count"].(float64); ok {
-		if int(c) > 0 && int(c) <= 10 {
-			count = int(c)
+	switch v := args["count"].(type) {
+	case float64:
+		rounded := int(math.Round(v))
+		if math.Abs(v-float64(rounded)) > 1e-9 {
+			return ErrorResult(fmt.Sprintf("count must be an integer, got %v", v))
+		}
+		if rounded > 0 && rounded <= 10 {
+			count = rounded
+		}
+	case int:
+		if v > 0 && v <= 10 {
+			count = v
+		}
+	case string:
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 10 {
+			count = n
 		}
 	}
 
