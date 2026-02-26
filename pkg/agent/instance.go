@@ -88,9 +88,13 @@ func NewAgentInstance(
 	}
 
 	// Resolve fallback candidates
+	// First, look up model names in model_list to get full model strings
+	primaryModelString := resolveModelString(cfg, model)
+	fallbackModelStrings := resolveFallbackModelStrings(cfg, fallbacks)
+
 	modelCfg := providers.ModelConfig{
-		Primary:   model,
-		Fallbacks: fallbacks,
+		Primary:   primaryModelString,
+		Fallbacks: fallbackModelStrings,
 	}
 	candidates := providers.ResolveCandidates(modelCfg, defaults.Provider)
 
@@ -155,4 +159,33 @@ func expandHome(path string) string {
 		return home
 	}
 	return path
+}
+
+// resolveModelString looks up a model name in model_list and returns the full model string.
+// If the model name already contains a "/" (like "openrouter/free"), it's returned as-is.
+// If the model name is not found in model_list, it's returned as-is (for backward compatibility).
+func resolveModelString(cfg *config.Config, modelName string) string {
+	// If it already looks like a full model string (protocol/model), return it as-is
+	if strings.Contains(modelName, "/") {
+		return modelName
+	}
+
+	// Look up in model_list
+	modelCfg, err := cfg.GetModelConfig(modelName)
+	if err != nil {
+		// Model not found in model_list, return as-is for backward compatibility
+		return modelName
+	}
+
+	// Return the full model string (e.g., "antigravity/gemini-3-flash")
+	return modelCfg.Model
+}
+
+// resolveFallbackModelStrings looks up multiple model names in model_list and returns their full model strings.
+func resolveFallbackModelStrings(cfg *config.Config, modelNames []string) []string {
+	result := make([]string, 0, len(modelNames))
+	for _, name := range modelNames {
+		result = append(result, resolveModelString(cfg, name))
+	}
+	return result
 }
