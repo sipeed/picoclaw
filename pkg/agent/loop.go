@@ -1151,7 +1151,12 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
 	content := strings.TrimSpace(msg.Content)
 
-	if !strings.HasPrefix(content, ":") {
+	// Handle : prefixed extension commands (work across all channels)
+	if strings.HasPrefix(content, ":") {
+		return al.handleExtensionCommand(content)
+	}
+
+	if !strings.HasPrefix(content, "/") {
 		return "", false
 	}
 
@@ -1164,6 +1169,91 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	args := parts[1:]
 
 	switch cmd {
+	case "/show":
+		if len(args) < 1 {
+			return "Usage: /show [model|channel|agents]", true
+		}
+		switch args[0] {
+		case "model":
+			defaultAgent := al.registry.GetDefaultAgent()
+			if defaultAgent == nil {
+				return "No default agent configured", true
+			}
+			return fmt.Sprintf("Current model: %s", defaultAgent.Model), true
+		case "channel":
+			return fmt.Sprintf("Current channel: %s", msg.Channel), true
+		case "agents":
+			agentIDs := al.registry.ListAgentIDs()
+			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
+		default:
+			return fmt.Sprintf("Unknown show target: %s", args[0]), true
+		}
+
+	case "/list":
+		if len(args) < 1 {
+			return "Usage: /list [models|channels|agents]", true
+		}
+		switch args[0] {
+		case "models":
+			return "Available models: configured in config.json per agent", true
+		case "channels":
+			if al.channelManager == nil {
+				return "Channel manager not initialized", true
+			}
+			channels := al.channelManager.GetEnabledChannels()
+			if len(channels) == 0 {
+				return "No channels enabled", true
+			}
+			return fmt.Sprintf("Enabled channels: %s", strings.Join(channels, ", ")), true
+		case "agents":
+			agentIDs := al.registry.ListAgentIDs()
+			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
+		default:
+			return fmt.Sprintf("Unknown list target: %s", args[0]), true
+		}
+
+	case "/switch":
+		if len(args) < 3 || args[1] != "to" {
+			return "Usage: /switch [model|channel] to <name>", true
+		}
+		target := args[0]
+		value := args[2]
+
+		switch target {
+		case "model":
+			defaultAgent := al.registry.GetDefaultAgent()
+			if defaultAgent == nil {
+				return "No default agent configured", true
+			}
+			oldModel := defaultAgent.Model
+			defaultAgent.Model = value
+			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
+		case "channel":
+			if al.channelManager == nil {
+				return "Channel manager not initialized", true
+			}
+			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
+				return fmt.Sprintf("Channel '%s' not found or not enabled", value), true
+			}
+			return fmt.Sprintf("Switched target channel to %s", value), true
+		default:
+			return fmt.Sprintf("Unknown switch target: %s", target), true
+		}
+	}
+
+	return "", false
+}
+
+// handleExtensionCommand handles : prefixed commands that work across all channels.
+func (al *AgentLoop) handleExtensionCommand(content string) (string, bool) {
+	parts := strings.Fields(content)
+	if len(parts) == 0 {
+		return "", false
+	}
+
+	cmd := parts[0]
+
+	switch cmd {
 	case ":cmd", ":pico", ":hipico", ":edit":
 		// Pass through to processMessage for mode handling (needs sessionKey from routing)
 		return "", false
@@ -1174,10 +1264,7 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 :cmd - Switch to command mode (execute shell commands)
 :pico - Switch to chat mode (default, AI conversation)
 :hipico <msg> - Ask AI for help (from command mode, one-shot)
-:edit <file> - View/edit files (cmd mode)
-:show [model|channel|agents] - Show current configuration
-:list [models|channels|agents] - List available options
-:switch [model|channel] to <name> - Switch model or channel`, true
+:edit <file> - View/edit files (cmd mode)`, true
 
 	case ":usage":
 		agent := al.registry.GetDefaultAgent()
@@ -1203,77 +1290,6 @@ Token usage (this session):
 			promptTokens+completionTokens,
 			agent.TotalRequests.Load(),
 		), true
-
-	case ":show":
-		if len(args) < 1 {
-			return "Usage: :show [model|channel|agents]", true
-		}
-		switch args[0] {
-		case "model":
-			defaultAgent := al.registry.GetDefaultAgent()
-			if defaultAgent == nil {
-				return "No default agent configured", true
-			}
-			return fmt.Sprintf("Current model: %s", defaultAgent.Model), true
-		case "channel":
-			return fmt.Sprintf("Current channel: %s", msg.Channel), true
-		case "agents":
-			agentIDs := al.registry.ListAgentIDs()
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-		default:
-			return fmt.Sprintf("Unknown show target: %s", args[0]), true
-		}
-
-	case ":list":
-		if len(args) < 1 {
-			return "Usage: :list [models|channels|agents]", true
-		}
-		switch args[0] {
-		case "models":
-			return "Available models: configured in config.json per agent", true
-		case "channels":
-			if al.channelManager == nil {
-				return "Channel manager not initialized", true
-			}
-			channels := al.channelManager.GetEnabledChannels()
-			if len(channels) == 0 {
-				return "No channels enabled", true
-			}
-			return fmt.Sprintf("Enabled channels: %s", strings.Join(channels, ", ")), true
-		case "agents":
-			agentIDs := al.registry.ListAgentIDs()
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-		default:
-			return fmt.Sprintf("Unknown list target: %s", args[0]), true
-		}
-
-	case ":switch":
-		if len(args) < 3 || args[1] != "to" {
-			return "Usage: :switch [model|channel] to <name>", true
-		}
-		target := args[0]
-		value := args[2]
-
-		switch target {
-		case "model":
-			defaultAgent := al.registry.GetDefaultAgent()
-			if defaultAgent == nil {
-				return "No default agent configured", true
-			}
-			oldModel := defaultAgent.Model
-			defaultAgent.Model = value
-			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
-		case "channel":
-			if al.channelManager == nil {
-				return "Channel manager not initialized", true
-			}
-			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
-				return fmt.Sprintf("Channel '%s' not found or not enabled", value), true
-			}
-			return fmt.Sprintf("Switched target channel to %s", value), true
-		default:
-			return fmt.Sprintf("Unknown switch target: %s", target), true
-		}
 
 	default:
 		// Don't intercept unrecognized : prefixed messages (e.g. :) :D :thinking:)

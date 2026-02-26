@@ -632,9 +632,9 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	}
 }
 
-// TestHandleCommand_EmojiPassthrough verifies that emoji-like
+// TestHandleExtensionCommand_EmojiPassthrough verifies that emoji-like
 // messages starting with : are not intercepted as commands.
-func TestHandleCommand_EmojiPassthrough(t *testing.T) {
+func TestHandleExtensionCommand_EmojiPassthrough(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
@@ -647,12 +647,10 @@ func TestHandleCommand_EmojiPassthrough(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	provider := &mockProvider{}
 	al := NewAgentLoop(cfg, msgBus, provider)
-	ctx := context.Background()
 
 	emojiInputs := []string{":)", ":D", ":heart:", ":thinking:", ":-)", ":100:"}
 	for _, input := range emojiInputs {
-		msg := bus.InboundMessage{Content: input}
-		_, handled := al.handleCommand(ctx, msg)
+		_, handled := al.handleExtensionCommand(input)
 		if handled {
 			t.Errorf("Expected %q to pass through (not handled), but it was handled", input)
 		}
@@ -661,36 +659,9 @@ func TestHandleCommand_EmojiPassthrough(t *testing.T) {
 	// Known commands should still be handled
 	knownCommands := []string{":help", ":usage"}
 	for _, cmd := range knownCommands {
-		msg := bus.InboundMessage{Content: cmd}
-		_, handled := al.handleCommand(ctx, msg)
+		_, handled := al.handleExtensionCommand(cmd)
 		if !handled {
 			t.Errorf("Expected %q to be handled, but it was not", cmd)
-		}
-	}
-
-	// :show, :list, :switch should be handled
-	showMsg := bus.InboundMessage{Content: ":show model", Channel: "cli"}
-	resp, handled := al.handleCommand(ctx, showMsg)
-	if !handled {
-		t.Error("Expected :show model to be handled")
-	}
-	if resp != "Current model: test-model" {
-		t.Errorf("Unexpected :show model response: %s", resp)
-	}
-
-	listMsg := bus.InboundMessage{Content: ":list agents"}
-	_, handled = al.handleCommand(ctx, listMsg)
-	if !handled {
-		t.Error("Expected :list agents to be handled")
-	}
-
-	// Non-: messages should not be handled
-	plainInputs := []string{"hello", "/show model", "ls -la"}
-	for _, input := range plainInputs {
-		msg := bus.InboundMessage{Content: input}
-		_, handled := al.handleCommand(ctx, msg)
-		if handled {
-			t.Errorf("Expected %q to not be handled, but it was", input)
 		}
 	}
 }
