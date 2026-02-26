@@ -124,6 +124,7 @@ func gatewayCmd(debug bool) error {
 
 	channelManager, err := channels.NewManager(cfg, msgBus, mediaStore)
 	if err != nil {
+		mediaStore.Stop()
 		return fmt.Errorf("error creating channel manager: %w", err)
 	}
 

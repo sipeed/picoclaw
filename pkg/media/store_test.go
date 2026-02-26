@@ -345,11 +345,34 @@ func TestStartStopLifecycle(t *testing.T) {
 
 	// Start and stop should not panic
 	store.Start()
+	// Double start should not spawn a second goroutine
+	store.Start()
 	time.Sleep(100 * time.Millisecond)
 	store.Stop()
 
 	// Double stop should not panic
 	store.Stop()
+}
+
+func TestCleanExpiredZeroMaxAge(t *testing.T) {
+	store := NewFileMediaStoreWithCleanup(MediaCleanerConfig{
+		Enabled:  true,
+		MaxAge:   0,
+		Interval: time.Hour,
+	})
+
+	dir := t.TempDir()
+	path := createTempFile(t, dir, "file.jpg")
+	ref, _ := store.Store(path, MediaMeta{Source: "test"}, "scope1")
+
+	// Zero MaxAge should be a no-op
+	removed := store.CleanExpired()
+	if removed != 0 {
+		t.Errorf("expected 0 removed with zero MaxAge, got %d", removed)
+	}
+	if _, err := store.Resolve(ref); err != nil {
+		t.Errorf("ref should still resolve: %v", err)
+	}
 }
 
 func TestStartDisabledIsNoop(t *testing.T) {
