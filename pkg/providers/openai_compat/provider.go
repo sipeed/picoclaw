@@ -28,10 +28,11 @@ type (
 )
 
 type Provider struct {
-	apiKey         string
-	apiBase        string
-	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
-	httpClient     *http.Client
+	apiKey              string
+	apiBase             string
+	maxTokensField      string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	httpClient          *http.Client
+	supportPromptCache  bool // Only send prompt_cache_key when true (OpenAI-specific feature)
 }
 
 func NewProvider(apiKey, apiBase, proxy string) *Provider {
@@ -60,6 +61,12 @@ func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string
 		maxTokensField: maxTokensField,
 		httpClient:     client,
 	}
+}
+
+// SetSupportPromptCache enables or disables sending the prompt_cache_key field.
+// Most providers accept or ignore this field, but Gemini rejects unknown fields.
+func (p *Provider) SetSupportPromptCache(v bool) {
+	p.supportPromptCache = v
 }
 
 func (p *Provider) Chat(
@@ -115,8 +122,11 @@ func (p *Provider) Chat(
 	// with the same key and reuse prefix KV cache across calls.
 	// The key is typically the agent ID — stable per agent, shared across requests.
 	// See: https://platform.openai.com/docs/guides/prompt-caching
-	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		requestBody["prompt_cache_key"] = cacheKey
+	// Disabled for providers like Gemini that reject unknown fields in the request body.
+	if p.supportPromptCache {
+		if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
+			requestBody["prompt_cache_key"] = cacheKey
+		}
 	}
 
 	jsonData, err := json.Marshal(requestBody)
