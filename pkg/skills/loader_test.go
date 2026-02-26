@@ -3,8 +3,6 @@ package skills
 import (
 	"os"
 	"path/filepath"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -368,28 +366,10 @@ No frontmatter here`,
 		},
 	}
 
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Extract frontmatter
-			frontmatter := sl.extractFrontmatter(tc.content)
-			assert.NotEmpty(t, frontmatter, "Frontmatter should be extracted for %s line endings", tc.lineEndingType)
-
-			// Parse YAML to get name and description (parseSimpleYAML now handles all line ending types)
-			yamlMeta := sl.parseSimpleYAML(frontmatter)
-			assert.Equal(
-				t,
-				tc.expectedName,
-				yamlMeta["name"],
-				"Name should be correctly parsed from frontmatter with %s line endings",
-				tc.lineEndingType,
-			)
-			assert.Equal(
-				t,
-				tc.expectedDesc,
-				yamlMeta["description"],
-				"Description should be correctly parsed from frontmatter with %s line endings",
-				tc.lineEndingType,
-			)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := loader.extractFrontmatter(tt.content)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -530,10 +510,24 @@ func TestStripFrontmatter(t *testing.T) {
 		content         string
 		expectedContent string
 		lineEndingType  string
-	for _, tt := range tests {
+	}{
+		{
+			name: "unix",
+			content: `---
+name: Test
+description: Desc
+---
+
+Content`,
+			expectedContent: "\nContent",
+			lineEndingType:  "unix",
+		},
+	}
+
+	for _, tt := range testcases {
 		t.Run(tt.name, func(t *testing.T) {
-			result := loader.extractFrontmatter(tt.content)
-			assert.Equal(t, tt.expected, result)
+			result := sl.stripFrontmatter(tt.content)
+			assert.Equal(t, tt.expectedContent, result)
 		})
 	}
 }
