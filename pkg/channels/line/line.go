@@ -368,9 +368,6 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 		"preview":      utils.Truncate(content, 50),
 	})
 
-	// Show typing/loading indicator (requires user ID, not group ID)
-	c.sendLoading(senderID)
-
 	sender := bus.SenderInfo{
 		Platform:    "line",
 		PlatformID:  senderID,
@@ -379,6 +376,30 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 
 	if !c.IsAllowedSender(sender) {
 		return
+	}
+
+	// Thinking indicator (LINE loading animation is 1:1 only).
+	// For group/room chats, LINE provides no equivalent API.
+	if !isGroup {
+		typingCtx, typingCancel := context.WithTimeout(c.ctx, 5*time.Minute)
+		stop, err := c.StartTyping(typingCtx, chatID)
+		if err == nil {
+			var stopOnce sync.Once
+			stopFn := func() {
+				stopOnce.Do(func() {
+					stop()
+					typingCancel()
+				})
+			}
+			if rec := c.GetPlaceholderRecorder(); rec != nil {
+				rec.RecordTypingStop("line", chatID, stopFn)
+			} else {
+				// No recorder — stop immediately to avoid goroutine leaks.
+				stopFn()
+			}
+		} else {
+			typingCancel()
+		}
 	}
 
 	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, mediaPaths, metadata, sender)
@@ -577,17 +598,50 @@ func (c *LINEChannel) sendPush(ctx context.Context, to, content, quoteToken stri
 	return c.callAPI(ctx, linePushEndpoint, payload)
 }
 
+// StartTyping implements channels.TypingCapable using LINE's loading animation.
+//
+// NOTE: The LINE loading animation API only works for 1:1 chats. Callers must ensure
+// the provided chatID is a user chat ID (not a group/room ID).
+// There is no explicit "stop" API; we periodically re-send start requests to keep
+// the indicator alive, and stop by canceling the context.
+func (c *LINEChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+	if chatID == "" {
+		return func() {}, nil
+	}
+
+	typingCtx, cancel := context.WithCancel(ctx)
+	var once sync.Once
+	stop := func() { once.Do(cancel) }
+
+	// Send immediately, then refresh periodically for long-running tasks.
+	if err := c.sendLoading(typingCtx, chatID); err != nil {
+		stop()
+		return stop, err
+	}
+
+	ticker := time.NewTicker(50 * time.Second)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				_ = c.sendLoading(typingCtx, chatID)
+			}
+		}
+	}()
+
+	return stop, nil
+}
+
 // sendLoading sends a loading animation indicator to the chat.
-func (c *LINEChannel) sendLoading(chatID string) {
+func (c *LINEChannel) sendLoading(ctx context.Context, chatID string) error {
 	payload := map[string]any{
 		"chatId":         chatID,
 		"loadingSeconds": 60,
 	}
-	if err := c.callAPI(c.ctx, lineLoadingEndpoint, payload); err != nil {
-		logger.DebugCF("line", "Failed to send loading indicator", map[string]any{
-			"error": err.Error(),
-		})
-	}
+	return c.callAPI(ctx, lineLoadingEndpoint, payload)
 }
 
 // callAPI makes an authenticated POST request to the LINE API.
@@ -612,7 +666,7 @@ func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload any)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
 		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("LINE API error: %s", string(respBody)))
 	}
