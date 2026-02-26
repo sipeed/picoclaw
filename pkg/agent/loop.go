@@ -1117,7 +1117,7 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	omitted := false
 
 	for _, m := range toSummarize {
-		if m.Role != "user" && m.Role != "assistant" {
+		if m.Role != "user" && m.Role != "assistant" && m.Role != "tool" {
 			continue
 		}
 		msgTokens := len(m.Content) / 2
@@ -1194,7 +1194,10 @@ func (al *AgentLoop) summarizeBatch(
 	}
 	sb.WriteString("\nCONVERSATION:\n")
 	for _, m := range batch {
-		fmt.Fprintf(&sb, "%s: %s\n", m.Role, m.Content)
+		for _, line := range formatMessageForSummary(m) {
+			sb.WriteString(line)
+			sb.WriteByte('\n')
+		}
 	}
 	prompt := sb.String()
 
@@ -1213,6 +1216,63 @@ func (al *AgentLoop) summarizeBatch(
 		return "", err
 	}
 	return response.Content, nil
+}
+
+func formatMessageForSummary(msg providers.Message) []string {
+	content := strings.TrimSpace(msg.Content)
+
+	switch msg.Role {
+	case "assistant":
+		lines := make([]string, 0, 1+len(msg.ToolCalls))
+		if content != "" {
+			lines = append(lines, fmt.Sprintf("assistant: %s", content))
+		}
+		for _, tc := range msg.ToolCalls {
+			name := tc.Name
+			if name == "" && tc.Function != nil {
+				name = tc.Function.Name
+			}
+			if name == "" {
+				name = "unknown_tool"
+			}
+
+			args := "{}"
+			if tc.Function != nil && strings.TrimSpace(tc.Function.Arguments) != "" {
+				args = tc.Function.Arguments
+			} else if len(tc.Arguments) > 0 {
+				if b, err := json.Marshal(tc.Arguments); err == nil {
+					args = string(b)
+				}
+			}
+
+			lines = append(lines, fmt.Sprintf(
+				"assistant(tool_call id=%s name=%s): %s",
+				tc.ID,
+				name,
+				utils.Truncate(args, 240),
+			))
+		}
+
+		if len(lines) == 0 {
+			return []string{"assistant:"}
+		}
+		return lines
+
+	case "tool":
+		toolID := msg.ToolCallID
+		if toolID == "" {
+			toolID = "unknown"
+		}
+		if content == "" {
+			return []string{fmt.Sprintf("tool(%s):", toolID)}
+		}
+		return []string{fmt.Sprintf("tool(%s): %s", toolID, utils.Truncate(content, 320))}
+
+	case "user":
+		fallthrough
+	default:
+		return []string{fmt.Sprintf("%s: %s", msg.Role, content)}
+	}
 }
 
 // estimateTokens estimates the number of tokens in a message list.
