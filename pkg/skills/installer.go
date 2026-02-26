@@ -23,12 +23,6 @@ type AvailableSkill struct {
 	Tags        []string `json:"tags"`
 }
 
-type BuiltinSkill struct {
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Enabled bool   `json:"enabled"`
-}
-
 const maxRetries = 3
 
 func shouldRetry(statusCode int) bool {
