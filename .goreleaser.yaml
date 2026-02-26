@@ -30,6 +30,8 @@ builds:
       - riscv64
       - loong64
       - arm
+    goarm:
+      - "7"             
     main: ./cmd/picoclaw
     ignore:
       - goos: windows
