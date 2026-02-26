@@ -34,6 +34,9 @@ func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) er
 	if mb.closed.Load() {
 		return ErrBusClosed
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	select {
 	case mb.inbound <- msg:
 		return nil
@@ -59,6 +62,9 @@ func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) 
 	if mb.closed.Load() {
 		return ErrBusClosed
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	select {
 	case mb.outbound <- msg:
 		return nil
@@ -83,6 +89,9 @@ func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, b
 func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMediaMessage) error {
 	if mb.closed.Load() {
 		return ErrBusClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	select {
 	case mb.outboundMedia <- msg:
