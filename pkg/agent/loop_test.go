@@ -631,3 +631,37 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
 	}
 }
+
+// TestHandleExtensionCommand_EmojiPassthrough verifies that emoji-like
+// messages starting with : are not intercepted as commands.
+func TestHandleExtensionCommand_EmojiPassthrough(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: t.TempDir(),
+				Model:     "test-model",
+				MaxTokens: 4096,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	emojiInputs := []string{":)", ":D", ":heart:", ":thinking:", ":-)", ":100:"}
+	for _, input := range emojiInputs {
+		_, handled := al.handleExtensionCommand(input)
+		if handled {
+			t.Errorf("Expected %q to pass through (not handled), but it was handled", input)
+		}
+	}
+
+	// Known commands should still be handled
+	knownCommands := []string{":help", ":usage"}
+	for _, cmd := range knownCommands {
+		_, handled := al.handleExtensionCommand(cmd)
+		if !handled {
+			t.Errorf("Expected %q to be handled, but it was not", cmd)
+		}
+	}
+}
