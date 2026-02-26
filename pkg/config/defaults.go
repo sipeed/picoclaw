@@ -364,13 +364,16 @@ func DefaultConfig() *Config {
 			ToolParallelOverrides:     map[string]string{},
 		},
 		Audit: AuditConfig{
-			Enabled:             false,
-			IntervalMinutes:     30,
-			LookbackMinutes:     180,
-			MinConfidence:       0.75,
-			InconsistencyPolicy: "strict",
-			AutoRemediation:     "safe_only",
-			NotifyChannel:       "last_active",
+			Enabled:                     false,
+			IntervalMinutes:             30,
+			LookbackMinutes:             180,
+			MinConfidence:               0.75,
+			InconsistencyPolicy:         "strict",
+			AutoRemediation:             "safe_only",
+			MaxAutoRemediationsPerCycle: 3,
+			RemediationCooldownMinutes:  10,
+			RemediationAgentID:          "",
+			NotifyChannel:               "last_active",
 			Supervisor: AuditSupervisorConfig{
 				Enabled: false,
 				Model: &AgentModelConfig{

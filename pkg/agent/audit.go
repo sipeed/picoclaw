@@ -128,7 +128,7 @@ func (al *AgentLoop) executeAuditCycle(ctx context.Context) {
 		return
 	}
 
-	al.applyAutoRemediation(report)
+	al.applyAutoRemediation(ctx, report)
 	al.publishAuditReport(report)
 }
 
@@ -369,8 +369,8 @@ func parseSupervisorReview(raw string) (*supervisorReview, error) {
 	return &review, nil
 }
 
-func (al *AgentLoop) applyAutoRemediation(report *AuditReport) {
-	if report == nil || len(report.Findings) == 0 || al.taskLedger == nil {
+func (al *AgentLoop) applyAutoRemediation(ctx context.Context, report *AuditReport) {
+	if report == nil || len(report.Findings) == 0 || al.taskLedger == nil || al.cfg == nil {
 		return
 	}
 
@@ -378,20 +378,213 @@ func (al *AgentLoop) applyAutoRemediation(report *AuditReport) {
 	if mode == "" || mode == "disabled" || mode == "off" || mode == "none" {
 		return
 	}
-	if mode != "safe_only" {
+
+	if mode == "safe_only" {
+		for _, finding := range report.Findings {
+			if finding.Category != "missed" {
+				continue
+			}
+			_ = al.taskLedger.AddRemediation(finding.TaskID, tools.TaskRemediation{
+				Action: "notify",
+				Status: "queued",
+				Note:   finding.Message,
+			})
+		}
 		return
 	}
 
+	// retry/auto-fix modes
+	// - retry_missed: only retry tasks in "missed" category
+	// - retry_all: retry missed + rerun quality/inconsistency findings
+	// - retry: alias for retry_missed
+	switch mode {
+	case "retry":
+		mode = "retry_missed"
+	case "retry_missed", "retry_all":
+	default:
+		// Unknown mode: fail closed.
+		return
+	}
+
+	maxPerCycle := al.cfg.Audit.MaxAutoRemediationsPerCycle
+	if maxPerCycle <= 0 {
+		maxPerCycle = 3
+	}
+	cooldownMinutes := al.cfg.Audit.RemediationCooldownMinutes
+	if cooldownMinutes <= 0 {
+		cooldownMinutes = 10
+	}
+	cooldownMS := int64(cooldownMinutes) * 60 * 1000
+	retryLimit := al.cfg.Orchestration.RetryLimitPerTask
+	if retryLimit < 0 {
+		retryLimit = 0
+	}
+
+	targetAgentID := strings.TrimSpace(al.cfg.Audit.RemediationAgentID)
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil || defaultAgent.SubagentManager == nil {
+		return
+	}
+	if targetAgentID != "" {
+		normalized, ok := al.registry.GetAgent(targetAgentID)
+		if !ok || normalized == nil {
+			logger.WarnCF("audit", "Remediation agent not found; falling back to default agent", map[string]any{
+				"remediation_agent_id": targetAgentID,
+			})
+			targetAgentID = ""
+		} else {
+			targetAgentID = normalized.ID
+		}
+		if targetAgentID != "" && targetAgentID != defaultAgent.ID && !al.registry.CanSpawnSubagent(defaultAgent.ID, targetAgentID) {
+			logger.WarnCF("audit", "Remediation agent not allowed by subagent allowlist; falling back to default agent", map[string]any{
+				"parent_agent_id":      defaultAgent.ID,
+				"remediation_agent_id": targetAgentID,
+			})
+			targetAgentID = ""
+		}
+	}
+
+	nowMS := time.Now().UnixMilli()
+	thresholdMS := nowMS - cooldownMS
+	spawned := 0
 	for _, finding := range report.Findings {
-		if finding.Category != "missed" {
+		if spawned >= maxPerCycle {
+			return
+		}
+
+		if strings.TrimSpace(finding.TaskID) == "" {
 			continue
 		}
-		_ = al.taskLedger.AddRemediation(finding.TaskID, tools.TaskRemediation{
-			Action: "notify",
-			Status: "queued",
-			Note:   finding.Message,
+		// Decide whether this finding should trigger an automatic rerun.
+		switch finding.Category {
+		case "missed":
+			// always eligible in retry modes
+		case "quality", "inconsistency":
+			if mode != "retry_all" {
+				continue
+			}
+		default:
+			continue
+		}
+
+		entry, ok := al.taskLedger.Get(finding.TaskID)
+		if !ok {
+			continue
+		}
+		if retryLimit > 0 && entry.RetryCount >= retryLimit {
+			continue
+		}
+
+		intent := strings.TrimSpace(entry.Intent)
+		if intent == "" {
+			_ = al.taskLedger.AddRemediation(entry.ID, tools.TaskRemediation{
+				Action: "retry",
+				Status: "skipped",
+				Note:   "missing task intent; cannot auto-retry",
+			})
+			continue
+		}
+
+		if hasRecentRetryRemediation(entry.Remediations, thresholdMS) {
+			continue
+		}
+
+		originChannel, originChatID := al.resolveRemediationDestination(entry)
+		if originChannel == "" || originChatID == "" {
+			continue
+		}
+
+		retryTask := buildRetryTask(finding, entry)
+		label := fmt.Sprintf("audit-%s:%s", finding.Category, entry.ID)
+
+		taskInfo, err := defaultAgent.SubagentManager.SpawnTask(
+			ctx,
+			retryTask,
+			label,
+			targetAgentID,
+			originChannel,
+			originChatID,
+			nil,
+		)
+		if err != nil {
+			_ = al.taskLedger.AddRemediation(entry.ID, tools.TaskRemediation{
+				Action: "retry",
+				Status: "error",
+				Note:   fmt.Sprintf("failed to spawn retry task: %v", err),
+			})
+			continue
+		}
+
+		_ = al.taskLedger.IncrementRetry(entry.ID)
+		_ = al.taskLedger.AddRemediation(entry.ID, tools.TaskRemediation{
+			Action: "retry",
+			Status: "spawned",
+			Note:   fmt.Sprintf("spawned %s (agent_id=%s)", taskInfo.ID, strings.TrimSpace(targetAgentID)),
 		})
+		spawned++
 	}
+}
+
+func hasRecentRetryRemediation(remediations []tools.TaskRemediation, thresholdMS int64) bool {
+	for _, r := range remediations {
+		if strings.ToLower(strings.TrimSpace(r.Action)) != "retry" {
+			continue
+		}
+		if r.CreatedAtMS < thresholdMS {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(r.Status)) {
+		case "queued", "spawned", "running", "skipped":
+			return true
+		}
+	}
+	return false
+}
+
+func (al *AgentLoop) resolveRemediationDestination(entry tools.TaskLedgerEntry) (string, string) {
+	channel := strings.TrimSpace(entry.OriginChannel)
+	chatID := strings.TrimSpace(entry.OriginChatID)
+	if channel != "" && chatID != "" && !constants.IsInternalChannel(channel) {
+		return channel, chatID
+	}
+
+	channel, chatID = al.resolveAuditDestination()
+	if channel == "" || chatID == "" || constants.IsInternalChannel(channel) {
+		return "", ""
+	}
+	return channel, chatID
+}
+
+func buildRetryTask(finding AuditFinding, entry tools.TaskLedgerEntry) string {
+	intent := strings.TrimSpace(entry.Intent)
+	if intent == "" {
+		return ""
+	}
+
+	reason := strings.TrimSpace(finding.Message)
+	if reason == "" {
+		reason = "Task requires follow-up."
+	}
+
+	var b strings.Builder
+	b.WriteString("You are running an automatic remediation retry for a previously problematic task.\n")
+	b.WriteString("Be concise and deliver a complete result.\n\n")
+	b.WriteString(fmt.Sprintf("Original task id: %s\n", entry.ID))
+	b.WriteString(fmt.Sprintf("Original status: %s\n", entry.Status))
+	b.WriteString(fmt.Sprintf("Finding category: %s\n", finding.Category))
+	b.WriteString(fmt.Sprintf("Reason: %s\n\n", reason))
+	b.WriteString("Task:\n")
+	b.WriteString(intent)
+	b.WriteString("\n\nAcceptance criteria:\n")
+	switch finding.Category {
+	case "quality":
+		b.WriteString("- Produce a non-empty result.\n- Include concrete deliverables.\n")
+	case "inconsistency":
+		b.WriteString("- If tools are required, use them and complete the task end-to-end.\n")
+	default:
+		b.WriteString("- Complete the task end-to-end.\n")
+	}
+	return b.String()
 }
 
 func (al *AgentLoop) publishAuditReport(report *AuditReport) {

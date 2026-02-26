@@ -785,6 +785,41 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 * `PICOCLAW_HEARTBEAT_ENABLED=false` to disable
 * `PICOCLAW_HEARTBEAT_INTERVAL=60` to change interval
 
+### Audit (Task Supervisor)
+
+PicoClaw can periodically audit background tasks (subagents spawned via `spawn/sessions_spawn`) and detect:
+
+- missed tasks (overdue planned/running, failed with retry budget)
+- low-quality completions (empty result)
+- execution inconsistencies (no tool evidence in strict mode)
+
+You can optionally enable **automatic make-up / retry** by spawning remediation subagents:
+
+- `safe_only` (default): record remediation notes only
+- `retry_missed`: auto-retry missed findings
+- `retry_all`: auto-retry missed + quality + inconsistency
+
+**Example configuration:**
+
+```json
+{
+  "orchestration": {
+    "retry_limit_per_task": 10
+  },
+  "audit": {
+    "enabled": true,
+    "interval_minutes": 5,
+    "lookback_minutes": 180,
+    "auto_remediation": "retry_all",
+    "max_auto_remediations_per_cycle": 3,
+    "remediation_cooldown_minutes": 10,
+    "notify_channel": "last_active"
+  }
+}
+```
+
+> Tip: Leave `audit.remediation_agent_id` empty to run retries on the same model. Set it if you want retries to run on a dedicated supervisor agent.
+
 ### Providers
 
 > [!NOTE]

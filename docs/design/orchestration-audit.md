@@ -40,6 +40,7 @@ This document describes how PicoClaw's subagent orchestration and periodic audit
   - Used as default deadline metadata in task ledger entries.
 - `retry_limit_per_task`
   - Used by audit logic to detect failed tasks that still have retry budget.
+  - Also caps how many automatic remediation retries can be spawned for one task.
 
 ### `audit`
 
@@ -54,7 +55,16 @@ This document describes how PicoClaw's subagent orchestration and periodic audit
 - `inconsistency_policy`
   - `strict` mode flags completed tasks with no tool evidence.
 - `auto_remediation`
-  - `safe_only` records low-risk remediation actions in ledger.
+  - `safe_only` records low-risk remediation actions in ledger (no retries).
+  - `retry_missed` automatically spawns subagent retries for `missed` findings.
+  - `retry_all` automatically spawns retries for `missed`, `quality`, and `inconsistency` findings.
+  - `retry` is accepted as an alias for `retry_missed`.
+- `max_auto_remediations_per_cycle`
+  - Caps how many remediation tasks can be spawned in one audit cycle (prevents runaway loops).
+- `remediation_cooldown_minutes`
+  - Suppresses repeated remediation attempts for the same task within the cooldown window.
+- `remediation_agent_id`
+  - Optional agent id used to execute remediation retries (requires subagent allowlist when targeting a different agent).
 - `notify_channel`
   - Destination for audit report:
     - `last_active`: last recorded user channel/chat.
@@ -117,6 +127,45 @@ Optional model checks:
 
 - Supervisor model receives task JSON and returns structured score/issues.
 - Findings are merged into deterministic report.
+
+## Auto Remediation (Retry / Make-up)
+
+When `audit.auto_remediation` is set to a retry mode (`retry_missed` / `retry_all`), the audit loop can automatically **spawn a subagent** to retry missed or low-quality tasks.
+
+Behavior:
+
+- The audit loop scans the task ledger for findings.
+- For eligible findings, it spawns a new subagent task with stricter acceptance criteria.
+- It records a remediation entry (`action=retry`) and increments `retry_count` on the original task.
+- It respects:
+  - `audit.max_auto_remediations_per_cycle` (per-cycle cap),
+  - `audit.remediation_cooldown_minutes` (per-task cooldown),
+  - `orchestration.retry_limit_per_task` (per-task retry budget).
+
+Delivery:
+
+- By default, remediation retries run on the default agent using the same provider/model as normal subagent tasks.
+- If `audit.remediation_agent_id` is set, the retry is delegated to that agent id (requires subagent allowlist when targeting a different agent).
+- The retry result is delivered back to the original task's `origin_channel/origin_chat_id` when available; otherwise it falls back to `audit.notify_channel`.
+
+### Example Configuration
+
+```json
+{
+  "orchestration": {
+    "retry_limit_per_task": 10
+  },
+  "audit": {
+    "enabled": true,
+    "interval_minutes": 5,
+    "lookback_minutes": 180,
+    "auto_remediation": "retry_all",
+    "max_auto_remediations_per_cycle": 3,
+    "remediation_cooldown_minutes": 10,
+    "notify_channel": "last_active"
+  }
+}
+```
 
 ## Backward Compatibility
 

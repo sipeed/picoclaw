@@ -174,6 +174,7 @@ func registerSharedTools(
 			cfg.Orchestration.ToolParallelOverrides,
 		)
 		subagentManager.SetTools(agent.Tools)
+		agent.SubagentManager = subagentManager
 		currentAgentID := agentID
 		subagentManager.SetExecutionResolver(func(targetAgentID string) (tools.SubagentExecutionConfig, error) {
 			return resolveSubagentExecution(cfg, registry, provider, currentAgentID, targetAgentID)

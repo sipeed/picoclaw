@@ -296,6 +296,9 @@
     "min_confidence": 0.75,
     "inconsistency_policy": "strict",
     "auto_remediation": "safe_only",
+    "max_auto_remediations_per_cycle": 3,
+    "remediation_cooldown_minutes": 10,
+    "remediation_agent_id": "",
     "notify_channel": "last_active",
     "supervisor": {
       "enabled": false,

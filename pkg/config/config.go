@@ -377,7 +377,16 @@ type AuditConfig struct {
 	MinConfidence       float64               `json:"min_confidence"        env:"PICOCLAW_AUDIT_MIN_CONFIDENCE"`
 	InconsistencyPolicy string                `json:"inconsistency_policy"  env:"PICOCLAW_AUDIT_INCONSISTENCY_POLICY"`
 	AutoRemediation     string                `json:"auto_remediation"      env:"PICOCLAW_AUDIT_AUTO_REMEDIATION"`
-	NotifyChannel       string                `json:"notify_channel"        env:"PICOCLAW_AUDIT_NOTIFY_CHANNEL"`
+	// MaxAutoRemediationsPerCycle limits how many retry/fix tasks can be spawned
+	// in one audit cycle to avoid runaway loops.
+	MaxAutoRemediationsPerCycle int `json:"max_auto_remediations_per_cycle" env:"PICOCLAW_AUDIT_MAX_AUTO_REMEDIATIONS_PER_CYCLE"`
+	// RemediationCooldownMinutes prevents re-triggering remediation for the same
+	// task too frequently.
+	RemediationCooldownMinutes int `json:"remediation_cooldown_minutes"     env:"PICOCLAW_AUDIT_REMEDIATION_COOLDOWN_MINUTES"`
+	// RemediationAgentID optionally delegates remediation retries to a specific
+	// agent id (requires subagent allowlist when targeting a different agent).
+	RemediationAgentID string `json:"remediation_agent_id"               env:"PICOCLAW_AUDIT_REMEDIATION_AGENT_ID"`
+	NotifyChannel      string `json:"notify_channel"        env:"PICOCLAW_AUDIT_NOTIFY_CHANNEL"`
 }
 
 type AuditSupervisorConfig struct {

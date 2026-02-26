@@ -28,6 +28,7 @@ type AgentInstance struct {
 	Sessions                      *session.SessionManager
 	ContextBuilder                *ContextBuilder
 	Tools                         *tools.ToolRegistry
+	SubagentManager               *tools.SubagentManager
 	Subagents                     *config.SubagentsConfig
 	SkillsFilter                  []string
 	Candidates                    []providers.FallbackCandidate

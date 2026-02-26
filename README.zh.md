@@ -420,6 +420,41 @@ Agent 读取 HEARTBEAT.md
 - `PICOCLAW_HEARTBEAT_ENABLED=false` 禁用
 - `PICOCLAW_HEARTBEAT_INTERVAL=60` 更改间隔
 
+### 审计 / 监管与自动补做 (Audit)
+
+PicoClaw 支持周期性审计后台任务（主要是通过 `spawn/sessions_spawn` 生成的子任务），用于发现：
+
+- **漏执行 / 超时**：planned/running 任务超时、failed 但仍有重试预算
+- **低质量输出**：completed 但结果为空
+- **执行不一致**：strict 模式下 completed 但没有工具证据
+
+你也可以开启**自动补做 / 自动重试**（通过再 spawn 一个补做 subagent）：
+
+- `safe_only`（默认）：仅记录提示，不自动重试
+- `retry_missed`：自动补做 missed
+- `retry_all`：自动补做 missed + quality + inconsistency
+
+**配置示例：**
+
+```json
+{
+  "orchestration": {
+    "retry_limit_per_task": 10
+  },
+  "audit": {
+    "enabled": true,
+    "interval_minutes": 5,
+    "lookback_minutes": 180,
+    "auto_remediation": "retry_all",
+    "max_auto_remediations_per_cycle": 3,
+    "remediation_cooldown_minutes": 10,
+    "notify_channel": "last_active"
+  }
+}
+```
+
+> 小贴士：保持 `audit.remediation_agent_id` 为空即可让补做任务使用同一个模型；如果你想把补做任务交给一个专门的监管 agent，再配置该字段即可。
+
 ### 提供商 (Providers)
 
 > [!NOTE]

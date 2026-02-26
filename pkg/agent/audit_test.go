@@ -87,3 +87,102 @@ func TestParseSupervisorReview_EmbeddedJSON(t *testing.T) {
 		t.Fatalf("issue category = %q", review.Issues[0].Category)
 	}
 }
+
+func TestApplyAutoRemediation_RetriesMissedTasksWithCooldown(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Audit.Enabled = true
+	cfg.Audit.AutoRemediation = "retry_missed"
+	cfg.Audit.MaxAutoRemediationsPerCycle = 5
+	cfg.Audit.RemediationCooldownMinutes = 60
+
+	loop := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	ledger := loop.GetTaskLedger()
+	if ledger == nil {
+		t.Fatal("expected task ledger")
+	}
+
+	taskID := "task-failed-1"
+	_ = ledger.UpsertTask(tools.TaskLedgerEntry{
+		ID:            taskID,
+		Status:        tools.TaskStatusFailed,
+		Intent:        "Write a short status update about the project.",
+		OriginChannel: "telegram",
+		OriginChatID:  "chat-1",
+		CreatedAtMS:   time.Now().Add(-10 * time.Minute).UnixMilli(),
+	})
+
+	report := &AuditReport{
+		GeneratedAt: time.Now(),
+		Lookback:    180 * time.Minute,
+		TotalTasks:  1,
+		Findings: []AuditFinding{
+			{
+				TaskID:         taskID,
+				Category:       "missed",
+				Severity:       "medium",
+				Message:        "Task failed and still has retry budget.",
+				Recommendation: "Retry this task automatically or manually.",
+			},
+		},
+	}
+
+	loop.applyAutoRemediation(context.Background(), report)
+
+	entry, ok := ledger.Get(taskID)
+	if !ok {
+		t.Fatal("expected task in ledger")
+	}
+	if entry.RetryCount != 1 {
+		t.Fatalf("RetryCount = %d, want %d", entry.RetryCount, 1)
+	}
+	hasSpawned := false
+	for _, r := range entry.Remediations {
+		if strings.EqualFold(r.Action, "retry") && strings.EqualFold(r.Status, "spawned") {
+			hasSpawned = true
+			break
+		}
+	}
+	if !hasSpawned {
+		t.Fatalf("expected spawned retry remediation, got: %+v", entry.Remediations)
+	}
+
+	// Second run should respect cooldown and not spawn another retry.
+	loop.applyAutoRemediation(context.Background(), report)
+	entry2, _ := ledger.Get(taskID)
+	if entry2.RetryCount != 1 {
+		t.Fatalf("RetryCount after cooldown check = %d, want %d", entry2.RetryCount, 1)
+	}
+	spawnedCount := 0
+	spawnedTaskID := ""
+	for _, r := range entry2.Remediations {
+		if strings.EqualFold(r.Action, "retry") && strings.EqualFold(r.Status, "spawned") {
+			spawnedCount++
+			parts := strings.Fields(r.Note)
+			if len(parts) >= 2 {
+				spawnedTaskID = parts[1]
+			}
+		}
+	}
+	if spawnedCount != 1 {
+		t.Fatalf("spawned remediation count = %d, want %d", spawnedCount, 1)
+	}
+
+	// Ensure the spawned subagent finishes before TempDir cleanup.
+	if spawnedTaskID == "" {
+		t.Fatal("expected spawned task id in remediation note")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		subTask, ok := ledger.Get(spawnedTaskID)
+		if ok && (subTask.Status == tools.TaskStatusCompleted ||
+			subTask.Status == tools.TaskStatusFailed ||
+			subTask.Status == tools.TaskStatusCancelled) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for spawned task %s to finish", spawnedTaskID)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
