@@ -544,6 +544,57 @@ func TestCompact_ThenAppend(t *testing.T) {
 	}
 }
 
+func TestTruncateHistory_StaleMetaCount(t *testing.T) {
+	// Simulates a crash between JSONL append and meta update in addMsg:
+	// file has N+1 lines but meta.Count is still N. TruncateHistory must
+	// reconcile with the real line count so that keepLast is accurate.
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	// Write 10 messages normally (meta.Count = 10).
+	for i := 0; i < 10; i++ {
+		err := store.AddMessage(ctx, "stale", "user", string(rune('a'+i)))
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+	}
+
+	// Simulate crash: append a line to JSONL but do NOT update meta.
+	// This leaves meta.Count = 10 while the file has 11 lines.
+	jsonlPath := store.jsonlPath("stale")
+	f, err := os.OpenFile(jsonlPath, os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatalf("open for append: %v", err)
+	}
+	_, err = f.WriteString(`{"role":"user","content":"orphan"}` + "\n")
+	if err != nil {
+		t.Fatalf("write orphan: %v", err)
+	}
+	f.Close()
+
+	// TruncateHistory(keepLast=4) should keep the last 4 of 11 lines,
+	// not the last 4 of 10.
+	err = store.TruncateHistory(ctx, "stale", 4)
+	if err != nil {
+		t.Fatalf("TruncateHistory: %v", err)
+	}
+
+	history, err := store.GetHistory(ctx, "stale")
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected 4, got %d", len(history))
+	}
+	// Last 4 of [a,b,c,d,e,f,g,h,i,j,orphan] = [h,i,j,orphan]
+	if history[0].Content != "h" {
+		t.Errorf("first kept = %q, want 'h'", history[0].Content)
+	}
+	if history[3].Content != "orphan" {
+		t.Errorf("last kept = %q, want 'orphan'", history[3].Content)
+	}
+}
+
 func TestCrashRecovery_PartialLine(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
