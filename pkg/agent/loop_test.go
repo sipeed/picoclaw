@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -630,6 +631,42 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
 	}
+}
+
+// TestHandleCdCommand_TraversalBlocked verifies that cd ../../.. cannot escape workspace.
+func TestHandleCdCommand_TraversalBlocked(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				Model:     "test-model",
+				MaxTokens: 4096,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+
+	// Set working dir to a subdir inside workspace
+	subdir := filepath.Join(workspace, "a", "b")
+	os.MkdirAll(subdir, 0o755)
+	al.setSessionWorkDir("test", subdir)
+
+	// Try to escape via ../../../..
+	result := al.handleCdCommand("cd ../../../..", "test", agent)
+	workDir := al.getSessionWorkDir("test")
+
+	if !strings.HasPrefix(workDir, workspace) {
+		t.Errorf("cd traversal escaped workspace: workDir=%s, workspace=%s", workDir, workspace)
+	}
+	// Should land in workspace, not outside
+	if workDir != workspace {
+		t.Errorf("Expected workDir=%s, got %s", workspace, workDir)
+	}
+	_ = result
 }
 
 // TestHandleExtensionCommand_EmojiPassthrough verifies that emoji-like

@@ -1426,6 +1426,11 @@ func (al *AgentLoop) handleCdCommand(content, sessionKey string, agent *AgentIns
 
 	target = filepath.Clean(target)
 
+	// Prevent traversal outside workspace via ../
+	if !strings.HasPrefix(target, workspace) {
+		target = workspace
+	}
+
 	info, err := os.Stat(target)
 	if err != nil {
 		return fmt.Sprintf("cd: %s: No such file or directory", target)
