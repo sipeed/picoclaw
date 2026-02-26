@@ -4,8 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -15,22 +17,23 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID             string
-	Name           string
-	Model          string
-	Fallbacks      []string
-	Workspace      string
-	MaxIterations  int
-	MaxTokens      int
-	Temperature    float64
-	ContextWindow  int
-	Provider       providers.LLMProvider
-	Sessions       *session.SessionManager
-	ContextBuilder *ContextBuilder
-	Tools          *tools.ToolRegistry
-	Subagents      *config.SubagentsConfig
-	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
+	ID                string
+	Name              string
+	Model             string
+	Fallbacks         []string
+	Workspace         string
+	MaxIterations     int
+	MaxTokens         int
+	Temperature       float64
+	ContextWindow     int
+	Provider          providers.LLMProvider
+	Sessions          *session.SessionManager
+	ContextBuilder    *ContextBuilder
+	Tools             *tools.ToolRegistry
+	Subagents         *config.SubagentsConfig
+	skillsFilterMutex sync.RWMutex // Protects SkillsFilter
+	SkillsFilter      []string
+	Candidates        []providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -155,4 +158,97 @@ func expandHome(path string) string {
 		return home
 	}
 	return path
+}
+
+// SetSkillsFilter dynamically sets the skills filter for this agent.
+// Modifying the filter will trigger ContextBuilder cache invalidation
+// to ensure the next request uses the updated skill set.
+//
+// Parameters:
+//   - filters: List of skill names to include. Empty or nil clears the filter.
+//
+// Example:
+//
+//	agent.SetSkillsFilter([]string{"customer-service", "faq"})
+//	agent.SetSkillsFilter(nil) // Clear filter, all skills available
+func (ai *AgentInstance) SetSkillsFilter(filters []string) {
+	ai.skillsFilterMutex.Lock()
+	defer ai.skillsFilterMutex.Unlock()
+
+	// Create a copy to prevent external modification
+	if filters == nil {
+		ai.SkillsFilter = nil
+	} else {
+		ai.SkillsFilter = make([]string, len(filters))
+		copy(ai.SkillsFilter, filters)
+	}
+
+	// Trigger context builder cache invalidation and update its filter
+	if ai.ContextBuilder != nil {
+		ai.ContextBuilder.SetSkillsFilter(filters)
+	}
+}
+
+// EnableSkillRecommender enables intelligent skill recommendation for this agent.
+// The recommender will automatically select relevant skills based on context.
+//
+// Parameters:
+//   - model: Model to use for LLM-based recommendations (optional, uses agent's model if empty)
+//   - weights: Optional custom weights for scoring algorithm (channel, keyword, history, recency)
+//
+// Example:
+//
+//	// Enable with default settings
+//	agent.EnableSkillRecommender()
+//
+//	// Enable with custom weights
+//	agent.EnableSkillRecommenderWithWeights(0.5, 0.3, 0.15, 0.05)
+func (ai *AgentInstance) EnableSkillRecommender(model string, weights ...[4]float64) {
+	if model == "" {
+		model = ai.Model
+	}
+
+	recommender := NewSkillRecommender(
+		ai.ContextBuilder.skillsLoader,
+		ai.Provider,
+		model,
+	)
+
+	// Set custom weights if provided
+	if len(weights) > 0 {
+		w := weights[0]
+		recommender.SetWeights(w[0], w[1], w[2], w[3])
+	}
+
+	ai.ContextBuilder.SetSkillRecommender(recommender)
+
+	logger.InfoCF("agent", "Skill recommender enabled",
+		map[string]any{
+			"agent_id": ai.ID,
+			"model":    model,
+		})
+}
+
+// EnableSkillRecommenderWithWeights enables skill recommender with custom weights.
+// This is a convenience wrapper around EnableSkillRecommender.
+func (ai *AgentInstance) EnableSkillRecommenderWithWeights(channel, keyword, history, recency float64) {
+	ai.EnableSkillRecommender("", [4]float64{channel, keyword, history, recency})
+}
+
+// GetSkillsFilter returns the current skills filter.
+// Returns nil if no filter is set (all skills available).
+//
+// The returned slice is a copy to prevent concurrent modification.
+func (ai *AgentInstance) GetSkillsFilter() []string {
+	ai.skillsFilterMutex.RLock()
+	defer ai.skillsFilterMutex.RUnlock()
+
+	if ai.SkillsFilter == nil {
+		return nil
+	}
+
+	// Return a copy to prevent concurrent modification
+	result := make([]string, len(ai.SkillsFilter))
+	copy(result, ai.SkillsFilter)
+	return result
 }

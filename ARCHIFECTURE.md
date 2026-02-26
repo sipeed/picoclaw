@@ -42,6 +42,8 @@ flowchart TD
 - 通道基类接口与基类实现：Channel / BaseChannel（[base.go](pkg/channels/base.go#L10-L66)）
 - LLM 提供方接口：LLMProvider（[types.go](pkg/providers/types.go#L11-L23)）
 - 技能注册源接口：SkillRegistry（[registry.go](pkg/skills/registry.go#L42-L71)）
+- 上下文构建与技能推荐：[context.go](pkg/agent/context.go)、[recommender.go](pkg/agent/recommender.go)
+- 工具可见性过滤：[registry.go](pkg/tools/registry.go)
 
 ## 拓展方式与改动点
 
@@ -266,3 +268,142 @@ flowchart TD
 - **多来源合并**：workspace 优先于 global，再到内置
 - **按需加载**：系统提示词仅包含技能摘要，具体内容需读取 SKILL.md
 - **可审计**：安装过程保留来源与版本元数据，便于治理
+
+## 上下文动态选择增强
+
+基于上下文的动态工具和技能选择机制，支持运行时动态过滤和智能推荐。
+
+### 核心组件
+
+1. **ContextBuilder 增强** ([context.go](pkg/agent/context.go))
+   - `ContextStrategy`: Full/Lite/Custom 三种上下文构建策略
+   - `ContextBuildOptions`: 灵活的上下文构建选项配置
+   - `BuildMessagesWithOptions()`: 统一的上下文构建入口
+   - 缓存机制优化：避免重复构建完整上下文
+
+2. **工具可见性过滤器** ([registry.go](pkg/tools/registry.go))
+   - `ToolVisibilityContext`: 工具可见性判断上下文（Channel、ChatID、UserRoles 等）
+   - `ToolVisibilityFilter`: 工具可见性过滤函数
+   - `RegisterWithFilter()`: 注册带过滤器的工具
+   - `GetDefinitionsForContext()`: 根据上下文获取工具定义
+
+3. **技能按需加载** ([loader.go](pkg/skills/loader.go))
+   - `BuildSkillsSummaryFiltered()`: 按技能名称列表过滤输出
+   - 支持空列表时返回全部技能（向后兼容）
+
+4. **技能推荐器** ([recommender.go](pkg/agent/recommender.go))
+   - `SkillRecommender`: 基于上下文的智能技能推荐
+   - 混合推荐算法：规则预筛选 + LLM 智能选择
+   - 多维度评分：channel(40%) + keyword(30%) + history(20%) + recency(10%)
+
+### 工作流程
+
+```mermaid
+flowchart TD
+    A[用户消息到达] --> B{ContextBuilder.BuildMessagesWithOptions}
+    B --> C{检查 Strategy}
+    C -->|Full| D[使用缓存的系统提示词]
+    C -->|Lite| E[构建最小上下文]
+    C -->|Custom| F[按选项构建自定义上下文]
+    
+    D --> G{检查技能推荐器}
+    E --> G
+    F --> G
+    
+    G -->|启用且无显式过滤 | H[RecommendSkillsForContext]
+    G -->|禁用或有显式过滤 | I[使用显式过滤列表]
+    
+    H --> J[规则预筛选与评分]
+    J --> K{多个候选？}
+    K -->|是 | L[LLM 智能选择]
+    K -->|否 | M[直接返回]
+    
+    L --> N[推荐技能列表]
+    M --> N
+    
+    N --> O[SkillsLoader.BuildSkillsSummaryFiltered]
+    I --> P[SkillsLoader.BuildSkillsSummaryFiltered]
+    
+    O --> Q[构建系统消息]
+    P --> Q
+    
+    Q --> R[添加动态上下文]
+    R --> S[添加历史对话]
+    S --> T[返回完整消息列表]
+    
+    U[工具调用请求] --> V[ToolRegistry.GetDefinitionsForContext]
+    V --> W[遍历工具过滤器]
+    W --> X{工具有过滤器？}
+    X -->|是 | Y[执行过滤器判断可见性]
+    X -->|否 | Z[工具可见]
+    Y -->|返回 true| Z
+    Y -->|返回 false| AA[工具不可见]
+    Z --> AB[加入工具定义列表]
+    AB --> AC[返回给 LLM]
+```
+
+### 使用场景
+
+#### 1. 多租户权限控制
+- 管理员工具：仅对 admin 角色用户可见
+- 普通用户工具：对所有用户可见
+- VIP 专属工具：仅对特定 ChatID 或用户组可见
+
+#### 2. 通道特定功能
+- Telegram: sticker、poll 等特定技能
+- Slack: huddle、workflow 等集成
+- WeCom: 审批、会议等企业微信功能
+
+#### 3. 性能优化
+- Lite 策略：快速响应简单查询，减少 token 消耗
+- Full 策略：复杂任务使用完整上下文
+- Custom 策略：精确控制包含的技能和工具
+
+### 配置示例
+
+```go
+// 注册带过滤器的工具
+registry.RegisterWithFilter(adminTool, func(ctx tools.ToolVisibilityContext) bool {
+    for _, role := range ctx.UserRoles {
+        if role == "admin" {
+            return true
+        }
+    }
+    return false
+})
+
+// 使用不同策略构建上下文
+opts := agent.ContextBuildOptions{
+    Strategy:       agent.ContextStrategyLite, // 或 Full/Custom
+    IncludeSkills:  []string{"skill1", "skill2"}, // Custom 策略使用
+    ExcludeTools:   []string{"admin_tool"},
+    IncludeMemory:  true,
+    IncludeRuntime: true,
+}
+
+messages := cb.BuildMessagesWithOptions(
+    history, "", "user message", nil,
+    "telegram", "chat123",
+    opts,
+)
+```
+
+### 性能对比
+
+基准测试结果显示（详见 [context_benchmark_test.go](pkg/agent/context_benchmark_test.go)）：
+
+- **Lite 策略**: ~2,500 ns/op - 最快，适合简单查询
+- **Full 策略**: ~1,000,000 ns/op - 完整上下文，token 消耗最大
+- **Custom 策略**: ~1,000,000 ns/op - 性能接近 Full，但可控制内容
+
+使用 Lite 策略可减少约 99.7% 的处理时间，显著降低延迟和 token 消耗。
+
+### 向后兼容性
+
+所有新增功能都是可选的，现有代码无需修改：
+
+- `BuildMessages()` 自动调用 `BuildMessagesWithOptions()` 使用 Full 策略
+- `Register()` 继续工作，工具对所有上下文可见
+- `BuildSkillsSummary()` 保持不变，返回全部技能
+- 默认不启用推荐器，需显式设置
+

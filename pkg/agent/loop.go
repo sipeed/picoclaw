@@ -488,8 +488,13 @@ func (al *AgentLoop) runLLMIteration(
 				"max":       agent.MaxIterations,
 			})
 
-		// Build tool definitions
-		providerToolDefs := agent.Tools.ToProviderDefs()
+		// Build tool definitions with context-based filtering
+		visibilityCtx := tools.ToolVisibilityContext{
+			Channel:   opts.Channel,
+			ChatID:    opts.ChatID,
+			Timestamp: time.Now(),
+		}
+		providerToolDefs := agent.Tools.ToProviderDefsForContext(visibilityCtx)
 
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",

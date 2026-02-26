@@ -5,8 +5,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/stretchr/testify/assert"
 )
 
 // --- mock types ---
@@ -347,4 +349,556 @@ func TestToolRegistry_ConcurrentAccess(t *testing.T) {
 	if r.Count() == 0 {
 		t.Error("expected tools to be registered after concurrent access")
 	}
+}
+
+func TestToolRegistry_RegisterWithFilter_NoFilter(t *testing.T) {
+	r := NewToolRegistry()
+	tool := newMockTool("public_tool", "always visible")
+	r.RegisterWithFilter(tool, nil)
+
+	// Tool should be visible in all contexts
+	ctx := ToolVisibilityContext{
+		Channel:   "telegram",
+		ChatID:    "chat-123",
+		UserID:    "user-456",
+		UserRoles: []string{"user"},
+	}
+
+	defs := r.GetDefinitionsForContext(ctx)
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 definition, got %d", len(defs))
+	}
+	if defs[0]["function"].(map[string]any)["name"] != "public_tool" {
+		t.Error("expected public_tool to be visible")
+	}
+}
+
+func TestToolRegistry_RegisterWithFilter_AdminOnly(t *testing.T) {
+	r := NewToolRegistry()
+
+	// Register admin-only tool
+	adminTool := newMockTool("admin_tool", "admin only")
+	r.RegisterWithFilter(adminTool, func(ctx ToolVisibilityContext) bool {
+		for _, role := range ctx.UserRoles {
+			if role == "admin" {
+				return true
+			}
+		}
+		return false
+	})
+
+	// Regular user should not see it
+	userCtx := ToolVisibilityContext{
+		Channel:   "telegram",
+		ChatID:    "chat-123",
+		UserID:    "user-456",
+		UserRoles: []string{"user"},
+	}
+
+	defs := r.GetDefinitionsForContext(userCtx)
+	if len(defs) != 0 {
+		t.Errorf("expected 0 definitions for regular user, got %d", len(defs))
+	}
+
+	// Admin should see it
+	adminCtx := ToolVisibilityContext{
+		Channel:   "telegram",
+		ChatID:    "chat-123",
+		UserID:    "admin-789",
+		UserRoles: []string{"admin", "user"},
+	}
+
+	defs = r.GetDefinitionsForContext(adminCtx)
+	if len(defs) != 1 {
+		t.Errorf("expected 1 definition for admin, got %d", len(defs))
+	}
+}
+
+func TestToolRegistry_RegisterWithFilter_ChannelSpecific(t *testing.T) {
+	r := NewToolRegistry()
+
+	// Register Telegram-only tool
+	telegramTool := newMockTool("telegram_tool", "telegram only")
+	r.RegisterWithFilter(telegramTool, func(ctx ToolVisibilityContext) bool {
+		return ctx.Channel == "telegram"
+	})
+
+	// Should be visible in Telegram
+	telegramCtx := ToolVisibilityContext{
+		Channel:   "telegram",
+		ChatID:    "chat-123",
+		UserID:    "user-456",
+		UserRoles: []string{"user"},
+	}
+
+	defs := r.GetDefinitionsForContext(telegramCtx)
+	if len(defs) != 1 {
+		t.Errorf("expected 1 definition in Telegram, got %d", len(defs))
+	}
+
+	// Should not be visible in other channels
+	slackCtx := ToolVisibilityContext{
+		Channel:   "slack",
+		ChatID:    "chat-123",
+		UserID:    "user-456",
+		UserRoles: []string{"user"},
+	}
+
+	defs = r.GetDefinitionsForContext(slackCtx)
+	if len(defs) != 0 {
+		t.Errorf("expected 0 definitions in Slack, got %d", len(defs))
+	}
+}
+
+func TestToolRegistry_RegisterWithFilter_MixedTools(t *testing.T) {
+	r := NewToolRegistry()
+
+	// Register mix of filtered and unfiltered tools
+	r.RegisterWithFilter(newMockTool("public1", "always visible"), nil)
+	r.RegisterWithFilter(newMockTool("public2", "always visible"), nil)
+
+	r.RegisterWithFilter(newMockTool("admin_only", "admin only"), func(ctx ToolVisibilityContext) bool {
+		for _, role := range ctx.UserRoles {
+			if role == "admin" {
+				return true
+			}
+		}
+		return false
+	})
+
+	r.RegisterWithFilter(newMockTool("telegram_only", "telegram only"), func(ctx ToolVisibilityContext) bool {
+		return ctx.Channel == "telegram"
+	})
+
+	// Regular user in Telegram should see: public1, public2, telegram_only (3 tools)
+	userCtx := ToolVisibilityContext{
+		Channel:   "telegram",
+		ChatID:    "chat-123",
+		UserID:    "user-456",
+		UserRoles: []string{"user"},
+	}
+
+	defs := r.GetDefinitionsForContext(userCtx)
+	if len(defs) != 3 {
+		t.Errorf("expected 3 definitions for regular user in Telegram, got %d", len(defs))
+	}
+
+	// Admin in Slack should see: public1, public2, admin_only (3 tools)
+	adminCtx := ToolVisibilityContext{
+		Channel:   "slack",
+		ChatID:    "chat-123",
+		UserID:    "admin-789",
+		UserRoles: []string{"admin"},
+	}
+
+	defs = r.GetDefinitionsForContext(adminCtx)
+	if len(defs) != 3 {
+		t.Errorf("expected 3 definitions for admin in Slack, got %d", len(defs))
+	}
+
+	// Admin in Telegram should see all 4 tools
+	adminTelegramCtx := ToolVisibilityContext{
+		Channel:   "telegram",
+		ChatID:    "chat-123",
+		UserID:    "admin-789",
+		UserRoles: []string{"admin"},
+	}
+
+	defs = r.GetDefinitionsForContext(adminTelegramCtx)
+	if len(defs) != 4 {
+		t.Errorf("expected 4 definitions for admin in Telegram, got %d", len(defs))
+	}
+}
+
+func TestToolRegistry_GetDefinitionsForContext_EmptyRegistry(t *testing.T) {
+	r := NewToolRegistry()
+
+	ctx := ToolVisibilityContext{
+		Channel:   "telegram",
+		ChatID:    "chat-123",
+		UserID:    "user-456",
+		UserRoles: []string{"user"},
+	}
+
+	defs := r.GetDefinitionsForContext(ctx)
+	if len(defs) != 0 {
+		t.Errorf("expected 0 definitions in empty registry, got %d", len(defs))
+	}
+}
+
+func TestToolRegistry_RegisterWithFilter_UpdateFilter(t *testing.T) {
+	r := NewToolRegistry()
+
+	// Register with filter
+	r.RegisterWithFilter(newMockTool("changing_tool", "changes filter"), func(ctx ToolVisibilityContext) bool {
+		return ctx.Channel == "telegram"
+	})
+
+	// Should only be visible in Telegram
+	telegramCtx := ToolVisibilityContext{Channel: "telegram"}
+	slackCtx := ToolVisibilityContext{Channel: "slack"}
+
+	if len(r.GetDefinitionsForContext(telegramCtx)) != 1 {
+		t.Error("expected tool visible in Telegram")
+	}
+	if len(r.GetDefinitionsForContext(slackCtx)) != 0 {
+		t.Error("expected tool hidden in Slack")
+	}
+
+	// Re-register without filter (should make it public)
+	r.RegisterWithFilter(newMockTool("changing_tool", "now public"), nil)
+
+	if len(r.GetDefinitionsForContext(telegramCtx)) != 1 {
+		t.Error("expected tool still visible in Telegram")
+	}
+	if len(r.GetDefinitionsForContext(slackCtx)) != 1 {
+		t.Error("expected tool now visible in Slack")
+	}
+}
+
+func TestToolRegistry_GetDefinitionsForContext_ConcurrentAccess(t *testing.T) {
+	r := NewToolRegistry()
+
+	// Register some tools with different filters
+	r.RegisterWithFilter(newMockTool("public", "always visible"), nil)
+	r.RegisterWithFilter(newMockTool("admin_only", "admin only"), func(ctx ToolVisibilityContext) bool {
+		for _, role := range ctx.UserRoles {
+			return role == "admin"
+		}
+		return false
+	})
+
+	var wg sync.WaitGroup
+	errorChan := make(chan string, 100)
+
+	// Multiple goroutines querying different contexts
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(iteration int) {
+			defer wg.Done()
+			ctx := ToolVisibilityContext{
+				Channel:   "telegram",
+				ChatID:    "chat-" + string(rune(iteration)),
+				UserID:    "user-" + string(rune(iteration)),
+				UserRoles: []string{"user", "admin"},
+			}
+
+			defs := r.GetDefinitionsForContext(ctx)
+			// Should always get consistent results
+			if len(defs) < 1 || len(defs) > 2 {
+				errorChan <- "unexpected definition count: " + string(rune(len(defs)))
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errorChan)
+
+	for errMsg := range errorChan {
+		t.Error(errMsg)
+	}
+}
+
+func TestToolRegistry_MultiTenant_AdminVsRegularUser(t *testing.T) {
+	registry := NewToolRegistry()
+
+	// Register a general tool visible to everyone
+	generalTool := newMockTool("read_file", "Read files")
+	registry.Register(generalTool)
+
+	// Register an admin-only tool with filter
+	adminTool := newMockTool("admin_deploy", "Deploy application")
+	registry.RegisterWithFilter(adminTool, func(ctx ToolVisibilityContext) bool {
+		for _, role := range ctx.UserRoles {
+			if role == "admin" {
+				return true
+			}
+		}
+		return false
+	})
+
+	// Register a user-only tool
+	userTool := newMockTool("user_feedback", "Submit feedback")
+	registry.RegisterWithFilter(userTool, func(ctx ToolVisibilityContext) bool {
+		for _, role := range ctx.UserRoles {
+			if role == "user" {
+				return true
+			}
+		}
+		return false
+	})
+
+	t.Run("admin user sees all tools", func(t *testing.T) {
+		ctx := ToolVisibilityContext{
+			Channel:   "telegram",
+			ChatID:    "chat123",
+			UserID:    "admin_user",
+			UserRoles: []string{"admin"},
+			Timestamp: time.Now(),
+		}
+
+		definitions := registry.GetDefinitionsForContext(ctx)
+
+		// Admin should see both general and admin tools
+		assert.Len(t, definitions, 2)
+
+		// Check that admin tool is included
+		foundAdmin := false
+		foundGeneral := false
+		for _, def := range definitions {
+			// ToolToSchema returns: {"type": "function", "function": {"name": "...", ...}}
+			if function, ok := def["function"].(map[string]any); ok {
+				if name, ok := function["name"].(string); ok {
+					if name == "admin_deploy" {
+						foundAdmin = true
+					}
+					if name == "read_file" {
+						foundGeneral = true
+					}
+				}
+			}
+		}
+
+		assert.True(t, foundAdmin, "admin should see admin_deploy tool")
+		assert.True(t, foundGeneral, "admin should see read_file tool")
+	})
+
+	t.Run("regular user sees limited tools", func(t *testing.T) {
+		ctx := ToolVisibilityContext{
+			Channel:   "telegram",
+			ChatID:    "chat456",
+			UserID:    "regular_user",
+			UserRoles: []string{"user"},
+			Timestamp: time.Now(),
+		}
+
+		definitions := registry.GetDefinitionsForContext(ctx)
+
+		// Regular user should see general and user tools, but not admin tools
+		assert.Len(t, definitions, 2)
+
+		foundUser := false
+		foundGeneral := false
+		foundAdmin := false
+
+		for _, def := range definitions {
+			if function, ok := def["function"].(map[string]any); ok {
+				if name, ok := function["name"].(string); ok {
+					if name == "user_feedback" {
+						foundUser = true
+					}
+					if name == "read_file" {
+						foundGeneral = true
+					}
+					if name == "admin_deploy" {
+						foundAdmin = true
+					}
+				}
+			}
+		}
+
+		assert.True(t, foundUser, "user should see user_feedback tool")
+		assert.True(t, foundGeneral, "user should see read_file tool")
+		assert.False(t, foundAdmin, "user should NOT see admin_deploy tool")
+	})
+
+	t.Run("user with multiple roles", func(t *testing.T) {
+		ctx := ToolVisibilityContext{
+			Channel:   "slack",
+			ChatID:    "chat789",
+			UserID:    "power_user",
+			UserRoles: []string{"user", "admin"},
+			Timestamp: time.Now(),
+		}
+
+		definitions := registry.GetDefinitionsForContext(ctx)
+
+		// User with both roles should see all tools
+		assert.Len(t, definitions, 3)
+	})
+
+	t.Run("user with no roles", func(t *testing.T) {
+		ctx := ToolVisibilityContext{
+			Channel:   "discord",
+			ChatID:    "chat999",
+			UserID:    "guest",
+			UserRoles: []string{},
+			Timestamp: time.Now(),
+		}
+
+		definitions := registry.GetDefinitionsForContext(ctx)
+
+		// Guest should only see general tools (no role-based restrictions)
+		assert.Len(t, definitions, 1)
+
+		// Check the tool name
+		if len(definitions) > 0 {
+			if function, ok := definitions[0]["function"].(map[string]any); ok {
+				if name, ok := function["name"].(string); ok {
+					assert.Contains(t, name, "read_file")
+				}
+			}
+		}
+	})
+}
+
+func TestToolRegistry_ChannelSpecificToolVisibility(t *testing.T) {
+	registry := NewToolRegistry()
+
+	// Register a Telegram-specific tool (e.g., sticker creation)
+	telegramTool := newMockTool("create_sticker", "Create sticker")
+	registry.RegisterWithFilter(telegramTool, func(ctx ToolVisibilityContext) bool {
+		return ctx.Channel == "telegram"
+	})
+
+	// Register a Slack-specific tool (e.g., channel management)
+	slackTool := newMockTool("manage_channel", "Manage Slack channel")
+	registry.RegisterWithFilter(slackTool, func(ctx ToolVisibilityContext) bool {
+		return ctx.Channel == "slack"
+	})
+
+	// Register a general tool available on all channels
+	generalTool := newMockTool("search_web", "Search web")
+	registry.Register(generalTool)
+
+	t.Run("Telegram channel", func(t *testing.T) {
+		ctx := ToolVisibilityContext{
+			Channel:   "telegram",
+			ChatID:    "tg_chat",
+			UserID:    "user1",
+			UserRoles: []string{"user"},
+			Timestamp: time.Now(),
+		}
+
+		definitions := registry.GetDefinitionsForContext(ctx)
+
+		// Should see general + Telegram-specific tools
+		assert.Len(t, definitions, 2)
+
+		foundTelegram := false
+		foundGeneral := false
+		for _, def := range definitions {
+			if function, ok := def["function"].(map[string]any); ok {
+				if name, ok := function["name"].(string); ok {
+					if name == "create_sticker" {
+						foundTelegram = true
+					}
+					if name == "search_web" {
+						foundGeneral = true
+					}
+				}
+			}
+		}
+
+		assert.True(t, foundTelegram, "should see Telegram-specific tool")
+		assert.True(t, foundGeneral, "should see general tool")
+	})
+
+	t.Run("Slack channel", func(t *testing.T) {
+		ctx := ToolVisibilityContext{
+			Channel:   "slack",
+			ChatID:    "slack_channel",
+			UserID:    "user2",
+			UserRoles: []string{"user"},
+			Timestamp: time.Now(),
+		}
+
+		definitions := registry.GetDefinitionsForContext(ctx)
+
+		// Should see general + Slack-specific tools
+		assert.Len(t, definitions, 2)
+
+		foundSlack := false
+		foundGeneral := false
+		for _, def := range definitions {
+			if function, ok := def["function"].(map[string]any); ok {
+				if name, ok := function["name"].(string); ok {
+					if name == "manage_channel" {
+						foundSlack = true
+					}
+					if name == "search_web" {
+						foundGeneral = true
+					}
+				}
+			}
+		}
+
+		assert.True(t, foundSlack, "should see Slack-specific tool")
+		assert.True(t, foundGeneral, "should see general tool")
+	})
+
+	t.Run("Other channel (no specific tools)", func(t *testing.T) {
+		ctx := ToolVisibilityContext{
+			Channel:   "discord",
+			ChatID:    "discord_server",
+			UserID:    "user3",
+			UserRoles: []string{"user"},
+			Timestamp: time.Now(),
+		}
+
+		definitions := registry.GetDefinitionsForContext(ctx)
+
+		// Should only see general tools
+		assert.Len(t, definitions, 1)
+
+		if len(definitions) > 0 {
+			if function, ok := definitions[0]["function"].(map[string]any); ok {
+				if name, ok := function["name"].(string); ok {
+					assert.Equal(t, "search_web", name)
+				}
+			}
+		}
+	})
+}
+
+func TestToolRegistry_ChatSpecificToolVisibility(t *testing.T) {
+	registry := NewToolRegistry()
+
+	// Register a tool only visible in specific chat (e.g., VIP support chat)
+	vipTool := newMockTool("vip_support", "VIP support")
+	registry.RegisterWithFilter(vipTool, func(ctx ToolVisibilityContext) bool {
+		return ctx.ChatID == "vip_chat_001"
+	})
+
+	// Register a general tool
+	generalTool := newMockTool("help", "Get help")
+	registry.Register(generalTool)
+
+	t.Run("VIP chat", func(t *testing.T) {
+		ctx := ToolVisibilityContext{
+			Channel:   "wecom",
+			ChatID:    "vip_chat_001",
+			UserID:    "vip_user",
+			UserRoles: []string{"vip"},
+			Timestamp: time.Now(),
+		}
+
+		definitions := registry.GetDefinitionsForContext(ctx)
+
+		// VIP should see both general and VIP tools
+		assert.Len(t, definitions, 2)
+	})
+
+	t.Run("Regular chat", func(t *testing.T) {
+		ctx := ToolVisibilityContext{
+			Channel:   "wecom",
+			ChatID:    "regular_chat",
+			UserID:    "regular_user",
+			UserRoles: []string{"user"},
+			Timestamp: time.Now(),
+		}
+
+		definitions := registry.GetDefinitionsForContext(ctx)
+
+		// Regular users should only see general tool
+		assert.Len(t, definitions, 1)
+
+		if len(definitions) > 0 {
+			if function, ok := definitions[0]["function"].(map[string]any); ok {
+				if name, ok := function["name"].(string); ok {
+					assert.Equal(t, "help", name)
+				}
+			}
+		}
+	})
 }

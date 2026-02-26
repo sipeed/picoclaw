@@ -1,0 +1,51 @@
+# PicoClaw OpenSpec 项目配置
+schema: spec-driven
+
+context: |
+  ## PicoClaw 项目上下文
+  **技术栈**: Go 1.25.7
+  **项目类型**: 超轻量 AI 助手网关
+  **架构**: Event-driven, message bus pattern
+  **测试**: go test with testify/assert and testify/require
+  **代码风格**: Go standard formatting, Godoc comments required
+  **并发控制**: Use sync.RWMutex for shared state protection
+  
+  **关键组件**:
+  - AgentInstance: Agent 实例管理
+  - ContextBuilder: System prompt 构建（带缓存机制）
+  - ToolRegistry: 工具注册和执行（支持可见性过滤）
+  - SkillsLoader: 技能加载（workspace > global > builtin）
+  - SessionManager: 会话管理（按 channel + chatID 隔离）
+
+rules:
+  proposal:
+    - Must include backward compatibility analysis
+    - Identify affected packages and APIs
+    - Include performance impact assessment
+    - **CRITICAL**: Must identify test coverage requirements (unit, integration, E2E)
+    
+  specs:
+    - Use WHEN/THEN format for scenarios
+    - Each requirement must have at least one scenario
+    - Scenarios MUST be testable
+    - **CRITICAL**: Each scenario must map to at least one test case
+    
+  design:
+    - Explain mutex usage and lock granularity
+    - Document cache invalidation strategies
+    - Include rollback plan
+    - **CRITICAL**: Must include testing strategy section (what to test, how to test)
+    
+  tasks:
+    - Tasks must be small enough to complete in one session
+    - Order by dependency
+    - **CRITICAL**: Every feature task MUST be followed by corresponding test task
+    - **CRITICAL**: Implementation is NOT complete until tests are written and passing
+    - **CONSTRAINT**: No task group can be marked complete without test tasks
+    - Last task in each group should be "Run tests and verify"
+    
+  verification:
+    - **MANDATORY**: Run /opsx:verify before /opsx:archive
+    - Verify MUST check test coverage against specs
+    - All tests MUST pass before archiving
+    - Test failure rate must be 0%

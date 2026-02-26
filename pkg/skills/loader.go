@@ -192,6 +192,80 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 	return strings.Join(lines, "\n")
 }
 
+// BuildSkillsSummaryFiltered builds a summary of skills filtered by the provided skill names.
+// If skillNames is nil or empty, returns all skills (same as BuildSkillsSummary).
+// This is used when SkillsFilter is set on AgentInstance.
+//
+// Parameters:
+//   - skillNames: List of skill names to include. Nil/empty means all skills.
+//
+// Returns:
+//   - XML-formatted skills summary string
+func (sl *SkillsLoader) BuildSkillsSummaryFiltered(skillNames []string) string {
+	if len(skillNames) == 0 {
+		return sl.BuildSkillsSummary()
+	}
+
+	// Create a map for O(1) lookup
+	filterSet := make(map[string]bool)
+	for _, name := range skillNames {
+		filterSet[name] = true
+	}
+
+	allSkills := sl.ListSkills()
+	if len(allSkills) == 0 {
+		return ""
+	}
+
+	var lines []string
+	lines = append(lines, "<skills>")
+	for _, s := range allSkills {
+		// Skip skills not in filter
+		if !filterSet[s.Name] {
+			continue
+		}
+
+		escapedName := escapeXML(s.Name)
+		escapedDesc := escapeXML(s.Description)
+		escapedPath := escapeXML(s.Path)
+
+		lines = append(lines, fmt.Sprintf("  <skill>"))
+		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapedName))
+		lines = append(lines, fmt.Sprintf("    <description>%s</description>", escapedDesc))
+		lines = append(lines, fmt.Sprintf("    <location>%s</location>", escapedPath))
+		lines = append(lines, fmt.Sprintf("    <source>%s</source>", s.Source))
+		lines = append(lines, "  </skill>")
+	}
+	lines = append(lines, "</skills>")
+
+	return strings.Join(lines, "\n")
+}
+
+// BuildSkillsSummaryForNames builds a summary for explicitly specified skill names.
+// Similar to BuildSkillsSummaryFiltered but maintains the order of skillNames.
+// Only skills that exist and can be loaded will be included.
+//
+// Parameters:
+//   - skillNames: Ordered list of skill names to include
+//
+// Returns:
+//   - Markdown-formatted skills content with headers
+func (sl *SkillsLoader) BuildSkillsSummaryForNames(skillNames []string) string {
+	if len(skillNames) == 0 {
+		return ""
+	}
+
+	var parts []string
+	for _, name := range skillNames {
+		content, ok := sl.LoadSkill(name)
+		if ok {
+			parts = append(parts, fmt.Sprintf("### Skill: %s\n\n%s", name, content))
+		}
+	}
+
+	return strings.Join(parts, "\n\n---\n\n")
+}
+
 func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 	content, err := os.ReadFile(skillPath)
 	if err != nil {

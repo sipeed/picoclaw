@@ -16,10 +16,51 @@ import (
 	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
+// min returns the minimum of two integers.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// ContextStrategy represents the strategy for building context messages.
+type ContextStrategy int
+
+const (
+	// ContextStrategyFull builds complete context including identity, bootstrap, skills, tools, memory, and runtime info.
+	ContextStrategyFull ContextStrategy = iota
+	// ContextStrategyLite builds minimal context with only core identity, current time, and session info.
+	ContextStrategyLite
+	// ContextStrategyCustom builds custom context with explicitly specified includes.
+	ContextStrategyCustom
+)
+
+// ContextBuildOptions holds options for custom context building.
+type ContextBuildOptions struct {
+	Strategy       ContextStrategy // Context building strategy
+	IncludeTools   []string        // Tool names to include (for Custom strategy)
+	ExcludeTools   []string        // Tool names to exclude (for Custom strategy)
+	IncludeSkills  []string        // Skill names to include (for Custom strategy)
+	ExcludeSkills  []string        // Skill names to exclude (for Custom strategy)
+	IncludeMemory  bool            // Whether to include memory context (default: true)
+	IncludeRuntime bool            // Whether to include runtime info (default: true)
+}
+
 type ContextBuilder struct {
 	workspace    string
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
+
+	// SkillsFilter holds the list of skill names to include in system prompt.
+	// When set, only these skills will be shown to the LLM.
+	// This is used for dynamic skill filtering based on context.
+	skillsFilterMutex sync.RWMutex
+	skillsFilter      []string
+
+	// SkillRecommender provides intelligent skill recommendations based on context.
+	// Optional component for dynamic skill selection.
+	skillRecommender *SkillRecommender
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -94,8 +135,12 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 		parts = append(parts, bootstrapContent)
 	}
 
-	// Skills - show summary, AI can read full content with read_file tool
-	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
+	// Skills - show summary filtered by skillsFilter if set
+	cb.skillsFilterMutex.RLock()
+	filter := cb.skillsFilter
+	cb.skillsFilterMutex.RUnlock()
+
+	skillsSummary := cb.skillsLoader.BuildSkillsSummaryFiltered(filter)
 	if skillsSummary != "" {
 		parts = append(parts, fmt.Sprintf(`# Skills
 
@@ -168,6 +213,46 @@ func (cb *ContextBuilder) InvalidateCache() {
 	cb.existedAtCache = nil
 
 	logger.DebugCF("agent", "System prompt cache invalidated", nil)
+}
+
+// SetSkillsFilter sets the skills filter for this context builder.
+// When set, only the specified skills will be included in the system prompt.
+// This triggers cache invalidation to ensure the next request uses the updated skill set.
+//
+// Parameters:
+//   - filters: List of skill names to include. Empty or nil clears the filter.
+func (cb *ContextBuilder) SetSkillsFilter(filters []string) {
+	cb.skillsFilterMutex.Lock()
+	defer cb.skillsFilterMutex.Unlock()
+
+	// Create a copy to prevent external modification
+	if filters == nil {
+		cb.skillsFilter = nil
+	} else {
+		cb.skillsFilter = make([]string, len(filters))
+		copy(cb.skillsFilter, filters)
+	}
+
+	// Trigger cache invalidation
+	cb.InvalidateCache()
+}
+
+// GetSkillsFilter returns the current skills filter.
+// Returns nil if no filter is set (all skills available).
+//
+// The returned slice is a copy to prevent concurrent modification.
+func (cb *ContextBuilder) GetSkillsFilter() []string {
+	cb.skillsFilterMutex.RLock()
+	defer cb.skillsFilterMutex.RUnlock()
+
+	if cb.skillsFilter == nil {
+		return nil
+	}
+
+	// Return a copy
+	result := make([]string, len(cb.skillsFilter))
+	copy(result, cb.skillsFilter)
+	return result
 }
 
 // sourcePaths returns the workspace source file paths tracked for cache
@@ -375,43 +460,159 @@ func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
 	return sb.String()
 }
 
-func (cb *ContextBuilder) BuildMessages(
+// buildLiteContext builds minimal context with only core identity, current time, and session info.
+// This is useful for simple queries that don't require tools or skills.
+func (cb *ContextBuilder) buildLiteContext(channel, chatID string) string {
+	var sb strings.Builder
+
+	// Core identity only
+	sb.WriteString(cb.getIdentity())
+
+	// Add dynamic context (time, runtime, session)
+	dynamicCtx := cb.buildDynamicContext(channel, chatID)
+	sb.WriteString("\n\n---\n\n")
+	sb.WriteString(dynamicCtx)
+
+	return sb.String()
+}
+
+// buildCustomContext builds custom context with explicitly specified includes/excludes.
+// This provides fine-grained control over what context is included.
+func (cb *ContextBuilder) buildCustomContext(opts ContextBuildOptions, channel, chatID string) string {
+	parts := []string{}
+
+	// Core identity (always included)
+	parts = append(parts, cb.getIdentity())
+
+	// Bootstrap files (optional, default: include)
+	bootstrapContent := cb.LoadBootstrapFiles()
+	if bootstrapContent != "" {
+		parts = append(parts, bootstrapContent)
+	}
+
+	// Skills - filtered based on options
+	if len(opts.IncludeSkills) > 0 || len(opts.ExcludeSkills) > 0 {
+		skillsSummary := cb.skillsLoader.BuildSkillsSummaryFiltered(opts.IncludeSkills)
+		if skillsSummary != "" {
+			parts = append(parts, fmt.Sprintf(`# Skills
+
+The following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.
+
+%s`, skillsSummary))
+		}
+	}
+
+	// Memory context (optional, default: true)
+	if opts.IncludeMemory {
+		memoryContext := cb.memory.GetMemoryContext()
+		if memoryContext != "" {
+			parts = append(parts, "# Memory\n\n"+memoryContext)
+		}
+	}
+
+	// Runtime info (optional, default: true)
+	if opts.IncludeRuntime {
+		dynamicCtx := cb.buildDynamicContext(channel, chatID)
+		parts = append(parts, dynamicCtx)
+	}
+
+	// Join with "---" separator
+	return strings.Join(parts, "\n\n---\n\n")
+}
+
+// BuildMessagesWithOptions builds context messages with specified strategy and options.
+// This is the main entry point for building context, supporting multiple strategies:
+//   - Full: Complete context (default, backward compatible)
+//   - Lite: Minimal context for simple queries
+//   - Custom: Explicitly specified includes/excludes
+//
+// Parameters:
+//   - history: Conversation history
+//   - summary: Optional conversation summary
+//   - currentMessage: Current user message
+//   - media: Optional media attachments
+//   - channel: Channel type (e.g., "telegram", "wecom")
+//   - chatID: Chat identifier
+//   - opts: Build options (strategy, includes, excludes)
+//
+// Returns:
+//   - Array of provider-compatible messages
+func (cb *ContextBuilder) BuildMessagesWithOptions(
 	history []providers.Message,
 	summary string,
 	currentMessage string,
 	media []string,
 	channel, chatID string,
+	opts ContextBuildOptions,
 ) []providers.Message {
 	messages := []providers.Message{}
 
-	// The static part (identity, bootstrap, skills, memory) is cached locally to
-	// avoid repeated file I/O and string building on every call (fixes issue #607).
-	// Dynamic parts (time, session, summary) are appended per request.
-	// Everything is sent as a single system message for provider compatibility:
-	// - Anthropic adapter extracts messages[0] (Role=="system") and maps its content
-	//   to the top-level "system" parameter in the Messages API request. A single
-	//   contiguous system block makes this extraction straightforward.
-	// - Codex maps only the first system message to its instructions field.
-	// - OpenAI-compat passes messages through as-is.
-	staticPrompt := cb.BuildSystemPromptWithCache()
+	// Set default values for optional fields
+	if !opts.IncludeMemory {
+		opts.IncludeMemory = true
+	}
+	if !opts.IncludeRuntime {
+		opts.IncludeRuntime = true
+	}
 
-	// Build short dynamic context (time, runtime, session) — changes per request
-	dynamicCtx := cb.buildDynamicContext(channel, chatID)
+	// Auto-detect recommended skills if recommender is enabled and no explicit filter
+	if cb.skillRecommender != nil && len(opts.IncludeSkills) == 0 && len(cb.skillsFilter) == 0 {
+		recommendations, err := cb.skillRecommender.RecommendSkillsForContext(channel, chatID, currentMessage, history)
+		if err == nil && len(recommendations) > 0 {
+			// Extract top N recommended skills (with score > threshold)
+			recommendedSkillNames := make([]string, 0)
+			for _, rec := range recommendations {
+				if rec.Score >= 30.0 { // Only include skills with score >= 30%
+					recommendedSkillNames = append(recommendedSkillNames, rec.Name)
+				}
+			}
 
-	// Compose a single system message: static (cached) + dynamic + optional summary.
-	// Keeping all system content in one message ensures every provider adapter can
-	// extract it correctly (Anthropic adapter -> top-level system param,
-	// Codex -> instructions field).
-	//
-	// SystemParts carries the same content as structured blocks so that
-	// cache-aware adapters (Anthropic) can set per-block cache_control.
-	// The static block is marked "ephemeral" — its prefix hash is stable
-	// across requests, enabling LLM-side KV cache reuse.
-	stringParts := []string{staticPrompt, dynamicCtx}
+			if len(recommendedSkillNames) > 0 {
+				opts.IncludeSkills = recommendedSkillNames
+				logger.DebugCF("agent", "Auto-recommended skills for context",
+					map[string]any{
+						"channel": channel,
+						"skills":  recommendedSkillNames,
+						"count":   len(recommendedSkillNames),
+						"message": currentMessage[:min(50, len(currentMessage))] + "...",
+					})
+			}
+		}
+	}
 
+	// Build static prompt based on strategy
+	var staticPrompt string
+	switch opts.Strategy {
+	case ContextStrategyLite:
+		staticPrompt = cb.buildLiteContext(channel, chatID)
+	case ContextStrategyCustom:
+		staticPrompt = cb.buildCustomContext(opts, channel, chatID)
+	case ContextStrategyFull:
+		fallthrough
+	default:
+		// Use cached system prompt for full strategy
+		staticPrompt = cb.BuildSystemPromptWithCache()
+	}
+
+	// Build dynamic context (always included for non-lite strategies)
+	var dynamicCtx string
+	if opts.Strategy != ContextStrategyLite && opts.IncludeRuntime {
+		dynamicCtx = cb.buildDynamicContext(channel, chatID)
+	}
+
+	// Compose system message parts
+	stringParts := []string{staticPrompt}
 	contentBlocks := []providers.ContentBlock{
-		{Type: "text", Text: staticPrompt, CacheControl: &providers.CacheControl{Type: "ephemeral"}},
-		{Type: "text", Text: dynamicCtx},
+		{Type: "text", Text: staticPrompt},
+	}
+
+	if dynamicCtx != "" {
+		stringParts = append(stringParts, dynamicCtx)
+		contentBlocks = append(contentBlocks, providers.ContentBlock{
+			Type:         "text",
+			Text:         dynamicCtx,
+			CacheControl: &providers.CacheControl{Type: "ephemeral"},
+		})
 	}
 
 	if summary != "" {
@@ -426,14 +627,13 @@ func (cb *ContextBuilder) BuildMessages(
 	fullSystemPrompt := strings.Join(stringParts, "\n\n---\n\n")
 
 	// Log system prompt summary for debugging (debug mode only).
-	// Read cachedSystemPrompt under lock to avoid a data race with
-	// concurrent InvalidateCache / BuildSystemPromptWithCache writes.
 	cb.systemPromptMutex.RLock()
 	isCached := cb.cachedSystemPrompt != ""
 	cb.systemPromptMutex.RUnlock()
 
-	logger.DebugCF("agent", "System prompt built",
+	logger.DebugCF("agent", "System prompt built with options",
 		map[string]any{
+			"strategy":      opts.Strategy,
 			"static_chars":  len(staticPrompt),
 			"dynamic_chars": len(dynamicCtx),
 			"total_chars":   len(fullSystemPrompt),
@@ -454,8 +654,6 @@ func (cb *ContextBuilder) BuildMessages(
 	history = sanitizeHistoryForProvider(history)
 
 	// Single system message containing all context — compatible with all providers.
-	// SystemParts enables cache-aware adapters to set per-block cache_control;
-	// Content is the concatenated fallback for adapters that don't read SystemParts.
 	messages = append(messages, providers.Message{
 		Role:        "system",
 		Content:     fullSystemPrompt,
@@ -474,6 +672,22 @@ func (cb *ContextBuilder) BuildMessages(
 	}
 
 	return messages
+}
+
+func (cb *ContextBuilder) BuildMessages(
+	history []providers.Message,
+	summary string,
+	currentMessage string,
+	media []string,
+	channel, chatID string,
+) []providers.Message {
+	// Delegate to BuildMessagesWithOptions with default Full strategy
+	opts := ContextBuildOptions{
+		Strategy:       ContextStrategyFull,
+		IncludeMemory:  true,
+		IncludeRuntime: true,
+	}
+	return cb.BuildMessagesWithOptions(history, summary, currentMessage, media, channel, chatID, opts)
 }
 
 func sanitizeHistoryForProvider(history []providers.Message) []providers.Message {
@@ -567,6 +781,13 @@ func (cb *ContextBuilder) AddAssistantMessage(
 	return messages
 }
 
+// SetSkillRecommender sets the skill recommender for this context builder.
+// When set, the recommender will be used to intelligently select skills based on context.
+// This is an optional enhancement that can improve LLM performance by reducing context size.
+func (cb *ContextBuilder) SetSkillRecommender(recommender *SkillRecommender) {
+	cb.skillRecommender = recommender
+}
+
 // GetSkillsInfo returns information about loaded skills.
 func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 	allSkills := cb.skillsLoader.ListSkills()
@@ -574,9 +795,19 @@ func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 	for _, s := range allSkills {
 		skillNames = append(skillNames, s.Name)
 	}
-	return map[string]any{
+
+	result := map[string]any{
 		"total":     len(allSkills),
 		"available": len(allSkills),
 		"names":     skillNames,
 	}
+
+	// Include recommender info if available
+	if cb.skillRecommender != nil {
+		result["recommender"] = "enabled"
+	} else {
+		result["recommender"] = "disabled"
+	}
+
+	return result
 }

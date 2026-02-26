@@ -11,14 +11,43 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+// ToolVisibilityContext represents the context used to determine tool visibility.
+// It contains information about the current request that can be used by filters
+// to decide whether a tool should be visible to the LLM.
+type ToolVisibilityContext struct {
+	Channel   string         // Channel type (e.g., "telegram", "wecom", "slack")
+	ChatID    string         // Unique chat identifier
+	UserID    string         // User identifier (if available)
+	UserRoles []string       // User roles/permissions (e.g., ["admin"], ["user"])
+	Args      map[string]any // Tool execution arguments
+	Timestamp time.Time      // Request timestamp
+}
+
+// ToolVisibilityFilter is a function type that determines whether a tool should be visible
+// based on the provided context. Return true to make the tool visible, false to hide it.
+//
+// Example:
+//
+//	adminOnlyFilter := func(ctx ToolVisibilityContext) bool {
+//	    for _, role := range ctx.UserRoles {
+//	        if role == "admin" {
+//	            return true
+//	        }
+//	    }
+//	    return false
+//	}
+type ToolVisibilityFilter func(ctx ToolVisibilityContext) bool
+
 type ToolRegistry struct {
-	tools map[string]Tool
-	mu    sync.RWMutex
+	tools             map[string]Tool
+	mu                sync.RWMutex
+	visibilityFilters map[string]ToolVisibilityFilter // Filters per tool
 }
 
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
-		tools: make(map[string]Tool),
+		tools:             make(map[string]Tool),
+		visibilityFilters: make(map[string]ToolVisibilityFilter),
 	}
 }
 
@@ -26,6 +55,38 @@ func (r *ToolRegistry) Register(tool Tool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.tools[tool.Name()] = tool
+	// No filter means always visible (backward compatible)
+	delete(r.visibilityFilters, tool.Name())
+}
+
+// RegisterWithFilter registers a tool with a visibility filter.
+// The filter determines whether the tool definition is included when GetDefinitionsForContext is called.
+// This enables fine-grained control over which tools are visible to the LLM based on context.
+//
+// Parameters:
+//   - tool: The tool to register
+//   - filter: A function that returns true if the tool should be visible, false otherwise
+//
+// Example:
+//
+//	adminTool := NewAdminTool()
+//	registry.RegisterWithFilter(adminTool, func(ctx ToolVisibilityContext) bool {
+//	    for _, role := range ctx.UserRoles {
+//	        if role == "admin" {
+//	            return true
+//	        }
+//	    }
+//	    return false
+//	})
+func (r *ToolRegistry) RegisterWithFilter(tool Tool, filter ToolVisibilityFilter) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tools[tool.Name()] = tool
+	if filter != nil {
+		r.visibilityFilters[tool.Name()] = filter
+	} else {
+		delete(r.visibilityFilters, tool.Name())
+	}
 }
 
 func (r *ToolRegistry) Get(name string) (Tool, bool) {
@@ -133,6 +194,35 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 	return definitions
 }
 
+// GetDefinitionsForContext returns tool definitions filtered by the provided context.
+// Only tools whose filters return true (or have no filter) will be included.
+// This allows different users/channels to see different sets of available tools.
+//
+// Parameters:
+//   - ctx: The visibility context containing channel, chatID, user info, etc.
+//
+// Returns:
+//   - Filtered list of tool definitions in schema format
+func (r *ToolRegistry) GetDefinitionsForContext(ctx ToolVisibilityContext) []map[string]any {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sorted := r.sortedToolNames()
+	definitions := make([]map[string]any, 0, len(sorted))
+
+	for _, name := range sorted {
+		tool := r.tools[name]
+		filter, hasFilter := r.visibilityFilters[name]
+
+		// If no filter or filter returns true, include the tool
+		if !hasFilter || filter(ctx) {
+			definitions = append(definitions, ToolToSchema(tool))
+		}
+	}
+
+	return definitions
+}
+
 // ToProviderDefs converts tool definitions to provider-compatible format.
 // This is the format expected by LLM provider APIs.
 func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
@@ -163,6 +253,46 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 				Parameters:  params,
 			},
 		})
+	}
+	return definitions
+}
+
+// ToProviderDefsForContext converts filtered tool definitions to provider-compatible format.
+// Similar to ToProviderDefs but applies context-based filtering.
+func (r *ToolRegistry) ToProviderDefsForContext(ctx ToolVisibilityContext) []providers.ToolDefinition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sorted := r.sortedToolNames()
+	definitions := make([]providers.ToolDefinition, 0, len(sorted))
+
+	for _, name := range sorted {
+		tool := r.tools[name]
+		filter, hasFilter := r.visibilityFilters[name]
+
+		// If no filter or filter returns true, include the tool
+		if !hasFilter || filter(ctx) {
+			schema := ToolToSchema(tool)
+
+			// Safely extract nested values with type checks
+			fn, ok := schema["function"].(map[string]any)
+			if !ok {
+				continue
+			}
+
+			name, _ := fn["name"].(string)
+			desc, _ := fn["description"].(string)
+			params, _ := fn["parameters"].(map[string]any)
+
+			definitions = append(definitions, providers.ToolDefinition{
+				Type: "function",
+				Function: providers.ToolFunctionDefinition{
+					Name:        name,
+					Description: desc,
+					Parameters:  params,
+				},
+			})
+		}
 	}
 	return definitions
 }

@@ -519,7 +519,7 @@ description: Desc
 ---
 
 Content`,
-			expectedContent: "\nContent",
+			expectedContent: "Content",
 			lineEndingType:  "unix",
 		},
 	}
@@ -649,4 +649,123 @@ func TestEscapeXML(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestSkillsLoaderBuildSkillsSummaryFiltered(t *testing.T) {
+	workspace := t.TempDir()
+	globalSkills := t.TempDir()
+	builtinSkills := t.TempDir()
+
+	// Create multiple skills
+	createSkill := func(basePath, name, desc string) {
+		skillDir := filepath.Join(basePath, "skills", name)
+		require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+		skillFile := filepath.Join(skillDir, "SKILL.md")
+		content := `---
+name: ` + name + `
+description: ` + desc + `
+---
+
+# ` + name
+		require.NoError(t, os.WriteFile(skillFile, []byte(content), 0o644))
+	}
+
+	createSkill(workspace, "skill1", "First skill")
+	createSkill(workspace, "skill2", "Second skill")
+	createSkill(workspace, "skill3", "Third skill")
+
+	loader := NewSkillsLoader(workspace, globalSkills, builtinSkills)
+
+	t.Run("filter with specific skills", func(t *testing.T) {
+		summary := loader.BuildSkillsSummaryFiltered([]string{"skill1", "skill3"})
+
+		assert.Contains(t, summary, "<skills>")
+		assert.Contains(t, summary, "</skills>")
+		assert.Contains(t, summary, "skill1")
+		assert.Contains(t, summary, "First skill")
+		assert.Contains(t, summary, "skill3")
+		assert.Contains(t, summary, "Third skill")
+		assert.NotContains(t, summary, "skill2")
+		assert.NotContains(t, summary, "Second skill")
+	})
+
+	t.Run("filter with single skill", func(t *testing.T) {
+		summary := loader.BuildSkillsSummaryFiltered([]string{"skill2"})
+
+		assert.Contains(t, summary, "skill2")
+		assert.Contains(t, summary, "Second skill")
+		assert.NotContains(t, summary, "skill1")
+		assert.NotContains(t, summary, "skill3")
+	})
+
+	t.Run("filter with non-existent skill", func(t *testing.T) {
+		summary := loader.BuildSkillsSummaryFiltered([]string{"nonexistent"})
+
+		assert.Contains(t, summary, "<skills>")
+		assert.Contains(t, summary, "</skills>")
+		// Should not contain any skill entries
+		assert.NotContains(t, summary, "<name>")
+	})
+
+	t.Run("filter with empty list", func(t *testing.T) {
+		summary := loader.BuildSkillsSummaryFiltered([]string{})
+
+		// Should return all skills (same as BuildSkillsSummary)
+		assert.Contains(t, summary, "skill1")
+		assert.Contains(t, summary, "skill2")
+		assert.Contains(t, summary, "skill3")
+	})
+
+	t.Run("filter with partial matches", func(t *testing.T) {
+		summary := loader.BuildSkillsSummaryFiltered([]string{"skill1", "nonexistent", "skill2"})
+
+		assert.Contains(t, summary, "skill1")
+		assert.Contains(t, summary, "skill2")
+		assert.NotContains(t, summary, "skill3")
+	})
+}
+
+func TestSkillsLoaderBuildSkillsSummaryFilteredEmpty(t *testing.T) {
+	workspace := t.TempDir()
+	globalSkills := t.TempDir()
+	builtinSkills := t.TempDir()
+
+	loader := NewSkillsLoader(workspace, globalSkills, builtinSkills)
+
+	t.Run("empty skills list", func(t *testing.T) {
+		summary := loader.BuildSkillsSummaryFiltered([]string{})
+		assert.Empty(t, summary)
+	})
+
+	t.Run("nil filter", func(t *testing.T) {
+		summary := loader.BuildSkillsSummaryFiltered(nil)
+		assert.Empty(t, summary)
+	})
+}
+
+func TestSkillsLoaderBuildSkillsSummaryFilteredXMLEscaping(t *testing.T) {
+	workspace := t.TempDir()
+	globalSkills := t.TempDir()
+	builtinSkills := t.TempDir()
+
+	// Create skill with special XML characters
+	skillDir := filepath.Join(workspace, "skills", "xml-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	content := `---
+name: xml-test
+description: Test & special <chars> to "escape"
+---
+
+# XML Test`
+	require.NoError(t, os.WriteFile(skillFile, []byte(content), 0o644))
+
+	loader := NewSkillsLoader(workspace, globalSkills, builtinSkills)
+	summary := loader.BuildSkillsSummaryFiltered([]string{"xml-test"})
+
+	assert.Contains(t, summary, "&amp;")
+	assert.Contains(t, summary, "&lt;")
+	assert.Contains(t, summary, "&gt;")
 }

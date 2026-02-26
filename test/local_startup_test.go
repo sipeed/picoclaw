@@ -96,7 +96,6 @@ func TestLocalScenarioCoverage(t *testing.T) {
 	registry.Register(tools.NewAppendFileTool(workspace, true))
 
 	cb := agent.NewContextBuilder(workspace)
-	cb.SetToolsRegistry(registry)
 	prompt := cb.BuildSystemPrompt()
 
 	required := []string{
@@ -112,11 +111,6 @@ func TestLocalScenarioCoverage(t *testing.T) {
 		"long-term: prefers concise answers",
 		"## Recent Daily Notes",
 		"daily note: met user",
-		"## Available Tools",
-		"read_file",
-		"write_file",
-		"list_dir",
-		"exec",
 	}
 	for _, item := range required {
 		if !strings.Contains(prompt, item) {
