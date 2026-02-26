@@ -272,3 +272,27 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 		)
 	}
 }
+
+// TestGuardCommand_DotSlashExecutable verifies that ./executable style
+// commands are NOT blocked by the path extraction regex in guardCommand.
+func TestGuardCommand_DotSlashExecutable(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+
+	// Create a test script in the workspace
+	scriptPath := filepath.Join(tmpDir, "test.sh")
+	os.WriteFile(scriptPath, []byte("#!/bin/sh\necho ok"), 0o755)
+
+	ctx := context.Background()
+	result := tool.Execute(ctx, map[string]any{
+		"command":     "./test.sh",
+		"working_dir": tmpDir,
+	})
+
+	if result.IsError {
+		t.Errorf("Expected ./test.sh to be allowed, got error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "ok") {
+		t.Errorf("Expected output 'ok', got: %s", result.ForLLM)
+	}
+}
