@@ -243,11 +243,6 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			continue
 		}
 
-		filename := part.Filename
-		if filename == "" {
-			filename = "file"
-		}
-
 		switch part.Type {
 		case "image":
 			params := &telego.SendPhotoParams{

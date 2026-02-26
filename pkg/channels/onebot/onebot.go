@@ -469,7 +469,7 @@ func (c *OneBotChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 			continue
 		}
 
-		segType := "image"
+		var segType string
 		switch part.Type {
 		case "image":
 			segType = "image"

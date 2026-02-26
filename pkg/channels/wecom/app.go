@@ -221,7 +221,7 @@ func (c *WeComAppChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 		}
 
 		// Map part type to WeCom media type
-		mediaType := "file"
+		var mediaType string
 		switch part.Type {
 		case "image":
 			mediaType = "image"

@@ -192,7 +192,7 @@ func gatewayCmd(debug bool) error {
 	msgBus.Close()
 
 	// Use a fresh context with timeout for graceful shutdown,
-	// since the original ctx is already cancelled.
+	// since the original ctx is already canceled.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 

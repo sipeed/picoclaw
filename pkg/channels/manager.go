@@ -455,7 +455,7 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) {
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
-		// ctx cancelled, shutting down
+		// ctx canceled, shutting down
 		return
 	}
 

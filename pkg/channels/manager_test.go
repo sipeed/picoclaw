@@ -245,7 +245,7 @@ func TestSendWithRetry_ContextCancelled(t *testing.T) {
 
 	m.sendWithRetry(ctx, "test", w, msg)
 
-	// Should have called Send once, then noticed ctx cancelled during backoff
+	// Should have called Send once, then noticed ctx canceled during backoff
 	if callCount != 1 {
 		t.Fatalf("expected 1 Send call before context cancellation, got %d", callCount)
 	}

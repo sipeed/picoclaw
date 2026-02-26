@@ -73,13 +73,13 @@ func TestPublishInbound_ContextCancel(t *testing.T) {
 		}
 	}
 
-	// Now buffer is full; publish with a cancelled context
+	// Now buffer is full; publish with a canceled context
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	err := mb.PublishInbound(cancelCtx, InboundMessage{Content: "overflow"})
 	if err == nil {
-		t.Fatal("expected error from cancelled context, got nil")
+		t.Fatal("expected error from canceled context, got nil")
 	}
 	if err != context.Canceled {
 		t.Fatalf("expected context.Canceled, got %v", err)
@@ -115,7 +115,7 @@ func TestConsumeInbound_ContextCancel(t *testing.T) {
 
 	_, ok := mb.ConsumeInbound(ctx)
 	if ok {
-		t.Fatal("expected ok=false when context is cancelled")
+		t.Fatal("expected ok=false when context is canceled")
 	}
 }
 
