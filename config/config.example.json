@@ -3,7 +3,7 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model": "gpt4",
+      "model_name": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -57,7 +57,8 @@
     "discord": {
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",
-      "allow_from": []
+      "allow_from": [],
+      "mention_only": false
     },
     "qq": {
       "enabled": false,
@@ -112,6 +113,32 @@
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
       "allow_from": []
+    },
+    "wecom": {
+      "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
+      "enabled": false,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18793,
+      "webhook_path": "/webhook/wecom",
+      "allow_from": [],
+      "reply_timeout": 5
+    },
+    "wecom_app": {
+      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only. See docs/wecom-app-configuration.md",
+      "enabled": false,
+      "corp_id": "YOUR_CORP_ID",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18792,
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": [],
+      "reply_timeout": 5
     }
   },
   "providers": {
@@ -169,6 +196,10 @@
     "volcengine": {
       "api_key": "",
       "api_base": ""
+    },
+    "mistral": {
+      "api_key": "",
+      "api_base": "https://api.mistral.ai/v1"
     }
   },
   "tools": {
@@ -191,7 +222,8 @@
         "enabled": false,
         "base_url": "http://localhost:8888",
         "max_results": 5
-      }
+      },
+      "proxy": ""
     },
     "cron": {
       "exec_timeout_minutes": 5
@@ -199,6 +231,17 @@
     "exec": {
       "enable_deny_patterns": false,
       "custom_deny_patterns": []
+    },
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "enabled": true,
+          "base_url": "https://clawhub.ai",
+          "search_path": "/api/v1/search",
+          "skills_path": "/api/v1/skills",
+          "download_path": "/api/v1/download"
+        }
+      }
     }
   },
   "heartbeat": {
@@ -210,7 +253,7 @@
     "monitor_usb": true
   },
   "gateway": {
-    "host": "0.0.0.0",
+    "host": "127.0.0.1",
     "port": 18790
   }
 }

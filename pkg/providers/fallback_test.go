@@ -17,12 +17,6 @@ func successRun(content string) func(ctx context.Context, provider, model string
 	}
 }
 
-func failRun(err error) func(ctx context.Context, provider, model string) (*LLMResponse, error) {
-	return func(ctx context.Context, provider, model string) (*LLMResponse, error) {
-		return nil, err
-	}
-}
-
 func TestFallback_SingleCandidate_Success(t *testing.T) {
 	ct := NewCooldownTracker()
 	fc := NewFallbackChain(ct)
@@ -462,7 +456,13 @@ func TestResolveCandidates_EmptyPrimary(t *testing.T) {
 func TestFallbackExhaustedError_Message(t *testing.T) {
 	e := &FallbackExhaustedError{
 		Attempts: []FallbackAttempt{
-			{Provider: "openai", Model: "gpt-4", Error: errors.New("rate limited"), Reason: FailoverRateLimit, Duration: 500 * time.Millisecond},
+			{
+				Provider: "openai",
+				Model:    "gpt-4",
+				Error:    errors.New("rate limited"),
+				Reason:   FailoverRateLimit,
+				Duration: 500 * time.Millisecond,
+			},
 			{Provider: "anthropic", Model: "claude", Skipped: true},
 		},
 	}

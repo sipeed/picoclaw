@@ -41,7 +41,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 
 	// Get user's configured provider and model
 	userProvider := strings.ToLower(cfg.Agents.Defaults.Provider)
-	userModel := cfg.Agents.Defaults.Model
+	userModel := cfg.Agents.Defaults.GetModelName()
 
 	p := cfg.Providers
 
@@ -321,6 +321,22 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					APIKey:    p.Qwen.APIKey,
 					APIBase:   p.Qwen.APIBase,
 					Proxy:     p.Qwen.Proxy,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"mistral"},
+			protocol:      "mistral",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Mistral.APIKey == "" && p.Mistral.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "mistral",
+					Model:     "mistral/mistral-small-latest",
+					APIKey:    p.Mistral.APIKey,
+					APIBase:   p.Mistral.APIBase,
+					Proxy:     p.Mistral.Proxy,
 				}, true
 			},
 		},

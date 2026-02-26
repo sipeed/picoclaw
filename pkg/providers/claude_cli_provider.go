@@ -24,7 +24,9 @@ func NewClaudeCliProvider(workspace string) *ClaudeCliProvider {
 }
 
 // Chat implements LLMProvider.Chat by executing the claude CLI.
-func (p *ClaudeCliProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *ClaudeCliProvider) Chat(
+	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
+) (*LLMResponse, error) {
 	systemPrompt := p.buildSystemPrompt(messages, tools)
 	prompt := p.messagesToPrompt(messages)
 
@@ -111,7 +113,9 @@ func (p *ClaudeCliProvider) buildToolsPrompt(tools []ToolDefinition) string {
 	sb.WriteString("## Available Tools\n\n")
 	sb.WriteString("When you need to use a tool, respond with ONLY a JSON object:\n\n")
 	sb.WriteString("```json\n")
-	sb.WriteString(`{"tool_calls":[{"id":"call_xxx","type":"function","function":{"name":"tool_name","arguments":"{...}"}}]}`)
+	sb.WriteString(
+		`{"tool_calls":[{"id":"call_xxx","type":"function","function":{"name":"tool_name","arguments":"{...}"}}]}`,
+	)
 	sb.WriteString("\n```\n\n")
 	sb.WriteString("CRITICAL: The 'arguments' field MUST be a JSON-encoded STRING.\n\n")
 	sb.WriteString("### Tool Definitions:\n\n")

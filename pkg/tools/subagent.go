@@ -38,7 +38,11 @@ type SubagentManager struct {
 	nextID         int
 }
 
-func NewSubagentManager(provider providers.LLMProvider, defaultModel, workspace string, bus *bus.MessageBus) *SubagentManager {
+func NewSubagentManager(
+	provider providers.LLMProvider,
+	defaultModel, workspace string,
+	bus *bus.MessageBus,
+) *SubagentManager {
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
@@ -76,7 +80,11 @@ func (sm *SubagentManager) RegisterTool(tool Tool) {
 	sm.tools.Register(tool)
 }
 
-func (sm *SubagentManager) Spawn(ctx context.Context, task, label, agentID, originChannel, originChatID string, callback AsyncCallback) (string, error) {
+func (sm *SubagentManager) Spawn(
+	ctx context.Context,
+	task, label, agentID, originChannel, originChatID string,
+	callback AsyncCallback,
+) (string, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -124,12 +132,12 @@ After completing the task, provide a clear summary of what was done.`
 		},
 	}
 
-	// Check if context is already cancelled before starting
+	// Check if context is already canceled before starting
 	select {
 	case <-ctx.Done():
 		sm.mu.Lock()
-		task.Status = "cancelled"
-		task.Result = "Task cancelled before execution"
+		task.Status = "canceled"
+		task.Result = "Task canceled before execution"
 		sm.mu.Unlock()
 		return
 	default:
@@ -177,10 +185,10 @@ After completing the task, provide a clear summary of what was done.`
 	if err != nil {
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
-		// Check if it was cancelled
+		// Check if it was canceled
 		if ctx.Err() != nil {
-			task.Status = "cancelled"
-			task.Result = "Task cancelled during execution"
+			task.Status = "canceled"
+			task.Result = "Task canceled during execution"
 		}
 		result = &ToolResult{
 			ForLLM:  task.Result,
@@ -194,7 +202,12 @@ After completing the task, provide a clear summary of what was done.`
 		task.Status = "completed"
 		task.Result = loopResult.Content
 		result = &ToolResult{
-			ForLLM:  fmt.Sprintf("Subagent '%s' completed (iterations: %d): %s", task.Label, loopResult.Iterations, loopResult.Content),
+			ForLLM: fmt.Sprintf(
+				"Subagent '%s' completed (iterations: %d): %s",
+				task.Label,
+				loopResult.Iterations,
+				loopResult.Content,
+			),
 			ForUser: loopResult.Content,
 			Silent:  false,
 			IsError: false,
@@ -258,15 +271,15 @@ func (t *SubagentTool) Description() string {
 	return "Execute a subagent task synchronously and return the result. Use this for delegating specific tasks to an independent agent instance. Returns execution summary to user and full details to LLM."
 }
 
-func (t *SubagentTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *SubagentTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"task": map[string]interface{}{
+		"properties": map[string]any{
+			"task": map[string]any{
 				"type":        "string",
 				"description": "The task for subagent to complete",
 			},
-			"label": map[string]interface{}{
+			"label": map[string]any{
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
@@ -280,7 +293,7 @@ func (t *SubagentTool) SetContext(channel, chatID string) {
 	t.originChatID = chatID
 }
 
-func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
+func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok {
 		return ErrorResult("task is required").WithError(fmt.Errorf("task parameter is required"))

@@ -75,7 +75,7 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 	c.botUserID = authResp.UserID
 	c.teamID = authResp.TeamID
 
-	logger.InfoCF("slack", "Slack bot connected", map[string]interface{}{
+	logger.InfoCF("slack", "Slack bot connected", map[string]any{
 		"bot_user_id": c.botUserID,
 		"team":        authResp.Team,
 	})
@@ -85,7 +85,7 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 	go func() {
 		if err := c.socketClient.RunContext(c.ctx); err != nil {
 			if c.ctx.Err() == nil {
-				logger.ErrorCF("slack", "Socket Mode connection error", map[string]interface{}{
+				logger.ErrorCF("slack", "Socket Mode connection error", map[string]any{
 					"error": err.Error(),
 				})
 			}
@@ -140,7 +140,7 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		})
 	}
 
-	logger.DebugCF("slack", "Message sent", map[string]interface{}{
+	logger.DebugCF("slack", "Message sent", map[string]any{
 		"channel_id": channelID,
 		"thread_ts":  threadTS,
 	})
@@ -200,9 +200,9 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 
-	// 检查白名单，避免为被拒绝的用户下载附件
+	// check allowlist to avoid downloading attachments for rejected users
 	if !c.IsAllowed(ev.User) {
-		logger.DebugCF("slack", "Message rejected by allowlist", map[string]interface{}{
+		logger.DebugCF("slack", "Message rejected by allowlist", map[string]any{
 			"user_id": ev.User,
 		})
 		return
@@ -232,13 +232,13 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	content = c.stripBotMention(content)
 
 	var mediaPaths []string
-	localFiles := []string{} // 跟踪需要清理的本地文件
+	localFiles := []string{} // track local files that need cleanup
 
-	// 确保临时文件在函数返回时被清理
+	// ensure temp files are cleaned up when function returns
 	defer func() {
 		for _, file := range localFiles {
 			if err := os.Remove(file); err != nil {
-				logger.DebugCF("slack", "Failed to cleanup temp file", map[string]interface{}{
+				logger.DebugCF("slack", "Failed to cleanup temp file", map[string]any{
 					"file":  file,
 					"error": err.Error(),
 				})
@@ -261,7 +261,7 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 				result, err := c.transcriber.Transcribe(ctx, localPath)
 
 				if err != nil {
-					logger.ErrorCF("slack", "Voice transcription failed", map[string]interface{}{"error": err.Error()})
+					logger.ErrorCF("slack", "Voice transcription failed", map[string]any{"error": err.Error()})
 					content += fmt.Sprintf("\n[audio: %s (transcription failed)]", file.Name)
 				} else {
 					content += fmt.Sprintf("\n[voice transcription: %s]", result.Text)
@@ -293,7 +293,7 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		"team_id":    c.teamID,
 	}
 
-	logger.DebugCF("slack", "Received message", map[string]interface{}{
+	logger.DebugCF("slack", "Received message", map[string]any{
 		"sender_id":  senderID,
 		"chat_id":    chatID,
 		"preview":    utils.Truncate(content, 50),
@@ -309,7 +309,7 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 	}
 
 	if !c.IsAllowed(ev.User) {
-		logger.DebugCF("slack", "Mention rejected by allowlist", map[string]interface{}{
+		logger.DebugCF("slack", "Mention rejected by allowlist", map[string]any{
 			"user_id": ev.User,
 		})
 		return
@@ -375,7 +375,7 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 	}
 
 	if !c.IsAllowed(cmd.UserID) {
-		logger.DebugCF("slack", "Slash command rejected by allowlist", map[string]interface{}{
+		logger.DebugCF("slack", "Slash command rejected by allowlist", map[string]any{
 			"user_id": cmd.UserID,
 		})
 		return
@@ -400,7 +400,7 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 		"team_id":    c.teamID,
 	}
 
-	logger.DebugCF("slack", "Slash command received", map[string]interface{}{
+	logger.DebugCF("slack", "Slash command received", map[string]any{
 		"sender_id": senderID,
 		"command":   cmd.Command,
 		"text":      utils.Truncate(content, 50),
@@ -415,7 +415,7 @@ func (c *SlackChannel) downloadSlackFile(file slack.File) string {
 		downloadURL = file.URLPrivate
 	}
 	if downloadURL == "" {
-		logger.ErrorCF("slack", "No download URL for file", map[string]interface{}{"file_id": file.ID})
+		logger.ErrorCF("slack", "No download URL for file", map[string]any{"file_id": file.ID})
 		return ""
 	}
 
@@ -439,5 +439,5 @@ func parseSlackChatID(chatID string) (channelID, threadTS string) {
 	if len(parts) > 1 {
 		threadTS = parts[1]
 	}
-	return
+	return channelID, threadTS
 }

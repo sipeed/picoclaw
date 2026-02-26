@@ -47,14 +47,12 @@ picoclaw agent -m "Hello" --model claude-opus-4-6-thinking
 
 If you are deploying via Coolify or Docker, follow these steps to test:
 
-1.  **Branch**: Use the `feat/antigravity-provider` branch.
-2.  **Environment Variables**:
-    *   `PICOCLAW_AGENTS_DEFAULTS_PROVIDER=antigravity`
-    *   `PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-3-flash`
-3.  **Authentication persistence**: 
+1.  **Environment Variables**:
+    *   `PICOCLAW_AGENTS_DEFAULTS_MODEL=gemini-flash`
+2.  **Authentication persistence**: 
     If you've logged in locally, you can copy your credentials to the server:
     ```bash
-    scp ~/.picoclaw/auth-profiles.json user@your-server:~/.picoclaw/
+    scp ~/.picoclaw/auth.json user@your-server:~/.picoclaw/
     ```
     *Alternatively*, run the `auth login` command once on the server if you have terminal access.
 
