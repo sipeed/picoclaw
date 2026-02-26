@@ -416,22 +416,25 @@ func authModelsCmd() error {
 	return nil
 }
 
-// isAntigravityModel checks if a model string belongs to antigravity provider
+// isProviderModel checks if a model string matches any of the given provider prefixes.
+// It returns true if the model equals a prefix or starts with "prefix/".
+func isProviderModel(model string, providers ...string) bool {
+	for _, p := range providers {
+		if model == p || strings.HasPrefix(model, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func isAntigravityModel(model string) bool {
-	return model == "antigravity" ||
-		model == "google-antigravity" ||
-		strings.HasPrefix(model, "antigravity/") ||
-		strings.HasPrefix(model, "google-antigravity/")
+	return isProviderModel(model, "antigravity", "google-antigravity")
 }
 
-// isOpenAIModel checks if a model string belongs to openai provider
 func isOpenAIModel(model string) bool {
-	return model == "openai" ||
-		strings.HasPrefix(model, "openai/")
+	return isProviderModel(model, "openai")
 }
 
-// isAnthropicModel checks if a model string belongs to anthropic provider
 func isAnthropicModel(model string) bool {
-	return model == "anthropic" ||
-		strings.HasPrefix(model, "anthropic/")
+	return isProviderModel(model, "anthropic")
 }

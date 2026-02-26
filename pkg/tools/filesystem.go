@@ -85,14 +85,16 @@ type ReadFileTool struct {
 	fs fileSystem
 }
 
-func NewReadFileTool(workspace string, restrict bool) *ReadFileTool {
-	var fs fileSystem
+// newFileSystem creates the appropriate fileSystem based on sandbox settings.
+func newFileSystem(workspace string, restrict bool) fileSystem {
 	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
+		return &sandboxFs{workspace: workspace}
 	}
-	return &ReadFileTool{fs: fs}
+	return &hostFs{}
+}
+
+func NewReadFileTool(workspace string, restrict bool) *ReadFileTool {
+	return &ReadFileTool{fs: newFileSystem(workspace, restrict)}
 }
 
 func (t *ReadFileTool) Name() string {
@@ -138,13 +140,7 @@ type WriteFileTool struct {
 }
 
 func NewWriteFileTool(workspace string, restrict bool) *WriteFileTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
-	}
-	return &WriteFileTool{fs: fs}
+	return &WriteFileTool{fs: newFileSystem(workspace, restrict)}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -195,13 +191,7 @@ type ListDirTool struct {
 }
 
 func NewListDirTool(workspace string, restrict bool) *ListDirTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
-	}
-	return &ListDirTool{fs: fs}
+	return &ListDirTool{fs: newFileSystem(workspace, restrict)}
 }
 
 func (t *ListDirTool) Name() string {

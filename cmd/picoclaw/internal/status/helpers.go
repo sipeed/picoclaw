@@ -41,46 +41,43 @@ func statusCmd() {
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("Model: %s\n", cfg.Agents.Defaults.GetModelName())
 
-		hasOpenRouter := cfg.Providers.OpenRouter.APIKey != ""
-		hasAnthropic := cfg.Providers.Anthropic.APIKey != ""
-		hasOpenAI := cfg.Providers.OpenAI.APIKey != ""
-		hasGemini := cfg.Providers.Gemini.APIKey != ""
-		hasZhipu := cfg.Providers.Zhipu.APIKey != ""
-		hasQwen := cfg.Providers.Qwen.APIKey != ""
-		hasGroq := cfg.Providers.Groq.APIKey != ""
-		hasVLLM := cfg.Providers.VLLM.APIBase != ""
-		hasMoonshot := cfg.Providers.Moonshot.APIKey != ""
-		hasDeepSeek := cfg.Providers.DeepSeek.APIKey != ""
-		hasVolcEngine := cfg.Providers.VolcEngine.APIKey != ""
-		hasNvidia := cfg.Providers.Nvidia.APIKey != ""
-		hasOllama := cfg.Providers.Ollama.APIBase != ""
-
-		status := func(enabled bool) string {
-			if enabled {
-				return "✓"
+		apiKeyProviders := []struct {
+			name   string
+			hasKey bool
+		}{
+			{"OpenRouter API", cfg.Providers.OpenRouter.APIKey != ""},
+			{"Anthropic API", cfg.Providers.Anthropic.APIKey != ""},
+			{"OpenAI API", cfg.Providers.OpenAI.APIKey != ""},
+			{"Gemini API", cfg.Providers.Gemini.APIKey != ""},
+			{"Zhipu API", cfg.Providers.Zhipu.APIKey != ""},
+			{"Qwen API", cfg.Providers.Qwen.APIKey != ""},
+			{"Groq API", cfg.Providers.Groq.APIKey != ""},
+			{"Moonshot API", cfg.Providers.Moonshot.APIKey != ""},
+			{"DeepSeek API", cfg.Providers.DeepSeek.APIKey != ""},
+			{"VolcEngine API", cfg.Providers.VolcEngine.APIKey != ""},
+			{"Nvidia API", cfg.Providers.Nvidia.APIKey != ""},
+		}
+		for _, p := range apiKeyProviders {
+			if p.hasKey {
+				fmt.Printf("%s: ✓\n", p.name)
+			} else {
+				fmt.Printf("%s: not set\n", p.name)
 			}
-			return "not set"
 		}
-		fmt.Println("OpenRouter API:", status(hasOpenRouter))
-		fmt.Println("Anthropic API:", status(hasAnthropic))
-		fmt.Println("OpenAI API:", status(hasOpenAI))
-		fmt.Println("Gemini API:", status(hasGemini))
-		fmt.Println("Zhipu API:", status(hasZhipu))
-		fmt.Println("Qwen API:", status(hasQwen))
-		fmt.Println("Groq API:", status(hasGroq))
-		fmt.Println("Moonshot API:", status(hasMoonshot))
-		fmt.Println("DeepSeek API:", status(hasDeepSeek))
-		fmt.Println("VolcEngine API:", status(hasVolcEngine))
-		fmt.Println("Nvidia API:", status(hasNvidia))
-		if hasVLLM {
-			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)
-		} else {
-			fmt.Println("vLLM/Local: not set")
+
+		urlProviders := []struct {
+			name    string
+			apiBase string
+		}{
+			{"vLLM/Local", cfg.Providers.VLLM.APIBase},
+			{"Ollama", cfg.Providers.Ollama.APIBase},
 		}
-		if hasOllama {
-			fmt.Printf("Ollama: ✓ %s\n", cfg.Providers.Ollama.APIBase)
-		} else {
-			fmt.Println("Ollama: not set")
+		for _, p := range urlProviders {
+			if p.apiBase != "" {
+				fmt.Printf("%s: ✓ %s\n", p.name, p.apiBase)
+			} else {
+				fmt.Printf("%s: not set\n", p.name)
+			}
 		}
 
 		store, _ := auth.LoadStore()
