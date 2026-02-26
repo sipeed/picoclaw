@@ -17,12 +17,63 @@ const (
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+// Pre-compiled regexes for HTML text extraction
+var (
+	reScript     = regexp.MustCompile(`<script[\s\S]*?</script>`)
+	reStyle      = regexp.MustCompile(`<style[\s\S]*?</style>`)
+	reTags       = regexp.MustCompile(`<[^>]+>`)
+	reWhitespace = regexp.MustCompile(`[^\S\n]+`)
+	reBlankLines = regexp.MustCompile(`\n{3,}`)
+
+	// DuckDuckGo result extraction
+	reDDGLink    = regexp.MustCompile(`<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>`)
+	reDDGSnippet = regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
+)
+
+// createHTTPClient creates an HTTP client with optional proxy support
+func createHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
+	client := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        10,
+			IdleConnTimeout:     30 * time.Second,
+			DisableCompression:  false,
+			TLSHandshakeTimeout: 15 * time.Second,
+		},
+	}
+
+	if proxyURL != "" {
+		proxy, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL: %w", err)
+		}
+		scheme := strings.ToLower(proxy.Scheme)
+		switch scheme {
+		case "http", "https", "socks5", "socks5h":
+		default:
+			return nil, fmt.Errorf(
+				"unsupported proxy scheme %q (supported: http, https, socks5, socks5h)",
+				proxy.Scheme,
+			)
+		}
+		if proxy.Host == "" {
+			return nil, fmt.Errorf("invalid proxy URL: missing host")
+		}
+		client.Transport.(*http.Transport).Proxy = http.ProxyURL(proxy)
+	} else {
+		client.Transport.(*http.Transport).Proxy = http.ProxyFromEnvironment
+	}
+
+	return client, nil
+}
+
 type SearchProvider interface {
 	Search(ctx context.Context, query string, count int) (string, error)
 }
 
 type BraveSearchProvider struct {
 	apiKey string
+	proxy  string
 }
 
 func (p *BraveSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
@@ -37,7 +88,10 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Subscription-Token", p.apiKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client, err := createHTTPClient(p.proxy, 10*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("failed to create HTTP client: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -88,6 +142,7 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 type TavilySearchProvider struct {
 	apiKey  string
 	baseURL string
+	proxy   string
 }
 
 func (p *TavilySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
@@ -119,7 +174,10 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client, err := createHTTPClient(p.proxy, 10*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("failed to create HTTP client: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -167,7 +225,9 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 	return strings.Join(lines, "\n"), nil
 }
 
-type DuckDuckGoSearchProvider struct{}
+type DuckDuckGoSearchProvider struct {
+	proxy string
+}
 
 func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
@@ -179,7 +239,10 @@ func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, cou
 
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client, err := createHTTPClient(p.proxy, 10*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("failed to create HTTP client: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -201,8 +264,7 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 	// Try finding the result links directly first, as they are the most critical
 	// Pattern: <a class="result__a" href="...">Title</a>
 	// The previous regex was a bit strict. Let's make it more flexible for attributes order/content
-	reLink := regexp.MustCompile(`<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>`)
-	matches := reLink.FindAllStringSubmatch(html, count+5)
+	matches := reDDGLink.FindAllStringSubmatch(html, count+5)
 
 	if len(matches) == 0 {
 		return fmt.Sprintf("No results found or extraction failed. Query: %s", query), nil
@@ -219,8 +281,7 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 
 	// A better regex approach: iterate through text and find matches in order
 	// But for now, let's grab all snippets too
-	reSnippet := regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
-	snippetMatches := reSnippet.FindAllStringSubmatch(html, count+5)
+	snippetMatches := reDDGSnippet.FindAllStringSubmatch(html, count+5)
 
 	maxItems := min(len(matches), count)
 
@@ -255,12 +316,12 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 }
 
 func stripTags(content string) string {
-	re := regexp.MustCompile(`<[^>]+>`)
-	return re.ReplaceAllString(content, "")
+	return reTags.ReplaceAllString(content, "")
 }
 
 type PerplexitySearchProvider struct {
 	apiKey string
+	proxy  string
 }
 
 func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
@@ -295,7 +356,10 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client, err := createHTTPClient(p.proxy, 30*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("failed to create HTTP client: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -348,6 +412,7 @@ type WebSearchToolOptions struct {
 	PerplexityAPIKey     string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
+	Proxy                string
 }
 
 func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
@@ -356,12 +421,12 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 
 	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
-		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey}
+		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey, proxy: opts.Proxy}
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
 		}
 	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
-		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey}
+		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey, proxy: opts.Proxy}
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
 		}
@@ -369,12 +434,13 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 		provider = &TavilySearchProvider{
 			apiKey:  opts.TavilyAPIKey,
 			baseURL: opts.TavilyBaseURL,
+			proxy:   opts.Proxy,
 		}
 		if opts.TavilyMaxResults > 0 {
 			maxResults = opts.TavilyMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
-		provider = &DuckDuckGoSearchProvider{}
+		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy}
 		if opts.DuckDuckGoMaxResults > 0 {
 			maxResults = opts.DuckDuckGoMaxResults
 		}
@@ -441,6 +507,7 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolR
 
 type WebFetchTool struct {
 	maxChars int
+	proxy    string
 }
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {
@@ -449,6 +516,16 @@ func NewWebFetchTool(maxChars int) *WebFetchTool {
 	}
 	return &WebFetchTool{
 		maxChars: maxChars,
+	}
+}
+
+func NewWebFetchToolWithProxy(maxChars int, proxy string) *WebFetchTool {
+	if maxChars <= 0 {
+		maxChars = 50000
+	}
+	return &WebFetchTool{
+		maxChars: maxChars,
+		proxy:    proxy,
 	}
 }
 
@@ -511,20 +588,17 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{
-		Timeout: 60 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false,
-			TLSHandshakeTimeout: 15 * time.Second,
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("stopped after 5 redirects")
-			}
-			return nil
-		},
+	client, err := createHTTPClient(t.proxy, 60*time.Second)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("failed to create HTTP client: %v", err))
+	}
+
+	// Configure redirect handling
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("stopped after 5 redirects")
+		}
+		return nil
 	}
 
 	resp, err := client.Do(req)
@@ -590,19 +664,14 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 }
 
 func (t *WebFetchTool) extractText(htmlContent string) string {
-	re := regexp.MustCompile(`<script[\s\S]*?</script>`)
-	result := re.ReplaceAllLiteralString(htmlContent, "")
-	re = regexp.MustCompile(`<style[\s\S]*?</style>`)
-	result = re.ReplaceAllLiteralString(result, "")
-	re = regexp.MustCompile(`<[^>]+>`)
-	result = re.ReplaceAllLiteralString(result, "")
+	result := reScript.ReplaceAllLiteralString(htmlContent, "")
+	result = reStyle.ReplaceAllLiteralString(result, "")
+	result = reTags.ReplaceAllLiteralString(result, "")
 
 	result = strings.TrimSpace(result)
 
-	re = regexp.MustCompile(`[^\S\n]+`)
-	result = re.ReplaceAllString(result, " ")
-	re = regexp.MustCompile(`\n{3,}`)
-	result = re.ReplaceAllString(result, "\n\n")
+	result = reWhitespace.ReplaceAllString(result, " ")
+	result = reBlankLines.ReplaceAllString(result, "\n\n")
 
 	lines := strings.Split(result, "\n")
 	var cleanLines []string

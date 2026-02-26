@@ -539,5 +539,5 @@ func parseSlackChatID(chatID string) (channelID, threadTS string) {
 	if len(parts) > 1 {
 		threadTS = parts[1]
 	}
-	return
+	return channelID, threadTS
 }

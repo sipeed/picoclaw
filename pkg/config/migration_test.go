@@ -166,6 +166,27 @@ func TestConvertProvidersToModelList_Proxy(t *testing.T) {
 	}
 }
 
+func TestConvertProvidersToModelList_RequestTimeout(t *testing.T) {
+	cfg := &Config{
+		Providers: ProvidersConfig{
+			Ollama: ProviderConfig{
+				APIKey:         "ollama-key",
+				RequestTimeout: 300,
+			},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	if result[0].RequestTimeout != 300 {
+		t.Errorf("RequestTimeout = %d, want %d", result[0].RequestTimeout, 300)
+	}
+}
+
 func TestConvertProvidersToModelList_AuthMethod(t *testing.T) {
 	cfg := &Config{
 		Providers: ProvidersConfig{

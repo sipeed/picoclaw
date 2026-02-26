@@ -73,7 +73,10 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 
 	if agents, ok := getMap(data, "agents"); ok {
 		if defaults, ok := getMap(agents, "defaults"); ok {
-			if v, ok := getString(defaults, "model"); ok {
+			// Prefer model_name, fallback to model for backward compatibility
+			if v, ok := getString(defaults, "model_name"); ok {
+				cfg.Agents.Defaults.ModelName = v
+			} else if v, ok := getString(defaults, "model"); ok {
 				cfg.Agents.Defaults.Model = v
 			}
 			if v, ok := getFloat(defaults, "max_tokens"); ok {
