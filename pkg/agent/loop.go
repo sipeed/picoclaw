@@ -1353,7 +1353,7 @@ func (al *AgentLoop) executeCmdMode(ctx context.Context, agent *AgentInstance, c
 		if workDir == "" {
 			workDir = agent.Workspace
 		}
-		return al.handleEditCommand(content, workDir), nil
+		return al.handleEditCommand(content, workDir, agent.Workspace), nil
 	}
 
 	// Intercept interactive editors
@@ -1462,7 +1462,7 @@ func shortenHomePath(path string) string {
 //	:edit <file> +<N> <text>        → insert after line N
 //	:edit <file> -<N>               → delete line N
 //	:edit <file> -m """<content>""" → write full content (create if needed)
-func (al *AgentLoop) handleEditCommand(content, workDir string) string {
+func (al *AgentLoop) handleEditCommand(content, workDir, workspace string) string {
 	raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(content), ":edit"))
 	if raw == "" {
 		return editUsage()
@@ -1479,7 +1479,10 @@ func (al *AgentLoop) handleEditCommand(content, workDir string) string {
 		return editUsage()
 	}
 
-	filename := resolveEditPath(parts[0], workDir)
+	filename, err := resolveEditPath(parts[0], workDir, workspace)
+	if err != nil {
+		return fmt.Sprintf("Access denied: %s", err)
+	}
 
 	// :edit <file> — show file content
 	if len(parts) == 1 && !strings.Contains(raw, "\n") {
@@ -1501,15 +1504,19 @@ func (al *AgentLoop) handleEditCommand(content, workDir string) string {
 	return editUsage()
 }
 
-func resolveEditPath(name, workDir string) string {
-	if strings.HasPrefix(name, "~/") {
-		home, _ := os.UserHomeDir()
-		return home + name[1:]
+func resolveEditPath(name, workDir, workspace string) (string, error) {
+	// Treat ~ as workspace root (not $HOME)
+	if name == "~" {
+		name = "."
+	} else if strings.HasPrefix(name, "~/") {
+		name = name[2:]
 	}
-	if filepath.IsAbs(name) {
-		return name
+	// Resolve relative paths against workDir
+	if !filepath.IsAbs(name) {
+		name = filepath.Join(workDir, name)
 	}
-	return filepath.Join(workDir, name)
+	// Validate against workspace (blocks absolute paths outside workspace, symlink escape, traversal)
+	return tools.ValidatePath(name, workspace, true)
 }
 
 func editUsage() string {

@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// validatePath ensures the given path is within the workspace if restrict is true.
-func validatePath(path, workspace string, restrict bool) (string, error) {
+// ValidatePath ensures the given path is within the workspace if restrict is true.
+func ValidatePath(path, workspace string, restrict bool) (string, error) {
 	if workspace == "" {
 		return path, fmt.Errorf("workspace is not defined")
 	}
