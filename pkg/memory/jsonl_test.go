@@ -440,7 +440,7 @@ func TestCompact_RemovesSkippedMessages(t *testing.T) {
 	}
 
 	// Before compact: file still has 10 lines.
-	allOnDisk, err := readMessages(store.jsonlPath("compact"))
+	allOnDisk, err := readMessages(store.jsonlPath("compact"), 0)
 	if err != nil {
 		t.Fatalf("readMessages: %v", err)
 	}
@@ -455,7 +455,7 @@ func TestCompact_RemovesSkippedMessages(t *testing.T) {
 	}
 
 	// After compact: file should have only 3 lines.
-	allOnDisk, err = readMessages(store.jsonlPath("compact"))
+	allOnDisk, err = readMessages(store.jsonlPath("compact"), 0)
 	if err != nil {
 		t.Fatalf("readMessages: %v", err)
 	}
