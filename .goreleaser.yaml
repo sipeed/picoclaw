@@ -15,10 +15,10 @@ builds:
       - stdjson
     ldflags:
       - -s -w
-      - -X main.version={{ .Version }}
-      - -X main.gitCommit={{ .ShortCommit }}
-      - -X main.buildTime={{ .Date }}
-      - -X main.goVersion={{ .Env.GOVERSION }}
+      - -X github.com/sipeed/picoclaw/cmd/picoclaw/internal.version={{ .Version }}
+      - -X github.com/sipeed/picoclaw/cmd/picoclaw/internal.gitCommit={{ .ShortCommit }}
+      - -X github.com/sipeed/picoclaw/cmd/picoclaw/internal.buildTime={{ .Date }}
+      - -X github.com/sipeed/picoclaw/cmd/picoclaw/internal.goVersion={{ .Env.GOVERSION }}
     goos:
       - linux
       - windows
@@ -28,8 +28,7 @@ builds:
       - amd64
       - arm64
       - riscv64
-      - s390x
-      - mips64
+      - loong64
       - arm
     main: ./cmd/picoclaw
     ignore:
@@ -66,6 +65,26 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+
+nfpms:
+  - id: picoclaw
+    package_name: picoclaw
+    file_name_template: >-
+      {{ .PackageName }}_
+      {{- .Version }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "arm64" }}aarch64
+      {{- else if eq .Arch "arm" }}armv{{ .Arm }}
+      {{- else }}{{ .Arch }}{{ end }}
+    vendor: picoclaw
+    homepage: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw
+    maintainer: picoclaw contributors
+    description: picoclaw - a tool for managing and running tasks
+    license: MIT
+    formats:
+      - rpm
+      - deb
+    bindir: /usr/bin
 
 changelog:
   sort: asc

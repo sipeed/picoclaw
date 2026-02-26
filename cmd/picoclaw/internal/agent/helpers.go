@@ -1,7 +1,4 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// License: MIT
-
-package main
+package agent
 
 import (
 	"bufio"
@@ -14,56 +11,37 @@ import (
 
 	"github.com/chzyer/readline"
 
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-func agentCmd() {
-	message := ""
-	sessionKey := "cli:default"
-	modelOverride := ""
-
-	args := os.Args[2:]
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--debug", "-d":
-			logger.SetLevel(logger.DEBUG)
-			fmt.Println("🔍 Debug mode enabled")
-		case "-m", "--message":
-			if i+1 < len(args) {
-				message = args[i+1]
-				i++
-			}
-		case "-s", "--session":
-			if i+1 < len(args) {
-				sessionKey = args[i+1]
-				i++
-			}
-		case "--model", "-model":
-			if i+1 < len(args) {
-				modelOverride = args[i+1]
-				i++
-			}
-		}
+func agentCmd(message, sessionKey, model string, debug bool) error {
+	if sessionKey == "" {
+		sessionKey = "cli:default"
 	}
 
-	cfg, err := loadConfig()
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+		fmt.Println("🔍 Debug mode enabled")
+	}
+
+	cfg, err := internal.LoadConfig()
 	if err != nil {
-		fmt.Printf("Error loading config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error loading config: %w", err)
 	}
 
-	if modelOverride != "" {
-		cfg.Agents.Defaults.ModelName = modelOverride
+	if model != "" {
+		cfg.Agents.Defaults.ModelName = model
 	}
 
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {
-		fmt.Printf("Error creating provider: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error creating provider: %w", err)
 	}
+
 	// Use the resolved model ID from provider creation
 	if modelID != "" {
 		cfg.Agents.Defaults.ModelName = modelID
@@ -85,18 +63,20 @@ func agentCmd() {
 		ctx := context.Background()
 		response, err := agentLoop.ProcessDirect(ctx, message, sessionKey)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error processing message: %w", err)
 		}
-		fmt.Printf("\n%s %s\n", logo, response)
-	} else {
-		fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n\n", logo)
-		interactiveMode(agentLoop, sessionKey)
+		fmt.Printf("\n%s %s\n", internal.Logo, response)
+		return nil
 	}
+
+	fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n\n", internal.Logo)
+	interactiveMode(agentLoop, sessionKey)
+
+	return nil
 }
 
 func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
-	prompt := fmt.Sprintf("%s You: ", logo)
+	prompt := fmt.Sprintf("%s You: ", internal.Logo)
 
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:          prompt,
@@ -141,14 +121,14 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			continue
 		}
 
-		fmt.Printf("\n%s %s\n\n", logo, response)
+		fmt.Printf("\n%s %s\n\n", internal.Logo, response)
 	}
 }
 
 func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Printf("%s You: ", logo)
+		fmt.Print(fmt.Sprintf("%s You: ", internal.Logo))
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
@@ -176,6 +156,6 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			continue
 		}
 
-		fmt.Printf("\n%s %s\n\n", logo, response)
+		fmt.Printf("\n%s %s\n\n", internal.Logo, response)
 	}
 }
