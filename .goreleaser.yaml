@@ -5,7 +5,7 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - go generate ./cmd/picoclaw
+    - go generate ./cmd/picoclaw/...
 
 builds:
   - id: picoclaw
@@ -30,6 +30,8 @@ builds:
       - riscv64
       - loong64
       - arm
+    goarm:
+      - "7"             
     main: ./cmd/picoclaw
     ignore:
       - goos: windows
@@ -71,7 +73,6 @@ nfpms:
     package_name: picoclaw
     file_name_template: >-
       {{ .PackageName }}_
-      {{- .Version }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "arm64" }}aarch64
       {{- else if eq .Arch "arm" }}armv{{ .Arm }}
