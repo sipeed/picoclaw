@@ -591,6 +591,17 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration": iteration,
 					"error":     err.Error(),
 				})
+
+			// Send error message back to original source if enabled
+			if opts.SendResponse && !constants.IsInternalChannel(opts.Channel) {
+				errorMsg := formatLLMErrorMessage(err)
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: opts.Channel,
+					ChatID:  opts.ChatID,
+					Content: errorMsg,
+				})
+			}
+
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
@@ -845,6 +856,44 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 	}
 
 	return info
+}
+
+// formatLLMErrorMessage creates a user-friendly error message from LLM errors.
+func formatLLMErrorMessage(err error) string {
+	if err == nil {
+		return "An unknown error occurred."
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// Check for authentication/scope errors
+	if strings.Contains(errStr, "permission_denied") ||
+		strings.Contains(errStr, "insufficient authentication scopes") ||
+		strings.Contains(errStr, "access_token") ||
+		strings.Contains(errStr, "oauth") && strings.Contains(errStr, "scope") {
+		return "🔐 Authentication error: Your Google OAuth token may have expired or lacks required permissions.\n\n" +
+			"Please re-authenticate with: `picoclaw auth login --provider google-antigravity`"
+	}
+
+	// Check for rate limit errors
+	if strings.Contains(errStr, "rate limit") || strings.Contains(errStr, "quota") {
+		return "⏳ Rate limit exceeded. Please wait a moment and try again."
+	}
+
+	// Check for model not found errors
+	if strings.Contains(errStr, "not a valid model") ||
+		strings.Contains(errStr, "model not found") ||
+		strings.Contains(errStr, "invalid model") {
+		return "❌ The specified model is not available. Please check your model configuration."
+	}
+
+	// Check for context/window size errors
+	if strings.Contains(errStr, "context") || strings.Contains(errStr, "token") {
+		return "📝 Context limit exceeded. The conversation is too long for the model."
+	}
+
+	// Generic error fallback
+	return fmt.Sprintf("❌ Error: %s", err.Error())
 }
 
 // formatMessagesForLog formats messages for logging
