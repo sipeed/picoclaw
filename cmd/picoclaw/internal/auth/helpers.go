@@ -15,7 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
+const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity, qwen"
 
 func authLoginCmd(provider string, useDeviceCode bool) error {
 	switch provider {
@@ -25,6 +25,8 @@ func authLoginCmd(provider string, useDeviceCode bool) error {
 		return authLoginPasteToken(provider)
 	case "google-antigravity", "antigravity":
 		return authLoginGoogleAntigravity()
+	case "qwen", "qwen-oauth", "qwenoauth", "qwen-portal":
+		return authLoginQwen()
 	default:
 		return fmt.Errorf("unsupported provider: %s (%s)", provider, supportedProvidersMsg)
 	}
@@ -434,4 +436,58 @@ func isOpenAIModel(model string) bool {
 func isAnthropicModel(model string) bool {
 	return model == "anthropic" ||
 		strings.HasPrefix(model, "anthropic/")
+}
+
+// isQwenOAuthModel checks if a model string belongs to qwen-oauth provider
+func isQwenOAuthModel(model string) bool {
+	return model == "qwen-oauth" ||
+		model == "qwenoauth" ||
+		model == "qwen-portal" ||
+		strings.HasPrefix(model, "qwen-oauth/")
+}
+
+// authLoginQwen performs the Qwen Portal OAuth device-code (QR scan) login flow.
+func authLoginQwen() error {
+	cred, err := auth.LoginQwenQRCode()
+	if err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	if err = auth.SetCredential("qwen", cred); err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	appCfg, err := internal.LoadConfig()
+	if err == nil {
+		// Update or add qwen-oauth in ModelList
+		foundQwen := false
+		for i := range appCfg.ModelList {
+			if isQwenOAuthModel(appCfg.ModelList[i].Model) {
+				appCfg.ModelList[i].AuthMethod = "oauth"
+				foundQwen = true
+				break
+			}
+		}
+
+		// If no qwen-oauth in ModelList, add it
+		if !foundQwen {
+			appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
+				ModelName:  "qwen-coder",
+				Model:      "qwen-oauth/coder-model",
+				AuthMethod: "oauth",
+			})
+		}
+
+		// Update default model to use Qwen
+		appCfg.Agents.Defaults.ModelName = "qwen-coder"
+
+		if err = config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+			return fmt.Errorf("could not update config: %w", err)
+		}
+	}
+
+	fmt.Println("\n✓ Qwen OAuth login successful!")
+	fmt.Println("Default model set to: qwen-coder (Qwen Coder)")
+
+	return nil
 }

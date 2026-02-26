@@ -564,3 +564,14 @@ func openBrowser(url string) error {
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 }
+
+// QwenOAuthConfig returns the OAuth configuration for Qwen Portal (通义千问).
+// Uses device code flow (QR code scan) for authentication.
+// Reference: https://github.com/openclaw/openclaw/tree/main/extensions/qwen-portal-auth
+func QwenOAuthConfig() OAuthProviderConfig {
+	return OAuthProviderConfig{
+		Issuer:   "https://chat.qwen.ai",
+		ClientID: "f0304373b74a44d2b584a3fb70ca9e56",
+		Scopes:   "openid profile email model.completion",
+	}
+}
