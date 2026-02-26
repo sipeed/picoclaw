@@ -511,6 +511,22 @@ func parseChatID(chatIDStr string) (int64, error) {
 	return id, err
 }
 
+// Pre-compiled regex patterns for markdownToTelegramHTML.
+// Compiled once at package init, reused across all calls (regexp is goroutine-safe).
+// This eliminates ~20 KB of heap allocation per outbound message.
+var (
+	reHeader     = regexp.MustCompile(`^#{1,6}\s+(.+)$`)
+	reBlockquote = regexp.MustCompile(`^>\s*(.*)$`)
+	reLink       = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	reBold       = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	reBoldAlt    = regexp.MustCompile(`__(.+?)__`)
+	reItalic     = regexp.MustCompile(`_([^_]+)_`)
+	reStrike     = regexp.MustCompile(`~~(.+?)~~`)
+	reListItem   = regexp.MustCompile(`^[-*]\s+`)
+	reCodeBlock  = regexp.MustCompile("```[\\w]*\\n?([\\s\\S]*?)```")
+	reInlineCode = regexp.MustCompile("`([^`]+)`")
+)
+
 func markdownToTelegramHTML(text string) string {
 	if text == "" {
 		return ""
@@ -522,19 +538,18 @@ func markdownToTelegramHTML(text string) string {
 	inlineCodes := extractInlineCodes(text)
 	text = inlineCodes.text
 
-	text = regexp.MustCompile(`^#{1,6}\s+(.+)$`).ReplaceAllString(text, "$1")
+	text = reHeader.ReplaceAllString(text, "$1")
 
-	text = regexp.MustCompile(`^>\s*(.*)$`).ReplaceAllString(text, "$1")
+	text = reBlockquote.ReplaceAllString(text, "$1")
 
 	text = escapeHTML(text)
 
-	text = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`).ReplaceAllString(text, `<a href="$2">$1</a>`)
+	text = reLink.ReplaceAllString(text, `<a href="$2">$1</a>`)
 
-	text = regexp.MustCompile(`\*\*(.+?)\*\*`).ReplaceAllString(text, "<b>$1</b>")
+	text = reBold.ReplaceAllString(text, "<b>$1</b>")
 
-	text = regexp.MustCompile(`__(.+?)__`).ReplaceAllString(text, "<b>$1</b>")
+	text = reBoldAlt.ReplaceAllString(text, "<b>$1</b>")
 
-	reItalic := regexp.MustCompile(`_([^_]+)_`)
 	text = reItalic.ReplaceAllStringFunc(text, func(s string) string {
 		match := reItalic.FindStringSubmatch(s)
 		if len(match) < 2 {
@@ -543,9 +558,9 @@ func markdownToTelegramHTML(text string) string {
 		return "<i>" + match[1] + "</i>"
 	})
 
-	text = regexp.MustCompile(`~~(.+?)~~`).ReplaceAllString(text, "<s>$1</s>")
+	text = reStrike.ReplaceAllString(text, "<s>$1</s>")
 
-	text = regexp.MustCompile(`^[-*]\s+`).ReplaceAllString(text, "• ")
+	text = reListItem.ReplaceAllString(text, "• ")
 
 	for i, code := range inlineCodes.codes {
 		escaped := escapeHTML(code)
@@ -570,8 +585,7 @@ type codeBlockMatch struct {
 }
 
 func extractCodeBlocks(text string) codeBlockMatch {
-	re := regexp.MustCompile("```[\\w]*\\n?([\\s\\S]*?)```")
-	matches := re.FindAllStringSubmatch(text, -1)
+	matches := reCodeBlock.FindAllStringSubmatch(text, -1)
 
 	codes := make([]string, 0, len(matches))
 	for _, match := range matches {
@@ -579,7 +593,7 @@ func extractCodeBlocks(text string) codeBlockMatch {
 	}
 
 	i := 0
-	text = re.ReplaceAllStringFunc(text, func(m string) string {
+	text = reCodeBlock.ReplaceAllStringFunc(text, func(m string) string {
 		placeholder := fmt.Sprintf("\x00CB%d\x00", i)
 		i++
 		return placeholder
@@ -594,8 +608,7 @@ type inlineCodeMatch struct {
 }
 
 func extractInlineCodes(text string) inlineCodeMatch {
-	re := regexp.MustCompile("`([^`]+)`")
-	matches := re.FindAllStringSubmatch(text, -1)
+	matches := reInlineCode.FindAllStringSubmatch(text, -1)
 
 	codes := make([]string, 0, len(matches))
 	for _, match := range matches {
@@ -603,7 +616,7 @@ func extractInlineCodes(text string) inlineCodeMatch {
 	}
 
 	i := 0
-	text = re.ReplaceAllStringFunc(text, func(m string) string {
+	text = reInlineCode.ReplaceAllStringFunc(text, func(m string) string {
 		placeholder := fmt.Sprintf("\x00IC%d\x00", i)
 		i++
 		return placeholder
