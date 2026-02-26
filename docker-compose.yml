@@ -15,7 +15,9 @@ services:
     #  - "host.docker.internal:host-gateway"
     volumes:
       - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
+      - ./config/config.json:/root/.picoclaw/config.json:ro
       - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
+      - picoclaw-workspace:/root/.picoclaw/workspace
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
     tty: true
@@ -38,8 +40,10 @@ services:
     volumes:
       # Configuration file
       - ./config/config.json:/home/picoclaw/.picoclaw/config.json:ro
+      - ./config/config.json:/root/.picoclaw/config.json:ro
       # Persistent workspace (sessions, memory, logs)
       - picoclaw-workspace:/home/picoclaw/.picoclaw/workspace
+      - picoclaw-workspace:/root/.picoclaw/workspace
     command: ["gateway"]
 
 volumes:
