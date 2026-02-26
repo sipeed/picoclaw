@@ -5,7 +5,7 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - go generate ./cmd/picoclaw
+    - go generate ./cmd/picoclaw/...
 
 builds:
   - id: picoclaw
