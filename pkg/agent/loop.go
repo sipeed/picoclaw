@@ -1292,7 +1292,9 @@ Token usage (this session):
 		), true
 
 	default:
-		return fmt.Sprintf("Unknown command: %s\nType :help for available commands.", cmd), true
+		// Don't intercept unrecognized : prefixed messages (e.g. :) :D :thinking:)
+		// Let them pass through as normal chat messages
+		return "", false
 	}
 }
 
