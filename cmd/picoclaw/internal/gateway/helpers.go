@@ -38,15 +38,14 @@ func gatewayCmd(debug bool) error {
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
-	provider, modelID, err := providers.CreateProvider(cfg)
+	provider, _, err := providers.CreateProvider(cfg)
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
 	}
 
-	// Use the resolved model ID from provider creation
-	if modelID != "" {
-		cfg.Agents.Defaults.ModelName = modelID
-	}
+	// Don't overwrite ModelName with modelID - modelID is just the protocol-stripped
+	// model identifier, but ModelName should remain as the model_list entry name
+	// for proper fallback resolution.
 
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
