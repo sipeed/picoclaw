@@ -9,6 +9,8 @@ import (
 
 const maxRetries = 3
 
+var retryDelayUnit = time.Second
+
 func shouldRetry(statusCode int) bool {
 	return statusCode == http.StatusTooManyRequests ||
 		statusCode >= 500
@@ -34,7 +36,7 @@ func DoRequestWithRetry(client *http.Client, req *http.Request) (*http.Response,
 		}
 
 		if i < maxRetries-1 {
-			if err = sleepWithCtx(req.Context(), time.Second*time.Duration(i+1)); err != nil {
+			if err = sleepWithCtx(req.Context(), retryDelayUnit*time.Duration(i+1)); err != nil {
 				return nil, fmt.Errorf("failed to sleep: %w", err)
 			}
 		}

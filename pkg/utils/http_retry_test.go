@@ -11,6 +11,9 @@ import (
 )
 
 func TestDoRequestWithRetry(t *testing.T) {
+	retryDelayUnit = time.Millisecond
+	t.Cleanup(func() { retryDelayUnit = time.Second })
+
 	testcases := []struct {
 		name           string
 		serverBehavior func(*httptest.Server) int
@@ -53,6 +56,7 @@ func TestDoRequestWithRetry(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			attempts := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				attempts++
@@ -91,6 +95,9 @@ func TestDoRequestWithRetry(t *testing.T) {
 }
 
 func TestDoRequestWithRetry_Delay(t *testing.T) {
+	retryDelayUnit = time.Millisecond
+	t.Cleanup(func() { retryDelayUnit = time.Second })
+
 	var start time.Time
 	delays := []time.Duration{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -124,5 +131,5 @@ func TestDoRequestWithRetry_Delay(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 
-	assert.GreaterOrEqual(t, delays[2], time.Second)
+	assert.GreaterOrEqual(t, delays[2], time.Millisecond)
 }
