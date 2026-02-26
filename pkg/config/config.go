@@ -401,7 +401,12 @@ type ModelConfig struct {
 	// Special providers (CLI-based, OAuth, etc.)
 	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token
 	ConnectMode string `json:"connect_mode,omitempty"` // Connection mode: stdio, grpc
-	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
+	Workspace   string `json:"workspace,omitempty"`   // Workspace path for CLI-based providers
+
+	// OAuth / client credentials (e.g. LiteLLM + Keycloak)
+	TokenURL      string `json:"token_url,omitempty"`
+	ClientID      string `json:"client_id,omitempty"`
+	ClientSecret  string `json:"client_secret,omitempty"`
 
 	// Optional optimizations
 	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
