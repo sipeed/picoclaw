@@ -64,7 +64,7 @@ func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string
 }
 
 // SetSupportPromptCache enables or disables sending the prompt_cache_key field.
-// Only OpenAI supports this field; other providers (e.g. Gemini) reject unknown fields.
+// Most providers accept or ignore this field, but Gemini rejects unknown fields.
 func (p *Provider) SetSupportPromptCache(v bool) {
 	p.supportPromptCache = v
 }
@@ -122,7 +122,7 @@ func (p *Provider) Chat(
 	// with the same key and reuse prefix KV cache across calls.
 	// The key is typically the agent ID — stable per agent, shared across requests.
 	// See: https://platform.openai.com/docs/guides/prompt-caching
-	// Only sent for providers that support it (e.g. OpenAI); others like Gemini reject unknown fields.
+	// Disabled for providers like Gemini that reject unknown fields in the request body.
 	if p.supportPromptCache {
 		if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
 			requestBody["prompt_cache_key"] = cacheKey
