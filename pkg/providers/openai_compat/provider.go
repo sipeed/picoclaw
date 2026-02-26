@@ -154,9 +154,11 @@ func (p *Provider) Chat(
 	// The key is typically the agent ID — stable per agent, shared across requests.
 	// See: https://platform.openai.com/docs/guides/prompt-caching
 	// Prompt caching is only supported by OpenAI-native endpoints.
-	// Gemini and other providers reject unknown fields, so skip for non-OpenAI APIs.
+	// Gemini and Groq reject unknown fields, so skip for non-OpenAI APIs.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
+		apiBase := strings.ToLower(p.apiBase)
+		if !strings.Contains(apiBase, "generativelanguage.googleapis.com") &&
+			!strings.Contains(apiBase, "groq.com") {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
 	}
