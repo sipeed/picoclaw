@@ -365,3 +365,38 @@ func TestConfig_ValidateModelList(t *testing.T) {
 		})
 	}
 }
+
+func TestModelConfig_RequestTimeoutParsing(t *testing.T) {
+	jsonData := `{
+		"model_name": "slow-local",
+		"model": "openai/local-model",
+		"api_base": "http://localhost:11434/v1",
+		"request_timeout": 300
+	}`
+
+	var cfg ModelConfig
+	if err := json.Unmarshal([]byte(jsonData), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if cfg.RequestTimeout != 300 {
+		t.Fatalf("RequestTimeout = %d, want 300", cfg.RequestTimeout)
+	}
+}
+
+func TestModelConfig_RequestTimeoutDefaultZeroValue(t *testing.T) {
+	jsonData := `{
+		"model_name": "default-timeout",
+		"model": "openai/gpt-4o",
+		"api_key": "test-key"
+	}`
+
+	var cfg ModelConfig
+	if err := json.Unmarshal([]byte(jsonData), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if cfg.RequestTimeout != 0 {
+		t.Fatalf("RequestTimeout = %d, want 0", cfg.RequestTimeout)
+	}
+}
