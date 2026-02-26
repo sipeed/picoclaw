@@ -137,7 +137,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		), modelID, nil
 
 	case "antigravity":
-		return NewAntigravityProvider(), modelID, nil
+		provider, err := NewAntigravityProvider()
+		if err != nil {
+			return nil, "", err
+		}
+		return provider, modelID, nil
 
 	case "claude-cli", "claudecli":
 		workspace := cfg.Workspace
