@@ -49,8 +49,8 @@ func TestIsPermString(t *testing.T) {
 		{"drwxr-xr-x", true},
 		{"-rw-r--r--", true},
 		{"lrwxrwxrwx", true},
-		{"-rwsr-xr-x", true},  // setuid
-		{"drwxrwxrwt", true},  // sticky
+		{"-rwsr-xr-x", true},   // setuid
+		{"drwxrwxrwt", true},   // sticky
 		{"hello world", false}, // wrong length/chars
 		{"----------", true},
 		{"xrwxrwxrwx", false}, // invalid first char
