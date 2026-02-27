@@ -13,3 +13,4 @@ local.properties
 /core/*/build
 keystore.properties
 keystore/
+*.jks

@@ -54,7 +54,8 @@ class ConfigViewModel(private val apiClient: ConfigApiClient) : ViewModel() {
         val section = s.sections.find { it.key == sectionKey } ?: return
 
         val fields = section.fields.map { field ->
-            val raw = extractNestedValue(config, field.key)
+            val fullKey = "$sectionKey.${field.key}"
+            val raw = extractNestedValue(config, fullKey)
             val display = jsonElementToEditString(raw, field.type)
             FieldState(
                 key = field.key,
@@ -97,7 +98,8 @@ class ConfigViewModel(private val apiClient: ConfigApiClient) : ViewModel() {
 
         saveJob = viewModelScope.launch {
             try {
-                val payload = buildNestedJsonObject(changed)
+                val prefixed = changed.map { it.copy(key = "${detail.sectionKey}.${it.key}") }
+                val payload = buildNestedJsonObject(prefixed)
                 val result = apiClient.saveConfig(payload)
                 if (result.error != null) {
                     _uiState.update { it.copy(saveState = SaveState.Error(result.error)) }
