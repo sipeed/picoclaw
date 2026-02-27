@@ -296,8 +296,8 @@ func TestConvertConfig(t *testing.T) {
 		if len(warnings) != 0 {
 			t.Errorf("expected no warnings, got %v", warnings)
 		}
-		if cfg.Agents.Defaults.Model != "glm-4.7" {
-			t.Errorf("default model should be glm-4.7, got %q", cfg.Agents.Defaults.Model)
+		if cfg.Agents.Defaults.Model != "" {
+			t.Errorf("default model should be nil, got %q", cfg.Agents.Defaults.Model)
 		}
 	})
 }
