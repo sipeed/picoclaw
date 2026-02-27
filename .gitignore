@@ -12,6 +12,11 @@ build/
 /picoclaw-test
 cmd/**/workspace
 
+# Go debug binaries (created by VS Code Go extension)
+__debug_bin
+__debug_bin.exe
+__debug_bin*
+
 # Picoclaw specific
 
 # PicoClaw
