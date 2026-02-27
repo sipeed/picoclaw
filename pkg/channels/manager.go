@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -213,27 +212,8 @@ func (m *Manager) initChannels() error {
 
 	if m.config.Channels.WhatsApp.Enabled {
 		waCfg := m.config.Channels.WhatsApp
-		useNative := waCfg.UseNative
-		if useNative {
-			logger.DebugC("channels", "Attempting to initialize WhatsApp native channel (whatsmeow)")
-			storePath := waCfg.SessionStorePath
-			if storePath == "" {
-				storePath = filepath.Join(m.config.WorkspacePath(), "whatsapp")
-			}
-			newNative := getWhatsAppNativeFactory()
-			if newNative == nil {
-				logger.ErrorCF("channels", "WhatsApp native not linked; import _ github.com/sipeed/picoclaw/pkg/channels/whatsapp or build with -tags whatsapp_native", nil)
-			} else {
-				ch, err := newNative(waCfg, m.bus, storePath)
-				if err != nil {
-					logger.ErrorCF("channels", "Failed to initialize WhatsApp native channel", map[string]any{
-						"error": err.Error(),
-					})
-				} else {
-					m.channels["whatsapp"] = ch
-					logger.InfoC("channels", "WhatsApp native channel enabled successfully")
-				}
-			}
+		if waCfg.UseNative {
+			m.initChannel("whatsapp_native", "WhatsApp Native")
 		} else if waCfg.BridgeURL != "" {
 			m.initChannel("whatsapp", "WhatsApp")
 		}
