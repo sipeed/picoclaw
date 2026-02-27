@@ -544,21 +544,17 @@ func (al *AgentLoop) runLLMIteration(
 			})
 		}
 
-		// Retry loop for context/token errors
+		// Retry loop for context-window and transient provider errors.
+		// Context-window errors trigger compression; transient errors retry with backoff.
 		maxRetries := 2
+		transientBackoff := []time.Duration{1 * time.Second, 2 * time.Second}
 		for retry := 0; retry <= maxRetries; retry++ {
 			response, err = callLLM()
 			if err == nil {
 				break
 			}
 
-			errMsg := strings.ToLower(err.Error())
-			isContextError := strings.Contains(errMsg, "token") ||
-				strings.Contains(errMsg, "context") ||
-				strings.Contains(errMsg, "invalidparameter") ||
-				strings.Contains(errMsg, "length")
-
-			if isContextError && retry < maxRetries {
+			if retry < maxRetries && isContextWindowError(err) {
 				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]any{
 					"error": err.Error(),
 					"retry": retry,
@@ -580,6 +576,33 @@ func (al *AgentLoop) runLLMIteration(
 					nil, opts.Channel, opts.ChatID,
 				)
 				continue
+			}
+
+			if retry < maxRetries {
+				if retryable, reason := isTransientLLMError(err); retryable {
+					logger.WarnCF("agent", "Transient LLM error detected, retrying", map[string]any{
+						"error":  err.Error(),
+						"reason": reason,
+						"retry":  retry,
+					})
+
+					if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
+						al.bus.PublishOutbound(bus.OutboundMessage{
+							Channel: opts.Channel,
+							ChatID:  opts.ChatID,
+							Content: "Temporary LLM error. Retrying...",
+						})
+					}
+
+					if retry < len(transientBackoff) {
+						select {
+						case <-ctx.Done():
+							return "", iteration, ctx.Err()
+						case <-time.After(transientBackoff[retry]):
+						}
+					}
+					continue
+				}
 			}
 			break
 		}
@@ -763,6 +786,61 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 				al.summarizeSession(agent, sessionKey)
 			}()
 		}
+	}
+}
+
+func isContextWindowError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	contextPatterns := []string{
+		"context window",
+		"context length",
+		"maximum context length",
+		"max context length",
+		"too many tokens",
+		"max message tokens",
+		"token limit",
+		"prompt is too long",
+		"exceed max message tokens",
+	}
+	for _, pattern := range contextPatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
+	}
+
+	// Provider-specific "invalid parameter" style errors frequently include token/length hints.
+	if strings.Contains(errMsg, "invalidparameter") &&
+		(strings.Contains(errMsg, "token") ||
+			strings.Contains(errMsg, "length") ||
+			strings.Contains(errMsg, "context")) {
+		return true
+	}
+
+	return false
+}
+
+func isTransientLLMError(err error) (bool, string) {
+	if err == nil {
+		return false, ""
+	}
+
+	classified := providers.ClassifyError(err, "", "")
+	if classified == nil {
+		return false, ""
+	}
+
+	switch classified.Reason {
+	case providers.FailoverTimeout, providers.FailoverRateLimit:
+		if classified.Status > 0 {
+			return true, fmt.Sprintf("%s:%d", classified.Reason, classified.Status)
+		}
+		return true, string(classified.Reason)
+	default:
+		return false, ""
 	}
 }
 

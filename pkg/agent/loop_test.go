@@ -631,3 +631,116 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
 	}
 }
+
+// TestAgentLoop_TransientLLMErrorRetry verifies transient 5xx failures are retried
+// without triggering context compression.
+func TestAgentLoop_TransientLLMErrorRetry(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &failFirstMockProvider{
+		failures:    1,
+		failError:   fmt.Errorf("API request failed: status: 502 body: bad gateway"),
+		successResp: "Recovered from transient error",
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+	routedSessionKey := "agent:main:main"
+
+	history := []providers.Message{
+		{Role: "system", Content: "System prompt"},
+		{Role: "user", Content: "Old message 1"},
+		{Role: "assistant", Content: "Old response 1"},
+		{Role: "user", Content: "Old message 2"},
+		{Role: "assistant", Content: "Old response 2"},
+		{Role: "user", Content: "Trigger message"},
+	}
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+	for _, m := range history {
+		defaultAgent.Sessions.AddFullMessage(routedSessionKey, m)
+	}
+
+	response, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"Trigger message",
+		routedSessionKey,
+		"test",
+		"test-chat",
+	)
+	if err != nil {
+		t.Fatalf("Expected success after transient retry, got error: %v", err)
+	}
+	if response != "Recovered from transient error" {
+		t.Errorf("Expected 'Recovered from transient error', got '%s'", response)
+	}
+	if provider.currentCall != 2 {
+		t.Errorf("Expected 2 calls (1 fail + 1 success), got %d", provider.currentCall)
+	}
+
+	// Transient errors should not trigger context compression.
+	finalHistory := defaultAgent.Sessions.GetHistory(routedSessionKey)
+	if len(finalHistory) != 8 {
+		t.Errorf("Expected no compression for transient retries (len == 8), got %d", len(finalHistory))
+	}
+}
+
+// TestAgentLoop_NonRetryableLLMError_NoRetry verifies non-retryable 4xx failures
+// return immediately without additional attempts.
+func TestAgentLoop_NonRetryableLLMError_NoRetry(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &failFirstMockProvider{
+		failures:    1,
+		failError:   fmt.Errorf("API request failed: status: 400 body: invalid request"),
+		successResp: "should not be used",
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+	_, err = al.ProcessDirectWithChannel(
+		context.Background(),
+		"Trigger message",
+		"test-session-no-retry",
+		"test",
+		"test-chat",
+	)
+	if err == nil {
+		t.Fatal("Expected non-retryable 400 error, got nil")
+	}
+	if provider.currentCall != 1 {
+		t.Errorf("Expected 1 call for non-retryable error, got %d", provider.currentCall)
+	}
+}
