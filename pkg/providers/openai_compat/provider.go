@@ -317,7 +317,11 @@ func normalizeModel(model, apiBase string) string {
 		return model
 	}
 
-	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
+	lowerAPIBase := strings.ToLower(apiBase)
+	if strings.Contains(lowerAPIBase, "openrouter.ai") {
+		return model
+	}
+	if strings.Contains(lowerAPIBase, "shengsuanyun.com") {
 		return model
 	}
 

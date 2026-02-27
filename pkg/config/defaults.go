@@ -241,11 +241,11 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
-			// ShengsuanYun (神算云)
+			// ShengSuanYun (胜算云)
 			{
-				ModelName: "deepseek-v3",
-				Model:     "shengsuanyun/deepseek-v3",
-				APIBase:   "https://api.shengsuanyun.com/v1",
+				ModelName: "deepseek-v3.2-exp",
+				Model:     "shengsuanyun/deepseek/deepseek-v3.2-exp",
+				APIBase:   "https://router.shengsuanyun.com/api/v1",
 				APIKey:    "",
 			},
 
