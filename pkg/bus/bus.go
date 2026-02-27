@@ -30,6 +30,8 @@ func (mb *MessageBus) PublishInbound(msg InboundMessage) {
 	mb.inbound <- msg
 }
 
+// ConsumeInbound returns the next inbound message and whether the read succeeded.
+// The bool is false when the context is cancelled or the channel is closed.
 func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool) {
 	select {
 	case msg, ok := <-mb.inbound:
@@ -48,6 +50,8 @@ func (mb *MessageBus) PublishOutbound(msg OutboundMessage) {
 	mb.outbound <- msg
 }
 
+// SubscribeOutbound returns the next outbound message and whether the read succeeded.
+// The bool is false when the context is cancelled or the channel is closed.
 func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, bool) {
 	select {
 	case msg, ok := <-mb.outbound:
