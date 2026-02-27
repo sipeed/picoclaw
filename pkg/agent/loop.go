@@ -463,8 +463,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	}
 
 	// 9. Log response
-	responsePreview := utils.Truncate(finalContent, 120)
-	logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
+	logger.InfoCF("agent", fmt.Sprintf("Response: [%s]", finalContent),
 		map[string]any{
 			"agent_id":     agent.ID,
 			"session_key":  opts.SessionKey,
