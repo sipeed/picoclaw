@@ -1,8 +1,9 @@
 package routing
 
-import "strings"
-
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalizeAgentID_Empty(t *testing.T) {
 	if got := NormalizeAgentID(""); got != DefaultAgentID {
