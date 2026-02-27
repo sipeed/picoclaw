@@ -1,13 +1,20 @@
 package io.clawdroid.feature.chat.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -59,6 +66,8 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToBackendSettings: () -> Unit,
+    onNavigateToAppSettings: () -> Unit,
     viewModel: SettingsViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -114,7 +123,8 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 Text(
@@ -159,6 +169,26 @@ fun SettingsScreen(
                 ) {
                     Text(if (uiState.isTesting) "Speaking..." else "Test Voice")
                 }
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    "Other Settings",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = NeonCyan
+                )
+
+                NavigationCard(
+                    title = "Backend Config",
+                    subtitle = "Configure backend server settings",
+                    onClick = onNavigateToBackendSettings,
+                )
+
+                NavigationCard(
+                    title = "App Settings",
+                    subtitle = "Gateway connection settings",
+                    onClick = onNavigateToAppSettings,
+                )
             }
         }
     }
@@ -317,6 +347,41 @@ private fun SliderSetting(
                 activeTrackColor = NeonCyan,
                 inactiveTrackColor = GlassWhite
             )
+        )
+    }
+}
+
+@Composable
+private fun NavigationCard(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(GlassWhite, RoundedCornerShape(16.dp))
+            .border(0.5.dp, GlassBorder, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = TextPrimary,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+            )
+        }
+        Icon(
+            painter = painterResource(LucideR.drawable.lucide_ic_chevron_right),
+            contentDescription = "Open",
+            tint = TextSecondary,
         )
     }
 }
