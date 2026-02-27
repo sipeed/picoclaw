@@ -57,6 +57,7 @@
     "discord": {
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",
+      "proxy": "",
       "allow_from": [],
       "mention_only": false
     },

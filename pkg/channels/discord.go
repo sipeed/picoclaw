@@ -3,12 +3,15 @@ package channels
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/gorilla/websocket"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -37,6 +40,10 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
+	}
+
+	if err := applyDiscordProxy(session, cfg.Proxy); err != nil {
+		return nil, err
 	}
 
 	base := NewBaseChannel("discord", cfg, bus, cfg.AllowFrom)
@@ -357,7 +364,41 @@ func (c *DiscordChannel) stopTyping(chatID string) {
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "discord",
+		ProxyURL:     c.config.Proxy,
 	})
+}
+
+func applyDiscordProxy(session *discordgo.Session, proxyAddr string) error {
+	var proxyFunc func(*http.Request) (*url.URL, error)
+	if proxyAddr != "" {
+		proxyURL, err := url.Parse(proxyAddr)
+		if err != nil {
+			return fmt.Errorf("invalid discord proxy URL %q: %w", proxyAddr, err)
+		}
+		proxyFunc = http.ProxyURL(proxyURL)
+	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
+		proxyFunc = http.ProxyFromEnvironment
+	}
+
+	if proxyFunc == nil {
+		return nil
+	}
+
+	transport := &http.Transport{Proxy: proxyFunc}
+	session.Client = &http.Client{
+		Timeout:   20 * time.Second,
+		Transport: transport,
+	}
+
+	if session.Dialer != nil {
+		dialerCopy := *session.Dialer
+		dialerCopy.Proxy = proxyFunc
+		session.Dialer = &dialerCopy
+	} else {
+		session.Dialer = &websocket.Dialer{Proxy: proxyFunc}
+	}
+
+	return nil
 }
 
 // stripBotMention removes the bot mention from the message content.
