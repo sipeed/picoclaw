@@ -77,7 +77,9 @@ func NewGoogleChatChannel(cfg config.GoogleChatConfig, messageBus *bus.MessageBu
 		return nil, fmt.Errorf("google chat subscription_id is required")
 	}
 
-	base := NewBaseChannel("googlechat", cfg, messageBus, cfg.AllowFrom)
+	base := NewBaseChannel("googlechat", cfg, messageBus, cfg.AllowFrom,
+		WithReasoningChannelID(cfg.ReasoningChannelID),
+	)
 
 	return &GoogleChatChannel{
 		BaseChannel:   base,
@@ -134,7 +136,7 @@ func (c *GoogleChatChannel) Start(ctx context.Context) error {
 	// Start receiving messages
 	go c.receiveLoop()
 
-	c.setRunning(true)
+	c.SetRunning(true)
 	logger.InfoC("googlechat", "Google Chat channel started")
 	return nil
 }
@@ -150,7 +152,7 @@ func (c *GoogleChatChannel) Stop(ctx context.Context) error {
 		c.pubsubClient.Close()
 	}
 
-	c.setRunning(false)
+	c.SetRunning(false)
 	logger.InfoC("googlechat", "Google Chat channel stopped")
 	return nil
 }
@@ -356,6 +358,7 @@ func (c *GoogleChatChannel) handleMessage(event GoogleChatEvent) {
 
 	senderName := event.Message.Sender.Name
 	senderEmail := event.Message.Sender.Email
+	messageID := event.Message.Name
 
 	// Access Control
 	if !c.IsAllowed(senderName) && (senderEmail == "" || !c.IsAllowed(senderEmail)) {
@@ -408,7 +411,7 @@ func (c *GoogleChatChannel) handleMessage(event GoogleChatEvent) {
 		"text":    utils.Truncate(content, 50),
 	})
 
-	c.HandleMessage(senderName, chatID, content, nil, metadata)
+	c.HandleMessage(c.ctx, bus.Peer{}, messageID, senderName, chatID, content, nil, metadata)
 }
 
 func (c *GoogleChatChannel) handleAddedToSpace(event GoogleChatEvent) {

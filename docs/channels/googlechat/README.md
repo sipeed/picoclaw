@@ -12,19 +12,21 @@ The Google Chat channel allows PicoClaw to receive messages from Google Chat via
       "subscription_id": "projects/YOUR_PROJECT_ID/subscriptions/YOUR_SUBSCRIPTION_ID",
       "project_id": "YOUR_PROJECT_ID",
       "allow_from": [],
-      "debug": false
+      "debug": false,
+      "reasoning_channel_id": ""
     }
   }
 }
 ```
 
-| Field           | Type   | Required | Description                                                                 |
-| --------------- | ------ | -------- | --------------------------------------------------------------------------- |
-| enabled         | bool   | Yes      | Enable Google Chat channel                                                  |
-| subscription_id | string | Yes      | The full Pub/Sub subscription ID (e.g., `projects/.../subscriptions/...`)   |
-| project_id      | string | No       | The Google Cloud Project ID. If omitted, it will be inferred from ADC or ID |
-| allow_from      | array  | No       | List of allowed users (names or emails)                                     |
-| debug           | bool   | No       | Enable debug logging for the channel                                        |
+| Field                | Type   | Required | Description                                                                 |
+| -------------------- | ------ | -------- | --------------------------------------------------------------------------- |
+| enabled              | bool   | Yes      | Enable Google Chat channel                                                  |
+| subscription_id      | string | Yes      | The full Pub/Sub subscription ID (e.g., `projects/.../subscriptions/...`)   |
+| project_id           | string | No       | The Google Cloud Project ID. If omitted, it will be inferred from ADC or ID |
+| allow_from           | array  | No       | List of allowed users (names or emails)                                     |
+| debug                | bool   | No       | Enable debug logging for the channel                                        |
+| reasoning_channel_id | string | No       | Dedicated thread or space ID to send reasoning/thought blocks to           |
 
 ## Setup Guide
 

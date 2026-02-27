@@ -115,6 +115,51 @@ func TestBuildAgentPeerSessionKey_IdentityLink(t *testing.T) {
 	}
 }
 
+func TestResolveLinkedPeerID_CanonicalPeerID(t *testing.T) {
+	// When peerID is already in canonical "platform:id" format,
+	// it should match identity_links that use the bare ID.
+	links := map[string][]string{
+		"john": {"123"},
+	}
+	got := resolveLinkedPeerID(links, "telegram", "telegram:123")
+	if got != "john" {
+		t.Errorf("resolveLinkedPeerID with canonical peerID = %q, want %q", got, "john")
+	}
+}
+
+func TestResolveLinkedPeerID_CanonicalInLinks(t *testing.T) {
+	// When identity_links contain canonical IDs and peerID is canonical too
+	links := map[string][]string{
+		"john": {"telegram:123", "discord:456"},
+	}
+	got := resolveLinkedPeerID(links, "telegram", "telegram:123")
+	if got != "john" {
+		t.Errorf("resolveLinkedPeerID canonical in links = %q, want %q", got, "john")
+	}
+}
+
+func TestResolveLinkedPeerID_BarePeerIDMatchesCanonicalLink(t *testing.T) {
+	// When peerID is bare "123" and links have "telegram:123",
+	// the scoped candidate "telegram:123" should match.
+	links := map[string][]string{
+		"john": {"telegram:123"},
+	}
+	got := resolveLinkedPeerID(links, "telegram", "123")
+	if got != "john" {
+		t.Errorf("resolveLinkedPeerID bare peer matches canonical link = %q, want %q", got, "john")
+	}
+}
+
+func TestResolveLinkedPeerID_NoMatch(t *testing.T) {
+	links := map[string][]string{
+		"john": {"telegram:123"},
+	}
+	got := resolveLinkedPeerID(links, "discord", "999")
+	if got != "" {
+		t.Errorf("resolveLinkedPeerID no match = %q, want empty", got)
+	}
+}
+
 func TestParseAgentSessionKey_Valid(t *testing.T) {
 	parsed := ParseAgentSessionKey("agent:sales:telegram:direct:user123")
 	if parsed == nil {

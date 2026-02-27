@@ -145,39 +145,43 @@ Bạn cũng có thể chạy PicoClaw bằng Docker Compose mà không cần cà
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Thiết lập API Key
-cp config/config.example.json config/config.json
-vim config/config.json      # Thiết lập DISCORD_BOT_TOKEN, API keys, v.v.
+# 2. Lần chạy đầu tiên — tự tạo docker/data/config.json rồi dừng lại
+docker compose -f docker/docker-compose.yml --profile gateway up
+# Container hiển thị "First-run setup complete." rồi tự dừng.
 
-# 3. Build & Khởi động
-docker compose --profile gateway up -d
+# 3. Thiết lập API Key
+vim docker/data/config.json   # API key của provider, bot token, v.v.
+
+# 4. Khởi động
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Người dùng Docker**: Theo mặc định, Gateway lắng nghe trên `127.0.0.1`, không thể truy cập từ máy chủ. Nếu bạn cần truy cập các endpoint kiểm tra sức khỏe hoặc mở cổng, hãy đặt `PICOCLAW_GATEWAY_HOST=0.0.0.0` trong môi trường của bạn hoặc cập nhật `config.json`.
 
+```bash
+# 5. Xem logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. Xem logs
-docker compose logs -f picoclaw-gateway
-
-# 5. Dừng
-docker compose --profile gateway down
+# 6. Dừng
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Chế độ Agent (chạy một lần)
 
 ```bash
 # Đặt câu hỏi
-docker compose run --rm picoclaw-agent -m "2+2 bằng mấy?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "2+2 bằng mấy?"
 
 # Chế độ tương tác
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Build lại
+### Cập nhật
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Bắt đầu nhanh
