@@ -3,6 +3,7 @@ package auth
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -51,10 +52,9 @@ func TestAuthCredentialNeedsRefresh(t *testing.T) {
 }
 
 func TestStoreRoundtrip(t *testing.T) {
+	ResetSecureStore()
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
 
 	cred := &AuthCredential{
 		AccessToken:  "test-access-token",
@@ -88,10 +88,14 @@ func TestStoreRoundtrip(t *testing.T) {
 }
 
 func TestStoreFilePermissions(t *testing.T) {
+	ResetSecureStore()
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+
+	// Skip on Windows as file permissions work differently
+	if runtime.GOOS == "windows" {
+		t.Skip("file permissions test not applicable on Windows")
+	}
 
 	cred := &AuthCredential{
 		AccessToken: "secret-token",
@@ -114,10 +118,9 @@ func TestStoreFilePermissions(t *testing.T) {
 }
 
 func TestStoreMultiProvider(t *testing.T) {
+	ResetSecureStore()
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
 
 	openaiCred := &AuthCredential{AccessToken: "openai-token", Provider: "openai", AuthMethod: "oauth"}
 	anthropicCred := &AuthCredential{AccessToken: "anthropic-token", Provider: "anthropic", AuthMethod: "token"}
@@ -147,10 +150,9 @@ func TestStoreMultiProvider(t *testing.T) {
 }
 
 func TestDeleteCredential(t *testing.T) {
+	ResetSecureStore()
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
 
 	cred := &AuthCredential{AccessToken: "to-delete", Provider: "openai", AuthMethod: "oauth"}
 	if err := SetCredential("openai", cred); err != nil {
@@ -171,10 +173,13 @@ func TestDeleteCredential(t *testing.T) {
 }
 
 func TestLoadStoreEmpty(t *testing.T) {
+	ResetSecureStore()
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+
+	// Ensure the auth file doesn't exist
+	authPath := filepath.Join(tmpDir, ".picoclaw", "auth.json")
+	_ = os.Remove(authPath)
 
 	store, err := LoadStore()
 	if err != nil {
