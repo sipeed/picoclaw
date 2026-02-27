@@ -64,6 +64,24 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
 		},
+		{
+			name:         "cloudflare openai upstream",
+			model:        "cloudflare/openai/gpt-5.2",
+			wantProtocol: "cloudflare",
+			wantModelID:  "openai/gpt-5.2",
+		},
+		{
+			name:         "cloudflare anthropic upstream",
+			model:        "cloudflare/anthropic/claude-sonnet-4.6",
+			wantProtocol: "cloudflare",
+			wantModelID:  "anthropic/claude-sonnet-4.6",
+		},
+		{
+			name:         "cloudflare workers-ai deep path",
+			model:        "cloudflare/workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+			wantProtocol: "cloudflare",
+			wantModelID:  "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+		},
 	}
 
 	for _, tt := range tests {
@@ -217,6 +235,106 @@ func TestCreateProviderFromConfig_MissingAPIKey(t *testing.T) {
 	_, _, err := CreateProviderFromConfig(cfg)
 	if err == nil {
 		t.Fatal("CreateProviderFromConfig() expected error for missing API key")
+	}
+}
+
+func TestCreateProviderFromConfig_Cloudflare_UnifiedBilling(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "cf-gpt5",
+		Model:     "cloudflare/openai/gpt-5.2",
+		CfToken:   "cf-test-token",
+		APIBase:   "https://gateway.ai.cloudflare.com/v1/acct/gw/compat",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if _, ok := provider.(*CloudflareProvider); !ok {
+		t.Fatalf("expected *CloudflareProvider, got %T", provider)
+	}
+	// modelID should be everything after "cloudflare/"
+	if modelID != "openai/gpt-5.2" {
+		t.Errorf("modelID = %q, want %q", modelID, "openai/gpt-5.2")
+	}
+}
+
+func TestCreateProviderFromConfig_Cloudflare_BYOK(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "cf-claude",
+		Model:     "cloudflare/anthropic/claude-sonnet-4.6",
+		APIKey:    "sk-ant-key",
+		CfToken:   "cf-test-token",
+		APIBase:   "https://gateway.ai.cloudflare.com/v1/acct/gw/compat",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if _, ok := provider.(*CloudflareProvider); !ok {
+		t.Fatalf("expected *CloudflareProvider, got %T", provider)
+	}
+	if modelID != "anthropic/claude-sonnet-4.6" {
+		t.Errorf("modelID = %q, want %q", modelID, "anthropic/claude-sonnet-4.6")
+	}
+}
+
+func TestCreateProviderFromConfig_Cloudflare_WorkersAI(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "cf-gpt-oss-120b",
+		Model:     "cloudflare/workers-ai/@cf/openai/gpt-oss-120b",
+		CfToken:   "cf-test-token",
+		APIBase:   "https://gateway.ai.cloudflare.com/v1/acct/gw/compat",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if modelID != "workers-ai/@cf/openai/gpt-oss-120b" {
+		t.Errorf("modelID = %q, want %q", modelID, "workers-ai/@cf/openai/gpt-oss-120b")
+	}
+}
+
+func TestCreateProviderFromConfig_Cloudflare_MissingAPIBase(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "cf-no-base",
+		Model:     "cloudflare/openai/gpt-5.2",
+		CfToken:   "cf-test-token",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error for missing api_base")
+	}
+	if !strings.Contains(err.Error(), "api_base is required") {
+		t.Errorf("error = %q, expected to contain 'api_base is required'", err.Error())
+	}
+}
+
+func TestCreateProviderFromConfig_Cloudflare_MissingAuth(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "cf-no-auth",
+		Model:     "cloudflare/openai/gpt-5.2",
+		APIBase:   "https://gateway.ai.cloudflare.com/v1/acct/gw/compat",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error for missing cf_token and api_key")
+	}
+	if !strings.Contains(err.Error(), "cf_token or api_key is required") {
+		t.Errorf("error = %q, expected to contain 'cf_token or api_key is required'", err.Error())
 	}
 }
 

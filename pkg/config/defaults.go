@@ -270,6 +270,18 @@ func DefaultConfig() *Config {
 				APIBase:   "http://localhost:8000/v1",
 				APIKey:    "",
 			},
+
+			// Cloudflare AI Gateway - https://developers.cloudflare.com/ai-gateway/
+			// Supports Unified Billing (cf_token only) or BYOK (add api_key).
+			// Model format: cloudflare/{provider}/{model}
+			// e.g., cloudflare/openai/gpt-5.2, cloudflare/anthropic/claude-sonnet-4.6
+			//       cloudflare/workers-ai/@cf/openai/gpt-oss-120b
+			{
+				ModelName: "cf-gpt-oss-120b",
+				Model:     "cloudflare/workers-ai/@cf/openai/gpt-oss-120b",
+				APIBase:   "https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat",
+				CfToken:   "",
+			},
 		},
 		Gateway: GatewayConfig{
 			Host: "127.0.0.1",
