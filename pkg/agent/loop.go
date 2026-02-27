@@ -516,9 +516,9 @@ func (al *AgentLoop) runLLMIteration(
 		var response *providers.LLMResponse
 		var err error
 
-		callLLM := func() (*providers.LLMResponse, error) {
+		callLLMOnce := func(callCtx context.Context) (*providers.LLMResponse, error) {
 			if len(agent.Candidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
+				fbResult, fbErr := al.fallback.Execute(callCtx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
 							"max_tokens":       agent.MaxTokens,
@@ -537,28 +537,45 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
+			return agent.Provider.Chat(callCtx, messages, providerToolDefs, agent.Model, map[string]any{
 				"max_tokens":       agent.MaxTokens,
 				"temperature":      agent.Temperature,
 				"prompt_cache_key": agent.ID,
 			})
 		}
 
-		// Retry loop for context/token errors
+		retryPolicy := utils.DefaultLLMRetryPolicy()
+		retryPolicy.Notify = func(notice utils.RetryNotice) {
+			logger.WarnCF("agent", "Transient LLM error detected, retrying", map[string]any{
+				"attempt":     notice.Attempt,
+				"total":       notice.Total,
+				"reason":      notice.Decision.Reason,
+				"status":      notice.Decision.Status,
+				"retry_after": notice.Decision.RetryAfter.String(),
+				"backoff":     notice.Delay.String(),
+			})
+
+			// User-facing notice only on first retry to avoid spam.
+			if notice.Attempt != 1 || constants.IsInternalChannel(opts.Channel) {
+				return
+			}
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel: opts.Channel,
+				ChatID:  opts.ChatID,
+				Content: utils.FormatLLMRetryNotice(notice),
+			})
+		}
+
+		// Outer retry loop for context-window compression.
+		// Transient/network retries are handled inside DoWithRetry.
 		maxRetries := 2
 		for retry := 0; retry <= maxRetries; retry++ {
-			response, err = callLLM()
+			response, err = utils.DoWithRetry(ctx, retryPolicy, callLLMOnce)
 			if err == nil {
 				break
 			}
 
-			errMsg := strings.ToLower(err.Error())
-			isContextError := strings.Contains(errMsg, "token") ||
-				strings.Contains(errMsg, "context") ||
-				strings.Contains(errMsg, "invalidparameter") ||
-				strings.Contains(errMsg, "length")
-
-			if isContextError && retry < maxRetries {
+			if retry < maxRetries && isContextWindowError(err) {
 				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]any{
 					"error": err.Error(),
 					"retry": retry,
@@ -764,6 +781,40 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 			}()
 		}
 	}
+}
+
+func isContextWindowError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	contextPatterns := []string{
+		"context window",
+		"context length",
+		"maximum context length",
+		"max context length",
+		"too many tokens",
+		"max message tokens",
+		"token limit",
+		"prompt is too long",
+		"exceed max message tokens",
+	}
+	for _, pattern := range contextPatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
+	}
+
+	// Provider-specific "invalid parameter" style errors frequently include token/length hints.
+	if strings.Contains(errMsg, "invalidparameter") &&
+		(strings.Contains(errMsg, "token") ||
+			strings.Contains(errMsg, "length") ||
+			strings.Contains(errMsg, "context")) {
+		return true
+	}
+
+	return false
 }
 
 // forceCompression aggressively reduces context when the limit is hit.

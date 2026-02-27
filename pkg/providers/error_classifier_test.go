@@ -139,6 +139,8 @@ func TestClassifyError_TimeoutPatterns(t *testing.T) {
 		"connection timed out",
 		"deadline exceeded",
 		"context deadline exceeded",
+		"connection reset by peer",
+		"tls handshake timeout",
 	}
 
 	for _, msg := range patterns {

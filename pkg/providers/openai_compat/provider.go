@@ -188,6 +188,14 @@ func (p *Provider) Chat(
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After")); retryAfter != "" {
+			return nil, fmt.Errorf(
+				"API request failed:\n  Status: %d\n  Retry-After: %s\n  Body:   %s",
+				resp.StatusCode,
+				retryAfter,
+				string(body),
+			)
+		}
 		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
 
