@@ -93,3 +93,56 @@ func TestNewAgentInstance_DefaultsTemperatureWhenUnset(t *testing.T) {
 		t.Fatalf("Temperature = %f, want %f", agent.Temperature, 0.7)
 	}
 }
+
+func TestNewAgentInstance_UsesConfiguredContextWindow(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         1234,
+				MaxToolIterations: 5,
+				ContextWindow:     64000,
+			},
+		},
+	}
+
+	provider := &mockProvider{}
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+
+	if agent.ContextWindow != 64000 {
+		t.Fatalf("ContextWindow = %d, want %d", agent.ContextWindow, 64000)
+	}
+}
+
+func TestNewAgentInstance_DefaultsContextWindowWhenZero(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         1234,
+				MaxToolIterations: 5,
+			},
+		},
+	}
+
+	provider := &mockProvider{}
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+
+	if agent.ContextWindow != 128000 {
+		t.Fatalf("ContextWindow = %d, want %d", agent.ContextWindow, 128000)
+	}
+}
