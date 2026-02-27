@@ -201,7 +201,8 @@ type ChannelsConfig struct {
 	LINE     LINEConfig     `json:"line"`
 	OneBot   OneBotConfig   `json:"onebot"`
 	WeCom    WeComConfig    `json:"wecom"`
-	WeComApp WeComAppConfig `json:"wecom_app"`
+	WeComApp   WeComAppConfig   `json:"wecom_app"`
+	GoogleChat GoogleChatConfig `json:"googlechat"`
 }
 
 type WhatsAppConfig struct {
@@ -304,6 +305,14 @@ type WeComAppConfig struct {
 	WebhookPath    string              `json:"webhook_path"     env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
 	AllowFrom      FlexibleStringSlice `json:"allow_from"       env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
 	ReplyTimeout   int                 `json:"reply_timeout"    env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
+}
+
+type GoogleChatConfig struct {
+	Enabled        bool                `json:"enabled"         env:"PICOCLAW_CHANNELS_GOOGLECHAT_ENABLED"`
+	SubscriptionID string              `json:"subscription_id" env:"PICOCLAW_CHANNELS_GOOGLECHAT_SUBSCRIPTION_ID"`
+	ProjectID      string              `json:"project_id"      env:"PICOCLAW_CHANNELS_GOOGLECHAT_PROJECT_ID"`
+	AllowFrom      FlexibleStringSlice `json:"allow_from"      env:"PICOCLAW_CHANNELS_GOOGLECHAT_ALLOW_FROM"`
+	Debug          bool                `json:"debug"           env:"PICOCLAW_CHANNELS_GOOGLECHAT_DEBUG"`
 }
 
 type HeartbeatConfig struct {
