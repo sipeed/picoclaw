@@ -84,7 +84,7 @@ Your workspace is at: %s
    - If I tell you about my preferences, update %s/USER.md
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
-		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
+		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
