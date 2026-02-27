@@ -30,14 +30,47 @@ import (
 )
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	cfg            *config.Config
-	registry       *AgentRegistry
-	state          *state.Manager
-	running        atomic.Bool
-	summarizing    sync.Map
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
+	bus             *bus.MessageBus
+	cfg             *config.Config
+	registry        *AgentRegistry
+	state           *state.Manager
+	running         atomic.Bool
+	summarizing     sync.Map
+	fallback        *providers.FallbackChain
+	channelManager  *channels.Manager
+	sessionOverride *sessionOverrideStore
+}
+
+type sessionOverrideStore struct {
+	mu        sync.RWMutex
+	overrides map[string]string
+}
+
+func newSessionOverrideStore() *sessionOverrideStore {
+	return &sessionOverrideStore{overrides: make(map[string]string)}
+}
+
+func (s *sessionOverrideStore) Get(key string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.overrides[key]
+	return value, ok
+}
+
+func (s *sessionOverrideStore) Set(key, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.overrides[key] = value
+}
+
+func (s *sessionOverrideStore) Delete(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.overrides, key)
+}
+
+func buildSessionOverrideKey(channel, chatID, agentID string) string {
+	return channel + ":" + chatID + ":" + agentID
 }
 
 // processOptions configures how a message is processed
@@ -70,12 +103,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 
 	return &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		summarizing: sync.Map{},
-		fallback:    fallbackChain,
+		bus:             msgBus,
+		cfg:             cfg,
+		registry:        registry,
+		state:           stateManager,
+		summarizing:     sync.Map{},
+		fallback:        fallbackChain,
+		sessionOverride: newSessionOverrideStore(),
 	}
 }
 
@@ -314,6 +348,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		sessionKey = msg.SessionKey
 	}
 
+	if override, ok := al.sessionOverride.Get(buildSessionOverrideKey(msg.Channel, msg.ChatID, agent.ID)); ok {
+		sessionKey = override
+	}
+
 	logger.InfoCF("agent", "Routed message",
 		map[string]any{
 			"agent_id":    agent.ID,
@@ -386,6 +424,138 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		EnableSummary:   false,
 		SendResponse:    true,
 	})
+}
+
+func (al *AgentLoop) startNewSessionForMessage(msg bus.InboundMessage) (string, error) {
+	if constants.IsInternalChannel(msg.Channel) {
+		return "", fmt.Errorf("new session commands are not supported in internal channels")
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel:    msg.Channel,
+		AccountID:  msg.Metadata["account_id"],
+		Peer:       extractPeer(msg),
+		ParentPeer: extractParentPeer(msg),
+		GuildID:    msg.Metadata["guild_id"],
+		TeamID:     msg.Metadata["team_id"],
+	})
+
+	agent, ok := al.registry.GetAgent(route.AgentID)
+	if !ok {
+		agent = al.registry.GetDefaultAgent()
+	}
+	if agent == nil {
+		return "", fmt.Errorf("no agent available for new session")
+	}
+
+	sessionKey := route.SessionKey
+	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
+		sessionKey = msg.SessionKey
+	}
+
+	if sessionKey != "" {
+		if err := agent.Sessions.Save(sessionKey); err != nil {
+			return "", err
+		}
+	}
+
+	newSessionKey := fmt.Sprintf("agent:%s:new:%d", agent.ID, time.Now().UnixNano())
+	agent.Sessions.GetOrCreate(newSessionKey)
+	overrideKey := buildSessionOverrideKey(msg.Channel, msg.ChatID, agent.ID)
+	al.sessionOverride.Set(overrideKey, newSessionKey)
+
+	// Clean up the old session file from disk to prevent unbounded accumulation.
+	if sessionKey != "" {
+		if err := agent.Sessions.Delete(sessionKey); err != nil {
+			logger.WarnCF("agent", "Failed to delete old session file", map[string]any{
+				"session_key": sessionKey,
+				"error":       err.Error(),
+			})
+		}
+	}
+
+	return formatNewSessionResponse(al.cfg, agent), nil
+}
+
+// clearSessionForMessage clears the current session history and summary in-place,
+// keeping the same session key. Unlike startNewSessionForMessage, this does not
+// create a new session key or set an override.
+func (al *AgentLoop) clearSessionForMessage(msg bus.InboundMessage) (string, error) {
+	if constants.IsInternalChannel(msg.Channel) {
+		return "", fmt.Errorf("clear command is not supported in internal channels")
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel:    msg.Channel,
+		AccountID:  msg.Metadata["account_id"],
+		Peer:       extractPeer(msg),
+		ParentPeer: extractParentPeer(msg),
+		GuildID:    msg.Metadata["guild_id"],
+		TeamID:     msg.Metadata["team_id"],
+	})
+
+	agent, ok := al.registry.GetAgent(route.AgentID)
+	if !ok {
+		agent = al.registry.GetDefaultAgent()
+	}
+	if agent == nil {
+		return "", fmt.Errorf("no agent available to clear session")
+	}
+
+	// Resolve the active session key, honoring any existing override.
+	sessionKey := route.SessionKey
+	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
+		sessionKey = msg.SessionKey
+	}
+	if override, ok := al.sessionOverride.Get(buildSessionOverrideKey(msg.Channel, msg.ChatID, agent.ID)); ok {
+		sessionKey = override
+	}
+
+	if sessionKey == "" {
+		return "", fmt.Errorf("no active session to clear")
+	}
+
+	agent.Sessions.ClearSession(sessionKey)
+
+	if err := agent.Sessions.Save(sessionKey); err != nil {
+		return "", err
+	}
+
+	return "Conversation history cleared.", nil
+}
+
+func formatNewSessionResponse(cfg *config.Config, agent *AgentInstance) string {
+	provider, model := resolveAgentModelDisplay(cfg, agent)
+	if model == "" {
+		return "Starting a new conversation..."
+	}
+	if provider == "" {
+		return fmt.Sprintf("Starting a new conversation... (model: %s)", model)
+	}
+	return fmt.Sprintf("Starting a new conversation... (provider: %s, model: %s)", provider, model)
+}
+
+func resolveAgentModelDisplay(cfg *config.Config, agent *AgentInstance) (string, string) {
+	if agent == nil {
+		return "", ""
+	}
+	modelName := strings.TrimSpace(agent.Model)
+	if modelName == "" {
+		return "", ""
+	}
+	if cfg != nil {
+		if modelCfg, err := cfg.GetModelConfig(modelName); err == nil && modelCfg != nil {
+			if ref := providers.ParseModelRef(modelCfg.Model, ""); ref != nil {
+				return ref.Provider, ref.Model
+			}
+			return "", strings.TrimSpace(modelCfg.Model)
+		}
+	}
+	ref := providers.ParseModelRef(modelName, "")
+	if ref == nil {
+		return "", modelName
+	}
+	return ref.Provider, ref.Model
 }
 
 // runAgentLoop is the core message processing logic.
@@ -1044,6 +1214,28 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	args := parts[1:]
 
 	switch cmd {
+	case "/new":
+		if len(args) > 0 {
+			return "Usage: /new", true
+		}
+		response, err := al.startNewSessionForMessage(msg)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to start new session", map[string]any{"error": err.Error()})
+			return "Sorry, I couldn't start a new session. Please try again.", true
+		}
+		return response, true
+
+	case "/clear":
+		if len(args) > 0 {
+			return "Usage: /clear", true
+		}
+		response, err := al.clearSessionForMessage(msg)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to clear session", map[string]any{"error": err.Error()})
+			return "Sorry, I couldn't clear the conversation. Please try again.", true
+		}
+		return response, true
+
 	case "/show":
 		if len(args) < 1 {
 			return "Usage: /show [model|channel|agents]", true
