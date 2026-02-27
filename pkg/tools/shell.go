@@ -143,7 +143,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
 		if t.restrictToWorkspace && t.workingDir != "" {
-			resolvedWD, err := validatePath(wd, t.workingDir, true)
+			resolvedWD, err := ValidatePath(wd, t.workingDir, true)
 			if err != nil {
 				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
 			}
@@ -289,9 +289,16 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		}
 
 		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		matchIndices := pathPattern.FindAllStringIndex(cmd, -1)
 
-		for _, raw := range matches {
+		for _, loc := range matchIndices {
+			raw := cmd[loc[0]:loc[1]]
+			// Skip relative paths like ./executable — the regex extracts
+			// "/executable" from "./executable" but it's not an absolute path.
+			if loc[0] > 0 && cmd[loc[0]-1] == '.' {
+				continue
+			}
+
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue

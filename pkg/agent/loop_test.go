@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -629,5 +630,75 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+// TestHandleCdCommand_TraversalBlocked verifies that cd ../../.. cannot escape workspace.
+func TestHandleCdCommand_TraversalBlocked(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				Model:     "test-model",
+				MaxTokens: 4096,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+
+	// Set working dir to a subdir inside workspace
+	subdir := filepath.Join(workspace, "a", "b")
+	os.MkdirAll(subdir, 0o755)
+	al.setSessionWorkDir("test", subdir)
+
+	// Try to escape via ../../../..
+	result := al.handleCdCommand("cd ../../../..", "test", agent)
+	workDir := al.getSessionWorkDir("test")
+
+	if !strings.HasPrefix(workDir, workspace) {
+		t.Errorf("cd traversal escaped workspace: workDir=%s, workspace=%s", workDir, workspace)
+	}
+	// Should land in workspace, not outside
+	if workDir != workspace {
+		t.Errorf("Expected workDir=%s, got %s", workspace, workDir)
+	}
+	_ = result
+}
+
+// TestHandleExtensionCommand_EmojiPassthrough verifies that emoji-like
+// messages starting with : are not intercepted as commands.
+func TestHandleExtensionCommand_EmojiPassthrough(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: t.TempDir(),
+				Model:     "test-model",
+				MaxTokens: 4096,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	emojiInputs := []string{":)", ":D", ":heart:", ":thinking:", ":-)", ":100:"}
+	for _, input := range emojiInputs {
+		_, handled := al.handleExtensionCommand(input)
+		if handled {
+			t.Errorf("Expected %q to pass through (not handled), but it was handled", input)
+		}
+	}
+
+	// Known commands should still be handled
+	knownCommands := []string{":help", ":usage"}
+	for _, cmd := range knownCommands {
+		_, handled := al.handleExtensionCommand(cmd)
+		if !handled {
+			t.Errorf("Expected %q to be handled, but it was not", cmd)
+		}
 	}
 }

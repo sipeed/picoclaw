@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -31,6 +32,21 @@ type AgentInstance struct {
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
 	Candidates     []providers.FallbackCandidate
+
+	// Accumulated token usage counters (atomic for concurrent safety)
+	TotalPromptTokens     atomic.Int64
+	TotalCompletionTokens atomic.Int64
+	TotalRequests         atomic.Int64
+}
+
+// AddUsage accumulates token usage from a single LLM response.
+func (a *AgentInstance) AddUsage(usage *providers.UsageInfo) {
+	if usage == nil {
+		return
+	}
+	a.TotalPromptTokens.Add(int64(usage.PromptTokens))
+	a.TotalCompletionTokens.Add(int64(usage.CompletionTokens))
+	a.TotalRequests.Add(1)
 }
 
 // NewAgentInstance creates an agent instance from config.
