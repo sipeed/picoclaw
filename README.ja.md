@@ -510,7 +510,6 @@ clawdroid/
 │   ├── core/                 # 共有コア (data, domain, model, ui)
 │   └── feature/              # 機能モジュール (chat, settings)
 ├── workspace/                # テンプレートファイル (IDENTITY.md, SOUL.md 等)
-├── config/                   # config.example.json
 ├── Makefile
 ├── go.mod
 └── .goreleaser.yaml

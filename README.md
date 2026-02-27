@@ -512,7 +512,6 @@ clawdroid/
 │   ├── core/                 # Shared core (data, domain, model, ui)
 │   └── feature/              # Feature modules (chat, settings)
 ├── workspace/                # Template files (IDENTITY.md, SOUL.md, etc.)
-├── config/                   # config.example.json
 ├── Makefile
 ├── go.mod
 └── .goreleaser.yaml

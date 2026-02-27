@@ -28,12 +28,6 @@ type SchemaResponse struct {
 	Sections []SchemaSection `json:"sections"`
 }
 
-// acronyms maps lowercase abbreviations to their uppercase forms for label generation.
-var acronyms = map[string]string{
-	"api": "API", "llm": "LLM", "url": "URL", "ws": "WS",
-	"id": "ID", "mcp": "MCP",
-}
-
 // secretKeys lists JSON keys that contain sensitive values.
 var secretKeys = map[string]bool{
 	"api_key":              true,
@@ -72,7 +66,7 @@ func BuildSchema(defaultCfg *config.Config) SchemaResponse {
 
 		section := SchemaSection{
 			Key:   jsonTag,
-			Label: snakeToTitle(jsonTag),
+			Label: labelTag(field),
 		}
 
 		fieldVal := cfgVal.Field(i)
@@ -145,7 +139,7 @@ func buildFields(t reflect.Type, v reflect.Value, prefix string) []SchemaField {
 
 		fields = append(fields, SchemaField{
 			Key:     fullKey,
-			Label:   snakeToTitle(jk),
+			Label:   labelTag(sf),
 			Type:    schemaType,
 			Secret:  secretKeys[jk],
 			Default: defVal,
@@ -195,15 +189,7 @@ func jsonKey(f reflect.StructField) string {
 	return parts[0]
 }
 
-// snakeToTitle converts a snake_case string to Title Case, applying acronym rules.
-func snakeToTitle(s string) string {
-	parts := strings.Split(s, "_")
-	for i, p := range parts {
-		if upper, ok := acronyms[strings.ToLower(p)]; ok {
-			parts[i] = upper
-		} else if len(p) > 0 {
-			parts[i] = strings.ToUpper(p[:1]) + p[1:]
-		}
-	}
-	return strings.Join(parts, " ")
+// labelTag reads the "label" struct tag from a field.
+func labelTag(f reflect.StructField) string {
+	return f.Tag.Get("label")
 }

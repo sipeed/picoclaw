@@ -44,123 +44,123 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 }
 
 type LLMConfig struct {
-	Model   string `json:"model" env:"CLAWDROID_LLM_MODEL"`
-	APIKey  string `json:"api_key" env:"CLAWDROID_LLM_API_KEY"`
-	BaseURL string `json:"base_url" env:"CLAWDROID_LLM_BASE_URL"`
+	Model   string `json:"model" label:"Model" env:"CLAWDROID_LLM_MODEL"`
+	APIKey  string `json:"api_key" label:"API Key" env:"CLAWDROID_LLM_API_KEY"`
+	BaseURL string `json:"base_url" label:"Base URL" env:"CLAWDROID_LLM_BASE_URL"`
 }
 
 type Config struct {
-	LLM        LLMConfig        `json:"llm"`
-	Agents     AgentsConfig     `json:"agents"`
-	Channels   ChannelsConfig   `json:"channels"`
-	Gateway    GatewayConfig    `json:"gateway"`
-	Tools      ToolsConfig      `json:"tools"`
-	Heartbeat  HeartbeatConfig  `json:"heartbeat"`
-	RateLimits RateLimitsConfig `json:"rate_limits"`
+	LLM        LLMConfig        `json:"llm" label:"LLM"`
+	Agents     AgentsConfig     `json:"agents" label:"Agent Defaults"`
+	Channels   ChannelsConfig   `json:"channels" label:"Messaging Channels"`
+	Gateway    GatewayConfig    `json:"gateway" label:"Gateway"`
+	Tools      ToolsConfig      `json:"tools" label:"Tool Settings"`
+	Heartbeat  HeartbeatConfig  `json:"heartbeat" label:"Heartbeat"`
+	RateLimits RateLimitsConfig `json:"rate_limits" label:"Rate Limits"`
 	mu         sync.RWMutex
 }
 
 type AgentsConfig struct {
-	Defaults AgentDefaults `json:"defaults"`
+	Defaults AgentDefaults `json:"defaults" label:"Defaults"`
 }
 
 type AgentDefaults struct {
-	Workspace           string  `json:"workspace" env:"CLAWDROID_AGENTS_DEFAULTS_WORKSPACE"`
-	DataDir             string  `json:"data_dir" env:"CLAWDROID_AGENTS_DEFAULTS_DATA_DIR"`
-	RestrictToWorkspace bool    `json:"restrict_to_workspace" env:"CLAWDROID_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	MaxTokens           int     `json:"max_tokens" env:"CLAWDROID_AGENTS_DEFAULTS_MAX_TOKENS"`
-	ContextWindow       int     `json:"context_window" env:"CLAWDROID_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
-	Temperature         float64 `json:"temperature" env:"CLAWDROID_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int     `json:"max_tool_iterations" env:"CLAWDROID_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace           string  `json:"workspace" label:"Workspace" env:"CLAWDROID_AGENTS_DEFAULTS_WORKSPACE"`
+	DataDir             string  `json:"data_dir" label:"Data Directory" env:"CLAWDROID_AGENTS_DEFAULTS_DATA_DIR"`
+	RestrictToWorkspace bool    `json:"restrict_to_workspace" label:"Restrict to Workspace" env:"CLAWDROID_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	MaxTokens           int     `json:"max_tokens" label:"Max Tokens" env:"CLAWDROID_AGENTS_DEFAULTS_MAX_TOKENS"`
+	ContextWindow       int     `json:"context_window" label:"Context Window" env:"CLAWDROID_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
+	Temperature         float64 `json:"temperature" label:"Temperature" env:"CLAWDROID_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int     `json:"max_tool_iterations" label:"Max Tool Iterations" env:"CLAWDROID_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
 type ChannelsConfig struct {
-	WhatsApp  WhatsAppConfig  `json:"whatsapp"`
-	Telegram  TelegramConfig  `json:"telegram"`
-	Discord   DiscordConfig   `json:"discord"`
-	Slack     SlackConfig     `json:"slack"`
-	LINE      LINEConfig      `json:"line"`
-	WebSocket WebSocketConfig `json:"websocket"`
+	WhatsApp  WhatsAppConfig  `json:"whatsapp" label:"WhatsApp"`
+	Telegram  TelegramConfig  `json:"telegram" label:"Telegram"`
+	Discord   DiscordConfig   `json:"discord" label:"Discord"`
+	Slack     SlackConfig     `json:"slack" label:"Slack"`
+	LINE      LINEConfig      `json:"line" label:"LINE"`
+	WebSocket WebSocketConfig `json:"websocket" label:"WebSocket"`
 }
 
 type WhatsAppConfig struct {
-	Enabled   bool                `json:"enabled" env:"CLAWDROID_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL string              `json:"bridge_url" env:"CLAWDROID_CHANNELS_WHATSAPP_BRIDGE_URL"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" label:"Enabled" env:"CLAWDROID_CHANNELS_WHATSAPP_ENABLED"`
+	BridgeURL string              `json:"bridge_url" label:"Bridge URL" env:"CLAWDROID_CHANNELS_WHATSAPP_BRIDGE_URL"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" label:"Allow From" env:"CLAWDROID_CHANNELS_WHATSAPP_ALLOW_FROM"`
 }
 
 type TelegramConfig struct {
-	Enabled   bool                `json:"enabled" env:"CLAWDROID_CHANNELS_TELEGRAM_ENABLED"`
-	Token     string              `json:"token" env:"CLAWDROID_CHANNELS_TELEGRAM_TOKEN"`
-	Proxy     string              `json:"proxy" env:"CLAWDROID_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" label:"Enabled" env:"CLAWDROID_CHANNELS_TELEGRAM_ENABLED"`
+	Token     string              `json:"token" label:"Token" env:"CLAWDROID_CHANNELS_TELEGRAM_TOKEN"`
+	Proxy     string              `json:"proxy" label:"Proxy" env:"CLAWDROID_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" label:"Allow From" env:"CLAWDROID_CHANNELS_TELEGRAM_ALLOW_FROM"`
 }
 
 type DiscordConfig struct {
-	Enabled   bool                `json:"enabled" env:"CLAWDROID_CHANNELS_DISCORD_ENABLED"`
-	Token     string              `json:"token" env:"CLAWDROID_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_DISCORD_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" label:"Enabled" env:"CLAWDROID_CHANNELS_DISCORD_ENABLED"`
+	Token     string              `json:"token" label:"Token" env:"CLAWDROID_CHANNELS_DISCORD_TOKEN"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" label:"Allow From" env:"CLAWDROID_CHANNELS_DISCORD_ALLOW_FROM"`
 }
 
 type SlackConfig struct {
-	Enabled   bool                `json:"enabled" env:"CLAWDROID_CHANNELS_SLACK_ENABLED"`
-	BotToken  string              `json:"bot_token" env:"CLAWDROID_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken  string              `json:"app_token" env:"CLAWDROID_CHANNELS_SLACK_APP_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_SLACK_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" label:"Enabled" env:"CLAWDROID_CHANNELS_SLACK_ENABLED"`
+	BotToken  string              `json:"bot_token" label:"Bot Token" env:"CLAWDROID_CHANNELS_SLACK_BOT_TOKEN"`
+	AppToken  string              `json:"app_token" label:"App Token" env:"CLAWDROID_CHANNELS_SLACK_APP_TOKEN"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" label:"Allow From" env:"CLAWDROID_CHANNELS_SLACK_ALLOW_FROM"`
 }
 
 type LINEConfig struct {
-	Enabled            bool                `json:"enabled" env:"CLAWDROID_CHANNELS_LINE_ENABLED"`
-	ChannelSecret      string              `json:"channel_secret" env:"CLAWDROID_CHANNELS_LINE_CHANNEL_SECRET"`
-	ChannelAccessToken string              `json:"channel_access_token" env:"CLAWDROID_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
-	WebhookHost        string              `json:"webhook_host" env:"CLAWDROID_CHANNELS_LINE_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port" env:"CLAWDROID_CHANNELS_LINE_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path" env:"CLAWDROID_CHANNELS_LINE_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_LINE_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled" label:"Enabled" env:"CLAWDROID_CHANNELS_LINE_ENABLED"`
+	ChannelSecret      string              `json:"channel_secret" label:"Channel Secret" env:"CLAWDROID_CHANNELS_LINE_CHANNEL_SECRET"`
+	ChannelAccessToken string              `json:"channel_access_token" label:"Channel Access Token" env:"CLAWDROID_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
+	WebhookHost        string              `json:"webhook_host" label:"Webhook Host" env:"CLAWDROID_CHANNELS_LINE_WEBHOOK_HOST"`
+	WebhookPort        int                 `json:"webhook_port" label:"Webhook Port" env:"CLAWDROID_CHANNELS_LINE_WEBHOOK_PORT"`
+	WebhookPath        string              `json:"webhook_path" label:"Webhook Path" env:"CLAWDROID_CHANNELS_LINE_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from" label:"Allow From" env:"CLAWDROID_CHANNELS_LINE_ALLOW_FROM"`
 }
 
 type WebSocketConfig struct {
-	Enabled   bool                `json:"enabled" env:"CLAWDROID_CHANNELS_WEBSOCKET_ENABLED"`
-	Host      string              `json:"host" env:"CLAWDROID_CHANNELS_WEBSOCKET_HOST"`
-	Port      int                 `json:"port" env:"CLAWDROID_CHANNELS_WEBSOCKET_PORT"`
-	Path      string              `json:"path" env:"CLAWDROID_CHANNELS_WEBSOCKET_PATH"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"CLAWDROID_CHANNELS_WEBSOCKET_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" label:"Enabled" env:"CLAWDROID_CHANNELS_WEBSOCKET_ENABLED"`
+	Host      string              `json:"host" label:"Host" env:"CLAWDROID_CHANNELS_WEBSOCKET_HOST"`
+	Port      int                 `json:"port" label:"Port" env:"CLAWDROID_CHANNELS_WEBSOCKET_PORT"`
+	Path      string              `json:"path" label:"Path" env:"CLAWDROID_CHANNELS_WEBSOCKET_PATH"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" label:"Allow From" env:"CLAWDROID_CHANNELS_WEBSOCKET_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {
-	Enabled  bool `json:"enabled" env:"CLAWDROID_HEARTBEAT_ENABLED"`
-	Interval int  `json:"interval" env:"CLAWDROID_HEARTBEAT_INTERVAL"` // minutes, min 5
+	Enabled  bool `json:"enabled" label:"Enabled" env:"CLAWDROID_HEARTBEAT_ENABLED"`
+	Interval int  `json:"interval" label:"Interval" env:"CLAWDROID_HEARTBEAT_INTERVAL"` // minutes, min 5
 }
 
 type RateLimitsConfig struct {
-	MaxToolCallsPerMinute int `json:"max_tool_calls_per_minute" env:"CLAWDROID_RATE_LIMITS_MAX_TOOL_CALLS_PER_MINUTE"` // 0 = unlimited
-	MaxRequestsPerMinute  int `json:"max_requests_per_minute" env:"CLAWDROID_RATE_LIMITS_MAX_REQUESTS_PER_MINUTE"`     // 0 = unlimited
+	MaxToolCallsPerMinute int `json:"max_tool_calls_per_minute" label:"Max Tool Calls Per Minute" env:"CLAWDROID_RATE_LIMITS_MAX_TOOL_CALLS_PER_MINUTE"` // 0 = unlimited
+	MaxRequestsPerMinute  int `json:"max_requests_per_minute" label:"Max Requests Per Minute" env:"CLAWDROID_RATE_LIMITS_MAX_REQUESTS_PER_MINUTE"`       // 0 = unlimited
 }
 
 type GatewayConfig struct {
-	Host   string `json:"host" env:"CLAWDROID_GATEWAY_HOST"`
-	Port   int    `json:"port" env:"CLAWDROID_GATEWAY_PORT"`
-	APIKey string `json:"api_key" env:"CLAWDROID_GATEWAY_API_KEY"`
+	Host   string `json:"host" label:"Host" env:"CLAWDROID_GATEWAY_HOST"`
+	Port   int    `json:"port" label:"Port" env:"CLAWDROID_GATEWAY_PORT"`
+	APIKey string `json:"api_key" label:"API Key" env:"CLAWDROID_GATEWAY_API_KEY"`
 }
 
 type BraveConfig struct {
-	Enabled    bool   `json:"enabled" env:"CLAWDROID_TOOLS_WEB_BRAVE_ENABLED"`
-	APIKey     string `json:"api_key" env:"CLAWDROID_TOOLS_WEB_BRAVE_API_KEY"`
-	MaxResults int    `json:"max_results" env:"CLAWDROID_TOOLS_WEB_BRAVE_MAX_RESULTS"`
+	Enabled    bool   `json:"enabled" label:"Enabled" env:"CLAWDROID_TOOLS_WEB_BRAVE_ENABLED"`
+	APIKey     string `json:"api_key" label:"API Key" env:"CLAWDROID_TOOLS_WEB_BRAVE_API_KEY"`
+	MaxResults int    `json:"max_results" label:"Max Results" env:"CLAWDROID_TOOLS_WEB_BRAVE_MAX_RESULTS"`
 }
 
 type DuckDuckGoConfig struct {
-	Enabled    bool `json:"enabled" env:"CLAWDROID_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
-	MaxResults int  `json:"max_results" env:"CLAWDROID_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
+	Enabled    bool `json:"enabled" label:"Enabled" env:"CLAWDROID_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
+	MaxResults int  `json:"max_results" label:"Max Results" env:"CLAWDROID_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
 type WebToolsConfig struct {
-	Brave      BraveConfig      `json:"brave"`
-	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
+	Brave      BraveConfig      `json:"brave" label:"Brave Search"`
+	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo" label:"DuckDuckGo"`
 }
 
 type ExecToolsConfig struct {
-	Enabled bool `json:"enabled" env:"CLAWDROID_TOOLS_EXEC_ENABLED"`
+	Enabled bool `json:"enabled" label:"Enabled" env:"CLAWDROID_TOOLS_EXEC_ENABLED"`
 }
 
 type MCPServerConfig struct {
@@ -178,19 +178,19 @@ type MCPServerConfig struct {
 }
 
 type AndroidToolsConfig struct {
-	Enabled bool `json:"enabled" env:"CLAWDROID_TOOLS_ANDROID_ENABLED"`
+	Enabled bool `json:"enabled" label:"Enabled" env:"CLAWDROID_TOOLS_ANDROID_ENABLED"`
 }
 
 type MemoryToolsConfig struct {
-	Enabled bool `json:"enabled" env:"CLAWDROID_TOOLS_MEMORY_ENABLED"`
+	Enabled bool `json:"enabled" label:"Enabled" env:"CLAWDROID_TOOLS_MEMORY_ENABLED"`
 }
 
 type ToolsConfig struct {
-	Web     WebToolsConfig             `json:"web"`
-	Exec    ExecToolsConfig            `json:"exec"`
-	Android AndroidToolsConfig         `json:"android"`
-	Memory  MemoryToolsConfig          `json:"memory"`
-	MCP     map[string]MCPServerConfig `json:"mcp,omitempty"`
+	Web     WebToolsConfig             `json:"web" label:"Web Search"`
+	Exec    ExecToolsConfig            `json:"exec" label:"Shell Exec"`
+	Android AndroidToolsConfig         `json:"android" label:"Android"`
+	Memory  MemoryToolsConfig          `json:"memory" label:"Memory"`
+	MCP     map[string]MCPServerConfig `json:"mcp,omitempty" label:"MCP Servers"`
 }
 
 func DefaultConfig() *Config {

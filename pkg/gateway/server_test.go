@@ -196,20 +196,22 @@ func TestBuildSchema_SecretFlag(t *testing.T) {
 }
 
 func TestBuildSchema_Labels(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"api_key", "API Key"},
-		{"base_url", "Base URL"},
-		{"max_tokens", "Max Tokens"},
-		{"bot_token", "Bot Token"},
+	schema := BuildSchema(config.DefaultConfig())
+
+	wantLabels := map[string]string{
+		"api_key":              "API Key",
+		"base_url":             "Base URL",
+		"defaults.max_tokens":  "Max Tokens",
+		"slack.bot_token":      "Bot Token",
 	}
 
-	for _, tc := range tests {
-		got := snakeToTitle(tc.input)
-		if got != tc.want {
-			t.Errorf("snakeToTitle(%q) = %q, want %q", tc.input, got, tc.want)
+	for _, sec := range schema.Sections {
+		for _, f := range sec.Fields {
+			if want, ok := wantLabels[f.Key]; ok {
+				if f.Label != want {
+					t.Errorf("field %q label = %q, want %q", f.Key, f.Label, want)
+				}
+			}
 		}
 	}
 }
@@ -1177,7 +1179,10 @@ func TestBuildSchema_SectionLabels(t *testing.T) {
 
 	wantLabels := map[string]string{
 		"llm":         "LLM",
+		"agents":      "Agent Defaults",
+		"channels":    "Messaging Channels",
 		"gateway":     "Gateway",
+		"tools":       "Tool Settings",
 		"heartbeat":   "Heartbeat",
 		"rate_limits": "Rate Limits",
 	}
@@ -2367,42 +2372,6 @@ func TestBuildSchema_GatewaySectionFields(t *testing.T) {
 	}
 }
 
-// --- #31: snakeToTitle with long compound words ---
-
-func TestSnakeToTitle_LongCompound(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"channel_access_token", "Channel Access Token"},
-		{"max_tool_calls_per_minute", "Max Tool Calls Per Minute"},
-		{"restrict_to_workspace", "Restrict To Workspace"},
-	}
-	for _, tc := range tests {
-		got := snakeToTitle(tc.input)
-		if got != tc.want {
-			t.Errorf("snakeToTitle(%q) = %q, want %q", tc.input, got, tc.want)
-		}
-	}
-}
-
-// --- #32: snakeToTitle with empty string ---
-
-func TestSnakeToTitle_EmptyString(t *testing.T) {
-	got := snakeToTitle("")
-	if got != "" {
-		t.Errorf("snakeToTitle(\"\") = %q, want empty", got)
-	}
-}
-
-// --- #33: snakeToTitle with "mcp" acronym ---
-
-func TestSnakeToTitle_MCPAcronym(t *testing.T) {
-	got := snakeToTitle("mcp")
-	if got != "MCP" {
-		t.Errorf("snakeToTitle(\"mcp\") = %q, want %q", got, "MCP")
-	}
-}
 
 // --- #34: goTypeToSchema unknown type ---
 
