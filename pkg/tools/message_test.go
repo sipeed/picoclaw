@@ -11,7 +11,7 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 	tool.SetContext("test-channel", "test-chat-id")
 
 	var sentChannel, sentChatID, sentContent string
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(_ context.Context, channel, chatID, content string) error {
 		sentChannel = channel
 		sentChatID = chatID
 		sentContent = content
@@ -63,7 +63,7 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 	tool.SetContext("default-channel", "default-chat-id")
 
 	var sentChannel, sentChatID string
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(_ context.Context, channel, chatID, content string) error {
 		sentChannel = channel
 		sentChatID = chatID
 		return nil
@@ -94,12 +94,38 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 	}
 }
 
+func TestMessageTool_Execute_PropagatesContext(t *testing.T) {
+	tool := NewMessageTool()
+	tool.SetContext("test-channel", "test-chat-id")
+
+	type keyType string
+	const key keyType = "k"
+	ctx := context.WithValue(context.Background(), key, "v")
+
+	seen := ""
+	tool.SetSendCallback(func(cbCtx context.Context, channel, chatID, content string) error {
+		val, _ := cbCtx.Value(key).(string)
+		seen = val
+		return nil
+	})
+
+	result := tool.Execute(ctx, map[string]any{
+		"content": "context test",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %v", result.ForLLM)
+	}
+	if seen != "v" {
+		t.Fatalf("expected propagated context value 'v', got %q", seen)
+	}
+}
+
 func TestMessageTool_Execute_SendFailure(t *testing.T) {
 	tool := NewMessageTool()
 	tool.SetContext("test-channel", "test-chat-id")
 
 	sendErr := errors.New("network error")
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(_ context.Context, channel, chatID, content string) error {
 		return sendErr
 	})
 
@@ -153,7 +179,7 @@ func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 	tool := NewMessageTool()
 	// No SetContext called, so defaultChannel and defaultChatID are empty
 
-	tool.SetSendCallback(func(channel, chatID, content string) error {
+	tool.SetSendCallback(func(_ context.Context, channel, chatID, content string) error {
 		return nil
 	})
 

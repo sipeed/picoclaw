@@ -1003,6 +1003,18 @@ PicoClaw routes providers by protocol family:
 
 This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
 
+### Lifecycle Hooks (Plugin-style Extensions)
+
+PicoClaw provides typed lifecycle hooks for observability, outbound filtering, and tool guardrails.
+
+- Register hooks in Go at startup with `hooks.NewHookRegistry()`.
+- Attach once via `agentLoop.SetHooks(registry)` before `Run()` and handle setup errors.
+- If hooks are not set, default behavior is unchanged.
+
+See runnable examples: [docs/hooks-plugin-examples.md](docs/hooks-plugin-examples.md)
+
+Roadmap for plugin system evolution: [docs/plugin-system-roadmap.md](docs/plugin-system-roadmap.md)
+
 <details>
 <summary><b>Zhipu</b></summary>
 
