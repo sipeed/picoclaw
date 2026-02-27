@@ -106,6 +106,10 @@ func registerSharedTools(
 			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+			BochaAPIKey:          cfg.Tools.Web.Bocha.APIKey,
+			BochaBaseURL:         cfg.Tools.Web.Bocha.BaseURL,
+			BochaMaxResults:      cfg.Tools.Web.Bocha.MaxResults,
+			BochaEnabled:         cfg.Tools.Web.Bocha.Enabled,
 			Proxy:                cfg.Tools.Web.Proxy,
 		}); searchTool != nil {
 			agent.Tools.Register(searchTool)
