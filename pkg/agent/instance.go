@@ -82,6 +82,13 @@ func NewAgentInstance(
 		maxTokens = 8192
 	}
 
+	// ContextWindow defaults to 128K if not specified (most modern models support this)
+	// For models with smaller context, users should configure this explicitly
+	contextWindow := defaults.ContextWindow
+	if contextWindow == 0 {
+		contextWindow = 128000
+	}
+
 	temperature := 0.7
 	if defaults.Temperature != nil {
 		temperature = *defaults.Temperature
@@ -103,7 +110,7 @@ func NewAgentInstance(
 		MaxIterations:  maxIter,
 		MaxTokens:      maxTokens,
 		Temperature:    temperature,
-		ContextWindow:  maxTokens,
+		ContextWindow:  contextWindow,
 		Provider:       provider,
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,
