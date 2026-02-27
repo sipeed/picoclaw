@@ -15,7 +15,7 @@ func (s *Server) handleGetSchema(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, schema)
 }
 
-// handleGetConfig returns the current configuration with secrets masked.
+// handleGetConfig returns the current configuration.
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	s.cfg.RLock()
 	data, err := json.Marshal(s.cfg)
@@ -31,13 +31,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maskSecrets(raw)
 	writeJSON(w, http.StatusOK, raw)
 }
 
 // handlePutConfig updates the configuration.
 func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
-	// Read current config as a map for secret preservation
 	s.cfg.RLock()
 	currentData, err := json.Marshal(s.cfg)
 	s.cfg.RUnlock()
@@ -46,30 +44,19 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var currentMap map[string]interface{}
-	if err := json.Unmarshal(currentData, &currentMap); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "failed to process current config")
-		return
-	}
-
-	// Decode request body into a map to inspect raw values
 	var incoming map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
 
-	// Restore masked secrets: replace "****" with current values
-	restoreSecrets(incoming, currentMap)
-
-	// Marshal merged map, then unmarshal onto a deep copy of current config (partial update)
 	mergedData, err := json.Marshal(incoming)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "failed to prepare config")
 		return
 	}
 
-	// Deep copy current config via JSON round-trip to avoid shared map/slice references
+	// Deep copy current config, then apply incoming partial update
 	var newCfg config.Config
 	if err := json.Unmarshal(currentData, &newCfg); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "failed to copy config")
@@ -96,38 +83,6 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(100 * time.Millisecond)
 			s.onRestart()
 		}()
-	}
-}
-
-// maskSecrets replaces non-empty secret values with "****".
-func maskSecrets(m map[string]interface{}) {
-	for k, v := range m {
-		switch val := v.(type) {
-		case map[string]interface{}:
-			maskSecrets(val)
-		case string:
-			if secretKeys[k] && val != "" {
-				m[k] = "****"
-			}
-		}
-	}
-}
-
-// restoreSecrets replaces "****" values in incoming with the corresponding current values.
-func restoreSecrets(incoming, current map[string]interface{}) {
-	for k, v := range incoming {
-		switch val := v.(type) {
-		case map[string]interface{}:
-			if curSub, ok := current[k].(map[string]interface{}); ok {
-				restoreSecrets(val, curSub)
-			}
-		case string:
-			if secretKeys[k] && val == "****" {
-				if curVal, ok := current[k]; ok {
-					incoming[k] = curVal
-				}
-			}
-		}
 	}
 }
 

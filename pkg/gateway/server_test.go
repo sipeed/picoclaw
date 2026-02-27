@@ -402,7 +402,7 @@ func TestHandleGetSchema_Response(t *testing.T) {
 
 // --- GET /api/config tests ---
 
-func TestHandleGetConfig_SecretsMasked(t *testing.T) {
+func TestHandleGetConfig_SecretsReturnedAsIs(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.LLM.APIKey = "secret-key-123"
 	cfg.Channels.Telegram.Token = "telegram-token-456"
@@ -423,25 +423,25 @@ func TestHandleGetConfig_SecretsMasked(t *testing.T) {
 	var result map[string]interface{}
 	json.NewDecoder(rr.Body).Decode(&result)
 
-	// Check masked secrets
+	// Secrets are returned as-is (no masking)
 	llm := result["llm"].(map[string]interface{})
-	if llm["api_key"] != "****" {
-		t.Errorf("LLM api_key should be masked, got %v", llm["api_key"])
+	if llm["api_key"] != "secret-key-123" {
+		t.Errorf("LLM api_key = %v, want %q", llm["api_key"], "secret-key-123")
 	}
 
 	telegram := result["channels"].(map[string]interface{})["telegram"].(map[string]interface{})
-	if telegram["token"] != "****" {
-		t.Errorf("Telegram token should be masked, got %v", telegram["token"])
+	if telegram["token"] != "telegram-token-456" {
+		t.Errorf("Telegram token = %v, want %q", telegram["token"], "telegram-token-456")
 	}
 
 	slack := result["channels"].(map[string]interface{})["slack"].(map[string]interface{})
-	if slack["bot_token"] != "****" {
-		t.Errorf("Slack bot_token should be masked, got %v", slack["bot_token"])
+	if slack["bot_token"] != "slack-bot-token" {
+		t.Errorf("Slack bot_token = %v, want %q", slack["bot_token"], "slack-bot-token")
 	}
 
 	line := result["channels"].(map[string]interface{})["line"].(map[string]interface{})
-	if line["channel_secret"] != "****" {
-		t.Errorf("LINE channel_secret should be masked, got %v", line["channel_secret"])
+	if line["channel_secret"] != "line-secret" {
+		t.Errorf("LINE channel_secret = %v, want %q", line["channel_secret"], "line-secret")
 	}
 }
 
@@ -481,7 +481,7 @@ func TestHandleGetConfig_NonSecretValues(t *testing.T) {
 	}
 }
 
-func TestHandleGetConfig_GatewayAPIKeyMasked(t *testing.T) {
+func TestHandleGetConfig_GatewayAPIKeyReturnedAsIs(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Gateway.APIKey = "my-gateway-secret"
 
@@ -494,12 +494,12 @@ func TestHandleGetConfig_GatewayAPIKeyMasked(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&result)
 
 	gw := result["gateway"].(map[string]interface{})
-	if gw["api_key"] != "****" {
-		t.Errorf("gateway api_key should be masked, got %v", gw["api_key"])
+	if gw["api_key"] != "my-gateway-secret" {
+		t.Errorf("gateway api_key = %v, want %q", gw["api_key"], "my-gateway-secret")
 	}
 }
 
-func TestHandleGetConfig_EmptySecretsNotMasked(t *testing.T) {
+func TestHandleGetConfig_EmptySecretsReturnedEmpty(t *testing.T) {
 	cfg := config.DefaultConfig()
 	// All secrets are empty by default
 
@@ -512,8 +512,8 @@ func TestHandleGetConfig_EmptySecretsNotMasked(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&result)
 
 	llm := result["llm"].(map[string]interface{})
-	if llm["api_key"] == "****" {
-		t.Error("Empty api_key should not be masked")
+	if llm["api_key"] != "" {
+		t.Errorf("Empty api_key should be returned as empty string, got %v", llm["api_key"])
 	}
 }
 
@@ -564,7 +564,7 @@ func TestHandlePutConfig_UpdateNonSecret(t *testing.T) {
 	}
 }
 
-func TestHandlePutConfig_SecretPreserved(t *testing.T) {
+func TestHandlePutConfig_SecretPreservedViaPartialUpdate(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.LLM.APIKey = "real-secret"
 
@@ -573,8 +573,8 @@ func TestHandlePutConfig_SecretPreserved(t *testing.T) {
 	config.SaveConfig(cfgPath, cfg)
 
 	s := &Server{cfg: cfg, configPath: cfgPath}
-	// Send "****" for api_key — should preserve original
-	body := `{"llm":{"api_key":"****","model":"updated"}}`
+	// Only send model — api_key should be preserved via partial update
+	body := `{"llm":{"model":"updated"}}`
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(body))
 	s.handlePutConfig(rr, req)
@@ -601,7 +601,7 @@ func TestHandlePutConfig_SecretUpdatedWithNewValue(t *testing.T) {
 	config.SaveConfig(cfgPath, cfg)
 
 	s := &Server{cfg: cfg, configPath: cfgPath}
-	// Send an actual new secret (not "****") — should save the new value
+	// Send a new secret value — should save the new value
 	body := `{"llm":{"api_key":"brand-new-secret"}}`
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(body))
@@ -978,169 +978,12 @@ func TestSecretKeys(t *testing.T) {
 	}
 }
 
-// --- maskSecrets / restoreSecrets unit tests ---
+// --- PUT /api/config: nested secret preservation via partial update ---
 
-func TestMaskSecrets_NestedSecrets(t *testing.T) {
-	m := map[string]interface{}{
-		"channels": map[string]interface{}{
-			"telegram": map[string]interface{}{
-				"enabled": true,
-				"token":   "tg-secret-token",
-			},
-			"slack": map[string]interface{}{
-				"bot_token": "slack-bot-secret",
-				"app_token": "slack-app-secret",
-			},
-			"line": map[string]interface{}{
-				"channel_secret":       "line-secret-val",
-				"channel_access_token": "line-access-val",
-				"webhook_host":         "127.0.0.1",
-			},
-		},
-	}
-
-	maskSecrets(m)
-
-	channels := m["channels"].(map[string]interface{})
-	tg := channels["telegram"].(map[string]interface{})
-	if tg["token"] != "****" {
-		t.Errorf("telegram token = %v, want ****", tg["token"])
-	}
-	if tg["enabled"] != true {
-		t.Error("telegram enabled should be unchanged")
-	}
-
-	slack := channels["slack"].(map[string]interface{})
-	if slack["bot_token"] != "****" {
-		t.Errorf("slack bot_token = %v, want ****", slack["bot_token"])
-	}
-	if slack["app_token"] != "****" {
-		t.Errorf("slack app_token = %v, want ****", slack["app_token"])
-	}
-
-	line := channels["line"].(map[string]interface{})
-	if line["channel_secret"] != "****" {
-		t.Errorf("line channel_secret = %v, want ****", line["channel_secret"])
-	}
-	if line["channel_access_token"] != "****" {
-		t.Errorf("line channel_access_token = %v, want ****", line["channel_access_token"])
-	}
-	if line["webhook_host"] != "127.0.0.1" {
-		t.Errorf("line webhook_host = %v, should be unchanged", line["webhook_host"])
-	}
-}
-
-func TestMaskSecrets_NonStringSecretKeySkipped(t *testing.T) {
-	// If a secret key has a non-string value (e.g. int, bool, nil), maskSecrets should not panic
-	m := map[string]interface{}{
-		"api_key": 12345,
-		"token":   nil,
-		"nested": map[string]interface{}{
-			"bot_token": true,
-		},
-	}
-
-	// Should not panic
-	maskSecrets(m)
-
-	// Non-string values should be untouched
-	if m["api_key"] != 12345 {
-		t.Errorf("int api_key = %v, should be unchanged", m["api_key"])
-	}
-	if m["token"] != nil {
-		t.Errorf("nil token = %v, should be unchanged", m["token"])
-	}
-	nested := m["nested"].(map[string]interface{})
-	if nested["bot_token"] != true {
-		t.Errorf("bool bot_token = %v, should be unchanged", nested["bot_token"])
-	}
-}
-
-func TestRestoreSecrets_NestedRestore(t *testing.T) {
-	incoming := map[string]interface{}{
-		"channels": map[string]interface{}{
-			"telegram": map[string]interface{}{
-				"token": "****",
-			},
-			"slack": map[string]interface{}{
-				"bot_token": "****",
-				"app_token": "new-app-token", // updated, not "****"
-			},
-		},
-	}
-
-	current := map[string]interface{}{
-		"channels": map[string]interface{}{
-			"telegram": map[string]interface{}{
-				"token": "real-telegram-token",
-			},
-			"slack": map[string]interface{}{
-				"bot_token": "real-bot-token",
-				"app_token": "real-app-token",
-			},
-		},
-	}
-
-	restoreSecrets(incoming, current)
-
-	channels := incoming["channels"].(map[string]interface{})
-	tg := channels["telegram"].(map[string]interface{})
-	if tg["token"] != "real-telegram-token" {
-		t.Errorf("telegram token = %v, want restored value", tg["token"])
-	}
-
-	slack := channels["slack"].(map[string]interface{})
-	if slack["bot_token"] != "real-bot-token" {
-		t.Errorf("slack bot_token = %v, want restored value", slack["bot_token"])
-	}
-	if slack["app_token"] != "new-app-token" {
-		t.Errorf("slack app_token = %v, should keep new value", slack["app_token"])
-	}
-}
-
-func TestRestoreSecrets_MissingInCurrent(t *testing.T) {
-	// incoming has a secret key that doesn't exist in current — should keep "****" as-is
-	incoming := map[string]interface{}{
-		"api_key": "****",
-	}
-
-	current := map[string]interface{}{
-		// no api_key
-	}
-
-	restoreSecrets(incoming, current)
-
-	if incoming["api_key"] != "****" {
-		t.Errorf("api_key = %v, want **** (no current value to restore)", incoming["api_key"])
-	}
-}
-
-func TestRestoreSecrets_IncomingSubMapNotInCurrent(t *testing.T) {
-	// incoming has a nested map that doesn't exist in current
-	incoming := map[string]interface{}{
-		"new_section": map[string]interface{}{
-			"token": "****",
-		},
-	}
-
-	current := map[string]interface{}{
-		// no new_section
-	}
-
-	// Should not panic
-	restoreSecrets(incoming, current)
-
-	sub := incoming["new_section"].(map[string]interface{})
-	if sub["token"] != "****" {
-		t.Errorf("token = %v, want **** (no current to restore from)", sub["token"])
-	}
-}
-
-// --- PUT /api/config: nested secret preservation via handler ---
-
-func TestHandlePutConfig_NestedSecretPreserved(t *testing.T) {
+func TestHandlePutConfig_NestedSecretPreservedViaPartialUpdate(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Channels.Telegram.Token = "real-tg-token"
+	cfg.Channels.Telegram.Enabled = false
 	cfg.Channels.Slack.BotToken = "real-slack-bot"
 	cfg.Channels.LINE.ChannelSecret = "real-line-secret"
 
@@ -1149,8 +992,8 @@ func TestHandlePutConfig_NestedSecretPreserved(t *testing.T) {
 	config.SaveConfig(cfgPath, cfg)
 
 	s := &Server{cfg: cfg, configPath: cfgPath}
-	// Send "****" for nested secrets — they should all be preserved
-	body := `{"channels":{"telegram":{"token":"****"},"slack":{"bot_token":"****"},"line":{"channel_secret":"****"}}}`
+	// Only send non-secret fields — secrets should be preserved via partial update
+	body := `{"channels":{"telegram":{"enabled":true}}}`
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(body))
 	s.handlePutConfig(rr, req)
@@ -1404,7 +1247,7 @@ func TestHandlePutConfig_SecretClearedWithEmptyString(t *testing.T) {
 	config.SaveConfig(cfgPath, cfg)
 
 	s := &Server{cfg: cfg, configPath: cfgPath}
-	// Send empty string (not "****") to clear the secret
+	// Send empty string to clear the secret
 	body := `{"llm":{"api_key":""}}`
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(body))
@@ -1492,9 +1335,9 @@ func TestHandlePutConfig_InMemoryConfigUnchanged(t *testing.T) {
 	}
 }
 
-// --- GET /api/config: Discord token masked ---
+// --- GET /api/config: Discord token returned as-is ---
 
-func TestHandleGetConfig_DiscordTokenMasked(t *testing.T) {
+func TestHandleGetConfig_DiscordTokenReturnedAsIs(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Channels.Discord.Token = "discord-secret-token"
 
@@ -1511,8 +1354,8 @@ func TestHandleGetConfig_DiscordTokenMasked(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&result)
 
 	discord := result["channels"].(map[string]interface{})["discord"].(map[string]interface{})
-	if discord["token"] != "****" {
-		t.Errorf("Discord token should be masked, got %v", discord["token"])
+	if discord["token"] != "discord-secret-token" {
+		t.Errorf("Discord token = %v, want %q", discord["token"], "discord-secret-token")
 	}
 }
 
@@ -1915,9 +1758,9 @@ func TestHandlePutConfig_ConcurrentGETAndPUT(t *testing.T) {
 // Additional tests: Medium priority
 // =============================================================================
 
-// --- #8: Brave api_key masked in GET ---
+// --- #8: Brave api_key returned as-is in GET ---
 
-func TestHandleGetConfig_BraveAPIKeyMasked(t *testing.T) {
+func TestHandleGetConfig_BraveAPIKeyReturnedAsIs(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Tools.Web.Brave.APIKey = "brave-secret"
 
@@ -1936,8 +1779,8 @@ func TestHandleGetConfig_BraveAPIKeyMasked(t *testing.T) {
 	tools := result["tools"].(map[string]interface{})
 	web := tools["web"].(map[string]interface{})
 	brave := web["brave"].(map[string]interface{})
-	if brave["api_key"] != "****" {
-		t.Errorf("brave api_key should be masked, got %v", brave["api_key"])
+	if brave["api_key"] != "brave-secret" {
+		t.Errorf("brave api_key = %v, want %q", brave["api_key"], "brave-secret")
 	}
 }
 
@@ -2173,8 +2016,8 @@ func TestHandlePutConfig_ThenGetRoundTrip(t *testing.T) {
 
 	s := &Server{cfg: cfg, configPath: cfgPath}
 
-	// PUT to change model
-	putBody := `{"llm":{"model":"new-model","api_key":"****"}}`
+	// PUT to change model (only send model — api_key preserved via partial update)
+	putBody := `{"llm":{"model":"new-model"}}`
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(putBody))
 	s.handlePutConfig(rr, req)
@@ -2203,8 +2046,8 @@ func TestHandlePutConfig_ThenGetRoundTrip(t *testing.T) {
 	if llm["model"] != "new-model" {
 		t.Errorf("GET model = %v, want %q", llm["model"], "new-model")
 	}
-	if llm["api_key"] != "****" {
-		t.Errorf("GET api_key = %v, want masked", llm["api_key"])
+	if llm["api_key"] != "my-secret" {
+		t.Errorf("GET api_key = %v, want %q", llm["api_key"], "my-secret")
 	}
 }
 
@@ -2384,52 +2227,6 @@ func TestHandleGetConfig_AllSectionsPresent(t *testing.T) {
 		if _, ok := result[sec]; !ok {
 			t.Errorf("section %q missing from GET /api/config response", sec)
 		}
-	}
-}
-
-// --- #25: maskSecrets / restoreSecrets with empty maps ---
-
-func TestMaskSecrets_EmptyMap(t *testing.T) {
-	m := map[string]interface{}{}
-	maskSecrets(m) // should not panic
-	if len(m) != 0 {
-		t.Error("empty map should remain empty")
-	}
-}
-
-func TestRestoreSecrets_EmptyMaps(t *testing.T) {
-	incoming := map[string]interface{}{}
-	current := map[string]interface{}{}
-	restoreSecrets(incoming, current) // should not panic
-	if len(incoming) != 0 {
-		t.Error("empty incoming should remain empty")
-	}
-}
-
-// --- #26: maskSecrets with 4+ levels of nesting ---
-
-func TestMaskSecrets_DeeplyNested(t *testing.T) {
-	m := map[string]interface{}{
-		"level1": map[string]interface{}{
-			"level2": map[string]interface{}{
-				"level3": map[string]interface{}{
-					"api_key": "deep-secret",
-					"name":    "keep-this",
-				},
-			},
-		},
-	}
-
-	maskSecrets(m)
-
-	l1 := m["level1"].(map[string]interface{})
-	l2 := l1["level2"].(map[string]interface{})
-	l3 := l2["level3"].(map[string]interface{})
-	if l3["api_key"] != "****" {
-		t.Errorf("deeply nested api_key = %v, want ****", l3["api_key"])
-	}
-	if l3["name"] != "keep-this" {
-		t.Errorf("name = %v, should be unchanged", l3["name"])
 	}
 }
 
