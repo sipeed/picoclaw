@@ -160,6 +160,7 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
 			Qwen:          ProviderConfig{APIKey: "key17"},
 			Mistral:       ProviderConfig{APIKey: "key18"},
+			Avian:         ProviderConfig{APIKey: "key19"},
 		},
 	}
 
