@@ -44,6 +44,3 @@ tasks/
 
 # Added by goreleaser init:
 dist/
-akalro-dietpi.pub
-akalro-dietpi
-.gitignore

@@ -79,14 +79,10 @@
     "whatsapp": {
       "enabled": false,
       "bridge_url": "ws://localhost:3001",
-<<<<<<< main
       "use_native": false,
       "session_store_path": "",
-      "allow_from": []
-=======
       "allow_from": [],
       "reasoning_channel_id": ""
->>>>>>> refactor/channel-system
     },
     "feishu": {
       "enabled": false,
