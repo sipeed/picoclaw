@@ -25,9 +25,11 @@ func DefaultConfig() *Config {
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
-				Enabled:   false,
-				BridgeURL: "ws://localhost:3001",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:          false,
+				BridgeURL:        "ws://localhost:3001",
+				UseNative:        false,
+				SessionStorePath: "",
+				AllowFrom:        FlexibleStringSlice{},
 			},
 			Telegram: TelegramConfig{
 				Enabled:   false,

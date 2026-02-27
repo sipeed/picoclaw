@@ -210,8 +210,13 @@ func (m *Manager) initChannels() error {
 		m.initChannel("telegram", "Telegram")
 	}
 
-	if m.config.Channels.WhatsApp.Enabled && m.config.Channels.WhatsApp.BridgeURL != "" {
-		m.initChannel("whatsapp", "WhatsApp")
+	if m.config.Channels.WhatsApp.Enabled {
+		waCfg := m.config.Channels.WhatsApp
+		if waCfg.UseNative {
+			m.initChannel("whatsapp_native", "WhatsApp Native")
+		} else if waCfg.BridgeURL != "" {
+			m.initChannel("whatsapp", "WhatsApp")
+		}
 	}
 
 	if m.config.Channels.Feishu.Enabled {
