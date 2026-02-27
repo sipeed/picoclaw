@@ -175,11 +175,12 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
+	senderID := m.Author.ID + "|" + m.Author.Username
 
 	// Check allowlist first to avoid downloading attachments and transcribing for rejected users
-	if !c.IsAllowed(m.Author.ID) {
+	if !c.IsAllowed(senderID) {
 		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
-			"user_id": m.Author.ID,
+			"user_id": senderID,
 		})
 		return
 	}
@@ -202,7 +203,6 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		}
 	}
 
-	senderID := m.Author.ID
 	senderName := m.Author.Username
 	if m.Author.Discriminator != "" && m.Author.Discriminator != "0" {
 		senderName += "#" + m.Author.Discriminator
