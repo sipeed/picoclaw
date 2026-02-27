@@ -15,6 +15,11 @@ type errorPattern struct {
 func substr(s string) errorPattern { return errorPattern{substring: s} }
 func rxp(r string) errorPattern    { return errorPattern{regex: regexp.MustCompile("(?i)" + r)} }
 
+var (
+	reHTTPStatus     = regexp.MustCompile(`status[:\s]+(\d{3})`)
+	reHTTPStatusLine = regexp.MustCompile(`HTTP[/\s]+\d*\.?\d*\s+(\d{3})`)
+)
+
 // Error patterns organized by FailoverReason, matching OpenClaw production (~40 patterns).
 var (
 	rateLimitPatterns = []errorPattern{
@@ -201,12 +206,7 @@ func classifyByMessage(msg string) FailoverReason {
 // Looks for patterns like "status: 429", "status 429", "HTTP 429", or standalone "429".
 func extractHTTPStatus(msg string) int {
 	// Common patterns in Go HTTP error messages
-	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`status[:\s]+(\d{3})`),
-		regexp.MustCompile(`HTTP[/\s]+\d*\.?\d*\s+(\d{3})`),
-	}
-
-	for _, p := range patterns {
+	for _, p := range []*regexp.Regexp{reHTTPStatus, reHTTPStatusLine} {
 		if m := p.FindStringSubmatch(msg); len(m) > 1 {
 			return parseDigits(m[1])
 		}
