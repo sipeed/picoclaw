@@ -11,6 +11,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/hooks"
 	"github.com/sipeed/picoclaw/pkg/plugin"
+	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 type blockingPlugin struct{}
@@ -30,6 +32,68 @@ func (p blockingPlugin) Register(r *hooks.HookRegistry) error {
 		return nil
 	})
 	return nil
+}
+
+type nilArgsProvider struct {
+	calls int
+}
+
+func (p *nilArgsProvider) Chat(
+	_ context.Context,
+	_ []providers.Message,
+	_ []providers.ToolDefinition,
+	_ string,
+	_ map[string]any,
+) (*providers.LLMResponse, error) {
+	if p.calls == 0 {
+		p.calls++
+		return &providers.LLMResponse{
+			Content: "",
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:        "tc-1",
+					Type:      "function",
+					Name:      "nil_args_tool",
+					Arguments: map[string]any{"seed": "value"},
+				},
+			},
+		}, nil
+	}
+	p.calls++
+	return &providers.LLMResponse{
+		Content:   "done",
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (p *nilArgsProvider) GetDefaultModel() string {
+	return "test-model"
+}
+
+type nilArgsCaptureTool struct {
+	receivedNil bool
+}
+
+func (t *nilArgsCaptureTool) Name() string {
+	return "nil_args_tool"
+}
+
+func (t *nilArgsCaptureTool) Description() string {
+	return "captures whether args are nil"
+}
+
+func (t *nilArgsCaptureTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (t *nilArgsCaptureTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+	if args == nil {
+		t.receivedNil = true
+	}
+	return tools.SilentResult("ok")
 }
 
 func TestSetPluginManagerInstallsHookRegistry(t *testing.T) {

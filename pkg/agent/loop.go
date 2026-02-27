@@ -264,11 +264,18 @@ func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) error {
 // SetPluginManager installs a plugin manager and routes its hook registry into the loop.
 // Must be called before Run starts.
 func (al *AgentLoop) SetPluginManager(pm *plugin.Manager) error {
-	al.pluginManager = pm
 	if pm == nil {
-		return al.SetHooks(nil)
+		if err := al.SetHooks(nil); err != nil {
+			return err
+		}
+		al.pluginManager = nil
+		return nil
 	}
-	return al.SetHooks(pm.HookRegistry())
+	if err := al.SetHooks(pm.HookRegistry()); err != nil {
+		return err
+	}
+	al.pluginManager = pm
+	return nil
 }
 
 // EnablePlugins is a convenience helper to build and install a plugin manager.
@@ -848,13 +855,17 @@ func (al *AgentLoop) runLLMIteration(
 					toolResult = tools.ErrorResult(reason)
 				}
 				tc.Arguments = btcEvent.Args
+				if tc.Arguments == nil {
+					tc.Arguments = make(map[string]any)
+				}
 			}
 
-			toolStart := time.Now()
+			var toolDuration time.Duration
 			if !toolCanceled {
+				toolStart := time.Now()
 				toolResult = agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+				toolDuration = time.Since(toolStart)
 			}
-			toolDuration := time.Since(toolStart)
 
 			// Fire after_tool_call hook (fires for both executed and canceled calls)
 			if al.hooks != nil {
