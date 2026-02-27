@@ -202,6 +202,19 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.HTTP.Enabled {
+		logger.DebugC("channels", "Attempting to initialize HTTP channel")
+		http, err := NewHTTPChannel(&m.config.Channels.HTTP, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize HTTP channel", map[string]any{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["http"] = http
+			logger.InfoC("channels", "HTTP channel enabled successfully")
+		}
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})

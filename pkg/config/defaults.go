@@ -113,6 +113,12 @@ func DefaultConfig() *Config {
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
 			},
+			HTTP: HTTPConfig{
+				Enabled:   true,
+				Host:      "127.0.0.1",
+				Port:      8070,
+				AllowFrom: FlexibleStringSlice{},
+			},
 		},
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{WebSearch: true},

@@ -18,6 +18,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/tencent-connect/botgo v0.2.1
+	github.com/yuin/goldmark v1.6.0
 	golang.org/x/oauth2 v0.35.0
 )
 
