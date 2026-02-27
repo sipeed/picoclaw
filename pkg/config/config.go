@@ -219,12 +219,21 @@ type TelegramConfig struct {
 }
 
 type FeishuConfig struct {
-	Enabled           bool                `json:"enabled"            env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
-	AppID             string              `json:"app_id"             env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
-	AppSecret         string              `json:"app_secret"         env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey        string              `json:"encrypt_key"        env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken string              `json:"verification_token" env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
-	AllowFrom         FlexibleStringSlice `json:"allow_from"         env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
+	Enabled           bool                `json:"enabled"             env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
+	AppID             string              `json:"app_id"              env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
+	AppSecret         string              `json:"app_secret"          env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
+	EncryptKey        string              `json:"encrypt_key"         env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
+	VerificationToken string              `json:"verification_token"  env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	AllowFrom         FlexibleStringSlice `json:"allow_from"          env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
+	// RenderMode: 消息渲染模式
+	// "raw" - 纯文本（默认，保持原有行为）
+	// "auto" - 自动检测，代码块/表格使用卡片
+	// "card" - 始终使用卡片
+	RenderMode string `json:"render_mode" env:"PICOCLAW_CHANNELS_FEISHU_RENDER_MODE"`
+	// StreamingEnabled: 启用流式输出（默认 false）
+	StreamingEnabled bool `json:"streaming_enabled" env:"PICOCLAW_CHANNELS_FEISHU_STREAMING_ENABLED"`
+	// StreamingInterval: 流式更新间隔（毫秒，默认 100）
+	StreamingInterval int `json:"streaming_interval" env:"PICOCLAW_CHANNELS_FEISHU_STREAMING_INTERVAL"`
 }
 
 type DiscordConfig struct {
