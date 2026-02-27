@@ -176,6 +176,19 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.Webhook.Enabled {
+		logger.DebugC("channels", "Attempting to initialize webhook channel")
+		webhook, err := NewWebhookChannel(m.config.Channels.Webhook, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize webhook channel", map[string]any{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["webhook"] = webhook
+			logger.InfoC("channels", "Webhook channel enabled successfully")
+		}
+	}
+
 	if m.config.Channels.WeCom.Enabled && m.config.Channels.WeCom.Token != "" {
 		logger.DebugC("channels", "Attempting to initialize WeCom channel")
 		wecom, err := NewWeComBotChannel(m.config.Channels.WeCom, m.bus)

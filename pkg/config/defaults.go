@@ -89,6 +89,17 @@ func DefaultConfig() *Config {
 				GroupTriggerPrefix: []string{},
 				AllowFrom:          FlexibleStringSlice{},
 			},
+			Webhook: WebhookConfig{
+				Enabled:          false,
+				WebhookHost:      "127.0.0.1",
+				WebhookPort:      18794,
+				WebhookPath:      "/v1/inbound",
+				SendPath:         "/v1/outbound",
+				ConnectorURL:     "http://127.0.0.1:19400/v1/outbound",
+				ConnectorTimeout: 10,
+				Token:            "",
+				AllowFrom:        FlexibleStringSlice{},
+			},
 			WeCom: WeComConfig{
 				Enabled:        false,
 				Token:          "",

@@ -114,6 +114,18 @@
       "group_trigger_prefix": [],
       "allow_from": []
     },
+    "webhook": {
+      "_comment": "Generic local webhook ingress (Clawdentity-compatible)",
+      "enabled": false,
+      "webhook_host": "127.0.0.1",
+      "webhook_port": 18794,
+      "webhook_path": "/v1/inbound",
+      "send_path": "/v1/outbound",
+      "connector_url": "http://127.0.0.1:19400/v1/outbound",
+      "connector_timeout": 10,
+      "token": "",
+      "allow_from": []
+    },
     "wecom": {
       "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
       "enabled": false,
