@@ -11,10 +11,13 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
+
+const voidHookWaitBudget = 50 * time.Millisecond
 
 // HookHandler is the callback signature for all hooks.
 type HookHandler[T any] func(ctx context.Context, event *T) error
@@ -204,6 +207,17 @@ func cloneReflectValue(v reflect.Value) reflect.Value {
 			out.Index(i).Set(cloneReflectValue(v.Index(i)))
 		}
 		return out
+	case reflect.Struct:
+		out := reflect.New(v.Type()).Elem()
+		for i := range v.NumField() {
+			field := out.Field(i)
+			if !field.CanSet() {
+				// Preserve original value for structs with non-settable fields.
+				return v
+			}
+			field.Set(cloneReflectValue(v.Field(i)))
+		}
+		return out
 	default:
 		return v
 	}
@@ -310,7 +324,9 @@ func cloneVoidEvent[T any](event *T) *T {
 	}
 }
 
-// triggerVoid runs all handlers concurrently and waits for completion.
+// triggerVoid runs all handlers concurrently.
+// It waits up to a small budget to collect immediate completions, then
+// continues fail-open to avoid blocking the core agent pipeline.
 // Each handler receives a cloned event to avoid shared-state mutation races.
 // Errors are logged but do not propagate to the caller.
 func triggerVoid[T any](ctx context.Context, hooks []HookRegistration[T], event *T, hookName string) {
@@ -343,7 +359,27 @@ func triggerVoid[T any](ctx context.Context, hooks []HookRegistration[T], event 
 			}
 		}(h)
 	}
-	wg.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		logger.WarnCF("hooks", "Void hook dispatch interrupted by context",
+			map[string]any{
+				"hook": hookName,
+			})
+	case <-time.After(voidHookWaitBudget):
+		logger.WarnCF("hooks", "Void hook dispatch exceeded wait budget; continuing",
+			map[string]any{
+				"hook":           hookName,
+				"wait_budget_ms": voidHookWaitBudget.Milliseconds(),
+			})
+	}
 }
 
 // triggerModifying runs handlers sequentially by priority, stopping if Cancel is set.

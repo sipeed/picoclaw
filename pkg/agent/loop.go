@@ -803,9 +803,14 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Save assistant message with tool calls to session
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
+		assistantMsgIndex := len(messages) - 1
+		assistantSessionIndex := -1
+		if history := agent.Sessions.GetHistory(opts.SessionKey); len(history) > 0 {
+			assistantSessionIndex = len(history) - 1
+		}
 
 		// Execute tool calls
-		for _, tc := range normalizedToolCalls {
+		for tcIdx, tc := range normalizedToolCalls {
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
 			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
@@ -858,12 +863,29 @@ func (al *AgentLoop) runLLMIteration(
 				if tc.Arguments == nil {
 					tc.Arguments = make(map[string]any)
 				}
+
+				// Keep persisted assistant tool-call arguments aligned with rewritten execution args.
+				updateToolCallArguments(&messages[assistantMsgIndex], tcIdx, tc.Arguments)
+				if assistantSessionIndex >= 0 {
+					history := agent.Sessions.GetHistory(opts.SessionKey)
+					if assistantSessionIndex < len(history) {
+						updateToolCallArguments(&history[assistantSessionIndex], tcIdx, tc.Arguments)
+						agent.Sessions.SetHistory(opts.SessionKey, history)
+					}
+				}
 			}
 
 			var toolDuration time.Duration
 			if !toolCanceled {
 				toolStart := time.Now()
-				toolResult = agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+				toolResult = agent.Tools.ExecuteWithContext(
+					ctx,
+					tc.Name,
+					tc.Arguments,
+					opts.Channel,
+					opts.ChatID,
+					asyncCallback,
+				)
 				toolDuration = time.Since(toolStart)
 			}
 
@@ -1038,6 +1060,19 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 	}
 
 	return info
+}
+
+// updateToolCallArguments patches the serialized arguments for a tool call in-place.
+func updateToolCallArguments(msg *providers.Message, toolCallIndex int, args map[string]any) {
+	if msg == nil || toolCallIndex < 0 || toolCallIndex >= len(msg.ToolCalls) {
+		return
+	}
+	toolCall := &msg.ToolCalls[toolCallIndex]
+	if toolCall.Function == nil {
+		return
+	}
+	argumentsJSON, _ := json.Marshal(args)
+	toolCall.Function.Arguments = string(argumentsJSON)
 }
 
 // formatMessagesForLog formats messages for logging

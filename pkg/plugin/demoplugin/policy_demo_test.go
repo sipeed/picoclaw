@@ -141,7 +141,13 @@ func TestPolicyDemoPluginAuditHooks(t *testing.T) {
 	}
 
 	pm.HookRegistry().TriggerSessionStart(context.Background(), &hooks.SessionEvent{AgentID: "a1", SessionKey: "s1"})
-	pm.HookRegistry().TriggerAfterToolCall(context.Background(), &hooks.AfterToolCallEvent{ToolName: "web_search", Duration: 45 * time.Millisecond})
+	pm.HookRegistry().TriggerAfterToolCall(
+		context.Background(),
+		&hooks.AfterToolCallEvent{
+			ToolName: "web_search",
+			Duration: 45 * time.Millisecond,
+		},
+	)
 	pm.HookRegistry().TriggerSessionEnd(context.Background(), &hooks.SessionEvent{AgentID: "a1", SessionKey: "s1"})
 
 	stats := p.Snapshot()

@@ -226,6 +226,96 @@ func TestVoidHooksReceiveIsolatedLLMInputToolSchema(t *testing.T) {
 	}
 }
 
+func TestVoidHooksReceiveIsolatedStructValuesInMap(t *testing.T) {
+	type schemaSpec struct {
+		Required []string
+		Meta     map[string]string
+	}
+
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnLLMInput("struct-mutator", 0, func(_ context.Context, e *LLMInputEvent) error {
+		spec, ok := e.Tools[0].Function.Parameters["schema"].(schemaSpec)
+		if !ok {
+			t.Fatal("schema should be schemaSpec")
+		}
+		spec.Required[0] = "mutated"
+		spec.Meta["k"] = "changed"
+		e.Tools[0].Function.Parameters["schema"] = spec
+		return nil
+	})
+
+	event := &LLMInputEvent{
+		AgentID: "a1",
+		Model:   "m1",
+		Tools: []providers.ToolDefinition{
+			{
+				Type: "function",
+				Function: providers.ToolFunctionDefinition{
+					Name: "message",
+					Parameters: map[string]any{
+						"schema": schemaSpec{
+							Required: []string{"content"},
+							Meta:     map[string]string{"k": "v"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r.TriggerLLMInput(ctx, event)
+
+	spec, ok := event.Tools[0].Function.Parameters["schema"].(schemaSpec)
+	if !ok {
+		t.Fatal("schema should remain schemaSpec")
+	}
+	if len(spec.Required) != 1 || spec.Required[0] != "content" {
+		t.Fatalf("expected required to remain unchanged, got %#v", spec.Required)
+	}
+	if got := spec.Meta["k"]; got != "v" {
+		t.Fatalf("expected meta[k] to remain v, got %q", got)
+	}
+}
+
+func TestVoidHooksFailOpenOnSlowHandler(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+
+	r.OnLLMInput("slow", 0, func(_ context.Context, _ *LLMInputEvent) error {
+		close(started)
+		<-release
+		close(done)
+		return nil
+	})
+
+	begin := time.Now()
+	r.TriggerLLMInput(ctx, &LLMInputEvent{AgentID: "a1"})
+	elapsed := time.Since(begin)
+
+	if elapsed > voidHookWaitBudget*3 {
+		t.Fatalf("expected fail-open dispatch within budget, got %s", elapsed)
+	}
+
+	select {
+	case <-started:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for slow handler to start")
+	}
+
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for slow handler to finish after release")
+	}
+}
+
 func TestModifyingHookPriority(t *testing.T) {
 	r := NewHookRegistry()
 	ctx := context.Background()

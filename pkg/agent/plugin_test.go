@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -338,5 +339,78 @@ func TestSetHooksNilRestoresDirectMessageCallback(t *testing.T) {
 	}
 	if msg.Content != "second" || msg.Channel != "cli" || msg.ChatID != "direct" {
 		t.Fatalf("unexpected outbound message: %#v", msg)
+	}
+}
+
+func TestBeforeToolCallArgRewriteUpdatesAssistantTranscript(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-plugin-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &nilArgsProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	al.RegisterTool(&nilArgsCaptureTool{})
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	sessionKey := "agent:" + defaultAgent.ID + ":s2"
+
+	reg := hooks.NewHookRegistry()
+	reg.OnBeforeToolCall("rewrite-args", 0, func(_ context.Context, e *hooks.BeforeToolCallEvent) error {
+		e.Args["rewritten"] = "yes"
+		return nil
+	})
+	if err := al.SetHooks(reg); err != nil {
+		t.Fatalf("SetHooks: %v", err)
+	}
+
+	if _, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"run rewrite test",
+		sessionKey,
+		"cli",
+		"direct",
+	); err != nil {
+		t.Fatalf("ProcessDirectWithChannel: %v", err)
+	}
+
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+
+	foundToolCall := false
+	for _, msg := range history {
+		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
+			continue
+		}
+		if msg.ToolCalls[0].Function == nil {
+			t.Fatal("expected tool call function payload")
+		}
+		var args map[string]any
+		if err := json.Unmarshal([]byte(msg.ToolCalls[0].Function.Arguments), &args); err != nil {
+			t.Fatalf("failed to decode persisted tool call args: %v", err)
+		}
+		if got := args["rewritten"]; got != "yes" {
+			t.Fatalf("expected rewritten arg to be persisted, got %#v", got)
+		}
+		foundToolCall = true
+		break
+	}
+
+	if !foundToolCall {
+		t.Fatal("expected assistant tool call message in session history")
 	}
 }
