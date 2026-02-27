@@ -203,6 +203,7 @@ type ChannelsConfig struct {
 	OneBot   OneBotConfig   `json:"onebot"`
 	WeCom    WeComConfig    `json:"wecom"`
 	WeComApp WeComAppConfig `json:"wecom_app"`
+	XiaoYi   XiaoYiConfig   `json:"xiaoyi"`
 }
 
 type WhatsAppConfig struct {
@@ -305,6 +306,16 @@ type WeComAppConfig struct {
 	WebhookPath    string              `json:"webhook_path"     env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
 	AllowFrom      FlexibleStringSlice `json:"allow_from"       env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
 	ReplyTimeout   int                 `json:"reply_timeout"    env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
+}
+
+type XiaoYiConfig struct {
+	Enabled   bool                `json:"enabled"    env:"PICOCLAW_CHANNELS_XIAOYI_ENABLED"`
+	WSUrl1    string              `json:"ws_url1"    env:"PICOCLAW_CHANNELS_XIAOYI_WS_URL1"`
+	WSUrl2    string              `json:"ws_url2"    env:"PICOCLAW_CHANNELS_XIAOYI_WS_URL2"`
+	AK        string              `json:"ak"         env:"PICOCLAW_CHANNELS_XIAOYI_AK"`
+	SK        string              `json:"sk"         env:"PICOCLAW_CHANNELS_XIAOYI_SK"`
+	AgentID   string              `json:"agent_id"   env:"PICOCLAW_CHANNELS_XIAOYI_AGENT_ID"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_XIAOYI_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {

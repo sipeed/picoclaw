@@ -202,6 +202,19 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.XiaoYi.Enabled && m.config.Channels.XiaoYi.AK != "" {
+		logger.DebugC("channels", "Attempting to initialize XiaoYi channel")
+		xiaoyi, err := NewXiaoYiChannel(m.config.Channels.XiaoYi, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", "Failed to initialize XiaoYi channel", map[string]any{
+				"error": err.Error(),
+			})
+		} else {
+			m.channels["xiaoyi"] = xiaoyi
+			logger.InfoC("channels", "XiaoYi channel enabled successfully")
+		}
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})

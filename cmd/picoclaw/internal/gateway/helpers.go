@@ -149,6 +149,16 @@ func gatewayCmd(debug bool) error {
 		}
 	}
 
+	// Inject process function into XiaoYi channel
+	if xiaoyiChannel, ok := channelManager.GetChannel("xiaoyi"); ok {
+		if xc, ok := xiaoyiChannel.(*channels.XiaoYiChannel); ok {
+			xc.SetProcessFunc(func(ctx context.Context, content, sessionKey, channel, chatID string) (string, error) {
+				return agentLoop.ProcessDirectWithChannel(ctx, content, sessionKey, channel, chatID)
+			})
+			logger.InfoC("xiaoyi", "Agent process function attached to XiaoYi channel")
+		}
+	}
+
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
 		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
