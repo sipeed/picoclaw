@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,15 +30,23 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// DuplicateTracker tracks consecutive duplicate tool calls to prevent infinite loops
+type DuplicateTracker struct {
+	consecutiveCount int    // Count of consecutive duplicate tool calls
+	lastToolName     string // Name of the last tool that was duplicated
+	maxThreshold     int    // Number of duplicates required to break loop (default: 3)
+}
+
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	cfg            *config.Config
-	registry       *AgentRegistry
-	state          *state.Manager
-	running        atomic.Bool
-	summarizing    sync.Map
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
+	bus               *bus.MessageBus
+	cfg               *config.Config
+	registry          *AgentRegistry
+	state             *state.Manager
+	running           atomic.Bool
+	summarizing       sync.Map
+	fallback          *providers.FallbackChain
+	channelManager    *channels.Manager
+	duplicateDetector *DuplicateTracker
 }
 
 // processOptions configures how a message is processed
@@ -76,6 +85,11 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		state:       stateManager,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
+		duplicateDetector: &DuplicateTracker{
+			consecutiveCount: 0,
+			lastToolName:     "",
+			maxThreshold:     3, // Require 3 consecutive duplicates before breaking
+		},
 	}
 }
 
@@ -623,6 +637,77 @@ func (al *AgentLoop) runLLMIteration(
 				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
+
+		// Check for duplicate consecutive tool calls (prevents infinite loops)
+		// Issue #545: If the LLM keeps trying to call the same tools with identical arguments,
+		// it's likely stuck. This logic detects and prevents spam by requiring 3+ consecutive
+		// duplicates before breaking, allowing legitimate retries to succeed.
+		if iteration > 1 && len(messages) >= 2 {
+			// Safely find the previous assistant message by walking backwards
+			var lastAssistantMsg *providers.Message
+			for i := len(messages) - 1; i >= 0; i-- {
+				if messages[i].Role == "assistant" && i > 0 {
+					lastAssistantMsg = &messages[i-1]
+					break
+				}
+			}
+
+			if lastAssistantMsg != nil && len(lastAssistantMsg.ToolCalls) > 0 && len(normalizedToolCalls) > 0 {
+				// Check if ALL tool calls are identical (not just first)
+				allToolsIdentical := len(lastAssistantMsg.ToolCalls) == len(normalizedToolCalls)
+
+				if allToolsIdentical {
+					for idx := 0; idx < len(normalizedToolCalls); idx++ {
+						lastTC := lastAssistantMsg.ToolCalls[idx]
+						currentTC := normalizedToolCalls[idx]
+
+						// Check tool name
+						if lastTC.Name != currentTC.Name {
+							allToolsIdentical = false
+							break
+						}
+
+						// Check arguments using semantic comparison (Fix #2: reflect.DeepEqual)
+						// This is better than json.Marshal because it handles map key ordering correctly
+						if !reflect.DeepEqual(lastTC.Arguments, currentTC.Arguments) {
+							allToolsIdentical = false
+							break
+						}
+					}
+				}
+
+				if allToolsIdentical {
+					// Track consecutive duplicates (Fix #6: require threshold)
+					if normalizedToolCalls[0].Name == agent.duplicateDetector.lastToolName {
+						agent.duplicateDetector.consecutiveCount++
+					} else {
+						agent.duplicateDetector.consecutiveCount = 1
+						agent.duplicateDetector.lastToolName = normalizedToolCalls[0].Name
+					}
+
+					// Only break if we've seen N consecutive duplicates
+					if agent.duplicateDetector.consecutiveCount >= agent.duplicateDetector.maxThreshold {
+						logger.InfoCF("agent", "Detected too many consecutive duplicate tool calls, breaking iteration loop",
+							map[string]any{
+								"agent_id":          agent.ID,
+								"tools":             toolNames,
+								"consecutive_count": agent.duplicateDetector.consecutiveCount,
+								"iteration":         iteration,
+							})
+						// Use the LLM response content as final answer
+						finalContent = response.Content
+						if finalContent == "" {
+							finalContent = "I've completed processing but have no new response to give."
+						}
+						break
+					}
+				} else {
+					// Reset counter when tools differ
+					agent.duplicateDetector.consecutiveCount = 0
+					agent.duplicateDetector.lastToolName = ""
+				}
+			}
+		}
 
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
