@@ -201,7 +201,7 @@ private fun ConfigField(
         "float" -> NumberField(field, onValueChanged, KeyboardType.Decimal)
         "[]string" -> StringArrayField(field, onValueChanged)
         "directory" -> DirectoryField(field, onValueChanged, snackbarHostState)
-        "map", "[]any" -> ReadOnlyField(field)
+        "map", "[]any" -> JsonField(field, onValueChanged)
         else -> StringField(field, onValueChanged)
     }
 }
@@ -296,13 +296,26 @@ private fun StringArrayField(field: FieldState, onValueChanged: (String) -> Unit
 }
 
 @Composable
-private fun ReadOnlyField(field: FieldState) {
+private fun JsonField(field: FieldState, onValueChanged: (String) -> Unit) {
+    val jsonError = remember(field.value) {
+        if (field.value.isBlank()) null
+        else try {
+            kotlinx.serialization.json.Json.parseToJsonElement(field.value); null
+        } catch (e: Exception) {
+            e.message
+        }
+    }
+
     OutlinedTextField(
-        value = field.value.ifEmpty { "(complex value)" },
-        onValueChange = {},
+        value = field.value,
+        onValueChange = onValueChanged,
         label = { Text(field.label, color = TextSecondary) },
-        readOnly = true,
-        enabled = false,
+        singleLine = false,
+        minLines = 3,
+        isError = jsonError != null,
+        supportingText = if (jsonError != null) {
+            { Text(jsonError, color = MaterialTheme.colorScheme.error) }
+        } else null,
         colors = configFieldColors(),
         modifier = Modifier.fillMaxWidth(),
     )

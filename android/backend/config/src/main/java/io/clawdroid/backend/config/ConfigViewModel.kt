@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -29,6 +30,7 @@ class ConfigViewModel(private val apiClient: ConfigApiClient) : ViewModel() {
     private var configValues: JsonObject? = null
     private var saveJob: Job? = null
     private var pendingSectionKey: String? = null
+    private val prettyJson = Json { prettyPrint = true }
 
     init {
         loadData()
@@ -193,6 +195,7 @@ class ConfigViewModel(private val apiClient: ConfigApiClient) : ViewModel() {
                     element.map { it.jsonPrimitive.contentOrNull ?: "" }.joinToString(", ")
                 } else ""
             }
+            "map", "[]any" -> prettyJson.encodeToString(JsonElement.serializer(), element)
             else -> (element as? JsonPrimitive)?.contentOrNull ?: element.toString()
         }
     }
@@ -232,6 +235,7 @@ class ConfigViewModel(private val apiClient: ConfigApiClient) : ViewModel() {
                 .filter { it.isNotEmpty() }
                 .map { JsonPrimitive(it) }
         )
+        "map", "[]any" -> prettyJson.parseToJsonElement(field.value)
         else -> JsonPrimitive(field.value)
     }
 }
