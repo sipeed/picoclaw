@@ -69,6 +69,8 @@ Your workspace is at: %s
 - Memory: %s/memory/MEMORY.md
 - Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
 - Skills: %s/skills/{skill-name}/SKILL.md
+- Soul: %s/SOUL.md          # Your identity and personality
+- User: %s/USER.md          # User preferences
 
 ## Important Rules
 
@@ -76,10 +78,13 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
+3. **Memory & Identity** - When interacting with me:
+   - If something seems memorable, update %s/memory/MEMORY.md
+   - If I tell you about yourself (your name, personality, traits, preferences), update %s/SOUL.md
+   - If I tell you about my preferences, update %s/USER.md
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
-		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
+		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
