@@ -170,10 +170,9 @@ func (cb *ContextBuilder) InvalidateCache() {
 	logger.DebugCF("agent", "System prompt cache invalidated", nil)
 }
 
-// sourcePaths returns the workspace source file paths tracked for cache
-// invalidation (bootstrap files + memory). The skills directory is handled
-// separately in sourceFilesChangedLocked because it requires both directory-
-// level and recursive file-level mtime checks.
+// sourcePaths returns non-skill workspace source files tracked for cache
+// invalidation (bootstrap files + memory). Skill roots are handled separately
+// because they require both directory-level and recursive file-level checks.
 func (cb *ContextBuilder) sourcePaths() []string {
 	return []string{
 		filepath.Join(cb.workspace, "AGENTS.md"),
@@ -182,6 +181,20 @@ func (cb *ContextBuilder) sourcePaths() []string {
 		filepath.Join(cb.workspace, "IDENTITY.md"),
 		filepath.Join(cb.workspace, "memory", "MEMORY.md"),
 	}
+}
+
+// skillRoots returns all skill root directories that can affect
+// BuildSkillsSummary output (workspace/global/builtin).
+func (cb *ContextBuilder) skillRoots() []string {
+	if cb.skillsLoader == nil {
+		return []string{filepath.Join(cb.workspace, "skills")}
+	}
+
+	roots := cb.skillsLoader.SkillRoots()
+	if len(roots) == 0 {
+		return []string{filepath.Join(cb.workspace, "skills")}
+	}
+	return roots
 }
 
 // cacheBaseline holds the file existence snapshot and the latest observed
@@ -195,10 +208,10 @@ type cacheBaseline struct {
 // the latest mtime across all tracked files + skills directory contents.
 // Called under write lock when the cache is built.
 func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
-	skillsDir := filepath.Join(cb.workspace, "skills")
+	skillRoots := cb.skillRoots()
 
-	// All paths whose existence we track: source files + skills dir.
-	allPaths := append(cb.sourcePaths(), skillsDir)
+	// All paths whose existence we track: source files + all skill roots.
+	allPaths := append(cb.sourcePaths(), skillRoots...)
 
 	existed := make(map[string]bool, len(allPaths))
 	var maxMtime time.Time
@@ -211,17 +224,19 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 		}
 	}
 
-	// Walk skills files to capture their mtimes too.
+	// Walk all skill roots recursively to capture skill file mtimes too.
 	// Use os.Stat (not d.Info) to match the stat method used in
 	// fileChangedSince / skillFilesModifiedSince for consistency.
-	_ = filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr == nil && !d.IsDir() {
-			if info, err := os.Stat(path); err == nil && info.ModTime().After(maxMtime) {
-				maxMtime = info.ModTime()
+	for _, root := range skillRoots {
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr == nil && !d.IsDir() {
+				if info, err := os.Stat(path); err == nil && info.ModTime().After(maxMtime) {
+					maxMtime = info.ModTime()
+				}
 			}
-		}
-		return nil
-	})
+			return nil
+		})
+	}
 
 	// If no tracked files exist yet (empty workspace), maxMtime is zero.
 	// Use a very old non-zero time so that:
@@ -255,22 +270,18 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 		}
 	}
 
-	// --- Skills directory (handled separately from sourcePaths) ---
+	// --- Skill roots (workspace/global/builtin) ---
 	//
-	// 1. Creation/deletion: tracked via existedAtCache, same as bootstrap files.
-	skillsDir := filepath.Join(cb.workspace, "skills")
-	if cb.fileChangedSince(skillsDir) {
-		return true
-	}
-
-	// 2. Structural changes (add/remove entries inside the dir) are reflected
-	//    in the directory's own mtime, which fileChangedSince already checks.
-	//
-	// 3. Content-only edits to files inside skills/ do NOT update the parent
-	//    directory mtime on most filesystems, so we recursively walk to check
-	//    individual file mtimes at any nesting depth.
-	if skillFilesModifiedSince(skillsDir, cb.cachedAt) {
-		return true
+	// For each root:
+	// 1. Creation/deletion and directory mtime changes are tracked by fileChangedSince.
+	// 2. Content-only edits inside the tree are tracked by recursive file mtime checks.
+	for _, root := range cb.skillRoots() {
+		if cb.fileChangedSince(root) {
+			return true
+		}
+		if skillFilesModifiedSince(root, cb.cachedAt) {
+			return true
+		}
 	}
 
 	return false

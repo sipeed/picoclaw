@@ -64,6 +64,28 @@ type SkillsLoader struct {
 	builtinSkills   string // builtin skills
 }
 
+// SkillRoots returns all unique skill root directories used by this loader.
+// The order follows resolution priority: workspace > global > builtin.
+func (sl *SkillsLoader) SkillRoots() []string {
+	roots := []string{sl.workspaceSkills, sl.globalSkills, sl.builtinSkills}
+	seen := make(map[string]struct{}, len(roots))
+	out := make([]string, 0, len(roots))
+
+	for _, root := range roots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+		clean := filepath.Clean(root)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		out = append(out, clean)
+	}
+
+	return out
+}
+
 func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string) *SkillsLoader {
 	return &SkillsLoader{
 		workspace:       workspace,
