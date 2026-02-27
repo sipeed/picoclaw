@@ -43,7 +43,7 @@ type RetryPolicy struct {
 	Jitter          RetryJitterFunc
 }
 
-var retryAfterPattern = regexp.MustCompile(`(?i)retry[- ]after[:=]?\s*([^\s\r\n]+)`)
+var retryAfterPattern = regexp.MustCompile(`(?i)retry[- ]after[:=]?\s*([^\r\n]+)`)
 
 // DefaultLLMRetryPolicy returns the default retry behavior for LLM calls.
 func DefaultLLMRetryPolicy() RetryPolicy {
@@ -101,7 +101,7 @@ func DoWithRetry[T any](ctx context.Context, policy RetryPolicy, fn func(context
 
 	sleepFn := policy.Sleep
 	if sleepFn == nil {
-		sleepFn = sleepWithContext
+		sleepFn = sleepWithCtx
 	}
 	jitterFn := policy.Jitter
 	if jitterFn == nil {
@@ -230,18 +230,6 @@ func boundedAttemptTimeout(ctx context.Context, configured time.Duration) (time.
 		return remaining, true
 	}
 	return configured, true
-}
-
-func sleepWithContext(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }
 
 func defaultJitter(max time.Duration) time.Duration {

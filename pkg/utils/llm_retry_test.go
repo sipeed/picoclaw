@@ -150,3 +150,16 @@ func TestLLMRetry_DoWithRetry_UsesRetryAfterFor429(t *testing.T) {
 		t.Fatalf("slept = %v, want 3s", slept)
 	}
 }
+
+func TestLLMRetry_ExtractRetryAfter_HTTPDate(t *testing.T) {
+	now := time.Date(2015, 10, 21, 7, 27, 0, 0, time.UTC)
+	err := errors.New("API request failed:\n  Status: 429\n  Retry-After: Wed, 21 Oct 2015 07:28:00 GMT")
+
+	delay, ok := extractRetryAfter(err, now)
+	if !ok {
+		t.Fatal("expected retry-after date to parse")
+	}
+	if delay != time.Minute {
+		t.Fatalf("delay = %v, want 1m", delay)
+	}
+}
