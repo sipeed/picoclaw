@@ -226,7 +226,7 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model_name": "gpt4",
+      "model": "deepseek/deepseek-chat",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20

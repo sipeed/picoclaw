@@ -193,7 +193,7 @@ picoclaw onboard
   ],
   "agents": {
     "defaults": {
-      "model_name": "gpt4"
+      "model_name": "deepseek/deepseek-chat"
     }
   },
   "channels": {
