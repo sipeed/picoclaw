@@ -5,6 +5,8 @@ ARG TARGETPLATFORM
 RUN apk add --no-cache ca-certificates tzdata
 
 COPY $TARGETPLATFORM/picoclaw /usr/local/bin/picoclaw
+COPY docker/entrypoint.sh /entrypoint.sh
 
-ENTRYPOINT ["picoclaw"]
-CMD ["gateway"]
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
