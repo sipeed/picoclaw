@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -171,6 +173,46 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	// Should be marked as truncated
 	if truncated, ok := resultMap["truncated"].(bool); !ok || !truncated {
 		t.Errorf("Expected 'truncated' to be true in result")
+	}
+}
+
+func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
+	// Create a mock HTTP server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+
+		// Generate a payload intentionally larger than our limit.
+		// Limit: 10 * 1024 * 1024 (10MB). We generate 10MB + 100 bytes of the letter 'A'.
+		largeData := bytes.Repeat([]byte("A"), int(MaxFetchLimitBytes)+100)
+
+		w.Write(largeData)
+	}))
+	// Ensure the server is shut down at the end of the test
+	defer ts.Close()
+
+	// Initialize the tool
+	tool := NewWebFetchTool(50000)
+
+	// Prepare the arguments pointing to the URL of our local mock server
+	args := map[string]any{
+		"url": ts.URL,
+	}
+
+	// Execute the tool
+	ctx := context.Background()
+	result := tool.Execute(ctx, args)
+
+	// Assuming ErrorResult sets the ForLLM field with the error text.
+	if result == nil {
+		t.Fatal("expected a ToolResult, got nil")
+	}
+
+	// Search for the exact error string we set earlier in the Execute method
+	expectedErrorMsg := fmt.Sprintf("size exceeded %d bytes limit", MaxFetchLimitBytes)
+
+	if !strings.Contains(result.ForLLM, expectedErrorMsg) && !strings.Contains(result.ForUser, expectedErrorMsg) {
+		t.Errorf("test failed: expected error %q, but got: %+v", expectedErrorMsg, result)
 	}
 }
 

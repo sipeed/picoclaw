@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,7 +15,8 @@ import (
 )
 
 const (
-	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	userAgent          = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	MaxFetchLimitBytes = int64(10 * 1024 * 1024) // 10MB limit
 )
 
 // Pre-compiled regexes for HTML text extraction
@@ -605,10 +607,17 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("request failed: %v", err))
 	}
+
+	resp.Body = http.MaxBytesReader(nil, resp.Body, MaxFetchLimitBytes)
+
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return ErrorResult(fmt.Sprintf("failed to read response: size exceeded %d bytes limit", MaxFetchLimitBytes))
+		}
 		return ErrorResult(fmt.Sprintf("failed to read response: %v", err))
 	}
 
