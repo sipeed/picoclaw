@@ -770,6 +770,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 
 // forceCompression aggressively reduces context when the limit is hit.
 // It drops the oldest 50% of messages (keeping system prompt and last user message).
+// IMPORTANT: It preserves tool call/response pairing to avoid API 400 errors.
 func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
 	if len(history) <= 4 {
@@ -784,16 +785,23 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		return
 	}
 
-	// Helper to find the mid-point of the conversation
+	// Find a safe cut point that doesn't break tool call/response pairs.
+	// A "safe" cut point is right after a user message, because:
+	// 1. User messages don't have tool call dependencies
+	// 2. Any preceding tool call/response pairs will be kept together
 	mid := len(conversation) / 2
+	cutIndex := findSafeCutPoint(conversation, mid)
 
 	// New history structure:
 	// 1. System Prompt (with compression note appended)
-	// 2. Second half of conversation
+	// 2. Second half of conversation (from safe cut point)
 	// 3. Last message
 
-	droppedCount := mid
-	keptConversation := conversation[mid:]
+	droppedCount := cutIndex
+	keptConversation := conversation[cutIndex:]
+
+	// Additional safety: remove orphaned tool messages at the start of kept conversation
+	keptConversation = removeOrphanedToolMessages(keptConversation)
 
 	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
 
@@ -819,6 +827,39 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
 	})
+}
+
+// findSafeCutPoint finds a safe index to cut the conversation without breaking tool call/response pairs.
+// It starts from the mid-point and searches forward for a user message, which is always safe to cut after.
+func findSafeCutPoint(conversation []providers.Message, mid int) int {
+	// Search forward from mid to find a user message
+	for i := mid; i < len(conversation); i++ {
+		if conversation[i].Role == "user" {
+			return i + 1 // Cut after the user message
+		}
+	}
+
+	// Fallback: search backward from mid
+	for i := mid - 1; i >= 0; i-- {
+		if conversation[i].Role == "user" {
+			return i + 1 // Cut after the user message
+		}
+	}
+
+	// No user message found (edge case), use mid but this may cause issues
+	return mid
+}
+
+// removeOrphanedToolMessages removes tool messages at the start that don't have a preceding
+// assistant message with tool_calls. This is a safety net for edge cases.
+func removeOrphanedToolMessages(messages []providers.Message) []providers.Message {
+	// Find the first non-tool message
+	for i := 0; i < len(messages); i++ {
+		if messages[i].Role != "tool" {
+			return messages[i:]
+		}
+	}
+	return messages
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
