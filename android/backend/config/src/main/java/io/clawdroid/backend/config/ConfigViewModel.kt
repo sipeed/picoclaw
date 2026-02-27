@@ -28,6 +28,7 @@ class ConfigViewModel(private val apiClient: ConfigApiClient) : ViewModel() {
     private var schema: ConfigSchema? = null
     private var configValues: JsonObject? = null
     private var saveJob: Job? = null
+    private var pendingSectionKey: String? = null
 
     init {
         loadData()
@@ -40,6 +41,10 @@ class ConfigViewModel(private val apiClient: ConfigApiClient) : ViewModel() {
     fun onSectionSelected(sectionKey: String) {
         val current = _uiState.value.detailState
         if (current != null && current.sectionKey == sectionKey) return
+        if (schema == null) {
+            pendingSectionKey = sectionKey
+            return
+        }
         loadSection(sectionKey)
     }
 
@@ -132,6 +137,10 @@ class ConfigViewModel(private val apiClient: ConfigApiClient) : ViewModel() {
                 configValues = c
                 _uiState.update {
                     it.copy(listState = ListState.Loaded(s.toSummaries()))
+                }
+                pendingSectionKey?.let { key ->
+                    pendingSectionKey = null
+                    loadSection(key)
                 }
             } catch (e: Exception) {
                 _uiState.update {
