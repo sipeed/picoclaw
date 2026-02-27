@@ -263,6 +263,10 @@ func (m *Manager) initChannels() error {
 		m.initChannel("pico", "Pico")
 	}
 
+	if m.config.Channels.XiaoYi.Enabled && m.config.Channels.XiaoYi.AK != "" {
+		m.initChannel("xiaoyi", "XiaoYi")
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})
