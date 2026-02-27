@@ -37,3 +37,8 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	return errors.New("feishu channel is not supported on 32-bit architectures")
 }
+
+// StartTyping is a stub method to satisfy the TypingCapable interface
+func (c *FeishuChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+	return func() {}, errors.New("feishu channel is not supported on 32-bit architectures")
+}
