@@ -4,20 +4,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.clawdroid.backend.api.GatewaySettings
 import io.clawdroid.backend.api.GatewaySettingsStore
+import io.clawdroid.backend.config.ConfigApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 
 data class AppSettingsUiState(
     val apiKey: String = "",
-    val wsPort: String = "18793",
     val httpPort: String = "18790",
+    val saving: Boolean = false,
+    val error: String? = null,
 ) {
-    val wsPortError: String? get() = portError(wsPort)
     val httpPortError: String? get() = portError(httpPort)
-    val hasErrors: Boolean get() = wsPortError != null || httpPortError != null
+    val hasErrors: Boolean get() = httpPortError != null
 }
 
 private fun portError(value: String): String? {
@@ -28,6 +31,7 @@ private fun portError(value: String): String? {
 
 class AppSettingsViewModel(
     private val settingsStore: GatewaySettingsStore,
+    private val configApiClient: ConfigApiClient,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AppSettingsUiState())
@@ -37,43 +41,48 @@ class AppSettingsViewModel(
         val current = settingsStore.settings.value
         _uiState.value = AppSettingsUiState(
             apiKey = current.apiKey,
-            wsPort = current.wsPort.toString(),
             httpPort = current.httpPort.toString(),
         )
     }
 
     fun onApiKeyChange(value: String) {
-        _uiState.update { it.copy(apiKey = value) }
-    }
-
-    fun onWsPortChange(value: String) {
-        if (value.isEmpty() || value.toIntOrNull() != null) {
-            _uiState.update { it.copy(wsPort = value) }
-        }
+        _uiState.update { it.copy(apiKey = value, error = null) }
     }
 
     fun onHttpPortChange(value: String) {
         if (value.isEmpty() || value.toIntOrNull() != null) {
-            _uiState.update { it.copy(httpPort = value) }
+            _uiState.update { it.copy(httpPort = value, error = null) }
         }
     }
 
     fun save(onComplete: () -> Unit) {
         viewModelScope.launch {
             val state = _uiState.value
-            if (state.hasErrors) return@launch
+            if (state.hasErrors || state.saving) return@launch
+
+            _uiState.update { it.copy(saving = true, error = null) }
+
             val defaults = GatewaySettings()
-            fun validPort(raw: String, fallback: Int): Int {
-                val port = raw.toIntOrNull() ?: return fallback
-                return if (port in 1..65535) port else fallback
+            val newPort = state.httpPort.toIntOrNull()?.takeIf { it in 1..65535 } ?: defaults.httpPort
+            val newKey = state.apiKey
+
+            // Send update via config API using current (old) connection settings
+            val payload = buildJsonObject {
+                put("gateway", buildJsonObject {
+                    put("port", JsonPrimitive(newPort))
+                    put("api_key", JsonPrimitive(newKey))
+                })
             }
-            val settings = GatewaySettings(
-                wsPort = validPort(state.wsPort, defaults.wsPort),
-                httpPort = validPort(state.httpPort, defaults.httpPort),
-                apiKey = state.apiKey,
-            )
-            settingsStore.update(settings)
-            onComplete()
+
+            try {
+                configApiClient.saveConfig(payload)
+                // Persist new values locally after remote success
+                settingsStore.update(GatewaySettings(httpPort = newPort, apiKey = newKey))
+                _uiState.update { it.copy(saving = false) }
+                onComplete()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(saving = false, error = e.message ?: "Save failed") }
+            }
         }
     }
 }

@@ -33,7 +33,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/config", s.authMiddleware(s.handleGetConfig))
 	mux.HandleFunc("PUT /api/config", s.authMiddleware(s.handlePutConfig))
 
-	addr := fmt.Sprintf("%s:%d", s.cfg.Gateway.Host, s.cfg.Gateway.Port)
+	addr := fmt.Sprintf("127.0.0.1:%d", s.cfg.Gateway.Port)
 	s.server = &http.Server{
 		Addr:    addr,
 		Handler: mux,

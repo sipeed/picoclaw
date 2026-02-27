@@ -21,7 +21,6 @@ class GatewaySettingsStoreImpl(
 ) : GatewaySettingsStore {
 
     private object Keys {
-        val WS_PORT = intPreferencesKey("ws_port")
         val HTTP_PORT = intPreferencesKey("http_port")
         val API_KEY = stringPreferencesKey("api_key")
     }
@@ -29,7 +28,6 @@ class GatewaySettingsStoreImpl(
     override val settings: StateFlow<GatewaySettings> =
         context.gatewayDataStore.data.map { prefs ->
             GatewaySettings(
-                wsPort = prefs[Keys.WS_PORT] ?: DEFAULT.wsPort,
                 httpPort = prefs[Keys.HTTP_PORT] ?: DEFAULT.httpPort,
                 apiKey = prefs[Keys.API_KEY] ?: DEFAULT.apiKey,
             )
@@ -41,7 +39,6 @@ class GatewaySettingsStoreImpl(
 
     override suspend fun update(settings: GatewaySettings) {
         context.gatewayDataStore.edit { prefs ->
-            prefs[Keys.WS_PORT] = settings.wsPort
             prefs[Keys.HTTP_PORT] = settings.httpPort
             prefs[Keys.API_KEY] = settings.apiKey
         }

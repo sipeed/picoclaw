@@ -492,7 +492,7 @@ func gatewayCmd() {
 		fmt.Printf("Error starting gateway HTTP server: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("✓ Config API started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf("✓ Config API started on 127.0.0.1:%d\n", cfg.Gateway.Port)
 
 	// Setup cron tool and service
 	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.DataPath(), cfg.Agents.Defaults.RestrictToWorkspace, cfg.Tools.Exec.Enabled)
@@ -539,7 +539,7 @@ func gatewayCmd() {
 		fmt.Println("⚠ Warning: No channels enabled")
 	}
 
-	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf("✓ Gateway started on 127.0.0.1:%d\n", cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")
 
 	ctx, cancel := context.WithCancel(context.Background())

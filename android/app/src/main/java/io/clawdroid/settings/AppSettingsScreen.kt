@@ -59,7 +59,7 @@ fun AppSettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var apiKeyHidden by remember { mutableStateOf(true) }
-    val saveEnabled by remember { derivedStateOf { !uiState.hasErrors } }
+    val saveEnabled by remember { derivedStateOf { !uiState.hasErrors && !uiState.saving } }
 
     Box(
         modifier = Modifier
@@ -92,7 +92,7 @@ fun AppSettingsScreen(
             containerColor = Color.Transparent,
             topBar = {
                 TopAppBar(
-                    title = { Text("App Settings") },
+                    title = { Text("Connection") },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,
                     ),
@@ -115,7 +115,7 @@ fun AppSettingsScreen(
                             ),
                             modifier = Modifier.padding(end = 8.dp),
                         ) {
-                            Text("Save")
+                            Text(if (uiState.saving) "Saving…" else "Save")
                         }
                     },
                 )
@@ -136,9 +136,22 @@ fun AppSettingsScreen(
                 )
 
                 OutlinedTextField(
+                    value = uiState.httpPort,
+                    onValueChange = { viewModel.onHttpPortChange(it) },
+                    label = { Text("Port", color = TextSecondary) },
+                    placeholder = { Text("18790", color = TextSecondary.copy(alpha = 0.5f)) },
+                    singleLine = true,
+                    isError = uiState.httpPortError != null,
+                    supportingText = uiState.httpPortError?.let { err -> { Text(err) } },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = appSettingsFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
                     value = uiState.apiKey,
                     onValueChange = { viewModel.onApiKeyChange(it) },
-                    label = { Text("Gateway API Key", color = TextSecondary) },
+                    label = { Text("API Key", color = TextSecondary) },
                     singleLine = true,
                     visualTransformation = if (apiKeyHidden) PasswordVisualTransformation() else VisualTransformation.None,
                     trailingIcon = {
@@ -154,31 +167,13 @@ fun AppSettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                OutlinedTextField(
-                    value = uiState.wsPort,
-                    onValueChange = { viewModel.onWsPortChange(it) },
-                    label = { Text("Gateway WS Port", color = TextSecondary) },
-                    placeholder = { Text("18793", color = TextSecondary.copy(alpha = 0.5f)) },
-                    singleLine = true,
-                    isError = uiState.wsPortError != null,
-                    supportingText = uiState.wsPortError?.let { err -> { Text(err) } },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = appSettingsFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                OutlinedTextField(
-                    value = uiState.httpPort,
-                    onValueChange = { viewModel.onHttpPortChange(it) },
-                    label = { Text("Gateway HTTP Port", color = TextSecondary) },
-                    placeholder = { Text("18790", color = TextSecondary.copy(alpha = 0.5f)) },
-                    singleLine = true,
-                    isError = uiState.httpPortError != null,
-                    supportingText = uiState.httpPortError?.let { err -> { Text(err) } },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = appSettingsFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                uiState.error?.let { error ->
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
     }

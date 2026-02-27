@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -198,6 +199,13 @@ func (c *WebSocketChannel) maybeBroadcast(msg bus.OutboundMessage, clientType st
 }
 
 func (c *WebSocketChannel) handleWS(w http.ResponseWriter, r *http.Request) {
+	if key := c.config.APIKey; key != "" {
+		if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("api_key")), []byte(key)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
+
 	conn, err := c.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logger.ErrorCF("websocket", "Upgrade failed", map[string]interface{}{

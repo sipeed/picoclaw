@@ -22,7 +22,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.net.URLEncoder
+
 
 class WebSocketClient(
     private val client: HttpClient,
@@ -42,7 +42,6 @@ class WebSocketClient(
     private val json = Json { ignoreUnknownKeys = true }
 
     @Volatile var wsUrl: String = "ws://127.0.0.1:18793/ws"
-    @Volatile var apiKey: String = ""
 
     fun connect() {
         if (connectJob?.isActive == true) return
@@ -52,11 +51,8 @@ class WebSocketClient(
                 try {
                     _connectionState.value = ConnectionState.CONNECTING
                     val currentWsUrl = wsUrl
-                    val currentApiKey = apiKey
-                    val url = buildString {
-                        append("$currentWsUrl?client_id=$clientId&client_type=$clientType")
-                        if (currentApiKey.isNotEmpty()) append("&api_key=${URLEncoder.encode(currentApiKey, "UTF-8")}")
-                    }
+                    val separator = if ('?' in currentWsUrl) '&' else '?'
+                    val url = "${currentWsUrl}${separator}client_id=$clientId&client_type=$clientType"
                     client.webSocket(url) {
                         session = this
                         _connectionState.value = ConnectionState.CONNECTED

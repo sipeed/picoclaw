@@ -57,7 +57,6 @@ func TestServerStop_NoServer_NoError(t *testing.T) {
 
 func TestServerStart_RegistersRoutesAndAuth(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Gateway.Host = "127.0.0.1"
 	cfg.Gateway.Port = -1 // invalid port prevents real listen but Start still builds handler
 	cfg.Gateway.APIKey = "test-key"
 
@@ -106,9 +105,9 @@ func TestServerStart_RegistersRoutesAndAuth(t *testing.T) {
 
 func TestBuildSchema_SectionCount(t *testing.T) {
 	schema := BuildSchema(config.DefaultConfig())
-	// Config has exported fields: LLM, Agents, Channels, Gateway, Tools, Heartbeat, RateLimits
-	if len(schema.Sections) < 7 {
-		t.Errorf("expected at least 7 sections, got %d", len(schema.Sections))
+	// Config has exported fields: LLM, Agents, Channels, Tools, Heartbeat, RateLimits (gateway excluded)
+	if len(schema.Sections) < 6 {
+		t.Errorf("expected at least 6 sections, got %d", len(schema.Sections))
 	}
 }
 
@@ -342,8 +341,6 @@ func TestBuildSchema_DefaultValues(t *testing.T) {
 		{"agents", "defaults.max_tokens", float64(8192)},        // JSON numbers → float64
 		{"agents", "defaults.context_window", float64(128000)},
 		{"agents", "defaults.restrict_to_workspace", true},
-		{"gateway", "host", "127.0.0.1"},
-		{"gateway", "port", float64(18790)},
 		{"heartbeat", "enabled", true},
 		{"heartbeat", "interval", float64(30)},
 	}
@@ -387,8 +384,8 @@ func TestHandleGetSchema_Response(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if len(schema.Sections) < 7 {
-		t.Errorf("expected at least 7 sections, got %d", len(schema.Sections))
+	if len(schema.Sections) < 6 {
+		t.Errorf("expected at least 6 sections, got %d", len(schema.Sections))
 	}
 
 	// Verify each section has at least one field
@@ -451,7 +448,6 @@ func TestHandleGetConfig_NonSecretValues(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.LLM.Model = "test-model"
 	cfg.LLM.BaseURL = "https://example.com"
-	cfg.Gateway.Host = "0.0.0.0"
 	cfg.Gateway.Port = 9999
 
 	s := newTestServer(cfg)
@@ -475,9 +471,6 @@ func TestHandleGetConfig_NonSecretValues(t *testing.T) {
 	}
 
 	gw := result["gateway"].(map[string]interface{})
-	if gw["host"] != "0.0.0.0" {
-		t.Errorf("gateway host = %v, want %q", gw["host"], "0.0.0.0")
-	}
 	if gw["port"] != float64(9999) {
 		t.Errorf("gateway port = %v, want %v", gw["port"], 9999)
 	}
@@ -723,7 +716,6 @@ func TestHandlePutConfig_SaveError_500(t *testing.T) {
 func TestHandlePutConfig_PartialUpdatePreservesOtherSections(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.LLM.Model = "original-model"
-	cfg.Gateway.Host = "10.0.0.1"
 	cfg.Gateway.Port = 12345
 	cfg.Channels.Telegram.Enabled = true
 	cfg.Heartbeat.Interval = 60
@@ -750,9 +742,6 @@ func TestHandlePutConfig_PartialUpdatePreservesOtherSections(t *testing.T) {
 
 	if saved.LLM.Model != "new-model" {
 		t.Errorf("LLM model = %q, want %q", saved.LLM.Model, "new-model")
-	}
-	if saved.Gateway.Host != "10.0.0.1" {
-		t.Errorf("Gateway host = %q, want %q (should be preserved)", saved.Gateway.Host, "10.0.0.1")
 	}
 	if saved.Gateway.Port != 12345 {
 		t.Errorf("Gateway port = %d, want %d (should be preserved)", saved.Gateway.Port, 12345)
@@ -1200,7 +1189,6 @@ func TestBuildSchema_SectionLabels(t *testing.T) {
 
 func TestServerRouting_PutConfig_AuthRequired(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Gateway.Host = "127.0.0.1"
 	cfg.Gateway.Port = -1
 	cfg.Gateway.APIKey = "route-test-key"
 
@@ -2064,7 +2052,6 @@ func TestHandlePutConfig_ThenGetRoundTrip(t *testing.T) {
 
 func TestServerStop_CalledTwice(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Gateway.Host = "127.0.0.1"
 	cfg.Gateway.Port = -1
 
 	s := NewServer(cfg, "/tmp/config.json", nil)
@@ -2085,7 +2072,6 @@ func TestServerStop_CalledTwice(t *testing.T) {
 
 func TestServerRouting_UnsupportedMethods(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Gateway.Host = "127.0.0.1"
 	cfg.Gateway.Port = -1
 
 	s := NewServer(cfg, "/tmp/config.json", nil)
@@ -2107,7 +2093,6 @@ func TestServerRouting_UnsupportedMethods(t *testing.T) {
 
 func TestServerRouting_UnknownPath(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Gateway.Host = "127.0.0.1"
 	cfg.Gateway.Port = -1
 
 	s := NewServer(cfg, "/tmp/config.json", nil)
@@ -2168,7 +2153,6 @@ func TestAuthMiddleware_TokenWithWhitespace_403(t *testing.T) {
 
 func TestServerRouting_SchemaAuthRequired(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Gateway.Host = "127.0.0.1"
 	cfg.Gateway.Port = -1
 	cfg.Gateway.APIKey = "schema-auth-key"
 
@@ -2336,38 +2320,14 @@ func TestBuildSchema_RateLimitsSectionFields(t *testing.T) {
 	}
 }
 
-// --- #30: gateway section all fields in schema ---
+// --- #30: gateway section excluded from schema ---
 
-func TestBuildSchema_GatewaySectionFields(t *testing.T) {
+func TestBuildSchema_GatewaySectionExcluded(t *testing.T) {
 	schema := BuildSchema(config.DefaultConfig())
 
-	var gw *SchemaSection
-	for i := range schema.Sections {
-		if schema.Sections[i].Key == "gateway" {
-			gw = &schema.Sections[i]
-			break
-		}
-	}
-	if gw == nil {
-		t.Fatal("gateway section not found")
-	}
-
-	keySet := map[string]bool{}
-	for _, f := range gw.Fields {
-		keySet[f.Key] = true
-	}
-
-	wantKeys := []string{"host", "port", "api_key"}
-	for _, k := range wantKeys {
-		if !keySet[k] {
-			t.Errorf("gateway field %q not found", k)
-		}
-	}
-
-	// api_key should be secret
-	for _, f := range gw.Fields {
-		if f.Key == "api_key" && !f.Secret {
-			t.Error("gateway api_key should be marked as secret")
+	for _, sec := range schema.Sections {
+		if sec.Key == "gateway" {
+			t.Error("gateway section should be excluded from schema")
 		}
 	}
 }

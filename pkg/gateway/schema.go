@@ -65,6 +65,11 @@ func BuildSchema(defaultCfg *config.Config) SchemaResponse {
 			continue
 		}
 
+		// Gateway is managed via the Connection screen, not the Backend Config UI.
+		if jsonTag == "gateway" {
+			continue
+		}
+
 		section := SchemaSection{
 			Key:   jsonTag,
 			Label: labelTag(field),

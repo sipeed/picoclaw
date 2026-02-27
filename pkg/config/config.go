@@ -124,6 +124,7 @@ type WebSocketConfig struct {
 	Host      string              `json:"host" label:"Host" env:"CLAWDROID_CHANNELS_WEBSOCKET_HOST"`
 	Port      int                 `json:"port" label:"Port" env:"CLAWDROID_CHANNELS_WEBSOCKET_PORT"`
 	Path      string              `json:"path" label:"Path" env:"CLAWDROID_CHANNELS_WEBSOCKET_PATH"`
+	APIKey    string              `json:"api_key" label:"API Key" env:"CLAWDROID_CHANNELS_WEBSOCKET_API_KEY"`
 	AllowFrom FlexibleStringSlice `json:"allow_from" label:"Allow From" env:"CLAWDROID_CHANNELS_WEBSOCKET_ALLOW_FROM"`
 }
 
@@ -138,7 +139,6 @@ type RateLimitsConfig struct {
 }
 
 type GatewayConfig struct {
-	Host   string `json:"host" label:"Host" env:"CLAWDROID_GATEWAY_HOST"`
 	Port   int    `json:"port" label:"Port" env:"CLAWDROID_GATEWAY_PORT"`
 	APIKey string `json:"api_key" label:"API Key" env:"CLAWDROID_GATEWAY_API_KEY"`
 }
@@ -249,7 +249,6 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host: "127.0.0.1",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{

@@ -78,11 +78,7 @@ val appModule = module {
         val clientId = prefs.getString("client_id", null) ?: UUID.randomUUID().toString().also {
             prefs.edit().putString("client_id", it).apply()
         }
-        val gwSettings = get<GatewaySettingsStore>().settings.value
-        WebSocketClient(get(), get(), clientId).apply {
-            wsUrl = gwSettings.wsUrl
-            apiKey = gwSettings.apiKey
-        }
+        WebSocketClient(get(), get(), clientId)
     }
 
     // ImageFileStorage
@@ -134,5 +130,5 @@ val appModule = module {
     // ViewModel
     viewModel { ChatViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get(), get()) }
-    viewModel { AppSettingsViewModel(get()) }
+    viewModel { AppSettingsViewModel(get(), get()) }
 }
