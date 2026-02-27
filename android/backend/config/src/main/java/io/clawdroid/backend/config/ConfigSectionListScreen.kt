@@ -42,14 +42,13 @@ import io.clawdroid.core.ui.theme.GlassWhite
 import io.clawdroid.core.ui.theme.NeonCyan
 import io.clawdroid.core.ui.theme.TextPrimary
 import io.clawdroid.core.ui.theme.TextSecondary
-import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigSectionListScreen(
     onNavigateBack: () -> Unit,
     onSectionSelected: (sectionKey: String) -> Unit,
-    viewModel: ConfigViewModel = koinViewModel(),
+    viewModel: ConfigViewModel,
 ) {
     val uiState by viewModel.uiState.collectAsState()
 

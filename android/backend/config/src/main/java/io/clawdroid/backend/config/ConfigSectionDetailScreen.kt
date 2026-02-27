@@ -59,14 +59,13 @@ import io.clawdroid.core.ui.theme.NeonCyan
 import io.clawdroid.core.ui.theme.TextPrimary
 import io.clawdroid.core.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
-import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigSectionDetailScreen(
     sectionKey: String,
     onNavigateBack: () -> Unit,
-    viewModel: ConfigViewModel = koinViewModel(),
+    viewModel: ConfigViewModel,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }

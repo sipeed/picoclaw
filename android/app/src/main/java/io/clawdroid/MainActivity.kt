@@ -9,18 +9,22 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.runtime.remember
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.clawdroid.backend.config.ConfigSectionDetailScreen
 import io.clawdroid.backend.config.ConfigSectionListScreen
+import io.clawdroid.backend.config.ConfigViewModel
 import io.clawdroid.core.ui.theme.ClawDroidTheme
 import io.clawdroid.feature.chat.screen.ChatScreen
 import io.clawdroid.feature.chat.screen.SettingsScreen
 import io.clawdroid.navigation.NavRoutes
 import io.clawdroid.settings.AppSettingsScreen
+import org.koin.androidx.compose.koinViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -48,22 +52,37 @@ class MainActivity : ComponentActivity() {
                             onNavigateToAppSettings = { navController.navigate(NavRoutes.APP_SETTINGS) },
                         )
                     }
-                    composable(NavRoutes.BACKEND_SETTINGS) {
-                        ConfigSectionListScreen(
-                            onNavigateBack = { navController.popBackStack() },
-                            onSectionSelected = { sectionKey ->
-                                navController.navigate("backend_settings/$sectionKey")
-                            },
-                        )
-                    }
-                    composable(
-                        NavRoutes.BACKEND_SETTINGS_SECTION,
-                        arguments = listOf(navArgument("sectionKey") { type = NavType.StringType }),
-                    ) { backStackEntry ->
-                        ConfigSectionDetailScreen(
-                            sectionKey = backStackEntry.arguments?.getString("sectionKey") ?: "",
-                            onNavigateBack = { navController.popBackStack() },
-                        )
+                    navigation(
+                        route = NavRoutes.BACKEND_SETTINGS,
+                        startDestination = NavRoutes.BACKEND_SETTINGS_LIST,
+                    ) {
+                        composable(NavRoutes.BACKEND_SETTINGS_LIST) { entry ->
+                            val parentEntry = remember(entry) {
+                                navController.getBackStackEntry(NavRoutes.BACKEND_SETTINGS)
+                            }
+                            val viewModel: ConfigViewModel = koinViewModel(viewModelStoreOwner = parentEntry)
+                            ConfigSectionListScreen(
+                                onNavigateBack = { navController.popBackStack() },
+                                onSectionSelected = { sectionKey ->
+                                    navController.navigate("backend_settings/$sectionKey")
+                                },
+                                viewModel = viewModel,
+                            )
+                        }
+                        composable(
+                            NavRoutes.BACKEND_SETTINGS_SECTION,
+                            arguments = listOf(navArgument("sectionKey") { type = NavType.StringType }),
+                        ) { entry ->
+                            val parentEntry = remember(entry) {
+                                navController.getBackStackEntry(NavRoutes.BACKEND_SETTINGS)
+                            }
+                            val viewModel: ConfigViewModel = koinViewModel(viewModelStoreOwner = parentEntry)
+                            ConfigSectionDetailScreen(
+                                sectionKey = entry.arguments?.getString("sectionKey") ?: "",
+                                onNavigateBack = { navController.popBackStack() },
+                                viewModel = viewModel,
+                            )
+                        }
                     }
                     composable(NavRoutes.APP_SETTINGS) {
                         AppSettingsScreen(
