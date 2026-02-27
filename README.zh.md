@@ -600,7 +600,7 @@ Agent 读取 HEARTBEAT.md
 }
 ```
 
-> 详见 [Cloudflare AI Gateway 文档](https://developers.cloudflare.com/ai-gateway/) 和 [Workers AI 模型列表](https://developers.cloudflare.com/workers-ai/models/)。
+> 详见 [Cloudflare AI Gateway 文档](https://developers.cloudflare.com/ai-gateway/)、[Workers AI 模型列表](https://developers.cloudflare.com/workers-ai/models/) 和 [Workers AI 定价](https://developers.cloudflare.com/workers-ai/platform/pricing/)。
 
 #### 负载均衡
 
@@ -863,3 +863,4 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 | **Brave Search** | 2000 次查询/月 | 网络搜索功能 |
 | **Tavily** | 1000 次查询/月 | AI Agent 搜索优化 |
 | **Groq** | 提供免费层级 | 极速推理 (Llama, Mixtral) |
+| **Cloudflare AI Gateway** | Workers AI 免费层级 | 多提供商统一计费，无服务器模型 |
