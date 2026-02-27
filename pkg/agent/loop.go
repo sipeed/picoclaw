@@ -603,6 +603,19 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration":     iteration,
 					"content_chars": len(finalContent),
 				})
+			// If content is empty and we just processed tool results (iteration > 1),
+			// retry once by adding a nudge message to prompt the model to respond.
+			if strings.TrimSpace(finalContent) == "" && iteration > 1 && iteration < al.maxIterations {
+				logger.InfoCF("agent", "Empty response after tool use, retrying with nudge",
+					map[string]interface{}{
+						"iteration": iteration,
+					})
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: "Please provide your response based on the tool results above.",
+				})
+				continue
+			}
 			break
 		}
 
