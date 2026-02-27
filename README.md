@@ -288,7 +288,7 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, WeCom, or XiaoYi
 
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
@@ -298,6 +298,7 @@ Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
 | **WeCom**    | Medium (CorpID + webhook setup)    |
+| **XiaoYi**   | Medium (AK/SK + AgentID)           |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
