@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
@@ -331,5 +332,243 @@ func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	// Should mention missing domain
 	if !strings.Contains(result.ForLLM, "domain") && !strings.Contains(result.ForUser, "domain") {
 		t.Errorf("Expected domain error message, got ForLLM: %s", result.ForLLM)
+	}
+}
+
+func TestCreateHTTPClient_ProxyConfigured(t *testing.T) {
+	client, err := createHTTPClient("http://127.0.0.1:7890", 12*time.Second)
+	if err != nil {
+		t.Fatalf("createHTTPClient() error: %v", err)
+	}
+	if client.Timeout != 12*time.Second {
+		t.Fatalf("client.Timeout = %v, want %v", client.Timeout, 12*time.Second)
+	}
+
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+	}
+	if tr.Proxy == nil {
+		t.Fatal("transport.Proxy is nil, want non-nil")
+	}
+
+	req, err := http.NewRequest("GET", "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest() error: %v", err)
+	}
+	proxyURL, err := tr.Proxy(req)
+	if err != nil {
+		t.Fatalf("transport.Proxy(req) error: %v", err)
+	}
+	if proxyURL == nil || proxyURL.String() != "http://127.0.0.1:7890" {
+		t.Fatalf("proxy URL = %v, want %q", proxyURL, "http://127.0.0.1:7890")
+	}
+}
+
+func TestCreateHTTPClient_InvalidProxy(t *testing.T) {
+	_, err := createHTTPClient("://bad-proxy", 10*time.Second)
+	if err == nil {
+		t.Fatal("createHTTPClient() expected error for invalid proxy URL, got nil")
+	}
+}
+
+func TestCreateHTTPClient_Socks5ProxyConfigured(t *testing.T) {
+	client, err := createHTTPClient("socks5://127.0.0.1:1080", 8*time.Second)
+	if err != nil {
+		t.Fatalf("createHTTPClient() error: %v", err)
+	}
+
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+	}
+	req, err := http.NewRequest("GET", "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest() error: %v", err)
+	}
+	proxyURL, err := tr.Proxy(req)
+	if err != nil {
+		t.Fatalf("transport.Proxy(req) error: %v", err)
+	}
+	if proxyURL == nil || proxyURL.String() != "socks5://127.0.0.1:1080" {
+		t.Fatalf("proxy URL = %v, want %q", proxyURL, "socks5://127.0.0.1:1080")
+	}
+}
+
+func TestCreateHTTPClient_UnsupportedProxyScheme(t *testing.T) {
+	_, err := createHTTPClient("ftp://127.0.0.1:21", 10*time.Second)
+	if err == nil {
+		t.Fatal("createHTTPClient() expected error for unsupported scheme, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported proxy scheme") {
+		t.Fatalf("error = %q, want to contain %q", err.Error(), "unsupported proxy scheme")
+	}
+}
+
+func TestCreateHTTPClient_ProxyFromEnvironmentWhenConfigEmpty(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:8888")
+	t.Setenv("http_proxy", "http://127.0.0.1:8888")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:8888")
+	t.Setenv("https_proxy", "http://127.0.0.1:8888")
+	t.Setenv("ALL_PROXY", "")
+	t.Setenv("all_proxy", "")
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+
+	client, err := createHTTPClient("", 10*time.Second)
+	if err != nil {
+		t.Fatalf("createHTTPClient() error: %v", err)
+	}
+
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+	}
+	if tr.Proxy == nil {
+		t.Fatal("transport.Proxy is nil, want proxy function from environment")
+	}
+
+	req, err := http.NewRequest("GET", "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest() error: %v", err)
+	}
+	if _, err := tr.Proxy(req); err != nil {
+		t.Fatalf("transport.Proxy(req) error: %v", err)
+	}
+}
+
+func TestNewWebFetchToolWithProxy(t *testing.T) {
+	tool := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890")
+	if tool.maxChars != 1024 {
+		t.Fatalf("maxChars = %d, want %d", tool.maxChars, 1024)
+	}
+	if tool.proxy != "http://127.0.0.1:7890" {
+		t.Fatalf("proxy = %q, want %q", tool.proxy, "http://127.0.0.1:7890")
+	}
+
+	tool = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890")
+	if tool.maxChars != 50000 {
+		t.Fatalf("default maxChars = %d, want %d", tool.maxChars, 50000)
+	}
+}
+
+func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
+	t.Run("perplexity", func(t *testing.T) {
+		tool := NewWebSearchTool(WebSearchToolOptions{
+			PerplexityEnabled:    true,
+			PerplexityAPIKey:     "k",
+			PerplexityMaxResults: 3,
+			Proxy:                "http://127.0.0.1:7890",
+		})
+		p, ok := tool.provider.(*PerplexitySearchProvider)
+		if !ok {
+			t.Fatalf("provider type = %T, want *PerplexitySearchProvider", tool.provider)
+		}
+		if p.proxy != "http://127.0.0.1:7890" {
+			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+	})
+
+	t.Run("brave", func(t *testing.T) {
+		tool := NewWebSearchTool(WebSearchToolOptions{
+			BraveEnabled:    true,
+			BraveAPIKey:     "k",
+			BraveMaxResults: 3,
+			Proxy:           "http://127.0.0.1:7890",
+		})
+		p, ok := tool.provider.(*BraveSearchProvider)
+		if !ok {
+			t.Fatalf("provider type = %T, want *BraveSearchProvider", tool.provider)
+		}
+		if p.proxy != "http://127.0.0.1:7890" {
+			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+	})
+
+	t.Run("duckduckgo", func(t *testing.T) {
+		tool := NewWebSearchTool(WebSearchToolOptions{
+			DuckDuckGoEnabled:    true,
+			DuckDuckGoMaxResults: 3,
+			Proxy:                "http://127.0.0.1:7890",
+		})
+		p, ok := tool.provider.(*DuckDuckGoSearchProvider)
+		if !ok {
+			t.Fatalf("provider type = %T, want *DuckDuckGoSearchProvider", tool.provider)
+		}
+		if p.proxy != "http://127.0.0.1:7890" {
+			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+	})
+}
+
+// TestWebTool_TavilySearch_Success verifies successful Tavily search
+func TestWebTool_TavilySearch_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("Expected POST request, got %s", r.Method)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("Expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
+		}
+
+		// Verify payload
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if payload["api_key"] != "test-key" {
+			t.Errorf("Expected api_key test-key, got %v", payload["api_key"])
+		}
+		if payload["query"] != "test query" {
+			t.Errorf("Expected query 'test query', got %v", payload["query"])
+		}
+
+		// Return mock response
+		response := map[string]any{
+			"results": []map[string]any{
+				{
+					"title":   "Test Result 1",
+					"url":     "https://example.com/1",
+					"content": "Content for result 1",
+				},
+				{
+					"title":   "Test Result 2",
+					"url":     "https://example.com/2",
+					"content": "Content for result 2",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		TavilyEnabled:    true,
+		TavilyAPIKey:     "test-key",
+		TavilyBaseURL:    server.URL,
+		TavilyMaxResults: 5,
+	})
+
+	ctx := context.Background()
+	args := map[string]any{
+		"query": "test query",
+	}
+
+	result := tool.Execute(ctx, args)
+
+	// Success should not be an error
+	if result.IsError {
+		t.Errorf("Expected success, got IsError=true: %s", result.ForLLM)
+	}
+
+	// ForUser should contain result titles and URLs
+	if !strings.Contains(result.ForUser, "Test Result 1") ||
+		!strings.Contains(result.ForUser, "https://example.com/1") {
+		t.Errorf("Expected results in output, got: %s", result.ForUser)
+	}
+
+	// Should mention via Tavily
+	if !strings.Contains(result.ForUser, "via Tavily") {
+		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
 	}
 }

@@ -94,7 +94,7 @@ func TestNewAgentInstance_DefaultsTemperatureWhenUnset(t *testing.T) {
 	}
 }
 
-func TestNewAgentInstance_EnableToolsDefaultsToTrue(t *testing.T) {
+func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -104,10 +104,15 @@ func TestNewAgentInstance_EnableToolsDefaultsToTrue(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         1234,
-				MaxToolIterations: 5,
+				Workspace: tmpDir,
+				Model:     "step-3.5-flash",
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "step-3.5-flash",
+				Model:     "openrouter/stepfun/step-3.5-flash:free",
+				APIBase:   "https://openrouter.ai/api/v1",
 			},
 		},
 	}
@@ -115,27 +120,36 @@ func TestNewAgentInstance_EnableToolsDefaultsToTrue(t *testing.T) {
 	provider := &mockProvider{}
 	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
 
-	if !agent.EnableTools {
-		t.Fatal("EnableTools = false, want true")
+	if len(agent.Candidates) != 1 {
+		t.Fatalf("len(Candidates) = %d, want 1", len(agent.Candidates))
+	}
+	if agent.Candidates[0].Provider != "openrouter" {
+		t.Fatalf("candidate provider = %q, want %q", agent.Candidates[0].Provider, "openrouter")
+	}
+	if agent.Candidates[0].Model != "stepfun/step-3.5-flash:free" {
+		t.Fatalf("candidate model = %q, want %q", agent.Candidates[0].Model, "stepfun/step-3.5-flash:free")
 	}
 }
 
-func TestNewAgentInstance_EnableToolsFromDefaults(t *testing.T) {
+func TestNewAgentInstance_ResolveCandidatesFromModelListAliasWithoutProtocol(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	disabled := false
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         1234,
-				MaxToolIterations: 5,
-				EnableTools:       &disabled,
+				Workspace: tmpDir,
+				Model:     "glm-5",
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "glm-5",
+				Model:     "glm-5",
+				APIBase:   "https://api.z.ai/api/coding/paas/v4",
 			},
 		},
 	}
@@ -143,42 +157,13 @@ func TestNewAgentInstance_EnableToolsFromDefaults(t *testing.T) {
 	provider := &mockProvider{}
 	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
 
-	if agent.EnableTools {
-		t.Fatal("EnableTools = true, want false")
+	if len(agent.Candidates) != 1 {
+		t.Fatalf("len(Candidates) = %d, want 1", len(agent.Candidates))
 	}
-}
-
-func TestNewAgentInstance_EnableToolsAgentOverride(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+	if agent.Candidates[0].Provider != "openai" {
+		t.Fatalf("candidate provider = %q, want %q", agent.Candidates[0].Provider, "openai")
 	}
-	defer os.RemoveAll(tmpDir)
-
-	disabled := false
-	enabled := true
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         1234,
-				MaxToolIterations: 5,
-				EnableTools:       &disabled,
-			},
-		},
-	}
-
-	agentCfg := &config.AgentConfig{
-		ID:          "main",
-		Default:     true,
-		EnableTools: &enabled,
-	}
-
-	provider := &mockProvider{}
-	agent := NewAgentInstance(agentCfg, &cfg.Agents.Defaults, cfg, provider)
-
-	if !agent.EnableTools {
-		t.Fatal("EnableTools = false, want true")
+	if agent.Candidates[0].Model != "glm-5" {
+		t.Fatalf("candidate model = %q, want %q", agent.Candidates[0].Model, "glm-5")
 	}
 }
