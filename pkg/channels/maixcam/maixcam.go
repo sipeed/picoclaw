@@ -33,7 +33,13 @@ type MaixCamMessage struct {
 }
 
 func NewMaixCamChannel(cfg config.MaixCamConfig, bus *bus.MessageBus) (*MaixCamChannel, error) {
-	base := channels.NewBaseChannel("maixcam", cfg, bus, cfg.AllowFrom)
+	base := channels.NewBaseChannel(
+		"maixcam",
+		cfg,
+		bus,
+		cfg.AllowFrom,
+		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+	)
 
 	return &MaixCamChannel{
 		BaseChannel: base,

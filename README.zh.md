@@ -166,41 +166,43 @@ make install
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. 设置 API Key
-cp config/config.example.json config/config.json
-vim config/config.json      # 设置 DISCORD_BOT_TOKEN, API keys 等
+# 2. 首次运行 — 自动生成 docker/data/config.json 后退出
+docker compose -f docker/docker-compose.yml --profile gateway up
+# 容器打印 "First-run setup complete." 后自动停止
 
-# 3. 构建并启动
-docker compose --profile gateway up -d
+# 3. 填写 API Key 等配置
+vim docker/data/config.json   # 设置 provider API key、Bot Token 等
+
+# 4. 正式启动
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
-**Docker 用户**: 默认情况下, Gateway监听 `127.0.0.1`，这使得这个端口未暴露到容器外。如果你需要通过端口映射访问健康检查接口, 请在环境变量中设置 `PICOCLAW_GATEWAY_HOST=0.0.0.0` 或修改 `config.json`。
+> **Docker 用户**: 默认情况下, Gateway 监听 `127.0.0.1`，该端口不会暴露到容器外。如果需要通过端口映射访问健康检查接口，请在环境变量中设置 `PICOCLAW_GATEWAY_HOST=0.0.0.0` 或修改 `config.json`。
 
-# 4. 查看日志
-docker compose logs -f picoclaw-gateway
+```bash
+# 5. 查看日志
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 5. 停止
-docker compose --profile gateway down
-
+# 6. 停止
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Agent 模式 (一次性运行)
 
 ```bash
 # 提问
-docker compose run --rm picoclaw-agent -m "2+2 等于几？"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "2+2 等于几？"
 
 # 交互模式
-docker compose run --rm picoclaw-agent
-
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### 重新构建
+### 更新镜像
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
-
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 快速开始
