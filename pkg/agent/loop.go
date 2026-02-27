@@ -574,11 +574,22 @@ func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, chan
 		return
 	}
 
-	al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+	// Use a short timeout so the goroutine does not block indefinitely when
+	// the outbound bus is full.  Reasoning output is best-effort; dropping it
+	// is acceptable to avoid goroutine accumulation.
+	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pubCancel()
+
+	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
 		Channel: channelName,
 		ChatID:  channelID,
 		Content: reasoningContent,
-	})
+	}); err != nil {
+		logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
+			"channel": channelName,
+			"error":   err.Error(),
+		})
+	}
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
