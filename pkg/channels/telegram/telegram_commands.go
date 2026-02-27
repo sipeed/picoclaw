@@ -119,7 +119,7 @@ func (c *cmd) List(ctx context.Context, message telego.Message) error {
 		if provider == "" {
 			provider = "configured default"
 		}
-		response = fmt.Sprintf("Configured Model: %s\nProvider: %s\n\nTo change models, update config.yaml",
+		response = fmt.Sprintf("Configured Model: %s\nProvider: %s\n\nTo change models, update config.json",
 			c.config.Agents.Defaults.GetModelName(), provider)
 
 	case "channels":
