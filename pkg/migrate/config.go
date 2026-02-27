@@ -231,7 +231,7 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 			// Migrate old "search" config to "brave" if api_key is present
 			if search, ok := getMap(web, "search"); ok {
 				if v, ok := getString(search, "api_key"); ok {
-					cfg.Tools.Web.Brave.APIKey = v
+					cfg.Tools.Web.Brave.APIKeys = v
 					if v != "" {
 						cfg.Tools.Web.Brave.Enabled = true
 					}
@@ -301,7 +301,7 @@ func MergeConfig(existing, incoming *config.Config) *config.Config {
 		existing.Channels.MaixCam = incoming.Channels.MaixCam
 	}
 
-	if existing.Tools.Web.Brave.APIKey == "" {
+	if existing.Tools.Web.Brave.APIKeys == "" {
 		existing.Tools.Web.Brave = incoming.Tools.Web.Brave
 	}
 

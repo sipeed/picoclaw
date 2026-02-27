@@ -302,7 +302,7 @@ func DefaultConfig() *Config {
 				Proxy: "",
 				Brave: BraveConfig{
 					Enabled:    false,
-					APIKey:     "",
+					APIKeys:    "",
 					MaxResults: 5,
 				},
 				DuckDuckGo: DuckDuckGoConfig{
@@ -311,7 +311,7 @@ func DefaultConfig() *Config {
 				},
 				Perplexity: PerplexityConfig{
 					Enabled:    false,
-					APIKey:     "",
+					APIKeys:    "",
 					MaxResults: 5,
 				},
 			},

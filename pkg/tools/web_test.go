@@ -176,7 +176,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 
 // TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
-	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: ""})
+	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: ""})
 	if tool != nil {
 		t.Errorf("Expected nil tool when Brave API key is empty")
 	}
@@ -190,7 +190,7 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
+	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: "test-key", BraveMaxResults: 5})
 	ctx := context.Background()
 	args := map[string]any{}
 
@@ -456,7 +456,7 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	t.Run("perplexity", func(t *testing.T) {
 		tool := NewWebSearchTool(WebSearchToolOptions{
 			PerplexityEnabled:    true,
-			PerplexityAPIKey:     "k",
+			PerplexityAPIKeys:     "k",
 			PerplexityMaxResults: 3,
 			Proxy:                "http://127.0.0.1:7890",
 		})
@@ -472,7 +472,7 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	t.Run("brave", func(t *testing.T) {
 		tool := NewWebSearchTool(WebSearchToolOptions{
 			BraveEnabled:    true,
-			BraveAPIKey:     "k",
+			BraveAPIKeys:     "k",
 			BraveMaxResults: 3,
 			Proxy:           "http://127.0.0.1:7890",
 		})
@@ -544,7 +544,7 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 
 	tool := NewWebSearchTool(WebSearchToolOptions{
 		TavilyEnabled:    true,
-		TavilyAPIKey:     "test-key",
+		TavilyAPIKeys:    "test-key",
 		TavilyBaseURL:    server.URL,
 		TavilyMaxResults: 5,
 	})

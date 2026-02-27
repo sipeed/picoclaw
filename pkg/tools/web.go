@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -71,36 +72,102 @@ type SearchProvider interface {
 	Search(ctx context.Context, query string, count int) (string, error)
 }
 
+type APIKeyPool struct {
+	keys    []string
+	current uint32
+}
+
+func NewAPIKeyPool(keysStr string) *APIKeyPool {
+	var keys []string
+	for _, k := range strings.Split(keysStr, ",") {
+		if trimmed := strings.TrimSpace(k); trimmed != "" {
+			keys = append(keys, trimmed)
+		}
+	}
+	return &APIKeyPool{
+		keys: keys,
+	}
+}
+
+func (p *APIKeyPool) Get() string {
+	if len(p.keys) == 0 {
+		return ""
+	}
+	if len(p.keys) == 1 {
+		return p.keys[0]
+	}
+	idx := atomic.AddUint32(&p.current, 1) - 1
+	if idx >= uint32(len(p.keys))-1 {
+		atomic.CompareAndSwapUint32(&p.current, idx+1, 0)
+	}
+	return p.keys[idx%uint32(len(p.keys))]
+}
+
+func (p *APIKeyPool) Len() int {
+	return len(p.keys)
+}
+
 type BraveSearchProvider struct {
-	apiKey string
-	proxy  string
+	keyPool *APIKeyPool
+	proxy   string
 }
 
 func (p *BraveSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d",
 		url.QueryEscape(query), count)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+	maxTries := p.keyPool.Len()
+	if maxTries == 0 {
+		return "", fmt.Errorf("no brave api key available")
 	}
 
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Subscription-Token", p.apiKey)
+	var lastErr error
+	var body []byte
 
-	client, err := createHTTPClient(p.proxy, 10*time.Second)
-	if err != nil {
-		return "", fmt.Errorf("failed to create HTTP client: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
+	for try := 0; try < maxTries; try++ {
+		apiKey := p.keyPool.Get()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+		req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-Subscription-Token", apiKey)
+
+		client, err := createHTTPClient(p.proxy, 10*time.Second)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to create HTTP client: %w", err)
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		body, err = io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response: %w", err)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			lastErr = nil
+			break
+		}
+		lastErr = fmt.Errorf("brave api error (status %d): %s", resp.StatusCode, string(body))
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			continue
+		} else {
+			break
+		}
+	}
+
+	if lastErr != nil {
+		return "", fmt.Errorf("all brave api keys failed, last error: %w", lastErr)
 	}
 
 	var searchResp struct {
@@ -114,8 +181,6 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 	}
 
 	if err := json.Unmarshal(body, &searchResp); err != nil {
-		// Log error body for debugging
-		fmt.Printf("Brave API Error Body: %s\n", string(body))
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -140,7 +205,7 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 }
 
 type TavilySearchProvider struct {
-	apiKey  string
+	keyPool *APIKeyPool
 	baseURL string
 	proxy   string
 }
@@ -151,46 +216,73 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 		searchURL = "https://api.tavily.com/search"
 	}
 
-	payload := map[string]any{
-		"api_key":             p.apiKey,
-		"query":               query,
-		"search_depth":        "advanced",
-		"include_answer":      false,
-		"include_images":      false,
-		"include_raw_content": false,
-		"max_results":         count,
+	maxTries := p.keyPool.Len()
+	if maxTries == 0 {
+		return "", fmt.Errorf("no tavily api key available")
 	}
 
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	var lastErr error
+	var body []byte
+
+	for try := 0; try < maxTries; try++ {
+		apiKey := p.keyPool.Get()
+		payload := map[string]any{
+			"api_key":             apiKey,
+			"query":               query,
+			"search_depth":        "advanced",
+			"include_answer":      false,
+			"include_images":      false,
+			"include_raw_content": false,
+			"max_results":         count,
+		}
+
+		bodyBytes, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal payload: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", userAgent)
+
+		client, err := createHTTPClient(p.proxy, 10*time.Second)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to create HTTP client: %w", err)
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		body, err = io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response: %w", err)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			lastErr = nil
+			break
+		}
+
+		lastErr = fmt.Errorf("tavily api error (status %d): %s", resp.StatusCode, string(body))
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			continue
+		} else {
+			break
+		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", userAgent)
-
-	client, err := createHTTPClient(p.proxy, 10*time.Second)
-	if err != nil {
-		return "", fmt.Errorf("failed to create HTTP client: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("tavily api error (status %d): %s", resp.StatusCode, string(body))
+	if lastErr != nil {
+		return "", fmt.Errorf("all tavily api keys failed, last error: %w", lastErr)
 	}
 
 	var searchResp struct {
@@ -320,12 +412,17 @@ func stripTags(content string) string {
 }
 
 type PerplexitySearchProvider struct {
-	apiKey string
-	proxy  string
+	keyPool *APIKeyPool
+	proxy   string
 }
 
 func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
 	searchURL := "https://api.perplexity.ai/chat/completions"
+
+	maxTries := p.keyPool.Len()
+	if maxTries == 0 {
+		return "", fmt.Errorf("no perplexity api key available")
+	}
 
 	payload := map[string]any{
 		"model": "sonar",
@@ -347,32 +444,54 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, strings.NewReader(string(payloadBytes)))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+	var lastErr error
+	var body []byte
+
+	for try := 0; try < maxTries; try++ {
+		apiKey := p.keyPool.Get()
+		req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(payloadBytes))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("User-Agent", userAgent)
+
+		client, err := createHTTPClient(p.proxy, 30*time.Second)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to create HTTP client: %w", err)
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		body, err = io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response: %w", err)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			lastErr = nil
+			break
+		}
+
+		lastErr = fmt.Errorf("Perplexity API error: %s", string(body))
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			continue
+		} else {
+			break
+		}
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	req.Header.Set("User-Agent", userAgent)
-
-	client, err := createHTTPClient(p.proxy, 30*time.Second)
-	if err != nil {
-		return "", fmt.Errorf("failed to create HTTP client: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Perplexity API error: %s", string(body))
+	if lastErr != nil {
+		return "", fmt.Errorf("all perplexity api keys failed, last error: %w", lastErr)
 	}
 
 	var searchResp struct {
@@ -400,16 +519,16 @@ type WebSearchTool struct {
 }
 
 type WebSearchToolOptions struct {
-	BraveAPIKey          string
+	BraveAPIKeys         string
 	BraveMaxResults      int
 	BraveEnabled         bool
-	TavilyAPIKey         string
+	TavilyAPIKeys        string
 	TavilyBaseURL        string
 	TavilyMaxResults     int
 	TavilyEnabled        bool
 	DuckDuckGoMaxResults int
 	DuckDuckGoEnabled    bool
-	PerplexityAPIKey     string
+	PerplexityAPIKeys    string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
 	Proxy                string
@@ -420,19 +539,19 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 	maxResults := 5
 
 	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
-	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
-		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey, proxy: opts.Proxy}
+	if opts.PerplexityEnabled && opts.PerplexityAPIKeys != "" {
+		provider = &PerplexitySearchProvider{keyPool: NewAPIKeyPool(opts.PerplexityAPIKeys), proxy: opts.Proxy}
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
 		}
-	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
-		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey, proxy: opts.Proxy}
+	} else if opts.BraveEnabled && opts.BraveAPIKeys != "" {
+		provider = &BraveSearchProvider{keyPool: NewAPIKeyPool(opts.BraveAPIKeys), proxy: opts.Proxy}
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
 		}
-	} else if opts.TavilyEnabled && opts.TavilyAPIKey != "" {
+	} else if opts.TavilyEnabled && opts.TavilyAPIKeys != "" {
 		provider = &TavilySearchProvider{
-			apiKey:  opts.TavilyAPIKey,
+			keyPool: NewAPIKeyPool(opts.TavilyAPIKeys),
 			baseURL: opts.TavilyBaseURL,
 			proxy:   opts.Proxy,
 		}
