@@ -167,39 +167,43 @@ You can also run PicoClaw using Docker Compose without installing anything local
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Set your API keys
-cp config/config.example.json config/config.json
-vim config/config.json      # Set DISCORD_BOT_TOKEN, API keys, etc.
+# 2. First run — auto-generates docker/data/config.json then exits
+docker compose -f docker/docker-compose.yml --profile gateway up
+# The container prints "First-run setup complete." and stops.
 
-# 3. Build & Start
-docker compose --profile gateway up -d
+# 3. Set your API keys
+vim docker/data/config.json   # Set provider API keys, bot tokens, etc.
+
+# 4. Start
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Docker Users**: By default, the Gateway listens on `127.0.0.1` which is not accessible from the host. If you need to access the health endpoints or expose ports, set `PICOCLAW_GATEWAY_HOST=0.0.0.0` in your environment or update `config.json`.
 
+```bash
+# 5. Check logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. Check logs
-docker compose logs -f picoclaw-gateway
-
-# 5. Stop
-docker compose --profile gateway down
+# 6. Stop
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Agent Mode (One-shot)
 
 ```bash
 # Ask a question
-docker compose run --rm picoclaw-agent -m "What is 2+2?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "What is 2+2?"
 
 # Interactive mode
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Rebuild
+### Update
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Quick Start
@@ -232,7 +236,8 @@ picoclaw onboard
     {
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
-      "api_key": "your-api-key"
+      "api_key": "your-api-key",
+      "request_timeout": 300
     },
     {
       "model_name": "claude-sonnet-4.6",
@@ -262,6 +267,7 @@ picoclaw onboard
 ```
 
 > **New**: The `model_list` configuration format allows zero-code provider addition. See [Model Configuration](#model-configuration-model_list) for details.
+> `request_timeout` is optional and uses seconds. If omitted or set to `<= 0`, PicoClaw uses the default timeout (120s).
 
 **3. Get API Keys**
 
@@ -915,7 +921,8 @@ This design also enables **multi-agent support** with flexible provider selectio
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-..."
+  "api_key": "sk-...",
+  "request_timeout": 300
 }
 ```
 
@@ -1143,7 +1150,7 @@ discord: <https://discord.gg/V4sAZ9XWpN>
 
 ## 🐛 Troubleshooting
 
-### Web search says "API 配置问题"
+### Web search says "API key configuration issue"
 
 This is normal if you haven't configured a search API key yet. PicoClaw will provide helpful links for manual searching.
 
