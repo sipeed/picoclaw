@@ -56,6 +56,7 @@ type WhatsAppNativeChannel struct {
 	runCancel    context.CancelFunc
 	reconnectMu  sync.Mutex
 	reconnecting bool
+	wg           sync.WaitGroup // tracks background goroutines (QR handler, reconnect)
 }
 
 // NewWhatsAppNativeChannel creates a WhatsApp channel that uses whatsmeow for connection.
@@ -112,6 +113,12 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 	}
 
 	client := whatsmeow.NewClient(deviceStore, waLogger)
+
+	// Create runCtx/runCancel BEFORE registering event handler and starting
+	// goroutines so that Stop() can cancel them at any time, including during
+	// the QR-login flow.
+	c.runCtx, c.runCancel = context.WithCancel(ctx)
+
 	client.AddEventHandler(c.eventHandler)
 
 	c.mu.Lock()
@@ -122,33 +129,50 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 	if client.Store.ID == nil {
 		qrChan, err := client.GetQRChannel(ctx)
 		if err != nil {
+			c.runCancel()
 			_ = container.Close()
 			return fmt.Errorf("get QR channel: %w", err)
 		}
 		if err := client.Connect(); err != nil {
+			c.runCancel()
 			_ = container.Close()
 			return fmt.Errorf("connect: %w", err)
 		}
-		for evt := range qrChan {
-			if evt.Event == "code" {
-				logger.InfoCF("whatsapp", "Scan this QR code with WhatsApp (Linked Devices):", nil)
-				qrterminal.GenerateWithConfig(evt.Code, qrterminal.Config{
-					Level:      qrterminal.L,
-					Writer:     os.Stdout,
-					HalfBlocks: true,
-				})
-			} else {
-				logger.InfoCF("whatsapp", "WhatsApp login event", map[string]any{"event": evt.Event})
+		// Handle QR events in a background goroutine so Start() returns
+		// promptly.  The goroutine is tracked via c.wg and respects
+		// c.runCtx for cancellation.
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+			for {
+				select {
+				case <-c.runCtx.Done():
+					return
+				case evt, ok := <-qrChan:
+					if !ok {
+						return
+					}
+					if evt.Event == "code" {
+						logger.InfoCF("whatsapp", "Scan this QR code with WhatsApp (Linked Devices):", nil)
+						qrterminal.GenerateWithConfig(evt.Code, qrterminal.Config{
+							Level:      qrterminal.L,
+							Writer:     os.Stdout,
+							HalfBlocks: true,
+						})
+					} else {
+						logger.InfoCF("whatsapp", "WhatsApp login event", map[string]any{"event": evt.Event})
+					}
+				}
 			}
-		}
+		}()
 	} else {
 		if err := client.Connect(); err != nil {
+			c.runCancel()
 			_ = container.Close()
 			return fmt.Errorf("connect: %w", err)
 		}
 	}
 
-	c.runCtx, c.runCancel = context.WithCancel(ctx)
 	c.SetRunning(true)
 	logger.InfoC("whatsapp", "WhatsApp native channel connected")
 	return nil
@@ -159,6 +183,11 @@ func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 	if c.runCancel != nil {
 		c.runCancel()
 	}
+
+	// Wait for background goroutines (QR handler, reconnect) to finish so
+	// they don't reference the client/container after cleanup.
+	c.wg.Wait()
+
 	c.mu.Lock()
 	client := c.client
 	container := c.container
@@ -189,7 +218,11 @@ func (c *WhatsAppNativeChannel) eventHandler(evt any) {
 		}
 		c.reconnecting = true
 		c.reconnectMu.Unlock()
-		go c.reconnectWithBackoff()
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+			c.reconnectWithBackoff()
+		}()
 	}
 }
 
