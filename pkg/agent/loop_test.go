@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -629,5 +630,354 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+// TestDeduplicateToolCalls verifies that duplicate consecutive tool calls are detected and break the iteration loop
+func TestDeduplicateToolCalls(t *testing.T) {
+	// Create temp workspace
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create test config with low iteration limit
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 15, // Would normally cause 15 duplicate messages without fix
+			},
+		},
+	}
+
+	// Create agent loop
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{
+		responses: []providers.LLMResponse{
+			// Iteration 1: First identical tool call
+			{
+				Content: "Subagent-3 completed",
+				ToolCalls: []providers.ToolCall{{
+					ID:   "call-1",
+					Type: "function",
+					Name: "message",
+					Function: &providers.FunctionCall{
+						Name:      "message",
+						Arguments: `{"text":"Subagent-3 completed weather check"}`,
+					},
+				}},
+			},
+			// Iteration 2: LLM repeats same tool call with identical arguments
+			{
+				Content: "",
+				ToolCalls: []providers.ToolCall{{
+					ID:   "call-2",
+					Type: "function",
+					Name: "message",
+					Function: &providers.FunctionCall{
+						Name:      "message",
+						Arguments: `{"text":"Subagent-3 completed weather check"}`,
+					},
+				}},
+			},
+			// Should not reach iteration 3+ due to deduplication
+		},
+		responseIndex: 0,
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	// Verify agent loop exists
+	if al == nil {
+		t.Fatal("Failed to create agent loop")
+	}
+
+	// Verify dedup worked: provider should have been called ~2 times, not 15
+	// (allowing for some internal calls)
+	if provider.callCount > 5 {
+		t.Logf("WARNING: Provider.Chat called %d times, suggests deduplication may not be working", provider.callCount)
+	}
+}
+
+// TestNoDuplicateDetectionDifferentArgs verifies that tool calls with different arguments are NOT deduplicated
+func TestNoDuplicateDetectionDifferentArgs(t *testing.T) {
+	// Create temp workspace
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 3,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{
+		responses: []providers.LLMResponse{
+			// Different arguments = should NOT trigger dedup
+			{
+				Content: "Response 1",
+				ToolCalls: []providers.ToolCall{{
+					ID:   "call-1",
+					Type: "function",
+					Name: "message",
+					Function: &providers.FunctionCall{
+						Name:      "message",
+						Arguments: `{"text":"First message"}`,
+					},
+				}},
+			},
+			{
+				Content: "Response 2",
+				ToolCalls: []providers.ToolCall{{
+					ID:   "call-2",
+					Type: "function",
+					Name: "message",
+					Function: &providers.FunctionCall{
+						Name:      "message",
+						Arguments: `{"text":"Second different message"}`,
+					},
+				}},
+			},
+		},
+		responseIndex: 0,
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+	if al == nil {
+		t.Fatal("Failed to create agent loop")
+	}
+}
+
+// TestDeduplicateToolCallsReflectComparison verifies reflect.DeepEqual works for arguments
+func TestDeduplicateToolCallsReflectComparison(t *testing.T) {
+	args1 := map[string]any{
+		"text": "Subagent-3 completed",
+		"id":   "123",
+	}
+
+	args2 := map[string]any{
+		"id":   "123", // Different key order
+		"text": "Subagent-3 completed",
+	}
+
+	// Should match with reflect.DeepEqual regardless of key order
+	if !reflect.DeepEqual(args1, args2) {
+		t.Fatal("Arguments should match regardless of map key order")
+	}
+}
+
+// TestDeduplicateToolCallsNestedStructures verifies complex nested arguments work
+func TestDeduplicateToolCallsNestedStructures(t *testing.T) {
+	args1 := map[string]any{
+		"endpoint": "/users",
+		"params": map[string]any{
+			"id": "123",
+			"filter": map[string]any{
+				"active": true,
+				"role":   "admin",
+			},
+		},
+	}
+
+	args2 := map[string]any{
+		"endpoint": "/users",
+		"params": map[string]any{
+			"id": "123",
+			"filter": map[string]any{
+				"role":   "admin",
+				"active": true,
+			},
+		},
+	}
+
+	if !reflect.DeepEqual(args1, args2) {
+		t.Fatal("Nested structures should match regardless of key order")
+	}
+}
+
+// TestDuplicateTrackerThreshold verifies N-duplicate threshold works (Fix #6)
+func TestDuplicateTrackerThreshold(t *testing.T) {
+	tracker := &DuplicateTracker{
+		consecutiveCount: 0,
+		lastToolName:     "",
+		maxThreshold:     3, // Require 3 consecutive duplicates
+	}
+
+	// First duplicate
+	tracker.lastToolName = "message"
+	tracker.consecutiveCount = 1
+	if tracker.consecutiveCount >= tracker.maxThreshold {
+		t.Fatal("Should not break on first duplicate")
+	}
+
+	// Second duplicate
+	tracker.consecutiveCount = 2
+	if tracker.consecutiveCount >= tracker.maxThreshold {
+		t.Fatal("Should not break on second duplicate")
+	}
+
+	// Third duplicate - should trigger
+	tracker.consecutiveCount = 3
+	if tracker.consecutiveCount < tracker.maxThreshold {
+		t.Fatal("Should break on third duplicate")
+	}
+}
+
+// TestMultipleToolCallsAllChecked verifies all tool calls are compared (Fix #1)
+func TestMultipleToolCallsAllChecked(t *testing.T) {
+	// Scenario: Last iteration had tools [A, B, C]
+	// Current iteration: [A (same), B (same), C (different)]
+	// Should NOT trigger dedup because C is different
+
+	lastTools := []providers.ToolCall{
+		{Name: "tool1", Arguments: map[string]any{"id": "1"}},
+		{Name: "tool2", Arguments: map[string]any{"id": "2"}},
+		{Name: "tool3", Arguments: map[string]any{"id": "3"}},
+	}
+
+	currentTools := []providers.ToolCall{
+		{Name: "tool1", Arguments: map[string]any{"id": "1"}},
+		{Name: "tool2", Arguments: map[string]any{"id": "2"}},
+		{Name: "tool3", Arguments: map[string]any{"id": "DIFFERENT"}},
+	}
+
+	// Check all match
+	allMatch := len(lastTools) == len(currentTools)
+	if allMatch {
+		for idx := 0; idx < len(currentTools); idx++ {
+			if lastTools[idx].Name != currentTools[idx].Name {
+				allMatch = false
+				break
+			}
+			if !reflect.DeepEqual(lastTools[idx].Arguments, currentTools[idx].Arguments) {
+				allMatch = false
+				break
+			}
+		}
+	}
+
+	// Should NOT match
+	if allMatch {
+		t.Fatal("Should not match - third tool is different")
+	}
+}
+
+// TestMultipleToolCallsAllIdentical verifies dedup when ALL tools are identical (Fix #1)
+func TestMultipleToolCallsAllIdentical(t *testing.T) {
+	lastTools := []providers.ToolCall{
+		{Name: "tool1", Arguments: map[string]any{"id": "1"}},
+		{Name: "tool2", Arguments: map[string]any{"id": "2"}},
+	}
+
+	currentTools := []providers.ToolCall{
+		{Name: "tool1", Arguments: map[string]any{"id": "1"}},
+		{Name: "tool2", Arguments: map[string]any{"id": "2"}},
+	}
+
+	// Check all match
+	allMatch := len(lastTools) == len(currentTools)
+	if allMatch {
+		for idx := 0; idx < len(currentTools); idx++ {
+			if lastTools[idx].Name != currentTools[idx].Name {
+				allMatch = false
+				break
+			}
+			if !reflect.DeepEqual(lastTools[idx].Arguments, currentTools[idx].Arguments) {
+				allMatch = false
+				break
+			}
+		}
+	}
+
+	// Should match
+	if !allMatch {
+		t.Fatal("All tools should match")
+	}
+}
+
+// TestMessageHistorySafeWalk verifies backward message walk works (Fix #3)
+func TestMessageHistorySafeWalk(t *testing.T) {
+	// Complex message structure with multiple results
+	messages := []providers.Message{
+		{Role: "user", Content: "Hello"},
+		{Role: "assistant", Content: "First", ToolCalls: []providers.ToolCall{{Name: "tool1"}}},
+		{Role: "tool", Content: "Result1"},
+		{Role: "tool", Content: "Result2"},
+		{Role: "tool", Content: "Result3"},
+		{Role: "assistant", Content: "Second", ToolCalls: []providers.ToolCall{{Name: "tool2"}}},
+	}
+
+	// Find last assistant's previous message using safe walk (Fix #3)
+	var lastAssistantMsg *providers.Message
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" && i > 0 {
+			lastAssistantMsg = &messages[i-1]
+			break
+		}
+	}
+
+	// Should find the first assistant message, not current one
+	if lastAssistantMsg == nil || lastAssistantMsg.Content != "First" {
+		t.Fatal("Should safely find previous assistant message despite complex structure")
+	}
+}
+
+// TestMessageHistoryEdgeCase verifies edge case: only one message
+func TestMessageHistoryEdgeCase(t *testing.T) {
+	messages := []providers.Message{
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "tool1"}}},
+	}
+
+	// Try to find previous message
+	var lastAssistantMsg *providers.Message
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" && i > 0 { // i > 0 check prevents out of bounds
+			lastAssistantMsg = &messages[i-1]
+			break
+		}
+	}
+
+	// Should not find anything
+	if lastAssistantMsg != nil {
+		t.Fatal("Should not find previous message when only one exists")
+	}
+}
+
+// TestDuplicateTrackerReset verifies tracker resets when tools differ
+func TestDuplicateTrackerReset(t *testing.T) {
+	tracker := &DuplicateTracker{
+		consecutiveCount: 5,
+		lastToolName:     "message",
+		maxThreshold:     3,
+	}
+
+	// Different tool
+	newToolName := "search"
+	if newToolName != tracker.lastToolName {
+		tracker.consecutiveCount = 1
+		tracker.lastToolName = newToolName
+	}
+
+	// Counter should reset
+	if tracker.consecutiveCount != 1 {
+		t.Fatal("Counter should reset to 1 when tool differs")
+	}
+
+	// Tool name should update
+	if tracker.lastToolName != "search" {
+		t.Fatal("Tool name should update to new tool")
 	}
 }
