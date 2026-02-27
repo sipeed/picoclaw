@@ -33,6 +33,11 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
+      "model_name": "opencode-zen",
+      "model": "opencode/claude-sonnet-4-5",
+      "api_key": "your-opencode-zen-api-key"
+    },
+    {
       "model_name": "loadbalanced-gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-key1",

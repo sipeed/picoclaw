@@ -53,7 +53,7 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
-// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
+// Supported protocols: openai, anthropic, opencode, antigravity, claude-cli, codex-cli, github-copilot
 // Returns the provider, the model ID (without protocol prefix), and any error.
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
@@ -88,7 +88,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"volcengine", "vllm", "qwen", "mistral":
+		"volcengine", "vllm", "qwen", "mistral", "opencode":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -188,6 +188,8 @@ func getDefaultAPIBase(protocol string) string {
 		return "http://localhost:8000/v1"
 	case "mistral":
 		return "https://api.mistral.ai/v1"
+	case "opencode":
+		return "https://opencode.ai/zen/v1"
 	default:
 		return ""
 	}
