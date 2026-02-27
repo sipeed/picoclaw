@@ -126,6 +126,7 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 	base := channels.NewBaseChannel("wecom_app", cfg, messageBus, cfg.AllowFrom,
 		channels.WithMaxMessageLength(2048),
 		channels.WithGroupTrigger(cfg.GroupTrigger),
+		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
 	return &WeComAppChannel{
