@@ -356,6 +356,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}, true
 			},
 		},
+		{
+			providerNames: []string{"avian"},
+			protocol:      "avian",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Avian.APIKey == "" && p.Avian.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "avian",
+					Model:          "avian/deepseek/deepseek-v3.2",
+					APIKey:         p.Avian.APIKey,
+					APIBase:        p.Avian.APIBase,
+					Proxy:          p.Avian.Proxy,
+					RequestTimeout: p.Avian.RequestTimeout,
+				}, true
+			},
+		},
 	}
 
 	// Process each provider migration

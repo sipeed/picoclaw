@@ -172,6 +172,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.model = "deepseek-chat"
 				}
 			}
+		case "avian":
+			if cfg.Providers.Avian.APIKey != "" {
+				sel.apiKey = cfg.Providers.Avian.APIKey
+				sel.apiBase = cfg.Providers.Avian.APIBase
+				sel.proxy = cfg.Providers.Avian.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.avian.io/v1"
+				}
+			}
 		case "mistral":
 			if cfg.Providers.Mistral.APIKey != "" {
 				sel.apiKey = cfg.Providers.Mistral.APIKey
@@ -290,6 +299,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.Mistral.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.mistral.ai/v1"
+			}
+		case strings.HasPrefix(model, "avian/") && cfg.Providers.Avian.APIKey != "":
+			sel.apiKey = cfg.Providers.Avian.APIKey
+			sel.apiBase = cfg.Providers.Avian.APIBase
+			sel.proxy = cfg.Providers.Avian.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://api.avian.io/v1"
 			}
 		case cfg.Providers.VLLM.APIBase != "":
 			sel.apiKey = cfg.Providers.VLLM.APIKey
