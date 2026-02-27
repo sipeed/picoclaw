@@ -585,10 +585,19 @@ func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, chan
 		ChatID:  channelID,
 		Content: reasoningContent,
 	}); err != nil {
-		logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
-			"channel": channelName,
-			"error":   err.Error(),
-		})
+		// Only log unexpected errors; context deadline/cancel are expected when
+		// the bus is full under load and would be too noisy to warn about.
+		if ctx.Err() == nil {
+			logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		} else {
+			logger.DebugCF("agent", "Reasoning publish skipped (context done)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		}
 	}
 }
 

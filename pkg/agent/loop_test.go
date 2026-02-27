@@ -797,4 +797,53 @@ func TestHandleReasoning(t *testing.T) {
 			t.Fatalf("expected no outbound message, got %+v", msg)
 		}
 	})
+
+	t.Run("returns promptly when bus is full", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+
+		// Fill the outbound bus buffer (default size is 64) so that the
+		// next PublishOutbound will block until the context deadline.
+		for i := 0; i < 64; i++ {
+			err := msgBus.PublishOutbound(context.Background(), bus.OutboundMessage{
+				Channel: "filler",
+				ChatID:  "filler",
+				Content: fmt.Sprintf("filler-%d", i),
+			})
+			if err != nil {
+				t.Fatalf("failed to fill bus: %v", err)
+			}
+		}
+
+		// Use a short-deadline parent context to bound the test.
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		start := time.Now()
+		al.handleReasoning(ctx, "should timeout", "slack", "channel-full")
+		elapsed := time.Since(start)
+
+		// handleReasoning uses a 5s internal timeout, but the parent ctx
+		// expires in 500ms. It should return within ~500ms, not 5s.
+		if elapsed > 2*time.Second {
+			t.Fatalf("handleReasoning blocked too long (%v); expected prompt return", elapsed)
+		}
+
+		// Drain the bus and verify the reasoning message was NOT published
+		// (it should have been dropped due to timeout).
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer drainCancel()
+		foundReasoning := false
+		for {
+			msg, ok := msgBus.SubscribeOutbound(drainCtx)
+			if !ok {
+				break
+			}
+			if msg.Content == "should timeout" {
+				foundReasoning = true
+			}
+		}
+		if foundReasoning {
+			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
+		}
+	})
 }

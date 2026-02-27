@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mdp/qrterminal/v3"
@@ -56,6 +57,7 @@ type WhatsAppNativeChannel struct {
 	runCancel    context.CancelFunc
 	reconnectMu  sync.Mutex
 	reconnecting bool
+	stopping     atomic.Bool    // set once Stop begins; prevents new wg.Add calls
 	wg           sync.WaitGroup // tracks background goroutines (QR handler, reconnect)
 }
 
@@ -127,7 +129,7 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 	c.mu.Unlock()
 
 	if client.Store.ID == nil {
-		qrChan, err := client.GetQRChannel(ctx)
+		qrChan, err := client.GetQRChannel(c.runCtx)
 		if err != nil {
 			c.runCancel()
 			_ = container.Close()
@@ -180,24 +182,47 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 
 func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 	logger.InfoC("whatsapp", "Stopping WhatsApp native channel")
+
+	// Mark as stopping so no new goroutines are spawned via eventHandler.
+	c.stopping.Store(true)
+
 	if c.runCancel != nil {
 		c.runCancel()
 	}
 
-	// Wait for background goroutines (QR handler, reconnect) to finish so
-	// they don't reference the client/container after cleanup.
-	c.wg.Wait()
-
+	// Disconnect the client first so any blocking Connect()/reconnect loops
+	// can be interrupted before we wait on the goroutines.
 	c.mu.Lock()
 	client := c.client
 	container := c.container
-	c.client = nil
-	c.container = nil
 	c.mu.Unlock()
 
 	if client != nil {
 		client.Disconnect()
 	}
+
+	// Wait for background goroutines (QR handler, reconnect) to finish in a
+	// context-aware way so Stop can be bounded by ctx.
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// All goroutines have finished.
+	case <-ctx.Done():
+		// Context canceled or timed out; log and proceed with best-effort cleanup.
+		logger.WarnC("whatsapp", fmt.Sprintf("Stop context canceled before all goroutines finished: %v", ctx.Err()))
+	}
+
+	// Now it is safe to clear and close resources.
+	c.mu.Lock()
+	c.client = nil
+	c.container = nil
+	c.mu.Unlock()
+
 	if container != nil {
 		_ = container.Close()
 	}
@@ -211,6 +236,10 @@ func (c *WhatsAppNativeChannel) eventHandler(evt any) {
 		c.handleIncoming(evt.(*events.Message))
 	case *events.Disconnected:
 		logger.InfoCF("whatsapp", "WhatsApp disconnected, will attempt reconnection", nil)
+		// Prevent new goroutines once Stop() has begun.
+		if c.stopping.Load() {
+			return
+		}
 		c.reconnectMu.Lock()
 		if c.reconnecting {
 			c.reconnectMu.Unlock()
