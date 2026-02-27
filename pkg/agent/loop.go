@@ -211,12 +211,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						})
 						logger.InfoCF("agent", "Published outbound response",
 							map[string]any{
-								"channel": msg.Channel,
-								"chat_id": msg.ChatID,
+								"channel":     msg.Channel,
+								"chat_id":     msg.ChatID,
 								"content_len": len(response),
 							})
 					} else {
-						logger.DebugCF("agent", "Skipped outbound (message tool already sent)", map[string]any{"channel": msg.Channel})
+						logger.DebugCF(
+							"agent",
+							"Skipped outbound (message tool already sent)",
+							map[string]any{"channel": msg.Channel},
+						)
 					}
 				}
 			}()
@@ -395,7 +399,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"agent_id":    agent.ID,
 			"session_key": sessionKey,
 			"matched_by":  route.MatchedBy,
-	})
+		})
 
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,

@@ -18,15 +18,14 @@ import (
 	"time"
 
 	"github.com/mdp/qrterminal/v3"
-	_ "modernc.org/sqlite"
-
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
-	"go.mau.fi/whatsmeow/proto/waE2E"
-	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
+	_ "modernc.org/sqlite"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -61,7 +60,11 @@ type WhatsAppNativeChannel struct {
 
 // NewWhatsAppNativeChannel creates a WhatsApp channel that uses whatsmeow for connection.
 // storePath is the directory for the SQLite session store (e.g. workspace/whatsapp).
-func NewWhatsAppNativeChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus, storePath string) (channels.Channel, error) {
+func NewWhatsAppNativeChannel(
+	cfg config.WhatsAppConfig,
+	bus *bus.MessageBus,
+	storePath string,
+) (channels.Channel, error) {
 	base := channels.NewBaseChannel("whatsapp_native", cfg, bus, cfg.AllowFrom, channels.WithMaxMessageLength(65536))
 	if storePath == "" {
 		storePath = "whatsapp"
@@ -77,7 +80,7 @@ func NewWhatsAppNativeChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus, st
 func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 	logger.InfoCF("whatsapp", "Starting WhatsApp native channel (whatsmeow)", map[string]any{"store": c.storePath})
 
-	if err := os.MkdirAll(c.storePath, 0700); err != nil {
+	if err := os.MkdirAll(c.storePath, 0o700); err != nil {
 		return fmt.Errorf("create session store dir: %w", err)
 	}
 
@@ -173,7 +176,7 @@ func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *WhatsAppNativeChannel) eventHandler(evt interface{}) {
+func (c *WhatsAppNativeChannel) eventHandler(evt any) {
 	switch evt.(type) {
 	case *events.Message:
 		c.handleIncoming(evt.(*events.Message))
@@ -284,7 +287,11 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 		return
 	}
 
-	logger.DebugCF("whatsapp", "WhatsApp message received", map[string]any{"sender_id": senderID, "content_preview": utils.Truncate(content, 50)})
+	logger.DebugCF(
+		"whatsapp",
+		"WhatsApp message received",
+		map[string]any{"sender_id": senderID, "content_preview": utils.Truncate(content, 50)},
+	)
 	c.HandleMessage(c.runCtx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, sender)
 }
 
