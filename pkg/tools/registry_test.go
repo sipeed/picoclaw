@@ -59,7 +59,7 @@ func newMockTool(name, desc string) *mockRegistryTool {
 // --- tests ---
 
 func TestNewToolRegistry(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	if r.Count() != 0 {
 		t.Errorf("expected empty registry, got count %d", r.Count())
 	}
@@ -69,7 +69,7 @@ func TestNewToolRegistry(t *testing.T) {
 }
 
 func TestToolRegistry_RegisterAndGet(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	tool := newMockTool("echo", "echoes input")
 	r.Register(tool)
 
@@ -83,7 +83,7 @@ func TestToolRegistry_RegisterAndGet(t *testing.T) {
 }
 
 func TestToolRegistry_Get_NotFound(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	_, ok := r.Get("nonexistent")
 	if ok {
 		t.Error("expected ok=false for unregistered tool")
@@ -91,7 +91,7 @@ func TestToolRegistry_Get_NotFound(t *testing.T) {
 }
 
 func TestToolRegistry_RegisterOverwrite(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	r.Register(newMockTool("dup", "first"))
 	r.Register(newMockTool("dup", "second"))
 
@@ -105,7 +105,7 @@ func TestToolRegistry_RegisterOverwrite(t *testing.T) {
 }
 
 func TestToolRegistry_Execute_Success(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	r.Register(&mockRegistryTool{
 		name:   "greet",
 		desc:   "says hello",
@@ -123,7 +123,7 @@ func TestToolRegistry_Execute_Success(t *testing.T) {
 }
 
 func TestToolRegistry_Execute_NotFound(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	result := r.Execute(context.Background(), "missing", nil)
 	if !result.IsError {
 		t.Error("expected error for missing tool")
@@ -137,7 +137,7 @@ func TestToolRegistry_Execute_NotFound(t *testing.T) {
 }
 
 func TestToolRegistry_ExecuteWithContext_ContextualTool(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	ct := &mockCtxTool{
 		mockRegistryTool: *newMockTool("ctx_tool", "needs context"),
 	}
@@ -154,7 +154,7 @@ func TestToolRegistry_ExecuteWithContext_ContextualTool(t *testing.T) {
 }
 
 func TestToolRegistry_ExecuteWithContext_SkipsEmptyContext(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	ct := &mockCtxTool{
 		mockRegistryTool: *newMockTool("ctx_tool", "needs context"),
 	}
@@ -168,7 +168,7 @@ func TestToolRegistry_ExecuteWithContext_SkipsEmptyContext(t *testing.T) {
 }
 
 func TestToolRegistry_ExecuteWithContext_AsyncCallback(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	at := &mockAsyncRegistryTool{
 		mockRegistryTool: *newMockTool("async_tool", "async work"),
 	}
@@ -193,7 +193,7 @@ func TestToolRegistry_ExecuteWithContext_AsyncCallback(t *testing.T) {
 }
 
 func TestToolRegistry_GetDefinitions(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	r.Register(newMockTool("alpha", "tool A"))
 
 	defs := r.GetDefinitions()
@@ -216,7 +216,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 }
 
 func TestToolRegistry_ToProviderDefs(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	params := map[string]any{"type": "object", "properties": map[string]any{}}
 	r.Register(&mockRegistryTool{
 		name:   "beta",
@@ -251,7 +251,7 @@ func TestToolRegistry_ToProviderDefs(t *testing.T) {
 }
 
 func TestToolRegistry_List(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	r.Register(newMockTool("x", ""))
 	r.Register(newMockTool("y", ""))
 
@@ -270,7 +270,7 @@ func TestToolRegistry_List(t *testing.T) {
 }
 
 func TestToolRegistry_Count(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	if r.Count() != 0 {
 		t.Errorf("expected 0, got %d", r.Count())
 	}
@@ -288,7 +288,7 @@ func TestToolRegistry_Count(t *testing.T) {
 }
 
 func TestToolRegistry_GetSummaries(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	r.Register(newMockTool("read_file", "Reads a file"))
 
 	summaries := r.GetSummaries()
@@ -326,7 +326,7 @@ func TestToolToSchema(t *testing.T) {
 }
 
 func TestToolRegistry_ConcurrentAccess(t *testing.T) {
-	r := NewToolRegistry()
+	r := NewEmptyToolRegistry()
 	var wg sync.WaitGroup
 
 	for i := 0; i < 50; i++ {

@@ -47,13 +47,7 @@ func NewAgentInstance(
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
-	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
-	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
+	toolsRegistry := tools.NewToolRegistry(cfg, workspace, restrict)
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)

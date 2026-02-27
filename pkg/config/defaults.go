@@ -293,11 +293,52 @@ func DefaultConfig() *Config {
 					MaxResults: 5,
 				},
 			},
-			Cron: CronToolsConfig{
+			Cron: CronToolConfig{
+				Enabled:            true,
 				ExecTimeoutMinutes: 5,
 			},
+			// File tools - each individually configurable
+			ReadFile: ToolConfig{
+				Enabled: true,
+			},
+			WriteFile: ToolConfig{
+				Enabled: true,
+			},
+			EditFile: ToolConfig{
+				Enabled: false,
+			},
+			AppendFile: ToolConfig{
+				Enabled: false,
+			},
+			ListDir: ToolConfig{
+				Enabled: false,
+			},
+			// Exec tool
 			Exec: ExecConfig{
+				Enabled:            true,
 				EnableDenyPatterns: true,
+			},
+			// Skills tools
+			FindSkills: ToolConfig{
+				Enabled: true,
+			},
+			InstallSkill: ToolConfig{
+				Enabled: true,
+			},
+			// Subagent tools
+			Spawn: ToolConfig{
+				Enabled: true,
+			},
+			// Message tool
+			Message: ToolConfig{
+				Enabled: true,
+			},
+			// Hardware tools
+			I2C: ToolConfig{
+				Enabled: false,
+			},
+			SPI: ToolConfig{
+				Enabled: false,
 			},
 			Skills: SkillsToolsConfig{
 				Registries: SkillsRegistriesConfig{
