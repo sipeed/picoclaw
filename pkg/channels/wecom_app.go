@@ -215,7 +215,15 @@ func (c *WeComAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 	accessToken := c.getAccessToken()
 	if accessToken == "" {
-		return fmt.Errorf("no valid access token available")
+		// Token expired or not yet acquired — attempt an on-demand refresh
+		logger.WarnC("wecom_app", "Access token missing or expired, attempting on-demand refresh")
+		if err := c.refreshAccessToken(); err != nil {
+			return fmt.Errorf("access token unavailable and refresh failed: %w", err)
+		}
+		accessToken = c.getAccessToken()
+		if accessToken == "" {
+			return fmt.Errorf("no valid access token available after refresh")
+		}
 	}
 
 	logger.DebugCF("wecom_app", "Sending message", map[string]any{
@@ -223,7 +231,7 @@ func (c *WeComAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		"preview": utils.Truncate(msg.Content, 100),
 	})
 
-	return c.sendTextMessage(ctx, accessToken, msg.ChatID, msg.Content)
+	return c.sendMarkdownMessage(ctx, accessToken, msg.ChatID, msg.Content)
 }
 
 // handleWebhook handles incoming webhook requests from WeCom
@@ -453,14 +461,29 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 
 // tokenRefreshLoop periodically refreshes the access token
 func (c *WeComAppChannel) tokenRefreshLoop() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
+	const fallbackInterval = 30 * time.Minute
+	const earlyRefresh = 5 * time.Minute
 
 	for {
+		// Calculate sleep duration based on current token expiry
+		c.tokenMu.RLock()
+		expiry := c.tokenExpiry
+		c.tokenMu.RUnlock()
+
+		var sleepDur time.Duration
+		if expiry.IsZero() {
+			// Token never successfully acquired
+			sleepDur = fallbackInterval
+		} else {
+			sleepDur = max(time.Until(expiry.Add(-earlyRefresh)),
+				// minimum 1 minute to avoid tight loop
+				time.Minute)
+		}
+
 		select {
 		case <-c.ctx.Done():
 			return
-		case <-ticker.C:
+		case <-time.After(sleepDur):
 			if err := c.refreshAccessToken(); err != nil {
 				logger.ErrorCF("wecom_app", "Failed to refresh access token", map[string]any{
 					"error": err.Error(),
