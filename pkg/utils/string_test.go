@@ -117,7 +117,7 @@ func TestSanitizeMessageContent(t *testing.T) {
 		{"strip RTL override", "Hi\u202eevil", "Hievil"},
 		{"strip BOM", "\uFEFFcontent", "content"},
 		{"strip multiple", "a\u200c\u202ab\u202cc", "abc"},
-		{"unicode letters preserved", "café 日本語", "café 日本語"},
+		{"unicode letters preserved", "café \u65e5\u672c\u8a9e", "café \u65e5\u672c\u8a9e"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
