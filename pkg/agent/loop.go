@@ -52,7 +52,7 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 }
 
-const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in configs.json."
+const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
