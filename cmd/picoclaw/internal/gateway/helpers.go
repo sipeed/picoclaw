@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -36,7 +37,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
-
 
 func gatewayCmd(debug bool) error {
 	if debug {
@@ -227,6 +227,7 @@ func setupCronTool(
 	if err != nil {
 		log.Fatalf("Critical error during CronTool initialization: %v", err)
 	}
+
 	agentLoop.RegisterTool(cronTool)
 
 	// Set the onJob handler
