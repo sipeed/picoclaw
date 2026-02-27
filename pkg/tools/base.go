@@ -17,6 +17,12 @@ type ContextualTool interface {
 	SetContext(channel, chatID string)
 }
 
+// NotificationFormatter allows a tool to generate a custom
+// message to be shown to the user before execution.
+type NotificationFormatter interface {
+	FormatNotification(args map[string]any) string
+}
+
 // AsyncCallback is a function type that async tools use to notify completion.
 // When an async tool finishes its work, it calls this callback with the result.
 //

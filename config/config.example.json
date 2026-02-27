@@ -203,6 +203,7 @@
     }
   },
   "tools": {
+    "enable_notifications": false,
     "web": {
       "brave": {
         "enabled": false,

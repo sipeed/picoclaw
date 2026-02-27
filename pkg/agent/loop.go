@@ -668,6 +668,28 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration": iteration,
 				})
 
+			// notify tool use on channel
+			if al.cfg.Tools.EnableNotifications && !constants.IsInternalChannel(opts.Channel) {
+				var notification string
+
+				if tool, ok := agent.Tools.Get(tc.Name); ok {
+					// check the tool implements the interface
+					if notifier, isNotifier := tool.(tools.NotificationFormatter); isNotifier {
+						notification = notifier.FormatNotification(tc.Arguments)
+					} else if tc.Name != "message" {
+						notification = fmt.Sprintf("🛠️ Tool use: `%s`", tc.Name)
+					}
+				}
+
+				if notification != "" {
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Content: notification,
+					})
+				}
+			}
+
 			// Create async callback for tools that implement AsyncTool
 			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
 			// Instead, they notify the agent via PublishInbound, and the agent decides

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type ExecTool struct {
@@ -132,6 +133,13 @@ func (t *ExecTool) Parameters() map[string]any {
 		},
 		"required": []string{"command"},
 	}
+}
+
+func (t *ExecTool) FormatNotification(args map[string]any) string {
+	if cmd, ok := args["command"].(string); ok {
+		return fmt.Sprintf("🛠️ Exec: `%s`", utils.Truncate(cmd, 500))
+	}
+	return "🛠️ Shell command execution in progress"
 }
 
 func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult {

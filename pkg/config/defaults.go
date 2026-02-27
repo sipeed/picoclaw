@@ -276,6 +276,7 @@ func DefaultConfig() *Config {
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
+			EnableNotifications: false,
 			Web: WebToolsConfig{
 				Proxy: "",
 				Brave: BraveConfig{

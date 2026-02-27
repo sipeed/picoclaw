@@ -470,10 +470,11 @@ type ExecConfig struct {
 }
 
 type ToolsConfig struct {
-	Web    WebToolsConfig    `json:"web"`
-	Cron   CronToolsConfig   `json:"cron"`
-	Exec   ExecConfig        `json:"exec"`
-	Skills SkillsToolsConfig `json:"skills"`
+	EnableNotifications bool              `json:"enable_notifications" env:"PICOCLAW_TOOLS_ENABLE_NOTIFICATIONS"`
+	Web                 WebToolsConfig    `json:"web"`
+	Cron                CronToolsConfig   `json:"cron"`
+	Exec                ExecConfig        `json:"exec"`
+	Skills              SkillsToolsConfig `json:"skills"`
 }
 
 type SkillsToolsConfig struct {
