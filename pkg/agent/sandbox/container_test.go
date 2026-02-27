@@ -1,6 +1,8 @@
 package sandbox
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -50,6 +52,48 @@ func TestResolveContainerPath_RejectsAbsoluteOutsideWorkspace(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "outside container workspace") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseTopLevelDirEntriesFromTar_KeepImmediateChildren(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	writeHeader := func(hdr *tar.Header, content []byte) {
+		t.Helper()
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatalf("write header failed: %v", err)
+		}
+		if len(content) > 0 {
+			if _, err := tw.Write(content); err != nil {
+				t.Fatalf("write content failed: %v", err)
+			}
+		}
+	}
+
+	writeHeader(&tar.Header{Name: "it", Typeflag: tar.TypeDir, Mode: 0o755}, nil)
+	writeHeader(&tar.Header{Name: "it/write.txt", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1}, []byte("x"))
+	writeHeader(&tar.Header{Name: "it/sub", Typeflag: tar.TypeDir, Mode: 0o755}, nil)
+	writeHeader(&tar.Header{Name: "it/sub/nested.txt", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1}, []byte("y"))
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close failed: %v", err)
+	}
+
+	entries, err := parseTopLevelDirEntriesFromTar(tar.NewReader(&buf))
+	if err != nil {
+		t.Fatalf("parseTopLevelDirEntriesFromTar failed: %v", err)
+	}
+
+	got := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		got[e.Name()] = struct{}{}
+	}
+	for _, want := range []string{"write.txt", "sub"} {
+		if _, ok := got[want]; !ok {
+			t.Fatalf("missing top-level entry %q in %+v", want, got)
+		}
+	}
+	if _, ok := got["nested.txt"]; ok {
+		t.Fatalf("nested file should not appear in top-level entries: %+v", got)
 	}
 }
 

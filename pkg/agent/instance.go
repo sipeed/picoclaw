@@ -64,27 +64,35 @@ func NewAgentInstance(
 	toolsRegistry := tools.NewToolRegistry()
 
 	sandboxManager := sandbox.NewFromConfigWithAgent(workspace, restrict, cfg, agentID)
-	isSandboxAllowed := func(toolName string) bool {
-		return sandboxManager == nil || sandbox.IsToolSandboxEnabled(cfg, toolName)
+	// isToolEnabled determines if a base system tool should be registered for the LLM.
+	// SandboxManager *always* provides a Sandbox context (HostSandbox if mode="off").
+	isToolEnabled := func(toolName string) bool {
+		// If the user explicitly disables the sandbox mode (Mode = "off"), they are opting out of
+		// safety isolation. We grant the LLM access to all core tools via the HostSandbox.
+		if isSandboxModeOff(cfg) {
+			return true
+		}
+		// Otherwise, respect the fine-grained allow/deny policy defined in the Sandbox config.
+		return sandbox.IsToolSandboxEnabled(cfg, toolName)
 	}
 
-	if isSandboxAllowed("read_file") {
+	if isToolEnabled("read_file") {
 		toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
 	}
-	if !roContainer && isSandboxAllowed("write_file") {
+	if !roContainer && isToolEnabled("write_file") {
 		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
 	}
-	if isSandboxAllowed("list_dir") {
+	if isToolEnabled("list_dir") {
 		toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
 	}
-	if isSandboxAllowed("exec") {
+	if isToolEnabled("exec") {
 		toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
 	}
 	if !roContainer {
-		if isSandboxAllowed("edit_file") {
+		if isToolEnabled("edit_file") {
 			toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 		}
-		if isSandboxAllowed("append_file") {
+		if isToolEnabled("append_file") {
 			toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
 		}
 	}
@@ -170,8 +178,15 @@ func isContainerReadOnlySandbox(cfg *config.Config) bool {
 	if cfg == nil {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(cfg.Agents.Defaults.Sandbox.Mode), "all") &&
-		strings.EqualFold(strings.TrimSpace(cfg.Agents.Defaults.Sandbox.WorkspaceAccess), "ro")
+	return cfg.Agents.Defaults.Sandbox.Mode == config.SandboxModeAll &&
+		cfg.Agents.Defaults.Sandbox.WorkspaceAccess == config.WorkspaceAccessRO
+}
+
+func isSandboxModeOff(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.Agents.Defaults.Sandbox.Mode == config.SandboxModeOff
 }
 
 func expandHome(path string) string {

@@ -16,6 +16,7 @@ type stubSandbox struct {
 	lastReq sandbox.ExecRequest
 	err     error
 	res     *sandbox.ExecResult
+	fs      sandbox.FsBridge
 }
 
 func (s *stubSandbox) Start(ctx context.Context) error { return nil }
@@ -24,7 +25,14 @@ func (s *stubSandbox) Prune(ctx context.Context) error { return nil }
 func (s *stubSandbox) Resolve(ctx context.Context) (sandbox.Sandbox, error) {
 	return s, nil
 }
-func (s *stubSandbox) Fs() sandbox.FsBridge { return nil }
+
+func (s *stubSandbox) Fs() sandbox.FsBridge {
+	if s.fs != nil {
+		return s.fs
+	}
+	return sandbox.NewHostSandbox("", false).Fs()
+}
+
 func (s *stubSandbox) Exec(ctx context.Context, req sandbox.ExecRequest) (*sandbox.ExecResult, error) {
 	return sandboxAggregateFromStub(ctx, req, s.ExecStream)
 }
@@ -103,7 +111,9 @@ func sandboxAggregateFromStub(
 func TestShellTool_Success(t *testing.T) {
 	tool := NewExecTool("", false)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
+		res: &sandbox.ExecResult{Stdout: "hello world", ExitCode: 0},
+	})
 	args := map[string]any{
 		"command": "echo 'hello world'",
 	}
@@ -130,7 +140,13 @@ func TestShellTool_Success(t *testing.T) {
 func TestShellTool_Failure(t *testing.T) {
 	tool := NewExecTool("", false)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
+		res: &sandbox.ExecResult{
+			Stdout:   "",
+			Stderr:   "ls: cannot access '/nonexistent_directory_12345': No such file or directory",
+			ExitCode: 2,
+		},
+	})
 	args := map[string]any{
 		"command": "ls /nonexistent_directory_12345",
 	}
@@ -158,7 +174,9 @@ func TestShellTool_Timeout(t *testing.T) {
 	tool := NewExecTool("", false)
 	tool.SetTimeout(100 * time.Millisecond)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
+		err: context.DeadlineExceeded,
+	})
 	args := map[string]any{
 		"command": "sleep 10",
 	}
@@ -185,7 +203,9 @@ func TestShellTool_WorkingDir(t *testing.T) {
 
 	tool := NewExecTool("", false)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
+		res: &sandbox.ExecResult{Stdout: "test content\n", ExitCode: 0},
+	})
 	args := map[string]any{
 		"command":     "cat test.txt",
 		"working_dir": tmpDir,
@@ -206,7 +226,9 @@ func TestShellTool_WorkingDir(t *testing.T) {
 func TestShellTool_DangerousCommand(t *testing.T) {
 	tool := NewExecTool("", false)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
+		res: &sandbox.ExecResult{Stdout: "", Stderr: "", ExitCode: 1},
+	})
 	args := map[string]any{
 		"command": "rm -rf /",
 	}
@@ -227,7 +249,9 @@ func TestShellTool_DangerousCommand(t *testing.T) {
 func TestShellTool_MissingCommand(t *testing.T) {
 	tool := NewExecTool("", false)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
+		res: &sandbox.ExecResult{Stdout: "", Stderr: "", ExitCode: 1},
+	})
 	args := map[string]any{}
 
 	result := tool.Execute(ctx, args)
@@ -242,7 +266,9 @@ func TestShellTool_MissingCommand(t *testing.T) {
 func TestShellTool_StderrCapture(t *testing.T) {
 	tool := NewExecTool("", false)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
+		res: &sandbox.ExecResult{Stdout: "stdout", Stderr: "stderr", ExitCode: 0},
+	})
 	args := map[string]any{
 		"command": "sh -c 'echo stdout; echo stderr >&2'",
 	}
@@ -262,7 +288,9 @@ func TestShellTool_StderrCapture(t *testing.T) {
 func TestShellTool_OutputTruncation(t *testing.T) {
 	tool := NewExecTool("", false)
 
-	ctx := context.Background()
+	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
+		res: &sandbox.ExecResult{Stdout: strings.Repeat("x", 20000), ExitCode: 0},
+	})
 	// Generate long output (>10000 chars)
 	args := map[string]any{
 		"command": "python3 -c \"print('x' * 20000)\" || echo " + strings.Repeat("x", 20000),
@@ -289,7 +317,9 @@ func TestShellTool_WorkingDir_OutsideWorkspace(t *testing.T) {
 	}
 
 	tool := NewExecTool(workspace, true)
-	result := tool.Execute(context.Background(), map[string]any{
+	result := tool.Execute(sandbox.WithSandbox(context.Background(), &stubSandbox{
+		res: &sandbox.ExecResult{Stdout: "", Stderr: "", ExitCode: 1},
+	}), map[string]any{
 		"command":     "pwd",
 		"working_dir": outsideDir,
 	})

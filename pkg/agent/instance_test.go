@@ -135,3 +135,36 @@ func TestNewAgentInstance_ReadOnlyContainerOmitsWriteTools(t *testing.T) {
 		t.Fatalf("write_file should be absent in ro sandbox, got: %+v", writeRes)
 	}
 }
+
+func TestNewAgentInstance_SandboxModeOffRegistersFullToolSet(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         1234,
+				MaxToolIterations: 5,
+				Sandbox: config.AgentSandboxConfig{
+					Mode: "off",
+				},
+			},
+		},
+	}
+	// Keep sandbox allowlist narrow to ensure mode=off bypasses sandbox policy gating.
+	cfg.Tools.Sandbox.Tools.Allow = []string{"exec"}
+
+	provider := &mockProvider{}
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+
+	for _, name := range []string{"read_file", "write_file", "list_dir", "exec", "edit_file", "append_file"} {
+		if _, ok := agent.Tools.Get(name); !ok {
+			t.Fatalf("%s should be registered when sandbox.mode=off", name)
+		}
+	}
+}

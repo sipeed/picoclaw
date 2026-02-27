@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 )
 
 func processExists(pid int) bool {
@@ -22,15 +24,25 @@ func processExists(pid int) bool {
 }
 
 func TestShellTool_TimeoutKillsChildProcess(t *testing.T) {
-	tool := NewExecTool(t.TempDir(), false)
+	workspace := t.TempDir()
+	tool := NewExecTool(workspace, false)
 	tool.SetTimeout(500 * time.Millisecond)
+
+	sb := sandbox.NewHostSandbox(workspace, false)
+	err := sb.Start(context.Background())
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer sb.Prune(context.Background())
+
+	ctx := sandbox.WithSandbox(context.Background(), sb)
 
 	args := map[string]any{
 		// Spawn a child process that would outlive the shell unless process-group kill is used.
 		"command": "sleep 60 & echo $! > child.pid; wait",
 	}
 
-	result := tool.Execute(context.Background(), args)
+	result := tool.Execute(ctx, args)
 	if !result.IsError {
 		t.Fatalf("expected timeout error, got success: %s", result.ForLLM)
 	}

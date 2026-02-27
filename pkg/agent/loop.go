@@ -409,16 +409,17 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// it against the main session key for non-main mode.
 	ctx = sandbox.WithSessionKey(ctx, opts.SessionKey)
 
-	// Resolve sandbox environment for this run
-	if agent.SandboxManager != nil {
-		sb, err := agent.SandboxManager.Resolve(ctx)
-		if err != nil {
-			logger.ErrorCF("agent", "Failed to resolve sandbox", map[string]any{"error": err.Error()})
-			return "", fmt.Errorf("failed to resolve sandbox: %w", err)
-		}
-		// Add sandbox to context for thread-safe access in tools via registry
-		ctx = sandbox.WithSandbox(ctx, sb)
+	// Resolve sandbox environment for this run.
+	// We guarantee SandboxManager is non-nil (fallback to host manager) in NewAgentInstance.
+	ctx = sandbox.WithManager(ctx, agent.SandboxManager)
+
+	sb, err := agent.SandboxManager.Resolve(ctx)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to resolve sandbox", map[string]any{"error": err.Error()})
+		return "", fmt.Errorf("failed to resolve sandbox: %w", err)
 	}
+	// Add pre-resolved sandbox to context for thread-safe access in tools
+	ctx = sandbox.WithSandbox(ctx, sb)
 
 	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message

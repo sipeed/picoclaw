@@ -539,10 +539,37 @@ type AgentSandboxDockerConfig struct {
 	Binds           []string                                 `json:"binds"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER_BINDS"`
 }
 
+// SandboxMode defines the operational mode of the agent sandbox.
+type SandboxMode string
+
+const (
+	SandboxModeOff     SandboxMode = "off"      // Sandbox disabled (host execution)
+	SandboxModeNonMain SandboxMode = "non-main" // Sandbox all sessions except main
+	SandboxModeAll     SandboxMode = "all"      // Sandbox all sessions
+)
+
+// SandboxScope defines the isolation scope of the sandbox container.
+type SandboxScope string
+
+const (
+	SandboxScopeSession SandboxScope = "session" // One container per session
+	SandboxScopeAgent   SandboxScope = "agent"   // One container per agent (shared across sessions)
+	SandboxScopeShared  SandboxScope = "shared"  // One container shared by all agents
+)
+
+// WorkspaceAccess defines how the agent workspace is exposed to the sandbox.
+type WorkspaceAccess string
+
+const (
+	WorkspaceAccessNone WorkspaceAccess = "none" // No workspace access
+	WorkspaceAccessRO   WorkspaceAccess = "ro"   // Read-only access
+	WorkspaceAccessRW   WorkspaceAccess = "rw"   // Read-write access
+)
+
 type AgentSandboxConfig struct {
-	Mode            string                   `json:"mode"             env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_MODE"`
-	Scope           string                   `json:"scope"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_SCOPE"`
-	WorkspaceAccess string                   `json:"workspace_access" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ACCESS"`
+	Mode            SandboxMode              `json:"mode"             env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_MODE"`
+	Scope           SandboxScope             `json:"scope"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_SCOPE"`
+	WorkspaceAccess WorkspaceAccess          `json:"workspace_access" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ACCESS"`
 	WorkspaceRoot   string                   `json:"workspace_root"   env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_WORKSPACE_ROOT"`
 	Docker          AgentSandboxDockerConfig `json:"docker"           env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_DOCKER"`
 	Prune           AgentSandboxPruneConfig  `json:"prune"            env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE"`

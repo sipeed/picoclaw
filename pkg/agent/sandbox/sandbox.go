@@ -2,7 +2,10 @@ package sandbox
 
 import (
 	"context"
+	"os"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // Sandbox abstracts command execution and filesystem access.
@@ -97,12 +100,41 @@ func WithSandbox(ctx context.Context, sb Sandbox) context.Context {
 	return context.WithValue(ctx, sandboxContextKey{}, sb)
 }
 
-// SandboxFromContext returns the sandbox instance attached by WithSandbox.
-func SandboxFromContext(ctx context.Context) Sandbox {
+// FromContext returns the sandbox instance attached by WithSandbox.
+// If no pre-resolved sandbox exists, it attempts to resolve one via the Manager in context.
+func FromContext(ctx context.Context) Sandbox {
 	if ctx == nil {
 		return nil
 	}
-	v, _ := ctx.Value(sandboxContextKey{}).(Sandbox)
+	// 1. Try pre-resolved sandbox
+	if v, ok := ctx.Value(sandboxContextKey{}).(Sandbox); ok && v != nil {
+		return v
+	}
+	// 2. Try on-demand resolution via Manager
+	if m := managerFromContext(ctx); m != nil {
+		sb, err := m.Resolve(ctx)
+		if err != nil {
+			logger.WarnCF("sandbox", "FromContext: manager.Resolve failed", map[string]any{"error": err.Error()})
+		} else if sb != nil {
+			return sb
+		}
+	}
+	return nil
+}
+
+type managerContextKey struct{}
+
+// WithManager returns a derived context carrying the sandbox manager.
+func WithManager(ctx context.Context, m Manager) context.Context {
+	return context.WithValue(ctx, managerContextKey{}, m)
+}
+
+// managerFromContext returns the manager attached by WithManager.
+func managerFromContext(ctx context.Context) Manager {
+	if ctx == nil {
+		return nil
+	}
+	v, _ := ctx.Value(managerContextKey{}).(Manager)
 	return v
 }
 
@@ -113,6 +145,8 @@ type FsBridge interface {
 	// WriteFile writes data to a sandbox-visible path.
 	// When mkdir is true, missing parent directories should be created.
 	WriteFile(ctx context.Context, path string, data []byte, mkdir bool) error
+	// ReadDir reads the named directory and returns a list of directory entries.
+	ReadDir(ctx context.Context, path string) ([]os.DirEntry, error)
 }
 
 func aggregateExecStream(execFn func(onEvent func(ExecEvent) error) (*ExecResult, error)) (*ExecResult, error) {

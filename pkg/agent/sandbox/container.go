@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path"
@@ -101,7 +102,7 @@ func NewContainerSandbox(cfg ContainerSandboxConfig) *ContainerSandbox {
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{"LANG": "C.UTF-8"}
 	}
-	cfg.WorkspaceAccess = normalizeWorkspaceAccess(cfg.WorkspaceAccess)
+	cfg.WorkspaceAccess = string(normalizeWorkspaceAccess(config.WorkspaceAccess(cfg.WorkspaceAccess)))
 	cfg.WorkspaceRoot = strings.TrimSpace(cfg.WorkspaceRoot)
 	sb := &ContainerSandbox{cfg: cfg}
 	sb.hash = computeContainerConfigHash(cfg)
@@ -125,7 +126,7 @@ func (c *ContainerSandbox) Start(ctx context.Context) error {
 		c.startErr = err
 		return err
 	}
-	if strings.TrimSpace(c.cfg.Workspace) != "" && c.cfg.WorkspaceAccess == "none" {
+	if strings.TrimSpace(c.cfg.Workspace) != "" && c.cfg.WorkspaceAccess == string(config.WorkspaceAccessNone) {
 		if err := os.MkdirAll(c.cfg.Workspace, 0o755); err != nil {
 			c.startErr = fmt.Errorf("sandbox workspace init failed: %w", err)
 			return c.startErr
@@ -255,6 +256,13 @@ func (c *ContainerSandbox) ExecStream(
 	if err != nil {
 		return nil, fmt.Errorf("docker exec attach failed: %w", err)
 	}
+
+	// Prevent stdcopy.StdCopy from blocking indefinitely if the container hangs.
+	// We force close the hijacked connection when the context times out.
+	go func() {
+		<-execCtx.Done()
+		attach.Close()
+	}()
 	defer attach.Close()
 
 	var stdout, stderr bytes.Buffer
@@ -404,16 +412,16 @@ func (c *ContainerSandbox) binds() []string {
 	}
 
 	if hostDir != "" {
-		if c.cfg.WorkspaceAccess == "none" {
+		if c.cfg.WorkspaceAccess == string(config.WorkspaceAccessNone) {
 			// Ensure the isolated directory exists on the host so Docker doesn't create it as root
 			_ = os.MkdirAll(hostDir, 0o755)
 		}
 		// Add :Z flag for SELinux (Podman) to label the content with a private unshared label.
 		// This fixes errors like: "crun: getcwd: Operation not permitted: OCI permission denied"
-		switch c.cfg.WorkspaceAccess {
-		case "ro":
+		switch config.WorkspaceAccess(c.cfg.WorkspaceAccess) {
+		case config.WorkspaceAccessRO:
 			binds = append(binds, fmt.Sprintf("%s:%s:ro,Z", hostDir, c.cfg.Workdir))
-		case "rw", "none":
+		case config.WorkspaceAccessRW, config.WorkspaceAccessNone:
 			binds = append(binds, fmt.Sprintf("%s:%s:rw,Z", hostDir, c.cfg.Workdir))
 		default:
 			// Default to no mount for unknown access types
@@ -574,7 +582,7 @@ func (f *containerFS) ReadFile(ctx context.Context, p string) ([]byte, error) {
 			return content, nil
 		}
 	}
-	return nil, fmt.Errorf("file not found in container: %s", containerPath)
+	return nil, fmt.Errorf("file not found in container %s: %w", containerPath, fs.ErrNotExist)
 }
 
 func (f *containerFS) WriteFile(ctx context.Context, p string, data []byte, mkdir bool) error {
@@ -630,8 +638,94 @@ func (f *containerFS) WriteFile(ctx context.Context, p string, data []byte, mkdi
 	return nil
 }
 
+func (f *containerFS) ReadDir(ctx context.Context, p string) ([]os.DirEntry, error) {
+	if err := f.sb.ensureContainer(ctx); err != nil {
+		return nil, err
+	}
+	containerPath, err := resolveContainerPathWithRoot(f.sb.cfg.Workdir, p)
+	if err != nil {
+		return nil, err
+	}
+
+	rc, _, err := f.sb.cli.CopyFromContainer(ctx, f.sb.cfg.ContainerName, containerPath)
+	if err != nil {
+		return nil, fmt.Errorf("docker copy from container failed: %w", err)
+	}
+	defer rc.Close()
+
+	var entries []os.DirEntry
+	tr := tar.NewReader(rc)
+	entries, err = parseTopLevelDirEntriesFromTar(tr)
+	if err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func parseTopLevelDirEntriesFromTar(tr *tar.Reader) ([]os.DirEntry, error) {
+	var entries []os.DirEntry
+	seen := make(map[string]struct{})
+	rootName := ""
+	first := true
+
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("tar read failed: %w", err)
+		}
+
+		cleanName := path.Clean(hdr.Name)
+		if first {
+			first = false
+			rootName = cleanName
+			continue
+		}
+
+		relName := cleanName
+		if rootName != "" && rootName != "." {
+			if relName == rootName {
+				continue
+			}
+			prefix := rootName + "/"
+			relName = strings.TrimPrefix(relName, prefix)
+		}
+		relName = strings.TrimPrefix(relName, "./")
+		if relName == "" || relName == "." {
+			continue
+		}
+		if strings.Contains(relName, "/") {
+			// CopyFromContainer is recursive; keep only immediate children.
+			continue
+		}
+		if _, ok := seen[relName]; ok {
+			continue
+		}
+		seen[relName] = struct{}{}
+
+		entries = append(entries, &containerDirEntry{
+			name: relName,
+			info: hdr.FileInfo(),
+		})
+	}
+
+	return entries, nil
+}
+
+type containerDirEntry struct {
+	name string
+	info os.FileInfo
+}
+
+func (d *containerDirEntry) Name() string               { return d.name }
+func (d *containerDirEntry) IsDir() bool                { return d.info.IsDir() }
+func (d *containerDirEntry) Type() os.FileMode          { return d.info.Mode().Type() }
+func (d *containerDirEntry) Info() (os.FileInfo, error) { return d.info, nil }
+
 func (c *ContainerSandbox) hostDirForContainerPath(containerDir string) (string, bool) {
-	if c.cfg.WorkspaceAccess == "ro" {
+	if c.cfg.WorkspaceAccess == string(config.WorkspaceAccessRO) {
 		return "", false
 	}
 	workspace := strings.TrimSpace(c.cfg.Workspace)

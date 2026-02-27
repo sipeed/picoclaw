@@ -103,6 +103,22 @@ func TestContainerSandbox_Integration_ExecReadWrite(t *testing.T) {
 	if strings.TrimSpace(pwdRes.Stdout) != "/workspace/it" {
 		t.Fatalf("pwd mismatch: got %q want %q", strings.TrimSpace(pwdRes.Stdout), "/workspace/it")
 	}
+
+	// Test ReadDir
+	entries, err := sb.Fs().ReadDir(ctx, "it")
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	found := false
+	for _, e := range entries {
+		if e.Name() == "write.txt" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("ReadDir result missing 'write.txt'")
+	}
 }
 
 func TestContainerSandbox_Integration_WriteFileMkdirInContainerTmp(t *testing.T) {
@@ -362,5 +378,50 @@ func TestContainerSandbox_Integration_ExecTimeoutRespectsRequest(t *testing.T) {
 	}
 	if time.Since(start) > 2*time.Second {
 		t.Fatalf("expected timeout to trigger early, took %v", time.Since(start))
+	}
+}
+
+func TestContainerSandbox_Integration_ExecTimeoutBreaksStdCopyBlock(t *testing.T) {
+	if os.Getenv("PICOCLAW_RUN_DOCKER_TESTS") != "1" {
+		t.Skip("set PICOCLAW_RUN_DOCKER_TESTS=1 to run docker integration tests")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	containerName := fmt.Sprintf("picoclaw-test-timeout-block-%d", time.Now().UnixNano())
+	image := strings.TrimSpace(os.Getenv("PICOCLAW_DOCKER_TEST_IMAGE"))
+	if image == "" {
+		image = "debian:bookworm-slim"
+	}
+
+	sb := NewContainerSandbox(ContainerSandboxConfig{
+		Image:         image,
+		ContainerName: containerName,
+		Workspace:     t.TempDir(),
+	})
+	if err := sb.Start(ctx); err != nil {
+		t.Fatalf("sandbox start failed: %v", err)
+	}
+	defer func() {
+		_ = sb.Prune(context.Background())
+		if sb.cli != nil {
+			_ = sb.cli.ContainerRemove(context.Background(), containerName, container.RemoveOptions{Force: true})
+		}
+	}()
+
+	start := time.Now()
+	// Run a command that sleeps for a very long time holding the stream open.
+	// We set a 500ms timeout. If StdCopy isn't broken asynchronously, the Exec call will hang.
+	_, err := sb.Exec(ctx, ExecRequest{
+		Command:   "sh -c 'sleep 1000'",
+		TimeoutMs: 500,
+	})
+	if err == nil {
+		t.Fatal("expected timeout error for hanging command")
+	}
+	elapsed := time.Since(start)
+	if elapsed > 2*time.Second {
+		t.Fatalf("expected timeout to trigger within 2s, but it blocked for %v (StdCopy might be hanging)", elapsed)
 	}
 }

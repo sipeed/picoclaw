@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,7 +91,7 @@ func (h *HostSandbox) ExecStream(
 	}
 
 	if req.WorkingDir != "" {
-		dir, err := validatePath(req.WorkingDir, h.workspace, h.restrict)
+		dir, err := ValidatePath(req.WorkingDir, h.workspace, h.restrict)
 		if err != nil {
 			return nil, err
 		}
@@ -105,6 +106,9 @@ func (h *HostSandbox) ExecStream(
 	if err != nil {
 		return nil, fmt.Errorf("stderr pipe setup failed: %w", err)
 	}
+
+	prepareCommandForTermination(cmd)
+
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -158,9 +162,11 @@ func (h *HostSandbox) ExecStream(
 
 	waitErr := cmd.Wait()
 	if streamErr != nil {
+		_ = terminateProcessTree(cmd)
 		return nil, streamErr
 	}
 	if cmdCtx.Err() != nil {
+		_ = terminateProcessTree(cmd)
 		return nil, cmdCtx.Err()
 	}
 
@@ -205,7 +211,7 @@ func (h *hostFS) getSafeRelPath(path string) (string, error) {
 func (h *hostFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	if !h.restrict || h.workspace == "" || h.root == nil {
 		// Unrestricted mode continues to use traditional resolution
-		resolved, err := validatePath(path, h.workspace, h.restrict)
+		resolved, err := ValidatePath(path, h.workspace, h.restrict)
 		if err != nil {
 			return nil, err
 		}
@@ -225,7 +231,7 @@ func (h *hostFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
 func (h *hostFS) WriteFile(ctx context.Context, path string, data []byte, mkdir bool) error {
 	if !h.restrict || h.workspace == "" || h.root == nil {
 		// Unrestricted mode continues to use traditional resolution
-		resolved, err := validatePath(path, h.workspace, h.restrict)
+		resolved, err := ValidatePath(path, h.workspace, h.restrict)
 		if err != nil {
 			return err
 		}
@@ -234,7 +240,17 @@ func (h *hostFS) WriteFile(ctx context.Context, path string, data []byte, mkdir 
 				return err
 			}
 		}
-		return os.WriteFile(resolved, data, 0o644)
+		// Atomic write: write to temp file then rename to prevent partial writes.
+		tmpPath := fmt.Sprintf("%s.%d.tmp", resolved, time.Now().UnixNano())
+		if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("failed to write temp file: %w", err)
+		}
+		if err := os.Rename(tmpPath, resolved); err != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("failed to replace original file: %w", err)
+		}
+		return nil
 	}
 
 	relPath, err := h.getSafeRelPath(path)
@@ -248,80 +264,32 @@ func (h *hostFS) WriteFile(ctx context.Context, path string, data []byte, mkdir 
 			return err
 		}
 	}
-	// Uses OS-level guarantees to restrict the file writing within the root descriptor.
-	return h.root.WriteFile(relPath, data, 0o644)
+	// Atomic write within os.Root: write to temp file then rename.
+	tmpRelPath := fmt.Sprintf("%s.%d.tmp", relPath, time.Now().UnixNano())
+	if err := h.root.WriteFile(tmpRelPath, data, 0o644); err != nil {
+		h.root.Remove(tmpRelPath)
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := h.root.Rename(tmpRelPath, relPath); err != nil {
+		h.root.Remove(tmpRelPath)
+		return fmt.Errorf("failed to rename temp file over target: %w", err)
+	}
+	return nil
 }
 
-// validatePath ensures the given path is within the workspace if restrict is true but does not ensure atomic TOCTOU protection.
-// It is kept for setting string-based fields like cmd.Dir where os.Root cannot be directly mapped.
-// The secure file operations boundary relies on os.Root implemented in FsBridge.
-// validatePath ensures the given path is within the workspace if restrict is true.
-func validatePath(path, workspace string, restrict bool) (string, error) {
-	if workspace == "" {
-		return path, nil
-	}
-
-	absWorkspace, err := filepath.Abs(workspace)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve workspace path: %w", err)
-	}
-
-	var absPath string
-	if filepath.IsAbs(path) {
-		absPath = filepath.Clean(path)
-	} else {
-		absPath, err = filepath.Abs(filepath.Join(absWorkspace, path))
+func (h *hostFS) ReadDir(ctx context.Context, path string) ([]os.DirEntry, error) {
+	if !h.restrict || h.workspace == "" || h.root == nil {
+		resolved, err := ValidatePath(path, h.workspace, h.restrict)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve file path: %w", err)
+			return nil, err
 		}
+		return os.ReadDir(resolved)
 	}
 
-	if restrict {
-		if !isWithinWorkspace(absPath, absWorkspace) {
-			return "", ErrOutsideWorkspace
-		}
-
-		var resolved string
-		workspaceReal := absWorkspace
-		if resolved, err = filepath.EvalSymlinks(absWorkspace); err == nil {
-			workspaceReal = resolved
-		}
-
-		if resolved, err = filepath.EvalSymlinks(absPath); err == nil {
-			if !isWithinWorkspace(resolved, workspaceReal) {
-				return "", ErrOutsideWorkspace
-			}
-		} else if os.IsNotExist(err) {
-			var parentResolved string
-			if parentResolved, err = resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
-				if !isWithinWorkspace(parentResolved, workspaceReal) {
-					return "", fmt.Errorf("access denied: symlink resolves outside workspace")
-				}
-			} else if !os.IsNotExist(err) {
-				return "", fmt.Errorf("failed to resolve path: %w", err)
-			}
-		} else {
-			return "", fmt.Errorf("failed to resolve path: %w", err)
-		}
+	relPath, err := h.getSafeRelPath(path)
+	if err != nil {
+		return nil, err
 	}
 
-	return absPath, nil
-}
-
-func resolveExistingAncestor(path string) (string, error) {
-	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
-		if resolved, err := filepath.EvalSymlinks(current); err == nil {
-			return resolved, nil
-		} else if !os.IsNotExist(err) {
-			return "", err
-		}
-		if filepath.Dir(current) == current {
-			return "", os.ErrNotExist
-		}
-	}
-}
-
-func isWithinWorkspace(candidate, workspace string) bool {
-	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
-	return err == nil && filepath.IsLocal(rel)
+	return fs.ReadDir(h.root.FS(), relPath)
 }

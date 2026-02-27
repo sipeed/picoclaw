@@ -27,11 +27,11 @@ func NewFromConfig(workspace string, restrict bool, cfg *config.Config) Sandbox 
 }
 
 // NewFromConfigWithAgent builds the sandbox Manager for an agent.
-// Returns nil when sandboxing is disabled (mode=off), so callers can check manager != nil.
+// It always returns a non-nil Manager (falling back to a host manager or error manager if needed).
 func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config, agentID string) Manager {
-	mode := "all"
-	scope := "agent"
-	workspaceAccess := "none"
+	mode := config.SandboxModeAll
+	scope := config.SandboxScopeAgent
+	workspaceAccess := config.WorkspaceAccessNone
 	workspaceRoot := "~/.picoclaw/sandboxes"
 	image := "picoclaw-sandbox:bookworm-slim"
 	containerPrefix := "picoclaw-sandbox-"
@@ -41,14 +41,14 @@ func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config,
 
 	if cfg != nil {
 		sb := cfg.Agents.Defaults.Sandbox
-		if strings.TrimSpace(sb.Mode) != "" {
-			mode = strings.TrimSpace(sb.Mode)
+		if sb.Mode != "" {
+			mode = sb.Mode
 		}
-		if strings.TrimSpace(sb.Scope) != "" {
-			scope = strings.TrimSpace(sb.Scope)
+		if sb.Scope != "" {
+			scope = sb.Scope
 		}
-		if strings.TrimSpace(sb.WorkspaceAccess) != "" {
-			workspaceAccess = strings.TrimSpace(sb.WorkspaceAccess)
+		if sb.WorkspaceAccess != "" {
+			workspaceAccess = sb.WorkspaceAccess
 		}
 		if strings.TrimSpace(sb.WorkspaceRoot) != "" {
 			workspaceRoot = strings.TrimSpace(sb.WorkspaceRoot)
@@ -71,12 +71,13 @@ func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config,
 	agentID = routing.NormalizeAgentID(agentID)
 
 	resolvedMode := normalizeSandboxMode(mode)
-	if resolvedMode == "off" {
-		return nil // sandbox disabled; host-level access is handled directly by tools
-	}
-
 	host := NewHostSandbox(workspace, restrict)
 	_ = host.Start(context.Background())
+
+	// When sandbox is disabled, skip building container infrastructure entirely.
+	if resolvedMode == config.SandboxModeOff {
+		return &hostOnlyManager{host: host}
+	}
 
 	resolvedScope := normalizeSandboxScope(scope)
 	normalizedAccess := normalizeWorkspaceAccess(workspaceAccess)
@@ -105,31 +106,33 @@ func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config,
 	return manager
 }
 
-func normalizeWorkspaceAccess(access string) string {
-	v := strings.ToLower(strings.TrimSpace(access))
+func normalizeWorkspaceAccess(access config.WorkspaceAccess) config.WorkspaceAccess {
+	v := config.WorkspaceAccess(strings.ToLower(strings.TrimSpace(string(access))))
 	switch v {
-	case "ro", "rw":
+	case config.WorkspaceAccessRO, config.WorkspaceAccessRW:
 		return v
 	default:
-		return "none"
+		return config.WorkspaceAccessNone
 	}
 }
 
-func normalizeSandboxMode(mode string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "all", "non-main":
-		return strings.ToLower(strings.TrimSpace(mode))
+func normalizeSandboxMode(mode config.SandboxMode) config.SandboxMode {
+	v := config.SandboxMode(strings.ToLower(strings.TrimSpace(string(mode))))
+	switch v {
+	case config.SandboxModeAll, config.SandboxModeNonMain:
+		return v
 	default:
-		return "off"
+		return config.SandboxModeOff
 	}
 }
 
-func normalizeSandboxScope(scope string) string {
-	switch strings.ToLower(strings.TrimSpace(scope)) {
-	case "session", "shared":
-		return strings.ToLower(strings.TrimSpace(scope))
+func normalizeSandboxScope(scope config.SandboxScope) config.SandboxScope {
+	v := config.SandboxScope(strings.ToLower(strings.TrimSpace(string(scope))))
+	switch v {
+	case config.SandboxScopeSession, config.SandboxScopeShared:
+		return v
 	default:
-		return "agent"
+		return config.SandboxScopeAgent
 	}
 }
 
@@ -165,13 +168,13 @@ func resolveAbsPath(p string) string {
 }
 
 type scopedSandboxManager struct {
-	mode            string
-	scope           string
+	mode            config.SandboxMode
+	scope           config.SandboxScope
 	agentID         string
 	host            Sandbox
 	image           string
 	containerPrefix string
-	workspaceAccess string
+	workspaceAccess config.WorkspaceAccess
 	workspaceRoot   string
 	agentWorkspace  string
 	pruneIdleHours  int
@@ -188,7 +191,7 @@ type scopedSandboxManager struct {
 }
 
 func (m *scopedSandboxManager) Start(ctx context.Context) error {
-	if m.mode == "off" {
+	if m.mode == config.SandboxModeOff {
 		return nil
 	}
 	if _, err := m.getOrCreateSandbox(ctx, m.defaultScopeKey()); err != nil {
@@ -361,9 +364,9 @@ func (m *scopedSandboxManager) Resolve(ctx context.Context) (Sandbox, error) {
 
 func (m *scopedSandboxManager) shouldSandbox(ctx context.Context) bool {
 	switch m.mode {
-	case "all":
+	case config.SandboxModeAll:
 		return true
-	case "non-main":
+	case config.SandboxModeNonMain:
 		// Sandbox all sessions except the agent's main session.
 		// Normalize before comparing to handle aliases like "main" or bare agent keys
 		return m.normalizeSessionKey(SessionKeyFromContext(ctx)) != m.mainSessionKey()
@@ -397,9 +400,9 @@ func (m *scopedSandboxManager) normalizeSessionKey(raw string) string {
 func (m *scopedSandboxManager) scopeKeyFromContext(ctx context.Context) string {
 	sessionKey := m.normalizeSessionKey(SessionKeyFromContext(ctx))
 	switch m.scope {
-	case "shared":
+	case config.SandboxScopeShared:
 		return "shared"
-	case "session":
+	case config.SandboxScopeSession:
 		return sessionKey
 	default:
 		if parsed := routing.ParseAgentSessionKey(sessionKey); parsed != nil {
@@ -434,7 +437,7 @@ func (m *scopedSandboxManager) getOrCreateSandbox(ctx context.Context, scopeKey 
 
 func (m *scopedSandboxManager) buildScopedContainerSandbox(scopeKey string) Sandbox {
 	workspace := m.agentWorkspace
-	if m.workspaceAccess == "none" || strings.TrimSpace(workspace) == "" {
+	if m.workspaceAccess == config.WorkspaceAccessNone || strings.TrimSpace(workspace) == "" {
 		workspace = filepath.Join(m.workspaceRoot, slugScopeKey(scopeKey), "workspace")
 	}
 	return NewContainerSandbox(ContainerSandboxConfig{
@@ -443,7 +446,7 @@ func (m *scopedSandboxManager) buildScopedContainerSandbox(scopeKey string) Sand
 		ContainerPrefix: m.containerPrefix,
 		Workspace:       workspace,
 		AgentWorkspace:  m.agentWorkspace,
-		WorkspaceAccess: m.workspaceAccess,
+		WorkspaceAccess: string(m.workspaceAccess),
 		WorkspaceRoot:   m.workspaceRoot,
 		PruneIdleHours:  m.pruneIdleHours,
 		PruneMaxAgeDays: m.pruneMaxAgeDays,
@@ -494,6 +497,17 @@ func (f *managerFS) WriteFile(ctx context.Context, path string, data []byte, mkd
 	return sb.Fs().WriteFile(ctx, path, data, mkdir)
 }
 
+func (f *managerFS) ReadDir(ctx context.Context, path string) ([]os.DirEntry, error) {
+	if !f.m.shouldSandbox(ctx) {
+		return f.m.host.Fs().ReadDir(ctx, path)
+	}
+	sb, err := f.m.getOrCreateSandbox(ctx, f.m.scopeKeyFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return sb.Fs().ReadDir(ctx, path)
+}
+
 var nonAlnum = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 func slugScopeKey(scopeKey string) string {
@@ -511,6 +525,29 @@ func slugScopeKey(scopeKey string) string {
 	}
 	sum := sha256.Sum256([]byte(raw))
 	return safe + "-" + hex.EncodeToString(sum[:4])
+}
+
+// hostOnlyManager is a lightweight Manager used when sandbox mode is "off".
+// It delegates all operations directly to the HostSandbox, avoiding
+// unnecessary container infrastructure setup.
+type hostOnlyManager struct {
+	host Sandbox
+}
+
+func (h *hostOnlyManager) Start(ctx context.Context) error              { return nil }
+func (h *hostOnlyManager) Prune(ctx context.Context) error              { return h.host.Prune(ctx) }
+func (h *hostOnlyManager) Resolve(ctx context.Context) (Sandbox, error) { return h.host, nil }
+func (h *hostOnlyManager) Fs() FsBridge                                 { return h.host.Fs() }
+func (h *hostOnlyManager) Exec(ctx context.Context, req ExecRequest) (*ExecResult, error) {
+	return h.host.Exec(ctx, req)
+}
+
+func (h *hostOnlyManager) ExecStream(
+	ctx context.Context,
+	req ExecRequest,
+	onEvent func(ExecEvent) error,
+) (*ExecResult, error) {
+	return h.host.ExecStream(ctx, req, onEvent)
 }
 
 type unavailableSandboxManager struct {
@@ -561,4 +598,8 @@ func (e *errorFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
 
 func (e *errorFS) WriteFile(ctx context.Context, path string, data []byte, mkdir bool) error {
 	return fmt.Errorf("sandbox unavailable: %w", e.err)
+}
+
+func (e *errorFS) ReadDir(ctx context.Context, path string) ([]os.DirEntry, error) {
+	return nil, fmt.Errorf("sandbox unavailable: %w", e.err)
 }

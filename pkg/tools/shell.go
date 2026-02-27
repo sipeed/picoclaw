@@ -1,16 +1,13 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 
@@ -148,11 +145,11 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	cwd := t.workingDir
 	if wd != "" {
 		if t.restrictToWorkspace && t.workingDir != "" {
-			resolvedWD, err := validatePath(wd, t.workingDir, true)
+			resolvedWD, err := sandbox.ValidatePath(wd, t.workingDir, true)
 			if err != nil {
 				// In sandbox mode, allow explicit container workspace paths when
 				// restrict_to_workspace is enabled.
-				sb := sandbox.SandboxFromContext(ctx)
+				sb := sandbox.FromContext(ctx)
 				if sb != nil && filepath.IsAbs(wd) && isSandboxWorkspaceAbsolutePath(wd) {
 					cwd = wd
 				} else {
@@ -176,96 +173,19 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		return ErrorResult(guardError)
 	}
 
-	sb := sandbox.SandboxFromContext(ctx)
-	if sb != nil {
-		sandboxWD := t.resolveSandboxWorkingDir(cwd)
-		res, err := sb.Exec(ctx, sandbox.ExecRequest{
-			Command:    command,
-			WorkingDir: sandboxWD,
-			TimeoutMs:  t.timeout.Milliseconds(),
-		})
-		if err != nil {
-			return ErrorResult(fmt.Sprintf("sandbox exec failed: %v", err))
-		}
-		output := res.Stdout
-		if res.Stderr != "" {
-			output += "\nSTDERR:\n" + res.Stderr
-		}
-		if output == "" {
-			output = "(no output)"
-		}
-		if res.ExitCode != 0 {
-			output += fmt.Sprintf("\nExit code: %d", res.ExitCode)
-			return &ToolResult{
-				ForLLM:  output,
-				ForUser: output,
-				IsError: true,
-			}
-		}
-		return &ToolResult{
-			ForLLM:  output,
-			ForUser: output,
-			IsError: false,
-		}
+	sb := sandbox.FromContext(ctx)
+	if sb == nil {
+		return ErrorResult("sandbox environment unavailable")
 	}
 
-	// timeout == 0 means no timeout
-	var cmdCtx context.Context
-	var cancel context.CancelFunc
-	if t.timeout > 0 {
-		cmdCtx, cancel = context.WithTimeout(ctx, t.timeout)
-	} else {
-		cmdCtx, cancel = context.WithCancel(ctx)
-	}
-	defer cancel()
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(cmdCtx, "powershell", "-NoProfile", "-NonInteractive", "-Command", command)
-	} else {
-		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
-	}
-	if cwd != "" {
-		cmd.Dir = cwd
-	}
-
-	prepareCommandForTermination(cmd)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Start(); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Wait()
-	}()
-
-	var err error
-	select {
-	case err = <-done:
-	case <-cmdCtx.Done():
-		terminateProcessTree(cmd)
-		select {
-		case err = <-done:
-		case <-time.After(2 * time.Second):
-			if cmd.Process != nil {
-				_ = cmd.Process.Kill()
-			}
-			err = <-done
-		}
-	}
-
-	output := stdout.String()
-	if stderr.Len() > 0 {
-		output += "\nSTDERR:\n" + stderr.String()
-	}
-
+	sandboxWD := t.resolveSandboxWorkingDir(cwd)
+	res, err := sb.Exec(ctx, sandbox.ExecRequest{
+		Command:    command,
+		WorkingDir: sandboxWD,
+		TimeoutMs:  t.timeout.Milliseconds(),
+	})
 	if err != nil {
-		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "context deadline exceeded") {
 			msg := fmt.Sprintf("command timed out after %v", t.timeout)
 			return &ToolResult{
 				ForLLM:  msg,
@@ -273,14 +193,12 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 				IsError: true,
 			}
 		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			output += fmt.Sprintf("\nExit code: %d", exitErr.ExitCode())
-		} else {
-			output += fmt.Sprintf("\nError: %v", err)
-		}
+		return ErrorResult(fmt.Sprintf("sandbox exec failed: %v", err))
 	}
-
+	output := res.Stdout
+	if res.Stderr != "" {
+		output += "\nSTDERR:\n" + res.Stderr
+	}
 	if output == "" {
 		output = "(no output)"
 	}
@@ -290,10 +208,18 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
 	}
 
+	if res.ExitCode != 0 {
+		output += fmt.Sprintf("\nExit code: %d", res.ExitCode)
+		return &ToolResult{
+			ForLLM:  output,
+			ForUser: output,
+			IsError: true,
+		}
+	}
 	return &ToolResult{
 		ForLLM:  output,
 		ForUser: output,
-		IsError: err != nil,
+		IsError: false,
 	}
 }
 

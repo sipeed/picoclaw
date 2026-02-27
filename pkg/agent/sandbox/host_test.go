@@ -77,7 +77,7 @@ func TestHostSandbox_ExecAndFs(t *testing.T) {
 func TestHostSandbox_ResolvePathRestrictions(t *testing.T) {
 	root := t.TempDir()
 
-	got, err := validatePath("a/b.txt", root, true)
+	got, err := ValidatePath("a/b.txt", root, true)
 	if err != nil {
 		t.Fatalf("resolvePath relative error: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestHostSandbox_ResolvePathRestrictions(t *testing.T) {
 		t.Fatalf("resolvePath relative got %q, want %q", got, want)
 	}
 
-	_, err = validatePath(filepath.Join(root, "..", "outside.txt"), root, true)
+	_, err = ValidatePath(filepath.Join(root, "..", "outside.txt"), root, true)
 	if err == nil || !errors.Is(err, ErrOutsideWorkspace) {
 		t.Fatalf("expected outside workspace error, got: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestHostSandbox_ResolvePathRestrictions(t *testing.T) {
 	}
 	link := filepath.Join(root, "link.txt")
 	if err := os.Symlink(target, link); err == nil {
-		_, err = validatePath("link.txt", root, true)
+		_, err = ValidatePath("link.txt", root, true)
 		if err == nil || !errors.Is(err, ErrOutsideWorkspace) {
 			t.Fatalf("expected symlink outside error, got: %v", err)
 		}
@@ -155,6 +155,56 @@ func TestHostFS_ReadFileWriteFile_Restricted(t *testing.T) {
 
 	if err := sb.Prune(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestHostFS_ReadDir(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "a/b"), 0o755)
+	os.WriteFile(filepath.Join(root, "a/f1.txt"), []byte("1"), 0o644)
+	os.WriteFile(filepath.Join(root, "a/b/f2.txt"), []byte("2"), 0o644)
+
+	sb := NewHostSandbox(root, true)
+	if err := sb.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer sb.Prune(context.Background())
+
+	// Test restricted ReadDir on "a"
+	entries, err := sb.Fs().ReadDir(context.Background(), "a")
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+
+	foundF1 := false
+	foundB := false
+	for _, e := range entries {
+		if e.Name() == "f1.txt" && !e.IsDir() {
+			foundF1 = true
+		}
+		if e.Name() == "b" && e.IsDir() {
+			foundB = true
+		}
+	}
+	if !foundF1 || !foundB {
+		t.Errorf("ReadDir result missing expected entries: foundF1=%v, foundB=%v", foundF1, foundB)
+	}
+
+	// Test unrestricted ReadDir
+	sb2 := NewHostSandbox(root, false)
+	entries2, err := sb2.Fs().ReadDir(context.Background(), root)
+	if err != nil {
+		t.Fatalf("ReadDir unrestricted failed: %v", err)
+	}
+	foundA := false
+	for _, e := range entries2 {
+		if e.Name() == "a" {
+			foundA = true
+			break
+		}
+	}
+	if !foundA {
+		t.Errorf("ReadDir unrestricted missing 'a'")
 	}
 }
 
@@ -264,16 +314,13 @@ func TestHostFS_ReadFileWriteFile_WithoutWorkspaceOrRoot(t *testing.T) {
 
 	content := []byte("hello empty workspace")
 	target := filepath.Join(root, "empty.txt")
-	if err := sb.Fs().WriteFile(context.Background(), target, content, true); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
+	if err := sb.Fs().WriteFile(context.Background(), target, content, true); err == nil {
+		t.Fatalf("expected WriteFile to fail due to empty workspace with restrict=true")
 	}
 
-	readContent, err := sb.Fs().ReadFile(context.Background(), target)
-	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
-	}
-	if string(readContent) != string(content) {
-		t.Fatalf("content mismatch")
+	_, err := sb.Fs().ReadFile(context.Background(), target)
+	if err == nil {
+		t.Fatalf("expected ReadFile to fail due to empty workspace with restrict=true")
 	}
 
 	// Test case where root is nil explicitly
@@ -284,7 +331,7 @@ func TestHostFS_ReadFileWriteFile_WithoutWorkspaceOrRoot(t *testing.T) {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
-	readContent, err = sb2.Fs().ReadFile(context.Background(), "nil_root_test.txt")
+	readContent, err := sb2.Fs().ReadFile(context.Background(), "nil_root_test.txt")
 	if err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
@@ -294,9 +341,9 @@ func TestHostFS_ReadFileWriteFile_WithoutWorkspaceOrRoot(t *testing.T) {
 }
 
 func TestValidatePathErrors(t *testing.T) {
-	_, err := validatePath("/a/b/c", "", true)
-	if err != nil {
-		t.Fatalf("expected no err for empty workspace with abs path")
+	_, err := ValidatePath("/a/b/c", "", true)
+	if err == nil {
+		t.Fatalf("expected err for empty workspace with restrict=true")
 	}
 
 	root := t.TempDir()
@@ -306,7 +353,7 @@ func TestValidatePathErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = validatePath("a.txt/b.txt", root, true)
+	_, err = ValidatePath("a.txt/b.txt", root, true)
 	if err == nil {
 		t.Fatalf("expected error when ancestor is file")
 	}

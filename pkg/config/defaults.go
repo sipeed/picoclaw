@@ -18,9 +18,9 @@ func DefaultConfig() *Config {
 				Temperature:         nil, // nil means use provider default
 				MaxToolIterations:   20,
 				Sandbox: AgentSandboxConfig{
-					Mode:            "off",
-					Scope:           "agent",
-					WorkspaceAccess: "none",
+					Mode:            SandboxModeOff,
+					Scope:           SandboxScopeAgent,
+					WorkspaceAccess: WorkspaceAccessNone,
 					WorkspaceRoot:   "~/.picoclaw/sandboxes",
 					Docker: AgentSandboxDockerConfig{
 						Image:           "picoclaw-sandbox:bookworm-slim",
