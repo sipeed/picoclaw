@@ -164,39 +164,43 @@ Vous pouvez également exécuter PicoClaw avec Docker Compose sans rien installe
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Configurez vos clés API
-cp config/config.example.json config/config.json
-vim config/config.json      # Configurez DISCORD_BOT_TOKEN, clés API, etc.
+# 2. Premier lancement — génère docker/data/config.json puis s'arrête
+docker compose -f docker/docker-compose.yml --profile gateway up
+# Le conteneur affiche "First-run setup complete." puis s'arrête.
 
-# 3. Compiler & Démarrer
-docker compose --profile gateway up -d
+# 3. Configurez vos clés API
+vim docker/data/config.json   # Clés API du fournisseur, tokens de bot, etc.
+
+# 4. Démarrer
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Utilisateurs Docker** : Par défaut, le Gateway écoute sur `127.0.0.1`, ce qui n'est pas accessible depuis l'hôte. Si vous avez besoin d'accéder aux endpoints de santé ou d'exposer des ports, définissez `PICOCLAW_GATEWAY_HOST=0.0.0.0` dans votre environnement ou mettez à jour `config.json`.
 
+```bash
+# 5. Voir les logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. Voir les logs
-docker compose logs -f picoclaw-gateway
-
-# 5. Arrêter
-docker compose --profile gateway down
+# 6. Arrêter
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Mode Agent (exécution unique)
 
 ```bash
 # Poser une question
-docker compose run --rm picoclaw-agent -m "Combien font 2+2 ?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Combien font 2+2 ?"
 
 # Mode interactif
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Recompiler
+### Mettre à jour
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Démarrage Rapide
