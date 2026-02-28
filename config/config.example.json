@@ -162,7 +162,8 @@
       "webhook_host": "0.0.0.0",
       "webhook_port": 18791,
       "webhook_path": "/webhook/wecom-aibot",
-      "max_steps": 10
+      "max_steps": 10,
+      "welcome_message": "Hello! I'm your AI assistant. How can I help you today?"
     }
   },
   "providers": {

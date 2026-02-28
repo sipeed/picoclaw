@@ -89,7 +89,9 @@ type WeComAIBotMessage struct {
 		} `json:"msg_item"`
 	} `json:"mixed,omitempty"`
 	// event field
-	Event string `json:"event,omitempty"`
+	Event *struct {
+		EventType string `json:"eventtype"`
+	} `json:"event,omitempty"`
 }
 
 // WeComAIBotStreamResponse represents the streaming response format
@@ -423,7 +425,7 @@ func (c *WeComAIBotChannel) processMessage(ctx context.Context, msg WeComAIBotMe
 			}{
 				ID:      c.generateStreamID(),
 				Finish:  true,
-				Content: "暂不支持该消息类型",
+				Content: "Unsupported message type: " + msg.MsgType,
 			},
 		})
 	}
@@ -545,6 +547,7 @@ func (c *WeComAIBotChannel) handleStreamMessage(ctx context.Context, msg WeComAI
 
 // handleImageMessage handles image messages
 func (c *WeComAIBotChannel) handleImageMessage(ctx context.Context, msg WeComAIBotMessage, timestamp, nonce string) string {
+	logger.WarnC("wecom_aibot", "Image message type not yet fully implemented")
 	if msg.Image == nil {
 		logger.ErrorC("wecom_aibot", "Image message missing image field")
 		return c.encryptEmptyResponse(timestamp, nonce)
@@ -553,7 +556,7 @@ func (c *WeComAIBotChannel) handleImageMessage(ctx context.Context, msg WeComAIB
 	imageURL := msg.Image.URL
 
 	// Download and decrypt image
-	imageData, err := c.downloadAndDecryptImage(ctx, imageURL)
+	_, err := c.downloadAndDecryptImage(ctx, imageURL)
 	if err != nil {
 		logger.ErrorCF("wecom_aibot", "Failed to process image", map[string]any{
 			"error": err,
@@ -575,14 +578,35 @@ func (c *WeComAIBotChannel) handleImageMessage(ctx context.Context, msg WeComAIB
 			}{
 				ID:      c.generateStreamID(),
 				Finish:  true,
-				Content: fmt.Sprintf("图片处理失败: %v", err),
+				Content: fmt.Sprintf("Image received (URL: %s), but image messages are not yet supported", imageURL),
 			},
 		})
 	}
 
 	// Echo back the image (simple demo behavior)
-	streamID := c.generateStreamID()
-	return c.encryptImageResponse(streamID, timestamp, nonce, imageData)
+	// streamID := c.generateStreamID()
+	// return c.encryptImageResponse(streamID, timestamp, nonce, imageData)
+
+	// For now, just acknowledge receipt without echoing the image
+	return c.encryptResponse("", timestamp, nonce, WeComAIBotStreamResponse{
+		MsgType: "stream",
+		Stream: struct {
+			ID      string `json:"id"`
+			Finish  bool   `json:"finish"`
+			Content string `json:"content,omitempty"`
+			MsgItem []struct {
+				MsgType string `json:"msgtype"`
+				Image   *struct {
+					Base64 string `json:"base64"`
+					MD5    string `json:"md5"`
+				} `json:"image,omitempty"`
+			} `json:"msg_item,omitempty"`
+		}{
+			ID:      c.generateStreamID(),
+			Finish:  true,
+			Content: fmt.Sprintf("Image received (URL: %s), but image messages are not yet supported", imageURL),
+		},
+	})
 }
 
 // handleMixedMessage handles mixed (text + image) messages
@@ -604,17 +628,45 @@ func (c *WeComAIBotChannel) handleMixedMessage(ctx context.Context, msg WeComAIB
 		}{
 			ID:      c.generateStreamID(),
 			Finish:  true,
-			Content: "暂不支持图文混排消息",
+			Content: "Mixed message type is not yet supported",
 		},
 	})
 }
 
 // handleEventMessage handles event messages
 func (c *WeComAIBotChannel) handleEventMessage(ctx context.Context, msg WeComAIBotMessage, timestamp, nonce string) string {
+	eventType := ""
+	if msg.Event != nil {
+		eventType = msg.Event.EventType
+	}
 	logger.DebugCF("wecom_aibot", "Received event", map[string]any{
-		"event": msg.Event,
+		"event_type": eventType,
 	})
-	// Return empty response for events
+
+	// Send welcome message when user opens the chat window
+	if eventType == "enter_chat" && c.config.WelcomeMessage != "" {
+		streamID := c.generateStreamID()
+		return c.encryptResponse(streamID, timestamp, nonce, WeComAIBotStreamResponse{
+			MsgType: "stream",
+			Stream: struct {
+				ID      string `json:"id"`
+				Finish  bool   `json:"finish"`
+				Content string `json:"content,omitempty"`
+				MsgItem []struct {
+					MsgType string `json:"msgtype"`
+					Image   *struct {
+						Base64 string `json:"base64"`
+						MD5    string `json:"md5"`
+					} `json:"image,omitempty"`
+				} `json:"msg_item,omitempty"`
+			}{
+				ID:      streamID,
+				Finish:  true,
+				Content: c.config.WelcomeMessage,
+			},
+		})
+	}
+
 	return c.encryptEmptyResponse(timestamp, nonce)
 }
 
@@ -862,7 +914,7 @@ func (c *WeComAIBotChannel) encryptMessage(plaintext, receiveid string) (string,
 
 	// Generate 16-byte random string
 	randomBytes := make([]byte, 16)
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		n, err := rand.Int(rand.Reader, big.NewInt(10))
 		if err != nil {
 			return "", fmt.Errorf("failed to generate random: %w", err)

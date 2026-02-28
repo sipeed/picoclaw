@@ -369,7 +369,8 @@ type WeComAIBotConfig struct {
 	WebhookPath    string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
 	AllowFrom      FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
 	ReplyTimeout   int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
-	MaxSteps       int                 `json:"max_steps"               env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"` // Maximum streaming steps
+	MaxSteps       int                 `json:"max_steps"               env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
+	WelcomeMessage string              `json:"welcome_message"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
 }
 
 type PicoConfig struct {
