@@ -5,7 +5,9 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - go generate ./cmd/picoclaw/...
+    - go generate ./...
+    - go install github.com/tc-hib/go-winres@latest
+    - go-winres make --in cmd/picoclaw-launcher/winres/winres.json --out cmd/picoclaw-launcher/rsrc --product-version={{ .Version }} --file-version={{ .Version }}
 
 builds:
   - id: picoclaw
@@ -33,6 +35,32 @@ builds:
     goarm:
       - "7"
     main: ./cmd/picoclaw
+    ignore:
+      - goos: windows
+        goarch: arm
+
+  - id: picoclaw-launcher
+    binary: picoclaw-launcher
+    env:
+      - CGO_ENABLED=0
+    tags:
+      - stdjson
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - windows
+      - darwin
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - riscv64
+      - loong64
+      - arm
+    goarm:
+      - "7"
+    main: ./cmd/picoclaw-launcher
     ignore:
       - goos: windows
         goarch: arm
@@ -72,6 +100,9 @@ archives:
 
 nfpms:
   - id: picoclaw
+    builds:
+      - picoclaw
+      - picoclaw-launcher
     package_name: picoclaw
     file_name_template: >-
       {{ .PackageName }}_
