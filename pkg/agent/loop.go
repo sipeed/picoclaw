@@ -590,7 +590,10 @@ func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, chan
 		// (bus full under load, or parent canceled).  Check the error
 		// itself rather than ctx.Err(), because pubCtx may time out
 		// (5 s) while the parent ctx is still active.
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		// Also treat ErrBusClosed as expected — it occurs during normal
+		// shutdown when the bus is closed before all goroutines finish.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+			errors.Is(err, bus.ErrBusClosed) {
 			logger.DebugCF("agent", "Reasoning publish skipped (timeout/cancel)", map[string]any{
 				"channel": channelName,
 				"error":   err.Error(),
