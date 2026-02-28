@@ -880,12 +880,12 @@ func formatDurationMs(ms int64) string {
 		tenths := (ms % 1000) / 100
 		return fmt.Sprintf("%d.%ds", totalSec, tenths)
 	}
-	min := totalSec / 60
+	mins := totalSec / 60
 	sec := totalSec % 60
 	if sec == 0 {
-		return fmt.Sprintf("%dm", min)
+		return fmt.Sprintf("%dm", mins)
 	}
-	return fmt.Sprintf("%dm%ds", min, sec)
+	return fmt.Sprintf("%dm%ds", mins, sec)
 }
 
 // acquireSessionLock gets or creates a per-session semaphore and acquires it.
@@ -1152,8 +1152,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 				"", nil, opts.Channel, opts.ChatID,
 			)
 			messages = append(messages, providers.Message{
-				Role:    "user",
-				Content: fmt.Sprintf("[System] Phase %d is now active. Continue working on the next steps.", agent.ContextBuilder.GetCurrentPhase()),
+				Role: "user",
+				Content: fmt.Sprintf(
+					"[System] Phase %d is now active. Continue working on the next steps.",
+					agent.ContextBuilder.GetCurrentPhase(),
+				),
 			})
 			if len(messages) > 0 {
 				al.lastSystemPrompt.Store(messages[0].Content)
@@ -1240,7 +1243,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		if agent.ContextBuilder.IsCurrentPhaseComplete() {
 			if phaseLoop >= maxPhaseTransitions {
 				logger.WarnCF("agent", "Max phase transitions reached, stopping",
-					map[string]interface{}{"agent_id": agent.ID, "transitions": phaseLoop})
+					map[string]any{"agent_id": agent.ID, "transitions": phaseLoop})
 				break
 			}
 			prev := agent.ContextBuilder.GetCurrentPhase()
