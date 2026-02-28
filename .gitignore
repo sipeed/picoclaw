@@ -8,8 +8,8 @@ build/
 *.dylib
 *.test
 *.out
-/clawdroid
-/clawdroid-test
+clawdroid
+clawdroid-test
 cmd/clawdroid/workspace
 
 # ClawDroid specific
