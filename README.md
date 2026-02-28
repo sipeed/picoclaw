@@ -293,13 +293,14 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Discord, WhatsApp, Signal, DingTalk, LINE, or WeCom
 
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
 | **Telegram** | Easy (just a token)                |
 | **Discord**  | Easy (bot token + intents)         |
 | **WhatsApp** | Easy (native: QR scan; or bridge URL) |
+| **Signal**   | Easy (signal-cli daemon + phone)   |
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
@@ -414,6 +415,57 @@ PicoClaw can connect to WhatsApp in two ways:
 ```
 
 If `session_store_path` is empty, the session is stored in `&lt;workspace&gt;/whatsapp/`. Run `picoclaw gateway`; on first run, scan the QR code printed in the terminal with WhatsApp → Linked Devices.
+
+</details>
+
+<details>
+<summary><b>Signal</b> (via signal-cli)</summary>
+
+PicoClaw connects to Signal through [signal-cli](https://github.com/AsamK/signal-cli) running in JSON-RPC daemon mode. signal-cli handles Signal protocol registration and encryption; PicoClaw connects to its HTTP API.
+
+**1. Set up signal-cli**
+
+Run signal-cli as a daemon (Docker recommended):
+
+```bash
+docker run -d --name signal-cli \
+  -p 8080:8080 \
+  -v signal-data:/home/.local/share/signal-cli \
+  bbernhard/signal-cli-rest-api
+```
+
+Register or link a phone number following the [signal-cli docs](https://github.com/AsamK/signal-cli/wiki).
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "signal": {
+      "enabled": true,
+      "account": "+1234567890",
+      "signal_cli_url": "http://localhost:8080",
+      "allow_from": ["+1987654321"],
+      "group_trigger": {
+        "mention_only": true
+      }
+    }
+  }
+}
+```
+
+- `account`: The phone number registered with signal-cli
+- `signal_cli_url`: URL of the signal-cli REST API (default: `http://localhost:8080`)
+- `allow_from`: Phone numbers allowed to interact (empty = allow all)
+- `group_trigger`: Group chat trigger config — `mention_only` requires @mention, `prefixes` triggers on message prefixes (omit for respond-to-all)
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+> Signal supports markdown-to-styled-text conversion (bold, italic, strikethrough, monospace) and typing indicators.
 
 </details>
 
