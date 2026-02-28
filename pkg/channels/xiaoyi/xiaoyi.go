@@ -2,6 +2,7 @@ package xiaoyi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -116,7 +117,7 @@ func (c *XiaoYiChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return channels.ErrNotRunning
 	}
 
-	parts := strings.SplitN(msg.ChatID, ":", 2)
+	parts := strings.SplitN(msg.ChatID, "|", 2)
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid chat_id format: %w", channels.ErrSendFailed)
 	}
@@ -131,6 +132,9 @@ func (c *XiaoYiChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	})
 
 	if err := c.client.ReplyStream(ctx, taskID, sessionID, msg.Content, false, false); err != nil {
+		if errors.Is(err, types.ErrSessionNotFound) {
+			return fmt.Errorf("xiaoyi session not found: %w", channels.ErrSendFailed)
+		}
 		return fmt.Errorf("xiaoyi reply: %w", channels.ErrTemporary)
 	}
 
@@ -165,7 +169,7 @@ func (c *XiaoYiChannel) handleMessage(ctx context.Context, msg types.Message) er
 		return nil
 	}
 
-	chatID := fmt.Sprintf("%s:%s", sessionID, taskID)
+	chatID := fmt.Sprintf("%s|%s", sessionID, taskID)
 	peer := bus.Peer{Kind: "direct", ID: sessionID}
 
 	if err := c.client.SendStatus(ctx, taskID, sessionID, "Processing...", "working"); err != nil {
@@ -176,7 +180,7 @@ func (c *XiaoYiChannel) handleMessage(ctx context.Context, msg types.Message) er
 		"task_id": taskID,
 	}
 
-	c.HandleMessage(c.ctx,
+	c.HandleMessage(ctx,
 		peer,
 		"",
 		sessionID,
