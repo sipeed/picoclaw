@@ -240,6 +240,14 @@ func registerSharedTools(
 			Proxy:                cfg.Tools.Web.Proxy,
 		}); searchTool != nil {
 			agent.Tools.Register(searchTool)
+			logger.InfoCF("agent", "Web search provider registered", map[string]any{
+				"agent_id": agentID,
+				"provider": searchTool.ProviderName(),
+			})
+		} else {
+			logger.WarnCF("agent", "No web search provider configured", map[string]any{
+				"agent_id": agentID,
+			})
 		}
 		agent.Tools.Register(tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy))
 
@@ -2775,7 +2783,7 @@ func (al *AgentLoop) runLLMIteration(
 			"prompt_cache_key": agent.ID,
 		})
 		if forceErr == nil && forceResp.Content != "" {
-			finalContent = forceResp.Content
+			finalContent = utils.StripThinkBlocks(forceResp.Content)
 			if forceResp.Usage != nil && al.stats != nil {
 				al.stats.RecordUsage(
 					forceResp.Usage.PromptTokens,
@@ -2896,10 +2904,17 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 
 	// Tools info
 	toolsList := agent.Tools.List()
-	info["tools"] = map[string]any{
+	toolsMap := map[string]any{
 		"count": len(toolsList),
 		"names": toolsList,
 	}
+	// Report web search provider if registered
+	if t, ok := agent.Tools.Get("web_search"); ok {
+		if wst, ok := t.(*tools.WebSearchTool); ok {
+			toolsMap["web_search_provider"] = wst.ProviderName()
+		}
+	}
+	info["tools"] = toolsMap
 
 	// Skills info
 	info["skills"] = agent.ContextBuilder.GetSkillsInfo()
