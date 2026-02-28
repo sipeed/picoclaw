@@ -90,6 +90,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
 			openai_compat.WithStream(boolDefault(cfg.Stream, false)),
 			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
+			openai_compat.WithMinInterval(rpmToMinInterval(cfg.RPM)),
 		), modelID, nil
 
 	case "minimax":
@@ -106,6 +107,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
 			openai_compat.WithStream(boolDefault(cfg.Stream, true)),
 			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
+			openai_compat.WithMinInterval(rpmToMinInterval(cfg.RPM)),
 		), modelID, nil
 
 	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
@@ -123,6 +125,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
 			openai_compat.WithStream(boolDefault(cfg.Stream, false)),
 			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
+			openai_compat.WithMinInterval(rpmToMinInterval(cfg.RPM)),
 		), modelID, nil
 
 	case "anthropic":
@@ -142,12 +145,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
-			apiBase,
-			cfg.Proxy,
-			cfg.MaxTokensField,
-			cfg.RequestTimeout,
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy,
+			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
+			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
+			openai_compat.WithMinInterval(rpmToMinInterval(cfg.RPM)),
 		), modelID, nil
 
 	case "antigravity":
@@ -225,6 +226,15 @@ func getDefaultAPIBase(protocol string) string {
 	default:
 		return ""
 	}
+}
+
+// rpmToMinInterval converts a requests-per-minute limit to a minimum interval
+// between consecutive requests. Returns 0 (no throttle) when rpm <= 0.
+func rpmToMinInterval(rpm int) time.Duration {
+	if rpm <= 0 {
+		return 0
+	}
+	return time.Minute / time.Duration(rpm)
 }
 
 // boolDefault dereferences a *bool, returning def when nil.

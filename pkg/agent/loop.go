@@ -305,6 +305,7 @@ func registerSharedTools(
 				webSearchOpts,
 			)
 			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+			agent.SubagentMgr = subagentManager
 			spawnTool := tools.NewSpawnTool(subagentManager)
 			currentAgentID := agentID
 			spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
@@ -942,19 +943,25 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	}
 
 	// Guarantee heartbeat worktree cleanup on ALL exit paths (error, panic, normal).
+	// Wait for spawned subagents first so they aren't killed mid-flight.
 	defer func() {
-		if opts.Background && agent.IsInWorktree(opts.SessionKey) {
-			commitMsg := "heartbeat: auto-save"
-			wtResult, _ := agent.DeactivateWorktree(opts.SessionKey, commitMsg, false)
-			if wtResult != nil && wtResult.CommitsAhead > 0 && !constants.IsInternalChannel(opts.Channel) {
-				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = al.bus.PublishOutbound(cleanupCtx, bus.OutboundMessage{
-					Channel: opts.Channel,
-					ChatID:  opts.ChatID,
-					Content: fmt.Sprintf("Heartbeat made code changes on branch `%s` (%d commits).",
-						wtResult.Branch, wtResult.CommitsAhead),
-				})
-				cleanupCancel()
+		if opts.Background {
+			if agent.SubagentMgr != nil {
+				agent.SubagentMgr.WaitAll()
+			}
+			if agent.IsInWorktree(opts.SessionKey) {
+				commitMsg := "heartbeat: auto-save"
+				wtResult, _ := agent.DeactivateWorktree(opts.SessionKey, commitMsg, false)
+				if wtResult != nil && wtResult.CommitsAhead > 0 && !constants.IsInternalChannel(opts.Channel) {
+					cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					_ = al.bus.PublishOutbound(cleanupCtx, bus.OutboundMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Content: fmt.Sprintf("Heartbeat made code changes on branch `%s` (%d commits).",
+							wtResult.Branch, wtResult.CommitsAhead),
+					})
+					cleanupCancel()
+				}
 			}
 		}
 	}()

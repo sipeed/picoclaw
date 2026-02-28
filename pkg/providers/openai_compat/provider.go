@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
@@ -36,6 +37,12 @@ type Provider struct {
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	stream         bool   // Use SSE streaming internally (accumulates into a single LLMResponse)
 	httpClient     *http.Client
+
+	// Rate limiting: minimum interval between consecutive API requests.
+	// Shared across all goroutines using this provider instance.
+	mu            sync.Mutex
+	lastRequestAt time.Time
+	minInterval   time.Duration
 }
 
 // Option is a functional option for configuring a Provider.
@@ -66,6 +73,14 @@ func WithStream(stream bool) Option {
 		if stream && p.httpClient.Timeout == defaultRequestTimeout {
 			p.httpClient.Timeout = 5 * time.Minute
 		}
+	}
+}
+
+// WithMinInterval sets the minimum interval between consecutive API requests.
+// This prevents rate limit errors when many subagents share the same provider.
+func WithMinInterval(d time.Duration) Option {
+	return func(p *Provider) {
+		p.minInterval = d
 	}
 }
 
@@ -211,6 +226,25 @@ func (p *Provider) buildHTTPRequest(
 	return req, nil
 }
 
+// waitForInterval enforces the minimum interval between consecutive API requests.
+// It sleeps if needed, then records the current time as the last request time.
+func (p *Provider) waitForInterval() {
+	if p.minInterval <= 0 {
+		return
+	}
+	p.mu.Lock()
+	if !p.lastRequestAt.IsZero() {
+		elapsed := time.Since(p.lastRequestAt)
+		if wait := p.minInterval - elapsed; wait > 0 {
+			p.mu.Unlock()
+			time.Sleep(wait)
+			p.mu.Lock()
+		}
+	}
+	p.lastRequestAt = time.Now()
+	p.mu.Unlock()
+}
+
 func (p *Provider) Chat(
 	ctx context.Context,
 	messages []Message,
@@ -232,6 +266,8 @@ func (p *Provider) Chat(
 	if err != nil {
 		return nil, err
 	}
+
+	p.waitForInterval()
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -271,6 +307,8 @@ func (p *Provider) ChatStream(
 	if err != nil {
 		return nil, err
 	}
+
+	p.waitForInterval()
 
 	resp, err := p.httpClient.Do(req) //nolint:bodyclose // closed in goroutine or error path below
 	if err != nil {
