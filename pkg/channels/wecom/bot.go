@@ -93,9 +93,12 @@ func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*We
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
+	ctx, cancel := context.WithCancel(context.Background())
 	return &WeComBotChannel{
 		BaseChannel:   base,
 		config:        cfg,
+		ctx:           ctx,
+		cancel:        cancel,
 		processedMsgs: make(map[string]bool),
 	}, nil
 }
