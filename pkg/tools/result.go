@@ -30,6 +30,10 @@ type ToolResult struct {
 	// Err is the underlying error (not JSON serialized).
 	// Used for internal error handling and logging.
 	Err error `json:"-"`
+
+	// Media contains media store refs produced by this tool.
+	// When non-empty, the agent will publish these as OutboundMediaMessage.
+	Media []string `json:"media,omitempty"`
 }
 
 // NewToolResult creates a basic ToolResult with content for the LLM.
@@ -117,6 +121,19 @@ func UserResult(content string) *ToolResult {
 		Silent:  false,
 		IsError: false,
 		Async:   false,
+	}
+}
+
+// MediaResult creates a ToolResult with media refs for the user.
+// The agent will publish these refs as OutboundMediaMessage.
+//
+// Example:
+//
+//	result := MediaResult("Image generated successfully", []string{"media://abc123"})
+func MediaResult(forLLM string, mediaRefs []string) *ToolResult {
+	return &ToolResult{
+		ForLLM: forLLM,
+		Media:  mediaRefs,
 	}
 }
 

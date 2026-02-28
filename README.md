@@ -154,9 +154,14 @@ make build
 # Build for multiple platforms
 make build-all
 
+# Build for Raspberry Pi Zero 2 W (32-bit: make build-linux-arm; 64-bit: make build-linux-arm64)
+make build-pi-zero
+
 # Build And Install
 make install
 ```
+
+**Raspberry Pi Zero 2 W:** Use the binary that matches your OS: 32-bit Raspberry Pi OS → `make build-linux-arm` (output: `build/picoclaw-linux-arm`); 64-bit → `make build-linux-arm64` (output: `build/picoclaw-linux-arm64`). Or run `make build-pi-zero` to build both.
 
 ## 🐳 Docker Compose
 
@@ -167,39 +172,43 @@ You can also run PicoClaw using Docker Compose without installing anything local
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Set your API keys
-cp config/config.example.json config/config.json
-vim config/config.json      # Set DISCORD_BOT_TOKEN, API keys, etc.
+# 2. First run — auto-generates docker/data/config.json then exits
+docker compose -f docker/docker-compose.yml --profile gateway up
+# The container prints "First-run setup complete." and stops.
 
-# 3. Build & Start
-docker compose --profile gateway up -d
+# 3. Set your API keys
+vim docker/data/config.json   # Set provider API keys, bot tokens, etc.
+
+# 4. Start
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Docker Users**: By default, the Gateway listens on `127.0.0.1` which is not accessible from the host. If you need to access the health endpoints or expose ports, set `PICOCLAW_GATEWAY_HOST=0.0.0.0` in your environment or update `config.json`.
 
+```bash
+# 5. Check logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. Check logs
-docker compose logs -f picoclaw-gateway
-
-# 5. Stop
-docker compose --profile gateway down
+# 6. Stop
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Agent Mode (One-shot)
 
 ```bash
 # Ask a question
-docker compose run --rm picoclaw-agent -m "What is 2+2?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "What is 2+2?"
 
 # Interactive mode
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Rebuild
+### Update
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Quick Start
@@ -284,12 +293,13 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, DingTalk, LINE, or WeCom
+Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or WeCom
 
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
 | **Telegram** | Easy (just a token)                |
 | **Discord**  | Easy (bot token + intents)         |
+| **WhatsApp** | Easy (native: QR scan; or bridge URL) |
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
@@ -377,6 +387,33 @@ Set `"mention_only": true` to make the bot respond only when @-mentioned. Useful
 ```bash
 picoclaw gateway
 ```
+
+</details>
+
+<details>
+<summary><b>WhatsApp</b> (native via whatsmeow)</summary>
+
+PicoClaw can connect to WhatsApp in two ways:
+
+- **Native (recommended):** In-process using [whatsmeow](https://github.com/tulir/whatsmeow). No separate bridge. Set `"use_native": true` and leave `bridge_url` empty. On first run, scan the QR code with WhatsApp (Linked Devices). Session is stored under your workspace (e.g. `workspace/whatsapp/`). The native channel is **optional** to keep the default binary small; build with `-tags whatsapp_native` (e.g. `make build-whatsapp-native` or `go build -tags whatsapp_native ./cmd/...`).
+- **Bridge:** Connect to an external WebSocket bridge. Set `bridge_url` (e.g. `ws://localhost:3001`) and keep `use_native` false.
+
+**Configure (native)**
+
+```json
+{
+  "channels": {
+    "whatsapp": {
+      "enabled": true,
+      "use_native": true,
+      "session_store_path": "",
+      "allow_from": []
+    }
+  }
+}
+```
+
+If `session_store_path` is empty, the session is stored in `&lt;workspace&gt;/whatsapp/`. Run `picoclaw gateway`; on first run, scan the QR code printed in the terminal with WhatsApp → Linked Devices.
 
 </details>
 
@@ -1066,7 +1103,11 @@ picoclaw agent -m "Hello"
       "allow_from": [""]
     },
     "whatsapp": {
-      "enabled": false
+      "enabled": false,
+      "bridge_url": "ws://localhost:3001",
+      "use_native": false,
+      "session_store_path": "",
+      "allow_from": []
     },
     "feishu": {
       "enabled": false,
