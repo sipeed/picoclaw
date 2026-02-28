@@ -243,9 +243,9 @@ func TestMergeWorktreeBranch_Conflict(t *testing.T) {
 	dir := initTestRepo(t)
 	wtPath := filepath.Join(dir, ".picoclaw", "worktrees", "merge-conflict")
 
-	wt, err := CreateWorktree(dir, wtPath, "plan/merge-conflict")
-	if err != nil {
-		t.Fatalf("CreateWorktree: %v", err)
+	wt, createErr := CreateWorktree(dir, wtPath, "plan/merge-conflict")
+	if createErr != nil {
+		t.Fatalf("CreateWorktree: %v", createErr)
 	}
 
 	// Make a change on the base branch
@@ -270,9 +270,9 @@ func TestMergeWorktreeBranch_Conflict(t *testing.T) {
 	}
 
 	// Verify base branch file is unchanged (merge was aborted)
-	content, err := os.ReadFile(filepath.Join(dir, "conflict.txt"))
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	content, readErr := os.ReadFile(filepath.Join(dir, "conflict.txt"))
+	if readErr != nil {
+		t.Fatalf("ReadFile: %v", readErr)
 	}
 	if string(content) != "base content" {
 		t.Errorf("conflict.txt = %q, want %q (merge should have been aborted)", string(content), "base content")
