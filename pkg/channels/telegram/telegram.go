@@ -44,6 +44,7 @@ type TelegramChannel struct {
 	bot      *telego.Bot
 	bh       *telegohandler.BotHandler
 	commands TelegramCommander
+	dispatcher commands.Dispatching
 	config   *config.Config
 	chatIDs  map[string]int64
 	ctx      context.Context
@@ -94,6 +95,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	return &TelegramChannel{
 		BaseChannel: base,
 		commands:    NewTelegramCommands(bot, cfg),
+		dispatcher:  commands.NewDispatcher(commands.NewRegistry(commands.BuiltinDefinitions(cfg))),
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
@@ -121,22 +123,9 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	c.bh = bh
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		c.commands.Help(ctx, message)
-		return nil
-	}, th.CommandEqual("help"))
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Start(ctx, message)
-	}, th.CommandEqual("start"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Show(ctx, message)
-	}, th.CommandEqual("show"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.List(ctx, message)
-	}, th.CommandEqual("list"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		if c.dispatchCommand(ctx, message) {
+			return nil
+		}
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
 

@@ -25,6 +25,16 @@ type Dispatcher struct {
 	reg *Registry
 }
 
+type Dispatching interface {
+	Dispatch(ctx context.Context, req Request) Result
+}
+
+type DispatchFunc func(ctx context.Context, req Request) Result
+
+func (f DispatchFunc) Dispatch(ctx context.Context, req Request) Result {
+	return f(ctx, req)
+}
+
 func NewDispatcher(reg *Registry) *Dispatcher {
 	return &Dispatcher{reg: reg}
 }
