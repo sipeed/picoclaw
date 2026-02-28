@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -18,9 +20,13 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
+	// mu protects Model, Candidates and SubagentMgr which can be changed at
+	// runtime by the /switch model command while the LLM loop is running.
+	mu sync.RWMutex
+
 	ID                        string
 	Name                      string
-	Model                     string
+	Model                     string // registry key (model name)
 	Fallbacks                 []string
 	Workspace                 string
 	MaxIterations             int
@@ -29,32 +35,38 @@ type AgentInstance struct {
 	ContextWindow             int
 	SummarizeMessageThreshold int
 	SummarizeTokenPercent     int
-	Provider                  providers.LLMProvider
 	Sessions                  *session.SessionManager
 	ContextBuilder            *ContextBuilder
 	Tools                     *tools.ToolRegistry
 	Subagents                 *config.SubagentsConfig
 	SkillsFilter              []string
 	Candidates                []providers.FallbackCandidate
+	SubagentMgr               *tools.SubagentManager // updated on /switch model
+	AllowReadPaths            []*regexp.Regexp        // compiled path whitelist for reads
+	AllowWritePaths           []*regexp.Regexp        // compiled path whitelist for writes
 }
 
 // NewAgentInstance creates an agent instance from config.
+// The ModelRegistry is used to resolve the provider and model ID.
 func NewAgentInstance(
 	agentCfg *config.AgentConfig,
 	defaults *config.AgentDefaults,
 	cfg *config.Config,
-	provider providers.LLMProvider,
+	modelRegistry *providers.ModelRegistry,
 ) *AgentInstance {
 	workspace := resolveAgentWorkspace(agentCfg, defaults)
 	os.MkdirAll(workspace, 0o755)
 
-	model := resolveAgentModel(agentCfg, defaults)
+	modelName := resolveAgentModel(agentCfg, defaults)
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
+
+	// Model stays as the model name (registry key); provider is resolved at call time.
+	model := modelName
 
 	restrict := defaults.RestrictToWorkspace
 	readRestrict := restrict && !defaults.AllowReadOutsideWorkspace
 
-	// Compile path whitelist patterns from config.
+	// Compile path whitelist patterns once and store on the instance.
 	allowReadPaths := compilePatterns(cfg.Tools.AllowReadPaths)
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 
@@ -113,52 +125,27 @@ func NewAgentInstance(
 		summarizeTokenPercent = 75
 	}
 
-	// Resolve fallback candidates
-	modelCfg := providers.ModelConfig{
-		Primary:   model,
-		Fallbacks: fallbacks,
+	// Build fallback candidates from the registry using model names as keys.
+	allModels := append([]string{modelName}, fallbacks...)
+	seen := make(map[string]bool)
+	var candidates []providers.FallbackCandidate
+	for _, name := range allModels {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		if _, ok := modelRegistry.Get(name); ok {
+			candidates = append(candidates, providers.FallbackCandidate{Model: name})
+		} else {
+			logger.WarnCF("agent", "Model not found in registry, skipping",
+				map[string]any{"model": name, "agent_id": agentID})
+		}
 	}
-	resolveFromModelList := func(raw string) (string, bool) {
-		ensureProtocol := func(model string) string {
-			model = strings.TrimSpace(model)
-			if model == "" {
-				return ""
-			}
-			if strings.Contains(model, "/") {
-				return model
-			}
-			return "openai/" + model
-		}
-
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return "", false
-		}
-
-		if cfg != nil {
-			if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
-				return ensureProtocol(mc.Model), true
-			}
-
-			for i := range cfg.ModelList {
-				fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
-				if fullModel == "" {
-					continue
-				}
-				if fullModel == raw {
-					return ensureProtocol(fullModel), true
-				}
-				_, modelID := providers.ExtractProtocol(fullModel)
-				if modelID == raw {
-					return ensureProtocol(fullModel), true
-				}
-			}
-		}
-
-		return "", false
+	if len(candidates) == 0 {
+		logger.WarnCF("agent", "Agent has no valid candidates; will use registry default",
+			map[string]any{"agent_id": agentID, "configured_model": modelName})
 	}
-
-	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
 	return &AgentInstance{
 		ID:                        agentID,
@@ -172,13 +159,14 @@ func NewAgentInstance(
 		ContextWindow:             maxTokens,
 		SummarizeMessageThreshold: summarizeMessageThreshold,
 		SummarizeTokenPercent:     summarizeTokenPercent,
-		Provider:                  provider,
 		Sessions:                  sessionsManager,
 		ContextBuilder:            contextBuilder,
 		Tools:                     toolsRegistry,
 		Subagents:                 subagents,
 		SkillsFilter:              skillsFilter,
 		Candidates:                candidates,
+		AllowReadPaths:            allowReadPaths,
+		AllowWritePaths:           allowWritePaths,
 	}
 }
 
@@ -236,4 +224,28 @@ func expandHome(path string) string {
 		return home
 	}
 	return path
+}
+
+// getModelSnapshot returns a consistent snapshot of the mutable routing fields.
+// Use this at the start of each LLM iteration rather than reading fields directly.
+func (a *AgentInstance) getModelSnapshot() (model string, candidates []providers.FallbackCandidate) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	model = a.Model
+	candidates = make([]providers.FallbackCandidate, len(a.Candidates))
+	copy(candidates, a.Candidates)
+	return
+}
+
+// switchModel atomically updates Model.
+// Returns the previous model name.
+func (a *AgentInstance) switchModel(model string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	old := a.Model
+	a.Model = model
+	if a.SubagentMgr != nil {
+		a.SubagentMgr.UpdateModel(model)
+	}
+	return old
 }

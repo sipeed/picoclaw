@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-func makeCandidate(provider, model string) FallbackCandidate {
-	return FallbackCandidate{Provider: provider, Model: model}
+func makeCandidate(model string) FallbackCandidate {
+	return FallbackCandidate{Model: model}
 }
 
-func successRun(content string) func(ctx context.Context, provider, model string) (*LLMResponse, error) {
-	return func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+func successRun(content string) func(ctx context.Context, model string) (*LLMResponse, error) {
+	return func(ctx context.Context, model string) (*LLMResponse, error) {
 		return &LLMResponse{Content: content, FinishReason: "stop"}, nil
 	}
 }
@@ -21,7 +21,7 @@ func TestFallback_SingleCandidate_Success(t *testing.T) {
 	ct := NewCooldownTracker()
 	fc := NewFallbackChain(ct)
 
-	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
+	candidates := []FallbackCandidate{makeCandidate("gpt-4")}
 	result, err := fc.Execute(context.Background(), candidates, successRun("hello"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -29,8 +29,8 @@ func TestFallback_SingleCandidate_Success(t *testing.T) {
 	if result.Response.Content != "hello" {
 		t.Errorf("content = %q, want hello", result.Response.Content)
 	}
-	if result.Provider != "openai" || result.Model != "gpt-4" {
-		t.Errorf("provider/model = %s/%s, want openai/gpt-4", result.Provider, result.Model)
+	if result.Model != "gpt-4" {
+		t.Errorf("model = %s, want gpt-4", result.Model)
 	}
 }
 
@@ -39,12 +39,12 @@ func TestFallback_SecondCandidateSuccess(t *testing.T) {
 	fc := NewFallbackChain(ct)
 
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4"),
-		makeCandidate("anthropic", "claude-opus"),
+		makeCandidate("gpt-4"),
+		makeCandidate("claude-opus"),
 	}
 
 	attempt := 0
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
 		attempt++
 		if attempt == 1 {
 			return nil, errors.New("rate limit exceeded")
@@ -56,8 +56,8 @@ func TestFallback_SecondCandidateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Provider != "anthropic" {
-		t.Errorf("provider = %q, want anthropic", result.Provider)
+	if result.Model != "claude-opus" {
+		t.Errorf("model = %q, want claude-opus", result.Model)
 	}
 	if result.Response.Content != "from claude" {
 		t.Errorf("content = %q, want 'from claude'", result.Response.Content)
@@ -72,12 +72,12 @@ func TestFallback_AllFail(t *testing.T) {
 	fc := NewFallbackChain(ct)
 
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4"),
-		makeCandidate("anthropic", "claude"),
-		makeCandidate("groq", "llama"),
+		makeCandidate("gpt-4"),
+		makeCandidate("claude"),
+		makeCandidate("llama"),
 	}
 
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
 		return nil, errors.New("rate limit exceeded")
 	}
 
@@ -100,12 +100,12 @@ func TestFallback_ContextCanceled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4"),
-		makeCandidate("anthropic", "claude"),
+		makeCandidate("gpt-4"),
+		makeCandidate("claude"),
 	}
 
 	attempt := 0
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
 		attempt++
 		if attempt == 1 {
 			cancel() // cancel context
@@ -126,12 +126,12 @@ func TestFallback_NonRetriableError(t *testing.T) {
 	fc := NewFallbackChain(ct)
 
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4"),
-		makeCandidate("anthropic", "claude"),
+		makeCandidate("gpt-4"),
+		makeCandidate("claude"),
 	}
 
 	attempt := 0
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
 		attempt++
 		return nil, errors.New("string should match pattern")
 	}
@@ -157,17 +157,17 @@ func TestFallback_CooldownSkip(t *testing.T) {
 	ct, _ := newTestTracker(now)
 	fc := NewFallbackChain(ct)
 
-	// Put openai in cooldown
-	ct.MarkFailure("openai", FailoverRateLimit)
+	// Put gpt-4 in cooldown
+	ct.MarkFailure("gpt-4", FailoverRateLimit)
 
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4"),
-		makeCandidate("anthropic", "claude"),
+		makeCandidate("gpt-4"),
+		makeCandidate("claude"),
 	}
 
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
-		if provider == "openai" {
-			t.Error("should not call openai (in cooldown)")
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
+		if model == "gpt-4" {
+			t.Error("should not call gpt-4 (in cooldown)")
 		}
 		return &LLMResponse{Content: "claude response", FinishReason: "stop"}, nil
 	}
@@ -176,8 +176,8 @@ func TestFallback_CooldownSkip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Provider != "anthropic" {
-		t.Errorf("provider = %q, want anthropic", result.Provider)
+	if result.Model != "claude" {
+		t.Errorf("model = %q, want claude", result.Model)
 	}
 	// Should have 1 skipped attempt
 	skipped := 0
@@ -195,17 +195,17 @@ func TestFallback_AllInCooldown(t *testing.T) {
 	ct := NewCooldownTracker()
 	fc := NewFallbackChain(ct)
 
-	// Put all providers in cooldown
-	ct.MarkFailure("openai", FailoverRateLimit)
-	ct.MarkFailure("anthropic", FailoverBilling)
+	// Put all models in cooldown
+	ct.MarkFailure("gpt-4", FailoverRateLimit)
+	ct.MarkFailure("claude", FailoverBilling)
 
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4"),
-		makeCandidate("anthropic", "claude"),
+		makeCandidate("gpt-4"),
+		makeCandidate("claude"),
 	}
 
 	_, err := fc.Execute(context.Background(), candidates,
-		func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		func(ctx context.Context, model string) (*LLMResponse, error) {
 			t.Error("should not call any provider (all in cooldown)")
 			return nil, nil
 		})
@@ -234,7 +234,7 @@ func TestFallback_EmptyFallbacks(t *testing.T) {
 	ct := NewCooldownTracker()
 	fc := NewFallbackChain(ct)
 
-	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
+	candidates := []FallbackCandidate{makeCandidate("gpt-4")}
 	result, err := fc.Execute(context.Background(), candidates, successRun("ok"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -249,12 +249,12 @@ func TestFallback_UnclassifiedError(t *testing.T) {
 	fc := NewFallbackChain(ct)
 
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4"),
-		makeCandidate("anthropic", "claude"),
+		makeCandidate("gpt-4"),
+		makeCandidate("claude"),
 	}
 
 	attempt := 0
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
 		attempt++
 		return nil, errors.New("completely unknown internal error")
 	}
@@ -272,13 +272,13 @@ func TestFallback_SuccessResetsCooldown(t *testing.T) {
 	ct := NewCooldownTracker()
 	fc := NewFallbackChain(ct)
 
-	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
+	candidates := []FallbackCandidate{makeCandidate("gpt-4")}
 
 	attempt := 0
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
 		attempt++
 		if attempt == 1 {
-			ct.MarkFailure("openai", FailoverRateLimit) // simulate failure tracked elsewhere
+			ct.MarkFailure("gpt-4", FailoverRateLimit) // simulate failure tracked elsewhere
 		}
 		return &LLMResponse{Content: "ok", FinishReason: "stop"}, nil
 	}
@@ -287,7 +287,7 @@ func TestFallback_SuccessResetsCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ct.IsAvailable("openai") {
+	if !ct.IsAvailable("gpt-4") {
 		t.Error("success should reset cooldown")
 	}
 }
@@ -298,7 +298,7 @@ func TestImageFallback_Success(t *testing.T) {
 	ct := NewCooldownTracker()
 	fc := NewFallbackChain(ct)
 
-	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4o")}
+	candidates := []FallbackCandidate{makeCandidate("gpt-4o")}
 	result, err := fc.ExecuteImage(context.Background(), candidates, successRun("image result"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -313,12 +313,12 @@ func TestImageFallback_DimensionError(t *testing.T) {
 	fc := NewFallbackChain(ct)
 
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4o"),
-		makeCandidate("anthropic", "claude"),
+		makeCandidate("gpt-4o"),
+		makeCandidate("claude"),
 	}
 
 	attempt := 0
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
 		attempt++
 		return nil, errors.New("image dimensions exceed max 4096x4096")
 	}
@@ -337,12 +337,12 @@ func TestImageFallback_SizeError(t *testing.T) {
 	fc := NewFallbackChain(ct)
 
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4o"),
-		makeCandidate("anthropic", "claude"),
+		makeCandidate("gpt-4o"),
+		makeCandidate("claude"),
 	}
 
 	attempt := 0
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
 		attempt++
 		return nil, errors.New("image exceeds 20 mb")
 	}
@@ -361,12 +361,12 @@ func TestImageFallback_RetryOnOtherErrors(t *testing.T) {
 	fc := NewFallbackChain(ct)
 
 	candidates := []FallbackCandidate{
-		makeCandidate("openai", "gpt-4o"),
-		makeCandidate("anthropic", "claude-sonnet"),
+		makeCandidate("gpt-4o"),
+		makeCandidate("claude-sonnet"),
 	}
 
 	attempt := 0
-	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+	run := func(ctx context.Context, model string) (*LLMResponse, error) {
 		attempt++
 		if attempt == 1 {
 			return nil, errors.New("rate limit exceeded")
@@ -378,8 +378,8 @@ func TestImageFallback_RetryOnOtherErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Provider != "anthropic" {
-		t.Errorf("provider = %q, want anthropic", result.Provider)
+	if result.Model != "claude-sonnet" {
+		t.Errorf("model = %q, want claude-sonnet", result.Model)
 	}
 }
 
@@ -406,14 +406,14 @@ func TestResolveCandidates_Simple(t *testing.T) {
 		t.Fatalf("candidates = %d, want 3", len(candidates))
 	}
 
-	if candidates[0].Provider != "openai" || candidates[0].Model != "gpt-4" {
-		t.Errorf("candidate[0] = %s/%s, want openai/gpt-4", candidates[0].Provider, candidates[0].Model)
+	if candidates[0].Model != "gpt-4" {
+		t.Errorf("candidate[0].Model = %q, want gpt-4", candidates[0].Model)
 	}
-	if candidates[1].Provider != "anthropic" || candidates[1].Model != "claude-opus" {
-		t.Errorf("candidate[1] = %s/%s, want anthropic/claude-opus", candidates[1].Provider, candidates[1].Model)
+	if candidates[1].Model != "claude-opus" {
+		t.Errorf("candidate[1].Model = %q, want claude-opus", candidates[1].Model)
 	}
-	if candidates[2].Provider != "groq" || candidates[2].Model != "llama-3" {
-		t.Errorf("candidate[2] = %s/%s, want groq/llama-3", candidates[2].Provider, candidates[2].Model)
+	if candidates[2].Model != "llama-3" {
+		t.Errorf("candidate[2].Model = %q, want llama-3", candidates[2].Model)
 	}
 }
 
@@ -470,9 +470,6 @@ func TestResolveCandidatesWithLookup_AliasResolvesToNestedModel(t *testing.T) {
 	if len(candidates) != 1 {
 		t.Fatalf("candidates = %d, want 1", len(candidates))
 	}
-	if candidates[0].Provider != "openrouter" {
-		t.Fatalf("provider = %q, want openrouter", candidates[0].Provider)
-	}
 	if candidates[0].Model != "stepfun/step-3.5-flash:free" {
 		t.Fatalf("model = %q, want stepfun/step-3.5-flash:free", candidates[0].Model)
 	}
@@ -513,9 +510,6 @@ func TestResolveCandidatesWithLookup_AliasWithoutProtocolUsesDefaultProvider(t *
 	candidates := ResolveCandidatesWithLookup(cfg, "openai", lookup)
 	if len(candidates) != 1 {
 		t.Fatalf("candidates = %d, want 1", len(candidates))
-	}
-	if candidates[0].Provider != "openai" {
-		t.Fatalf("provider = %q, want openai", candidates[0].Provider)
 	}
 	if candidates[0].Model != "glm-5" {
 		t.Fatalf("model = %q, want glm-5", candidates[0].Model)

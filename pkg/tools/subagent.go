@@ -23,11 +23,11 @@ type SubagentTask struct {
 }
 
 type SubagentManager struct {
-	tasks          map[string]*SubagentTask
-	mu             sync.RWMutex
-	provider       providers.LLMProvider
-	defaultModel   string
-	bus            *bus.MessageBus
+	tasks            map[string]*SubagentTask
+	mu               sync.RWMutex
+	registry         *providers.ModelRegistry
+	defaultModelName string // registry key; looked up at spawn time
+	bus              *bus.MessageBus
 	workspace      string
 	tools          *ToolRegistry
 	maxIterations  int
@@ -39,19 +39,19 @@ type SubagentManager struct {
 }
 
 func NewSubagentManager(
-	provider providers.LLMProvider,
-	defaultModel, workspace string,
+	registry *providers.ModelRegistry,
+	defaultModelName, workspace string,
 	bus *bus.MessageBus,
 ) *SubagentManager {
 	return &SubagentManager{
-		tasks:         make(map[string]*SubagentTask),
-		provider:      provider,
-		defaultModel:  defaultModel,
-		bus:           bus,
-		workspace:     workspace,
-		tools:         NewToolRegistry(),
-		maxIterations: 10,
-		nextID:        1,
+		tasks:            make(map[string]*SubagentTask),
+		registry:         registry,
+		defaultModelName: defaultModelName,
+		bus:              bus,
+		workspace:        workspace,
+		tools:            NewToolRegistry(),
+		maxIterations:    10,
+		nextID:           1,
 	}
 }
 
@@ -65,7 +65,13 @@ func (sm *SubagentManager) SetLLMOptions(maxTokens int, temperature float64) {
 	sm.hasTemperature = true
 }
 
-// SetTools sets the tool registry for subagent execution.
+// UpdateModel updates the model used for new subagent spawns.
+// Called when the user switches models at runtime.
+func (sm *SubagentManager) UpdateModel(modelName string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.defaultModelName = modelName
+}
 // If not set, subagent will have access to the provided tools.
 func (sm *SubagentManager) SetTools(tools *ToolRegistry) {
 	sm.mu.Lock()
@@ -151,7 +157,20 @@ After completing the task, provide a clear summary of what was done.`
 	temperature := sm.temperature
 	hasMaxTokens := sm.hasMaxTokens
 	hasTemperature := sm.hasTemperature
+	registry := sm.registry
+	modelName := sm.defaultModelName
 	sm.mu.RUnlock()
+
+	entry, ok := registry.Get(modelName)
+	if !ok {
+		if entry, ok = registry.GetDefault(); !ok {
+			sm.mu.Lock()
+			task.Status = "failed"
+			task.Result = fmt.Sprintf("model %q not found in registry", modelName)
+			sm.mu.Unlock()
+			return
+		}
+	}
 
 	var llmOptions map[string]any
 	if hasMaxTokens || hasTemperature {
@@ -165,8 +184,8 @@ After completing the task, provide a clear summary of what was done.`
 	}
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
-		Provider:      sm.provider,
-		Model:         sm.defaultModel,
+		Provider:      entry.Provider,
+		Model:         entry.ModelID,
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
@@ -328,7 +347,16 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	temperature := sm.temperature
 	hasMaxTokens := sm.hasMaxTokens
 	hasTemperature := sm.hasTemperature
+	registry := sm.registry
+	modelName := sm.defaultModelName
 	sm.mu.RUnlock()
+
+	entry, ok := registry.Get(modelName)
+	if !ok {
+		if entry, ok = registry.GetDefault(); !ok {
+			return ErrorResult(fmt.Sprintf("model %q not found in registry", modelName)).WithError(fmt.Errorf("model not found"))
+		}
+	}
 
 	var llmOptions map[string]any
 	if hasMaxTokens || hasTemperature {
@@ -342,8 +370,8 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
-		Provider:      sm.provider,
-		Model:         sm.defaultModel,
+		Provider:      entry.Provider,
+		Model:         entry.ModelID,
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,

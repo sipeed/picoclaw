@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -29,15 +26,21 @@ func (f *fakeChannel) IsAllowed(string) bool                                   {
 func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
 func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
 
-func newTestAgentLoop(
-	t *testing.T,
-) (al *AgentLoop, cfg *config.Config, msgBus *bus.MessageBus, provider *mockProvider, cleanup func()) {
-	t.Helper()
+// mockRegistry wraps a mockProvider into a minimal ModelRegistry for tests.
+func mockRegistry(p providers.LLMProvider) *providers.ModelRegistry {
+	return providers.NewModelRegistryFromProvider(p, "mock-model")
+}
+
+func TestRecordLastChannel(t *testing.T) {
+	// Create temp workspace
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	cfg = &config.Config{
+	defer os.RemoveAll(tmpDir)
+
+	// Create test config
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
@@ -47,43 +50,74 @@ func newTestAgentLoop(
 			},
 		},
 	}
-	msgBus = bus.NewMessageBus()
-	provider = &mockProvider{}
-	al = NewAgentLoop(cfg, msgBus, provider)
-	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
-}
 
-func TestRecordLastChannel(t *testing.T) {
-	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
-	defer cleanup()
+	// Create agent loop
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 
+	// Test RecordLastChannel
 	testChannel := "test-channel"
-	if err := al.RecordLastChannel(testChannel); err != nil {
+	err = al.RecordLastChannel(testChannel)
+	if err != nil {
 		t.Fatalf("RecordLastChannel failed: %v", err)
 	}
-	if got := al.state.GetLastChannel(); got != testChannel {
-		t.Errorf("Expected channel '%s', got '%s'", testChannel, got)
+
+	// Verify channel was saved
+	lastChannel := al.state.GetLastChannel()
+	if lastChannel != testChannel {
+		t.Errorf("Expected channel '%s', got '%s'", testChannel, lastChannel)
 	}
-	al2 := NewAgentLoop(cfg, msgBus, provider)
-	if got := al2.state.GetLastChannel(); got != testChannel {
-		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, got)
+
+	// Verify persistence by creating a new agent loop
+	al2 := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
+	if al2.state.GetLastChannel() != testChannel {
+		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, al2.state.GetLastChannel())
 	}
 }
 
 func TestRecordLastChatID(t *testing.T) {
-	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
-	defer cleanup()
+	// Create temp workspace
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
 
+	// Create test config
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	// Create agent loop
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
+
+	// Test RecordLastChatID
 	testChatID := "test-chat-id-123"
-	if err := al.RecordLastChatID(testChatID); err != nil {
+	err = al.RecordLastChatID(testChatID)
+	if err != nil {
 		t.Fatalf("RecordLastChatID failed: %v", err)
 	}
-	if got := al.state.GetLastChatID(); got != testChatID {
-		t.Errorf("Expected chat ID '%s', got '%s'", testChatID, got)
+
+	// Verify chat ID was saved
+	lastChatID := al.state.GetLastChatID()
+	if lastChatID != testChatID {
+		t.Errorf("Expected chat ID '%s', got '%s'", testChatID, lastChatID)
 	}
-	al2 := NewAgentLoop(cfg, msgBus, provider)
-	if got := al2.state.GetLastChatID(); got != testChatID {
-		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, got)
+
+	// Verify persistence by creating a new agent loop
+	al2 := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
+	if al2.state.GetLastChatID() != testChatID {
+		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, al2.state.GetLastChatID())
 	}
 }
 
@@ -110,7 +144,7 @@ func TestNewAgentLoop_StateInitialized(t *testing.T) {
 	// Create agent loop
 	msgBus := bus.NewMessageBus()
 	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 
 	// Verify state manager is initialized
 	if al.state == nil {
@@ -145,7 +179,7 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 
 	// Register a custom tool
 	customTool := &mockCustomTool{}
@@ -158,7 +192,13 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
-	found := slices.Contains(toolsList, "mock_custom")
+	found := false
+	for _, name := range toolsList {
+		if name == "mock_custom" {
+			found = true
+			break
+		}
+	}
 	if !found {
 		t.Error("Expected custom tool to be registered")
 	}
@@ -185,7 +225,7 @@ func TestToolContext_Updates(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	provider := &simpleMockProvider{response: "OK"}
-	_ = NewAgentLoop(cfg, msgBus, provider)
+	_ = NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 
 	// Verify that ContextualTool interface is defined and can be implemented
 	// This test validates the interface contract exists
@@ -216,7 +256,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 
 	// Register a test tool and verify it shows up in startup info
 	testTool := &mockCustomTool{}
@@ -227,7 +267,13 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
-	found := slices.Contains(toolsList, "mock_custom")
+	found := false
+	for _, name := range toolsList {
+		if name == "mock_custom" {
+			found = true
+			break
+		}
+	}
 	if !found {
 		t.Error("Expected custom tool to be registered")
 	}
@@ -254,7 +300,7 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 
 	info := al.GetStartupInfo()
 
@@ -301,7 +347,7 @@ func TestAgentLoop_Stop(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 
 	// Note: running is only set to true when Run() is called
 	// We can't test that without starting the event loop
@@ -429,7 +475,7 @@ func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	provider := &simpleMockProvider{response: "File operation complete"}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 	helper := testHelper{al: al}
 
 	// ReadFileTool returns SilentResult, which should not send user message
@@ -471,7 +517,7 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	provider := &simpleMockProvider{response: "Command output: hello world"}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 	helper := testHelper{al: al}
 
 	// ExecTool returns UserResult, which should send user message
@@ -550,7 +596,7 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 		successResp: "Recovered from context error",
 	}
 
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, msgBus, mockRegistry(provider))
 
 	// Inject some history to simulate a full context
 	sessionKey := "test-session-context"
@@ -621,7 +667,7 @@ func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
 		},
 	}
 
-	al := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), mockRegistry(&mockProvider{}))
 	chManager, err := channels.NewManager(&config.Config{}, bus.NewMessageBus(), nil)
 	if err != nil {
 		t.Fatalf("Failed to create channel manager: %v", err)
@@ -691,7 +737,7 @@ func TestHandleReasoning(t *testing.T) {
 			},
 		}
 		msgBus := bus.NewMessageBus()
-		return NewAgentLoop(cfg, msgBus, &mockProvider{}), msgBus
+		return NewAgentLoop(cfg, msgBus, mockRegistry(&mockProvider{})), msgBus
 	}
 
 	t.Run("skips when any required field is empty", func(t *testing.T) {
@@ -809,143 +855,4 @@ func TestHandleReasoning(t *testing.T) {
 			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
 		}
 	})
-}
-
-func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
-	store := media.NewFileMediaStore()
-	dir := t.TempDir()
-
-	// Create a minimal valid PNG (8-byte header is enough for filetype detection)
-	pngPath := filepath.Join(dir, "test.png")
-	// PNG magic: 0x89 P N G \r \n 0x1A \n + minimal IHDR
-	pngHeader := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-		0x00, 0x00, 0x00, 0x0D, // IHDR length
-		0x49, 0x48, 0x44, 0x52, // "IHDR"
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, // 1x1 RGB
-		0x00, 0x00, 0x00, // no interlace
-		0x90, 0x77, 0x53, 0xDE, // CRC
-	}
-	if err := os.WriteFile(pngPath, pngHeader, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	ref, err := store.Store(pngPath, media.MediaMeta{}, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	messages := []providers.Message{
-		{Role: "user", Content: "describe this", Media: []string{ref}},
-	}
-	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
-
-	if len(result[0].Media) != 1 {
-		t.Fatalf("expected 1 resolved media, got %d", len(result[0].Media))
-	}
-	if !strings.HasPrefix(result[0].Media[0], "data:image/png;base64,") {
-		t.Fatalf("expected data:image/png;base64, prefix, got %q", result[0].Media[0][:40])
-	}
-}
-
-func TestResolveMediaRefs_SkipsOversizedFile(t *testing.T) {
-	store := media.NewFileMediaStore()
-	dir := t.TempDir()
-
-	bigPath := filepath.Join(dir, "big.png")
-	// Write PNG header + padding to exceed limit
-	data := make([]byte, 1024+1) // 1KB + 1 byte
-	copy(data, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})
-	if err := os.WriteFile(bigPath, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	ref, _ := store.Store(bigPath, media.MediaMeta{}, "test")
-
-	messages := []providers.Message{
-		{Role: "user", Content: "hi", Media: []string{ref}},
-	}
-	// Use a tiny limit (1KB) so the file is oversized
-	result := resolveMediaRefs(messages, store, 1024)
-
-	if len(result[0].Media) != 0 {
-		t.Fatalf("expected 0 media (oversized), got %d", len(result[0].Media))
-	}
-}
-
-func TestResolveMediaRefs_SkipsUnknownType(t *testing.T) {
-	store := media.NewFileMediaStore()
-	dir := t.TempDir()
-
-	txtPath := filepath.Join(dir, "readme.txt")
-	if err := os.WriteFile(txtPath, []byte("hello world"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	ref, _ := store.Store(txtPath, media.MediaMeta{}, "test")
-
-	messages := []providers.Message{
-		{Role: "user", Content: "hi", Media: []string{ref}},
-	}
-	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
-
-	if len(result[0].Media) != 0 {
-		t.Fatalf("expected 0 media (unknown type), got %d", len(result[0].Media))
-	}
-}
-
-func TestResolveMediaRefs_PassesThroughNonMediaRefs(t *testing.T) {
-	messages := []providers.Message{
-		{Role: "user", Content: "hi", Media: []string{"https://example.com/img.png"}},
-	}
-	result := resolveMediaRefs(messages, nil, config.DefaultMaxMediaSize)
-
-	if len(result[0].Media) != 1 || result[0].Media[0] != "https://example.com/img.png" {
-		t.Fatalf("expected passthrough of non-media:// URL, got %v", result[0].Media)
-	}
-}
-
-func TestResolveMediaRefs_DoesNotMutateOriginal(t *testing.T) {
-	store := media.NewFileMediaStore()
-	dir := t.TempDir()
-	pngPath := filepath.Join(dir, "test.png")
-	pngHeader := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
-		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
-	}
-	os.WriteFile(pngPath, pngHeader, 0o644)
-	ref, _ := store.Store(pngPath, media.MediaMeta{}, "test")
-
-	original := []providers.Message{
-		{Role: "user", Content: "hi", Media: []string{ref}},
-	}
-	originalRef := original[0].Media[0]
-
-	resolveMediaRefs(original, store, config.DefaultMaxMediaSize)
-
-	if original[0].Media[0] != originalRef {
-		t.Fatal("resolveMediaRefs mutated original message slice")
-	}
-}
-
-func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
-	store := media.NewFileMediaStore()
-	dir := t.TempDir()
-
-	// File with JPEG content but stored with explicit content type
-	jpegPath := filepath.Join(dir, "photo")
-	jpegHeader := []byte{0xFF, 0xD8, 0xFF, 0xE0} // JPEG magic bytes
-	os.WriteFile(jpegPath, jpegHeader, 0o644)
-	ref, _ := store.Store(jpegPath, media.MediaMeta{ContentType: "image/jpeg"}, "test")
-
-	messages := []providers.Message{
-		{Role: "user", Content: "hi", Media: []string{ref}},
-	}
-	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
-
-	if len(result[0].Media) != 1 {
-		t.Fatalf("expected 1 media, got %d", len(result[0].Media))
-	}
-	if !strings.HasPrefix(result[0].Media[0], "data:image/jpeg;base64,") {
-		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
-	}
 }

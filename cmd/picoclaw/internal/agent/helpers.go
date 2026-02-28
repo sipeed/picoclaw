@@ -37,19 +37,16 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 		cfg.Agents.Defaults.ModelName = model
 	}
 
-	provider, modelID, err := providers.CreateProvider(cfg)
+	// Build model registry — same startup path as gatewayCmd
+	modelRegistry, err := providers.NewModelRegistry(cfg)
 	if err != nil {
-		return fmt.Errorf("error creating provider: %w", err)
+		return fmt.Errorf("error creating model registry: %w", err)
 	}
-
-	// Use the resolved model ID from provider creation
-	if modelID != "" {
-		cfg.Agents.Defaults.ModelName = modelID
-	}
+	defer modelRegistry.Close()
 
 	msgBus := bus.NewMessageBus()
 	defer msgBus.Close()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, modelRegistry)
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()

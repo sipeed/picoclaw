@@ -37,6 +37,7 @@ type AgentLoop struct {
 	bus            *bus.MessageBus
 	cfg            *config.Config
 	registry       *AgentRegistry
+	modelRegistry  *providers.ModelRegistry
 	state          *state.Manager
 	running        atomic.Bool
 	summarizing    sync.Map
@@ -60,34 +61,38 @@ type processOptions struct {
 
 const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
 
-func NewAgentLoop(
-	cfg *config.Config,
-	msgBus *bus.MessageBus,
-	provider providers.LLMProvider,
-) *AgentLoop {
-	registry := NewAgentRegistry(cfg, provider)
+// NewAgentLoop creates an agent loop. The ModelRegistry is the single source
+// of truth for all model→provider mappings.
+func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, modelRegistry *providers.ModelRegistry) *AgentLoop {
+	agentRegistry := NewAgentRegistry(cfg, modelRegistry)
 
 	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
+	registerSharedTools(cfg, msgBus, agentRegistry, modelRegistry)
 
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
-	fallbackChain := providers.NewFallbackChain(cooldown)
+	fallbackChain := providers.NewFallbackChain(cooldown).WithProviderKeyFn(func(model string) string {
+		if entry, ok := modelRegistry.Get(model); ok {
+			return entry.ProviderKey
+		}
+		return model
+	})
 
 	// Create state manager using default agent's workspace for channel recording
-	defaultAgent := registry.GetDefaultAgent()
+	defaultAgent := agentRegistry.GetDefaultAgent()
 	var stateManager *state.Manager
 	if defaultAgent != nil {
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
 	return &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		summarizing: sync.Map{},
-		fallback:    fallbackChain,
+		bus:           msgBus,
+		cfg:           cfg,
+		registry:      agentRegistry,
+		modelRegistry: modelRegistry,
+		state:         stateManager,
+		summarizing:   sync.Map{},
+		fallback:      fallbackChain,
 	}
 }
 
@@ -96,7 +101,7 @@ func registerSharedTools(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	registry *AgentRegistry,
-	provider providers.LLMProvider,
+	modelRegistry *providers.ModelRegistry,
 ) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -161,9 +166,10 @@ func registerSharedTools(
 		agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
 		agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
 
-		// Spawn tool with allowlist checker
-		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
+		// Spawn tool with allowlist checker — each agent uses its own provider
+		subagentManager := tools.NewSubagentManager(modelRegistry, agent.Model, agent.Workspace, msgBus)
 		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+		agent.SubagentMgr = subagentManager
 		spawnTool := tools.NewSpawnTool(subagentManager)
 		currentAgentID := agentID
 		spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
@@ -317,6 +323,23 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
+// agentEntry resolves the registry entry for an agent's current model.
+// All LLM calls should go through this to ensure provider is always derived from the registry.
+func (al *AgentLoop) agentEntry(agent *AgentInstance) (*providers.ModelEntry, error) {
+	agent.mu.RLock()
+	model := agent.Model
+	agent.mu.RUnlock()
+	if al.modelRegistry != nil {
+		if entry, ok := al.modelRegistry.Get(model); ok {
+			return entry, nil
+		}
+		if entry, ok := al.modelRegistry.GetDefault(); ok {
+			return entry, nil
+		}
+	}
+	return nil, fmt.Errorf("no provider found for model %q", model)
+}
+
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	for _, agentID := range al.registry.ListAgentIDs() {
 		if agent, ok := al.registry.GetAgent(agentID); ok {
@@ -448,6 +471,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
+	}
+
+	// Reset message-tool sentInRound before any early-return paths (including
+	// handleCommand) so that a stale true from the previous LLM round never
+	// causes the command response to be silently dropped in the Run loop's
+	// alreadySent check (which would leave the typing indicator stuck on).
+	if defaultAgent := al.registry.GetDefaultAgent(); defaultAgent != nil {
+		if tool, ok := defaultAgent.Tools.Get("message"); ok {
+			if mt, ok := tool.(tools.ContextualTool); ok {
+				mt.SetContext(msg.Channel, msg.ChatID)
+			}
+		}
 	}
 
 	// Check for commands
@@ -731,6 +766,10 @@ func (al *AgentLoop) runLLMIteration(
 	for iteration < agent.MaxIterations {
 		iteration++
 
+		// Snapshot mutable routing fields once per iteration so that a concurrent
+		// /switch model command cannot cause a mid-iteration inconsistency.
+		currentModel, currentCandidates := agent.getModelSnapshot()
+
 		logger.DebugCF("agent", "LLM iteration",
 			map[string]any{
 				"agent_id":  agent.ID,
@@ -746,7 +785,7 @@ func (al *AgentLoop) runLLMIteration(
 			map[string]any{
 				"agent_id":          agent.ID,
 				"iteration":         iteration,
-				"model":             agent.Model,
+				"model":             currentModel,
 				"messages_count":    len(messages),
 				"tools_count":       len(providerToolDefs),
 				"max_tokens":        agent.MaxTokens,
@@ -767,38 +806,39 @@ func (al *AgentLoop) runLLMIteration(
 		var err error
 
 		callLLM := func() (*providers.LLMResponse, error) {
-			if len(agent.Candidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(
-					ctx,
-					agent.Candidates,
-					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(
-							ctx,
-							messages,
-							providerToolDefs,
-							model,
-							map[string]any{
-								"max_tokens":       agent.MaxTokens,
-								"temperature":      agent.Temperature,
-								"prompt_cache_key": agent.ID,
-							},
-						)
+			if len(currentCandidates) > 1 && al.fallback != nil {
+				fbResult, fbErr := al.fallback.Execute(ctx, currentCandidates,
+					func(ctx context.Context, model string) (*providers.LLMResponse, error) {
+						entry, ok := al.modelRegistry.Get(model)
+						if !ok {
+							return nil, fmt.Errorf("model %q not found in registry", model)
+						}
+						return entry.Provider.Chat(ctx, messages, providerToolDefs, entry.ModelID, map[string]any{
+							"max_tokens":       agent.MaxTokens,
+							"temperature":      agent.Temperature,
+							"prompt_cache_key": agent.ID,
+						})
 					},
 				)
 				if fbErr != nil {
 					return nil, fbErr
 				}
-				if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
-					logger.InfoCF(
-						"agent",
-						fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
-							fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
-						map[string]any{"agent_id": agent.ID, "iteration": iteration},
-					)
+				if fbResult.Model != "" && len(fbResult.Attempts) > 0 {
+					logger.InfoCF("agent", fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
+						fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
+						map[string]any{"agent_id": agent.ID, "iteration": iteration})
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
+			entry, ok := al.modelRegistry.Get(currentModel)
+			if !ok {
+				var defOk bool
+				entry, defOk = al.modelRegistry.GetDefault()
+				if !defOk {
+					return nil, fmt.Errorf("no provider found for model %q", currentModel)
+				}
+			}
+			return entry.Provider.Chat(ctx, messages, providerToolDefs, entry.ModelID, map[string]any{
 				"max_tokens":       agent.MaxTokens,
 				"temperature":      agent.Temperature,
 				"prompt_cache_key": agent.ID,
@@ -1286,17 +1326,23 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 			s1,
 			s2,
 		)
-		resp, err := agent.Provider.Chat(
-			ctx,
-			[]providers.Message{{Role: "user", Content: mergePrompt}},
-			nil,
-			agent.Model,
-			map[string]any{
-				"max_tokens":       1024,
-				"temperature":      0.3,
-				"prompt_cache_key": agent.ID,
-			},
-		)
+		resp, err := func() (*providers.LLMResponse, error) {
+			entry, err := al.agentEntry(agent)
+			if err != nil {
+				return nil, err
+			}
+			return entry.Provider.Chat(
+				ctx,
+				[]providers.Message{{Role: "user", Content: mergePrompt}},
+				nil,
+				entry.ModelID,
+				map[string]any{
+					"max_tokens":       1024,
+					"temperature":      0.3,
+					"prompt_cache_key": agent.ID,
+				},
+			)
+		}()
 		if err == nil {
 			finalSummary = resp.Content
 		} else {
@@ -1339,11 +1385,15 @@ func (al *AgentLoop) summarizeBatch(
 	}
 	prompt := sb.String()
 
-	response, err := agent.Provider.Chat(
+	entry, err := al.agentEntry(agent)
+	if err != nil {
+		return "", err
+	}
+	response, err := entry.Provider.Chat(
 		ctx,
 		[]providers.Message{{Role: "user", Content: prompt}},
 		nil,
-		agent.Model,
+		entry.ModelID,
 		map[string]any{
 			"max_tokens":       1024,
 			"temperature":      0.3,
@@ -1409,7 +1459,22 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 		}
 		switch args[0] {
 		case "models":
-			return "Available models: configured in config.json per agent", true
+			defaultAgent := al.registry.GetDefaultAgent()
+			currentModel := ""
+			if defaultAgent != nil {
+				currentModel, _ = defaultAgent.getModelSnapshot()
+			}
+			var names []string
+			for _, m := range al.modelRegistry.ModelNames() {
+				if currentModel == m {
+					m += " ✅"
+				}
+				names = append(names, m)
+			}
+			if len(names) == 0 {
+				return "No models configured in model_list", true
+			}
+			return fmt.Sprintf("Available models:\n• %s\n\nUse /switch model to <name>", strings.Join(names, "\n• ")), true
 		case "channels":
 			if al.channelManager == nil {
 				return "Channel manager not initialized", true
@@ -1439,8 +1504,13 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 			if defaultAgent == nil {
 				return "No default agent configured", true
 			}
-			oldModel := defaultAgent.Model
-			defaultAgent.Model = value
+			if al.modelRegistry == nil {
+				return "Model registry not available", true
+			}
+			if _, ok := al.modelRegistry.Get(value); !ok {
+				return fmt.Sprintf("Unknown model '%s'. Available: %s", value, strings.Join(al.modelRegistry.ModelNames(), ", ")), true
+			}
+			oldModel := defaultAgent.switchModel(value)
 			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
 		case "channel":
 			if al.channelManager == nil {

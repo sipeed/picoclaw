@@ -49,18 +49,15 @@ func gatewayCmd(debug bool) error {
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
-	provider, modelID, err := providers.CreateProvider(cfg)
+	// Build model registry — the single source of truth for all providers.
+	// Providers are cached internally; models with identical configs share one.
+	modelRegistry, err := providers.NewModelRegistry(cfg)
 	if err != nil {
-		return fmt.Errorf("error creating provider: %w", err)
-	}
-
-	// Use the resolved model ID from provider creation
-	if modelID != "" {
-		cfg.Agents.Defaults.ModelName = modelID
+		return fmt.Errorf("error creating model registry: %w", err)
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, modelRegistry)
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
@@ -188,9 +185,7 @@ func gatewayCmd(debug bool) error {
 	<-sigChan
 
 	fmt.Println("\nShutting down...")
-	if cp, ok := provider.(providers.StatefulProvider); ok {
-		cp.Close()
-	}
+	modelRegistry.Close()
 	cancel()
 	msgBus.Close()
 
