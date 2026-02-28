@@ -387,8 +387,14 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 }
 
 type WebSearchTool struct {
-	provider   SearchProvider
-	maxResults int
+	provider     SearchProvider
+	providerName string
+	maxResults   int
+}
+
+// ProviderName returns the name of the active search provider (e.g. "brave", "perplexity").
+func (t *WebSearchTool) ProviderName() string {
+	return t.providerName
 }
 
 type WebSearchToolOptions struct {
@@ -409,16 +415,19 @@ type WebSearchToolOptions struct {
 
 func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 	var provider SearchProvider
+	var providerName string
 	maxResults := 5
 
 	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
 		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey, proxy: opts.Proxy}
+		providerName = "perplexity"
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
 		}
 	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
 		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey, proxy: opts.Proxy}
+		providerName = "brave"
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
 		}
@@ -428,11 +437,13 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 			baseURL: opts.TavilyBaseURL,
 			proxy:   opts.Proxy,
 		}
+		providerName = "tavily"
 		if opts.TavilyMaxResults > 0 {
 			maxResults = opts.TavilyMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
 		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy}
+		providerName = "duckduckgo"
 		if opts.DuckDuckGoMaxResults > 0 {
 			maxResults = opts.DuckDuckGoMaxResults
 		}
@@ -441,8 +452,9 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 	}
 
 	return &WebSearchTool{
-		provider:   provider,
-		maxResults: maxResults,
+		provider:     provider,
+		providerName: providerName,
+		maxResults:   maxResults,
 	}
 }
 
