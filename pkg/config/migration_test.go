@@ -131,14 +131,15 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 			GitHubCopilot: ProviderConfig{ConnectMode: "grpc"},
 			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
 			Qwen:          ProviderConfig{APIKey: "key17"},
+			Mistral:       ProviderConfig{APIKey: "key18"},
 		},
 	}
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 17 providers should be converted
-	if len(result) != 17 {
-		t.Errorf("len(result) = %d, want 17", len(result))
+	// All 18 providers should be converted
+	if len(result) != 18 {
+		t.Errorf("len(result) = %d, want 18", len(result))
 	}
 }
 
@@ -162,6 +163,27 @@ func TestConvertProvidersToModelList_Proxy(t *testing.T) {
 
 	if result[0].Proxy != "http://proxy:8080" {
 		t.Errorf("Proxy = %q, want %q", result[0].Proxy, "http://proxy:8080")
+	}
+}
+
+func TestConvertProvidersToModelList_RequestTimeout(t *testing.T) {
+	cfg := &Config{
+		Providers: ProvidersConfig{
+			Ollama: ProviderConfig{
+				APIKey:         "ollama-key",
+				RequestTimeout: 300,
+			},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	if result[0].RequestTimeout != 300 {
+		t.Errorf("RequestTimeout = %d, want %d", result[0].RequestTimeout, 300)
 	}
 }
 

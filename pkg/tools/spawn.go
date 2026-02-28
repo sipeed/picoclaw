@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type SpawnTool struct {
@@ -66,8 +67,8 @@ func (t *SpawnTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 
 func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
-	if !ok {
-		return ErrorResult("task is required")
+	if !ok || strings.TrimSpace(task) == "" {
+		return ErrorResult("task is required and must be a non-empty string")
 	}
 
 	label, _ := args["label"].(string)

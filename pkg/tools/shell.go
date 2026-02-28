@@ -76,11 +76,11 @@ func NewExecTool(workingDir string, restrict bool) *ExecTool {
 func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
 	denyPatterns := make([]*regexp.Regexp, 0)
 
-	enableDenyPatterns := true
 	if config != nil {
 		execConfig := config.Tools.Exec
-		enableDenyPatterns = execConfig.EnableDenyPatterns
+		enableDenyPatterns := execConfig.EnableDenyPatterns
 		if enableDenyPatterns {
+			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			if len(execConfig.CustomDenyPatterns) > 0 {
 				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
 				for _, pattern := range execConfig.CustomDenyPatterns {
@@ -91,8 +91,6 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 					}
 					denyPatterns = append(denyPatterns, re)
 				}
-			} else {
-				denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			}
 		} else {
 			// If deny patterns are disabled, we won't add any patterns, allowing all commands.

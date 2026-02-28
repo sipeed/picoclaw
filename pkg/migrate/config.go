@@ -22,6 +22,7 @@ var supportedProviders = map[string]bool{
 	"qwen":           true,
 	"deepseek":       true,
 	"github_copilot": true,
+	"mistral":        true,
 }
 
 var supportedChannels = map[string]bool{
@@ -72,7 +73,10 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 
 	if agents, ok := getMap(data, "agents"); ok {
 		if defaults, ok := getMap(agents, "defaults"); ok {
-			if v, ok := getString(defaults, "model"); ok {
+			// Prefer model_name, fallback to model for backward compatibility
+			if v, ok := getString(defaults, "model_name"); ok {
+				cfg.Agents.Defaults.ModelName = v
+			} else if v, ok := getString(defaults, "model"); ok {
 				cfg.Agents.Defaults.Model = v
 			}
 			if v, ok := getFloat(defaults, "max_tokens"); ok {
@@ -160,6 +164,12 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 				cfg.Channels.WhatsApp.AllowFrom = allowFrom
 				if v, ok := getString(cMap, "bridge_url"); ok {
 					cfg.Channels.WhatsApp.BridgeURL = v
+				}
+				if v, ok := getBool(cMap, "use_native"); ok {
+					cfg.Channels.WhatsApp.UseNative = v
+				}
+				if v, ok := getString(cMap, "session_store_path"); ok {
+					cfg.Channels.WhatsApp.SessionStorePath = v
 				}
 			case "feishu":
 				cfg.Channels.Feishu.Enabled = enabled

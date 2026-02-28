@@ -17,6 +17,8 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
+	ContentBlock           = protocoltypes.ContentBlock
+	CacheControl           = protocoltypes.CacheControl
 )
 
 type LLMProvider interface {
@@ -28,6 +30,11 @@ type LLMProvider interface {
 		options map[string]any,
 	) (*LLMResponse, error)
 	GetDefaultModel() string
+}
+
+type StatefulProvider interface {
+	LLMProvider
+	Close()
 }
 
 // FailoverReason classifies why an LLM request failed for fallback decisions.
