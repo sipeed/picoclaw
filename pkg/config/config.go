@@ -58,6 +58,7 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Security  SecurityConfig  `json:"security,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -382,6 +383,57 @@ type DevicesConfig struct {
 	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
 }
 
+// SecurityConfig holds all security-related configuration.
+type SecurityConfig struct {
+	SSRF                 SSRFConfig                 `json:"ssrf"`
+	AuditLogging         AuditLoggingConfig         `json:"audit_logging"`
+	RateLimiting         RateLimitingConfig         `json:"rate_limiting"`
+	CredentialEncryption CredentialEncryptionConfig `json:"credential_encryption"`
+	PromptInjection      PromptInjectionConfig      `json:"prompt_injection"`
+}
+
+// SSRFConfig configures Server-Side Request Forgery protection.
+type SSRFConfig struct {
+	Enabled                bool     `json:"enabled"                 env:"PICOCLAW_SECURITY_SSRF_ENABLED"`
+	BlockPrivateIPs        bool     `json:"block_private_ips"       env:"PICOCLAW_SECURITY_SSRF_BLOCK_PRIVATE_IPS"`
+	BlockMetadataEndpoints bool     `json:"block_metadata_endpoints" env:"PICOCLAW_SECURITY_SSRF_BLOCK_METADATA_ENDPOINTS"`
+	BlockLocalhost         bool     `json:"block_localhost"         env:"PICOCLAW_SECURITY_SSRF_BLOCK_LOCALHOST"`
+	AllowedHosts           []string `json:"allowed_hosts"`
+	DNSRebindingProtection bool     `json:"dns_rebinding_protection" env:"PICOCLAW_SECURITY_SSRF_DNS_REBINDING_PROTECTION"`
+}
+
+// AuditLoggingConfig configures audit logging for security events.
+type AuditLoggingConfig struct {
+	Enabled           bool `json:"enabled"             env:"PICOCLAW_SECURITY_AUDIT_ENABLED"`
+	LogToolExecutions bool `json:"log_tool_executions" env:"PICOCLAW_SECURITY_AUDIT_LOG_TOOL_EXECUTIONS"`
+	LogAuthEvents     bool `json:"log_auth_events"     env:"PICOCLAW_SECURITY_AUDIT_LOG_AUTH_EVENTS"`
+	LogConfigChanges  bool `json:"log_config_changes"  env:"PICOCLAW_SECURITY_AUDIT_LOG_CONFIG_CHANGES"`
+	RetentionDays     int  `json:"retention_days"      env:"PICOCLAW_SECURITY_AUDIT_RETENTION_DAYS"`
+}
+
+// RateLimitingConfig configures rate limiting for API and tool usage.
+type RateLimitingConfig struct {
+	Enabled                 bool `json:"enabled"                  env:"PICOCLAW_SECURITY_RATELIMIT_ENABLED"`
+	RequestsPerMinute       int  `json:"requests_per_minute"      env:"PICOCLAW_SECURITY_RATELIMIT_REQUESTS_PER_MINUTE"`
+	ToolExecutionsPerMinute int  `json:"tool_executions_per_minute" env:"PICOCLAW_SECURITY_RATELIMIT_TOOL_EXECUTIONS_PER_MINUTE"`
+	PerUserLimit            bool `json:"per_user_limit"           env:"PICOCLAW_SECURITY_RATELIMIT_PER_USER_LIMIT"`
+}
+
+// CredentialEncryptionConfig configures how credentials are encrypted at rest.
+type CredentialEncryptionConfig struct {
+	Enabled     bool   `json:"enabled"     env:"PICOCLAW_SECURITY_CRED_ENCRYPTION_ENABLED"`
+	UseKeychain bool   `json:"use_keychain" env:"PICOCLAW_SECURITY_CRED_ENCRYPTION_USE_KEYCHAIN"`
+	Algorithm   string `json:"algorithm"   env:"PICOCLAW_SECURITY_CRED_ENCRYPTION_ALGORITHM"`
+}
+
+// PromptInjectionConfig configures prompt injection defense mechanisms.
+type PromptInjectionConfig struct {
+	Enabled                 bool     `json:"enabled"                env:"PICOCLAW_SECURITY_PROMPT_INJECTION_ENABLED"`
+	SanitizeUserInput       bool     `json:"sanitize_user_input"    env:"PICOCLAW_SECURITY_PROMPT_INJECTION_SANITIZE_USER_INPUT"`
+	DetectInjectionPatterns bool     `json:"detect_injection_patterns" env:"PICOCLAW_SECURITY_PROMPT_INJECTION_DETECT_PATTERNS"`
+	CustomBlockPatterns     []string `json:"custom_block_patterns"`
+}
+
 type ProvidersConfig struct {
 	Anthropic     ProviderConfig       `json:"anthropic"`
 	OpenAI        OpenAIProviderConfig `json:"openai"`
@@ -437,12 +489,11 @@ func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
 }
 
 type ProviderConfig struct {
-	APIKey         string `json:"api_key"                   env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase        string `json:"api_base"                  env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy          string `json:"proxy,omitempty"           env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	RequestTimeout int    `json:"request_timeout,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_REQUEST_TIMEOUT"`
-	AuthMethod     string `json:"auth_method,omitempty"     env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode    string `json:"connect_mode,omitempty"    env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
+	APIKey      string `json:"api_key"                env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
+	APIBase     string `json:"api_base"               env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
+	Proxy       string `json:"proxy,omitempty"        env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
+	AuthMethod  string `json:"auth_method,omitempty"  env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
+	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
 }
 
 type OpenAIProviderConfig struct {
@@ -473,7 +524,6 @@ type ModelConfig struct {
 	// Optional optimizations
 	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
-	RequestTimeout int    `json:"request_timeout,omitempty"`
 }
 
 // Validate checks if the ModelConfig has all required fields.
