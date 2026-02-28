@@ -26,6 +26,7 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
+	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
 type Provider struct {
@@ -37,30 +38,49 @@ type Provider struct {
 	httpClient     *http.Client
 }
 
-// Options configures optional behaviour for the provider.
-type Options struct {
-	EndpointPath   string // API path appended to apiBase (default: "/chat/completions")
-	MaxTokensField string // Field name for max tokens parameter
-	Stream         bool   // Use SSE streaming internally
-}
+// Option is a functional option for configuring a Provider.
+type Option func(*Provider)
 
-func NewProvider(apiKey, apiBase, proxy string) *Provider {
-	return NewProviderWithMaxTokensField(apiKey, apiBase, proxy, "")
-}
+const defaultRequestTimeout = 120 * time.Second
 
-func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
-	return NewProviderWithOptions(apiKey, apiBase, proxy, Options{
-		MaxTokensField: maxTokensField,
-	})
-}
-
-func NewProviderWithOptions(apiKey, apiBase, proxy string, opts Options) *Provider {
-	timeout := 120 * time.Second
-	if opts.Stream {
-		timeout = 5 * time.Minute
+// WithMaxTokensField sets the field name for max tokens (e.g., "max_completion_tokens").
+func WithMaxTokensField(maxTokensField string) Option {
+	return func(p *Provider) {
+		p.maxTokensField = maxTokensField
 	}
+}
+
+// WithRequestTimeout overrides the HTTP client timeout.
+func WithRequestTimeout(timeout time.Duration) Option {
+	return func(p *Provider) {
+		if timeout > 0 {
+			p.httpClient.Timeout = timeout
+		}
+	}
+}
+
+// WithStream enables SSE streaming mode.
+func WithStream(stream bool) Option {
+	return func(p *Provider) {
+		p.stream = stream
+		if stream && p.httpClient.Timeout == defaultRequestTimeout {
+			p.httpClient.Timeout = 5 * time.Minute
+		}
+	}
+}
+
+// WithEndpointPath sets the API path appended to apiBase (default: "/chat/completions").
+func WithEndpointPath(path string) Option {
+	return func(p *Provider) {
+		if path != "" {
+			p.endpointPath = path
+		}
+	}
+}
+
+func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout: defaultRequestTimeout,
 	}
 
 	if proxy != "" {
@@ -74,19 +94,37 @@ func NewProviderWithOptions(apiKey, apiBase, proxy string, opts Options) *Provid
 		}
 	}
 
-	endpointPath := opts.EndpointPath
-	if endpointPath == "" {
-		endpointPath = "/chat/completions"
+	p := &Provider{
+		apiKey:       apiKey,
+		apiBase:      strings.TrimRight(apiBase, "/"),
+		endpointPath: "/chat/completions",
+		httpClient:   client,
 	}
 
-	return &Provider{
-		apiKey:         apiKey,
-		apiBase:        strings.TrimRight(apiBase, "/"),
-		endpointPath:   endpointPath,
-		maxTokensField: opts.MaxTokensField,
-		stream:         opts.Stream,
-		httpClient:     client,
+	for _, opt := range opts {
+		if opt != nil {
+			opt(p)
+		}
 	}
+
+	return p
+}
+
+func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
+	return NewProvider(apiKey, apiBase, proxy, WithMaxTokensField(maxTokensField))
+}
+
+func NewProviderWithMaxTokensFieldAndTimeout(
+	apiKey, apiBase, proxy, maxTokensField string,
+	requestTimeoutSeconds int,
+) *Provider {
+	return NewProvider(
+		apiKey,
+		apiBase,
+		proxy,
+		WithMaxTokensField(maxTokensField),
+		WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+	)
 }
 
 // streamBufferSize is the channel buffer size for ChatStream events.
@@ -109,7 +147,7 @@ func (p *Provider) buildHTTPRequest(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": messages,
+		"messages": stripSystemParts(messages),
 	}
 
 	if len(tools) > 0 {
@@ -145,6 +183,14 @@ func (p *Provider) buildHTTPRequest(
 
 	if stream {
 		requestBody["stream"] = true
+	}
+
+	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
+	// with the same key and reuse prefix KV cache across calls.
+	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
+		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
+			requestBody["prompt_cache_key"] = cacheKey
+		}
 	}
 
 	jsonData, err := json.Marshal(requestBody)
@@ -213,7 +259,7 @@ func (p *Provider) CanStream() bool {
 
 // ChatStream opens an SSE connection and returns a channel of StreamEvent.
 // The channel is closed when the stream ends or an error occurs.
-// Cancelling ctx will abort the HTTP request and close the channel.
+// Canceling ctx will abort the HTTP request and close the channel.
 func (p *Provider) ChatStream(
 	ctx context.Context,
 	messages []Message,
@@ -226,7 +272,7 @@ func (p *Provider) ChatStream(
 		return nil, err
 	}
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.httpClient.Do(req) //nolint:bodyclose // closed in goroutine or error path below
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -248,7 +294,7 @@ func (p *Provider) ChatStream(
 }
 
 // readSSEIntoChannel reads SSE lines from r and sends StreamEvent values on ch.
-// It returns when the stream ends, an error occurs, or ctx is cancelled.
+// It returns when the stream ends, an error occurs, or ctx is canceled.
 func readSSEIntoChannel(ctx context.Context, r io.Reader, ch chan<- protocoltypes.StreamEvent) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -284,6 +330,7 @@ func readSSEIntoChannel(ctx context.Context, r io.Reader, ch chan<- protocoltype
 		if len(chunk.Choices) > 0 {
 			choice := chunk.Choices[0]
 			ev.ContentDelta = choice.Delta.Content
+			ev.ReasoningDelta = choice.Delta.ReasoningContent
 			if choice.FinishReason != "" {
 				ev.FinishReason = choice.FinishReason
 			}
@@ -318,6 +365,7 @@ func readSSEIntoChannel(ctx context.Context, r io.Reader, ch chan<- protocoltype
 // AccumulateStream drains a StreamEvent channel and returns a complete LLMResponse.
 func AccumulateStream(ch <-chan protocoltypes.StreamEvent) (*LLMResponse, error) {
 	var content strings.Builder
+	var reasoning strings.Builder
 	var toolCalls []streamToolCallAcc
 	var finishReason string
 	var usage *UsageInfo
@@ -328,6 +376,9 @@ func AccumulateStream(ch <-chan protocoltypes.StreamEvent) (*LLMResponse, error)
 		}
 		if ev.ContentDelta != "" {
 			content.WriteString(ev.ContentDelta)
+		}
+		if ev.ReasoningDelta != "" {
+			reasoning.WriteString(ev.ReasoningDelta)
 		}
 		if ev.FinishReason != "" {
 			finishReason = ev.FinishReason
@@ -351,6 +402,7 @@ func AccumulateStream(ch <-chan protocoltypes.StreamEvent) (*LLMResponse, error)
 
 	result := &LLMResponse{
 		Content:      content.String(),
+		Reasoning:    reasoning.String(),
 		FinishReason: finishReason,
 		Usage:        usage,
 	}
@@ -378,8 +430,11 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
-				Content   string `json:"content"`
-				ToolCalls []struct {
+				Content          string            `json:"content"`
+				ReasoningContent string            `json:"reasoning_content"`
+				Reasoning        string            `json:"reasoning"`
+				ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
+				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function *struct {
@@ -451,11 +506,40 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	}
 
 	return &LLMResponse{
-		Content:      choice.Message.Content,
-		ToolCalls:    toolCalls,
-		FinishReason: choice.FinishReason,
-		Usage:        apiResponse.Usage,
+		Content:          choice.Message.Content,
+		ReasoningContent: choice.Message.ReasoningContent,
+		Reasoning:        choice.Message.Reasoning,
+		ReasoningDetails: choice.Message.ReasoningDetails,
+		ToolCalls:        toolCalls,
+		FinishReason:     choice.FinishReason,
+		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+// openaiMessage is the wire-format message for OpenAI-compatible APIs.
+// It mirrors protocoltypes.Message but omits SystemParts, which is an
+// internal field that would be unknown to third-party endpoints.
+type openaiMessage struct {
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// stripSystemParts converts []Message to []openaiMessage, dropping the
+// SystemParts field so it doesn't leak into the JSON payload sent to
+// OpenAI-compatible APIs (some strict endpoints reject unknown fields).
+func stripSystemParts(messages []Message) []openaiMessage {
+	out := make([]openaiMessage, len(messages))
+	for i, m := range messages {
+		out[i] = openaiMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCalls:  m.ToolCalls,
+			ToolCallID: m.ToolCallID,
+		}
+	}
+	return out
 }
 
 func normalizeModel(model, apiBase string) string {
@@ -470,7 +554,17 @@ func normalizeModel(model, apiBase string) string {
 
 	prefix := strings.ToLower(model[:idx])
 	switch prefix {
-	case "openai", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "minimax", "mistral":
+	case "openai",
+		"moonshot",
+		"nvidia",
+		"groq",
+		"ollama",
+		"deepseek",
+		"google",
+		"openrouter",
+		"zhipu",
+		"minimax",
+		"mistral":
 		return model[idx+1:]
 	default:
 		return model
@@ -520,8 +614,9 @@ type streamChoice struct {
 }
 
 type streamDelta struct {
-	Content   string          `json:"content"`
-	ToolCalls []streamDeltaTC `json:"tool_calls"`
+	Content          string          `json:"content"`
+	ReasoningContent string          `json:"reasoning_content"`
+	ToolCalls        []streamDeltaTC `json:"tool_calls"`
 }
 
 type streamDeltaTC struct {
@@ -541,4 +636,3 @@ type streamToolCallAcc struct {
 	Name      string
 	Arguments strings.Builder
 }
-

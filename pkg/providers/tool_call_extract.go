@@ -177,7 +177,8 @@ func findToolCallBlock(text string) (blockStart, blockEnd int, content string, f
 		}
 		// Also consume a preceding [TOOLCALL] marker if present.
 		start := invokePos
-		if loc := reBracketMarker.FindStringIndex(before[:start]); loc != nil && strings.TrimSpace(before[loc[1]:start]) == "" {
+		if loc := reBracketMarker.FindStringIndex(before[:start]); loc != nil &&
+			strings.TrimSpace(before[loc[1]:start]) == "" {
 			start = loc[0]
 		}
 		return start, cm[1], text[invokePos:cm[0]], true
@@ -186,7 +187,7 @@ func findToolCallBlock(text string) (blockStart, blockEnd int, content string, f
 	return 0, 0, "", false
 }
 
-// --- XML tool call extraction ---
+// ExtractXMLToolCalls extracts tool calls from XML-formatted text.
 //
 // Expected format:
 //
@@ -195,7 +196,6 @@ func findToolCallBlock(text string) (blockStart, blockEnd int, content string, f
 //	<parameter name="param">value</parameter>
 //	</invoke>
 //	</ns:toolcall>
-// ExtractXMLToolCalls is the exported version for use by the agent loop.
 func ExtractXMLToolCalls(text string) []ToolCall {
 	return extractXMLToolCalls(text)
 }
@@ -246,7 +246,7 @@ func parseInvokeElements(text string, callIdx *int) []ToolCall {
 		toolName := invokeBody[nameStart : nameStart+nameEnd]
 
 		// Extract parameters
-		args := make(map[string]interface{})
+		args := make(map[string]any)
 		paramRemaining := invokeBody
 		for {
 			pStart := strings.Index(paramRemaining, "<parameter")

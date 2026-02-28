@@ -74,7 +74,14 @@ func (t *DevPreviewTool) Execute(ctx context.Context, args map[string]any) *Tool
 		if err := t.manager.ActivateDevTarget(id); err != nil {
 			return ErrorResult(fmt.Sprintf("failed to activate dev target: %v", err))
 		}
-		return SilentResult(fmt.Sprintf("Dev preview started (id=%s, name=%s). Target: %s\nUsers can view it in the Mini App Dev tab.", id, name, target))
+		return SilentResult(
+			fmt.Sprintf(
+				"Dev preview started (id=%s, name=%s). Target: %s\nUsers can view it in the Mini App Dev tab.",
+				id,
+				name,
+				target,
+			),
+		)
 
 	case "stop":
 		if err := t.manager.DeactivateDevTarget(); err != nil {

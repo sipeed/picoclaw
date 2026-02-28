@@ -8,13 +8,13 @@ import (
 // TestAllowedToolsForPreset checks that each preset has appropriate tool access.
 func TestAllowedToolsForPreset(t *testing.T) {
 	tests := []struct {
-		name               string
-		preset             Preset
-		wantRead           bool
-		wantWrite          bool
-		wantExec           bool
-		wantSpawn          bool
-		wantWebSearch      bool
+		name          string
+		preset        Preset
+		wantRead      bool
+		wantWrite     bool
+		wantExec      bool
+		wantSpawn     bool
+		wantWebSearch bool
 	}{
 		{
 			name:          "scout",

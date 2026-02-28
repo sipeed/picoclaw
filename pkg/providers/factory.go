@@ -40,7 +40,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 }
 
 func resolveProviderSelectionByName(cfg *config.Config, providerName string) (providerSelection, error) {
-	model := cfg.Agents.Defaults.Model
+	model := cfg.Agents.Defaults.GetModelName()
 	lowerModel := strings.ToLower(model)
 
 	sel := providerSelection{

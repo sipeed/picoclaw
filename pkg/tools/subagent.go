@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -53,7 +54,10 @@ func NewSubagentManager(
 		reporter = orch.Noop
 	}
 	// Create a shared exec tool for all presets
-	execTool := NewExecTool(workspace, true)
+	execTool, err := NewExecTool(workspace, true)
+	if err != nil {
+		log.Printf("subagent: failed to create exec tool: %v (exec disabled for subagents)", err)
+	}
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
@@ -164,12 +168,12 @@ After completing, provide a clear summary of what was done and how it was verifi
 		},
 	}
 
-	// Check if context is already cancelled before starting
+	// Check if context is already canceled before starting
 	select {
 	case <-ctx.Done():
 		sm.mu.Lock()
-		task.Status = "cancelled"
-		task.Result = "Task cancelled before execution"
+		task.Status = "canceled"
+		task.Result = "Task canceled before execution"
 		sm.mu.Unlock()
 		return
 	default:
@@ -226,12 +230,12 @@ After completing, provide a clear summary of what was done and how it was verifi
 	if err != nil {
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
-		// Check if it was cancelled
+		// Check if it was canceled
 		gcReason := "failed"
 		if ctx.Err() != nil {
-			task.Status = "cancelled"
-			task.Result = "Task cancelled during execution"
-			gcReason = "cancelled"
+			task.Status = "canceled"
+			task.Result = "Task canceled during execution"
+			gcReason = "canceled"
 		}
 		sm.reporter.ReportGC(task.ID, gcReason)
 		result = &ToolResult{
@@ -265,7 +269,9 @@ After completing, provide a clear summary of what was done and how it was verifi
 	// Send announce message back to main agent
 	if sm.bus != nil {
 		announceContent := fmt.Sprintf("Task '%s' completed.\n\nResult:\n%s", task.Label, task.Result)
-		sm.bus.PublishInbound(bus.InboundMessage{
+		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer pubCancel()
+		sm.bus.PublishInbound(pubCtx, bus.InboundMessage{
 			Channel:  "system",
 			SenderID: fmt.Sprintf("subagent:%s", task.ID),
 			// Format: "original_channel:original_chat_id" for routing back

@@ -117,6 +117,7 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | `connect_mode` | No | Connection mode for CLI providers: `stdio`, `grpc` |
 | `rpm` | No | Requests per minute limit |
 | `max_tokens_field` | No | Field name for max tokens |
+| `request_timeout` | No | HTTP request timeout in seconds; `<=0` uses default `120s` |
 
 *`api_key` is required for HTTP-based protocols unless `api_base` points to a local server.
 

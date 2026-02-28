@@ -191,7 +191,7 @@ func (t *BgMonitorTool) actionWatch(ctx context.Context, args map[string]any) *T
 				IsError: true,
 			}
 		case <-ctx.Done():
-			return ErrorResult("watch cancelled")
+			return ErrorResult("watch canceled")
 		case <-ticker.C:
 			// Continue polling
 		}

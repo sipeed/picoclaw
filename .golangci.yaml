@@ -28,9 +28,7 @@ linters:
     - wsl_v5
 
     # TODO: Disabled, because they are failing at the moment, we should fix them and enable (step by step)
-    - bodyclose
     - contextcheck
-    - dogsled
     - embeddedstructfieldcheck
     - errcheck
     - errchkjson
@@ -45,32 +43,24 @@ linters:
     - gocritic
     - gocyclo
     - godox
-    - goprintffuncname
     - gosec
     - ineffassign
     - lll
     - maintidx
-    - misspell
     - mnd
     - modernize
-    - nakedret
     - nestif
     - nilnil
     - paralleltest
     - perfsprint
-    - prealloc
-    - predeclared
     - revive
     - staticcheck
     - tagalign
     - testifylint
     - thelper
     - unparam
-    - unused
     - usestdlibvars
     - usetesting
-    - wastedassign
-    - whitespace
   settings:
     errcheck:
       check-type-assertions: true
@@ -152,6 +142,9 @@ linters:
           - gocognit
           - gocyclo
         path: _test\.go$
+      - linters:
+          - nolintlint
+        path: 'pkg/tools/(i2c\.go|spi\.go)$'
 
 issues:
   max-issues-per-linter: 0
