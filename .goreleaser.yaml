@@ -24,6 +24,7 @@ builds:
       - windows
       - darwin
       - freebsd
+      - netbsd
     goarch:
       - amd64
       - arm64
@@ -35,6 +36,12 @@ builds:
     main: ./cmd/picoclaw
     ignore:
       - goos: windows
+        goarch: arm
+      - goos: netbsd
+        goarch: s390x
+      - goos: netbsd
+        goarch: mips64
+      - goos: netbsd
         goarch: arm
 
 dockers_v2:
