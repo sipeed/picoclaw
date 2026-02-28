@@ -152,6 +152,12 @@ func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
 	if modelID != "claude-sonnet-4.6" {
 		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4.6")
 	}
+	// Anthropic API key must route to native ClaudeProvider (not HTTPProvider).
+	// The Anthropic API uses /v1/messages and x-api-key header, which are
+	// incompatible with the OpenAI-compatible HTTPProvider.
+	if _, ok := provider.(*ClaudeProvider); !ok {
+		t.Errorf("expected *ClaudeProvider for anthropic API key, got %T", provider)
+	}
 }
 
 func TestCreateProviderFromConfig_Antigravity(t *testing.T) {
