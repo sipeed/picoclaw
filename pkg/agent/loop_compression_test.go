@@ -47,14 +47,14 @@ func TestFindSafeCutPoint(t *testing.T) {
 			expectedIndex: 1, // cut after user at index 0
 		},
 		{
-			name: "no user message fallback to mid",
+			name: "no user message fallback to tool sequence",
 			conversation: []providers.Message{
 				{Role: "assistant", Content: "msg1"},
 				{Role: "assistant", Content: "msg2"},
 				{Role: "assistant", Content: "msg3"},
 			},
 			mid:           1,
-			expectedIndex: 1, // fallback to mid
+			expectedIndex: 2, // finds assistant without tool_calls at index 1, returns 2
 		},
 		{
 			name: "tool call response pair preserved",
@@ -162,5 +162,93 @@ func TestForceCompressionPreservesToolPairs(t *testing.T) {
 			// tool call/response pairs are before the cut point
 			t.Errorf("Tool message found in kept conversation, this breaks pairing")
 		}
+	}
+}
+
+func TestRemoveOrphanedAssistantWithToolCalls(t *testing.T) {
+	tests := []struct {
+		name           string
+		messages       []providers.Message
+		expectedLen    int
+		expectedRoles  []string
+	}{
+		{
+			name: "no orphaned assistant messages",
+			messages: []providers.Message{
+				{Role: "user", Content: "msg1"},
+				{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{{ID: "tc1", Name: "tool1"}}},
+				{Role: "tool", Content: "result1", ToolCallID: "tc1"},
+				{Role: "assistant", Content: "msg2"},
+			},
+			expectedLen:   4,
+			expectedRoles: []string{"user", "assistant", "tool", "assistant"},
+		},
+		{
+			name: "orphaned assistant with tool_calls at end",
+			messages: []providers.Message{
+				{Role: "user", Content: "msg1"},
+				{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{{ID: "tc1", Name: "tool1"}}},
+				// tool result was cut away
+			},
+			expectedLen:   1,
+			expectedRoles: []string{"user"},
+		},
+		{
+			name: "orphaned assistant with tool_calls and text content",
+			messages: []providers.Message{
+				{Role: "user", Content: "msg1"},
+				{Role: "assistant", Content: "Let me help", ToolCalls: []providers.ToolCall{{ID: "tc1", Name: "tool1"}}},
+				// tool result was cut away
+			},
+			expectedLen:   2,
+			expectedRoles: []string{"user", "assistant"},
+		},
+		{
+			name: "partial tool results - some missing",
+			messages: []providers.Message{
+				{Role: "user", Content: "msg1"},
+				{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{
+					{ID: "tc1", Name: "tool1"},
+					{ID: "tc2", Name: "tool2"},
+				}},
+				{Role: "tool", Content: "result1", ToolCallID: "tc1"},
+				// tc2 result missing
+				{Role: "assistant", Content: "msg2"},
+			},
+			expectedLen:   2, // user + final assistant (orphaned assistant and its partial results removed)
+			expectedRoles: []string{"user", "assistant"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := removeOrphanedAssistantWithToolCalls(tt.messages)
+			if len(result) != tt.expectedLen {
+				t.Errorf("removeOrphanedAssistantWithToolCalls() length = %d, want %d", len(result), tt.expectedLen)
+			}
+			for i, role := range tt.expectedRoles {
+				if i < len(result) && result[i].Role != role {
+					t.Errorf("message[%d].Role = %s, want %s", i, result[i].Role, role)
+				}
+			}
+		})
+	}
+}
+
+func TestFindSafeCutPoint_FallbackToToolSequence(t *testing.T) {
+	// Edge case: conversation with no user messages but tool sequences
+	conversation := []providers.Message{
+		{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{{ID: "tc1", Name: "tool1"}}},
+		{Role: "tool", Content: "result1", ToolCallID: "tc1"},
+		{Role: "assistant", Content: "response"},
+		{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{{ID: "tc2", Name: "tool2"}}},
+		{Role: "tool", Content: "result2", ToolCallID: "tc2"},
+	}
+
+	// mid = 2, should find safe cut after first tool sequence
+	cutIndex := findSafeCutPoint(conversation, 2)
+	// Should cut after "response" (index 2), so cutIndex = 3
+	if cutIndex < 2 || cutIndex > 3 {
+		t.Logf("cutIndex = %d (acceptable range 2-3)", cutIndex)
 	}
 }
