@@ -129,9 +129,12 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
+	ctx, cancel := context.WithCancel(context.Background())
 	return &WeComAppChannel{
 		BaseChannel:   base,
 		config:        cfg,
+		ctx:           ctx,
+		cancel:        cancel,
 		processedMsgs: make(map[string]bool),
 	}, nil
 }
@@ -567,8 +570,9 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		return
 	}
 
-	// Process the message with context
-	go c.processMessage(ctx, msg)
+	// Process the message with the channel's long-lived context (not the HTTP
+	// request context, which is canceled as soon as we return the response).
+	go c.processMessage(c.ctx, msg)
 
 	// Return success response immediately
 	// WeCom App requires response within configured timeout (default 5 seconds)
