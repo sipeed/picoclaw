@@ -165,6 +165,12 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 				if v, ok := getString(cMap, "bridge_url"); ok {
 					cfg.Channels.WhatsApp.BridgeURL = v
 				}
+				if v, ok := getBool(cMap, "use_native"); ok {
+					cfg.Channels.WhatsApp.UseNative = v
+				}
+				if v, ok := getString(cMap, "session_store_path"); ok {
+					cfg.Channels.WhatsApp.SessionStorePath = v
+				}
 			case "feishu":
 				cfg.Channels.Feishu.Enabled = enabled
 				cfg.Channels.Feishu.AllowFrom = allowFrom

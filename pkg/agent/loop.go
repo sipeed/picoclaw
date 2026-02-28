@@ -211,6 +211,18 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							ChatID:  msg.ChatID,
 							Content: response,
 						})
+						logger.InfoCF("agent", "Published outbound response",
+							map[string]any{
+								"channel":     msg.Channel,
+								"chat_id":     msg.ChatID,
+								"content_len": len(response),
+							})
+					} else {
+						logger.DebugCF(
+							"agent",
+							"Skipped outbound (message tool already sent)",
+							map[string]any{"channel": msg.Channel},
+						)
 					}
 				}
 			}()
@@ -312,6 +324,9 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 // Each heartbeat is independent and doesn't accumulate context.
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
 	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", fmt.Errorf("no default agent for heartbeat")
+	}
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      "heartbeat",
 		Channel:         channel,
@@ -363,6 +378,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	agent, ok := al.registry.GetAgent(route.AgentID)
 	if !ok {
 		agent = al.registry.GetDefaultAgent()
+	}
+	if agent == nil {
+		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+	}
+
+	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if mt, ok := tool.(tools.ContextualTool); ok {
+			mt.SetContext(msg.Channel, msg.ChatID)
+		}
 	}
 
 	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
@@ -430,6 +455,9 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	// Use default agent for system messages
 	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", fmt.Errorf("no default agent for system message")
+	}
 
 	// Use the origin session for context
 	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
