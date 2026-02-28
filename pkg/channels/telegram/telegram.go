@@ -355,6 +355,21 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	if user == nil {
 		return fmt.Errorf("message sender (user) is nil")
 	}
+	if user.IsBot {
+		logger.DebugCF("telegram", "Ignoring bot-originated message", map[string]any{
+			"user_id": user.ID,
+		})
+		return nil
+	}
+	// Defensive fallback: ignore messages from this bot by username to avoid self-loop echoes.
+	if botUsername := c.bot.Username(); botUsername != "" && strings.EqualFold(user.Username, botUsername) {
+		logger.DebugCF("telegram", "Ignoring self message by username", map[string]any{
+			"user_id":   user.ID,
+			"username":  user.Username,
+			"bot_name":  botUsername,
+		})
+		return nil
+	}
 
 	platformID := fmt.Sprintf("%d", user.ID)
 	sender := bus.SenderInfo{
