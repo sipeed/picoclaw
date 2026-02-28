@@ -1275,8 +1275,8 @@ func formatMessageForSummary(msg providers.Message) []string {
 	}
 }
 
-func truncateSummaryField(content string, max int) string {
-	truncated := utils.Truncate(content, max)
+func truncateSummaryField(content string, maxLen int) string {
+	truncated := utils.Truncate(content, maxLen)
 	if utf8.RuneCountInString(truncated) < utf8.RuneCountInString(content) {
 		return truncated + " [TRUNCATED]"
 	}
