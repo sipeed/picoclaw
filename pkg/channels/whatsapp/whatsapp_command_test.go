@@ -12,7 +12,7 @@ func TestTryHandleCommand_UsesDispatcher(t *testing.T) {
 	called := false
 	ch.dispatcher = commands.DispatchFunc(func(context.Context, commands.Request) commands.Result {
 		called = true
-		return commands.Result{Matched: true}
+		return commands.Result{Matched: true, Handled: true}
 	})
 
 	handled := ch.tryHandleCommand(context.Background(), "/help", "chat1", "user1", "mid1")

@@ -422,7 +422,7 @@ func (c *WhatsAppNativeChannel) tryHandleCommand(
 			"error":   res.Err.Error(),
 		})
 	}
-	return res.Matched
+	return res.Handled
 }
 
 func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {

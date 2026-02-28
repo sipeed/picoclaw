@@ -17,6 +17,7 @@ type Request struct {
 
 type Result struct {
 	Matched bool
+	Handled bool
 	Command string
 	Err     error
 }
@@ -51,10 +52,10 @@ func (d *Dispatcher) Dispatch(ctx context.Context, req Request) Result {
 			continue
 		}
 		if def.Handler == nil {
-			return Result{Matched: true, Command: def.Name}
+			return Result{Matched: true, Handled: false, Command: def.Name}
 		}
 		err := def.Handler(ctx, req)
-		return Result{Matched: true, Command: def.Name, Err: err}
+		return Result{Matched: true, Handled: true, Command: def.Name, Err: err}
 	}
 
 	return Result{Matched: false}

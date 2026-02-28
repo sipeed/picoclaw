@@ -280,5 +280,5 @@ func (c *WhatsAppChannel) tryHandleCommand(
 		})
 	}
 
-	return res.Matched
+	return res.Handled
 }
