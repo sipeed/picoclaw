@@ -17,6 +17,19 @@ const (
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+// Pre-compiled regexes for HTML text extraction
+var (
+	reScript     = regexp.MustCompile(`<script[\s\S]*?</script>`)
+	reStyle      = regexp.MustCompile(`<style[\s\S]*?</style>`)
+	reTags       = regexp.MustCompile(`<[^>]+>`)
+	reWhitespace = regexp.MustCompile(`[^\S\n]+`)
+	reBlankLines = regexp.MustCompile(`\n{3,}`)
+
+	// DuckDuckGo result extraction
+	reDDGLink    = regexp.MustCompile(`<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>`)
+	reDDGSnippet = regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
+)
+
 // createHTTPClient creates an HTTP client with optional proxy support
 func createHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
 	client := &http.Client{
@@ -129,6 +142,7 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 type TavilySearchProvider struct {
 	apiKey  string
 	baseURL string
+	proxy   string
 }
 
 func (p *TavilySearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
@@ -160,7 +174,10 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client, err := createHTTPClient(p.proxy, 10*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("failed to create HTTP client: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -247,8 +264,7 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 	// Try finding the result links directly first, as they are the most critical
 	// Pattern: <a class="result__a" href="...">Title</a>
 	// The previous regex was a bit strict. Let's make it more flexible for attributes order/content
-	reLink := regexp.MustCompile(`<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>`)
-	matches := reLink.FindAllStringSubmatch(html, count+5)
+	matches := reDDGLink.FindAllStringSubmatch(html, count+5)
 
 	if len(matches) == 0 {
 		return fmt.Sprintf("No results found or extraction failed. Query: %s", query), nil
@@ -265,8 +281,7 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 
 	// A better regex approach: iterate through text and find matches in order
 	// But for now, let's grab all snippets too
-	reSnippet := regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
-	snippetMatches := reSnippet.FindAllStringSubmatch(html, count+5)
+	snippetMatches := reDDGSnippet.FindAllStringSubmatch(html, count+5)
 
 	maxItems := min(len(matches), count)
 
@@ -301,8 +316,7 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 }
 
 func stripTags(content string) string {
-	re := regexp.MustCompile(`<[^>]+>`)
-	return re.ReplaceAllString(content, "")
+	return reTags.ReplaceAllString(content, "")
 }
 
 type PerplexitySearchProvider struct {
@@ -420,6 +434,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 		provider = &TavilySearchProvider{
 			apiKey:  opts.TavilyAPIKey,
 			baseURL: opts.TavilyBaseURL,
+			proxy:   opts.Proxy,
 		}
 		if opts.TavilyMaxResults > 0 {
 			maxResults = opts.TavilyMaxResults
@@ -649,19 +664,14 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 }
 
 func (t *WebFetchTool) extractText(htmlContent string) string {
-	re := regexp.MustCompile(`<script[\s\S]*?</script>`)
-	result := re.ReplaceAllLiteralString(htmlContent, "")
-	re = regexp.MustCompile(`<style[\s\S]*?</style>`)
-	result = re.ReplaceAllLiteralString(result, "")
-	re = regexp.MustCompile(`<[^>]+>`)
-	result = re.ReplaceAllLiteralString(result, "")
+	result := reScript.ReplaceAllLiteralString(htmlContent, "")
+	result = reStyle.ReplaceAllLiteralString(result, "")
+	result = reTags.ReplaceAllLiteralString(result, "")
 
 	result = strings.TrimSpace(result)
 
-	re = regexp.MustCompile(`[^\S\n]+`)
-	result = re.ReplaceAllString(result, " ")
-	re = regexp.MustCompile(`\n{3,}`)
-	result = re.ReplaceAllString(result, "\n\n")
+	result = reWhitespace.ReplaceAllString(result, " ")
+	result = reBlankLines.ReplaceAllString(result, "\n\n")
 
 	lines := strings.Split(result, "\n")
 	var cleanLines []string

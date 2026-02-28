@@ -109,8 +109,17 @@ func sandboxAggregateFromStub(
 	return &sandbox.ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: exitCode}, nil
 }
 
+func mustNewExecTool(t *testing.T, workingDir string, restrict bool) *ExecTool {
+	t.Helper()
+	tool, err := NewExecTool(workingDir, restrict)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %v", err)
+	}
+	return tool
+}
+
 func TestShellTool_Success(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool := mustNewExecTool(t, "", false)
 	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
 		res: &sandbox.ExecResult{Stdout: "hello world", ExitCode: 0},
 	})
@@ -125,7 +134,7 @@ func TestShellTool_Success(t *testing.T) {
 }
 
 func TestShellTool_Failure(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool := mustNewExecTool(t, "", false)
 	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
 		res: &sandbox.ExecResult{Stderr: "error", ExitCode: 2},
 	})
@@ -143,7 +152,7 @@ func TestShellTool_WorkingDir_OutsideWorkspace(t *testing.T) {
 	os.MkdirAll(workspace, 0o755)
 	os.MkdirAll(outsideDir, 0o755)
 
-	tool := NewExecTool(workspace, true)
+	tool := mustNewExecTool(t, workspace, true)
 	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
 		workspace: workspace,
 		res:       &sandbox.ExecResult{ExitCode: 0},
@@ -171,7 +180,7 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 		t.Skip("symlinks not supported")
 	}
 
-	tool := NewExecTool(workspace, true)
+	tool := mustNewExecTool(t, workspace, true)
 	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
 		workspace: workspace,
 	})
@@ -187,7 +196,7 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 
 func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool := NewExecTool(tmpDir, true)
+	tool := mustNewExecTool(t, tmpDir, true)
 	ctx := sandbox.WithSandbox(context.Background(), &stubSandbox{
 		workspace: tmpDir,
 	})
@@ -201,7 +210,7 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 func TestShellTool_SandboxMapsHostWorkingDirToRelative(t *testing.T) {
 	workspace := t.TempDir()
 	sb := &stubSandbox{workspace: workspace}
-	tool := NewExecTool(workspace, true)
+	tool := mustNewExecTool(t, workspace, true)
 
 	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
@@ -212,7 +221,6 @@ func TestShellTool_SandboxMapsHostWorkingDirToRelative(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("expected success, got error: %s", result.ForLLM)
 	}
-	// We now prefer relative paths if inside workspace for better container compatibility
 	if sb.lastReq.WorkingDir != "subdir" {
 		t.Fatalf("sandbox working_dir = %q, want subdir", sb.lastReq.WorkingDir)
 	}
@@ -221,7 +229,7 @@ func TestShellTool_SandboxMapsHostWorkingDirToRelative(t *testing.T) {
 func TestShellTool_SandboxAllowsAbsoluteWorkspaceWorkingDir(t *testing.T) {
 	workspace := "/workspace"
 	sb := &stubSandbox{workspace: workspace}
-	tool := NewExecTool(workspace, true)
+	tool := mustNewExecTool(t, workspace, true)
 
 	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{
@@ -232,8 +240,6 @@ func TestShellTool_SandboxAllowsAbsoluteWorkspaceWorkingDir(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("expected success, got error: %s", result.ForLLM)
 	}
-	// It's allowed! Conversion to relative 'subdir' is an acceptable implementation detail
-	// because it resolves to the same location in the container.
 	if sb.lastReq.WorkingDir != "subdir" && sb.lastReq.WorkingDir != "/workspace/subdir" {
 		t.Fatalf("sandbox working_dir = %q, want subdir or /workspace/subdir", sb.lastReq.WorkingDir)
 	}
@@ -242,7 +248,7 @@ func TestShellTool_SandboxAllowsAbsoluteWorkspaceWorkingDir(t *testing.T) {
 func TestShellTool_SandboxBlocksAbsoluteNonWorkspaceWorkingDirWhenRestricted(t *testing.T) {
 	workspace := t.TempDir()
 	sb := &stubSandbox{workspace: workspace}
-	tool := NewExecTool(workspace, true)
+	tool := mustNewExecTool(t, workspace, true)
 
 	ctx := sandbox.WithSandbox(context.Background(), sb)
 	args := map[string]any{

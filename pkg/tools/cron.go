@@ -47,7 +47,7 @@ func NewCronTool(
 	execTimeout time.Duration,
 	config *config.Config,
 	mgr sandbox.Manager,
-) *CronTool {
+) (*CronTool, error) {
 	var sandboxManager sandbox.Manager
 	if mgr != nil {
 		sandboxManager = mgr
@@ -55,7 +55,11 @@ func NewCronTool(
 		// Fallback: build a host-only sandbox manager when no manager is provided.
 		sandboxManager = sandbox.NewFromConfigAsManager(workspace, restrict, config)
 	}
-	guard := NewExecToolWithConfig(workspace, restrict, config)
+	guard, err := NewExecToolWithConfig(workspace, restrict, config)
+	if err != nil {
+		return nil, fmt.Errorf("unable to configure exec tool: %w", err)
+	}
+	guard.SetTimeout(execTimeout)
 	return &CronTool{
 		cronService:    cronService,
 		executor:       executor,
@@ -63,7 +67,7 @@ func NewCronTool(
 		sandboxManager: sandboxManager,
 		execGuard:      guard,
 		execTimeout:    execTimeout,
-	}
+	}, nil
 }
 
 // Name returns the tool name
@@ -310,7 +314,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 			cwd = t.execGuard.workingDir
 			if guardError := t.execGuard.guardCommand(job.Payload.Command, cwd); guardError != "" {
 				output = fmt.Sprintf("Error executing scheduled command: %s", guardError)
-				t.msgBus.PublishOutbound(bus.OutboundMessage{
+				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer pubCancel()
+				t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 					Channel: channel,
 					ChatID:  chatID,
 					Content: output,
@@ -347,7 +353,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 			}
 		}
 
-		t.msgBus.PublishOutbound(bus.OutboundMessage{
+		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer pubCancel()
+		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 			Channel: channel,
 			ChatID:  chatID,
 			Content: output,
@@ -357,7 +365,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 
 	// If deliver=true, send message directly without agent processing
 	if job.Payload.Deliver {
-		t.msgBus.PublishOutbound(bus.OutboundMessage{
+		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer pubCancel()
+		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 			Channel: channel,
 			ChatID:  chatID,
 			Content: job.Payload.Message,

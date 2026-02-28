@@ -25,6 +25,7 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
+	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
 type Provider struct {
@@ -34,13 +35,27 @@ type Provider struct {
 	httpClient     *http.Client
 }
 
-func NewProvider(apiKey, apiBase, proxy string) *Provider {
-	return NewProviderWithMaxTokensField(apiKey, apiBase, proxy, "")
+type Option func(*Provider)
+
+const defaultRequestTimeout = 120 * time.Second
+
+func WithMaxTokensField(maxTokensField string) Option {
+	return func(p *Provider) {
+		p.maxTokensField = maxTokensField
+	}
 }
 
-func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
+func WithRequestTimeout(timeout time.Duration) Option {
+	return func(p *Provider) {
+		if timeout > 0 {
+			p.httpClient.Timeout = timeout
+		}
+	}
+}
+
+func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 	client := &http.Client{
-		Timeout: 120 * time.Second,
+		Timeout: defaultRequestTimeout,
 	}
 
 	if proxy != "" {
@@ -54,12 +69,36 @@ func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string
 		}
 	}
 
-	return &Provider{
-		apiKey:         apiKey,
-		apiBase:        strings.TrimRight(apiBase, "/"),
-		maxTokensField: maxTokensField,
-		httpClient:     client,
+	p := &Provider{
+		apiKey:     apiKey,
+		apiBase:    strings.TrimRight(apiBase, "/"),
+		httpClient: client,
 	}
+
+	for _, opt := range opts {
+		if opt != nil {
+			opt(p)
+		}
+	}
+
+	return p
+}
+
+func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
+	return NewProvider(apiKey, apiBase, proxy, WithMaxTokensField(maxTokensField))
+}
+
+func NewProviderWithMaxTokensFieldAndTimeout(
+	apiKey, apiBase, proxy, maxTokensField string,
+	requestTimeoutSeconds int,
+) *Provider {
+	return NewProvider(
+		apiKey,
+		apiBase,
+		proxy,
+		WithMaxTokensField(maxTokensField),
+		WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+	)
 }
 
 func (p *Provider) Chat(
@@ -115,8 +154,12 @@ func (p *Provider) Chat(
 	// with the same key and reuse prefix KV cache across calls.
 	// The key is typically the agent ID — stable per agent, shared across requests.
 	// See: https://platform.openai.com/docs/guides/prompt-caching
+	// Prompt caching is only supported by OpenAI-native endpoints.
+	// Gemini and other providers reject unknown fields, so skip for non-OpenAI APIs.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		requestBody["prompt_cache_key"] = cacheKey
+		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
+			requestBody["prompt_cache_key"] = cacheKey
+		}
 	}
 
 	jsonData, err := json.Marshal(requestBody)
@@ -156,8 +199,10 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
-				Content          string `json:"content"`
-				ReasoningContent string `json:"reasoning_content"`
+				Content          string            `json:"content"`
+				ReasoningContent string            `json:"reasoning_content"`
+				Reasoning        string            `json:"reasoning"`
+				ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
 				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
@@ -232,6 +277,8 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	return &LLMResponse{
 		Content:          choice.Message.Content,
 		ReasoningContent: choice.Message.ReasoningContent,
+		Reasoning:        choice.Message.Reasoning,
+		ReasoningDetails: choice.Message.ReasoningDetails,
 		ToolCalls:        toolCalls,
 		FinishReason:     choice.FinishReason,
 		Usage:            apiResponse.Usage,

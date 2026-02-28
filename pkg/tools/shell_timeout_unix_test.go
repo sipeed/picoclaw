@@ -25,7 +25,7 @@ func processExists(pid int) bool {
 
 func TestShellTool_TimeoutKillsChildProcess(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewExecTool(workspace, false)
+	tool := mustNewExecTool(t, workspace, false)
 	tool.SetTimeout(500 * time.Millisecond)
 
 	sb := sandbox.NewHostSandbox(workspace, false)

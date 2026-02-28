@@ -165,39 +165,43 @@ Você tambêm pode rodar o PicoClaw usando Docker Compose sem instalar nada loca
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Configure suas API keys
-cp config/config.example.json config/config.json
-vim config/config.json      # Configure DISCORD_BOT_TOKEN, API keys, etc.
+# 2. Primeiro uso — gera docker/data/config.json automaticamente e para
+docker compose -f docker/docker-compose.yml --profile gateway up
+# O contêiner exibe "First-run setup complete." e para.
 
-# 3. Build & Iniciar
-docker compose --profile gateway up -d
+# 3. Configure suas API keys
+vim docker/data/config.json   # Chaves de API do provedor, tokens de bot, etc.
+
+# 4. Iniciar
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Usuários Docker**: Por padrão, o Gateway ouve em `127.0.0.1`, o que não é acessível a partir do host. Se você precisar acessar os endpoints de integridade ou expor portas, defina `PICOCLAW_GATEWAY_HOST=0.0.0.0` em seu ambiente ou atualize o `config.json`.
 
+```bash
+# 5. Ver logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. Ver logs
-docker compose logs -f picoclaw-gateway
-
-# 5. Parar
-docker compose --profile gateway down
+# 6. Parar
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Modo Agente (Execução única)
 
 ```bash
 # Fazer uma pergunta
-docker compose run --rm picoclaw-agent -m "Quanto e 2+2?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Quanto e 2+2?"
 
 # Modo interativo
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Rebuild
+### Atualizar
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Início Rápido
@@ -222,6 +226,7 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
@@ -245,6 +250,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **Novo**: O formato de configuração `model_list` permite adicionar provedores sem alterar código. Veja [Configuração de Modelo](#configuração-de-modelo-model_list) para detalhes.
+> `request_timeout` é opcional e usa segundos. Se omitido ou definido como `<= 0`, o PicoClaw usa o timeout padrão (120s).
 
 **3. Obter API Keys**
 
@@ -972,6 +980,17 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 }
 ```
 > Execute `picoclaw auth login --provider anthropic` para configurar credenciais OAuth.
+
+**Proxy/API personalizada**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### Balanceamento de Carga
 

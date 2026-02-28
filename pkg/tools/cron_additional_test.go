@@ -79,7 +79,7 @@ func TestCronTool_ExecuteJob_BlocksDangerousCommandViaGuard(t *testing.T) {
 	tool := &CronTool{
 		msgBus:         msgBus,
 		sandboxManager: sb,
-		execGuard:      NewExecTool("", true),
+		execGuard:      mustNewExecTool(t, "", true),
 	}
 
 	job := &cron.CronJob{
@@ -113,7 +113,7 @@ func TestCronTool_ExecuteJob_AllowsSafeCommand(t *testing.T) {
 	tool := &CronTool{
 		msgBus:         msgBus,
 		sandboxManager: sb,
-		execGuard:      NewExecTool("/tmp/ws", true),
+		execGuard:      mustNewExecTool(t, "/tmp/ws", true),
 	}
 
 	job := &cron.CronJob{
