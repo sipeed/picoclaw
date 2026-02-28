@@ -34,15 +34,19 @@ type CronTool struct {
 func NewCronTool(
 	cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool,
 	execTimeout time.Duration, config *config.Config,
-) *CronTool {
-	execTool := NewExecToolWithConfig(workspace, restrict, config)
+) (*CronTool, error) {
+	execTool, err := NewExecToolWithConfig(workspace, restrict, config)
+	if err != nil {
+		return nil, fmt.Errorf("unable to configure exec tool: %w", err)
+	}
+
 	execTool.SetTimeout(execTimeout)
 	return &CronTool{
 		cronService: cronService,
 		executor:    executor,
 		msgBus:      msgBus,
 		execTool:    execTool,
-	}
+	}, nil
 }
 
 // Name returns the tool name
@@ -296,7 +300,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 			output = fmt.Sprintf("Scheduled command '%s' executed:\n%s", job.Payload.Command, result.ForLLM)
 		}
 
-		t.msgBus.PublishOutbound(bus.OutboundMessage{
+		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer pubCancel()
+		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 			Channel: channel,
 			ChatID:  chatID,
 			Content: output,
@@ -306,7 +312,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 
 	// If deliver=true, send message directly without agent processing
 	if job.Payload.Deliver {
-		t.msgBus.PublishOutbound(bus.OutboundMessage{
+		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer pubCancel()
+		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 			Channel: channel,
 			ChatID:  chatID,
 			Content: job.Payload.Message,

@@ -9,7 +9,7 @@ import (
 )
 
 func TestBgMonitor_List(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	monitor := NewBgMonitorTool(tool)
 
 	// List with no processes
@@ -64,7 +64,7 @@ func TestBgMonitor_List(t *testing.T) {
 }
 
 func TestBgMonitor_Watch_Match(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	monitor := NewBgMonitorTool(tool)
 
 	var cmd string
@@ -103,7 +103,7 @@ func TestBgMonitor_Watch_Match(t *testing.T) {
 }
 
 func TestBgMonitor_Watch_Timeout(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	monitor := NewBgMonitorTool(tool)
 
 	var cmd string
@@ -139,7 +139,7 @@ func TestBgMonitor_Watch_Timeout(t *testing.T) {
 }
 
 func TestBgMonitor_Watch_ProcessExit(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	monitor := NewBgMonitorTool(tool)
 
 	var cmd string
@@ -178,7 +178,7 @@ func TestBgMonitor_Watch_ProcessExit(t *testing.T) {
 }
 
 func TestBgMonitor_Tail(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	monitor := NewBgMonitorTool(tool)
 
 	var cmd string
@@ -216,7 +216,7 @@ func TestBgMonitor_Tail(t *testing.T) {
 }
 
 func TestBgMonitor_InvalidAction(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	monitor := NewBgMonitorTool(tool)
 
 	result := monitor.Execute(context.Background(), map[string]any{"action": "invalid"})

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -103,6 +104,50 @@ func TestProviderChat_ParsesToolCalls(t *testing.T) {
 	}
 	if out.ToolCalls[0].Arguments["city"] != "SF" {
 		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want SF", out.ToolCalls[0].Arguments["city"])
+	}
+}
+
+func TestProviderChat_ParsesReasoningContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content":           "The answer is 2",
+						"reasoning_content": "Let me think step by step... 1+1=2",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call_1",
+								"type": "function",
+								"function": map[string]any{
+									"name":      "calculator",
+									"arguments": "{\"expr\":\"1+1\"}",
+								},
+							},
+						},
+					},
+					"finish_reason": "tool_calls",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "1+1=?"}}, nil, "kimi-k2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if out.ReasoningContent != "Let me think step by step... 1+1=2" {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "Let me think step by step... 1+1=2")
+	}
+	if out.Content != "The answer is 2" {
+		t.Fatalf("Content = %q, want %q", out.Content, "The answer is 2")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
 	}
 }
 
@@ -672,5 +717,26 @@ func TestCanStream(t *testing.T) {
 	p2 := NewProviderWithOptions("key", "https://example.com", "", Options{Stream: true})
 	if !p2.CanStream() {
 		t.Error("CanStream() = false for stream provider")
+	}
+}
+
+func TestProvider_RequestTimeoutDefault(t *testing.T) {
+	p := NewProviderWithMaxTokensFieldAndTimeout("key", "https://example.com/v1", "", "", 0)
+	if p.httpClient.Timeout != defaultRequestTimeout {
+		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
+	}
+}
+
+func TestProvider_RequestTimeoutOverride(t *testing.T) {
+	p := NewProviderWithMaxTokensFieldAndTimeout("key", "https://example.com/v1", "", "", 300)
+	if p.httpClient.Timeout != 300*time.Second {
+		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, 300*time.Second)
+	}
+}
+
+func TestProvider_RequestTimeoutNonPositive(t *testing.T) {
+	p := NewProviderWithMaxTokensFieldAndTimeout("key", "https://example.com/v1", "", "", -1)
+	if p.httpClient.Timeout != defaultRequestTimeout {
+		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
 	}
 }
