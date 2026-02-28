@@ -467,7 +467,8 @@ func (p *agentLoopDataProvider) GetGitRepos() []miniapp.GitRepoSummary {
 			seen[repoDir] = true
 			name := filepath.Base(repoDir)
 			branch := ""
-			if out, err := exec.Command("git", "-C", repoDir, "rev-parse", "--abbrev-ref", "HEAD").Output(); err == nil {
+			out, err := exec.Command("git", "-C", repoDir, "rev-parse", "--abbrev-ref", "HEAD").Output()
+			if err == nil {
 				branch = strings.TrimSpace(string(out))
 			}
 			repos = append(repos, miniapp.GitRepoSummary{Name: name, Branch: branch})

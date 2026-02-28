@@ -645,8 +645,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			lower := strings.ToLower(content)
 
 			// Check for stop keywords
-			//nolint:gosmopolitan // intentional CJK stop words
-		stopKeywords := []string{"stop", "cancel", "abort", "停止", "中止", "やめて"}
+			stopKeywords := []string{ //nolint:gosmopolitan // intentional CJK stop words
+				"stop", "cancel", "abort", "停止", "中止", "やめて",
+			}
 			isStop := false
 			for _, kw := range stopKeywords {
 				if lower == kw {
