@@ -753,6 +753,7 @@ Subagent có quyền truy cập các công cụ (message, web_search, v.v.) và 
 | `groq` | LLM + **Chuyển giọng nói** (Whisper) | [console.groq.com](https://console.groq.com) |
 | `qwen` | LLM (Qwen trực tiếp) | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `cerebras` | LLM (Cerebras trực tiếp) | [cerebras.ai](https://cerebras.ai) |
+| `minimax` | LLM (MiniMax trực tiếp) | [platform.minimax.io](https://platform.minimax.io) |
 
 <details>
 <summary><b>Cấu hình Zhipu</b></summary>
@@ -890,6 +891,7 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Lấy Khóa](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Lấy Khóa](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **MiniMax** | `minimax/` | `https://api.minimax.io/v1` | OpenAI | [Lấy Khóa](https://platform.minimax.io) |
 | **Antigravity** | `antigravity/` | Google Cloud | Tùy chỉnh | Chỉ OAuth |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 

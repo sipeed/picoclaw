@@ -431,6 +431,7 @@ Agent 读取 HEARTBEAT.md
 | `qwen`               | LLM (通义千问)               | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`               | LLM + **语音转录** (Whisper) | [console.groq.com](https://console.groq.com)                         |
 | `cerebras`           | LLM (Cerebras 直连)          | [cerebras.ai](https://cerebras.ai)                                   |
+| `minimax`            | LLM (MiniMax 直连)           | [platform.minimax.io](https://platform.minimax.io)                   |
 
 ### 模型配置 (model_list)
 
@@ -462,6 +463,7 @@ Agent 读取 HEARTBEAT.md
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [获取密钥](https://cerebras.ai)                                   |
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [获取密钥](https://console.volcengine.com)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                 |
+| **MiniMax**         | `minimax/`        | `https://api.minimax.io/v1`                         | OpenAI    | [获取密钥](https://platform.minimax.io)                           |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | 自定义    | 仅 OAuth                                                          |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                 |
 

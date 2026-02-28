@@ -778,6 +778,7 @@ O subagente tem acesso às ferramentas (message, web_search, etc.) e pode se com
 | `deepseek` (Em teste) | LLM (DeepSeek direto) | [platform.deepseek.com](https://platform.deepseek.com) |
 | `qwen` | Alibaba Qwen | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `cerebras` | Cerebras | [cerebras.ai](https://cerebras.ai) |
+| `minimax` | MiniMax | [platform.minimax.io](https://platform.minimax.io) |
 | `groq` | LLM + **Transcrição de voz** (Whisper) | [console.groq.com](https://console.groq.com) |
 
 <details>
@@ -919,6 +920,7 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Obter Chave](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obter Chave](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **MiniMax** | `minimax/` | `https://api.minimax.io/v1` | OpenAI | [Obter Chave](https://platform.minimax.io) |
 | **Antigravity** | `antigravity/` | Google Cloud | Custom | Apenas OAuth |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
