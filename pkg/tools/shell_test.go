@@ -553,6 +553,74 @@ func TestGuardCommand_AgentCLISlashCommand(t *testing.T) {
 	}
 }
 
+// TestGuardCommand_DenyPattern_IncludesPattern verifies that deny-match
+// error messages include the matched pattern string.
+func TestGuardCommand_DenyPattern_IncludesPattern(t *testing.T) {
+	workspace := t.TempDir()
+	tool, _ := NewExecTool(workspace, true)
+	// Also add a custom deny pattern for precise matching.
+	tool.denyPatterns = append(tool.denyPatterns, regexp.MustCompile(`\bdangerous_cmd\b`))
+
+	result := tool.guardCommand("dangerous_cmd --force", workspace)
+	if result == "" {
+		t.Fatal("expected deny pattern to block the command")
+	}
+	if !strings.Contains(result, "deny pattern") {
+		t.Errorf("expected 'deny pattern' in message, got: %s", result)
+	}
+	if !strings.Contains(result, `\bdangerous_cmd\b`) {
+		t.Errorf("expected pattern string in message, got: %s", result)
+	}
+}
+
+// TestGuardCommand_Allowlist_ShowsPatterns verifies that allowlist violation
+// messages include all configured patterns.
+func TestGuardCommand_Allowlist_ShowsPatterns(t *testing.T) {
+	workspace := t.TempDir()
+	tool, _ := NewExecTool(workspace, true)
+	err := tool.SetAllowPatterns([]string{`^go\b`, `^git\b`})
+	if err != nil {
+		t.Fatalf("SetAllowPatterns failed: %v", err)
+	}
+
+	result := tool.guardCommand("curl http://example.com", workspace)
+	if result == "" {
+		t.Fatal("expected allowlist to block the command")
+	}
+	if !strings.Contains(result, "not in allowlist") {
+		t.Errorf("expected 'not in allowlist' in message, got: %s", result)
+	}
+	if !strings.Contains(result, `^go\b`) || !strings.Contains(result, `^git\b`) {
+		t.Errorf("expected allowlist patterns in message, got: %s", result)
+	}
+}
+
+// TestGuardCommand_PathOutside_IncludesPath verifies that workspace-escape
+// messages include the offending path token.
+func TestGuardCommand_PathOutside_IncludesPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix absolute path test not applicable on Windows")
+	}
+
+	workspace := t.TempDir()
+	externalDir := t.TempDir()
+	dataFile := filepath.Join(externalDir, "secret.txt")
+	os.WriteFile(dataFile, []byte("secret"), 0o644)
+
+	tool, _ := NewExecTool(workspace, true)
+
+	result := tool.guardCommand("cat "+dataFile, workspace)
+	if result == "" {
+		t.Fatal("expected path outside workspace to be blocked")
+	}
+	if !strings.Contains(result, "path outside working dir") {
+		t.Errorf("expected 'path outside working dir' in message, got: %s", result)
+	}
+	if !strings.Contains(result, dataFile) {
+		t.Errorf("expected offending path %q in message, got: %s", dataFile, result)
+	}
+}
+
 // --- Background process tests ---
 
 func TestExecTool_Bg_StartAndOutput(t *testing.T) {

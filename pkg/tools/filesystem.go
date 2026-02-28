@@ -36,7 +36,7 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 
 	if restrict {
 		if !isWithinWorkspace(absPath, absWorkspace) {
-			return "", fmt.Errorf("access denied: path is outside the workspace")
+			return "", fmt.Errorf("access denied: path outside workspace %s", absWorkspace)
 		}
 
 		var resolved string

@@ -486,3 +486,15 @@ func TestSandboxFs_Write(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, newData, content)
 }
+
+// TestValidatePath_OutsideWorkspace_IncludesPath verifies that the access
+// denied error includes the workspace path so the caller knows the boundary.
+func TestValidatePath_OutsideWorkspace_IncludesPath(t *testing.T) {
+	workspace := t.TempDir()
+	outsidePath := filepath.Join(t.TempDir(), "secret.txt")
+
+	_, err := validatePath(outsidePath, workspace, true)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "access denied")
+	assert.Contains(t, err.Error(), workspace)
+}
