@@ -21,8 +21,6 @@
       "enabled": true,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/wecom-aibot",
       "allow_from": [],
       "welcome_message": "你好！有什么可以帮助你的吗？",
@@ -36,8 +34,6 @@
 | ---------------- | ------ | ---- | -------------------------------------------------- |
 | token            | string | 是   | 回调验证令牌，在 AI Bot 管理页面配置               |
 | encoding_aes_key | string | 是   | 43 字符 AES 密钥，在 AI Bot 管理页面随机生成       |
-| webhook_host     | string | 否   | HTTP 服务器绑定地址（默认：0.0.0.0）               |
-| webhook_port     | int    | 否   | HTTP 服务器端口（默认：18791）                     |
 | webhook_path     | string | 否   | Webhook 路径（默认：/webhook/wecom-aibot）         |
 | allow_from       | array  | 否   | 用户 ID 白名单，空数组表示允许所有用户             |
 | welcome_message  | string | 否   | 用户进入聊天时发送的欢迎语，留空则不发送           |
