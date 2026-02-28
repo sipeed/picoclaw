@@ -314,6 +314,11 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+				SearXNG: SearXNGConfig{
+					Enabled:    false,
+					BaseURL:    "",
+					MaxResults: 5,
+				},
 			},
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5,
