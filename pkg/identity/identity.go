@@ -44,6 +44,10 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 		return false
 	}
 
+	if allowed == "*" {
+		return true
+	}
+
 	// Try canonical match first: "platform:id" format
 	if platform, id, ok := ParseCanonicalID(allowed); ok {
 		// Only treat as canonical if the platform portion looks like a known platform name

@@ -84,7 +84,6 @@ func (p *Provider) Chat(
 	if err != nil {
 		return nil, err
 	}
-
 	resp, err := p.client.Messages.New(ctx, params, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("claude API call: %w", err)
@@ -144,7 +143,16 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
+					// Skip tool calls with empty name - they cause API errors
+					if tc.Name == "" {
+						continue
+					}
+					// Ensure Arguments is not nil/empty to avoid null input in API request
+					args := tc.Arguments
+					if args == nil || len(args) == 0 {
+						args = map[string]any{}
+					}
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, args, tc.Name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
