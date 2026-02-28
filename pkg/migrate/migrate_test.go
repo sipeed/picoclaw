@@ -31,7 +31,12 @@ func TestMigrateInstanceRegister(t *testing.T) {
 }
 
 func TestMigrateInstanceGetCurrentHandler(t *testing.T) {
-	instance := NewMigrateInstance(Options{})
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "openclaw.json")
+	err := os.WriteFile(configPath, []byte("{}"), 0o644)
+	require.NoError(t, err)
+
+	instance := NewMigrateInstance(Options{SourceHome: tmpDir})
 	require.NotNil(t, instance)
 
 	handler, err := instance.getCurrentHandler()
@@ -41,8 +46,14 @@ func TestMigrateInstanceGetCurrentHandler(t *testing.T) {
 }
 
 func TestMigrateInstanceGetCurrentHandlerWithSource(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "openclaw.json")
+	err := os.WriteFile(configPath, []byte("{}"), 0o644)
+	require.NoError(t, err)
+
 	opts := Options{
-		Source: "openclaw",
+		Source:     "openclaw",
+		SourceHome: tmpDir,
 	}
 	instance := NewMigrateInstance(opts)
 
@@ -74,10 +85,15 @@ func TestMigrateInstancePlanWithInvalidSource(t *testing.T) {
 }
 
 func TestMigrateInstancePlanConfigOnlyAndWorkspaceOnlyMutuallyExclusive(t *testing.T) {
-	instance := NewMigrateInstance(Options{})
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "openclaw.json")
+	err := os.WriteFile(configPath, []byte("{}"), 0o644)
+	require.NoError(t, err)
+
+	instance := NewMigrateInstance(Options{SourceHome: tmpDir})
 	require.NotNil(t, instance)
 
-	_, err := instance.Run(Options{
+	_, err = instance.Run(Options{
 		ConfigOnly:    true,
 		WorkspaceOnly: true,
 	})
@@ -145,18 +161,27 @@ func TestMigrateInstanceExecute(t *testing.T) {
 }
 
 func TestMigrateInstanceExecuteWithInvalidSource(t *testing.T) {
-	instance := NewMigrateInstance(Options{})
+	tmpDir := t.TempDir()
+	sourceDir := filepath.Join(tmpDir, "source")
+	err := os.MkdirAll(sourceDir, 0o755)
+	require.NoError(t, err)
+
+	instance := &MigrateInstance{
+		options:  Options{Source: "mock"},
+		handlers: make(map[string]Operation),
+	}
+	instance.Register("mock", &mockOperation{sourceHome: sourceDir})
 
 	actions := []Action{
 		{
 			Type:        ActionCopy,
-			Source:      "/tmp/nonexistent/file.txt",
-			Target:      "/tmp/target/file.txt",
+			Source:      filepath.Join(sourceDir, "nonexistent.txt"),
+			Target:      filepath.Join(tmpDir, "target.txt"),
 			Description: "copy file",
 		},
 	}
 
-	result := instance.Execute(actions, "/tmp/nonexistent", "/tmp/target")
+	result := instance.Execute(actions, sourceDir, tmpDir)
 	require.NotNil(t, result)
 	assert.Equal(t, 0, result.FilesCopied)
 	assert.Greater(t, len(result.Errors), 0)
@@ -165,7 +190,11 @@ func TestMigrateInstanceExecuteWithInvalidSource(t *testing.T) {
 func TestMigrateInstanceExecuteCreateDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	instance := NewMigrateInstance(Options{})
+	instance := &MigrateInstance{
+		options:  Options{Source: "mock"},
+		handlers: make(map[string]Operation),
+	}
+	instance.Register("mock", &mockOperation{})
 
 	actions := []Action{
 		{
@@ -195,7 +224,11 @@ func TestMigrateInstanceExecuteBackup(t *testing.T) {
 	err = os.WriteFile(targetFile, []byte("target"), 0o644)
 	require.NoError(t, err)
 
-	instance := NewMigrateInstance(Options{})
+	instance := &MigrateInstance{
+		options:  Options{Source: "mock"},
+		handlers: make(map[string]Operation),
+	}
+	instance.Register("mock", &mockOperation{})
 
 	actions := []Action{
 		{
@@ -221,7 +254,11 @@ func TestMigrateInstanceExecuteBackup(t *testing.T) {
 }
 
 func TestMigrateInstanceExecuteSkip(t *testing.T) {
-	instance := NewMigrateInstance(Options{})
+	instance := &MigrateInstance{
+		options:  Options{Source: "mock"},
+		handlers: make(map[string]Operation),
+	}
+	instance.Register("mock", &mockOperation{})
 
 	actions := []Action{
 		{
