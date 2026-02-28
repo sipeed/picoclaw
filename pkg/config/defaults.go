@@ -27,7 +27,6 @@ func DefaultConfig() *Config {
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:           workspacePath,
-
 				RestrictToWorkspace: true,
 				Provider:            "",
 				Model:               "",
