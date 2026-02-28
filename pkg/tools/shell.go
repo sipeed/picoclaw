@@ -69,15 +69,16 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
 }
 
-func NewExecTool(workingDir string, restrict bool) *ExecTool {
+func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 	return NewExecToolWithConfig(workingDir, restrict, nil)
 }
 
-func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
+func NewExecToolWithConfig(workingDir string, restrict bool, cfg *config.Config) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
+	timeout := 60 * time.Second // default timeout
 
-	if config != nil {
-		execConfig := config.Tools.Exec
+	if cfg != nil {
+		execConfig := cfg.Tools.Exec
 		enableDenyPatterns := execConfig.EnableDenyPatterns
 		if enableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
@@ -86,8 +87,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 				for _, pattern := range execConfig.CustomDenyPatterns {
 					re, err := regexp.Compile(pattern)
 					if err != nil {
-						fmt.Printf("Invalid custom deny pattern %q: %v\n", pattern, err)
-						continue
+						return nil, fmt.Errorf("invalid custom deny pattern %q: %w", pattern, err)
 					}
 					denyPatterns = append(denyPatterns, re)
 				}
@@ -96,17 +96,22 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
 			fmt.Println("Warning: deny patterns are disabled. All commands will be allowed.")
 		}
+
+		// Apply configured timeout if set (0 means use default)
+		if execConfig.TimeoutSeconds > 0 {
+			timeout = time.Duration(execConfig.TimeoutSeconds) * time.Second
+		}
 	} else {
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}
 
 	return &ExecTool{
 		workingDir:          workingDir,
-		timeout:             60 * time.Second,
+		timeout:             timeout,
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
 		restrictToWorkspace: restrict,
-	}
+	}, nil
 }
 
 func (t *ExecTool) Name() string {
