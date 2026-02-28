@@ -701,7 +701,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 
 	for _, pattern := range t.denyPatterns {
 		if pattern.MatchString(lower) {
-			return "Command blocked by safety guard (dangerous pattern detected)"
+			return fmt.Sprintf("Command blocked: deny pattern %s", pattern.String())
 		}
 	}
 
@@ -714,7 +714,16 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			}
 		}
 		if !allowed {
-			return "Command blocked by safety guard (not in allowlist)"
+			var b strings.Builder
+			b.WriteString("Command blocked: not in allowlist [")
+			for i, p := range t.allowPatterns {
+				if i > 0 {
+					b.WriteByte(',')
+				}
+				b.WriteString(p.String())
+			}
+			b.WriteByte(']')
+			return b.String()
 		}
 	}
 
@@ -764,7 +773,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 						continue
 					}
 				}
-				return "Command blocked by safety guard (path outside working dir)"
+				return fmt.Sprintf("Command blocked: path outside working dir %s", p)
 			}
 		}
 	}
