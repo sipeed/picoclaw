@@ -98,18 +98,24 @@ type WeComAIBotMessage struct {
 	} `json:"event,omitempty"`
 }
 
-// WeComAIBotStreamInfo represents the detailed stream content in streaming responses
+// WeComAIBotMsgItemImage holds the image payload inside a stream message item.
+type WeComAIBotMsgItemImage struct {
+	Base64 string `json:"base64"`
+	MD5    string `json:"md5"`
+}
+
+// WeComAIBotMsgItem is a single item inside a stream's msg_item list.
+type WeComAIBotMsgItem struct {
+	MsgType string                  `json:"msgtype"`
+	Image   *WeComAIBotMsgItemImage `json:"image,omitempty"`
+}
+
+// WeComAIBotStreamInfo represents the detailed stream content in streaming responses.
 type WeComAIBotStreamInfo struct {
-	ID      string `json:"id"`
-	Finish  bool   `json:"finish"`
-	Content string `json:"content,omitempty"`
-	MsgItem []struct {
-		MsgType string `json:"msgtype"`
-		Image   *struct {
-			Base64 string `json:"base64"`
-			MD5    string `json:"md5"`
-		} `json:"image,omitempty"`
-	} `json:"msg_item,omitempty"`
+	ID      string              `json:"id"`
+	Finish  bool                `json:"finish"`
+	Content string              `json:"content,omitempty"`
+	MsgItem []WeComAIBotMsgItem `json:"msg_item,omitempty"`
 }
 
 // WeComAIBotStreamResponse represents the streaming response format
@@ -457,18 +463,7 @@ func (c *WeComAIBotChannel) processMessage(
 		})
 		return c.encryptResponse("", timestamp, nonce, WeComAIBotStreamResponse{
 			MsgType: "stream",
-			Stream: struct {
-				ID      string `json:"id"`
-				Finish  bool   `json:"finish"`
-				Content string `json:"content,omitempty"`
-				MsgItem []struct {
-					MsgType string `json:"msgtype"`
-					Image   *struct {
-						Base64 string `json:"base64"`
-						MD5    string `json:"md5"`
-					} `json:"image,omitempty"`
-				} `json:"msg_item,omitempty"`
-			}{
+			Stream: WeComAIBotStreamInfo{
 				ID:      c.generateStreamID(),
 				Finish:  true,
 				Content: "Unsupported message type: " + msg.MsgType,
@@ -586,18 +581,7 @@ func (c *WeComAIBotChannel) handleStreamMessage(
 		)
 		return c.encryptResponse(streamID, timestamp, nonce, WeComAIBotStreamResponse{
 			MsgType: "stream",
-			Stream: struct {
-				ID      string `json:"id"`
-				Finish  bool   `json:"finish"`
-				Content string `json:"content,omitempty"`
-				MsgItem []struct {
-					MsgType string `json:"msgtype"`
-					Image   *struct {
-						Base64 string `json:"base64"`
-						MD5    string `json:"md5"`
-					} `json:"image,omitempty"`
-				} `json:"msg_item,omitempty"`
-			}{
+			Stream: WeComAIBotStreamInfo{
 				ID:      streamID,
 				Finish:  true,
 				Content: "Task not found or already finished. Please resend your message to start a new session.",
@@ -626,18 +610,7 @@ func (c *WeComAIBotChannel) handleImageMessage(
 	// For now, just acknowledge receipt without echoing the image
 	return c.encryptResponse("", timestamp, nonce, WeComAIBotStreamResponse{
 		MsgType: "stream",
-		Stream: struct {
-			ID      string `json:"id"`
-			Finish  bool   `json:"finish"`
-			Content string `json:"content,omitempty"`
-			MsgItem []struct {
-				MsgType string `json:"msgtype"`
-				Image   *struct {
-					Base64 string `json:"base64"`
-					MD5    string `json:"md5"`
-				} `json:"image,omitempty"`
-			} `json:"msg_item,omitempty"`
-		}{
+		Stream: WeComAIBotStreamInfo{
 			ID:     c.generateStreamID(),
 			Finish: true,
 			Content: fmt.Sprintf(
@@ -657,18 +630,7 @@ func (c *WeComAIBotChannel) handleMixedMessage(
 	logger.WarnC("wecom_aibot", "Mixed message type not yet fully implemented")
 	return c.encryptResponse("", timestamp, nonce, WeComAIBotStreamResponse{
 		MsgType: "stream",
-		Stream: struct {
-			ID      string `json:"id"`
-			Finish  bool   `json:"finish"`
-			Content string `json:"content,omitempty"`
-			MsgItem []struct {
-				MsgType string `json:"msgtype"`
-				Image   *struct {
-					Base64 string `json:"base64"`
-					MD5    string `json:"md5"`
-				} `json:"image,omitempty"`
-			} `json:"msg_item,omitempty"`
-		}{
+		Stream: WeComAIBotStreamInfo{
 			ID:      c.generateStreamID(),
 			Finish:  true,
 			Content: "Mixed message type is not yet supported",
@@ -695,18 +657,7 @@ func (c *WeComAIBotChannel) handleEventMessage(
 		streamID := c.generateStreamID()
 		return c.encryptResponse(streamID, timestamp, nonce, WeComAIBotStreamResponse{
 			MsgType: "stream",
-			Stream: struct {
-				ID      string `json:"id"`
-				Finish  bool   `json:"finish"`
-				Content string `json:"content,omitempty"`
-				MsgItem []struct {
-					MsgType string `json:"msgtype"`
-					Image   *struct {
-						Base64 string `json:"base64"`
-						MD5    string `json:"md5"`
-					} `json:"image,omitempty"`
-				} `json:"msg_item,omitempty"`
-			}{
+			Stream: WeComAIBotStreamInfo{
 				ID:      streamID,
 				Finish:  true,
 				Content: c.config.WelcomeMessage,
@@ -765,18 +716,7 @@ func (c *WeComAIBotChannel) getStreamResponse(task *streamTask, timestamp, nonce
 
 	response := WeComAIBotStreamResponse{
 		MsgType: "stream",
-		Stream: struct {
-			ID      string `json:"id"`
-			Finish  bool   `json:"finish"`
-			Content string `json:"content,omitempty"`
-			MsgItem []struct {
-				MsgType string `json:"msgtype"`
-				Image   *struct {
-					Base64 string `json:"base64"`
-					MD5    string `json:"md5"`
-				} `json:"image,omitempty"`
-			} `json:"msg_item,omitempty"`
-		}{
+		Stream: WeComAIBotStreamInfo{
 			ID:      task.StreamID,
 			Finish:  finish,
 			Content: content,
