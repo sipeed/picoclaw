@@ -465,7 +465,7 @@ func (c *ContainerSandbox) sandboxStateDir() string {
 }
 
 func (c *ContainerSandbox) stopAndRemoveContainer(ctx context.Context, containerName string) error {
-	timeout := 10
+	timeout := 5
 	_ = c.cli.ContainerStop(ctx, containerName, container.StopOptions{Timeout: &timeout})
 	if err := c.cli.ContainerRemove(ctx, containerName, container.RemoveOptions{Force: true}); err != nil {
 		return err
@@ -484,7 +484,7 @@ func stopAndRemoveContainerByName(ctx context.Context, containerName string) err
 	}
 	defer cli.Close()
 
-	timeout := 10
+	timeout := 5
 	_ = cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
 	if err := cli.ContainerRemove(ctx, name, container.RemoveOptions{Force: true}); err != nil {
 		return err

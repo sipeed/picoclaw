@@ -249,8 +249,8 @@ func TestContainerSandbox_Integration_MaybePruneRemovesOldContainer(t *testing.T
 	}
 
 	// Explicitly call Prune (scoped manager would normally do this in loop)
-	if err := sb.Prune(ctx); err != nil {
-		t.Fatalf("Prune failed: %v", err)
+	if pruneErr := sb.Prune(ctx); pruneErr != nil {
+		t.Fatalf("Prune failed: %v", pruneErr)
 	}
 
 	// Verify container is gone
@@ -313,10 +313,15 @@ func TestContainerSandbox_Integration_ExecTimeoutBreaksStdCopyBlock(t *testing.T
 	}
 	defer sb.Prune(ctx)
 
+	// Ensure container is started so the timeout only applies to command execution
+	if _, err := sb.Exec(ctx, ExecRequest{Command: "true"}); err != nil {
+		t.Fatalf("warmup failed: %v", err)
+	}
+
 	// Simulate a command that hangs and might block output readers
 	start := time.Now()
 	_, err := sb.Exec(ctx, ExecRequest{
-		Command:   "cat", // Blocks waiting for stdin which is never provided
+		Command:   "sleep 10", // Guaranteed to hang
 		TimeoutMs: 500,
 	})
 	elapsed := time.Since(start)

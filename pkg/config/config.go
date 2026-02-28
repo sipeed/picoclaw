@@ -898,7 +898,7 @@ func (c *Config) ValidateModelList() error {
 }
 
 // IntPtr is a convenience helper that returns a pointer to the provided int value.
-// It is used to initialise *int config fields with literal defaults.
+// It is used to initialize *int config fields with literal defaults.
 func IntPtr(v int) *int {
 	return &v
 }

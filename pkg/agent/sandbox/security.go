@@ -10,23 +10,34 @@ import (
 )
 
 var blockedHostPaths = []string{
+	"/boot",
+	"/dev",
 	"/etc",
 	"/private/etc",
-	"/proc",
-	"/sys",
-	"/dev",
-	"/root",
-	"/boot",
-	"/run",
-	"/var/run",
 	"/private/var/run",
-	"/run/docker.sock",
-	"/var/run/docker.sock",
 	"/private/var/run/docker.sock",
-	"/run/user",
+	"/proc",
+	"/root",
+	"/run",
+	"/run/containerd",
+	"/run/crio",
+	"/run/docker.sock",
 	"/run/podman",
+	"/run/user",
+	"/sys",
 	"/tmp/podman.sock",
+	"/var/run",
+	"/var/run/containerd",
+	"/var/run/crio",
+	"/var/run/docker.sock",
 	"/xdg_runtime_dir",
+}
+
+var blockedHostPathSuffixes = []string{
+	"/.docker/run/docker.sock",
+	"/.docker/desktop/docker.sock",
+	"/.colima/default/docker.sock",
+	"/.rd/docker.sock",
 }
 
 var blockedEnvVarPatterns = []*regexp.Regexp{
@@ -96,6 +107,18 @@ func validateBindSourcePath(bind, source string) error {
 		if source == blocked || strings.HasPrefix(source, blocked+"/") {
 			return fmt.Errorf("sandbox security: bind mount %q targets blocked path %q", bind, blocked)
 		}
+	}
+	for _, suffix := range blockedHostPathSuffixes {
+		if source == suffix || strings.HasSuffix(source, suffix) {
+			return fmt.Errorf("sandbox security: bind mount %q targets blocked path suffix %q", bind, suffix)
+		}
+	}
+	isSocket, err := isUnixSocketPath(source)
+	if err != nil {
+		return fmt.Errorf("sandbox security: bind mount %q source %q cannot be validated: %w", bind, source, err)
+	}
+	if isSocket {
+		return fmt.Errorf("sandbox security: bind mount %q targets unix socket %q", bind, source)
 	}
 	return nil
 }
@@ -193,4 +216,19 @@ func isBlockedEnvVarKey(key string) bool {
 
 var filepathEvalSymlinks = func(path string) (string, error) {
 	return filepath.EvalSymlinks(path)
+}
+
+var osLstat = func(path string) (os.FileInfo, error) {
+	return os.Lstat(path)
+}
+
+func isUnixSocketPath(p string) (bool, error) {
+	fi, err := osLstat(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return fi.Mode()&os.ModeSocket != 0, nil
 }

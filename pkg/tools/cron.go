@@ -309,9 +309,8 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	// Execute command if present
 	if job.Payload.Command != "" {
 		var output string
-		cwd := ""
 		if t.execGuard != nil {
-			cwd = t.execGuard.workingDir
+			cwd := t.execGuard.workingDir
 			if guardError := t.execGuard.guardCommand(job.Payload.Command, cwd); guardError != "" {
 				output = fmt.Sprintf("Error executing scheduled command: %s", guardError)
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,26 @@ func TestValidateBindMounts_BlocksDangerousPath(t *testing.T) {
 		t.Fatal("expected blocked bind path error")
 	}
 	if !strings.Contains(err.Error(), "blocked path") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateBindMounts_BlocksAdditionalRuntimePaths(t *testing.T) {
+	err := validateBindMounts([]string{"/run/containerd/containerd.sock:/mnt/runtime.sock:ro"})
+	if err == nil {
+		t.Fatal("expected blocked runtime bind path error")
+	}
+	if !strings.Contains(err.Error(), "blocked path") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateBindMounts_BlocksDangerousSocketSuffixes(t *testing.T) {
+	err := validateBindMounts([]string{"/home/user/.docker/run/docker.sock:/mnt/docker.sock:ro"})
+	if err == nil {
+		t.Fatal("expected blocked dangerous socket suffix error")
+	}
+	if !strings.Contains(err.Error(), "blocked path suffix") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -30,6 +51,40 @@ func TestValidateBindMounts_BlocksNonAbsoluteSource(t *testing.T) {
 func TestValidateBindMounts_AllowsProjectPath(t *testing.T) {
 	if err := validateBindMounts([]string{"/home/user/project:/workspace:rw"}); err != nil {
 		t.Fatalf("expected bind to pass, got %v", err)
+	}
+}
+
+func TestValidateBindMounts_BlocksUnixSocketSource(t *testing.T) {
+	tmpDir := t.TempDir()
+	socketPath := filepath.Join(tmpDir, "agent.sock")
+	ln, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen unix: %v", err)
+	}
+	defer ln.Close()
+
+	err = validateBindMounts([]string{socketPath + ":/workspace/agent.sock:ro"})
+	if err == nil {
+		t.Fatal("expected unix socket source to be blocked")
+	}
+	if !strings.Contains(err.Error(), "unix socket") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateBindMounts_BlocksSymlinkToBlockedPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	link := filepath.Join(tmpDir, "etc-link")
+	if err := os.Symlink("/etc", link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	err := validateBindMounts([]string{link + ":/workspace/etc:ro"})
+	if err == nil {
+		t.Fatal("expected symlink-resolved blocked path error")
+	}
+	if !strings.Contains(err.Error(), "blocked path") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -138,7 +193,9 @@ func TestTryRealpathAbsolute_Branches(t *testing.T) {
 	}
 
 	old := filepathEvalSymlinks
+	oldLstat := osLstat
 	t.Cleanup(func() { filepathEvalSymlinks = old })
+	t.Cleanup(func() { osLstat = oldLstat })
 
 	filepathEvalSymlinks = old
 	if got := tryRealpathAbsolute(link); got == link {
@@ -153,5 +210,38 @@ func TestTryRealpathAbsolute_Branches(t *testing.T) {
 	nonexistent := filepath.Join(root, "does-not-exist")
 	if got := tryRealpathAbsolute(nonexistent); got != nonexistent {
 		t.Fatalf("tryRealpathAbsolute(nonexistent) got %q", got)
+	}
+}
+
+func TestIsUnixSocketPath_Branches(t *testing.T) {
+	tmpDir := t.TempDir()
+	socketPath := filepath.Join(tmpDir, "s.sock")
+	ln, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen unix: %v", err)
+	}
+	defer ln.Close()
+
+	ok, err := isUnixSocketPath(socketPath)
+	if err != nil {
+		t.Fatalf("isUnixSocketPath(socket) error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected socket path to be detected")
+	}
+
+	ok, err = isUnixSocketPath(filepath.Join(tmpDir, "missing.sock"))
+	if err != nil {
+		t.Fatalf("isUnixSocketPath(missing) error: %v", err)
+	}
+	if ok {
+		t.Fatal("missing path should not be detected as socket")
+	}
+
+	old := osLstat
+	t.Cleanup(func() { osLstat = old })
+	osLstat = func(path string) (os.FileInfo, error) { return nil, os.ErrPermission }
+	if _, err := isUnixSocketPath(socketPath); err == nil {
+		t.Fatal("expected lstat permission error to be returned")
 	}
 }
