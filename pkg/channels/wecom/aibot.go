@@ -351,9 +351,9 @@ func (c *WeComAIBotChannel) handleMessageCallback(
 	var encryptedMsg struct {
 		Encrypt string `json:"encrypt"`
 	}
-	if err := json.Unmarshal(body, &encryptedMsg); err != nil {
+	if unmarshalErr := json.Unmarshal(body, &encryptedMsg); unmarshalErr != nil {
 		logger.ErrorCF("wecom_aibot", "Failed to parse JSON body", map[string]any{
-			"error": err,
+			"error": unmarshalErr,
 			"body":  string(body),
 		})
 		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
