@@ -296,7 +296,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 			output = fmt.Sprintf("Scheduled command '%s' executed:\n%s", job.Payload.Command, result.ForLLM)
 		}
 
-		t.msgBus.PublishOutbound(bus.OutboundMessage{
+		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer pubCancel()
+		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 			Channel: channel,
 			ChatID:  chatID,
 			Content: output,
@@ -306,7 +308,9 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 
 	// If deliver=true, send message directly without agent processing
 	if job.Payload.Deliver {
-		t.msgBus.PublishOutbound(bus.OutboundMessage{
+		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer pubCancel()
+		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 			Channel: channel,
 			ChatID:  chatID,
 			Content: job.Payload.Message,
