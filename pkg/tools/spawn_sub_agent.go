@@ -28,7 +28,13 @@ func (t *SpawnSubAgentTool) Name() string {
 }
 
 func (t *SpawnSubAgentTool) Description() string {
-	return "Directly delegate a specific task to a new, isolated sub-agent. You (the main agent) should autonomously determine the appropriate expert role and specific task based on the user's high-level request. It will execute independently and return the final result."
+	base := "Directly delegate a specific task to a new, isolated sub-agent. You (the main agent) should autonomously determine the appropriate expert role and specific task based on the user's high-level request. It will execute independently and return the final result."
+	if t.manager != nil {
+		if hint := t.manager.ModelCapabilityHint(); hint != "" {
+			return base + "\n\n" + hint
+		}
+	}
+	return base
 }
 
 func (t *SpawnSubAgentTool) Parameters() map[string]any {
@@ -89,7 +95,11 @@ func (t *SpawnSubAgentTool) Execute(ctx context.Context, args map[string]any) *T
 
 	// 2.1 Model Override (Heterogeneous Agents)
 	if modelParam, ok := args["model"].(string); ok && strings.TrimSpace(modelParam) != "" {
-		config.Model = strings.TrimSpace(modelParam)
+		requestedModel := strings.TrimSpace(modelParam)
+		if !t.manager.IsModelAllowed(requestedModel) {
+			return ErrorResult(fmt.Sprintf("requested model '%s' is not in the allowed fallback candidates list for this agent workspace", requestedModel)).WithError(fmt.Errorf("model %s not allowed", requestedModel))
+		}
+		config.Model = requestedModel
 	}
 
 	// Note: For MVP, we pass the current ToolRegistry unmodified.

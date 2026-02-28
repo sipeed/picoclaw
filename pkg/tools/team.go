@@ -38,7 +38,13 @@ func (t *TeamTool) Name() string {
 }
 
 func (t *TeamTool) Description() string {
-	return "Compose and execute a team of distinct sub-agents. You (the main agent) should autonomously analyze the user's request, determine the necessary specialized roles, break down the work into sub-tasks, and assign them. Execute sequentially (passing output from one to the next) or concurrently in parallel."
+	base := "Compose and execute a team of distinct sub-agents. You (the main agent) should autonomously analyze the user's request, determine the necessary specialized roles, break down the work into sub-tasks, and assign them. Execute sequentially (passing output from one to the next) or concurrently in parallel."
+	if t.manager != nil {
+		if hint := t.manager.ModelCapabilityHint(); hint != "" {
+			return base + "\n\n" + hint
+		}
+	}
+	return base
 }
 
 func (t *TeamTool) Parameters() map[string]any {
@@ -210,14 +216,17 @@ func upgradeRegistryForConcurrency(original *ToolRegistry) *ToolRegistry {
 
 // buildWorkerConfig creates a ToolLoopConfig for a specific team member,
 // potentially overriding the model based on the member's definition.
-func buildWorkerConfig(baseConfig ToolLoopConfig, registry *ToolRegistry, m TeamMember) ToolLoopConfig {
+func buildWorkerConfig(baseConfig ToolLoopConfig, registry *ToolRegistry, m TeamMember, manager *SubagentManager) (ToolLoopConfig, error) {
 	cfg := baseConfig
 	cfg.Tools = registry
 	// Heterogeneous Agents: Override model if this team member requested a specific one
 	if m.Model != "" {
+		if !manager.IsModelAllowed(m.Model) {
+			return cfg, fmt.Errorf("requested model '%s' is not in the allowed fallback candidates list for this agent workspace", m.Model)
+		}
 		cfg.Model = m.Model
 	}
-	return cfg
+	return cfg, nil
 }
 
 func (t *TeamTool) executeSequential(ctx context.Context, baseConfig ToolLoopConfig, members []TeamMember) *ToolResult {
@@ -238,7 +247,13 @@ func (t *TeamTool) executeSequential(ctx context.Context, baseConfig ToolLoopCon
 			{Role: "user", Content: actualTask},
 		}
 
-		workerConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, m)
+		workerConfig, err := buildWorkerConfig(baseConfig, baseConfig.Tools, m, t.manager)
+		if err != nil {
+			errStr := fmt.Sprintf("Phase %d (Role: %s) configuration failed: %v", i+1, m.Role, err)
+			finalOutput.WriteString(errStr + "\n")
+			return ErrorResult(errStr).WithError(err)
+		}
+
 		loopResult, err := RunToolLoop(ctx, workerConfig, messages, t.originChannel, t.originChatID)
 		if err != nil {
 			errStr := fmt.Sprintf("Phase %d (Role: %s) failed: %v", i+1, m.Role, err)
@@ -278,7 +293,12 @@ func (t *TeamTool) executeParallel(ctx context.Context, baseConfig ToolLoopConfi
 				{Role: "user", Content: member.Task},
 			}
 
-			workerConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, member)
+			workerConfig, err := buildWorkerConfig(baseConfig, baseConfig.Tools, member, t.manager)
+			if err != nil {
+				resultsChan <- workResult{index: index, role: member.Role, err: err}
+				return
+			}
+
 			loopResult, err := RunToolLoop(ctx, workerConfig, messages, t.originChannel, t.originChatID)
 
 			if err != nil {
@@ -344,7 +364,13 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 		finalOutput.WriteString(fmt.Sprintf("## Attempt %d\n", attempt))
 
 		// 2. Trigger Worker (resumes from its exact previous state!)
-		workerConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, worker)
+		workerConfig, err := buildWorkerConfig(baseConfig, baseConfig.Tools, worker, t.manager)
+		if err != nil {
+			errStr := fmt.Sprintf("Worker configuration failed on attempt %d: %v", attempt, err)
+			finalOutput.WriteString(errStr + "\n")
+			return ErrorResult(errStr).WithError(err)
+		}
+
 		workerResult, err := RunToolLoop(ctx, workerConfig, workerMessages, t.originChannel, t.originChatID)
 		if err != nil {
 			errStr := fmt.Sprintf("Worker failed on attempt %d: %v", attempt, err)
@@ -365,7 +391,13 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig Too
 			{Role: "user", Content: evalContext},
 		}
 
-		evalConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, evaluator)
+		evalConfig, err := buildWorkerConfig(baseConfig, baseConfig.Tools, evaluator, t.manager)
+		if err != nil {
+			errStr := fmt.Sprintf("Evaluator configuration failed on attempt %d: %v", attempt, err)
+			finalOutput.WriteString(errStr + "\n")
+			return ErrorResult(errStr).WithError(err)
+		}
+
 		evalResult, err := RunToolLoop(ctx, evalConfig, evalMessages, t.originChannel, t.originChatID)
 		if err != nil {
 			errStr := fmt.Sprintf("Evaluator failed on attempt %d: %v", attempt, err)
@@ -514,7 +546,17 @@ func (t *TeamTool) executeDAG(ctx context.Context, baseConfig ToolLoopConfig, me
 					{Role: "user", Content: actualTask},
 				}
 
-				workerConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, m)
+				workerConfig, err := buildWorkerConfig(baseConfig, baseConfig.Tools, m, t.manager)
+				if err != nil {
+					masterErrMu.Lock()
+					if masterErr == nil {
+						masterErr = err
+					}
+					masterErrMu.Unlock()
+					resultChan <- nodeResult{id: id, err: err}
+					return
+				}
+
 				loopResult, err := RunToolLoop(ctx, workerConfig, messages, t.originChannel, t.originChatID)
 
 				if err != nil {
