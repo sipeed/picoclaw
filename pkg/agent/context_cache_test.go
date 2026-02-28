@@ -420,7 +420,9 @@ description: global-v2
 		t.Fatal(err)
 	}
 	future := time.Now().Add(2 * time.Second)
-	os.Chtimes(globalSkillPath, future, future)
+	if err := os.Chtimes(globalSkillPath, future, future); err != nil {
+		t.Fatalf("failed to update mtime for %s: %v", globalSkillPath, err)
+	}
 
 	cb.systemPromptMutex.RLock()
 	changed := cb.sourceFilesChangedLocked()
@@ -478,7 +480,9 @@ description: builtin-v2
 		t.Fatal(err)
 	}
 	future := time.Now().Add(2 * time.Second)
-	os.Chtimes(builtinSkillPath, future, future)
+	if err := os.Chtimes(builtinSkillPath, future, future); err != nil {
+		t.Fatalf("failed to update mtime for %s: %v", builtinSkillPath, err)
+	}
 
 	cb.systemPromptMutex.RLock()
 	changed := cb.sourceFilesChangedLocked()
@@ -493,6 +497,45 @@ description: builtin-v2
 	}
 	if sp1 == sp2 {
 		t.Error("cache should be invalidated when builtin skill file content changes")
+	}
+}
+
+// TestSkillFileDeletionInvalidatesCache verifies that deleting a nested skill
+// file invalidates the cached system prompt.
+func TestSkillFileDeletionInvalidatesCache(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"skills/delete-me/SKILL.md": `---
+name: delete-me
+description: delete-me-v1
+---
+# Delete Me`,
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	sp1 := cb.BuildSystemPromptWithCache()
+	if !strings.Contains(sp1, "delete-me-v1") {
+		t.Fatal("expected initial prompt to contain skill description")
+	}
+
+	skillPath := filepath.Join(tmpDir, "skills", "delete-me", "SKILL.md")
+	if err := os.Remove(skillPath); err != nil {
+		t.Fatal(err)
+	}
+
+	cb.systemPromptMutex.RLock()
+	changed := cb.sourceFilesChangedLocked()
+	cb.systemPromptMutex.RUnlock()
+	if !changed {
+		t.Fatal("sourceFilesChangedLocked() should detect deleted skill file")
+	}
+
+	sp2 := cb.BuildSystemPromptWithCache()
+	if strings.Contains(sp2, "delete-me-v1") {
+		t.Error("rebuilt prompt should not contain deleted skill description")
+	}
+	if sp1 == sp2 {
+		t.Error("cache should be invalidated when skill file is deleted")
 	}
 }
 

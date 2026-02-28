@@ -72,10 +72,11 @@ func (sl *SkillsLoader) SkillRoots() []string {
 	out := make([]string, 0, len(roots))
 
 	for _, root := range roots {
-		if strings.TrimSpace(root) == "" {
+		trimmed := strings.TrimSpace(root)
+		if trimmed == "" {
 			continue
 		}
-		clean := filepath.Clean(root)
+		clean := filepath.Clean(trimmed)
 		if _, ok := seen[clean]; ok {
 			continue
 		}

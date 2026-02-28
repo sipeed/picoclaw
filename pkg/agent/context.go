@@ -33,6 +33,11 @@ type ContextBuilder struct {
 	// created (didn't exist at cache time, now exist) or deleted (existed at
 	// cache time, now gone) — both of which should trigger a cache rebuild.
 	existedAtCache map[string]bool
+
+	// skillFilesAtCache snapshots the skill tree file set and mtimes at cache
+	// build time. This catches nested file creations/deletions/mtime changes
+	// that may not update the top-level skill root directory mtime.
+	skillFilesAtCache map[string]time.Time
 }
 
 func getGlobalConfigDir() string {
@@ -150,6 +155,7 @@ func (cb *ContextBuilder) BuildSystemPromptWithCache() string {
 	cb.cachedSystemPrompt = prompt
 	cb.cachedAt = baseline.maxMtime
 	cb.existedAtCache = baseline.existed
+	cb.skillFilesAtCache = baseline.skillFiles
 
 	logger.DebugCF("agent", "System prompt cached",
 		map[string]any{
@@ -169,6 +175,7 @@ func (cb *ContextBuilder) InvalidateCache() {
 	cb.cachedSystemPrompt = ""
 	cb.cachedAt = time.Time{}
 	cb.existedAtCache = nil
+	cb.skillFilesAtCache = nil
 
 	logger.DebugCF("agent", "System prompt cache invalidated", nil)
 }
@@ -203,8 +210,9 @@ func (cb *ContextBuilder) skillRoots() []string {
 // cacheBaseline holds the file existence snapshot and the latest observed
 // mtime across all tracked paths. Used as the cache reference point.
 type cacheBaseline struct {
-	existed  map[string]bool
-	maxMtime time.Time
+	existed    map[string]bool
+	skillFiles map[string]time.Time
+	maxMtime   time.Time
 }
 
 // buildCacheBaseline records which tracked paths currently exist and computes
@@ -217,6 +225,7 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 	allPaths := append(cb.sourcePaths(), skillRoots...)
 
 	existed := make(map[string]bool, len(allPaths))
+	skillFiles := make(map[string]time.Time)
 	var maxMtime time.Time
 
 	for _, p := range allPaths {
@@ -227,14 +236,16 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 		}
 	}
 
-	// Walk all skill roots recursively to capture skill file mtimes too.
-	// Use os.Stat (not d.Info) to match the stat method used in
-	// fileChangedSince / skillFilesModifiedSince for consistency.
+	// Walk all skill roots recursively to snapshot skill files and mtimes.
+	// Use os.Stat (not d.Info) for consistency with sourceFilesChanged checks.
 	for _, root := range skillRoots {
 		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 			if walkErr == nil && !d.IsDir() {
-				if info, err := os.Stat(path); err == nil && info.ModTime().After(maxMtime) {
-					maxMtime = info.ModTime()
+				if info, err := os.Stat(path); err == nil {
+					skillFiles[path] = info.ModTime()
+					if info.ModTime().After(maxMtime) {
+						maxMtime = info.ModTime()
+					}
 				}
 			}
 			return nil
@@ -251,7 +262,7 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 		maxMtime = time.Unix(1, 0)
 	}
 
-	return cacheBaseline{existed: existed, maxMtime: maxMtime}
+	return cacheBaseline{existed: existed, skillFiles: skillFiles, maxMtime: maxMtime}
 }
 
 // sourceFilesChangedLocked checks whether any workspace source file has been
@@ -276,15 +287,15 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 	// --- Skill roots (workspace/global/builtin) ---
 	//
 	// For each root:
-	// 1. Creation/deletion and directory mtime changes are tracked by fileChangedSince.
-	// 2. Content-only edits inside the tree are tracked by recursive file mtime checks.
+	// 1. Creation/deletion and root directory mtime changes are tracked by fileChangedSince.
+	// 2. Nested file create/delete/mtime changes are tracked by the skill file snapshot.
 	for _, root := range cb.skillRoots() {
 		if cb.fileChangedSince(root) {
 			return true
 		}
-		if skillFilesModifiedSince(root, cb.cachedAt) {
-			return true
-		}
+	}
+	if skillFilesChangedSince(cb.skillRoots(), cb.skillFilesAtCache) {
+		return true
 	}
 
 	return false
@@ -324,28 +335,64 @@ func (cb *ContextBuilder) fileChangedSince(path string) bool {
 // if the callback returned nil when its err parameter is non-nil.
 var errWalkStop = errors.New("walk stop")
 
-// skillFilesModifiedSince recursively walks the skills directory and checks
-// whether any file was modified after t. This catches content-only edits at
-// any nesting depth (e.g. skills/name/docs/extra.md) that don't update
-// parent directory mtimes.
-func skillFilesModifiedSince(skillsDir string, t time.Time) bool {
-	changed := false
-	err := filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr == nil && !d.IsDir() {
-			if info, statErr := os.Stat(path); statErr == nil && info.ModTime().After(t) {
-				changed = true
-				return errWalkStop // stop walking
-			}
-		}
-		return nil
-	})
-	// errWalkStop is expected (early exit on first changed file).
-	// os.IsNotExist means the skills dir doesn't exist yet — not an error.
-	// Any other error is unexpected and worth logging.
-	if err != nil && !errors.Is(err, errWalkStop) && !os.IsNotExist(err) {
-		logger.DebugCF("agent", "skills walk error", map[string]any{"error": err.Error()})
+// skillFilesChangedSince compares the current recursive skill file tree
+// against the cache-time snapshot. Any create/delete/mtime drift invalidates
+// the cache.
+func skillFilesChangedSince(skillRoots []string, filesAtCache map[string]time.Time) bool {
+	// Defensive: if the snapshot was never initialized, force rebuild.
+	if filesAtCache == nil {
+		return true
 	}
-	return changed
+
+	// Check cached files still exist and keep the same mtime.
+	for path, cachedMtime := range filesAtCache {
+		info, err := os.Stat(path)
+		if err != nil {
+			// A previously tracked file disappeared (or became inaccessible):
+			// either way, cached skill summary may now be stale.
+			return true
+		}
+		if !info.ModTime().Equal(cachedMtime) {
+			return true
+		}
+	}
+
+	// Check no new files appeared under any skill root.
+	changed := false
+	for _, root := range skillRoots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				// Treat unexpected walk errors as changed to avoid stale cache.
+				if !os.IsNotExist(walkErr) {
+					changed = true
+					return errWalkStop
+				}
+				return nil
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if _, ok := filesAtCache[path]; !ok {
+				changed = true
+				return errWalkStop
+			}
+			return nil
+		})
+
+		if changed {
+			return true
+		}
+		if err != nil && !errors.Is(err, errWalkStop) && !os.IsNotExist(err) {
+			logger.DebugCF("agent", "skills walk error", map[string]any{"error": err.Error()})
+			return true
+		}
+	}
+
+	return false
 }
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
