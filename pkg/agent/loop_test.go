@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -562,6 +563,27 @@ func (m *failFirstMockProvider) GetDefaultModel() string {
 	return "mock-fail-model"
 }
 
+type captureSummaryProvider struct {
+	response     string
+	lastMessages []providers.Message
+}
+
+func (m *captureSummaryProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.lastMessages = make([]providers.Message, len(messages))
+	copy(m.lastMessages, messages)
+	return &providers.LLMResponse{Content: m.response}, nil
+}
+
+func (m *captureSummaryProvider) GetDefaultModel() string {
+	return "capture-summary-model"
+}
+
 // TestAgentLoop_ContextExhaustionRetry verify that the agent retries on context errors
 func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
@@ -850,4 +872,174 @@ func TestHandleReasoning(t *testing.T) {
 			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
 		}
 	})
+	t.Run("fallback to default target channel id when disabled", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		cfg := &config.Config{
+			Channels: config.ChannelsConfig{
+				Telegram: config.TelegramConfig{ReasoningChannelID: "rid-telegram"},
+			},
+		}
+
+		chManager, err := channels.NewManager(cfg, bus.NewMessageBus(), nil)
+		if err != nil {
+			t.Fatalf("Failed to create channel manager: %v", err)
+		}
+		chManager.RegisterChannel("telegram", &fakeChannel{id: "rid-telegram"})
+		al.cfg = cfg
+		al.SetChannelManager(chManager)
+
+		al.handleReasoning(context.Background(), "reasoning fallback", "telegram", "rid-telegram")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		msg, ok := msgBus.SubscribeOutbound(ctx)
+		if !ok {
+			t.Fatal("expected outbound message")
+		}
+		if msg.Channel != "telegram" {
+			t.Fatalf("expected telegram channel, got %+v", msg)
+		}
+		if msg.ChatID != "rid-telegram" {
+			t.Fatalf("expected fallback chat id rid-telegram, got %+v", msg)
+		}
+		if msg.Content != "reasoning fallback" {
+			t.Fatalf("content mismatch: got %q", msg.Content)
+		}
+	})
+}
+
+func TestSummarizeBatch_IncludesToolCallsAndToolResults(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-summary-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	provider := &captureSummaryProvider{response: "summary ok"}
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{Workspace: tmpDir, Model: "test-model", MaxTokens: 4096},
+		},
+	}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	batch := []providers.Message{
+		{Role: "user", Content: "Hi, where are we?"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID:       "call_1",
+				Function: &providers.FunctionCall{Name: "list_dir", Arguments: `{"path":"."}`},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_1", Content: "[\"AGENTS.md\",\"README.md\"]"},
+		{Role: "assistant", Content: "You're in the workspace root."},
+	}
+
+	_, err = al.summarizeBatch(context.Background(), agent, batch, "")
+	if err != nil {
+		t.Fatalf("summarizeBatch failed: %v", err)
+	}
+
+	if len(provider.lastMessages) != 1 {
+		t.Fatalf("Expected exactly one summary prompt message, got %d", len(provider.lastMessages))
+	}
+
+	prompt := provider.lastMessages[0].Content
+	if !strings.Contains(prompt, "assistant(tool_call id=call_1 name=list_dir):") {
+		t.Fatalf("Expected tool call serialization in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "tool(call_1): [\"AGENTS.md\",\"README.md\"]") {
+		t.Fatalf("Expected tool result serialization in prompt, got: %s", prompt)
+	}
+}
+
+func TestSummarizeSession_KeepsToolMessagesInSummaryInput(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-summary-session-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	provider := &captureSummaryProvider{response: "session summary ok"}
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{Workspace: tmpDir, Model: "test-model", MaxTokens: 4096},
+		},
+	}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	sessionKey := "summary-session"
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "Hi"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{
+		Role: "assistant",
+		ToolCalls: []providers.ToolCall{{
+			ID:       "call_1",
+			Function: &providers.FunctionCall{Name: "list_dir", Arguments: `{"path":"."}`},
+		}},
+	})
+	agent.Sessions.AddFullMessage(
+		sessionKey,
+		providers.Message{Role: "tool", ToolCallID: "call_1", Content: "[\"a\",\"b\"]"},
+	)
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "assistant", Content: "Done."})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "tail-1"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "assistant", Content: "tail-2"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: "tail-3"})
+	agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "assistant", Content: "tail-4"})
+
+	al.summarizeSession(agent, sessionKey)
+
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("Expected summarizeSession to call provider")
+	}
+	prompt := provider.lastMessages[0].Content
+	if !strings.Contains(prompt, "tool(call_1): [\"a\",\"b\"]") {
+		t.Fatalf("Expected tool message preserved in summary prompt, got: %s", prompt)
+	}
+}
+
+func TestSummarizeBatch_MarksTruncatedToolOutput(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-summary-truncation-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	provider := &captureSummaryProvider{response: "summary ok"}
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{Workspace: tmpDir, Model: "test-model", MaxTokens: 4096},
+		},
+	}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	longToolOutput := strings.Repeat("file.txt\n", 120)
+	batch := []providers.Message{{Role: "tool", ToolCallID: "call_1", Content: longToolOutput}}
+
+	_, err = al.summarizeBatch(context.Background(), agent, batch, "")
+	if err != nil {
+		t.Fatalf("summarizeBatch failed: %v", err)
+	}
+
+	if len(provider.lastMessages) != 1 {
+		t.Fatalf("Expected exactly one summary prompt message, got %d", len(provider.lastMessages))
+	}
+
+	prompt := provider.lastMessages[0].Content
+	if !strings.Contains(prompt, "[TRUNCATED]") {
+		t.Fatalf("Expected truncation marker in prompt, got: %s", prompt)
+	}
 }
