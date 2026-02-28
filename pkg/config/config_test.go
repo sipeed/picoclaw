@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -321,6 +322,25 @@ func TestSaveConfig_FilePermissions(t *testing.T) {
 	perm := info.Mode().Perm()
 	if perm != 0o600 {
 		t.Errorf("config file has permission %04o, want 0600", perm)
+	}
+}
+
+func TestSaveConfig_IncludesEmptyLegacyModelField(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "config.json")
+
+	cfg := DefaultConfig()
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig failed: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+
+	if !strings.Contains(string(data), `"model": ""`) {
+		t.Fatalf("saved config should include empty legacy model field, got: %s", string(data))
 	}
 }
 

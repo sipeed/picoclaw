@@ -255,6 +255,10 @@ func (m *Manager) initChannels() error {
 		m.initChannel("wecom", "WeCom")
 	}
 
+	if m.config.Channels.WeComAIBot.Enabled && m.config.Channels.WeComAIBot.Token != "" {
+		m.initChannel("wecom_aibot", "WeCom AI Bot")
+	}
+
 	if m.config.Channels.WeComApp.Enabled && m.config.Channels.WeComApp.CorpID != "" {
 		m.initChannel("wecom_app", "WeCom App")
 	}
