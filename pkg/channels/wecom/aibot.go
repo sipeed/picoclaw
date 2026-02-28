@@ -242,6 +242,8 @@ func (c *WeComAIBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) e
 					"error":     err,
 					"stream_id": task.StreamID,
 				})
+				c.removeTask(task)
+				return err
 			}
 		} else {
 			logger.WarnCF("wecom_aibot", "Stream closed but no response_url available", map[string]any{
@@ -751,6 +753,8 @@ func (c *WeComAIBotChannel) removeTask(task *streamTask) {
 
 // sendViaResponseURL posts a markdown reply to the WeCom response_url.
 // response_url is valid for 1 hour and can only be used once per callback.
+// Returned errors are wrapped with channels.ErrRateLimit, channels.ErrTemporary,
+// or channels.ErrSendFailed so the manager can apply the right retry policy.
 func (c *WeComAIBotChannel) sendViaResponseURL(responseURL, content string) error {
 	payload := map[string]any{
 		"msgtype": "markdown",
@@ -775,15 +779,26 @@ func (c *WeComAIBotChannel) sendViaResponseURL(responseURL, content string) erro
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to post to response_url: %w", err)
+		return fmt.Errorf("post to response_url failed: %w: %w", channels.ErrTemporary, err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("response_url returned %d: %s", resp.StatusCode, string(respBody))
+	if resp.StatusCode == http.StatusOK {
+		return nil
 	}
-	return nil
+
+	respBody, _ := io.ReadAll(resp.Body)
+	switch {
+	case resp.StatusCode == http.StatusTooManyRequests:
+		return fmt.Errorf("response_url rate limited (%d): %s: %w",
+			resp.StatusCode, respBody, channels.ErrRateLimit)
+	case resp.StatusCode >= 500:
+		return fmt.Errorf("response_url server error (%d): %s: %w",
+			resp.StatusCode, respBody, channels.ErrTemporary)
+	default:
+		return fmt.Errorf("response_url returned %d: %s: %w",
+			resp.StatusCode, respBody, channels.ErrSendFailed)
+	}
 }
 
 // encryptResponse encrypts a streaming response
