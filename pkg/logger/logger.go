@@ -153,7 +153,7 @@ func formatComponent(component string) string {
 }
 
 func formatFields(fields map[string]any) string {
-	var parts []string
+	parts := make([]string, 0, len(fields))
 	for k, v := range fields {
 		parts = append(parts, fmt.Sprintf("%s=%v", k, v))
 	}

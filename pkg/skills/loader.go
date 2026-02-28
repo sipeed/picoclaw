@@ -13,7 +13,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-var namePattern = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
+var (
+	namePattern        = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
+	reFrontmatter      = regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---`)
+	reStripFrontmatter = regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---(?:\r\n|\n|\r)*`)
+)
 
 const (
 	MaxNameLength        = 64
@@ -257,10 +261,7 @@ func (sl *SkillsLoader) parseSimpleYAML(content string) map[string]string {
 
 func (sl *SkillsLoader) extractFrontmatter(content string) string {
 	// Support \n (Unix), \r\n (Windows), and \r (classic Mac) line endings for frontmatter blocks
-	// (?s) enables DOTALL so . matches newlines;
-	// ^--- at start, then ... --- at start of line, honoring all three line ending types
-	re := regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---`)
-	match := re.FindStringSubmatch(content)
+	match := reFrontmatter.FindStringSubmatch(content)
 	if len(match) > 1 {
 		return match[1]
 	}
@@ -268,12 +269,7 @@ func (sl *SkillsLoader) extractFrontmatter(content string) string {
 }
 
 func (sl *SkillsLoader) stripFrontmatter(content string) string {
-	// Support \n (Unix), \r\n (Windows), and \r (classic Mac) line endings for frontmatter blocks
-	// (?s) enables DOTALL so . matches newlines;
-	// ^--- at start, then ... --- at start of line, honoring all three line ending types
-	// Match zero or more trailing line endings after closing --- (handles both with and without blank lines)
-	re := regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---(?:\r\n|\n|\r)*`)
-	return re.ReplaceAllString(content, "")
+	return reStripFrontmatter.ReplaceAllString(content, "")
 }
 
 func escapeXML(s string) string {
