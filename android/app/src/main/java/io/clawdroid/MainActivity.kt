@@ -45,10 +45,10 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val wsClient: WebSocketClient = koinInject()
 
-                // Observe setup_required messages from server
+                // Observe setup_required state from server
                 LaunchedEffect(Unit) {
-                    wsClient.incomingMessages.collect { msg ->
-                        if (msg.type == "setup_required") {
+                    wsClient.setupRequired.collect { required ->
+                        if (required) {
                             val current = navController.currentDestination?.route
                             if (current != NavRoutes.SETUP) {
                                 navController.navigate(NavRoutes.SETUP) {

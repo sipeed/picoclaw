@@ -45,7 +45,7 @@ fun SetupStep2LlmScreen(viewModel: SetupViewModel) {
     ) {
         Spacer(Modifier.height(32.dp))
 
-        Text("Step 2 of 5", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        Text("Step 2 of 4", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
         Text("LLM Settings", style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
         Text(
             "Configure the language model used by the agent.",

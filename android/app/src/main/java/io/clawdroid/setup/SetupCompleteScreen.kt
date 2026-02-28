@@ -37,7 +37,7 @@ fun SetupCompleteScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Step 5 of 5", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        Text("Step 4 of 4", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
 
         Spacer(Modifier.height(16.dp))
 

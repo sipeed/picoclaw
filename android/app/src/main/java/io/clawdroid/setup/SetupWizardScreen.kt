@@ -1,5 +1,6 @@
 package io.clawdroid.setup
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -26,6 +27,15 @@ fun SetupWizardScreen(
     viewModel: SetupViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    // Step 0 (Gateway/auth): suppress back entirely
+    // Step 1+: go to previous step
+    BackHandler(enabled = true) {
+        if (uiState.currentStep > 0) {
+            viewModel.previousStep()
+        }
+        // Step 0: do nothing (suppress back)
+    }
 
     Box(
         modifier = Modifier
@@ -57,7 +67,11 @@ fun SetupWizardScreen(
         AnimatedContent(
             targetState = uiState.currentStep,
             transitionSpec = {
-                slideInHorizontally { it } togetherWith slideOutHorizontally { -it }
+                if (targetState > initialState) {
+                    slideInHorizontally { it } togetherWith slideOutHorizontally { -it }
+                } else {
+                    slideInHorizontally { -it } togetherWith slideOutHorizontally { it }
+                }
             },
             label = "setup_step",
         ) { step ->
@@ -65,8 +79,7 @@ fun SetupWizardScreen(
                 0 -> SetupStep1GatewayScreen(viewModel)
                 1 -> SetupStep2LlmScreen(viewModel)
                 2 -> SetupStep3WorkspaceScreen(viewModel)
-                3 -> SetupStep4ChatScreen(viewModel)
-                4 -> SetupCompleteScreen(viewModel, onSetupComplete)
+                3 -> SetupCompleteScreen(viewModel, onSetupComplete)
             }
         }
     }

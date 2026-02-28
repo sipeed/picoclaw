@@ -34,6 +34,9 @@ class WebSocketClient(
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    private val _setupRequired = MutableStateFlow(false)
+    val setupRequired: StateFlow<Boolean> = _setupRequired.asStateFlow()
+
     private val _incomingMessages = MutableSharedFlow<WsOutgoing>(extraBufferCapacity = 64)
     val incomingMessages: SharedFlow<WsOutgoing> = _incomingMessages.asSharedFlow()
 
@@ -50,6 +53,7 @@ class WebSocketClient(
             while (isActive) {
                 try {
                     _connectionState.value = ConnectionState.CONNECTING
+                    _setupRequired.value = false
                     val currentWsUrl = wsUrl
                     val separator = if ('?' in currentWsUrl) '&' else '?'
                     val url = "${currentWsUrl}${separator}client_id=$clientId&client_type=$clientType"
@@ -62,6 +66,9 @@ class WebSocketClient(
                                 val text = frame.readText()
                                 try {
                                     val msg = json.decodeFromString<WsOutgoing>(text)
+                                    if (msg.type == "setup_required") {
+                                        _setupRequired.value = true
+                                    }
                                     _incomingMessages.emit(msg)
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Failed to parse WebSocket message", e)

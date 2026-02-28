@@ -457,37 +457,13 @@ func gatewayCmd() {
 		return
 	}
 
-	provider, err := providers.CreateProvider(cfg)
-	if err != nil {
-		fmt.Printf("Error creating provider: %v\n", err)
-		os.Exit(1)
-	}
-
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
-
-	// Print agent startup info
-	fmt.Println("\n📦 Agent Status:")
-	startupInfo := agentLoop.GetStartupInfo()
-	toolsInfo := startupInfo["tools"].(map[string]interface{})
-	skillsInfo := startupInfo["skills"].(map[string]interface{})
-	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
-	fmt.Printf("  • Skills: %d/%d available\n",
-		skillsInfo["available"],
-		skillsInfo["total"])
-
-	// Log to file as well
-	logger.InfoCF("agent", "Agent initialized",
-		map[string]interface{}{
-			"tools_count":      toolsInfo["count"],
-			"skills_total":     skillsInfo["total"],
-			"skills_available": skillsInfo["available"],
-		})
 
 	// Restart channel for config-triggered restarts
 	restartCh := make(chan struct{}, 1)
 
-	// Start Gateway HTTP server (Config API)
+	// Start Gateway HTTP server (Config API) first — must be available
+	// even when LLM provider fails, so the user can fix config via API.
 	gwServer := gateway.NewServer(cfg, configPath, func() {
 		select {
 		case restartCh <- struct{}{}:
@@ -500,43 +476,18 @@ func gatewayCmd() {
 	}
 	fmt.Printf("✓ Config API started on 127.0.0.1:%d\n", cfg.Gateway.Port)
 
-	// Setup cron tool and service
-	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.DataPath(), cfg.Agents.Defaults.RestrictToWorkspace, cfg.Tools.Exec.Enabled)
-
-	heartbeatService := heartbeat.NewHeartbeatService(
-		cfg.WorkspacePath(),
-		cfg.DataPath(),
-		cfg.Heartbeat.Interval,
-		cfg.Heartbeat.Enabled,
-		agentLoop.StateManager(),
-	)
-	heartbeatService.SetBus(msgBus)
-	heartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
-		// Use cli:direct as fallback if no valid channel
-		if channel == "" || chatID == "" {
-			channel, chatID = "cli", "direct"
-		}
-		// Use ProcessHeartbeat - no session history, each heartbeat is independent
-		response, err := agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
-		if err != nil {
-			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
-		}
-		if response == "HEARTBEAT_OK" {
-			return tools.SilentResult("Heartbeat OK")
-		}
-		// For heartbeat, always return silent - the subagent result will be
-		// sent to user via processSystemMessage when the async task completes
-		return tools.SilentResult(response)
-	})
-
 	channelManager, err := channels.NewManager(cfg, msgBus, configPath)
 	if err != nil {
 		fmt.Printf("Error creating channel manager: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Inject channel manager into agent loop for command handling
-	agentLoop.SetChannelManager(channelManager)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := channelManager.StartAll(ctx); err != nil {
+		fmt.Printf("Error starting channels: %v\n", err)
+	}
 
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
@@ -545,27 +496,93 @@ func gatewayCmd() {
 		fmt.Println("⚠ Warning: No channels enabled")
 	}
 
+	// Try to create LLM provider — if it fails, run in degraded mode
+	// (Gateway + Channels available, but no AgentLoop).
+	provider, providerErr := providers.CreateProvider(cfg)
+
+	var agentLoop *agent.AgentLoop
+	var cronService *cron.CronService
+	var heartbeatService *heartbeat.HeartbeatService
+
+	if providerErr != nil {
+		fmt.Printf("⚠ LLM provider not available: %v\n", providerErr)
+		fmt.Println("  → Running in degraded mode. Fix LLM settings via Config API, then restart.")
+
+		// Drain inbound messages and reply with an error
+		go func() {
+			for {
+				msg, ok := msgBus.ConsumeInbound(ctx)
+				if !ok {
+					return
+				}
+				msgBus.PublishOutbound(bus.OutboundMessage{
+					Channel: msg.Channel,
+					ChatID:  msg.ChatID,
+					Content: "⚠ LLM is not configured. Please set your model and API key in Settings, then restart the gateway.",
+				})
+			}
+		}()
+	} else {
+		agentLoop = agent.NewAgentLoop(cfg, msgBus, provider)
+
+		// Print agent startup info
+		fmt.Println("\n📦 Agent Status:")
+		startupInfo := agentLoop.GetStartupInfo()
+		toolsInfo := startupInfo["tools"].(map[string]interface{})
+		skillsInfo := startupInfo["skills"].(map[string]interface{})
+		fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
+		fmt.Printf("  • Skills: %d/%d available\n",
+			skillsInfo["available"],
+			skillsInfo["total"])
+
+		logger.InfoCF("agent", "Agent initialized",
+			map[string]interface{}{
+				"tools_count":      toolsInfo["count"],
+				"skills_total":     skillsInfo["total"],
+				"skills_available": skillsInfo["available"],
+			})
+
+		agentLoop.SetChannelManager(channelManager)
+
+		cronService = setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.DataPath(), cfg.Agents.Defaults.RestrictToWorkspace, cfg.Tools.Exec.Enabled)
+
+		heartbeatService = heartbeat.NewHeartbeatService(
+			cfg.WorkspacePath(),
+			cfg.DataPath(),
+			cfg.Heartbeat.Interval,
+			cfg.Heartbeat.Enabled,
+			agentLoop.StateManager(),
+		)
+		heartbeatService.SetBus(msgBus)
+		heartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
+			if channel == "" || chatID == "" {
+				channel, chatID = "cli", "direct"
+			}
+			response, err := agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
+			if err != nil {
+				return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
+			}
+			if response == "HEARTBEAT_OK" {
+				return tools.SilentResult("Heartbeat OK")
+			}
+			return tools.SilentResult(response)
+		})
+
+		if err := cronService.Start(); err != nil {
+			fmt.Printf("Error starting cron service: %v\n", err)
+		}
+		fmt.Println("✓ Cron service started")
+
+		if err := heartbeatService.Start(); err != nil {
+			fmt.Printf("Error starting heartbeat service: %v\n", err)
+		}
+		fmt.Println("✓ Heartbeat service started")
+
+		go agentLoop.Run(ctx)
+	}
+
 	fmt.Printf("✓ Gateway started on 127.0.0.1:%d\n", cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := cronService.Start(); err != nil {
-		fmt.Printf("Error starting cron service: %v\n", err)
-	}
-	fmt.Println("✓ Cron service started")
-
-	if err := heartbeatService.Start(); err != nil {
-		fmt.Printf("Error starting heartbeat service: %v\n", err)
-	}
-	fmt.Println("✓ Heartbeat service started")
-
-	if err := channelManager.StartAll(ctx); err != nil {
-		fmt.Printf("Error starting channels: %v\n", err)
-	}
-
-	go agentLoop.Run(ctx)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
@@ -584,9 +601,15 @@ func gatewayCmd() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	gwServer.Stop(shutdownCtx)
-	heartbeatService.Stop()
-	cronService.Stop()
-	agentLoop.Stop()
+	if heartbeatService != nil {
+		heartbeatService.Stop()
+	}
+	if cronService != nil {
+		cronService.Stop()
+	}
+	if agentLoop != nil {
+		agentLoop.Stop()
+	}
 	channelManager.StopAll(shutdownCtx)
 	fmt.Println("✓ Gateway stopped")
 
