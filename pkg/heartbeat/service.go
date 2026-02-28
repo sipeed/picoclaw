@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -308,8 +309,11 @@ Add your heartbeat tasks below this line:
 	}
 }
 
-// sendResponse sends the heartbeat response to the last channel
+// sendResponse sends the heartbeat response to the last channel.
+// Think blocks are stripped as a safety net to prevent LLM reasoning
+// artifacts from leaking into user-facing messages.
 func (hs *HeartbeatService) sendResponse(response string) {
+	response = utils.StripThinkBlocks(response)
 	hs.mu.RLock()
 	msgBus := hs.bus
 	hs.mu.RUnlock()
