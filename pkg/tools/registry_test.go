@@ -337,6 +337,78 @@ func TestToolRegistry_Count(t *testing.T) {
 	}
 }
 
+func TestBuildParamHint(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema map[string]any
+		want   string
+	}{
+		{
+			name: "required and optional",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"task":  map[string]any{"type": "string"},
+					"label": map[string]any{"type": "string"},
+				},
+				"required": []string{"task"},
+			},
+			want: "(task, label?)",
+		},
+		{
+			name: "all required",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command": map[string]any{"type": "string"},
+				},
+				"required": []string{"command"},
+			},
+			want: "(command)",
+		},
+		{
+			name: "no properties",
+			schema: map[string]any{
+				"type": "object",
+			},
+			want: "",
+		},
+		{
+			name:   "empty schema",
+			schema: map[string]any{},
+			want:   "",
+		},
+		{
+			name:   "nil schema",
+			schema: nil,
+			want:   "",
+		},
+		{
+			name: "multiple optional sorted",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"task":     map[string]any{"type": "string"},
+					"preset":   map[string]any{"type": "string"},
+					"label":    map[string]any{"type": "string"},
+					"agent_id": map[string]any{"type": "string"},
+				},
+				"required": []string{"task"},
+			},
+			want: "(task, agent_id?, label?, preset?)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildParamHint(tt.schema)
+			if got != tt.want {
+				t.Errorf("buildParamHint() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestToolRegistry_GetSummaries(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(newMockTool("read_file", "Reads a file"))
@@ -350,6 +422,32 @@ func TestToolRegistry_GetSummaries(t *testing.T) {
 	}
 	if !strings.Contains(summaries[0], "Reads a file") {
 		t.Errorf("expected description in summary, got %q", summaries[0])
+	}
+}
+
+func TestToolRegistry_GetSummaries_WithParamHint(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockRegistryTool{
+		name: "spawn",
+		desc: "Spawn a subagent",
+		params: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"task":   map[string]any{"type": "string"},
+				"preset": map[string]any{"type": "string"},
+			},
+			"required": []string{"task"},
+		},
+		result: SilentResult("ok"),
+	})
+
+	summaries := r.GetSummaries()
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	// Should contain param hint
+	if !strings.Contains(summaries[0], "(task, preset?)") {
+		t.Errorf("expected param hint in summary, got %q", summaries[0])
 	}
 }
 

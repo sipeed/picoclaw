@@ -17,14 +17,14 @@ type reporterSpy struct {
 }
 
 type spyCall struct {
-	state string
+	state orch.AgentState
 	tool  string
 }
 
 func (r *reporterSpy) ReportSpawn(id, label, task string)       {}
 func (r *reporterSpy) ReportConversation(from, to, text string) {}
 func (r *reporterSpy) ReportGC(id, reason string)               {}
-func (r *reporterSpy) ReportStateChange(id, state, tool string) {
+func (r *reporterSpy) ReportStateChange(id string, state orch.AgentState, tool string) {
 	r.mu.Lock()
 	r.calls = append(r.calls, spyCall{state, tool})
 	r.mu.Unlock()
@@ -117,7 +117,7 @@ func TestToolLoop_Reporter_WaitingBeforeLLM(t *testing.T) {
 	if len(calls) == 0 {
 		t.Fatal("expected at least one ReportStateChange call")
 	}
-	if calls[0].state != "waiting" {
+	if calls[0].state != orch.AgentStateWaiting {
 		t.Fatalf("first call must be state=waiting, got %+v", calls[0])
 	}
 }
@@ -152,14 +152,59 @@ func TestToolLoop_Reporter_ToolcallOrderedAfterWaiting(t *testing.T) {
 	if len(calls) < 3 {
 		t.Fatalf("expected at least 3 calls, got %d: %+v", len(calls), calls)
 	}
-	if calls[0].state != "waiting" {
+	if calls[0].state != orch.AgentStateWaiting {
 		t.Fatalf("calls[0] must be waiting, got %+v", calls[0])
 	}
-	if calls[1].state != "toolcall" || calls[1].tool != "echo_tool" {
+	if calls[1].state != orch.AgentStateToolCall || calls[1].tool != "echo_tool" {
 		t.Fatalf("calls[1] must be toolcall(echo_tool), got %+v", calls[1])
 	}
-	if calls[2].state != "waiting" {
+	if calls[2].state != orch.AgentStateWaiting {
 		t.Fatalf("calls[2] must be waiting (2nd LLM iteration), got %+v", calls[2])
+	}
+}
+
+// TestToolLoop_ToolCallStats verifies that ToolLoopResult.ToolCalls and
+// ToolStats are populated correctly after a tool call iteration.
+func TestToolLoop_ToolCallStats(t *testing.T) {
+	reg := NewToolRegistry()
+	reg.Register(&echoTool{})
+
+	result, err := RunToolLoop(context.Background(), ToolLoopConfig{
+		Provider:      &sequenceMockProvider{},
+		Model:         "test",
+		Tools:         reg,
+		MaxIterations: 5,
+	}, []providers.Message{{Role: "user", Content: "do it"}}, "cli", "direct")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ToolCalls != 1 {
+		t.Errorf("ToolCalls = %d, want 1", result.ToolCalls)
+	}
+	if result.ToolStats["echo_tool"] != 1 {
+		t.Errorf("ToolStats[echo_tool] = %d, want 1", result.ToolStats["echo_tool"])
+	}
+	if result.Iterations != 2 {
+		t.Errorf("Iterations = %d, want 2", result.Iterations)
+	}
+}
+
+// TestToolLoop_NoToolCalls_ZeroStats verifies that a direct answer (no tool
+// calls) produces zero ToolCalls and an empty ToolStats map.
+func TestToolLoop_NoToolCalls_ZeroStats(t *testing.T) {
+	result, err := RunToolLoop(context.Background(), ToolLoopConfig{
+		Provider:      &MockLLMProvider{},
+		Model:         "test",
+		MaxIterations: 1,
+	}, []providers.Message{{Role: "user", Content: "hi"}}, "cli", "direct")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ToolCalls != 0 {
+		t.Errorf("ToolCalls = %d, want 0", result.ToolCalls)
+	}
+	if len(result.ToolStats) != 0 {
+		t.Errorf("ToolStats = %v, want empty", result.ToolStats)
 	}
 }
 
