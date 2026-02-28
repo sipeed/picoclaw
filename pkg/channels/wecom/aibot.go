@@ -93,21 +93,24 @@ type WeComAIBotMessage struct {
 	} `json:"event,omitempty"`
 }
 
+// WeComAIBotStreamInfo represents the detailed stream content in streaming responses
+type WeComAIBotStreamInfo struct {
+	ID      string `json:"id"`
+	Finish  bool   `json:"finish"`
+	Content string `json:"content,omitempty"`
+	MsgItem []struct {
+		MsgType string `json:"msgtype"`
+		Image   *struct {
+			Base64 string `json:"base64"`
+			MD5    string `json:"md5"`
+		} `json:"image,omitempty"`
+	} `json:"msg_item,omitempty"`
+}
+
 // WeComAIBotStreamResponse represents the streaming response format
 type WeComAIBotStreamResponse struct {
-	MsgType string `json:"msgtype"`
-	Stream  struct {
-		ID      string `json:"id"`
-		Finish  bool   `json:"finish"`
-		Content string `json:"content,omitempty"`
-		MsgItem []struct {
-			MsgType string `json:"msgtype"`
-			Image   *struct {
-				Base64 string `json:"base64"`
-				MD5    string `json:"md5"`
-			} `json:"image,omitempty"`
-		} `json:"msg_item,omitempty"`
-	} `json:"stream"`
+	MsgType string              `json:"msgtype"`
+	Stream  WeComAIBotStreamInfo `json:"stream"`
 }
 
 // WeComAIBotEncryptedResponse represents the encrypted response wrapper
