@@ -434,8 +434,10 @@ func (t *SubagentTool) SetContext(channel, chatID string) {
 func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok {
-		return ErrorResult(`Required parameter "task" (string) is missing. Example: {"task": "describe what you need done"}`).
-			WithError(fmt.Errorf("task parameter is required"))
+		return ErrorResult(
+			`Required parameter "task" (string) is missing. ` +
+				`Example: {"task": "describe what you need done"}`,
+		).WithError(fmt.Errorf("task parameter is required"))
 	}
 
 	label, _ := args["label"].(string)

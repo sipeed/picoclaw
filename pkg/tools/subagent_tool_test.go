@@ -365,7 +365,11 @@ func TestFormatToolStats(t *testing.T) {
 	}{
 		{"empty", map[string]int{}, ""},
 		{"single", map[string]int{"exec": 3}, "exec:3"},
-		{"multiple sorted", map[string]int{"read_file": 5, "exec": 3, "write_file": 1}, "exec:3,read_file:5,write_file:1"},
+		{
+			"multiple sorted",
+			map[string]int{"read_file": 5, "exec": 3, "write_file": 1},
+			"exec:3,read_file:5,write_file:1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

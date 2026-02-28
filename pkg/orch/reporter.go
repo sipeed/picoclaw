@@ -11,10 +11,10 @@ type AgentReporter interface {
 
 type noopReporter struct{}
 
-func (n *noopReporter) ReportSpawn(id, label, task string)                        {}
+func (n *noopReporter) ReportSpawn(id, label, task string)                         {}
 func (n *noopReporter) ReportStateChange(id string, state AgentState, tool string) {}
-func (n *noopReporter) ReportConversation(from, to, text string)                  {}
-func (n *noopReporter) ReportGC(id, reason string)                                {}
+func (n *noopReporter) ReportConversation(from, to, text string)                   {}
+func (n *noopReporter) ReportGC(id, reason string)                                 {}
 
 // Noop is the AgentReporter to use when orchestration is disabled.
 // Allows nil-free code in callers.

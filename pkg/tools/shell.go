@@ -903,7 +903,11 @@ func checkCurlLocalNet(command string) string {
 		}
 		host := u.Hostname()
 		if !isLocalHost(host) {
-			return fmt.Sprintf("Command blocked by safety guard (curl/wget is restricted to localhost and private network; %q is a public address)", host)
+			return fmt.Sprintf(
+				"Command blocked by safety guard "+
+					"(curl/wget is restricted to localhost and private network; %q is a public address)",
+				host,
+			)
 		}
 	}
 	return ""
