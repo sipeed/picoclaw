@@ -127,7 +127,7 @@
       "reasoning_channel_id": ""
     },
     "wecom": {
-      "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
+      "_comment": "WeCom Bot - Easier setup, supports group chats",
       "enabled": false,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
@@ -149,6 +149,17 @@
       "allow_from": [],
       "reply_timeout": 5,
       "reasoning_channel_id": ""
+    },
+    "wecom_aibot": {
+      "_comment": "WeCom AI Bot (智能机器人) - Official WeCom AI Bot integration, supports proactive messaging and private chats.",
+      "enabled": false,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
+      "webhook_path": "/webhook/wecom-aibot",
+      "max_steps": 10,
+      "welcome_message": "Hello! I'm your AI assistant. How can I help you today?"
     }
   },
   "providers": {
