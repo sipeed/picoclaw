@@ -9,12 +9,12 @@ import (
 
 // SchemaField describes a single configuration field.
 type SchemaField struct {
-	Key      string      `json:"key"`
-	Label    string      `json:"label"`
-	Group    string      `json:"group,omitempty"`
-	Type     string      `json:"type"`
-	Secret   bool        `json:"secret"`
-	Default  interface{} `json:"default"`
+	Key     string      `json:"key"`
+	Label   string      `json:"label"`
+	Group   string      `json:"group,omitempty"`
+	Type    string      `json:"type"`
+	Secret  bool        `json:"secret"`
+	Default interface{} `json:"default"`
 }
 
 // SchemaSection describes a top-level configuration section.

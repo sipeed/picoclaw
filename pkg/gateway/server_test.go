@@ -198,10 +198,10 @@ func TestBuildSchema_Labels(t *testing.T) {
 	schema := BuildSchema(config.DefaultConfig())
 
 	wantLabels := map[string]string{
-		"api_key":              "API Key",
-		"base_url":             "Base URL",
-		"defaults.max_tokens":  "Max Tokens",
-		"slack.bot_token":      "Bot Token",
+		"api_key":             "API Key",
+		"base_url":            "Base URL",
+		"defaults.max_tokens": "Max Tokens",
+		"slack.bot_token":     "Bot Token",
 	}
 
 	for _, sec := range schema.Sections {
@@ -338,7 +338,7 @@ func TestBuildSchema_DefaultValues(t *testing.T) {
 		key     string
 		want    interface{}
 	}{
-		{"agents", "defaults.max_tokens", float64(8192)},        // JSON numbers → float64
+		{"agents", "defaults.max_tokens", float64(8192)}, // JSON numbers → float64
 		{"agents", "defaults.context_window", float64(128000)},
 		{"agents", "defaults.restrict_to_workspace", true},
 		{"heartbeat", "enabled", true},
@@ -2331,7 +2331,6 @@ func TestBuildSchema_GatewaySectionExcluded(t *testing.T) {
 		}
 	}
 }
-
 
 // --- #34: goTypeToSchema unknown type ---
 
