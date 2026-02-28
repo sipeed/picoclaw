@@ -10,18 +10,15 @@ import (
 	"time"
 )
 
-
 func (h *Handler) apiSkills(w http.ResponseWriter, r *http.Request) {
 	skillsList := h.provider.ListSkills()
 	writeJSON(w, skillsList)
 }
 
-
 func (h *Handler) apiPlan(w http.ResponseWriter, r *http.Request) {
 	info := h.provider.GetPlanInfo()
 	writeJSON(w, info)
 }
-
 
 func (h *Handler) apiSessions(w http.ResponseWriter, r *http.Request) {
 	sessions := h.provider.GetActiveSessions()
@@ -30,7 +27,6 @@ func (h *Handler) apiSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, sessions)
 }
-
 
 func (h *Handler) apiSession(w http.ResponseWriter, r *http.Request) {
 	s := h.provider.GetSessionStats()
@@ -41,16 +37,13 @@ func (h *Handler) apiSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s)
 }
 
-
 func (h *Handler) apiContext(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, h.provider.GetContextInfo())
 }
 
-
 func (h *Handler) apiPrompt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"prompt": h.provider.GetSystemPrompt()})
 }
-
 
 func (h *Handler) apiGit(w http.ResponseWriter, r *http.Request) {
 	repo := r.URL.Query().Get("repo")
@@ -60,7 +53,6 @@ func (h *Handler) apiGit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, h.provider.GetGitRepoDetail(repo))
 	}
 }
-
 
 func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -98,7 +90,6 @@ func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
 	h.sender.SendCommand(userID, chatID, req.Command)
 	writeJSON(w, map[string]string{"status": "ok"})
 }
-
 
 func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
@@ -143,11 +134,16 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 			sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 			sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
 			sendSSEIfChanged(w, flusher, "context", h.provider.GetContextInfo(), &lastContext)
-			sendSSEIfChanged(w, flusher, "prompt", map[string]string{"prompt": h.provider.GetSystemPrompt()}, &lastPrompt)
+			sendSSEIfChanged(
+				w,
+				flusher,
+				"prompt",
+				map[string]string{"prompt": h.provider.GetSystemPrompt()},
+				&lastPrompt,
+			)
 		}
 	}
 }
-
 
 func sendSSEIfChanged(w http.ResponseWriter, f http.Flusher, event string, v any, last *[]byte) {
 	data, _ := json.Marshal(v)
@@ -158,11 +154,9 @@ func sendSSEIfChanged(w http.ResponseWriter, f http.Flusher, event string, v any
 	}
 }
 
-
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
 }
 
 // apiDevConsole receives console output from dev preview iframes.
-

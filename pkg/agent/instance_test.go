@@ -94,7 +94,7 @@ func TestNewAgentInstance_DefaultsTemperatureWhenUnset(t *testing.T) {
 	}
 }
 
-func TestNewAgentInstance_PlanModel_SetFromDefaults(t *testing.T) {
+func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -104,13 +104,15 @@ func TestNewAgentInstance_PlanModel_SetFromDefaults(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:          tmpDir,
-				Provider:           "zhipu",
-				Model:              "glm-4.7",
-				PlanModel:          "anthropic/claude-sonnet-4-6",
-				PlanModelFallbacks: []string{"openai/gpt-4o"},
-				MaxTokens:          8192,
-				MaxToolIterations:  20,
+				Workspace: tmpDir,
+				Model:     "step-3.5-flash",
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "step-3.5-flash",
+				Model:     "openrouter/stepfun/step-3.5-flash:free",
+				APIBase:   "https://openrouter.ai/api/v1",
 			},
 		},
 	}
@@ -118,21 +120,18 @@ func TestNewAgentInstance_PlanModel_SetFromDefaults(t *testing.T) {
 	provider := &mockProvider{}
 	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
 
-	if agent.PlanModel != "anthropic/claude-sonnet-4-6" {
-		t.Errorf("PlanModel = %q, want 'anthropic/claude-sonnet-4-6'", agent.PlanModel)
+	if len(agent.Candidates) != 1 {
+		t.Fatalf("len(Candidates) = %d, want 1", len(agent.Candidates))
 	}
-	if len(agent.PlanFallbacks) != 1 || agent.PlanFallbacks[0] != "openai/gpt-4o" {
-		t.Errorf("PlanFallbacks = %v, want [openai/gpt-4o]", agent.PlanFallbacks)
+	if agent.Candidates[0].Provider != "openrouter" {
+		t.Fatalf("candidate provider = %q, want %q", agent.Candidates[0].Provider, "openrouter")
 	}
-	if len(agent.PlanCandidates) == 0 {
-		t.Fatal("PlanCandidates should not be empty when plan_model is set")
-	}
-	if agent.PlanCandidates[0].Model != "claude-sonnet-4-6" {
-		t.Errorf("PlanCandidates[0].Model = %q, want 'claude-sonnet-4-6'", agent.PlanCandidates[0].Model)
+	if agent.Candidates[0].Model != "stepfun/step-3.5-flash:free" {
+		t.Fatalf("candidate model = %q, want %q", agent.Candidates[0].Model, "stepfun/step-3.5-flash:free")
 	}
 }
 
-func TestNewAgentInstance_PlanModel_NilWhenUnset(t *testing.T) {
+func TestNewAgentInstance_ResolveCandidatesFromModelListAliasWithoutProtocol(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -142,10 +141,15 @@ func TestNewAgentInstance_PlanModel_NilWhenUnset(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         1234,
-				MaxToolIterations: 5,
+				Workspace: tmpDir,
+				Model:     "glm-5",
+			},
+		},
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "glm-5",
+				Model:     "glm-5",
+				APIBase:   "https://api.z.ai/api/coding/paas/v4",
 			},
 		},
 	}
@@ -153,50 +157,13 @@ func TestNewAgentInstance_PlanModel_NilWhenUnset(t *testing.T) {
 	provider := &mockProvider{}
 	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
 
-	if agent.PlanModel != "" {
-		t.Errorf("PlanModel = %q, want empty", agent.PlanModel)
+	if len(agent.Candidates) != 1 {
+		t.Fatalf("len(Candidates) = %d, want 1", len(agent.Candidates))
 	}
-	if agent.PlanCandidates != nil {
-		t.Errorf("PlanCandidates = %v, want nil", agent.PlanCandidates)
+	if agent.Candidates[0].Provider != "openai" {
+		t.Fatalf("candidate provider = %q, want %q", agent.Candidates[0].Provider, "openai")
 	}
-}
-
-func TestNewAgentInstance_PlanModel_AgentOverridesDefaults(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:          tmpDir,
-				Provider:           "zhipu",
-				Model:              "glm-4.7",
-				PlanModel:          "default-plan-model",
-				PlanModelFallbacks: []string{"default-fallback"},
-				MaxTokens:          8192,
-				MaxToolIterations:  20,
-			},
-		},
-	}
-
-	agentCfg := &config.AgentConfig{
-		ID: "custom",
-		PlanModel: &config.AgentModelConfig{
-			Primary:   "agent-plan-model",
-			Fallbacks: []string{"agent-fallback"},
-		},
-	}
-
-	provider := &mockProvider{}
-	agent := NewAgentInstance(agentCfg, &cfg.Agents.Defaults, cfg, provider)
-
-	if agent.PlanModel != "agent-plan-model" {
-		t.Errorf("PlanModel = %q, want 'agent-plan-model'", agent.PlanModel)
-	}
-	if len(agent.PlanFallbacks) != 1 || agent.PlanFallbacks[0] != "agent-fallback" {
-		t.Errorf("PlanFallbacks = %v, want [agent-fallback]", agent.PlanFallbacks)
+	if agent.Candidates[0].Model != "glm-5" {
+		t.Fatalf("candidate model = %q, want %q", agent.Candidates[0].Model, "glm-5")
 	}
 }

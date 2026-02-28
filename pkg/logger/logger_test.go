@@ -294,10 +294,10 @@ func TestUnsubscribe_ClosesChannel(t *testing.T) {
 
 func TestSanitizeFields(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    map[string]any
-		maskedK  []string // keys that should be "***"
-		safeK    []string // keys that should keep original value
+		name    string
+		input   map[string]any
+		maskedK []string // keys that should be "***"
+		safeK   []string // keys that should keep original value
 	}{
 		{
 			name:    "nil fields",
@@ -310,23 +310,41 @@ func TestSanitizeFields(t *testing.T) {
 			maskedK: nil,
 		},
 		{
-			name:    "sensitive keys masked",
-			input:   map[string]any{"token": "abc123", "api_key": "sk-xxx", "secret": "s3cr3t", "password": "pass", "authorization": "Bearer tok"},
+			name: "sensitive keys masked",
+			input: map[string]any{
+				"token":         "abc123",
+				"api_key":       "sk-xxx",
+				"secret":        "s3cr3t",
+				"password":      "pass",
+				"authorization": "Bearer tok",
+			},
 			maskedK: []string{"token", "api_key", "secret", "password", "authorization"},
 		},
 		{
-			name:    "case insensitive",
-			input:   map[string]any{"Token": "abc", "API_KEY": "xyz", "Secret": "s", "PASSWORD": "p", "Authorization": "a", "Credential": "c"},
+			name: "case insensitive",
+			input: map[string]any{
+				"Token":         "abc",
+				"API_KEY":       "xyz",
+				"Secret":        "s",
+				"PASSWORD":      "p",
+				"Authorization": "a",
+				"Credential":    "c",
+			},
 			maskedK: []string{"Token", "API_KEY", "Secret", "PASSWORD", "Authorization", "Credential"},
 		},
 		{
-			name:    "safe keys preserved",
-			input:   map[string]any{"error": "something failed", "count": 42, "user_id": "12345", "component": "test"},
-			safeK:   []string{"error", "count", "user_id", "component"},
+			name:  "safe keys preserved",
+			input: map[string]any{"error": "something failed", "count": 42, "user_id": "12345", "component": "test"},
+			safeK: []string{"error", "count", "user_id", "component"},
 		},
 		{
-			name:    "mixed keys",
-			input:   map[string]any{"token": "sensitive", "msg_signature": "safe", "corp_secret": "sensitive2", "nonce": "safe2"},
+			name: "mixed keys",
+			input: map[string]any{
+				"token":         "sensitive",
+				"msg_signature": "safe",
+				"corp_secret":   "sensitive2",
+				"nonce":         "safe2",
+			},
 			maskedK: []string{"token", "corp_secret"},
 			safeK:   []string{"msg_signature", "nonce"},
 		},
@@ -363,9 +381,9 @@ func TestRecentLogsSanitizesFields(t *testing.T) {
 	SetLevel(DEBUG)
 
 	InfoCF("sanitize-test", "log with sensitive fields", map[string]any{
-		"token":    "my-secret-token",
-		"api_key":  "sk-12345",
-		"user_id":  "safe-value",
+		"token":   "my-secret-token",
+		"api_key": "sk-12345",
+		"user_id": "safe-value",
 	})
 
 	got := RecentLogs(DEBUG, "sanitize-test", 100)

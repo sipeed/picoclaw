@@ -14,7 +14,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-
 // apiLogsSnapshot creates a tar.gz snapshot of the current log buffer.
 func (h *Handler) apiLogsSnapshot(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -86,7 +85,6 @@ func (h *Handler) apiLogsSnapshot(w http.ResponseWriter, r *http.Request) {
 
 // apiLogsSnapshotDownload serves a snapshot tar.gz file.
 
-
 // apiLogsSnapshotDownload serves a snapshot tar.gz file.
 func (h *Handler) apiLogsSnapshotDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -117,7 +115,6 @@ func (h *Handler) apiLogsSnapshotDownload(w http.ResponseWriter, r *http.Request
 
 // cleanOldSnapshots removes snapshot files older than maxAge.
 
-
 // cleanOldSnapshots removes snapshot files older than maxAge.
 func cleanOldSnapshots(dir string, maxAge time.Duration) {
 	entries, err := os.ReadDir(dir)
@@ -140,4 +137,3 @@ func cleanOldSnapshots(dir string, maxAge time.Duration) {
 }
 
 // initDataMaxAge is the maximum age of initData before it is considered expired.
-

@@ -8,6 +8,7 @@ package providers
 
 import (
 	"context"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
 )
@@ -23,18 +24,37 @@ func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
 }
 
 func NewHTTPProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *HTTPProvider {
+	return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(apiKey, apiBase, proxy, maxTokensField, 0)
+}
+
+func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+	apiKey, apiBase, proxy, maxTokensField string,
+	requestTimeoutSeconds int,
+) *HTTPProvider {
 	return &HTTPProvider{
-		delegate: openai_compat.NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField),
+		delegate: openai_compat.NewProvider(
+			apiKey,
+			apiBase,
+			proxy,
+			openai_compat.WithMaxTokensField(maxTokensField),
+			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+		),
 	}
 }
 
-func NewHTTPProviderWithOptions(apiKey, apiBase, proxy string, opts openai_compat.Options) *HTTPProvider {
+func NewHTTPProviderWithOptions(apiKey, apiBase, proxy string, opts ...openai_compat.Option) *HTTPProvider {
 	return &HTTPProvider{
-		delegate: openai_compat.NewProviderWithOptions(apiKey, apiBase, proxy, opts),
+		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy, opts...),
 	}
 }
 
-func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *HTTPProvider) Chat(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
 	resp, err := p.delegate.Chat(ctx, messages, tools, model, options)
 	if err != nil {
 		return nil, err

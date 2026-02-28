@@ -65,7 +65,7 @@ func (m *mockDevTargetManager) GetDevTarget() string {
 }
 
 func (m *mockDevTargetManager) ListDevTargets() []miniapp.DevTarget {
-	var out []miniapp.DevTarget
+	out := make([]miniapp.DevTarget, 0, len(m.targets))
 	for _, dt := range m.targets {
 		out = append(out, *dt)
 	}
@@ -202,8 +202,8 @@ func TestDevPreviewTool_UnregisterNotFound(t *testing.T) {
 	tool := NewDevPreviewTool(mgr)
 
 	result := tool.Execute(context.Background(), map[string]any{
-		"action":  "unregister",
-		"id":      "999",
+		"action": "unregister",
+		"id":     "999",
 	})
 
 	if !result.IsError {
@@ -421,7 +421,7 @@ func TestDevPreviewTool_InferName(t *testing.T) {
 		{"http://127.0.0.1:9000", "127.0.0.1:9000"},
 		{"http://localhost", "localhost"},
 		{"http://[::1]:5000", "::1:5000"},
-		{"not-a-url", ""},          // url.Parse succeeds but Hostname() is empty
+		{"not-a-url", ""}, // url.Parse succeeds but Hostname() is empty
 	}
 	for _, tc := range cases {
 		got := inferName(tc.target)

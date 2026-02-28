@@ -40,7 +40,14 @@ type Handler struct {
 }
 
 // NewHandler creates a new Mini App handler.
-func NewHandler(provider DataProvider, sender CommandSender, botToken string, notifier *StateNotifier, allowList []string, workspace string) *Handler {
+func NewHandler(
+	provider DataProvider,
+	sender CommandSender,
+	botToken string,
+	notifier *StateNotifier,
+	allowList []string,
+	workspace string,
+) *Handler {
 	return &Handler{
 		provider:   provider,
 		sender:     sender,

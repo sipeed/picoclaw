@@ -17,7 +17,10 @@ func TestSanitizeBranchName(t *testing.T) {
 		{"  spaces  ", "plan/spaces"},
 		{"UPPER-case_Mix", "plan/upper-case-mix"},
 		{"a/b/c", "plan/a-b-c"},
-		{"very long task name that exceeds the forty character limit for safety", "plan/very-long-task-name-that-exceeds-the-for"},
+		{
+			"very long task name that exceeds the forty character limit for safety",
+			"plan/very-long-task-name-that-exceeds-the-for",
+		},
 		{"---leading-trailing---", "plan/leading-trailing"},
 		{"special!@#$%chars", "plan/special-chars"},
 	}

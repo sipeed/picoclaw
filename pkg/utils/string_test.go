@@ -59,7 +59,7 @@ func TestStripThinkBlocks_ClosedThenUnclosed(t *testing.T) {
 
 func TestDetectRepetitionLoop_HighRepetition(t *testing.T) {
 	// Repeat a short phrase many times → should be detected
-	phrase := "結構本格的なコード"
+	phrase := "結構本格的なコード" //nolint:gosmopolitan // CJK test data
 	repeated := strings.Repeat(phrase, 300)
 	if !DetectRepetitionLoop(repeated) {
 		t.Fatal("DetectRepetitionLoop should return true for highly repetitive text")
@@ -285,6 +285,30 @@ func TestTruncate(t *testing.T) {
 			got := Truncate(tt.input, tt.maxLen)
 			if got != tt.want {
 				t.Errorf("Truncate(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeMessageContent(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"empty", "", ""},
+		{"plain text unchanged", "Hello world", "Hello world"},
+		{"strip ZWSP", "Hello\u200bworld", "Helloworld"},
+		{"strip RTL override", "Hi\u202eevil", "Hievil"},
+		{"strip BOM", "\uFEFFcontent", "content"},
+		{"strip multiple", "a\u200c\u202ab\u202cc", "abc"},
+		{"unicode letters preserved", "café \u65e5\u672c\u8a9e", "café \u65e5\u672c\u8a9e"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SanitizeMessageContent(tt.input)
+			if got != tt.want {
+				t.Errorf("SanitizeMessageContent(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

@@ -11,11 +11,23 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
+
+type fakeChannel struct{ id string }
+
+func (f *fakeChannel) Name() string                                            { return "fake" }
+func (f *fakeChannel) Start(ctx context.Context) error                         { return nil }
+func (f *fakeChannel) Stop(ctx context.Context) error                          { return nil }
+func (f *fakeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error { return nil }
+func (f *fakeChannel) IsRunning() bool                                         { return true }
+func (f *fakeChannel) IsAllowed(string) bool                                   { return true }
+func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
+func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
 
 func TestRecordLastChannel(t *testing.T) {
 	// Create temp workspace
@@ -660,6 +672,75 @@ func TestShouldInjectReminder(t *testing.T) {
 	}
 }
 
+func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	chManager, err := channels.NewManager(&config.Config{}, bus.NewMessageBus(), nil)
+	if err != nil {
+		t.Fatalf("Failed to create channel manager: %v", err)
+	}
+	for name, id := range map[string]string{
+		"whatsapp":  "rid-whatsapp",
+		"telegram":  "rid-telegram",
+		"feishu":    "rid-feishu",
+		"discord":   "rid-discord",
+		"maixcam":   "rid-maixcam",
+		"qq":        "rid-qq",
+		"dingtalk":  "rid-dingtalk",
+		"slack":     "rid-slack",
+		"line":      "rid-line",
+		"onebot":    "rid-onebot",
+		"wecom":     "rid-wecom",
+		"wecom_app": "rid-wecom-app",
+	} {
+		chManager.RegisterChannel(name, &fakeChannel{id: id})
+	}
+	al.SetChannelManager(chManager)
+	tests := []struct {
+		channel string
+		wantID  string
+	}{
+		{channel: "whatsapp", wantID: "rid-whatsapp"},
+		{channel: "telegram", wantID: "rid-telegram"},
+		{channel: "feishu", wantID: "rid-feishu"},
+		{channel: "discord", wantID: "rid-discord"},
+		{channel: "maixcam", wantID: "rid-maixcam"},
+		{channel: "qq", wantID: "rid-qq"},
+		{channel: "dingtalk", wantID: "rid-dingtalk"},
+		{channel: "slack", wantID: "rid-slack"},
+		{channel: "line", wantID: "rid-line"},
+		{channel: "onebot", wantID: "rid-onebot"},
+		{channel: "wecom", wantID: "rid-wecom"},
+		{channel: "wecom_app", wantID: "rid-wecom-app"},
+		{channel: "unknown", wantID: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.channel, func(t *testing.T) {
+			got := al.targetReasoningChannelID(tt.channel)
+			if got != tt.wantID {
+				t.Fatalf("targetReasoningChannelID(%q) = %q, want %q", tt.channel, got, tt.wantID)
+			}
+		})
+	}
+}
+
 func TestBuildTaskReminder_WithoutBlocker(t *testing.T) {
 	msg := buildTaskReminder("implement feature X", "")
 	if msg.Role != "user" {
@@ -836,7 +917,7 @@ func TestSlashCommandResponseSkipsPlaceholder(t *testing.T) {
 	}()
 
 	// Send a slash command
-	msgBus.PublishInbound(bus.InboundMessage{
+	msgBus.PublishInbound(context.Background(), bus.InboundMessage{
 		Channel:  "telegram",
 		SenderID: "user1",
 		ChatID:   "chat1",
@@ -1385,7 +1466,7 @@ Test
 func TestIsToolAllowedDuringInterview_FuzzyNames(t *testing.T) {
 	tests := []struct {
 		name string
-		args map[string]interface{}
+		args map[string]any
 		want bool
 	}{
 		// Exact names — read tools allowed
@@ -1403,38 +1484,38 @@ func TestIsToolAllowedDuringInterview_FuzzyNames(t *testing.T) {
 		{"message", nil, true},
 		{"Message", nil, true},
 		// Write to MEMORY.md — allowed
-		{"edit_file", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
-		{"editfile", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
-		{"EditFile", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
+		{"edit_file", map[string]any{"path": "/ws/memory/MEMORY.md"}, true},
+		{"editfile", map[string]any{"path": "/ws/memory/MEMORY.md"}, true},
+		{"EditFile", map[string]any{"path": "/ws/memory/MEMORY.md"}, true},
 		// Write to non-MEMORY.md — blocked
-		{"edit_file", map[string]interface{}{"path": "/ws/main.go"}, false},
-		{"editfile", map[string]interface{}{"path": "/ws/main.go"}, false},
+		{"edit_file", map[string]any{"path": "/ws/main.go"}, false},
+		{"editfile", map[string]any{"path": "/ws/main.go"}, false},
 		// exec — read-only commands allowed
-		{"exec", map[string]interface{}{"command": "find . -name '*.py'"}, true},
-		{"exec", map[string]interface{}{"command": "ls -la"}, true},
-		{"exec", map[string]interface{}{"command": "grep -r TODO ."}, true},
-		{"exec", map[string]interface{}{"command": "cat README.md"}, true},
+		{"exec", map[string]any{"command": "find . -name '*.py'"}, true},
+		{"exec", map[string]any{"command": "ls -la"}, true},
+		{"exec", map[string]any{"command": "grep -r TODO ."}, true},
+		{"exec", map[string]any{"command": "cat README.md"}, true},
 		// exec — cd prefix stripped
-		{"exec", map[string]interface{}{"command": "cd /home/user/project && find . -type f"}, true},
-		{"exec", map[string]interface{}{"command": "cd /tmp && rm -rf *"}, false},
+		{"exec", map[string]any{"command": "cd /home/user/project && find . -type f"}, true},
+		{"exec", map[string]any{"command": "cd /tmp && rm -rf *"}, false},
 		// exec — write operators blocked
-		{"exec", map[string]interface{}{"command": "find . > output.txt"}, false},
-		{"exec", map[string]interface{}{"command": "ls -la >> log.txt"}, false},
-		{"exec", map[string]interface{}{"command": "cat foo | tee bar.txt"}, false},
+		{"exec", map[string]any{"command": "find . > output.txt"}, false},
+		{"exec", map[string]any{"command": "ls -la >> log.txt"}, false},
+		{"exec", map[string]any{"command": "cat foo | tee bar.txt"}, false},
 		// exec — path traversal blocked
-		{"exec", map[string]interface{}{"command": "cat ../../etc/passwd"}, false},
-		{"exec", map[string]interface{}{"command": "find ../../"}, false},
-		{"exec", map[string]interface{}{"command": "ls ../secret"}, false},
+		{"exec", map[string]any{"command": "cat ../../etc/passwd"}, false},
+		{"exec", map[string]any{"command": "find ../../"}, false},
+		{"exec", map[string]any{"command": "ls ../secret"}, false},
 		// exec — absolute paths blocked
-		{"exec", map[string]interface{}{"command": "cat /etc/passwd"}, false},
-		{"exec", map[string]interface{}{"command": "find /etc -name '*.conf'"}, false},
-		{"exec", map[string]interface{}{"command": "ls /root"}, false},
+		{"exec", map[string]any{"command": "cat /etc/passwd"}, false},
+		{"exec", map[string]any{"command": "find /etc -name '*.conf'"}, false},
+		{"exec", map[string]any{"command": "ls /root"}, false},
 		// exec — write commands blocked
-		{"exec", map[string]interface{}{"command": "rm -rf /"}, false},
-		{"exec", map[string]interface{}{"command": "mv a b"}, false},
+		{"exec", map[string]any{"command": "rm -rf /"}, false},
+		{"exec", map[string]any{"command": "mv a b"}, false},
 		// exec — no args / empty command blocked
 		{"exec", nil, false},
-		{"exec", map[string]interface{}{"command": ""}, false},
+		{"exec", map[string]any{"command": ""}, false},
 		{"Exec", nil, false},
 	}
 	for _, tt := range tests {
@@ -1449,56 +1530,60 @@ func TestBuildArgsSnippet_ExecStripsCD(t *testing.T) {
 	tests := []struct {
 		name      string
 		tool      string
-		args      map[string]interface{}
+		args      map[string]any
 		workspace string
 		wantSnip  string
 	}{
 		{
-			name:      "exec strips cd prefix",
-			tool:      "exec",
-			args:      map[string]interface{}{"command": "cd /home/user/workspace/project/my-projects && pytest tests/test_integration.py"},
+			name: "exec strips cd prefix",
+			tool: "exec",
+			args: map[string]any{
+				"command": "cd /home/user/workspace/project/my-projects && pytest tests/test_integration.py",
+			},
 			workspace: "/home/user/workspace",
 			wantSnip:  "pytest tests/test_integration.py",
 		},
 		{
 			name:      "exec no cd prefix, flags stripped",
 			tool:      "exec",
-			args:      map[string]interface{}{"command": "ls -la"},
+			args:      map[string]any{"command": "ls -la"},
 			workspace: "/ws",
 			wantSnip:  "ls",
 		},
 		{
 			name:      "exec empty command",
 			tool:      "exec",
-			args:      map[string]interface{}{},
+			args:      map[string]any{},
 			workspace: "/ws",
 			wantSnip:  "{}",
 		},
 		{
 			name:      "read_file strips workspace",
 			tool:      "read_file",
-			args:      map[string]interface{}{"path": "/home/user/workspace/src/main.go"},
+			args:      map[string]any{"path": "/home/user/workspace/src/main.go"},
 			workspace: "/home/user/workspace",
 			wantSnip:  "src/main.go",
 		},
 		{
 			name:      "edit_file shows path",
 			tool:      "edit_file",
-			args:      map[string]interface{}{"path": "/ws/config.json", "old_text": "old value here"},
+			args:      map[string]any{"path": "/ws/config.json", "old_text": "old value here"},
 			workspace: "/ws",
 			wantSnip:  "config.json",
 		},
 		{
-			name:      "file tool long path prioritizes filename",
-			tool:      "read_file",
-			args:      map[string]interface{}{"path": "/ws/projects/terra-py-form/src/terra_py_form/hot/state/backend.py"},
+			name: "file tool long path prioritizes filename",
+			tool: "read_file",
+			args: map[string]any{
+				"path": "/ws/projects/terra-py-form/src/terra_py_form/hot/state/backend.py",
+			},
 			workspace: "/ws",
 			wantSnip:  "projects/terra-py-form/src/terra_py_form/hot/sta\u2026/backend.py",
 		},
 		{
 			name:      "unknown tool shows raw JSON",
 			tool:      "web_search",
-			args:      map[string]interface{}{"query": "hello"},
+			args:      map[string]any{"query": "hello"},
 			workspace: "/ws",
 			wantSnip:  `{"query":"hello"}`,
 		},
@@ -1528,20 +1613,32 @@ func TestFormatCompactEntry(t *testing.T) {
 			wantMark: "✓ 1.0s", // exec keeps duration
 		},
 		{
-			name:     "exec long entry truncated from end",
-			entry:    toolLogEntry{Name: "[2] exec", ArgsSnip: "pytest tests/integration/test_very_long_name.py", Result: "✗ 3.0s"},
+			name: "exec long entry truncated from end",
+			entry: toolLogEntry{
+				Name:     "[2] exec",
+				ArgsSnip: "pytest tests/integration/test_very_long_name.py",
+				Result:   "✗ 3.0s",
+			},
 			wantMark: "✗",
 		},
 		{
-			name:     "file tool omits duration, shows filename",
-			entry:    toolLogEntry{Name: "[3] edit_file", ArgsSnip: "projects/terra/src/deep/nested/backend.py", Result: "✓ 0.0s"},
+			name: "file tool omits duration, shows filename",
+			entry: toolLogEntry{
+				Name:     "[3] edit_file",
+				ArgsSnip: "projects/terra/src/deep/nested/backend.py",
+				Result:   "✓ 0.0s",
+			},
 			wantSub:  "backend.py",
 			wantMark: "✓",
 			noTime:   true,
 		},
 		{
-			name:     "file tool path truncates from start",
-			entry:    toolLogEntry{Name: "[4] read_file", ArgsSnip: "projects/terra-py-form/src/terra_py_form/hot/state/backend.py", Result: "✓ 0.1s"},
+			name: "file tool path truncates from start",
+			entry: toolLogEntry{
+				Name:     "[4] read_file",
+				ArgsSnip: "projects/terra-py-form/src/terra_py_form/hot/state/backend.py",
+				Result:   "✓ 0.1s",
+			},
 			wantSub:  "backend.py",
 			wantMark: "✓",
 			noTime:   true,
@@ -1583,8 +1680,8 @@ func TestBuildRichStatus(t *testing.T) {
 	mustContain := []string{
 		"Task in progress (3/20)",
 		"my-projects",
-		"read_file",       // latest entry
-		"No errors",       // no error yet
+		"read_file", // latest entry
+		"No errors", // no error yet
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(got, s) {
@@ -1664,7 +1761,7 @@ func TestExtractExecProjectDir(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := map[string]interface{}{"command": tt.cmd}
+			args := map[string]any{"command": tt.cmd}
 			got := extractExecProjectDir(args)
 			if got != tt.want {
 				t.Errorf("extractExecProjectDir(%q) = %q, want %q", tt.cmd, got, tt.want)
@@ -1752,15 +1849,18 @@ func TestBuildRichStatus_FixedHeight(t *testing.T) {
 	lines0 := countLines(buildRichStatus(task0, true, "/ws/p"))
 
 	// 1 entry
-	task1 := &activeTask{Iteration: 1, MaxIter: 10,
-		toolLog: []toolLogEntry{{Name: "exec", ArgsSnip: "ls", Result: "⏳"}}}
+	task1 := &activeTask{
+		Iteration: 1, MaxIter: 10,
+		toolLog: []toolLogEntry{{Name: "exec", ArgsSnip: "ls", Result: "⏳"}},
+	}
 	lines1 := countLines(buildRichStatus(task1, true, "/ws/p"))
 
 	// 5 entries
 	task5 := &activeTask{Iteration: 5, MaxIter: 10}
 	for i := 0; i < 5; i++ {
 		task5.toolLog = append(task5.toolLog, toolLogEntry{
-			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s"})
+			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s",
+		})
 	}
 	lines5 := countLines(buildRichStatus(task5, true, "/ws/p"))
 
@@ -1768,10 +1868,13 @@ func TestBuildRichStatus_FixedHeight(t *testing.T) {
 	task5err := &activeTask{Iteration: 5, MaxIter: 10}
 	for i := 0; i < 5; i++ {
 		task5err.toolLog = append(task5err.toolLog, toolLogEntry{
-			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s"})
+			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s",
+		})
 	}
-	errEntry := toolLogEntry{Name: "[3] exec", ArgsSnip: "pytest", Result: "✗ 2.0s",
-		ErrDetail: "FAILED test\nExit code: 1"}
+	errEntry := toolLogEntry{
+		Name: "[3] exec", ArgsSnip: "pytest", Result: "✗ 2.0s",
+		ErrDetail: "FAILED test\nExit code: 1",
+	}
 	task5err.lastError = &errEntry
 	lines5err := countLines(buildRichStatus(task5err, true, "/ws/p"))
 
@@ -2278,7 +2381,7 @@ func TestConsumeStream_OnChunkCallback(t *testing.T) {
 	defer cancel()
 
 	var chunks []string
-	onChunk := func(accumulated string) {
+	onChunk := func(accumulated, _ string) {
 		chunks = append(chunks, accumulated)
 	}
 
@@ -2329,7 +2432,7 @@ func TestConsumeStream_OnChunkWithRepetitionDetection(t *testing.T) {
 	}()
 
 	var chunkCount int
-	onChunk := func(accumulated string) {
+	onChunk := func(_, _ string) {
 		chunkCount++
 	}
 
@@ -2352,9 +2455,9 @@ func TestConsumeStream_OnChunkWithRepetitionDetection(t *testing.T) {
 
 // modelCapturingMockProvider records which model was passed to Chat.
 type modelCapturingMockProvider struct {
-	mu        sync.Mutex
-	models    []string
-	response  string
+	mu       sync.Mutex
+	models   []string
+	response string
 }
 
 func (m *modelCapturingMockProvider) Chat(
@@ -2410,8 +2513,8 @@ func TestAgentLoop_PlanModel_UsedDuringInterviewing(t *testing.T) {
 	os.MkdirAll(memoryDir, 0o755)
 	memoryPath := filepath.Join(memoryDir, "MEMORY.md")
 	memoryContent := "# Active Plan\n\n> Task: Test plan model\n> Status: interviewing\n> Phase: 1\n"
-	if err := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); err != nil {
-		t.Fatalf("Failed to write MEMORY.md: %v", err)
+	if wErr := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); wErr != nil {
+		t.Fatalf("Failed to write MEMORY.md: %v", wErr)
 	}
 
 	_, err = al.ProcessDirectWithChannel(
@@ -2478,8 +2581,8 @@ func TestAgentLoop_PlanModel_NotUsedDuringExecuting(t *testing.T) {
 ## Phase 1: Build
 - [ ] Run build
 `
-	if err := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); err != nil {
-		t.Fatalf("Failed to write MEMORY.md: %v", err)
+	if wErr := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); wErr != nil {
+		t.Fatalf("Failed to write MEMORY.md: %v", wErr)
 	}
 
 	_, err = al.ProcessDirectWithChannel(
@@ -2539,8 +2642,8 @@ func TestAgentLoop_PlanModel_ResolvesProviderForSingleCandidate(t *testing.T) {
 	os.MkdirAll(memoryDir, 0o755)
 	memoryPath := filepath.Join(memoryDir, "MEMORY.md")
 	memoryContent := "# Active Plan\n\n> Task: Test provider resolution\n> Status: interviewing\n> Phase: 1\n"
-	if err := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); err != nil {
-		t.Fatalf("Failed to write MEMORY.md: %v", err)
+	if wErr := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); wErr != nil {
+		t.Fatalf("Failed to write MEMORY.md: %v", wErr)
 	}
 
 	_, err = al.ProcessDirectWithChannel(
@@ -2708,4 +2811,183 @@ func TestFilterInterviewTools(t *testing.T) {
 			t.Errorf("disallowed tool %q should have been filtered out", d.Function.Name)
 		}
 	}
+}
+
+func TestBuildStreamingDisplay_ContentOnly(t *testing.T) {
+	display := buildStreamingDisplay("hello world", "")
+	if !strings.HasSuffix(display, " \u2589") {
+		t.Error("expected cursor suffix")
+	}
+	if strings.Contains(display, "\U0001f9e0") {
+		t.Error("should not contain brain emoji when no reasoning")
+	}
+	lines := strings.Count(display, "\n") + 1
+	if lines != streamingDisplayLines+1 { // TailPad lines + cursor on last line
+		t.Logf("display:\n%s", display)
+	}
+}
+
+func TestBuildStreamingDisplay_ReasoningOnly(t *testing.T) {
+	display := buildStreamingDisplay("", "let me think about this")
+	if !strings.Contains(display, "\U0001f9e0") {
+		t.Error("expected brain emoji for reasoning phase")
+	}
+	if !strings.Contains(display, "Thinking...") {
+		t.Error("expected Thinking... header")
+	}
+	if !strings.HasSuffix(display, " \u2589") {
+		t.Error("expected cursor suffix")
+	}
+}
+
+func TestBuildStreamingDisplay_Both(t *testing.T) {
+	display := buildStreamingDisplay("the answer is 42", "first I considered...")
+	if !strings.Contains(display, "\U0001f9e0") {
+		t.Error("expected brain emoji")
+	}
+	if !strings.Contains(display, "responding") {
+		t.Error("expected responding header when both present")
+	}
+	if !strings.Contains(display, "the answer is 42") {
+		t.Error("expected content in display")
+	}
+}
+
+func TestHandleReasoning(t *testing.T) {
+	newLoop := func(t *testing.T) (*AgentLoop, *bus.MessageBus) {
+		t.Helper()
+		tmpDir, err := os.MkdirTemp("", "agent-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+		cfg := &config.Config{
+			Agents: config.AgentsConfig{
+				Defaults: config.AgentDefaults{
+					Workspace:         tmpDir,
+					Model:             "test-model",
+					MaxTokens:         4096,
+					MaxToolIterations: 10,
+				},
+			},
+		}
+		msgBus := bus.NewMessageBus()
+		return NewAgentLoop(cfg, msgBus, &mockProvider{}), msgBus
+	}
+
+	t.Run("skips when any required field is empty", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		al.handleReasoning(context.Background(), "reasoning", "telegram", "")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		if msg, ok := msgBus.SubscribeOutbound(ctx); ok {
+			t.Fatalf("expected no outbound message, got %+v", msg)
+		}
+	})
+
+	t.Run("publishes one message for non telegram", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		al.handleReasoning(context.Background(), "hello reasoning", "slack", "channel-1")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		msg, ok := msgBus.SubscribeOutbound(ctx)
+		if !ok {
+			t.Fatal("expected an outbound message")
+		}
+		if msg.Channel != "slack" || msg.ChatID != "channel-1" || msg.Content != "hello reasoning" {
+			t.Fatalf("unexpected outbound message: %+v", msg)
+		}
+	})
+
+	t.Run("publishes one message for telegram", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		reasoning := "hello telegram reasoning"
+		al.handleReasoning(context.Background(), reasoning, "telegram", "tg-chat")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		msg, ok := msgBus.SubscribeOutbound(ctx)
+		if !ok {
+			t.Fatal("expected outbound message")
+		}
+
+		if msg.Channel != "telegram" {
+			t.Fatalf("expected telegram channel message, got %+v", msg)
+		}
+		if msg.ChatID != "tg-chat" {
+			t.Fatalf("expected chatID tg-chat, got %+v", msg)
+		}
+		if msg.Content != reasoning {
+			t.Fatalf("content mismatch: got %q want %q", msg.Content, reasoning)
+		}
+	})
+	t.Run("expired ctx", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		reasoning := "hello telegram reasoning"
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		al.handleReasoning(ctx, reasoning, "telegram", "tg-chat")
+
+		ctx, cancel = context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		msg, ok := msgBus.SubscribeOutbound(ctx)
+		if ok {
+			t.Fatalf("expected no outbound message, got %+v", msg)
+		}
+	})
+
+	t.Run("returns promptly when bus is full", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+
+		// Fill the outbound bus buffer until a publish would block.
+		// Use a short timeout to detect when the buffer is full,
+		// rather than hardcoding the buffer size.
+		for i := 0; ; i++ {
+			fillCtx, fillCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			err := msgBus.PublishOutbound(fillCtx, bus.OutboundMessage{
+				Channel: "filler",
+				ChatID:  "filler",
+				Content: fmt.Sprintf("filler-%d", i),
+			})
+			fillCancel()
+			if err != nil {
+				// Buffer is full (timed out trying to send).
+				break
+			}
+		}
+
+		// Use a short-deadline parent context to bound the test.
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		start := time.Now()
+		al.handleReasoning(ctx, "should timeout", "slack", "channel-full")
+		elapsed := time.Since(start)
+
+		// handleReasoning uses a 5s internal timeout, but the parent ctx
+		// expires in 500ms. It should return within ~500ms, not 5s.
+		if elapsed > 2*time.Second {
+			t.Fatalf("handleReasoning blocked too long (%v); expected prompt return", elapsed)
+		}
+
+		// Drain the bus and verify the reasoning message was NOT published
+		// (it should have been dropped due to timeout).
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer drainCancel()
+		foundReasoning := false
+		for {
+			msg, ok := msgBus.SubscribeOutbound(drainCtx)
+			if !ok {
+				break
+			}
+			if msg.Content == "should timeout" {
+				foundReasoning = true
+			}
+		}
+		if foundReasoning {
+			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
+		}
+	})
 }

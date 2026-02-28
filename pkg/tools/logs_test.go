@@ -20,8 +20,8 @@ func setupTestLogs(t *testing.T) {
 	logger.WarnC("telegram", "webhook retry")
 	logger.ErrorC("discord", "connection timeout")
 	logger.WarnCF("wecom", "signature failed", map[string]any{
-		"token":   "secret-value",
-		"nonce":   "safe-value",
+		"token": "secret-value",
+		"nonce": "safe-value",
 	})
 }
 

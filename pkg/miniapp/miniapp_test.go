@@ -26,7 +26,7 @@ import (
 // buildInitData constructs a valid initData string from params and a bot token.
 func buildInitData(params map[string]string, botToken string) string {
 	// Build data-check-string
-	var pairs []string
+	pairs := make([]string, 0, len(params))
 	for k, v := range params {
 		pairs = append(pairs, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -175,24 +175,31 @@ type mockDataProvider struct{}
 func (m *mockDataProvider) ListSkills() []skills.SkillInfo {
 	return []skills.SkillInfo{{Name: "test-skill", Description: "A test", Source: "local"}}
 }
+
 func (m *mockDataProvider) GetPlanInfo() PlanInfo {
 	return PlanInfo{HasPlan: false, Status: "none"}
 }
+
 func (m *mockDataProvider) GetSessionStats() *stats.Stats {
 	return nil
 }
+
 func (m *mockDataProvider) GetActiveSessions() []SessionInfo {
 	return []SessionInfo{}
 }
+
 func (m *mockDataProvider) GetGitRepos() []GitRepoSummary {
 	return nil
 }
+
 func (m *mockDataProvider) GetGitRepoDetail(name string) GitInfo {
 	return GitInfo{Name: name}
 }
+
 func (m *mockDataProvider) GetContextInfo() ContextInfo {
 	return ContextInfo{Workspace: "/mock/workspace"}
 }
+
 func (m *mockDataProvider) GetSystemPrompt() string {
 	return "mock system prompt"
 }
@@ -464,6 +471,7 @@ type mutatingDataProvider struct {
 func (m *mutatingDataProvider) ListSkills() []skills.SkillInfo {
 	return []skills.SkillInfo{{Name: "test-skill", Description: "A test", Source: "local"}}
 }
+
 func (m *mutatingDataProvider) GetPlanInfo() PlanInfo {
 	if m.mutated.Load() {
 		return PlanInfo{HasPlan: true, Status: "executing", CurrentPhase: 1, TotalPhases: 2}
@@ -474,15 +482,19 @@ func (m *mutatingDataProvider) GetSessionStats() *stats.Stats { return nil }
 func (m *mutatingDataProvider) GetActiveSessions() []SessionInfo {
 	return []SessionInfo{}
 }
+
 func (m *mutatingDataProvider) GetGitRepos() []GitRepoSummary {
 	return nil
 }
+
 func (m *mutatingDataProvider) GetGitRepoDetail(name string) GitInfo {
 	return GitInfo{Name: name}
 }
+
 func (m *mutatingDataProvider) GetContextInfo() ContextInfo {
 	return ContextInfo{Workspace: "/mock/workspace"}
 }
+
 func (m *mutatingDataProvider) GetSystemPrompt() string {
 	return "mock system prompt"
 }

@@ -17,7 +17,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-
 // validateLocalhostURL parses and validates that a URL targets localhost.
 func validateLocalhostURL(target string) (*url.URL, error) {
 	u, err := url.Parse(target)
@@ -32,7 +31,6 @@ func validateLocalhostURL(target string) (*url.URL, error) {
 }
 
 // RegisterDevTarget registers a new dev server target. Only localhost targets are allowed.
-
 
 // RegisterDevTarget registers a new dev server target. Only localhost targets are allowed.
 func (h *Handler) RegisterDevTarget(name, target string) (string, error) {
@@ -54,7 +52,6 @@ func (h *Handler) RegisterDevTarget(name, target string) (string, error) {
 }
 
 // UnregisterDevTarget removes a registered target. If it was active, the proxy is disabled.
-
 
 // UnregisterDevTarget removes a registered target. If it was active, the proxy is disabled.
 func (h *Handler) UnregisterDevTarget(id string) error {
@@ -78,7 +75,6 @@ func (h *Handler) UnregisterDevTarget(id string) error {
 }
 
 // ActivateDevTarget sets the reverse proxy to the registered target with the given ID.
-
 
 // ActivateDevTarget sets the reverse proxy to the registered target with the given ID.
 func (h *Handler) ActivateDevTarget(id string) error {
@@ -148,7 +144,6 @@ p{color:#8e8e93;font-size:14px;margin:0}
 
 // DeactivateDevTarget disables the reverse proxy without removing registrations.
 
-
 // DeactivateDevTarget disables the reverse proxy without removing registrations.
 func (h *Handler) DeactivateDevTarget() error {
 	h.devMu.Lock()
@@ -165,7 +160,6 @@ func (h *Handler) DeactivateDevTarget() error {
 
 // GetDevTarget returns the current dev proxy target URL, or empty string if disabled.
 
-
 // GetDevTarget returns the current dev proxy target URL, or empty string if disabled.
 func (h *Handler) GetDevTarget() string {
 	h.devMu.RLock()
@@ -177,7 +171,6 @@ func (h *Handler) GetDevTarget() string {
 }
 
 // ListDevTargets returns all registered dev targets.
-
 
 // ListDevTargets returns all registered dev targets.
 func (h *Handler) ListDevTargets() []DevTarget {
@@ -197,7 +190,6 @@ func (h *Handler) ListDevTargets() []DevTarget {
 // It rewrites fetch() and XMLHttpRequest.open() so that absolute paths like
 // "/api/items" are prefixed with "/miniapp/dev", matching the reverse proxy mount.
 // It also captures console.log/warn/error/info and forwards them to the server.
-
 
 // devProxyScript is the JavaScript injected into HTML responses from the dev proxy.
 // It rewrites fetch() and XMLHttpRequest.open() so that absolute paths like
@@ -255,7 +247,6 @@ const devProxyScript = `<script data-dev-proxy>
 // injectDevProxyScript inserts the dev proxy rewrite script into an HTML document.
 // Insertion priority: before </head>, after <body...>, or prepend to document.
 
-
 // injectDevProxyScript inserts the dev proxy rewrite script into an HTML document.
 // Insertion priority: before </head>, after <body...>, or prepend to document.
 func injectDevProxyScript(html []byte) []byte {
@@ -294,7 +285,6 @@ func injectDevProxyScript(html []byte) []byte {
 
 // escapeHTMLString escapes HTML special characters in a string.
 
-
 // escapeHTMLString escapes HTML special characters in a string.
 func escapeHTMLString(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
@@ -305,7 +295,6 @@ func escapeHTMLString(s string) string {
 }
 
 // RegisterRoutes registers Mini App routes on the given mux.
-
 
 func (h *Handler) apiDev(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -359,7 +348,6 @@ func (h *Handler) apiDev(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 func (h *Handler) serveDevProxy(w http.ResponseWriter, r *http.Request) {
 	h.devMu.RLock()
 	proxy := h.devProxy
@@ -380,7 +368,6 @@ func (h *Handler) serveDevProxy(w http.ResponseWriter, r *http.Request) {
 
 // extractUserFromInitData parses user.id from the initData query string.
 // initData contains a "user" param with JSON like {"id":123456,...}.
-
 
 func (h *Handler) devStatus() map[string]any {
 	h.devMu.RLock()
@@ -405,7 +392,6 @@ func (h *Handler) devStatus() map[string]any {
 		"targets":   targets,
 	}
 }
-
 
 // apiDevConsole receives console output from dev preview iframes.
 func (h *Handler) apiDevConsole(w http.ResponseWriter, r *http.Request) {
@@ -474,4 +460,3 @@ func (h *Handler) apiDevConsole(w http.ResponseWriter, r *http.Request) {
 }
 
 // wsLogs serves a WebSocket endpoint that streams log entries in real time.
-

@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
 // MemoryStore manages persistent memory for the agent.
@@ -60,7 +62,9 @@ func (ms *MemoryStore) ReadLongTerm() string {
 
 // WriteLongTerm writes content to the long-term memory file (MEMORY.md).
 func (ms *MemoryStore) WriteLongTerm(content string) error {
-	return os.WriteFile(ms.memoryFile, []byte(content), 0o644)
+	// Use unified atomic write utility with explicit sync for flash storage reliability.
+	// Using 0o600 (owner read/write only) for secure default permissions.
+	return fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0o600)
 }
 
 // ClearLongTerm removes the long-term memory file.
@@ -88,7 +92,9 @@ func (ms *MemoryStore) AppendToday(content string) error {
 
 	// Ensure month directory exists
 	monthDir := filepath.Dir(todayFile)
-	os.MkdirAll(monthDir, 0o755)
+	if err := os.MkdirAll(monthDir, 0o755); err != nil {
+		return err
+	}
 
 	var existingContent string
 	if data, err := os.ReadFile(todayFile); err == nil {
@@ -105,7 +111,8 @@ func (ms *MemoryStore) AppendToday(content string) error {
 		newContent = existingContent + "\n" + content
 	}
 
-	return os.WriteFile(todayFile, []byte(newContent), 0o644)
+	// Use unified atomic write utility with explicit sync for flash storage reliability.
+	return fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0o600)
 }
 
 // GetRecentDailyNotes returns daily notes from the last N days.
@@ -139,8 +146,6 @@ var (
 	reStatus      = regexp.MustCompile(`(?m)^> Status:\s*(.+)`)
 	rePhase       = regexp.MustCompile(`(?m)^> Phase:\s*(\d+)`)
 	rePhaseHeader = regexp.MustCompile(`(?m)^## Phase (\d+):\s*(.*)`)
-	reStepDone    = regexp.MustCompile(`(?m)^- \[x\] `)
-	reStepTodo    = regexp.MustCompile(`(?m)^- \[ \] `)
 	reWorkDir     = regexp.MustCompile(`(?m)^> WorkDir:\s*(.+)`)
 )
 
@@ -175,16 +180,16 @@ func (ms *MemoryStore) GetCurrentPhase() int {
 func (ms *MemoryStore) GetTotalPhases() int {
 	content := ms.ReadLongTerm()
 	matches := rePhaseHeader.FindAllStringSubmatch(content, -1)
-	max := 0
+	maxN := 0
 	for _, m := range matches {
 		if len(m) >= 2 {
 			n, _ := strconv.Atoi(m[1])
-			if n > max {
-				max = n
+			if n > maxN {
+				maxN = n
 			}
 		}
 	}
-	return max
+	return maxN
 }
 
 // IsPlanComplete returns true if all steps in all phases are [x].
@@ -513,12 +518,22 @@ func (ms *MemoryStore) getInterviewContextFrom(content string) string {
 	sb.WriteString("- Tooling preferences (test framework, linter, formatter, CI)\n")
 	sb.WriteString("- Key commands the user already runs (build, test, deploy)\n")
 	sb.WriteString("\n### Rules\n")
-	sb.WriteString("- NEVER remove or overwrite the header block (`# Active Plan`, `> Task:`, `> Status:`, `> Phase:` lines). The system parses these to track state.\n")
-	sb.WriteString("- After each answer, use edit_file to append findings to the ## Context section of memory/MEMORY.md.\n")
-	sb.WriteString("- When you have enough information, use edit_file to add ## Phase, ## Commands, and ## Context sections BELOW the header block.\n")
-	sb.WriteString("- Each step MUST use checkbox syntax: `- [ ] description`. The system parses checkboxes to track progress.\n")
+	sb.WriteString(
+		"- NEVER remove or overwrite the header block (`# Active Plan`, `> Task:`, `> Status:`, `> Phase:` lines). The system parses these to track state.\n",
+	)
+	sb.WriteString(
+		"- After each answer, use edit_file to append findings to the ## Context section of memory/MEMORY.md.\n",
+	)
+	sb.WriteString(
+		"- When you have enough information, use edit_file to add ## Phase, ## Commands, and ## Context sections BELOW the header block.\n",
+	)
+	sb.WriteString(
+		"- Each step MUST use checkbox syntax: `- [ ] description`. The system parses checkboxes to track progress.\n",
+	)
 	sb.WriteString("- Organize into 2-5 phases with 3-5 steps each.\n")
-	sb.WriteString("- After writing Phases, change `> Status: interviewing` to `> Status: review` via edit_file. The user must approve with /plan start before execution begins.\n")
+	sb.WriteString(
+		"- After writing Phases, change `> Status: interviewing` to `> Status: review` via edit_file. The user must approve with /plan start before execution begins.\n",
+	)
 	sb.WriteString("\n### Target Format (MANDATORY — system parses this exact structure)\n")
 	sb.WriteString("\n")
 	sb.WriteString("# Active Plan\n")
@@ -621,16 +636,16 @@ func (ms *MemoryStore) getPlanContextFrom(content string) string {
 // maxPhaseNumber returns the highest phase number found in content.
 func maxPhaseNumber(content string) int {
 	matches := rePhaseHeader.FindAllStringSubmatch(content, -1)
-	max := 0
+	maxN := 0
 	for _, m := range matches {
 		if len(m) >= 2 {
 			n, _ := strconv.Atoi(m[1])
-			if n > max {
-				max = n
+			if n > maxN {
+				maxN = n
 			}
 		}
 	}
-	return max
+	return maxN
 }
 
 // getPhaseTitle extracts the title of a phase from "## Phase N: Title".

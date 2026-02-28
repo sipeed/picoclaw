@@ -178,30 +178,27 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
 }
 
-func NewExecTool(workingDir string, restrict bool) *ExecTool {
+func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 	return NewExecToolWithConfig(workingDir, restrict, nil)
 }
 
-func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
+func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
 
-	enableDenyPatterns := true
 	if config != nil {
 		execConfig := config.Tools.Exec
-		enableDenyPatterns = execConfig.EnableDenyPatterns
+		enableDenyPatterns := execConfig.EnableDenyPatterns
 		if enableDenyPatterns {
+			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			if len(execConfig.CustomDenyPatterns) > 0 {
 				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
 				for _, pattern := range execConfig.CustomDenyPatterns {
 					re, err := regexp.Compile(pattern)
 					if err != nil {
-						fmt.Printf("Invalid custom deny pattern %q: %v\n", pattern, err)
-						continue
+						return nil, fmt.Errorf("invalid custom deny pattern %q: %w", pattern, err)
 					}
 					denyPatterns = append(denyPatterns, re)
 				}
-			} else {
-				denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			}
 		} else {
 			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
@@ -222,7 +219,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		bgProcesses:         make(map[string]*bgProcess),
 		bgCtx:               bgCtx,
 		bgShutdown:          bgCancel,
-	}
+	}, nil
 }
 
 func (t *ExecTool) Name() string {
@@ -421,7 +418,9 @@ func (t *ExecTool) executeBg(command, cwd string) *ToolResult {
 	}
 	if running >= bgMaxProcesses {
 		t.bgMu.Unlock()
-		return ErrorResult(fmt.Sprintf("maximum background processes reached (%d). Kill an existing one first.", bgMaxProcesses))
+		return ErrorResult(
+			fmt.Sprintf("maximum background processes reached (%d). Kill an existing one first.", bgMaxProcesses),
+		)
 	}
 
 	t.bgNextID++
@@ -811,7 +810,7 @@ func isExecutable(path string) bool {
 		}
 		return false
 	}
-	return info.Mode()&0111 != 0
+	return info.Mode()&0o111 != 0
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {
