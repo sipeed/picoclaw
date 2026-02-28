@@ -141,8 +141,6 @@ func DefaultConfig() *Config {
 				Enabled:        false,
 				Token:          "",
 				EncodingAESKey: "",
-				WebhookHost:    "0.0.0.0",
-				WebhookPort:    18791,
 				WebhookPath:    "/webhook/wecom-aibot",
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
