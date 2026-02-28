@@ -35,3 +35,13 @@
 3. 配置事件订阅和Webhook URL
 4. 设置加密(可选,生产环境建议启用)
 5. 将 App ID、App Secret、Encrypt Key 和 Verification Token(如果启用加密) 填入配置文件中
+
+## 发送本地图片
+
+飞书频道现已支持通过 `im/v1/image/create` 上传本地图片并发送图片消息。
+
+- 如果发送内容是本地图片路径（如 `/tmp/a.png` 或 `file:///tmp/a.png`），会自动上传并发送图片。
+- 如果发送内容包含 Markdown 图片语法（如 `![img](/tmp/a.png)`），会提取并发送图片。
+- 同一条消息里如果同时包含文本和 Markdown 图片，文本会先发送，再发送图片。
+
+支持格式：`jpg/jpeg/png/webp/gif/tiff/bmp/ico`。
