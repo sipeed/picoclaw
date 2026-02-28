@@ -47,7 +47,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
-func gatewayCmd(debug bool, orchestration bool) error {
+func gatewayCmd(debug bool, orchestration bool, enableStats bool) error {
 	if debug {
 		logger.SetLevel(logger.DEBUG)
 		fmt.Println("🔍 Debug mode enabled")
@@ -72,7 +72,7 @@ func gatewayCmd(debug bool, orchestration bool) error {
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, enableStats)
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
