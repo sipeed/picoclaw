@@ -446,8 +446,9 @@ Register or link a phone number following the [signal-cli docs](https://github.c
       "account": "+1234567890",
       "signal_cli_url": "http://localhost:8080",
       "allow_from": ["+1987654321"],
-      "dms_enabled": true,
-      "groups_enabled": false
+      "group_trigger": {
+        "mention_only": true
+      }
     }
   }
 }
@@ -456,7 +457,7 @@ Register or link a phone number following the [signal-cli docs](https://github.c
 - `account`: The phone number registered with signal-cli
 - `signal_cli_url`: URL of the signal-cli REST API (default: `http://localhost:8080`)
 - `allow_from`: Phone numbers allowed to interact (empty = allow all)
-- `dms_enabled` / `groups_enabled`: Toggle DM and group message handling
+- `group_trigger`: Group chat trigger config — `mention_only` requires @mention, `prefixes` triggers on message prefixes (omit for respond-to-all)
 
 **3. Run**
 

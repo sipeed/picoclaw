@@ -378,8 +378,7 @@ type SignalConfig struct {
 	Account            string              `json:"account"              env:"PICOCLAW_CHANNELS_SIGNAL_ACCOUNT"`
 	SignalCLIURL       string              `json:"signal_cli_url"       env:"PICOCLAW_CHANNELS_SIGNAL_CLI_URL"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_SIGNAL_ALLOW_FROM"`
-	DMsEnabled         *bool               `json:"dms_enabled,omitempty"`
-	GroupsEnabled      *bool               `json:"groups_enabled,omitempty"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_SIGNAL_REASONING_CHANNEL_ID"`
 }
 
