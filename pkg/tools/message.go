@@ -53,7 +53,12 @@ func (t *MessageTool) Parameters() map[string]any {
 func (t *MessageTool) SetContext(channel, chatID string) {
 	t.defaultChannel = channel
 	t.defaultChatID = chatID
-	t.sentInRound = false // Reset send tracking for new processing round
+}
+
+// BeginRound resets per-round send tracking.
+// AgentLoop calls this once per inbound message before tool iterations begin.
+func (t *MessageTool) BeginRound() {
+	t.sentInRound = false
 	t.lastChannel = ""
 	t.lastChatID = ""
 	t.lastContent = ""

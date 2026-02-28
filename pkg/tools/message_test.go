@@ -226,6 +226,36 @@ func TestMessageTool_Execute_SuppressDuplicateInSameRound(t *testing.T) {
 	}
 }
 
+func TestMessageTool_Execute_AllowsSameContentAfterBeginRound(t *testing.T) {
+	tool := NewMessageTool()
+	tool.SetContext("test-channel", "test-chat-id")
+
+	callCount := 0
+	tool.SetSendCallback(func(channel, chatID, content string) error {
+		callCount++
+		return nil
+	})
+
+	ctx := context.Background()
+	args := map[string]any{"content": "same message"}
+
+	first := tool.Execute(ctx, args)
+	if first.IsError || !first.Silent {
+		t.Fatalf("first result unexpected: %+v", first)
+	}
+
+	tool.BeginRound()
+	tool.SetContext("test-channel", "test-chat-id")
+
+	second := tool.Execute(ctx, args)
+	if second.IsError || !second.Silent {
+		t.Fatalf("second result unexpected: %+v", second)
+	}
+	if callCount != 2 {
+		t.Fatalf("send callback call count = %d, want 2", callCount)
+	}
+}
+
 func TestMessageTool_Name(t *testing.T) {
 	tool := NewMessageTool()
 	if tool.Name() != "message" {
