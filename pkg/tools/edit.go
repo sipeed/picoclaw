@@ -2,9 +2,7 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"strings"
 )
 
@@ -76,6 +74,12 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	return SilentResult(fmt.Sprintf("File edited: %s", path))
 }
 
+func (t *EditFileTool) UpgradeToConcurrent() Tool {
+	return &EditFileTool{
+		fs: &ConcurrentFS{baseFS: t.fs},
+	}
+}
+
 type AppendFileTool struct {
 	fs fileSystem
 }
@@ -132,31 +136,25 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *Tool
 	return SilentResult(fmt.Sprintf("Appended to %s", path))
 }
 
-// editFile reads the file via sysFs, performs the replacement, and writes back.
-// It uses a fileSystem interface, allowing the same logic for both restricted and unrestricted modes.
-func editFile(sysFs fileSystem, path, oldText, newText string) error {
-	content, err := sysFs.ReadFile(path)
-	if err != nil {
-		return err
+func (t *AppendFileTool) UpgradeToConcurrent() Tool {
+	return &AppendFileTool{
+		fs: &ConcurrentFS{baseFS: t.fs},
 	}
-
-	newContent, err := replaceEditContent(content, oldText, newText)
-	if err != nil {
-		return err
-	}
-
-	return sysFs.WriteFile(path, newContent)
 }
 
-// appendFile reads the existing content (if any) via sysFs, appends new content, and writes back.
-func appendFile(sysFs fileSystem, path, appendContent string) error {
-	content, err := sysFs.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
+// editFile reads the file via sysFs, performs the replacement, and writes back atomically.
+func editFile(sysFs fileSystem, path, oldText, newText string) error {
+	return sysFs.EditFile(path, func(content []byte) ([]byte, error) {
+		return replaceEditContent(content, oldText, newText)
+	})
+}
 
-	newContent := append(content, []byte(appendContent)...)
-	return sysFs.WriteFile(path, newContent)
+// appendFile reads the existing content (if any) via sysFs, appends new content, and writes back atomically.
+func appendFile(sysFs fileSystem, path, appendContent string) error {
+	return sysFs.EditFile(path, func(content []byte) ([]byte, error) {
+		newContent := append(content, []byte(appendContent)...)
+		return newContent, nil
+	})
 }
 
 // replaceEditContent handles the core logic of finding and replacing a single occurrence of oldText.

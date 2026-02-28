@@ -155,6 +155,12 @@ func registerSharedTools(
 			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 		})
 		agent.Tools.Register(spawnTool)
+
+		teamTool := tools.NewTeamTool(subagentManager)
+		agent.Tools.Register(teamTool)
+
+		spawnSubAgentTool := tools.NewSpawnSubAgentTool(subagentManager)
+		agent.Tools.Register(spawnSubAgentTool)
 	}
 }
 

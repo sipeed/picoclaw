@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -18,17 +19,19 @@ import (
 
 // ToolLoopConfig configures the tool execution loop.
 type ToolLoopConfig struct {
-	Provider      providers.LLMProvider
-	Model         string
-	Tools         *ToolRegistry
-	MaxIterations int
-	LLMOptions    map[string]any
+	Provider             providers.LLMProvider
+	Model                string
+	Tools                *ToolRegistry
+	MaxIterations        int
+	LLMOptions           map[string]any
+	RemainingTokenBudget *atomic.Int64
 }
 
 // ToolLoopResult contains the result of running the tool loop.
 type ToolLoopResult struct {
 	Content    string
 	Iterations int
+	Messages   []providers.Message // Allows caller to retain stateful context across executions
 }
 
 // RunToolLoop executes the LLM + tool call iteration loop.
@@ -71,6 +74,18 @@ func RunToolLoop(
 					"error":     err.Error(),
 				})
 			return nil, fmt.Errorf("LLM call failed: %w", err)
+		}
+
+		// 3.5 Token Budget Enforcement
+		if response.Usage != nil && config.RemainingTokenBudget != nil {
+			newBudget := config.RemainingTokenBudget.Add(-int64(response.Usage.TotalTokens))
+			if newBudget < 0 {
+				logger.ErrorCF("toolloop", "Token budget exceeded", map[string]any{
+					"used_iteration": response.Usage.TotalTokens,
+					"deficit":        newBudget,
+				})
+				return nil, fmt.Errorf("Token Budget Exceeded: Team budget completely consumed")
+			}
 		}
 
 		// 4. If no tool calls, we're done
@@ -158,5 +173,6 @@ func RunToolLoop(
 	return &ToolLoopResult{
 		Content:    finalContent,
 		Iterations: iteration,
+		Messages:   messages,
 	}, nil
 }

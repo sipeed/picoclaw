@@ -248,6 +248,31 @@ func (sm *SubagentManager) ListTasks() []*SubagentTask {
 	return tasks
 }
 
+// BuildBaseWorkerConfig returns a base ToolLoopConfig that can be customized for isolated workers.
+func (sm *SubagentManager) BuildBaseWorkerConfig(ctx context.Context) ToolLoopConfig {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	var llmOptions map[string]any
+	if sm.hasMaxTokens || sm.hasTemperature {
+		llmOptions = map[string]any{}
+		if sm.hasMaxTokens {
+			llmOptions["max_tokens"] = sm.maxTokens
+		}
+		if sm.hasTemperature {
+			llmOptions["temperature"] = sm.temperature
+		}
+	}
+
+	return ToolLoopConfig{
+		Provider:      sm.provider,
+		Model:         sm.defaultModel,
+		Tools:         sm.tools, // Note: Caller should replace this for isolated registry
+		MaxIterations: sm.maxIterations,
+		LLMOptions:    llmOptions,
+	}
+}
+
 // SubagentTool executes a subagent task synchronously and returns the result.
 // Unlike SpawnTool which runs tasks asynchronously, SubagentTool waits for completion
 // and returns the result directly in the ToolResult.
