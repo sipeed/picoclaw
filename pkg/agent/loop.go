@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/git"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/orch"
@@ -944,24 +945,51 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// Guarantee heartbeat worktree cleanup on ALL exit paths (error, panic, normal).
 	// Wait for spawned subagents first so they aren't killed mid-flight.
+	// After auto-commit, attempt to merge the worktree branch into main.
 	defer func() {
 		if opts.Background {
 			if agent.SubagentMgr != nil {
 				agent.SubagentMgr.WaitAll(35 * time.Minute) // slightly above spawnTimeout
 			}
-			if agent.IsInWorktree(opts.SessionKey) {
-				commitMsg := "heartbeat: auto-save"
-				wtResult, _ := agent.DeactivateWorktree(opts.SessionKey, commitMsg, false)
-				if wtResult != nil && wtResult.CommitsAhead > 0 && !constants.IsInternalChannel(opts.Channel) {
-					cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
-					_ = al.bus.PublishOutbound(cleanupCtx, bus.OutboundMessage{
-						Channel: opts.Channel,
-						ChatID:  opts.ChatID,
-						Content: fmt.Sprintf("Heartbeat made code changes on branch `%s` (%d commits).",
-							wtResult.Branch, wtResult.CommitsAhead),
-					})
-					cleanupCancel()
+			wt := agent.GetWorktree(opts.SessionKey)
+			if wt != nil {
+				// 1. Auto-commit uncommitted changes in worktree
+				if git.HasUncommittedChanges(wt.Path) {
+					_ = git.AutoCommit(wt.Path, "heartbeat: auto-save")
 				}
+
+				// 2. Check if there are unique commits worth merging
+				repoRoot := git.FindRepoRoot(agent.Workspace)
+				ahead := git.CommitsAhead(repoRoot, wt.BaseBranch, wt.Branch)
+
+				if ahead > 0 && repoRoot != "" {
+					// 3. Try fast-forward merge into base branch
+					mr := git.MergeWorktreeBranch(repoRoot, wt)
+
+					// 4. Notify based on merge result
+					if !constants.IsInternalChannel(opts.Channel) {
+						cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+						if mr.Merged {
+							_ = al.bus.PublishOutbound(cleanupCtx, bus.OutboundMessage{
+								Channel: opts.Channel,
+								ChatID:  opts.ChatID,
+								Content: fmt.Sprintf("Heartbeat: merged %d commit(s) to %s.",
+									ahead, wt.BaseBranch),
+							})
+						} else if mr.Conflict {
+							_ = al.bus.PublishOutbound(cleanupCtx, bus.OutboundMessage{
+								Channel: opts.Channel,
+								ChatID:  opts.ChatID,
+								Content: fmt.Sprintf("Heartbeat: merge conflict on branch `%s` — manual merge needed.",
+									mr.Branch),
+							})
+						}
+						cleanupCancel()
+					}
+				}
+
+				// 5. Dispose worktree (branch auto-deleted if merged, kept if conflict)
+				agent.DeactivateWorktree(opts.SessionKey, "", false)
 			}
 		}
 	}()
