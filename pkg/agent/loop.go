@@ -119,7 +119,12 @@ type processOptions struct {
 
 const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
 
-func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, enableStats ...bool) *AgentLoop {
+func NewAgentLoop(
+	cfg *config.Config,
+	msgBus *bus.MessageBus,
+	provider providers.LLMProvider,
+	enableStats ...bool,
+) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
 	// Set up shared fallback chain
@@ -282,7 +287,14 @@ func registerSharedTools(
 				PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 				PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 			}
-			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus, al.reporter(), webSearchOpts)
+			subagentManager := tools.NewSubagentManager(
+				provider,
+				agent.Model,
+				agent.Workspace,
+				msgBus,
+				al.reporter(),
+				webSearchOpts,
+			)
 			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 			spawnTool := tools.NewSpawnTool(subagentManager)
 			currentAgentID := agentID
@@ -480,7 +492,10 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 // It caches created providers by "provider/model" key so each combination is
 // only resolved once. Looks up model_list first (new format), then falls back
 // to the legacy providers section via CreateProviderByName.
-func (al *AgentLoop) resolveProvider(providerName, modelName string, fallback providers.LLMProvider) providers.LLMProvider {
+func (al *AgentLoop) resolveProvider(
+	providerName, modelName string,
+	fallback providers.LLMProvider,
+) providers.LLMProvider {
 	key := strings.ToLower(providerName + "/" + modelName)
 	if key == "/" {
 		return fallback
@@ -497,14 +512,14 @@ func (al *AgentLoop) resolveProvider(providerName, modelName string, fallback pr
 			return p
 		}
 		logger.WarnCF("agent", "Failed to create provider from model_list, trying legacy",
-			map[string]interface{}{"provider": providerName, "model": modelName, "error": err.Error()})
+			map[string]any{"provider": providerName, "model": modelName, "error": err.Error()})
 	}
 
 	// Fall back to legacy providers section.
 	p, err := providers.CreateProviderByName(al.cfg, providerName)
 	if err != nil {
 		logger.WarnCF("agent", "Failed to create provider for fallback, using primary",
-			map[string]interface{}{"provider": providerName, "error": err.Error()})
+			map[string]any{"provider": providerName, "error": err.Error()})
 		return fallback
 	}
 	al.providerCache[key] = p
@@ -630,7 +645,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			lower := strings.ToLower(content)
 
 			// Check for stop keywords
-			stopKeywords := []string{"stop", "cancel", "abort", "停止", "中止", "やめて"}
+			stopKeywords := []string{"stop", "cancel", "abort", "停止", "中止", "やめて"} //nolint:gosmopolitan // intentional CJK stop words
 			isStop := false
 			for _, kw := range stopKeywords {
 				if lower == kw {
@@ -939,7 +954,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 1a. Set session-specific working directory for bootstrap file lookup.
 	// Prefer the tool-detected project directory (touch_dir) from the session tracker,
 	// resolved as an absolute path under workspace. Fall back to worktree or workspace.
-	if active := al.sessions.ListActive(); len(active) > 0 && active[0].SessionKey == opts.SessionKey && active[0].TouchDir != "" {
+	if active := al.sessions.ListActive(); len(active) > 0 && active[0].SessionKey == opts.SessionKey &&
+		active[0].TouchDir != "" {
 		agent.ContextBuilder.SetWorkDir(filepath.Join(agent.Workspace, active[0].TouchDir))
 	} else {
 		agent.ContextBuilder.SetWorkDir(agent.EffectiveWorkspace(opts.SessionKey))
@@ -1015,7 +1031,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			sb.WriteString("\n\n## Background Execution\n")
 			sb.WriteString("You are running as a background heartbeat with no conversation history. ")
 			sb.WriteString("MEMORY.md is the only shared state between heartbeats. ")
-			sb.WriteString("After completing each plan step, immediately use edit_file to mark it [x] in memory/MEMORY.md.")
+			sb.WriteString(
+				"After completing each plan step, immediately use edit_file to mark it [x] in memory/MEMORY.md.",
+			)
 			messages[0].Content = sb.String()
 		}
 	}
@@ -1053,14 +1071,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 5a. Auto-advance plan phases after LLM iteration
 	postStatus := agent.ContextBuilder.GetPlanStatus()
-	if agent.ContextBuilder.HasActivePlan() && (postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
+	if agent.ContextBuilder.HasActivePlan() &&
+		(postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
 		// Intercept: if AI changed status to executing or review without user approval
 		// (from interviewing or review), validate and hold at "review".
 		if preStatus == "interviewing" || (preStatus == "review" && postStatus == "executing") {
 			if err := agent.ContextBuilder.ValidatePlanStructure(); err != nil {
 				_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 				logger.WarnCF("agent", "Reverted plan to interviewing: "+err.Error(),
-					map[string]interface{}{"agent_id": agent.ID})
+					map[string]any{"agent_id": agent.ID})
 				// Inject rejection into session history so LLM sees it next iteration
 				rejectionMsg := "[System] Plan rejected: " + err.Error() + ". Fix and try again."
 				agent.Sessions.AddMessage(opts.SessionKey, "user", rejectionMsg)
@@ -1080,7 +1099,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			// Safeguard: executing but no phases (shouldn't happen, but be safe).
 			_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 			logger.WarnCF("agent", "Reverted plan to interviewing: no phases defined",
-				map[string]interface{}{"agent_id": agent.ID})
+				map[string]any{"agent_id": agent.ID})
 		} else if agent.ContextBuilder.IsPlanComplete() {
 			// Mark plan as completed (keep memory for review; user can /plan clear)
 			total := agent.ContextBuilder.GetTotalPhases()
@@ -1194,7 +1213,8 @@ func buildTaskReminder(userMessage string, lastBlocker string) providers.Message
 		truncatedBlocker := utils.Truncate(lastBlocker, blockerMaxChars)
 		content = fmt.Sprintf(
 			"[TASK REMINDER]\nOriginal task:\n---\n%s\n---\nLast blocker:\n---\n%s\n---\nFix the blocker if essential, or find an alternative. If all steps are complete, move on.",
-			truncatedTask, truncatedBlocker,
+			truncatedTask,
+			truncatedBlocker,
 		)
 	} else {
 		content = fmt.Sprintf(
@@ -1247,7 +1267,7 @@ var optFlagPattern = regexp.MustCompile(`\s+--?\w[\w-]*(=\S*)?`)
 
 // extractExecProjectDir extracts the basename of an exec cd target.
 // Returns "" if the command has no cd prefix.
-func extractExecProjectDir(args map[string]interface{}) string {
+func extractExecProjectDir(args map[string]any) string {
 	cmd, _ := args["command"].(string)
 	if cmd == "" {
 		return ""
@@ -1338,7 +1358,7 @@ func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string
 // For exec: extracts the command and strips the leading "cd <workspace> && ".
 // For file tools: extracts the path and strips the workspace prefix.
 // Falls back to raw JSON truncation.
-func buildArgsSnippet(toolName string, args map[string]interface{}, workspace string) string {
+func buildArgsSnippet(toolName string, args map[string]any, workspace string) string {
 	switch toolName {
 	case "exec":
 		cmd, _ := args["command"].(string)
@@ -1829,7 +1849,12 @@ type streamToolCallAcc struct {
 }
 
 // buildAccumulatedResponse constructs an LLMResponse from accumulated stream data.
-func buildAccumulatedResponse(content, reasoning string, toolCalls []streamToolCallAcc, finishReason string, usage *providers.UsageInfo) *providers.LLMResponse {
+func buildAccumulatedResponse(
+	content, reasoning string,
+	toolCalls []streamToolCallAcc,
+	finishReason string,
+	usage *providers.UsageInfo,
+) *providers.LLMResponse {
 	resp := &providers.LLMResponse{
 		Content:      content,
 		Reasoning:    reasoning,
@@ -2426,7 +2451,14 @@ func (al *AgentLoop) runLLMIteration(
 			if wt := agent.GetWorktree(opts.SessionKey); wt != nil {
 				toolCtx = tools.WithWorkspaceOverride(toolCtx, wt.Path)
 			}
-			toolResult := agent.Tools.ExecuteWithContext(toolCtx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+			toolResult := agent.Tools.ExecuteWithContext(
+				toolCtx,
+				tc.Name,
+				tc.Arguments,
+				opts.Channel,
+				opts.ChatID,
+				asyncCallback,
+			)
 			toolDuration := time.Since(toolStart)
 
 			// Update tool log entry with result
@@ -2539,7 +2571,7 @@ func (al *AgentLoop) runLLMIteration(
 			messages = append(messages, reminderMsg)
 			lastReminderIdx = len(messages) - 1
 			logger.DebugCF("agent", "Injected task reminder",
-				map[string]interface{}{
+				map[string]any{
 					"agent_id":    agent.ID,
 					"iteration":   iteration,
 					"has_blocker": lastBlocker != "",
@@ -2551,7 +2583,7 @@ func (al *AgentLoop) runLLMIteration(
 			if reminder, ok := buildPlanReminder(planSnapshot); ok {
 				messages = append(messages, reminder)
 				logger.DebugCF("agent", "Injected plan reminder",
-					map[string]interface{}{
+					map[string]any{
 						"agent_id":    agent.ID,
 						"iteration":   iteration,
 						"plan_status": planSnapshot,
@@ -2565,7 +2597,8 @@ func (al *AgentLoop) runLLMIteration(
 		if touchDir := al.sessions.GetTouchDir(opts.SessionKey); touchDir != "" {
 			agent.ContextBuilder.SetWorkDir(filepath.Join(agent.Workspace, touchDir))
 		}
-		if newPrompt := agent.ContextBuilder.BuildSystemPrompt(); len(messages) > 0 && messages[0].Content != newPrompt {
+		if newPrompt := agent.ContextBuilder.BuildSystemPrompt(); len(messages) > 0 &&
+			messages[0].Content != newPrompt {
 			messages[0].Content = newPrompt
 			al.lastSystemPrompt.Store(newPrompt)
 			al.promptDirty.Store(false)
@@ -2577,11 +2610,11 @@ func (al *AgentLoop) runLLMIteration(
 	// make one final LLM call without tools to force a text response.
 	if finalContent == "" && iteration >= maxIter {
 		logger.WarnCF("agent", "Max iterations reached, forcing final response without tools",
-			map[string]interface{}{
+			map[string]any{
 				"agent_id":  agent.ID,
 				"iteration": iteration,
 			})
-		forceResp, forceErr := agent.Provider.Chat(ctx, messages, nil, agent.Model, map[string]interface{}{
+		forceResp, forceErr := agent.Provider.Chat(ctx, messages, nil, agent.Model, map[string]any{
 			"max_tokens":       agent.MaxTokens,
 			"temperature":      agent.Temperature,
 			"prompt_cache_key": agent.ID,
@@ -2633,7 +2666,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
 				logger.InfoCF("agent", "Memory threshold reached, optimizing conversation history",
-					map[string]interface{}{
+					map[string]any{
 						"session_key":    sessionKey,
 						"history_len":    len(newHistory),
 						"token_estimate": tokenEstimate,
@@ -3127,7 +3160,8 @@ func (al *AgentLoop) handleSessionCommand(args []string) string {
 	}
 
 	s := al.stats.GetStats()
-	return fmt.Sprintf("Session Statistics\n\nToday (%s):\n  Prompts: %d\n  LLM calls: %d\n  Tokens: %s (in: %s, out: %s)\n\nAll time (since %s):\n  Prompts: %d\n  LLM calls: %d\n  Tokens: %s (in: %s, out: %s)",
+	return fmt.Sprintf(
+		"Session Statistics\n\nToday (%s):\n  Prompts: %d\n  LLM calls: %d\n  Tokens: %s (in: %s, out: %s)\n\nAll time (since %s):\n  Prompts: %d\n  LLM calls: %d\n  Tokens: %s (in: %s, out: %s)",
 		s.Today.Date,
 		s.Today.Prompts,
 		s.Today.Requests,
@@ -3369,7 +3403,7 @@ func filterInterviewTools(defs []providers.ToolDefinition) []providers.ToolDefin
 // plan is in a pre-execution state. Uses the shared interviewAllowedTools map for
 // name-level gating, then applies argument-level constraints for write-type tools
 // (MEMORY.md only) and exec (read-only commands only).
-func isToolAllowedDuringInterview(toolName string, args map[string]interface{}) bool {
+func isToolAllowedDuringInterview(toolName string, args map[string]any) bool {
 	norm := tools.NormalizeToolName(toolName)
 	if !interviewAllowedTools[norm] {
 		return false

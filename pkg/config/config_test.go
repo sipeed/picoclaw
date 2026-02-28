@@ -435,7 +435,8 @@ func TestAgentDefaults_PlanModel_StringParse(t *testing.T) {
 	if cfg.Agents.Defaults.PlanModel != "anthropic/claude-sonnet-4-6" {
 		t.Errorf("PlanModel = %q, want 'anthropic/claude-sonnet-4-6'", cfg.Agents.Defaults.PlanModel)
 	}
-	if len(cfg.Agents.Defaults.PlanModelFallbacks) != 1 || cfg.Agents.Defaults.PlanModelFallbacks[0] != "openai/gpt-4o" {
+	if len(cfg.Agents.Defaults.PlanModelFallbacks) != 1 ||
+		cfg.Agents.Defaults.PlanModelFallbacks[0] != "openai/gpt-4o" {
 		t.Errorf("PlanModelFallbacks = %v, want [openai/gpt-4o]", cfg.Agents.Defaults.PlanModelFallbacks)
 	}
 }

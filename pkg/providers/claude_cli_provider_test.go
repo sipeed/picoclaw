@@ -1086,7 +1086,7 @@ func TestExtractXMLToolCalls_MismatchedCloseTag(t *testing.T) {
 	}
 }
 
-func TestStripXMLToolCalls_MismatchedCloseTag(t *testing.T) {
+func TestStripXMLToolCalls_MismatchedCloseTag(t *testing.T) { //nolint:gosmopolitan // CJK test data
 	text := `今テスト走らせるね。
 <minimax:toolcall>
 <invoke name="exec">

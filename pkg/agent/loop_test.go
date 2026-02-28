@@ -1466,7 +1466,7 @@ Test
 func TestIsToolAllowedDuringInterview_FuzzyNames(t *testing.T) {
 	tests := []struct {
 		name string
-		args map[string]interface{}
+		args map[string]any
 		want bool
 	}{
 		// Exact names — read tools allowed
@@ -1484,38 +1484,38 @@ func TestIsToolAllowedDuringInterview_FuzzyNames(t *testing.T) {
 		{"message", nil, true},
 		{"Message", nil, true},
 		// Write to MEMORY.md — allowed
-		{"edit_file", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
-		{"editfile", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
-		{"EditFile", map[string]interface{}{"path": "/ws/memory/MEMORY.md"}, true},
+		{"edit_file", map[string]any{"path": "/ws/memory/MEMORY.md"}, true},
+		{"editfile", map[string]any{"path": "/ws/memory/MEMORY.md"}, true},
+		{"EditFile", map[string]any{"path": "/ws/memory/MEMORY.md"}, true},
 		// Write to non-MEMORY.md — blocked
-		{"edit_file", map[string]interface{}{"path": "/ws/main.go"}, false},
-		{"editfile", map[string]interface{}{"path": "/ws/main.go"}, false},
+		{"edit_file", map[string]any{"path": "/ws/main.go"}, false},
+		{"editfile", map[string]any{"path": "/ws/main.go"}, false},
 		// exec — read-only commands allowed
-		{"exec", map[string]interface{}{"command": "find . -name '*.py'"}, true},
-		{"exec", map[string]interface{}{"command": "ls -la"}, true},
-		{"exec", map[string]interface{}{"command": "grep -r TODO ."}, true},
-		{"exec", map[string]interface{}{"command": "cat README.md"}, true},
+		{"exec", map[string]any{"command": "find . -name '*.py'"}, true},
+		{"exec", map[string]any{"command": "ls -la"}, true},
+		{"exec", map[string]any{"command": "grep -r TODO ."}, true},
+		{"exec", map[string]any{"command": "cat README.md"}, true},
 		// exec — cd prefix stripped
-		{"exec", map[string]interface{}{"command": "cd /home/user/project && find . -type f"}, true},
-		{"exec", map[string]interface{}{"command": "cd /tmp && rm -rf *"}, false},
+		{"exec", map[string]any{"command": "cd /home/user/project && find . -type f"}, true},
+		{"exec", map[string]any{"command": "cd /tmp && rm -rf *"}, false},
 		// exec — write operators blocked
-		{"exec", map[string]interface{}{"command": "find . > output.txt"}, false},
-		{"exec", map[string]interface{}{"command": "ls -la >> log.txt"}, false},
-		{"exec", map[string]interface{}{"command": "cat foo | tee bar.txt"}, false},
+		{"exec", map[string]any{"command": "find . > output.txt"}, false},
+		{"exec", map[string]any{"command": "ls -la >> log.txt"}, false},
+		{"exec", map[string]any{"command": "cat foo | tee bar.txt"}, false},
 		// exec — path traversal blocked
-		{"exec", map[string]interface{}{"command": "cat ../../etc/passwd"}, false},
-		{"exec", map[string]interface{}{"command": "find ../../"}, false},
-		{"exec", map[string]interface{}{"command": "ls ../secret"}, false},
+		{"exec", map[string]any{"command": "cat ../../etc/passwd"}, false},
+		{"exec", map[string]any{"command": "find ../../"}, false},
+		{"exec", map[string]any{"command": "ls ../secret"}, false},
 		// exec — absolute paths blocked
-		{"exec", map[string]interface{}{"command": "cat /etc/passwd"}, false},
-		{"exec", map[string]interface{}{"command": "find /etc -name '*.conf'"}, false},
-		{"exec", map[string]interface{}{"command": "ls /root"}, false},
+		{"exec", map[string]any{"command": "cat /etc/passwd"}, false},
+		{"exec", map[string]any{"command": "find /etc -name '*.conf'"}, false},
+		{"exec", map[string]any{"command": "ls /root"}, false},
 		// exec — write commands blocked
-		{"exec", map[string]interface{}{"command": "rm -rf /"}, false},
-		{"exec", map[string]interface{}{"command": "mv a b"}, false},
+		{"exec", map[string]any{"command": "rm -rf /"}, false},
+		{"exec", map[string]any{"command": "mv a b"}, false},
 		// exec — no args / empty command blocked
 		{"exec", nil, false},
-		{"exec", map[string]interface{}{"command": ""}, false},
+		{"exec", map[string]any{"command": ""}, false},
 		{"Exec", nil, false},
 	}
 	for _, tt := range tests {
@@ -1530,56 +1530,60 @@ func TestBuildArgsSnippet_ExecStripsCD(t *testing.T) {
 	tests := []struct {
 		name      string
 		tool      string
-		args      map[string]interface{}
+		args      map[string]any
 		workspace string
 		wantSnip  string
 	}{
 		{
-			name:      "exec strips cd prefix",
-			tool:      "exec",
-			args:      map[string]interface{}{"command": "cd /home/user/workspace/project/my-projects && pytest tests/test_integration.py"},
+			name: "exec strips cd prefix",
+			tool: "exec",
+			args: map[string]any{
+				"command": "cd /home/user/workspace/project/my-projects && pytest tests/test_integration.py",
+			},
 			workspace: "/home/user/workspace",
 			wantSnip:  "pytest tests/test_integration.py",
 		},
 		{
 			name:      "exec no cd prefix, flags stripped",
 			tool:      "exec",
-			args:      map[string]interface{}{"command": "ls -la"},
+			args:      map[string]any{"command": "ls -la"},
 			workspace: "/ws",
 			wantSnip:  "ls",
 		},
 		{
 			name:      "exec empty command",
 			tool:      "exec",
-			args:      map[string]interface{}{},
+			args:      map[string]any{},
 			workspace: "/ws",
 			wantSnip:  "{}",
 		},
 		{
 			name:      "read_file strips workspace",
 			tool:      "read_file",
-			args:      map[string]interface{}{"path": "/home/user/workspace/src/main.go"},
+			args:      map[string]any{"path": "/home/user/workspace/src/main.go"},
 			workspace: "/home/user/workspace",
 			wantSnip:  "src/main.go",
 		},
 		{
 			name:      "edit_file shows path",
 			tool:      "edit_file",
-			args:      map[string]interface{}{"path": "/ws/config.json", "old_text": "old value here"},
+			args:      map[string]any{"path": "/ws/config.json", "old_text": "old value here"},
 			workspace: "/ws",
 			wantSnip:  "config.json",
 		},
 		{
-			name:      "file tool long path prioritizes filename",
-			tool:      "read_file",
-			args:      map[string]interface{}{"path": "/ws/projects/terra-py-form/src/terra_py_form/hot/state/backend.py"},
+			name: "file tool long path prioritizes filename",
+			tool: "read_file",
+			args: map[string]any{
+				"path": "/ws/projects/terra-py-form/src/terra_py_form/hot/state/backend.py",
+			},
 			workspace: "/ws",
 			wantSnip:  "projects/terra-py-form/src/terra_py_form/hot/sta\u2026/backend.py",
 		},
 		{
 			name:      "unknown tool shows raw JSON",
 			tool:      "web_search",
-			args:      map[string]interface{}{"query": "hello"},
+			args:      map[string]any{"query": "hello"},
 			workspace: "/ws",
 			wantSnip:  `{"query":"hello"}`,
 		},
@@ -1609,20 +1613,32 @@ func TestFormatCompactEntry(t *testing.T) {
 			wantMark: "✓ 1.0s", // exec keeps duration
 		},
 		{
-			name:     "exec long entry truncated from end",
-			entry:    toolLogEntry{Name: "[2] exec", ArgsSnip: "pytest tests/integration/test_very_long_name.py", Result: "✗ 3.0s"},
+			name: "exec long entry truncated from end",
+			entry: toolLogEntry{
+				Name:     "[2] exec",
+				ArgsSnip: "pytest tests/integration/test_very_long_name.py",
+				Result:   "✗ 3.0s",
+			},
 			wantMark: "✗",
 		},
 		{
-			name:     "file tool omits duration, shows filename",
-			entry:    toolLogEntry{Name: "[3] edit_file", ArgsSnip: "projects/terra/src/deep/nested/backend.py", Result: "✓ 0.0s"},
+			name: "file tool omits duration, shows filename",
+			entry: toolLogEntry{
+				Name:     "[3] edit_file",
+				ArgsSnip: "projects/terra/src/deep/nested/backend.py",
+				Result:   "✓ 0.0s",
+			},
 			wantSub:  "backend.py",
 			wantMark: "✓",
 			noTime:   true,
 		},
 		{
-			name:     "file tool path truncates from start",
-			entry:    toolLogEntry{Name: "[4] read_file", ArgsSnip: "projects/terra-py-form/src/terra_py_form/hot/state/backend.py", Result: "✓ 0.1s"},
+			name: "file tool path truncates from start",
+			entry: toolLogEntry{
+				Name:     "[4] read_file",
+				ArgsSnip: "projects/terra-py-form/src/terra_py_form/hot/state/backend.py",
+				Result:   "✓ 0.1s",
+			},
 			wantSub:  "backend.py",
 			wantMark: "✓",
 			noTime:   true,
@@ -1745,7 +1761,7 @@ func TestExtractExecProjectDir(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := map[string]interface{}{"command": tt.cmd}
+			args := map[string]any{"command": tt.cmd}
 			got := extractExecProjectDir(args)
 			if got != tt.want {
 				t.Errorf("extractExecProjectDir(%q) = %q, want %q", tt.cmd, got, tt.want)

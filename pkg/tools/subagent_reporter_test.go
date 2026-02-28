@@ -21,7 +21,13 @@ func newBlockingProvider() *blockingProvider {
 	return &blockingProvider{ready: make(chan struct{})}
 }
 
-func (p *blockingProvider) Chat(ctx context.Context, _ []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *blockingProvider) Chat(
+	ctx context.Context,
+	_ []providers.Message,
+	_ []providers.ToolDefinition,
+	_ string,
+	_ map[string]any,
+) (*providers.LLMResponse, error) {
 	close(p.ready) // signal: we are now blocking
 	<-ctx.Done()
 	return nil, ctx.Err()
