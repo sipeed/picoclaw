@@ -38,25 +38,49 @@ type Provider struct {
 	httpClient     *http.Client
 }
 
-// Options configures optional behaviour for the provider.
-type Options struct {
-	EndpointPath   string // API path appended to apiBase (default: "/chat/completions")
-	MaxTokensField string // Field name for max tokens parameter
-	Stream         bool   // Use SSE streaming internally
-	RequestTimeout int    // Request timeout in seconds (0 = default 120s)
-}
+// Option is a functional option for configuring a Provider.
+type Option func(*Provider)
 
 const defaultRequestTimeout = 120 * time.Second
 
-func NewProviderWithOptions(apiKey, apiBase, proxy string, opts Options) *Provider {
-	timeout := defaultRequestTimeout
-	if opts.RequestTimeout > 0 {
-		timeout = time.Duration(opts.RequestTimeout) * time.Second
-	} else if opts.Stream {
-		timeout = 5 * time.Minute
+// WithMaxTokensField sets the field name for max tokens (e.g., "max_completion_tokens").
+func WithMaxTokensField(maxTokensField string) Option {
+	return func(p *Provider) {
+		p.maxTokensField = maxTokensField
 	}
+}
+
+// WithRequestTimeout overrides the HTTP client timeout.
+func WithRequestTimeout(timeout time.Duration) Option {
+	return func(p *Provider) {
+		if timeout > 0 {
+			p.httpClient.Timeout = timeout
+		}
+	}
+}
+
+// WithStream enables SSE streaming mode.
+func WithStream(stream bool) Option {
+	return func(p *Provider) {
+		p.stream = stream
+		if stream && p.httpClient.Timeout == defaultRequestTimeout {
+			p.httpClient.Timeout = 5 * time.Minute
+		}
+	}
+}
+
+// WithEndpointPath sets the API path appended to apiBase (default: "/chat/completions").
+func WithEndpointPath(path string) Option {
+	return func(p *Provider) {
+		if path != "" {
+			p.endpointPath = path
+		}
+	}
+}
+
+func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout: defaultRequestTimeout,
 	}
 
 	if proxy != "" {
@@ -70,39 +94,37 @@ func NewProviderWithOptions(apiKey, apiBase, proxy string, opts Options) *Provid
 		}
 	}
 
-	endpointPath := opts.EndpointPath
-	if endpointPath == "" {
-		endpointPath = "/chat/completions"
+	p := &Provider{
+		apiKey:       apiKey,
+		apiBase:      strings.TrimRight(apiBase, "/"),
+		endpointPath: "/chat/completions",
+		httpClient:   client,
 	}
 
-	return &Provider{
-		apiKey:         apiKey,
-		apiBase:        strings.TrimRight(apiBase, "/"),
-		endpointPath:   endpointPath,
-		maxTokensField: opts.MaxTokensField,
-		stream:         opts.Stream,
-		httpClient:     client,
+	for _, opt := range opts {
+		if opt != nil {
+			opt(p)
+		}
 	}
-}
 
-func NewProvider(apiKey, apiBase, proxy string) *Provider {
-	return NewProviderWithOptions(apiKey, apiBase, proxy, Options{})
+	return p
 }
 
 func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
-	return NewProviderWithOptions(apiKey, apiBase, proxy, Options{
-		MaxTokensField: maxTokensField,
-	})
+	return NewProvider(apiKey, apiBase, proxy, WithMaxTokensField(maxTokensField))
 }
 
 func NewProviderWithMaxTokensFieldAndTimeout(
 	apiKey, apiBase, proxy, maxTokensField string,
 	requestTimeoutSeconds int,
 ) *Provider {
-	return NewProviderWithOptions(apiKey, apiBase, proxy, Options{
-		MaxTokensField: maxTokensField,
-		RequestTimeout: requestTimeoutSeconds,
-	})
+	return NewProvider(
+		apiKey,
+		apiBase,
+		proxy,
+		WithMaxTokensField(maxTokensField),
+		WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+	)
 }
 
 // streamBufferSize is the channel buffer size for ChatStream events.
@@ -308,6 +330,7 @@ func readSSEIntoChannel(ctx context.Context, r io.Reader, ch chan<- protocoltype
 		if len(chunk.Choices) > 0 {
 			choice := chunk.Choices[0]
 			ev.ContentDelta = choice.Delta.Content
+			ev.ReasoningDelta = choice.Delta.ReasoningContent
 			if choice.FinishReason != "" {
 				ev.FinishReason = choice.FinishReason
 			}
@@ -342,6 +365,7 @@ func readSSEIntoChannel(ctx context.Context, r io.Reader, ch chan<- protocoltype
 // AccumulateStream drains a StreamEvent channel and returns a complete LLMResponse.
 func AccumulateStream(ch <-chan protocoltypes.StreamEvent) (*LLMResponse, error) {
 	var content strings.Builder
+	var reasoning strings.Builder
 	var toolCalls []streamToolCallAcc
 	var finishReason string
 	var usage *UsageInfo
@@ -352,6 +376,9 @@ func AccumulateStream(ch <-chan protocoltypes.StreamEvent) (*LLMResponse, error)
 		}
 		if ev.ContentDelta != "" {
 			content.WriteString(ev.ContentDelta)
+		}
+		if ev.ReasoningDelta != "" {
+			reasoning.WriteString(ev.ReasoningDelta)
 		}
 		if ev.FinishReason != "" {
 			finishReason = ev.FinishReason
@@ -375,6 +402,7 @@ func AccumulateStream(ch <-chan protocoltypes.StreamEvent) (*LLMResponse, error)
 
 	result := &LLMResponse{
 		Content:      content.String(),
+		Reasoning:    reasoning.String(),
 		FinishReason: finishReason,
 		Usage:        usage,
 	}
@@ -576,8 +604,9 @@ type streamChoice struct {
 }
 
 type streamDelta struct {
-	Content   string          `json:"content"`
-	ToolCalls []streamDeltaTC `json:"tool_calls"`
+	Content          string          `json:"content"`
+	ReasoningContent string          `json:"reasoning_content"`
+	ToolCalls        []streamDeltaTC `json:"tool_calls"`
 }
 
 type streamDeltaTC struct {

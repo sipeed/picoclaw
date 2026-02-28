@@ -1692,6 +1692,61 @@ func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, chan
 	}
 }
 
+// streamingReasoningLines is the number of lines reserved for reasoning
+// in the streaming display.  The remaining lines go to content.
+const streamingReasoningLines = 6
+
+// buildStreamingDisplay builds a fixed-height status bubble for streaming.
+//
+// Layout when reasoning is active (reasoning only or both):
+//
+//	🧠 Thinking...
+//	━━━━━━━━━━
+//	<reasoning tail — streamingReasoningLines lines>
+//	━━━━━━━━━━
+//	<content tail — remaining lines>  (or blank if content is empty)
+//	█
+//
+// Layout when no reasoning (content only):
+//
+//	<content tail — streamingDisplayLines lines>
+//	█
+func buildStreamingDisplay(content, reasoning string) string {
+	if reasoning == "" {
+		// No reasoning — full window for content.
+		return utils.TailPad(content, streamingDisplayLines, maxEntryLineWidth) + " \u2589"
+	}
+
+	var sb strings.Builder
+
+	// Header
+	if content == "" {
+		sb.WriteString("\U0001f9e0 Thinking...\n")
+	} else {
+		sb.WriteString("\U0001f9e0 Thought, now responding...\n")
+	}
+	sb.WriteString(statusSeparator)
+
+	// Reasoning window
+	headerLines := 2 // header + separator
+	footerLines := 1 // separator before content
+	contentLines := streamingDisplayLines - headerLines - footerLines - streamingReasoningLines
+	if contentLines < 3 {
+		contentLines = 3
+	}
+	rLines := streamingDisplayLines - headerLines - footerLines - contentLines
+
+	sb.WriteString(utils.TailPad(reasoning, rLines, maxEntryLineWidth))
+	sb.WriteByte('\n')
+	sb.WriteString(statusSeparator)
+
+	// Content window (may be blank padding if content hasn't started)
+	sb.WriteString(utils.TailPad(content, contentLines, maxEntryLineWidth))
+	sb.WriteString(" \u2589")
+
+	return sb.String()
+}
+
 // runLLMIteration executes the LLM call loop with tool handling.
 // consumeStreamWithRepetitionDetection reads StreamEvents from ch, accumulates
 // content and tool calls, and runs repetition detection every checkInterval runes.
@@ -1701,9 +1756,10 @@ func consumeStreamWithRepetitionDetection(
 	ch <-chan protocoltypes.StreamEvent,
 	cancelFn context.CancelFunc,
 	checkInterval int,
-	onChunk func(accumulated string),
+	onChunk func(content, reasoning string),
 ) (*providers.LLMResponse, bool, error) {
 	var content strings.Builder
+	var reasoning strings.Builder
 	var toolCalls []streamToolCallAcc
 	var finishReason string
 	var usage *providers.UsageInfo
@@ -1713,12 +1769,18 @@ func consumeStreamWithRepetitionDetection(
 		if ev.Err != nil {
 			return nil, false, ev.Err
 		}
+		updated := false
 		if ev.ContentDelta != "" {
 			content.WriteString(ev.ContentDelta)
 			runesSinceLastCheck += utf8.RuneCountInString(ev.ContentDelta)
-			if onChunk != nil {
-				onChunk(content.String())
-			}
+			updated = true
+		}
+		if ev.ReasoningDelta != "" {
+			reasoning.WriteString(ev.ReasoningDelta)
+			updated = true
+		}
+		if updated && onChunk != nil {
+			onChunk(content.String(), reasoning.String())
 		}
 		if ev.FinishReason != "" {
 			finishReason = ev.FinishReason
@@ -1747,13 +1809,13 @@ func consumeStreamWithRepetitionDetection(
 				// Drain remaining events so the producer goroutine can exit.
 				for range ch {
 				}
-				resp := buildAccumulatedResponse(content.String(), toolCalls, finishReason, usage)
+				resp := buildAccumulatedResponse(content.String(), reasoning.String(), toolCalls, finishReason, usage)
 				return resp, true, nil
 			}
 		}
 	}
 
-	resp := buildAccumulatedResponse(content.String(), toolCalls, finishReason, usage)
+	resp := buildAccumulatedResponse(content.String(), reasoning.String(), toolCalls, finishReason, usage)
 	return resp, false, nil
 }
 
@@ -1765,9 +1827,10 @@ type streamToolCallAcc struct {
 }
 
 // buildAccumulatedResponse constructs an LLMResponse from accumulated stream data.
-func buildAccumulatedResponse(content string, toolCalls []streamToolCallAcc, finishReason string, usage *providers.UsageInfo) *providers.LLMResponse {
+func buildAccumulatedResponse(content, reasoning string, toolCalls []streamToolCallAcc, finishReason string, usage *providers.UsageInfo) *providers.LLMResponse {
 	resp := &providers.LLMResponse{
 		Content:      content,
+		Reasoning:    reasoning,
 		FinishReason: finishReason,
 		Usage:        usage,
 	}
@@ -1880,19 +1943,19 @@ func (al *AgentLoop) runLLMIteration(
 		// Build onChunk callback for streaming preview.
 		// When sending responses to a real (non-internal) channel, publish
 		// throttled status updates so the user sees LLM output in real time.
-		var onChunk func(string)
+		var onChunk func(string, string)
 		if !constants.IsInternalChannel(opts.Channel) {
 			lastPublish := time.Time{}
-			onChunk = func(accumulated string) {
+			onChunk = func(accumulated, reasoning string) {
 				if time.Since(lastPublish) < 500*time.Millisecond {
 					return
 				}
 				lastPublish = time.Now()
-				display := utils.TailPad(accumulated, streamingDisplayLines, maxEntryLineWidth)
+				display := buildStreamingDisplay(accumulated, reasoning)
 				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel:  opts.Channel,
 					ChatID:   opts.ChatID,
-					Content:  display + " \u2589",
+					Content:  display,
 					IsStatus: true,
 				})
 			}

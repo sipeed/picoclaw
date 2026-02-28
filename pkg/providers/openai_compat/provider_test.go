@@ -373,10 +373,10 @@ func TestProviderChat_StreamingTextResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewProviderWithOptions("key", server.URL, "", Options{
-		EndpointPath: "/text/chatcompletion_v2",
-		Stream:       true,
-	})
+	p := NewProvider("key", server.URL, "",
+		WithEndpointPath("/text/chatcompletion_v2"),
+		WithStream(true),
+	)
 	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "MiniMax-M1", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
@@ -415,7 +415,7 @@ func TestProviderChat_StreamingToolCalls(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewProviderWithOptions("key", server.URL, "", Options{Stream: true})
+	p := NewProvider("key", server.URL, "", WithStream(true))
 	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "weather?"}}, nil, "test", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
@@ -449,9 +449,9 @@ func TestProviderChat_CustomEndpointPath(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewProviderWithOptions("key", server.URL, "", Options{
-		EndpointPath: "/text/chatcompletion_v2",
-	})
+	p := NewProvider("key", server.URL, "",
+		WithEndpointPath("/text/chatcompletion_v2"),
+	)
 	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "test", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
@@ -633,7 +633,7 @@ func TestChatStream_EndToEnd(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewProviderWithOptions("key", server.URL, "", Options{Stream: true})
+	p := NewProvider("key", server.URL, "", WithStream(true))
 
 	ch, err := p.ChatStream(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "test", nil)
 	if err != nil {
@@ -679,7 +679,7 @@ func TestChatStream_EarlyCancel(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewProviderWithOptions("key", server.URL, "", Options{Stream: true})
+	p := NewProvider("key", server.URL, "", WithStream(true))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -714,7 +714,7 @@ func TestCanStream(t *testing.T) {
 		t.Error("CanStream() = true for non-stream provider")
 	}
 
-	p2 := NewProviderWithOptions("key", "https://example.com", "", Options{Stream: true})
+	p2 := NewProvider("key", "https://example.com", "", WithStream(true))
 	if !p2.CanStream() {
 		t.Error("CanStream() = false for stream provider")
 	}
