@@ -19,30 +19,30 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID             string
-	Name           string
-	Model          string
-	Fallbacks      []string
-	Workspace      string
+	ID                   string
+	Name                 string
+	Model                string
+	Fallbacks            []string
+	Workspace            string
 	MaxIterations        int
 	TaskReminderInterval int
 	MaxTokens            int
 	Temperature          float64
 	ContextWindow        int
-	Provider       providers.LLMProvider
-	Sessions       *session.SessionManager
-	ContextBuilder *ContextBuilder
-	Tools          *tools.ToolRegistry
-	Subagents      *config.SubagentsConfig
-	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
-	PlanModel      string
-	PlanFallbacks  []string
-	PlanCandidates []providers.FallbackCandidate
+	Provider             providers.LLMProvider
+	Sessions             *session.SessionManager
+	ContextBuilder       *ContextBuilder
+	Tools                *tools.ToolRegistry
+	Subagents            *config.SubagentsConfig
+	SkillsFilter         []string
+	Candidates           []providers.FallbackCandidate
+	PlanModel            string
+	PlanFallbacks        []string
+	PlanCandidates       []providers.FallbackCandidate
 
 	// Interview staleness tracking: consecutive turns where MEMORY.md was not updated.
-	interviewStaleCount  int
-	interviewMemoryLen   int
+	interviewStaleCount int
+	interviewMemoryLen  int
 
 	// Per-session worktree isolation
 	worktrees  map[string]*git.WorktreeInfo // sessionKey → worktree
@@ -189,26 +189,26 @@ func NewAgentInstance(
 	}
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
+		ID:                   agentID,
+		Name:                 agentName,
+		Model:                model,
+		Fallbacks:            fallbacks,
+		Workspace:            workspace,
 		MaxIterations:        maxIter,
 		TaskReminderInterval: reminderInterval,
 		MaxTokens:            maxTokens,
 		Temperature:          temperature,
 		ContextWindow:        maxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
-		PlanModel:      planModel,
-		PlanFallbacks:  planFallbacks,
-		PlanCandidates: planCandidates,
+		Provider:             provider,
+		Sessions:             sessionsManager,
+		ContextBuilder:       contextBuilder,
+		Tools:                toolsRegistry,
+		Subagents:            subagents,
+		SkillsFilter:         skillsFilter,
+		Candidates:           candidates,
+		PlanModel:            planModel,
+		PlanFallbacks:        planFallbacks,
+		PlanCandidates:       planCandidates,
 	}
 }
 

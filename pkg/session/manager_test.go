@@ -91,7 +91,7 @@ func TestSanitizeHistory_InterleavedMessages(t *testing.T) {
 		{Role: "assistant", Content: "ok", ToolCalls: []providers.ToolCall{
 			{ID: "call_1", Name: "exec"},
 		}},
-		{Role: "user", Content: "collision!"},  // ← interleaved from other session
+		{Role: "user", Content: "collision!"},               // ← interleaved from other session
 		{Role: "tool", Content: "ok", ToolCallID: "call_1"}, // ← out of order
 		{Role: "assistant", Content: "done"},
 	}

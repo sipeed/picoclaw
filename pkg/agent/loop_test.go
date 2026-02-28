@@ -1664,8 +1664,8 @@ func TestBuildRichStatus(t *testing.T) {
 	mustContain := []string{
 		"Task in progress (3/20)",
 		"my-projects",
-		"read_file",       // latest entry
-		"No errors",       // no error yet
+		"read_file", // latest entry
+		"No errors", // no error yet
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(got, s) {
@@ -1833,15 +1833,18 @@ func TestBuildRichStatus_FixedHeight(t *testing.T) {
 	lines0 := countLines(buildRichStatus(task0, true, "/ws/p"))
 
 	// 1 entry
-	task1 := &activeTask{Iteration: 1, MaxIter: 10,
-		toolLog: []toolLogEntry{{Name: "exec", ArgsSnip: "ls", Result: "⏳"}}}
+	task1 := &activeTask{
+		Iteration: 1, MaxIter: 10,
+		toolLog: []toolLogEntry{{Name: "exec", ArgsSnip: "ls", Result: "⏳"}},
+	}
 	lines1 := countLines(buildRichStatus(task1, true, "/ws/p"))
 
 	// 5 entries
 	task5 := &activeTask{Iteration: 5, MaxIter: 10}
 	for i := 0; i < 5; i++ {
 		task5.toolLog = append(task5.toolLog, toolLogEntry{
-			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s"})
+			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s",
+		})
 	}
 	lines5 := countLines(buildRichStatus(task5, true, "/ws/p"))
 
@@ -1849,10 +1852,13 @@ func TestBuildRichStatus_FixedHeight(t *testing.T) {
 	task5err := &activeTask{Iteration: 5, MaxIter: 10}
 	for i := 0; i < 5; i++ {
 		task5err.toolLog = append(task5err.toolLog, toolLogEntry{
-			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s"})
+			Name: fmt.Sprintf("[%d] exec", i), ArgsSnip: "cmd", Result: "✓ 1.0s",
+		})
 	}
-	errEntry := toolLogEntry{Name: "[3] exec", ArgsSnip: "pytest", Result: "✗ 2.0s",
-		ErrDetail: "FAILED test\nExit code: 1"}
+	errEntry := toolLogEntry{
+		Name: "[3] exec", ArgsSnip: "pytest", Result: "✗ 2.0s",
+		ErrDetail: "FAILED test\nExit code: 1",
+	}
 	task5err.lastError = &errEntry
 	lines5err := countLines(buildRichStatus(task5err, true, "/ws/p"))
 
@@ -2433,9 +2439,9 @@ func TestConsumeStream_OnChunkWithRepetitionDetection(t *testing.T) {
 
 // modelCapturingMockProvider records which model was passed to Chat.
 type modelCapturingMockProvider struct {
-	mu        sync.Mutex
-	models    []string
-	response  string
+	mu       sync.Mutex
+	models   []string
+	response string
 }
 
 func (m *modelCapturingMockProvider) Chat(

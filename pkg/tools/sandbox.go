@@ -27,11 +27,11 @@ type ExecPolicy struct {
 
 // SandboxConfig describes the sandbox isolation policy for a preset.
 type SandboxConfig struct {
-	Preset              Preset
-	WriteRoot           string            // Path restriction for write tools; empty = no writes allowed
-	AllowedTools        map[string]bool   // Tools that can be used
-	ExecPolicy          *ExecPolicy       // nil = exec not allowed
-	SpawnablePresets    []string          // Presets that can be spawned; nil = spawn not allowed
+	Preset           Preset
+	WriteRoot        string          // Path restriction for write tools; empty = no writes allowed
+	AllowedTools     map[string]bool // Tools that can be used
+	ExecPolicy       *ExecPolicy     // nil = exec not allowed
+	SpawnablePresets []string        // Presets that can be spawned; nil = spawn not allowed
 }
 
 // SubagentEnvironment provides context for subagent execution.
@@ -65,11 +65,11 @@ var presetSpawnablePresets = map[Preset][]string{
 func AllowedToolsForPreset(p Preset) map[string]bool {
 	// Base tools available to all presets
 	allowed := map[string]bool{
-		"read_file":   true,
-		"list_dir":    true,
-		"web_search":  true,
-		"web_fetch":   true,
-		"message":     true,
+		"read_file":  true,
+		"list_dir":   true,
+		"web_search": true,
+		"web_fetch":  true,
+		"message":    true,
 	}
 
 	// Add analyst+ tools (exec, git, etc.)

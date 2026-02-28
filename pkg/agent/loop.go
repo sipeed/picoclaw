@@ -41,24 +41,24 @@ import (
 
 // activeTask tracks a running agent task for live status and intervention.
 type activeTask struct {
-	Description string
-	Iteration   int
-	MaxIter     int
-	StartedAt   time.Time
-	cancel      context.CancelFunc
-	interrupt   chan string // buffered 1, for user message injection
-	toolLog     []toolLogEntry
-	lastError   *toolLogEntry // sticky: most recent error, persists across iterations
-	projectDir    string // detected from exec cd target (authoritative)
-	fileCommonDir string // LCP of file paths relative to workspace (fallback)
+	Description   string
+	Iteration     int
+	MaxIter       int
+	StartedAt     time.Time
+	cancel        context.CancelFunc
+	interrupt     chan string // buffered 1, for user message injection
+	toolLog       []toolLogEntry
+	lastError     *toolLogEntry // sticky: most recent error, persists across iterations
+	projectDir    string        // detected from exec cd target (authoritative)
+	fileCommonDir string        // LCP of file paths relative to workspace (fallback)
 	mu            sync.Mutex
 }
 
 // toolLogEntry records a single tool call for the live terminal view.
 type toolLogEntry struct {
-	Name     string
-	ArgsSnip string // first ~80 chars of args
-	Result   string // "✓ 4.9s" or "✗ 3.2s"
+	Name      string
+	ArgsSnip  string // first ~80 chars of args
+	Result    string // "✓ 4.9s" or "✗ 3.2s"
 	ErrDetail string // non-empty on error — e.g. "Exit code: exit status 1"
 }
 
@@ -78,26 +78,26 @@ func newSessionSemaphore() *sessionSemaphore {
 }
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	cfg            *config.Config
-	registry       *AgentRegistry
-	state          *state.Manager
-	stats          *stats.Tracker // nil when --stats not passed
-	running        atomic.Bool
-	summarizing    sync.Map
+	bus              *bus.MessageBus
+	cfg              *config.Config
+	registry         *AgentRegistry
+	state            *state.Manager
+	stats            *stats.Tracker // nil when --stats not passed
+	running          atomic.Bool
+	summarizing      sync.Map
 	fallback         *providers.FallbackChain
 	channelManager   *channels.Manager
 	mediaStore       media.MediaStore
 	providerCache    map[string]providers.LLMProvider
-	planStartPending bool // set by /plan start to trigger LLM execution
-	planClearHistory bool // set by /plan start clear to wipe history on transition
+	planStartPending bool     // set by /plan start to trigger LLM execution
+	planClearHistory bool     // set by /plan start clear to wipe history on transition
 	sessionLocks     sync.Map // sessionKey → *sessionSemaphore
 	activeTasks      sync.Map // sessionKey → *activeTask
 	sessions         *SessionTracker
-	lastSystemPrompt atomic.Value // string — last system prompt sent to LLM
-	promptDirty      atomic.Bool   // true = rebuild needed on next GetSystemPrompt read
-	OnStateChange    func() // called on plan/session/skills mutations
-	OnUserMessage    func() // called when a real user message is processed
+	lastSystemPrompt atomic.Value       // string — last system prompt sent to LLM
+	promptDirty      atomic.Bool        // true = rebuild needed on next GetSystemPrompt read
+	OnStateChange    func()             // called on plan/session/skills mutations
+	OnUserMessage    func()             // called when a real user message is processed
 	orchBroadcaster  *orch.Broadcaster  // nil when --orchestration not set
 	orchReporter     orch.AgentReporter // always non-nil (Noop when disabled)
 }
@@ -601,8 +601,8 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 		DefaultResponse: defaultResponse,
 		EnableSummary:   false,
 		SendResponse:    false,
-		NoHistory:       true,  // Don't load session history for heartbeat
-		Background:      true,  // Enable live task notifications on Telegram
+		NoHistory:       true, // Don't load session history for heartbeat
+		Background:      true, // Enable live task notifications on Telegram
 	})
 }
 
@@ -976,8 +976,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		if removedCount > 0 {
 			logger.WarnCF("agent", "Sanitized session history: removed orphaned messages",
 				map[string]any{
-					"session_key":    opts.SessionKey,
-					"removed_count":  removedCount,
+					"session_key":   opts.SessionKey,
+					"removed_count": removedCount,
 				})
 			// Persist the sanitized history
 			agent.Sessions.SetHistory(opts.SessionKey, history)
@@ -1174,8 +1174,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 }
 
 // Task reminder constants and helpers.
-const taskReminderMaxChars = 500
-const blockerMaxChars = 200
+const (
+	taskReminderMaxChars = 500
+	blockerMaxChars      = 200
+)
 
 func shouldInjectReminder(iteration, interval int) bool {
 	if interval <= 0 {
@@ -1361,7 +1363,7 @@ func buildArgsSnippet(toolName string, args map[string]interface{}, workspace st
 		if runes := []rune(path); len(runes) > maxPath {
 			// Find last slash to extract filename
 			if lastSlash := strings.LastIndex(path, "/"); lastSlash >= 0 {
-				filename := path[lastSlash:] // includes "/"
+				filename := path[lastSlash:]                     // includes "/"
 				dirBudget := maxPath - len([]rune(filename)) - 1 // 1 for "…"
 				if dirBudget > 0 {
 					dir := []rune(path[:lastSlash])
@@ -1509,10 +1511,10 @@ func compressRepeats(s string) string {
 
 // Display layout constants.
 const (
-	displayPastEntries     = 4  // number of compact 1-line past entries
-	displayErrorLines      = 5  // content lines inside the error code block
-	statusSeparator        = "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-	streamingDisplayLines  = 17 // line count matching buildRichStatus output
+	displayPastEntries    = 4 // number of compact 1-line past entries
+	displayErrorLines     = 5 // content lines inside the error code block
+	statusSeparator       = "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+	streamingDisplayLines = 17 // line count matching buildRichStatus output
 )
 
 // buildRichStatus builds a fixed-height terminal-like status display.
@@ -3338,16 +3340,16 @@ func isPlanPreExecution(status string) bool {
 // filterInterviewTools uses this to strip tool *definitions* before the LLM call,
 // while isToolAllowedDuringInterview adds argument-level checks as a second gate.
 var interviewAllowedTools = map[string]bool{
-	"readfile":  true,
-	"listdir":   true,
-	"websearch": true,
-	"webfetch":  true,
-	"message":   true,
-	"editfile":  true,
+	"readfile":   true,
+	"listdir":    true,
+	"websearch":  true,
+	"webfetch":   true,
+	"message":    true,
+	"editfile":   true,
 	"appendfile": true,
-	"writefile": true,
-	"exec":      true,
-	"logs":      true,
+	"writefile":  true,
+	"exec":       true,
+	"logs":       true,
 }
 
 // filterInterviewTools removes tool definitions that are not in the

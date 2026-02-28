@@ -52,8 +52,8 @@ func (t *SpawnTool) Parameters() map[string]any {
 				"description": "Optional target agent ID to delegate the task to",
 			},
 			"preset": map[string]any{
-				"type": "string",
-				"enum": []string{"scout", "analyst", "coder", "worker", "coordinator"},
+				"type":        "string",
+				"enum":        []string{"scout", "analyst", "coder", "worker", "coordinator"},
 				"description": "Optional capability tier: scout (explore), analyst (analyze), coder (code), worker (build), coordinator (orchestrate)",
 			},
 		},

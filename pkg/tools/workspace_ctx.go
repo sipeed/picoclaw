@@ -6,8 +6,10 @@ import (
 	"strings"
 )
 
-type workspaceOverrideKey struct{}
-type overrideFsKey struct{}
+type (
+	workspaceOverrideKey struct{}
+	overrideFsKey        struct{}
+)
 
 // WithWorkspaceOverride returns a context carrying a workspace override path
 // and a pre-built sandboxFs for that workspace. Tools will resolve file

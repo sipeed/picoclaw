@@ -14,8 +14,8 @@ type Event struct {
 	ID      string `json:"id,omitempty"`
 	Label   string `json:"label,omitempty"`
 	Task    string `json:"task,omitempty"`
-	State   string `json:"state,omitempty"`  // waiting | toolcall | idle
-	Tool    string `json:"tool,omitempty"`   // tool name during toolcall
+	State   string `json:"state,omitempty"` // waiting | toolcall | idle
+	Tool    string `json:"tool,omitempty"`  // tool name during toolcall
 	From    string `json:"from,omitempty"`
 	To      string `json:"to,omitempty"`
 	Text    string `json:"text,omitempty"`
