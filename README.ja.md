@@ -257,7 +257,7 @@ Telegram、Discord、QQ、DingTalk、LINE、WeCom で PicoClaw と会話でき�
 | **QQ** | 簡単（AppID + AppSecret） |
 | **DingTalk** | 普通（アプリ認証情報） |
 | **LINE** | 普通（認証情報 + Webhook URL） |
-| **WeCom** | 普通（CorpID + Webhook設定） |
+| **WeCom AI Bot** | 普通（Token + AES キー） |
 
 <details>
 <summary><b>Telegram</b>（推奨）</summary>
@@ -456,12 +456,13 @@ picoclaw gateway
 <details>
 <summary><b>WeCom (企業微信)</b></summary>
 
-PicoClaw は2種類の WeCom 統合をサポートしています：
+PicoClaw は3種類の WeCom 統合をサポートしています：
 
-**オプション1: WeCom Bot (智能ロボット)** - 簡単な設定、グループチャット対応
-**オプション2: WeCom App (自作アプリ)** - より多機能、アクティブメッセージング対応
+**オプション1: WeCom Bot (ロボット)** - 簡単な設定、グループチャット対応
+**オプション2: WeCom App (カスタムアプリ)** - より多機能、アクティブメッセージング対応、プライベートチャットのみ
+**オプション3: WeCom AI Bot (スマートボット)** - 公式 AI Bot、ストリーミング返信、グループ・プライベート両対応
 
-詳細な設定手順は [WeCom App Configuration Guide](docs/wecom-app-configuration.md) を参照してください。
+詳細な設定手順は [WeCom AI Bot Configuration Guide](docs/channels/wecom/wecom_aibot/README.zh.md) を参照してください。
 
 **クイックセットアップ - WeCom Bot:**
 
@@ -529,6 +530,41 @@ picoclaw gateway
 ```
 
 > **注意**: WeCom App の Webhook コールバックは共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は HTTPS 用のリバースプロキシを設定してください。
+
+**クイックセットアップ - WeCom AI Bot:**
+
+**1. AI Bot を作成**
+
+* WeCom 管理コンソール → アプリ管理 → AI Bot
+* コールバック URL を設定: `http://your-server:18791/webhook/wecom-aibot`
+* **Token** をコピーし、**EncodingAESKey** を生成
+
+**2. 設定**
+
+```json
+{
+  "channels": {
+    "wecom_aibot": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18791,
+      "webhook_path": "/webhook/wecom-aibot",
+      "allow_from": [],
+      "welcome_message": "こんにちは！何かお手伝いできますか？"
+    }
+  }
+}
+```
+
+**3. 起動**
+
+```bash
+picoclaw gateway
+```
+
+> **注意**: WeCom AI Bot はストリーミングプルプロトコルを使用 — 返信タイムアウトの心配なし。長時間タスク（>5.5分）は自動的に `response_url` によるプッシュ配信に切り替わります。
 
 </details>
 
