@@ -277,6 +277,92 @@ func TestProvider_ProxyConfigured(t *testing.T) {
 	}
 }
 
+func TestProviderChat_UsesKimiUserAgentOnCodingEndpoint(t *testing.T) {
+	var gotUA string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	kimiBase := server.URL + "/api.kimi.com/coding/v1"
+	p := NewProvider("key", kimiBase, "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "kimi-for-coding", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if gotUA != "KimiCLI/1.3" {
+		t.Fatalf("User-Agent = %q, want %q", gotUA, "KimiCLI/1.3")
+	}
+}
+
+func TestProviderChat_KimiCodingModelAliases(t *testing.T) {
+	tests := []struct {
+		name  string
+		model string
+	}{
+		{name: "k2.5", model: "kimi-k2.5"},
+		{name: "k2-thinking", model: "kimi-k2-thinking"},
+		{name: "for-coding", model: "kimi-for-coding"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotUA string
+			var gotModel string
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotUA = r.Header.Get("User-Agent")
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if m, ok := body["model"].(string); ok {
+					gotModel = m
+				}
+
+				resp := map[string]any{
+					"choices": []map[string]any{
+						{
+							"message":       map[string]any{"content": "ok"},
+							"finish_reason": "stop",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(resp)
+			}))
+			defer server.Close()
+
+			kimiBase := server.URL + "/api.kimi.com/coding/v1"
+			p := NewProvider("key", kimiBase, "")
+			_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, tt.model, nil)
+			if err != nil {
+				t.Fatalf("Chat() error = %v", err)
+			}
+
+			if gotUA != "KimiCLI/1.3" {
+				t.Fatalf("User-Agent = %q, want %q", gotUA, "KimiCLI/1.3")
+			}
+			if gotModel != tt.model {
+				t.Fatalf("model = %q, want %q", gotModel, tt.model)
+			}
+		})
+	}
+}
+
 func TestProviderChat_AcceptsNumericOptionTypes(t *testing.T) {
 	var requestBody map[string]any
 

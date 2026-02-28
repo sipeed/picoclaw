@@ -194,6 +194,13 @@ func DefaultConfig() *Config {
 				APIBase:   "https://api.moonshot.cn/v1",
 				APIKey:    "",
 			},
+			// Kimi Plan/Coding - https://www.kimi.com/code/docs
+			{
+				ModelName: "kimi-plan-coding",
+				Model:     "moonshot/kimi-k2-thinking",
+				APIBase:   "https://api.kimi.com/coding/v1",
+				APIKey:    "",
+			},
 
 			// Groq - https://console.groq.com/keys
 			{
