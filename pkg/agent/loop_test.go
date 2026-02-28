@@ -378,6 +378,29 @@ func (m *simpleMockProvider) GetDefaultModel() string {
 	return "mock-model"
 }
 
+type captureToolsProvider struct {
+	response       string
+	lastToolsCount int
+}
+
+func (m *captureToolsProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.lastToolsCount = len(tools)
+	return &providers.LLMResponse{
+		Content:   m.response,
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *captureToolsProvider) GetDefaultModel() string {
+	return "mock-capture-model"
+}
+
 // mockCustomTool is a simple mock tool for registration testing
 type mockCustomTool struct{}
 
@@ -448,6 +471,92 @@ func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, ms
 }
 
 const responseTimeout = 3 * time.Second
+
+func TestAgentLoop_ChatOnlyMode_DoesNotPassTools(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	disabled := false
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				EnableTools:       &disabled,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &captureToolsProvider{response: "chat-only"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"chat-only-session",
+		"test",
+		"chat",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel() error = %v", err)
+	}
+
+	if response != "chat-only" {
+		t.Fatalf("response = %q, want %q", response, "chat-only")
+	}
+	if provider.lastToolsCount != 0 {
+		t.Fatalf("lastToolsCount = %d, want 0", provider.lastToolsCount)
+	}
+}
+
+func TestAgentLoop_ToolsEnabled_PassesTools(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	enabled := true
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				EnableTools:       &enabled,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &captureToolsProvider{response: "with-tools"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"with-tools-session",
+		"test",
+		"chat",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel() error = %v", err)
+	}
+
+	if response != "with-tools" {
+		t.Fatalf("response = %q, want %q", response, "with-tools")
+	}
+	if provider.lastToolsCount == 0 {
+		t.Fatal("lastToolsCount = 0, want > 0")
+	}
+}
 
 // TestToolResult_SilentToolDoesNotSendUserMessage verifies silent tools don't trigger outbound
 func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {

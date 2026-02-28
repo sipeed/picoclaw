@@ -627,8 +627,11 @@ func (al *AgentLoop) runLLMIteration(
 				"max":       agent.MaxIterations,
 			})
 
-		// Build tool definitions
-		providerToolDefs := agent.Tools.ToProviderDefs()
+		// Build tool definitions (chat-only mode omits tools entirely).
+		var providerToolDefs []providers.ToolDefinition
+		if agent.EnableTools {
+			providerToolDefs = agent.Tools.ToProviderDefs()
+		}
 
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
@@ -638,6 +641,7 @@ func (al *AgentLoop) runLLMIteration(
 				"model":             agent.Model,
 				"messages_count":    len(messages),
 				"tools_count":       len(providerToolDefs),
+				"tools_enabled":     agent.EnableTools,
 				"max_tokens":        agent.MaxTokens,
 				"temperature":       agent.Temperature,
 				"system_prompt_len": len(messages[0].Content),

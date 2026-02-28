@@ -24,6 +24,7 @@ type AgentInstance struct {
 	MaxTokens      int
 	Temperature    float64
 	ContextWindow  int
+	EnableTools    bool
 	Provider       providers.LLMProvider
 	Sessions       *session.SessionManager
 	ContextBuilder *ContextBuilder
@@ -45,6 +46,7 @@ func NewAgentInstance(
 
 	model := resolveAgentModel(agentCfg, defaults)
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
+	enableTools := resolveAgentEnableTools(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
 	toolsRegistry := tools.NewToolRegistry()
@@ -144,6 +146,7 @@ func NewAgentInstance(
 		MaxTokens:      maxTokens,
 		Temperature:    temperature,
 		ContextWindow:  maxTokens,
+		EnableTools:    enableTools,
 		Provider:       provider,
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,
@@ -181,6 +184,18 @@ func resolveAgentFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentD
 		return agentCfg.Model.Fallbacks
 	}
 	return defaults.ModelFallbacks
+}
+
+// resolveAgentEnableTools resolves whether tool calling is enabled for an agent.
+func resolveAgentEnableTools(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) bool {
+	enabled := true
+	if defaults != nil && defaults.EnableTools != nil {
+		enabled = *defaults.EnableTools
+	}
+	if agentCfg != nil && agentCfg.EnableTools != nil {
+		enabled = *agentCfg.EnableTools
+	}
+	return enabled
 }
 
 func expandHome(path string) string {

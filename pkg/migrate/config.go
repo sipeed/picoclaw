@@ -88,6 +88,9 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 			if v, ok := getFloat(defaults, "max_tool_iterations"); ok {
 				cfg.Agents.Defaults.MaxToolIterations = int(v)
 			}
+			if v, ok := getBool(defaults, "enable_tools"); ok {
+				cfg.Agents.Defaults.EnableTools = &v
+			}
 			if v, ok := getString(defaults, "workspace"); ok {
 				cfg.Agents.Defaults.Workspace = rewriteWorkspacePath(v)
 			}
