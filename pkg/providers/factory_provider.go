@@ -111,7 +111,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.RequestTimeout,
 		), modelID, nil
 
-	case "anthropic":
+	case "anthropic", "claude":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
 			// Use OAuth credentials from auth store
 			provider, err := createClaudeAuthProvider()
