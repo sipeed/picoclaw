@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,8 +29,9 @@ type FeishuChannel struct {
 	client   *lark.Client
 	wsClient *larkws.Client
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	mu           sync.Mutex
+	cancel       context.CancelFunc
+	placeholders sync.Map // chatID -> messageID (string)
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
@@ -107,6 +109,13 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("failed to marshal feishu content: %w", err)
 	}
 
+	// Final response: consume placeholder (stop progress updates), then send as new message
+	if !msg.IsProgress {
+		c.placeholders.Delete(msg.ChatID)
+	}
+
+	// All messages (progress and final): create a new message
+
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
@@ -156,6 +165,19 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		content = "[empty message]"
 	}
 
+	// Intercept /stop command: cancel in-progress processing, don't forward to agent
+	if strings.HasPrefix(content, "/stop") {
+		if c.Bus().TriggerAbort(chatID) {
+			// Clear placeholder so the "Stopped" response creates a new message
+			c.placeholders.Delete(chatID)
+			logger.InfoCF("feishu", "User triggered abort", map[string]any{
+				"chat_id":   chatID,
+				"sender_id": senderID,
+			})
+		}
+		return nil
+	}
+
 	metadata := map[string]string{}
 	messageID := ""
 	if mid := stringValue(message.MessageId); mid != "" {
@@ -199,6 +221,25 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 
 	if !c.IsAllowedSender(senderInfo) {
 		return nil
+	}
+
+	// Send thinking placeholder before dispatching to agent
+	placeholderCtx, placeholderCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer placeholderCancel()
+
+	placeholderPayload, _ := json.Marshal(map[string]string{"text": "Thinking..."})
+	placeholderReq := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(larkim.ReceiveIdTypeChatId).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(chatID).
+			MsgType(larkim.MsgTypeText).
+			Content(string(placeholderPayload)).
+			Build()).
+		Build()
+
+	placeholderResp, placeholderErr := c.client.Im.V1.Message.Create(placeholderCtx, placeholderReq)
+	if placeholderErr == nil && placeholderResp.Success() && placeholderResp.Data.MessageId != nil {
+		c.placeholders.Store(chatID, *placeholderResp.Data.MessageId)
 	}
 
 	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata, senderInfo)

@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -19,6 +20,7 @@ type MessageBus struct {
 	outboundMedia chan OutboundMediaMessage
 	done          chan struct{}
 	closed        atomic.Bool
+	aborts        sync.Map // chatID -> context.CancelFunc
 }
 
 func NewMessageBus() *MessageBus {
@@ -112,6 +114,22 @@ func (mb *MessageBus) SubscribeOutboundMedia(ctx context.Context) (OutboundMedia
 	case <-ctx.Done():
 		return OutboundMediaMessage{}, false
 	}
+}
+
+func (mb *MessageBus) RegisterAbort(chatID string, cancel context.CancelFunc) {
+	mb.aborts.Store(chatID, cancel)
+}
+
+func (mb *MessageBus) ClearAbort(chatID string) {
+	mb.aborts.Delete(chatID)
+}
+
+func (mb *MessageBus) TriggerAbort(chatID string) bool {
+	if v, ok := mb.aborts.LoadAndDelete(chatID); ok {
+		v.(context.CancelFunc)()
+		return true
+	}
+	return false
 }
 
 func (mb *MessageBus) Close() {
