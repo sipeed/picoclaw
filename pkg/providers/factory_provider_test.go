@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers/gemini_sdk"
+	"github.com/sipeed/picoclaw/pkg/providers/openai_sdk"
 )
 
 func TestExtractProtocol(t *testing.T) {
@@ -94,6 +96,9 @@ func TestCreateProviderFromConfig_OpenAI(t *testing.T) {
 	if provider == nil {
 		t.Fatal("CreateProviderFromConfig() returned nil provider")
 	}
+	if _, ok := provider.(*openai_sdk.Provider); !ok {
+		t.Fatalf("expected *openai_sdk.Provider, got %T", provider)
+	}
 	if modelID != "gpt-4o" {
 		t.Errorf("modelID = %q, want %q", modelID, "gpt-4o")
 	}
@@ -105,6 +110,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		protocol string
 	}{
 		{"openai", "openai"},
+		{"gemini", "gemini"},
 		{"groq", "groq"},
 		{"openrouter", "openrouter"},
 		{"cerebras", "cerebras"},
@@ -127,9 +133,22 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 				t.Fatalf("CreateProviderFromConfig() error = %v", err)
 			}
 
-			// Verify we got an HTTPProvider for all these protocols
+			if tt.protocol == "openai" {
+				if _, ok := provider.(*openai_sdk.Provider); !ok {
+					t.Fatalf("protocol=openai: expected *openai_sdk.Provider, got %T", provider)
+				}
+				return
+			}
+			if tt.protocol == "gemini" {
+				if _, ok := provider.(*gemini_sdk.Provider); !ok {
+					t.Fatalf("protocol=gemini: expected *gemini_sdk.Provider, got %T", provider)
+				}
+				return
+			}
+
+			// Non-openai/non-gemini protocols remain on HTTPProvider.
 			if _, ok := provider.(*HTTPProvider); !ok {
-				t.Fatalf("expected *HTTPProvider, got %T", provider)
+				t.Fatalf("protocol=%s: expected *HTTPProvider, got %T", tt.protocol, provider)
 			}
 		})
 	}
@@ -169,6 +188,40 @@ func TestCreateProviderFromConfig_Antigravity(t *testing.T) {
 	}
 	if modelID != "gemini-2.0-flash" {
 		t.Errorf("modelID = %q, want %q", modelID, "gemini-2.0-flash")
+	}
+}
+
+func TestCreateProviderFromConfig_GeminiAndGoogle(t *testing.T) {
+	tests := []struct {
+		name  string
+		model string
+	}{
+		{name: "gemini protocol", model: "gemini/gemini-2.5-flash"},
+		{name: "google protocol", model: "google/gemini-2.5-flash"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.ModelConfig{
+				ModelName: "test-gemini",
+				Model:     tt.model,
+				APIKey:    "test-key",
+			}
+
+			provider, modelID, err := CreateProviderFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("CreateProviderFromConfig() error = %v", err)
+			}
+			if provider == nil {
+				t.Fatal("CreateProviderFromConfig() returned nil provider")
+			}
+			if _, ok := provider.(*gemini_sdk.Provider); !ok {
+				t.Fatalf("expected *gemini_sdk.Provider, got %T", provider)
+			}
+			if modelID != "gemini-2.5-flash" {
+				t.Errorf("modelID = %q, want %q", modelID, "gemini-2.5-flash")
+			}
+		})
 	}
 }
 

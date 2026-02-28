@@ -150,16 +150,10 @@ func (p *Provider) Chat(
 		}
 	}
 
-	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
-	// with the same key and reuse prefix KV cache across calls.
-	// The key is typically the agent ID — stable per agent, shared across requests.
-	// See: https://platform.openai.com/docs/guides/prompt-caching
-	// Prompt caching is only supported by OpenAI-native endpoints.
-	// Gemini and other providers reject unknown fields, so skip for non-OpenAI APIs.
+	// Prompt caching: pass a stable cache key so compatible endpoints that
+	// support this field can reuse prefix KV cache across calls.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
-			requestBody["prompt_cache_key"] = cacheKey
-		}
+		requestBody["prompt_cache_key"] = cacheKey
 	}
 
 	jsonData, err := json.Marshal(requestBody)
@@ -323,7 +317,7 @@ func normalizeModel(model, apiBase string) string {
 
 	prefix := strings.ToLower(model[:idx])
 	switch prefix {
-	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "mistral":
+	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "openrouter", "zhipu", "mistral":
 		return model[idx+1:]
 	default:
 		return model
