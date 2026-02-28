@@ -52,7 +52,7 @@
 
 ## 📢 新闻 (News)
 
-2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](docs/picoclaw_community_roadmap_260216.md), 期待你的参与！
+2026-02-16 🎉 PicoClaw 在一周内突破了12K star! 感谢大家的关注！PicoClaw 的成长速度超乎我们预期. 由于PR数量的快速膨胀，我们亟需社区开发者参与维护. 我们需要的志愿者角色和roadmap已经发布到了[这里](docs/ROADMAP.md), 期待你的参与！
 
 2026-02-13 🎉 **PicoClaw 在 4 天内突破 5000 Stars！** 感谢社区的支持！由于正值中国春节假期，PR 和 Issue 涌入较多，我们正在利用这段时间敲定 **项目路线图 (Roadmap)** 并组建 **开发者群组**，以便加速 PicoClaw 的开发。
 🚀 **行动号召：** 请在 GitHub Discussions 中提交您的功能请求 (Feature Requests)。我们将在接下来的周会上进行审查和优先级排序。
@@ -166,38 +166,43 @@ make install
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. 设置 API Key
-cp config/config.example.json config/config.json
-vim config/config.json      # 设置 DISCORD_BOT_TOKEN, API keys 等
+# 2. 首次运行 — 自动生成 docker/data/config.json 后退出
+docker compose -f docker/docker-compose.yml --profile gateway up
+# 容器打印 "First-run setup complete." 后自动停止
 
-# 3. 构建并启动
-docker compose --profile gateway up -d
+# 3. 填写 API Key 等配置
+vim docker/data/config.json   # 设置 provider API key、Bot Token 等
 
-# 4. 查看日志
-docker compose logs -f picoclaw-gateway
+# 4. 正式启动
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
-# 5. 停止
-docker compose --profile gateway down
+> [!TIP]
+> **Docker 用户**: 默认情况下, Gateway 监听 `127.0.0.1`，该端口不会暴露到容器外。如果需要通过端口映射访问健康检查接口，请在环境变量中设置 `PICOCLAW_GATEWAY_HOST=0.0.0.0` 或修改 `config.json`。
 
+```bash
+# 5. 查看日志
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
+
+# 6. 停止
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Agent 模式 (一次性运行)
 
 ```bash
 # 提问
-docker compose run --rm picoclaw-agent -m "2+2 等于几？"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "2+2 等于几？"
 
 # 交互模式
-docker compose run --rm picoclaw-agent
-
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### 重新构建
+### 更新镜像
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
-
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 快速开始
@@ -205,7 +210,7 @@ docker compose --profile gateway up -d
 > [!TIP]
 > 在 `~/.picoclaw/config.json` 中设置您的 API Key。
 > 获取 API Key: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu (智谱)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> 网络搜索是 **可选的** - 获取免费的 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询)
+> 网络搜索是 **可选的** - 获取免费的 [Tavily API](https://tavily.com) (每月 1000 次免费查询) 或 [Brave Search API](https://brave.com/search/api) (每月 2000 次免费查询)
 
 **1. 初始化 (Initialize)**
 
@@ -221,7 +226,7 @@ picoclaw onboard
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
-      "model": "gpt4",
+      "model_name": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
@@ -231,7 +236,8 @@ picoclaw onboard
     {
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
-      "api_key": "your-api-key"
+      "api_key": "your-api-key",
+      "request_timeout": 300
     },
     {
       "model_name": "claude-sonnet-4.6",
@@ -246,8 +252,9 @@ picoclaw onboard
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       },
-      "duckduckgo": {
-        "enabled": true,
+      "tavily": {
+        "enabled": false,
+        "api_key": "YOUR_TAVILY_API_KEY",
         "max_results": 5
       }
     },
@@ -259,11 +266,12 @@ picoclaw onboard
 ```
 
 > **新功能**: `model_list` 配置格式支持零代码添加 provider。详见[模型配置](#模型配置-model_list)章节。
+> `request_timeout` 为可选项，单位为秒。若省略或设置为 `<= 0`，PicoClaw 使用默认超时（120 秒）。
 
 **3. 获取 API Key**
 
-- **LLM 提供商**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
-- **网络搜索** (可选): [Brave Search](https://brave.com/search/api) - 提供免费层级 (2000 请求/月)
+* **LLM 提供商**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+* **网络搜索** (可选): [Tavily](https://tavily.com) - 专为 AI Agent 优化 (1000 请求/月) · [Brave Search](https://brave.com/search/api) - 提供免费层级 (2000 请求/月)
 
 > **注意**: 完整的配置模板请参考 `config.example.json`。
 
@@ -546,7 +554,8 @@ Agent 读取 HEARTBEAT.md
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-..."
+  "api_key": "sk-...",
+  "request_timeout": 300
 }
 ```
 
@@ -771,7 +780,7 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 
 启用网络搜索：
 
-1. 在 [https://brave.com/search/api](https://brave.com/search/api) 获取免费 API Key (每月 2000 次免费查询)
+1. 在 [https://tavily.com](https://tavily.com) (1000 次免费) 或 [https://brave.com/search/api](https://brave.com/search/api) 获取免费 API Key (2000 次免费)
 2. 添加到 `~/.picoclaw/config.json`:
 
 ```json
@@ -804,10 +813,10 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 
 ## 📝 API Key 对比
 
-| 服务             | 免费层级       | 适用场景                      |
-| ---------------- | -------------- | ----------------------------- |
-| **OpenRouter**   | 200K tokens/月 | 多模型聚合 (Claude, GPT-4 等) |
-| **智谱 (Zhipu)** | 200K tokens/月 | 最适合中国用户                |
-| **Brave Search** | 2000 次查询/月 | 网络搜索功能                  |
-| **Groq**         | 提供免费层级   | 极速推理 (Llama, Mixtral)     |
-| **Cerebras**     | 提供免费层级   | 极速推理 (Llama, Qwen 等)     |
+| 服务 | 免费层级 | 适用场景 |
+| --- | --- | --- |
+| **OpenRouter** | 200K tokens/月 | 多模型聚合 (Claude, GPT-4 等) |
+| **智谱 (Zhipu)** | 200K tokens/月 | 最适合中国用户 |
+| **Brave Search** | 2000 次查询/月 | 网络搜索功能 |
+| **Tavily** | 1000 次查询/月 | AI Agent 搜索优化 |
+| **Groq** | 提供免费层级 | 极速推理 (Llama, Mixtral) |

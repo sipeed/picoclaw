@@ -50,7 +50,7 @@
 
 ## 📢 Actualités
 
-2026-02-16 🎉 PicoClaw a atteint 12K étoiles en une semaine ! Merci à tous pour votre soutien ! PicoClaw grandit plus vite que nous ne l'avions jamais imaginé. Vu le volume élevé de PR, nous avons un besoin urgent de mainteneurs communautaires. Nos rôles de bénévoles et notre feuille de route sont officiellement publiés [ici](docs/picoclaw_community_roadmap_260216.md) — nous avons hâte de vous accueillir !
+2026-02-16 🎉 PicoClaw a atteint 12K étoiles en une semaine ! Merci à tous pour votre soutien ! PicoClaw grandit plus vite que nous ne l'avions jamais imaginé. Vu le volume élevé de PR, nous avons un besoin urgent de mainteneurs communautaires. Nos rôles de bénévoles et notre feuille de route sont officiellement publiés [ici](docs/ROADMAP.md) — nous avons hâte de vous accueillir !
 
 2026-02-13 🎉 PicoClaw a atteint 5000 étoiles en 4 jours ! Merci à la communauté ! Nous finalisons la **Feuille de Route du Projet** et mettons en place le **Groupe de Développeurs** pour accélérer le développement de PicoClaw.
 🚀 **Appel à l'action :** Soumettez vos demandes de fonctionnalités dans les GitHub Discussions. Nous les examinerons et les prioriserons lors de notre prochaine réunion hebdomadaire.
@@ -164,35 +164,43 @@ Vous pouvez également exécuter PicoClaw avec Docker Compose sans rien installe
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Configurez vos clés API
-cp config/config.example.json config/config.json
-vim config/config.json      # Configurez DISCORD_BOT_TOKEN, clés API, etc.
+# 2. Premier lancement — génère docker/data/config.json puis s'arrête
+docker compose -f docker/docker-compose.yml --profile gateway up
+# Le conteneur affiche "First-run setup complete." puis s'arrête.
 
-# 3. Compiler & Démarrer
-docker compose --profile gateway up -d
+# 3. Configurez vos clés API
+vim docker/data/config.json   # Clés API du fournisseur, tokens de bot, etc.
 
-# 4. Voir les logs
-docker compose logs -f picoclaw-gateway
+# 4. Démarrer
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
-# 5. Arrêter
-docker compose --profile gateway down
+> [!TIP]
+> **Utilisateurs Docker** : Par défaut, le Gateway écoute sur `127.0.0.1`, ce qui n'est pas accessible depuis l'hôte. Si vous avez besoin d'accéder aux endpoints de santé ou d'exposer des ports, définissez `PICOCLAW_GATEWAY_HOST=0.0.0.0` dans votre environnement ou mettez à jour `config.json`.
+
+```bash
+# 5. Voir les logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
+
+# 6. Arrêter
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Mode Agent (exécution unique)
 
 ```bash
 # Poser une question
-docker compose run --rm picoclaw-agent -m "Combien font 2+2 ?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Combien font 2+2 ?"
 
 # Mode interactif
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Recompiler
+### Mettre à jour
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Démarrage Rapide
@@ -217,12 +225,13 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
   "agents": {
     "defaults": {
-      "model": "gpt4"
+      "model_name": "gpt4"
     }
   },
   "channels": {
@@ -247,6 +256,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **Nouveau** : Le format de configuration `model_list` permet d'ajouter des fournisseurs sans modifier le code. Voir [Configuration de Modèle](#configuration-de-modèle-model_list) pour plus de détails.
+> `request_timeout` est optionnel et s'exprime en secondes. S'il est omis ou défini à `<= 0`, PicoClaw utilise le délai d'expiration par défaut (120s).
 
 **3. Obtenir des Clés API**
 
@@ -974,6 +986,17 @@ Cette conception permet également le **support multi-agent** avec une sélectio
 }
 ```
 > Exécutez `picoclaw auth login --provider anthropic` pour configurer les identifiants OAuth.
+
+**Proxy/API personnalisée**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### Équilibrage de Charge
 

@@ -126,35 +126,43 @@ Docker Compose を使えば、ローカルにインストールせずに PicoCla
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. API キーを設定
-cp config/config.example.json config/config.json
-vim config/config.json      # DISCORD_BOT_TOKEN, プロバイダーの API キーを設定
+# 2. 初回起動 — docker/data/config.json を自動生成して終了
+docker compose -f docker/docker-compose.yml --profile gateway up
+# コンテナが "First-run setup complete." を表示して停止します。
 
-# 3. ビルドと起動
-docker compose --profile gateway up -d
+# 3. API キーを設定
+vim docker/data/config.json   # プロバイダー API キー、Bot トークンなどを設定
 
-# 4. ログ確認
-docker compose logs -f picoclaw-gateway
+# 4. 起動
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
-# 5. 停止
-docker compose --profile gateway down
+> [!TIP]
+> **Docker ユーザー**: デフォルトでは、Gateway は `127.0.0.1` でリッスンしており、ホストからアクセスできません。ヘルスチェックエンドポイントにアクセスしたり、ポートを公開したりする必要がある場合は、環境変数で `PICOCLAW_GATEWAY_HOST=0.0.0.0` を設定するか、`config.json` を更新してください。
+
+```bash
+# 5. ログ確認
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
+
+# 6. 停止
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Agent モード（ワンショット）
 
 ```bash
 # 質問を投げる
-docker compose run --rm picoclaw-agent -m "What is 2+2?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "What is 2+2?"
 
 # インタラクティブモード
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### リビルド
+### アップデート
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 クイックスタート（ネイティブ）
@@ -162,7 +170,7 @@ docker compose --profile gateway up -d
 > [!TIP]
 > `~/.picoclaw/config.json` に API キーを設定してください。
 > API キーの取得先: [OpenRouter](https://openrouter.ai/keys) (LLM) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) (LLM)
-> Web 検索は **任意** です - 無料の [Brave Search API](https://brave.com/search/api) (月 2000 クエリ無料)
+> Web 検索は **任意** です - 無料の [Tavily API](https://tavily.com) (月 1000 クエリ無料) または [Brave Search API](https://brave.com/search/api) (月 2000 クエリ無料)
 
 **1. 初期化**
 
@@ -179,12 +187,13 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
   "agents": {
     "defaults": {
-      "model": "gpt4"
+      "model_name": "gpt4"
     }
   },
   "channels": {
@@ -193,14 +202,37 @@ picoclaw onboard
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "allow_from": []
     }
+  },
+  "tools": {
+    "web": {
+      "search": {
+        "api_key": "YOUR_BRAVE_API_KEY",
+        "max_results": 5
+      },
+      "tavily": {
+        "enabled": false,
+        "api_key": "YOUR_TAVILY_API_KEY",
+        "max_results": 5
+      }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5
+    }
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 30
   }
 }
 ```
 
+> **新機能**: `model_list` 形式により、プロバイダーをコード変更なしで追加できます。詳細は [モデル設定](#モデル設定-model_list) を参照してください。
+> `request_timeout` は任意の秒単位設定です。省略または `<= 0` の場合、PicoClaw はデフォルトのタイムアウト（120秒）を使用します。
+
 **3. API キーの取得**
 
-- **LLM プロバイダー**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys) · [Qwen](https://dashscope.console.aliyun.com)
-- **Web 検索**（任意）: [Brave Search](https://brave.com/search/api) - 無料枠あり（月 2000 リクエスト）
+- **LLM プロバイダー**: [OpenRouter](https://openrouter.ai/keys) · [Zhipu](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys)
+- **Web 検索**（任意）: [Tavily](https://tavily.com) - AI エージェント向けに最適化 (月 1000 リクエスト) · [Brave Search](https://brave.com/search/api) - 無料枠あり（月 2000 リクエスト）
 
 > **注意**: 完全な設定テンプレートは `config.example.json` を参照してください。
 
@@ -894,6 +926,17 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 ```
 > OAuth認証を設定するには、`picoclaw auth login --provider anthropic` を実行してください。
 
+**カスタムプロキシ/API**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
+
 #### ロードバランシング
 
 同じモデル名で複数のエンドポイントを設定すると、PicoClaw が自動的にラウンドロビンで分散します：
@@ -985,7 +1028,7 @@ Discord: https://discord.gg/V4sAZ9XWpN
 検索 API キーをまだ設定していない場合、これは正常です。PicoClaw は手動検索用の便利なリンクを提供します。
 
 Web 検索を有効にするには：
-1. [https://brave.com/search/api](https://brave.com/search/api) で無料の API キーを取得（月 2000 クエリ無料）
+1. [https://tavily.com](https://tavily.com) (月 1000 クエリ無料) または [https://brave.com/search/api](https://brave.com/search/api) で無料の API キーを取得（月 2000 クエリ無料）
 2. `~/.picoclaw/config.json` に追加：
    ```json
    {
@@ -1023,5 +1066,6 @@ Web 検索を有効にするには：
 | **Zhipu** | 月 200K トークン | 中国ユーザー向け最適 |
 | **Qwen** | 無料枠あり | 通義千問 (Qwen) |
 | **Brave Search** | 月 2000 クエリ | Web 検索機能 |
+| **Tavily** | 月 1000 クエリ | AI エージェント検索最適化 |
 | **Groq** | 無料枠あり | 高速推論（Llama, Mixtral） |
 | **Cerebras** | 無料枠あり | 高速推論（Llama, Qwen など） |
