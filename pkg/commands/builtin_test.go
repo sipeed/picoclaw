@@ -14,3 +14,17 @@ func TestBuiltinDefinitions_ContainsTelegramDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinDefinitions_WhatsAppOnlyHasBasicCommands(t *testing.T) {
+	defs := NewRegistry(BuiltinDefinitions(nil)).ForChannel("whatsapp")
+	names := map[string]bool{}
+	for _, d := range defs {
+		names[d.Name] = true
+	}
+	if !names["start"] || !names["help"] {
+		t.Fatalf("whatsapp should include start/help, got %+v", names)
+	}
+	if names["show"] || names["list"] {
+		t.Fatalf("whatsapp should not include show/list, got %+v", names)
+	}
+}

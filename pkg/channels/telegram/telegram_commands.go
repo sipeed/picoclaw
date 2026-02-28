@@ -40,7 +40,7 @@ func commandArgs(text string) string {
 
 func (c *cmd) Help(ctx context.Context, message telego.Message) error {
 	defs := commands.NewRegistry(commands.BuiltinDefinitions(c.config)).ForChannel("telegram")
-	msg := formatHelpMessage(defs)
+	msg := commands.FormatHelpMessage(defs)
 	_, err := c.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: message.Chat.ID},
 		Text:   msg,
@@ -49,26 +49,6 @@ func (c *cmd) Help(ctx context.Context, message telego.Message) error {
 		},
 	})
 	return err
-}
-
-func formatHelpMessage(defs []commands.Definition) string {
-	if len(defs) == 0 {
-		return "No commands available."
-	}
-
-	lines := make([]string, 0, len(defs))
-	for _, def := range defs {
-		usage := def.Usage
-		if usage == "" {
-			usage = "/" + def.Name
-		}
-		desc := def.Description
-		if desc == "" {
-			desc = "No description"
-		}
-		lines = append(lines, fmt.Sprintf("%s - %s", usage, desc))
-	}
-	return strings.Join(lines, "\n")
 }
 
 func (c *cmd) Start(ctx context.Context, message telego.Message) error {

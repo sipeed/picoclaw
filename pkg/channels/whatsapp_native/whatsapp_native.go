@@ -406,15 +406,15 @@ func (c *WhatsAppNativeChannel) tryHandleCommand(
 	ctx context.Context,
 	text, chatID, senderID, messageID string,
 ) bool {
-	if c.dispatcher == nil {
-		return false
-	}
-	res := c.dispatcher.Dispatch(ctx, commands.Request{
+	res := c.DispatchCommand(ctx, commands.Request{
 		Channel:   "whatsapp_native",
 		ChatID:    chatID,
 		SenderID:  senderID,
 		Text:      text,
 		MessageID: messageID,
+		Reply: func(text string) error {
+			return c.Send(ctx, bus.OutboundMessage{ChatID: chatID, Content: text})
+		},
 	})
 	if res.Err != nil {
 		logger.WarnCF("whatsapp", "Command execution failed", map[string]any{
@@ -422,7 +422,14 @@ func (c *WhatsAppNativeChannel) tryHandleCommand(
 			"error":   res.Err.Error(),
 		})
 	}
-	return res.Handled
+	return res.Matched
+}
+
+func (c *WhatsAppNativeChannel) DispatchCommand(ctx context.Context, req commands.Request) commands.Result {
+	if c.dispatcher == nil {
+		return commands.Result{Matched: false}
+	}
+	return c.dispatcher.Dispatch(ctx, req)
 }
 
 func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {

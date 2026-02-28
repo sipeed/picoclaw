@@ -13,6 +13,7 @@ type Request struct {
 	SenderID  string
 	Text      string
 	MessageID string
+	Reply     func(text string) error
 }
 
 type Result struct {
@@ -41,14 +42,13 @@ func NewDispatcher(reg *Registry) *Dispatcher {
 }
 
 func (d *Dispatcher) Dispatch(ctx context.Context, req Request) Result {
-	token := firstToken(req.Text)
-	if token == "" {
+	cmdName, ok := parseCommandName(req.Text)
+	if !ok {
 		return Result{Matched: false}
 	}
 
-	cmdName := strings.TrimPrefix(token, "/")
 	for _, def := range d.reg.ForChannel(req.Channel) {
-		if def.Name != cmdName {
+		if def.Name != cmdName && !contains(def.Aliases, cmdName) {
 			continue
 		}
 		if def.Handler == nil {
@@ -67,4 +67,30 @@ func firstToken(input string) string {
 		return ""
 	}
 	return parts[0]
+}
+
+func parseCommandName(input string) (string, bool) {
+	token := firstToken(input)
+	if token == "" || !strings.HasPrefix(token, "/") {
+		return "", false
+	}
+
+	name := strings.TrimPrefix(token, "/")
+	if i := strings.Index(name, "@"); i >= 0 {
+		name = name[:i]
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", false
+	}
+	return name, true
+}
+
+func contains(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }

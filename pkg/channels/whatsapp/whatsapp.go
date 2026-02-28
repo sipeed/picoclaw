@@ -20,14 +20,14 @@ import (
 
 type WhatsAppChannel struct {
 	*channels.BaseChannel
-	conn      *websocket.Conn
-	config    config.WhatsAppConfig
-	url       string
+	conn       *websocket.Conn
+	config     config.WhatsAppConfig
+	url        string
 	dispatcher commands.Dispatching
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	connected bool
+	ctx        context.Context
+	cancel     context.CancelFunc
+	mu         sync.Mutex
+	connected  bool
 }
 
 func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsAppChannel, error) {
@@ -262,16 +262,15 @@ func (c *WhatsAppChannel) tryHandleCommand(
 	ctx context.Context,
 	text, chatID, senderID, messageID string,
 ) bool {
-	if c.dispatcher == nil {
-		return false
-	}
-
-	res := c.dispatcher.Dispatch(ctx, commands.Request{
+	res := c.DispatchCommand(ctx, commands.Request{
 		Channel:   "whatsapp",
 		ChatID:    chatID,
 		SenderID:  senderID,
 		Text:      text,
 		MessageID: messageID,
+		Reply: func(text string) error {
+			return c.Send(ctx, bus.OutboundMessage{ChatID: chatID, Content: text})
+		},
 	})
 	if res.Err != nil {
 		logger.WarnCF("whatsapp", "Command execution failed", map[string]any{
@@ -279,6 +278,12 @@ func (c *WhatsAppChannel) tryHandleCommand(
 			"error":   res.Err.Error(),
 		})
 	}
+	return res.Matched
+}
 
-	return res.Handled
+func (c *WhatsAppChannel) DispatchCommand(ctx context.Context, req commands.Request) commands.Result {
+	if c.dispatcher == nil {
+		return commands.Result{Matched: false}
+	}
+	return c.dispatcher.Dispatch(ctx, req)
 }
