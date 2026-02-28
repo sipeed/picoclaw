@@ -18,6 +18,11 @@ builds:
       - arm64
       - arm
     main: ./cmd/clawdroid
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.gitCommit={{.Commit}}
+      - -X main.buildTime={{.Date}}
 
 archives:
   - formats: [tar.gz]

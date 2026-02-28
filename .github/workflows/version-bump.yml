@@ -1,0 +1,54 @@
+name: Version Bump
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semver bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read current version
+        id: current
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate next version
+        id: next
+        run: |
+          IFS='.' read -r major minor patch <<< "${{ steps.current.outputs.version }}"
+          case "${{ inputs.bump }}" in
+            major) major=$((major+1)); minor=0; patch=0 ;;
+            minor) minor=$((minor+1)); patch=0 ;;
+            patch) patch=$((patch+1)) ;;
+          esac
+          echo "version=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+
+      - name: Update VERSION file
+        run: echo "${{ steps.next.outputs.version }}" > VERSION
+
+      - name: Increment versionCode
+        run: |
+          FILE=android/app/build.gradle.kts
+          CODE=$(grep -oP 'versionCode\s*=\s*\K\d+' "$FILE")
+          sed -i "s/versionCode\s*=\s*[0-9]\+/versionCode = $((CODE+1))/" "$FILE"
+          echo "versionCode: $CODE -> $((CODE+1))"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION android/app/build.gradle.kts
+          git commit -m "chore: bump version to ${{ steps.next.outputs.version }}"
+          git push

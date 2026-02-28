@@ -13,6 +13,9 @@ val keystoreProperties = Properties().apply {
     }
 }
 
+val versionFile = rootProject.file("../VERSION")
+val appVersionName = if (versionFile.exists()) versionFile.readText().trim() else "0.1.0"
+
 android {
     namespace = "io.clawdroid"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -22,7 +25,7 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = appVersionName
     }
 
     signingConfigs {

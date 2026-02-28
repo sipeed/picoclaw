@@ -30,6 +30,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate version
+        env:
+          TAG_VERSION: ${{ inputs.tag }}
+        run: |
+          FILE_VERSION=$(cat VERSION)
+          TAG_VERSION="${TAG_VERSION#v}"
+          if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag ($TAG_VERSION) ≠ VERSION file ($FILE_VERSION). Run version-bump first."
+            exit 1
+          fi
+
       - name: Create and push tag
         shell: bash
         env:
