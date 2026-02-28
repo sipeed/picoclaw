@@ -28,6 +28,7 @@ type SubagentTask struct {
 	Iterations    int            `json:"-"`
 	ToolCalls     int            `json:"-"`
 	ToolStats     map[string]int `json:"-"`
+	cancel        context.CancelFunc
 }
 
 type SubagentManager struct {
@@ -126,10 +127,13 @@ func (sm *SubagentManager) Spawn(
 	// Start task in background with a detached context.
 	// The spawned goroutine must outlive the parent (e.g. heartbeat session)
 	// which may finish before the subagent completes.
+	// The cancel func is stored on the task so CancelTask() can stop it.
+	spawnCtx, spawnCancel := context.WithCancel(context.Background())
+	subagentTask.cancel = spawnCancel
 	sm.wg.Add(1)
 	go func() {
 		defer sm.wg.Done()
-		sm.runTask(context.Background(), subagentTask, preset, callback)
+		sm.runTask(spawnCtx, subagentTask, preset, callback)
 	}()
 
 	if label != "" {
@@ -377,6 +381,16 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 // Used by heartbeat cleanup to avoid destroying worktrees while subagents are still running.
 func (sm *SubagentManager) WaitAll() {
 	sm.wg.Wait()
+}
+
+// CancelTask cancels the context for a running subagent task.
+func (sm *SubagentManager) CancelTask(taskID string) {
+	sm.mu.RLock()
+	task, ok := sm.tasks[taskID]
+	sm.mu.RUnlock()
+	if ok && task.cancel != nil {
+		task.cancel()
+	}
 }
 
 func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
