@@ -310,13 +310,26 @@ func TestSanitizeFields(t *testing.T) {
 			maskedK: nil,
 		},
 		{
-			name:    "sensitive keys masked",
-			input:   map[string]any{"token": "abc123", "api_key": "sk-xxx", "secret": "s3cr3t", "password": "pass", "authorization": "Bearer tok"},
+			name: "sensitive keys masked",
+			input: map[string]any{
+				"token":         "abc123",
+				"api_key":       "sk-xxx",
+				"secret":        "s3cr3t",
+				"password":      "pass",
+				"authorization": "Bearer tok",
+			},
 			maskedK: []string{"token", "api_key", "secret", "password", "authorization"},
 		},
 		{
-			name:    "case insensitive",
-			input:   map[string]any{"Token": "abc", "API_KEY": "xyz", "Secret": "s", "PASSWORD": "p", "Authorization": "a", "Credential": "c"},
+			name: "case insensitive",
+			input: map[string]any{
+				"Token":         "abc",
+				"API_KEY":       "xyz",
+				"Secret":        "s",
+				"PASSWORD":      "p",
+				"Authorization": "a",
+				"Credential":    "c",
+			},
 			maskedK: []string{"Token", "API_KEY", "Secret", "PASSWORD", "Authorization", "Credential"},
 		},
 		{
@@ -325,8 +338,13 @@ func TestSanitizeFields(t *testing.T) {
 			safeK: []string{"error", "count", "user_id", "component"},
 		},
 		{
-			name:    "mixed keys",
-			input:   map[string]any{"token": "sensitive", "msg_signature": "safe", "corp_secret": "sensitive2", "nonce": "safe2"},
+			name: "mixed keys",
+			input: map[string]any{
+				"token":         "sensitive",
+				"msg_signature": "safe",
+				"corp_secret":   "sensitive2",
+				"nonce":         "safe2",
+			},
 			maskedK: []string{"token", "corp_secret"},
 			safeK:   []string{"msg_signature", "nonce"},
 		},

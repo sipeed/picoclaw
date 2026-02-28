@@ -134,7 +134,13 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 			sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 			sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
 			sendSSEIfChanged(w, flusher, "context", h.provider.GetContextInfo(), &lastContext)
-			sendSSEIfChanged(w, flusher, "prompt", map[string]string{"prompt": h.provider.GetSystemPrompt()}, &lastPrompt)
+			sendSSEIfChanged(
+				w,
+				flusher,
+				"prompt",
+				map[string]string{"prompt": h.provider.GetSystemPrompt()},
+				&lastPrompt,
+			)
 		}
 	}
 }

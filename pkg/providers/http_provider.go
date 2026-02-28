@@ -48,7 +48,13 @@ func NewHTTPProviderWithOptions(apiKey, apiBase, proxy string, opts ...openai_co
 	}
 }
 
-func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *HTTPProvider) Chat(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
 	resp, err := p.delegate.Chat(ctx, messages, tools, model, options)
 	if err != nil {
 		return nil, err

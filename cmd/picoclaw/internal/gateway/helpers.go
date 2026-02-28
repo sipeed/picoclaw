@@ -205,7 +205,11 @@ func gatewayCmd(debug bool, orchestration bool) error {
 			// Auto-detect Tailscale hostname and fetch TLS cert
 			hostname, tsErr := tailscale.DetectHostname()
 			if tsErr != nil {
-				logger.InfoCF("miniapp", "Tailscale not available, Mini App disabled", map[string]any{"error": tsErr.Error()})
+				logger.InfoCF(
+					"miniapp",
+					"Tailscale not available, Mini App disabled",
+					map[string]any{"error": tsErr.Error()},
+				)
 			} else {
 				certDir := filepath.Join(cfg.WorkspacePath(), "state", "certs")
 				certFile, keyFile, certErr := tailscale.FetchCert(hostname, certDir)
@@ -224,7 +228,14 @@ func gatewayCmd(debug bool, orchestration bool) error {
 			dataProvider := &agentLoopDataProvider{loop: agentLoop, workspace: cfg.WorkspacePath()}
 			sender := &telegramCommandSender{bus: msgBus}
 			miniappNotifier = miniapp.NewStateNotifier()
-			handler := miniapp.NewHandler(dataProvider, sender, cfg.Channels.Telegram.Token, miniappNotifier, cfg.Channels.Telegram.AllowFrom, cfg.WorkspacePath())
+			handler := miniapp.NewHandler(
+				dataProvider,
+				sender,
+				cfg.Channels.Telegram.Token,
+				miniappNotifier,
+				cfg.Channels.Telegram.AllowFrom,
+				cfg.WorkspacePath(),
+			)
 			agentLoop.OnStateChange = miniappNotifier.Notify
 			if b := agentLoop.GetOrchBroadcaster(); b != nil {
 				handler.SetOrchBroadcaster(b)
@@ -251,7 +262,11 @@ func gatewayCmd(debug bool, orchestration bool) error {
 		}
 	}()
 	if useTLS {
-		fmt.Printf("✓ Health endpoints available at https://%s:%d/health and /ready (TLS)\n", cfg.Gateway.Host, cfg.Gateway.Port)
+		fmt.Printf(
+			"✓ Health endpoints available at https://%s:%d/health and /ready (TLS)\n",
+			cfg.Gateway.Host,
+			cfg.Gateway.Port,
+		)
 	} else {
 		fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	}

@@ -418,7 +418,9 @@ func (t *ExecTool) executeBg(command, cwd string) *ToolResult {
 	}
 	if running >= bgMaxProcesses {
 		t.bgMu.Unlock()
-		return ErrorResult(fmt.Sprintf("maximum background processes reached (%d). Kill an existing one first.", bgMaxProcesses))
+		return ErrorResult(
+			fmt.Sprintf("maximum background processes reached (%d). Kill an existing one first.", bgMaxProcesses),
+		)
 	}
 
 	t.bgNextID++
