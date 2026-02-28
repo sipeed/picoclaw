@@ -215,34 +215,43 @@ func skillsListBuiltinCmd() {
 	}
 }
 
-func skillsSearchCmd(installer *skills.SkillInstaller) {
+func skillsSearchCmd(query string) {
 	fmt.Println("Searching for available skills...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	availableSkills, err := installer.ListAvailableSkills(ctx)
+	cfg, err := internal.LoadConfig()
 	if err != nil {
 		fmt.Printf("✗ Failed to fetch skills list: %v\n", err)
 		return
 	}
 
-	if len(availableSkills) == 0 {
+	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
+		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
+		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	results, err := registryMgr.SearchAll(ctx, query, 20)
+	if err != nil {
+		fmt.Printf("✗ Failed to fetch skills list: %v\n", err)
+		return
+	}
+
+	if len(results) == 0 {
 		fmt.Println("No skills available.")
 		return
 	}
 
-	fmt.Printf("\nAvailable Skills (%d):\n", len(availableSkills))
+	fmt.Printf("\nAvailable Skills (%d):\n", len(results))
 	fmt.Println("--------------------")
-	for _, skill := range availableSkills {
-		fmt.Printf("  📦 %s\n", skill.Name)
-		fmt.Printf("     %s\n", skill.Description)
-		fmt.Printf("     Repo: %s\n", skill.Repository)
-		if skill.Author != "" {
-			fmt.Printf("     Author: %s\n", skill.Author)
-		}
-		if len(skill.Tags) > 0 {
-			fmt.Printf("     Tags: %v\n", skill.Tags)
+	for _, result := range results {
+		fmt.Printf("  📦 %s\n", result.DisplayName)
+		fmt.Printf("     %s\n", result.Summary)
+		fmt.Printf("     Slug: %s\n", result.Slug)
+		fmt.Printf("     Registry: %s\n", result.RegistryName)
+		if result.Version != "" {
+			fmt.Printf("     Version: %s\n", result.Version)
 		}
 		fmt.Println()
 	}
