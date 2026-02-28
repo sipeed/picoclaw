@@ -657,8 +657,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		urlStr,
 		extractor,
 		truncated,
-		text
-	),
+		text)
 
 	return &ToolResult{
 		ForLLM: forLLM,
