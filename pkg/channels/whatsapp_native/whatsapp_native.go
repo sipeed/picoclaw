@@ -30,6 +30,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -55,6 +56,7 @@ type WhatsAppNativeChannel struct {
 	mu           sync.Mutex
 	runCtx       context.Context
 	runCancel    context.CancelFunc
+	dispatcher   commands.Dispatching
 	reconnectMu  sync.Mutex
 	reconnecting bool
 	stopping     atomic.Bool    // set once Stop begins; prevents new wg.Add calls
@@ -76,6 +78,7 @@ func NewWhatsAppNativeChannel(
 		BaseChannel: base,
 		config:      cfg,
 		storePath:   storePath,
+		dispatcher:  commands.NewDispatcher(commands.NewRegistry(commands.BuiltinDefinitions(nil))),
 	}
 	return c, nil
 }
@@ -387,6 +390,9 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 	if !c.IsAllowedSender(sender) {
 		return
 	}
+	if c.tryHandleCommand(c.runCtx, content, chatID, senderID, messageID) {
+		return
+	}
 
 	logger.DebugCF(
 		"whatsapp",
@@ -394,6 +400,29 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 		map[string]any{"sender_id": senderID, "content_preview": utils.Truncate(content, 50)},
 	)
 	c.HandleMessage(c.runCtx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, sender)
+}
+
+func (c *WhatsAppNativeChannel) tryHandleCommand(
+	ctx context.Context,
+	text, chatID, senderID, messageID string,
+) bool {
+	if c.dispatcher == nil {
+		return false
+	}
+	res := c.dispatcher.Dispatch(ctx, commands.Request{
+		Channel:   "whatsapp_native",
+		ChatID:    chatID,
+		SenderID:  senderID,
+		Text:      text,
+		MessageID: messageID,
+	})
+	if res.Err != nil {
+		logger.WarnCF("whatsapp", "Command execution failed", map[string]any{
+			"command": res.Command,
+			"error":   res.Err.Error(),
+		})
+	}
+	return res.Matched
 }
 
 func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {

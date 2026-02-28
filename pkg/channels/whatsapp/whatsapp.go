@@ -11,6 +11,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -22,6 +23,7 @@ type WhatsAppChannel struct {
 	conn      *websocket.Conn
 	config    config.WhatsAppConfig
 	url       string
+	dispatcher commands.Dispatching
 	ctx       context.Context
 	cancel    context.CancelFunc
 	mu        sync.Mutex
@@ -42,6 +44,7 @@ func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsA
 		BaseChannel: base,
 		config:      cfg,
 		url:         cfg.BridgeURL,
+		dispatcher:  commands.NewDispatcher(commands.NewRegistry(commands.BuiltinDefinitions(nil))),
 		connected:   false,
 	}, nil
 }
@@ -248,5 +251,34 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]any) {
 		return
 	}
 
+	if c.tryHandleCommand(c.ctx, content, chatID, senderID, messageID) {
+		return
+	}
+
 	c.HandleMessage(c.ctx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, sender)
+}
+
+func (c *WhatsAppChannel) tryHandleCommand(
+	ctx context.Context,
+	text, chatID, senderID, messageID string,
+) bool {
+	if c.dispatcher == nil {
+		return false
+	}
+
+	res := c.dispatcher.Dispatch(ctx, commands.Request{
+		Channel:   "whatsapp",
+		ChatID:    chatID,
+		SenderID:  senderID,
+		Text:      text,
+		MessageID: messageID,
+	})
+	if res.Err != nil {
+		logger.WarnCF("whatsapp", "Command execution failed", map[string]any{
+			"command": res.Command,
+			"error":   res.Err.Error(),
+		})
+	}
+
+	return res.Matched
 }
