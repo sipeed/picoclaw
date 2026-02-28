@@ -67,6 +67,33 @@ builds:
       - goos: windows
         goarch: arm
 
+  - id: picoclaw-launcher-tui
+    binary: picoclaw-launcher-tui
+    env:
+      - CGO_ENABLED=0
+    tags:
+      - stdjson
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - windows
+      - darwin
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - riscv64
+      - loong64
+      - arm
+    goarm:
+      - "6"
+      - "7"
+    main: ./cmd/picoclaw-launcher-tui
+    ignore:
+      - goos: windows
+        goarch: arm
+
 dockers_v2:
   - id: picoclaw
     dockerfile: docker/Dockerfile.goreleaser
@@ -105,6 +132,7 @@ nfpms:
     builds:
       - picoclaw
       - picoclaw-launcher
+      - picoclaw-launcher-tui
     package_name: picoclaw
     file_name_template: >-
       {{ .PackageName }}_
