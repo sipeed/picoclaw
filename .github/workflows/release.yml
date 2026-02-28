@@ -1,10 +1,10 @@
-name: Create Tag and Release
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (required, e.g. v0.2.0)"
+        description: "Release tag (e.g. v0.2.0)"
         required: true
         type: string
       prerelease:
@@ -19,8 +19,8 @@ on:
         default: false
 
 jobs:
-  create-tag:
-    name: Create Git Tag
+  create-release:
+    name: Create Tag & Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,7 +42,6 @@ jobs:
           fi
 
       - name: Create and push tag
-        shell: bash
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
@@ -51,13 +50,27 @@ jobs:
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
           git push origin "$RELEASE_TAG"
 
-  release:
-    name: GoReleaser Release
-    needs: create-tag
+      - name: Create release with generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          IS_DRAFT: ${{ inputs.draft }}
+          IS_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          FLAGS=""
+          if [ "$IS_DRAFT" = "true" ]; then FLAGS="$FLAGS --draft"; fi
+          if [ "$IS_PRERELEASE" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
+          gh release create "$RELEASE_TAG" \
+            --generate-notes \
+            --title "$RELEASE_TAG" \
+            $FLAGS
+
+  build-go:
+    name: Go Binaries
+    needs: create-release
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
     steps:
       - name: Checkout tag
         uses: actions/checkout@v4
@@ -65,32 +78,27 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.tag }}
 
-      - name: Setup Go from go.mod
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: ~> v2
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build all platforms
+        run: make build-all
 
-      - name: Apply release flags
-        shell: bash
+      - name: Upload binaries to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          gh release edit "${{ inputs.tag }}" \
-            --draft=${{ inputs.draft }} \
-            --prerelease=${{ inputs.prerelease }}
+          gh release upload "$RELEASE_TAG" \
+            build/clawdroid-linux-amd64 \
+            build/clawdroid-linux-arm64 \
+            build/clawdroid-linux-arm
 
-  android-termux:
+  build-android-termux:
     name: Android Termux APK
-    needs: create-tag
+    needs: create-release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -129,24 +137,19 @@ jobs:
       - name: Build release APK
         run: ./gradlew assembleTermuxRelease
 
-      - name: Rename APK with version
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          mv app/build/outputs/apk/termux/release/app-termux-release.apk \
-             app/build/outputs/apk/termux/release/clawdroid-termux-"$RELEASE_TAG".apk
-
       - name: Upload APK to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
+          mv app/build/outputs/apk/termux/release/app-termux-release.apk \
+             app/build/outputs/apk/termux/release/clawdroid-noembedded-"$RELEASE_TAG".apk
           gh release upload "$RELEASE_TAG" \
-            app/build/outputs/apk/termux/release/clawdroid-termux-"$RELEASE_TAG".apk
+            app/build/outputs/apk/termux/release/clawdroid-noembedded-"$RELEASE_TAG".apk
 
-  android-embedded:
+  build-android-embedded:
     name: Android Embedded APKs
-    needs: create-tag
+    needs: create-release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -193,8 +196,9 @@ jobs:
         working-directory: android
         run: ./gradlew assembleEmbeddedRelease -PenableAbiSplit
 
-      - name: Rename APKs with version
+      - name: Upload APKs to release
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
         working-directory: android/app/build/outputs/apk/embedded/release
         run: |
@@ -202,13 +206,6 @@ jobs:
           mv app-embedded-armeabi-v7a-release.apk    clawdroid-"$RELEASE_TAG"-armeabi-v7a.apk
           mv app-embedded-x86_64-release.apk         clawdroid-"$RELEASE_TAG"-x86_64.apk
           mv app-embedded-universal-release.apk      clawdroid-"$RELEASE_TAG"-universal.apk
-
-      - name: Upload APKs to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        working-directory: android/app/build/outputs/apk/embedded/release
-        run: |
           gh release upload "$RELEASE_TAG" \
             clawdroid-"$RELEASE_TAG"-arm64-v8a.apk \
             clawdroid-"$RELEASE_TAG"-armeabi-v7a.apk \

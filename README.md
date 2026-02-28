@@ -55,10 +55,10 @@ Choose the APK matching your device architecture:
 
 | Architecture | APK |
 |-------------|-----|
-| 64-bit ARM (most modern devices) | `clawdroid-embedded-arm64-v8a-release.apk` |
-| 32-bit ARM | `clawdroid-embedded-armeabi-v7a-release.apk` |
-| x86_64 (emulators) | `clawdroid-embedded-x86_64-release.apk` |
-| Universal (all architectures) | `clawdroid-embedded-universal-release.apk` |
+| 64-bit ARM (most modern devices) | `clawdroid-<version>-arm64-v8a.apk` |
+| 32-bit ARM | `clawdroid-<version>-armeabi-v7a.apk` |
+| x86_64 (emulators) | `clawdroid-<version>-x86_64.apk` |
+| Universal (all architectures) | `clawdroid-<version>-universal.apk` |
 
 ### 2. Install & Launch
 
@@ -274,6 +274,7 @@ Download from [GitHub Releases](https://github.com/KarakuriAgent/clawdroid/relea
 |-------------|--------|
 | 64-bit ARM (most modern devices) | `clawdroid-linux-arm64` |
 | 32-bit ARM | `clawdroid-linux-arm` |
+| x86_64 | `clawdroid-linux-amd64` |
 
 You can check your architecture in Termux with `uname -m`.
 
@@ -302,7 +303,7 @@ Add your LLM model and API key.
 
 **5. Install the Termux APK**
 
-Install the Termux-flavor APK (`clawdroid-termux-*.apk`) on the same device.
+Install the Termux-flavor APK (`clawdroid-noembedded-*.apk`) on the same device.
 
 **6. Start the backend**
 

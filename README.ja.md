@@ -53,10 +53,10 @@ graph TB
 
 | アーキテクチャ | APK |
 |-------------|-----|
-| 64-bit ARM（最近のデバイスの大半） | `clawdroid-embedded-arm64-v8a-release.apk` |
-| 32-bit ARM | `clawdroid-embedded-armeabi-v7a-release.apk` |
-| x86_64（エミュレーター） | `clawdroid-embedded-x86_64-release.apk` |
-| ユニバーサル（全アーキテクチャ） | `clawdroid-embedded-universal-release.apk` |
+| 64-bit ARM（最近のデバイスの大半） | `clawdroid-<version>-arm64-v8a.apk` |
+| 32-bit ARM | `clawdroid-<version>-armeabi-v7a.apk` |
+| x86_64（エミュレーター） | `clawdroid-<version>-x86_64.apk` |
+| ユニバーサル（全アーキテクチャ） | `clawdroid-<version>-universal.apk` |
 
 ### 2. インストール & 起動
 
@@ -272,6 +272,7 @@ Termux 版は Go バックエンドを APK に内蔵せず、Termux 上で別プ
 |-------------|---------|
 | 64-bit ARM（最近のデバイスの大半） | `clawdroid-linux-arm64` |
 | 32-bit ARM | `clawdroid-linux-arm` |
+| x86_64 | `clawdroid-linux-amd64` |
 
 Termux で `uname -m` を実行するとアーキテクチャを確認できます。
 
@@ -300,7 +301,7 @@ LLM モデルと API キーを設定します。
 
 **5. Termux 版 APK のインストール**
 
-Termux フレーバーの APK（`clawdroid-termux-*.apk`）を同じデバイスにインストールします。
+Termux フレーバーの APK（`clawdroid-noembedded-*.apk`）を同じデバイスにインストールします。
 
 **6. バックエンドの起動**
 
