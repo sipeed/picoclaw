@@ -120,7 +120,10 @@ func DoWithRetry[T any](ctx context.Context, policy RetryPolicy, fn func(context
 		if attemptTimeout := policy.AttemptTimeouts[attempt]; attemptTimeout > 0 {
 			timeout, ok := boundedAttemptTimeout(runCtx, attemptTimeout)
 			if !ok {
-				return zero, runCtx.Err()
+				if err := runCtx.Err(); err != nil {
+					return zero, err
+				}
+				return zero, context.DeadlineExceeded
 			}
 			attemptCtx, cancelAttempt = context.WithTimeout(runCtx, timeout)
 		}

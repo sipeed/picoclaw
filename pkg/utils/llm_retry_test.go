@@ -9,6 +9,19 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+type staleDeadlineContext struct {
+	context.Context
+	deadline time.Time
+}
+
+func (c staleDeadlineContext) Deadline() (time.Time, bool) {
+	return c.deadline, true
+}
+
+func (c staleDeadlineContext) Err() error {
+	return nil
+}
+
 func TestLLMRetry_ClassifyRetryDecision_429WithRetryAfter(t *testing.T) {
 	err := errors.New("API request failed:\n  Status: 429\n  Retry-After: 7")
 	decision := ClassifyRetryDecision(err)
@@ -161,5 +174,27 @@ func TestLLMRetry_ExtractRetryAfter_HTTPDate(t *testing.T) {
 	}
 	if delay != time.Minute {
 		t.Fatalf("delay = %v, want 1m", delay)
+	}
+}
+
+func TestLLMRetry_DoWithRetry_ExpiredDeadlineReturnsDeadlineExceeded(t *testing.T) {
+	ctx := staleDeadlineContext{
+		Context:  context.Background(),
+		deadline: time.Now().Add(-time.Second),
+	}
+
+	calls := 0
+	_, err := DoWithRetry(ctx, RetryPolicy{
+		AttemptTimeouts: []time.Duration{time.Second},
+	}, func(context.Context) (string, error) {
+		calls++
+		return "ok", nil
+	})
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context deadline exceeded", err)
+	}
+	if calls != 0 {
+		t.Fatalf("calls = %d, want 0", calls)
 	}
 }

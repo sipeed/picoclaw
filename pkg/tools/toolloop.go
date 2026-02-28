@@ -74,7 +74,7 @@ func RunToolLoop(
 			if existingNotify != nil {
 				existingNotify(notice)
 			}
-			if config.RetryNotice != nil && channel != "" && chatID != "" {
+			if config.RetryNotice != nil {
 				config.RetryNotice(utils.FormatLLMRetryNotice(notice))
 			}
 		}
