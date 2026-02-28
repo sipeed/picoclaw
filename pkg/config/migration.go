@@ -356,6 +356,22 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}, true
 			},
 		},
+		{
+			providerNames: []string{"minimax"},
+			protocol:      "minimax",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Minimax.APIKey == "" && p.Minimax.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName: "minimax",
+					Model:     "minimax/MiniMax-M2.5",
+					APIKey:    p.Minimax.APIKey,
+					APIBase:   p.Minimax.APIBase,
+					Proxy:     p.Minimax.Proxy,
+				}, true
+			},
+		},
 	}
 
 	// Process each provider migration

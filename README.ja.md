@@ -740,6 +740,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | `deepseek`（要テスト） | LLM（DeepSeek 直接） | [platform.deepseek.com](https://platform.deepseek.com) |
 | `groq` | LLM + **音声文字起こし**（Whisper） | [console.groq.com](https://console.groq.com) |
 | `cerebras` | LLM（Cerebras 直接） | [cerebras.ai](https://cerebras.ai) |
+| `minimax` | LLM（MiniMax 直接） | [platform.minimax.io](https://platform.minimax.io) |
 
 ### 基本設定
 
@@ -864,6 +865,7 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 | **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [キーを取得](https://cerebras.ai) |
 | **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [キーを取得](https://console.volcengine.com) |
 | **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **MiniMax** | `minimax/` | `https://api.minimax.io/v1` | OpenAI | [キーを取得](https://platform.minimax.io) |
 | **Antigravity** | `antigravity/` | Google Cloud | カスタム | OAuthのみ |
 | **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
 
