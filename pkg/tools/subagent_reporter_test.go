@@ -196,10 +196,7 @@ func TestSubagentManager_Spawn_CancelledDuringExecution(t *testing.T) {
 	bp := newBlockingProvider()
 	mgr := NewSubagentManager(bp, "test-model", "/tmp/test", nil, b, WebSearchToolOptions{})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	_, err := mgr.Spawn(ctx, "long task", "cancel-me", "", "cli", "direct", "", nil)
+	_, err := mgr.Spawn(context.Background(), "long task", "cancel-me", "", "cli", "direct", "", nil)
 	if err != nil {
 		t.Fatalf("Spawn() error: %v", err)
 	}
@@ -211,8 +208,8 @@ func TestSubagentManager_Spawn_CancelledDuringExecution(t *testing.T) {
 		t.Fatal("timed out waiting for blockingProvider to enter Chat")
 	}
 
-	// Now cancel — the LLM call unblocks with ctx.Err().
-	cancel()
+	// Cancel via CancelTask — the spawned goroutine's detached context is canceled.
+	mgr.CancelTask("subagent-1")
 
 	// Collect events until agent_gc.
 	var events []orch.Event
