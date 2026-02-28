@@ -26,8 +26,9 @@ func NewGitHubCopilotProvider(uri string, connectMode string, model string) (*Gi
 
 	switch connectMode {
 	case "stdio":
-		// TODO:
-		return nil, fmt.Errorf("stdio mode not implemented")
+		// TODO: Implement stdio mode for GitHub Copilot provider
+		// See https://github.com/github/copilot-sdk/blob/main/docs/getting-started.md for details
+		return nil, fmt.Errorf("stdio mode not implemented for GitHub Copilot provider; please use 'grpc' mode instead")
 	case "grpc":
 		client := copilot.NewClient(&copilot.ClientOptions{
 			CLIUrl: uri,
@@ -100,9 +101,12 @@ func (p *GitHubCopilotProvider) Chat(
 		return nil, fmt.Errorf("provider closed")
 	}
 
-	resp, _ := session.SendAndWait(ctx, copilot.MessageOptions{
+	resp, err := session.SendAndWait(ctx, copilot.MessageOptions{
 		Prompt: string(fullcontent),
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to send message to copilot: %w", err)
+	}
 
 	if resp == nil {
 		return nil, fmt.Errorf("empty response from copilot")
