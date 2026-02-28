@@ -384,6 +384,12 @@ func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessag
 		return fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
 	}
 
+	// Detect unpaired state: the client is connected (to WhatsApp servers)
+	// but has not completed QR-login yet, so sending would fail.
+	if client.Store.ID == nil {
+		return fmt.Errorf("whatsapp not yet paired (QR login pending): %w", channels.ErrTemporary)
+	}
+
 	to, err := parseJID(msg.ChatID)
 	if err != nil {
 		return fmt.Errorf("invalid chat id %q: %w", msg.ChatID, err)

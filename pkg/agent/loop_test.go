@@ -801,16 +801,20 @@ func TestHandleReasoning(t *testing.T) {
 	t.Run("returns promptly when bus is full", func(t *testing.T) {
 		al, msgBus := newLoop(t)
 
-		// Fill the outbound bus buffer (default size is 64) so that the
-		// next PublishOutbound will block until the context deadline.
-		for i := 0; i < 64; i++ {
-			err := msgBus.PublishOutbound(context.Background(), bus.OutboundMessage{
+		// Fill the outbound bus buffer until a publish would block.
+		// Use a short timeout to detect when the buffer is full,
+		// rather than hardcoding the buffer size.
+		for i := 0; ; i++ {
+			fillCtx, fillCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			err := msgBus.PublishOutbound(fillCtx, bus.OutboundMessage{
 				Channel: "filler",
 				ChatID:  "filler",
 				Content: fmt.Sprintf("filler-%d", i),
 			})
+			fillCancel()
 			if err != nil {
-				t.Fatalf("failed to fill bus: %v", err)
+				// Buffer is full (timed out trying to send).
+				break
 			}
 		}
 

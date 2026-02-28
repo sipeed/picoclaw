@@ -9,6 +9,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -585,15 +586,17 @@ func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, chan
 		ChatID:  channelID,
 		Content: reasoningContent,
 	}); err != nil {
-		// Only log unexpected errors; context deadline/cancel are expected when
-		// the bus is full under load and would be too noisy to warn about.
-		if ctx.Err() == nil {
-			logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
+		// Treat context.DeadlineExceeded / context.Canceled as expected
+		// (bus full under load, or parent cancelled).  Check the error
+		// itself rather than ctx.Err(), because pubCtx may time out
+		// (5 s) while the parent ctx is still active.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			logger.DebugCF("agent", "Reasoning publish skipped (timeout/cancel)", map[string]any{
 				"channel": channelName,
 				"error":   err.Error(),
 			})
 		} else {
-			logger.DebugCF("agent", "Reasoning publish skipped (context done)", map[string]any{
+			logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
 				"channel": channelName,
 				"error":   err.Error(),
 			})
