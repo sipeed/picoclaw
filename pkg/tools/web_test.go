@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const testFetchLimit = int64(10 * 1024 * 1024)
+
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +23,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := NewWebFetchTool(50000, testFetchLimit)
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -57,7 +59,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := NewWebFetchTool(50000, testFetchLimit)
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -78,7 +80,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 
 // TestWebTool_WebFetch_InvalidURL verifies error handling for invalid URL
 func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool := NewWebFetchTool(50000, testFetchLimit)
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "not-a-valid-url",
@@ -99,7 +101,7 @@ func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 
 // TestWebTool_WebFetch_UnsupportedScheme verifies error handling for non-http URLs
 func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool := NewWebFetchTool(50000, testFetchLimit)
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "ftp://example.com/file.txt",
@@ -120,7 +122,7 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingURL verifies error handling for missing URL
 func TestWebTool_WebFetch_MissingURL(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool := NewWebFetchTool(50000, testFetchLimit)
 	ctx := context.Background()
 	args := map[string]any{}
 
@@ -148,7 +150,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(1000) // Limit to 1000 chars
+	tool := NewWebFetchTool(1000, testFetchLimit) // Limit to 1000 chars
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -184,7 +186,7 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 
 		// Generate a payload intentionally larger than our limit.
 		// Limit: 10 * 1024 * 1024 (10MB). We generate 10MB + 100 bytes of the letter 'A'.
-		largeData := bytes.Repeat([]byte("A"), int(MaxFetchLimitBytes)+100)
+		largeData := bytes.Repeat([]byte("A"), int(testFetchLimit)+100)
 
 		w.Write(largeData)
 	}))
@@ -192,7 +194,7 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 	defer ts.Close()
 
 	// Initialize the tool
-	tool := NewWebFetchTool(50000)
+	tool := NewWebFetchTool(50000, testFetchLimit)
 
 	// Prepare the arguments pointing to the URL of our local mock server
 	args := map[string]any{
@@ -209,7 +211,7 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 	}
 
 	// Search for the exact error string we set earlier in the Execute method
-	expectedErrorMsg := fmt.Sprintf("size exceeded %d bytes limit", MaxFetchLimitBytes)
+	expectedErrorMsg := fmt.Sprintf("size exceeded %d bytes limit", testFetchLimit)
 
 	if !strings.Contains(result.ForLLM, expectedErrorMsg) && !strings.Contains(result.ForUser, expectedErrorMsg) {
 		t.Errorf("test failed: expected error %q, but got: %+v", expectedErrorMsg, result)
@@ -257,7 +259,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := NewWebFetchTool(50000, testFetchLimit)
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -358,7 +360,7 @@ func TestWebFetchTool_extractText(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool := NewWebFetchTool(50000, testFetchLimit)
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "https://",
@@ -480,7 +482,7 @@ func TestCreateHTTPClient_ProxyFromEnvironmentWhenConfigEmpty(t *testing.T) {
 }
 
 func TestNewWebFetchToolWithProxy(t *testing.T) {
-	tool := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890")
+	tool := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890", testFetchLimit)
 	if tool.maxChars != 1024 {
 		t.Fatalf("maxChars = %d, want %d", tool.maxChars, 1024)
 	}
@@ -488,7 +490,7 @@ func TestNewWebFetchToolWithProxy(t *testing.T) {
 		t.Fatalf("proxy = %q, want %q", tool.proxy, "http://127.0.0.1:7890")
 	}
 
-	tool = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890")
+	tool = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890", testFetchLimit)
 	if tool.maxChars != 50000 {
 		t.Fatalf("default maxChars = %d, want %d", tool.maxChars, 50000)
 	}
