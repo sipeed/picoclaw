@@ -397,7 +397,7 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 type BochaSearchProvider struct {
 	apiKey  string
 	baseURL string
-	proxy   string
+	client  *http.Client
 }
 
 func (p *BochaSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
@@ -425,17 +425,13 @@ func (p *BochaSearchProvider) Search(ctx context.Context, query string, count in
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
-	client, err := createHTTPClient(p.proxy, 15*time.Second)
-	if err != nil {
-		return "", fmt.Errorf("failed to create HTTP client: %w", err)
-	}
-	resp, err := client.Do(req)
+	resp, err := p.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -552,10 +548,14 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 			maxResults = opts.DuckDuckGoMaxResults
 		}
 	} else if opts.BochaEnabled && opts.BochaAPIKey != "" {
+		bochaClient, err := createHTTPClient(opts.Proxy, 15*time.Second)
+		if err != nil {
+			return nil
+		}
 		provider = &BochaSearchProvider{
 			apiKey:  opts.BochaAPIKey,
 			baseURL: opts.BochaBaseURL,
-			proxy:   opts.Proxy,
+			client:  bochaClient,
 		}
 		if opts.BochaMaxResults > 0 {
 			maxResults = opts.BochaMaxResults
