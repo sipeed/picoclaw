@@ -433,6 +433,11 @@ func (c *WeComAIBotChannel) handleMessageCallback(
 	// Process the message and get streaming response
 	response := c.processMessage(ctx, msg, timestamp, nonce)
 
+	// Check if response is empty (e.g. due to unsupported message type)
+	if response == "" {
+		response = c.encryptEmptyResponse(timestamp, nonce)
+	}
+
 	// Return encrypted JSON response
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
