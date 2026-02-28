@@ -312,11 +312,10 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	defer m.mu.Unlock()
 
 	if len(m.channels) == 0 {
-		logger.WarnC("channels", "No channels enabled")
-		return errors.New("no channels enabled")
+		logger.InfoC("channels", "No chat channels enabled; gateway will serve HTTP API only")
+	} else {
+		logger.InfoC("channels", "Starting all channels")
 	}
-
-	logger.InfoC("channels", "Starting all channels")
 
 	dispatchCtx, cancel := context.WithCancel(ctx)
 	m.dispatchTask = &asyncTask{cancel: cancel}

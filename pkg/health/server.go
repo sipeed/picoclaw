@@ -12,6 +12,7 @@ import (
 
 type Server struct {
 	server    *http.Server
+	mux       *http.ServeMux
 	mu        sync.RWMutex
 	ready     bool
 	checks    map[string]Check
@@ -34,6 +35,7 @@ type StatusResponse struct {
 func NewServer(host string, port int) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
+		mux:       mux,
 		ready:     false,
 		checks:    make(map[string]Check),
 		startTime: time.Now(),
@@ -47,10 +49,16 @@ func NewServer(host string, port int) *Server {
 		Addr:         addr,
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		WriteTimeout: 30 * time.Second, // allow longer writes for chat responses
 	}
 
 	return s
+}
+
+// RegisterHandler registers an additional HTTP handler on the server's mux.
+// Must be called before Start/StartContext.
+func (s *Server) RegisterHandler(pattern string, handler http.HandlerFunc) {
+	s.mux.HandleFunc(pattern, handler)
 }
 
 func (s *Server) Start() error {
@@ -155,11 +163,14 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RegisterOnMux registers /health and /ready handlers onto the given mux.
-// This allows the health endpoints to be served by a shared HTTP server.
+// RegisterOnMux registers health endpoints and any handlers added via RegisterHandler
+// onto the given mux. This allows the health server to be served by a shared HTTP server.
+// Handlers added via RegisterHandler (e.g. /chat, /v1/chat/completions) are served via
+// the catch-all "/" which forwards to the health server's mux.
 func (s *Server) RegisterOnMux(mux *http.ServeMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
+	mux.Handle("/", s.mux) // catch-all for RegisterHandler routes (/chat, /v1/chat/completions, etc.)
 }
 
 func statusString(ok bool) string {

@@ -308,6 +308,12 @@ func DefaultConfig() *Config {
 			Host: "127.0.0.1",
 			Port: 18790,
 		},
+		Nodes: NodesConfig{
+			Enabled: false,
+			Host:    "0.0.0.0",
+			Port:    18790, // same port as gateway; node WS is served on the shared HTTP server
+			Token:   "",
+		},
 		Tools: ToolsConfig{
 			MediaCleanup: MediaCleanupConfig{
 				Enabled:  true,

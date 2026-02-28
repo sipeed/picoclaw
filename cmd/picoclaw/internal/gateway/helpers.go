@@ -33,6 +33,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/nodes"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -60,7 +61,30 @@ func gatewayCmd(debug bool) error {
 	}
 
 	msgBus := bus.NewMessageBus()
+
+	// Prepare the openclaw node WebSocket server.
+	// The handler is mounted on the shared HTTP server (cfg.Gateway.Host:Port)
+	// rather than a separate listener, so nodes and the rest-API share one port.
+	// Nodes (headless Linux, iOS, Android, macOS) connect using the
+	// openclaw gateway protocol (version 3); picoclaw acts as the server.
+	var nodeRegistry *nodes.Registry
+	var nodeSrv *nodes.Server
+	if cfg.Nodes.Enabled {
+		nodeRegistry = nodes.NewRegistry()
+		nodeSrv = nodes.NewServer(nodes.ServerConfig{
+			Enabled: true,
+			Host:    cfg.Gateway.Host, // bind address follows gateway (shared server)
+			Port:    cfg.Gateway.Port, // same port as gateway
+			Token:   cfg.Nodes.Token,
+		}, nodeRegistry)
+	}
+
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+
+	// Attach node registry to agent loop so NodesTool is available.
+	if nodeRegistry != nil {
+		agentLoop.SetNodeRegistry(nodeRegistry)
+	}
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
@@ -169,8 +193,17 @@ func gatewayCmd(debug bool) error {
 		fmt.Println("✓ Device event service started")
 	}
 
-	// Setup shared HTTP server with health endpoints and webhook handlers
+	// Setup shared HTTP server with health endpoints and webhook handlers.
+	// Handlers must be registered before SetupHTTPServer so they are on the shared mux.
 	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	healthServer.RegisterHandler("/chat", agentLoop.NewChatHTTPHandler())
+	openAIHandler := agentLoop.NewOpenAIChatHandler(agent.OpenAIChatHandlerConfig{
+		Token: cfg.Gateway.Token,
+	})
+	healthServer.RegisterHandler("/v1/chat/completions", openAIHandler)
+	if nodeSrv != nil {
+		healthServer.RegisterHandler("/", nodeSrv.Handler())
+	}
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
 	channelManager.SetupHTTPServer(addr, healthServer)
 
@@ -178,8 +211,17 @@ func gatewayCmd(debug bool) error {
 		fmt.Printf("Error starting channels: %v\n", err)
 		return err
 	}
-
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	// HTTP server is started inside channelManager.StartAll()
+	fmt.Printf("✓ HTTP server started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf("  • /health  /ready              – health probes\n")
+	fmt.Printf("  • /chat                        – chat API (picoclaw chat)\n")
+	fmt.Printf("  • /v1/chat/completions         – OpenAI-compatible chat completions\n")
+	if cfg.Gateway.Token != "" {
+		fmt.Printf("  ↳ bearer token auth enabled\n")
+	}
+	if nodeSrv != nil {
+		fmt.Printf("  • /                            – node WebSocket (openclaw protocol v3)\n")
+	}
 
 	go agentLoop.Run(ctx)
 

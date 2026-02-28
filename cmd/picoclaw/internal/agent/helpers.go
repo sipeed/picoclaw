@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/nodes"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -50,6 +51,14 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 	msgBus := bus.NewMessageBus()
 	defer msgBus.Close()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+
+	// Register NodesTool with an empty registry so the tool is always visible.
+	// In agent mode no nodes server is running, so the registry starts empty
+	// (status/describe will return "no nodes connected"). In gateway mode the
+	// real registry with connected nodes is injected via SetNodeRegistry.
+	if cfg.Nodes.Enabled {
+		agentLoop.SetNodeRegistry(nodes.NewRegistry())
+	}
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()

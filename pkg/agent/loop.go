@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/nodes"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -42,6 +44,7 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
+	nodeRegistry   *nodes.Registry // optional; non-nil when nodes server is enabled
 }
 
 // processOptions configures how a message is processed
@@ -82,6 +85,20 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		state:       stateManager,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
+	}
+}
+
+// SetNodeRegistry attaches a node Registry to the agent loop so that the
+// NodesTool becomes available. Call this after NewAgentLoop but before Run.
+func (al *AgentLoop) SetNodeRegistry(nodeReg *nodes.Registry) {
+	al.nodeRegistry = nodeReg
+	// Register NodesTool with every agent instance.
+	for _, agentID := range al.registry.ListAgentIDs() {
+		agent, ok := al.registry.GetAgent(agentID)
+		if !ok {
+			continue
+		}
+		agent.Tools.Register(tools.NewNodesTool(nodeReg))
 	}
 }
 
@@ -1349,4 +1366,62 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 		return nil
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
+}
+
+// ChatAPIRequest is the JSON body for POST /chat.
+type ChatAPIRequest struct {
+	Message string `json:"message"`
+	Session string `json:"session"`
+}
+
+// ChatAPIResponse is the JSON response for POST /chat.
+type ChatAPIResponse struct {
+	Response string `json:"response"`
+	Session  string `json:"session"`
+	Error    string `json:"error,omitempty"`
+}
+
+// NewChatHTTPHandler returns an http.HandlerFunc that exposes a simple
+// synchronous chat endpoint: POST /chat {"message":"...", "session":"..."}.
+// The handler calls ProcessDirect on the agent loop and waits for the reply.
+func (al *AgentLoop) NewChatHTTPHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req ChatAPIRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(ChatAPIResponse{Error: "invalid request body: " + err.Error()})
+			return
+		}
+
+		if req.Message == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(ChatAPIResponse{Error: "message is required"})
+			return
+		}
+
+		sessionKey := req.Session
+		if sessionKey == "" {
+			sessionKey = "cli:default"
+		}
+
+		response, err := al.ProcessDirect(r.Context(), req.Message, sessionKey)
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(ChatAPIResponse{Error: err.Error()})
+			return
+		}
+
+		json.NewEncoder(w).Encode(ChatAPIResponse{
+			Response: response,
+			Session:  sessionKey,
+		})
+	}
 }

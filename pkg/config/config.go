@@ -55,6 +55,7 @@ type Config struct {
 	Providers ProvidersConfig `json:"providers,omitempty"`
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"`
+	Nodes     NodesConfig     `json:"nodes"`
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
@@ -488,8 +489,34 @@ func (c *ModelConfig) Validate() error {
 }
 
 type GatewayConfig struct {
-	Host string `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
-	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
+	Host string `json:"host"            env:"PICOCLAW_GATEWAY_HOST"`
+	Port int    `json:"port"            env:"PICOCLAW_GATEWAY_PORT"`
+	// Token is an optional shared secret for the HTTP API.
+	// If non-empty, all /v1/chat/completions requests must provide
+	// "Authorization: Bearer <token>". Leave empty to allow all requests.
+	Token string `json:"token,omitempty" env:"PICOCLAW_GATEWAY_TOKEN"`
+}
+
+// NodesConfig configures the openclaw node WebSocket server.
+// Nodes (headless Linux, iOS, Android, macOS) connect to picoclaw using
+// the openclaw gateway protocol (version 3). picoclaw acts as the server;
+// nodes are clients with role="node".
+type NodesConfig struct {
+	// Enabled controls whether the node WebSocket server starts.
+	Enabled bool `json:"enabled" env:"PICOCLAW_NODES_ENABLED"`
+
+	// Host is the bind address (default "0.0.0.0").
+	Host string `json:"host" env:"PICOCLAW_NODES_HOST"`
+
+	// Port is the TCP listen port (default 18790).
+	// Note: 18789 is the standard openclaw gateway port; 18790 avoids collisions
+	// when picoclaw runs alongside openclaw.
+	Port int `json:"port" env:"PICOCLAW_NODES_PORT"`
+
+	// Token is an optional shared secret for authentication.
+	// If non-empty, connecting nodes must provide it as auth.token.
+	// Leave empty to allow all connections (suitable for trusted networks).
+	Token string `json:"token,omitempty" env:"PICOCLAW_NODES_TOKEN"`
 }
 
 type BraveConfig struct {
