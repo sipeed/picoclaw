@@ -39,11 +39,12 @@ const (
 // Implements: channels.Channel, channels.TypingCapable, channels.ReactionCapable
 type SignalChannel struct {
 	*channels.BaseChannel
-	config     config.SignalConfig
-	httpClient *http.Client
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
+	config    config.SignalConfig
+	rpcClient *http.Client // JSON-RPC calls (30s timeout)
+	sseClient *http.Client // SSE streaming (no timeout)
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
 }
 
 // Signal SSE event types
@@ -134,7 +135,8 @@ func NewSignalChannel(cfg *config.Config, b *bus.MessageBus) (channels.Channel, 
 	return &SignalChannel{
 		BaseChannel: base,
 		config:      signalCfg,
-		httpClient:  &http.Client{Timeout: signalRPCTimeout},
+		rpcClient:   &http.Client{Timeout: signalRPCTimeout},
+		sseClient:   &http.Client{Timeout: 0},
 	}, nil
 }
 
@@ -291,8 +293,7 @@ func (c *SignalChannel) connectSSE() error {
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	sseClient := &http.Client{Timeout: 0}
-	resp, err := sseClient.Do(req)
+	resp, err := c.sseClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("SSE connection failed: %w", err)
 	}
@@ -659,7 +660,7 @@ func (c *SignalChannel) rpcCall(ctx context.Context, method string, params any) 
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.rpcClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("RPC request failed: %w", err)
 	}
