@@ -587,7 +587,7 @@ func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, chan
 		Content: reasoningContent,
 	}); err != nil {
 		// Treat context.DeadlineExceeded / context.Canceled as expected
-		// (bus full under load, or parent cancelled).  Check the error
+		// (bus full under load, or parent canceled).  Check the error
 		// itself rather than ctx.Err(), because pubCtx may time out
 		// (5 s) while the parent ctx is still active.
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
