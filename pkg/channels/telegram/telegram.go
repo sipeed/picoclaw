@@ -364,9 +364,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	// Defensive fallback: ignore messages from this bot by username to avoid self-loop echoes.
 	if botUsername := c.bot.Username(); botUsername != "" && strings.EqualFold(user.Username, botUsername) {
 		logger.DebugCF("telegram", "Ignoring self message by username", map[string]any{
-			"user_id":   user.ID,
-			"username":  user.Username,
-			"bot_name":  botUsername,
+			"user_id":  user.ID,
+			"username": user.Username,
+			"bot_name": botUsername,
 		})
 		return nil
 	}
