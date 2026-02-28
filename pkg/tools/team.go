@@ -21,6 +21,7 @@ type TeamMember struct {
 	ID        string
 	Role      string
 	Task      string
+	Model     string   // Heterogeneous Agents: Optional specific model for this task
 	DependsOn []string // List of member IDs this member depends on
 }
 
@@ -70,6 +71,10 @@ func (t *TeamTool) Parameters() map[string]any {
 						"task": map[string]any{
 							"type":        "string",
 							"description": "The specific task this member needs to accomplish.",
+						},
+						"model": map[string]any{
+							"type":        "string",
+							"description": "Optional specific LLM model ID to route this task to (e.g., 'gpt-4o' for vision, 'claude-3-5-sonnet' for logic). If omitted, inherits the parent's model.",
 						},
 						"depends_on": map[string]any{
 							"type":        "array",
@@ -132,6 +137,9 @@ func (t *TeamTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 			id = fmt.Sprintf("member_%d", i)
 		}
 
+		modelStr, _ := mMap["model"].(string)
+		modelStr = strings.TrimSpace(modelStr)
+
 		var dependsOn []string
 		if depRaw, dOk := mMap["depends_on"].([]any); dOk {
 			for _, d := range depRaw {
@@ -145,6 +153,7 @@ func (t *TeamTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 			ID:        id,
 			Role:      role,
 			Task:      task,
+			Model:     modelStr,
 			DependsOn: dependsOn,
 		})
 	}
@@ -199,7 +208,19 @@ func upgradeRegistryForConcurrency(original *ToolRegistry) *ToolRegistry {
 	return upgraded
 }
 
-func (t *TeamTool) executeSequential(ctx context.Context, config ToolLoopConfig, members []TeamMember) *ToolResult {
+// buildWorkerConfig creates a ToolLoopConfig for a specific team member,
+// potentially overriding the model based on the member's definition.
+func buildWorkerConfig(baseConfig ToolLoopConfig, registry *ToolRegistry, m TeamMember) ToolLoopConfig {
+	cfg := baseConfig
+	cfg.Tools = registry
+	// Heterogeneous Agents: Override model if this team member requested a specific one
+	if m.Model != "" {
+		cfg.Model = m.Model
+	}
+	return cfg
+}
+
+func (t *TeamTool) executeSequential(ctx context.Context, baseConfig ToolLoopConfig, members []TeamMember) *ToolResult {
 	var finalOutput strings.Builder
 	finalOutput.WriteString("Team Execution Summary (Sequential):\n\n")
 
@@ -217,7 +238,8 @@ func (t *TeamTool) executeSequential(ctx context.Context, config ToolLoopConfig,
 			{Role: "user", Content: actualTask},
 		}
 
-		loopResult, err := RunToolLoop(ctx, config, messages, t.originChannel, t.originChatID)
+		workerConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, m)
+		loopResult, err := RunToolLoop(ctx, workerConfig, messages, t.originChannel, t.originChatID)
 		if err != nil {
 			errStr := fmt.Sprintf("Phase %d (Role: %s) failed: %v", i+1, m.Role, err)
 			finalOutput.WriteString(errStr + "\n")
@@ -235,7 +257,7 @@ func (t *TeamTool) executeSequential(ctx context.Context, config ToolLoopConfig,
 	}
 }
 
-func (t *TeamTool) executeParallel(ctx context.Context, config ToolLoopConfig, members []TeamMember) *ToolResult {
+func (t *TeamTool) executeParallel(ctx context.Context, baseConfig ToolLoopConfig, members []TeamMember) *ToolResult {
 	var wg sync.WaitGroup
 	type workResult struct {
 		index int
@@ -248,22 +270,23 @@ func (t *TeamTool) executeParallel(ctx context.Context, config ToolLoopConfig, m
 
 	for i, m := range members {
 		wg.Add(1)
-		go func(index int, role, task string) {
+		go func(index int, member TeamMember) {
 			defer wg.Done()
 
 			messages := []providers.Message{
-				{Role: "system", Content: role},
-				{Role: "user", Content: task},
+				{Role: "system", Content: member.Role},
+				{Role: "user", Content: member.Task},
 			}
 
-			loopResult, err := RunToolLoop(ctx, config, messages, t.originChannel, t.originChatID)
+			workerConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, member)
+			loopResult, err := RunToolLoop(ctx, workerConfig, messages, t.originChannel, t.originChatID)
 
 			if err != nil {
-				resultsChan <- workResult{index: index, role: role, err: err}
+				resultsChan <- workResult{index: index, role: member.Role, err: err}
 				return
 			}
-			resultsChan <- workResult{index: index, role: role, res: loopResult.Content}
-		}(i, m.Role, m.Task)
+			resultsChan <- workResult{index: index, role: member.Role, res: loopResult.Content}
+		}(i, m)
 	}
 
 	// Wait for all goroutines to finish
@@ -299,7 +322,7 @@ func (t *TeamTool) executeParallel(ctx context.Context, config ToolLoopConfig, m
 	}
 }
 
-func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, config ToolLoopConfig, members []TeamMember) *ToolResult {
+func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, baseConfig ToolLoopConfig, members []TeamMember) *ToolResult {
 	if len(members) != 2 {
 		return ErrorResult("The evaluator_optimizer strategy requires exactly two members: [0] Worker, [1] Evaluator.")
 	}
@@ -321,7 +344,8 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, config ToolLoo
 		finalOutput.WriteString(fmt.Sprintf("## Attempt %d\n", attempt))
 
 		// 2. Trigger Worker (resumes from its exact previous state!)
-		workerResult, err := RunToolLoop(ctx, config, workerMessages, t.originChannel, t.originChatID)
+		workerConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, worker)
+		workerResult, err := RunToolLoop(ctx, workerConfig, workerMessages, t.originChannel, t.originChatID)
 		if err != nil {
 			errStr := fmt.Sprintf("Worker failed on attempt %d: %v", attempt, err)
 			finalOutput.WriteString(errStr + "\n")
@@ -341,7 +365,8 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, config ToolLoo
 			{Role: "user", Content: evalContext},
 		}
 
-		evalResult, err := RunToolLoop(ctx, config, evalMessages, t.originChannel, t.originChatID)
+		evalConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, evaluator)
+		evalResult, err := RunToolLoop(ctx, evalConfig, evalMessages, t.originChannel, t.originChatID)
 		if err != nil {
 			errStr := fmt.Sprintf("Evaluator failed on attempt %d: %v", attempt, err)
 			finalOutput.WriteString(errStr + "\n")
@@ -376,7 +401,7 @@ func (t *TeamTool) executeEvaluatorOptimizer(ctx context.Context, config ToolLoo
 	}
 }
 
-func (t *TeamTool) executeDAG(ctx context.Context, config ToolLoopConfig, members []TeamMember) *ToolResult {
+func (t *TeamTool) executeDAG(ctx context.Context, baseConfig ToolLoopConfig, members []TeamMember) *ToolResult {
 	// 1. Build and VALIDATE dependency graph
 	memberMap := make(map[string]TeamMember)
 	inDegree := make(map[string]int)
@@ -489,7 +514,8 @@ func (t *TeamTool) executeDAG(ctx context.Context, config ToolLoopConfig, member
 					{Role: "user", Content: actualTask},
 				}
 
-				loopResult, err := RunToolLoop(ctx, config, messages, t.originChannel, t.originChatID)
+				workerConfig := buildWorkerConfig(baseConfig, baseConfig.Tools, m)
+				loopResult, err := RunToolLoop(ctx, workerConfig, messages, t.originChannel, t.originChatID)
 
 				if err != nil {
 					masterErrMu.Lock()

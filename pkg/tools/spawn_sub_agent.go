@@ -43,6 +43,10 @@ func (t *SpawnSubAgentTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "The system prompt/role assignment for the sub-agent (e.g., 'You are an expert code reviewer').",
 			},
+			"model": map[string]any{
+				"type":        "string",
+				"description": "Optional specific LLM model ID to route this task to (e.g., 'gpt-4o' for vision, 'claude-3-5-sonnet' for logic). If omitted, inherits the parent's model.",
+			},
 		},
 		"required": []string{"task", "role"},
 	}
@@ -82,6 +86,11 @@ func (t *SpawnSubAgentTool) Execute(ctx context.Context, args map[string]any) *T
 
 	// 2. Base Configuration (Timeout & LLM constraints)
 	config := t.manager.BuildBaseWorkerConfig(ctx)
+
+	// 2.1 Model Override (Heterogeneous Agents)
+	if modelParam, ok := args["model"].(string); ok && strings.TrimSpace(modelParam) != "" {
+		config.Model = strings.TrimSpace(modelParam)
+	}
 
 	// Note: For MVP, we pass the current ToolRegistry unmodified.
 	// To enforce strict sandboxing later, we can construct a new ToolRegistry here based on args['allowed_tools'].
