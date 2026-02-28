@@ -44,7 +44,7 @@ type streamTask struct {
 	ResponseURL  string // temporary URL for proactive reply (valid 1 hour, use once)
 	Question     string
 	CreatedTime  time.Time
-	Deadline     time.Time // ~5m30s, we close the stream here and switch to response_url
+	Deadline     time.Time // ~30s, we close the stream here and switch to response_url
 	StreamClosed bool      // stream returned finish:true; waiting for agent to reply via response_url
 	Finished     bool      // fully done
 	mu           sync.Mutex
