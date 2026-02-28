@@ -862,3 +862,383 @@ func TestBuildMediaScope_WithMessageID(t *testing.T) {
 		t.Fatalf("expected %s, got %s", expected, scope)
 	}
 }
+
+// --- Status / TaskStatus message handling tests ---
+
+// mockEditorWithSendID implements MessageEditor and MessageSenderWithID.
+type mockEditorWithSendID struct {
+	mockChannel
+	editFn     func(ctx context.Context, chatID, messageID, content string) error
+	sendWithID func(ctx context.Context, chatID, content string) (string, error)
+}
+
+func (m *mockEditorWithSendID) EditMessage(ctx context.Context, chatID, messageID, content string) error {
+	return m.editFn(ctx, chatID, messageID, content)
+}
+
+func (m *mockEditorWithSendID) SendWithID(ctx context.Context, chatID, content string) (string, error) {
+	return m.sendWithID(ctx, chatID, content)
+}
+
+func TestHandleStatusSend_EditsPlaceholder(t *testing.T) {
+	m := newTestManager()
+	var editCalled bool
+	var editedContent string
+
+	ch := &mockEditorWithSendID{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		editFn: func(_ context.Context, _, messageID, content string) error {
+			editCalled = true
+			editedContent = content
+			if messageID != "ph-42" {
+				t.Fatalf("expected messageID ph-42, got %s", messageID)
+			}
+			return nil
+		},
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			t.Fatal("SendWithID should not be called when placeholder exists")
+			return "", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	// Register a placeholder
+	m.RecordPlaceholder("test", "123", "ph-42")
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "status update 1", IsStatus: true}
+	m.handleStatusSend(context.Background(), "test", w, msg)
+
+	if !editCalled {
+		t.Fatal("expected EditMessage to be called on placeholder")
+	}
+	if editedContent != "status update 1" {
+		t.Fatalf("expected content 'status update 1', got %s", editedContent)
+	}
+}
+
+func TestHandleStatusSend_EditsTrackedStatus(t *testing.T) {
+	m := newTestManager()
+	var editCalled bool
+
+	ch := &mockEditorWithSendID{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		editFn: func(_ context.Context, _, messageID, _ string) error {
+			editCalled = true
+			if messageID != "status-99" {
+				t.Fatalf("expected messageID status-99, got %s", messageID)
+			}
+			return nil
+		},
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			t.Fatal("SendWithID should not be called when statusMsgID exists")
+			return "", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	// Pre-store a tracked status message
+	m.statusMsgIDs.Store("test:123", statusMsgEntry{messageID: "status-99", createdAt: time.Now()})
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "update 2", IsStatus: true}
+	m.handleStatusSend(context.Background(), "test", w, msg)
+
+	if !editCalled {
+		t.Fatal("expected EditMessage to be called on tracked status message")
+	}
+}
+
+func TestHandleStatusSend_SendsNewAndTracks(t *testing.T) {
+	m := newTestManager()
+	var sendWithIDCalled bool
+
+	ch := &mockEditorWithSendID{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			return nil
+		},
+		sendWithID: func(_ context.Context, chatID, content string) (string, error) {
+			sendWithIDCalled = true
+			if chatID != "123" {
+				t.Fatalf("expected chatID 123, got %s", chatID)
+			}
+			return "new-msg-1", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	// No placeholder, no tracked status → should use SendWithID
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "first status", IsStatus: true}
+	m.handleStatusSend(context.Background(), "test", w, msg)
+
+	if !sendWithIDCalled {
+		t.Fatal("expected SendWithID to be called")
+	}
+
+	// Verify tracked
+	v, ok := m.statusMsgIDs.Load("test:123")
+	if !ok {
+		t.Fatal("expected statusMsgIDs to contain tracked entry")
+	}
+	entry := v.(statusMsgEntry)
+	if entry.messageID != "new-msg-1" {
+		t.Fatalf("expected messageID new-msg-1, got %s", entry.messageID)
+	}
+}
+
+func TestHandleTaskStatusSend_EditsExisting(t *testing.T) {
+	m := newTestManager()
+	var editCalled bool
+
+	ch := &mockEditorWithSendID{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		editFn: func(_ context.Context, _, messageID, content string) error {
+			editCalled = true
+			if messageID != "task-msg-1" {
+				t.Fatalf("expected messageID task-msg-1, got %s", messageID)
+			}
+			if content != "task progress 50%" {
+				t.Fatalf("expected content 'task progress 50%%', got %s", content)
+			}
+			return nil
+		},
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			t.Fatal("SendWithID should not be called when task message exists")
+			return "", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	// Pre-store task message
+	m.taskMsgIDs.Store("task-abc", statusMsgEntry{messageID: "task-msg-1", createdAt: time.Now()})
+
+	msg := bus.OutboundMessage{
+		Channel:      "test",
+		ChatID:       "123",
+		Content:      "task progress 50%",
+		IsTaskStatus: true,
+		TaskID:       "task-abc",
+	}
+	m.handleTaskStatusSend(context.Background(), "test", w, msg)
+
+	if !editCalled {
+		t.Fatal("expected EditMessage to be called")
+	}
+}
+
+func TestHandleTaskStatusSend_SendsNewAndTracks(t *testing.T) {
+	m := newTestManager()
+	var sendWithIDCalled bool
+
+	ch := &mockEditorWithSendID{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		editFn: func(_ context.Context, _, _, _ string) error { return nil },
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			sendWithIDCalled = true
+			return "new-task-msg", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	msg := bus.OutboundMessage{
+		Channel:      "test",
+		ChatID:       "123",
+		Content:      "task started",
+		IsTaskStatus: true,
+		TaskID:       "task-xyz",
+	}
+	m.handleTaskStatusSend(context.Background(), "test", w, msg)
+
+	if !sendWithIDCalled {
+		t.Fatal("expected SendWithID to be called")
+	}
+
+	v, ok := m.taskMsgIDs.Load("task-xyz")
+	if !ok {
+		t.Fatal("expected taskMsgIDs to contain tracked entry")
+	}
+	entry := v.(statusMsgEntry)
+	if entry.messageID != "new-task-msg" {
+		t.Fatalf("expected messageID new-task-msg, got %s", entry.messageID)
+	}
+}
+
+func TestHandleTaskStatusSend_FallbackToSend(t *testing.T) {
+	m := newTestManager()
+	var sendCalled bool
+
+	// Channel without SendWithID — only has Send
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, msg bus.OutboundMessage) error {
+			sendCalled = true
+			if msg.Content != "task status" {
+				t.Fatalf("expected content 'task status', got %s", msg.Content)
+			}
+			return nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	msg := bus.OutboundMessage{
+		Channel:      "test",
+		ChatID:       "123",
+		Content:      "task status",
+		IsTaskStatus: true,
+		TaskID:       "task-fallback",
+	}
+	m.handleTaskStatusSend(context.Background(), "test", w, msg)
+
+	if !sendCalled {
+		t.Fatal("expected fallback Send to be called")
+	}
+}
+
+func TestPreSend_EditsStatusMessage(t *testing.T) {
+	m := newTestManager()
+	var editCalled bool
+
+	ch := &mockMessageEditor{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		editFn: func(_ context.Context, _, messageID, _ string) error {
+			editCalled = true
+			if messageID != "status-msg-77" {
+				t.Fatalf("expected messageID status-msg-77, got %s", messageID)
+			}
+			return nil
+		},
+	}
+
+	// Store a tracked status message
+	m.statusMsgIDs.Store("test:123", statusMsgEntry{messageID: "status-msg-77", createdAt: time.Now()})
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "final response"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if !edited {
+		t.Fatal("expected preSend to return true (status message edited)")
+	}
+	if !editCalled {
+		t.Fatal("expected EditMessage to be called")
+	}
+
+	// Verify status message was consumed (LoadAndDelete)
+	if _, loaded := m.statusMsgIDs.Load("test:123"); loaded {
+		t.Fatal("expected statusMsgIDs entry to be deleted after preSend")
+	}
+}
+
+func TestRunWorker_RoutesStatusMessages(t *testing.T) {
+	m := newTestManager()
+
+	var regularSendCount atomic.Int32
+	var sendWithIDCount atomic.Int32
+
+	ch := &mockEditorWithSendID{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				regularSendCount.Add(1)
+				return nil
+			},
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			return nil
+		},
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			sendWithIDCount.Add(1)
+			return "tracked-1", nil
+		},
+	}
+
+	w := &channelWorker{
+		ch:      ch,
+		queue:   make(chan bus.OutboundMessage, 10),
+		done:    make(chan struct{}),
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go m.runWorker(ctx, "test", w)
+
+	// Send a status message for chatID "1" (routed to handleStatusSend → SendWithID)
+	w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "status", IsStatus: true}
+	// Send a task status message for chatID "2" (routed to handleTaskStatusSend → SendWithID)
+	w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "2", Content: "task", IsTaskStatus: true, TaskID: "t1"}
+	// Send a regular message for chatID "3" (no tracked status → regular Send)
+	w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "3", Content: "hello"}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if regularSendCount.Load() != 1 {
+		t.Fatalf("expected 1 regular Send call, got %d", regularSendCount.Load())
+	}
+	if sendWithIDCount.Load() != 2 {
+		t.Fatalf("expected 2 SendWithID calls (status + task), got %d", sendWithIDCount.Load())
+	}
+}
+
+func TestStatusMsgTTLJanitor(t *testing.T) {
+	m := newTestManager()
+
+	// Store entries with timestamps in the past
+	m.statusMsgIDs.Store("test:old", statusMsgEntry{
+		messageID: "old-status",
+		createdAt: time.Now().Add(-10 * time.Minute),
+	})
+	m.taskMsgIDs.Store("task-old", statusMsgEntry{
+		messageID: "old-task",
+		createdAt: time.Now().Add(-60 * time.Minute),
+	})
+	// Store a fresh entry that should survive
+	m.statusMsgIDs.Store("test:fresh", statusMsgEntry{
+		messageID: "fresh-status",
+		createdAt: time.Now(),
+	})
+
+	// Simulate janitor logic
+	now := time.Now()
+	m.statusMsgIDs.Range(func(key, value any) bool {
+		if entry, ok := value.(statusMsgEntry); ok {
+			if now.Sub(entry.createdAt) > statusMsgTTL {
+				m.statusMsgIDs.Delete(key)
+			}
+		}
+		return true
+	})
+	m.taskMsgIDs.Range(func(key, value any) bool {
+		if entry, ok := value.(statusMsgEntry); ok {
+			if now.Sub(entry.createdAt) > taskMsgTTL {
+				m.taskMsgIDs.Delete(key)
+			}
+		}
+		return true
+	})
+
+	if _, loaded := m.statusMsgIDs.Load("test:old"); loaded {
+		t.Fatal("expected old status entry to be evicted")
+	}
+	if _, loaded := m.taskMsgIDs.Load("task-old"); loaded {
+		t.Fatal("expected old task entry to be evicted")
+	}
+	if _, loaded := m.statusMsgIDs.Load("test:fresh"); !loaded {
+		t.Fatal("expected fresh status entry to survive")
+	}
+}
