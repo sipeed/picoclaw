@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,12 +18,12 @@ import (
 
 const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
 
-func authLoginCmd(provider string, useDeviceCode bool) error {
+func authLoginCmd(provider string, useDeviceCode bool, setupToken bool) error {
 	switch provider {
 	case "openai":
 		return authLoginOpenAI(useDeviceCode)
 	case "anthropic":
-		return authLoginPasteToken(provider)
+		return authLoginAnthropic(setupToken)
 	case "google-antigravity", "antigravity":
 		return authLoginGoogleAntigravity()
 	default:
@@ -159,6 +160,78 @@ func authLoginGoogleAntigravity() error {
 	fmt.Println("\n✓ Google Antigravity login successful!")
 	fmt.Println("Default model set to: gemini-flash")
 	fmt.Println("Try it: picoclaw agent -m \"Hello world\"")
+
+	return nil
+}
+
+func authLoginAnthropic(setupToken bool) error {
+	if setupToken {
+		return authLoginAnthropicSetupToken()
+	}
+
+	fmt.Println("Anthropic login method:")
+	fmt.Println("  1) Setup token (from `claude setup-token`) (Recommended)")
+	fmt.Println("  2) API key (from console.anthropic.com)")
+	fmt.Print("Choose [1]: ")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	choice := "1"
+	if scanner.Scan() {
+		text := strings.TrimSpace(scanner.Text())
+		if text != "" {
+			choice = text
+		}
+	}
+
+	switch choice {
+	case "1":
+		return authLoginAnthropicSetupToken()
+	case "2":
+		return authLoginPasteToken("anthropic")
+	default:
+		return fmt.Errorf("invalid choice: %s", choice)
+	}
+}
+
+func authLoginAnthropicSetupToken() error {
+	cred, err := auth.LoginSetupToken(os.Stdin)
+	if err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	if err = auth.SetCredential("anthropic", cred); err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	appCfg, err := internal.LoadConfig()
+	if err == nil {
+		appCfg.Providers.Anthropic.AuthMethod = "oauth"
+
+		found := false
+		for i := range appCfg.ModelList {
+			if isAnthropicModel(appCfg.ModelList[i].Model) {
+				appCfg.ModelList[i].AuthMethod = "oauth"
+				found = true
+				break
+			}
+		}
+		if !found {
+			appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
+				ModelName:  "claude-sonnet-4.6",
+				Model:      "anthropic/claude-sonnet-4.6",
+				AuthMethod: "oauth",
+			})
+		}
+
+		appCfg.Agents.Defaults.ModelName = "claude-sonnet-4.6"
+
+		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+			return fmt.Errorf("could not update config: %w", err)
+		}
+	}
+
+	fmt.Println("Setup token saved for Anthropic!")
+	fmt.Println("Default model set to: claude-sonnet-4.6")
 
 	return nil
 }
@@ -359,6 +432,16 @@ func authStatusCmd() error {
 		}
 		if !cred.ExpiresAt.IsZero() {
 			fmt.Printf("    Expires: %s\n", cred.ExpiresAt.Format("2006-01-02 15:04"))
+		}
+
+		if provider == "anthropic" && cred.AuthMethod == "oauth" {
+			usage, err := auth.FetchAnthropicUsage(cred.AccessToken)
+			if err != nil {
+				fmt.Printf("    Usage: unavailable (%v)\n", err)
+			} else {
+				fmt.Printf("    Usage (5h):  %.1f%%\n", usage.FiveHourUtilization*100)
+				fmt.Printf("    Usage (7d):  %.1f%%\n", usage.SevenDayUtilization*100)
+			}
 		}
 	}
 
