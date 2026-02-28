@@ -80,6 +80,11 @@ func gatewayCmd(debug bool, orchestration bool, enableStats bool) error {
 	toolsInfo := startupInfo["tools"].(map[string]any)
 	skillsInfo := startupInfo["skills"].(map[string]any)
 	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
+	if wsProvider, ok := toolsInfo["web_search_provider"].(string); ok {
+		fmt.Printf("  • Web search: %s\n", wsProvider)
+	} else {
+		fmt.Println("  • Web search: disabled")
+	}
 	fmt.Printf("  • Skills: %d/%d available\n",
 		skillsInfo["available"],
 		skillsInfo["total"])
