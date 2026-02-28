@@ -581,8 +581,6 @@ picoclaw gateway
       "enabled": true,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/wecom-aibot",
       "allow_from": [],
       "welcome_message": "Bonjour ! Comment puis-je vous aider ?"
