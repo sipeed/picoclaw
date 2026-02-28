@@ -244,7 +244,7 @@ func (c *WeComAIBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) e
 					"stream_id": task.StreamID,
 				})
 				c.removeTask(task)
-				return err
+				return fmt.Errorf("response_url delivery failed: %w", channels.ErrSendFailed)
 			}
 		} else {
 			logger.WarnCF("wecom_aibot", "Stream closed but no response_url available", map[string]any{
