@@ -51,10 +51,10 @@ jobs:
           EOF
 
       - name: Build release APK
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleTermuxRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: clawdroid-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/termuxRelease/*.apk

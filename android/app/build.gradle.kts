@@ -49,8 +49,20 @@ android {
         }
     }
 
+    flavorDimensions += "variant"
+    productFlavors {
+        create("termux") { dimension = "variant" }
+        create("embedded") { dimension = "variant" }
+    }
+
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    sourceSets {
+        getByName("termux") { java.srcDirs("src/termux/java") }
+        getByName("embedded") { java.srcDirs("src/embedded/java") }
     }
 
     compileOptions {
@@ -66,6 +78,8 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":backend:api"))
     implementation(project(":backend:config"))
+
+    "termuxImplementation"(project(":backend:loader-noop"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

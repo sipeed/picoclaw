@@ -120,16 +120,16 @@ jobs:
           EOF
 
       - name: Build release APK
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleTermuxRelease
 
       - name: Rename APK with version
         run: |
-          mv app/build/outputs/apk/release/app-release.apk \
-             app/build/outputs/apk/release/clawdroid-${{ inputs.tag }}.apk
+          mv app/build/outputs/apk/termuxRelease/app-termux-release.apk \
+             app/build/outputs/apk/termuxRelease/clawdroid-${{ inputs.tag }}.apk
 
       - name: Upload APK to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ inputs.tag }}" \
-            app/build/outputs/apk/release/clawdroid-${{ inputs.tag }}.apk
+            app/build/outputs/apk/termuxRelease/clawdroid-${{ inputs.tag }}.apk

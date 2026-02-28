@@ -7,6 +7,7 @@ import io.clawdroid.backend.config.ConfigApiClient
 import io.clawdroid.backend.config.configModule
 import io.clawdroid.core.data.remote.WebSocketClient
 import io.clawdroid.di.appModule
+import io.clawdroid.di.flavorModule
 import io.clawdroid.receiver.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -23,7 +24,7 @@ class ClawDroidApp : Application() {
         super.onCreate()
         val koinApp = startKoin {
             androidContext(this@ClawDroidApp)
-            modules(appModule, configModule)
+            modules(appModule, flavorModule, configModule)
         }
         NotificationHelper.createNotificationChannel(this)
 
