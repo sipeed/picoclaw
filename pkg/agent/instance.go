@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +52,12 @@ func NewAgentInstance(
 	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
+	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+	if err != nil {
+		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+	}
+	toolsRegistry.Register(execTool)
+
 	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
 
