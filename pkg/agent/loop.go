@@ -23,10 +23,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	picolib "github.com/sipeed/picoclaw/pkg/pico"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
+	"github.com/sipeed/picoclaw/pkg/swarm"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -41,6 +43,18 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
+
+	// Swarm mode support
+	swarmEnabled        bool
+	swarmInitError      error // Set if swarm initialization fails
+	swarmDiscovery      *swarm.DiscoveryService
+	swarmHandoff        *swarm.HandoffCoordinator
+	swarmLoad           *swarm.LoadMonitor
+	swarmPicoClient     *picolib.PicoNodeClient
+	swarmLeaderElection *swarm.LeaderElection
+
+	// Dynamic command registry (wired from channel manager)
+	commandRegistry *channels.CommandRegistry
 }
 
 // processOptions configures how a message is processed
@@ -74,7 +88,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
-	return &AgentLoop{
+	al := &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
 		registry:    registry,
@@ -82,6 +96,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
 	}
+
+	// Initialize swarm mode if enabled
+	if cfg.Swarm.Enabled {
+		al.initSwarm()
+	}
+
+	return al
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
@@ -234,6 +255,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+	// Gracefully shutdown swarm mode components if enabled
+	if al.swarmEnabled {
+		if err := al.ShutdownSwarm(); err != nil {
+			logger.WarnCF("swarm", "Error during swarm shutdown", map[string]any{"error": err})
+		}
+	}
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
@@ -246,6 +273,13 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+	al.commandRegistry = cm.CommandRegistry()
+
+	// Wire up swarm node request handler on the Pico channel
+	if al.swarmEnabled {
+		al.registerPicoNodeHandler()
+		al.registerSwarmCommands()
+	}
 }
 
 // SetMediaStore injects a MediaStore for media lifecycle management.
@@ -360,6 +394,25 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
+	// Check for @node-id routing syntax
+	if al.swarmEnabled {
+		if targetNodeID, content := tools.ParseNodeMention(msg.Content); targetNodeID != "" {
+			logger.InfoCF("swarm", "Node mention detected", map[string]any{
+				"target":  targetNodeID,
+				"content": utils.Truncate(content, 50),
+			})
+			return al.handleNodeRouting(ctx, msg, targetNodeID, content)
+		}
+
+		// For non-mentioned messages in swarm mode, only leader processes
+		if al.swarmLeaderElection != nil && !al.swarmLeaderElection.IsLeader() {
+			logger.DebugCF("swarm", "Ignoring message (not leader)", map[string]any{
+				"content": utils.Truncate(msg.Content, 50),
+			})
+			return "", nil
+		}
+	}
+
 	// Check for commands
 	if response, handled := al.handleCommand(ctx, msg); handled {
 		return response, nil
@@ -402,6 +455,22 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"session_key": sessionKey,
 			"matched_by":  route.MatchedBy,
 		})
+
+	// Check if we should handoff this request to another node
+	if al.swarmEnabled && al.shouldHandoff(agent, processOptions{
+		SessionKey:  sessionKey,
+		Channel:     msg.Channel,
+		ChatID:      msg.ChatID,
+		UserMessage: msg.Content,
+	}) {
+		handoffResp, err := al.initiateSwarmHandoff(ctx, agent, sessionKey, msg)
+		if err == nil && handoffResp != nil && handoffResp.Accepted {
+			// Handoff was successful, return the response
+			return fmt.Sprintf("Your request has been handed off to node %s for processing.", handoffResp.NodeID), nil
+		}
+		// If handoff failed, continue processing locally
+		logger.WarnCF("swarm", "Handoff failed, processing locally", map[string]any{"error": err})
+	}
 
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
@@ -475,6 +544,10 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 // runAgentLoop is the core message processing logic.
 func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
+	// Track active session for swarm load monitoring
+	al.IncrementSwarmSessions()
+	defer al.DecrementSwarmSessions()
+
 	// 0. Record last channel for heartbeat notifications (skip internal channels)
 	if opts.Channel != "" && opts.ChatID != "" {
 		// Don't record internal channels (cli, system, subagent)
@@ -907,6 +980,15 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
 				logger.Debug("Memory threshold reached. Optimizing conversation history...")
+				if !constants.IsInternalChannel(channel) {
+					pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer pubCancel()
+					al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+						Channel: channel,
+						ChatID:  chatID,
+						Content: "Memory threshold reached. Optimizing conversation history...",
+					})
+				}
 				al.summarizeSession(agent, sessionKey)
 			}()
 		}
@@ -1260,6 +1342,19 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 			return fmt.Sprintf("Switched target channel to %s", value), true
 		default:
 			return fmt.Sprintf("Unknown switch target: %s", target), true
+		}
+	}
+
+	// Check dynamic command registry
+	if al.commandRegistry != nil {
+		cmdName := strings.TrimPrefix(parts[0], "/")
+		if entry, ok := al.commandRegistry.Get(cmdName); ok {
+			argsStr := strings.Join(args, " ")
+			response, err := entry.Handler(ctx, argsStr, msg)
+			if err != nil {
+				return fmt.Sprintf("Command error: %v", err), true
+			}
+			return response, true
 		}
 	}
 

@@ -79,12 +79,13 @@ type Manager struct {
 	bus           *bus.MessageBus
 	config        *config.Config
 	mediaStore    media.MediaStore
+	commands      *CommandRegistry
 	dispatchTask  *asyncTask
 	mux           *http.ServeMux
 	httpServer    *http.Server
 	mu            sync.RWMutex
-	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
-	typingStops   sync.Map // "channel:chatID" → func()
+	placeholders  sync.Map // "channel:chatID" → placeholderEntry
+	typingStops   sync.Map // "channel:chatID" → typingEntry
 	reactionUndos sync.Map // "channel:chatID" → reactionEntry
 }
 
@@ -154,6 +155,7 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.Medi
 		bus:        messageBus,
 		config:     cfg,
 		mediaStore: store,
+		commands:   NewCommandRegistry(),
 	}
 
 	if err := m.initChannels(); err != nil {
@@ -778,6 +780,12 @@ func (m *Manager) RegisterChannel(name string, channel Channel) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.channels[name] = channel
+}
+
+// CommandRegistry returns the shared command registry.
+// External modules use this to register slash commands that work across all channels.
+func (m *Manager) CommandRegistry() *CommandRegistry {
+	return m.commands
 }
 
 func (m *Manager) UnregisterChannel(name string) {
