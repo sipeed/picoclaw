@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -53,7 +54,10 @@ func NewSubagentManager(
 		reporter = orch.Noop
 	}
 	// Create a shared exec tool for all presets
-	execTool, _ := NewExecTool(workspace, true)
+	execTool, err := NewExecTool(workspace, true)
+	if err != nil {
+		log.Printf("subagent: failed to create exec tool: %v (exec disabled for subagents)", err)
+	}
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,

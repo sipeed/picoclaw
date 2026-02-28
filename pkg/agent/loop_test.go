@@ -2359,7 +2359,7 @@ func TestConsumeStream_OnChunkCallback(t *testing.T) {
 	defer cancel()
 
 	var chunks []string
-	onChunk := func(accumulated string) {
+	onChunk := func(accumulated, _ string) {
 		chunks = append(chunks, accumulated)
 	}
 
@@ -2410,7 +2410,7 @@ func TestConsumeStream_OnChunkWithRepetitionDetection(t *testing.T) {
 	}()
 
 	var chunkCount int
-	onChunk := func(accumulated string) {
+	onChunk := func(_, _ string) {
 		chunkCount++
 	}
 
@@ -2788,6 +2788,46 @@ func TestFilterInterviewTools(t *testing.T) {
 		if disallowed[norm] {
 			t.Errorf("disallowed tool %q should have been filtered out", d.Function.Name)
 		}
+	}
+}
+
+func TestBuildStreamingDisplay_ContentOnly(t *testing.T) {
+	display := buildStreamingDisplay("hello world", "")
+	if !strings.HasSuffix(display, " \u2589") {
+		t.Error("expected cursor suffix")
+	}
+	if strings.Contains(display, "\U0001f9e0") {
+		t.Error("should not contain brain emoji when no reasoning")
+	}
+	lines := strings.Count(display, "\n") + 1
+	if lines != streamingDisplayLines+1 { // TailPad lines + cursor on last line
+		t.Logf("display:\n%s", display)
+	}
+}
+
+func TestBuildStreamingDisplay_ReasoningOnly(t *testing.T) {
+	display := buildStreamingDisplay("", "let me think about this")
+	if !strings.Contains(display, "\U0001f9e0") {
+		t.Error("expected brain emoji for reasoning phase")
+	}
+	if !strings.Contains(display, "Thinking...") {
+		t.Error("expected Thinking... header")
+	}
+	if !strings.HasSuffix(display, " \u2589") {
+		t.Error("expected cursor suffix")
+	}
+}
+
+func TestBuildStreamingDisplay_Both(t *testing.T) {
+	display := buildStreamingDisplay("the answer is 42", "first I considered...")
+	if !strings.Contains(display, "\U0001f9e0") {
+		t.Error("expected brain emoji")
+	}
+	if !strings.Contains(display, "responding") {
+		t.Error("expected responding header when both present")
+	}
+	if !strings.Contains(display, "the answer is 42") {
+		t.Error("expected content in display")
 	}
 }
 

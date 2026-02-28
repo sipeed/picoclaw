@@ -85,6 +85,7 @@ type ToolFunctionDefinition struct {
 // StreamEvent represents a single chunk from an SSE streaming response.
 type StreamEvent struct {
 	ContentDelta   string
+	ReasoningDelta string // incremental reasoning/thinking content
 	ToolCallDeltas []StreamToolCallDelta
 	FinishReason   string     // set only on the final event
 	Usage          *UsageInfo // set only on the final event

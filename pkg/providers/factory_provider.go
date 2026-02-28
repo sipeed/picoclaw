@@ -8,6 +8,7 @@ package providers
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
@@ -85,11 +86,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, openai_compat.Options{
-			MaxTokensField: cfg.MaxTokensField,
-			Stream:         boolDefault(cfg.Stream, false),
-			RequestTimeout: cfg.RequestTimeout,
-		}), modelID, nil
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy,
+			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
+			openai_compat.WithStream(boolDefault(cfg.Stream, false)),
+			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
+		), modelID, nil
 
 	case "minimax":
 		// MiniMax uses a non-standard endpoint path and defaults to SSE streaming.
@@ -100,12 +101,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, openai_compat.Options{
-			EndpointPath:   "/text/chatcompletion_v2",
-			MaxTokensField: cfg.MaxTokensField,
-			Stream:         boolDefault(cfg.Stream, true),
-			RequestTimeout: cfg.RequestTimeout,
-		}), modelID, nil
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy,
+			openai_compat.WithEndpointPath("/text/chatcompletion_v2"),
+			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
+			openai_compat.WithStream(boolDefault(cfg.Stream, true)),
+			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
+		), modelID, nil
 
 	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
@@ -118,11 +119,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, openai_compat.Options{
-			MaxTokensField: cfg.MaxTokensField,
-			Stream:         boolDefault(cfg.Stream, false),
-			RequestTimeout: cfg.RequestTimeout,
-		}), modelID, nil
+		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy,
+			openai_compat.WithMaxTokensField(cfg.MaxTokensField),
+			openai_compat.WithStream(boolDefault(cfg.Stream, false)),
+			openai_compat.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
+		), modelID, nil
 
 	case "anthropic":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
