@@ -374,12 +374,12 @@ type PicoConfig struct {
 }
 
 type SignalConfig struct {
-	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_SIGNAL_ENABLED"`
-	Account            string              `json:"account"              env:"PICOCLAW_CHANNELS_SIGNAL_ACCOUNT"`
-	SignalCLIURL       string              `json:"signal_cli_url"       env:"PICOCLAW_CHANNELS_SIGNAL_CLI_URL"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_SIGNAL_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_SIGNAL_ENABLED"`
+	Account            string              `json:"account"                 env:"PICOCLAW_CHANNELS_SIGNAL_ACCOUNT"`
+	SignalCLIURL       string              `json:"signal_cli_url"          env:"PICOCLAW_CHANNELS_SIGNAL_CLI_URL"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_SIGNAL_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_SIGNAL_REASONING_CHANNEL_ID"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_SIGNAL_REASONING_CHANNEL_ID"`
 }
 
 type HeartbeatConfig struct {

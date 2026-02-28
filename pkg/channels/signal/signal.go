@@ -42,8 +42,8 @@ type SignalChannel struct {
 	config     config.SignalConfig
 	httpClient *http.Client
 	ctx        context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
 }
 
 // Signal SSE event types
@@ -611,7 +611,13 @@ func (c *SignalChannel) sendMessage(ctx context.Context, chatID, content string)
 	return err
 }
 
-func (c *SignalChannel) sendReaction(ctx context.Context, chatID, targetAuthor string, targetTimestamp int64, emoji string, remove bool) {
+func (c *SignalChannel) sendReaction(
+	ctx context.Context,
+	chatID, targetAuthor string,
+	targetTimestamp int64,
+	emoji string,
+	remove bool,
+) {
 	params := map[string]any{
 		"account":         c.config.Account,
 		"emoji":           emoji,
