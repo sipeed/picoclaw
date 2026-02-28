@@ -65,7 +65,7 @@ func (m *mockDevTargetManager) GetDevTarget() string {
 }
 
 func (m *mockDevTargetManager) ListDevTargets() []miniapp.DevTarget {
-	var out []miniapp.DevTarget
+	out := make([]miniapp.DevTarget, 0, len(m.targets))
 	for _, dt := range m.targets {
 		out = append(out, *dt)
 	}

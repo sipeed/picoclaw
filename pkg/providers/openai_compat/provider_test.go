@@ -519,7 +519,7 @@ func TestReadSSEIntoChannel_TextAndToolCalls(t *testing.T) {
 }
 
 func TestReadSSEIntoChannel_ContextCancel(t *testing.T) {
-	// Simulate a slow SSE stream that gets cancelled.
+	// Simulate a slow SSE stream that gets canceled.
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create a reader that blocks after sending one chunk.

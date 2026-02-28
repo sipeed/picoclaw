@@ -645,7 +645,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			lower := strings.ToLower(content)
 
 			// Check for stop keywords
-			stopKeywords := []string{"stop", "cancel", "abort", "停止", "中止", "やめて"} //nolint:gosmopolitan // intentional CJK stop words
+			//nolint:gosmopolitan // intentional CJK stop words
+		stopKeywords := []string{"stop", "cancel", "abort", "停止", "中止", "やめて"}
 			isStop := false
 			for _, kw := range stopKeywords {
 				if lower == kw {
@@ -1999,13 +2000,13 @@ func (al *AgentLoop) runLLMIteration(
 			if sp, ok := p.(providers.StreamingProvider); ok && sp.CanStream() {
 				streamCtx, streamCancel := context.WithCancel(ctx)
 				defer streamCancel()
-				ch, err := sp.ChatStream(streamCtx, messages, providerToolDefs, model, opts_)
-				if err != nil {
-					return nil, err
+				ch, sErr := sp.ChatStream(streamCtx, messages, providerToolDefs, model, opts_)
+				if sErr != nil {
+					return nil, sErr
 				}
-				resp, repetition, err := consumeStreamWithRepetitionDetection(ch, streamCancel, 1000, onChunk)
-				if err != nil {
-					return nil, err
+				resp, repetition, sErr := consumeStreamWithRepetitionDetection(ch, streamCancel, 1000, onChunk)
+				if sErr != nil {
+					return nil, sErr
 				}
 				if repetition {
 					resp.FinishReason = "repetition_detected"
@@ -2156,7 +2157,7 @@ func (al *AgentLoop) runLLMIteration(
 		// blocks so loops inside <think> are caught).  Skip when the
 		// provider already returned native tool calls.
 		// Streaming providers may have already flagged repetition via
-		// FinishReason="repetition_detected" — honour that too.
+		// FinishReason="repetition_detected" — honor that too.
 		if response.FinishReason == "repetition_detected" ||
 			(len(response.ToolCalls) == 0 && utils.DetectRepetitionLoop(response.Content)) {
 			logger.WarnCF("agent", "Repetition loop detected in LLM response, retrying",
@@ -2603,7 +2604,6 @@ func (al *AgentLoop) runLLMIteration(
 			al.lastSystemPrompt.Store(newPrompt)
 			al.promptDirty.Store(false)
 		}
-
 	}
 
 	// If max iterations exhausted with tool calls still pending,
@@ -2783,7 +2783,7 @@ func (al *AgentLoop) GetPlanInfo() (hasPlan bool, status string, currentPhase, t
 	totalPhases = mem.GetTotalPhases()
 	display = mem.FormatPlanDisplay()
 	memory = mem.ReadLongTerm()
-	return
+	return hasPlan, status, currentPhase, totalPhases, display, memory
 }
 
 // GetPlanStatus returns the current plan status ("interviewing", "executing", "review", etc.) or "".
@@ -2837,7 +2837,7 @@ func (al *AgentLoop) GetContextInfo() (workDir, planWorkDir, workspace string, b
 		workDir = agent.ContextBuilder.workDir
 	}
 	bootstrap = agent.ContextBuilder.ResolveBootstrapPaths()
-	return
+	return workDir, planWorkDir, workspace, bootstrap
 }
 
 // GetSystemPrompt returns the system prompt last sent to the LLM.

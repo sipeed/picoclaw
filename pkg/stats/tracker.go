@@ -51,7 +51,7 @@ func NewTracker(workspace string) *Tracker {
 	}
 	t.load()
 
-	// Initialise Since if this is a fresh tracker
+	// Initialize Since if this is a fresh tracker
 	if t.stats.Since.IsZero() {
 		t.stats.Since = time.Now()
 	}
@@ -104,7 +104,7 @@ func (t *Tracker) GetStats() Stats {
 	return t.stats
 }
 
-// Reset zeroes all counters and re-initialises Since.
+// Reset zeroes all counters and re-initializes Since.
 func (t *Tracker) Reset() {
 	t.mu.Lock()
 	defer t.mu.Unlock()

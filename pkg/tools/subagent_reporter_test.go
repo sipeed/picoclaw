@@ -10,9 +10,9 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-// blockingProvider blocks inside Chat until the context is cancelled.
+// blockingProvider blocks inside Chat until the context is canceled.
 // The ready channel is closed the moment Chat is entered, so callers can
-// synchronise before cancelling the context.
+// synchronize before canceling the context.
 type blockingProvider struct {
 	ready chan struct{}
 }
@@ -179,14 +179,14 @@ func TestSubagentManager_Spawn_SnapshotLiveDuringExecution(t *testing.T) {
 }
 
 // TestSubagentManager_Spawn_CancelledDuringExecution verifies that when the
-// context is cancelled while a subagent's LLM call is in progress, the
+// context is canceled while a subagent's LLM call is in progress, the
 // Broadcaster receives agent_gc with reason="canceled" and the agent is
 // removed from the snapshot.
 //
-// Synchronisation:
+// Synchronization:
 //  1. blockingProvider.ready is closed when Chat() is entered (goroutine is
 //     now blocked inside the LLM call).
-//  2. Only then is the context cancelled, so there is no race between spawn
+//  2. Only then is the context canceled, so there is no race between spawn
 //     and cancellation.
 func TestSubagentManager_Spawn_CancelledDuringExecution(t *testing.T) {
 	b := orch.NewBroadcaster()

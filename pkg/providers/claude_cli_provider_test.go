@@ -1086,8 +1086,9 @@ func TestExtractXMLToolCalls_MismatchedCloseTag(t *testing.T) {
 	}
 }
 
-func TestStripXMLToolCalls_MismatchedCloseTag(t *testing.T) { //nolint:gosmopolitan // CJK test data
-	text := `今テスト走らせるね。
+func TestStripXMLToolCalls_MismatchedCloseTag(t *testing.T) {
+	text := `今テスト走らせるね。` + //nolint:gosmopolitan // CJK test data
+		`
 <minimax:toolcall>
 <invoke name="exec">
 <parameter name="command">cd /home/user && pytest</parameter>
@@ -1098,7 +1099,7 @@ func TestStripXMLToolCalls_MismatchedCloseTag(t *testing.T) { //nolint:gosmopoli
 	if strings.Contains(got, "toolcall") || strings.Contains(got, "tool_call") {
 		t.Errorf("should remove XML block, got %q", got)
 	}
-	if !strings.Contains(got, "今テスト走らせるね。") {
+	if !strings.Contains(got, "今テスト走らせるね。") { //nolint:gosmopolitan // CJK test data
 		t.Errorf("should keep text before, got %q", got)
 	}
 }
@@ -1163,7 +1164,7 @@ Finished.`
 
 func TestExtractXMLToolCalls_OrphanedClosingTag(t *testing.T) {
 	// LLM emits [TOOLCALL] marker + <invoke> with orphaned closing tag (no opening tag)
-	text := "了解！確認するね。\n[TOOLCALL]\n<invoke name=\"listdir\">\n<parameter name=\"path\">/home/user/workspace</parameter>\n</invoke>\n</minimax:tool_call>"
+	text := "了解！確認するね。\n[TOOLCALL]\n<invoke name=\"listdir\">\n<parameter name=\"path\">/home/user/workspace</parameter>\n</invoke>\n</minimax:tool_call>" //nolint:gosmopolitan // CJK test data
 
 	calls := extractXMLToolCalls(text)
 	if len(calls) != 1 {
@@ -1178,12 +1179,12 @@ func TestExtractXMLToolCalls_OrphanedClosingTag(t *testing.T) {
 }
 
 func TestStripXMLToolCalls_OrphanedClosingTag(t *testing.T) {
-	text := "了解！確認するね。\n[TOOLCALL]\n<invoke name=\"listdir\">\n<parameter name=\"path\">/home/user</parameter>\n</invoke>\n</minimax:tool_call>"
+	text := "了解！確認するね。\n[TOOLCALL]\n<invoke name=\"listdir\">\n<parameter name=\"path\">/home/user</parameter>\n</invoke>\n</minimax:tool_call>" //nolint:gosmopolitan // CJK test data
 	got := stripXMLToolCalls(text)
 	if strings.Contains(got, "invoke") || strings.Contains(got, "TOOLCALL") || strings.Contains(got, "minimax") {
 		t.Errorf("should remove orphaned closing tag block, got %q", got)
 	}
-	if !strings.Contains(got, "了解") {
+	if !strings.Contains(got, "了解") { //nolint:gosmopolitan // CJK test data
 		t.Errorf("should keep user-facing text, got %q", got)
 	}
 }

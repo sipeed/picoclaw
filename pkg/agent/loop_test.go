@@ -2513,8 +2513,8 @@ func TestAgentLoop_PlanModel_UsedDuringInterviewing(t *testing.T) {
 	os.MkdirAll(memoryDir, 0o755)
 	memoryPath := filepath.Join(memoryDir, "MEMORY.md")
 	memoryContent := "# Active Plan\n\n> Task: Test plan model\n> Status: interviewing\n> Phase: 1\n"
-	if err := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); err != nil {
-		t.Fatalf("Failed to write MEMORY.md: %v", err)
+	if wErr := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); wErr != nil {
+		t.Fatalf("Failed to write MEMORY.md: %v", wErr)
 	}
 
 	_, err = al.ProcessDirectWithChannel(
@@ -2581,8 +2581,8 @@ func TestAgentLoop_PlanModel_NotUsedDuringExecuting(t *testing.T) {
 ## Phase 1: Build
 - [ ] Run build
 `
-	if err := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); err != nil {
-		t.Fatalf("Failed to write MEMORY.md: %v", err)
+	if wErr := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); wErr != nil {
+		t.Fatalf("Failed to write MEMORY.md: %v", wErr)
 	}
 
 	_, err = al.ProcessDirectWithChannel(
@@ -2642,8 +2642,8 @@ func TestAgentLoop_PlanModel_ResolvesProviderForSingleCandidate(t *testing.T) {
 	os.MkdirAll(memoryDir, 0o755)
 	memoryPath := filepath.Join(memoryDir, "MEMORY.md")
 	memoryContent := "# Active Plan\n\n> Task: Test provider resolution\n> Status: interviewing\n> Phase: 1\n"
-	if err := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); err != nil {
-		t.Fatalf("Failed to write MEMORY.md: %v", err)
+	if wErr := os.WriteFile(memoryPath, []byte(memoryContent), 0o644); wErr != nil {
+		t.Fatalf("Failed to write MEMORY.md: %v", wErr)
 	}
 
 	_, err = al.ProcessDirectWithChannel(

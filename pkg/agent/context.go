@@ -787,25 +787,6 @@ func (cb *ContextBuilder) AddAssistantMessage(
 	return messages
 }
 
-func (cb *ContextBuilder) loadSkills() string {
-	allSkills := cb.skillsLoader.ListSkills()
-	if len(allSkills) == 0 {
-		return ""
-	}
-
-	var skillNames []string
-	for _, s := range allSkills {
-		skillNames = append(skillNames, s.Name)
-	}
-
-	content := cb.skillsLoader.LoadSkillsForContext(skillNames)
-	if content == "" {
-		return ""
-	}
-
-	return "# Skill Definitions\n\n" + content
-}
-
 // LoadSkill loads a skill by name, returning its content (with frontmatter stripped) and whether it was found.
 func (cb *ContextBuilder) LoadSkill(name string) (string, bool) {
 	return cb.skillsLoader.LoadSkill(name)
