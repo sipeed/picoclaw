@@ -64,6 +64,12 @@ func TestExtractProtocol(t *testing.T) {
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
 		},
+		{
+			name:         "openrouter nested model path with suffix",
+			model:        "openrouter/stepfun/step-3.5-flash:free",
+			wantProtocol: "openrouter",
+			wantModelID:  "stepfun/step-3.5-flash:free",
+		},
 	}
 
 	for _, tt := range tests {
@@ -96,6 +102,28 @@ func TestCreateProviderFromConfig_OpenAI(t *testing.T) {
 	}
 	if modelID != "gpt-4o" {
 		t.Errorf("modelID = %q, want %q", modelID, "gpt-4o")
+	}
+}
+
+func TestCreateProviderFromConfig_OpenRouterNestedModelPath(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-openrouter-step",
+		Model:     "openrouter/stepfun/step-3.5-flash:free",
+		APIKey:    "test-key",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+	if modelID != "stepfun/step-3.5-flash:free" {
+		t.Errorf("modelID = %q, want %q", modelID, "stepfun/step-3.5-flash:free")
 	}
 }
 

@@ -123,3 +123,73 @@ func TestParseModelRef_DefaultProviderNormalization(t *testing.T) {
 		t.Errorf("provider = %q, want openai (normalized from GPT)", ref.Provider)
 	}
 }
+
+func TestParseModelRef_OpenRouterNestedModelWithExplicitProvider(t *testing.T) {
+	ref := ParseModelRef("openrouter/stepfun/step-3.5-flash:free", "openai")
+	if ref == nil {
+		t.Fatal("expected non-nil ref")
+	}
+	if ref.Provider != "openrouter" {
+		t.Errorf("provider = %q, want openrouter", ref.Provider)
+	}
+	if ref.Model != "stepfun/step-3.5-flash:free" {
+		t.Errorf("model = %q, want stepfun/step-3.5-flash:free", ref.Model)
+	}
+}
+
+func TestParseModelRef_UnknownPrefixUsesDefaultProvider(t *testing.T) {
+	ref := ParseModelRef("stepfun/step-3.5-flash:free", "openrouter")
+	if ref == nil {
+		t.Fatal("expected non-nil ref")
+	}
+	if ref.Provider != "openrouter" {
+		t.Errorf("provider = %q, want openrouter", ref.Provider)
+	}
+	if ref.Model != "stepfun/step-3.5-flash:free" {
+		t.Errorf("model = %q, want stepfun/step-3.5-flash:free", ref.Model)
+	}
+}
+
+func TestParseModelRef_KnownAliasPrefixes(t *testing.T) {
+	tests := []struct {
+		raw          string
+		wantProvider string
+		wantModel    string
+	}{
+		{
+			raw:          "claude-code/claude-sonnet-4.6",
+			wantProvider: "claude-code",
+			wantModel:    "claude-sonnet-4.6",
+		},
+		{
+			raw:          "claudecode/claude-sonnet-4.6",
+			wantProvider: "claudecode",
+			wantModel:    "claude-sonnet-4.6",
+		},
+		{
+			raw:          "codex-code/codex",
+			wantProvider: "codex-code",
+			wantModel:    "codex",
+		},
+	}
+
+	for _, tt := range tests {
+		ref := ParseModelRef(tt.raw, "openai")
+		if ref == nil {
+			t.Fatalf("ParseModelRef(%q) returned nil", tt.raw)
+		}
+		if ref.Provider != tt.wantProvider {
+			t.Errorf("ParseModelRef(%q) provider = %q, want %q", tt.raw, ref.Provider, tt.wantProvider)
+		}
+		if ref.Model != tt.wantModel {
+			t.Errorf("ParseModelRef(%q) model = %q, want %q", tt.raw, ref.Model, tt.wantModel)
+		}
+	}
+}
+
+func TestParseModelRef_UnknownPrefixEmptyModelAfterSlash(t *testing.T) {
+	ref := ParseModelRef("foo/", "openrouter")
+	if ref != nil {
+		t.Errorf("expected nil for unknown prefix with empty model, got %+v", ref)
+	}
+}
