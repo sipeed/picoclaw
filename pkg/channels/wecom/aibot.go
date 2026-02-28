@@ -17,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -531,7 +532,7 @@ func (c *WeComAIBotChannel) handleTextMessage(
 		sender := bus.SenderInfo{
 			Platform:    "wecom_aibot",
 			PlatformID:  userID,
-			CanonicalID: "wecom_aibot:" + userID,
+			CanonicalID: identity.BuildCanonicalID("wecom_aibot", userID),
 			DisplayName: userID,
 		}
 		peerKind := "direct"
