@@ -88,6 +88,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, openai_compat.Options{
 			MaxTokensField: cfg.MaxTokensField,
 			Stream:         boolDefault(cfg.Stream, false),
+			RequestTimeout: cfg.RequestTimeout,
 		}), modelID, nil
 
 	case "minimax":
@@ -103,6 +104,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			EndpointPath:   "/text/chatcompletion_v2",
 			MaxTokensField: cfg.MaxTokensField,
 			Stream:         boolDefault(cfg.Stream, true),
+			RequestTimeout: cfg.RequestTimeout,
 		}), modelID, nil
 
 	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
@@ -119,6 +121,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return NewHTTPProviderWithOptions(cfg.APIKey, apiBase, cfg.Proxy, openai_compat.Options{
 			MaxTokensField: cfg.MaxTokensField,
 			Stream:         boolDefault(cfg.Stream, false),
+			RequestTimeout: cfg.RequestTimeout,
 		}), modelID, nil
 
 	case "anthropic":
@@ -138,7 +141,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensField(cfg.APIKey, apiBase, cfg.Proxy, cfg.MaxTokensField), modelID, nil
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey,
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+		), modelID, nil
 
 	case "antigravity":
 		return NewAntigravityProvider(), modelID, nil

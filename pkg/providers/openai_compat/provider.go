@@ -26,6 +26,7 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 	ExtraContent           = protocoltypes.ExtraContent
 	GoogleExtra            = protocoltypes.GoogleExtra
+	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
 type Provider struct {
@@ -42,21 +43,16 @@ type Options struct {
 	EndpointPath   string // API path appended to apiBase (default: "/chat/completions")
 	MaxTokensField string // Field name for max tokens parameter
 	Stream         bool   // Use SSE streaming internally
+	RequestTimeout int    // Request timeout in seconds (0 = default 120s)
 }
 
-func NewProvider(apiKey, apiBase, proxy string) *Provider {
-	return NewProviderWithMaxTokensField(apiKey, apiBase, proxy, "")
-}
-
-func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
-	return NewProviderWithOptions(apiKey, apiBase, proxy, Options{
-		MaxTokensField: maxTokensField,
-	})
-}
+const defaultRequestTimeout = 120 * time.Second
 
 func NewProviderWithOptions(apiKey, apiBase, proxy string, opts Options) *Provider {
-	timeout := 120 * time.Second
-	if opts.Stream {
+	timeout := defaultRequestTimeout
+	if opts.RequestTimeout > 0 {
+		timeout = time.Duration(opts.RequestTimeout) * time.Second
+	} else if opts.Stream {
 		timeout = 5 * time.Minute
 	}
 	client := &http.Client{
@@ -89,6 +85,26 @@ func NewProviderWithOptions(apiKey, apiBase, proxy string, opts Options) *Provid
 	}
 }
 
+func NewProvider(apiKey, apiBase, proxy string) *Provider {
+	return NewProviderWithOptions(apiKey, apiBase, proxy, Options{})
+}
+
+func NewProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *Provider {
+	return NewProviderWithOptions(apiKey, apiBase, proxy, Options{
+		MaxTokensField: maxTokensField,
+	})
+}
+
+func NewProviderWithMaxTokensFieldAndTimeout(
+	apiKey, apiBase, proxy, maxTokensField string,
+	requestTimeoutSeconds int,
+) *Provider {
+	return NewProviderWithOptions(apiKey, apiBase, proxy, Options{
+		MaxTokensField: maxTokensField,
+		RequestTimeout: requestTimeoutSeconds,
+	})
+}
+
 // streamBufferSize is the channel buffer size for ChatStream events.
 const streamBufferSize = 32
 
@@ -109,7 +125,7 @@ func (p *Provider) buildHTTPRequest(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": messages,
+		"messages": stripSystemParts(messages),
 	}
 
 	if len(tools) > 0 {
@@ -145,6 +161,14 @@ func (p *Provider) buildHTTPRequest(
 
 	if stream {
 		requestBody["stream"] = true
+	}
+
+	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
+	// with the same key and reuse prefix KV cache across calls.
+	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
+		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
+			requestBody["prompt_cache_key"] = cacheKey
+		}
 	}
 
 	jsonData, err := json.Marshal(requestBody)
@@ -378,8 +402,11 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
-				Content   string `json:"content"`
-				ToolCalls []struct {
+				Content          string            `json:"content"`
+				ReasoningContent string            `json:"reasoning_content"`
+				Reasoning        string            `json:"reasoning"`
+				ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
+				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function *struct {
@@ -451,11 +478,40 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	}
 
 	return &LLMResponse{
-		Content:      choice.Message.Content,
-		ToolCalls:    toolCalls,
-		FinishReason: choice.FinishReason,
-		Usage:        apiResponse.Usage,
+		Content:          choice.Message.Content,
+		ReasoningContent: choice.Message.ReasoningContent,
+		Reasoning:        choice.Message.Reasoning,
+		ReasoningDetails: choice.Message.ReasoningDetails,
+		ToolCalls:        toolCalls,
+		FinishReason:     choice.FinishReason,
+		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+// openaiMessage is the wire-format message for OpenAI-compatible APIs.
+// It mirrors protocoltypes.Message but omits SystemParts, which is an
+// internal field that would be unknown to third-party endpoints.
+type openaiMessage struct {
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// stripSystemParts converts []Message to []openaiMessage, dropping the
+// SystemParts field so it doesn't leak into the JSON payload sent to
+// OpenAI-compatible APIs (some strict endpoints reject unknown fields).
+func stripSystemParts(messages []Message) []openaiMessage {
+	out := make([]openaiMessage, len(messages))
+	for i, m := range messages {
+		out[i] = openaiMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCalls:  m.ToolCalls,
+			ToolCallID: m.ToolCallID,
+		}
+	}
+	return out
 }
 
 func normalizeModel(model, apiBase string) string {

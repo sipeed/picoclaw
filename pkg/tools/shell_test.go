@@ -13,7 +13,10 @@ import (
 
 // TestShellTool_Success verifies successful command execution
 func TestShellTool_Success(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -40,7 +43,10 @@ func TestShellTool_Success(t *testing.T) {
 
 // TestShellTool_Failure verifies failed command execution
 func TestShellTool_Failure(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -67,7 +73,11 @@ func TestShellTool_Failure(t *testing.T) {
 
 // TestShellTool_Timeout verifies command timeout handling
 func TestShellTool_Timeout(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
+
 	tool.SetTimeout(100 * time.Millisecond)
 
 	ctx := context.Background()
@@ -95,7 +105,10 @@ func TestShellTool_WorkingDir(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -116,7 +129,10 @@ func TestShellTool_WorkingDir(t *testing.T) {
 
 // TestShellTool_DangerousCommand verifies safety guard blocks dangerous commands
 func TestShellTool_DangerousCommand(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -137,7 +153,10 @@ func TestShellTool_DangerousCommand(t *testing.T) {
 
 // TestShellTool_MissingCommand verifies error handling for missing command
 func TestShellTool_MissingCommand(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{}
@@ -152,7 +171,10 @@ func TestShellTool_MissingCommand(t *testing.T) {
 
 // TestShellTool_StderrCapture verifies stderr is captured and included
 func TestShellTool_StderrCapture(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -172,7 +194,10 @@ func TestShellTool_StderrCapture(t *testing.T) {
 
 // TestShellTool_OutputTruncation verifies long output is truncated
 func TestShellTool_OutputTruncation(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	// Generate long output (>10000 chars)
@@ -200,7 +225,11 @@ func TestShellTool_WorkingDir_OutsideWorkspace(t *testing.T) {
 		t.Fatalf("failed to create outside dir: %v", err)
 	}
 
-	tool := NewExecTool(workspace, true)
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
+
 	result := tool.Execute(context.Background(), map[string]any{
 		"command":     "pwd",
 		"working_dir": outsideDir,
@@ -234,7 +263,11 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 		t.Skipf("symlinks not supported in this environment: %v", err)
 	}
 
-	tool := NewExecTool(workspace, true)
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
+
 	result := tool.Execute(context.Background(), map[string]any{
 		"command":     "cat secret.txt",
 		"working_dir": link,
@@ -251,7 +284,11 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 // TestShellTool_RestrictToWorkspace verifies workspace restriction
 func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool := NewExecTool(tmpDir, false)
+	tool, err := NewExecTool(tmpDir, false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
+
 	tool.SetRestrictToWorkspace(true)
 
 	ctx := context.Background()
@@ -283,7 +320,7 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 // matching "/cold/test.py" from "tests/cold/test.py" as an absolute path.
 func TestGuardCommand_RelativePathWithSlashes(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	cmds := []string{
 		"pytest tests/cold/test_solver.py -v --tb=short",
@@ -305,7 +342,7 @@ func TestGuardCommand_RelativePathWithSlashes(t *testing.T) {
 // (they are relative paths, not absolute).
 func TestGuardCommand_VenvBinary(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	cmds := []string{
 		".venv/bin/python -m pytest",
@@ -335,7 +372,7 @@ func TestGuardCommand_ExecutableBinaryAllowed(t *testing.T) {
 	execPath := filepath.Join(externalDir, "mybin")
 	os.WriteFile(execPath, []byte("#!/bin/sh\necho ok"), 0755)
 
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	cmd := execPath + " --help"
 	result := tool.guardCommand(cmd, workspace)
@@ -358,7 +395,7 @@ func TestGuardCommand_ExecutableBinaryAllowed_Windows(t *testing.T) {
 	execPath := filepath.Join(externalDir, "tool.exe")
 	os.WriteFile(execPath, []byte("MZ"), 0644)
 
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	cmd := execPath + " --version"
 	result := tool.guardCommand(cmd, workspace)
@@ -381,7 +418,7 @@ func TestGuardCommand_NonExecutableOutsideBlocked(t *testing.T) {
 	dataFile := filepath.Join(externalDir, "secret.txt")
 	os.WriteFile(dataFile, []byte("secret data"), 0644)
 
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	cmd := "cat " + dataFile
 	result := tool.guardCommand(cmd, workspace)
@@ -397,7 +434,7 @@ func TestGuardCommand_NonExecutableOutsideBlocked(t *testing.T) {
 // paths that don't exist are blocked (could be file creation outside workspace).
 func TestGuardCommand_NonExistentAbsolutePathBlocked(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	// Use platform-appropriate absolute path
 	var cmd string
@@ -417,7 +454,7 @@ func TestGuardCommand_NonExistentAbsolutePathBlocked(t *testing.T) {
 // because the token starts with "-", not "/".
 func TestGuardCommand_FlagEmbeddedPathSkipped(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	cmds := []string{
 		"gcc -I/usr/local/include -L/usr/lib main.c",
@@ -437,7 +474,7 @@ func TestGuardCommand_FlagEmbeddedPathSkipped(t *testing.T) {
 // within the workspace are always allowed.
 func TestGuardCommand_AbsolutePathInsideWorkspace(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	innerDir := filepath.Join(workspace, "projects", "myapp")
 	os.MkdirAll(innerDir, 0755)
@@ -453,7 +490,7 @@ func TestGuardCommand_AbsolutePathInsideWorkspace(t *testing.T) {
 // patterns are blocked.
 func TestGuardCommand_PathTraversal(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	cmds := []string{
 		"cat ../../etc/passwd",
@@ -479,7 +516,7 @@ func TestGuardCommand_CdWithAbsoluteWorkspacePath(t *testing.T) {
 	innerDir := filepath.Join(workspace, "projects", "foo")
 	os.MkdirAll(innerDir, 0755)
 
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	cmd := "cd " + innerDir + " && ls -la"
 	result := tool.guardCommand(cmd, workspace)
@@ -490,7 +527,7 @@ func TestGuardCommand_CdWithAbsoluteWorkspacePath(t *testing.T) {
 
 func TestGuardCommand_AgentCLISlashCommand(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewExecTool(workspace, true)
+	tool, _ := NewExecTool(workspace, true)
 
 	// Agent CLI slash commands (e.g., "/review") are not file paths.
 	// They should be allowed because they don't exist on disk.
@@ -519,7 +556,7 @@ func TestGuardCommand_AgentCLISlashCommand(t *testing.T) {
 // --- Background process tests ---
 
 func TestExecTool_Bg_StartAndOutput(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	defer tool.Shutdown()
 
 	var cmd string
@@ -560,7 +597,7 @@ func TestExecTool_Bg_StartAndOutput(t *testing.T) {
 }
 
 func TestExecTool_Bg_Kill(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	defer tool.Shutdown()
 
 	var cmd string
@@ -598,7 +635,7 @@ func TestExecTool_Bg_Kill(t *testing.T) {
 }
 
 func TestExecTool_Bg_ExitedProcess(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	defer tool.Shutdown()
 
 	var cmd string
@@ -636,7 +673,7 @@ func TestExecTool_Bg_ExitedProcess(t *testing.T) {
 }
 
 func TestExecTool_Bg_InvalidID(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	defer tool.Shutdown()
 
 	// Output for non-existent ID
@@ -662,7 +699,7 @@ func TestExecTool_Bg_InvalidID(t *testing.T) {
 }
 
 func TestExecTool_Bg_InitialOutputCapture(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	defer tool.Shutdown()
 
 	var cmd string
@@ -688,7 +725,7 @@ func TestExecTool_Bg_InitialOutputCapture(t *testing.T) {
 }
 
 func TestExecTool_Bg_RuntimeStatus(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	defer tool.Shutdown()
 
 	// No bg processes — should return empty
@@ -721,7 +758,7 @@ func TestExecTool_Bg_RuntimeStatus(t *testing.T) {
 }
 
 func TestExecTool_Bg_Shutdown(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 
 	var cmd string
 	if runtime.GOOS == "windows" {
@@ -836,7 +873,7 @@ func TestRingBuffer(t *testing.T) {
 }
 
 func TestExecTool_Bg_RingBufferOverflow(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, _ := NewExecTool("", false)
 	defer tool.Shutdown()
 
 	// Generate output larger than 32KB ring buffer
