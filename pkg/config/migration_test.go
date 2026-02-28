@@ -63,6 +63,33 @@ func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
 	}
 }
 
+func TestConvertProvidersToModelList_LiteLLM(t *testing.T) {
+	cfg := &Config{
+		Providers: ProvidersConfig{
+			LiteLLM: ProviderConfig{
+				APIKey:  "litellm-key",
+				APIBase: "http://localhost:4000/v1",
+			},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	if result[0].ModelName != "litellm" {
+		t.Errorf("ModelName = %q, want %q", result[0].ModelName, "litellm")
+	}
+	if result[0].Model != "litellm/auto" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "litellm/auto")
+	}
+	if result[0].APIBase != "http://localhost:4000/v1" {
+		t.Errorf("APIBase = %q, want %q", result[0].APIBase, "http://localhost:4000/v1")
+	}
+}
+
 func TestConvertProvidersToModelList_Multiple(t *testing.T) {
 	cfg := &Config{
 		Providers: ProvidersConfig{
@@ -115,6 +142,7 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 	cfg := &Config{
 		Providers: ProvidersConfig{
 			OpenAI:        OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "key1"}},
+			LiteLLM:       ProviderConfig{APIKey: "key-litellm", APIBase: "http://localhost:4000/v1"},
 			Anthropic:     ProviderConfig{APIKey: "key2"},
 			OpenRouter:    ProviderConfig{APIKey: "key3"},
 			Groq:          ProviderConfig{APIKey: "key4"},
@@ -137,9 +165,9 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 18 providers should be converted
-	if len(result) != 18 {
-		t.Errorf("len(result) = %d, want 18", len(result))
+	// All 19 providers should be converted
+	if len(result) != 19 {
+		t.Errorf("len(result) = %d, want 19", len(result))
 	}
 }
 

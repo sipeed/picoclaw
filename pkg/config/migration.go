@@ -89,6 +89,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 			},
 		},
 		{
+			providerNames: []string{"litellm"},
+			protocol:      "litellm",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.LiteLLM.APIKey == "" && p.LiteLLM.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "litellm",
+					Model:          "litellm/auto",
+					APIKey:         p.LiteLLM.APIKey,
+					APIBase:        p.LiteLLM.APIBase,
+					Proxy:          p.LiteLLM.Proxy,
+					RequestTimeout: p.LiteLLM.RequestTimeout,
+				}, true
+			},
+		},
+		{
 			providerNames: []string{"openrouter"},
 			protocol:      "openrouter",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
