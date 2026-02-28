@@ -22,7 +22,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 const (
@@ -40,10 +39,9 @@ const (
 // Implements: channels.Channel, channels.TypingCapable, channels.ReactionCapable
 type SignalChannel struct {
 	*channels.BaseChannel
-	config      config.SignalConfig
-	httpClient  *http.Client
-	transcriber *voice.GroqTranscriber
-	ctx         context.Context
+	config     config.SignalConfig
+	httpClient *http.Client
+	ctx        context.Context
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
 }
@@ -72,6 +70,14 @@ type signalDataMessage struct {
 	ViewOnce         bool               `json:"viewOnce"`
 	GroupInfo        *signalGroupInfo   `json:"groupInfo"`
 	Attachments      []signalAttachment `json:"attachments"`
+	Mentions         []signalMention    `json:"mentions"`
+}
+
+type signalMention struct {
+	Start  int    `json:"start"`
+	Length int    `json:"length"`
+	UUID   string `json:"uuid"`
+	Number string `json:"number"`
 }
 
 type signalGroupInfo struct {
@@ -117,6 +123,7 @@ func NewSignalChannel(cfg *config.Config, b *bus.MessageBus) (channels.Channel, 
 
 	opts := []channels.BaseChannelOption{
 		channels.WithMaxMessageLength(signalMaxMessageLength),
+		channels.WithGroupTrigger(signalCfg.GroupTrigger),
 	}
 	if signalCfg.ReasoningChannelID != "" {
 		opts = append(opts, channels.WithReasoningChannelID(signalCfg.ReasoningChannelID))
@@ -129,10 +136,6 @@ func NewSignalChannel(cfg *config.Config, b *bus.MessageBus) (channels.Channel, 
 		config:      signalCfg,
 		httpClient:  &http.Client{Timeout: signalRPCTimeout},
 	}, nil
-}
-
-func (c *SignalChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
-	c.transcriber = transcriber
 }
 
 func (c *SignalChannel) Start(ctx context.Context) error {
@@ -190,7 +193,7 @@ func (c *SignalChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	}
 
 	if err := c.sendMessage(ctx, msg.ChatID, msg.Content); err != nil {
-		return fmt.Errorf("signal send: %w", channels.ErrTemporary)
+		return fmt.Errorf("signal send: %w: %v", channels.ErrTemporary, err)
 	}
 
 	return nil
@@ -296,7 +299,7 @@ func (c *SignalChannel) connectSSE() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("SSE returned status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -382,22 +385,25 @@ func (c *SignalChannel) handleEvent(event signalEvent) {
 	peerID := senderPhone
 
 	if isGroup {
-		if c.config.GroupsEnabled != nil && !*c.config.GroupsEnabled {
-			logger.DebugCF("signal", "Group message ignored (groups_enabled=false)", map[string]any{
-				"group_id": dm.GroupInfo.GroupID,
-			})
-			return
-		}
 		chatID = dm.GroupInfo.GroupID
 		peerKind = "group"
 		peerID = dm.GroupInfo.GroupID
-	} else {
-		if c.config.DMsEnabled != nil && !*c.config.DMsEnabled {
-			return
-		}
 	}
 
 	content := dm.Message
+
+	// In group chats, apply unified group trigger filtering
+	if isGroup {
+		isMentioned := c.isBotMentioned(dm.Mentions)
+		if isMentioned {
+			content = c.stripMention(content, dm.Mentions)
+		}
+		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
+		if !respond {
+			return
+		}
+		content = cleaned
+	}
 	mediaPaths := []string{}
 	localFiles := []string{}
 
@@ -423,8 +429,7 @@ func (c *SignalChannel) handleEvent(event signalEvent) {
 		if strings.HasPrefix(att.ContentType, "image/") {
 			content = appendContent(content, "[image: photo]")
 		} else if utils.IsAudioFile(att.Filename, att.ContentType) {
-			transcribedText := c.transcribeAudio(localPath)
-			content = appendContent(content, transcribedText)
+			content = appendContent(content, "[voice message]")
 		} else {
 			name := att.Filename
 			if name == "" {
@@ -439,12 +444,6 @@ func (c *SignalChannel) handleEvent(event signalEvent) {
 	}
 	if content == "" {
 		content = "[media only]"
-	}
-
-	// Build compound senderID for backward compat
-	senderID := senderPhone
-	if envelope.SourceName != "" {
-		senderID = fmt.Sprintf("%s|%s", senderPhone, envelope.SourceName)
 	}
 
 	peer := bus.Peer{Kind: peerKind, ID: peerID}
@@ -473,7 +472,71 @@ func (c *SignalChannel) handleEvent(event signalEvent) {
 		"preview":  utils.Truncate(content, 50),
 	})
 
-	c.HandleMessage(c.ctx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, sender)
+	c.HandleMessage(c.ctx, peer, messageID, senderPhone, chatID, content, mediaPaths, metadata, sender)
+}
+
+// isBotMentioned checks whether the bot was @mentioned in a group message
+// by looking for its account number or UUID in the structured mentions array.
+//
+// Note: signal-cli v0.13.24 has a bug (https://github.com/AsamK/signal-cli/issues/1940)
+// where the mentions array is empty due to binary ACI parsing issues. This will
+// work correctly once the fix (PR #1944) is released.
+func (c *SignalChannel) isBotMentioned(mentions []signalMention) bool {
+	for _, m := range mentions {
+		if m.Number == c.config.Account || m.UUID == c.config.Account {
+			return true
+		}
+	}
+	return false
+}
+
+// stripMention removes the bot's @mention from the message content using
+// the precise UTF-16 offsets from the structured mention data.
+// Signal represents mentions as U+FFFC (object replacement character) in the text.
+func (c *SignalChannel) stripMention(content string, mentions []signalMention) string {
+	for _, m := range mentions {
+		if m.Number != c.config.Account && m.UUID != c.config.Account {
+			continue
+		}
+		runes := []rune(content)
+		runeStart, runeLen := utf16PosToRunePos(runes, m.Start, m.Length)
+		if runeStart >= 0 && runeStart+runeLen <= len(runes) {
+			before := strings.TrimRight(string(runes[:runeStart]), " ")
+			after := strings.TrimLeft(string(runes[runeStart+runeLen:]), " ")
+			if before == "" {
+				return after
+			}
+			if after == "" {
+				return before
+			}
+			return before + " " + after
+		}
+	}
+	return content
+}
+
+// utf16PosToRunePos converts a UTF-16 code unit position and length to rune position and length.
+func utf16PosToRunePos(runes []rune, utf16Start, utf16Len int) (int, int) {
+	pos := 0
+	runeStart := -1
+	runeLen := 0
+	for i, r := range runes {
+		if pos == utf16Start {
+			runeStart = i
+		}
+		units := 1
+		if r >= 0x10000 {
+			units = 2 // surrogate pair
+		}
+		if runeStart >= 0 {
+			runeLen++
+			if pos+units >= utf16Start+utf16Len {
+				break
+			}
+		}
+		pos += units
+	}
+	return runeStart, runeLen
 }
 
 // Media handling
@@ -492,26 +555,6 @@ func (c *SignalChannel) downloadAttachment(att signalAttachment) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "signal",
 	})
-}
-
-func (c *SignalChannel) transcribeAudio(localPath string) string {
-	if c.transcriber != nil && c.transcriber.IsAvailable() {
-		tCtx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
-		result, err := c.transcriber.Transcribe(tCtx, localPath)
-		cancel()
-
-		if err != nil {
-			logger.ErrorCF("signal", "Voice transcription failed", map[string]any{
-				"error": err.Error(),
-			})
-			return "[voice (transcription failed)]"
-		}
-		logger.InfoCF("signal", "Voice transcribed successfully", map[string]any{
-			"text": result.Text,
-		})
-		return fmt.Sprintf("[voice transcription: %s]", result.Text)
-	}
-	return "[voice]"
 }
 
 func extensionFromMIME(mime string) string {
@@ -579,7 +622,7 @@ func (c *SignalChannel) sendReaction(ctx context.Context, chatID, targetAuthor s
 	if isGroupChat(chatID) {
 		params["groupId"] = chatID
 	} else {
-		params["recipient"] = chatID
+		params["recipient"] = []string{chatID}
 	}
 
 	if _, err := c.rpcCall(ctx, "sendReaction", params); err != nil {
@@ -643,7 +686,7 @@ func (c *SignalChannel) sendTyping(chatID string) {
 	if isGroupChat(chatID) {
 		params["groupId"] = chatID
 	} else {
-		params["recipient"] = chatID
+		params["recipient"] = []string{chatID}
 	}
 
 	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
@@ -658,6 +701,8 @@ func (c *SignalChannel) sendTyping(chatID string) {
 }
 
 // isGroupChat determines if a chatID is a Signal group (base64-encoded) or a phone number.
+// This is safe because chatID is always set by handleEvent: either the sender's E.164 phone
+// number (starts with "+") for DMs, or the base64-encoded GroupInfo.GroupID for groups.
 func isGroupChat(chatID string) bool {
 	return chatID != "" && !strings.HasPrefix(chatID, "+")
 }
