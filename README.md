@@ -665,7 +665,7 @@ picoclaw gateway
 picoclaw gateway
 ```
 
-> **Note**: WeCom AI Bot uses streaming pull protocol — no reply timeout concerns. Long tasks (>5.5 min) automatically switch to `response_url` push delivery.
+> **Note**: WeCom AI Bot uses streaming pull protocol — no reply timeout concerns. Long tasks (>30 seconds) automatically switch to `response_url` push delivery.
 
 </details>
 

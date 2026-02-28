@@ -564,7 +564,7 @@ picoclaw gateway
 picoclaw gateway
 ```
 
-> **注意**: WeCom AI Bot はストリーミングプルプロトコルを使用 — 返信タイムアウトの心配なし。長時間タスク（>5.5分）は自動的に `response_url` によるプッシュ配信に切り替わります。
+> **注意**: WeCom AI Bot はストリーミングプルプロトコルを使用 — 返信タイムアウトの心配なし。長時間タスク（>30秒）は自動的に `response_url` によるプッシュ配信に切り替わります。
 
 </details>
 
