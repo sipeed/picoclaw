@@ -6,7 +6,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha1"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -14,7 +13,6 @@ import (
 	"io"
 	"math/big"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -291,13 +289,14 @@ func (c *WeComAIBotChannel) handleWebhook(w http.ResponseWriter, r *http.Request
 		"query":  r.URL.RawQuery,
 	})
 
-	if r.Method == http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
 		// URL verification
 		c.handleVerification(ctx, w, r)
-	} else if r.Method == http.MethodPost {
+	case http.MethodPost:
 		// Message callback
 		c.handleMessageCallback(ctx, w, r)
-	} else {
+	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -909,7 +908,7 @@ func (c *WeComAIBotChannel) encryptResponse(
 	}
 
 	// Generate signature
-	signature := c.generateSignature(timestamp, nonce, encrypted)
+	signature := computeSignature(c.config.Token, timestamp, nonce, encrypted)
 
 	// Build encrypted response
 	encryptedResp := WeComAIBotEncryptedResponse{
@@ -1008,20 +1007,6 @@ func pkcs7Pad(data []byte, blockSize int) []byte {
 	}
 	padText := bytes.Repeat([]byte{byte(padding)}, padding)
 	return append(data, padText...)
-}
-
-// generateSignature generates message signature using common function
-func (c *WeComAIBotChannel) generateSignature(timestamp, nonce, encrypt string) string {
-	// Sort parameters
-	params := []string{c.config.Token, timestamp, nonce, encrypt}
-	sort.Strings(params)
-
-	// Concatenate
-	str := strings.Join(params, "")
-
-	// SHA1 hash
-	hash := sha1.Sum([]byte(str))
-	return fmt.Sprintf("%x", hash)
 }
 
 // generateStreamID generates a random stream ID
