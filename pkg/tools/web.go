@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -506,26 +507,35 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolR
 }
 
 type WebFetchTool struct {
-	maxChars int
-	proxy    string
+	maxChars        int
+	proxy           string
+	fetchLimitBytes int64
 }
 
-func NewWebFetchTool(maxChars int) *WebFetchTool {
+func NewWebFetchTool(maxChars int, fetchLimitBytes int64) *WebFetchTool {
 	if maxChars <= 0 {
 		maxChars = 50000
 	}
+	if fetchLimitBytes <= 0 {
+		fetchLimitBytes = 10 * 1024 * 1024 // Security Fallback
+	}
 	return &WebFetchTool{
-		maxChars: maxChars,
+		maxChars:        maxChars,
+		fetchLimitBytes: fetchLimitBytes,
 	}
 }
 
-func NewWebFetchToolWithProxy(maxChars int, proxy string) *WebFetchTool {
+func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64) *WebFetchTool {
 	if maxChars <= 0 {
 		maxChars = 50000
 	}
+	if fetchLimitBytes <= 0 {
+		fetchLimitBytes = 10 * 1024 * 1024 // Security Fallback
+	}
 	return &WebFetchTool{
-		maxChars: maxChars,
-		proxy:    proxy,
+		maxChars:        maxChars,
+		proxy:           proxy,
+		fetchLimitBytes: fetchLimitBytes,
 	}
 }
 
@@ -605,10 +615,17 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("request failed: %v", err))
 	}
+
+	resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
+
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return ErrorResult(fmt.Sprintf("failed to read response: size exceeded %d bytes limit", t.fetchLimitBytes))
+		}
 		return ErrorResult(fmt.Sprintf("failed to read response: %v", err))
 	}
 
