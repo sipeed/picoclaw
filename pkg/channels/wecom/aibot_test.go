@@ -192,27 +192,19 @@ func TestEncryptDecrypt(t *testing.T) {
 }
 
 func TestGenerateSignature(t *testing.T) {
-	cfg := config.WeComAIBotConfig{
-		Enabled:        true,
-		Token:          "test_token",
-		EncodingAESKey: "testkey1234567890123456789012345678901234567",
-	}
-
-	messageBus := bus.NewMessageBus()
-	ch, _ := NewWeComAIBotChannel(cfg, messageBus)
-
+	token := "test_token"
 	timestamp := "1234567890"
 	nonce := "test_nonce"
 	encrypt := "encrypted_msg"
 
-	signature := ch.generateSignature(timestamp, nonce, encrypt)
+	signature := computeSignature(token, timestamp, nonce, encrypt)
 
 	if signature == "" {
 		t.Error("Generated signature is empty")
 	}
 
 	// Verify signature using verifySignature function
-	if !verifySignature(cfg.Token, signature, timestamp, nonce, encrypt) {
+	if !verifySignature(token, signature, timestamp, nonce, encrypt) {
 		t.Error("Generated signature does not verify correctly")
 	}
 }
