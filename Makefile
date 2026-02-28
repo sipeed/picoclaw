@@ -39,7 +39,7 @@ UNAME_M:=$(shell uname -m)
 # Platform-specific settings (Linux only)
 PLATFORM=linux
 ifeq ($(UNAME_M),x86_64)
-	ARCH=amd64
+	ARCH=x86_64
 else ifeq ($(UNAME_M),aarch64)
 	ARCH=arm64
 else
@@ -70,7 +70,7 @@ build: generate
 build-all: generate
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-x86_64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
 	GOOS=linux GOARCH=arm $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./$(CMD_DIR)
 	@echo "All builds complete"

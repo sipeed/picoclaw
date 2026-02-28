@@ -272,7 +272,7 @@ Termux 版は Go バックエンドを APK に内蔵せず、Termux 上で別プ
 |-------------|---------|
 | 64-bit ARM（最近のデバイスの大半） | `clawdroid-linux-arm64` |
 | 32-bit ARM | `clawdroid-linux-arm` |
-| x86_64 | `clawdroid-linux-amd64` |
+| x86_64 | `clawdroid-linux-x86_64` |
 
 Termux で `uname -m` を実行するとアーキテクチャを確認できます。
 

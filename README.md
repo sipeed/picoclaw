@@ -274,7 +274,7 @@ Download from [GitHub Releases](https://github.com/KarakuriAgent/clawdroid/relea
 |-------------|--------|
 | 64-bit ARM (most modern devices) | `clawdroid-linux-arm64` |
 | 32-bit ARM | `clawdroid-linux-arm` |
-| x86_64 | `clawdroid-linux-amd64` |
+| x86_64 | `clawdroid-linux-x86_64` |
 
 You can check your architecture in Termux with `uname -m`.
 

@@ -31,7 +31,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           gh release upload "$RELEASE_TAG" \
-            build/clawdroid-linux-amd64 \
+            build/clawdroid-linux-x86_64 \
             build/clawdroid-linux-arm64 \
             build/clawdroid-linux-arm
 
