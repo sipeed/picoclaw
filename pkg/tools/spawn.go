@@ -94,7 +94,10 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 
 	// Validate preset name if provided
 	if preset != "" && !IsValidPreset(Preset(preset)) {
-		return ErrorResult(fmt.Sprintf("preset %q is not valid. Available presets: scout, analyst, coder, worker, coordinator", preset))
+		return ErrorResult(fmt.Sprintf(
+			"preset %q is not valid. Available presets: scout, analyst, coder, worker, coordinator",
+			preset,
+		))
 	}
 
 	if t.manager == nil {

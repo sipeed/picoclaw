@@ -1176,7 +1176,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 		// 5a. Auto-advance plan phases after LLM iteration
 		postStatus := agent.ContextBuilder.GetPlanStatus()
-		if !agent.ContextBuilder.HasActivePlan() || !(postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
+		if !agent.ContextBuilder.HasActivePlan() ||
+			!(postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
 			break
 		}
 
@@ -2739,7 +2740,7 @@ func (al *AgentLoop) runLLMIteration(
 			if reminder, ok := buildOrchReminder(iteration); ok {
 				messages = append(messages, reminder)
 				logger.DebugCF("agent", "Injected orchestration nudge",
-					map[string]interface{}{
+					map[string]any{
 						"agent_id":  agent.ID,
 						"iteration": iteration,
 					})
