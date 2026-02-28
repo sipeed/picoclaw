@@ -44,3 +44,5 @@ tasks/
 
 # Added by goreleaser init:
 dist/
+
+vendor/
