@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +24,10 @@ type SubagentTask struct {
 	Status        string
 	Result        string
 	Created       int64
+	CompletedAt   int64          `json:"-"`
+	Iterations    int            `json:"-"`
+	ToolCalls     int            `json:"-"`
+	ToolStats     map[string]int `json:"-"`
 }
 
 type SubagentManager struct {
@@ -33,7 +39,6 @@ type SubagentManager struct {
 	workspace      string
 	tools          *ToolRegistry
 	webSearchOpts  WebSearchToolOptions
-	execTool       *ExecTool // Shared exec tool for all presets
 	maxIterations  int
 	maxTokens      int
 	temperature    float64
@@ -53,11 +58,6 @@ func NewSubagentManager(
 	if reporter == nil {
 		reporter = orch.Noop
 	}
-	// Create a shared exec tool for all presets
-	execTool, err := NewExecTool(workspace, true)
-	if err != nil {
-		log.Printf("subagent: failed to create exec tool: %v (exec disabled for subagents)", err)
-	}
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,
@@ -66,7 +66,6 @@ func NewSubagentManager(
 		workspace:     workspace,
 		tools:         NewToolRegistry(),
 		webSearchOpts: webSearchOpts,
-		execTool:      execTool,
 		maxIterations: 10,
 		nextID:        1,
 		reporter:      reporter,
@@ -249,14 +248,19 @@ After completing, provide a clear summary of what was done and how it was verifi
 	} else {
 		task.Status = "completed"
 		task.Result = loopResult.Content
+		task.CompletedAt = time.Now().UnixMilli()
+		task.Iterations = loopResult.Iterations
+		task.ToolCalls = loopResult.ToolCalls
+		task.ToolStats = loopResult.ToolStats
 		// Notify conductor of the result
 		sm.reporter.ReportConversation(task.ID, "conductor", loopResult.Content)
 		sm.reporter.ReportGC(task.ID, "completed")
 		result = &ToolResult{
 			ForLLM: fmt.Sprintf(
-				"Subagent '%s' completed (iterations: %d): %s",
+				"Subagent '%s' completed (iterations: %d, tool calls: %d): %s",
 				task.Label,
 				loopResult.Iterations,
+				loopResult.ToolCalls,
 				loopResult.Content,
 			),
 			ForUser: loopResult.Content,
@@ -269,14 +273,23 @@ After completing, provide a clear summary of what was done and how it was verifi
 	// Send announce message back to main agent
 	if sm.bus != nil {
 		announceContent := fmt.Sprintf("Task '%s' completed.\n\nResult:\n%s", task.Label, task.Result)
+		metadata := map[string]string{
+			"duration_ms": strconv.FormatInt(task.CompletedAt-task.Created, 10),
+			"iterations":  strconv.Itoa(task.Iterations),
+			"tool_calls":  strconv.Itoa(task.ToolCalls),
+		}
+		if len(task.ToolStats) > 0 {
+			metadata["tool_stats"] = formatToolStats(task.ToolStats)
+		}
 		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer pubCancel()
 		sm.bus.PublishInbound(pubCtx, bus.InboundMessage{
 			Channel:  "system",
 			SenderID: fmt.Sprintf("subagent:%s", task.ID),
 			// Format: "original_channel:original_chat_id" for routing back
-			ChatID:  fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
-			Content: announceContent,
+			ChatID:   fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
+			Content:  announceContent,
+			Metadata: metadata,
 		})
 	}
 }
@@ -306,12 +319,22 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 		registry.Register(NewAppendFileTool(writeRoot, true))
 	}
 
-	// Register exec and bg_monitor if allowed
+	// Register exec and bg_monitor if allowed.
+	// Each subagent gets its own ExecTool to avoid mutating the shared instance's
+	// allowRules (which would leak sandbox restrictions to the conductor).
 	if config.AllowedTools["exec"] {
-		// Use the shared exec tool but set allow patterns
-		execTool := sm.execTool
+		execWorkDir := writeRoot
+		if execWorkDir == "" {
+			execWorkDir = sm.workspace
+		}
+		execTool, err := NewExecTool(execWorkDir, true)
+		if err != nil {
+			// exec disabled for this subagent; skip registration
+			return registry
+		}
 		if config.ExecPolicy != nil {
-			_ = execTool.SetAllowPatterns([]string{config.ExecPolicy.AllowPattern})
+			execTool.SetAllowRules(config.ExecPolicy.AllowRules)
+			execTool.SetLocalNetOnly(config.ExecPolicy.LocalNetOnly)
 		}
 		registry.Register(execTool)
 
@@ -383,7 +406,7 @@ func (t *SubagentTool) Name() string {
 }
 
 func (t *SubagentTool) Description() string {
-	return "Execute a subagent task synchronously and return the result. Use this for delegating specific tasks to an independent agent instance. Returns execution summary to user and full details to LLM."
+	return "Run a task in a subagent and BLOCK until it completes, returning the result directly. Use when you need the answer before deciding your next step. For background/parallel tasks, use spawn instead."
 }
 
 func (t *SubagentTool) Parameters() map[string]any {
@@ -411,13 +434,17 @@ func (t *SubagentTool) SetContext(channel, chatID string) {
 func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok {
-		return ErrorResult("task is required").WithError(fmt.Errorf("task parameter is required"))
+		return ErrorResult(
+			`Required parameter "task" (string) is missing. ` +
+				`Example: {"task": "describe what you need done"}`,
+		).WithError(fmt.Errorf("task parameter is required"))
 	}
 
 	label, _ := args["label"].(string)
 
 	if t.manager == nil {
-		return ErrorResult("Subagent manager not configured").WithError(fmt.Errorf("manager is nil"))
+		return ErrorResult("subagent tool is not available in this session (orchestration may be disabled)").
+			WithError(fmt.Errorf("manager is nil"))
 	}
 
 	// Build messages for subagent
@@ -477,8 +504,8 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if labelStr == "" {
 		labelStr = "(unnamed)"
 	}
-	llmContent := fmt.Sprintf("Subagent task completed:\nLabel: %s\nIterations: %d\nResult: %s",
-		labelStr, loopResult.Iterations, loopResult.Content)
+	llmContent := fmt.Sprintf("Subagent task completed:\nLabel: %s\nIterations: %d\nTool calls: %d\nResult: %s",
+		labelStr, loopResult.Iterations, loopResult.ToolCalls, loopResult.Content)
 
 	return &ToolResult{
 		ForLLM:  llmContent,
@@ -487,4 +514,19 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		IsError: false,
 		Async:   false,
 	}
+}
+
+// formatToolStats formats a tool stats map as a compact string: "exec:3,read_file:5".
+// Keys are sorted alphabetically for deterministic output.
+func formatToolStats(stats map[string]int) string {
+	keys := make([]string, 0, len(stats))
+	for k := range stats {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+":"+strconv.Itoa(stats[k]))
+	}
+	return strings.Join(parts, ",")
 }

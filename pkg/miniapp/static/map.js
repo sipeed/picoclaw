@@ -27,6 +27,7 @@ var MAP_POSITIONS = {
   door:      { x: 160, y: 314 },  // entry / exit point
   conductor: { x: 160, y:  58 },
   secretary: { x: 108, y:  58 },
+  heartbeat: { x: 230, y:  58 },  // pigeon messenger — periodic heartbeat agent
   meeting:   { x: 160, y: 161 },  // neutral zone for conversations
   stations: [
     { x:  40, y: 106 },  // S0  scout

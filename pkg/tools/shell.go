@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,8 +122,9 @@ type ExecTool struct {
 	workingDir          string
 	timeout             time.Duration
 	denyPatterns        []*regexp.Regexp
-	allowPatterns       []*regexp.Regexp
+	allowRules          [][]string // pre-split command prefix allowlist
 	restrictToWorkspace bool
+	localNetOnly        bool // restrict curl/wget to localhost + RFC 1918
 
 	// Background process management
 	bgMu        sync.Mutex
@@ -214,7 +217,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		workingDir:          workingDir,
 		timeout:             5 * time.Minute,
 		denyPatterns:        denyPatterns,
-		allowPatterns:       nil,
+		allowRules:          nil,
 		restrictToWorkspace: restrict,
 		bgProcesses:         make(map[string]*bgProcess),
 		bgCtx:               bgCtx,
@@ -705,25 +708,26 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		}
 	}
 
-	if len(t.allowPatterns) > 0 {
-		allowed := false
-		for _, pattern := range t.allowPatterns {
-			if pattern.MatchString(lower) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
+	if len(t.allowRules) > 0 {
+		if !matchAllowRules(lower, t.allowRules) {
 			var b strings.Builder
 			b.WriteString("Command blocked: not in allowlist [")
-			for i, p := range t.allowPatterns {
+			for i, rule := range t.allowRules {
 				if i > 0 {
 					b.WriteByte(',')
 				}
-				b.WriteString(p.String())
+				b.WriteString(strings.Join(rule, " "))
 			}
 			b.WriteByte(']')
 			return b.String()
+		}
+	}
+
+	// Restrict curl/wget to localhost and RFC 1918 private addresses.
+	// External HTTP access is available via the web_fetch tool.
+	if t.localNetOnly && isCurlOrWget(cmd) {
+		if errMsg := checkCurlLocalNet(cmd); errMsg != "" {
+			return errMsg
 		}
 	}
 
@@ -764,6 +768,12 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			if strings.HasPrefix(rel, "..") {
 				// Path is outside workspace — allow if it's an executable binary
 				if isExecutable(p) {
+					continue
+				}
+				// Allow /dev/* paths (e.g. /dev/null, /dev/urandom).
+				// Device files are not regular filesystem paths and pose
+				// no workspace-escape risk.
+				if strings.HasPrefix(p, "/dev/") {
 					continue
 				}
 				// Agent CLI slash commands: skip non-existent paths
@@ -830,16 +840,90 @@ func (t *ExecTool) SetRestrictToWorkspace(restrict bool) {
 	t.restrictToWorkspace = restrict
 }
 
-func (t *ExecTool) SetAllowPatterns(patterns []string) error {
-	t.allowPatterns = make([]*regexp.Regexp, 0, len(patterns))
-	for _, p := range patterns {
-		re, err := regexp.Compile(p)
-		if err != nil {
-			return fmt.Errorf("invalid allow pattern %q: %w", p, err)
+// SetAllowRules sets the command prefix allowlist.
+// Each rule is a space-separated command prefix (e.g. "go test", "pnpm run lint").
+// A command is allowed if its first N words match any rule's N words exactly.
+func (t *ExecTool) SetAllowRules(rules []string) {
+	t.allowRules = make([][]string, 0, len(rules))
+	for _, r := range rules {
+		words := strings.Fields(strings.ToLower(r))
+		if len(words) > 0 {
+			t.allowRules = append(t.allowRules, words)
 		}
-		t.allowPatterns = append(t.allowPatterns, re)
 	}
-	return nil
+}
+
+// matchAllowRules checks if cmd matches any prefix in the allowlist.
+func matchAllowRules(cmd string, rules [][]string) bool {
+	cmdWords := strings.Fields(cmd)
+	for _, ruleWords := range rules {
+		if len(cmdWords) < len(ruleWords) {
+			continue
+		}
+		match := true
+		for i, rw := range ruleWords {
+			if cmdWords[i] != rw {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *ExecTool) SetLocalNetOnly(v bool) {
+	t.localNetOnly = v
+}
+
+// isCurlOrWget reports whether command is a curl or wget invocation.
+func isCurlOrWget(command string) bool {
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return false
+	}
+	base := filepath.Base(fields[0])
+	return base == "curl" || base == "wget"
+}
+
+// checkCurlLocalNet validates that all http/https URLs in a curl/wget command
+// target localhost or RFC 1918 private addresses.
+// Returns an error message string, or empty string if the command is allowed.
+func checkCurlLocalNet(command string) string {
+	for _, token := range strings.Fields(command) {
+		token = strings.Trim(token, "\"'")
+		if !strings.HasPrefix(token, "http://") && !strings.HasPrefix(token, "https://") {
+			continue
+		}
+		u, err := url.Parse(token)
+		if err != nil {
+			continue
+		}
+		host := u.Hostname()
+		if !isLocalHost(host) {
+			return fmt.Sprintf(
+				"Command blocked by safety guard "+
+					"(curl/wget is restricted to localhost and private network; %q is a public address)",
+				host,
+			)
+		}
+	}
+	return ""
+}
+
+// isLocalHost reports whether host is localhost or a loopback/RFC 1918 private IP.
+// DNS resolution is intentionally avoided to prevent DNS rebinding attacks.
+func isLocalHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate()
 }
 
 // SetBgMaxLifetimeForTest overrides bgMaxLifetime for testing purposes.

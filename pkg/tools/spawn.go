@@ -32,7 +32,7 @@ func (t *SpawnTool) Name() string {
 }
 
 func (t *SpawnTool) Description() string {
-	return "Spawn a subagent to handle a task in the background. Use this for complex or time-consuming tasks that can run independently. The subagent will complete the task and report back when done."
+	return "Spawn a subagent that runs NON-BLOCKING in the background and returns immediately. Prefer this over subagent for any task that can run independently. Use preset to control capabilities (scout, analyst, coder, worker, coordinator)."
 }
 
 func (t *SpawnTool) Parameters() map[string]any {
@@ -73,26 +73,35 @@ func (t *SpawnTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok || strings.TrimSpace(task) == "" {
-		return ErrorResult("task is required and must be a non-empty string")
+		return ErrorResult(
+			`Required parameter "task" (string) is missing. ` +
+				`Example: {"task": "describe what you need done", "preset": "scout"}`,
+		)
 	}
 
 	label, _ := args["label"].(string)
 	agentID, _ := args["agent_id"].(string)
 	preset, _ := args["preset"].(string)
 
-	// Check allowlist if targeting a specific agent or preset
-	checkTarget := agentID
-	if checkTarget == "" && preset != "" {
-		checkTarget = preset
-	}
-	if checkTarget != "" && t.allowlistCheck != nil {
-		if !t.allowlistCheck(checkTarget) {
-			return ErrorResult(fmt.Sprintf("not allowed to spawn agent '%s' or preset '%s'", agentID, preset))
+	// Check allowlist if targeting a specific agent ID.
+	// Presets (scout, analyst, etc.) are NOT agent IDs — they are validated
+	// separately by IsValidPreset() in the subagent manager.
+	if agentID != "" && t.allowlistCheck != nil {
+		if !t.allowlistCheck(agentID) {
+			return ErrorResult(fmt.Sprintf("agent %q is not in the allowed agents list", agentID))
 		}
 	}
 
+	// Validate preset name if provided
+	if preset != "" && !IsValidPreset(Preset(preset)) {
+		return ErrorResult(fmt.Sprintf(
+			"preset %q is not valid. Available presets: scout, analyst, coder, worker, coordinator",
+			preset,
+		))
+	}
+
 	if t.manager == nil {
-		return ErrorResult("Subagent manager not configured")
+		return ErrorResult("spawn tool is not available in this session (orchestration may be disabled)")
 	}
 
 	// Pass callback to manager for async completion notification

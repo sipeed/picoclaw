@@ -630,6 +630,14 @@ func (ms *MemoryStore) getPlanContextFrom(content string) string {
 		sb.WriteString("\n")
 	}
 
+	// Orchestration section: conductor's delegation tracking (Delegated/Findings/Decisions)
+	orchContent := ms.extractSection(content, "Orchestration")
+	if orchContent != "" {
+		sb.WriteString("### Orchestration\n")
+		sb.WriteString(orchContent)
+		sb.WriteString("\n")
+	}
+
 	return sb.String()
 }
 

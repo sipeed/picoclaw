@@ -115,6 +115,7 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 	TaskID          string // Unique task ID for background task status tracking
 	Background      bool   // If true, this is a background task (cron/heartbeat) — enables live task notifications
+	SystemMessage   bool   // If true, this is a system message (subagent result) — skip placeholder and plan nudge
 }
 
 const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
@@ -302,6 +303,9 @@ func registerSharedTools(
 				return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 			})
 			agent.Tools.Register(spawnTool)
+			// Register blocking subagent tool alongside spawn
+			subagentTool := tools.NewSubagentTool(subagentManager)
+			agent.Tools.Register(subagentTool)
 		}
 
 		// Update context builder with the complete tools registry
@@ -796,24 +800,92 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		return "", nil
 	}
 
-	// Use default agent for system messages
+	// Inject subagent result into session history without running a full LLM loop.
+	// The conductor will see the result on its next turn. This avoids:
+	// - Flooding the chat with a response for every subagent completion
+	// - Consuming the Telegram "Thinking..." placeholder
+	// - Wasting LLM tokens on processing each result individually
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for system message")
 	}
 
-	// Use the origin session for context
 	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
+	historyMsg := fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content)
+	agent.Sessions.AddMessage(sessionKey, "user", historyMsg)
+	agent.Sessions.MarkDirty(sessionKey)
 
-	return al.runAgentLoop(ctx, agent, processOptions{
-		SessionKey:      sessionKey,
+	// Send a brief notification (SkipPlaceholder to avoid corrupting status messages)
+	label := msg.SenderID
+	if idx := strings.LastIndex(label, ":"); idx >= 0 {
+		label = label[idx+1:]
+	}
+	notification := formatSubagentCompletion(label, msg.Metadata)
+	_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 		Channel:         originChannel,
 		ChatID:          originChatID,
-		UserMessage:     fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content),
-		DefaultResponse: "Background task completed.",
-		EnableSummary:   false,
-		SendResponse:    true,
+		Content:         notification,
+		SkipPlaceholder: true,
 	})
+
+	logger.InfoCF("agent", "Subagent result injected into session history",
+		map[string]any{
+			"sender_id":   msg.SenderID,
+			"session_key": sessionKey,
+			"content_len": len(content),
+		})
+
+	return "", nil
+}
+
+// formatSubagentCompletion builds the user-facing notification for a completed subagent.
+// If metadata contains duration_ms and tool_calls it produces e.g.:
+//
+//	"📋 scout-1 completed (3.2s, 5 tool calls)."
+//
+// Without metadata it falls back to the plain "📋 scout-1 completed." format.
+func formatSubagentCompletion(label string, metadata map[string]string) string {
+	if len(metadata) == 0 {
+		return fmt.Sprintf("📋 %s completed.", label)
+	}
+	durationMs, _ := strconv.ParseInt(metadata["duration_ms"], 10, 64)
+	toolCalls, _ := strconv.Atoi(metadata["tool_calls"])
+
+	if durationMs <= 0 && toolCalls <= 0 {
+		return fmt.Sprintf("📋 %s completed.", label)
+	}
+
+	parts := make([]string, 0, 2)
+	if durationMs > 0 {
+		parts = append(parts, formatDurationMs(durationMs))
+	}
+	if toolCalls > 0 {
+		if toolCalls == 1 {
+			parts = append(parts, "1 tool call")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d tool calls", toolCalls))
+		}
+	}
+	return fmt.Sprintf("📋 %s completed (%s).", label, strings.Join(parts, ", "))
+}
+
+// formatDurationMs converts milliseconds to a human-readable duration string.
+// Examples: 800 → "0.8s", 1200 → "1.2s", 65000 → "1m5s", 3661000 → "61m1s".
+func formatDurationMs(ms int64) string {
+	if ms < 1000 {
+		return fmt.Sprintf("%dms", ms)
+	}
+	totalSec := ms / 1000
+	if totalSec < 60 {
+		tenths := (ms % 1000) / 100
+		return fmt.Sprintf("%d.%ds", totalSec, tenths)
+	}
+	mins := totalSec / 60
+	sec := totalSec % 60
+	if sec == 0 {
+		return fmt.Sprintf("%dm", mins)
+	}
+	return fmt.Sprintf("%dm%ds", mins, sec)
 }
 
 // acquireSessionLock gets or creates a per-session semaphore and acquires it.
@@ -1066,16 +1138,49 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		al.promptDirty.Store(false)
 	}
 
-	// 5. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts, task, preStatus)
-	if err != nil {
-		return "", err
-	}
+	// 5. Run LLM iteration loop (with automatic phase transitions)
+	var finalContent string
+	var iteration int
+	const maxPhaseTransitions = 10
 
-	// 5a. Auto-advance plan phases after LLM iteration
-	postStatus := agent.ContextBuilder.GetPlanStatus()
-	if agent.ContextBuilder.HasActivePlan() &&
-		(postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
+	for phaseLoop := 0; ; phaseLoop++ {
+		// On phase transition: rebuild system prompt with new phase context + nudge
+		if phaseLoop > 0 {
+			messages = agent.ContextBuilder.BuildMessages(
+				agent.Sessions.GetHistory(opts.SessionKey),
+				agent.Sessions.GetSummary(opts.SessionKey),
+				"", nil, opts.Channel, opts.ChatID,
+			)
+			messages = append(messages, providers.Message{
+				Role: "user",
+				Content: fmt.Sprintf(
+					"[System] Phase %d is now active. Continue working on the next steps.",
+					agent.ContextBuilder.GetCurrentPhase(),
+				),
+			})
+			if len(messages) > 0 {
+				al.lastSystemPrompt.Store(messages[0].Content)
+			}
+		}
+
+		curPlanStatus := preStatus
+		if phaseLoop > 0 {
+			curPlanStatus = agent.ContextBuilder.GetPlanStatus()
+		}
+
+		var err error
+		finalContent, iteration, err = al.runLLMIteration(ctx, agent, messages, opts, task, curPlanStatus)
+		if err != nil {
+			return "", err
+		}
+
+		// 5a. Auto-advance plan phases after LLM iteration
+		postStatus := agent.ContextBuilder.GetPlanStatus()
+		if !agent.ContextBuilder.HasActivePlan() ||
+			!(postStatus == "executing" || postStatus == "review" || postStatus == "completed") {
+			break
+		}
+
 		// Intercept: if AI changed status to executing or review without user approval
 		// (from interviewing or review), validate and hold at "review".
 		if preStatus == "interviewing" || (preStatus == "review" && postStatus == "executing") {
@@ -1083,11 +1188,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 				_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 				logger.WarnCF("agent", "Reverted plan to interviewing: "+err.Error(),
 					map[string]any{"agent_id": agent.ID})
-				// Inject rejection into session history so LLM sees it next iteration
 				rejectionMsg := "[System] Plan rejected: " + err.Error() + ". Fix and try again."
 				agent.Sessions.AddMessage(opts.SessionKey, "user", rejectionMsg)
 			} else {
 				_ = agent.ContextBuilder.SetPlanStatus("review")
+				al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStatePlanReview, "")
 				if !constants.IsInternalChannel(opts.Channel) {
 					planDisplay := agent.ContextBuilder.FormatPlanDisplay()
 					_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
@@ -1098,17 +1203,22 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					})
 				}
 			}
-		} else if postStatus == "executing" && agent.ContextBuilder.GetTotalPhases() == 0 {
-			// Safeguard: executing but no phases (shouldn't happen, but be safe).
+			break
+		}
+
+		if postStatus == "executing" && agent.ContextBuilder.GetTotalPhases() == 0 {
 			_ = agent.ContextBuilder.SetPlanStatus("interviewing")
 			logger.WarnCF("agent", "Reverted plan to interviewing: no phases defined",
 				map[string]any{"agent_id": agent.ID})
-		} else if agent.ContextBuilder.IsPlanComplete() {
-			// Mark plan as completed (keep memory for review; user can /plan clear)
+			break
+		}
+
+		if agent.ContextBuilder.IsPlanComplete() {
 			total := agent.ContextBuilder.GetTotalPhases()
 			_ = agent.ContextBuilder.SetCurrentPhase(total)
 			if preStatus != "completed" {
 				_ = agent.ContextBuilder.SetPlanStatus("completed")
+				al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStatePlanCompleted, "")
 
 				// Deactivate worktree on plan completion
 				commitMsg := "plan: " + agent.ContextBuilder.Memory().GetPlanTaskName()
@@ -1128,7 +1238,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					})
 				}
 			}
-		} else if agent.ContextBuilder.IsCurrentPhaseComplete() {
+			break
+		}
+
+		if agent.ContextBuilder.IsCurrentPhaseComplete() {
+			if phaseLoop >= maxPhaseTransitions {
+				logger.WarnCF("agent", "Max phase transitions reached, stopping",
+					map[string]any{"agent_id": agent.ID, "transitions": phaseLoop})
+				break
+			}
 			prev := agent.ContextBuilder.GetCurrentPhase()
 			_ = agent.ContextBuilder.AdvancePhase()
 			next := agent.ContextBuilder.GetCurrentPhase()
@@ -1140,7 +1258,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					SkipPlaceholder: true,
 				})
 			}
+			al.notifyStateChange()
+			continue
 		}
+
+		break
 	}
 
 	al.notifyStateChange()
@@ -1176,9 +1298,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 8. Optional: send response via bus
 	if opts.SendResponse {
 		_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Channel: opts.Channel,
-			ChatID:  opts.ChatID,
-			Content: finalContent,
+			Channel:         opts.Channel,
+			ChatID:          opts.ChatID,
+			Content:         finalContent,
+			SkipPlaceholder: opts.SystemMessage, // suppress Telegram "Thinking..." for system messages
 		})
 	}
 
@@ -1256,6 +1379,24 @@ func buildPlanReminder(planStatus string) (providers.Message, bool) {
 	default:
 		return providers.Message{}, false
 	}
+	return providers.Message{Role: "user", Content: content}, true
+}
+
+// buildOrchReminder returns a reminder to use spawn/subagent during plan execution.
+// Fires on first iteration and every 3rd iteration to reinforce delegation behavior.
+func buildOrchReminder(iteration int) (providers.Message, bool) {
+	if iteration != 1 && iteration%3 != 0 {
+		return providers.Message{}, false
+	}
+	content := `[System] ORCHESTRATION mode active. You MUST delegate plan steps to subagents.
+Use spawn (non-blocking, returns immediately) or subagent (blocking, waits for result).
+Do NOT implement steps inline unless they are a single trivial tool call.
+
+To delegate, call the tool with JSON arguments:
+  Tool: spawn  Arguments: {"task": "...", "preset": "scout", "label": "..."}
+  Tool: subagent  Arguments: {"task": "...", "label": "..."}
+
+Spawn multiple independent steps in parallel for maximum throughput.`
 	return providers.Message{Role: "user", Content: content}, true
 }
 
@@ -2055,7 +2196,7 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		// Report waiting state to canvas before each LLM call.
-		al.reporter().ReportStateChange(opts.SessionKey, "waiting", "")
+		al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStateWaiting, "")
 
 		// Retry loop for context/token errors
 		maxRetries := 2
@@ -2447,7 +2588,7 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			// Report toolcall state to canvas.
-			al.reporter().ReportStateChange(opts.SessionKey, "toolcall", tc.Name)
+			al.reporter().ReportStateChange(opts.SessionKey, orch.AgentStateToolCall, tc.Name)
 
 			toolStart := time.Now()
 			toolCtx := ctx
@@ -2590,6 +2731,18 @@ func (al *AgentLoop) runLLMIteration(
 						"agent_id":    agent.ID,
 						"iteration":   iteration,
 						"plan_status": planSnapshot,
+					})
+			}
+		}
+
+		// Inject orchestration nudge during plan execution to encourage spawn usage.
+		if planSnapshot == "executing" && agent.Subagents != nil && agent.Subagents.Enabled {
+			if reminder, ok := buildOrchReminder(iteration); ok {
+				messages = append(messages, reminder)
+				logger.DebugCF("agent", "Injected orchestration nudge",
+					map[string]any{
+						"agent_id":  agent.ID,
+						"iteration": iteration,
 					})
 			}
 		}
@@ -3335,6 +3488,7 @@ func (al *AgentLoop) handlePlanCommand(args []string, sessionKey string) (string
 		if err := agent.ContextBuilder.SetPlanStatus("executing"); err != nil {
 			return fmt.Sprintf("Error: %v", err), true
 		}
+		al.reporter().ReportStateChange(sessionKey, orch.AgentStatePlanExecuting, "")
 		al.planStartPending = true
 		clearHistory := len(args) > 1 && args[1] == "clear"
 		al.planClearHistory = clearHistory

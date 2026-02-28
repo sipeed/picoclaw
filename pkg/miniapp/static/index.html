@@ -884,9 +884,14 @@
         <div class="orch-badge-label">CNDR</div>
         <div class="orch-badge-dot"></div>
       </div>
-      <div class="orch-badge alive" id="orch-badge-secretary">
+      <div class="orch-badge" id="orch-badge-secretary">
         <div class="orch-badge-emoji">👩‍💼</div>
         <div class="orch-badge-label">SEC</div>
+        <div class="orch-badge-dot"></div>
+      </div>
+      <div class="orch-badge alive" id="orch-badge-heartbeat">
+        <div class="orch-badge-emoji">🕊️</div>
+        <div class="orch-badge-label">HB</div>
         <div class="orch-badge-dot"></div>
       </div>
     </div>
@@ -1810,7 +1815,7 @@ var _orchLastTs = null;
 var _orchBOB      = [0, -1, -2, -1];
 var _orchFRAME_MS = {idle:450, waiting:650, toolcall:90, talking:280, entering:220, exiting:220};
 var _orchWALK     = 55;
-var _orchConductor, _orchSecretary, _orchSubagents, _orchSlots, _orchFreeSlots;
+var _orchConductor, _orchSecretary, _orchHeartbeat, _orchSubagents, _orchSlots, _orchFreeSlots;
 
 function _orchMakeChar(id, emoji, home) {
   return {id:id, emoji:emoji, x:home.x, y:home.y, home:home, target:null, state:'idle',
@@ -1819,7 +1824,10 @@ function _orchMakeChar(id, emoji, home) {
 function _orchInitChars() {
   _orchConductor = _orchMakeChar('conductor', '👑',  MAP_POSITIONS.conductor);
   _orchSecretary = _orchMakeChar('secretary', '👩‍💼', MAP_POSITIONS.secretary);
-  _orchConductor.alive = true; _orchSecretary.alive = true;
+  _orchHeartbeat = _orchMakeChar('heartbeat', '🕊️',  MAP_POSITIONS.heartbeat || {x:230,y:58});
+  _orchConductor.alive = true; _orchSecretary.alive = false; _orchHeartbeat.alive = true;
+  _orchConductor.statusText = null;
+  _orchHeartbeat.facing = 1; _orchHeartbeat.flipTimer = 0;
   var ps = [{id:'s0',emoji:'🔍'},{id:'s1',emoji:'📊'},{id:'s2',emoji:'💻'},
             {id:'s3',emoji:'🔧'},{id:'s4',emoji:'🎯'}];
   _orchSubagents = ps.map(function(p,i){
@@ -1828,7 +1836,7 @@ function _orchInitChars() {
   });
   _orchSlots = {}; _orchFreeSlots = _orchSubagents.slice();
 }
-function _orchAllChars() { return [_orchConductor, _orchSecretary].concat(_orchSubagents); }
+function _orchAllChars() { return [_orchConductor, _orchSecretary, _orchHeartbeat].concat(_orchSubagents); }
 
 function _orchSyncBadge(id, state, alive) {
   var el = document.getElementById('orch-badge-' + id); if (!el) return;
@@ -1838,12 +1846,30 @@ function _orchSyncBadge(id, state, alive) {
     + (state==='toolcall'? ' toolcall' : '')
     + (state==='waiting' ? ' waiting'  : '');
 }
-function _orchSetState(c, state) { c.state=state; _orchSyncBadge(c.id, state, c.alive); }
+function _orchSetState(c, state, tool) {
+  c.state=state; _orchSyncBadge(c.id, state, c.alive);
+  if (c === _orchConductor) {
+    if      (state==='waiting')           c.statusText='🤔';
+    else if (state==='toolcall')          c.statusText='⌨';
+    else if (state==='user_waiting')      c.statusText='⏳';
+    else if (state==='plan_interviewing') c.statusText='📋';
+    else if (state==='plan_review')       c.statusText='🔍';
+    else if (state==='plan_executing')    c.statusText='▶️';
+    else if (state==='plan_completed')    c.statusText='✅';
+    else                                  c.statusText=null;
+    // Secretary appears only during plan mode.
+    var inPlan = state.indexOf('plan_')===0;
+    if (_orchSecretary.alive !== inPlan) {
+      _orchSecretary.alive = inPlan;
+      _orchSyncBadge('secretary', _orchSecretary.state, _orchSecretary.alive);
+    }
+  }
+}
 function _orchMoveTo(c, pos, cb) { c.target=pos; c._onArrive=cb||null; }
 function _orchSay(c, text, ttl)  { c.bubble={text:text, ttl:ttl||2200}; }
 
 function _orchCharForId(id) {
-  if (id === 'heartbeat') return _orchSecretary;
+  if (id === 'heartbeat') return _orchHeartbeat;
   if (_orchSlots[id])     return _orchSlots[id];
   return _orchConductor;
 }
@@ -1865,7 +1891,16 @@ function _orchGC(id) {
     _orchSetState(c,'exiting');
     _orchMoveTo(c, MAP_POSITIONS.door, function(){ c.alive=false; _orchSetState(c,'idle'); });
   } else {
-    var ch=_orchCharForId(id); ch.alive=false; _orchSetState(ch,'idle');
+    var ch=_orchCharForId(id);
+    if (ch === _orchHeartbeat) {
+      // Heartbeat pigeon is permanent — keep alive, just return to idle.
+      _orchSetState(ch,'idle');
+    } else if (ch === _orchConductor) {
+      // Conductor is permanent — keep alive, show ⏳ waiting for user.
+      _orchSetState(ch,'user_waiting');
+    } else {
+      ch.alive=false; _orchSetState(ch,'idle');
+    }
   }
 }
 function _orchConverse(fromId, toId, text) {
@@ -1885,16 +1920,44 @@ function _orchConverse(fromId, toId, text) {
 function _orchUpdate(dt) {
   _orchAllChars().forEach(function(c){
     if (!c.alive && c.state!=='entering') return;
-    c.frameTimer+=dt;
-    var dur=_orchFRAME_MS[c.state]||450;
-    if (c.frameTimer>=dur){ c.frame=(c.frame+1)%4; c.frameTimer-=dur; }
+    // Frame animation (bob): pigeon uses state-specific timing instead of shared table.
+    if (c === _orchHeartbeat) {
+      if (c.state === 'idle') {
+        c.frame = 0; // pin still — no bob when inactive
+      } else {
+        c.frameTimer += dt;
+        var pDur = c.state==='toolcall' ? 130 : 380;
+        if (c.frameTimer >= pDur) { c.frame=(c.frame+1)%4; c.frameTimer-=pDur; }
+      }
+    } else {
+      c.frameTimer+=dt;
+      var dur=_orchFRAME_MS[c.state]||450;
+      if (c.frameTimer>=dur){ c.frame=(c.frame+1)%4; c.frameTimer-=dur; }
+    }
     if (c.target){
       var dx=c.target.x-c.x, dy=c.target.y-c.y, dist=Math.sqrt(dx*dx+dy*dy);
       if (dist>1.5){ var spd=_orchWALK*dt/1000; c.x+=dx/dist*spd; c.y+=dy/dist*spd; }
       else { c.x=c.target.x; c.y=c.target.y; c.target=null; if(c._onArrive){c._onArrive();c._onArrive=null;} }
     }
     if (c.bubble){ c.bubble.ttl-=dt; if(c.bubble.ttl<=0) c.bubble=null; }
+    // Heartbeat pigeon: direction flip rate reflects activity level.
+    if (c === _orchHeartbeat) {
+      if (c.target) {
+        var pdx = c.target.x - c.x;
+        if (Math.abs(pdx) > 1) c.facing = pdx > 0 ? 1 : -1;
+      } else {
+        var flipRate = c.state==='toolcall' ? 280 : c.state==='waiting' ? 600 : 2800;
+        c.flipTimer += dt;
+        if (c.flipTimer >= flipRate) { c.flipTimer -= flipRate; c.facing = -c.facing; }
+      }
+    }
   });
+}
+function _orchDrawStatus(c) {
+  if (!c.statusText) return;
+  var yOff=_orchBOB[c.frame], cx=Math.floor(c.x), cy=Math.floor(c.y+yOff)-20;
+  orchCtx.font='11px serif'; orchCtx.textAlign='center'; orchCtx.textBaseline='middle';
+  orchCtx.fillText(c.statusText, cx, cy);
 }
 function _orchDrawBubble(c) {
   if (!c.bubble) return;
@@ -1917,12 +1980,26 @@ function _orchDrawChar(c) {
   } else if (c.state==='waiting'){
     orchCtx.fillStyle='rgba(96,165,250,0.25)'; orchCtx.beginPath();
     orchCtx.arc(cx,cy,11,0,Math.PI*2); orchCtx.fill();
+  } else if (c.state==='user_waiting' || c.state==='plan_review'){
+    orchCtx.fillStyle='rgba(167,139,250,0.18)'; orchCtx.beginPath();
+    orchCtx.arc(cx,cy,10,0,Math.PI*2); orchCtx.fill();
+  } else if (c.state==='plan_executing'){
+    orchCtx.fillStyle='rgba(74,222,128,0.18)'; orchCtx.beginPath();
+    orchCtx.arc(cx,cy,10,0,Math.PI*2); orchCtx.fill();
   }
   orchCtx.font='18px serif'; orchCtx.textAlign='center'; orchCtx.textBaseline='middle';
-  orchCtx.fillText(c.emoji, cx, cy);
+  if (c.facing === -1) {
+    orchCtx.save();
+    orchCtx.translate(cx, cy); orchCtx.scale(-1, 1);
+    orchCtx.fillText(c.emoji, 0, 0);
+    orchCtx.restore();
+  } else {
+    orchCtx.fillText(c.emoji, cx, cy);
+  }
   orchCtx.font='6px Silkscreen,monospace'; orchCtx.textAlign='center'; orchCtx.textBaseline='top';
   orchCtx.fillStyle=c.state==='talking'?'#facc15':'#3a4a7a';
   orchCtx.fillText(c.id.toUpperCase(), cx, cy+11);
+  _orchDrawStatus(c);
   _orchDrawBubble(c);
 }
 function _orchRender(ts) {
@@ -1964,7 +2041,7 @@ function connectOrchWs() {
     } else if (msg.type==='event') {
       var ev=msg.event||{};
       if (ev.type==='agent_spawn')  _orchSpawn(ev.id);
-      if (ev.type==='agent_state')  { var c=_orchCharForId(ev.id); if(c) _orchSetState(c,ev.state); }
+      if (ev.type==='agent_state')  { var c=_orchCharForId(ev.id); if(c) _orchSetState(c,ev.state,ev.tool); }
       if (ev.type==='agent_gc')     _orchGC(ev.id);
       if (ev.type==='conversation') _orchConverse(ev.from, ev.to, ev.text);
     }
