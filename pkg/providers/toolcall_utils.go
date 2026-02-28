@@ -5,7 +5,11 @@
 
 package providers
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
+)
 
 // NormalizeToolCall normalizes a ToolCall to ensure all fields are properly populated.
 // It handles cases where Name/Arguments might be in different locations (top-level vs Function)
@@ -31,12 +35,18 @@ func NormalizeToolCall(tc ToolCall) ToolCall {
 		}
 	}
 
+	// Extract thought_signature from ExtraContent if present
+	if normalized.ThoughtSignature == "" && normalized.ExtraContent != nil && normalized.ExtraContent.Google != nil {
+		normalized.ThoughtSignature = normalized.ExtraContent.Google.ThoughtSignature
+	}
+
 	// Ensure Function is populated with consistent values
 	argsJSON, _ := json.Marshal(normalized.Arguments)
 	if normalized.Function == nil {
-		normalized.Function = &FunctionCall{
-			Name:      normalized.Name,
-			Arguments: string(argsJSON),
+		normalized.Function = &protocoltypes.FunctionCall{
+			Name:             normalized.Name,
+			Arguments:        string(argsJSON),
+			ThoughtSignature: normalized.ThoughtSignature,
 		}
 	} else {
 		if normalized.Function.Name == "" {
@@ -47,6 +57,18 @@ func NormalizeToolCall(tc ToolCall) ToolCall {
 		}
 		if normalized.Function.Arguments == "" {
 			normalized.Function.Arguments = string(argsJSON)
+		}
+		if normalized.Function.ThoughtSignature == "" {
+			normalized.Function.ThoughtSignature = normalized.ThoughtSignature
+		}
+	}
+
+	// Ensure ExtraContent reflects the thought_signature for Gemini 3 round-trips
+	if normalized.ThoughtSignature != "" && (normalized.ExtraContent == nil || normalized.ExtraContent.Google == nil) {
+		normalized.ExtraContent = &protocoltypes.ExtraContent{
+			Google: &protocoltypes.GoogleExtra{
+				ThoughtSignature: normalized.ThoughtSignature,
+			},
 		}
 	}
 

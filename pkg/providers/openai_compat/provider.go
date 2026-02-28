@@ -238,6 +238,7 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	for _, tc := range choice.Message.ToolCalls {
 		arguments := make(map[string]any)
 		name := ""
+		argumentsStr := ""
 
 		// Extract thought_signature from Gemini/Google-specific extra content
 		thoughtSignature := ""
@@ -247,6 +248,7 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 
 		if tc.Function != nil {
 			name = tc.Function.Name
+			argumentsStr = tc.Function.Arguments
 			if tc.Function.Arguments != "" {
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
 					log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
@@ -258,9 +260,14 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		// Build ToolCall with ExtraContent for Gemini 3 thought_signature persistence
 		toolCall := ToolCall{
 			ID:               tc.ID,
+			Type:             tc.Type,
 			Name:             name,
 			Arguments:        arguments,
 			ThoughtSignature: thoughtSignature,
+			Function: &protocoltypes.FunctionCall{
+				Name:      name,
+				Arguments: argumentsStr,
+			},
 		}
 
 		if thoughtSignature != "" {

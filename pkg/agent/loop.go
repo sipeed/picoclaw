@@ -1310,7 +1310,7 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 			}
 			return fmt.Sprintf("Switched target channel to %s", value), true
 		default:
-			return fmt.Sprintf("Unknown switch target: %s", target), true
+			return fmt.Sprintf("Unknown switch target: %s", target)
 		}
 	}
 
