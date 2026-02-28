@@ -60,6 +60,19 @@ android {
         buildConfig = true
     }
 
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
+
+    splits {
+        abi {
+            isEnable = project.hasProperty("enableAbiSplit")
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     sourceSets {
         getByName("termux") { java.srcDirs("src/termux/java") }
         getByName("embedded") { java.srcDirs("src/embedded/java") }

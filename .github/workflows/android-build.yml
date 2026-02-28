@@ -5,15 +5,25 @@ on:
     branches: ["main"]
     paths:
       - "android/**"
+      - "cmd/**"
+      - "pkg/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
       - ".github/workflows/android-build.yml"
   pull_request:
     paths:
       - "android/**"
+      - "cmd/**"
+      - "pkg/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
       - ".github/workflows/android-build.yml"
   workflow_dispatch:
 
 jobs:
-  build:
+  termux:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,12 +53,8 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          cat > keystore.properties <<EOF
-          storeFile=release.keystore
-          storePassword=$STORE_PASSWORD
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
-          EOF
+          printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
 
       - name: Build release APK
         run: ./gradlew assembleTermuxRelease
@@ -56,5 +62,55 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: clawdroid-release-apk
-          path: android/app/build/outputs/apk/termuxRelease/*.apk
+          name: clawdroid-termux-release-apk
+          path: android/app/build/outputs/apk/termux/release/*.apk
+
+  embedded:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build Go binaries for Android
+        run: make build-android
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        working-directory: android
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+
+      - name: Create keystore.properties
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: android
+        run: |
+          printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
+
+      - name: Build release APKs
+        working-directory: android
+        run: ./gradlew assembleEmbeddedRelease -PenableAbiSplit
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawdroid-embedded-release-apks
+          path: android/app/build/outputs/apk/embedded/release/*.apk

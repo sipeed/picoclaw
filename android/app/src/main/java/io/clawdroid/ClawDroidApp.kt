@@ -2,6 +2,8 @@ package io.clawdroid
 
 import android.app.Application
 import android.util.Log
+import io.clawdroid.backend.api.BackendLifecycle
+import io.clawdroid.backend.api.BackendState
 import io.clawdroid.backend.api.GatewaySettingsStore
 import io.clawdroid.backend.config.ConfigApiClient
 import io.clawdroid.backend.config.configModule
@@ -10,7 +12,9 @@ import io.clawdroid.di.appModule
 import io.clawdroid.di.flavorModule
 import io.clawdroid.receiver.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.jsonObject
@@ -29,14 +33,22 @@ class ClawDroidApp : Application() {
         NotificationHelper.createNotificationChannel(this)
 
         val koin = koinApp.koin
+        val backendLifecycle: BackendLifecycle = koin.get()
         val settingsStore: GatewaySettingsStore = koin.get()
         val wsClient: WebSocketClient = koin.get()
         val configApiClient: ConfigApiClient = koin.get()
         val scope: CoroutineScope = koin.get()
+        scope.launch { backendLifecycle.start() }
         scope.launch {
-            // Only react when httpPort or apiKey actually change
-            settingsStore.settings
-                .map { it.httpPort to it.apiKey }
+            // Wait for backend to be running before connecting WebSocket
+            combine(
+                settingsStore.settings
+                    .map { it.httpPort to it.apiKey }
+                    .distinctUntilChanged(),
+                backendLifecycle.state,
+            ) { settings, state -> settings to state }
+                .filter { (_, state) -> state == BackendState.RUNNING }
+                .map { (settings, _) -> settings }
                 .distinctUntilChanged()
                 .collect {
                     // Fetch WS connection info from config API

@@ -77,8 +77,8 @@ jobs:
             --draft=${{ inputs.draft }} \
             --prerelease=${{ inputs.prerelease }}
 
-  android:
-    name: Android Release APK
+  android-termux:
+    name: Android Termux APK
     needs: create-tag
     runs-on: ubuntu-latest
     permissions:
@@ -112,24 +112,94 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          cat > keystore.properties <<EOF
-          storeFile=release.keystore
-          storePassword=$STORE_PASSWORD
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
-          EOF
+          printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
 
       - name: Build release APK
         run: ./gradlew assembleTermuxRelease
 
       - name: Rename APK with version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          mv app/build/outputs/apk/termuxRelease/app-termux-release.apk \
-             app/build/outputs/apk/termuxRelease/clawdroid-${{ inputs.tag }}.apk
+          mv app/build/outputs/apk/termux/release/app-termux-release.apk \
+             app/build/outputs/apk/termux/release/clawdroid-termux-"$RELEASE_TAG".apk
 
       - name: Upload APK to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          gh release upload "${{ inputs.tag }}" \
-            app/build/outputs/apk/termuxRelease/clawdroid-${{ inputs.tag }}.apk
+          gh release upload "$RELEASE_TAG" \
+            app/build/outputs/apk/termux/release/clawdroid-termux-"$RELEASE_TAG".apk
+
+  android-embedded:
+    name: Android Embedded APKs
+    needs: create-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build Go binaries for Android
+        run: make build-android
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        working-directory: android
+        run: echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+
+      - name: Create keystore.properties
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: android
+        run: |
+          printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
+
+      - name: Build release APKs
+        working-directory: android
+        run: ./gradlew assembleEmbeddedRelease -PenableAbiSplit
+
+      - name: Rename APKs with version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        working-directory: android/app/build/outputs/apk/embedded/release
+        run: |
+          mv app-embedded-arm64-v8a-release.apk     clawdroid-"$RELEASE_TAG"-arm64-v8a.apk
+          mv app-embedded-armeabi-v7a-release.apk    clawdroid-"$RELEASE_TAG"-armeabi-v7a.apk
+          mv app-embedded-x86_64-release.apk         clawdroid-"$RELEASE_TAG"-x86_64.apk
+          mv app-embedded-universal-release.apk      clawdroid-"$RELEASE_TAG"-universal.apk
+
+      - name: Upload APKs to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        working-directory: android/app/build/outputs/apk/embedded/release
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            clawdroid-"$RELEASE_TAG"-arm64-v8a.apk \
+            clawdroid-"$RELEASE_TAG"-armeabi-v7a.apk \
+            clawdroid-"$RELEASE_TAG"-x86_64.apk \
+            clawdroid-"$RELEASE_TAG"-universal.apk

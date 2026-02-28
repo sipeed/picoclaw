@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test build-android
+.PHONY: all build install uninstall clean help test build-android build-android-arm64 build-android-x86_64 build-android-arm clean-android
 
 # Build variables
 BINARY_NAME=clawdroid
@@ -22,6 +22,9 @@ export GOTOOLCHAIN?=local
 INSTALL_PREFIX?=$(HOME)/.local
 INSTALL_BIN_DIR=$(INSTALL_PREFIX)/bin
 INSTALL_MAN_DIR=$(INSTALL_PREFIX)/share/man/man1
+
+# Android
+ANDROID_JNILIBS_DIR=android/app/src/embedded/jniLibs
 
 # Workspace and Skills
 CLAWDROID_HOME?=$(HOME)/.clawdroid
@@ -72,19 +75,49 @@ build-all: generate
 	GOOS=linux GOARCH=arm $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./$(CMD_DIR)
 	@echo "All builds complete"
 
-## build-android: Build clawdroid for Android (embedded flavor jniLibs)
+## build-android: Build clawdroid for Android (all architectures)
 build-android: generate
-	@echo "Building $(BINARY_NAME) for Android..."
-	@mkdir -p android/app/src/embedded/jniLibs/arm64-v8a
-	@mkdir -p android/app/src/embedded/jniLibs/x86_64
-	@mkdir -p android/app/src/embedded/jniLibs/armeabi-v7a
+	@echo "Building $(BINARY_NAME) for Android (all architectures)..."
+	@mkdir -p $(ANDROID_JNILIBS_DIR)/arm64-v8a
+	@mkdir -p $(ANDROID_JNILIBS_DIR)/x86_64
+	@mkdir -p $(ANDROID_JNILIBS_DIR)/armeabi-v7a
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath $(LDFLAGS) \
-		-o android/app/src/embedded/jniLibs/arm64-v8a/libclawdroid.so ./$(CMD_DIR)
+		-o $(ANDROID_JNILIBS_DIR)/arm64-v8a/libclawdroid.so ./$(CMD_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath $(LDFLAGS) \
-		-o android/app/src/embedded/jniLibs/x86_64/libclawdroid.so ./$(CMD_DIR)
+		-o $(ANDROID_JNILIBS_DIR)/x86_64/libclawdroid.so ./$(CMD_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 $(GO) build -trimpath $(LDFLAGS) \
-		-o android/app/src/embedded/jniLibs/armeabi-v7a/libclawdroid.so ./$(CMD_DIR)
-	@echo "Android build complete"
+		-o $(ANDROID_JNILIBS_DIR)/armeabi-v7a/libclawdroid.so ./$(CMD_DIR)
+	@echo "Android build complete (all architectures)"
+
+## build-android-arm64: Build clawdroid for Android (arm64-v8a only)
+build-android-arm64: generate
+	@echo "Building $(BINARY_NAME) for Android (arm64-v8a)..."
+	@mkdir -p $(ANDROID_JNILIBS_DIR)/arm64-v8a
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath $(LDFLAGS) \
+		-o $(ANDROID_JNILIBS_DIR)/arm64-v8a/libclawdroid.so ./$(CMD_DIR)
+	@echo "Android build complete (arm64-v8a)"
+
+## build-android-x86_64: Build clawdroid for Android (x86_64 only)
+build-android-x86_64: generate
+	@echo "Building $(BINARY_NAME) for Android (x86_64)..."
+	@mkdir -p $(ANDROID_JNILIBS_DIR)/x86_64
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath $(LDFLAGS) \
+		-o $(ANDROID_JNILIBS_DIR)/x86_64/libclawdroid.so ./$(CMD_DIR)
+	@echo "Android build complete (x86_64)"
+
+## build-android-arm: Build clawdroid for Android (armeabi-v7a only)
+build-android-arm: generate
+	@echo "Building $(BINARY_NAME) for Android (armeabi-v7a)..."
+	@mkdir -p $(ANDROID_JNILIBS_DIR)/armeabi-v7a
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 $(GO) build -trimpath $(LDFLAGS) \
+		-o $(ANDROID_JNILIBS_DIR)/armeabi-v7a/libclawdroid.so ./$(CMD_DIR)
+	@echo "Android build complete (armeabi-v7a)"
+
+## clean-android: Remove Android jniLibs build artifacts
+clean-android:
+	@echo "Cleaning Android build artifacts..."
+	@rm -rf $(ANDROID_JNILIBS_DIR)
+	@echo "Android clean complete"
 
 ## install: Install clawdroid to system and copy builtin skills
 install: build
