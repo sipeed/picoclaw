@@ -9,6 +9,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -666,10 +667,35 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			errMsg := strings.ToLower(err.Error())
-			isContextError := strings.Contains(errMsg, "token") ||
-				strings.Contains(errMsg, "context") ||
+
+			// Check if this is a network/HTTP timeout — not a context window error.
+			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(errMsg, "deadline exceeded") ||
+				strings.Contains(errMsg, "client.timeout") ||
+				strings.Contains(errMsg, "timed out") ||
+				strings.Contains(errMsg, "timeout exceeded")
+
+			// Detect real context window / token limit errors, excluding network timeouts.
+			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
+				strings.Contains(errMsg, "context window") ||
+				strings.Contains(errMsg, "maximum context length") ||
+				strings.Contains(errMsg, "token limit") ||
+				strings.Contains(errMsg, "too many tokens") ||
+				strings.Contains(errMsg, "max_tokens") ||
 				strings.Contains(errMsg, "invalidparameter") ||
-				strings.Contains(errMsg, "length")
+				strings.Contains(errMsg, "prompt is too long") ||
+				strings.Contains(errMsg, "request too large"))
+
+			if isTimeoutError && retry < maxRetries {
+				backoff := time.Duration(retry+1) * 5 * time.Second
+				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
+					"error":   err.Error(),
+					"retry":   retry,
+					"backoff": backoff.String(),
+				})
+				time.Sleep(backoff)
+				continue
+			}
 
 			if isContextError && retry < maxRetries {
 				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]any{
