@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -112,6 +113,16 @@ func copyDirectory(src, dst string) error {
 		_, err = io.Copy(dstFile, srcFile)
 		return err
 	})
+}
+
+func init() {
+	// Override DNS resolver for CGO_ENABLED=0 builds (Android APK).
+	// The pure-Go resolver falls back to [::1]:53 on Android because
+	// /etc/resolv.conf does not exist. When CGO is enabled (Termux),
+	// the cgo resolver is used instead and this Dial is never called.
+	net.DefaultResolver.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "udp", "8.8.8.8:53")
+	}
 }
 
 func main() {
