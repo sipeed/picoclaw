@@ -304,6 +304,7 @@ PicoClaw 支持多种聊天平台，使您的 Agent 能够连接到任何地方�
 | **Line**             | ⭐⭐⭐ 较难 | 需要 HTTPS Webhook                        | [查看文档](docs/channels/line/README.zh.md)                                                                     |
 | **OneBot**           | ⭐⭐ 中等   | 兼容 NapCat/Go-CQHTTP，社区生态丰富       | [查看文档](docs/channels/onebot/README.zh.md)                                                                   |
 | **MaixCam**          | ⭐ 简单     | 专为 AI 摄像头设计的硬件集成通道          | [查看文档](docs/channels/maixcam/README.zh.md)                                                                  |
+| **小艺 (XiaoYi)**    | ⭐⭐ 中等   | 华为小艺 A2A 协议，支持语音助手生态       | [查看文档](docs/channels/xiaoyi/README.zh.md)                                                                  |
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> 加入 Agent 社交网络
 
