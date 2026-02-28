@@ -808,7 +808,7 @@ func isExecutable(path string) bool {
 		}
 		return false
 	}
-	return info.Mode()&0111 != 0
+	return info.Mode()&0o111 != 0
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
-
 
 const maxWSClients = 4
 
@@ -21,7 +21,6 @@ const (
 type wsClient struct {
 	conn *websocket.Conn
 }
-
 
 var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -42,7 +41,6 @@ var wsUpgrader = websocket.Upgrader{
 }
 
 // NewHandler creates a new Mini App handler.
-
 
 // wsLogs serves a WebSocket endpoint that streams log entries in real time.
 func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +134,7 @@ func (h *Handler) wsLogs(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			entry.Caller = ""                              // strip for security
+			entry.Caller = ""                                  // strip for security
 			entry.Fields = logger.SanitizeFields(entry.Fields) // mask sensitive values
 			if err := conn.WriteJSON(map[string]any{"type": "entry", "entry": entry}); err != nil {
 				return

@@ -186,7 +186,7 @@ func findToolCallBlock(text string) (blockStart, blockEnd int, content string, f
 	return 0, 0, "", false
 }
 
-// --- XML tool call extraction ---
+// ExtractXMLToolCalls extracts tool calls from XML-formatted text.
 //
 // Expected format:
 //
@@ -195,7 +195,6 @@ func findToolCallBlock(text string) (blockStart, blockEnd int, content string, f
 //	<parameter name="param">value</parameter>
 //	</invoke>
 //	</ns:toolcall>
-// ExtractXMLToolCalls is the exported version for use by the agent loop.
 func ExtractXMLToolCalls(text string) []ToolCall {
 	return extractXMLToolCalls(text)
 }

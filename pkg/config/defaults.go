@@ -10,12 +10,12 @@ func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:           "~/.picoclaw/workspace",
-				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "",
-				MaxTokens:           32768,
-				Temperature:         nil, // nil means use provider default
+				Workspace:            "~/.picoclaw/workspace",
+				RestrictToWorkspace:  true,
+				Provider:             "",
+				Model:                "",
+				MaxTokens:            32768,
+				Temperature:          nil, // nil means use provider default
 				MaxToolIterations:    50,
 				TaskReminderInterval: 5,
 			},

@@ -29,6 +29,7 @@ func (r *reporterSpy) ReportStateChange(id, state, tool string) {
 	r.calls = append(r.calls, spyCall{state, tool})
 	r.mu.Unlock()
 }
+
 func (r *reporterSpy) snapshot() []spyCall {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -77,6 +78,7 @@ func (t *echoTool) Description() string { return "echo" }
 func (t *echoTool) Parameters() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
 }
+
 func (t *echoTool) Execute(_ context.Context, _ map[string]any) *ToolResult {
 	return &ToolResult{ForLLM: "echoed"}
 }

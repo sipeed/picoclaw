@@ -20,7 +20,6 @@ var (
 
 // IsAudioFile checks if a file is an audio file based on its filename extension and content type.
 func IsAudioFile(filename, contentType string) bool {
-
 	for _, ext := range audioExtensions {
 		if strings.HasSuffix(strings.ToLower(filename), ext) {
 			return true

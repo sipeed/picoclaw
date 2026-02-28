@@ -44,7 +44,7 @@ When results come back, synthesize and decide the next fork.`
 
 type ContextBuilder struct {
 	workspace            string
-	workDir              string              // session-specific working directory (worktree or project subdir)
+	workDir              string // session-specific working directory (worktree or project subdir)
 	skillsLoader         *skills.SkillsLoader
 	memory               *MemoryStore
 	tools                *tools.ToolRegistry // Direct reference to tool registry

@@ -11,7 +11,7 @@ import (
 
 // DayStats holds token usage for a single day.
 type DayStats struct {
-	Date             string `json:"date"`              // "2006-01-02"
+	Date             string `json:"date"` // "2006-01-02"
 	PromptTokens     int64  `json:"prompt_tokens"`
 	CompletionTokens int64  `json:"completion_tokens"`
 	TotalTokens      int64  `json:"total_tokens"`
@@ -43,7 +43,7 @@ type Tracker struct {
 // NewTracker creates a tracker that persists to {workspace}/state/stats.json.
 func NewTracker(workspace string) *Tracker {
 	stateDir := filepath.Join(workspace, "state")
-	os.MkdirAll(stateDir, 0755)
+	os.MkdirAll(stateDir, 0o755)
 
 	t := &Tracker{
 		stateFile: filepath.Join(stateDir, "stats.json"),
@@ -135,7 +135,7 @@ func (t *Tracker) save() {
 		return
 	}
 	tmp := t.stateFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return
 	}
 	if err := os.Rename(tmp, t.stateFile); err != nil {

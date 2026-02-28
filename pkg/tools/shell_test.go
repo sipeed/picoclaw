@@ -370,7 +370,7 @@ func TestGuardCommand_ExecutableBinaryAllowed(t *testing.T) {
 
 	// Create a fake executable outside the workspace
 	execPath := filepath.Join(externalDir, "mybin")
-	os.WriteFile(execPath, []byte("#!/bin/sh\necho ok"), 0755)
+	os.WriteFile(execPath, []byte("#!/bin/sh\necho ok"), 0o755)
 
 	tool, _ := NewExecTool(workspace, true)
 
@@ -393,7 +393,7 @@ func TestGuardCommand_ExecutableBinaryAllowed_Windows(t *testing.T) {
 
 	// Create a fake .exe outside the workspace
 	execPath := filepath.Join(externalDir, "tool.exe")
-	os.WriteFile(execPath, []byte("MZ"), 0644)
+	os.WriteFile(execPath, []byte("MZ"), 0o644)
 
 	tool, _ := NewExecTool(workspace, true)
 
@@ -416,7 +416,7 @@ func TestGuardCommand_NonExecutableOutsideBlocked(t *testing.T) {
 
 	// Create a regular (non-executable) file outside workspace
 	dataFile := filepath.Join(externalDir, "secret.txt")
-	os.WriteFile(dataFile, []byte("secret data"), 0644)
+	os.WriteFile(dataFile, []byte("secret data"), 0o644)
 
 	tool, _ := NewExecTool(workspace, true)
 
@@ -477,7 +477,7 @@ func TestGuardCommand_AbsolutePathInsideWorkspace(t *testing.T) {
 	tool, _ := NewExecTool(workspace, true)
 
 	innerDir := filepath.Join(workspace, "projects", "myapp")
-	os.MkdirAll(innerDir, 0755)
+	os.MkdirAll(innerDir, 0o755)
 
 	cmd := "ls " + innerDir
 	result := tool.guardCommand(cmd, workspace)
@@ -514,7 +514,7 @@ func TestGuardCommand_PathTraversal(t *testing.T) {
 func TestGuardCommand_CdWithAbsoluteWorkspacePath(t *testing.T) {
 	workspace := t.TempDir()
 	innerDir := filepath.Join(workspace, "projects", "foo")
-	os.MkdirAll(innerDir, 0755)
+	os.MkdirAll(innerDir, 0o755)
 
 	tool, _ := NewExecTool(workspace, true)
 

@@ -272,7 +272,7 @@ func (p *Provider) ChatStream(
 		return nil, err
 	}
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.httpClient.Do(req) //nolint:bodyclose // closed in goroutine or error path below
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -626,4 +626,3 @@ type streamToolCallAcc struct {
 	Name      string
 	Arguments strings.Builder
 }
-
