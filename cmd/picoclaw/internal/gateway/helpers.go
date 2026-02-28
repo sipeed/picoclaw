@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -216,7 +218,8 @@ func gatewayCmd(debug bool, orchestration bool) error {
 				if certErr != nil {
 					logger.ErrorCF("miniapp", "Failed to fetch TLS cert", map[string]any{"error": certErr.Error()})
 				} else {
-					webAppURL = fmt.Sprintf("https://%s:%d/miniapp", hostname, cfg.Gateway.Port)
+					hostPort := net.JoinHostPort(hostname, strconv.Itoa(cfg.Gateway.Port))
+					webAppURL = "https://" + hostPort + "/miniapp"
 					cfg.Channels.Telegram.WebAppURL = webAppURL
 					tlsCert, tlsKey = certFile, keyFile
 					useTLS = true
@@ -268,7 +271,10 @@ func gatewayCmd(debug bool, orchestration bool) error {
 			cfg.Gateway.Port,
 		)
 	} else {
-		fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+		fmt.Printf(
+			"✓ Health endpoints available at http://%s:%d/health and /ready\n",
+			cfg.Gateway.Host, cfg.Gateway.Port,
+		)
 	}
 
 	go agentLoop.Run(ctx)

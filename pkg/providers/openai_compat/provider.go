@@ -259,7 +259,7 @@ func (p *Provider) CanStream() bool {
 
 // ChatStream opens an SSE connection and returns a channel of StreamEvent.
 // The channel is closed when the stream ends or an error occurs.
-// Cancelling ctx will abort the HTTP request and close the channel.
+// Canceling ctx will abort the HTTP request and close the channel.
 func (p *Provider) ChatStream(
 	ctx context.Context,
 	messages []Message,
@@ -294,7 +294,7 @@ func (p *Provider) ChatStream(
 }
 
 // readSSEIntoChannel reads SSE lines from r and sends StreamEvent values on ch.
-// It returns when the stream ends, an error occurs, or ctx is cancelled.
+// It returns when the stream ends, an error occurs, or ctx is canceled.
 func readSSEIntoChannel(ctx context.Context, r io.Reader, ch chan<- protocoltypes.StreamEvent) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)

@@ -59,7 +59,7 @@ func TestStripThinkBlocks_ClosedThenUnclosed(t *testing.T) {
 
 func TestDetectRepetitionLoop_HighRepetition(t *testing.T) {
 	// Repeat a short phrase many times → should be detected
-	phrase := "結構本格的なコード"
+	phrase := "結構本格的なコード" //nolint:gosmopolitan // CJK test data
 	repeated := strings.Repeat(phrase, 300)
 	if !DetectRepetitionLoop(repeated) {
 		t.Fatal("DetectRepetitionLoop should return true for highly repetitive text")

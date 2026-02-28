@@ -146,8 +146,6 @@ var (
 	reStatus      = regexp.MustCompile(`(?m)^> Status:\s*(.+)`)
 	rePhase       = regexp.MustCompile(`(?m)^> Phase:\s*(\d+)`)
 	rePhaseHeader = regexp.MustCompile(`(?m)^## Phase (\d+):\s*(.*)`)
-	reStepDone    = regexp.MustCompile(`(?m)^- \[x\] `)
-	reStepTodo    = regexp.MustCompile(`(?m)^- \[ \] `)
 	reWorkDir     = regexp.MustCompile(`(?m)^> WorkDir:\s*(.+)`)
 )
 
@@ -182,16 +180,16 @@ func (ms *MemoryStore) GetCurrentPhase() int {
 func (ms *MemoryStore) GetTotalPhases() int {
 	content := ms.ReadLongTerm()
 	matches := rePhaseHeader.FindAllStringSubmatch(content, -1)
-	max := 0
+	maxN := 0
 	for _, m := range matches {
 		if len(m) >= 2 {
 			n, _ := strconv.Atoi(m[1])
-			if n > max {
-				max = n
+			if n > maxN {
+				maxN = n
 			}
 		}
 	}
-	return max
+	return maxN
 }
 
 // IsPlanComplete returns true if all steps in all phases are [x].
@@ -638,16 +636,16 @@ func (ms *MemoryStore) getPlanContextFrom(content string) string {
 // maxPhaseNumber returns the highest phase number found in content.
 func maxPhaseNumber(content string) int {
 	matches := rePhaseHeader.FindAllStringSubmatch(content, -1)
-	max := 0
+	maxN := 0
 	for _, m := range matches {
 		if len(m) >= 2 {
 			n, _ := strconv.Atoi(m[1])
-			if n > max {
-				max = n
+			if n > maxN {
+				maxN = n
 			}
 		}
 	}
-	return max
+	return maxN
 }
 
 // getPhaseTitle extracts the title of a phase from "## Phase N: Title".

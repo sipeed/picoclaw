@@ -26,7 +26,7 @@ import (
 // buildInitData constructs a valid initData string from params and a bot token.
 func buildInitData(params map[string]string, botToken string) string {
 	// Build data-check-string
-	var pairs []string
+	pairs := make([]string, 0, len(params))
 	for k, v := range params {
 		pairs = append(pairs, fmt.Sprintf("%s=%s", k, v))
 	}

@@ -19,7 +19,7 @@ type Event struct {
 	From    string `json:"from,omitempty"`
 	To      string `json:"to,omitempty"`
 	Text    string `json:"text,omitempty"`
-	Reason  string `json:"reason,omitempty"` // agent_gc: completed | failed | cancelled
+	Reason  string `json:"reason,omitempty"` // agent_gc: completed | failed | canceled
 	Created int64  `json:"created,omitempty"`
 }
 
