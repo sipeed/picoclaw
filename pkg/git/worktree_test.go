@@ -201,6 +201,84 @@ func TestCommitsAhead(t *testing.T) {
 	}
 }
 
+func TestMergeWorktreeBranch_Success(t *testing.T) {
+	dir := initTestRepo(t)
+	baseBranch := CurrentBranch(dir)
+	wtPath := filepath.Join(dir, ".picoclaw", "worktrees", "merge-ok")
+
+	wt, err := CreateWorktree(dir, wtPath, "plan/merge-ok")
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	// Make a change in the worktree and commit
+	os.WriteFile(filepath.Join(wtPath, "merged-file.txt"), []byte("hello from worktree"), 0o644)
+	if err := AutoCommit(wtPath, "add merged-file"); err != nil {
+		t.Fatalf("AutoCommit: %v", err)
+	}
+
+	// Merge into base branch
+	mr := MergeWorktreeBranch(dir, wt)
+	if !mr.Merged {
+		t.Fatal("expected Merged=true")
+	}
+	if mr.Conflict {
+		t.Fatal("expected Conflict=false")
+	}
+	if mr.Branch != "plan/merge-ok" {
+		t.Errorf("Branch = %q, want %q", mr.Branch, "plan/merge-ok")
+	}
+
+	// Verify the file exists on the base branch
+	checkoutCmd := exec.Command("git", "checkout", baseBranch)
+	checkoutCmd.Dir = dir
+	checkoutCmd.Run()
+
+	if _, err := os.Stat(filepath.Join(dir, "merged-file.txt")); os.IsNotExist(err) {
+		t.Fatal("merged-file.txt should exist on base branch after merge")
+	}
+}
+
+func TestMergeWorktreeBranch_Conflict(t *testing.T) {
+	dir := initTestRepo(t)
+	wtPath := filepath.Join(dir, ".picoclaw", "worktrees", "merge-conflict")
+
+	wt, err := CreateWorktree(dir, wtPath, "plan/merge-conflict")
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	// Make a change on the base branch
+	os.WriteFile(filepath.Join(dir, "conflict.txt"), []byte("base content"), 0o644)
+	if err := AutoCommit(dir, "add conflict.txt on base"); err != nil {
+		t.Fatalf("AutoCommit base: %v", err)
+	}
+
+	// Make a conflicting change in the worktree
+	os.WriteFile(filepath.Join(wtPath, "conflict.txt"), []byte("worktree content"), 0o644)
+	if err := AutoCommit(wtPath, "add conflict.txt on worktree"); err != nil {
+		t.Fatalf("AutoCommit worktree: %v", err)
+	}
+
+	// Attempt merge — should conflict
+	mr := MergeWorktreeBranch(dir, wt)
+	if mr.Merged {
+		t.Fatal("expected Merged=false on conflict")
+	}
+	if !mr.Conflict {
+		t.Fatal("expected Conflict=true")
+	}
+
+	// Verify base branch file is unchanged (merge was aborted)
+	content, err := os.ReadFile(filepath.Join(dir, "conflict.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(content) != "base content" {
+		t.Errorf("conflict.txt = %q, want %q (merge should have been aborted)", string(content), "base content")
+	}
+}
+
 func TestPruneOrphaned(t *testing.T) {
 	dir := initTestRepo(t)
 
