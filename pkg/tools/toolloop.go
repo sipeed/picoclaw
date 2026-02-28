@@ -36,6 +36,8 @@ type ToolLoopConfig struct {
 type ToolLoopResult struct {
 	Content    string
 	Iterations int
+	ToolCalls  int            // total tool call count across all iterations
+	ToolStats  map[string]int // tool name → call count
 }
 
 // RunToolLoop executes the LLM + tool call iteration loop.
@@ -52,6 +54,8 @@ func RunToolLoop(
 	}
 
 	iteration := 0
+	totalToolCalls := 0
+	toolStats := map[string]int{}
 	var finalContent string
 
 	for iteration < config.MaxIterations {
@@ -75,7 +79,7 @@ func RunToolLoop(
 			llmOpts = map[string]any{}
 		}
 		// 3. Call LLM  (hook: waiting for response)
-		reporter.ReportStateChange(config.AgentID, "waiting", "")
+		reporter.ReportStateChange(config.AgentID, orch.AgentStateWaiting, "")
 		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
@@ -143,7 +147,9 @@ func RunToolLoop(
 					"tool":      tc.Name,
 					"iteration": iteration,
 				})
-			reporter.ReportStateChange(config.AgentID, "toolcall", tc.Name)
+			reporter.ReportStateChange(config.AgentID, orch.AgentStateToolCall, tc.Name)
+			totalToolCalls++
+			toolStats[tc.Name]++
 
 			// Execute tool (no async callback for subagents - they run independently)
 			var toolResult *ToolResult
@@ -172,5 +178,7 @@ func RunToolLoop(
 	return &ToolLoopResult{
 		Content:    finalContent,
 		Iterations: iteration,
+		ToolCalls:  totalToolCalls,
+		ToolStats:  toolStats,
 	}, nil
 }
