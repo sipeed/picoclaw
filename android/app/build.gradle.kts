@@ -80,6 +80,7 @@ dependencies {
     implementation(project(":backend:config"))
 
     "termuxImplementation"(project(":backend:loader-noop"))
+    "embeddedImplementation"(project(":backend:loader"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
