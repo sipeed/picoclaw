@@ -21,9 +21,9 @@ type spyCall struct {
 	tool  string
 }
 
-func (r *reporterSpy) ReportSpawn(id, label, task string)                        {}
-func (r *reporterSpy) ReportConversation(from, to, text string)                  {}
-func (r *reporterSpy) ReportGC(id, reason string)                                {}
+func (r *reporterSpy) ReportSpawn(id, label, task string)       {}
+func (r *reporterSpy) ReportConversation(from, to, text string) {}
+func (r *reporterSpy) ReportGC(id, reason string)               {}
 func (r *reporterSpy) ReportStateChange(id string, state orch.AgentState, tool string) {
 	r.mu.Lock()
 	r.calls = append(r.calls, spyCall{state, tool})

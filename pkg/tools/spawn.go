@@ -73,7 +73,10 @@ func (t *SpawnTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
 	if !ok || strings.TrimSpace(task) == "" {
-		return ErrorResult(`Required parameter "task" (string) is missing. Example: {"task": "describe what you need done", "preset": "scout"}`)
+		return ErrorResult(
+			`Required parameter "task" (string) is missing. ` +
+				`Example: {"task": "describe what you need done", "preset": "scout"}`,
+		)
 	}
 
 	label, _ := args["label"].(string)
