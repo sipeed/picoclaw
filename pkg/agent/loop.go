@@ -947,7 +947,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	defer func() {
 		if opts.Background {
 			if agent.SubagentMgr != nil {
-				agent.SubagentMgr.WaitAll()
+				agent.SubagentMgr.WaitAll(35 * time.Minute) // slightly above spawnTimeout
 			}
 			if agent.IsInWorktree(opts.SessionKey) {
 				commitMsg := "heartbeat: auto-save"

@@ -14,6 +14,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+// spawnTimeout is the hard upper bound for a single spawn goroutine.
+// MaxIterations × HTTP timeout provides the soft limit; this is a safety net.
+const spawnTimeout = 30 * time.Minute
+
 type SubagentTask struct {
 	ID            string
 	Task          string
@@ -124,11 +128,11 @@ func (sm *SubagentManager) Spawn(
 
 	sm.reporter.ReportSpawn(taskID, label, task)
 
-	// Start task in background with a detached context.
+	// Start task in background with a detached context that has a hard timeout.
 	// The spawned goroutine must outlive the parent (e.g. heartbeat session)
 	// which may finish before the subagent completes.
 	// The cancel func is stored on the task so CancelTask() can stop it.
-	spawnCtx, spawnCancel := context.WithCancel(context.Background())
+	spawnCtx, spawnCancel := context.WithTimeout(context.Background(), spawnTimeout)
 	subagentTask.cancel = spawnCancel
 	sm.wg.Add(1)
 	go func() {
@@ -377,10 +381,21 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 	return registry
 }
 
-// WaitAll blocks until all spawned subagent goroutines have finished.
-// Used by heartbeat cleanup to avoid destroying worktrees while subagents are still running.
-func (sm *SubagentManager) WaitAll() {
-	sm.wg.Wait()
+// WaitAll blocks until all spawned subagent goroutines have finished
+// or the timeout expires. Returns true if all goroutines finished,
+// false on timeout.
+func (sm *SubagentManager) WaitAll(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		sm.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // CancelTask cancels the context for a running subagent task.
