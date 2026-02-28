@@ -126,39 +126,43 @@ Docker Compose を使えば、ローカルにインストールせずに PicoCla
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. API キーを設定
-cp config/config.example.json config/config.json
-vim config/config.json      # DISCORD_BOT_TOKEN, プロバイダーの API キーを設定
+# 2. 初回起動 — docker/data/config.json を自動生成して終了
+docker compose -f docker/docker-compose.yml --profile gateway up
+# コンテナが "First-run setup complete." を表示して停止します。
 
-# 3. ビルドと起動
-docker compose --profile gateway up -d
+# 3. API キーを設定
+vim docker/data/config.json   # プロバイダー API キー、Bot トークンなどを設定
+
+# 4. 起動
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Docker ユーザー**: デフォルトでは、Gateway は `127.0.0.1` でリッスンしており、ホストからアクセスできません。ヘルスチェックエンドポイントにアクセスしたり、ポートを公開したりする必要がある場合は、環境変数で `PICOCLAW_GATEWAY_HOST=0.0.0.0` を設定するか、`config.json` を更新してください。
 
+```bash
+# 5. ログ確認
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. ログ確認
-docker compose logs -f picoclaw-gateway
-
-# 5. 停止
-docker compose --profile gateway down
+# 6. 停止
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Agent モード（ワンショット）
 
 ```bash
 # 質問を投げる
-docker compose run --rm picoclaw-agent -m "What is 2+2?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "What is 2+2?"
 
 # インタラクティブモード
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### リビルド
+### アップデート
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 クイックスタート（ネイティブ）

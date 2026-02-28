@@ -2,29 +2,39 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
+	_ "github.com/sipeed/picoclaw/pkg/channels/discord"
+	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
+	_ "github.com/sipeed/picoclaw/pkg/channels/line"
+	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
+	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
+	_ "github.com/sipeed/picoclaw/pkg/channels/pico"
+	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
+	_ "github.com/sipeed/picoclaw/pkg/channels/slack"
+	_ "github.com/sipeed/picoclaw/pkg/channels/telegram"
+	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
+	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp"
+	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp_native"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/devices"
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 func gatewayCmd(debug bool) error {
@@ -105,49 +115,23 @@ func gatewayCmd(debug bool) error {
 		return tools.SilentResult(response)
 	})
 
-	channelManager, err := channels.NewManager(cfg, msgBus)
+	// Create media store for file lifecycle management with TTL cleanup
+	mediaStore := media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
+		Enabled:  cfg.Tools.MediaCleanup.Enabled,
+		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
+		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
+	})
+	mediaStore.Start()
+
+	channelManager, err := channels.NewManager(cfg, msgBus, mediaStore)
 	if err != nil {
+		mediaStore.Stop()
 		return fmt.Errorf("error creating channel manager: %w", err)
 	}
 
-	// Inject channel manager into agent loop for command handling
+	// Inject channel manager and media store into agent loop
 	agentLoop.SetChannelManager(channelManager)
-
-	var transcriber *voice.GroqTranscriber
-	groqAPIKey := cfg.Providers.Groq.APIKey
-	if groqAPIKey == "" {
-		for _, mc := range cfg.ModelList {
-			if strings.HasPrefix(mc.Model, "groq/") && mc.APIKey != "" {
-				groqAPIKey = mc.APIKey
-				break
-			}
-		}
-	}
-	if groqAPIKey != "" {
-		transcriber = voice.NewGroqTranscriber(groqAPIKey)
-		logger.InfoC("voice", "Groq voice transcription enabled")
-	}
-
-	if transcriber != nil {
-		if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
-			if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
-				tc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Telegram channel")
-			}
-		}
-		if discordChannel, ok := channelManager.GetChannel("discord"); ok {
-			if dc, ok := discordChannel.(*channels.DiscordChannel); ok {
-				dc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Discord channel")
-			}
-		}
-		if slackChannel, ok := channelManager.GetChannel("slack"); ok {
-			if sc, ok := slackChannel.(*channels.SlackChannel); ok {
-				sc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Slack channel")
-			}
-		}
-	}
+	agentLoop.SetMediaStore(mediaStore)
 
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
@@ -184,16 +168,15 @@ func gatewayCmd(debug bool) error {
 		fmt.Println("✓ Device event service started")
 	}
 
+	// Setup shared HTTP server with health endpoints and webhook handlers
+	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
+	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
+	channelManager.SetupHTTPServer(addr, healthServer)
+
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
-	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
-	go func() {
-		if err := healthServer.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.ErrorCF("health", "Health server error", map[string]any{"error": err.Error()})
-		}
-	}()
 	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	go agentLoop.Run(ctx)
@@ -207,12 +190,19 @@ func gatewayCmd(debug bool) error {
 		cp.Close()
 	}
 	cancel()
-	healthServer.Stop(context.Background())
+	msgBus.Close()
+
+	// Use a fresh context with timeout for graceful shutdown,
+	// since the original ctx is already canceled.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+
+	channelManager.StopAll(shutdownCtx)
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
+	mediaStore.Stop()
 	agentLoop.Stop()
-	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
 
 	return nil
