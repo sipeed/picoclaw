@@ -421,8 +421,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -436,10 +434,12 @@ LINE の Webhook には HTTPS が必要です。リバースプロキシまた�
 
 ```bash
 # ngrok の例
-ngrok http 18791
+ngrok http 18790
 ```
 
 LINE Developers Console で Webhook URL を `https://あなたのドメイン/webhook/line` に設定し、**Webhook の利用** を有効にしてください。
+
+> **注意**: LINE の Webhook は共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は Gateway のポートを公開するか、リバースプロキシを設定してください。
 
 **4. 起動**
 
@@ -449,7 +449,7 @@ picoclaw gateway
 
 > グループチャットでは @メンション時のみ応答します。返信は元メッセージを引用する形式です。
 
-> **Docker Compose**: `picoclaw-gateway` サービスに `ports: ["18791:18791"]` を追加して Webhook ポートを公開してください。
+> **Docker Compose**: Gateway HTTP サーバーは共有の `127.0.0.1:18790` で Webhook を提供します。ホストからアクセスするには `picoclaw-gateway` サービスに `ports: ["18790:18790"]` を追加してください。
 
 </details>
 
@@ -480,13 +480,13 @@ PicoClaw は2種類の WeCom 統合をサポートしています：
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
   }
 }
+
+> **注意**: WeCom Bot の Webhook 受信は共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は Gateway のポートを公開するか、HTTPS 用のリバースプロキシを設定してください。
 ```
 
 **クイックセットアップ - WeCom App:**
@@ -500,7 +500,7 @@ PicoClaw は2種類の WeCom 統合をサポートしています：
 **2. メッセージ受信を設定**
 
 * アプリ詳細で "メッセージを受信" → "APIを設定" をクリック
-* URL を `http://your-server:18792/webhook/wecom-app` に設定
+* URL を `http://your-server:18790/webhook/wecom-app` に設定
 * **Token** と **EncodingAESKey** を生成
 
 **3. 設定**
@@ -515,8 +515,6 @@ PicoClaw は2種類の WeCom 統合をサポートしています：
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -530,7 +528,7 @@ PicoClaw は2種類の WeCom 統合をサポートしています：
 picoclaw gateway
 ```
 
-> **注意**: WeCom App は Webhook コールバック用にポート 18792 を開放する必要があります。本番環境では HTTPS 用のリバースプロキシを使用してください。
+> **注意**: WeCom App の Webhook コールバックは共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は HTTPS 用のリバースプロキシを設定してください。
 
 </details>
 

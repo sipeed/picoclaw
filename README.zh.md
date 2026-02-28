@@ -290,6 +290,8 @@ picoclaw agent -m "2+2 等于几？"
 
 PicoClaw 支持多种聊天平台，使您的 Agent 能够连接到任何地方。
 
+> **注意**: 所有 Webhook 类渠道（LINE、WeCom、飞书等）均挂载在同一个 Gateway HTTP 服务器上（`gateway.host`:`gateway.port`，默认 `127.0.0.1:18790`），无需为每个渠道单独配置端口。
+
 ### 核心渠道
 
 | 渠道                 | 设置难度    | 特性说明                                  | 文档链接                                                                                                        |

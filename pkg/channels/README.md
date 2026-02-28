@@ -1,7 +1,5 @@
-# PicoClaw Channel System Refactor: Complete Development Guide
+# PicoClaw Channel System: Complete Development Guide
 
-> **Branch**: `refactor/channel-system`
-> **Status**: Active development (~40 commits)
 > **Scope**: `pkg/channels/`, `pkg/bus/`, `pkg/media/`, `pkg/identity/`, `cmd/picoclaw/internal/gateway/`
 
 ---
@@ -46,6 +44,8 @@ pkg/channels/
 pkg/channels/
 ├── base.go              # BaseChannel shared abstraction layer
 ├── interfaces.go        # Optional capability interfaces (TypingCapable, MessageEditor, ReactionCapable, PlaceholderCapable, PlaceholderRecorder)
+├── README.md            # English documentation
+├── README.zh.md         # Chinese documentation
 ├── media.go             # MediaSender optional interface
 ├── webhook.go           # WebhookHandler, HealthChecker optional interfaces
 ├── errors.go            # Sentinel errors (ErrNotRunning, ErrRateLimit, ErrTemporary, ErrSendFailed)
@@ -60,7 +60,7 @@ pkg/channels/
 ├── discord/
 │   ├── init.go
 │   └── discord.go
-├── slack/ line/ onebot/ dingtalk/ feishu/ wecom/ qq/ whatsapp/ maixcam/ pico/
+├── slack/ line/ onebot/ dingtalk/ feishu/ wecom/ qq/ whatsapp/ whatsapp_native/ maixcam/ pico/
 │   └── ...
 
 pkg/bus/
@@ -111,7 +111,7 @@ pkg/identity/
 |-----------|-------------|
 | **Sub-package Isolation** | Each channel is a standalone Go sub-package, depending on `BaseChannel` and interfaces from the `channels` parent package |
 | **Factory Registration** | Sub-packages self-register via `init()`, Manager looks up factories by name, eliminating import coupling |
-| **Capability Discovery** | Optional capabilities are declared via interfaces (`MediaSender`, `TypingCapable`, `ReactionCapable`, `PlaceholderCapable`, `MessageEditor`, `WebhookHandler`), discovered by Manager via runtime type assertions |
+| **Capability Discovery** | Optional capabilities are declared via interfaces (`MediaSender`, `TypingCapable`, `ReactionCapable`, `PlaceholderCapable`, `MessageEditor`, `WebhookHandler`, `HealthChecker`), discovered by Manager via runtime type assertions |
 | **Structured Messages** | Peer, MessageID, and SenderInfo promoted from Metadata to first-class fields on InboundMessage |
 | **Error Classification** | Channels return sentinel errors (`ErrRateLimit`, `ErrTemporary`, etc.), Manager uses these to determine retry strategy |
 | **Centralized Orchestration** | Rate limiting, message splitting, retries, and Typing/Reaction/Placeholder management are all handled by Manager and BaseChannel; channels only need to implement Send |
@@ -145,6 +145,7 @@ After refactoring, these files have been removed and code moved to corresponding
 | _(did not exist)_ | `pkg/channels/interfaces.go` | New optional capability interfaces |
 | _(did not exist)_ | `pkg/channels/media.go` | New MediaSender interface |
 | _(did not exist)_ | `pkg/channels/webhook.go` | New WebhookHandler/HealthChecker |
+| _(did not exist)_ | `pkg/channels/whatsapp_native/` | New WhatsApp native mode (whatsmeow) |
 | _(did not exist)_ | `pkg/channels/split.go` | New message splitting (migrated from utils) |
 | _(did not exist)_ | `pkg/bus/types.go` | New structured message types |
 | _(did not exist)_ | `pkg/media/store.go` | New media file lifecycle management |
@@ -220,6 +221,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
         cfg.Channels.Telegram.AllowFrom, // Allow list
         channels.WithMaxMessageLength(4096),                     // Platform message length limit
         channels.WithGroupTrigger(cfg.Channels.Telegram.GroupTrigger), // Group trigger config
+        channels.WithReasoningChannelID(cfg.Channels.Telegram.ReasoningChannelID), // Reasoning chain routing
     )
     return &TelegramChannel{
         BaseChannel: base,
@@ -466,6 +468,7 @@ func NewMatrixChannel(cfg *config.Config, msgBus *bus.MessageBus) (*MatrixChanne
         matrixCfg.AllowFrom,                // Allow list
         channels.WithMaxMessageLength(65536), // Matrix message length limit
         channels.WithGroupTrigger(matrixCfg.GroupTrigger),
+        channels.WithReasoningChannelID(matrixCfg.ReasoningChannelID), // Reasoning chain routing (optional)
     )
 
     return &MatrixChannel{
@@ -666,6 +669,32 @@ func (c *MatrixChannel) EditMessage(ctx context.Context, chatID, messageID, cont
 }
 ```
 
+#### PlaceholderCapable — Placeholder Messages
+
+```go
+// If the platform supports sending placeholder messages (e.g. "Thinking... 💭"),
+// and the channel also implements MessageEditor, then Manager's preSend will
+// automatically edit the placeholder into the final response on outbound.
+// SendPlaceholder checks PlaceholderConfig.Enabled internally;
+// returning ("", nil) means skip.
+func (c *MatrixChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+    cfg := c.config.Channels.Matrix.Placeholder
+    if !cfg.Enabled {
+        return "", nil
+    }
+    text := cfg.Text
+    if text == "" {
+        text = "Thinking... 💭"
+    }
+    // Call Matrix API to send placeholder message
+    msg, err := c.sendText(ctx, chatID, text)
+    if err != nil {
+        return "", err
+    }
+    return msg.ID, nil
+}
+```
+
 #### WebhookHandler — HTTP Webhook Reception
 
 ```go
@@ -755,6 +784,8 @@ type MatrixChannelConfig struct {
     Token      string   `yaml:"token" json:"token"`
     AllowFrom  []string `yaml:"allow_from" json:"allow_from"`
     GroupTrigger GroupTriggerConfig `yaml:"group_trigger" json:"group_trigger"`
+    Placeholder  PlaceholderConfig  `yaml:"placeholder" json:"placeholder"`
+    ReasoningChannelID string `yaml:"reasoning_channel_id" json:"reasoning_channel_id"`
 }
 ```
 
@@ -766,6 +797,15 @@ if m.config.Channels.Matrix.Enabled && m.config.Channels.Matrix.Token != "" {
     m.initChannel("matrix", "Matrix")
 }
 ```
+
+> **Note**: If your channel has multiple modes (like WhatsApp Bridge vs Native), branch in initChannels based on config:
+> ```go
+> if cfg.UseNative {
+>     m.initChannel("matrix_native", "Matrix Native")
+> } else {
+>     m.initChannel("matrix", "Matrix")
+> }
+> ```
 
 #### Add blank import in Gateway
 
@@ -882,19 +922,21 @@ BaseChannel is the shared abstraction layer for all channels, providing the foll
 | `IsRunning() bool` | Atomically read running state |
 | `SetRunning(bool)` | Atomically set running state |
 | `MaxMessageLength() int` | Message length limit (rune count), 0 = unlimited |
+| `ReasoningChannelID() string` | Reasoning chain routing target channel ID (empty = no routing) |
 | `IsAllowed(senderID string) bool` | Legacy allow-list check (supports `"id\|username"` and `"@username"` formats) |
 | `IsAllowedSender(sender SenderInfo) bool` | New allow-list check (delegates to `identity.MatchAllowed`) |
 | `ShouldRespondInGroup(isMentioned, content) (bool, string)` | Unified group chat trigger filtering logic |
-| `HandleMessage(...)` | Unified inbound message handling: permission check → build MediaScope → auto-trigger Typing/Reaction → publish to Bus |
+| `HandleMessage(...)` | Unified inbound message handling: permission check → build MediaScope → auto-trigger Typing/Reaction/Placeholder → publish to Bus |
 | `SetMediaStore(s) / GetMediaStore()` | MediaStore injected by Manager |
 | `SetPlaceholderRecorder(r) / GetPlaceholderRecorder()` | PlaceholderRecorder injected by Manager |
-| `SetOwner(ch)` | Concrete channel reference injected by Manager (used for Typing/Reaction type assertions in HandleMessage) |
+| `SetOwner(ch)` | Concrete channel reference injected by Manager (used for Typing/Reaction/Placeholder type assertions in HandleMessage) |
 
 **Functional Options**:
 
 ```go
 channels.WithMaxMessageLength(4096)        // Set platform message length limit
 channels.WithGroupTrigger(groupTriggerCfg) // Set group trigger configuration
+channels.WithReasoningChannelID(id)        // Set reasoning chain routing target channel
 ```
 
 ### 4.4 Factory Registry
@@ -998,7 +1040,7 @@ StartAll:
      - runMediaWorker (per-channel outbound media)
      - dispatchOutbound (route from bus to worker queues)
      - dispatchOutboundMedia (route from bus to media worker queues)
-     - runTTLJanitor (every 10s clean up expired typing/placeholder)
+     - runTTLJanitor (every 10s clean up expired typing/reaction/placeholder)
   4. Start shared HTTP server (if configured)
 
 StopAll:
@@ -1206,18 +1248,20 @@ make test                                       # Full test suite
 
 | Sub-package | Registered Name | Optional Interfaces |
 |-------------|----------------|-------------------|
-| `pkg/channels/telegram/` | `"telegram"` | MessageEditor, MediaSender, TypingCapable, PlaceholderCapable |
-| `pkg/channels/discord/` | `"discord"` | MessageEditor, TypingCapable, PlaceholderCapable |
-| `pkg/channels/slack/` | `"slack"` | ReactionCapable |
-| `pkg/channels/line/` | `"line"` | WebhookHandler, HealthChecker, TypingCapable |
-| `pkg/channels/onebot/` | `"onebot"` | ReactionCapable |
-| `pkg/channels/dingtalk/` | `"dingtalk"` | WebhookHandler |
-| `pkg/channels/feishu/` | `"feishu"` | WebhookHandler (architecture-specific build tags) |
-| `pkg/channels/wecom/` | `"wecom"` + `"wecom_app"` | WebhookHandler |
+| `pkg/channels/telegram/` | `"telegram"` | TypingCapable, PlaceholderCapable, MessageEditor, MediaSender |
+| `pkg/channels/discord/` | `"discord"` | TypingCapable, PlaceholderCapable, MessageEditor, MediaSender |
+| `pkg/channels/slack/` | `"slack"` | ReactionCapable, MediaSender |
+| `pkg/channels/line/` | `"line"` | TypingCapable, MediaSender, WebhookHandler |
+| `pkg/channels/onebot/` | `"onebot"` | ReactionCapable, MediaSender |
+| `pkg/channels/dingtalk/` | `"dingtalk"` | — |
+| `pkg/channels/feishu/` | `"feishu"` | — (architecture-specific build tags: `feishu_32.go` / `feishu_64.go`) |
+| `pkg/channels/wecom/` | `"wecom"` | WebhookHandler, HealthChecker |
+| `pkg/channels/wecom/` | `"wecom_app"` | MediaSender, WebhookHandler, HealthChecker |
 | `pkg/channels/qq/` | `"qq"` | — |
-| `pkg/channels/whatsapp/` | `"whatsapp"` | — |
+| `pkg/channels/whatsapp/` | `"whatsapp"` | — (Bridge mode) |
+| `pkg/channels/whatsapp_native/` | `"whatsapp_native"` | — (Native whatsmeow mode) |
 | `pkg/channels/maixcam/` | `"maixcam"` | — |
-| `pkg/channels/pico/` | `"pico"` | WebhookHandler (Pico Protocol), TypingCapable, PlaceholderCapable |
+| `pkg/channels/pico/` | `"pico"` | TypingCapable, PlaceholderCapable, MessageEditor, WebhookHandler |
 
 ### A.3 Interface Quick Reference
 
@@ -1231,6 +1275,7 @@ type Channel interface {
     IsRunning() bool
     IsAllowed(senderID string) bool
     IsAllowedSender(sender bus.SenderInfo) bool
+    ReasoningChannelID() string
 }
 
 // ===== Optional =====
@@ -1324,8 +1369,16 @@ agentLoop.Stop()               // Stop Agent
 
 1. **Media cleanup temporarily disabled**: The `ReleaseAll` call in the Agent loop is commented out (`refactor(loop): disable media cleanup to prevent premature file deletion`) because session boundaries are not yet clearly defined. TTL cleanup remains active.
 
-2. **Feishu architecture-specific compilation**: The Feishu channel uses build tags to distinguish 32-bit and 64-bit architectures (`feishu_32.go` / `feishu_64.go`).
+2. **Feishu architecture-specific compilation**: The Feishu channel uses build tags to distinguish 32-bit and 64-bit architectures (`feishu_32.go` / `feishu_64.go`). Feishu uses the SDK's WebSocket mode (not HTTP webhook), so it does not implement `WebhookHandler`.
 
-3. **WeCom has two factories**: `"wecom"` (Bot mode) and `"wecom_app"` (App mode) are registered separately.
+3. **WeCom has two factories**: `"wecom"` (Bot mode, webhook only) and `"wecom_app"` (App mode, supports MediaSender) are registered separately. Both implement `WebhookHandler` and `HealthChecker`.
 
-4. **Pico Protocol**: `pkg/channels/pico/` implements a custom PicoClaw native protocol channel that receives messages via webhook.
+4. **Pico Protocol**: `pkg/channels/pico/` implements a custom PicoClaw native protocol channel that receives messages via WebSocket webhook (`/pico/ws`).
+
+5. **WhatsApp has two modes**: `"whatsapp"` (Bridge mode, communicates via external bridge URL) and `"whatsapp_native"` (native whatsmeow mode, connects directly to WhatsApp). Manager selects which to initialize based on `WhatsAppConfig.UseNative`.
+
+6. **DingTalk uses Stream mode**: DingTalk uses the SDK's Stream/WebSocket mode (not HTTP webhook), so it does not implement `WebhookHandler`.
+
+7. **PlaceholderConfig vs implementation**: `PlaceholderConfig` appears in 6 channel configs (Telegram, Discord, Slack, LINE, OneBot, Pico), but only channels that implement both `PlaceholderCapable` + `MessageEditor` (Telegram, Discord, Pico) can actually use placeholder message editing. The rest are reserved fields.
+
+8. **ReasoningChannelID**: All 12 channel configs have a `ReasoningChannelID` field, used to route LLM reasoning/thinking output to a designated channel. `BaseChannel` exposes this via the `WithReasoningChannelID` option and `ReasoningChannelID()` method.
