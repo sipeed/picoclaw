@@ -451,6 +451,12 @@ func gatewayCmd() {
 		os.Exit(1)
 	}
 
+	// If config.json does not exist, start in setup mode (minimal gateway)
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		gatewaySetupMode(cfg, configPath)
+		return
+	}
+
 	provider, err := providers.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
@@ -585,15 +591,84 @@ func gatewayCmd() {
 	fmt.Println("✓ Gateway stopped")
 
 	if restart {
-		exe, err := os.Executable()
-		if err != nil {
-			fmt.Printf("Error finding executable: %v\n", err)
-			os.Exit(1)
+		execRestart()
+	}
+}
+
+func execRestart() {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Error finding executable: %v\n", err)
+		os.Exit(1)
+	}
+	if err := syscall.Exec(exe, os.Args, os.Environ()); err != nil {
+		fmt.Printf("Error restarting: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// gatewaySetupMode starts a minimal gateway with only HTTP + WebSocket.
+// Provider, AgentLoop, CronService, and HeartbeatService are not started.
+func gatewaySetupMode(cfg *config.Config, configPath string) {
+	fmt.Println("\n⚙ Starting in setup mode (config.json not found)")
+
+	restartCh := make(chan struct{}, 1)
+
+	gwServer := gateway.NewServer(cfg, configPath, func() {
+		select {
+		case restartCh <- struct{}{}:
+		default:
 		}
-		if err := syscall.Exec(exe, os.Args, os.Environ()); err != nil {
-			fmt.Printf("Error restarting: %v\n", err)
-			os.Exit(1)
-		}
+	})
+	if err := gwServer.Start(); err != nil {
+		fmt.Printf("Error starting gateway HTTP server: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("✓ Config API started on 127.0.0.1:%d\n", cfg.Gateway.Port)
+
+	msgBus := bus.NewMessageBus()
+	channelManager, err := channels.NewManager(cfg, msgBus, configPath)
+	if err != nil {
+		fmt.Printf("Error creating channel manager: %v\n", err)
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := channelManager.StartAll(ctx); err != nil {
+		fmt.Printf("Error starting channels: %v\n", err)
+	}
+
+	enabledChannels := channelManager.GetEnabledChannels()
+	if len(enabledChannels) > 0 {
+		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
+	}
+
+	fmt.Println("✓ Setup mode ready — waiting for setup wizard")
+	fmt.Println("Press Ctrl+C to stop")
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+
+	restart := false
+	select {
+	case <-sigChan:
+	case <-restartCh:
+		restart = true
+		fmt.Println("\nRestarting after setup complete...")
+	}
+
+	fmt.Println("\nShutting down...")
+	cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	gwServer.Stop(shutdownCtx)
+	channelManager.StopAll(shutdownCtx)
+	fmt.Println("✓ Gateway stopped")
+
+	if restart {
+		execRestart()
 	}
 }
 

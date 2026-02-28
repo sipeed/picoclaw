@@ -51,23 +51,16 @@ func (s *Server) handleSetupInit(w http.ResponseWriter, r *http.Request) {
 
 	logger.InfoC("gateway", "Initial config created via setup wizard")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-
-	if s.onRestart != nil {
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			s.onRestart()
-		}()
-	}
 }
 
 // handleSetupComplete merges additional settings into an existing config.json.
 // PUT /api/setup/complete — authentication required.
 func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
-	s.cfg.RLock()
-	currentData, err := json.Marshal(s.cfg)
-	s.cfg.RUnlock()
+	// Read current config from disk (includes init step's gateway settings)
+	// rather than s.cfg which may still be DefaultConfig in setup mode.
+	currentData, err := os.ReadFile(s.configPath)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "failed to read current config")
+		writeJSONError(w, http.StatusInternalServerError, "failed to read config file")
 		return
 	}
 
