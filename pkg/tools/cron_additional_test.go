@@ -24,7 +24,8 @@ func (s *cronStubSandbox) Prune(ctx context.Context) error { return nil }
 func (s *cronStubSandbox) Resolve(ctx context.Context) (sandbox.Sandbox, error) {
 	return s, nil
 }
-func (s *cronStubSandbox) Fs() sandbox.FsBridge { return nil }
+func (s *cronStubSandbox) Fs() sandbox.FsBridge                    { return nil }
+func (s *cronStubSandbox) GetWorkspace(ctx context.Context) string { return "" }
 func (s *cronStubSandbox) Exec(ctx context.Context, req sandbox.ExecRequest) (*sandbox.ExecResult, error) {
 	return s.ExecStream(ctx, req, nil)
 }
@@ -76,9 +77,9 @@ func TestCronTool_ExecuteJob_BlocksDangerousCommandViaGuard(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	sb := &cronStubSandbox{}
 	tool := &CronTool{
-		msgBus:    msgBus,
-		sandbox:   sb,
-		execGuard: NewExecTool("", true),
+		msgBus:         msgBus,
+		sandboxManager: sb,
+		execGuard:      NewExecTool("", true),
 	}
 
 	job := &cron.CronJob{
@@ -110,9 +111,9 @@ func TestCronTool_ExecuteJob_AllowsSafeCommand(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	sb := &cronStubSandbox{res: &sandbox.ExecResult{Stdout: "safe", ExitCode: 0}}
 	tool := &CronTool{
-		msgBus:    msgBus,
-		sandbox:   sb,
-		execGuard: NewExecTool("/tmp/ws", true),
+		msgBus:         msgBus,
+		sandboxManager: sb,
+		execGuard:      NewExecTool("/tmp/ws", true),
 	}
 
 	job := &cron.CronJob{

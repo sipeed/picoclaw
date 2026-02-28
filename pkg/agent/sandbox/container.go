@@ -27,6 +27,7 @@ import (
 
 	"github.com/sipeed/picoclaw/internal/infra"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // ContainerSandboxConfig defines runtime and docker settings for container sandbox execution.
@@ -309,6 +310,10 @@ func (c *ContainerSandbox) Fs() FsBridge {
 	return c.fs
 }
 
+func (c *ContainerSandbox) GetWorkspace(ctx context.Context) string {
+	return c.cfg.Workdir
+}
+
 func (c *ContainerSandbox) ensureContainer(ctx context.Context) error {
 	inspect, err := c.cli.ContainerInspect(ctx, c.cfg.ContainerName)
 	if err != nil {
@@ -340,6 +345,18 @@ func (c *ContainerSandbox) ensureContainer(ctx context.Context) error {
 			_ = removeRegistryEntry(regPath, c.cfg.ContainerName)
 			return c.createAndStart(ctx)
 		}
+		// LOGIC-1: Container is actively running; recreating it now would disrupt
+		// in-flight work. Log a warning so operators can detect configuration drift.
+		// The container will be recreated on the next cold start or prune cycle.
+		logger.WarnCF(
+			"sandbox",
+			"container config hash mismatch but container is hot; skipping recreate",
+			map[string]any{
+				"container": c.cfg.ContainerName,
+				"want":      c.hash,
+				"got":       existing.ConfigHash,
+			},
+		)
 	}
 
 	if !inspect.State.Running {

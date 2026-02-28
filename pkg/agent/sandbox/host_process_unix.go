@@ -4,14 +4,15 @@ package sandbox
 
 import (
 	"os/exec"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func prepareCommandForTermination(cmd *exec.Cmd) {
 	if cmd == nil {
 		return
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &unix.SysProcAttr{Setpgid: true}
 }
 
 func terminateProcessTree(cmd *exec.Cmd) error {
@@ -25,7 +26,7 @@ func terminateProcessTree(cmd *exec.Cmd) error {
 	}
 
 	// Kill the entire process group spawned by the shell command.
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
+	_ = unix.Kill(-pid, unix.SIGKILL)
 	// Fallback kill on the shell process itself.
 	_ = cmd.Process.Kill()
 	return nil

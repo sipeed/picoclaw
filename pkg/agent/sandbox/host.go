@@ -59,6 +59,10 @@ func (h *HostSandbox) Fs() FsBridge {
 	return h.fs
 }
 
+func (h *HostSandbox) GetWorkspace(ctx context.Context) string {
+	return h.workspace
+}
+
 func (h *HostSandbox) Exec(ctx context.Context, req ExecRequest) (*ExecResult, error) {
 	return aggregateExecStream(func(onEvent func(ExecEvent) error) (*ExecResult, error) {
 		return h.ExecStream(ctx, req, onEvent)

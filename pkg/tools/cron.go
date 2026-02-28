@@ -23,15 +23,20 @@ type CronTool struct {
 	cronService *cron.CronService
 	executor    JobExecutor
 	msgBus      *bus.MessageBus
-	sandbox     sandbox.Sandbox
-	execGuard   *ExecTool
-	execTimeout time.Duration
-	channel     string
-	chatID      string
-	mu          sync.RWMutex
+	// sandboxManager is the agent-level sandbox manager used to execute
+	// scheduled commands. It respects the configured sandbox mode so that
+	// cron jobs run inside the same isolation boundary as regular tool calls.
+	sandboxManager sandbox.Manager
+	execGuard      *ExecTool
+	execTimeout    time.Duration
+	channel        string
+	chatID         string
+	mu             sync.RWMutex
 }
 
 // NewCronTool creates a new CronTool.
+// mgr is the agent's sandbox.Manager used to execute scheduled shell commands.
+// If mgr is nil, commands run on the host sandbox (equivalent to sandbox mode off).
 // execTimeout: 0 means no timeout, >0 sets the timeout duration.
 func NewCronTool(
 	cronService *cron.CronService,
@@ -41,16 +46,23 @@ func NewCronTool(
 	restrict bool,
 	execTimeout time.Duration,
 	config *config.Config,
+	mgr sandbox.Manager,
 ) *CronTool {
-	sb := sandbox.NewFromConfig(workspace, restrict, config)
+	var sandboxManager sandbox.Manager
+	if mgr != nil {
+		sandboxManager = mgr
+	} else {
+		// Fallback: build a host-only sandbox manager when no manager is provided.
+		sandboxManager = sandbox.NewFromConfigAsManager(workspace, restrict, config)
+	}
 	guard := NewExecToolWithConfig(workspace, restrict, config)
 	return &CronTool{
-		cronService: cronService,
-		executor:    executor,
-		msgBus:      msgBus,
-		sandbox:     sb,
-		execGuard:   guard,
-		execTimeout: execTimeout,
+		cronService:    cronService,
+		executor:       executor,
+		msgBus:         msgBus,
+		sandboxManager: sandboxManager,
+		execGuard:      guard,
+		execTimeout:    execTimeout,
 	}
 }
 
@@ -306,13 +318,18 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 				return "ok"
 			}
 		}
-		res, err := t.sandbox.Exec(ctx, sandbox.ExecRequest{
+		res, err := t.sandboxManager.Exec(ctx, sandbox.ExecRequest{
 			Command: job.Payload.Command,
 			WorkingDir: func() string {
 				if t.execGuard == nil {
 					return "."
 				}
-				return t.execGuard.resolveSandboxWorkingDir(cwd)
+				workspace := t.sandboxManager.GetWorkspace(ctx)
+				cwd := workspace
+				if cwd == "" {
+					cwd = "."
+				}
+				return t.execGuard.resolveSandboxWorkingDir(cwd, workspace)
 			}(),
 			TimeoutMs: t.execTimeout.Milliseconds(),
 		})

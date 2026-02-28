@@ -141,26 +141,17 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	wd, _ := args["working_dir"].(string)
 
+	sb := sandbox.FromContext(ctx)
+	if sb == nil {
+		return ErrorResult("sandbox environment unavailable")
+	}
+
+	effectiveWorkspace := sb.GetWorkspace(ctx)
+
 	// Resolve the working directory
-	cwd := t.workingDir
-	if wd != "" {
-		if t.restrictToWorkspace && t.workingDir != "" {
-			resolvedWD, err := sandbox.ValidatePath(wd, t.workingDir, true)
-			if err != nil {
-				// In sandbox mode, allow explicit container workspace paths when
-				// restrict_to_workspace is enabled.
-				sb := sandbox.FromContext(ctx)
-				if sb != nil && filepath.IsAbs(wd) && isSandboxWorkspaceAbsolutePath(wd) {
-					cwd = wd
-				} else {
-					return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
-				}
-			} else {
-				cwd = resolvedWD
-			}
-		} else {
-			cwd = wd
-		}
+	cwd := wd
+	if cwd == "" {
+		cwd = effectiveWorkspace
 	}
 
 	if cwd == "" {
@@ -169,16 +160,36 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		}
 	}
 
+	if cwd == "" {
+		cwd = "."
+	}
+
+	if wd != "" && t.restrictToWorkspace && effectiveWorkspace != "" {
+		resolvedWD, err := sandbox.ValidatePath(wd, effectiveWorkspace, true)
+		if err != nil {
+			// If ValidatePath explicitly found the path is outside (e.g. symlink escape),
+			// block it immediately and do NOT fall back to prefix matching.
+			if errors.Is(err, sandbox.ErrOutsideWorkspace) {
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
+			}
+
+			// In sandbox mode, allow explicit container workspace paths when
+			// restrict_to_workspace is enabled, but only for paths that don't exist on host.
+			if filepath.IsAbs(wd) && isSandboxWorkspaceAbsolutePath(wd, effectiveWorkspace) {
+				cwd = wd
+			} else {
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
+			}
+		} else {
+			cwd = resolvedWD
+		}
+	}
+
 	if guardError := t.guardCommand(command, cwd); guardError != "" {
 		return ErrorResult(guardError)
 	}
 
-	sb := sandbox.FromContext(ctx)
-	if sb == nil {
-		return ErrorResult("sandbox environment unavailable")
-	}
-
-	sandboxWD := t.resolveSandboxWorkingDir(cwd)
+	sandboxWD := t.resolveSandboxWorkingDir(cwd, effectiveWorkspace)
 	res, err := sb.Exec(ctx, sandbox.ExecRequest{
 		Command:    command,
 		WorkingDir: sandboxWD,
@@ -211,7 +222,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	if res.ExitCode != 0 {
 		output += fmt.Sprintf("\nExit code: %d", res.ExitCode)
 		return &ToolResult{
-			ForLLM:  output,
+			ForLLM:  fmt.Sprintf("Command failed with exit code %d:\n%s", res.ExitCode, output),
 			ForUser: output,
 			IsError: true,
 		}
@@ -293,7 +304,7 @@ func guardCommandWithPolicy(
 	return ""
 }
 
-func (t *ExecTool) resolveSandboxWorkingDir(cwd string) string {
+func (t *ExecTool) resolveSandboxWorkingDir(cwd, workspace string) string {
 	trimmed := strings.TrimSpace(cwd)
 	if trimmed == "" {
 		return "."
@@ -301,10 +312,7 @@ func (t *ExecTool) resolveSandboxWorkingDir(cwd string) string {
 	if !filepath.IsAbs(trimmed) {
 		return trimmed
 	}
-	if strings.HasPrefix(filepath.ToSlash(trimmed), "/workspace") {
-		return filepath.ToSlash(trimmed)
-	}
-	base := strings.TrimSpace(t.workingDir)
+	base := strings.TrimSpace(workspace)
 	if base != "" {
 		absBase, err := filepath.Abs(base)
 		if err == nil {
@@ -317,14 +325,21 @@ func (t *ExecTool) resolveSandboxWorkingDir(cwd string) string {
 			}
 		}
 	}
+	if isSandboxWorkspaceAbsolutePath(trimmed, workspace) {
+		return filepath.ToSlash(trimmed)
+	}
 	// Preserve explicit absolute paths in sandbox mode (e.g. /tmp/logs),
 	// instead of silently downgrading to ".".
 	return filepath.ToSlash(trimmed)
 }
 
-func isSandboxWorkspaceAbsolutePath(wd string) bool {
-	clean := path.Clean(filepath.ToSlash(strings.TrimSpace(wd)))
-	return clean == "/workspace" || strings.HasPrefix(clean, "/workspace/")
+func isSandboxWorkspaceAbsolutePath(wd, workspace string) bool {
+	if workspace == "" {
+		return false
+	}
+	cleanWD := path.Clean(filepath.ToSlash(strings.TrimSpace(wd)))
+	cleanWS := path.Clean(filepath.ToSlash(strings.TrimSpace(workspace)))
+	return cleanWD == cleanWS || strings.HasPrefix(cleanWD, cleanWS+"/")
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

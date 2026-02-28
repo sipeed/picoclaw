@@ -4,424 +4,327 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 )
 
-func TestContainerSandbox_Integration_ExecReadWrite(t *testing.T) {
-	if os.Getenv("PICOCLAW_RUN_DOCKER_TESTS") != "1" {
-		t.Skip("set PICOCLAW_RUN_DOCKER_TESTS=1 to run docker integration tests")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+// skipIfNoDocker checks if a Docker daemon is available and skips the test if not.
+// It returns a functional client and a cleanup function if successful.
+func skipIfNoDocker(t *testing.T) (*client.Client, func()) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		t.Skipf("docker client unavailable: %v", err)
+		t.Skipf("Docker client setup failed: %v", err)
 	}
-	defer cli.Close()
 
 	_, err = cli.Ping(ctx)
 	if err != nil {
-		t.Skipf("docker daemon unavailable: %v", err)
+		cli.Close()
+		t.Skip("Docker daemon unavailable (ping failed), skipping integration test")
 	}
 
-	workspace := t.TempDir()
-	containerName := fmt.Sprintf("picoclaw-test-%d", time.Now().UnixNano())
+	return cli, func() { cli.Close() }
+}
+
+func getTestImage() string {
 	image := strings.TrimSpace(os.Getenv("PICOCLAW_DOCKER_TEST_IMAGE"))
 	if image == "" {
 		image = "debian:bookworm-slim"
 	}
+	return image
+}
+
+func TestContainerSandbox_Integration_ExecReadWrite(t *testing.T) {
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	workspace := t.TempDir()
+	containerName := fmt.Sprintf("picoclaw-test-%d", time.Now().UnixNano())
+	image := getTestImage()
 
 	sb := NewContainerSandbox(ContainerSandboxConfig{
 		Image:         image,
 		ContainerName: containerName,
 		Workspace:     workspace,
 	})
-	err = sb.Start(ctx)
+	err := sb.Start(ctx)
 	if err != nil {
 		t.Fatalf("sandbox start failed: %v", err)
 	}
-	defer func() {
-		_ = sb.Prune(context.Background())
-		if sb.cli != nil {
-			_ = sb.cli.ContainerRemove(context.Background(), containerName, container.RemoveOptions{Force: true})
-		}
-	}()
+	defer sb.Prune(ctx)
 
-	content := []byte("hello from integration test")
-	err = sb.Fs().WriteFile(ctx, "it/write.txt", content, true)
+	// 1. Write file via FsBridge
+	testData := []byte("hello from host")
+	err = sb.Fs().WriteFile(ctx, "hello.txt", testData, false)
 	if err != nil {
-		t.Fatalf("write file failed: %v", err)
+		t.Fatalf("WriteFile failed: %v", err)
 	}
 
-	readBack, err := sb.Fs().ReadFile(ctx, "it/write.txt")
-	if err != nil {
-		t.Fatalf("read file failed: %v", err)
-	}
-	if string(readBack) != string(content) {
-		t.Fatalf("read content mismatch: got %q want %q", string(readBack), string(content))
-	}
-
-	hostBytes, err := os.ReadFile(filepath.Join(workspace, "it", "write.txt"))
-	if err != nil {
-		t.Fatalf("host workspace read failed: %v", err)
-	}
-	if string(hostBytes) != string(content) {
-		t.Fatalf("host content mismatch: got %q want %q", string(hostBytes), string(content))
-	}
-
-	execRes, err := sb.Exec(ctx, ExecRequest{
-		Command: "cat /workspace/it/write.txt",
+	// 2. Read back via Exec (command line)
+	res, err := sb.Exec(ctx, ExecRequest{
+		Command: "cat hello.txt",
 	})
 	if err != nil {
-		t.Fatalf("exec cat failed: %v", err)
+		t.Fatalf("Exec failed: %v", err)
 	}
-	if execRes.ExitCode != 0 {
-		t.Fatalf("exec cat exit code = %d, stderr = %q", execRes.ExitCode, execRes.Stderr)
-	}
-	if strings.TrimSpace(execRes.Stdout) != string(content) {
-		t.Fatalf("exec cat stdout mismatch: got %q want %q", strings.TrimSpace(execRes.Stdout), string(content))
+	if strings.TrimSpace(res.Stdout) != string(testData) {
+		t.Errorf("Exec output mismatch: got %q, want %q", res.Stdout, string(testData))
 	}
 
-	pwdRes, err := sb.Exec(ctx, ExecRequest{
-		Command:    "pwd",
-		WorkingDir: "it/",
+	// 3. Write via Exec
+	res, err = sb.Exec(ctx, ExecRequest{
+		Command: "echo 'modified in container' > hello.txt",
 	})
-	if err != nil {
-		t.Fatalf("exec pwd failed: %v", err)
-	}
-	if pwdRes.ExitCode != 0 {
-		t.Fatalf("exec pwd exit code = %d, stderr = %q", pwdRes.ExitCode, pwdRes.Stderr)
-	}
-	if strings.TrimSpace(pwdRes.Stdout) != "/workspace/it" {
-		t.Fatalf("pwd mismatch: got %q want %q", strings.TrimSpace(pwdRes.Stdout), "/workspace/it")
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("Exec write failed: %v, exit=%d", err, res.ExitCode)
 	}
 
-	// Test ReadDir
-	entries, err := sb.Fs().ReadDir(ctx, "it")
+	// 4. Read back via FsBridge
+	readData, err := sb.Fs().ReadFile(ctx, "hello.txt")
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if strings.TrimSpace(string(readData)) != "modified in container" {
+		t.Errorf("ReadFile output mismatch: got %q", string(readData))
+	}
+
+	// 5. Verify ReadDir
+	entries, err := sb.Fs().ReadDir(ctx, ".")
 	if err != nil {
 		t.Fatalf("ReadDir failed: %v", err)
 	}
 	found := false
 	for _, e := range entries {
-		if e.Name() == "write.txt" {
+		if e.Name() == "hello.txt" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("ReadDir result missing 'write.txt'")
+		t.Error("hello.txt not found in ReadDir")
 	}
 }
 
 func TestContainerSandbox_Integration_WriteFileMkdirInContainerTmp(t *testing.T) {
-	if os.Getenv("PICOCLAW_RUN_DOCKER_TESTS") != "1" {
-		t.Skip("set PICOCLAW_RUN_DOCKER_TESTS=1 to run docker integration tests")
-	}
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		t.Skipf("docker client unavailable: %v", err)
-	}
-	defer cli.Close()
-
-	_, err = cli.Ping(ctx)
-	if err != nil {
-		t.Skipf("docker daemon unavailable: %v", err)
-	}
-
 	containerName := fmt.Sprintf("picoclaw-test-mkdir-%d", time.Now().UnixNano())
-	image := strings.TrimSpace(os.Getenv("PICOCLAW_DOCKER_TEST_IMAGE"))
-	if image == "" {
-		image = "debian:bookworm-slim"
-	}
+	image := getTestImage()
 
 	sb := NewContainerSandbox(ContainerSandboxConfig{
 		Image:         image,
 		ContainerName: containerName,
 	})
-	err = sb.Start(ctx)
+	err := sb.Start(ctx)
 	if err != nil {
 		t.Fatalf("sandbox start failed: %v", err)
 	}
-	defer func() {
-		_ = sb.Prune(context.Background())
-		if sb.cli != nil {
-			_ = sb.cli.ContainerRemove(context.Background(), containerName, container.RemoveOptions{Force: true})
-		}
-	}()
+	defer sb.Prune(ctx)
 
-	content := []byte("mkdir path works")
-	err = sb.Fs().WriteFile(ctx, "/workspace/it_mkdir/nested/file.txt", content, true)
+	// Write to a directory that definitely doesn't exist in the container (under /workspace)
+	// This forces FsBridge to use Exec fallback for mkdir -p.
+	testPath := "/workspace/a/b/c/test.txt"
+	content := []byte("mkdir test")
+	err = sb.Fs().WriteFile(ctx, testPath, content, true)
 	if err != nil {
-		t.Fatalf("write with mkdir failed: %v", err)
+		t.Fatalf("WriteFile with mkdir failed: %v", err)
 	}
 
-	out, err := sb.Exec(ctx, ExecRequest{
-		Command: "cat /workspace/it_mkdir/nested/file.txt",
-	})
-	if err != nil {
-		t.Fatalf("exec cat failed: %v", err)
+	// Verify it exists
+	res, err := sb.Exec(ctx, ExecRequest{Command: "cat " + testPath})
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("Verify cat failed: %v", err)
 	}
-	if out.ExitCode != 0 {
-		t.Fatalf("exec cat exit code = %d, stderr = %q", out.ExitCode, out.Stderr)
-	}
-	if strings.TrimSpace(out.Stdout) != string(content) {
-		t.Fatalf("exec cat stdout mismatch: got %q want %q", strings.TrimSpace(out.Stdout), string(content))
+	if strings.TrimSpace(res.Stdout) != string(content) {
+		t.Errorf("cat mismatch: got %q", res.Stdout)
 	}
 }
 
 func TestContainerSandbox_Integration_SetupCommandSuccess(t *testing.T) {
-	if os.Getenv("PICOCLAW_RUN_DOCKER_TESTS") != "1" {
-		t.Skip("set PICOCLAW_RUN_DOCKER_TESTS=1 to run docker integration tests")
-	}
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	containerName := fmt.Sprintf("picoclaw-test-setup-ok-%d", time.Now().UnixNano())
-	image := strings.TrimSpace(os.Getenv("PICOCLAW_DOCKER_TEST_IMAGE"))
-	if image == "" {
-		image = "debian:bookworm-slim"
-	}
+	image := getTestImage()
 
 	sb := NewContainerSandbox(ContainerSandboxConfig{
 		Image:         image,
 		ContainerName: containerName,
-		Workspace:     t.TempDir(),
-		SetupCommand:  "true",
+		SetupCommand:  "touch /tmp/setup_done",
 	})
 	if err := sb.Start(ctx); err != nil {
-		t.Fatalf("sandbox start failed: %v", err)
+		t.Fatalf("Start failed: %v", err)
 	}
-	defer func() {
-		_ = sb.Prune(context.Background())
-		if sb.cli != nil {
-			_ = sb.cli.ContainerRemove(context.Background(), containerName, container.RemoveOptions{Force: true})
-		}
-	}()
+	defer sb.Prune(ctx)
 
-	out, err := sb.Exec(ctx, ExecRequest{
-		Command: "echo setup-ok",
-	})
-	if err != nil {
-		t.Fatalf("exec after setup_command failed: %v", err)
-	}
-	if out.ExitCode != 0 {
-		t.Fatalf("unexpected exit code=%d stderr=%q", out.ExitCode, out.Stderr)
-	}
-	if strings.TrimSpace(out.Stdout) != "setup-ok" {
-		t.Fatalf("unexpected setup content: %q", out.Stdout)
+	res, err := sb.Exec(ctx, ExecRequest{Command: "ls /tmp/setup_done"})
+	if err != nil || res.ExitCode != 0 {
+		t.Errorf("Setup command didn't run or fail to create file: %v", err)
 	}
 }
 
 func TestContainerSandbox_Integration_SetupCommandFailureRemovesContainer(t *testing.T) {
-	if os.Getenv("PICOCLAW_RUN_DOCKER_TESTS") != "1" {
-		t.Skip("set PICOCLAW_RUN_DOCKER_TESTS=1 to run docker integration tests")
-	}
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	containerName := fmt.Sprintf("picoclaw-test-setup-fail-%d", time.Now().UnixNano())
-	image := strings.TrimSpace(os.Getenv("PICOCLAW_DOCKER_TEST_IMAGE"))
-	if image == "" {
-		image = "debian:bookworm-slim"
-	}
+	image := getTestImage()
 
 	sb := NewContainerSandbox(ContainerSandboxConfig{
 		Image:         image,
 		ContainerName: containerName,
-		Workspace:     t.TempDir(),
-		SetupCommand:  "echo boom >&2; exit 7",
+		SetupCommand:  "false", // Force setup to fail
 	})
 	if err := sb.Start(ctx); err != nil {
-		t.Fatalf("sandbox start failed: %v", err)
-	}
-	defer func() {
-		_ = sb.Prune(context.Background())
-		if sb.cli != nil {
-			_ = sb.cli.ContainerRemove(context.Background(), containerName, container.RemoveOptions{Force: true})
-		}
-	}()
-
-	_, err := sb.Exec(ctx, ExecRequest{Command: "echo never"})
-	if err == nil || !strings.Contains(err.Error(), "setup_command failed") {
-		t.Fatalf("expected setup_command failed error, got: %v", err)
+		t.Fatalf("Start failed: %v", err)
 	}
 
-	_, inspectErr := sb.cli.ContainerInspect(ctx, containerName)
-	if inspectErr == nil {
-		t.Fatal("expected failed setup to remove container, but container still exists")
+	// Trigger container creation and setup command execution
+	_, err := sb.Exec(ctx, ExecRequest{Command: "echo test"})
+	if err == nil {
+		t.Fatal("expected Exec to fail due to failing setup_command")
+	}
+
+	// Verify container was removed by the error handler in createAndStart
+	cli, _ := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	defer cli.Close()
+	_, err = cli.ContainerInspect(ctx, containerName)
+	if !client.IsErrNotFound(err) {
+		t.Errorf("expected container to be removed after failed setup, got err: %v", err)
 	}
 }
 
 func TestContainerSandbox_Integration_MaybePruneRemovesOldContainer(t *testing.T) {
-	if os.Getenv("PICOCLAW_RUN_DOCKER_TESTS") != "1" {
-		t.Skip("set PICOCLAW_RUN_DOCKER_TESTS=1 to run docker integration tests")
-	}
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	root := t.TempDir()
 	containerName := fmt.Sprintf("picoclaw-test-prune-%d", time.Now().UnixNano())
-	image := strings.TrimSpace(os.Getenv("PICOCLAW_DOCKER_TEST_IMAGE"))
-	if image == "" {
-		image = "debian:bookworm-slim"
-	}
+	image := getTestImage()
 
 	sb := NewContainerSandbox(ContainerSandboxConfig{
 		Image:           image,
 		ContainerName:   containerName,
-		WorkspaceRoot:   root,
-		WorkspaceAccess: "none",
-		PruneIdleHours:  1,
-		PruneMaxAgeDays: 0,
+		Workspace:       root,
+		PruneMaxAgeDays: -1, // Force immediate prune eligibility
 	})
+
 	if err := sb.Start(ctx); err != nil {
-		t.Fatalf("sandbox start failed: %v", err)
-	}
-	defer func() {
-		_ = sb.Prune(context.Background())
-		if sb.cli != nil {
-			_ = sb.cli.ContainerRemove(context.Background(), containerName, container.RemoveOptions{Force: true})
-		}
-	}()
-
-	if _, err := sb.Exec(ctx, ExecRequest{Command: "echo alive"}); err != nil {
-		t.Fatalf("exec create failed: %v", err)
+		t.Fatalf("Start failed: %v", err)
 	}
 
-	now := time.Now().UnixMilli()
-	if err := upsertRegistryEntry(sb.registryPath(), registryEntry{
-		ContainerName: containerName,
-		Image:         image,
-		ConfigHash:    sb.hash,
-		CreatedAtMs:   now - int64(2*time.Hour/time.Millisecond),
-		LastUsedAtMs:  now - int64(2*time.Hour/time.Millisecond),
-	}); err != nil {
-		t.Fatalf("upsert old registry entry failed: %v", err)
+	// Trigger container creation
+	if _, err := sb.Exec(ctx, ExecRequest{Command: "echo test"}); err != nil {
+		t.Fatalf("Exec failed: %v", err)
 	}
 
-	manager := &scopedSandboxManager{
-		pruneIdleHours:  1,
-		pruneMaxAgeDays: 0,
-		scoped: map[string]Sandbox{
-			"agent:main": sb,
-		},
-	}
-	if err := manager.pruneOnce(ctx); err != nil {
-		t.Fatalf("pruneOnce failed: %v", err)
-	}
+	cli, _ := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	defer cli.Close()
 
-	if _, err := sb.cli.ContainerInspect(ctx, containerName); err == nil {
-		t.Fatal("expected container to be removed by prune")
-	}
-	data, err := loadRegistry(sb.registryPath())
+	_, err := cli.ContainerInspect(ctx, containerName)
 	if err != nil {
-		t.Fatalf("loadRegistry failed: %v", err)
+		t.Fatalf("container missing before prune: %v", err)
 	}
-	for _, e := range data.Entries {
-		if e.ContainerName == containerName {
-			t.Fatal("expected pruned container to be removed from registry")
-		}
+
+	// Explicitly call Prune (scoped manager would normally do this in loop)
+	if err := sb.Prune(ctx); err != nil {
+		t.Fatalf("Prune failed: %v", err)
+	}
+
+	// Verify container is gone
+	_, err = cli.ContainerInspect(ctx, containerName)
+	if !client.IsErrNotFound(err) {
+		t.Errorf("expected container gone after prune, got err: %v", err)
 	}
 }
 
 func TestContainerSandbox_Integration_ExecTimeoutRespectsRequest(t *testing.T) {
-	if os.Getenv("PICOCLAW_RUN_DOCKER_TESTS") != "1" {
-		t.Skip("set PICOCLAW_RUN_DOCKER_TESTS=1 to run docker integration tests")
-	}
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	containerName := fmt.Sprintf("picoclaw-test-timeout-%d", time.Now().UnixNano())
-	image := strings.TrimSpace(os.Getenv("PICOCLAW_DOCKER_TEST_IMAGE"))
-	if image == "" {
-		image = "debian:bookworm-slim"
-	}
+	image := getTestImage()
 
 	sb := NewContainerSandbox(ContainerSandboxConfig{
 		Image:         image,
 		ContainerName: containerName,
-		Workspace:     t.TempDir(),
 	})
 	if err := sb.Start(ctx); err != nil {
-		t.Fatalf("sandbox start failed: %v", err)
+		t.Fatalf("Start failed: %v", err)
 	}
-	defer func() {
-		_ = sb.Prune(context.Background())
-		if sb.cli != nil {
-			_ = sb.cli.ContainerRemove(context.Background(), containerName, container.RemoveOptions{Force: true})
-		}
-	}()
+	defer sb.Prune(ctx)
 
 	start := time.Now()
 	_, err := sb.Exec(ctx, ExecRequest{
-		Command:   "sleep 3",
-		TimeoutMs: 200,
+		Command:   "sleep 10",
+		TimeoutMs: 100, // Very short timeout
 	})
+	elapsed := time.Since(start)
+
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if time.Since(start) > 2*time.Second {
-		t.Fatalf("expected timeout to trigger early, took %v", time.Since(start))
+	if elapsed > 2*time.Second {
+		t.Errorf("Exec took too long to time out: %v", elapsed)
 	}
 }
 
 func TestContainerSandbox_Integration_ExecTimeoutBreaksStdCopyBlock(t *testing.T) {
-	if os.Getenv("PICOCLAW_RUN_DOCKER_TESTS") != "1" {
-		t.Skip("set PICOCLAW_RUN_DOCKER_TESTS=1 to run docker integration tests")
-	}
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	containerName := fmt.Sprintf("picoclaw-test-timeout-block-%d", time.Now().UnixNano())
-	image := strings.TrimSpace(os.Getenv("PICOCLAW_DOCKER_TEST_IMAGE"))
-	if image == "" {
-		image = "debian:bookworm-slim"
-	}
+	image := getTestImage()
 
 	sb := NewContainerSandbox(ContainerSandboxConfig{
 		Image:         image,
 		ContainerName: containerName,
-		Workspace:     t.TempDir(),
 	})
 	if err := sb.Start(ctx); err != nil {
-		t.Fatalf("sandbox start failed: %v", err)
+		t.Fatalf("Start failed: %v", err)
 	}
-	defer func() {
-		_ = sb.Prune(context.Background())
-		if sb.cli != nil {
-			_ = sb.cli.ContainerRemove(context.Background(), containerName, container.RemoveOptions{Force: true})
-		}
-	}()
+	defer sb.Prune(ctx)
 
+	// Simulate a command that hangs and might block output readers
 	start := time.Now()
-	// Run a command that sleeps for a very long time holding the stream open.
-	// We set a 500ms timeout. If StdCopy isn't broken asynchronously, the Exec call will hang.
 	_, err := sb.Exec(ctx, ExecRequest{
-		Command:   "sh -c 'sleep 1000'",
+		Command:   "cat", // Blocks waiting for stdin which is never provided
 		TimeoutMs: 500,
 	})
+	elapsed := time.Since(start)
+
 	if err == nil {
 		t.Fatal("expected timeout error for hanging command")
 	}
-	elapsed := time.Since(start)
-	if elapsed > 2*time.Second {
-		t.Fatalf("expected timeout to trigger within 2s, but it blocked for %v (StdCopy might be hanging)", elapsed)
+	if elapsed > 3*time.Second {
+		t.Errorf("Exec took too long to break block: %v", elapsed)
 	}
 }

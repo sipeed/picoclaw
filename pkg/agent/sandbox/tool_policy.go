@@ -26,10 +26,14 @@ func IsToolSandboxEnabled(cfg *config.Config, tool string) bool {
 		return false
 	}
 	if !hasAllow {
+		// No allow list configured: use the built-in default set.
 		return containsTool(defaultSandboxAllow, name)
 	}
 	if len(allow) == 0 {
-		return true
+		// Explicit empty allow list means "deny all" — no tool gets
+		// sandbox routing. This is the intuitive interpretation: an empty
+		// allowlist blocks everything (principle of least privilege).
+		return false
 	}
 	return containsTool(allow, name)
 }

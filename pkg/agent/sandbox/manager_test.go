@@ -52,8 +52,8 @@ func TestNewFromConfig_AllModeReturnsUnavailableWhenBlocked(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Sandbox.Mode = "all"
 	cfg.Agents.Defaults.Sandbox.Docker.Network = "host"
-	cfg.Agents.Defaults.Sandbox.Prune.IdleHours = 0
-	cfg.Agents.Defaults.Sandbox.Prune.MaxAgeDays = 0
+	cfg.Agents.Defaults.Sandbox.Prune.IdleHours = config.IntPtr(0)
+	cfg.Agents.Defaults.Sandbox.Prune.MaxAgeDays = config.IntPtr(0)
 
 	// NewFromConfigWithAgent is the manager factory; when Docker is unavailable
 	// it should return an unavailableSandbox that implements Manager.

@@ -232,7 +232,16 @@ func setupCronTool(
 	cronService := cron.NewCronService(cronStorePath, nil)
 
 	// Create and register CronTool
-	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
+	cronTool := tools.NewCronTool(
+		cronService,
+		agentLoop,
+		msgBus,
+		workspace,
+		restrict,
+		execTimeout,
+		cfg,
+		agentLoop.GetDefaultSandboxManager(),
+	)
 	agentLoop.RegisterTool(cronTool)
 
 	// Set the onJob handler

@@ -26,6 +26,14 @@ func NewFromConfig(workspace string, restrict bool, cfg *config.Config) Sandbox 
 	return host
 }
 
+// NewFromConfigAsManager returns a Manager backed by a HostSandbox from config.
+// Use this when you need the Manager interface but have no agent-level manager available.
+func NewFromConfigAsManager(workspace string, restrict bool, cfg *config.Config) Manager {
+	host := NewHostSandbox(workspace, restrict)
+	_ = host.Start(context.Background())
+	return &hostOnlyManager{host: host}
+}
+
 // NewFromConfigWithAgent builds the sandbox Manager for an agent.
 // It always returns a non-nil Manager (falling back to a host manager or error manager if needed).
 func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config, agentID string) Manager {
@@ -59,11 +67,11 @@ func NewFromConfigWithAgent(workspace string, restrict bool, cfg *config.Config,
 		if strings.TrimSpace(sb.Docker.ContainerPrefix) != "" {
 			containerPrefix = strings.TrimSpace(sb.Docker.ContainerPrefix)
 		}
-		if sb.Prune.IdleHours >= 0 {
-			pruneIdleHours = sb.Prune.IdleHours
+		if sb.Prune.IdleHours != nil {
+			pruneIdleHours = *sb.Prune.IdleHours
 		}
-		if sb.Prune.MaxAgeDays >= 0 {
-			pruneMaxAgeDays = sb.Prune.MaxAgeDays
+		if sb.Prune.MaxAgeDays != nil {
+			pruneMaxAgeDays = *sb.Prune.MaxAgeDays
 		}
 		dockerCfg = sb.Docker
 	}
@@ -354,6 +362,17 @@ func (m *scopedSandboxManager) Fs() FsBridge {
 	return m.fs
 }
 
+func (m *scopedSandboxManager) GetWorkspace(ctx context.Context) string {
+	if !m.shouldSandbox(ctx) {
+		return m.host.GetWorkspace(ctx)
+	}
+	sb, err := m.getOrCreateSandbox(ctx, m.scopeKeyFromContext(ctx))
+	if err != nil {
+		return m.host.GetWorkspace(ctx)
+	}
+	return sb.GetWorkspace(ctx)
+}
+
 // Resolve returns the specific sandbox instance to be used for the given context.
 func (m *scopedSandboxManager) Resolve(ctx context.Context) (Sandbox, error) {
 	if !m.shouldSandbox(ctx) {
@@ -422,16 +441,24 @@ func (m *scopedSandboxManager) getOrCreateSandbox(ctx context.Context, scopeKey 
 		m.mu.Unlock()
 		return sb, nil
 	}
-	sb := m.buildScopedContainerSandbox(scopeKey)
-	m.scoped[scopeKey] = sb
 	m.mu.Unlock()
 
+	sb := m.buildScopedContainerSandbox(scopeKey)
 	if err := sb.Start(ctx); err != nil {
-		m.mu.Lock()
-		delete(m.scoped, scopeKey)
-		m.mu.Unlock()
 		return nil, err
 	}
+
+	// Re-acquire lock and perform a second check to guard against a concurrent
+	// goroutine that also passed the fast path and completed Start() first.
+	m.mu.Lock()
+	if existing, ok := m.scoped[scopeKey]; ok {
+		m.mu.Unlock()
+		// Another goroutine won the race; clean up our duplicate and return theirs.
+		_ = sb.Prune(context.Background())
+		return existing, nil
+	}
+	m.scoped[scopeKey] = sb
+	m.mu.Unlock()
 	return sb, nil
 }
 
@@ -538,6 +565,7 @@ func (h *hostOnlyManager) Start(ctx context.Context) error              { return
 func (h *hostOnlyManager) Prune(ctx context.Context) error              { return h.host.Prune(ctx) }
 func (h *hostOnlyManager) Resolve(ctx context.Context) (Sandbox, error) { return h.host, nil }
 func (h *hostOnlyManager) Fs() FsBridge                                 { return h.host.Fs() }
+func (h *hostOnlyManager) GetWorkspace(ctx context.Context) string      { return h.host.GetWorkspace(ctx) }
 func (h *hostOnlyManager) Exec(ctx context.Context, req ExecRequest) (*ExecResult, error) {
 	return h.host.Exec(ctx, req)
 }
@@ -574,6 +602,11 @@ func (u *unavailableSandboxManager) Resolve(ctx context.Context) (Sandbox, error
 }
 
 func (u *unavailableSandboxManager) Fs() FsBridge { return u.fs }
+
+func (u *unavailableSandboxManager) GetWorkspace(ctx context.Context) string {
+	return ""
+}
+
 func (u *unavailableSandboxManager) Exec(ctx context.Context, req ExecRequest) (*ExecResult, error) {
 	return aggregateExecStream(func(onEvent func(ExecEvent) error) (*ExecResult, error) {
 		return u.ExecStream(ctx, req, onEvent)

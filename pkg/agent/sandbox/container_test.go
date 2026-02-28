@@ -16,6 +16,16 @@ import (
 )
 
 func TestResolveContainerPath_Relative(t *testing.T) {
+	sb := NewContainerSandbox(ContainerSandboxConfig{Workdir: "/app"})
+	if got := sb.GetWorkspace(context.Background()); got != "/app" {
+		t.Errorf("GetWorkspace() = %q, want /app", got)
+	}
+
+	sb2 := NewContainerSandbox(ContainerSandboxConfig{})
+	if got := sb2.GetWorkspace(context.Background()); got != "/workspace" {
+		t.Errorf("GetWorkspace() default = %q, want /workspace", got)
+	}
+
 	got, err := resolveContainerPath("foo/bar.txt")
 	if err != nil {
 		t.Fatalf("resolveContainerPath returned error: %v", err)

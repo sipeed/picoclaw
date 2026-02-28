@@ -428,6 +428,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		history = agent.Sessions.GetHistory(opts.SessionKey)
 		summary = agent.Sessions.GetSummary(opts.SessionKey)
 	}
+	workspacePath := sb.GetWorkspace(ctx)
+	_, isHost := sb.(*sandbox.HostSandbox)
+
+	sbInfo := SandboxInfo{
+		IsHost:       isHost,
+		WorkspaceDir: workspacePath,
+	}
+
 	messages := agent.ContextBuilder.BuildMessages(
 		history,
 		summary,
@@ -435,13 +443,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		nil,
 		opts.Channel,
 		opts.ChatID,
+		workspacePath,
+		sbInfo,
 	)
 
 	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
 	// 4. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
+	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts, workspacePath, sbInfo)
 	if err != nil {
 		return "", err
 	}
@@ -491,6 +501,8 @@ func (al *AgentLoop) runLLMIteration(
 	agent *AgentInstance,
 	messages []providers.Message,
 	opts processOptions,
+	workspacePath string,
+	sbInfo SandboxInfo,
 ) (string, int, error) {
 	iteration := 0
 	var finalContent string
@@ -594,7 +606,8 @@ func (al *AgentLoop) runLLMIteration(
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
 					newHistory, newSummary, "",
-					nil, opts.Channel, opts.ChatID,
+					nil, opts.Channel, opts.ChatID, workspacePath,
+					sbInfo,
 				)
 				continue
 			}
@@ -701,9 +714,8 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}
 
-			toolCtx := sandbox.WithSessionKey(ctx, opts.SessionKey)
 			toolResult := agent.Tools.ExecuteWithContext(
-				toolCtx,
+				ctx,
 				tc.Name,
 				tc.Arguments,
 				opts.Channel,
@@ -841,6 +853,16 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
 	})
+}
+
+// GetDefaultSandboxManager returns the SandboxManager of the default agent.
+// Returns nil if no default agent is registered.
+func (al *AgentLoop) GetDefaultSandboxManager() sandbox.Manager {
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return nil
+	}
+	return agent.SandboxManager
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.

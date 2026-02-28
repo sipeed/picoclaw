@@ -469,8 +469,12 @@ type ExecConfig struct {
 }
 
 type AgentSandboxPruneConfig struct {
-	IdleHours  int `json:"idle_hours"   env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_IDLE_HOURS"`
-	MaxAgeDays int `json:"max_age_days" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_MAX_AGE_DAYS"`
+	// IdleHours: prune containers idle for this many hours. nil = use default (24).
+	// Set to 0 to disable idle-based pruning.
+	IdleHours *int `json:"idle_hours" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_IDLE_HOURS"`
+	// MaxAgeDays: prune containers older than this many days. nil = use default (7).
+	// Set to 0 to disable age-based pruning.
+	MaxAgeDays *int `json:"max_age_days" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX_PRUNE_MAX_AGE_DAYS"`
 }
 
 type AgentSandboxDockerUlimitValue struct {
@@ -806,3 +810,12 @@ func (c *Config) ValidateModelList() error {
 	}
 	return nil
 }
+
+// IntPtr is a convenience helper that returns a pointer to the provided int value.
+// It is used to initialise *int config fields with literal defaults.
+func IntPtr(v int) *int {
+	return &v
+}
+
+// intPtr is an alias for IntPtr for internal use within the config package.
+func intPtr(v int) *int { return IntPtr(v) }

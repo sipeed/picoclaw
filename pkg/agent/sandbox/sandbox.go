@@ -27,6 +27,9 @@ type Sandbox interface {
 	// Implementations should emit stdout/stderr chunks as they arrive and a final
 	// exit event when command execution completes.
 	ExecStream(ctx context.Context, req ExecRequest, onEvent func(ExecEvent) error) (*ExecResult, error)
+	// For host sandboxes, this is the absolute host path.
+	// For container sandboxes, this is typically "/workspace".
+	GetWorkspace(ctx context.Context) string
 	// Fs returns the sandbox-aware filesystem bridge.
 	Fs() FsBridge
 }
@@ -177,13 +180,18 @@ func aggregateExecStream(execFn func(onEvent func(ExecEvent) error) (*ExecResult
 	if res == nil {
 		return out, nil
 	}
-	if res.Stdout != "" || out.Stdout == "" {
+	// Streaming output takes priority; only fall back to res if the streaming
+	// path produced no data at all (e.g. the implementation does not emit events).
+	if out.Stdout == "" && res.Stdout != "" {
 		out.Stdout = res.Stdout
 	}
-	if res.Stderr != "" || out.Stderr == "" {
+	if out.Stderr == "" && res.Stderr != "" {
 		out.Stderr = res.Stderr
 	}
-	if res.ExitCode != 0 || exitCode == 0 {
+	// Prefer the streaming exit code captured from ExecEventExit; fall back to
+	// res.ExitCode only when no exit event was received (exitCode stayed at 0)
+	// and res carries a non-zero code.
+	if exitCode == 0 && res.ExitCode != 0 {
 		out.ExitCode = res.ExitCode
 	}
 	return out, nil

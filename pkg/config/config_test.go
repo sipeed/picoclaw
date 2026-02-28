@@ -376,10 +376,10 @@ func TestDefaultConfig_SandboxTools(t *testing.T) {
 	if len(cfg.Tools.Sandbox.Tools.Allow) == 0 {
 		t.Fatal("Expected sandbox allow tools to be configured")
 	}
-	if cfg.Agents.Defaults.Sandbox.Prune.IdleHours <= 0 {
+	if cfg.Agents.Defaults.Sandbox.Prune.IdleHours == nil || *cfg.Agents.Defaults.Sandbox.Prune.IdleHours <= 0 {
 		t.Fatal("Expected sandbox prune idle hours > 0")
 	}
-	if cfg.Agents.Defaults.Sandbox.Prune.MaxAgeDays <= 0 {
+	if cfg.Agents.Defaults.Sandbox.Prune.MaxAgeDays == nil || *cfg.Agents.Defaults.Sandbox.Prune.MaxAgeDays <= 0 {
 		t.Fatal("Expected sandbox prune max age days > 0")
 	}
 	if cfg.Tools.Sandbox.Tools.Deny == nil {

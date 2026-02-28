@@ -20,9 +20,13 @@ var blockedHostPaths = []string{
 	"/run",
 	"/var/run",
 	"/private/var/run",
+	"/run/docker.sock",
 	"/var/run/docker.sock",
 	"/private/var/run/docker.sock",
-	"/run/docker.sock",
+	"/run/user",
+	"/run/podman",
+	"/tmp/podman.sock",
+	"/xdg_runtime_dir",
 }
 
 var blockedEnvVarPatterns = []*regexp.Regexp{

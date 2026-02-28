@@ -10,10 +10,16 @@ import (
 )
 
 func TestHostSandbox_StartStopFs(t *testing.T) {
-	sb := NewHostSandbox(t.TempDir(), true)
+	root := t.TempDir()
+	sb := NewHostSandbox(root, true)
 	if err := sb.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error: %v", err)
 	}
+
+	if got := sb.GetWorkspace(context.Background()); got != root {
+		t.Errorf("GetWorkspace() = %q, want %q", got, root)
+	}
+
 	if err := sb.Prune(context.Background()); err != nil {
 		t.Fatalf("Prune() error: %v", err)
 	}

@@ -47,8 +47,8 @@ func DefaultConfig() *Config {
 						Binds:           []string{},
 					},
 					Prune: AgentSandboxPruneConfig{
-						IdleHours:  24,
-						MaxAgeDays: 7,
+						IdleHours:  intPtr(24),
+						MaxAgeDays: intPtr(7),
 					},
 				},
 			},
