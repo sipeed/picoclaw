@@ -183,8 +183,14 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 	logger.InfoC("whatsapp", "Stopping WhatsApp native channel")
 
-	// Mark as stopping so no new goroutines are spawned via eventHandler.
+	// Mark as stopping under reconnectMu so the flag is visible to
+	// eventHandler atomically with respect to its wg.Add(1) call.
+	// This closes the TOCTOU window where eventHandler could check
+	// stopping (false), then Stop sets it true + enters wg.Wait,
+	// then eventHandler calls wg.Add(1) — causing a panic.
+	c.reconnectMu.Lock()
 	c.stopping.Store(true)
+	c.reconnectMu.Unlock()
 
 	if c.runCancel != nil {
 		c.runCancel()
@@ -236,18 +242,21 @@ func (c *WhatsAppNativeChannel) eventHandler(evt any) {
 		c.handleIncoming(evt.(*events.Message))
 	case *events.Disconnected:
 		logger.InfoCF("whatsapp", "WhatsApp disconnected, will attempt reconnection", nil)
-		// Prevent new goroutines once Stop() has begun.
-		if c.stopping.Load() {
-			return
-		}
 		c.reconnectMu.Lock()
 		if c.reconnecting {
 			c.reconnectMu.Unlock()
 			return
 		}
+		// Check stopping while holding the lock so the check and wg.Add
+		// are atomic with respect to Stop() setting the flag + calling
+		// wg.Wait(). This prevents the TOCTOU race.
+		if c.stopping.Load() {
+			c.reconnectMu.Unlock()
+			return
+		}
 		c.reconnecting = true
-		c.reconnectMu.Unlock()
 		c.wg.Add(1)
+		c.reconnectMu.Unlock()
 		go func() {
 			defer c.wg.Done()
 			c.reconnectWithBackoff()
