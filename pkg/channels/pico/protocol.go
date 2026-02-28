@@ -3,6 +3,8 @@ package pico
 import "time"
 
 // Protocol message types.
+// NOTE: These should match pkg/pico/protocol/protocol.go to keep protocol definitions in sync.
+// The canonical definitions are in pkg/pico/protocol which has zero dependencies.
 const (
 	// TypeMessageSend is sent from client to server.
 	TypeMessageSend = "message.send"
@@ -17,6 +19,11 @@ const (
 	TypeTypingStop    = "typing.stop"
 	TypeError         = "error"
 	TypePong          = "pong"
+
+	// TypeNodeRequest is sent for node-to-node communication (swarm mode).
+	TypeNodeRequest = "node.request"
+	// TypeNodeReply is the reply for node-to-node communication (swarm mode).
+	TypeNodeReply = "node.reply"
 )
 
 // PicoMessage is the wire format for all Pico Protocol messages.

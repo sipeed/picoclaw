@@ -58,6 +58,7 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Swarm     SwarmConfig     `json:"swarm,omitempty"` // Swarm mode configuration
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -773,4 +774,116 @@ func (c *Config) ValidateModelList() error {
 		}
 	}
 	return nil
+}
+
+// SwarmConfig contains configuration for swarm mode.
+type SwarmConfig struct {
+	// Enabled enables swarm mode.
+	Enabled bool `json:"enabled" env:"PICOCLAW_SWARM_ENABLED"`
+
+	// NodeID is the unique identifier for this node.
+	NodeID string `json:"node_id,omitempty" env:"PICOCLAW_SWARM_NODE_ID"`
+
+	// BindAddr is the address to bind for gossip and RPC.
+	BindAddr string `json:"bind_addr,omitempty" env:"PICOCLAW_SWARM_BIND_ADDR"`
+
+	// BindPort is the port for gossip protocol.
+	BindPort int `json:"bind_port,omitempty" env:"PICOCLAW_SWARM_BIND_PORT"`
+
+	// AdvertiseAddr is the address to advertise to other nodes.
+	AdvertiseAddr string `json:"advertise_addr,omitempty" env:"PICOCLAW_SWARM_ADVERTISE_ADDR"`
+
+	// Discovery configuration for node discovery.
+	Discovery SwarmDiscoveryConfig `json:"discovery"`
+
+	// Handoff configuration for task handoff.
+	Handoff SwarmHandoffConfig `json:"handoff"`
+
+	// RPC configuration for inter-node communication.
+	RPC SwarmRPCConfig `json:"rpc"`
+
+	// LoadMonitor configuration for load monitoring.
+	LoadMonitor SwarmLoadMonitorConfig `json:"load_monitor"`
+
+	// LeaderElection configuration for leader election.
+	LeaderElection SwarmLeaderElectionConfig `json:"leader_election"`
+}
+
+// SwarmDiscoveryConfig contains configuration for node discovery.
+type SwarmDiscoveryConfig struct {
+	// JoinAddrs is a list of existing nodes to join.
+	JoinAddrs []string `json:"join_addrs,omitempty"`
+
+	// GossipInterval is the interval between gossip messages (in seconds).
+	GossipInterval int `json:"gossip_interval,omitempty"`
+
+	// PushPullInterval is the interval for full state sync (in seconds).
+	PushPullInterval int `json:"push_pull_interval,omitempty"`
+
+	// NodeTimeout is the timeout before marking a node as suspect (in seconds).
+	NodeTimeout int `json:"node_timeout,omitempty"`
+
+	// DeadNodeTimeout is the timeout before marking a node as dead (in seconds).
+	DeadNodeTimeout int `json:"dead_node_timeout,omitempty"`
+}
+
+// SwarmHandoffConfig contains configuration for task handoff.
+type SwarmHandoffConfig struct {
+	// Enabled enables task handoff.
+	Enabled bool `json:"enabled"`
+
+	// LoadThreshold is the load score threshold (0-1) above which
+	// tasks will be handed off to other nodes.
+	LoadThreshold float64 `json:"load_threshold,omitempty"`
+
+	// Timeout is the timeout for a handoff operation (in seconds).
+	Timeout int `json:"timeout,omitempty"`
+
+	// MaxRetries is the maximum number of retries for handoff.
+	MaxRetries int `json:"max_retries,omitempty"`
+
+	// RetryDelay is the delay between retries (in seconds).
+	RetryDelay int `json:"retry_delay,omitempty"`
+}
+
+// SwarmRPCConfig contains configuration for RPC communication.
+type SwarmRPCConfig struct {
+	// Port is the port for RPC communication.
+	Port int `json:"port,omitempty" env:"PICOCLAW_SWARM_RPC_PORT"`
+
+	// Timeout is the default timeout for RPC calls (in seconds).
+	Timeout int `json:"timeout,omitempty"`
+}
+
+// SwarmLoadMonitorConfig contains configuration for load monitoring.
+type SwarmLoadMonitorConfig struct {
+	// Enabled enables load monitoring.
+	Enabled bool `json:"enabled"`
+
+	// Interval is the interval between load samples (in seconds).
+	Interval int `json:"interval,omitempty"`
+
+	// SampleSize is the number of samples to keep for averaging.
+	SampleSize int `json:"sample_size,omitempty"`
+
+	// CPUWeight is the weight for CPU usage in load score (0-1).
+	CPUWeight float64 `json:"cpu_weight,omitempty"`
+
+	// MemoryWeight is the weight for memory usage in load score (0-1).
+	MemoryWeight float64 `json:"memory_weight,omitempty"`
+
+	// SessionWeight is the weight for active sessions in load score (0-1).
+	SessionWeight float64 `json:"session_weight,omitempty"`
+}
+
+// SwarmLeaderElectionConfig contains configuration for leader election.
+type SwarmLeaderElectionConfig struct {
+	// Enabled enables leader election.
+	Enabled bool `json:"enabled"`
+
+	// ElectionInterval is how often to check leadership (in seconds).
+	ElectionInterval int `json:"election_interval,omitempty"`
+
+	// LeaderHeartbeatTimeout is how long before assuming leader is dead (in seconds).
+	LeaderHeartbeatTimeout int `json:"leader_heartbeat_timeout,omitempty"`
 }
