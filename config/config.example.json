@@ -159,7 +159,8 @@
       "webhook_port": 18791,
       "webhook_path": "/webhook/wecom-aibot",
       "max_steps": 10,
-      "welcome_message": "Hello! I'm your AI assistant. How can I help you today?"
+      "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
+      "reasoning_channel_id": ""
     }
   },
   "providers": {

@@ -130,6 +130,7 @@ func NewWeComAIBotChannel(
 
 	base := channels.NewBaseChannel("wecom_aibot", cfg, messageBus, cfg.AllowFrom,
 		channels.WithMaxMessageLength(2048),
+		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
 	return &WeComAIBotChannel{
@@ -336,13 +337,18 @@ func (c *WeComAIBotChannel) handleMessageCallback(
 	timestamp := r.URL.Query().Get("timestamp")
 	nonce := r.URL.Query().Get("nonce")
 
-	// Read request body
-	body, err := io.ReadAll(r.Body)
+	// Read request body (limit to 4 MB to prevent memory exhaustion)
+	const maxBodySize = 4 << 20 // 4 MB
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodySize+1))
 	if err != nil {
 		logger.ErrorCF("wecom_aibot", "Failed to read request body", map[string]any{
 			"error": err,
 		})
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
+		return
+	}
+	if len(body) > maxBodySize {
+		http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -1024,9 +1030,14 @@ func (c *WeComAIBotChannel) downloadAndDecryptImage(
 		return nil, fmt.Errorf("download failed with status: %d", resp.StatusCode)
 	}
 
-	encryptedData, err := io.ReadAll(resp.Body)
+	// Limit image download to 20 MB to prevent memory exhaustion
+	const maxImageSize = 20 << 20 // 20 MB
+	encryptedData, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read image data: %w", err)
+	}
+	if len(encryptedData) > maxImageSize {
+		return nil, fmt.Errorf("image too large (exceeds %d MB)", maxImageSize>>20)
 	}
 
 	logger.DebugCF("wecom_aibot", "Image downloaded", map[string]any{
