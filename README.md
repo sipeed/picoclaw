@@ -72,6 +72,18 @@ On first launch, a setup wizard guides you through the configuration:
 - See [Supported LLM Providers](#supported-llm-providers) for the full list
 - All settings can be changed later from the in-app settings screen
 
+### 4. Using the App
+
+**Chat**: Open the app and start chatting right away.
+
+**Assistant (overlay)**: To use ClawDroid as your device assistant, set it as the default:
+
+1. Open Android **Settings** > **Apps** > **Default apps** > **Digital assistant app**
+2. Select **ClawDroid**
+3. Long-press the Home button (or swipe from the corner on gesture navigation) to launch the assistant overlay
+
+The assistant overlay enables voice mode and device automation (tap, swipe, screenshot, etc.).
+
 ## Configuration
 
 The embedded version uses the in-app settings GUI. The Termux version uses `~/.clawdroid/config.json`.
