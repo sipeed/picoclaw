@@ -161,6 +161,12 @@ func registerSharedTools(
 
 		spawnSubAgentTool := tools.NewSpawnSubAgentTool(subagentManager)
 		agent.Tools.Register(spawnSubAgentTool)
+
+		// Direction 3: Hierarchical Decomposition.
+		// Share the fully-built registry (which includes team, spawn_sub_agent, etc.) back
+		// to the subagent manager so that all workers spawned by this agent also inherit
+		// the full toolset — enabling sub-agents to recursively call 'team' themselves.
+		subagentManager.SetTools(agent.Tools)
 	}
 }
 

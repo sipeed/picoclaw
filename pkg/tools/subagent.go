@@ -15,6 +15,7 @@ import (
 // These are set via `"tags": ["vision", "code"]` under each model in the model list.
 const (
 	ModelTagVision      = "vision"       // Supports image/screenshot input (multimodal)
+	ModelTagImageGen    = "image-gen"    // Supports image generation output (e.g. DALL-E, Stable Diffusion)
 	ModelTagCode        = "code"         // Specialized for code generation and analysis
 	ModelTagFast        = "fast"         // Low-latency model, suited for lightweight tasks
 	ModelTagLongContext = "long-context" // Supports very long context windows (>100k tokens)
@@ -24,7 +25,8 @@ const (
 // modelTagDescriptions provides LLM-readable explanations of each known tag,
 // injected at runtime into the tool description to guide model selection.
 var modelTagDescriptions = map[string]string{
-	ModelTagVision:      "can analyze images and screenshots",
+	ModelTagVision:      "can analyze images and screenshots (multimodal input)",
+	ModelTagImageGen:    "can generate images from text descriptions (e.g. DALL-E, Stable Diffusion)",
 	ModelTagCode:        "specialized in code generation and debugging",
 	ModelTagFast:        "fast and lightweight, ideal for simple or high-frequency tasks",
 	ModelTagLongContext: "handles very long inputs (>100k tokens)",

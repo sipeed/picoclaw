@@ -38,7 +38,29 @@ func (t *TeamTool) Name() string {
 }
 
 func (t *TeamTool) Description() string {
-	base := "Compose and execute a team of distinct sub-agents. You (the main agent) should autonomously analyze the user's request, determine the necessary specialized roles, break down the work into sub-tasks, and assign them. Execute sequentially (passing output from one to the next) or concurrently in parallel."
+	base := `Compose and execute a team of specialized sub-agents to accomplish a complex task.
+
+WHEN TO USE THIS TOOL (use proactively — do not attempt to handle these alone):
+- The task involves 2 or more distinct areas of concern (e.g. research + writing, coding + testing, data gathering + analysis).
+- The task would require more than 5 consecutive tool calls if done alone.
+- Any part of the task can be done in parallel to save time.
+- The task is large enough that a single agent would likely lose context or quality midway.
+- The user asks you to "build", "create", "generate", "analyze", or "convert" something non-trivial.
+When in doubt, prefer delegation over doing everything yourself.
+
+CRITICAL RULES FOR TASK PLANNING:
+1. Think like a project manager: analyze the full task first, then design the team structure before spawning anyone.
+2. Decompose the task into the smallest independently-ownable units of work. A member should own exactly ONE distinct concern — not a broad compound goal.
+3. Identify dependencies between units: if one member's output is required by another, declare it via 'depends_on'. Independent units should run concurrently.
+4. Each member's 'task' must be precise and self-contained. Include relevant context (e.g. reference to outputs from dependencies) directly in the task description.
+5. Sub-agents are full agents with access to the same tools, including this 'team' tool. If a member's sub-task is itself complex, it may recursively form its own team.
+
+Strategy guide:
+- sequential: each step depends on the full output of the previous step in a strict chain.
+- parallel: all tasks are fully independent with no shared inputs or outputs.
+- dag: most real-world tasks — some tasks depend on others, some can run concurrently.
+- evaluator_optimizer: the output needs iterative critique and revision cycles.`
+
 	if t.manager != nil {
 		if hint := t.manager.ModelCapabilityHint(); hint != "" {
 			return base + "\n\n" + hint
