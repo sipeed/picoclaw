@@ -148,6 +148,10 @@ func (c *WeComAppChannel) Name() string {
 func (c *WeComAppChannel) Start(ctx context.Context) error {
 	logger.InfoC("wecom_app", "Starting WeCom App channel...")
 
+	// Cancel the context created in the constructor to avoid a resource leak.
+	if c.cancel != nil {
+		c.cancel()
+	}
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	// Get initial access token
@@ -601,14 +605,14 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 		return
 	}
 	c.processedMsgs[msgID] = true
-	c.msgMu.Unlock()
-
-	// Clean up old messages periodically (keep last 1000)
+	// Clean up old messages while still holding the lock to avoid a data race
+	// on len(). Reset the map but re-insert the current msgID so it remains
+	// deduplicated.
 	if len(c.processedMsgs) > 1000 {
-		c.msgMu.Lock()
 		c.processedMsgs = make(map[string]bool)
-		c.msgMu.Unlock()
+		c.processedMsgs[msgID] = true
 	}
+	c.msgMu.Unlock()
 
 	senderID := msg.FromUserName
 	chatID := senderID // WeCom App uses user ID as chat ID for direct messages
