@@ -23,6 +23,8 @@ type ToolLoopConfig struct {
 	Tools         *ToolRegistry
 	MaxIterations int
 	LLMOptions    map[string]any
+	RetryPolicy   *utils.RetryPolicy
+	RetryNotice   func(string)
 }
 
 // ToolLoopResult contains the result of running the tool loop.
@@ -62,8 +64,24 @@ func RunToolLoop(
 		if llmOpts == nil {
 			llmOpts = map[string]any{}
 		}
-		// 3. Call LLM
-		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
+		// 3. Call LLM with bounded transient retries.
+		retryPolicy := utils.DefaultLLMRetryPolicy()
+		if config.RetryPolicy != nil {
+			retryPolicy = *config.RetryPolicy
+		}
+		existingNotify := retryPolicy.Notify
+		retryPolicy.Notify = func(notice utils.RetryNotice) {
+			if existingNotify != nil {
+				existingNotify(notice)
+			}
+			if config.RetryNotice != nil && channel != "" && chatID != "" {
+				config.RetryNotice(utils.FormatLLMRetryNotice(notice))
+			}
+		}
+
+		response, err := utils.DoWithRetry(ctx, retryPolicy, func(callCtx context.Context) (*providers.LLMResponse, error) {
+			return config.Provider.Chat(callCtx, messages, providerToolDefs, config.Model, llmOpts)
+		})
 		if err != nil {
 			logger.ErrorCF("toolloop", "LLM call failed",
 				map[string]any{
