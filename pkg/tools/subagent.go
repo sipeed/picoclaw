@@ -33,6 +33,7 @@ type SubagentTask struct {
 type SubagentManager struct {
 	tasks          map[string]*SubagentTask
 	mu             sync.RWMutex
+	wg             sync.WaitGroup // tracks running spawn goroutines
 	provider       providers.LLMProvider
 	defaultModel   string
 	bus            *bus.MessageBus
@@ -122,8 +123,14 @@ func (sm *SubagentManager) Spawn(
 
 	sm.reporter.ReportSpawn(taskID, label, task)
 
-	// Start task in background with context cancellation support
-	go sm.runTask(ctx, subagentTask, preset, callback)
+	// Start task in background with a detached context.
+	// The spawned goroutine must outlive the parent (e.g. heartbeat session)
+	// which may finish before the subagent completes.
+	sm.wg.Add(1)
+	go func() {
+		defer sm.wg.Done()
+		sm.runTask(context.Background(), subagentTask, preset, callback)
+	}()
 
 	if label != "" {
 		return fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task), nil
@@ -364,6 +371,12 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 	}
 
 	return registry
+}
+
+// WaitAll blocks until all spawned subagent goroutines have finished.
+// Used by heartbeat cleanup to avoid destroying worktrees while subagents are still running.
+func (sm *SubagentManager) WaitAll() {
+	sm.wg.Wait()
 }
 
 func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {

@@ -40,6 +40,10 @@ type AgentInstance struct {
 	PlanFallbacks        []string
 	PlanCandidates       []providers.FallbackCandidate
 
+	// SubagentMgr is set during registerSharedTools when orchestration is enabled.
+	// Used by runAgentLoop to wait for spawned subagents before worktree cleanup.
+	SubagentMgr *tools.SubagentManager
+
 	// Interview staleness tracking: consecutive turns where MEMORY.md was not updated.
 	interviewStaleCount int
 	interviewMemoryLen  int
