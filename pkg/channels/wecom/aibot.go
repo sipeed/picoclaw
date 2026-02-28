@@ -181,6 +181,9 @@ func (c *WeComAIBotChannel) Stop(ctx context.Context) error {
 // It writes into the earliest unfinished task in the queue (FIFO per chatID).
 // If the stream has already closed (deadline passed), it posts directly to response_url.
 func (c *WeComAIBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
 	c.taskMu.Lock()
 	queue := c.chatTasks[msg.ChatID]
 	for len(queue) > 0 && queue[0].Finished {
