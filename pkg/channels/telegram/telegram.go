@@ -192,6 +192,35 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	return nil
 }
 
+// SendWithID implements channels.MessageSenderWithID.
+// It sends a message and returns the platform message ID.
+func (c *TelegramChannel) SendWithID(ctx context.Context, chatID string, content string) (string, error) {
+	if !c.IsRunning() {
+		return "", channels.ErrNotRunning
+	}
+
+	cid, err := parseChatID(chatID)
+	if err != nil {
+		return "", fmt.Errorf("invalid chat ID %s: %w", chatID, channels.ErrSendFailed)
+	}
+
+	htmlContent := markdownToTelegramHTML(content)
+	tgMsg := tu.Message(tu.ID(cid), htmlContent)
+	tgMsg.ParseMode = telego.ModeHTML
+
+	sent, err := c.bot.SendMessage(ctx, tgMsg)
+	if err != nil {
+		// Fallback to plain text
+		tgMsg.ParseMode = ""
+		sent, err = c.bot.SendMessage(ctx, tgMsg)
+		if err != nil {
+			return "", fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+		}
+	}
+
+	return fmt.Sprintf("%d", sent.MessageID), nil
+}
+
 // StartTyping implements channels.TypingCapable.
 // It sends ChatAction(typing) immediately and then repeats every 4 seconds
 // (Telegram's typing indicator expires after ~5s) in a background goroutine.

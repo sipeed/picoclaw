@@ -35,6 +35,8 @@ const (
 	janitorInterval = 10 * time.Second
 	typingStopTTL   = 5 * time.Minute
 	placeholderTTL  = 10 * time.Minute
+	statusMsgTTL    = 5 * time.Minute
+	taskMsgTTL      = 30 * time.Minute
 )
 
 // typingEntry wraps a typing stop function with a creation timestamp for TTL eviction.
@@ -52,6 +54,12 @@ type reactionEntry struct {
 // placeholderEntry wraps a placeholder ID with a creation timestamp for TTL eviction.
 type placeholderEntry struct {
 	id        string
+	createdAt time.Time
+}
+
+// statusMsgEntry tracks a status or task message ID for later editing.
+type statusMsgEntry struct {
+	messageID string
 	createdAt time.Time
 }
 
@@ -80,9 +88,11 @@ type Manager struct {
 	mediaStore    media.MediaStore
 	dispatchTask  *asyncTask
 	mu            sync.RWMutex
-	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
-	typingStops   sync.Map // "channel:chatID" → func()
+	placeholders  sync.Map // "channel:chatID" → placeholderEntry
+	typingStops   sync.Map // "channel:chatID" → typingEntry
 	reactionUndos sync.Map // "channel:chatID" → reactionEntry
+	statusMsgIDs  sync.Map // "channel:chatID" → statusMsgEntry (streaming preview)
+	taskMsgIDs    sync.Map // taskID → statusMsgEntry (background task status)
 }
 
 type asyncTask struct {
@@ -110,8 +120,8 @@ func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 	m.reactionUndos.Store(key, reactionEntry{undo: undo, createdAt: time.Now()})
 }
 
-// preSend handles typing stop, reaction undo, and placeholder editing before sending a message.
-// Returns true if the message was edited into a placeholder (skip Send).
+// preSend handles typing stop, reaction undo, and placeholder/status editing before sending a message.
+// Returns true if the message was edited into an existing message (skip Send).
 func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) bool {
 	key := name + ":" + msg.ChatID
 
@@ -129,7 +139,18 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		}
 	}
 
-	// 3. Try editing placeholder
+	// 3. Try editing a tracked status message (from streaming preview)
+	if v, loaded := m.statusMsgIDs.LoadAndDelete(key); loaded {
+		if entry, ok := v.(statusMsgEntry); ok && entry.messageID != "" {
+			if editor, ok := ch.(MessageEditor); ok {
+				if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
+					return true // edited successfully, skip Send
+				}
+			}
+		}
+	}
+
+	// 4. Try editing placeholder
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
@@ -419,6 +440,17 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 			if !ok {
 				return
 			}
+
+			// Route status/task messages to dedicated handlers
+			if msg.IsStatus {
+				m.handleStatusSend(ctx, name, w, msg)
+				continue
+			}
+			if msg.IsTaskStatus {
+				m.handleTaskStatusSend(ctx, name, w, msg)
+				continue
+			}
+
 			maxLen := 0
 			if mlp, ok := w.ch.(MessageLengthProvider); ok {
 				maxLen = mlp.MaxMessageLength()
@@ -437,6 +469,93 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 			return
 		}
 	}
+}
+
+// handleStatusSend processes IsStatus messages (streaming previews).
+// It reuses an existing placeholder or tracked status message, or sends a new
+// one via SendWithID so subsequent status updates edit the same bubble.
+// If the channel doesn't support editing, the message is silently dropped.
+func (m *Manager) handleStatusSend(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) {
+	if err := w.limiter.Wait(ctx); err != nil {
+		return
+	}
+
+	key := name + ":" + msg.ChatID
+
+	// 1. Try editing an existing placeholder
+	if v, loaded := m.placeholders.Load(key); loaded {
+		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+			if editor, ok := w.ch.(MessageEditor); ok {
+				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
+					return
+				}
+			}
+		}
+	}
+
+	// 2. Try editing a previously tracked status message
+	if v, loaded := m.statusMsgIDs.Load(key); loaded {
+		if entry, ok := v.(statusMsgEntry); ok && entry.messageID != "" {
+			if editor, ok := w.ch.(MessageEditor); ok {
+				if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
+					return
+				}
+			}
+		}
+	}
+
+	// 3. Send new message via SendWithID and track it
+	if sender, ok := w.ch.(MessageSenderWithID); ok {
+		if msgID, err := sender.SendWithID(ctx, msg.ChatID, msg.Content); err == nil && msgID != "" {
+			m.statusMsgIDs.Store(key, statusMsgEntry{
+				messageID: msgID,
+				createdAt: time.Now(),
+			})
+			return
+		}
+	}
+
+	// 4. Channel doesn't support SendWithID or editing — drop silently
+}
+
+// handleTaskStatusSend processes IsTaskStatus messages (background task status).
+// It reuses a previously tracked task message, or sends a new one via SendWithID.
+// If the channel doesn't support editing, falls back to regular Send.
+func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) {
+	if err := w.limiter.Wait(ctx); err != nil {
+		return
+	}
+
+	taskKey := msg.TaskID
+
+	// 1. Try editing an existing task message
+	if taskKey != "" {
+		if v, loaded := m.taskMsgIDs.Load(taskKey); loaded {
+			if entry, ok := v.(statusMsgEntry); ok && entry.messageID != "" {
+				if editor, ok := w.ch.(MessageEditor); ok {
+					if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
+						return
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Send new message via SendWithID and track it
+	if sender, ok := w.ch.(MessageSenderWithID); ok {
+		if msgID, err := sender.SendWithID(ctx, msg.ChatID, msg.Content); err == nil && msgID != "" {
+			if taskKey != "" {
+				m.taskMsgIDs.Store(taskKey, statusMsgEntry{
+					messageID: msgID,
+					createdAt: time.Now(),
+				})
+			}
+			return
+		}
+	}
+
+	// 3. Fallback: regular Send (for channels without SendWithID)
+	_ = w.ch.Send(ctx, msg)
 }
 
 // sendWithRetry sends a message through the channel with rate limiting and
@@ -696,6 +815,22 @@ func (m *Manager) runTTLJanitor(ctx context.Context) {
 				if entry, ok := value.(placeholderEntry); ok {
 					if now.Sub(entry.createdAt) > placeholderTTL {
 						m.placeholders.Delete(key)
+					}
+				}
+				return true
+			})
+			m.statusMsgIDs.Range(func(key, value any) bool {
+				if entry, ok := value.(statusMsgEntry); ok {
+					if now.Sub(entry.createdAt) > statusMsgTTL {
+						m.statusMsgIDs.Delete(key)
+					}
+				}
+				return true
+			})
+			m.taskMsgIDs.Range(func(key, value any) bool {
+				if entry, ok := value.(statusMsgEntry); ok {
+					if now.Sub(entry.createdAt) > taskMsgTTL {
+						m.taskMsgIDs.Delete(key)
 					}
 				}
 				return true

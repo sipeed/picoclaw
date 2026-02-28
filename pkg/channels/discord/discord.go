@@ -219,6 +219,42 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 	}
 }
 
+// SendWithID implements channels.MessageSenderWithID.
+// It sends a message and returns the platform message ID.
+func (c *DiscordChannel) SendWithID(ctx context.Context, chatID string, content string) (string, error) {
+	if !c.IsRunning() {
+		return "", channels.ErrNotRunning
+	}
+
+	if chatID == "" {
+		return "", fmt.Errorf("channel ID is empty")
+	}
+
+	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+
+	type result struct {
+		id  string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		msg, err := c.session.ChannelMessageSend(chatID, content)
+		if err != nil {
+			done <- result{"", fmt.Errorf("discord send: %w", channels.ErrTemporary)}
+		} else {
+			done <- result{msg.ID, nil}
+		}
+	}()
+
+	select {
+	case r := <-done:
+		return r.id, r.err
+	case <-sendCtx.Done():
+		return "", sendCtx.Err()
+	}
+}
+
 // EditMessage implements channels.MessageEditor.
 func (c *DiscordChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	_, err := c.session.ChannelMessageEdit(chatID, messageID, content)
