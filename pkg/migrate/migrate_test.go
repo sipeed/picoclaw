@@ -1,875 +1,411 @@
 package migrate
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestCamelToSnake(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"simple", "apiKey", "api_key"},
-		{"two words", "apiBase", "api_base"},
-		{"three words", "maxToolIterations", "max_tool_iterations"},
-		{"already snake", "api_key", "api_key"},
-		{"single word", "enabled", "enabled"},
-		{"all lower", "model", "model"},
-		{"consecutive caps", "apiURL", "api_url"},
-		{"starts upper", "Model", "model"},
-		{"bridge url", "bridgeUrl", "bridge_url"},
-		{"client id", "clientId", "client_id"},
-		{"app secret", "appSecret", "app_secret"},
-		{"verification token", "verificationToken", "verification_token"},
-		{"allow from", "allowFrom", "allow_from"},
+func TestNewMigrateInstance(t *testing.T) {
+	opts := Options{
+		Source: "openclaw",
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := camelToSnake(tt.input)
-			if got != tt.want {
-				t.Errorf("camelToSnake(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
+	instance := NewMigrateInstance(opts)
+	require.NotNil(t, instance)
+	assert.Equal(t, "openclaw", instance.options.Source)
 }
 
-func TestConvertKeysToSnake(t *testing.T) {
-	input := map[string]any{
-		"apiKey":  "test-key",
-		"apiBase": "https://example.com",
-		"nested": map[string]any{
-			"maxTokens": float64(8192),
-			"allowFrom": []any{"user1", "user2"},
-			"deeperLevel": map[string]any{
-				"clientId": "abc",
-			},
-		},
-	}
+func TestMigrateInstanceRegister(t *testing.T) {
+	instance := NewMigrateInstance(Options{})
+	require.NotNil(t, instance)
 
-	result := convertKeysToSnake(input)
-	m, ok := result.(map[string]any)
-	if !ok {
-		t.Fatal("expected map[string]interface{}")
-	}
+	mockHandler := &mockOperation{}
+	instance.Register("test-source", mockHandler)
 
-	if _, ok = m["api_key"]; !ok {
-		t.Error("expected key 'api_key' after conversion")
-	}
-	if _, ok = m["api_base"]; !ok {
-		t.Error("expected key 'api_base' after conversion")
-	}
-
-	nested, ok := m["nested"].(map[string]any)
-	if !ok {
-		t.Fatal("expected nested map")
-	}
-	if _, ok = nested["max_tokens"]; !ok {
-		t.Error("expected key 'max_tokens' in nested map")
-	}
-	if _, ok = nested["allow_from"]; !ok {
-		t.Error("expected key 'allow_from' in nested map")
-	}
-
-	deeper, ok := nested["deeper_level"].(map[string]any)
-	if !ok {
-		t.Fatal("expected deeper_level map")
-	}
-	if _, ok := deeper["client_id"]; !ok {
-		t.Error("expected key 'client_id' in deeper level")
-	}
+	handler, ok := instance.handlers["test-source"]
+	require.True(t, ok)
+	assert.Equal(t, mockHandler, handler)
 }
 
-func TestLoadOpenClawConfig(t *testing.T) {
+func TestMigrateInstanceGetCurrentHandler(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "openclaw.json")
+	err := os.WriteFile(configPath, []byte("{}"), 0o644)
+	require.NoError(t, err)
 
-	openclawConfig := map[string]any{
-		"providers": map[string]any{
-			"anthropic": map[string]any{
-				"apiKey":  "sk-ant-test123",
-				"apiBase": "https://api.anthropic.com",
-			},
-		},
-		"agents": map[string]any{
-			"defaults": map[string]any{
-				"maxTokens": float64(4096),
-				"model":     "claude-3-opus",
-			},
-		},
-	}
+	instance := NewMigrateInstance(Options{SourceHome: tmpDir})
+	require.NotNil(t, instance)
 
-	data, err := json.Marshal(openclawConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(configPath, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := LoadOpenClawConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadOpenClawConfig: %v", err)
-	}
-
-	providers, ok := result["providers"].(map[string]any)
-	if !ok {
-		t.Fatal("expected providers map")
-	}
-	anthropic, ok := providers["anthropic"].(map[string]any)
-	if !ok {
-		t.Fatal("expected anthropic map")
-	}
-	if anthropic["api_key"] != "sk-ant-test123" {
-		t.Errorf("api_key = %v, want sk-ant-test123", anthropic["api_key"])
-	}
-
-	agents, ok := result["agents"].(map[string]any)
-	if !ok {
-		t.Fatal("expected agents map")
-	}
-	defaults, ok := agents["defaults"].(map[string]any)
-	if !ok {
-		t.Fatal("expected defaults map")
-	}
-	if defaults["max_tokens"] != float64(4096) {
-		t.Errorf("max_tokens = %v, want 4096", defaults["max_tokens"])
-	}
+	handler, err := instance.getCurrentHandler()
+	require.NoError(t, err)
+	require.NotNil(t, handler)
+	assert.Equal(t, "openclaw", handler.GetSourceName())
 }
 
-func TestConvertConfig(t *testing.T) {
-	t.Run("providers mapping", func(t *testing.T) {
-		data := map[string]any{
-			"providers": map[string]any{
-				"anthropic": map[string]any{
-					"api_key":  "sk-ant-test",
-					"api_base": "https://api.anthropic.com",
-				},
-				"openrouter": map[string]any{
-					"api_key": "sk-or-test",
-				},
-				"groq": map[string]any{
-					"api_key": "gsk-test",
-				},
-			},
-		}
-
-		cfg, warnings, err := ConvertConfig(data)
-		if err != nil {
-			t.Fatalf("ConvertConfig: %v", err)
-		}
-		if len(warnings) != 0 {
-			t.Errorf("expected no warnings, got %v", warnings)
-		}
-		if cfg.Providers.Anthropic.APIKey != "sk-ant-test" {
-			t.Errorf("Anthropic.APIKey = %q, want %q", cfg.Providers.Anthropic.APIKey, "sk-ant-test")
-		}
-		if cfg.Providers.OpenRouter.APIKey != "sk-or-test" {
-			t.Errorf("OpenRouter.APIKey = %q, want %q", cfg.Providers.OpenRouter.APIKey, "sk-or-test")
-		}
-		if cfg.Providers.Groq.APIKey != "gsk-test" {
-			t.Errorf("Groq.APIKey = %q, want %q", cfg.Providers.Groq.APIKey, "gsk-test")
-		}
-	})
-
-	t.Run("unsupported provider warning", func(t *testing.T) {
-		data := map[string]any{
-			"providers": map[string]any{
-				"unknown_provider": map[string]any{
-					"api_key": "sk-test",
-				},
-			},
-		}
-
-		_, warnings, err := ConvertConfig(data)
-		if err != nil {
-			t.Fatalf("ConvertConfig: %v", err)
-		}
-		if len(warnings) != 1 {
-			t.Fatalf("expected 1 warning, got %d", len(warnings))
-		}
-		if warnings[0] != "Provider 'unknown_provider' not supported in PicoClaw, skipping" {
-			t.Errorf("unexpected warning: %s", warnings[0])
-		}
-	})
-
-	t.Run("channels mapping", func(t *testing.T) {
-		data := map[string]any{
-			"channels": map[string]any{
-				"telegram": map[string]any{
-					"enabled":    true,
-					"token":      "tg-token-123",
-					"allow_from": []any{"user1"},
-				},
-				"discord": map[string]any{
-					"enabled": true,
-					"token":   "disc-token-456",
-				},
-			},
-		}
-
-		cfg, _, err := ConvertConfig(data)
-		if err != nil {
-			t.Fatalf("ConvertConfig: %v", err)
-		}
-		if !cfg.Channels.Telegram.Enabled {
-			t.Error("Telegram should be enabled")
-		}
-		if cfg.Channels.Telegram.Token != "tg-token-123" {
-			t.Errorf("Telegram.Token = %q, want %q", cfg.Channels.Telegram.Token, "tg-token-123")
-		}
-		if len(cfg.Channels.Telegram.AllowFrom) != 1 || cfg.Channels.Telegram.AllowFrom[0] != "user1" {
-			t.Errorf("Telegram.AllowFrom = %v, want [user1]", cfg.Channels.Telegram.AllowFrom)
-		}
-		if !cfg.Channels.Discord.Enabled {
-			t.Error("Discord should be enabled")
-		}
-	})
-
-	t.Run("unsupported channel warning", func(t *testing.T) {
-		data := map[string]any{
-			"channels": map[string]any{
-				"email": map[string]any{
-					"enabled": true,
-				},
-			},
-		}
-
-		_, warnings, err := ConvertConfig(data)
-		if err != nil {
-			t.Fatalf("ConvertConfig: %v", err)
-		}
-		if len(warnings) != 1 {
-			t.Fatalf("expected 1 warning, got %d", len(warnings))
-		}
-		if warnings[0] != "Channel 'email' not supported in PicoClaw, skipping" {
-			t.Errorf("unexpected warning: %s", warnings[0])
-		}
-	})
-
-	t.Run("agent defaults", func(t *testing.T) {
-		data := map[string]any{
-			"agents": map[string]any{
-				"defaults": map[string]any{
-					"model":               "claude-3-opus",
-					"max_tokens":          float64(4096),
-					"temperature":         0.5,
-					"max_tool_iterations": float64(10),
-					"workspace":           "~/.openclaw/workspace",
-				},
-			},
-		}
-
-		cfg, _, err := ConvertConfig(data)
-		if err != nil {
-			t.Fatalf("ConvertConfig: %v", err)
-		}
-		if cfg.Agents.Defaults.Model != "claude-3-opus" {
-			t.Errorf("Model = %q, want %q", cfg.Agents.Defaults.Model, "claude-3-opus")
-		}
-		if cfg.Agents.Defaults.MaxTokens != 4096 {
-			t.Errorf("MaxTokens = %d, want %d", cfg.Agents.Defaults.MaxTokens, 4096)
-		}
-		if cfg.Agents.Defaults.Temperature == nil {
-			t.Fatalf("Temperature is nil, want %f", 0.5)
-		}
-		if *cfg.Agents.Defaults.Temperature != 0.5 {
-			t.Errorf("Temperature = %f, want %f", *cfg.Agents.Defaults.Temperature, 0.5)
-		}
-		if cfg.Agents.Defaults.Workspace != "~/.picoclaw/workspace" {
-			t.Errorf("Workspace = %q, want %q", cfg.Agents.Defaults.Workspace, "~/.picoclaw/workspace")
-		}
-	})
-
-	t.Run("empty config", func(t *testing.T) {
-		data := map[string]any{}
-
-		cfg, warnings, err := ConvertConfig(data)
-		if err != nil {
-			t.Fatalf("ConvertConfig: %v", err)
-		}
-		if len(warnings) != 0 {
-			t.Errorf("expected no warnings, got %v", warnings)
-		}
-		if cfg.Agents.Defaults.Model != "" {
-			t.Errorf("default model should be nil, got %q", cfg.Agents.Defaults.Model)
-		}
-	})
-}
-
-func TestSupportedProvidersCompatibility(t *testing.T) {
-	expected := []string{
-		"anthropic",
-		"openai",
-		"openrouter",
-		"groq",
-		"zhipu",
-		"vllm",
-		"gemini",
-	}
-
-	for _, provider := range expected {
-		if !supportedProviders[provider] {
-			t.Fatalf("supportedProviders missing expected key %q", provider)
-		}
-	}
-}
-
-func TestMergeConfig(t *testing.T) {
-	t.Run("fills empty fields", func(t *testing.T) {
-		existing := config.DefaultConfig()
-		incoming := config.DefaultConfig()
-		incoming.Providers.Anthropic.APIKey = "sk-ant-incoming"
-		incoming.Providers.OpenRouter.APIKey = "sk-or-incoming"
-
-		result := MergeConfig(existing, incoming)
-		if result.Providers.Anthropic.APIKey != "sk-ant-incoming" {
-			t.Errorf("Anthropic.APIKey = %q, want %q", result.Providers.Anthropic.APIKey, "sk-ant-incoming")
-		}
-		if result.Providers.OpenRouter.APIKey != "sk-or-incoming" {
-			t.Errorf("OpenRouter.APIKey = %q, want %q", result.Providers.OpenRouter.APIKey, "sk-or-incoming")
-		}
-	})
-
-	t.Run("preserves existing non-empty fields", func(t *testing.T) {
-		existing := config.DefaultConfig()
-		existing.Providers.Anthropic.APIKey = "sk-ant-existing"
-
-		incoming := config.DefaultConfig()
-		incoming.Providers.Anthropic.APIKey = "sk-ant-incoming"
-		incoming.Providers.OpenAI.APIKey = "sk-oai-incoming"
-
-		result := MergeConfig(existing, incoming)
-		if result.Providers.Anthropic.APIKey != "sk-ant-existing" {
-			t.Errorf("Anthropic.APIKey should be preserved, got %q", result.Providers.Anthropic.APIKey)
-		}
-		if result.Providers.OpenAI.APIKey != "sk-oai-incoming" {
-			t.Errorf("OpenAI.APIKey should be filled, got %q", result.Providers.OpenAI.APIKey)
-		}
-	})
-
-	t.Run("merges enabled channels", func(t *testing.T) {
-		existing := config.DefaultConfig()
-		incoming := config.DefaultConfig()
-		incoming.Channels.Telegram.Enabled = true
-		incoming.Channels.Telegram.Token = "tg-token"
-
-		result := MergeConfig(existing, incoming)
-		if !result.Channels.Telegram.Enabled {
-			t.Error("Telegram should be enabled after merge")
-		}
-		if result.Channels.Telegram.Token != "tg-token" {
-			t.Errorf("Telegram.Token = %q, want %q", result.Channels.Telegram.Token, "tg-token")
-		}
-	})
-
-	t.Run("preserves existing enabled channels", func(t *testing.T) {
-		existing := config.DefaultConfig()
-		existing.Channels.Telegram.Enabled = true
-		existing.Channels.Telegram.Token = "existing-token"
-
-		incoming := config.DefaultConfig()
-		incoming.Channels.Telegram.Enabled = true
-		incoming.Channels.Telegram.Token = "incoming-token"
-
-		result := MergeConfig(existing, incoming)
-		if result.Channels.Telegram.Token != "existing-token" {
-			t.Errorf("Telegram.Token should be preserved, got %q", result.Channels.Telegram.Token)
-		}
-	})
-}
-
-func TestPlanWorkspaceMigration(t *testing.T) {
-	t.Run("copies available files", func(t *testing.T) {
-		srcDir := t.TempDir()
-		dstDir := t.TempDir()
-
-		os.WriteFile(filepath.Join(srcDir, "AGENTS.md"), []byte("# Agents"), 0o644)
-		os.WriteFile(filepath.Join(srcDir, "SOUL.md"), []byte("# Soul"), 0o644)
-		os.WriteFile(filepath.Join(srcDir, "USER.md"), []byte("# User"), 0o644)
-
-		actions, err := PlanWorkspaceMigration(srcDir, dstDir, false)
-		if err != nil {
-			t.Fatalf("PlanWorkspaceMigration: %v", err)
-		}
-
-		copyCount := 0
-		skipCount := 0
-		for _, a := range actions {
-			if a.Type == ActionCopy {
-				copyCount++
-			}
-			if a.Type == ActionSkip {
-				skipCount++
-			}
-		}
-		if copyCount != 3 {
-			t.Errorf("expected 3 copies, got %d", copyCount)
-		}
-		if skipCount != 2 {
-			t.Errorf("expected 2 skips (TOOLS.md, HEARTBEAT.md), got %d", skipCount)
-		}
-	})
-
-	t.Run("plans backup for existing destination files", func(t *testing.T) {
-		srcDir := t.TempDir()
-		dstDir := t.TempDir()
-
-		os.WriteFile(filepath.Join(srcDir, "AGENTS.md"), []byte("# Agents from OpenClaw"), 0o644)
-		os.WriteFile(filepath.Join(dstDir, "AGENTS.md"), []byte("# Existing Agents"), 0o644)
-
-		actions, err := PlanWorkspaceMigration(srcDir, dstDir, false)
-		if err != nil {
-			t.Fatalf("PlanWorkspaceMigration: %v", err)
-		}
-
-		backupCount := 0
-		for _, a := range actions {
-			if a.Type == ActionBackup && filepath.Base(a.Destination) == "AGENTS.md" {
-				backupCount++
-			}
-		}
-		if backupCount != 1 {
-			t.Errorf("expected 1 backup action for AGENTS.md, got %d", backupCount)
-		}
-	})
-
-	t.Run("force skips backup", func(t *testing.T) {
-		srcDir := t.TempDir()
-		dstDir := t.TempDir()
-
-		os.WriteFile(filepath.Join(srcDir, "AGENTS.md"), []byte("# Agents"), 0o644)
-		os.WriteFile(filepath.Join(dstDir, "AGENTS.md"), []byte("# Existing"), 0o644)
-
-		actions, err := PlanWorkspaceMigration(srcDir, dstDir, true)
-		if err != nil {
-			t.Fatalf("PlanWorkspaceMigration: %v", err)
-		}
-
-		for _, a := range actions {
-			if a.Type == ActionBackup {
-				t.Error("expected no backup actions with force=true")
-			}
-		}
-	})
-
-	t.Run("handles memory directory", func(t *testing.T) {
-		srcDir := t.TempDir()
-		dstDir := t.TempDir()
-
-		memDir := filepath.Join(srcDir, "memory")
-		os.MkdirAll(memDir, 0o755)
-		os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("# Memory"), 0o644)
-
-		actions, err := PlanWorkspaceMigration(srcDir, dstDir, false)
-		if err != nil {
-			t.Fatalf("PlanWorkspaceMigration: %v", err)
-		}
-
-		hasCopy := false
-		hasDir := false
-		for _, a := range actions {
-			if a.Type == ActionCopy && filepath.Base(a.Source) == "MEMORY.md" {
-				hasCopy = true
-			}
-			if a.Type == ActionCreateDir {
-				hasDir = true
-			}
-		}
-		if !hasCopy {
-			t.Error("expected copy action for memory/MEMORY.md")
-		}
-		if !hasDir {
-			t.Error("expected create dir action for memory/")
-		}
-	})
-
-	t.Run("handles skills directory", func(t *testing.T) {
-		srcDir := t.TempDir()
-		dstDir := t.TempDir()
-
-		skillDir := filepath.Join(srcDir, "skills", "weather")
-		os.MkdirAll(skillDir, 0o755)
-		os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# Weather"), 0o644)
-
-		actions, err := PlanWorkspaceMigration(srcDir, dstDir, false)
-		if err != nil {
-			t.Fatalf("PlanWorkspaceMigration: %v", err)
-		}
-
-		hasCopy := false
-		for _, a := range actions {
-			if a.Type == ActionCopy && filepath.Base(a.Source) == "SKILL.md" {
-				hasCopy = true
-			}
-		}
-		if !hasCopy {
-			t.Error("expected copy action for skills/weather/SKILL.md")
-		}
-	})
-}
-
-func TestFindOpenClawConfig(t *testing.T) {
-	t.Run("finds openclaw.json", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "openclaw.json")
-		os.WriteFile(configPath, []byte("{}"), 0o644)
-
-		found, err := findOpenClawConfig(tmpDir)
-		if err != nil {
-			t.Fatalf("findOpenClawConfig: %v", err)
-		}
-		if found != configPath {
-			t.Errorf("found %q, want %q", found, configPath)
-		}
-	})
-
-	t.Run("falls back to config.json", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "config.json")
-		os.WriteFile(configPath, []byte("{}"), 0o644)
-
-		found, err := findOpenClawConfig(tmpDir)
-		if err != nil {
-			t.Fatalf("findOpenClawConfig: %v", err)
-		}
-		if found != configPath {
-			t.Errorf("found %q, want %q", found, configPath)
-		}
-	})
-
-	t.Run("prefers openclaw.json over config.json", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		openclawPath := filepath.Join(tmpDir, "openclaw.json")
-		os.WriteFile(openclawPath, []byte("{}"), 0o644)
-		os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte("{}"), 0o644)
-
-		found, err := findOpenClawConfig(tmpDir)
-		if err != nil {
-			t.Fatalf("findOpenClawConfig: %v", err)
-		}
-		if found != openclawPath {
-			t.Errorf("should prefer openclaw.json, got %q", found)
-		}
-	})
-
-	t.Run("error when no config found", func(t *testing.T) {
-		tmpDir := t.TempDir()
-
-		_, err := findOpenClawConfig(tmpDir)
-		if err == nil {
-			t.Fatal("expected error when no config found")
-		}
-	})
-}
-
-func TestRewriteWorkspacePath(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"default path", "~/.openclaw/workspace", "~/.picoclaw/workspace"},
-		{"custom path", "/custom/path", "/custom/path"},
-		{"empty", "", ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := rewriteWorkspacePath(tt.input)
-			if got != tt.want {
-				t.Errorf("rewriteWorkspacePath(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestRunDryRun(t *testing.T) {
-	openclawHome := t.TempDir()
-	picoClawHome := t.TempDir()
-
-	wsDir := filepath.Join(openclawHome, "workspace")
-	os.MkdirAll(wsDir, 0o755)
-	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0o644)
-	os.WriteFile(filepath.Join(wsDir, "AGENTS.md"), []byte("# Agents"), 0o644)
-
-	configData := map[string]any{
-		"providers": map[string]any{
-			"anthropic": map[string]any{
-				"apiKey": "test-key",
-			},
-		},
-	}
-	data, _ := json.Marshal(configData)
-	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0o644)
+func TestMigrateInstanceGetCurrentHandlerWithSource(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "openclaw.json")
+	err := os.WriteFile(configPath, []byte("{}"), 0o644)
+	require.NoError(t, err)
 
 	opts := Options{
-		DryRun:       true,
-		OpenClawHome: openclawHome,
-		PicoClawHome: picoClawHome,
+		Source:     "openclaw",
+		SourceHome: tmpDir,
 	}
+	instance := NewMigrateInstance(opts)
 
-	result, err := Run(opts)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-
-	picoWs := filepath.Join(picoClawHome, "workspace")
-	if _, err := os.Stat(filepath.Join(picoWs, "SOUL.md")); !os.IsNotExist(err) {
-		t.Error("dry run should not create files")
-	}
-	if _, err := os.Stat(filepath.Join(picoClawHome, "config.json")); !os.IsNotExist(err) {
-		t.Error("dry run should not create config")
-	}
-
-	_ = result
+	handler, err := instance.getCurrentHandler()
+	require.NoError(t, err)
+	require.NotNil(t, handler)
+	assert.Equal(t, "openclaw", handler.GetSourceName())
 }
 
-func TestRunFullMigration(t *testing.T) {
-	openclawHome := t.TempDir()
-	picoClawHome := t.TempDir()
-
-	wsDir := filepath.Join(openclawHome, "workspace")
-	os.MkdirAll(wsDir, 0o755)
-	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul from OpenClaw"), 0o644)
-	os.WriteFile(filepath.Join(wsDir, "AGENTS.md"), []byte("# Agents from OpenClaw"), 0o644)
-	os.WriteFile(filepath.Join(wsDir, "USER.md"), []byte("# User from OpenClaw"), 0o644)
-
-	memDir := filepath.Join(wsDir, "memory")
-	os.MkdirAll(memDir, 0o755)
-	os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("# Memory notes"), 0o644)
-
-	configData := map[string]any{
-		"providers": map[string]any{
-			"anthropic": map[string]any{
-				"apiKey": "sk-ant-migrate-test",
-			},
-			"openrouter": map[string]any{
-				"apiKey": "sk-or-migrate-test",
-			},
-		},
-		"channels": map[string]any{
-			"telegram": map[string]any{
-				"enabled": true,
-				"token":   "tg-migrate-test",
-			},
-		},
-	}
-	data, _ := json.Marshal(configData)
-	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0o644)
-
-	opts := Options{
-		Force:        true,
-		OpenClawHome: openclawHome,
-		PicoClawHome: picoClawHome,
+func TestMigrateInstanceGetCurrentHandlerNotFound(t *testing.T) {
+	instance := &MigrateInstance{
+		options:  Options{},
+		handlers: make(map[string]Operation),
 	}
 
-	result, err := Run(opts)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-
-	picoWs := filepath.Join(picoClawHome, "workspace")
-
-	soulData, err := os.ReadFile(filepath.Join(picoWs, "SOUL.md"))
-	if err != nil {
-		t.Fatalf("reading SOUL.md: %v", err)
-	}
-	if string(soulData) != "# Soul from OpenClaw" {
-		t.Errorf("SOUL.md content = %q, want %q", string(soulData), "# Soul from OpenClaw")
-	}
-
-	agentsData, err := os.ReadFile(filepath.Join(picoWs, "AGENTS.md"))
-	if err != nil {
-		t.Fatalf("reading AGENTS.md: %v", err)
-	}
-	if string(agentsData) != "# Agents from OpenClaw" {
-		t.Errorf("AGENTS.md content = %q", string(agentsData))
-	}
-
-	memData, err := os.ReadFile(filepath.Join(picoWs, "memory", "MEMORY.md"))
-	if err != nil {
-		t.Fatalf("reading memory/MEMORY.md: %v", err)
-	}
-	if string(memData) != "# Memory notes" {
-		t.Errorf("MEMORY.md content = %q", string(memData))
-	}
-
-	picoConfig, err := config.LoadConfig(filepath.Join(picoClawHome, "config.json"))
-	if err != nil {
-		t.Fatalf("loading PicoClaw config: %v", err)
-	}
-	if picoConfig.Providers.Anthropic.APIKey != "sk-ant-migrate-test" {
-		t.Errorf("Anthropic.APIKey = %q, want %q", picoConfig.Providers.Anthropic.APIKey, "sk-ant-migrate-test")
-	}
-	if picoConfig.Providers.OpenRouter.APIKey != "sk-or-migrate-test" {
-		t.Errorf("OpenRouter.APIKey = %q, want %q", picoConfig.Providers.OpenRouter.APIKey, "sk-or-migrate-test")
-	}
-	if !picoConfig.Channels.Telegram.Enabled {
-		t.Error("Telegram should be enabled")
-	}
-	if picoConfig.Channels.Telegram.Token != "tg-migrate-test" {
-		t.Errorf("Telegram.Token = %q, want %q", picoConfig.Channels.Telegram.Token, "tg-migrate-test")
-	}
-
-	if result.FilesCopied < 3 {
-		t.Errorf("expected at least 3 files copied, got %d", result.FilesCopied)
-	}
-	if !result.ConfigMigrated {
-		t.Error("config should have been migrated")
-	}
-	if len(result.Errors) > 0 {
-		t.Errorf("expected no errors, got %v", result.Errors)
-	}
+	_, err := instance.getCurrentHandler()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
 }
 
-func TestRunOpenClawNotFound(t *testing.T) {
-	opts := Options{
-		OpenClawHome: "/nonexistent/path/to/openclaw",
-		PicoClawHome: t.TempDir(),
+func TestMigrateInstancePlanWithInvalidSource(t *testing.T) {
+	instance := &MigrateInstance{
+		options:  Options{},
+		handlers: make(map[string]Operation),
 	}
 
-	_, err := Run(opts)
-	if err == nil {
-		t.Fatal("expected error when OpenClaw not found")
-	}
+	_, _, err := instance.Plan(Options{}, "/tmp/source", "/tmp/target")
+	require.Error(t, err)
 }
 
-func TestRunMutuallyExclusiveFlags(t *testing.T) {
-	opts := Options{
+func TestMigrateInstancePlanConfigOnlyAndWorkspaceOnlyMutuallyExclusive(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "openclaw.json")
+	err := os.WriteFile(configPath, []byte("{}"), 0o644)
+	require.NoError(t, err)
+
+	instance := NewMigrateInstance(Options{SourceHome: tmpDir})
+	require.NotNil(t, instance)
+
+	_, err = instance.Run(Options{
 		ConfigOnly:    true,
 		WorkspaceOnly: true,
-	}
-
-	_, err := Run(opts)
-	if err == nil {
-		t.Fatal("expected error for mutually exclusive flags")
-	}
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
 }
 
-func TestBackupFile(t *testing.T) {
+func TestMigrateInstancePlanRefreshSetsWorkspaceOnly(t *testing.T) {
+	opts := Options{
+		Refresh:    true,
+		SourceHome: "/tmp/nonexistent",
+	}
+	instance := NewMigrateInstance(opts)
+	require.NotNil(t, instance)
+
+	_, err := instance.Run(opts)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestMigrateInstancePlanSourceNotFound(t *testing.T) {
+	opts := Options{
+		SourceHome: "/tmp/nonexistent-source-home",
+	}
+	instance := NewMigrateInstance(opts)
+
+	_, err := instance.Run(opts)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestMigrateInstanceExecute(t *testing.T) {
 	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "test.md")
-	os.WriteFile(filePath, []byte("original content"), 0o644)
+	sourceDir := filepath.Join(tmpDir, "source")
+	targetDir := filepath.Join(tmpDir, "target")
+	workspaceDir := filepath.Join(sourceDir, "workspace")
 
-	if err := backupFile(filePath); err != nil {
-		t.Fatalf("backupFile: %v", err)
+	err := os.MkdirAll(workspaceDir, 0o755)
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(workspaceDir, "test.txt"), []byte("test"), 0o644)
+	require.NoError(t, err)
+
+	instance := &MigrateInstance{
+		options:  Options{Source: "mock"},
+		handlers: make(map[string]Operation),
 	}
+	instance.Register("mock", &mockOperation{sourceHome: sourceDir, sourceWs: workspaceDir})
 
-	bakPath := filePath + ".bak"
-	bakData, err := os.ReadFile(bakPath)
-	if err != nil {
-		t.Fatalf("reading backup: %v", err)
-	}
-	if string(bakData) != "original content" {
-		t.Errorf("backup content = %q, want %q", string(bakData), "original content")
-	}
-}
-
-func TestCopyFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	srcPath := filepath.Join(tmpDir, "src.md")
-	dstPath := filepath.Join(tmpDir, "dst.md")
-
-	os.WriteFile(srcPath, []byte("file content"), 0o644)
-
-	if err := copyFile(srcPath, dstPath); err != nil {
-		t.Fatalf("copyFile: %v", err)
-	}
-
-	data, err := os.ReadFile(dstPath)
-	if err != nil {
-		t.Fatalf("reading copy: %v", err)
-	}
-	if string(data) != "file content" {
-		t.Errorf("copy content = %q, want %q", string(data), "file content")
-	}
-}
-
-func TestRunConfigOnly(t *testing.T) {
-	openclawHome := t.TempDir()
-	picoClawHome := t.TempDir()
-
-	wsDir := filepath.Join(openclawHome, "workspace")
-	os.MkdirAll(wsDir, 0o755)
-	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0o644)
-
-	configData := map[string]any{
-		"providers": map[string]any{
-			"anthropic": map[string]any{
-				"apiKey": "sk-config-only",
-			},
+	actions := []Action{
+		{
+			Type:        ActionCopy,
+			Source:      filepath.Join(workspaceDir, "test.txt"),
+			Target:      filepath.Join(targetDir, "workspace", "test.txt"),
+			Description: "copy file",
 		},
 	}
-	data, _ := json.Marshal(configData)
-	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0o644)
 
-	opts := Options{
-		Force:        true,
-		ConfigOnly:   true,
-		OpenClawHome: openclawHome,
-		PicoClawHome: picoClawHome,
-	}
+	result := instance.Execute(actions, workspaceDir, targetDir)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.FilesCopied)
 
-	result, err := Run(opts)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-
-	if !result.ConfigMigrated {
-		t.Error("config should have been migrated")
-	}
-
-	picoWs := filepath.Join(picoClawHome, "workspace")
-	if _, err := os.Stat(filepath.Join(picoWs, "SOUL.md")); !os.IsNotExist(err) {
-		t.Error("config-only should not copy workspace files")
-	}
+	_, err = os.Stat(filepath.Join(targetDir, "workspace", "test.txt"))
+	assert.NoError(t, err)
 }
 
-func TestRunWorkspaceOnly(t *testing.T) {
-	openclawHome := t.TempDir()
-	picoClawHome := t.TempDir()
+func TestMigrateInstanceExecuteWithInvalidSource(t *testing.T) {
+	tmpDir := t.TempDir()
+	sourceDir := filepath.Join(tmpDir, "source")
+	err := os.MkdirAll(sourceDir, 0o755)
+	require.NoError(t, err)
 
-	wsDir := filepath.Join(openclawHome, "workspace")
-	os.MkdirAll(wsDir, 0o755)
-	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul"), 0o644)
+	instance := &MigrateInstance{
+		options:  Options{Source: "mock"},
+		handlers: make(map[string]Operation),
+	}
+	instance.Register("mock", &mockOperation{sourceHome: sourceDir})
 
-	configData := map[string]any{
-		"providers": map[string]any{
-			"anthropic": map[string]any{
-				"apiKey": "sk-ws-only",
-			},
+	actions := []Action{
+		{
+			Type:        ActionCopy,
+			Source:      filepath.Join(sourceDir, "nonexistent.txt"),
+			Target:      filepath.Join(tmpDir, "target.txt"),
+			Description: "copy file",
 		},
 	}
-	data, _ := json.Marshal(configData)
-	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0o644)
 
-	opts := Options{
-		Force:         true,
-		WorkspaceOnly: true,
-		OpenClawHome:  openclawHome,
-		PicoClawHome:  picoClawHome,
+	result := instance.Execute(actions, sourceDir, tmpDir)
+	require.NotNil(t, result)
+	assert.Equal(t, 0, result.FilesCopied)
+	assert.Greater(t, len(result.Errors), 0)
+}
+
+func TestMigrateInstanceExecuteCreateDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	instance := &MigrateInstance{
+		options:  Options{Source: "mock"},
+		handlers: make(map[string]Operation),
+	}
+	instance.Register("mock", &mockOperation{})
+
+	actions := []Action{
+		{
+			Type:        ActionCreateDir,
+			Target:      filepath.Join(tmpDir, "new", "dir"),
+			Description: "create directory",
+		},
 	}
 
-	result, err := Run(opts)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	result := instance.Execute(actions, "", "")
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.DirsCreated)
+
+	_, err := os.Stat(filepath.Join(tmpDir, "new", "dir"))
+	assert.NoError(t, err)
+}
+
+func TestMigrateInstanceExecuteBackup(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sourceFile := filepath.Join(tmpDir, "source.txt")
+	targetFile := filepath.Join(tmpDir, "target.txt")
+
+	err := os.WriteFile(sourceFile, []byte("source"), 0o644)
+	require.NoError(t, err)
+
+	err = os.WriteFile(targetFile, []byte("target"), 0o644)
+	require.NoError(t, err)
+
+	instance := &MigrateInstance{
+		options:  Options{Source: "mock"},
+		handlers: make(map[string]Operation),
+	}
+	instance.Register("mock", &mockOperation{})
+
+	actions := []Action{
+		{
+			Type:        ActionBackup,
+			Source:      sourceFile,
+			Target:      targetFile,
+			Description: "backup and overwrite",
+		},
 	}
 
-	if result.ConfigMigrated {
-		t.Error("workspace-only should not migrate config")
+	result := instance.Execute(actions, tmpDir, tmpDir)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.BackupsCreated)
+	assert.Equal(t, 1, result.FilesCopied)
+
+	bakFile := targetFile + ".bak"
+	_, err = os.Stat(bakFile)
+	assert.NoError(t, err)
+
+	content, err := os.ReadFile(targetFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "source", string(content))
+}
+
+func TestMigrateInstanceExecuteSkip(t *testing.T) {
+	instance := &MigrateInstance{
+		options:  Options{Source: "mock"},
+		handlers: make(map[string]Operation),
+	}
+	instance.Register("mock", &mockOperation{})
+
+	actions := []Action{
+		{
+			Type:        ActionSkip,
+			Source:      "/tmp/source.txt",
+			Target:      "/tmp/target.txt",
+			Description: "skip file",
+		},
 	}
 
-	picoWs := filepath.Join(picoClawHome, "workspace")
-	soulData, err := os.ReadFile(filepath.Join(picoWs, "SOUL.md"))
-	if err != nil {
-		t.Fatalf("reading SOUL.md: %v", err)
+	result := instance.Execute(actions, "", "")
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.FilesSkipped)
+}
+
+func TestMigrateInstancePrintSummary(t *testing.T) {
+	instance := NewMigrateInstance(Options{})
+
+	result := &Result{
+		FilesCopied:    5,
+		ConfigMigrated: true,
+		BackupsCreated: 2,
+		FilesSkipped:   3,
+		Warnings:       []string{"warning 1"},
+		Errors:         []error{},
 	}
-	if string(soulData) != "# Soul" {
-		t.Errorf("SOUL.md content = %q", string(soulData))
+
+	instance.PrintSummary(result)
+}
+
+func TestMigrateInstancePrintSummaryWithErrors(t *testing.T) {
+	instance := NewMigrateInstance(Options{})
+
+	result := &Result{
+		FilesCopied:    0,
+		ConfigMigrated: false,
+		BackupsCreated: 0,
+		FilesSkipped:   0,
+		Warnings:       []string{},
+		Errors:         []error{assert.AnError},
 	}
+
+	instance.PrintSummary(result)
+}
+
+func TestMigrateInstancePrintSummaryNoActions(t *testing.T) {
+	instance := NewMigrateInstance(Options{})
+
+	result := &Result{
+		FilesCopied:    0,
+		ConfigMigrated: false,
+		BackupsCreated: 0,
+		FilesSkipped:   0,
+		Warnings:       []string{},
+		Errors:         []error{},
+	}
+
+	instance.PrintSummary(result)
+}
+
+func TestPrintPlan(t *testing.T) {
+	actions := []Action{
+		{
+			Type:        ActionConvertConfig,
+			Source:      "/source/config.json",
+			Target:      "/target/config.json",
+			Description: "convert config",
+		},
+		{
+			Type:        ActionCopy,
+			Source:      "/source/file.txt",
+			Target:      "/target/file.txt",
+			Description: "copy file",
+		},
+		{
+			Type:        ActionBackup,
+			Source:      "/source/existing.txt",
+			Target:      "/target/existing.txt",
+			Description: "backup and overwrite",
+		},
+		{
+			Type:        ActionSkip,
+			Source:      "/source/skipped.txt",
+			Target:      "/target/skipped.txt",
+			Description: "skip file",
+		},
+		{
+			Type:        ActionCreateDir,
+			Target:      "/target/newdir",
+			Description: "create directory",
+		},
+	}
+
+	warnings := []string{
+		"Warning: source directory not found",
+	}
+
+	PrintPlan(actions, warnings)
+}
+
+func TestPrintPlanEmpty(t *testing.T) {
+	PrintPlan([]Action{}, []string{})
+}
+
+type mockOperation struct {
+	sourceHome   string
+	sourceConfig string
+	sourceWs     string
+	migrateFiles []string
+	migrateDirs  []string
+}
+
+func (m *mockOperation) GetSourceName() string { return "mock" }
+func (m *mockOperation) GetSourceHome() (string, error) {
+	if m.sourceHome != "" {
+		return m.sourceHome, nil
+	}
+	return "/tmp/mock", nil
+}
+
+func (m *mockOperation) GetSourceWorkspace() (string, error) {
+	if m.sourceWs != "" {
+		return m.sourceWs, nil
+	}
+	if m.sourceHome != "" {
+		return filepath.Join(m.sourceHome, "workspace"), nil
+	}
+	return "/tmp/mock/workspace", nil
+}
+
+func (m *mockOperation) GetSourceConfigFile() (string, error) {
+	if m.sourceConfig != "" {
+		return m.sourceConfig, nil
+	}
+	return "/tmp/mock/config.json", nil
+}
+func (m *mockOperation) ExecuteConfigMigration(src, dst string) error { return nil }
+func (m *mockOperation) GetMigrateableFiles() []string {
+	if m.migrateFiles != nil {
+		return m.migrateFiles
+	}
+	return []string{}
+}
+
+func (m *mockOperation) GetMigrateableDirs() []string {
+	if m.migrateDirs != nil {
+		return m.migrateDirs
+	}
+	return []string{}
 }
