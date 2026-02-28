@@ -33,15 +33,19 @@ type CronTool struct {
 func NewCronTool(
 	cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool,
 	execTimeout time.Duration, config *config.Config,
-) *CronTool {
-	execTool := NewExecToolWithConfig(workspace, restrict, config)
+) (*CronTool, error) {
+	execTool, err := NewExecToolWithConfig(workspace, restrict, config)
+	if err != nil {
+		return nil, fmt.Errorf("unable to configure exec tool: %w", err)
+	}
+
 	execTool.SetTimeout(execTimeout)
 	return &CronTool{
 		cronService: cronService,
 		executor:    executor,
 		msgBus:      msgBus,
 		execTool:    execTool,
-	}
+	}, nil
 }
 
 // Name returns the tool name
