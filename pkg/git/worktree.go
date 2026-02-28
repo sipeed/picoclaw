@@ -193,6 +193,34 @@ func SafeDispose(repoDir string, wt *WorktreeInfo) DisposeResult {
 	return result
 }
 
+// MergeResult describes the outcome of a worktree branch merge attempt.
+type MergeResult struct {
+	Merged   bool   // true if merge succeeded
+	Branch   string // branch name that was merged
+	Conflict bool   // true if merge failed due to conflict
+}
+
+// MergeWorktreeBranch attempts to merge the worktree branch into the base branch.
+// On conflict, it aborts the merge and returns Conflict=true.
+// Must be called AFTER auto-commit and BEFORE SafeDispose.
+func MergeWorktreeBranch(repoDir string, wt *WorktreeInfo) MergeResult {
+	result := MergeResult{Branch: wt.Branch}
+
+	mergeCmd := exec.Command("git", "merge", "--no-edit", wt.Branch)
+	mergeCmd.Dir = repoDir
+	if err := mergeCmd.Run(); err != nil {
+		// Merge failed — abort and report conflict
+		abortCmd := exec.Command("git", "merge", "--abort")
+		abortCmd.Dir = repoDir
+		abortCmd.Run() // best-effort
+		result.Conflict = true
+		return result
+	}
+
+	result.Merged = true
+	return result
+}
+
 // PruneOrphaned runs git worktree prune and removes dirs in worktreesDir
 // that aren't valid git worktrees.
 func PruneOrphaned(repoDir, worktreesDir string) {
