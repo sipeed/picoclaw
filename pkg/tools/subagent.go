@@ -14,6 +14,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+// spawnTimeout is the hard upper bound for a single spawn goroutine.
+// MaxIterations × HTTP timeout provides the soft limit; this is a safety net.
+const spawnTimeout = 30 * time.Minute
+
 type SubagentTask struct {
 	ID            string
 	Task          string
@@ -28,11 +32,13 @@ type SubagentTask struct {
 	Iterations    int            `json:"-"`
 	ToolCalls     int            `json:"-"`
 	ToolStats     map[string]int `json:"-"`
+	cancel        context.CancelFunc
 }
 
 type SubagentManager struct {
 	tasks          map[string]*SubagentTask
 	mu             sync.RWMutex
+	wg             sync.WaitGroup // tracks running spawn goroutines
 	provider       providers.LLMProvider
 	defaultModel   string
 	bus            *bus.MessageBus
@@ -122,8 +128,17 @@ func (sm *SubagentManager) Spawn(
 
 	sm.reporter.ReportSpawn(taskID, label, task)
 
-	// Start task in background with context cancellation support
-	go sm.runTask(ctx, subagentTask, preset, callback)
+	// Start task in background with a detached context that has a hard timeout.
+	// The spawned goroutine must outlive the parent (e.g. heartbeat session)
+	// which may finish before the subagent completes.
+	// The cancel func is stored on the task so CancelTask() can stop it.
+	spawnCtx, spawnCancel := context.WithTimeout(context.Background(), spawnTimeout)
+	subagentTask.cancel = spawnCancel
+	sm.wg.Add(1)
+	go func() {
+		defer sm.wg.Done()
+		sm.runTask(spawnCtx, subagentTask, preset, callback)
+	}()
 
 	if label != "" {
 		return fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task), nil
@@ -364,6 +379,33 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 	}
 
 	return registry
+}
+
+// WaitAll blocks until all spawned subagent goroutines have finished
+// or the timeout expires. Returns true if all goroutines finished,
+// false on timeout.
+func (sm *SubagentManager) WaitAll(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		sm.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+// CancelTask cancels the context for a running subagent task.
+func (sm *SubagentManager) CancelTask(taskID string) {
+	sm.mu.RLock()
+	task, ok := sm.tasks[taskID]
+	sm.mu.RUnlock()
+	if ok && task.cancel != nil {
+		task.cancel()
+	}
 }
 
 func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
