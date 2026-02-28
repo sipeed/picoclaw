@@ -46,8 +46,11 @@ func getGlobalConfigDir() string {
 func NewContextBuilder(workspace string) *ContextBuilder {
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
-	wd, _ := os.Getwd()
-	builtinSkillsDir := filepath.Join(wd, "skills")
+	builtinSkillsDir := strings.TrimSpace(os.Getenv("PICOCLAW_BUILTIN_SKILLS"))
+	if builtinSkillsDir == "" {
+		wd, _ := os.Getwd()
+		builtinSkillsDir = filepath.Join(wd, "skills")
+	}
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{

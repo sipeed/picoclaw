@@ -439,7 +439,7 @@ description: global-v2
 }
 
 // TestBuiltinSkillFileContentChange verifies that modifying a builtin skill
-// ({cwd}/skills) invalidates the cached system prompt.
+// invalidates the cached system prompt.
 func TestBuiltinSkillFileContentChange(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -448,18 +448,9 @@ func TestBuiltinSkillFileContentChange(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	builtinRoot := t.TempDir()
-	oldWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(builtinRoot); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(oldWD)
-	})
+	t.Setenv("PICOCLAW_BUILTIN_SKILLS", builtinRoot)
 
-	builtinSkillPath := filepath.Join(builtinRoot, "skills", "builtin-skill", "SKILL.md")
+	builtinSkillPath := filepath.Join(builtinRoot, "builtin-skill", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(builtinSkillPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
