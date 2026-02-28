@@ -32,6 +32,15 @@ type FeishuChannel struct {
 	cancel context.CancelFunc
 }
 
+type InteractiveMarkdownContent struct {
+	Elements []CardElement `json:"elements"`
+}
+
+type CardElement struct {
+	Tag     string `json:"tag"`
+	Content string `json:"content"`
+}
+
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
 	base := channels.NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom,
 		channels.WithGroupTrigger(cfg.GroupTrigger),
@@ -102,17 +111,23 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("chat ID is empty")
 	}
 
-	payload, err := json.Marshal(map[string]string{"text": msg.Content})
+	var element CardElement
+	element.Tag = "markdown"
+	element.Content = msg.Content
+	var cardContent InteractiveMarkdownContent
+	cardContent.Elements = []CardElement{element}
+	// 将cardContent 序列化为JSON字符串
+	cardContentJSON, err := json.Marshal(cardContent)
 	if err != nil {
-		return fmt.Errorf("failed to marshal feishu content: %w", err)
+		return fmt.Errorf("failed to marshal feishu card content: %w", err)
 	}
 
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(msg.ChatID).
-			MsgType(larkim.MsgTypeText).
-			Content(string(payload)).
+			MsgType(larkim.MsgTypeInteractive).
+			Content(string(cardContentJSON)).
 			Uuid(fmt.Sprintf("picoclaw-%d", time.Now().UnixNano())).
 			Build()).
 		Build()
