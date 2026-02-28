@@ -69,30 +69,27 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
 }
 
-func NewExecTool(workingDir string, restrict bool) *ExecTool {
+func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 	return NewExecToolWithConfig(workingDir, restrict, nil)
 }
 
-func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
+func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
 
-	enableDenyPatterns := true
 	if config != nil {
 		execConfig := config.Tools.Exec
-		enableDenyPatterns = execConfig.EnableDenyPatterns
+		enableDenyPatterns := execConfig.EnableDenyPatterns
 		if enableDenyPatterns {
+			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			if len(execConfig.CustomDenyPatterns) > 0 {
 				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
 				for _, pattern := range execConfig.CustomDenyPatterns {
 					re, err := regexp.Compile(pattern)
 					if err != nil {
-						fmt.Printf("Invalid custom deny pattern %q: %v\n", pattern, err)
-						continue
+						return nil, fmt.Errorf("invalid custom deny pattern %q: %w", pattern, err)
 					}
 					denyPatterns = append(denyPatterns, re)
 				}
-			} else {
-				denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			}
 		} else {
 			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
@@ -108,7 +105,7 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
 		restrictToWorkspace: restrict,
-	}
+	}, nil
 }
 
 func (t *ExecTool) Name() string {
@@ -144,7 +141,15 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		cwd = wd
+		if t.restrictToWorkspace && t.workingDir != "" {
+			resolvedWD, err := validatePath(wd, t.workingDir, true)
+			if err != nil {
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
+			}
+			cwd = resolvedWD
+		} else {
+			cwd = wd
+		}
 	}
 
 	if cwd == "" {

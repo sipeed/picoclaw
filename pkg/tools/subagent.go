@@ -132,12 +132,12 @@ After completing the task, provide a clear summary of what was done.`
 		},
 	}
 
-	// Check if context is already cancelled before starting
+	// Check if context is already canceled before starting
 	select {
 	case <-ctx.Done():
 		sm.mu.Lock()
-		task.Status = "cancelled"
-		task.Result = "Task cancelled before execution"
+		task.Status = "canceled"
+		task.Result = "Task canceled before execution"
 		sm.mu.Unlock()
 		return
 	default:
@@ -185,10 +185,10 @@ After completing the task, provide a clear summary of what was done.`
 	if err != nil {
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
-		// Check if it was cancelled
+		// Check if it was canceled
 		if ctx.Err() != nil {
-			task.Status = "cancelled"
-			task.Result = "Task cancelled during execution"
+			task.Status = "canceled"
+			task.Result = "Task canceled during execution"
 		}
 		result = &ToolResult{
 			ForLLM:  task.Result,
@@ -218,7 +218,9 @@ After completing the task, provide a clear summary of what was done.`
 	// Send announce message back to main agent
 	if sm.bus != nil {
 		announceContent := fmt.Sprintf("Task '%s' completed.\n\nResult:\n%s", task.Label, task.Result)
-		sm.bus.PublishInbound(bus.InboundMessage{
+		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer pubCancel()
+		sm.bus.PublishInbound(pubCtx, bus.InboundMessage{
 			Channel:  "system",
 			SenderID: fmt.Sprintf("subagent:%s", task.ID),
 			// Format: "original_channel:original_chat_id" for routing back
