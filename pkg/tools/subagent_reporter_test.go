@@ -174,7 +174,7 @@ func TestSubagentManager_Spawn_SnapshotLiveDuringExecution(t *testing.T) {
 
 // TestSubagentManager_Spawn_CancelledDuringExecution verifies that when the
 // context is cancelled while a subagent's LLM call is in progress, the
-// Broadcaster receives agent_gc with reason="cancelled" and the agent is
+// Broadcaster receives agent_gc with reason="canceled" and the agent is
 // removed from the snapshot.
 //
 // Synchronisation:
@@ -224,7 +224,7 @@ loop:
 		}
 	}
 
-	// Locate agent_gc and verify reason = "cancelled".
+	// Locate agent_gc and verify reason = "canceled".
 	var gcEv orch.Event
 	for _, ev := range events {
 		if ev.Type == "agent_gc" {
@@ -232,12 +232,12 @@ loop:
 			break
 		}
 	}
-	if gcEv.Reason != "cancelled" {
-		t.Errorf("agent_gc reason = %q, want %q; events: %+v", gcEv.Reason, "cancelled", events)
+	if gcEv.Reason != "canceled" {
+		t.Errorf("agent_gc reason = %q, want %q; events: %+v", gcEv.Reason, "canceled", events)
 	}
 
 	// Snapshot must be empty after the GC event.
 	if snap := b.Snapshot(); len(snap) != 0 {
-		t.Errorf("snapshot must be empty after agent_gc(cancelled), got: %v", snap)
+		t.Errorf("snapshot must be empty after agent_gc(canceled), got: %v", snap)
 	}
 }
