@@ -1,10 +1,29 @@
 services:
   # ─────────────────────────────────────────────
+  # PicoClaw Init (one-shot bootstrap)
+  #   docker compose -f docker/docker-compose.yml --profile init run --rm picoclaw-init
+  # ─────────────────────────────────────────────
+  picoclaw-init:
+    image: picoclaw-local:dev
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: picoclaw-init
+    profiles:
+      - init
+    volumes:
+      - ./data:/home/picoclaw/.picoclaw
+    command: ["onboard"]
+
+  # ─────────────────────────────────────────────
   # PicoClaw Agent (one-shot query)
-  #   docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Hello"
+  #   docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent -m "Hello"
   # ─────────────────────────────────────────────
   picoclaw-agent:
-    image: docker.io/sipeed/picoclaw:latest
+    image: picoclaw-local:dev
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: picoclaw-agent
     profiles:
       - agent
@@ -12,17 +31,20 @@ services:
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
     volumes:
-      - ./data:/root/.picoclaw
-    entrypoint: ["picoclaw", "agent"]
+      - ./data:/home/picoclaw/.picoclaw
+    entrypoint: ["/entrypoint.sh", "agent"]
     stdin_open: true
     tty: true
 
   # ─────────────────────────────────────────────
   # PicoClaw Gateway (Long-running Bot)
-  #   docker compose -f docker/docker-compose.yml up picoclaw-gateway
+  #   docker compose -f docker/docker-compose.yml --profile gateway up picoclaw-gateway
   # ─────────────────────────────────────────────
   picoclaw-gateway:
-    image: docker.io/sipeed/picoclaw:latest
+    image: picoclaw-local:dev
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: picoclaw-gateway
     restart: on-failure
     profiles:
@@ -31,4 +53,4 @@ services:
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
     volumes:
-      - ./data:/root/.picoclaw
+      - ./data:/home/picoclaw/.picoclaw

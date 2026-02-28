@@ -198,17 +198,17 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ```bash
 # Ask a question
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "What is 2+2?"
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent -m "What is 2+2?"
 
 # Interactive mode
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent
 ```
 
 ### Update
 
 ```bash
-docker compose -f docker/docker-compose.yml pull
-docker compose -f docker/docker-compose.yml --profile gateway up -d
+git pull
+docker compose -f docker/docker-compose.yml --profile gateway up --build -d
 ```
 
 ### 🚀 Quick Start

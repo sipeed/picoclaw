@@ -171,17 +171,17 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ```bash
 # Đặt câu hỏi
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "2+2 bằng mấy?"
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent -m "2+2 bằng mấy?"
 
 # Chế độ tương tác
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent
 ```
 
 ### Cập nhật
 
 ```bash
-docker compose -f docker/docker-compose.yml pull
-docker compose -f docker/docker-compose.yml --profile gateway up -d
+git pull
+docker compose -f docker/docker-compose.yml --profile gateway up --build -d
 ```
 
 ### 🚀 Bắt đầu nhanh
