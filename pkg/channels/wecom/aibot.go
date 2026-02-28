@@ -928,9 +928,12 @@ func (c *WeComAIBotChannel) encryptResponse(
 	return string(respJSON)
 }
 
-// encryptEmptyResponse returns empty encrypted response
+// encryptEmptyResponse returns a minimal valid encrypted response
 func (c *WeComAIBotChannel) encryptEmptyResponse(timestamp, nonce string) string {
-	return ""
+	// Construct a zero-value stream response and encrypt it so that
+	// WeCom always receives a syntactically valid encrypted JSON object.
+	emptyResp := WeComAIBotStreamResponse{}
+	return c.encryptResponse("", timestamp, nonce, emptyResp)
 }
 
 // encryptMessage encrypts a plain text message for WeCom AI Bot
