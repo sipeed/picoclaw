@@ -153,6 +153,14 @@
       "allow_from": [],
       "reply_timeout": 5,
       "reasoning_channel_id": ""
+    },
+    "googlechat": {
+      "enabled": false,
+      "subscription_id": "projects/YOUR_PROJECT_ID/subscriptions/YOUR_SUBSCRIPTION_ID",
+      "project_id": "YOUR_PROJECT_ID",
+      "allow_from": [],
+      "debug": false,
+      "reasoning_channel_id": ""
     }
   },
   "providers": {

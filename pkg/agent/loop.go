@@ -860,6 +860,16 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}
 
+			// Publish status update if not silent
+			// We truncate arguments to avoid huge messages
+			argsPreview = utils.Truncate(string(argsJSON), 100)
+			al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+				Channel: opts.Channel,
+				ChatID:  opts.ChatID,
+				Content: fmt.Sprintf("Thinking... 🔨 Executing: %s(%s)", tc.Name, argsPreview),
+				Type:    "status",
+			})
+
 			toolResult := agent.Tools.ExecuteWithContext(
 				ctx,
 				tc.Name,
