@@ -412,22 +412,9 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 	}
 	ch, _ := NewWeComBotChannel(cfg, msgBus)
 
-	t.Run("valid direct message callback", func(t *testing.T) {
-		// Create JSON message for direct chat (single)
-		jsonMsg := `{
-			"msgid": "test_msg_id_123",
-			"aibotid": "test_aibot_id",
-			"chattype": "single",
-			"from": {"userid": "user123"},
-			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
-			"msgtype": "text",
-			"text": {"content": "Hello World"}
-		}`
-
-		// Encrypt message
+	runBotMessageCallback := func(t *testing.T, jsonMsg string) *httptest.ResponseRecorder {
+		t.Helper()
 		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
-
-		// Create encrypted XML wrapper
 		encryptedWrapper := struct {
 			XMLName xml.Name `xml:"xml"`
 			Encrypt string   `xml:"Encrypt"`
@@ -435,20 +422,29 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 			Encrypt: encrypted,
 		}
 		wrapperData, _ := xml.Marshal(encryptedWrapper)
-
 		timestamp := "1234567890"
 		nonce := "test_nonce"
 		signature := generateSignature("test_token", timestamp, nonce, encrypted)
-
 		req := httptest.NewRequest(
 			http.MethodPost,
 			"/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce,
 			bytes.NewReader(wrapperData),
 		)
 		w := httptest.NewRecorder()
-
 		ch.handleMessageCallback(context.Background(), w, req)
+		return w
+	}
 
+	t.Run("valid direct message callback", func(t *testing.T) {
+		w := runBotMessageCallback(t, `{
+			"msgid": "test_msg_id_123",
+			"aibotid": "test_aibot_id",
+			"chattype": "single",
+			"from": {"userid": "user123"},
+			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+			"msgtype": "text",
+			"text": {"content": "Hello World"}
+		}`)
 		if w.Code != http.StatusOK {
 			t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
 		}
@@ -458,8 +454,7 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 	})
 
 	t.Run("valid group message callback", func(t *testing.T) {
-		// Create JSON message for group chat
-		jsonMsg := `{
+		w := runBotMessageCallback(t, `{
 			"msgid": "test_msg_id_456",
 			"aibotid": "test_aibot_id",
 			"chatid": "group_chat_id_123",
@@ -468,33 +463,7 @@ func TestWeComBotHandleMessageCallback(t *testing.T) {
 			"response_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
 			"msgtype": "text",
 			"text": {"content": "Hello Group"}
-		}`
-
-		// Encrypt message
-		encrypted, _ := encryptTestMessage(jsonMsg, aesKey)
-
-		// Create encrypted XML wrapper
-		encryptedWrapper := struct {
-			XMLName xml.Name `xml:"xml"`
-			Encrypt string   `xml:"Encrypt"`
-		}{
-			Encrypt: encrypted,
-		}
-		wrapperData, _ := xml.Marshal(encryptedWrapper)
-
-		timestamp := "1234567890"
-		nonce := "test_nonce"
-		signature := generateSignature("test_token", timestamp, nonce, encrypted)
-
-		req := httptest.NewRequest(
-			http.MethodPost,
-			"/webhook/wecom?msg_signature="+signature+"&timestamp="+timestamp+"&nonce="+nonce,
-			bytes.NewReader(wrapperData),
-		)
-		w := httptest.NewRecorder()
-
-		ch.handleMessageCallback(context.Background(), w, req)
-
+		}`)
 		if w.Code != http.StatusOK {
 			t.Errorf("status code = %d, want %d", w.Code, http.StatusOK)
 		}

@@ -26,16 +26,15 @@ func (f *fakeChannel) IsAllowed(string) bool                                   {
 func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
 func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
 
-func TestRecordLastChannel(t *testing.T) {
-	// Create temp workspace
+func newTestAgentLoop(
+	t *testing.T,
+) (al *AgentLoop, cfg *config.Config, msgBus *bus.MessageBus, provider *mockProvider, cleanup func()) {
+	t.Helper()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create test config
-	cfg := &config.Config{
+	cfg = &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
@@ -45,74 +44,43 @@ func TestRecordLastChannel(t *testing.T) {
 			},
 		},
 	}
+	msgBus = bus.NewMessageBus()
+	provider = &mockProvider{}
+	al = NewAgentLoop(cfg, msgBus, provider)
+	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
+}
 
-	// Create agent loop
-	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+func TestRecordLastChannel(t *testing.T) {
+	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
+	defer cleanup()
 
-	// Test RecordLastChannel
 	testChannel := "test-channel"
-	err = al.RecordLastChannel(testChannel)
-	if err != nil {
+	if err := al.RecordLastChannel(testChannel); err != nil {
 		t.Fatalf("RecordLastChannel failed: %v", err)
 	}
-
-	// Verify channel was saved
-	lastChannel := al.state.GetLastChannel()
-	if lastChannel != testChannel {
-		t.Errorf("Expected channel '%s', got '%s'", testChannel, lastChannel)
+	if got := al.state.GetLastChannel(); got != testChannel {
+		t.Errorf("Expected channel '%s', got '%s'", testChannel, got)
 	}
-
-	// Verify persistence by creating a new agent loop
 	al2 := NewAgentLoop(cfg, msgBus, provider)
-	if al2.state.GetLastChannel() != testChannel {
-		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, al2.state.GetLastChannel())
+	if got := al2.state.GetLastChannel(); got != testChannel {
+		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, got)
 	}
 }
 
 func TestRecordLastChatID(t *testing.T) {
-	// Create temp workspace
-	tmpDir, err := os.MkdirTemp("", "agent-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
+	defer cleanup()
 
-	// Create test config
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-		},
-	}
-
-	// Create agent loop
-	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
-
-	// Test RecordLastChatID
 	testChatID := "test-chat-id-123"
-	err = al.RecordLastChatID(testChatID)
-	if err != nil {
+	if err := al.RecordLastChatID(testChatID); err != nil {
 		t.Fatalf("RecordLastChatID failed: %v", err)
 	}
-
-	// Verify chat ID was saved
-	lastChatID := al.state.GetLastChatID()
-	if lastChatID != testChatID {
-		t.Errorf("Expected chat ID '%s', got '%s'", testChatID, lastChatID)
+	if got := al.state.GetLastChatID(); got != testChatID {
+		t.Errorf("Expected chat ID '%s', got '%s'", testChatID, got)
 	}
-
-	// Verify persistence by creating a new agent loop
 	al2 := NewAgentLoop(cfg, msgBus, provider)
-	if al2.state.GetLastChatID() != testChatID {
-		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, al2.state.GetLastChatID())
+	if got := al2.state.GetLastChatID(); got != testChatID {
+		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, got)
 	}
 }
 
