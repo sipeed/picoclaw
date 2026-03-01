@@ -11,7 +11,9 @@ Discord 是一个专为社区设计的免费语音、视频和文本聊天应用
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
-      "mention_only": false
+      "group_trigger": {
+        "mention_only": false
+      }
     }
   }
 }
@@ -22,7 +24,7 @@ Discord 是一个专为社区设计的免费语音、视频和文本聊天应用
 | enabled      | bool   | 是   | 是否启用 Discord 频道            |
 | token        | string | 是   | Discord 机器人 Token             |
 | allow_from   | array  | 否   | 用户ID白名单，空表示允许所有用户 |
-| mention_only | bool   | 否   | 是否仅响应提及机器人的消息       |
+| group_trigger | object | 否   | 群组触发设置（示例: { "mention_only": false }） |
 
 ## 设置流程
 

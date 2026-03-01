@@ -295,6 +295,8 @@ That's it! You have a working AI assistant in 2 minutes.
 
 Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or WeCom
 
+> **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
+
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
 | **Telegram** | Easy (just a token)                |
@@ -336,69 +338,6 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or We
 picoclaw gateway
 ```
 
-#### Mini App (Dashboard)
-
-PicoClaw includes a Telegram Mini App that provides a GUI dashboard directly inside Telegram. It shows plan progress, available skills, active sessions, session stats, and lets you send commands without typing.
-
-**How it works:**
-
-When Telegram is enabled, PicoClaw automatically registers a "Dashboard" menu button in the chat. Tapping it opens the Mini App inside Telegram's WebView.
-
-| Tab | Description |
-|-----|-------------|
-| **Plan** | View plan phases/steps as a checklist, tap to mark done, start new plans |
-| **Skills** | Browse and invoke skills with a message input |
-| **Session** | View active sessions and token usage stats (requires `--stats` flag for stats) |
-| **Config** | Quick command buttons, custom command input, and **Log Viewer** |
-
-**Setup — Tailscale (recommended for self-hosting):**
-
-Telegram requires HTTPS for Mini Apps. The easiest way is to use [Tailscale](https://tailscale.com/) which provides automatic TLS certificates via MagicDNS.
-
-1. Install Tailscale on both your server and phone
-2. Allow cert provisioning (run once on the server):
-   ```bash
-   sudo tailscale set --operator=$USER
-   ```
-3. Start the gateway — PicoClaw auto-detects the Tailscale hostname and fetches a TLS certificate:
-   ```bash
-   picoclaw gateway --stats
-   ```
-   You should see:
-   ```
-   ✓ Mini App registered at https://<machine>.<tailnet>.ts.net:18790/miniapp
-   ```
-
-> Your phone must also be connected to the same Tailnet to access the Mini App.
-
-**Setup — Custom URL:**
-
-If you already have an HTTPS endpoint (e.g., reverse proxy, Cloudflare Tunnel), set `web_app_url` manually:
-
-```json
-{
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "YOUR_BOT_TOKEN",
-      "web_app_url": "https://your-domain.com/miniapp"
-    }
-  }
-}
-```
-
-When `web_app_url` is set, PicoClaw skips Tailscale auto-detection and serves the Mini App over HTTP (your reverse proxy handles TLS).
-
-**Log Viewer (Config tab):**
-
-The Config tab includes a real-time log viewer that streams logs via WebSocket. It supports three log streams:
-
-- **picoclaw** — agent, tools, and channel activity logs
-- **telego** — Telegram library internal logs
-- **dev-console** — JavaScript console output from Dev Preview iframes
-
-Features: component filter chips, auto-reconnect, and **Save Snapshot** to download a `.tar.gz` archive of the current log buffer (auto-deleted after 14 days). When `allow_from` is configured, the log viewer is restricted to allowed users only.
-
 </details>
 
 <details>
@@ -427,8 +366,7 @@ Features: component filter chips, auto-reconnect, and **Save Snapshot** to downl
     "discord": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"],
-      "mention_only": false
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -441,9 +379,31 @@ Features: component filter chips, auto-reconnect, and **Save Snapshot** to downl
 * Bot Permissions: `Send Messages`, `Read Message History`
 * Open the generated invite URL and add the bot to your server
 
-**Optional: Mention-only mode**
+**Optional: Group trigger mode**
 
-Set `"mention_only": true` to make the bot respond only when @-mentioned. Useful for shared servers where you want the bot to respond only when explicitly called.
+By default the bot responds to all messages in a server channel. To restrict responses to @-mentions only, add:
+
+```json
+{
+  "channels": {
+    "discord": {
+      "group_trigger": { "mention_only": true }
+    }
+  }
+}
+```
+
+You can also trigger by keyword prefixes (e.g. `!bot`):
+
+```json
+{
+  "channels": {
+    "discord": {
+      "group_trigger": { "prefixes": ["!bot"] }
+    }
+  }
+}
+```
 
 **6. Run**
 
@@ -564,8 +524,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -573,13 +531,15 @@ picoclaw gateway
 }
 ```
 
+> LINE webhook is served on the shared Gateway server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`).
+
 **3. Set up Webhook URL**
 
 LINE requires HTTPS for webhooks. Use a reverse proxy or tunnel:
 
 ```bash
-# Example with ngrok
-ngrok http 18791
+# Example with ngrok (gateway default port is 18790)
+ngrok http 18790
 ```
 
 Then set the Webhook URL in LINE Developers Console to `https://your-domain/webhook/line` and enable **Use webhook**.
@@ -591,8 +551,6 @@ picoclaw gateway
 ```
 
 > In group chats, the bot responds only when @mentioned. Replies quote the original message.
-
-> **Docker Compose**: Add `ports: ["18791:18791"]` to the `picoclaw-gateway` service to expose the webhook port.
 
 </details>
 
@@ -623,14 +581,14 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
   }
 }
 ```
+
+> WeCom webhook is served on the shared Gateway server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`).
 
 **Quick Setup - WeCom App:**
 
@@ -639,10 +597,11 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 * Go to WeCom Admin Console → App Management → Create App
 * Copy **AgentId** and **Secret**
 * Go to "My Company" page, copy **CorpID**
+
 **2. Configure receive message**
 
 * In App details, click "Receive Message" → "Set API"
-* Set URL to `http://your-server:18792/webhook/wecom-app`
+* Set URL to `http://your-server:18790/webhook/wecom-app`
 * Generate **Token** and **EncodingAESKey**
 
 **3. Configure**
@@ -657,8 +616,6 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -672,7 +629,7 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 picoclaw gateway
 ```
 
-> **Note**: WeCom App requires opening port 18792 for webhook callbacks. Use a reverse proxy for HTTPS.
+> **Note**: WeCom webhook callbacks are served on the Gateway port (default 18790). Use a reverse proxy for HTTPS.
 
 </details>
 
@@ -1099,36 +1056,6 @@ PicoClaw routes providers by protocol family:
 
 This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
 
-### Model Fallbacks
-
-`model_fallbacks` defines a fallback chain that activates when the primary model returns a retriable error (rate limit, server error, etc.). Fallbacks can target **different providers** — the provider is lazily created and cached on first use.
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "provider": "vllm",
-      "model": "your-model-name",
-      "model_fallbacks": ["openai/gpt-4o", "anthropic/claude-sonnet-4-5-20250929"]
-    }
-  },
-  "providers": {
-    "vllm": {
-      "api_key": "your-vllm-key",
-      "api_base": "https://api.example.com/v1"
-    },
-    "openai": {
-      "auth_method": "oauth"
-    },
-    "anthropic": {
-      "api_key": "sk-ant-xxx"
-    }
-  }
-}
-```
-
-The format is `provider/model`. If no `/` is present, the primary provider is assumed (same-provider fallback). Failed providers enter a cooldown period to avoid repeated timeouts.
-
 <details>
 <summary><b>Zhipu</b></summary>
 
@@ -1250,33 +1177,9 @@ picoclaw agent -m "Hello"
 | `picoclaw agent -m "..."` | Chat with the agent           |
 | `picoclaw agent`          | Interactive chat mode         |
 | `picoclaw gateway`        | Start the gateway             |
-| `picoclaw gateway --stats`| Start with usage tracking     |
 | `picoclaw status`         | Show status                   |
 | `picoclaw cron list`      | List all scheduled jobs       |
 | `picoclaw cron add ...`   | Add a scheduled job           |
-
-### Chat Commands
-
-These slash commands can be sent in any chat channel (Telegram, Discord, etc.) and return instantly without consuming LLM tokens:
-
-| Command           | Description                                      |
-| ----------------- | ------------------------------------------------ |
-| `/help`           | Show available commands                          |
-| `/session`        | Show token usage statistics (requires `--stats`) |
-| `/session reset`  | Reset usage statistics                           |
-| `/skills`         | List available skills                            |
-| `/skill <name> [message]` | Invoke a skill with optional message     |
-| `/show model`     | Show current model                               |
-| `/list channels`  | List enabled channels                            |
-| `/plan`           | Show current plan progress                       |
-| `/plan <task>`    | Start a new plan with interview flow             |
-| `/plan clear`     | Discard the current plan                         |
-
-> **Note**: `/session` requires the gateway to be started with `--stats` flag. Without it, stats tracking is disabled for zero overhead.
->
-> **Note**: `/skills` returns instantly without LLM cost. `/skill <name>` injects the skill's SKILL.md into the conversation context for the current turn, then only the skill name is kept in history to save the context window.
->
-> **Note**: `/plan` enables structured task planning with automatic phase advancement. The AI interviews you to understand requirements, organizes work into phases, and tracks progress through MEMORY.md.
 
 ### Scheduled Tasks / Reminders
 
