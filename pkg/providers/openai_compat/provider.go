@@ -29,10 +29,11 @@ type (
 )
 
 type Provider struct {
-	apiKey         string
-	apiBase        string
-	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
-	httpClient     *http.Client
+	apiKey           string
+	apiBase          string
+	maxTokensField   string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	usePromptCaching bool
+	httpClient       *http.Client
 }
 
 type Option func(*Provider)
@@ -50,6 +51,14 @@ func WithRequestTimeout(timeout time.Duration) Option {
 		if timeout > 0 {
 			p.httpClient.Timeout = timeout
 		}
+	}
+}
+
+// WithUsePromptCaching pass in true to enable prompt caching.
+// Prompt caching is only supported by OpenAI-native endpoints.
+func WithUsePromptCaching(usePromptCaching bool) Option {
+	return func(p *Provider) {
+		p.usePromptCaching = usePromptCaching
 	}
 }
 
@@ -157,7 +166,7 @@ func (p *Provider) Chat(
 	// Prompt caching is only supported by OpenAI-native endpoints.
 	// Gemini and other providers reject unknown fields, so skip for non-OpenAI APIs.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
+		if p.usePromptCaching {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
 	}
