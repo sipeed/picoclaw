@@ -2637,6 +2637,7 @@ func (al *AgentLoop) runLLMIteration(
 			toolCtx := ctx
 			if wt := agent.GetWorktree(opts.SessionKey); wt != nil {
 				toolCtx = tools.WithWorkspaceOverride(toolCtx, wt.Path)
+				toolCtx = tools.WithWorktreeInfo(toolCtx, wt)
 			}
 			toolResult := agent.Tools.ExecuteWithContext(
 				toolCtx,
