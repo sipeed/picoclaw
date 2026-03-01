@@ -152,6 +152,48 @@ func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
 	if modelID != "claude-sonnet-4.6" {
 		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4.6")
 	}
+	// Should use ClaudeProvider (Anthropic SDK), not HTTPProvider
+	if _, ok := provider.(*ClaudeProvider); !ok {
+		t.Errorf("expected *ClaudeProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_AnthropicWithCustomAPIBase(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-anthropic-custom",
+		Model:     "anthropic/glm-4.7",
+		APIKey:    "test-key",
+		APIBase:   "https://api.z.ai/api/anthropic/v1",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "glm-4.7" {
+		t.Errorf("modelID = %q, want %q", modelID, "glm-4.7")
+	}
+	if _, ok := provider.(*ClaudeProvider); !ok {
+		t.Errorf("expected *ClaudeProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_AnthropicMissingAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-anthropic-no-key",
+		Model:     "anthropic/claude-sonnet-4.6",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for missing API key")
+	}
+	if !strings.Contains(err.Error(), "api_key is required") {
+		t.Errorf("error = %q, want message containing %q", err.Error(), "api_key is required")
+	}
 }
 
 func TestCreateProviderFromConfig_Antigravity(t *testing.T) {
