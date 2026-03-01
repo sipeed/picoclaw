@@ -101,3 +101,25 @@ func TestBuiltinDefinitionsWithRuntime_EnablesSessionHandlers(t *testing.T) {
 		t.Fatalf("/session should provide runtime-backed handler when runtime is available")
 	}
 }
+
+func TestBuiltinDefinitions_ShowAndListAreTelegramOnlyHandlers(t *testing.T) {
+	defs := BuiltinDefinitions(&config.Config{})
+
+	defByName := map[string]Definition{}
+	for _, def := range defs {
+		defByName[def.Name] = def
+	}
+
+	for _, name := range []string{"show", "list"} {
+		def, ok := defByName[name]
+		if !ok {
+			t.Fatalf("missing /%s definition", name)
+		}
+		if def.Handler == nil {
+			t.Fatalf("/%s should provide a builtin handler", name)
+		}
+		if len(def.Channels) != 1 || def.Channels[0] != "telegram" {
+			t.Fatalf("/%s channels=%v, want [telegram]", name, def.Channels)
+		}
+	}
+}
