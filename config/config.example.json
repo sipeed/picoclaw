@@ -224,6 +224,7 @@
       "exec_timeout_minutes": 5
     },
     "exec": {
+      "timeout_seconds": 0,
       "enable_deny_patterns": false,
       "custom_deny_patterns": []
     },
