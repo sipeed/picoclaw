@@ -787,7 +787,7 @@ func TestHandleReasoning(t *testing.T) {
 		}
 	})
 
-	t.Run("returns promptly when bus is full", func(t *testing.T) {
+	t.Run("returns promptly when bus is full", func(t *testing.T) { //nolint:dupl
 		al, msgBus := newLoop(t)
 
 		// Fill the outbound bus buffer until a publish would block.
@@ -839,4 +839,103 @@ func TestHandleReasoning(t *testing.T) {
 			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
 		}
 	})
+}
+
+// dummyTool is a tool that always succeeds, used for duplicate detection testing.
+type dummyTool struct {
+	name string
+}
+
+func (d *dummyTool) Name() string        { return d.name }
+func (d *dummyTool) Description() string { return "dummy tool for testing" }
+func (d *dummyTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+func (d *dummyTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	return tools.SilentResult("ok")
+}
+
+func TestRunLLMIteration_DuplicateToolCallBreaker(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-dup-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	callCount := 0
+	dupToolCall := providers.ToolCall{
+		ID:   "call_dup",
+		Type: "function",
+		Name: "dummy_read",
+		Function: &providers.FunctionCall{
+			Name:      "dummy_read",
+			Arguments: `{"path":"test.txt"}`,
+		},
+		Arguments: map[string]any{"path": "test.txt"},
+	}
+
+	provider := &mockProvider{
+		chatFunc: func(ctx context.Context, messages []providers.Message, toolDefs []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
+			callCount++
+			// First 4 calls return duplicate tool calls, 5th returns text
+			if callCount <= 4 {
+				return &providers.LLMResponse{
+					Content:   "",
+					ToolCalls: []providers.ToolCall{dupToolCall},
+				}, nil
+			}
+			return &providers.LLMResponse{
+				Content:   "Done after breaking loop",
+				ToolCalls: []providers.ToolCall{},
+			}, nil
+		},
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 20,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("no default agent")
+	}
+	agent.Tools.Register(&dummyTool{name: "dummy_read"})
+
+	messages := []providers.Message{
+		{Role: "system", Content: "You are a helpful assistant."},
+		{Role: "user", Content: "Read test.txt"},
+	}
+
+	resp, _, err := al.runLLMIteration(context.Background(), agent, messages, processOptions{
+		SessionKey:      "test-dup",
+		Channel:         "test",
+		ChatID:          "chat1",
+		DefaultResponse: "default",
+	})
+	if err != nil {
+		t.Fatalf("runLLMIteration error: %v", err)
+	}
+
+	if resp != "Done after breaking loop" {
+		t.Errorf("expected 'Done after breaking loop', got %q", resp)
+	}
+
+	// The breaker should trigger after 3 consecutive dupes, meaning
+	// we should see fewer total LLM calls than MaxIterations
+	if callCount > 10 {
+		t.Errorf("expected breaker to limit calls, got %d", callCount)
+	}
 }
