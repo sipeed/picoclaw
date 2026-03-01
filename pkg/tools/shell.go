@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -278,31 +280,49 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	if t.restrictToWorkspace {
-		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
-			return "Command blocked by safety guard (path traversal detected)"
-		}
+		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+		splitPattern := regexp.MustCompile(`("[^"]*"|'[^']*'|[\S]+)+`)
 
 		cwdPath, err := filepath.Abs(cwd)
 		if err != nil {
-			return ""
+			cwdPath = ""
 		}
 
-		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
-
-		for _, raw := range matches {
-			p, err := filepath.Abs(raw)
+		parts := splitPattern.FindAllString(cmd, -1)
+		for _, part := range parts {
+			unquoted, err := strconv.Unquote(part)
 			if err != nil {
+				unquoted = part
+			}
+
+			u, err := url.ParseRequestURI(unquoted)
+			if err == nil && u.Scheme != "" && u.Host != "" {
 				continue
 			}
 
-			rel, err := filepath.Rel(cwdPath, p)
-			if err != nil {
+			if strings.Contains(part, "..\\") || strings.Contains(part, "../") {
+				return "Command blocked by safety guard (path traversal detected)"
+			}
+
+			if cwdPath == "" {
 				continue
 			}
 
-			if strings.HasPrefix(rel, "..") {
-				return "Command blocked by safety guard (path outside working dir)"
+			matches := pathPattern.FindAllString(part, -1)
+			for _, raw := range matches {
+				p, err := filepath.Abs(raw)
+				if err != nil {
+					continue
+				}
+
+				rel, err := filepath.Rel(cwdPath, p)
+				if err != nil {
+					continue
+				}
+
+				if strings.HasPrefix(rel, "..") {
+					return "Command blocked by safety guard (path outside working dir)"
+				}
 			}
 		}
 	}
