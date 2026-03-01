@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -17,6 +18,10 @@ type sessionHandlerFakeSessionOps struct {
 	pruneLimits    []int
 	pruneValue     []string
 	pruneErr       error
+
+	listScopeKeys []string
+	listValue     []session.SessionMeta
+	listErr       error
 
 	resumeScopeKeys []string
 	resumeIndices   []int
@@ -34,7 +39,8 @@ func (f *sessionHandlerFakeSessionOps) StartNew(scopeKey string) (string, error)
 }
 
 func (f *sessionHandlerFakeSessionOps) List(scopeKey string) ([]session.SessionMeta, error) {
-	return nil, nil
+	f.listScopeKeys = append(f.listScopeKeys, scopeKey)
+	return f.listValue, f.listErr
 }
 
 func (f *sessionHandlerFakeSessionOps) Resume(scopeKey string, index int) (string, error) {
@@ -152,6 +158,51 @@ func TestSessionHandlers_SessionResume_UsesRuntimeSessionOps(t *testing.T) {
 		t.Fatalf("resume indices=%v, want [3]", ops.resumeIndices)
 	}
 	if reply != "Resumed session 3: scope#3" {
+		t.Fatalf("reply=%q", reply)
+	}
+}
+
+func TestSessionHandlers_SessionList_UsesRuntimeSessionOps(t *testing.T) {
+	t.Helper()
+
+	ops := &sessionHandlerFakeSessionOps{
+		listValue: []session.SessionMeta{
+			{
+				Ordinal:    1,
+				SessionKey: "scope#3",
+				UpdatedAt:  time.Date(2026, 3, 1, 9, 7, 0, 0, time.UTC),
+				MessageCnt: 4,
+				Active:     true,
+			},
+		},
+	}
+	runtime := &sessionHandlerFakeRuntime{
+		channel: "whatsapp",
+		scope:   "scope",
+		ops:     ops,
+		cfg:     &config.Config{},
+	}
+
+	ctx := WithRuntime(context.Background(), runtime)
+
+	var reply string
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions(nil)))
+	res := ex.Execute(ctx, Request{
+		Channel: "whatsapp",
+		Text:    "/session list",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if len(ops.listScopeKeys) != 1 || ops.listScopeKeys[0] != "scope" {
+		t.Fatalf("list scope calls=%v, want [scope]", ops.listScopeKeys)
+	}
+	if reply != "Sessions for current chat:\n1. [*] scope#3 (4 msgs, updated 2026-03-01 09:07)" {
 		t.Fatalf("reply=%q", reply)
 	}
 }
