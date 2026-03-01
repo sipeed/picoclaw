@@ -21,8 +21,8 @@ func TestBuildParams_BasicMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildParams() error: %v", err)
 	}
-	if string(params.Model) != "claude-sonnet-4.6" {
-		t.Errorf("Model = %q, want %q", params.Model, "claude-sonnet-4.6")
+	if string(params.Model) != "claude-sonnet-4-6" {
+		t.Errorf("Model = %q, want %q", params.Model, "claude-sonnet-4-6")
 	}
 	if params.MaxTokens != 1024 {
 		t.Errorf("MaxTokens = %d, want 1024", params.MaxTokens)
