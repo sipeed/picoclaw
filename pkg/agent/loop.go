@@ -995,12 +995,18 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 
 	// Append compression note to the original system prompt instead of adding a new system message
 	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
-	compressionNote := fmt.Sprintf(
-		"\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]",
-		droppedCount,
-	)
+	// Also avoid duplicate compression notes - check if already present
 	enhancedSystemPrompt := history[0]
-	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
+	systemContent := enhancedSystemPrompt.Content
+	// Check if compression already noted (avoid duplicate notes)
+	if !strings.Contains(systemContent, "[System Note: Emergency compression") {
+		compressionNote := fmt.Sprintf(
+			"\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]",
+			droppedCount,
+		)
+		systemContent = systemContent + compressionNote
+	}
+	enhancedSystemPrompt.Content = systemContent
 	newHistory = append(newHistory, enhancedSystemPrompt)
 
 	newHistory = append(newHistory, keptConversation...)
