@@ -558,3 +558,94 @@ func TestNewContainerSandbox_SanitizesEnv(t *testing.T) {
 		t.Fatalf("LANG should be preserved or defaulted, got: %v", got)
 	}
 }
+
+func TestSyncAgentWorkspace_SeedsFilesAndPreservesExisting(t *testing.T) {
+	agentWs := t.TempDir()
+	containerWs := t.TempDir()
+
+	// Setup agent workspace with seed files
+	agentAgentsFile := filepath.Join(agentWs, "AGENTS.md")
+	if err := os.WriteFile(agentAgentsFile, []byte("agent content"), 0o644); err != nil {
+		t.Fatalf("failed to create agent AGENTS.md: %v", err)
+	}
+
+	agentUserFile := filepath.Join(agentWs, "USER.md")
+	if err := os.WriteFile(agentUserFile, []byte("user content"), 0o644); err != nil {
+		t.Fatalf("failed to create agent USER.md: %v", err)
+	}
+
+	// Setup container workspace with PRE-EXISTING AGENTS.md (should not be overwritten)
+	containerAgentsFile := filepath.Join(containerWs, "AGENTS.md")
+	if err := os.WriteFile(containerAgentsFile, []byte("PRESERVED CONTENT"), 0o644); err != nil {
+		t.Fatalf("failed to create container AGENTS.md: %v", err)
+	}
+
+	// Run Sync
+	if err := syncAgentWorkspace(agentWs, containerWs); err != nil {
+		t.Fatalf("syncAgentWorkspace failed: %v", err)
+	}
+
+	// Verify existing file was preserved
+	content, err := os.ReadFile(containerAgentsFile)
+	if err != nil {
+		t.Fatalf("failed to read container AGENTS.md: %v", err)
+	}
+	if string(content) != "PRESERVED CONTENT" {
+		t.Fatalf("existing file was overwritten. expected PRESERVED CONTENT, got: %s", string(content))
+	}
+
+	// Verify missing file was seeded
+	content, err = os.ReadFile(filepath.Join(containerWs, "USER.md"))
+	if err != nil {
+		t.Fatalf("failed to read container USER.md: %v", err)
+	}
+	if string(content) != "user content" {
+		t.Fatalf("missing file was not seeded correctly. got: %s", string(content))
+	}
+
+	// Verify non-existent seed files are handled cleanly (TOOLS.md, MEMORY.md)
+	if _, err := os.Stat(filepath.Join(containerWs, "MEMORY.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected MEMORY.md to not exist, got: %v", err)
+	}
+}
+
+func TestSyncAgentWorkspace_SyncsSkillsDirectory(t *testing.T) {
+	agentWs := t.TempDir()
+	containerWs := t.TempDir()
+
+	// Setup agent workspace with skills
+	agentSkillsDir := filepath.Join(agentWs, "skills")
+	if err := os.MkdirAll(agentSkillsDir, 0o755); err != nil {
+		t.Fatalf("failed to create agent skills dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentSkillsDir, "skill1.txt"), []byte("new skill"), 0o644); err != nil {
+		t.Fatalf("failed to create skill1: %v", err)
+	}
+
+	// Setup container workspace with OLD skills directory that should be overwritten
+	containerSkillsDir := filepath.Join(containerWs, "skills")
+	if err := os.MkdirAll(containerSkillsDir, 0o755); err != nil {
+		t.Fatalf("failed to create container skills dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(containerSkillsDir, "old-skill.txt"), []byte("old skill"), 0o644); err != nil {
+		t.Fatalf("failed to create old skill: %v", err)
+	}
+
+	// Run Sync
+	if err := syncAgentWorkspace(agentWs, containerWs); err != nil {
+		t.Fatalf("syncAgentWorkspace failed: %v", err)
+	}
+
+	// Verify old skills are gone and new skills are present
+	if _, err := os.Stat(filepath.Join(containerSkillsDir, "old-skill.txt")); !os.IsNotExist(err) {
+		t.Fatalf("old skill file was not removed during sync")
+	}
+
+	content, err := os.ReadFile(filepath.Join(containerSkillsDir, "skill1.txt"))
+	if err != nil {
+		t.Fatalf("failed to read synced skill: %v", err)
+	}
+	if string(content) != "new skill" {
+		t.Fatalf("skill file content mismatch. got: %s", string(content))
+	}
+}

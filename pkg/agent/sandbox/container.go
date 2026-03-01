@@ -341,6 +341,13 @@ func (c *ContainerSandbox) ensureContainer(ctx context.Context) error {
 		}
 	}
 
+	if c.cfg.WorkspaceAccess == string(config.WorkspaceAccessNone) && strings.TrimSpace(c.cfg.Workspace) != "" &&
+		strings.TrimSpace(c.cfg.AgentWorkspace) != "" {
+		if err := syncAgentWorkspace(c.cfg.AgentWorkspace, c.cfg.Workspace); err != nil {
+			logger.WarnCF("sandbox", "failed to sync agent workspace", map[string]any{"error": err})
+		}
+	}
+
 	hashMismatch := existing != nil && existing.ConfigHash != "" && existing.ConfigHash != c.hash
 	if hashMismatch {
 		hot := inspect.State.Running && (now-existing.LastUsedAtMs) < int64((5*time.Minute)/time.Millisecond)
