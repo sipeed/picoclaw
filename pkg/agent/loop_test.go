@@ -369,6 +369,29 @@ func (m *simpleMockProvider) GetDefaultModel() string {
 	return "mock-model"
 }
 
+type countingMockProvider struct {
+	response string
+	calls    int
+}
+
+func (m *countingMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	return &providers.LLMResponse{
+		Content:   m.response,
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (m *countingMockProvider) GetDefaultModel() string {
+	return "counting-mock-model"
+}
+
 // mockCustomTool is a simple mock tool for registration testing
 type mockCustomTool struct{}
 
@@ -605,6 +628,92 @@ func TestHandleCommand_NewAndSessionCommands(t *testing.T) {
 	}
 	if active != scopeKey {
 		t.Fatalf("active session = %q, want %q after resume", active, scopeKey)
+	}
+}
+
+func TestProcessMessage_CommandOutcomes(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Session: config.SessionConfig{
+			DMScope:      "per-channel-peer",
+			BacklogLimit: 20,
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	baseMsg := bus.InboundMessage{
+		Channel:  "whatsapp",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	showResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/show channel",
+		Peer:     baseMsg.Peer,
+	})
+	if showResp != "Command /show is not supported on whatsapp." {
+		t.Fatalf("unexpected /show reply: %q", showResp)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("LLM should not be called for rejected command, calls=%d", provider.calls)
+	}
+
+	fooResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/foo",
+		Peer:     baseMsg.Peer,
+	})
+	if fooResp != "LLM reply" {
+		t.Fatalf("unexpected /foo reply: %q", fooResp)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("LLM should be called exactly once after /foo passthrough, calls=%d", provider.calls)
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: baseMsg.Channel,
+		Peer:    extractPeer(baseMsg),
+	})
+	scopeKey := route.SessionKey
+
+	newResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/new",
+		Peer:     baseMsg.Peer,
+	})
+	if !strings.Contains(newResp, "Started new session: "+scopeKey+"#2") {
+		t.Fatalf("unexpected /new reply: %q", newResp)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("LLM should not be called for handled /new command, calls=%d", provider.calls)
 	}
 }
 
