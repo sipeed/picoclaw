@@ -107,6 +107,9 @@ func TestDoRequestWithRetry_ContextCancel(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := DoRequestWithRetry(client, req)
+	if resp != nil {
+		resp.Body.Close()
+	}
 	require.Error(t, err, "expected error from context cancellation")
 	assert.Nil(t, resp, "expected nil response when context is canceled")
 	assert.True(t, bodyClosed, "expected resp.Body to be closed on context cancellation")
