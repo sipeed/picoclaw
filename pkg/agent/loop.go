@@ -42,17 +42,19 @@ import (
 
 // activeTask tracks a running agent task for live status and intervention.
 type activeTask struct {
-	Description   string
-	Iteration     int
-	MaxIter       int
-	StartedAt     time.Time
-	cancel        context.CancelFunc
-	interrupt     chan string // buffered 1, for user message injection
-	toolLog       []toolLogEntry
-	lastError     *toolLogEntry // sticky: most recent error, persists across iterations
-	projectDir    string        // detected from exec cd target (authoritative)
-	fileCommonDir string        // LCP of file paths relative to workspace (fallback)
-	mu            sync.Mutex
+	Description    string
+	Result         string // LLM response summary for completion notification
+	Iteration      int
+	MaxIter        int
+	StartedAt      time.Time
+	cancel         context.CancelFunc
+	interrupt      chan string // buffered 1, for user message injection
+	toolLog        []toolLogEntry
+	lastError      *toolLogEntry // sticky: most recent error, persists across iterations
+	projectDir     string        // detected from exec cd target (authoritative)
+	fileCommonDir  string        // LCP of file paths relative to workspace (fallback)
+	streamedChunks bool          // true after onChunk fires at least once
+	mu             sync.Mutex
 }
 
 // toolLogEntry records a single tool call for the live terminal view.
@@ -1054,11 +1056,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		// Publish final task status on completion for background tasks
 		if opts.TaskID != "" {
 			elapsed := time.Since(task.StartedAt)
+			summary := task.Result
+			if summary == "" {
+				summary = task.Description
+			}
 			doneCtx, doneCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = al.bus.PublishOutbound(doneCtx, bus.OutboundMessage{
 				Channel:      opts.Channel,
 				ChatID:       opts.ChatID,
-				Content:      fmt.Sprintf("\u2705 Task completed (%.1fs)\n%s", elapsed.Seconds(), task.Description),
+				Content:      fmt.Sprintf("\u2705 Task completed (%.1fs)\n%s", elapsed.Seconds(), summary),
 				IsTaskStatus: true,
 				TaskID:       opts.TaskID,
 			})
@@ -1341,6 +1347,24 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 5c. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
+	}
+
+	// 5d. Store result summary for task completion notification
+	if task != nil {
+		task.Result = utils.Truncate(finalContent, 280)
+	}
+
+	// 5e. Replace orphaned streaming status bubble for background tasks.
+	// When SendResponse is false (e.g. heartbeat), no final non-status message
+	// triggers cleanup, so the last streaming chunk persists on Telegram.
+	if opts.Background && !opts.SendResponse && !constants.IsInternalChannel(opts.Channel) && task != nil &&
+		task.streamedChunks {
+		_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+			Channel:  opts.Channel,
+			ChatID:   opts.ChatID,
+			Content:  utils.Truncate(finalContent, 200),
+			IsStatus: true,
+		})
 	}
 
 	// 6. Save final assistant message to session (deferred write-behind)
@@ -2175,6 +2199,9 @@ func (al *AgentLoop) runLLMIteration(
 		if !constants.IsInternalChannel(opts.Channel) {
 			lastPublish := time.Time{}
 			onChunk = func(accumulated, reasoning string) {
+				if task != nil {
+					task.streamedChunks = true
+				}
 				if time.Since(lastPublish) < 500*time.Millisecond {
 					return
 				}
