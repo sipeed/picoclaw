@@ -284,7 +284,7 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 
 	maxItems := min(len(matches), count)
 
-	for i := 0; i < maxItems; i++ {
+	for i := range maxItems {
 		urlStr := matches[i][1]
 		title := stripTags(matches[i][2])
 		title = strings.TrimSpace(title)
@@ -292,9 +292,9 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 		// URL decoding if needed
 		if strings.Contains(urlStr, "uddg=") {
 			if u, err := url.QueryUnescape(urlStr); err == nil {
-				idx := strings.Index(u, "uddg=")
-				if idx != -1 {
-					urlStr = u[idx+5:]
+				_, after, ok := strings.Cut(u, "uddg=")
+				if ok {
+					urlStr = after
 				}
 			}
 		}
