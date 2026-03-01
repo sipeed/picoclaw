@@ -643,6 +643,31 @@ Connect Picoclaw to the Agent Social Network simply by sending a single message 
 
 Config file: `~/.picoclaw/config.json`
 
+### Environment Variables
+
+You can override default paths using environment variables. This is useful for portable installations, containerized deployments, or running picoclaw as a system service. These variables are independent and control different paths.
+
+| Variable          | Description                                                                                                                             | Default Path              |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Overrides the path to the configuration file. This directly tells picoclaw which `config.json` to load, ignoring all other locations. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Overrides the root directory for picoclaw data. This changes the default location of the `workspace` and other data directories.          | `~/.picoclaw`             |
+
+**Examples:**
+
+```bash
+# Run picoclaw using a specific config file
+# The workspace path will be read from within that config file
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Run picoclaw with all its data stored in /opt/picoclaw
+# Config will be loaded from the default ~/.picoclaw/config.json
+# Workspace will be created at /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Use both for a fully customized setup
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
+
 ### Workspace Layout
 
 PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspace`):

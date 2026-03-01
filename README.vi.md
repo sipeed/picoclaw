@@ -543,6 +543,31 @@ Kết nối PicoClaw với Mạng xã hội Agent chỉ bằng cách gửi một
 
 File cấu hình: `~/.picoclaw/config.json`
 
+### Biến môi trường
+
+Bạn có thể ghi đè các đường dẫn mặc định bằng cách sử dụng các biến môi trường. Điều này hữu ích cho việc cài đặt di động, triển khai container hóa hoặc chạy picoclaw như một dịch vụ hệ thống. Các biến này độc lập và kiểm soát các đường dẫn khác nhau.
+
+| Biến              | Mô tả                                                                                                                             | Đường dẫn mặc định        |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Ghi đè đường dẫn đến file cấu hình. Điều này trực tiếp yêu cầu picoclaw tải file `config.json` nào, bỏ qua tất cả các vị trí khác. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Ghi đè thư mục gốc cho dữ liệu picoclaw. Điều này thay đổi vị trí mặc định của `workspace` và các thư mục dữ liệu khác.          | `~/.picoclaw`             |
+
+**Ví dụ:**
+
+```bash
+# Chạy picoclaw bằng một file cấu hình cụ thể
+# Đường dẫn workspace sẽ được đọc từ trong file cấu hình đó
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Chạy picoclaw với tất cả dữ liệu được lưu trữ trong /opt/picoclaw
+# Cấu hình sẽ được tải từ ~/.picoclaw/config.json mặc định
+# Workspace sẽ được tạo tại /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Sử dụng cả hai để có thiết lập tùy chỉnh hoàn toàn
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
+
 ### Cấu trúc Workspace
 
 PicoClaw lưu trữ dữ liệu trong workspace đã cấu hình (mặc định: `~/.picoclaw/workspace`):

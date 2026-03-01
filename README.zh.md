@@ -317,6 +317,31 @@ PicoClaw 支持多种聊天平台，使您的 Agent 能够连接到任何地方�
 
 配置文件路径: `~/.picoclaw/config.json`
 
+### 环境变量
+
+你可以使用环境变量覆盖默认路径。这对于便携安装、容器化部署或将 picoclaw 作为系统服务运行非常有用。这些变量是独立的，控制不同的路径。
+
+| 变量              | 描述                                                                                                                             | 默认路径                  |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | 覆盖配置文件的路径。这直接告诉 picoclaw 加载哪个 `config.json`，忽略所有其他位置。 | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | 覆盖 picoclaw 数据根目录。这会更改 `workspace` 和其他数据目录的默认位置。          | `~/.picoclaw`             |
+
+**示例：**
+
+```bash
+# 使用特定的配置文件运行 picoclaw
+# 工作区路径将从该配置文件中读取
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# 在 /opt/picoclaw 中存储所有数据运行 picoclaw
+# 配置将从默认的 ~/.picoclaw/config.json 加载
+# 工作区将在 /opt/picoclaw/workspace 创建
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# 同时使用两者进行完全自定义设置
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
+
 ### 工作区布局 (Workspace Layout)
 
 PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/workspace`）：

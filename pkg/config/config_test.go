@@ -442,3 +442,28 @@ func TestDefaultConfig_DMScope(t *testing.T) {
 		t.Errorf("Session.DMScope = %q, want 'per-channel-peer'", cfg.Session.DMScope)
 	}
 }
+
+func TestDefaultConfig_WorkspacePath_Default(t *testing.T) {
+	// Unset to ensure we test the default
+	t.Setenv("PICOCLAW_HOME", "")
+	// Set a known home for consistent test results
+	t.Setenv("HOME", "/tmp/home")
+
+	cfg := DefaultConfig()
+	want := filepath.Join("/tmp/home", ".picoclaw", "workspace")
+
+	if cfg.Agents.Defaults.Workspace != want {
+		t.Errorf("Default workspace path = %q, want %q", cfg.Agents.Defaults.Workspace, want)
+	}
+}
+
+func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
+	t.Setenv("PICOCLAW_HOME", "/custom/picoclaw/home")
+
+	cfg := DefaultConfig()
+	want := "/custom/picoclaw/home/workspace"
+
+	if cfg.Agents.Defaults.Workspace != want {
+		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
+	}
+}

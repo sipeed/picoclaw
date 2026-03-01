@@ -536,6 +536,31 @@ picoclaw gateway
 
 設定ファイル: `~/.picoclaw/config.json`
 
+### 環境変数
+
+環境変数を使用してデフォルトのパスを上書きできます。これは、ポータブルインストール、コンテナ化されたデプロイメント、または picoclaw をシステムサービスとして実行する場合に便利です。これらの変数は独立しており、異なるパスを制御します。
+
+| 変数              | 説明                                                                                                                             | デフォルトパス            |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | 設定ファイルへのパスを上書きします。これにより、picoclaw は他のすべての場所を無視して、指定された `config.json` をロードします。 | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | picoclaw データのルートディレクトリを上書きします。これにより、`workspace` やその他のデータディレクトリのデフォルトの場所が変更されます。          | `~/.picoclaw`             |
+
+**例：**
+
+```bash
+# 特定の設定ファイルを使用して picoclaw を実行する
+# ワークスペースのパスはその設定ファイル内から読み込まれます
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# すべてのデータを /opt/picoclaw に保存して picoclaw を実行する
+# 設定はデフォルトの ~/.picoclaw/config.json からロードされます
+# ワークスペースは /opt/picoclaw/workspace に作成されます
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# 両方を使用して完全にカスタマイズされたセットアップを行う
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
+
 ### ワークスペース構成
 
 PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw/workspace`）にデータを保存します：

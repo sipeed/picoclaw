@@ -575,6 +575,31 @@ Connectez PicoClaw au Réseau Social d'Agents simplement en envoyant un seul mes
 
 Fichier de configuration : `~/.picoclaw/config.json`
 
+### Variables d'Environnement
+
+Vous pouvez remplacer les chemins par défaut à l'aide de variables d'environnement. Ceci est utile pour les installations portables, les déploiements conteneurisés ou l'exécution de picoclaw en tant que service système. Ces variables sont indépendantes et contrôlent différents chemins.
+
+| Variable          | Description                                                                                                                             | Chemin par Défaut         |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Remplace le chemin du fichier de configuration. Cela indique directement à picoclaw quel `config.json` charger, en ignorant tous les autres emplacements. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Remplace le répertoire racine des données picoclaw. Cela modifie l'emplacement par défaut du `workspace` et des autres répertoires de données.          | `~/.picoclaw`             |
+
+**Exemples :**
+
+```bash
+# Exécuter picoclaw en utilisant un fichier de configuration spécifique
+# Le chemin du workspace sera lu à partir de ce fichier de configuration
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Exécuter picoclaw avec toutes ses données stockées dans /opt/picoclaw
+# La configuration sera chargée à partir du fichier par défaut ~/.picoclaw/config.json
+# Le workspace sera créé dans /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Utiliser les deux pour une configuration entièrement personnalisée
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
+
 ### Structure du Workspace
 
 PicoClaw stocke les données dans votre workspace configuré (par défaut : `~/.picoclaw/workspace`) :
