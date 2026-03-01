@@ -46,11 +46,12 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string // Session identifier for history/context
-	Channel         string // Target channel for tool execution
-	ChatID          string // Target chat ID for tool execution
-	UserMessage     string // User message content (may include prefix)
-	DefaultResponse string // Response when LLM returns empty
+	SessionKey      string   // Session identifier for history/context
+	Channel         string   // Target channel for tool execution
+	ChatID          string   // Target chat ID for tool execution
+	UserMessage     string   // User message content (may include prefix)
+	Media           []string // Media URLs attached to the user message
+	DefaultResponse string   // Response when LLM returns empty
 	EnableSummary   bool   // Whether to trigger summarization
 	SendResponse    bool   // Whether to send response via bus
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
@@ -417,6 +418,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
+		Media:           msg.Media,
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
@@ -509,7 +511,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		history,
 		summary,
 		opts.UserMessage,
-		nil,
+		opts.Media,
 		opts.Channel,
 		opts.ChatID,
 	)
