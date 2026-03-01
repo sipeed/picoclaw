@@ -339,6 +339,7 @@ picoclaw gateway
 **4. Telegram command menu (auto-registered at startup)**
 
 PicoClaw now keeps command definitions in one shared registry. On startup, Telegram will automatically register supported bot commands (for example `/start`, `/help`, `/new`, `/session`, `/show`, `/list`) so command menu and runtime behavior stay in sync.
+Telegram command menu registration remains channel-local discovery UX; generic command execution is handled centrally in the agent loop via the commands executor.
 
 If command registration fails (network/API transient errors), the channel still starts and PicoClaw retries registration in the background.
 
@@ -662,6 +663,13 @@ Use `session.dm_scope` to control DM session isolation and `session.backlog_limi
 ```
 
 `/new` (or `/reset`) starts a fresh active session for the current scope. `/session list` and `/session resume <index>` operate within that same scope.
+
+### Unified Command Execution Policy
+
+- Generic slash commands are executed through a single path in `pkg/agent/loop.go` via `commands.Executor`.
+- Channel adapters no longer consume generic commands locally; they forward inbound text to the bus/agent path. Telegram still auto-registers supported commands at startup.
+- Unknown slash command (for example `/foo`) passes through to normal LLM processing.
+- Registered but unsupported command on the current channel (for example `/show` on WhatsApp) returns an explicit user-facing error and stops further processing.
 
 ### 🔒 Security Sandbox
 
