@@ -404,11 +404,11 @@ func TestConcurrentBuildSystemPromptWithCache(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan string, goroutines*iterations)
 
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				result := cb.BuildSystemPromptWithCache()
 				if result == "" {
 					errs <- "empty prompt returned"

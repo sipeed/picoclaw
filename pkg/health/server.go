@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -146,9 +147,7 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	ready := s.ready
 	checks := make(map[string]Check)
-	for k, v := range s.checks {
-		checks[k] = v
-	}
+	maps.Copy(checks, s.checks)
 	s.mu.RUnlock()
 
 	if !ready {

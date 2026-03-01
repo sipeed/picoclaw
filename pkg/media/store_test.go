@@ -49,7 +49,7 @@ func TestReleaseAll(t *testing.T) {
 
 	paths := make([]string, 3)
 	refs := make([]string, 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		paths[i] = createTempFile(t, dir, strings.Repeat("a", i+1)+".jpg")
 		var err error
 		refs[i], err = store.Store(paths[i], MediaMeta{Source: "test"}, "scope1")
@@ -228,12 +228,12 @@ func TestConcurrentSafety(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		go func(gIdx int) {
 			defer wg.Done()
 			scope := strings.Repeat("s", gIdx+1)
 
-			for i := 0; i < filesPerGoroutine; i++ {
+			for i := range filesPerGoroutine {
 				path := createTempFile(t, dir, strings.Repeat("f", gIdx*filesPerGoroutine+i+1)+".tmp")
 				ref, err := store.Store(path, MediaMeta{Source: "test"}, scope)
 				if err != nil {
@@ -448,11 +448,11 @@ func TestConcurrentCleanupSafety(t *testing.T) {
 	wg.Add(workers * 4)
 
 	// Store workers
-	for w := 0; w < workers; w++ {
+	for w := range workers {
 		go func(wIdx int) {
 			defer wg.Done()
 			scope := fmt.Sprintf("scope-%d", wIdx)
-			for i := 0; i < ops; i++ {
+			for i := range ops {
 				p := createTempFile(t, dir, fmt.Sprintf("w%d-f%d.tmp", wIdx, i))
 				store.Store(p, MediaMeta{Source: "test"}, scope)
 			}
@@ -460,30 +460,30 @@ func TestConcurrentCleanupSafety(t *testing.T) {
 	}
 
 	// Resolve workers
-	for w := 0; w < workers; w++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < ops; i++ {
+			for range ops {
 				store.Resolve("media://nonexistent")
 			}
 		}()
 	}
 
 	// ReleaseAll workers
-	for w := 0; w < workers; w++ {
+	for w := range workers {
 		go func(wIdx int) {
 			defer wg.Done()
-			for i := 0; i < ops; i++ {
+			for range ops {
 				store.ReleaseAll(fmt.Sprintf("scope-%d", wIdx))
 			}
 		}(w)
 	}
 
 	// CleanExpired workers
-	for w := 0; w < workers; w++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < ops; i++ {
+			for range ops {
 				store.CleanExpired()
 			}
 		}()
