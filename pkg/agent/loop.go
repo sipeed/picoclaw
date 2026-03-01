@@ -32,6 +32,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// maxHistoryMessagesForContext is the maximum number of history messages to send to the LLM.
+// Read-time cap only; session storage keeps full history.
+const maxHistoryMessagesForContext = 200
+
 type AgentLoop struct {
 	bus            *bus.MessageBus
 	cfg            *config.Config
@@ -496,6 +500,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	if !opts.NoHistory {
 		history = agent.Sessions.GetHistory(opts.SessionKey)
 		summary = agent.Sessions.GetSummary(opts.SessionKey)
+		// Read-time cap: only the last N messages go to the LLM; session storage is unchanged.
+		if len(history) > maxHistoryMessagesForContext {
+			history = history[len(history)-maxHistoryMessagesForContext:]
+		}
 	}
 	messages := agent.ContextBuilder.BuildMessages(
 		history,
@@ -736,11 +744,10 @@ func (al *AgentLoop) runLLMIteration(
 					})
 				}
 
-				al.forceCompression(agent, opts.SessionKey)
-				newHistory := agent.Sessions.GetHistory(opts.SessionKey)
+				compressed := al.forceCompression(agent, opts.SessionKey)
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
-					newHistory, newSummary, "",
+					compressed, newSummary, "",
 					nil, opts.Channel, opts.ChatID,
 				)
 				continue
@@ -966,10 +973,11 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 
 // forceCompression aggressively reduces context when the limit is hit.
 // It drops the oldest 50% of messages (keeping system prompt and last user message).
-func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
+// Returns the compressed history for use in the current request only; does not persist to session.
+func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) []providers.Message {
 	history := agent.Sessions.GetHistory(sessionKey)
 	if len(history) <= 4 {
-		return
+		return history
 	}
 
 	// Keep system prompt (usually [0]) and the very last message (user's trigger)
@@ -977,7 +985,7 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	// Assuming [0] is system, [1:] is conversation
 	conversation := history[1 : len(history)-1]
 	if len(conversation) == 0 {
-		return
+		return history
 	}
 
 	// Helper to find the mid-point of the conversation
@@ -1006,15 +1014,12 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	newHistory = append(newHistory, keptConversation...)
 	newHistory = append(newHistory, history[len(history)-1]) // Last message
 
-	// Update session
-	agent.Sessions.SetHistory(sessionKey, newHistory)
-	agent.Sessions.Save(sessionKey)
-
-	logger.WarnCF("agent", "Forced compression executed", map[string]any{
+	logger.WarnCF("agent", "Forced compression executed (in-memory only, not persisted)", map[string]any{
 		"session_key":  sessionKey,
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
 	})
+	return newHistory
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
@@ -1173,7 +1178,6 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 
 	if finalSummary != "" {
 		agent.Sessions.SetSummary(sessionKey, finalSummary)
-		agent.Sessions.TruncateHistory(sessionKey, 4)
 		agent.Sessions.Save(sessionKey)
 	}
 }
