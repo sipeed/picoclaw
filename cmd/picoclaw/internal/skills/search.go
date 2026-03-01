@@ -2,20 +2,19 @@ package skills
 
 import (
 	"github.com/spf13/cobra"
-
-	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
-func newSearchCommand(installerFn func() (*skills.SkillInstaller, error)) *cobra.Command {
+func newSearchCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "search",
+		Use:   "search [query]",
 		Short: "Search available skills",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			installer, err := installerFn()
-			if err != nil {
-				return err
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			query := ""
+			if len(args) == 1 {
+				query = args[0]
 			}
-			skillsSearchCmd(installer)
+			skillsSearchCmd(query)
 			return nil
 		},
 	}

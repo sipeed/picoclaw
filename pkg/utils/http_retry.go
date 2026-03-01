@@ -37,6 +37,9 @@ func DoRequestWithRetry(client *http.Client, req *http.Request) (*http.Response,
 
 		if i < maxRetries-1 {
 			if err = sleepWithCtx(req.Context(), retryDelayUnit*time.Duration(i+1)); err != nil {
+				if resp != nil {
+					resp.Body.Close()
+				}
 				return nil, fmt.Errorf("failed to sleep: %w", err)
 			}
 		}
