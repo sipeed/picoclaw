@@ -358,6 +358,14 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 		}
 	}
 
+	// Register git tools (worktree-safe push and PR creation)
+	if config.AllowedTools["git_push"] {
+		registry.Register(NewGitPushTool())
+	}
+	if config.AllowedTools["create_pr"] {
+		registry.Register(NewCreatePRTool())
+	}
+
 	// Register web tools
 	if config.AllowedTools["web_search"] {
 		webSearchTool := NewWebSearchTool(sm.webSearchOpts)
