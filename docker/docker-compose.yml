@@ -8,6 +8,8 @@ services:
     container_name: picoclaw-agent
     profiles:
       - agent
+    environment:
+      - HOME=/home/picoclaw
     # Uncomment to access host network; leave commented unless needed.
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
@@ -27,6 +29,8 @@ services:
     restart: on-failure
     profiles:
       - gateway
+    environment:
+      - HOME=/home/picoclaw
     # Uncomment to access host network; leave commented unless needed.
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
