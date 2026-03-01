@@ -112,6 +112,10 @@ func (c *WeComBotChannel) Name() string {
 func (c *WeComBotChannel) Start(ctx context.Context) error {
 	logger.InfoC("wecom", "Starting WeCom Bot channel...")
 
+	// Cancel the context created in the constructor to avoid a resource leak.
+	if c.cancel != nil {
+		c.cancel()
+	}
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	c.SetRunning(true)
@@ -326,14 +330,14 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 		return
 	}
 	c.processedMsgs[msgID] = true
-	c.msgMu.Unlock()
-
-	// Clean up old messages periodically (keep last 1000)
+	// Clean up old messages while still holding the lock to avoid a data race
+	// on len(). Reset the map but re-insert the current msgID so it remains
+	// deduplicated.
 	if len(c.processedMsgs) > 1000 {
-		c.msgMu.Lock()
 		c.processedMsgs = make(map[string]bool)
-		c.msgMu.Unlock()
+		c.processedMsgs[msgID] = true
 	}
+	c.msgMu.Unlock()
 
 	senderID := msg.From.UserID
 
