@@ -1,12 +1,15 @@
 package wecom
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"math/big"
 	"sort"
 	"strings"
 )
@@ -14,25 +17,23 @@ import (
 // blockSize is the PKCS7 block size used by WeCom (32)
 const blockSize = 32
 
+// computeSignature computes the WeCom message signature from the given parameters.
+// It sorts [token, timestamp, nonce, encrypt], concatenates them and returns the SHA1 hex digest.
+func computeSignature(token, timestamp, nonce, encrypt string) string {
+	params := []string{token, timestamp, nonce, encrypt}
+	sort.Strings(params)
+	str := strings.Join(params, "")
+	hash := sha1.Sum([]byte(str))
+	return fmt.Sprintf("%x", hash)
+}
+
 // verifySignature verifies the message signature for WeCom
 // This is a common function used by both WeCom Bot and WeCom App
 func verifySignature(token, msgSignature, timestamp, nonce, msgEncrypt string) bool {
 	if token == "" {
 		return true // Skip verification if token is not set
 	}
-
-	// Sort parameters
-	params := []string{token, timestamp, nonce, msgEncrypt}
-	sort.Strings(params)
-
-	// Concatenate
-	str := strings.Join(params, "")
-
-	// SHA1 hash
-	hash := sha1.Sum([]byte(str))
-	expectedSignature := fmt.Sprintf("%x", hash)
-
-	return expectedSignature == msgSignature
+	return computeSignature(token, timestamp, nonce, msgEncrypt) == msgSignature
 }
 
 // decryptMessage decrypts the encrypted message using AES
@@ -53,62 +54,126 @@ func decryptMessageWithVerify(encryptedMsg, encodingAESKey, receiveid string) (s
 		return string(decoded), nil
 	}
 
-	// Decode AES key (base64)
-	aesKey, err := base64.StdEncoding.DecodeString(encodingAESKey + "=")
+	aesKey, err := decodeWeComAESKey(encodingAESKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode AES key: %w", err)
+		return "", err
 	}
 
-	// Decode encrypted message
 	cipherText, err := base64.StdEncoding.DecodeString(encryptedMsg)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode message: %w", err)
 	}
 
-	// AES decrypt
+	plainText, err := decryptAESCBC(aesKey, cipherText)
+	if err != nil {
+		return "", err
+	}
+
+	return unpackWeComFrame(plainText, receiveid)
+}
+
+// decodeWeComAESKey base64-decodes the 43-character EncodingAESKey (trailing "=" is
+// appended automatically) and validates that the result is exactly 32 bytes.
+// It is the single place that handles this repeated pattern in both encrypt and decrypt paths.
+func decodeWeComAESKey(encodingAESKey string) ([]byte, error) {
+	aesKey, err := base64.StdEncoding.DecodeString(encodingAESKey + "=")
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode AES key: %w", err)
+	}
+	if len(aesKey) != 32 {
+		return nil, fmt.Errorf("invalid AES key length: %d", len(aesKey))
+	}
+	return aesKey, nil
+}
+
+// encryptAESCBC encrypts plaintext using AES-CBC with the given key, mirroring
+// decryptAESCBC. IV = aesKey[:aes.BlockSize]. The caller must PKCS7-pad the
+// plaintext to a multiple of aes.BlockSize before calling.
+func encryptAESCBC(aesKey, plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
-
-	if len(cipherText) < aes.BlockSize {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-
-	// IV is the first 16 bytes of AESKey
 	iv := aesKey[:aes.BlockSize]
-	mode := cipher.NewCBCDecrypter(block, iv)
-	plainText := make([]byte, len(cipherText))
-	mode.CryptBlocks(plainText, cipherText)
+	ciphertext := make([]byte, len(plaintext))
+	cipher.NewCBCEncrypter(block, iv).CryptBlocks(ciphertext, plaintext)
+	return ciphertext, nil
+}
 
-	// Remove PKCS7 padding
-	plainText, err = pkcs7Unpad(plainText)
-	if err != nil {
-		return "", fmt.Errorf("failed to unpad: %w", err)
+// packWeComFrame builds the WeCom wire format:
+//
+//	random(16 ASCII digits) + msg_len(4, big-endian) + msg + receiveid
+func packWeComFrame(msg, receiveid string) ([]byte, error) {
+	randomBytes := make([]byte, 16)
+	for i := range 16 {
+		n, err := rand.Int(rand.Reader, big.NewInt(10))
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate random: %w", err)
+		}
+		randomBytes[i] = byte('0' + n.Int64())
 	}
+	msgBytes := []byte(msg)
+	msgLenBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(msgLenBytes, uint32(len(msgBytes)))
+	var buf bytes.Buffer
+	buf.Write(randomBytes)
+	buf.Write(msgLenBytes)
+	buf.Write(msgBytes)
+	buf.WriteString(receiveid)
+	return buf.Bytes(), nil
+}
 
-	// Parse message structure
-	// Format: random(16) + msg_len(4) + msg + receiveid
-	if len(plainText) < 20 {
-		return "", fmt.Errorf("decrypted message too short")
+// unpackWeComFrame parses the WeCom wire format produced by packWeComFrame.
+// If receiveid is non-empty it verifies the frame's trailing receiveid field.
+func unpackWeComFrame(data []byte, receiveid string) (string, error) {
+	if len(data) < 20 {
+		return "", fmt.Errorf("decrypted frame too short: %d bytes", len(data))
 	}
-
-	msgLen := binary.BigEndian.Uint32(plainText[16:20])
-	if int(msgLen) > len(plainText)-20 {
-		return "", fmt.Errorf("invalid message length")
+	msgLen := binary.BigEndian.Uint32(data[16:20])
+	if int(msgLen) > len(data)-20 {
+		return "", fmt.Errorf("invalid message length: %d", msgLen)
 	}
-
-	msg := plainText[20 : 20+msgLen]
-
-	// Verify receiveid if provided
-	if receiveid != "" && len(plainText) > 20+int(msgLen) {
-		actualReceiveID := string(plainText[20+msgLen:])
+	msg := data[20 : 20+msgLen]
+	if receiveid != "" && len(data) > 20+int(msgLen) {
+		actualReceiveID := string(data[20+msgLen:])
 		if actualReceiveID != receiveid {
 			return "", fmt.Errorf("receiveid mismatch: expected %s, got %s", receiveid, actualReceiveID)
 		}
 	}
-
 	return string(msg), nil
+}
+
+// decryptAESCBC decrypts ciphertext using AES-CBC with the given key.
+// IV = aesKey[:aes.BlockSize]. PKCS7 padding is stripped from the returned plaintext.
+func decryptAESCBC(aesKey, ciphertext []byte) ([]byte, error) {
+	if len(ciphertext) == 0 {
+		return nil, fmt.Errorf("ciphertext is empty")
+	}
+	if len(ciphertext)%aes.BlockSize != 0 {
+		return nil, fmt.Errorf("ciphertext length %d is not a multiple of block size", len(ciphertext))
+	}
+	block, err := aes.NewCipher(aesKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+	iv := aesKey[:aes.BlockSize]
+	plaintext := make([]byte, len(ciphertext))
+	cipher.NewCBCDecrypter(block, iv).CryptBlocks(plaintext, ciphertext)
+	plaintext, err = pkcs7Unpad(plaintext)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpad: %w", err)
+	}
+	return plaintext, nil
+}
+
+// pkcs7Pad adds PKCS7 padding
+func pkcs7Pad(data []byte, blockSize int) []byte {
+	padding := blockSize - (len(data) % blockSize)
+	if padding == 0 {
+		padding = blockSize
+	}
+	padText := bytes.Repeat([]byte{byte(padding)}, padding)
+	return append(data, padText...)
 }
 
 // pkcs7Unpad removes PKCS7 padding with validation
