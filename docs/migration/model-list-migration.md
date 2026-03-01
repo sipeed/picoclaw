@@ -113,6 +113,7 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | `api_base` | No | API endpoint URL |
 | `api_key` | No* | API authentication key |
 | `proxy` | No | HTTP proxy URL |
+| `headers` | No | Custom HTTP headers (`Authorization` and `Content-Type` are reserved and will be ignored) |
 | `auth_method` | No | Authentication method: `oauth`, `token` |
 | `connect_mode` | No | Connection mode for CLI providers: `stdio`, `grpc` |
 | `rpm` | No | Requests per minute limit |

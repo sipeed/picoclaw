@@ -31,14 +31,23 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	apiKey, apiBase, proxy, maxTokensField string,
 	requestTimeoutSeconds int,
 ) *HTTPProvider {
+	return NewHTTPProviderWithOptions(apiKey, apiBase, proxy, maxTokensField, requestTimeoutSeconds, nil)
+}
+
+func NewHTTPProviderWithOptions(
+	apiKey, apiBase, proxy, maxTokensField string,
+	requestTimeoutSeconds int,
+	customHeaders map[string]string,
+) *HTTPProvider {
+	opts := []openai_compat.Option{
+		openai_compat.WithMaxTokensField(maxTokensField),
+		openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+	}
+	if customHeaders != nil {
+		opts = append(opts, openai_compat.WithCustomHeaders(customHeaders))
+	}
 	return &HTTPProvider{
-		delegate: openai_compat.NewProvider(
-			apiKey,
-			apiBase,
-			proxy,
-			openai_compat.WithMaxTokensField(maxTokensField),
-			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
-		),
+		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy, opts...),
 	}
 }
 

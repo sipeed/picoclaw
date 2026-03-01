@@ -464,6 +464,7 @@ type ModelConfig struct {
 	APIBase string `json:"api_base,omitempty"` // API endpoint URL
 	APIKey  string `json:"api_key"`            // API authentication key
 	Proxy   string `json:"proxy,omitempty"`    // HTTP proxy URL
+	Headers map[string]string `json:"headers,omitempty"`  // Custom HTTP headers (Authorization and Content-Type are reserved and will be ignored)
 
 	// Special providers (CLI-based, OAuth, etc.)
 	AuthMethod  string `json:"auth_method,omitempty"`  // Authentication method: oauth, token

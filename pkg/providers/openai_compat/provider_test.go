@@ -361,3 +361,119 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
 	}
 }
+
+func TestProviderChat_SendsCustomHeaders(t *testing.T) {
+	var gotHeader string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-Custom-Key")
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "", WithCustomHeaders(map[string]string{
+		"X-Custom-Key": "myvalue",
+	}))
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if gotHeader != "myvalue" {
+		t.Fatalf("X-Custom-Key = %q, want %q", gotHeader, "myvalue")
+	}
+}
+
+func TestProviderChat_SkipsReservedHeaders(t *testing.T) {
+	var gotAuth, gotContentType string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("mykey", server.URL, "", WithCustomHeaders(map[string]string{
+		"Authorization": "Bearer OVERRIDE",
+		"Content-Type":  "text/plain",
+		"X-Extra":       "allowed",
+	}))
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if gotAuth != "Bearer mykey" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer mykey")
+	}
+	if gotContentType != "application/json" {
+		t.Fatalf("Content-Type = %q, want %q", gotContentType, "application/json")
+	}
+}
+
+func TestProviderChat_RoundTripsReasoningContent(t *testing.T) {
+	var reqBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{
+			{Role: "user", Content: "1+1=?"},
+			{Role: "assistant", Content: "2", ReasoningContent: "let me think..."},
+			{Role: "user", Content: "thanks"},
+		},
+		nil,
+		"gpt-4o",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	msgs, ok := reqBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any")
+	}
+	assistantMsg, ok := msgs[1].(map[string]any)
+	if !ok {
+		t.Fatalf("messages[1] is not map[string]any")
+	}
+	if got := assistantMsg["reasoning_content"]; got != "let me think..." {
+		t.Fatalf("reasoning_content = %v, want %q", got, "let me think...")
+	}
+}

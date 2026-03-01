@@ -106,6 +106,7 @@ func RunToolLoop(
 			Role:    "assistant",
 			Content: response.Content,
 		}
+		assistantMsg.ReasoningContent = response.ReasoningContent
 		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
