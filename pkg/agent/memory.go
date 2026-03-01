@@ -111,7 +111,7 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 	var sb strings.Builder
 	first := true
 
-	for i := 0; i < days; i++ {
+	for i := range days {
 		date := time.Now().AddDate(0, 0, -i)
 		dateStr := date.Format("20060102") // YYYYMMDD
 		monthDir := dateStr[:6]            // YYYYMM
