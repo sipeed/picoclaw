@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -90,12 +91,37 @@ func sanitizeIdentifierComponent(s string) string {
 	return result
 }
 
-// Name returns the tool name, prefixed with the server name
+// Name returns the tool name, prefixed with the server name.
+// The total length is capped at 64 characters (OpenAI-compatible API limit).
+// A short hash of the original (unsanitized) server and tool names is appended
+// whenever sanitization is lossy or the name is truncated, ensuring that two
+// names which differ only in disallowed characters remain distinct after sanitization.
 func (t *MCPTool) Name() string {
 	// Prefix with server name to avoid conflicts, and sanitize components
 	sanitizedServer := sanitizeIdentifierComponent(t.serverName)
 	sanitizedTool := sanitizeIdentifierComponent(t.tool.Name)
-	return fmt.Sprintf("mcp_%s_%s", sanitizedServer, sanitizedTool)
+	full := fmt.Sprintf("mcp_%s_%s", sanitizedServer, sanitizedTool)
+
+	// Check if sanitization was lossless (only lowercasing, no char replacement/truncation)
+	lossless := strings.ToLower(t.serverName) == sanitizedServer &&
+		strings.ToLower(t.tool.Name) == sanitizedTool
+
+	const maxTotal = 64
+	if lossless && len(full) <= maxTotal {
+		return full
+	}
+
+	// Sanitization was lossy or name too long: append hash of the ORIGINAL names
+	// (not the sanitized names) so different originals always yield different hashes.
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(t.serverName + "\x00" + t.tool.Name))
+	suffix := fmt.Sprintf("%08x", h.Sum32()) // 8 chars
+
+	base := full
+	if len(base) > maxTotal-9 {
+		base = strings.TrimRight(full[:maxTotal-9], "_")
+	}
+	return base + "_" + suffix
 }
 
 // Description returns the tool description

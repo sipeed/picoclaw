@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Test script for MCP tools in Docker (full-featured image)
 
 set -e
