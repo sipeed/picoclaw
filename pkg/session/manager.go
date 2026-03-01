@@ -2,8 +2,10 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,24 +21,242 @@ type Session struct {
 	Updated  time.Time           `json:"updated"`
 }
 
+const sessionIndexFilename = "index.json"
+
+type scopeIndex struct {
+	ActiveSessionKey string    `json:"active_session_key"`
+	OrderedSessions  []string  `json:"ordered_sessions"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type sessionIndex struct {
+	Version int                    `json:"version"`
+	Scopes  map[string]*scopeIndex `json:"scopes"`
+}
+
+type SessionMeta struct {
+	Ordinal    int       `json:"ordinal"`
+	SessionKey string    `json:"session_key"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	MessageCnt int       `json:"message_cnt"`
+	Active     bool      `json:"active"`
+}
+
 type SessionManager struct {
-	sessions map[string]*Session
-	mu       sync.RWMutex
-	storage  string
+	sessions  map[string]*Session
+	mu        sync.RWMutex
+	storage   string
+	index     sessionIndex
+	indexPath string
 }
 
 func NewSessionManager(storage string) *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*Session),
 		storage:  storage,
+		index: sessionIndex{
+			Version: 1,
+			Scopes:  make(map[string]*scopeIndex),
+		},
 	}
 
 	if storage != "" {
 		os.MkdirAll(storage, 0o755)
+		sm.indexPath = filepath.Join(storage, sessionIndexFilename)
 		sm.loadSessions()
+		sm.loadIndex()
 	}
 
 	return sm
+}
+
+func (sm *SessionManager) ResolveActive(scopeKey string) (string, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	now := time.Now()
+	scope, changed := sm.ensureScopeLocked(scopeKey, now)
+	if changed {
+		if err := sm.saveIndexLocked(); err != nil {
+			return "", err
+		}
+	}
+	return scope.ActiveSessionKey, nil
+}
+
+func (sm *SessionManager) StartNew(scopeKey string) (string, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	now := time.Now()
+	scope, _ := sm.ensureScopeLocked(scopeKey, now)
+
+	newOrdinal := 2
+	for _, existing := range scope.OrderedSessions {
+		ordinal, ok := sessionOrdinal(scopeKey, existing)
+		if !ok {
+			continue
+		}
+		if ordinal >= newOrdinal {
+			newOrdinal = ordinal + 1
+		}
+	}
+
+	newSessionKey := scopeKey + "#" + strconv.Itoa(newOrdinal)
+	scope.ActiveSessionKey = newSessionKey
+	scope.OrderedSessions = append([]string{newSessionKey}, scope.OrderedSessions...)
+	scope.UpdatedAt = now
+	if err := sm.saveIndexLocked(); err != nil {
+		return "", err
+	}
+	return newSessionKey, nil
+}
+
+func (sm *SessionManager) List(scopeKey string) ([]SessionMeta, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	now := time.Now()
+	scope, changed := sm.ensureScopeLocked(scopeKey, now)
+	if changed {
+		if err := sm.saveIndexLocked(); err != nil {
+			return nil, err
+		}
+	}
+
+	list := make([]SessionMeta, 0, len(scope.OrderedSessions))
+	for i, key := range scope.OrderedSessions {
+		meta := SessionMeta{
+			Ordinal:    i + 1,
+			SessionKey: key,
+			Active:     key == scope.ActiveSessionKey,
+		}
+
+		if session, ok := sm.sessions[key]; ok {
+			meta.UpdatedAt = session.Updated
+			meta.MessageCnt = len(session.Messages)
+		}
+		list = append(list, meta)
+	}
+	return list, nil
+}
+
+func (sm *SessionManager) Resume(scopeKey string, index int) (string, error) {
+	if index < 1 {
+		return "", fmt.Errorf("session index must be >= 1")
+	}
+
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	now := time.Now()
+	scope, changed := sm.ensureScopeLocked(scopeKey, now)
+	if changed {
+		if err := sm.saveIndexLocked(); err != nil {
+			return "", err
+		}
+	}
+
+	if index > len(scope.OrderedSessions) {
+		return "", fmt.Errorf("session index %d out of range", index)
+	}
+
+	scope.ActiveSessionKey = scope.OrderedSessions[index-1]
+	scope.UpdatedAt = now
+	if err := sm.saveIndexLocked(); err != nil {
+		return "", err
+	}
+	return scope.ActiveSessionKey, nil
+}
+
+func (sm *SessionManager) DeleteSession(sessionKey string) error {
+	sm.mu.Lock()
+	changed := false
+	delete(sm.sessions, sessionKey)
+
+	now := time.Now()
+	for scopeKey, scope := range sm.index.Scopes {
+		if scope == nil {
+			delete(sm.index.Scopes, scopeKey)
+			changed = true
+			continue
+		}
+
+		filtered := scope.OrderedSessions[:0]
+		removed := false
+		for _, key := range scope.OrderedSessions {
+			if key == sessionKey {
+				removed = true
+				changed = true
+				continue
+			}
+			filtered = append(filtered, key)
+		}
+		scope.OrderedSessions = filtered
+		if !removed {
+			continue
+		}
+
+		if scope.ActiveSessionKey == sessionKey {
+			if len(scope.OrderedSessions) > 0 {
+				scope.ActiveSessionKey = scope.OrderedSessions[0]
+			} else {
+				scope.ActiveSessionKey = ""
+			}
+		}
+
+		if len(scope.OrderedSessions) == 0 {
+			delete(sm.index.Scopes, scopeKey)
+			continue
+		}
+		scope.UpdatedAt = now
+	}
+
+	if changed {
+		if err := sm.saveIndexLocked(); err != nil {
+			sm.mu.Unlock()
+			return err
+		}
+	}
+	sm.mu.Unlock()
+
+	if err := sm.deleteSessionFile(sessionKey); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (sm *SessionManager) Prune(scopeKey string, limit int) ([]string, error) {
+	if limit < 1 {
+		return nil, fmt.Errorf("limit must be >= 1")
+	}
+
+	sm.mu.Lock()
+	now := time.Now()
+	scope, changed := sm.ensureScopeLocked(scopeKey, now)
+	if changed {
+		if err := sm.saveIndexLocked(); err != nil {
+			sm.mu.Unlock()
+			return nil, err
+		}
+	}
+
+	if len(scope.OrderedSessions) <= limit {
+		sm.mu.Unlock()
+		return []string{}, nil
+	}
+
+	candidates := append([]string(nil), scope.OrderedSessions[limit:]...)
+	sm.mu.Unlock()
+
+	pruned := make([]string, 0, len(candidates))
+	for _, sessionKey := range candidates {
+		if err := sm.DeleteSession(sessionKey); err != nil {
+			return pruned, err
+		}
+		pruned = append(pruned, sessionKey)
+	}
+	return pruned, nil
 }
 
 func (sm *SessionManager) GetOrCreate(key string) *Session {
@@ -247,6 +467,9 @@ func (sm *SessionManager) loadSessions() error {
 		if filepath.Ext(file.Name()) != ".json" {
 			continue
 		}
+		if file.Name() == sessionIndexFilename {
+			continue
+		}
 
 		sessionPath := filepath.Join(sm.storage, file.Name())
 		data, err := os.ReadFile(sessionPath)
@@ -258,11 +481,173 @@ func (sm *SessionManager) loadSessions() error {
 		if err := json.Unmarshal(data, &session); err != nil {
 			continue
 		}
+		if session.Key == "" {
+			continue
+		}
 
 		sm.sessions[session.Key] = &session
 	}
 
 	return nil
+}
+
+func (sm *SessionManager) loadIndex() error {
+	if sm.storage == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(sm.indexPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var loaded sessionIndex
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		return err
+	}
+	if loaded.Version == 0 {
+		loaded.Version = 1
+	}
+	if loaded.Scopes == nil {
+		loaded.Scopes = make(map[string]*scopeIndex)
+	}
+
+	for scopeKey, scope := range loaded.Scopes {
+		if scope == nil {
+			delete(loaded.Scopes, scopeKey)
+			continue
+		}
+		if len(scope.OrderedSessions) == 0 {
+			scope.OrderedSessions = []string{scopeKey}
+		}
+		if scope.ActiveSessionKey == "" {
+			scope.ActiveSessionKey = scope.OrderedSessions[0]
+		}
+	}
+
+	sm.index = loaded
+	return nil
+}
+
+func (sm *SessionManager) saveIndexLocked() error {
+	if sm.storage == "" {
+		return nil
+	}
+	if sm.index.Scopes == nil {
+		sm.index.Scopes = make(map[string]*scopeIndex)
+	}
+	sm.index.Version = 1
+
+	data, err := json.MarshalIndent(sm.index, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp(sm.storage, "index-*.tmp")
+	if err != nil {
+		return err
+	}
+
+	tmpPath := tmpFile.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Chmod(0o644); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, sm.indexPath); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
+func (sm *SessionManager) ensureScopeLocked(scopeKey string, now time.Time) (*scopeIndex, bool) {
+	if sm.index.Scopes == nil {
+		sm.index.Scopes = make(map[string]*scopeIndex)
+	}
+
+	scope, ok := sm.index.Scopes[scopeKey]
+	if !ok || scope == nil {
+		scope = &scopeIndex{
+			ActiveSessionKey: scopeKey,
+			OrderedSessions:  []string{scopeKey},
+			UpdatedAt:        now,
+		}
+		sm.index.Scopes[scopeKey] = scope
+		return scope, true
+	}
+
+	changed := false
+	if len(scope.OrderedSessions) == 0 {
+		scope.OrderedSessions = []string{scopeKey}
+		changed = true
+	}
+	if scope.ActiveSessionKey == "" {
+		scope.ActiveSessionKey = scope.OrderedSessions[0]
+		changed = true
+	}
+	if changed {
+		scope.UpdatedAt = now
+	}
+	return scope, changed
+}
+
+func (sm *SessionManager) deleteSessionFile(sessionKey string) error {
+	if sm.storage == "" {
+		return nil
+	}
+
+	filename := sanitizeFilename(sessionKey)
+	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
+		return os.ErrInvalid
+	}
+
+	sessionPath := filepath.Join(sm.storage, filename+".json")
+	if err := os.Remove(sessionPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func sessionOrdinal(scopeKey, sessionKey string) (int, bool) {
+	if sessionKey == scopeKey {
+		return 1, true
+	}
+
+	prefix := scopeKey + "#"
+	if !strings.HasPrefix(sessionKey, prefix) {
+		return 0, false
+	}
+
+	n, err := strconv.Atoi(strings.TrimPrefix(sessionKey, prefix))
+	if err != nil || n < 2 {
+		return 0, false
+	}
+
+	return n, true
 }
 
 // SetHistory updates the messages of a session.
