@@ -72,8 +72,13 @@ BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
 # Default target
 all: build
 
-## generate: Run generate
-generate:
+## genbuild: Generate channel imports from build.yaml (channels.include). Run before build to shrink binary.
+genbuild:
+	@echo "Generating channel imports from build.yaml..."
+	@$(GO) run ./scripts/genbuild
+
+## generate: Run genbuild and go generate
+generate: genbuild
 	@echo "Run generate..."
 	@rm -r ./$(CMD_DIR)/workspace 2>/dev/null || true
 	@$(GO) generate ./...

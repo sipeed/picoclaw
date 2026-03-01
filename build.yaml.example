@@ -1,0 +1,17 @@
+# Build configuration: control which channels (and optionally providers/tools in the future)
+# are compiled into the binary to reduce size. Copy to build.yaml and edit. Used when you run:
+#   make build
+# (or run: go run ./scripts/genbuild before go build).
+#
+# See docs/BUILD_CONFIG.md.
+
+channels:
+  # Preferred allowlist model: list the channel names you want to include.
+  # If empty or omitted, all discovered channels under pkg/channels/ are included.
+  #
+  # Channel names must match the channel package directory under pkg/channels/.
+  include: []
+  # include: [telegram, whatsapp, discord, slack, feishu, dingtalk, wecom, qq, line, onebot, maixcam, pico, whatsapp_native]
+
+  # Optional denylist model:
+  #   skip: [telegram, whatsapp]
