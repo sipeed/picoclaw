@@ -313,7 +313,7 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	if len(m.channels) == 0 {
 		logger.WarnC("channels", "No channels enabled")
-		return nil
+		return errors.New("no channels enabled")
 	}
 
 	logger.InfoC("channels", "Starting all channels")

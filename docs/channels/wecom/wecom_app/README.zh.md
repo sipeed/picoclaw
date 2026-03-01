@@ -14,8 +14,6 @@
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
       "reply_timeout": 5
@@ -31,8 +29,6 @@
 | agent_id         | int    | 是   | 应用程序代理 ID                          |
 | token            | string | 是   | 回调验证令牌                             |
 | encoding_aes_key | string | 是   | 43 字符 AES 密钥                         |
-| webhook_host     | string | 否   | HTTP 服务器绑定地址                      |
-| webhook_port     | int    | 否   | HTTP 服务器端口（默认：18792）           |
 | webhook_path     | string | 否   | Webhook 路径（默认：/webhook/wecom-app） |
 | allow_from       | array  | 否   | 用户 ID 白名单                           |
 | reply_timeout    | int    | 否   | 回复超时时间（秒）                       |
@@ -45,3 +41,5 @@
 4. 在应用设置中配置“接收消息”，获取 Token 和 EncodingAESKey
 5. 设置回调 URL 为 `http://<your-server-ip>:<port>/webhook/wecom-app`
 6. 将 CorpID, Secret, AgentID 等信息填入配置文件
+
+   注意: PicoClaw 现在使用共享的 Gateway HTTP 服务器来接收所有渠道的 webhook 回调，默认监听地址为 127.0.0.1:18790。如需从公网接收回调，请把外部域名反向代理到 Gateway（默认端口 18790）。

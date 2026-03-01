@@ -2,53 +2,73 @@ package migrate
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/migrate/internal"
+	"github.com/sipeed/picoclaw/pkg/migrate/sources/openclaw"
 )
 
-type ActionType int
+type (
+	Options        = internal.Options
+	Operation      = internal.Operation
+	ActionType     = internal.ActionType
+	Action         = internal.Action
+	Result         = internal.Result
+	HandlerFactory = internal.HandlerFactory
+)
 
 const (
-	ActionCopy ActionType = iota
-	ActionSkip
-	ActionBackup
-	ActionConvertConfig
-	ActionCreateDir
-	ActionMergeConfig
+	ActionCopy          = internal.ActionCopy
+	ActionSkip          = internal.ActionSkip
+	ActionBackup        = internal.ActionBackup
+	ActionConvertConfig = internal.ActionConvertConfig
+	ActionCreateDir     = internal.ActionCreateDir
+	ActionMergeConfig   = internal.ActionMergeConfig
 )
 
-type Options struct {
-	DryRun        bool
-	ConfigOnly    bool
-	WorkspaceOnly bool
-	Force         bool
-	Refresh       bool
-	OpenClawHome  string
-	PicoClawHome  string
+type MigrateInstance struct {
+	options  Options
+	handlers map[string]Operation
 }
 
-type Action struct {
-	Type        ActionType
-	Source      string
-	Destination string
-	Description string
+func NewMigrateInstance(opts Options) *MigrateInstance {
+	instance := &MigrateInstance{
+		options:  opts,
+		handlers: make(map[string]Operation),
+	}
+
+	openclaw_handler, err := openclaw.NewOpenclawHandler(opts)
+	if err == nil {
+		instance.Register(openclaw_handler.GetSourceName(), openclaw_handler)
+	}
+
+	return instance
 }
 
-type Result struct {
-	FilesCopied    int
-	FilesSkipped   int
-	BackupsCreated int
-	ConfigMigrated bool
-	DirsCreated    int
-	Warnings       []string
-	Errors         []error
+func (m *MigrateInstance) Register(moduleName string, module Operation) {
+	m.handlers[moduleName] = module
 }
 
-func Run(opts Options) (*Result, error) {
+func (m *MigrateInstance) getCurrentHandler() (Operation, error) {
+	source := m.options.Source
+	if source == "" {
+		source = "openclaw"
+	}
+	handler, ok := m.handlers[source]
+	if !ok {
+		return nil, fmt.Errorf("Source '%s' not found", source)
+	}
+	return handler, nil
+}
+
+func (m *MigrateInstance) Run(opts Options) (*Result, error) {
+	handler, err := m.getCurrentHandler()
+	if err != nil {
+		return nil, err
+	}
+
 	if opts.ConfigOnly && opts.WorkspaceOnly {
 		return nil, fmt.Errorf("--config-only and --workspace-only are mutually exclusive")
 	}
@@ -57,28 +77,28 @@ func Run(opts Options) (*Result, error) {
 		opts.WorkspaceOnly = true
 	}
 
-	openclawHome, err := resolveOpenClawHome(opts.OpenClawHome)
+	sourceHome, err := handler.GetSourceHome()
 	if err != nil {
 		return nil, err
 	}
 
-	picoClawHome, err := resolvePicoClawHome(opts.PicoClawHome)
+	targetHome, err := internal.ResolveTargetHome(opts.TargetHome)
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err = os.Stat(openclawHome); os.IsNotExist(err) {
-		return nil, fmt.Errorf("OpenClaw installation not found at %s", openclawHome)
+	if _, err = os.Stat(sourceHome); os.IsNotExist(err) {
+		return nil, fmt.Errorf("Source installation not found at %s", sourceHome)
 	}
 
-	actions, warnings, err := Plan(opts, openclawHome, picoClawHome)
+	actions, warnings, err := m.Plan(opts, sourceHome, targetHome)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("Migrating from OpenClaw to PicoClaw")
-	fmt.Printf("  Source:      %s\n", openclawHome)
-	fmt.Printf("  Destination: %s\n", picoClawHome)
+	fmt.Println("Migrating from Source to PicoClaw")
+	fmt.Printf("  Source:      %s\n", sourceHome)
+	fmt.Printf("  Target: %s\n", targetHome)
 	fmt.Println()
 
 	if opts.DryRun {
@@ -95,19 +115,23 @@ func Run(opts Options) (*Result, error) {
 		fmt.Println()
 	}
 
-	result := Execute(actions, openclawHome, picoClawHome)
+	result := m.Execute(actions, sourceHome, targetHome)
 	result.Warnings = warnings
 	return result, nil
 }
 
-func Plan(opts Options, openclawHome, picoClawHome string) ([]Action, []string, error) {
+func (m *MigrateInstance) Plan(opts Options, sourceHome, targetHome string) ([]Action, []string, error) {
 	var actions []Action
 	var warnings []string
+	handler, err := m.getCurrentHandler()
+	if err != nil {
+		return nil, nil, err
+	}
 
 	force := opts.Force || opts.Refresh
 
 	if !opts.WorkspaceOnly {
-		configPath, err := findOpenClawConfig(openclawHome)
+		configPath, err := handler.GetSourceConfigFile()
 		if err != nil {
 			if opts.ConfigOnly {
 				return nil, nil, err
@@ -117,91 +141,95 @@ func Plan(opts Options, openclawHome, picoClawHome string) ([]Action, []string, 
 			actions = append(actions, Action{
 				Type:        ActionConvertConfig,
 				Source:      configPath,
-				Destination: filepath.Join(picoClawHome, "config.json"),
-				Description: "convert OpenClaw config to PicoClaw format",
+				Target:      filepath.Join(targetHome, "config.json"),
+				Description: "convert Source config to PicoClaw format",
 			})
-
-			data, err := LoadOpenClawConfig(configPath)
-			if err == nil {
-				_, configWarnings, _ := ConvertConfig(data)
-				warnings = append(warnings, configWarnings...)
-			}
 		}
 	}
 
 	if !opts.ConfigOnly {
-		srcWorkspace := resolveWorkspace(openclawHome)
-		dstWorkspace := resolveWorkspace(picoClawHome)
+		srcWorkspace, err := handler.GetSourceWorkspace()
+		if err != nil {
+			return nil, nil, fmt.Errorf("getting source workspace: %w", err)
+		}
+		dstWorkspace := internal.ResolveWorkspace(targetHome)
 
 		if _, err := os.Stat(srcWorkspace); err == nil {
-			wsActions, err := PlanWorkspaceMigration(srcWorkspace, dstWorkspace, force)
+			wsActions, err := internal.PlanWorkspaceMigration(srcWorkspace, dstWorkspace,
+				handler.GetMigrateableFiles(),
+				handler.GetMigrateableDirs(),
+				force)
 			if err != nil {
 				return nil, nil, fmt.Errorf("planning workspace migration: %w", err)
 			}
 			actions = append(actions, wsActions...)
 		} else {
-			warnings = append(warnings, "OpenClaw workspace directory not found, skipping workspace migration")
+			warnings = append(warnings, "Source workspace directory not found, skipping workspace migration")
 		}
 	}
 
 	return actions, warnings, nil
 }
 
-func Execute(actions []Action, openclawHome, picoClawHome string) *Result {
+func (m *MigrateInstance) Execute(actions []Action, sourceHome, targetHome string) *Result {
 	result := &Result{}
+	handler, err := m.getCurrentHandler()
+	if err != nil {
+		return result
+	}
 
 	for _, action := range actions {
 		switch action.Type {
 		case ActionConvertConfig:
-			if err := executeConfigMigration(action.Source, action.Destination, picoClawHome); err != nil {
+			if err := handler.ExecuteConfigMigration(action.Source, action.Target); err != nil {
 				result.Errors = append(result.Errors, fmt.Errorf("config migration: %w", err))
 				fmt.Printf("  ✗ Config migration failed: %v\n", err)
 			} else {
 				result.ConfigMigrated = true
-				fmt.Printf("  ✓ Converted config: %s\n", action.Destination)
+				fmt.Printf("  ✓ Converted config: %s\n", action.Target)
 			}
 		case ActionCreateDir:
-			if err := os.MkdirAll(action.Destination, 0o755); err != nil {
+			if err := os.MkdirAll(action.Target, 0o755); err != nil {
 				result.Errors = append(result.Errors, err)
 			} else {
 				result.DirsCreated++
 			}
 		case ActionBackup:
-			bakPath := action.Destination + ".bak"
-			if err := copyFile(action.Destination, bakPath); err != nil {
-				result.Errors = append(result.Errors, fmt.Errorf("backup %s: %w", action.Destination, err))
-				fmt.Printf("  ✗ Backup failed: %s\n", action.Destination)
+			bakPath := action.Target + ".bak"
+			if err := internal.CopyFile(action.Target, bakPath); err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("backup %s: %w", action.Target, err))
+				fmt.Printf("  ✗ Backup failed: %s\n", action.Target)
 				continue
 			}
 			result.BackupsCreated++
 			fmt.Printf(
 				"  ✓ Backed up %s -> %s.bak\n",
-				filepath.Base(action.Destination),
-				filepath.Base(action.Destination),
+				filepath.Base(action.Target),
+				filepath.Base(action.Target),
 			)
 
-			if err := os.MkdirAll(filepath.Dir(action.Destination), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(action.Target), 0o755); err != nil {
 				result.Errors = append(result.Errors, err)
 				continue
 			}
-			if err := copyFile(action.Source, action.Destination); err != nil {
+			if err := internal.CopyFile(action.Source, action.Target); err != nil {
 				result.Errors = append(result.Errors, fmt.Errorf("copy %s: %w", action.Source, err))
 				fmt.Printf("  ✗ Copy failed: %s\n", action.Source)
 			} else {
 				result.FilesCopied++
-				fmt.Printf("  ✓ Copied %s\n", relPath(action.Source, openclawHome))
+				fmt.Printf("  ✓ Copied %s\n", internal.RelPath(action.Source, sourceHome))
 			}
 		case ActionCopy:
-			if err := os.MkdirAll(filepath.Dir(action.Destination), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(action.Target), 0o755); err != nil {
 				result.Errors = append(result.Errors, err)
 				continue
 			}
-			if err := copyFile(action.Source, action.Destination); err != nil {
+			if err := internal.CopyFile(action.Source, action.Target); err != nil {
 				result.Errors = append(result.Errors, fmt.Errorf("copy %s: %w", action.Source, err))
 				fmt.Printf("  ✗ Copy failed: %s\n", action.Source)
 			} else {
 				result.FilesCopied++
-				fmt.Printf("  ✓ Copied %s\n", relPath(action.Source, openclawHome))
+				fmt.Printf("  ✓ Copied %s\n", internal.RelPath(action.Source, sourceHome))
 			}
 		case ActionSkip:
 			result.FilesSkipped++
@@ -211,31 +239,6 @@ func Execute(actions []Action, openclawHome, picoClawHome string) *Result {
 	return result
 }
 
-func executeConfigMigration(srcConfigPath, dstConfigPath, picoClawHome string) error {
-	data, err := LoadOpenClawConfig(srcConfigPath)
-	if err != nil {
-		return err
-	}
-
-	incoming, _, err := ConvertConfig(data)
-	if err != nil {
-		return err
-	}
-
-	if _, err := os.Stat(dstConfigPath); err == nil {
-		existing, err := config.LoadConfig(dstConfigPath)
-		if err != nil {
-			return fmt.Errorf("loading existing PicoClaw config: %w", err)
-		}
-		incoming = MergeConfig(existing, incoming)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(dstConfigPath), 0o755); err != nil {
-		return err
-	}
-	return config.SaveConfig(dstConfigPath, incoming)
-}
-
 func Confirm() bool {
 	fmt.Print("Proceed with migration? (y/n): ")
 	var response string
@@ -243,49 +246,7 @@ func Confirm() bool {
 	return strings.ToLower(strings.TrimSpace(response)) == "y"
 }
 
-func PrintPlan(actions []Action, warnings []string) {
-	fmt.Println("Planned actions:")
-	copies := 0
-	skips := 0
-	backups := 0
-	configCount := 0
-
-	for _, action := range actions {
-		switch action.Type {
-		case ActionConvertConfig:
-			fmt.Printf("  [config]  %s -> %s\n", action.Source, action.Destination)
-			configCount++
-		case ActionCopy:
-			fmt.Printf("  [copy]    %s\n", filepath.Base(action.Source))
-			copies++
-		case ActionBackup:
-			fmt.Printf("  [backup]  %s (exists, will backup and overwrite)\n", filepath.Base(action.Destination))
-			backups++
-			copies++
-		case ActionSkip:
-			if action.Description != "" {
-				fmt.Printf("  [skip]    %s (%s)\n", filepath.Base(action.Source), action.Description)
-			}
-			skips++
-		case ActionCreateDir:
-			fmt.Printf("  [mkdir]   %s\n", action.Destination)
-		}
-	}
-
-	if len(warnings) > 0 {
-		fmt.Println()
-		fmt.Println("Warnings:")
-		for _, w := range warnings {
-			fmt.Printf("  - %s\n", w)
-		}
-	}
-
-	fmt.Println()
-	fmt.Printf("%d files to copy, %d configs to convert, %d backups needed, %d skipped\n",
-		copies, configCount, backups, skips)
-}
-
-func PrintSummary(result *Result) {
+func (m *MigrateInstance) PrintSummary(result *Result) {
 	fmt.Println()
 	parts := []string{}
 	if result.FilesCopied > 0 {
@@ -316,83 +277,44 @@ func PrintSummary(result *Result) {
 	}
 }
 
-func resolveOpenClawHome(override string) (string, error) {
-	if override != "" {
-		return expandHome(override), nil
-	}
-	if envHome := os.Getenv("OPENCLAW_HOME"); envHome != "" {
-		return expandHome(envHome), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolving home directory: %w", err)
-	}
-	return filepath.Join(home, ".openclaw"), nil
-}
+func PrintPlan(actions []Action, warnings []string) {
+	fmt.Println("Planned actions:")
+	copies := 0
+	skips := 0
+	backups := 0
+	configCount := 0
 
-func resolvePicoClawHome(override string) (string, error) {
-	if override != "" {
-		return expandHome(override), nil
-	}
-	if envHome := os.Getenv("PICOCLAW_HOME"); envHome != "" {
-		return expandHome(envHome), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolving home directory: %w", err)
-	}
-	return filepath.Join(home, ".picoclaw"), nil
-}
-
-func resolveWorkspace(homeDir string) string {
-	return filepath.Join(homeDir, "workspace")
-}
-
-func expandHome(path string) string {
-	if path == "" {
-		return path
-	}
-	if path[0] == '~' {
-		home, _ := os.UserHomeDir()
-		if len(path) > 1 && path[1] == '/' {
-			return home + path[1:]
+	for _, action := range actions {
+		switch action.Type {
+		case ActionConvertConfig:
+			fmt.Printf("  [config]  %s -> %s\n", action.Source, action.Target)
+			configCount++
+		case ActionCopy:
+			fmt.Printf("  [copy]    %s\n", filepath.Base(action.Source))
+			copies++
+		case ActionBackup:
+			fmt.Printf("  [backup]  %s (exists, will backup and overwrite)\n", filepath.Base(action.Target))
+			backups++
+			copies++
+		case ActionSkip:
+			if action.Description != "" {
+				fmt.Printf("  [skip]    %s (%s)\n", filepath.Base(action.Source), action.Description)
+			}
+			skips++
+		case ActionCreateDir:
+			fmt.Printf("  [mkdir]   %s\n", action.Target)
 		}
-		return home
-	}
-	return path
-}
-
-func backupFile(path string) error {
-	bakPath := path + ".bak"
-	return copyFile(path, bakPath)
-}
-
-func copyFile(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	info, err := srcFile.Stat()
-	if err != nil {
-		return err
 	}
 
-	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode())
-	if err != nil {
-		return err
+	if len(warnings) > 0 {
+		fmt.Println()
+		fmt.Println("Warnings:")
+		for _, w := range warnings {
+			fmt.Printf("  - %s\n", w)
+		}
 	}
-	defer dstFile.Close()
 
-	_, err = io.Copy(dstFile, srcFile)
-	return err
-}
-
-func relPath(path, base string) string {
-	rel, err := filepath.Rel(base, path)
-	if err != nil {
-		return filepath.Base(path)
-	}
-	return rel
+	fmt.Println()
+	fmt.Printf("%d files to copy, %d configs to convert, %d backups needed, %d skipped\n",
+		copies, configCount, backups, skips)
 }

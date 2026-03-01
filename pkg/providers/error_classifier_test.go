@@ -305,7 +305,8 @@ func TestExtractHTTPStatus(t *testing.T) {
 	}{
 		{"status: 429 rate limited", 429},
 		{"status 401 unauthorized", 401},
-		{"HTTP/1.1 502 Bad Gateway", 502},
+		{"http/1.1 502 bad gateway", 502},
+		{"error 429", 429},
 		{"no status code here", 0},
 		{"random number 12345", 0},
 	}

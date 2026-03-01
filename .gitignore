@@ -44,3 +44,6 @@ tasks/
 
 # Added by goreleaser init:
 dist/
+
+# Windows Application Icon/Resource
+*.syso
