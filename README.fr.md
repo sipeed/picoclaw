@@ -772,7 +772,7 @@ Le sous-agent a accès aux outils (message, web_search, etc.) et peut communique
 ### Fournisseurs
 
 > [!NOTE]
-> Groq fournit la transcription vocale gratuite via Whisper. Si configuré, les messages vocaux Telegram seront automatiquement transcrits.
+> Groq fournit la transcription vocale gratuite via Whisper. Si configuré, les messages audio de n'importe quel canal seront automatiquement transcrits au niveau de l'agent.
 
 | Fournisseur              | Utilisation                              | Obtenir une Clé API                                    |
 | ------------------------ | ---------------------------------------- | ------------------------------------------------------ |

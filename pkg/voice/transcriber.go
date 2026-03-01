@@ -16,6 +16,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+type Transcriber interface {
+	Transcribe(ctx context.Context, audioFilePath string) (*TranscriptionResponse, error)
+	IsAvailable() bool
+}
+
 type GroqTranscriber struct {
 	apiKey     string
 	apiBase    string
