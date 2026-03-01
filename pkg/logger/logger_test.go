@@ -1,6 +1,11 @@
 package logger
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -136,4 +141,32 @@ func TestLoggerHelperFunctions(t *testing.T) {
 	SetLevel(DEBUG)
 	DebugC("test", "Debug with component")
 	WarnF("Warning with fields", map[string]any{"key": "value"})
+}
+
+// TestConcurrentFileLogging validates concurrent file writes are race-safe and complete.
+// Run: go test -race ./pkg/logger -run TestConcurrentFileLogging -count=1
+func TestConcurrentFileLogging(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "test.log")
+	if err := EnableFileLogging(logFile); err != nil {
+		t.Fatal(err)
+	}
+	defer DisableFileLogging()
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			InfoCF("test", fmt.Sprintf("msg-%d", n), map[string]any{"n": n})
+		}(i)
+	}
+	wg.Wait()
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 100 {
+		t.Errorf("expected 100 log lines, got %d", len(lines))
+	}
 }
