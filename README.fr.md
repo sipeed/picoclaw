@@ -190,17 +190,17 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ```bash
 # Poser une question
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Combien font 2+2 ?"
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent -m "Combien font 2+2 ?"
 
 # Mode interactif
-docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml --profile agent run --rm picoclaw-agent
 ```
 
 ### Mettre à jour
 
 ```bash
-docker compose -f docker/docker-compose.yml pull
-docker compose -f docker/docker-compose.yml --profile gateway up -d
+git pull
+docker compose -f docker/docker-compose.yml --profile gateway up --build -d
 ```
 
 ### 🚀 Démarrage Rapide
