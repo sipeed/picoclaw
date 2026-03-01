@@ -30,9 +30,10 @@ type InboundMessage struct {
 }
 
 type OutboundMessage struct {
-	Channel string `json:"channel"`
-	ChatID  string `json:"chat_id"`
-	Content string `json:"content"`
+	Channel    string `json:"channel"`
+	ChatID     string `json:"chat_id"`
+	Content    string `json:"content"`
+	IsProgress bool   `json:"is_progress,omitempty"` // true = intermediate progress update (edit placeholder, keep it)
 }
 
 // MediaPart describes a single media attachment to send.

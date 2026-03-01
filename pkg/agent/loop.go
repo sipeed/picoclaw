@@ -180,6 +180,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
+			// Create cancellable context for this message, register abort
+			msgCtx, msgCancel := context.WithCancel(ctx)
+			al.bus.RegisterAbort(msg.ChatID, msgCancel)
+
 			// Process message
 			func() {
 				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
@@ -195,9 +199,17 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				// 	}
 				// }()
 
-				response, err := al.processMessage(ctx, msg)
+				response, err := al.processMessage(msgCtx, msg)
+
+				al.bus.ClearAbort(msg.ChatID)
+				msgCancel() // cleanup
+
 				if err != nil {
-					response = fmt.Sprintf("Error processing message: %v", err)
+					if msgCtx.Err() != nil {
+						response = "Stopped."
+					} else {
+						response = fmt.Sprintf("Error processing message: %v", err)
+					}
 				}
 
 				if response != "" {
@@ -852,6 +864,16 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration": iteration,
 				})
 
+			// Send progress update to user
+			if !constants.IsInternalChannel(opts.Channel) {
+				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+					Channel:    opts.Channel,
+					ChatID:     opts.ChatID,
+					Content:    formatToolProgress(tc.Name, tc.Arguments),
+					IsProgress: true,
+				})
+			}
+
 			// Create async callback for tools that implement AsyncTool
 			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
 			// Instead, they notify the agent via PublishInbound, and the agent decides
@@ -889,6 +911,18 @@ func (al *AgentLoop) runLLMIteration(
 						"tool":        tc.Name,
 						"content_len": len(toolResult.ForUser),
 					})
+			}
+
+			// Report tool result to user via progress update
+			if !constants.IsInternalChannel(opts.Channel) {
+				if resultMsg := formatToolResult(tc.Name, tc.Arguments, toolResult); resultMsg != "" {
+					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+						Channel:    opts.Channel,
+						ChatID:     opts.ChatID,
+						Content:    resultMsg,
+						IsProgress: true,
+					})
+				}
 			}
 
 			// If tool returned media refs, publish them as outbound media
@@ -1349,4 +1383,75 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 		return nil
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
+}
+
+// formatToolProgress formats a human-readable progress string for a tool call.
+func formatToolProgress(toolName string, args map[string]any) string {
+	argStr := func(key string) string {
+		if v, ok := args[key]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		return ""
+	}
+
+	switch toolName {
+	case "write_file":
+		if path := argStr("path"); path != "" {
+			return fmt.Sprintf("Writing %s", path)
+		}
+	case "read_file":
+		if path := argStr("path"); path != "" {
+			return fmt.Sprintf("Reading %s", path)
+		}
+	case "edit_file":
+		if path := argStr("path"); path != "" {
+			return fmt.Sprintf("Editing %s", path)
+		}
+	case "exec":
+		if cmd := argStr("command"); cmd != "" {
+			return fmt.Sprintf("Executing %s", utils.Truncate(cmd, 80))
+		}
+	case "web_search":
+		if query := argStr("query"); query != "" {
+			return fmt.Sprintf("Searching %s", utils.Truncate(query, 60))
+		}
+	case "web_fetch":
+		if u := argStr("url"); u != "" {
+			return fmt.Sprintf("Fetching %s", utils.Truncate(u, 80))
+		}
+	case "spawn":
+		if label := argStr("label"); label != "" {
+			return fmt.Sprintf("Subtask %s", label)
+		}
+	case "message":
+		return "Sending message"
+	case "cron":
+		if action := argStr("action"); action != "" {
+			return fmt.Sprintf("Cron %s", action)
+		}
+	}
+
+	return toolName
+}
+
+// formatToolResult formats a result summary for a completed tool call.
+// Returns empty string if no result message is needed.
+func formatToolResult(toolName string, args map[string]any, result *tools.ToolResult) string {
+	desc := formatToolProgress(toolName, args)
+
+	// Error: always report
+	if result.Err != nil {
+		errPreview := utils.Truncate(result.Err.Error(), 100)
+		return fmt.Sprintf("[%s] Failed: %s", desc, errPreview)
+	}
+
+	// exec: show output summary
+	if toolName == "exec" && result.ForLLM != "" {
+		output := utils.Truncate(result.ForLLM, 120)
+		return fmt.Sprintf("[%s] Done:\n%s", desc, output)
+	}
+
+	return ""
 }
