@@ -318,7 +318,6 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 
 	var mediaPaths []string
 
-
 	scope := channels.BuildMediaScope("slack", chatID, messageTS)
 
 	// Helper to register a local file with the media store

@@ -255,7 +255,6 @@ func (c *DiscordChannel) SendWithID(ctx context.Context, chatID string, content 
 	}
 }
 
-
 // EditMessage implements channels.MessageEditor.
 func (c *DiscordChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	_, err := c.session.ChannelMessageEdit(chatID, messageID, content)
