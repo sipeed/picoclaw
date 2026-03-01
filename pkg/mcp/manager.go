@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
@@ -125,7 +126,11 @@ func (m *Manager) LoadFromConfig(ctx context.Context, cfg *config.Config) error 
 
 // LoadFromMCPConfig loads MCP servers from MCP configuration and workspace path.
 // This is the minimal dependency version that doesn't require the full Config object.
-func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig, workspacePath string) error {
+func (m *Manager) LoadFromMCPConfig(
+	ctx context.Context,
+	mcpCfg config.MCPConfig,
+	workspacePath string,
+) error {
 	if !mcpCfg.Enabled {
 		logger.InfoCF("mcp", "MCP integration is disabled", nil)
 		return nil
@@ -137,7 +142,7 @@ func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig
 	}
 
 	logger.InfoCF("mcp", "Initializing MCP servers",
-		map[string]interface{}{
+		map[string]any{
 			"count": len(mcpCfg.Servers),
 		})
 
@@ -148,7 +153,7 @@ func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig
 	for name, serverCfg := range mcpCfg.Servers {
 		if !serverCfg.Enabled {
 			logger.DebugCF("mcp", "Skipping disabled server",
-				map[string]interface{}{
+				map[string]any{
 					"server": name,
 				})
 			continue
@@ -162,9 +167,13 @@ func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig
 			// Resolve relative envFile paths relative to workspace
 			if serverCfg.EnvFile != "" && !filepath.IsAbs(serverCfg.EnvFile) {
 				if workspace == "" {
-					err := fmt.Errorf("workspace path is empty while resolving relative envFile %q for server %s", serverCfg.EnvFile, name)
+					err := fmt.Errorf(
+						"workspace path is empty while resolving relative envFile %q for server %s",
+						serverCfg.EnvFile,
+						name,
+					)
 					logger.ErrorCF("mcp", "Invalid MCP server configuration",
-						map[string]interface{}{
+						map[string]any{
 							"server":   name,
 							"env_file": serverCfg.EnvFile,
 							"error":    err.Error(),
@@ -177,7 +186,7 @@ func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig
 
 			if err := m.ConnectServer(ctx, name, serverCfg); err != nil {
 				logger.ErrorCF("mcp", "Failed to connect to MCP server",
-					map[string]interface{}{
+					map[string]any{
 						"server": name,
 						"error":  err.Error(),
 					})
@@ -200,7 +209,7 @@ func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig
 	// If all enabled servers failed to connect, return aggregated error
 	if enabledCount > 0 && connectedCount == 0 {
 		logger.ErrorCF("mcp", "All MCP servers failed to connect",
-			map[string]interface{}{
+			map[string]any{
 				"failed": len(allErrors),
 				"total":  enabledCount,
 			})
@@ -209,7 +218,7 @@ func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig
 
 	if len(allErrors) > 0 {
 		logger.WarnCF("mcp", "Some MCP servers failed to connect",
-			map[string]interface{}{
+			map[string]any{
 				"failed":    len(allErrors),
 				"connected": connectedCount,
 				"total":     enabledCount,
@@ -218,7 +227,7 @@ func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig
 	}
 
 	logger.InfoCF("mcp", "MCP server initialization complete",
-		map[string]interface{}{
+		map[string]any{
 			"connected": connectedCount,
 			"total":     enabledCount,
 		})
@@ -227,9 +236,13 @@ func (m *Manager) LoadFromMCPConfig(ctx context.Context, mcpCfg config.MCPConfig
 }
 
 // ConnectServer connects to a single MCP server
-func (m *Manager) ConnectServer(ctx context.Context, name string, cfg config.MCPServerConfig) error {
+func (m *Manager) ConnectServer(
+	ctx context.Context,
+	name string,
+	cfg config.MCPServerConfig,
+) error {
 	logger.InfoCF("mcp", "Connecting to MCP server",
-		map[string]interface{}{
+		map[string]any{
 			"server":  name,
 			"command": cfg.Command,
 			"args":    cfg.Args,
@@ -263,7 +276,7 @@ func (m *Manager) ConnectServer(ctx context.Context, name string, cfg config.MCP
 			return fmt.Errorf("URL is required for SSE/HTTP transport")
 		}
 		logger.DebugCF("mcp", "Using SSE/HTTP transport",
-			map[string]interface{}{
+			map[string]any{
 				"server": name,
 				"url":    cfg.URL,
 			})
@@ -282,7 +295,7 @@ func (m *Manager) ConnectServer(ctx context.Context, name string, cfg config.MCP
 				},
 			}
 			logger.DebugCF("mcp", "Added custom HTTP headers",
-				map[string]interface{}{
+				map[string]any{
 					"server":       name,
 					"header_count": len(cfg.Headers),
 				})
@@ -294,7 +307,7 @@ func (m *Manager) ConnectServer(ctx context.Context, name string, cfg config.MCP
 			return fmt.Errorf("command is required for stdio transport")
 		}
 		logger.DebugCF("mcp", "Using stdio transport",
-			map[string]interface{}{
+			map[string]any{
 				"server":  name,
 				"command": cfg.Command,
 			})
@@ -322,7 +335,7 @@ func (m *Manager) ConnectServer(ctx context.Context, name string, cfg config.MCP
 				envMap[k] = v
 			}
 			logger.DebugCF("mcp", "Loaded environment variables from file",
-				map[string]interface{}{
+				map[string]any{
 					"server":    name,
 					"envFile":   cfg.EnvFile,
 					"var_count": len(envVars),
@@ -343,7 +356,10 @@ func (m *Manager) ConnectServer(ctx context.Context, name string, cfg config.MCP
 
 		transport = &mcp.CommandTransport{Command: cmd}
 	default:
-		return fmt.Errorf("unsupported transport type: %s (supported: stdio, sse, http)", transportType)
+		return fmt.Errorf(
+			"unsupported transport type: %s (supported: stdio, sse, http)",
+			transportType,
+		)
 	}
 
 	// Connect to server
@@ -355,7 +371,7 @@ func (m *Manager) ConnectServer(ctx context.Context, name string, cfg config.MCP
 	// Get server info
 	initResult := session.InitializeResult()
 	logger.InfoCF("mcp", "Connected to MCP server",
-		map[string]interface{}{
+		map[string]any{
 			"server":        name,
 			"serverName":    initResult.ServerInfo.Name,
 			"serverVersion": initResult.ServerInfo.Version,
@@ -368,7 +384,7 @@ func (m *Manager) ConnectServer(ctx context.Context, name string, cfg config.MCP
 		for tool, err := range session.Tools(ctx, nil) {
 			if err != nil {
 				logger.WarnCF("mcp", "Error listing tool",
-					map[string]interface{}{
+					map[string]any{
 						"server": name,
 						"error":  err.Error(),
 					})
@@ -378,7 +394,7 @@ func (m *Manager) ConnectServer(ctx context.Context, name string, cfg config.MCP
 		}
 
 		logger.InfoCF("mcp", "Listed tools from MCP server",
-			map[string]interface{}{
+			map[string]any{
 				"server":    name,
 				"toolCount": len(tools),
 			})
@@ -419,7 +435,11 @@ func (m *Manager) GetServer(name string) (*ServerConnection, bool) {
 }
 
 // CallTool calls a tool on a specific server
-func (m *Manager) CallTool(ctx context.Context, serverName, toolName string, arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+func (m *Manager) CallTool(
+	ctx context.Context,
+	serverName, toolName string,
+	arguments map[string]any,
+) (*mcp.CallToolResult, error) {
 	m.mu.RLock()
 	if m.closed {
 		m.mu.RUnlock()
@@ -466,7 +486,7 @@ func (m *Manager) Close() error {
 	defer m.mu.Unlock()
 
 	logger.InfoCF("mcp", "Closing all MCP server connections",
-		map[string]interface{}{
+		map[string]any{
 			"count": len(m.servers),
 		})
 
@@ -474,7 +494,7 @@ func (m *Manager) Close() error {
 	for name, conn := range m.servers {
 		if err := conn.Session.Close(); err != nil {
 			logger.ErrorCF("mcp", "Failed to close server connection",
-				map[string]interface{}{
+				map[string]any{
 					"server": name,
 					"error":  err.Error(),
 				})

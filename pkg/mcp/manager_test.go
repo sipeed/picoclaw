@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -95,7 +96,7 @@ PORT =8080`,
 			tmpDir := t.TempDir()
 			envFile := filepath.Join(tmpDir, ".env")
 
-			if err := os.WriteFile(envFile, []byte(tt.content), 0644); err != nil {
+			if err := os.WriteFile(envFile, []byte(tt.content), 0o644); err != nil {
 				t.Fatalf("Failed to create test file: %v", err)
 			}
 
@@ -144,7 +145,7 @@ func TestEnvFilePriority(t *testing.T) {
 DATABASE_URL=from_file
 SHARED_VAR=from_file`
 
-	if err := os.WriteFile(envFile, []byte(envContent), 0644); err != nil {
+	if err := os.WriteFile(envFile, []byte(envContent), 0o644); err != nil {
 		t.Fatalf("Failed to create .env file: %v", err)
 	}
 
@@ -176,7 +177,10 @@ SHARED_VAR=from_file`
 
 	// Verify priority: config.Env should override envFile
 	if merged["SHARED_VAR"] != "from_config" {
-		t.Errorf("Expected SHARED_VAR=from_config (config should override file), got %s", merged["SHARED_VAR"])
+		t.Errorf(
+			"Expected SHARED_VAR=from_config (config should override file), got %s",
+			merged["SHARED_VAR"],
+		)
 	}
 	if merged["API_KEY"] != "from_file" {
 		t.Errorf("Expected API_KEY=from_file, got %s", merged["API_KEY"])

@@ -11,10 +11,14 @@ import (
 
 // MockMCPManager is a mock implementation of MCPManager interface for testing
 type MockMCPManager struct {
-	callToolFunc func(ctx context.Context, serverName, toolName string, arguments map[string]interface{}) (*mcp.CallToolResult, error)
+	callToolFunc func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error)
 }
 
-func (m *MockMCPManager) CallTool(ctx context.Context, serverName, toolName string, arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+func (m *MockMCPManager) CallTool(
+	ctx context.Context,
+	serverName, toolName string,
+	arguments map[string]any,
+) (*mcp.CallToolResult, error) {
 	if m.callToolFunc != nil {
 		return m.callToolFunc(ctx, serverName, toolName, arguments)
 	}
@@ -32,10 +36,10 @@ func TestNewMCPTool(t *testing.T) {
 	tool := &mcp.Tool{
 		Name:        "test_tool",
 		Description: "A test tool",
-		InputSchema: map[string]interface{}{
+		InputSchema: map[string]any{
 			"type": "object",
-			"properties": map[string]interface{}{
-				"input": map[string]interface{}{
+			"properties": map[string]any{
+				"input": map[string]any{
 					"type":        "string",
 					"description": "Test input",
 				},
@@ -142,17 +146,17 @@ func TestMCPTool_Description(t *testing.T) {
 func TestMCPTool_Parameters(t *testing.T) {
 	tests := []struct {
 		name           string
-		inputSchema    interface{}
+		inputSchema    any
 		expectType     string
 		checkProperty  string
 		expectProperty bool
 	}{
 		{
 			name: "map schema",
-			inputSchema: map[string]interface{}{
+			inputSchema: map[string]any{
 				"type": "object",
-				"properties": map[string]interface{}{
-					"query": map[string]interface{}{
+				"properties": map[string]any{
+					"query": map[string]any{
 						"type":        "string",
 						"description": "Search query",
 					},
@@ -212,7 +216,7 @@ func TestMCPTool_Parameters(t *testing.T) {
 
 			// Check if property exists when expected
 			if tt.checkProperty != "" {
-				properties, ok := params["properties"].(map[string]interface{})
+				properties, ok := params["properties"].(map[string]any)
 				if !ok && tt.expectProperty {
 					t.Errorf("Expected properties to be a map")
 					return
@@ -232,7 +236,7 @@ func TestMCPTool_Parameters(t *testing.T) {
 // TestMCPTool_Execute_Success tests successful tool execution
 func TestMCPTool_Execute_Success(t *testing.T) {
 	manager := &MockMCPManager{
-		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
 			// Verify correct parameters passed
 			if serverName != "github" {
 				t.Errorf("Expected serverName 'github', got '%s'", serverName)
@@ -257,7 +261,7 @@ func TestMCPTool_Execute_Success(t *testing.T) {
 	mcpTool := NewMCPTool(manager, "github", tool)
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"query": "golang mcp",
 	}
 
@@ -277,7 +281,7 @@ func TestMCPTool_Execute_Success(t *testing.T) {
 // TestMCPTool_Execute_ManagerError tests execution when manager returns error
 func TestMCPTool_Execute_ManagerError(t *testing.T) {
 	manager := &MockMCPManager{
-		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
 			return nil, fmt.Errorf("connection failed")
 		},
 	}
@@ -286,7 +290,7 @@ func TestMCPTool_Execute_ManagerError(t *testing.T) {
 	mcpTool := NewMCPTool(manager, "test_server", tool)
 
 	ctx := context.Background()
-	result := mcpTool.Execute(ctx, map[string]interface{}{})
+	result := mcpTool.Execute(ctx, map[string]any{})
 
 	if result == nil {
 		t.Fatal("Result should not be nil")
@@ -305,7 +309,7 @@ func TestMCPTool_Execute_ManagerError(t *testing.T) {
 // TestMCPTool_Execute_ServerError tests execution when server returns error
 func TestMCPTool_Execute_ServerError(t *testing.T) {
 	manager := &MockMCPManager{
-		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: "Invalid API key"},
@@ -319,7 +323,7 @@ func TestMCPTool_Execute_ServerError(t *testing.T) {
 	mcpTool := NewMCPTool(manager, "test_server", tool)
 
 	ctx := context.Background()
-	result := mcpTool.Execute(ctx, map[string]interface{}{})
+	result := mcpTool.Execute(ctx, map[string]any{})
 
 	if result == nil {
 		t.Fatal("Result should not be nil")
@@ -338,7 +342,7 @@ func TestMCPTool_Execute_ServerError(t *testing.T) {
 // TestMCPTool_Execute_MultipleContent tests execution with multiple content items
 func TestMCPTool_Execute_MultipleContent(t *testing.T) {
 	manager := &MockMCPManager{
-		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: "First line"},
@@ -354,7 +358,7 @@ func TestMCPTool_Execute_MultipleContent(t *testing.T) {
 	mcpTool := NewMCPTool(manager, "test_server", tool)
 
 	ctx := context.Background()
-	result := mcpTool.Execute(ctx, map[string]interface{}{})
+	result := mcpTool.Execute(ctx, map[string]any{})
 
 	if result.IsError {
 		t.Errorf("Expected no error, got: %s", result.ForLLM)
@@ -448,10 +452,10 @@ func TestMCPTool_InterfaceCompliance(t *testing.T) {
 // TestMCPTool_Parameters_MapSchema tests schema that's already a map
 func TestMCPTool_Parameters_MapSchema(t *testing.T) {
 	manager := &MockMCPManager{}
-	schema := map[string]interface{}{
+	schema := map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"name": map[string]interface{}{
+		"properties": map[string]any{
+			"name": map[string]any{
 				"type":        "string",
 				"description": "The name parameter",
 			},
@@ -472,12 +476,12 @@ func TestMCPTool_Parameters_MapSchema(t *testing.T) {
 		t.Errorf("Expected type 'object', got '%v'", params["type"])
 	}
 
-	props, ok := params["properties"].(map[string]interface{})
+	props, ok := params["properties"].(map[string]any)
 	if !ok {
 		t.Error("Properties should be a map")
 	}
 
-	nameParam, ok := props["name"].(map[string]interface{})
+	nameParam, ok := props["name"].(map[string]any)
 	if !ok {
 		t.Error("Name parameter should exist")
 	}
