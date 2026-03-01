@@ -82,11 +82,14 @@ func (r *ToolRegistry) ExecuteWithContext(
 
 	tool, ok := r.Get(name)
 	if !ok {
+		available := strings.Join(r.List(), ", ")
 		logger.ErrorCF("tool", "Tool not found",
 			map[string]any{
 				"tool": name,
 			})
-		return ErrorResult(fmt.Sprintf("tool %q not found", name)).WithError(fmt.Errorf("tool not found"))
+		return ErrorResult(fmt.Sprintf(
+			"tool %q not found. Available tools: %s", name, available,
+		)).WithError(fmt.Errorf("tool not found"))
 	}
 
 	// If tool implements ContextualTool, set context
