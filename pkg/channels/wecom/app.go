@@ -130,11 +130,18 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
+	// Client timeout must be >= the configured ReplyTimeout so the
+	// per-request context deadline is always the effective limit.
+	clientTimeout := 30 * time.Second
+	if d := time.Duration(cfg.ReplyTimeout) * time.Second; d > clientTimeout {
+		clientTimeout = d
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WeComAppChannel{
 		BaseChannel:   base,
 		config:        cfg,
-		client:        &http.Client{Timeout: 60 * time.Second},
+		client:        &http.Client{Timeout: clientTimeout},
 		ctx:           ctx,
 		cancel:        cancel,
 		processedMsgs: make(map[string]bool),
