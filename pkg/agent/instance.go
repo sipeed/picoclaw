@@ -48,10 +48,11 @@ func NewAgentInstance(
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
+	readRestrict := restrict && !defaults.AllowReadOutsideWorkspace
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
+	toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict))
 	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
+	toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict))
 	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
 	if err != nil {
 		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)

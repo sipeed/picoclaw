@@ -34,7 +34,10 @@ var (
 			`\b(format|mkfs|diskpart)\b\s`,
 		),
 		regexp.MustCompile(`\bdd\s+if=`),
-		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
+		// Block writes to block devices (all common naming schemes).
+		regexp.MustCompile(
+			`>\s*/dev/(sd[a-z]|hd[a-z]|vd[a-z]|xvd[a-z]|nvme\d|mmcblk\d|loop\d|dm-\d|md\d|sr\d|nbd\d)`,
+		),
 		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
 		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
 		regexp.MustCompile(`\$\([^)]+\)`),
@@ -45,7 +48,6 @@ var (
 		regexp.MustCompile(`;\s*rm\s+-[rf]`),
 		regexp.MustCompile(`&&\s*rm\s+-[rf]`),
 		regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
-		regexp.MustCompile(`>\s*/dev/null\s*>&?\s*\d?`),
 		regexp.MustCompile(`<<\s*EOF`),
 		regexp.MustCompile(`\$\(\s*cat\s+`),
 		regexp.MustCompile(`\$\(\s*curl\s+`),
@@ -75,6 +77,19 @@ var (
 
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
 	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+
+	// safePaths are kernel pseudo-devices that are always safe to reference in
+	// commands, regardless of workspace restriction. They contain no user data
+	// and cannot cause destructive writes.
+	safePaths = map[string]bool{
+		"/dev/null":    true,
+		"/dev/zero":    true,
+		"/dev/random":  true,
+		"/dev/urandom": true,
+		"/dev/stdin":   true,
+		"/dev/stdout":  true,
+		"/dev/stderr":  true,
+	}
 )
 
 func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
@@ -300,6 +315,10 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		for _, raw := range matches {
 			p, err := filepath.Abs(raw)
 			if err != nil {
+				continue
+			}
+
+			if safePaths[p] {
 				continue
 			}
 

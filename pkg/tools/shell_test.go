@@ -309,3 +309,81 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 		)
 	}
 }
+
+// TestShellTool_DevNullAllowed verifies that /dev/null redirections are not blocked (issue #964).
+func TestShellTool_DevNullAllowed(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		"echo hello 2>/dev/null",
+		"echo hello >/dev/null",
+		"echo hello > /dev/null",
+		"echo hello 2> /dev/null",
+		"echo hello >/dev/null 2>&1",
+		"find " + tmpDir + " -name '*.go' 2>/dev/null",
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "blocked") {
+			t.Errorf("command should not be blocked: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_BlockDevices verifies that writes to block devices are blocked (issue #965).
+func TestShellTool_BlockDevices(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	blocked := []string{
+		"echo x > /dev/sda",
+		"echo x > /dev/hda",
+		"echo x > /dev/vda",
+		"echo x > /dev/xvda",
+		"echo x > /dev/nvme0n1",
+		"echo x > /dev/mmcblk0",
+		"echo x > /dev/loop0",
+		"echo x > /dev/dm-0",
+		"echo x > /dev/md0",
+		"echo x > /dev/sr0",
+		"echo x > /dev/nbd0",
+	}
+
+	for _, cmd := range blocked {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError {
+			t.Errorf("expected block device write to be blocked: %s", cmd)
+		}
+	}
+}
+
+// TestShellTool_SafePathsInWorkspaceRestriction verifies that safe kernel pseudo-devices
+// are allowed even when workspace restriction is active.
+func TestShellTool_SafePathsInWorkspaceRestriction(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// These reference paths outside workspace but should be allowed via safePaths.
+	commands := []string{
+		"cat /dev/urandom | head -c 16 | od",
+		"echo test > /dev/null",
+		"dd if=/dev/zero bs=1 count=1",
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("safe path should not be blocked by workspace check: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
