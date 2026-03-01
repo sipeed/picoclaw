@@ -53,6 +53,7 @@ type Config struct {
 	Session   SessionConfig   `json:"session,omitempty"`
 	Channels  ChannelsConfig  `json:"channels"`
 	Providers ProvidersConfig `json:"providers,omitempty"`
+	Plugins   PluginsConfig   `json:"plugins,omitempty"`
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
@@ -165,6 +166,12 @@ type AgentBinding struct {
 type SessionConfig struct {
 	DMScope       string              `json:"dm_scope,omitempty"`
 	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
+}
+
+type PluginsConfig struct {
+	DefaultEnabled bool     `json:"default_enabled"`
+	Enabled        []string `json:"enabled,omitempty"`
+	Disabled       []string `json:"disabled,omitempty"`
 }
 
 type AgentDefaults struct {

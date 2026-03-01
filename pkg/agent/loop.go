@@ -22,8 +22,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/hooks"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/plugin"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -42,6 +44,8 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
+	hooks          *hooks.HookRegistry
+	pluginManager  *plugin.Manager
 }
 
 // processOptions configures how a message is processed
@@ -55,8 +59,6 @@ type processOptions struct {
 	SendResponse    bool   // Whether to send response via bus
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 }
-
-const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
@@ -172,61 +174,33 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
-			// Process message
-			func() {
-				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
-				// Currently disabled because files are deleted before the LLM can access their content.
-				// defer func() {
-				// 	if al.mediaStore != nil && msg.MediaScope != "" {
-				// 		if releaseErr := al.mediaStore.ReleaseAll(msg.MediaScope); releaseErr != nil {
-				// 			logger.WarnCF("agent", "Failed to release media", map[string]any{
-				// 				"scope": msg.MediaScope,
-				// 				"error": releaseErr.Error(),
-				// 			})
-				// 		}
-				// 	}
-				// }()
+			response, err := al.processMessage(ctx, msg)
+			if err != nil {
+				response = fmt.Sprintf("Error processing message: %v", err)
+			}
 
-				response, err := al.processMessage(ctx, msg)
-				if err != nil {
-					response = fmt.Sprintf("Error processing message: %v", err)
-				}
-
-				if response != "" {
-					// Check if the message tool already sent a response during this round.
-					// If so, skip publishing to avoid duplicate messages to the user.
-					// Use default agent's tools to check (message tool is shared).
-					alreadySent := false
-					defaultAgent := al.registry.GetDefaultAgent()
-					if defaultAgent != nil {
-						if tool, ok := defaultAgent.Tools.Get("message"); ok {
-							if mt, ok := tool.(*tools.MessageTool); ok {
-								alreadySent = mt.HasSentInRound()
-							}
+			if response != "" {
+				// Check if the message tool already sent a response during this round.
+				// If so, skip publishing to avoid duplicate messages to the user.
+				// Use default agent's tools to check (message tool is shared).
+				alreadySent := false
+				defaultAgent := al.registry.GetDefaultAgent()
+				if defaultAgent != nil {
+					if tool, ok := defaultAgent.Tools.Get("message"); ok {
+						if mt, ok := tool.(*tools.MessageTool); ok {
+							alreadySent = mt.HasSentInRound()
 						}
 					}
-
-					if !alreadySent {
-						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-							Channel: msg.Channel,
-							ChatID:  msg.ChatID,
-							Content: response,
-						})
-						logger.InfoCF("agent", "Published outbound response",
-							map[string]any{
-								"channel":     msg.Channel,
-								"chat_id":     msg.ChatID,
-								"content_len": len(response),
-							})
-					} else {
-						logger.DebugCF(
-							"agent",
-							"Skipped outbound (message tool already sent)",
-							map[string]any{"channel": msg.Channel},
-						)
-					}
 				}
-			}()
+
+				if !alreadySent {
+					al.sendOutbound(ctx, bus.OutboundMessage{
+						Channel: msg.Channel,
+						ChatID:  msg.ChatID,
+						Content: response,
+					})
+				}
+			}
 		}
 	}
 
@@ -284,6 +258,111 @@ func inferMediaType(filename, contentType string) string {
 	return "file"
 }
 
+// SetHooks installs a hook registry. Must be called before Run starts.
+func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) error {
+	if al.running.Load() {
+		return fmt.Errorf("SetHooks must be called before Run starts")
+	}
+	al.hooks = h
+
+	// Rewire MessageTool callbacks to route through sendOutbound for hook interception.
+	for _, agentID := range al.registry.ListAgentIDs() {
+		if agent, ok := al.registry.GetAgent(agentID); ok {
+			if tool, ok := agent.Tools.Get("message"); ok {
+				if mt, ok := tool.(*tools.MessageTool); ok {
+					if h == nil {
+						mt.SetSendCallback(func(channel, chatID, content string) error {
+							pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+							defer pubCancel()
+							return al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+								Channel: channel,
+								ChatID:  chatID,
+								Content: content,
+							})
+						})
+						continue
+					}
+					mt.SetSendCallback(func(channel, chatID, content string) error {
+						if sent, reason := al.sendOutbound(context.Background(), bus.OutboundMessage{
+							Channel: channel,
+							ChatID:  chatID,
+							Content: content,
+						}); !sent {
+							if strings.TrimSpace(reason) == "" {
+								reason = "unspecified"
+							}
+							return fmt.Errorf("message canceled by hook: %s", reason)
+						}
+						return nil
+					})
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// SetPluginManager installs a plugin manager and routes its hook registry into the loop.
+// Must be called before Run starts.
+func (al *AgentLoop) SetPluginManager(pm *plugin.Manager) error {
+	if pm == nil {
+		if err := al.SetHooks(nil); err != nil {
+			return err
+		}
+		al.pluginManager = nil
+		return nil
+	}
+	if err := al.SetHooks(pm.HookRegistry()); err != nil {
+		return err
+	}
+	al.pluginManager = pm
+	return nil
+}
+
+// EnablePlugins is a convenience helper to build and install a plugin manager.
+func (al *AgentLoop) EnablePlugins(plugins ...plugin.Plugin) error {
+	pm := plugin.NewManager()
+	if err := pm.RegisterAll(plugins...); err != nil {
+		return err
+	}
+	return al.SetPluginManager(pm)
+}
+
+// sendOutbound wraps bus.PublishOutbound with the message_sending hook.
+// Returns whether the message was sent and, if canceled, the cancel reason.
+func (al *AgentLoop) sendOutbound(ctx context.Context, msg bus.OutboundMessage) (bool, string) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if al.hooks != nil {
+		event := &hooks.MessageSendingEvent{Channel: msg.Channel, ChatID: msg.ChatID, Content: msg.Content}
+		al.hooks.TriggerMessageSending(ctx, event)
+		if event.Cancel {
+			reason := event.CancelReason
+			if reason == "" {
+				reason = "unspecified"
+			}
+			logger.WarnCF("hooks", "Outbound message canceled by hook",
+				map[string]any{
+					"channel": msg.Channel,
+					"chat_id": msg.ChatID,
+					"reason":  reason,
+				})
+			return false, reason
+		}
+		msg.Content = event.Content
+	}
+	if err := al.bus.PublishOutbound(ctx, msg); err != nil {
+		logger.WarnCF("agent", "Failed to publish outbound message", map[string]any{
+			"channel": msg.Channel,
+			"chat_id": msg.ChatID,
+			"error":   err.Error(),
+		})
+		return false, err.Error()
+	}
+	return true, ""
+}
+
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
 func (al *AgentLoop) RecordLastChannel(channel string) error {
@@ -333,7 +412,7 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 		Channel:         channel,
 		ChatID:          chatID,
 		UserMessage:     content,
-		DefaultResponse: defaultResponse,
+		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   false,
 		SendResponse:    false,
 		NoHistory:       true, // Don't load session history for heartbeat
@@ -355,6 +434,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"sender_id":   msg.SenderID,
 			"session_key": msg.SessionKey,
 		})
+
+	// Fire message_received hook
+	if al.hooks != nil {
+		al.hooks.TriggerMessageReceived(ctx, &hooks.MessageReceivedEvent{
+			Channel:  msg.Channel,
+			SenderID: msg.SenderID,
+			ChatID:   msg.ChatID,
+			Content:  msg.Content,
+			Media:    msg.Media,
+			Metadata: msg.Metadata,
+		})
+	}
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
@@ -384,13 +475,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
 	}
 
-	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if mt, ok := tool.(tools.ContextualTool); ok {
-			mt.SetContext(msg.Channel, msg.ChatID)
-		}
-	}
-
 	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
 	sessionKey := route.SessionKey
 	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
@@ -409,7 +493,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
-		DefaultResponse: defaultResponse,
+		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   true,
 		SendResponse:    false,
 	})
@@ -490,6 +574,18 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 1. Update tool contexts
 	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
 
+	// Fire session hooks
+	if al.hooks != nil {
+		sessionEvt := &hooks.SessionEvent{
+			AgentID:    agent.ID,
+			SessionKey: opts.SessionKey,
+			Channel:    opts.Channel,
+			ChatID:     opts.ChatID,
+		}
+		al.hooks.TriggerSessionStart(ctx, sessionEvt)
+		defer al.hooks.TriggerSessionEnd(ctx, sessionEvt)
+	}
+
 	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message
 	var summary string
@@ -529,12 +625,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 7. Optional: summarization
 	if opts.EnableSummary {
-		al.maybeSummarize(agent, opts.SessionKey, opts.Channel, opts.ChatID)
+		al.maybeSummarize(ctx, agent, opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
 	// 8. Optional: send response via bus
 	if opts.SendResponse {
-		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+		al.sendOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
 			Content: finalContent,
@@ -576,7 +672,7 @@ func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, chan
 	}
 
 	// Use a short timeout so the goroutine does not block indefinitely when
-	// the outbound bus is full.  Reasoning output is best-effort; dropping it
+	// the outbound bus is full. Reasoning output is best-effort; dropping it
 	// is acceptable to avoid goroutine accumulation.
 	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer pubCancel()
@@ -587,7 +683,7 @@ func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, chan
 		Content: reasoningContent,
 	}); err != nil {
 		// Treat context.DeadlineExceeded / context.Canceled as expected
-		// (bus full under load, or parent canceled).  Check the error
+		// (bus full under load, or parent canceled). Check the error
 		// itself rather than ctx.Err(), because pubCtx may time out
 		// (5 s) while the parent ctx is still active.
 		// Also treat ErrBusClosed as expected — it occurs during normal
@@ -684,8 +780,19 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		// Retry loop for context/token errors
+		llmStart := time.Now()
 		maxRetries := 2
 		for retry := 0; retry <= maxRetries; retry++ {
+			// Fire llm_input hook (re-fires after compression so hooks see actual messages)
+			if al.hooks != nil {
+				al.hooks.TriggerLLMInput(ctx, &hooks.LLMInputEvent{
+					AgentID:   agent.ID,
+					Model:     agent.Model,
+					Messages:  messages,
+					Tools:     providerToolDefs,
+					Iteration: iteration,
+				})
+			}
 			response, err = callLLM()
 			if err == nil {
 				break
@@ -729,7 +836,7 @@ func (al *AgentLoop) runLLMIteration(
 				})
 
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
-					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+					al.sendOutbound(ctx, bus.OutboundMessage{
 						Channel: opts.Channel,
 						ChatID:  opts.ChatID,
 						Content: "Context window exceeded. Compressing history and retrying...",
@@ -748,6 +855,8 @@ func (al *AgentLoop) runLLMIteration(
 			break
 		}
 
+		llmDuration := time.Since(llmStart)
+
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed",
 				map[string]any{
@@ -760,16 +869,18 @@ func (al *AgentLoop) runLLMIteration(
 
 		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
 
-		logger.DebugCF("agent", "LLM response",
-			map[string]any{
-				"agent_id":       agent.ID,
-				"iteration":      iteration,
-				"content_chars":  len(response.Content),
-				"tool_calls":     len(response.ToolCalls),
-				"reasoning":      response.Reasoning,
-				"target_channel": al.targetReasoningChannelID(opts.Channel),
-				"channel":        opts.Channel,
+		// Fire llm_output hook
+		if al.hooks != nil {
+			al.hooks.TriggerLLMOutput(ctx, &hooks.LLMOutputEvent{
+				AgentID:   agent.ID,
+				Model:     agent.Model,
+				Content:   response.Content,
+				ToolCalls: response.ToolCalls,
+				Iteration: iteration,
+				Duration:  llmDuration,
 			})
+		}
+
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
@@ -832,9 +943,14 @@ func (al *AgentLoop) runLLMIteration(
 
 		// Save assistant message with tool calls to session
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
+		assistantMsgIndex := len(messages) - 1
+		assistantSessionIndex := -1
+		if history := agent.Sessions.GetHistory(opts.SessionKey); len(history) > 0 {
+			assistantSessionIndex = len(history) - 1
+		}
 
 		// Execute tool calls
-		for _, tc := range normalizedToolCalls {
+		for tcIdx, tc := range normalizedToolCalls {
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
 			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
@@ -860,18 +976,74 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}
 
-			toolResult := agent.Tools.ExecuteWithContext(
-				ctx,
-				tc.Name,
-				tc.Arguments,
-				opts.Channel,
-				opts.ChatID,
-				asyncCallback,
-			)
+			// Fire before_tool_call hook
+			var toolResult *tools.ToolResult
+			toolCanceled := false
+			if al.hooks != nil {
+				args := tc.Arguments
+				if args == nil {
+					args = make(map[string]any)
+				}
+				btcEvent := &hooks.BeforeToolCallEvent{
+					ToolName: tc.Name,
+					Args:     args,
+					Channel:  opts.Channel,
+					ChatID:   opts.ChatID,
+				}
+				al.hooks.TriggerBeforeToolCall(ctx, btcEvent)
+				if btcEvent.Cancel {
+					toolCanceled = true
+					reason := btcEvent.CancelReason
+					if strings.TrimSpace(reason) == "" {
+						reason = fmt.Sprintf("tool call %q was canceled by before_tool_call hook", tc.Name)
+					}
+					toolResult = tools.ErrorResult(reason)
+				}
+				tc.Arguments = btcEvent.Args
+				if tc.Arguments == nil {
+					tc.Arguments = make(map[string]any)
+				}
+
+				// Keep persisted assistant tool-call arguments aligned with rewritten execution args.
+				updateToolCallArguments(&messages[assistantMsgIndex], tcIdx, tc.Arguments)
+				if assistantSessionIndex >= 0 {
+					history := agent.Sessions.GetHistory(opts.SessionKey)
+					if assistantSessionIndex < len(history) {
+						updateToolCallArguments(&history[assistantSessionIndex], tcIdx, tc.Arguments)
+						agent.Sessions.SetHistory(opts.SessionKey, history)
+					}
+				}
+			}
+
+			var toolDuration time.Duration
+			if !toolCanceled {
+				toolStart := time.Now()
+				toolResult = agent.Tools.ExecuteWithContext(
+					ctx,
+					tc.Name,
+					tc.Arguments,
+					opts.Channel,
+					opts.ChatID,
+					asyncCallback,
+				)
+				toolDuration = time.Since(toolStart)
+			}
+
+			// Fire after_tool_call hook (fires for both executed and canceled calls)
+			if al.hooks != nil {
+				al.hooks.TriggerAfterToolCall(ctx, &hooks.AfterToolCallEvent{
+					ToolName: tc.Name,
+					Args:     tc.Arguments,
+					Channel:  opts.Channel,
+					ChatID:   opts.ChatID,
+					Duration: toolDuration,
+					Result:   toolResult,
+				})
+			}
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
-				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+				al.sendOutbound(ctx, bus.OutboundMessage{
 					Channel: opts.Channel,
 					ChatID:  opts.ChatID,
 					Content: toolResult.ForUser,
@@ -898,7 +1070,7 @@ func (al *AgentLoop) runLLMIteration(
 					}
 					parts = append(parts, part)
 				}
-				al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
+				_ = al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
 					Channel: opts.Channel,
 					ChatID:  opts.ChatID,
 					Parts:   parts,
@@ -947,7 +1119,7 @@ func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID st
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
-func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, chatID string) {
+func (al *AgentLoop) maybeSummarize(_ context.Context, agent *AgentInstance, sessionKey, channel, chatID string) {
 	newHistory := agent.Sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := agent.ContextWindow * 75 / 100
@@ -957,6 +1129,13 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
+				if !constants.IsInternalChannel(channel) {
+					al.sendOutbound(context.Background(), bus.OutboundMessage{
+						Channel: channel,
+						ChatID:  chatID,
+						Content: "Memory threshold reached. Optimizing conversation history...",
+					})
+				}
 				logger.Debug("Memory threshold reached. Optimizing conversation history...")
 				al.summarizeSession(agent, sessionKey)
 			}()
@@ -1026,11 +1205,25 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 		return info
 	}
 
+	pluginNames := make([]string, 0)
+	if al.pluginManager != nil {
+		pluginNames = al.pluginManager.Names()
+		if pluginNames == nil {
+			pluginNames = make([]string, 0)
+		}
+	}
+
 	// Tools info
 	toolsList := agent.Tools.List()
 	info["tools"] = map[string]any{
 		"count": len(toolsList),
 		"names": toolsList,
+	}
+
+	// Plugins info
+	info["plugins"] = map[string]any{
+		"enabled": pluginNames,
+		"count":   len(pluginNames),
 	}
 
 	// Skills info
@@ -1043,6 +1236,19 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 	}
 
 	return info
+}
+
+// updateToolCallArguments patches the serialized arguments for a tool call in-place.
+func updateToolCallArguments(msg *providers.Message, toolCallIndex int, args map[string]any) {
+	if msg == nil || toolCallIndex < 0 || toolCallIndex >= len(msg.ToolCalls) {
+		return
+	}
+	toolCall := &msg.ToolCalls[toolCallIndex]
+	if toolCall.Function == nil {
+		return
+	}
+	argumentsJSON, _ := json.Marshal(args)
+	toolCall.Function.Arguments = string(argumentsJSON)
 }
 
 // formatMessagesForLog formats messages for logging
@@ -1317,20 +1523,27 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	return "", false
 }
 
-// extractPeer extracts the routing peer from the inbound message's structured Peer field.
+// extractPeer extracts the routing peer from inbound message metadata.
 func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
-	if msg.Peer.Kind == "" {
+	peerKind := msg.Metadata["peer_kind"]
+	if peerKind == "" {
+		peerKind = msg.Peer.Kind
+	}
+	peerID := msg.Metadata["peer_id"]
+	if peerID == "" {
+		peerID = msg.Peer.ID
+	}
+	if peerKind == "" {
 		return nil
 	}
-	peerID := msg.Peer.ID
 	if peerID == "" {
-		if msg.Peer.Kind == "direct" {
+		if peerKind == "direct" {
 			peerID = msg.SenderID
 		} else {
 			peerID = msg.ChatID
 		}
 	}
-	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
+	return &routing.RoutePeer{Kind: peerKind, ID: peerID}
 }
 
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.
