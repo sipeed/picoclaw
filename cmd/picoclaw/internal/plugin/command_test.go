@@ -1,25 +1,20 @@
-package main
+package plugin
 
 import (
-	"fmt"
 	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 )
 
-func TestNewPicoclawCommand(t *testing.T) {
-	cmd := NewPicoclawCommand()
+func TestNewPluginCommand(t *testing.T) {
+	cmd := NewPluginCommand()
 
 	require.NotNil(t, cmd)
 
-	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant v%s\n\n", internal.Logo, internal.GetVersion())
-
-	assert.Equal(t, "picoclaw", cmd.Use)
-	assert.Equal(t, short, cmd.Short)
+	assert.Equal(t, "plugin", cmd.Use)
+	assert.Equal(t, "Inspect and validate plugins", cmd.Short)
 
 	assert.True(t, cmd.HasSubCommands())
 	assert.True(t, cmd.HasAvailableSubCommands())
@@ -27,22 +22,14 @@ func TestNewPicoclawCommand(t *testing.T) {
 	assert.False(t, cmd.HasFlags())
 
 	assert.Nil(t, cmd.Run)
-	assert.Nil(t, cmd.RunE)
+	assert.NotNil(t, cmd.RunE)
 
 	assert.Nil(t, cmd.PersistentPreRun)
 	assert.Nil(t, cmd.PersistentPostRun)
 
 	allowedCommands := []string{
-		"agent",
-		"auth",
-		"cron",
-		"gateway",
-		"migrate",
-		"onboard",
-		"plugin",
-		"skills",
-		"status",
-		"version",
+		"list",
+		"lint",
 	}
 
 	subcommands := cmd.Commands()
