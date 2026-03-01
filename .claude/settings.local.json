@@ -28,7 +28,11 @@
       "Bash(gh api:*)",
       "Bash(gh run:*)",
       "Bash(gh pr:*)",
-      "Bash(gofmt:*)"
+      "Bash(gofmt:*)",
+      "Bash(go vet:*)",
+      "Bash(gofumpt:*)",
+      "Bash(git merge:*)",
+      "Bash(git checkout:*)"
     ]
   },
   "remote": {

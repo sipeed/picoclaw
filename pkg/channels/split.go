@@ -23,10 +23,7 @@ func SplitMessage(content string, maxLen int) []string {
 	var messages []string
 
 	// Dynamic buffer: 10% of maxLen, but at least 50 chars if possible
-	codeBlockBuffer := maxLen / 10
-	if codeBlockBuffer < 50 {
-		codeBlockBuffer = 50
-	}
+	codeBlockBuffer := max(maxLen/10, 50)
 	if codeBlockBuffer > maxLen/2 {
 		codeBlockBuffer = maxLen / 2
 	}
@@ -40,10 +37,7 @@ func SplitMessage(content string, maxLen int) []string {
 		}
 
 		// Effective split point: maxLen minus buffer, to leave room for code blocks
-		effectiveLimit := maxLen - codeBlockBuffer
-		if effectiveLimit < maxLen/2 {
-			effectiveLimit = maxLen / 2
-		}
+		effectiveLimit := max(maxLen-codeBlockBuffer, maxLen/2)
 
 		end := start + effectiveLimit
 
@@ -85,10 +79,9 @@ func SplitMessage(content string, maxLen int) []string {
 					// If we have a reasonable amount of content after the header, split inside
 					if msgEnd > headerEndIdx+20 {
 						// Find a better split point closer to maxLen
-						innerLimit := start + maxLen - 5 // Leave room for "\n```"
-						if innerLimit > totalLen {
-							innerLimit = totalLen
-						}
+						innerLimit := min(
+							// Leave room for "\n```"
+							start+maxLen-5, totalLen)
 						betterEnd := findLastNewlineInRange(runes, start, innerLimit, 200)
 						if betterEnd > headerEndIdx {
 							msgEnd = betterEnd
@@ -117,10 +110,7 @@ func SplitMessage(content string, maxLen int) []string {
 						if unclosedIdx-start > 20 {
 							msgEnd = unclosedIdx
 						} else {
-							splitAt := start + maxLen - 5
-							if splitAt > totalLen {
-								splitAt = totalLen
-							}
+							splitAt := min(start+maxLen-5, totalLen)
 							chunk := strings.TrimRight(string(runes[start:splitAt]), " \t\n\r") + "\n```"
 							messages = append(messages, chunk)
 							remaining := strings.TrimSpace(header + "\n" + string(runes[splitAt:totalLen]))
@@ -196,10 +186,7 @@ func findNewlineFrom(runes []rune, from int) int {
 // findLastNewlineInRange finds the last newline within the last searchWindow runes
 // of the range runes[start:end]. Returns the absolute index or start-1 (indicating not found).
 func findLastNewlineInRange(runes []rune, start, end, searchWindow int) int {
-	searchStart := end - searchWindow
-	if searchStart < start {
-		searchStart = start
-	}
+	searchStart := max(end-searchWindow, start)
 	for i := end - 1; i >= searchStart; i-- {
 		if runes[i] == '\n' {
 			return i
@@ -211,10 +198,7 @@ func findLastNewlineInRange(runes []rune, start, end, searchWindow int) int {
 // findLastSpaceInRange finds the last space/tab within the last searchWindow runes
 // of the range runes[start:end]. Returns the absolute index or start-1 (indicating not found).
 func findLastSpaceInRange(runes []rune, start, end, searchWindow int) int {
-	searchStart := end - searchWindow
-	if searchStart < start {
-		searchStart = start
-	}
+	searchStart := max(end-searchWindow, start)
 	for i := end - 1; i >= searchStart; i-- {
 		if runes[i] == ' ' || runes[i] == '\t' {
 			return i

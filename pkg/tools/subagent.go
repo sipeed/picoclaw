@@ -368,7 +368,7 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 
 	// Register web tools
 	if config.AllowedTools["web_search"] {
-		webSearchTool := NewWebSearchTool(sm.webSearchOpts)
+		webSearchTool, _ := NewWebSearchTool(sm.webSearchOpts)
 		if webSearchTool != nil {
 			registry.Register(webSearchTool)
 		}

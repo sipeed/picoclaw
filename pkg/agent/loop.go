@@ -225,7 +225,7 @@ func registerSharedTools(
 		}
 
 		// Web tools
-		if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+		searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
 			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
 			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
@@ -239,7 +239,13 @@ func registerSharedTools(
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 			Proxy:                cfg.Tools.Web.Proxy,
-		}); searchTool != nil {
+		})
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{
+				"agent_id": agentID,
+				"error":    err.Error(),
+			})
+		} else if searchTool != nil {
 			agent.Tools.Register(searchTool)
 			logger.InfoCF("agent", "Web search provider registered", map[string]any{
 				"agent_id": agentID,
@@ -250,7 +256,15 @@ func registerSharedTools(
 				"agent_id": agentID,
 			})
 		}
-		agent.Tools.Register(tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy))
+		fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{
+				"agent_id": agentID,
+				"error":    err.Error(),
+			})
+		} else {
+			agent.Tools.Register(fetchTool)
+		}
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		agent.Tools.Register(tools.NewI2CTool())

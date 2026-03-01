@@ -28,6 +28,7 @@ type MessageSenderWithID interface {
 	SendWithID(ctx context.Context, chatID string, content string) (messageID string, err error)
 }
 
+
 // PlaceholderCapable — channels that can send a placeholder message
 // (e.g. "Thinking... 💭") that will later be edited to the actual response.
 // The channel MUST also implement MessageEditor for the placeholder to be useful.

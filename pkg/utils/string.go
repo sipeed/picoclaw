@@ -95,6 +95,7 @@ func DetectRepetitionLoop(text string) bool {
 	return ratio < repetitionUniqueThreshold
 }
 
+
 // SanitizeMessageContent removes Unicode control characters, format characters (RTL overrides,
 // zero-width characters), and other non-graphic characters that could confuse an LLM
 // or cause display issues in the agent UI.
