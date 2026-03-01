@@ -3,7 +3,7 @@
 
 set -e
 
-COMPOSE_FILE="docker-compose.full.yml"
+COMPOSE_FILE="docker/docker-compose.full.yml"
 SERVICE="picoclaw-agent"
 
 echo "🧪 Testing MCP tools in Docker container (full-featured image)..."
@@ -38,8 +38,8 @@ echo "✅ Testing uv..."
 docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh "$SERVICE" -c 'uv --version'
 
 # Test MCP server installation (quick)
-echo "✅ Testing MCP server install with npx..."
-docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh "$SERVICE" -c 'npx -y cowsay "MCP works!"'
+echo "✅ Testing @modelcontextprotocol/server-filesystem MCP server install with npx..."
+docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh "$SERVICE" -c 'npx -y @modelcontextprotocol/server-filesystem --help'
 
 echo ""
 echo "🎉 All MCP tools are working correctly!"

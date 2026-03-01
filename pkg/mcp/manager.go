@@ -243,9 +243,9 @@ func (m *Manager) ConnectServer(
 ) error {
 	logger.InfoCF("mcp", "Connecting to MCP server",
 		map[string]any{
-			"server":  name,
-			"command": cfg.Command,
-			"args":    cfg.Args,
+			"server":     name,
+			"command":    cfg.Command,
+			"args_count": len(cfg.Args),
 		})
 
 	// Create client
