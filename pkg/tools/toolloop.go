@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -18,17 +19,19 @@ import (
 
 // ToolLoopConfig configures the tool execution loop.
 type ToolLoopConfig struct {
-	Provider      providers.LLMProvider
-	Model         string
-	Tools         *ToolRegistry
-	MaxIterations int
-	LLMOptions    map[string]any
+	Provider             providers.LLMProvider
+	Model                string
+	Tools                *ToolRegistry
+	MaxIterations        int
+	LLMOptions           map[string]any
+	RemainingTokenBudget *atomic.Int64
 }
 
 // ToolLoopResult contains the result of running the tool loop.
 type ToolLoopResult struct {
 	Content    string
 	Iterations int
+	Messages   []providers.Message // Allows caller to retain stateful context across executions
 }
 
 // RunToolLoop executes the LLM + tool call iteration loop.
@@ -71,6 +74,60 @@ func RunToolLoop(
 					"error":     err.Error(),
 				})
 			return nil, fmt.Errorf("LLM call failed: %w", err)
+		}
+
+		// 3.5 Token Budget: Soft enforcement with graceful degradation.
+		// Budget exhaustion is NOT a hard error — workers get a chance to wrap up gracefully.
+		if response.Usage != nil && config.RemainingTokenBudget != nil {
+			newBudget := config.RemainingTokenBudget.Add(-int64(response.Usage.TotalTokens))
+			originalBudget := newBudget + int64(response.Usage.TotalTokens)
+
+			if newBudget <= 0 {
+				// Budget exhausted: signal the worker to wrap up and return partial result.
+				logger.WarnCF("toolloop", "Token budget exhausted, injecting wrap-up signal",
+					map[string]any{
+						"deficit":   -newBudget,
+						"iteration": iteration,
+					})
+				finalContent = response.Content
+				messages = append(messages, providers.Message{
+					Role:    "assistant",
+					Content: response.Content,
+				})
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: "[SYSTEM] Token budget has been exhausted. Stop all tool calls immediately and return the best result you have completed so far. Do not call any more tools.",
+				})
+				// One final LLM call to get a summary/wrap-up from the model
+				if finalResp, err := config.Provider.Chat(ctx, messages, nil, config.Model, config.LLMOptions); err == nil {
+					finalContent = finalResp.Content
+				}
+				break
+			} else if originalBudget > 0 && newBudget < originalBudget/2 {
+				// Budget below 50%: soft warning injected into next iteration's context.
+				logger.WarnCF("toolloop", "Token budget below 50%, injecting advisory",
+					map[string]any{"remaining": newBudget, "iteration": iteration})
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: "[SYSTEM] Advisory: token budget is running low. Please prioritize completing the most critical parts of your task and avoid unnecessary tool calls.",
+				})
+			}
+		}
+
+		// 3.6 Truncation Recovery: LLM response was cut off (max_tokens hit or malformed JSON).
+		// Inject a recovery message so the LLM knows to retry with a shorter, complete response.
+		if response.FinishReason == "truncated" {
+			logger.WarnCF("toolloop", "LLM response was truncated (max_tokens hit), injecting recovery message",
+				map[string]any{"iteration": iteration})
+			messages = append(messages, providers.Message{
+				Role:    "assistant",
+				Content: response.Content,
+			})
+			messages = append(messages, providers.Message{
+				Role:    "user",
+				Content: "[SYSTEM] Your previous response was cut off because it exceeded the token limit. Please retry by producing a shorter, complete response. If you were about to call a tool, make sure the full JSON arguments are included without truncation.",
+			})
+			continue
 		}
 
 		// 4. If no tool calls, we're done
@@ -158,5 +215,6 @@ func RunToolLoop(
 	return &ToolLoopResult{
 		Content:    finalContent,
 		Iterations: iteration,
+		Messages:   messages,
 	}, nil
 }

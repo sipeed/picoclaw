@@ -148,7 +148,7 @@ func registerSharedTools(
 		agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
 
 		// Spawn tool with allowlist checker
-		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
+		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Candidates, agent.Workspace, msgBus)
 		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 		spawnTool := tools.NewSpawnTool(subagentManager)
 		currentAgentID := agentID
@@ -156,6 +156,18 @@ func registerSharedTools(
 			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 		})
 		agent.Tools.Register(spawnTool)
+
+		teamTool := tools.NewTeamTool(subagentManager)
+		agent.Tools.Register(teamTool)
+
+		spawnSubAgentTool := tools.NewSpawnSubAgentTool(subagentManager)
+		agent.Tools.Register(spawnSubAgentTool)
+
+		// Direction 3: Hierarchical Decomposition.
+		// Share the fully-built registry (which includes team, spawn_sub_agent, etc.) back
+		// to the subagent manager so that all workers spawned by this agent also inherit
+		// the full toolset — enabling sub-agents to recursively call 'team' themselves.
+		subagentManager.SetTools(agent.Tools)
 	}
 }
 

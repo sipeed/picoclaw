@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
@@ -131,6 +132,12 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	return NewToolResult(string(content))
 }
 
+func (t *ReadFileTool) UpgradeToConcurrent() Tool {
+	return &ReadFileTool{
+		fs: &ConcurrentFS{baseFS: t.fs},
+	}
+}
+
 type WriteFileTool struct {
 	fs fileSystem
 }
@@ -186,6 +193,12 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	}
 
 	return SilentResult(fmt.Sprintf("File written: %s", path))
+}
+
+func (t *WriteFileTool) UpgradeToConcurrent() Tool {
+	return &WriteFileTool{
+		fs: &ConcurrentFS{baseFS: t.fs},
+	}
 }
 
 type ListDirTool struct {
@@ -253,6 +266,7 @@ func formatDirEntries(entries []os.DirEntry) *ToolResult {
 type fileSystem interface {
 	ReadFile(path string) ([]byte, error)
 	WriteFile(path string, data []byte) error
+	EditFile(path string, editFn func([]byte) ([]byte, error)) error
 	ReadDir(path string) ([]os.DirEntry, error)
 }
 
@@ -271,6 +285,23 @@ func (h *hostFs) ReadFile(path string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 	return content, nil
+}
+
+func (h *hostFs) EditFile(path string, editFn func([]byte) ([]byte, error)) error {
+
+	content, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read file for editing: %w", err)
+	}
+	// If it doesn't exist, we pass an empty byte slice to the editFn.
+	// This is important for "append" operations which might create new files.
+
+	newContent, err := editFn(content)
+	if err != nil {
+		return err
+	}
+
+	return fileutil.WriteFileAtomic(path, newContent, 0o600)
 }
 
 func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
@@ -381,6 +412,63 @@ func (r *sandboxFs) WriteFile(path string, data []byte) error {
 	})
 }
 
+func (r *sandboxFs) EditFile(path string, editFn func([]byte) ([]byte, error)) error {
+	return r.execute(path, func(root *os.Root, relPath string) error {
+		// 1. Read
+		content, err := root.ReadFile(relPath)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to read file for editing: %w", err)
+		}
+
+		// 2. Modify
+		newContent, err := editFn(content)
+		if err != nil {
+			return err
+		}
+
+		// 3. Write (reusing the atomic write logic)
+		dir := filepath.Dir(relPath)
+		if dir != "." && dir != "/" {
+			if err := root.MkdirAll(dir, 0o755); err != nil {
+				return fmt.Errorf("failed to create parent directories: %w", err)
+			}
+		}
+
+		tmpRelPath := fmt.Sprintf(".tmp-%d-%d", os.Getpid(), time.Now().UnixNano())
+		tmpFile, err := root.OpenFile(tmpRelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to open temp file: %w", err)
+		}
+
+		if _, err := tmpFile.Write(newContent); err != nil {
+			tmpFile.Close()
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to write temp file: %w", err)
+		}
+		if err := tmpFile.Sync(); err != nil {
+			tmpFile.Close()
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to sync temp file: %w", err)
+		}
+		if err := tmpFile.Close(); err != nil {
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to close temp file: %w", err)
+		}
+
+		if err := root.Rename(tmpRelPath, relPath); err != nil {
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to rename temp file over target: %w", err)
+		}
+		if dirFile, err := root.Open("."); err == nil {
+			_ = dirFile.Sync()
+			dirFile.Close()
+		}
+
+		return nil
+	})
+}
+
 func (r *sandboxFs) ReadDir(path string) ([]os.DirEntry, error) {
 	var entries []os.DirEntry
 	err := r.execute(path, func(root *os.Root, relPath string) error {
@@ -414,4 +502,51 @@ func getSafeRelPath(workspace, path string) (string, error) {
 	}
 
 	return rel, nil
+}
+
+// ConcurrencyUpgradeable indicates a Tool operates on files and can be upgraded
+// to use a thread-safe locking proxy backend (`ConcurrentFS`) for Parallel or DAG agent teams.
+type ConcurrencyUpgradeable interface {
+	UpgradeToConcurrent() Tool
+}
+
+// Global file locks explicitly for concurrent agent strategies
+var globalFileLocks sync.Map // map[string]*sync.RWMutex
+
+func getPathLock(path string) *sync.RWMutex {
+	cleanPath := filepath.Clean(path)
+	actual, _ := globalFileLocks.LoadOrStore(cleanPath, &sync.RWMutex{})
+	return actual.(*sync.RWMutex)
+}
+
+// ConcurrentFS is a lightweight proxy wrapper around any `fileSystem`.
+// It guarantees thread-safe, race-condition-free access by locking the absolute file path globally.
+type ConcurrentFS struct {
+	baseFS fileSystem
+}
+
+func (c *ConcurrentFS) ReadFile(path string) ([]byte, error) {
+	lock := getPathLock(path)
+	lock.RLock()
+	defer lock.RUnlock()
+	return c.baseFS.ReadFile(path)
+}
+
+func (c *ConcurrentFS) WriteFile(path string, data []byte) error {
+	lock := getPathLock(path)
+	lock.Lock()
+	defer lock.Unlock()
+	return c.baseFS.WriteFile(path, data)
+}
+
+func (c *ConcurrentFS) EditFile(path string, editFn func([]byte) ([]byte, error)) error {
+	lock := getPathLock(path)
+	lock.Lock()
+	defer lock.Unlock()
+	return c.baseFS.EditFile(path, editFn)
+}
+
+func (c *ConcurrentFS) ReadDir(path string) ([]os.DirEntry, error) {
+	// Directories rarely suffer from single-file corruption, but we delegate anyway.
+	return c.baseFS.ReadDir(path)
 }

@@ -235,6 +235,7 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 
 	choice := apiResponse.Choices[0]
 	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
+	truncated := false
 	for _, tc := range choice.Message.ToolCalls {
 		arguments := make(map[string]any)
 		name := ""
@@ -249,8 +250,10 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 			name = tc.Function.Name
 			if tc.Function.Arguments != "" {
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &arguments); err != nil {
+					// JSON is malformed (likely truncated due to max_tokens). Log and signal truncation.
 					log.Printf("openai_compat: failed to decode tool call arguments for %q: %v", name, err)
-					arguments["raw"] = tc.Function.Arguments
+					truncated = true
+					continue // Skip this malformed tool call entirely
 				}
 			}
 		}
@@ -274,13 +277,19 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		toolCalls = append(toolCalls, toolCall)
 	}
 
+	finishReason := choice.FinishReason
+	// Propagate truncation: if finish_reason is "length" or we detected bad JSON, mark as truncated.
+	if truncated || finishReason == "length" {
+		finishReason = "truncated"
+	}
+
 	return &LLMResponse{
 		Content:          choice.Message.Content,
 		ReasoningContent: choice.Message.ReasoningContent,
 		Reasoning:        choice.Message.Reasoning,
 		ReasoningDetails: choice.Message.ReasoningDetails,
 		ToolCalls:        toolCalls,
-		FinishReason:     choice.FinishReason,
+		FinishReason:     finishReason,
 		Usage:            apiResponse.Usage,
 	}, nil
 }

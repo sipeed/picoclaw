@@ -459,11 +459,11 @@ func TestResolveCandidatesWithLookup_AliasResolvesToNestedModel(t *testing.T) {
 		Fallbacks: nil,
 	}
 
-	lookup := func(raw string) (string, bool) {
+	lookup := func(raw string) (string, []string, bool) {
 		if raw == "step-3.5-flash" {
-			return "openrouter/stepfun/step-3.5-flash:free", true
+			return "openrouter/stepfun/step-3.5-flash:free", nil, true
 		}
-		return "", false
+		return "", nil, false
 	}
 
 	candidates := ResolveCandidatesWithLookup(cfg, "", lookup)
@@ -484,11 +484,11 @@ func TestResolveCandidatesWithLookup_DeduplicateAfterLookup(t *testing.T) {
 		Fallbacks: []string{"openrouter/stepfun/step-3.5-flash:free"},
 	}
 
-	lookup := func(raw string) (string, bool) {
+	lookup := func(raw string) (string, []string, bool) {
 		if raw == "step-3.5-flash" {
-			return "openrouter/stepfun/step-3.5-flash:free", true
+			return "openrouter/stepfun/step-3.5-flash:free", nil, true
 		}
-		return "", false
+		return "", nil, false
 	}
 
 	candidates := ResolveCandidatesWithLookup(cfg, "", lookup)
@@ -503,11 +503,11 @@ func TestResolveCandidatesWithLookup_AliasWithoutProtocolUsesDefaultProvider(t *
 		Fallbacks: nil,
 	}
 
-	lookup := func(raw string) (string, bool) {
+	lookup := func(raw string) (string, []string, bool) {
 		if raw == "glm-5" {
-			return "glm-5", true
+			return "glm-5", nil, true
 		}
-		return "", false
+		return "", nil, false
 	}
 
 	candidates := ResolveCandidatesWithLookup(cfg, "openai", lookup)
