@@ -35,6 +35,12 @@ func TestExtractProtocol(t *testing.T) {
 			wantModelID:  "claude-sonnet-4.6",
 		},
 		{
+			name:         "claude with prefix",
+			model:        "claude/claude-sonnet-4.6",
+			wantProtocol: "claude",
+			wantModelID:  "claude-sonnet-4.6",
+		},
+		{
 			name:         "no prefix - defaults to openai",
 			model:        "gpt-4o",
 			wantProtocol: "openai",
@@ -139,6 +145,25 @@ func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-anthropic",
 		Model:     "anthropic/claude-sonnet-4.6",
+		APIKey:    "test-key",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "claude-sonnet-4.6" {
+		t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4.6")
+	}
+}
+
+func TestCreateProviderFromConfig_Claudue(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-anthropic",
+		Model:     "claude/claude-sonnet-4.6",
 		APIKey:    "test-key",
 	}
 
