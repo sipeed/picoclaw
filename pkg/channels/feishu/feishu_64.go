@@ -102,17 +102,18 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("chat ID is empty")
 	}
 
-	payload, err := json.Marshal(map[string]string{"text": msg.Content})
+	// Convert markdown to Feishu Interactive Card format
+	msgType, content, err := buildFeishuContent(msg.Content)
 	if err != nil {
-		return fmt.Errorf("failed to marshal feishu content: %w", err)
+		return fmt.Errorf("failed to build feishu content: %w", err)
 	}
 
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(msg.ChatID).
-			MsgType(larkim.MsgTypeText).
-			Content(string(payload)).
+			MsgType(msgType).
+			Content(content).
 			Uuid(fmt.Sprintf("picoclaw-%d", time.Now().UnixNano())).
 			Build()).
 		Build()
@@ -127,7 +128,8 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	}
 
 	logger.DebugCF("feishu", "Feishu message sent", map[string]any{
-		"chat_id": msg.ChatID,
+		"chat_id":  msg.ChatID,
+		"msg_type": msgType,
 	})
 
 	return nil
