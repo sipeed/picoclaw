@@ -279,6 +279,18 @@
             "@modelcontextprotocol/server-postgres",
             "postgresql://user:password@localhost/dbname"
           ]
+        },
+        "slack": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-slack"
+          ],
+          "env": {
+            "SLACK_BOT_TOKEN": "YOUR_SLACK_BOT_TOKEN",
+            "SLACK_TEAM_ID": "YOUR_SLACK_TEAM_ID"
+          }
         }
       }
     },
