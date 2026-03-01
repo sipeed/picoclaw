@@ -197,7 +197,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 				response, err := al.processMessage(ctx, msg)
 				if err != nil {
-					response = fmt.Sprintf("Error processing message: %v", err)
+					logger.ErrorCF("agent", "Error processing message",
+						map[string]any{"error": err.Error()})
+					response = userFriendlyError(err)
 				}
 
 				if response != "" {
