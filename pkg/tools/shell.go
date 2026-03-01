@@ -99,9 +99,15 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}
 
+	// Determine timeout: use configured value or default to 60 seconds
+	timeout := 60 * time.Second
+	if config != nil && config.Tools.Exec.TimeoutSeconds > 0 {
+		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
-		timeout:             60 * time.Second,
+		timeout:             timeout,
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
 		restrictToWorkspace: restrict,
