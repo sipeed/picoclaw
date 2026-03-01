@@ -89,11 +89,15 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 
 	return &TelegramChannel{
 		BaseChannel: base,
-		commands:    NewTelegramCommands(bot, cfg),
+		commands:    NewTelegramCommands(bot, cfg, nil),
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
 	}, nil
+}
+
+func (c *TelegramChannel) SetRegistry(switcher AgentModelSwitcher) {
+	c.commands = NewTelegramCommands(c.bot, c.config, switcher)
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -131,6 +135,10 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.commands.List(ctx, message)
 	}, th.CommandEqual("list"))
+
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.commands.Model(ctx, message)
+	}, th.CommandEqual("model"))
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
