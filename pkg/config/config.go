@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sync/atomic"
 
@@ -13,6 +14,15 @@ import (
 
 // rrCounter is a global counter for round-robin load balancing across models.
 var rrCounter atomic.Uint64
+
+var warningWriter io.Writer = os.Stderr
+
+func warnf(format string, args ...any) {
+	if warningWriter == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(warningWriter, "warning: "+format+"\n", args...)
+}
 
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
 // so allow_from can contain both "123" and 123.
@@ -620,6 +630,11 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	if cfg.Session.BacklogLimit < 1 {
+		warnf(
+			"invalid session.backlog_limit=%d, fallback to default=%d",
+			cfg.Session.BacklogLimit,
+			DefaultSessionBacklogLimit,
+		)
 		cfg.Session.BacklogLimit = DefaultSessionBacklogLimit
 	}
 

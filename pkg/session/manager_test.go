@@ -1,9 +1,12 @@
 package session
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -381,5 +384,72 @@ func TestLoadIndex_SelfHealsStaleReferences(t *testing.T) {
 	}
 	if !list[0].Active || list[0].SessionKey != validNewest {
 		t.Fatalf("list[0]=%+v, want active newest", list[0])
+	}
+}
+
+func TestDeleteSession_FileDeleteFailureIsDeferredAndRetriedOnStartup(t *testing.T) {
+	dir := t.TempDir()
+	sm := NewSessionManager(dir)
+	scope := "agent:main:telegram:direct:user1"
+
+	if _, err := sm.ResolveActive(scope); err != nil {
+		t.Fatal(err)
+	}
+	sessionKey, err := sm.StartNew(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldRemoveFile := removeFile
+	oldWarningWriter := warningWriter
+	var warnings bytes.Buffer
+	warningWriter = &warnings
+	removeFile = func(path string) error {
+		if strings.HasSuffix(path, sanitizeFilename(sessionKey)+".json") {
+			return errors.New("permission denied")
+		}
+		return oldRemoveFile(path)
+	}
+	t.Cleanup(func() {
+		removeFile = oldRemoveFile
+		warningWriter = oldWarningWriter
+	})
+
+	if err := sm.DeleteSession(sessionKey); err != nil {
+		t.Fatalf("DeleteSession(%q) returned unexpected error: %v", sessionKey, err)
+	}
+	if got := warnings.String(); !strings.Contains(got, "deferred retry on startup") {
+		t.Fatalf("expected deferred-delete warning, got: %q", got)
+	}
+
+	sessionPath := filepath.Join(dir, sanitizeFilename(sessionKey)+".json")
+	if _, err := os.Stat(sessionPath); err != nil {
+		t.Fatalf("expected deferred file %q to still exist, err=%v", sessionPath, err)
+	}
+
+	list, err := sm.List(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range list {
+		if item.SessionKey == sessionKey {
+			t.Fatalf("deleted session key %q should not remain in index list", sessionKey)
+		}
+	}
+
+	if len(sm.index.PendingDeletes) != 1 || sm.index.PendingDeletes[0] != sessionKey {
+		t.Fatalf("pending_deletes=%v, want [%q]", sm.index.PendingDeletes, sessionKey)
+	}
+
+	removeFile = oldRemoveFile
+	reloaded := NewSessionManager(dir)
+	if len(reloaded.index.PendingDeletes) != 0 {
+		t.Fatalf("pending_deletes should be drained on startup retry, got %v", reloaded.index.PendingDeletes)
+	}
+	if _, err := os.Stat(sessionPath); !os.IsNotExist(err) {
+		t.Fatalf("expected %q to be removed by startup retry, stat err=%v", sessionPath, err)
+	}
+	if _, exists := reloaded.sessions[sessionKey]; exists {
+		t.Fatalf("session %q should not be present in memory after startup retry", sessionKey)
 	}
 }

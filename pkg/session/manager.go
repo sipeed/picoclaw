@@ -2,7 +2,9 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,6 +25,11 @@ type Session struct {
 
 const sessionIndexFilename = "index.json"
 
+var (
+	removeFile              = os.Remove
+	warningWriter io.Writer = os.Stderr
+)
+
 type scopeIndex struct {
 	ActiveSessionKey string    `json:"active_session_key"`
 	OrderedSessions  []string  `json:"ordered_sessions"`
@@ -30,8 +37,9 @@ type scopeIndex struct {
 }
 
 type sessionIndex struct {
-	Version int                    `json:"version"`
-	Scopes  map[string]*scopeIndex `json:"scopes"`
+	Version        int                    `json:"version"`
+	Scopes         map[string]*scopeIndex `json:"scopes"`
+	PendingDeletes []string               `json:"pending_deletes,omitempty"`
 }
 
 type SessionMeta struct {
@@ -273,8 +281,31 @@ func (sm *SessionManager) DeleteSession(sessionKey string) error {
 	sm.mu.Unlock()
 
 	if err := sm.deleteSessionFile(sessionKey); err != nil {
-		return err
+		sm.warnf("failed to delete session file for %q, deferred retry on startup: %v", sessionKey, err)
+		sm.mu.Lock()
+		pendingChanged := sm.addPendingDeleteLocked(sessionKey)
+		if pendingChanged {
+			if err := sm.saveIndexLocked(); err != nil {
+				sm.mu.Unlock()
+				sm.warnf("failed to persist deferred delete for %q: %v", sessionKey, err)
+				return nil
+			}
+		}
+		sm.mu.Unlock()
+		return nil
 	}
+
+	sm.mu.Lock()
+	pendingChanged := sm.removePendingDeleteLocked(sessionKey)
+	if pendingChanged {
+		if err := sm.saveIndexLocked(); err != nil {
+			sm.mu.Unlock()
+			sm.warnf("failed to persist cleanup of deferred delete for %q: %v", sessionKey, err)
+			return nil
+		}
+	}
+	sm.mu.Unlock()
+
 	return nil
 }
 
@@ -508,6 +539,40 @@ func (sm *SessionManager) loadIndex() error {
 	}
 
 	changed := false
+	seenPending := make(map[string]struct{}, len(loaded.PendingDeletes))
+	retryPending := make([]string, 0, len(loaded.PendingDeletes))
+	for _, sessionKey := range loaded.PendingDeletes {
+		if sessionKey == "" {
+			changed = true
+			continue
+		}
+		if _, dup := seenPending[sessionKey]; dup {
+			changed = true
+			continue
+		}
+		seenPending[sessionKey] = struct{}{}
+
+		// Deferred-delete sessions should not be visible even if stale files remain.
+		delete(sm.sessions, sessionKey)
+
+		if err := sm.deleteSessionFile(sessionKey); err != nil {
+			// Invalid paths are unrecoverable; drop them from retry queue.
+			if errors.Is(err, os.ErrInvalid) {
+				changed = true
+				sm.warnf("dropping invalid deferred delete key %q: %v", sessionKey, err)
+				continue
+			}
+			sm.warnf("retry deferred session delete failed for %q: %v", sessionKey, err)
+			retryPending = append(retryPending, sessionKey)
+			continue
+		}
+		changed = true
+	}
+	if len(retryPending) != len(loaded.PendingDeletes) {
+		changed = true
+	}
+	loaded.PendingDeletes = retryPending
+
 	for scopeKey, scope := range loaded.Scopes {
 		if scope == nil {
 			delete(loaded.Scopes, scopeKey)
@@ -677,6 +742,43 @@ func cloneSession(stored *Session) Session {
 	return snapshot
 }
 
+func (sm *SessionManager) warnf(format string, args ...any) {
+	if warningWriter == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(warningWriter, "warning: "+format+"\n", args...)
+}
+
+func (sm *SessionManager) addPendingDeleteLocked(sessionKey string) bool {
+	if sessionKey == "" {
+		return false
+	}
+	for _, existing := range sm.index.PendingDeletes {
+		if existing == sessionKey {
+			return false
+		}
+	}
+	sm.index.PendingDeletes = append(sm.index.PendingDeletes, sessionKey)
+	return true
+}
+
+func (sm *SessionManager) removePendingDeleteLocked(sessionKey string) bool {
+	if len(sm.index.PendingDeletes) == 0 {
+		return false
+	}
+	filtered := sm.index.PendingDeletes[:0]
+	removed := false
+	for _, existing := range sm.index.PendingDeletes {
+		if existing == sessionKey {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, existing)
+	}
+	sm.index.PendingDeletes = filtered
+	return removed
+}
+
 func (sm *SessionManager) saveSessionLocked(key string) error {
 	if sm.storage == "" {
 		return nil
@@ -758,7 +860,7 @@ func (sm *SessionManager) deleteSessionFile(sessionKey string) error {
 	}
 
 	sessionPath := filepath.Join(sm.storage, filename+".json")
-	if err := os.Remove(sessionPath); err != nil {
+	if err := removeFile(sessionPath); err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}

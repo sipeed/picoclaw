@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -458,6 +459,12 @@ func TestDefaultConfig_SessionBacklogLimit(t *testing.T) {
 func TestLoadConfig_InvalidBacklogLimitFallsBackToDefault(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.json")
+	var warnings bytes.Buffer
+	oldWarningWriter := warningWriter
+	warningWriter = &warnings
+	t.Cleanup(func() {
+		warningWriter = oldWarningWriter
+	})
 
 	configJSON := `{
   "agents": {"defaults":{"workspace":"./workspace","model":"gpt4","max_tokens":8192,"max_tool_iterations":20}},
@@ -478,5 +485,8 @@ func TestLoadConfig_InvalidBacklogLimitFallsBackToDefault(t *testing.T) {
 			cfg.Session.BacklogLimit,
 			DefaultSessionBacklogLimit,
 		)
+	}
+	if got := warnings.String(); !strings.Contains(got, "invalid session.backlog_limit=0") {
+		t.Fatalf("expected warning about invalid backlog_limit, got: %q", got)
 	}
 }
