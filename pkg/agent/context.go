@@ -58,18 +58,23 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	}
 }
 
-func (cb *ContextBuilder) getIdentity() string {
-	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
+type SandboxInfo struct {
+	IsHost       bool
+	WorkspaceDir string
+}
 
+func (cb *ContextBuilder) getIdentity() string {
 	return fmt.Sprintf(`# picoclaw 🦞
 
 You are picoclaw, a helpful AI assistant.
 
 ## Workspace
-Your workspace is at: %s
-- Memory: %s/memory/MEMORY.md
-- Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
-- Skills: %s/skills/{skill-name}/SKILL.md
+Your workspace is at: {{WORKSPACE}}
+- Memory: {{WORKSPACE}}/memory/MEMORY.md
+- Daily Notes: {{WORKSPACE}}/memory/YYYYMM/YYYYMMDD.md
+- Skills: {{WORKSPACE}}/skills/{skill-name}/SKILL.md
+
+{{SANDBOX_GUIDANCE}}
 
 ## Important Rules
 
@@ -77,10 +82,9 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
+3. **Memory** - When interacting with me if something seems memorable, update {{WORKSPACE}}/memory/MEMORY.md
 
-4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
-		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
+4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`)
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
@@ -379,7 +383,8 @@ func (cb *ContextBuilder) BuildMessages(
 	summary string,
 	currentMessage string,
 	media []string,
-	channel, chatID string,
+	channel, chatID, workspacePath string,
+	sb SandboxInfo,
 ) []providers.Message {
 	messages := []providers.Message{}
 
@@ -393,6 +398,25 @@ func (cb *ContextBuilder) BuildMessages(
 	// - Codex maps only the first system message to its instructions field.
 	// - OpenAI-compat passes messages through as-is.
 	staticPrompt := cb.BuildSystemPromptWithCache()
+
+	// Inject the actual workspace path into the static prompt template.
+	// This allows the bulk of the prompt to remain cached while the path
+	// remains dynamic based on the execution environment (host vs container).
+	if workspacePath == "" {
+		workspacePath, _ = filepath.Abs(cb.workspace)
+	}
+	staticPrompt = strings.ReplaceAll(staticPrompt, "{{WORKSPACE}}", workspacePath)
+
+	// Inject dynamic sandbox guidance
+	sandboxGuidance := ""
+	if !sb.IsHost {
+		sandboxGuidance = `## Sandbox
+You are running in a sandboxed runtime (tools execute in Docker container).
+- **Guidance**: ALWAYS prefer relative paths (e.g., 'src/main.go') instead of absolute paths.
+- **Why**: File tools (read_file/write_file) run on host bridge, while execution tools (exec) run inside container. Relative paths ensure consistency between both.
+- **Constraints**: Some system-level tools or network access may be restricted by sandbox policy.`
+	}
+	staticPrompt = strings.ReplaceAll(staticPrompt, "{{SANDBOX_GUIDANCE}}", sandboxGuidance)
 
 	// Build short dynamic context (time, runtime, session) — changes per request
 	dynamicCtx := cb.buildDynamicContext(channel, chatID)

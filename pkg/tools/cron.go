@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
@@ -23,29 +24,50 @@ type CronTool struct {
 	cronService *cron.CronService
 	executor    JobExecutor
 	msgBus      *bus.MessageBus
-	execTool    *ExecTool
-	channel     string
-	chatID      string
-	mu          sync.RWMutex
+	// sandboxManager is the agent-level sandbox manager used to execute
+	// scheduled commands. It respects the configured sandbox mode so that
+	// cron jobs run inside the same isolation boundary as regular tool calls.
+	sandboxManager sandbox.Manager
+	execGuard      *ExecTool
+	execTimeout    time.Duration
+	channel        string
+	chatID         string
+	mu             sync.RWMutex
 }
 
-// NewCronTool creates a new CronTool
-// execTimeout: 0 means no timeout, >0 sets the timeout duration
+// NewCronTool creates a new CronTool.
+// mgr is the agent's sandbox.Manager used to execute scheduled shell commands.
+// If mgr is nil, commands run on the host sandbox (equivalent to sandbox mode off).
+// execTimeout: 0 means no timeout, >0 sets the timeout duration.
 func NewCronTool(
-	cronService *cron.CronService, executor JobExecutor, msgBus *bus.MessageBus, workspace string, restrict bool,
-	execTimeout time.Duration, config *config.Config,
+	cronService *cron.CronService,
+	executor JobExecutor,
+	msgBus *bus.MessageBus,
+	workspace string,
+	restrict bool,
+	execTimeout time.Duration,
+	config *config.Config,
+	mgr sandbox.Manager,
 ) (*CronTool, error) {
-	execTool, err := NewExecToolWithConfig(workspace, restrict, config)
+	var sandboxManager sandbox.Manager
+	if mgr != nil {
+		sandboxManager = mgr
+	} else {
+		// Fallback: build a host-only sandbox manager when no manager is provided.
+		sandboxManager = sandbox.NewFromConfigAsManager(workspace, restrict, config)
+	}
+	guard, err := NewExecToolWithConfig(workspace, restrict, config)
 	if err != nil {
 		return nil, fmt.Errorf("unable to configure exec tool: %w", err)
 	}
-
-	execTool.SetTimeout(execTimeout)
+	guard.SetTimeout(execTimeout)
 	return &CronTool{
-		cronService: cronService,
-		executor:    executor,
-		msgBus:      msgBus,
-		execTool:    execTool,
+		cronService:    cronService,
+		executor:       executor,
+		msgBus:         msgBus,
+		sandboxManager: sandboxManager,
+		execGuard:      guard,
+		execTimeout:    execTimeout,
 	}, nil
 }
 
@@ -288,16 +310,48 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 
 	// Execute command if present
 	if job.Payload.Command != "" {
-		args := map[string]any{
-			"command": job.Payload.Command,
-		}
-
-		result := t.execTool.Execute(ctx, args)
 		var output string
-		if result.IsError {
-			output = fmt.Sprintf("Error executing scheduled command: %s", result.ForLLM)
+		if t.execGuard != nil {
+			cwd := t.execGuard.workingDir
+			if guardError := t.execGuard.guardCommand(job.Payload.Command, cwd); guardError != "" {
+				output = fmt.Sprintf("Error executing scheduled command: %s", guardError)
+				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer pubCancel()
+				t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
+					Channel: channel,
+					ChatID:  chatID,
+					Content: output,
+				})
+				return "ok"
+			}
+		}
+		res, err := t.sandboxManager.Exec(ctx, sandbox.ExecRequest{
+			Command: job.Payload.Command,
+			WorkingDir: func() string {
+				if t.execGuard == nil {
+					return "."
+				}
+				workspace := t.sandboxManager.GetWorkspace(ctx)
+				cwd := workspace
+				if cwd == "" {
+					cwd = "."
+				}
+				return t.execGuard.resolveSandboxWorkingDir(cwd, workspace)
+			}(),
+			TimeoutMs: t.execTimeout.Milliseconds(),
+		})
+		if err != nil {
+			output = fmt.Sprintf("Error executing scheduled command: %v", err)
 		} else {
-			output = fmt.Sprintf("Scheduled command '%s' executed:\n%s", job.Payload.Command, result.ForLLM)
+			cmdOutput := res.Stdout
+			if res.Stderr != "" {
+				cmdOutput += "\nSTDERR:\n" + res.Stderr
+			}
+			if res.ExitCode != 0 {
+				output = fmt.Sprintf("Error executing scheduled command: %s\nExit code: %d", cmdOutput, res.ExitCode)
+			} else {
+				output = fmt.Sprintf("Scheduled command '%s' executed:\n%s", job.Payload.Command, cmdOutput)
+			}
 		}
 
 		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)

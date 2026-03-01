@@ -1,18 +1,17 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/agent/sandbox"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -147,23 +146,49 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		return ErrorResult("command is required")
 	}
 
-	cwd := t.workingDir
-	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		if t.restrictToWorkspace && t.workingDir != "" {
-			resolvedWD, err := validatePath(wd, t.workingDir, true)
-			if err != nil {
-				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
-			}
-			cwd = resolvedWD
-		} else {
-			cwd = wd
+	wd, _ := args["working_dir"].(string)
+
+	sb := sandbox.FromContext(ctx)
+	if sb == nil {
+		return ErrorResult("sandbox environment unavailable")
+	}
+
+	effectiveWorkspace := sb.GetWorkspace(ctx)
+
+	// Resolve the working directory
+	cwd := wd
+	if cwd == "" {
+		cwd = effectiveWorkspace
+	}
+
+	if cwd == "" {
+		if dir, err := os.Getwd(); err == nil {
+			cwd = dir
 		}
 	}
 
 	if cwd == "" {
-		wd, err := os.Getwd()
-		if err == nil {
-			cwd = wd
+		cwd = "."
+	}
+
+	if wd != "" && t.restrictToWorkspace && effectiveWorkspace != "" {
+		resolvedWD, err := sandbox.ValidatePath(wd, effectiveWorkspace, true)
+		if err != nil {
+			// If ValidatePath explicitly found the path is outside (e.g. symlink escape),
+			// block it immediately and do NOT fall back to prefix matching.
+			if errors.Is(err, sandbox.ErrOutsideWorkspace) {
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
+			}
+
+			// In sandbox mode, allow explicit container workspace paths when
+			// restrict_to_workspace is enabled, but only for paths that don't exist on host.
+			if filepath.IsAbs(wd) && isSandboxWorkspaceAbsolutePath(wd, effectiveWorkspace) {
+				cwd = wd
+			} else {
+				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
+			}
+		} else {
+			cwd = resolvedWD
 		}
 	}
 
@@ -171,73 +196,27 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		return ErrorResult(guardError)
 	}
 
-	// timeout == 0 means no timeout
-	var cmdCtx context.Context
-	var cancel context.CancelFunc
-	if t.timeout > 0 {
-		cmdCtx, cancel = context.WithTimeout(ctx, t.timeout)
-	} else {
-		cmdCtx, cancel = context.WithCancel(ctx)
-	}
-	defer cancel()
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(cmdCtx, "powershell", "-NoProfile", "-NonInteractive", "-Command", command)
-	} else {
-		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
-	}
-	if cwd != "" {
-		cmd.Dir = cwd
-	}
-
-	prepareCommandForTermination(cmd)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Start(); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Wait()
-	}()
-
-	var err error
-	select {
-	case err = <-done:
-	case <-cmdCtx.Done():
-		_ = terminateProcessTree(cmd)
-		select {
-		case err = <-done:
-		case <-time.After(2 * time.Second):
-			if cmd.Process != nil {
-				_ = cmd.Process.Kill()
-			}
-			err = <-done
-		}
-	}
-
-	output := stdout.String()
-	if stderr.Len() > 0 {
-		output += "\nSTDERR:\n" + stderr.String()
-	}
-
+	sandboxWD := t.resolveSandboxWorkingDir(cwd, effectiveWorkspace)
+	res, err := sb.Exec(ctx, sandbox.ExecRequest{
+		Command:    command,
+		WorkingDir: sandboxWD,
+		TimeoutMs:  t.timeout.Milliseconds(),
+	})
 	if err != nil {
-		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
-			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "context deadline exceeded") {
+			msg := fmt.Sprintf("command timed out after %v", t.timeout)
 			return &ToolResult{
 				ForLLM:  msg,
 				ForUser: msg,
 				IsError: true,
 			}
 		}
-		output += fmt.Sprintf("\nExit code: %v", err)
+		return ErrorResult(fmt.Sprintf("sandbox exec failed: %v", err))
 	}
-
+	output := res.Stdout
+	if res.Stderr != "" {
+		output += "\nSTDERR:\n" + res.Stderr
+	}
 	if output == "" {
 		output = "(no output)"
 	}
@@ -247,14 +226,14 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
 	}
 
-	if err != nil {
+	if res.ExitCode != 0 {
+		output += fmt.Sprintf("\nExit code: %d", res.ExitCode)
 		return &ToolResult{
-			ForLLM:  output,
+			ForLLM:  fmt.Sprintf("Command failed with exit code %d:\n%s", res.ExitCode, output),
 			ForUser: output,
 			IsError: true,
 		}
 	}
-
 	return &ToolResult{
 		ForLLM:  output,
 		ForUser: output,
@@ -263,18 +242,32 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 }
 
 func (t *ExecTool) guardCommand(command, cwd string) string {
+	return guardCommandWithPolicy(
+		command,
+		cwd,
+		t.restrictToWorkspace,
+		t.denyPatterns,
+		t.allowPatterns,
+	)
+}
+
+func guardCommandWithPolicy(
+	command, cwd string,
+	restrictToWorkspace bool,
+	denyPatterns, allowPatterns []*regexp.Regexp,
+) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
 
-	for _, pattern := range t.denyPatterns {
+	for _, pattern := range denyPatterns {
 		if pattern.MatchString(lower) {
 			return "Command blocked by safety guard (dangerous pattern detected)"
 		}
 	}
 
-	if len(t.allowPatterns) > 0 {
+	if len(allowPatterns) > 0 {
 		allowed := false
-		for _, pattern := range t.allowPatterns {
+		for _, pattern := range allowPatterns {
 			if pattern.MatchString(lower) {
 				allowed = true
 				break
@@ -285,7 +278,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		}
 	}
 
-	if t.restrictToWorkspace {
+	if restrictToWorkspace {
 		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
 			return "Command blocked by safety guard (path traversal detected)"
 		}
@@ -315,6 +308,44 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	return ""
+}
+
+func (t *ExecTool) resolveSandboxWorkingDir(cwd, workspace string) string {
+	trimmed := strings.TrimSpace(cwd)
+	if trimmed == "" {
+		return "."
+	}
+	if !filepath.IsAbs(trimmed) {
+		return trimmed
+	}
+	base := strings.TrimSpace(workspace)
+	if base != "" {
+		absBase, err := filepath.Abs(base)
+		if err == nil {
+			rel, err := filepath.Rel(absBase, trimmed)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+				if rel == "." {
+					return "."
+				}
+				return filepath.ToSlash(rel)
+			}
+		}
+	}
+	if isSandboxWorkspaceAbsolutePath(trimmed, workspace) {
+		return filepath.ToSlash(trimmed)
+	}
+	// Preserve explicit absolute paths in sandbox mode (e.g. /tmp/logs),
+	// instead of silently downgrading to ".".
+	return filepath.ToSlash(trimmed)
+}
+
+func isSandboxWorkspaceAbsolutePath(wd, workspace string) bool {
+	if workspace == "" {
+		return false
+	}
+	cleanWD := path.Clean(filepath.ToSlash(strings.TrimSpace(wd)))
+	cleanWS := path.Clean(filepath.ToSlash(strings.TrimSpace(workspace)))
+	return cleanWD == cleanWS || strings.HasPrefix(cleanWD, cleanWS+"/")
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

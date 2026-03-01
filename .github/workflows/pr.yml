@@ -41,3 +41,5 @@ jobs:
 
       - name: Run go test
         run: go test ./...
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
