@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 const testFetchLimit = int64(10 * 1024 * 1024)
@@ -23,7 +25,11 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -59,7 +65,11 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -80,7 +90,11 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 
 // TestWebTool_WebFetch_InvalidURL verifies error handling for invalid URL
 func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
-	tool := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "not-a-valid-url",
@@ -101,7 +115,11 @@ func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 
 // TestWebTool_WebFetch_UnsupportedScheme verifies error handling for non-http URLs
 func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
-	tool := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "ftp://example.com/file.txt",
@@ -122,7 +140,11 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingURL verifies error handling for missing URL
 func TestWebTool_WebFetch_MissingURL(t *testing.T) {
-	tool := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{}
 
@@ -150,7 +172,11 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(1000, testFetchLimit) // Limit to 1000 chars
+	tool, err := NewWebFetchTool(1000, testFetchLimit) // Limit to 1000 chars
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -194,7 +220,10 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 	defer ts.Close()
 
 	// Initialize the tool
-	tool := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
 
 	// Prepare the arguments pointing to the URL of our local mock server
 	args := map[string]any{
@@ -268,7 +297,11 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -369,7 +402,11 @@ func TestWebFetchTool_extractText(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
-	tool := NewWebFetchTool(50000, testFetchLimit)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "https://",
@@ -491,15 +528,22 @@ func TestCreateHTTPClient_ProxyFromEnvironmentWhenConfigEmpty(t *testing.T) {
 }
 
 func TestNewWebFetchToolWithProxy(t *testing.T) {
-	tool := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890", testFetchLimit)
-	if tool.maxChars != 1024 {
+	tool, err := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890", testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	} else if tool.maxChars != 1024 {
 		t.Fatalf("maxChars = %d, want %d", tool.maxChars, 1024)
 	}
+
 	if tool.proxy != "http://127.0.0.1:7890" {
 		t.Fatalf("proxy = %q, want %q", tool.proxy, "http://127.0.0.1:7890")
 	}
 
-	tool = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890", testFetchLimit)
+	tool, err = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890", testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	if tool.maxChars != 50000 {
 		t.Fatalf("default maxChars = %d, want %d", tool.maxChars, 50000)
 	}

@@ -522,23 +522,16 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolR
 type WebFetchTool struct {
 	maxChars        int
 	proxy           string
+	client          *http.Client
 	fetchLimitBytes int64
 }
 
-func NewWebFetchTool(maxChars int, fetchLimitBytes int64) *WebFetchTool {
-	if maxChars <= 0 {
-		maxChars = 50000
-	}
-	if fetchLimitBytes <= 0 {
-		fetchLimitBytes = 10 * 1024 * 1024 // Security Fallback
-	}
-	return &WebFetchTool{
-		maxChars:        maxChars,
-		fetchLimitBytes: fetchLimitBytes,
-	}
+func NewWebFetchTool(maxChars int, fetchLimitBytes int64) (*WebFetchTool, error) {
+	// createHTTPClient cannot fail with an empty proxy string.
+	return NewWebFetchToolWithProxy(maxChars, "", fetchLimitBytes)
 }
 
-func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64) *WebFetchTool {
+func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64) (*WebFetchTool, error) {
 	if maxChars <= 0 {
 		maxChars = defaultMaxChars
 	}
@@ -558,8 +551,9 @@ func NewWebFetchToolWithProxy(maxChars int, proxy string, fetchLimitBytes int64)
 	return &WebFetchTool{
 		maxChars:        maxChars,
 		proxy:           proxy,
+		client:          client,
 		fetchLimitBytes: fetchLimitBytes,
-	}
+	}, nil
 }
 
 func (t *WebFetchTool) Name() string {
