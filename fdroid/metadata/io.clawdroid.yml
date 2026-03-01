@@ -1,0 +1,67 @@
+# F-Droid metadata for ClawDroid
+# Reference: https://f-droid.org/docs/Build_Metadata_Reference/
+#
+# This file is a template for submitting to fdroiddata.
+# To submit: fork https://gitlab.com/fdroid/fdroiddata, add this file
+# to metadata/, and create a merge request.
+
+Categories:
+  - System
+  - Internet
+
+License: MIT
+AuthorName: KarakuriAgent
+WebSite: https://github.com/KarakuriAgent/clawdroid
+SourceCode: https://github.com/KarakuriAgent/clawdroid
+IssueTracker: https://github.com/KarakuriAgent/clawdroid/issues
+Changelog: https://github.com/KarakuriAgent/clawdroid/releases
+
+AntiFeatures:
+  NonFreeNet:
+    en-US: Requires a third-party LLM API (OpenAI, Anthropic, etc.) to function.
+    ja: 動作にサードパーティのLLM API（OpenAI、Anthropic等）が必要です。
+
+RepoType: git
+Repo: https://github.com/KarakuriAgent/clawdroid.git
+
+Builds:
+  - versionName: 0.2.0
+    versionCode: 2
+    commit: '0.2.0'
+    timeout: 20000
+    subdir: android/app
+    submodules: true
+
+    sudo:
+      - apt-get update
+      - apt-get install -y make
+
+    init: |-
+      cd ../..
+      # Extract Go version from go.mod
+      GO_VERSION=$(grep '^go ' go.mod | awk '{print $2}')
+      # Download and install Go
+      wget -q https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz
+      tar -C $HOME -xzf go${GO_VERSION}.linux-amd64.tar.gz
+      rm go${GO_VERSION}.linux-amd64.tar.gz
+
+    prebuild: |-
+      cd ../..
+      export PATH=$HOME/go/bin:$PATH
+      export GOPATH=$HOME/gopath
+      # Build Go backend for all Android architectures
+      make build-android
+
+    gradle:
+      - embedded
+
+    ndk: r27c
+
+    antifeatures:
+      NonFreeNet:
+        en-US: Requires a third-party LLM API to function.
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.2.0
+CurrentVersionCode: 2

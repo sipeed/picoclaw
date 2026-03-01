@@ -1,0 +1,2 @@
+* Fix CA certificate path for CGO_ENABLED=0 Android builds
+* Fix DNS resolver for CGO_ENABLED=0 Android builds

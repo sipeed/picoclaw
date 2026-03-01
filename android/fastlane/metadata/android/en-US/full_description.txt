@@ -1,0 +1,26 @@
+ClawDroid is an Android AI assistant with an embedded Go backend. Install the APK, launch, and start chatting — no separate server setup needed.
+
+A Kotlin/Jetpack Compose app provides the chat UI, voice assistant, and device automation. The Go backend runs as a single binary bundled inside the APK, handling the agent loop, tool execution, LLM calls, and messaging channels.
+
+<b>Features:</b>
+
+* Chat UI built with Jetpack Compose
+* Floating assistant overlay — replace Google Assistant with long-press home
+* Voice mode — continuous conversation loop (listen, send, think, speak)
+* Device automation — tap, swipe, text input, screenshot via AccessibilityService
+* 16+ built-in tools — file operations, web search, memory, cron, sub-agents, MCP
+* Multi-channel messaging — Telegram, Discord, Slack, WhatsApp, LINE
+* 10+ LLM providers — OpenAI, Anthropic, Gemini, DeepSeek, Groq, Mistral, Ollama, and more
+* Long-term memory and daily notes
+* Scheduled tasks with cron expressions
+* MCP (Model Context Protocol) server support
+* Customizable personality via workspace files
+
+<b>Two editions:</b>
+
+* Embedded — Go backend bundled in the APK, works out of the box
+* Termux — Run the Go backend separately in Termux for advanced users
+
+Requires an LLM API key (OpenAI, Anthropic, Gemini, etc.) to function.
+
+Source code: https://github.com/KarakuriAgent/clawdroid

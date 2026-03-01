@@ -1,0 +1,11 @@
+Initial release.
+
+* Chat UI with Jetpack Compose
+* Embedded Go backend (single binary in APK)
+* Voice mode with continuous conversation loop
+* Floating assistant overlay (replace Google Assistant)
+* Device automation via AccessibilityService
+* 16+ built-in tools (file ops, web search, memory, cron, MCP)
+* Multi-channel support (Telegram, Discord, Slack, WhatsApp, LINE)
+* 10+ LLM providers (OpenAI, Anthropic, Gemini, and more)
+* Termux edition for advanced users

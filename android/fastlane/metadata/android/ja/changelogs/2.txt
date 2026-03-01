@@ -1,0 +1,2 @@
+* CGO_ENABLED=0 Androidビルドの CA 証明書パスを修正
+* CGO_ENABLED=0 AndroidビルドのDNSリゾルバーを修正

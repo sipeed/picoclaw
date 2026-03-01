@@ -1,0 +1,26 @@
+ClawDroidはGoバックエンドを内蔵したAndroid AIアシスタントです。APKをインストールして起動するだけですぐに使えます。サーバーの別途セットアップは不要です。
+
+Kotlin/Jetpack Composeアプリがチャット UI、音声アシスタント、デバイス自動操作を提供します。Goバックエンドはシングルバイナリとして APK 内にバンドルされ、エージェントループ、ツール実行、LLM呼び出し、メッセージングチャンネルを処理します。
+
+<b>主な機能:</b>
+
+* Jetpack Composeで構築されたチャットUI
+* フローティングアシスタントオーバーレイ — ホームボタン長押しでGoogleアシスタントの代わりに起動
+* 音声モード — 継続的な会話ループ（聞く→送信→思考→話す）
+* デバイス自動操作 — AccessibilityServiceによるタップ、スワイプ、テキスト入力、スクリーンショット
+* 16以上の組み込みツール — ファイル操作、Web検索、メモリ、cron、サブエージェント、MCP
+* マルチチャンネル — Telegram、Discord、Slack、WhatsApp、LINE
+* 10以上のLLMプロバイダー — OpenAI、Anthropic、Gemini、DeepSeek、Groq、Mistral、Ollama等
+* 長期メモリとデイリーノート
+* cron式によるスケジュールタスク
+* MCP（Model Context Protocol）サーバー対応
+* ワークスペースファイルによるカスタマイズ可能なパーソナリティ
+
+<b>2つのエディション:</b>
+
+* 組み込み版 — Goバックエンドを APK に内蔵、すぐに使える
+* Termux版 — 上級者向け、GoバックエンドをTermuxで別途実行
+
+動作にはLLM APIキー（OpenAI、Anthropic、Gemini等）が必要です。
+
+ソースコード: https://github.com/KarakuriAgent/clawdroid

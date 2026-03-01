@@ -1,0 +1,1 @@
+AI assistant with embedded Go backend - chat, voice, device automation
