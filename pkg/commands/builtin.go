@@ -75,29 +75,7 @@ func builtinDefinitions(cfg *config.Config, runtime Runtime) []Definition {
 			Usage:       "/show [model|channel]",
 			Channels:    []string{"telegram"},
 			Handler: func(_ context.Context, req Request) error {
-				if req.Reply == nil {
-					return nil
-				}
-				if cfg == nil {
-					return req.Reply("Command unavailable in current context.")
-				}
-				args := commandArgs(req.Text)
-				if args == "" {
-					return req.Reply("Usage: /show [model|channel]")
-				}
-
-				switch args {
-				case "model":
-					return req.Reply(fmt.Sprintf(
-						"Current Model: %s (Provider: %s)",
-						cfg.Agents.Defaults.GetModelName(),
-						cfg.Agents.Defaults.Provider,
-					))
-				case "channel":
-					return req.Reply(fmt.Sprintf("Current Channel: %s", req.Channel))
-				default:
-					return req.Reply(fmt.Sprintf("Unknown parameter: %s. Try 'model' or 'channel'.", args))
-				}
+				return handleShowCommand(req, cfg)
 			},
 		},
 		{
@@ -106,34 +84,7 @@ func builtinDefinitions(cfg *config.Config, runtime Runtime) []Definition {
 			Usage:       "/list [models|channels]",
 			Channels:    []string{"telegram"},
 			Handler: func(_ context.Context, req Request) error {
-				if req.Reply == nil {
-					return nil
-				}
-				if cfg == nil {
-					return req.Reply("Command unavailable in current context.")
-				}
-				args := commandArgs(req.Text)
-				if args == "" {
-					return req.Reply("Usage: /list [models|channels]")
-				}
-
-				switch args {
-				case "models":
-					provider := cfg.Agents.Defaults.Provider
-					if provider == "" {
-						provider = "configured default"
-					}
-					return req.Reply(fmt.Sprintf(
-						"Configured Model: %s\nProvider: %s\n\nTo change models, update config.json",
-						cfg.Agents.Defaults.GetModelName(),
-						provider,
-					))
-				case "channels":
-					enabled := enabledChannels(cfg)
-					return req.Reply(fmt.Sprintf("Enabled Channels:\n- %s", strings.Join(enabled, "\n- ")))
-				default:
-					return req.Reply(fmt.Sprintf("Unknown parameter: %s. Try 'models' or 'channels'.", args))
-				}
+				return handleListCommand(req, cfg)
 			},
 		},
 	}
@@ -259,6 +210,59 @@ func handleSessionCommand(req Request, runtime Runtime) error {
 
 	default:
 		return reply(req, "Usage: /session [list|resume <index>]")
+	}
+}
+
+func handleShowCommand(req Request, cfg *config.Config) error {
+	if cfg == nil {
+		return reply(req, "Command unavailable in current context.")
+	}
+
+	args := commandArgs(req.Text)
+	if args == "" {
+		return reply(req, "Usage: /show [model|channel]")
+	}
+
+	switch args {
+	case "model":
+		return reply(req, fmt.Sprintf(
+			"Current Model: %s (Provider: %s)",
+			cfg.Agents.Defaults.GetModelName(),
+			cfg.Agents.Defaults.Provider,
+		))
+	case "channel":
+		return reply(req, fmt.Sprintf("Current Channel: %s", req.Channel))
+	default:
+		return reply(req, fmt.Sprintf("Unknown parameter: %s. Try 'model' or 'channel'.", args))
+	}
+}
+
+func handleListCommand(req Request, cfg *config.Config) error {
+	if cfg == nil {
+		return reply(req, "Command unavailable in current context.")
+	}
+
+	args := commandArgs(req.Text)
+	if args == "" {
+		return reply(req, "Usage: /list [models|channels]")
+	}
+
+	switch args {
+	case "models":
+		provider := cfg.Agents.Defaults.Provider
+		if provider == "" {
+			provider = "configured default"
+		}
+		return reply(req, fmt.Sprintf(
+			"Configured Model: %s\nProvider: %s\n\nTo change models, update config.json",
+			cfg.Agents.Defaults.GetModelName(),
+			provider,
+		))
+	case "channels":
+		enabled := enabledChannels(cfg)
+		return reply(req, fmt.Sprintf("Enabled Channels:\n- %s", strings.Join(enabled, "\n- ")))
+	default:
+		return reply(req, fmt.Sprintf("Unknown parameter: %s. Try 'models' or 'channels'.", args))
 	}
 }
 
