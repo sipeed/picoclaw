@@ -9,33 +9,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/commands"
 )
-
-func TestDispatchCommand_DoesNotConsumeGenericCommandsLocally(t *testing.T) {
-	ch := &TelegramChannel{}
-	called := false
-	ch.dispatcher = commands.DispatchFunc(func(context.Context, commands.Request) commands.Result {
-		called = true
-		return commands.Result{Matched: true, Command: "noop"}
-	})
-
-	msg := telego.Message{
-		Text:      "/help",
-		MessageID: 7,
-		Chat: telego.Chat{
-			ID: 123,
-		},
-	}
-
-	handled := ch.dispatchCommand(context.Background(), msg)
-	if handled {
-		t.Fatalf("handled=%v", handled)
-	}
-	if called {
-		t.Fatalf("handled=%v called=%v", handled, called)
-	}
-}
 
 func TestHandleMessage_DoesNotConsumeGenericCommandsLocally(t *testing.T) {
 	messageBus := bus.NewMessageBus()

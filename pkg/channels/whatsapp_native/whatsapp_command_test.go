@@ -14,37 +14,14 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-func TestTryHandleCommand_DoesNotConsumeGenericCommandsLocally(t *testing.T) {
-	ch := &WhatsAppNativeChannel{}
-	called := false
-	ch.dispatcher = commands.DispatchFunc(func(context.Context, commands.Request) commands.Result {
-		called = true
-		return commands.Result{Matched: true, Handled: true}
-	})
-
-	handled := ch.tryHandleCommand(context.Background(), "/help", "chat1", "user1", "mid1")
-	if handled {
-		t.Fatalf("handled=%v", handled)
-	}
-	if called {
-		t.Fatalf("handled=%v called=%v", handled, called)
-	}
-}
-
 func TestHandleIncoming_DoesNotConsumeGenericCommandsLocally(t *testing.T) {
 	messageBus := bus.NewMessageBus()
-	called := false
 	ch := &WhatsAppNativeChannel{
 		BaseChannel: channels.NewBaseChannel("whatsapp_native", config.WhatsAppConfig{}, messageBus, nil),
-		dispatcher: commands.DispatchFunc(func(context.Context, commands.Request) commands.Result {
-			called = true
-			return commands.Result{Matched: true, Handled: true}
-		}),
-		runCtx: context.Background(),
+		runCtx:      context.Background(),
 	}
 
 	evt := &events.Message{
@@ -62,10 +39,6 @@ func TestHandleIncoming_DoesNotConsumeGenericCommandsLocally(t *testing.T) {
 	}
 
 	ch.handleIncoming(evt)
-
-	if called {
-		t.Fatal("expected generic command dispatch to be bypassed")
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
