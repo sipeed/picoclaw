@@ -28,14 +28,14 @@ type SubagentManager struct {
 	registry         *providers.ModelRegistry
 	defaultModelName string // registry key; looked up at spawn time
 	bus              *bus.MessageBus
-	workspace      string
-	tools          *ToolRegistry
-	maxIterations  int
-	maxTokens      int
-	temperature    float64
-	hasMaxTokens   bool
-	hasTemperature bool
-	nextID         int
+	workspace        string
+	tools            *ToolRegistry
+	maxIterations    int
+	maxTokens        int
+	temperature      float64
+	hasMaxTokens     bool
+	hasTemperature   bool
+	nextID           int
 }
 
 func NewSubagentManager(
@@ -72,7 +72,7 @@ func (sm *SubagentManager) UpdateModel(modelName string) {
 	defer sm.mu.Unlock()
 	sm.defaultModelName = modelName
 }
-// If not set, subagent will have access to the provided tools.
+
 func (sm *SubagentManager) SetTools(tools *ToolRegistry) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
