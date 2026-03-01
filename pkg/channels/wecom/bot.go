@@ -25,6 +25,7 @@ import (
 type WeComBotChannel struct {
 	*channels.BaseChannel
 	config        config.WeComConfig
+	client        *http.Client
 	ctx           context.Context
 	cancel        context.CancelFunc
 	processedMsgs map[string]bool // Message deduplication: msg_id -> processed
@@ -97,6 +98,7 @@ func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*We
 	return &WeComBotChannel{
 		BaseChannel:   base,
 		config:        cfg,
+		client:        &http.Client{Timeout: 60 * time.Second},
 		ctx:           ctx,
 		cancel:        cancel,
 		processedMsgs: make(map[string]bool),
@@ -450,8 +452,7 @@ func (c *WeComBotChannel) sendWebhookReply(ctx context.Context, userID, content 
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return channels.ClassifyNetError(err)
 	}

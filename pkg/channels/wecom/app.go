@@ -32,6 +32,7 @@ const (
 type WeComAppChannel struct {
 	*channels.BaseChannel
 	config        config.WeComAppConfig
+	client        *http.Client
 	accessToken   string
 	tokenExpiry   time.Time
 	tokenMu       sync.RWMutex
@@ -133,6 +134,7 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 	return &WeComAppChannel{
 		BaseChannel:   base,
 		config:        cfg,
+		client:        &http.Client{Timeout: 60 * time.Second},
 		ctx:           ctx,
 		cancel:        cancel,
 		processedMsgs: make(map[string]bool),
@@ -306,8 +308,7 @@ func (c *WeComAppChannel) uploadMedia(ctx context.Context, accessToken, mediaTyp
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return "", channels.ClassifyNetError(err)
 	}
@@ -364,8 +365,7 @@ func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, use
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return channels.ClassifyNetError(err)
 	}
@@ -746,8 +746,7 @@ func (c *WeComAppChannel) sendTextMessage(ctx context.Context, accessToken, user
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return channels.ClassifyNetError(err)
 	}

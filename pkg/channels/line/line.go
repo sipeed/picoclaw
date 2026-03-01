@@ -45,6 +45,7 @@ type replyTokenEntry struct {
 type LINEChannel struct {
 	*channels.BaseChannel
 	config         config.LINEConfig
+	client         *http.Client
 	botUserID      string   // Bot's user ID
 	botBasicID     string   // Bot's basic ID (e.g. @216ru...)
 	botDisplayName string   // Bot's display name for text-based mention detection
@@ -69,6 +70,7 @@ func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINECha
 	return &LINEChannel{
 		BaseChannel: base,
 		config:      cfg,
+		client:      &http.Client{Timeout: 60 * time.Second},
 	}, nil
 }
 
@@ -104,8 +106,7 @@ func (c *LINEChannel) fetchBotInfo() error {
 	}
 	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -644,8 +645,7 @@ func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload any)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return channels.ClassifyNetError(err)
 	}
