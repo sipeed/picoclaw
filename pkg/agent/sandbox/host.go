@@ -114,6 +114,9 @@ func (h *HostSandbox) ExecStream(
 	}
 
 	prepareCommandForTermination(cmd)
+	cmd.Cancel = func() error {
+		return terminateProcessTree(cmd)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -168,11 +171,9 @@ func (h *HostSandbox) ExecStream(
 
 	waitErr := cmd.Wait()
 	if streamErr != nil {
-		_ = terminateProcessTree(cmd)
 		return nil, streamErr
 	}
 	if cmdCtx.Err() != nil {
-		_ = terminateProcessTree(cmd)
 		return nil, cmdCtx.Err()
 	}
 

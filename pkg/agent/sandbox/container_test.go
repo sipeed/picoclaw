@@ -325,7 +325,7 @@ func TestContainerSandbox_RegistryPath_UsesSandboxStateDir(t *testing.T) {
 		Workspace:     "/tmp/ws",
 		WorkspaceRoot: "/tmp/sbx",
 	})
-	want := filepath.Join(home, ".picoclaw", "sandboxes", "containers.json")
+	want := filepath.Join(home, ".picoclaw", "sandbox", "containers.json")
 	if got := sb.registryPath(); got != want {
 		t.Fatalf("registryPath = %q, want %q", got, want)
 	}
@@ -335,7 +335,7 @@ func TestContainerSandbox_RegistryPath_UsesPicoClawHomeOverride(t *testing.T) {
 	picoHome := t.TempDir()
 	t.Setenv("PICOCLAW_HOME", picoHome)
 	sb := NewContainerSandbox(ContainerSandboxConfig{})
-	want := filepath.Join(picoHome, "sandboxes", "containers.json")
+	want := filepath.Join(picoHome, "sandbox", "containers.json")
 	if got := sb.registryPath(); got != want {
 		t.Fatalf("registryPath = %q, want %q", got, want)
 	}
@@ -647,5 +647,13 @@ func TestSyncAgentWorkspace_SyncsSkillsDirectory(t *testing.T) {
 	}
 	if string(content) != "new skill" {
 		t.Fatalf("skill file content mismatch. got: %s", string(content))
+	}
+}
+
+func TestContainerSandbox_Resolve(t *testing.T) {
+	c := NewContainerSandbox(ContainerSandboxConfig{})
+	sb, err := c.Resolve(context.Background())
+	if err != nil || sb != c {
+		t.Fatal("expected Resolve to return self")
 	}
 }

@@ -287,7 +287,7 @@ func (m *scopedSandboxManager) pruneOnce(ctx context.Context) error {
 	if m.pruneIdleHours <= 0 && m.pruneMaxAgeDays <= 0 {
 		return nil
 	}
-	regPath := filepath.Join(infra.ResolveHomeDir(), "sandboxes", defaultSandboxRegistryFile)
+	regPath := filepath.Join(infra.ResolveHomeDir(), "sandbox", defaultSandboxRegistryFile)
 	registryMu.Lock()
 	data, err := loadRegistry(regPath)
 	registryMu.Unlock()
@@ -315,12 +315,17 @@ func (m *scopedSandboxManager) pruneOnce(ctx context.Context) error {
 		if !shouldPruneEntry(pruneCfg, now, entry) {
 			continue
 		}
+
+		// Best-effort cleanup: we attempt to prune or remove all eligible entries.
+		// If one fails, we record the error and continue to the next to prevent
+		// a single bad container from halting the entire garbage collection process.
 		if sb, ok := byContainer[entry.ContainerName]; ok {
 			if err := sb.Prune(ctx); err != nil && firstErr == nil {
 				firstErr = err
 			}
 			continue
 		}
+
 		if err := stopAndRemoveContainerByName(ctx, entry.ContainerName); err != nil && firstErr == nil {
 			firstErr = err
 		}

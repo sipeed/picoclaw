@@ -15,6 +15,6 @@ if [ ! -f "${DOCKERFILE}" ]; then
     exit 1
 fi
 
-docker build -t "${IMAGE_NAME}" -f "${DOCKERFILE}" "${REPO_ROOT}"
+docker build --no-cache -t "${IMAGE_NAME}" -f "${DOCKERFILE}" "${REPO_ROOT}"
 
 echo "Successfully built ${IMAGE_NAME}"

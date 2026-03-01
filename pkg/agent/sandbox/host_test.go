@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestHostSandbox_StartStopFs(t *testing.T) {
@@ -390,5 +391,42 @@ func TestValidatePathErrors(t *testing.T) {
 	_, err = ValidatePath("a.txt/b.txt", root, true)
 	if err == nil {
 		t.Fatalf("expected error when ancestor is file")
+	}
+}
+
+func TestHostSandbox_ExecStream_Cancellation(t *testing.T) {
+	root := t.TempDir()
+	sb := NewHostSandbox(root, false)
+
+	// Test graceful timeout/cancel.
+	// We'll run a bash script that sleeps indefinitely in the foreground.
+	// We expect the command to be terminated and streamErr or ctx.Err() returned.
+	req := ExecRequest{
+		Command:   "sleep 3600",
+		TimeoutMs: 100, // Very short timeout
+	}
+
+	start := time.Now()
+	res, err := sb.Exec(context.Background(), req)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("expected timeout error for sleep command, got nil. Res: %v", res)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("command failed to time out reasonably quickly: %v", elapsed)
+	}
+}
+
+func TestHostSandbox_ExecStream_NoCommand(t *testing.T) {
+	root := t.TempDir()
+	sb := NewHostSandbox(root, false)
+
+	req := ExecRequest{
+		Command: "",
+	}
+	_, err := sb.Exec(context.Background(), req)
+	if err == nil || err.Error() != "empty command" {
+		t.Fatalf("expected 'empty command', got: %v", err)
 	}
 }

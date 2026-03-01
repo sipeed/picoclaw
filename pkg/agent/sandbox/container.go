@@ -356,7 +356,7 @@ func (c *ContainerSandbox) ensureContainer(ctx context.Context) error {
 			_ = removeRegistryEntry(regPath, c.cfg.ContainerName)
 			return c.createAndStart(ctx)
 		}
-		// LOGIC-1: Container is actively running; recreating it now would disrupt
+		// Container is actively running; recreating it now would disrupt
 		// in-flight work. Log a warning so operators can detect configuration drift.
 		// The container will be recreated on the next cold start or prune cycle.
 		logger.WarnCF(
@@ -468,7 +468,7 @@ func (c *ContainerSandbox) registryPath() string {
 }
 
 func (c *ContainerSandbox) sandboxStateDir() string {
-	return filepath.Join(infra.ResolveHomeDir(), "sandboxes")
+	return filepath.Join(infra.ResolveHomeDir(), "sandbox")
 }
 
 func (c *ContainerSandbox) stopAndRemoveContainer(ctx context.Context, containerName string) error {
