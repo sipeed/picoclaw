@@ -361,3 +361,63 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
 	}
 }
+
+func TestProvider_FunctionalOptionExtraHeaders(t *testing.T) {
+	headers := map[string]string{
+		"cf-aig-authorization": "Bearer test-token",
+		"X-Custom-Header":      "custom-value",
+	}
+	p := NewProvider("key", "https://example.com/v1", "", WithExtraHeaders(headers))
+	if len(p.extraHeaders) != 2 {
+		t.Fatalf("len(extraHeaders) = %d, want 2", len(p.extraHeaders))
+	}
+	if p.extraHeaders["cf-aig-authorization"] != "Bearer test-token" {
+		t.Fatalf("extraHeaders[cf-aig-authorization] = %q, want %q",
+			p.extraHeaders["cf-aig-authorization"], "Bearer test-token")
+	}
+}
+
+func TestProvider_ExtraHeaders_SentInRequest(t *testing.T) {
+	var receivedHeaders http.Header
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeaders = r.Header.Clone()
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	headers := map[string]string{
+		"cf-aig-authorization": "Bearer cf-token-123",
+	}
+	p := NewProvider("api-key", server.URL, "", WithExtraHeaders(headers))
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "test"}},
+		nil,
+		"openai/gpt-4o",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	// Verify extra header is sent
+	if got := receivedHeaders.Get("cf-aig-authorization"); got != "Bearer cf-token-123" {
+		t.Errorf("cf-aig-authorization = %q, want %q", got, "Bearer cf-token-123")
+	}
+
+	// Verify standard Authorization header is also sent
+	if got := receivedHeaders.Get("Authorization"); got != "Bearer api-key" {
+		t.Errorf("Authorization = %q, want %q", got, "Bearer api-key")
+	}
+}

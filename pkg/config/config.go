@@ -470,6 +470,9 @@ type ModelConfig struct {
 	ConnectMode string `json:"connect_mode,omitempty"` // Connection mode: stdio, grpc
 	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
 
+	// Cloudflare AI Gateway
+	CfToken string `json:"cf_token,omitempty"` // Cloudflare AI Gateway token for cf-aig-authorization header
+
 	// Optional optimizations
 	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")

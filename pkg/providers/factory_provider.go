@@ -53,7 +53,7 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
-// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot
+// Supported protocols: openai, anthropic, antigravity, claude-cli, codex-cli, github-copilot, cloudflare
 // Returns the provider, the model ID (without protocol prefix), and any error.
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
@@ -138,6 +138,36 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "antigravity":
 		return NewAntigravityProvider(), modelID, nil
+
+	case "cloudflare":
+		// Cloudflare AI Gateway (OpenAI-compatible unified endpoint).
+		// Model format: cloudflare/{upstream_provider}/{model}
+		// e.g., "cloudflare/openai/gpt-5.2" → modelID = "openai/gpt-5.2"
+		// e.g., "cloudflare/workers-ai/@cf/openai/gpt-oss-120b" → modelID = "workers-ai/@cf/openai/gpt-oss-120b"
+		//
+		// Auth modes:
+		//   - Unified Billing: cf_token only (no api_key needed)
+		//   - BYOK: api_key (upstream provider key) + optional cf_token
+		if cfg.APIBase == "" {
+			return nil, "", fmt.Errorf(
+				"api_base is required for cloudflare protocol (e.g., https://gateway.ai.cloudflare.com/v1/ACCOUNT_ID/GATEWAY_ID/compat)",
+			)
+		}
+		if cfg.CfToken == "" && cfg.APIKey == "" {
+			return nil, "", fmt.Errorf("cf_token or api_key is required for cloudflare protocol")
+		}
+		provider, err := NewCloudflareProvider(
+			cfg.APIKey,
+			cfg.APIBase,
+			cfg.CfToken,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+		)
+		if err != nil {
+			return nil, "", fmt.Errorf("creating cloudflare provider: %w", err)
+		}
+		return provider, modelID, nil
 
 	case "claude-cli", "claudecli":
 		workspace := cfg.Workspace

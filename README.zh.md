@@ -464,6 +464,7 @@ Agent 读取 HEARTBEAT.md
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                 |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | 自定义    | 仅 OAuth                                                          |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                 |
+| **Cloudflare AI Gateway** | `cloudflare/` | `https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat` | OpenAI    | [获取令牌](https://www.cloudflare.com/zh-tw/developer-platform/products/ai-gateway/)  |
 
 #### 基础配置示例
 
@@ -558,6 +559,48 @@ Agent 读取 HEARTBEAT.md
   "request_timeout": 300
 }
 ```
+
+**Cloudflare AI Gateway（统一计费）**
+
+使用 Cloudflare 的计费来支付上游服务商 —— 无需各个服务商的 API Key：
+
+```json
+{
+  "model_name": "cf-gpt5",
+  "model": "cloudflare/openai/gpt-5.2",
+  "cf_token": "YOUR_CLOUDFLARE_AIG_TOKEN",
+  "api_base": "https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat"
+}
+```
+
+**Cloudflare AI Gateway（BYOK — 自带密钥）**
+
+通过 Cloudflare 路由请求，同时使用自己的服务商 API Key：
+
+```json
+{
+  "model_name": "cf-claude",
+  "model": "cloudflare/anthropic/claude-sonnet-4.6",
+  "api_key": "sk-ant-your-key",
+  "cf_token": "YOUR_CLOUDFLARE_AIG_TOKEN",
+  "api_base": "https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat"
+}
+```
+
+**Cloudflare Workers AI**
+
+通过 Cloudflare Workers AI 运行无服务器推理模型：
+
+```json
+{
+  "model_name": "cf-gpt-oss-120b",
+  "model": "cloudflare/workers-ai/@cf/openai/gpt-oss-120b",
+  "cf_token": "YOUR_CLOUDFLARE_AIG_TOKEN",
+  "api_base": "https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat"
+}
+```
+
+> 详见 [Cloudflare AI Gateway 文档](https://developers.cloudflare.com/ai-gateway/)、[Workers AI 模型列表](https://developers.cloudflare.com/workers-ai/models/) 和 [Workers AI 定价](https://developers.cloudflare.com/workers-ai/platform/pricing/)。
 
 #### 负载均衡
 
@@ -820,3 +863,4 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 | **Brave Search** | 2000 次查询/月 | 网络搜索功能 |
 | **Tavily** | 1000 次查询/月 | AI Agent 搜索优化 |
 | **Groq** | 提供免费层级 | 极速推理 (Llama, Mixtral) |
+| **Cloudflare AI Gateway** | Workers AI 免费层级 | 多提供商统一计费，无服务器模型 |

@@ -43,6 +43,12 @@
       "model": "openai/gpt-5.2",
       "api_key": "sk-key2",
       "api_base": "https://api2.example.com/v1"
+    },
+    {
+      "model_name": "cf-gpt-oss-120b",
+      "model": "cloudflare/workers-ai/@cf/openai/gpt-oss-120b",
+      "cf_token": "CLOUDFLARE_AIG_TOKEN",
+      "api_base": "https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat"
     }
   ],
   "channels": {

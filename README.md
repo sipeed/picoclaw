@@ -864,6 +864,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
 | **Antigravity**     | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot/` | `localhost:4321`                                    | gRPC      | -                                                                |
+| **Cloudflare AI Gateway** | `cloudflare/` | `https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat` | OpenAI    | [Get Token](https://www.cloudflare.com/zh-tw/developer-platform/products/ai-gateway/) |
 
 #### Basic Configuration
 
@@ -959,6 +960,48 @@ This design also enables **multi-agent support** with flexible provider selectio
 }
 ```
 
+**Cloudflare AI Gateway (Unified Billing)**
+
+Use Cloudflare's billing to pay for upstream providers — no individual API keys needed:
+
+```json
+{
+  "model_name": "cf-gpt5",
+  "model": "cloudflare/openai/gpt-5.2",
+  "cf_token": "YOUR_CLOUDFLARE_AIG_TOKEN",
+  "api_base": "https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat"
+}
+```
+
+**Cloudflare AI Gateway (BYOK — Bring Your Own Key)**
+
+Route through Cloudflare while using your own provider API key:
+
+```json
+{
+  "model_name": "cf-claude",
+  "model": "cloudflare/anthropic/claude-sonnet-4.6",
+  "api_key": "sk-ant-your-key",
+  "cf_token": "YOUR_CLOUDFLARE_AIG_TOKEN",
+  "api_base": "https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat"
+}
+```
+
+**Cloudflare Workers AI**
+
+Run serverless inference via Cloudflare Workers AI models:
+
+```json
+{
+  "model_name": "cf-gpt-oss-120b",
+  "model": "cloudflare/workers-ai/@cf/openai/gpt-oss-120b",
+  "cf_token": "YOUR_CLOUDFLARE_AIG_TOKEN",
+  "api_base": "https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT_ID/YOUR_GATEWAY_ID/compat"
+}
+```
+
+> See [Cloudflare AI Gateway docs](https://developers.cloudflare.com/ai-gateway/), [Workers AI models](https://developers.cloudflare.com/workers-ai/models/), and [Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/) for more details.
+
 #### Load Balancing
 
 Configure multiple endpoints for the same model name—PicoClaw will automatically round-robin between them:
@@ -1033,6 +1076,7 @@ PicoClaw routes providers by protocol family:
 - OpenAI-compatible protocol: OpenRouter, OpenAI-compatible gateways, Groq, Zhipu, and vLLM-style endpoints.
 - Anthropic protocol: Claude-native API behavior.
 - Codex/OAuth path: OpenAI OAuth/token authentication route.
+- Cloudflare AI Gateway: unified OpenAI-compatible proxy supporting multiple upstream providers (OpenAI, Anthropic, Google, Workers AI) via `cf-aig-authorization` header.
 
 This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
 
@@ -1228,10 +1272,11 @@ This happens when another instance of the bot is running. Make sure only one `pi
 
 ## 📝 API Key Comparison
 
-| Service          | Free Tier           | Use Case                              |
-| ---------------- | ------------------- | ------------------------------------- |
-| **OpenRouter**   | 200K tokens/month   | Multiple models (Claude, GPT-4, etc.) |
-| **Zhipu**        | 200K tokens/month   | Best for Chinese users                |
-| **Brave Search** | 2000 queries/month  | Web search functionality              |
-| **Groq**         | Free tier available | Fast inference (Llama, Mixtral)       |
-| **Cerebras**     | Free tier available | Fast inference (Llama, Qwen, etc.)    |
+| Service                    | Free Tier             | Use Case                              |
+| -------------------------- | --------------------- | ------------------------------------- |
+| **OpenRouter**             | 200K tokens/month     | Multiple models (Claude, GPT-4, etc.) |
+| **Zhipu**                  | 200K tokens/month     | Best for Chinese users                |
+| **Brave Search**           | 2000 queries/month    | Web search functionality              |
+| **Groq**                   | Free tier available   | Fast inference (Llama, Mixtral)       |
+| **Cerebras**               | Free tier available   | Fast inference (Llama, Qwen, etc.)    |
+| **Cloudflare AI Gateway**  | Workers AI free tier  | Unified billing for multiple providers, serverless models |
