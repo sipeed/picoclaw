@@ -181,6 +181,24 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://api.mistral.ai/v1"
 				}
 			}
+		case "opencode":
+			if cfg.Providers.Opencode.APIKey != "" {
+				sel.apiKey = cfg.Providers.Opencode.APIKey
+				sel.apiBase = cfg.Providers.Opencode.APIBase
+				sel.proxy = cfg.Providers.Opencode.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://opencode.ai/zen/v1"
+				}
+			}
+		case "kimi", "kimi-code", "moonshot":
+			if cfg.Providers.Moonshot.APIKey != "" {
+				sel.apiKey = cfg.Providers.Moonshot.APIKey
+				sel.apiBase = cfg.Providers.Moonshot.APIBase
+				sel.proxy = cfg.Providers.Moonshot.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://api.kimi.com/coding/v1"
+				}
+			}
 		case "github_copilot", "copilot":
 			sel.providerType = providerTypeGitHubCopilot
 			if cfg.Providers.GitHubCopilot.APIBase != "" {
@@ -201,7 +219,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.apiBase = cfg.Providers.Moonshot.APIBase
 			sel.proxy = cfg.Providers.Moonshot.Proxy
 			if sel.apiBase == "" {
-				sel.apiBase = "https://api.moonshot.cn/v1"
+				sel.apiBase = "https://api.kimi.com/coding/v1"
 			}
 		case strings.HasPrefix(model, "openrouter/") ||
 			strings.HasPrefix(model, "anthropic/") ||
