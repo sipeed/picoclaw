@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -12,6 +14,7 @@ import (
 // AgentRegistry manages multiple agent instances and routes messages to them.
 type AgentRegistry struct {
 	agents   map[string]*AgentInstance
+	cfg      *config.Config
 	resolver *routing.RouteResolver
 	mu       sync.RWMutex
 }
@@ -23,6 +26,7 @@ func NewAgentRegistry(
 ) *AgentRegistry {
 	registry := &AgentRegistry{
 		agents:   make(map[string]*AgentInstance),
+		cfg:      cfg,
 		resolver: routing.NewRouteResolver(cfg),
 	}
 
@@ -104,6 +108,68 @@ func (r *AgentRegistry) CanSpawnSubagent(parentAgentID, targetAgentID string) bo
 func (r *AgentRegistry) GetDefaultAgent() *AgentInstance {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.defaultAgentLocked()
+}
+
+// GetDefaultAgentModel returns the active model name of the default agent.
+func (r *AgentRegistry) GetDefaultAgentModel() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	agent := r.defaultAgentLocked()
+	if agent == nil {
+		return ""
+	}
+	return agent.Model
+}
+
+// SwitchDefaultAgentModel switches the default agent to a named model from config.model_list.
+// It returns old and new runtime model IDs.
+func (r *AgentRegistry) SwitchDefaultAgentModel(modelName string) (string, string, error) {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return "", "", fmt.Errorf("model name is required")
+	}
+
+	if r.cfg == nil {
+		return "", "", fmt.Errorf("registry config not available")
+	}
+
+	modelCfg, err := r.cfg.GetModelConfig(modelName)
+	if err != nil {
+		return "", "", err
+	}
+
+	resolved := *modelCfg
+	if resolved.Workspace == "" {
+		resolved.Workspace = r.cfg.WorkspacePath()
+	}
+
+	provider, modelID, err := providers.CreateProviderFromConfig(&resolved)
+	if err != nil {
+		return "", "", err
+	}
+
+	protocol, _ := providers.ExtractProtocol(resolved.Model)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	agent := r.defaultAgentLocked()
+	if agent == nil {
+		return "", "", fmt.Errorf("no default agent configured")
+	}
+
+	oldModel := agent.Model
+	agent.Provider = provider
+	agent.Model = modelID
+	agent.Candidates = []providers.FallbackCandidate{{
+		Provider: protocol,
+		Model:    modelID,
+	}}
+
+	return oldModel, modelID, nil
+}
+
+func (r *AgentRegistry) defaultAgentLocked() *AgentInstance {
 	if agent, ok := r.agents["main"]; ok {
 		return agent
 	}

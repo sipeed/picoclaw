@@ -292,6 +292,10 @@ func inferMediaType(filename, contentType string) string {
 	return "file"
 }
 
+func (al *AgentLoop) GetRegistry() *AgentRegistry {
+	return al.registry
+}
+
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
 func (al *AgentLoop) RecordLastChannel(channel string) error {
