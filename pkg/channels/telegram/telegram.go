@@ -221,7 +221,6 @@ func (c *TelegramChannel) SendWithID(ctx context.Context, chatID string, content
 	return fmt.Sprintf("%d", sent.MessageID), nil
 }
 
-
 // StartTyping implements channels.TypingCapable.
 // It sends ChatAction(typing) immediately and then repeats every 4 seconds
 // (Telegram's typing indicator expires after ~5s) in a background goroutine.
