@@ -53,6 +53,14 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	var opts []telego.BotOption
 	telegramCfg := cfg.Channels.Telegram
 
+	baseURL, err := normalizeTelegramBaseURL(telegramCfg.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid telegram base_url %q: %w", telegramCfg.BaseURL, err)
+	}
+	if baseURL != "" {
+		opts = append(opts, telego.WithAPIServer(baseURL))
+	}
+
 	if telegramCfg.Proxy != "" {
 		proxyURL, parseErr := url.Parse(telegramCfg.Proxy)
 		if parseErr != nil {
@@ -70,10 +78,6 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 				Proxy: http.ProxyFromEnvironment,
 			},
 		}))
-	}
-
-	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
-		opts = append(opts, telego.WithAPIServer(baseURL))
 	}
 
 	bot, err := telego.NewBot(telegramCfg.Token, opts...)
@@ -98,6 +102,30 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
 	}, nil
+}
+
+func normalizeTelegramBaseURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	normalized := strings.TrimRight(trimmed, "/")
+	parsed, err := url.Parse(normalized)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("scheme must be http or https")
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("host is required")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("query and fragment are not supported")
+	}
+
+	return normalized, nil
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
