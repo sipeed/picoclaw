@@ -49,5 +49,6 @@ func (f *fakeRuntime) Config() *config.Config {
 
 func TestRuntimeContracts_MinimalSessionOps(t *testing.T) {
 	var _ SessionOps = (*fakeSessionOps)(nil)
+	var _ SessionOps = (*session.SessionManager)(nil)
 	var _ Runtime = (*fakeRuntime)(nil)
 }
