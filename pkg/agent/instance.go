@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +52,12 @@ func NewAgentInstance(
 	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
+	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+	if err != nil {
+		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+	}
+	toolsRegistry.Register(execTool)
+
 	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
 	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
 
@@ -92,7 +98,47 @@ func NewAgentInstance(
 		Primary:   model,
 		Fallbacks: fallbacks,
 	}
-	candidates := providers.ResolveCandidates(modelCfg, defaults.Provider)
+	resolveFromModelList := func(raw string) (string, bool) {
+		ensureProtocol := func(model string) string {
+			model = strings.TrimSpace(model)
+			if model == "" {
+				return ""
+			}
+			if strings.Contains(model, "/") {
+				return model
+			}
+			return "openai/" + model
+		}
+
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return "", false
+		}
+
+		if cfg != nil {
+			if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
+				return ensureProtocol(mc.Model), true
+			}
+
+			for i := range cfg.ModelList {
+				fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
+				if fullModel == "" {
+					continue
+				}
+				if fullModel == raw {
+					return ensureProtocol(fullModel), true
+				}
+				_, modelID := providers.ExtractProtocol(fullModel)
+				if modelID == raw {
+					return ensureProtocol(fullModel), true
+				}
+			}
+		}
+
+		return "", false
+	}
+
+	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
 	return &AgentInstance{
 		ID:             agentID,
