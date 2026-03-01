@@ -7,7 +7,6 @@ linters:
     - containedctx
     - cyclop
     - depguard
-    - dupl
     - dupword
     - err113
     - exhaustruct

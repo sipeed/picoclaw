@@ -10,8 +10,8 @@ import (
 	picoclawconfig "github.com/sipeed/picoclaw/pkg/config"
 )
 
-func (s *appState) channelMenu() tview.Primitive {
-	items := []MenuItem{
+func (s *appState) buildChannelMenuItems() []MenuItem {
+	return []MenuItem{
 		{Label: "Back", Description: "Return to main menu", Action: func() { s.pop() }},
 		channelItem(
 			"Telegram",
@@ -86,8 +86,10 @@ func (s *appState) channelMenu() tview.Primitive {
 			func() { s.push("channel-wecomapp", s.wecomAppForm()) },
 		),
 	}
+}
 
-	menu := NewMenu("Channels", items)
+func (s *appState) channelMenu() tview.Primitive {
+	menu := NewMenu("Channels", s.buildChannelMenuItems())
 	menu.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEsc {
 			s.pop()
@@ -103,199 +105,72 @@ func (s *appState) channelMenu() tview.Primitive {
 }
 
 func refreshChannelMenuFromState(menu *Menu, s *appState) {
-	items := []MenuItem{
-		{Label: "Back", Description: "Return to main menu", Action: func() { s.pop() }},
-		channelItem(
-			"Telegram",
-			"Telegram bot settings",
-			s.config.Channels.Telegram.Enabled,
-			func() { s.push("channel-telegram", s.telegramForm()) },
-		),
-		channelItem(
-			"Discord",
-			"Discord bot settings",
-			s.config.Channels.Discord.Enabled,
-			func() { s.push("channel-discord", s.discordForm()) },
-		),
-		channelItem(
-			"QQ",
-			"QQ bot settings",
-			s.config.Channels.QQ.Enabled,
-			func() { s.push("channel-qq", s.qqForm()) },
-		),
-		channelItem(
-			"MaixCam",
-			"MaixCam gateway",
-			s.config.Channels.MaixCam.Enabled,
-			func() { s.push("channel-maixcam", s.maixcamForm()) },
-		),
-		channelItem(
-			"WhatsApp",
-			"WhatsApp bridge",
-			s.config.Channels.WhatsApp.Enabled,
-			func() { s.push("channel-whatsapp", s.whatsappForm()) },
-		),
-		channelItem(
-			"Feishu",
-			"Feishu bot settings",
-			s.config.Channels.Feishu.Enabled,
-			func() { s.push("channel-feishu", s.feishuForm()) },
-		),
-		channelItem(
-			"DingTalk",
-			"DingTalk bot settings",
-			s.config.Channels.DingTalk.Enabled,
-			func() { s.push("channel-dingtalk", s.dingtalkForm()) },
-		),
-		channelItem(
-			"Slack",
-			"Slack bot settings",
-			s.config.Channels.Slack.Enabled,
-			func() { s.push("channel-slack", s.slackForm()) },
-		),
-		channelItem(
-			"LINE",
-			"LINE bot settings",
-			s.config.Channels.LINE.Enabled,
-			func() { s.push("channel-line", s.lineForm()) },
-		),
-		channelItem(
-			"OneBot",
-			"OneBot settings",
-			s.config.Channels.OneBot.Enabled,
-			func() { s.push("channel-onebot", s.onebotForm()) },
-		),
-		channelItem(
-			"WeCom",
-			"WeCom bot settings",
-			s.config.Channels.WeCom.Enabled,
-			func() { s.push("channel-wecom", s.wecomForm()) },
-		),
-		channelItem(
-			"WeCom App",
-			"WeCom App settings",
-			s.config.Channels.WeComApp.Enabled,
-			func() { s.push("channel-wecomapp", s.wecomAppForm()) },
-		),
-	}
-	menu.applyItems(items)
+	menu.applyItems(s.buildChannelMenuItems())
 }
 
 func (s *appState) telegramForm() tview.Primitive {
 	cfg := &s.config.Channels.Telegram
-	form := baseChannelForm("Telegram", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("Telegram", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("Token", cfg.Token, 128, nil, func(text string) {
 		cfg.Token = strings.TrimSpace(text)
 	})
 	form.AddInputField("Proxy", cfg.Proxy, 128, nil, func(text string) {
 		cfg.Proxy = strings.TrimSpace(text)
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) discordForm() tview.Primitive {
 	cfg := &s.config.Channels.Discord
-	form := baseChannelForm("Discord", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("Discord", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("Token", cfg.Token, 128, nil, func(text string) {
 		cfg.Token = strings.TrimSpace(text)
 	})
 	form.AddCheckbox("Mention Only", cfg.MentionOnly, func(checked bool) {
 		cfg.MentionOnly = checked
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) qqForm() tview.Primitive {
 	cfg := &s.config.Channels.QQ
-	form := baseChannelForm("QQ", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("QQ", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("App ID", cfg.AppID, 64, nil, func(text string) {
 		cfg.AppID = strings.TrimSpace(text)
 	})
 	form.AddInputField("App Secret", cfg.AppSecret, 128, nil, func(text string) {
 		cfg.AppSecret = strings.TrimSpace(text)
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) maixcamForm() tview.Primitive {
 	cfg := &s.config.Channels.MaixCam
-	form := baseChannelForm("MaixCam", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("MaixCam", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("Host", cfg.Host, 64, nil, func(text string) {
 		cfg.Host = strings.TrimSpace(text)
 	})
 	addIntField(form, "Port", cfg.Port, func(value int) { cfg.Port = value })
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) whatsappForm() tview.Primitive {
 	cfg := &s.config.Channels.WhatsApp
-	form := baseChannelForm("WhatsApp", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("WhatsApp", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("Bridge URL", cfg.BridgeURL, 128, nil, func(text string) {
 		cfg.BridgeURL = strings.TrimSpace(text)
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) feishuForm() tview.Primitive {
 	cfg := &s.config.Channels.Feishu
-	form := baseChannelForm("Feishu", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("Feishu", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("App ID", cfg.AppID, 64, nil, func(text string) {
 		cfg.AppID = strings.TrimSpace(text)
 	})
@@ -308,66 +183,39 @@ func (s *appState) feishuForm() tview.Primitive {
 	form.AddInputField("Verification Token", cfg.VerificationToken, 128, nil, func(text string) {
 		cfg.VerificationToken = strings.TrimSpace(text)
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) dingtalkForm() tview.Primitive {
 	cfg := &s.config.Channels.DingTalk
-	form := baseChannelForm("DingTalk", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("DingTalk", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("Client ID", cfg.ClientID, 64, nil, func(text string) {
 		cfg.ClientID = strings.TrimSpace(text)
 	})
 	form.AddInputField("Client Secret", cfg.ClientSecret, 128, nil, func(text string) {
 		cfg.ClientSecret = strings.TrimSpace(text)
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) slackForm() tview.Primitive {
 	cfg := &s.config.Channels.Slack
-	form := baseChannelForm("Slack", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("Slack", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("Bot Token", cfg.BotToken, 128, nil, func(text string) {
 		cfg.BotToken = strings.TrimSpace(text)
 	})
 	form.AddInputField("App Token", cfg.AppToken, 128, nil, func(text string) {
 		cfg.AppToken = strings.TrimSpace(text)
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) lineForm() tview.Primitive {
 	cfg := &s.config.Channels.LINE
-	form := baseChannelForm("LINE", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("LINE", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("Channel Secret", cfg.ChannelSecret, 128, nil, func(text string) {
 		cfg.ChannelSecret = strings.TrimSpace(text)
 	})
@@ -381,22 +229,13 @@ func (s *appState) lineForm() tview.Primitive {
 	form.AddInputField("Webhook Path", cfg.WebhookPath, 64, nil, func(text string) {
 		cfg.WebhookPath = strings.TrimSpace(text)
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) onebotForm() tview.Primitive {
 	cfg := &s.config.Channels.OneBot
-	form := baseChannelForm("OneBot", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("OneBot", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("WS URL", cfg.WSUrl, 128, nil, func(text string) {
 		cfg.WSUrl = strings.TrimSpace(text)
 	})
@@ -418,22 +257,13 @@ func (s *appState) onebotForm() tview.Primitive {
 			cfg.GroupTriggerPrefix = splitCSV(text)
 		},
 	)
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	return wrapWithBack(form, s)
 }
 
 func (s *appState) wecomForm() tview.Primitive {
 	cfg := &s.config.Channels.WeCom
-	form := baseChannelForm("WeCom", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("WeCom", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("Token", cfg.Token, 128, nil, func(text string) {
 		cfg.Token = strings.TrimSpace(text)
 	})
@@ -450,9 +280,7 @@ func (s *appState) wecomForm() tview.Primitive {
 	form.AddInputField("Webhook Path", cfg.WebhookPath, 64, nil, func(text string) {
 		cfg.WebhookPath = strings.TrimSpace(text)
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	addIntField(
 		form,
 		"Reply Timeout",
@@ -464,14 +292,7 @@ func (s *appState) wecomForm() tview.Primitive {
 
 func (s *appState) wecomAppForm() tview.Primitive {
 	cfg := &s.config.Channels.WeComApp
-	form := baseChannelForm("WeCom App", cfg.Enabled, func(v bool) {
-		cfg.Enabled = v
-		s.dirty = true
-		refreshMainMenuIfPresent(s)
-		if menu, ok := s.menus["channel"]; ok {
-			refreshChannelMenuFromState(menu, s)
-		}
-	})
+	form := baseChannelForm("WeCom App", cfg.Enabled, s.makeChannelOnEnabled(&cfg.Enabled))
 	form.AddInputField("Corp ID", cfg.CorpID, 64, nil, func(text string) {
 		cfg.CorpID = strings.TrimSpace(text)
 	})
@@ -492,9 +313,7 @@ func (s *appState) wecomAppForm() tview.Primitive {
 	form.AddInputField("Webhook Path", cfg.WebhookPath, 64, nil, func(text string) {
 		cfg.WebhookPath = strings.TrimSpace(text)
 	})
-	form.AddInputField("Allow From", strings.Join(cfg.AllowFrom, ","), 128, nil, func(text string) {
-		cfg.AllowFrom = splitCSV(text)
-	})
+	addAllowFromField(form, &cfg.AllowFrom)
 	addIntField(
 		form,
 		"Reply Timeout",
@@ -502,6 +321,23 @@ func (s *appState) wecomAppForm() tview.Primitive {
 		func(value int) { cfg.ReplyTimeout = value },
 	)
 	return wrapWithBack(form, s)
+}
+
+func (s *appState) makeChannelOnEnabled(enabledPtr *bool) func(bool) {
+	return func(v bool) {
+		*enabledPtr = v
+		s.dirty = true
+		refreshMainMenuIfPresent(s)
+		if menu, ok := s.menus["channel"]; ok {
+			refreshChannelMenuFromState(menu, s)
+		}
+	}
+}
+
+func addAllowFromField(form *tview.Form, allowFrom *picoclawconfig.FlexibleStringSlice) {
+	form.AddInputField("Allow From", strings.Join(*allowFrom, ","), 128, nil, func(text string) {
+		*allowFrom = splitCSV(text)
+	})
 }
 
 func baseChannelForm(title string, enabled bool, onEnabled func(bool)) *tview.Form {

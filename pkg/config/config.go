@@ -742,25 +742,7 @@ func (c *Config) findMatches(modelName string) []ModelConfig {
 
 // HasProvidersConfig checks if any provider in the old providers config has configuration.
 func (c *Config) HasProvidersConfig() bool {
-	v := c.Providers
-	return v.Anthropic.APIKey != "" || v.Anthropic.APIBase != "" ||
-		v.OpenAI.APIKey != "" || v.OpenAI.APIBase != "" ||
-		v.OpenRouter.APIKey != "" || v.OpenRouter.APIBase != "" ||
-		v.Groq.APIKey != "" || v.Groq.APIBase != "" ||
-		v.Zhipu.APIKey != "" || v.Zhipu.APIBase != "" ||
-		v.VLLM.APIKey != "" || v.VLLM.APIBase != "" ||
-		v.Gemini.APIKey != "" || v.Gemini.APIBase != "" ||
-		v.Nvidia.APIKey != "" || v.Nvidia.APIBase != "" ||
-		v.Ollama.APIKey != "" || v.Ollama.APIBase != "" ||
-		v.Moonshot.APIKey != "" || v.Moonshot.APIBase != "" ||
-		v.ShengSuanYun.APIKey != "" || v.ShengSuanYun.APIBase != "" ||
-		v.DeepSeek.APIKey != "" || v.DeepSeek.APIBase != "" ||
-		v.Cerebras.APIKey != "" || v.Cerebras.APIBase != "" ||
-		v.VolcEngine.APIKey != "" || v.VolcEngine.APIBase != "" ||
-		v.GitHubCopilot.APIKey != "" || v.GitHubCopilot.APIBase != "" ||
-		v.Antigravity.APIKey != "" || v.Antigravity.APIBase != "" ||
-		v.Qwen.APIKey != "" || v.Qwen.APIBase != "" ||
-		v.Mistral.APIKey != "" || v.Mistral.APIBase != ""
+	return !c.Providers.IsEmpty()
 }
 
 // ValidateModelList validates all ModelConfig entries in the model_list.

@@ -47,79 +47,63 @@ func TestExecuteHeartbeat_Async(t *testing.T) {
 	}
 }
 
-func TestExecuteHeartbeat_Error(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.stopChan = make(chan struct{}) // Enable for testing
-
-	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
-		return &tools.ToolResult{
-			ForLLM:  "Heartbeat failed: connection error",
-			ForUser: "",
-			Silent:  false,
-			IsError: true,
-			Async:   false,
-		}
-	})
-
-	// Create HEARTBEAT.md
-	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
-
-	hs.executeHeartbeat()
-
-	// Check log file for error message
-	logFile := filepath.Join(tmpDir, "heartbeat.log")
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		t.Fatalf("Failed to read log file: %v", err)
+func TestExecuteHeartbeat_ResultLogging(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  *tools.ToolResult
+		wantLog string
+	}{
+		{
+			name: "error result",
+			result: &tools.ToolResult{
+				ForLLM:  "Heartbeat failed: connection error",
+				ForUser: "",
+				Silent:  false,
+				IsError: true,
+				Async:   false,
+			},
+			wantLog: "error message",
+		},
+		{
+			name: "silent result",
+			result: &tools.ToolResult{
+				ForLLM:  "Heartbeat completed successfully",
+				ForUser: "",
+				Silent:  true,
+				IsError: false,
+				Async:   false,
+			},
+			wantLog: "completion message",
+		},
 	}
 
-	logContent := string(data)
-	if logContent == "" {
-		t.Error("Expected log file to contain error message")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
 
-func TestExecuteHeartbeat_Silent(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+			hs := NewHeartbeatService(tmpDir, 30, true)
+			hs.stopChan = make(chan struct{}) // Enable for testing
 
-	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.stopChan = make(chan struct{}) // Enable for testing
+			hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
+				return tt.result
+			})
 
-	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
-		return &tools.ToolResult{
-			ForLLM:  "Heartbeat completed successfully",
-			ForUser: "",
-			Silent:  true,
-			IsError: false,
-			Async:   false,
-		}
-	})
+			os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
+			hs.executeHeartbeat()
 
-	// Create HEARTBEAT.md
-	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
-
-	hs.executeHeartbeat()
-
-	// Check log file for completion message
-	logFile := filepath.Join(tmpDir, "heartbeat.log")
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		t.Fatalf("Failed to read log file: %v", err)
-	}
-
-	logContent := string(data)
-	if logContent == "" {
-		t.Error("Expected log file to contain completion message")
+			logFile := filepath.Join(tmpDir, "heartbeat.log")
+			data, err := os.ReadFile(logFile)
+			if err != nil {
+				t.Fatalf("Failed to read log file: %v", err)
+			}
+			if string(data) == "" {
+				t.Errorf("Expected log file to contain %s", tt.wantLog)
+			}
+		})
 	}
 }
 
