@@ -170,7 +170,6 @@ func (c *PicoChannel) SendWithID(ctx context.Context, chatID string, content str
 	return msgID, nil
 }
 
-
 // EditMessage implements channels.MessageEditor.
 func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	outMsg := newMessage(TypeMessageUpdate, map[string]any{
