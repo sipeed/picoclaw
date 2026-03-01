@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -79,8 +80,6 @@ func (f *sessionHandlerFakeRuntime) Config() *config.Config {
 }
 
 func TestSessionHandlers_New_UsesRuntimeSessionOps(t *testing.T) {
-	t.Helper()
-
 	ops := &sessionHandlerFakeSessionOps{
 		startNewValue: "scope#2",
 		pruneValue:    []string{"scope#1"},
@@ -94,11 +93,9 @@ func TestSessionHandlers_New_UsesRuntimeSessionOps(t *testing.T) {
 		},
 	}
 
-	ctx := WithRuntime(context.Background(), runtime)
-
 	var reply string
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(nil)))
-	res := ex.Execute(ctx, Request{
+	ex := NewExecutor(NewRegistry(BuiltinDefinitionsWithRuntime(nil, runtime)))
+	res := ex.Execute(context.Background(), Request{
 		Channel: "whatsapp",
 		Text:    "/new",
 		Reply: func(text string) error {
@@ -125,8 +122,6 @@ func TestSessionHandlers_New_UsesRuntimeSessionOps(t *testing.T) {
 }
 
 func TestSessionHandlers_SessionResume_UsesRuntimeSessionOps(t *testing.T) {
-	t.Helper()
-
 	ops := &sessionHandlerFakeSessionOps{resumeValue: "scope#3"}
 	runtime := &sessionHandlerFakeRuntime{
 		channel: "whatsapp",
@@ -135,11 +130,9 @@ func TestSessionHandlers_SessionResume_UsesRuntimeSessionOps(t *testing.T) {
 		cfg:     &config.Config{},
 	}
 
-	ctx := WithRuntime(context.Background(), runtime)
-
 	var reply string
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(nil)))
-	res := ex.Execute(ctx, Request{
+	ex := NewExecutor(NewRegistry(BuiltinDefinitionsWithRuntime(nil, runtime)))
+	res := ex.Execute(context.Background(), Request{
 		Channel: "whatsapp",
 		Text:    "/session resume 3",
 		Reply: func(text string) error {
@@ -163,8 +156,6 @@ func TestSessionHandlers_SessionResume_UsesRuntimeSessionOps(t *testing.T) {
 }
 
 func TestSessionHandlers_SessionList_UsesRuntimeSessionOps(t *testing.T) {
-	t.Helper()
-
 	ops := &sessionHandlerFakeSessionOps{
 		listValue: []session.SessionMeta{
 			{
@@ -183,11 +174,9 @@ func TestSessionHandlers_SessionList_UsesRuntimeSessionOps(t *testing.T) {
 		cfg:     &config.Config{},
 	}
 
-	ctx := WithRuntime(context.Background(), runtime)
-
 	var reply string
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(nil)))
-	res := ex.Execute(ctx, Request{
+	ex := NewExecutor(NewRegistry(BuiltinDefinitionsWithRuntime(nil, runtime)))
+	res := ex.Execute(context.Background(), Request{
 		Channel: "whatsapp",
 		Text:    "/session list",
 		Reply: func(text string) error {
@@ -204,5 +193,143 @@ func TestSessionHandlers_SessionList_UsesRuntimeSessionOps(t *testing.T) {
 	}
 	if reply != "Sessions for current chat:\n1. [*] scope#3 (4 msgs, updated 2026-03-01 09:07)" {
 		t.Fatalf("reply=%q", reply)
+	}
+}
+
+func TestSessionHandlers_MissingRuntime_Passthrough(t *testing.T) {
+	ex := NewExecutor(NewRegistry(BuiltinDefinitionsWithRuntime(nil, nil)))
+
+	for _, input := range []string{"/new", "/session list"} {
+		res := ex.Execute(context.Background(), Request{
+			Channel: "whatsapp",
+			Text:    input,
+		})
+		if res.Outcome != OutcomePassthrough {
+			t.Fatalf("text=%q outcome=%v, want=%v", input, res.Outcome, OutcomePassthrough)
+		}
+	}
+}
+
+func TestSessionHandlers_NilSessionOps_Passthrough(t *testing.T) {
+	runtime := &sessionHandlerFakeRuntime{
+		channel: "whatsapp",
+		scope:   "scope",
+		ops:     nil,
+		cfg:     &config.Config{},
+	}
+	ex := NewExecutor(NewRegistry(BuiltinDefinitionsWithRuntime(nil, runtime)))
+
+	for _, input := range []string{"/new", "/session list"} {
+		res := ex.Execute(context.Background(), Request{
+			Channel: "whatsapp",
+			Text:    input,
+		})
+		if res.Outcome != OutcomePassthrough {
+			t.Fatalf("text=%q outcome=%v, want=%v", input, res.Outcome, OutcomePassthrough)
+		}
+	}
+}
+
+func TestSessionHandlers_EmptyScope_Passthrough(t *testing.T) {
+	runtime := &sessionHandlerFakeRuntime{
+		channel: "whatsapp",
+		scope:   "   ",
+		ops:     &sessionHandlerFakeSessionOps{},
+		cfg:     &config.Config{},
+	}
+	ex := NewExecutor(NewRegistry(BuiltinDefinitionsWithRuntime(nil, runtime)))
+
+	for _, input := range []string{"/new", "/session list"} {
+		res := ex.Execute(context.Background(), Request{
+			Channel: "whatsapp",
+			Text:    input,
+		})
+		if res.Outcome != OutcomePassthrough {
+			t.Fatalf("text=%q outcome=%v, want=%v", input, res.Outcome, OutcomePassthrough)
+		}
+	}
+}
+
+func TestSessionHandlers_ErrorAndValidationReplies(t *testing.T) {
+	tests := []struct {
+		name      string
+		text      string
+		ops       *sessionHandlerFakeSessionOps
+		wantReply string
+	}{
+		{
+			name:      "start new error",
+			text:      "/new",
+			ops:       &sessionHandlerFakeSessionOps{startNewErr: errors.New("boom")},
+			wantReply: "Failed to start new session: boom",
+		},
+		{
+			name: "prune error",
+			text: "/new",
+			ops: &sessionHandlerFakeSessionOps{
+				startNewValue: "scope#2",
+				pruneErr:      errors.New("prune failed"),
+			},
+			wantReply: "Started new session (scope#2), but pruning old sessions failed: prune failed",
+		},
+		{
+			name:      "list error",
+			text:      "/session list",
+			ops:       &sessionHandlerFakeSessionOps{listErr: errors.New("list failed")},
+			wantReply: "Failed to list sessions: list failed",
+		},
+		{
+			name:      "resume error",
+			text:      "/session resume 2",
+			ops:       &sessionHandlerFakeSessionOps{resumeErr: errors.New("resume failed")},
+			wantReply: "Failed to resume session 2: resume failed",
+		},
+		{
+			name:      "resume missing index",
+			text:      "/session resume",
+			ops:       &sessionHandlerFakeSessionOps{},
+			wantReply: "Usage: /session resume <index>",
+		},
+		{
+			name:      "resume non numeric index",
+			text:      "/session resume abc",
+			ops:       &sessionHandlerFakeSessionOps{},
+			wantReply: "Usage: /session resume <index>",
+		},
+		{
+			name:      "resume zero index",
+			text:      "/session resume 0",
+			ops:       &sessionHandlerFakeSessionOps{},
+			wantReply: "Usage: /session resume <index>",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := &sessionHandlerFakeRuntime{
+				channel: "whatsapp",
+				scope:   "scope",
+				ops:     tc.ops,
+				cfg:     &config.Config{},
+			}
+
+			var reply string
+			ex := NewExecutor(NewRegistry(BuiltinDefinitionsWithRuntime(nil, runtime)))
+			res := ex.Execute(context.Background(), Request{
+				Channel: "whatsapp",
+				Text:    tc.text,
+				Reply: func(text string) error {
+					reply = text
+					return nil
+				},
+			})
+
+			if res.Outcome != OutcomeHandled {
+				t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+			}
+			if reply != tc.wantReply {
+				t.Fatalf("reply=%q, want=%q", reply, tc.wantReply)
+			}
+		})
 	}
 }

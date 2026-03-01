@@ -1,6 +1,11 @@
 package commands
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/session"
+)
 
 func TestBuiltinDefinitions_ContainsTelegramDefaults(t *testing.T) {
 	defs := BuiltinDefinitions(nil)
@@ -32,7 +37,7 @@ func TestBuiltinDefinitions_WhatsAppOnlyHasBasicCommands(t *testing.T) {
 	}
 }
 
-func TestBuiltinDefinitions_SessionCommandsHaveHandlers(t *testing.T) {
+func TestBuiltinDefinitions_DefaultSessionCommandsArePassthrough(t *testing.T) {
 	defs := BuiltinDefinitions(nil)
 
 	defByName := map[string]Definition{}
@@ -44,8 +49,8 @@ func TestBuiltinDefinitions_SessionCommandsHaveHandlers(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing /new definition")
 	}
-	if newDef.Handler == nil {
-		t.Fatalf("/new should provide a runtime-backed handler")
+	if newDef.Handler != nil {
+		t.Fatalf("/new should be passthrough without runtime wiring")
 	}
 	if !contains(newDef.Aliases, "reset") {
 		t.Fatalf("/new aliases=%v, want alias \"reset\"", newDef.Aliases)
@@ -55,7 +60,44 @@ func TestBuiltinDefinitions_SessionCommandsHaveHandlers(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing /session definition")
 	}
-	if sessionDef.Handler == nil {
-		t.Fatalf("/session should provide a runtime-backed handler")
+	if sessionDef.Handler != nil {
+		t.Fatalf("/session should be passthrough without runtime wiring")
+	}
+}
+
+type builtinTestSessionOps struct{}
+
+func (f *builtinTestSessionOps) ResolveActive(scopeKey string) (string, error) { return "", nil }
+func (f *builtinTestSessionOps) StartNew(scopeKey string) (string, error)      { return "", nil }
+func (f *builtinTestSessionOps) List(scopeKey string) ([]session.SessionMeta, error) {
+	return nil, nil
+}
+func (f *builtinTestSessionOps) Resume(scopeKey string, index int) (string, error)  { return "", nil }
+func (f *builtinTestSessionOps) Prune(scopeKey string, limit int) ([]string, error) { return nil, nil }
+
+type builtinTestRuntime struct {
+	scope string
+	ops   SessionOps
+}
+
+func (f *builtinTestRuntime) Channel() string        { return "whatsapp" }
+func (f *builtinTestRuntime) ScopeKey() string       { return f.scope }
+func (f *builtinTestRuntime) SessionOps() SessionOps { return f.ops }
+func (f *builtinTestRuntime) Config() *config.Config { return nil }
+
+func TestBuiltinDefinitionsWithRuntime_EnablesSessionHandlers(t *testing.T) {
+	runtime := &builtinTestRuntime{scope: "scope", ops: &builtinTestSessionOps{}}
+	defs := BuiltinDefinitionsWithRuntime(nil, runtime)
+
+	defByName := map[string]Definition{}
+	for _, def := range defs {
+		defByName[def.Name] = def
+	}
+
+	if defByName["new"].Handler == nil {
+		t.Fatalf("/new should provide runtime-backed handler when runtime is available")
+	}
+	if defByName["session"].Handler == nil {
+		t.Fatalf("/session should provide runtime-backed handler when runtime is available")
 	}
 }

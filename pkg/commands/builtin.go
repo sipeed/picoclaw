@@ -9,25 +9,30 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-type runtimeContextKey struct{}
-
-// WithRuntime attaches command runtime capabilities to ctx for command handlers.
-func WithRuntime(ctx context.Context, runtime Runtime) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, runtimeContextKey{}, runtime)
-}
-
-func runtimeFromContext(ctx context.Context) Runtime {
-	if ctx == nil {
-		return nil
-	}
-	runtime, _ := ctx.Value(runtimeContextKey{}).(Runtime)
-	return runtime
-}
-
 func BuiltinDefinitions(cfg *config.Config) []Definition {
+	return builtinDefinitions(cfg, nil)
+}
+
+// BuiltinDefinitionsWithRuntime returns builtin command definitions with runtime-backed
+// session command handlers enabled only when runtime is usable.
+func BuiltinDefinitionsWithRuntime(cfg *config.Config, runtime Runtime) []Definition {
+	return builtinDefinitions(cfg, runtime)
+}
+
+func builtinDefinitions(cfg *config.Config, runtime Runtime) []Definition {
+	sessionRuntime := runtimeIfUsable(runtime)
+
+	var newHandler Handler
+	var sessionHandler Handler
+	if sessionRuntime != nil {
+		newHandler = func(_ context.Context, req Request) error {
+			return handleNewCommand(req, sessionRuntime, cfg)
+		}
+		sessionHandler = func(_ context.Context, req Request) error {
+			return handleSessionCommand(req, sessionRuntime)
+		}
+	}
+
 	return []Definition{
 		{
 			Name:        "start",
@@ -55,18 +60,14 @@ func BuiltinDefinitions(cfg *config.Config) []Definition {
 			Description: "Start a new chat session",
 			Usage:       "/new",
 			Channels:    []string{"telegram", "whatsapp", "whatsapp_native"},
-			Handler: func(ctx context.Context, req Request) error {
-				return handleNewCommand(ctx, req, cfg)
-			},
+			Handler:     newHandler,
 		},
 		{
 			Name:        "session",
 			Description: "Manage chat sessions",
 			Usage:       "/session [list|resume <index>]",
 			Channels:    []string{"telegram", "whatsapp", "whatsapp_native"},
-			Handler: func(ctx context.Context, req Request) error {
-				return handleSessionCommand(ctx, req)
-			},
+			Handler:     sessionHandler,
 		},
 		{
 			Name:        "show",
@@ -172,12 +173,7 @@ func replyText(text string) Handler {
 	}
 }
 
-func handleNewCommand(ctx context.Context, req Request, fallbackCfg *config.Config) error {
-	runtime := runtimeFromContext(ctx)
-	if runtime == nil || runtime.SessionOps() == nil || strings.TrimSpace(runtime.ScopeKey()) == "" {
-		return reply(req, "Command unavailable in current context.")
-	}
-
+func handleNewCommand(req Request, runtime Runtime, fallbackCfg *config.Config) error {
 	scopeKey := runtime.ScopeKey()
 	newSessionKey, err := runtime.SessionOps().StartNew(scopeKey)
 	if err != nil {
@@ -208,12 +204,7 @@ func handleNewCommand(ctx context.Context, req Request, fallbackCfg *config.Conf
 	return reply(req, fmt.Sprintf("Started new session: %s (pruned %d old session(s))", newSessionKey, len(pruned)))
 }
 
-func handleSessionCommand(ctx context.Context, req Request) error {
-	runtime := runtimeFromContext(ctx)
-	if runtime == nil || runtime.SessionOps() == nil || strings.TrimSpace(runtime.ScopeKey()) == "" {
-		return reply(req, "Command unavailable in current context.")
-	}
-
+func handleSessionCommand(req Request, runtime Runtime) error {
 	args := strings.Fields(commandArgs(req.Text))
 	if len(args) < 1 {
 		return reply(req, "Usage: /session [list|resume <index>]")
@@ -276,6 +267,19 @@ func reply(req Request, text string) error {
 		return nil
 	}
 	return req.Reply(text)
+}
+
+func runtimeIfUsable(runtime Runtime) Runtime {
+	if runtime == nil {
+		return nil
+	}
+	if runtime.SessionOps() == nil {
+		return nil
+	}
+	if strings.TrimSpace(runtime.ScopeKey()) == "" {
+		return nil
+	}
+	return runtime
 }
 
 func enabledChannels(cfg *config.Config) []string {
