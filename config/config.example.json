@@ -49,6 +49,7 @@
     "telegram": {
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "api_base_url": "",
       "proxy": "",
       "allow_from": [
         "YOUR_USER_ID"

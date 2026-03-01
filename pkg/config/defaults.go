@@ -30,9 +30,11 @@ func DefaultConfig() *Config {
 				AllowFrom: FlexibleStringSlice{},
 			},
 			Telegram: TelegramConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
+				Enabled:    false,
+				Token:      "",
+				APIBaseURL: "",
+				Proxy:      "",
+				AllowFrom:  FlexibleStringSlice{},
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,

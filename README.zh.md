@@ -305,6 +305,7 @@ picoclaw agent -m "2+2 等于几？"
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
+      "api_base_url": "",
       "allow_from": ["YOUR_USER_ID"]
     }
   }
@@ -313,6 +314,8 @@ picoclaw agent -m "2+2 等于几？"
 ```
 
 > 从 Telegram 上的 `@userinfobot` 获取您的用户 ID。
+>
+> 如果所在网络需要自定义 Telegram Bot API 端点（例如本地 Bot API 服务或反向代理），请设置 `api_base_url`。
 
 **3. 运行**
 
@@ -900,6 +903,7 @@ picoclaw agent -m "你好"
     "telegram": {
       "enabled": true,
       "token": "123456:ABC...",
+      "api_base_url": "",
       "allow_from": ["123456789"]
     },
     "discord": {

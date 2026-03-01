@@ -202,9 +202,10 @@ func TestConvertConfig(t *testing.T) {
 		data := map[string]any{
 			"channels": map[string]any{
 				"telegram": map[string]any{
-					"enabled":    true,
-					"token":      "tg-token-123",
-					"allow_from": []any{"user1"},
+					"enabled":      true,
+					"token":        "tg-token-123",
+					"api_base_url": "https://telegram-proxy.example.com",
+					"allow_from":   []any{"user1"},
 				},
 				"discord": map[string]any{
 					"enabled": true,
@@ -222,6 +223,13 @@ func TestConvertConfig(t *testing.T) {
 		}
 		if cfg.Channels.Telegram.Token != "tg-token-123" {
 			t.Errorf("Telegram.Token = %q, want %q", cfg.Channels.Telegram.Token, "tg-token-123")
+		}
+		if cfg.Channels.Telegram.APIBaseURL != "https://telegram-proxy.example.com" {
+			t.Errorf(
+				"Telegram.APIBaseURL = %q, want %q",
+				cfg.Channels.Telegram.APIBaseURL,
+				"https://telegram-proxy.example.com",
+			)
 		}
 		if len(cfg.Channels.Telegram.AllowFrom) != 1 || cfg.Channels.Telegram.AllowFrom[0] != "user1" {
 			t.Errorf("Telegram.AllowFrom = %v, want [user1]", cfg.Channels.Telegram.AllowFrom)
@@ -654,8 +662,9 @@ func TestRunFullMigration(t *testing.T) {
 		},
 		"channels": map[string]any{
 			"telegram": map[string]any{
-				"enabled": true,
-				"token":   "tg-migrate-test",
+				"enabled":      true,
+				"token":        "tg-migrate-test",
+				"api_base_url": "https://telegram-proxy.example.com",
 			},
 		},
 	}
@@ -714,6 +723,13 @@ func TestRunFullMigration(t *testing.T) {
 	}
 	if picoConfig.Channels.Telegram.Token != "tg-migrate-test" {
 		t.Errorf("Telegram.Token = %q, want %q", picoConfig.Channels.Telegram.Token, "tg-migrate-test")
+	}
+	if picoConfig.Channels.Telegram.APIBaseURL != "https://telegram-proxy.example.com" {
+		t.Errorf(
+			"Telegram.APIBaseURL = %q, want %q",
+			picoConfig.Channels.Telegram.APIBaseURL,
+			"https://telegram-proxy.example.com",
+		)
 	}
 
 	if result.FilesCopied < 3 {

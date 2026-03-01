@@ -188,6 +188,31 @@ func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 	}
 }
 
+func TestTelegramConfig_APIBaseURLParse(t *testing.T) {
+	jsonData := `{
+		"channels": {
+			"telegram": {
+				"enabled": true,
+				"token": "123456:ABC",
+				"api_base_url": "https://telegram-proxy.example.com/custom"
+			}
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if cfg.Channels.Telegram.APIBaseURL != "https://telegram-proxy.example.com/custom" {
+		t.Errorf(
+			"Telegram.APIBaseURL = %q, want %q",
+			cfg.Channels.Telegram.APIBaseURL,
+			"https://telegram-proxy.example.com/custom",
+		)
+	}
+}
+
 // TestDefaultConfig_HeartbeatEnabled verifies heartbeat is enabled by default
 func TestDefaultConfig_HeartbeatEnabled(t *testing.T) {
 	cfg := DefaultConfig()
@@ -275,6 +300,9 @@ func TestDefaultConfig_Channels(t *testing.T) {
 
 	if cfg.Channels.Telegram.Enabled {
 		t.Error("Telegram should be disabled by default")
+	}
+	if cfg.Channels.Telegram.APIBaseURL != "" {
+		t.Errorf("Telegram APIBaseURL should be empty by default, got %q", cfg.Channels.Telegram.APIBaseURL)
 	}
 	if cfg.Channels.Discord.Enabled {
 		t.Error("Discord should be disabled by default")

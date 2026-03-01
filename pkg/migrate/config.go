@@ -149,6 +149,9 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 				if v, ok := getString(cMap, "token"); ok {
 					cfg.Channels.Telegram.Token = v
 				}
+				if v, ok := getString(cMap, "api_base_url"); ok {
+					cfg.Channels.Telegram.APIBaseURL = v
+				}
 			case "discord":
 				cfg.Channels.Discord.Enabled = enabled
 				cfg.Channels.Discord.AllowFrom = allowFrom
