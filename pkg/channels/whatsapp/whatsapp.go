@@ -262,23 +262,9 @@ func (c *WhatsAppChannel) tryHandleCommand(
 	ctx context.Context,
 	text, chatID, senderID, messageID string,
 ) bool {
-	res := c.DispatchCommand(ctx, commands.Request{
-		Channel:   "whatsapp",
-		ChatID:    chatID,
-		SenderID:  senderID,
-		Text:      text,
-		MessageID: messageID,
-		Reply: func(text string) error {
-			return c.Send(ctx, bus.OutboundMessage{ChatID: chatID, Content: text})
-		},
-	})
-	if res.Err != nil {
-		logger.WarnCF("whatsapp", "Command execution failed", map[string]any{
-			"command": res.Command,
-			"error":   res.Err.Error(),
-		})
-	}
-	return res.Matched
+	// Generic slash commands are now executed in the agent-centric command path.
+	// Channel adapters must not consume them locally.
+	return false
 }
 
 func (c *WhatsAppChannel) DispatchCommand(ctx context.Context, req commands.Request) commands.Result {
