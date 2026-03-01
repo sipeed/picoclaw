@@ -38,13 +38,11 @@ var protectedBranches = regexp.MustCompile(`^(main|master|develop|release/.*)$`)
 //   - Protected branches (main, master, develop, release/*) are blocked
 //   - Force push is never allowed
 //   - Auto-commits uncommitted changes before pushing
-type GitPushTool struct {
-	workspace string
-}
+type GitPushTool struct{}
 
 // NewGitPushTool creates a GitPushTool.
-func NewGitPushTool(workspace string) *GitPushTool {
-	return &GitPushTool{workspace: workspace}
+func NewGitPushTool() *GitPushTool {
+	return &GitPushTool{}
 }
 
 func (t *GitPushTool) Name() string { return "git_push" }

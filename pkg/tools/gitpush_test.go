@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/git"
@@ -9,7 +10,7 @@ import (
 
 // TestGitPushTool_NoWorktree verifies that git_push fails without worktree context.
 func TestGitPushTool_NoWorktree(t *testing.T) {
-	tool := NewGitPushTool(t.TempDir())
+	tool := NewGitPushTool()
 
 	result := tool.Execute(context.Background(), map[string]any{})
 	if !result.IsError {
@@ -25,7 +26,7 @@ func TestGitPushTool_NoWorktree(t *testing.T) {
 
 // TestGitPushTool_ProtectedBranch verifies that protected branches are blocked.
 func TestGitPushTool_ProtectedBranch(t *testing.T) {
-	tool := NewGitPushTool(t.TempDir())
+	tool := NewGitPushTool()
 
 	protectedNames := []string{"main", "master", "develop", "release/v1.0"}
 
@@ -49,7 +50,7 @@ func TestGitPushTool_ProtectedBranch(t *testing.T) {
 
 // TestGitPushTool_EmptyBranch verifies that empty branch name is rejected.
 func TestGitPushTool_EmptyBranch(t *testing.T) {
-	tool := NewGitPushTool(t.TempDir())
+	tool := NewGitPushTool()
 
 	ctx := WithWorktreeInfo(context.Background(), &git.WorktreeInfo{
 		Branch:     "",
@@ -67,7 +68,7 @@ func TestGitPushTool_EmptyBranch(t *testing.T) {
 // TestGitPushTool_AllowedBranch verifies that non-protected branches pass the branch check.
 // (Push itself will fail because there's no real git repo, but it should get past validation.)
 func TestGitPushTool_AllowedBranch(t *testing.T) {
-	tool := NewGitPushTool(t.TempDir())
+	tool := NewGitPushTool()
 
 	allowedNames := []string{"plan/add-auth", "feature/foo", "worktree/test"}
 
@@ -81,7 +82,7 @@ func TestGitPushTool_AllowedBranch(t *testing.T) {
 			})
 			result := tool.Execute(ctx, map[string]any{})
 			// Should NOT fail with "protected branch" error
-			if result.IsError && contains(result.ForLLM, "protected") {
+			if result.IsError && strings.Contains(result.ForLLM, "protected") {
 				t.Fatalf("branch %q should not be blocked as protected", branch)
 			}
 		})
@@ -147,7 +148,7 @@ func TestWorktreeInfoContext(t *testing.T) {
 func TestGitPushTool_Interface(t *testing.T) {
 	var _ Tool = (*GitPushTool)(nil)
 
-	tool := NewGitPushTool(t.TempDir())
+	tool := NewGitPushTool()
 	if tool.Name() != "git_push" {
 		t.Errorf("Name: got %q, want %q", tool.Name(), "git_push")
 	}
@@ -163,22 +164,9 @@ func TestGitPushTool_Interface(t *testing.T) {
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
-}
-
-func containsStr(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}
-
 func assertContains(t *testing.T, s, substr string) {
 	t.Helper()
-	if !contains(s, substr) {
+	if !strings.Contains(s, substr) {
 		t.Errorf("expected %q to contain %q", s, substr)
 	}
 }
