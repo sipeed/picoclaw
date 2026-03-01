@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/sipeed/picoclaw/pkg/audit"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -341,6 +342,14 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+	// Generate request ID for audit trail correlation
+	requestID := fmt.Sprintf("req-%d-%s", time.Now().UnixNano(), msg.SenderID)
+	ctx = audit.WithRequestID(ctx, requestID)
+	ctx = audit.WithSessionID(ctx, msg.SessionKey)
+
+	// Audit log inbound message
+	audit.LogMessage(ctx, "inbound", "text", msg.Content, msg.MessageID)
+
 	// Add message preview to log (show full content for error messages)
 	var logContent string
 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
@@ -534,6 +543,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 8. Optional: send response via bus
 	if opts.SendResponse {
+		audit.LogMessage(ctx, "outbound", "text", finalContent, "")
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
@@ -824,6 +834,25 @@ func (al *AgentLoop) runLLMIteration(
 				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
+
+		// Audit log the tool call request from LLM
+		for _, tc := range normalizedToolCalls {
+			audit.Log(&audit.Entry{
+				Level:     audit.LevelInfo,
+				Component: "agent",
+				EventType: audit.EventToolCall,
+				AgentID:   agent.ID,
+				Channel:   opts.Channel,
+				ChatID:    opts.ChatID,
+				ToolCall: &audit.ToolCallData{
+					ToolID: tc.ID,
+					Name:   tc.Name,
+					Arguments: tc.Arguments,
+					IsAsync: false,
+					IsError: false,
+				},
+			})
+		}
 
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
