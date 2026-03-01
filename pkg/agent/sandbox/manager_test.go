@@ -311,6 +311,9 @@ func TestScopedSandboxManager_Delegates(t *testing.T) {
 }
 
 func TestScopedSandboxManager_ContainerDelegates(t *testing.T) {
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
+
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	ws := filepath.Join(home, "container_ws")
@@ -379,6 +382,9 @@ func TestScopedSandboxManager_ContainerDelegates(t *testing.T) {
 }
 
 func TestScopedSandboxManager_ContainerCreationError(t *testing.T) {
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
+
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
