@@ -175,17 +175,22 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 	htmlContent := markdownToTelegramHTML(msg.Content)
 
-	// Typing/placeholder handled by Manager.preSend — just send the message
-	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
-	tgMsg.ParseMode = telego.ModeHTML
+	// Split HTML content into chunks that fit within Telegram's message limit.
+	// Use 4000 to leave headroom for HTML tag overhead beyond the 4096 limit.
+	chunks := channels.SplitMessage(htmlContent, 4000)
 
-	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
-			"error": err.Error(),
-		})
-		tgMsg.ParseMode = ""
+	for _, chunk := range chunks {
+		tgMsg := tu.Message(tu.ID(chatID), chunk)
+		tgMsg.ParseMode = telego.ModeHTML
+
 		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+			logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
+				"error": err.Error(),
+			})
+			tgMsg.ParseMode = ""
+			if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+				return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+			}
 		}
 	}
 
