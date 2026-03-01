@@ -89,10 +89,27 @@ func (sm *SessionManager) StartNew(scopeKey string) (string, error) {
 	defer sm.mu.Unlock()
 
 	now := time.Now()
-	scope, _ := sm.ensureScopeLocked(scopeKey, now)
+	prevScopeEntryExists := false
+	prevScopeEntryWasNil := false
+	var prevScopeSnapshot *scopeIndex
+	if sm.index.Scopes != nil {
+		if existingScope, ok := sm.index.Scopes[scopeKey]; ok {
+			prevScopeEntryExists = true
+			if existingScope == nil {
+				prevScopeEntryWasNil = true
+			} else {
+				prevScopeSnapshot = cloneScopeIndex(existingScope)
+			}
+		}
+	}
+
+	orderedForOrdinal := []string{scopeKey}
+	if prevScopeSnapshot != nil && len(prevScopeSnapshot.OrderedSessions) > 0 {
+		orderedForOrdinal = prevScopeSnapshot.OrderedSessions
+	}
 
 	newOrdinal := 2
-	for _, existing := range scope.OrderedSessions {
+	for _, existing := range orderedForOrdinal {
 		ordinal, ok := sessionOrdinal(scopeKey, existing)
 		if !ok {
 			continue
@@ -121,16 +138,23 @@ func (sm *SessionManager) StartNew(scopeKey string) (string, error) {
 		return "", err
 	}
 
-	prevActive := scope.ActiveSessionKey
-	prevOrdered := append([]string(nil), scope.OrderedSessions...)
-	prevUpdated := scope.UpdatedAt
+	scope, _ := sm.ensureScopeLocked(scopeKey, now)
 	scope.ActiveSessionKey = newSessionKey
 	scope.OrderedSessions = prependSessionUnique(scope.OrderedSessions, newSessionKey)
 	scope.UpdatedAt = now
 	if err := sm.saveIndexLocked(); err != nil {
-		scope.ActiveSessionKey = prevActive
-		scope.OrderedSessions = prevOrdered
-		scope.UpdatedAt = prevUpdated
+		if prevScopeEntryExists {
+			if sm.index.Scopes == nil {
+				sm.index.Scopes = make(map[string]*scopeIndex)
+			}
+			if prevScopeEntryWasNil {
+				sm.index.Scopes[scopeKey] = nil
+			} else {
+				sm.index.Scopes[scopeKey] = cloneScopeIndex(prevScopeSnapshot)
+			}
+		} else if sm.index.Scopes != nil {
+			delete(sm.index.Scopes, scopeKey)
+		}
 		if created {
 			delete(sm.sessions, newSessionKey)
 			_ = sm.deleteSessionFile(newSessionKey)
@@ -623,6 +647,18 @@ func prependSessionUnique(ordered []string, sessionKey string) []string {
 		next = append(next, existing)
 	}
 	return next
+}
+
+func cloneScopeIndex(scope *scopeIndex) *scopeIndex {
+	if scope == nil {
+		return nil
+	}
+	cloned := &scopeIndex{
+		ActiveSessionKey: scope.ActiveSessionKey,
+		UpdatedAt:        scope.UpdatedAt,
+	}
+	cloned.OrderedSessions = append([]string(nil), scope.OrderedSessions...)
+	return cloned
 }
 
 func cloneSession(stored *Session) Session {

@@ -175,6 +175,33 @@ func TestStartNew_PersistsSessionFileWithoutManualSave(t *testing.T) {
 	}
 }
 
+func TestStartNew_DoesNotMutateIndexWhenSessionPersistFails(t *testing.T) {
+	dir := t.TempDir()
+	sm := NewSessionManager(dir)
+	scope := "../invalid/scope"
+
+	_, err := sm.StartNew(scope)
+	if err == nil {
+		t.Fatalf("expected StartNew to fail for invalid persisted session key")
+	}
+
+	if _, exists := sm.index.Scopes[scope]; exists {
+		t.Fatalf("scope %q should not be added to index on session persist failure", scope)
+	}
+
+	if _, exists := sm.sessions[scope+"#2"]; exists {
+		t.Fatalf("session %q should not remain in memory on session persist failure", scope+"#2")
+	}
+
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir %q: %v", dir, err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("storage should stay untouched, found files: %v", files)
+	}
+}
+
 func TestListAndResume_ByScopeOrdinal(t *testing.T) {
 	sm := NewSessionManager(t.TempDir())
 	scope := "agent:main:telegram:direct:user1"
