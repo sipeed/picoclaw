@@ -42,6 +42,23 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	}
 }
 
+func NewHTTPProviderWithMaxTokensFieldAndRequestTimeoutAndUsePromptCaching(
+	apiKey, apiBase, proxy, maxTokensField string,
+	requestTimeoutSeconds int,
+	usePromptCaching bool,
+) *HTTPProvider {
+	return &HTTPProvider{
+		delegate: openai_compat.NewProvider(
+			apiKey,
+			apiBase,
+			proxy,
+			openai_compat.WithMaxTokensField(maxTokensField),
+			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+			openai_compat.WithUsePromptCaching(usePromptCaching),
+		),
+	}
+}
+
 func (p *HTTPProvider) Chat(
 	ctx context.Context,
 	messages []Message,
