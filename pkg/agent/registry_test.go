@@ -203,3 +203,68 @@ func TestAgentInstance_FallbackExplicitEmpty(t *testing.T) {
 		t.Errorf("expected 0 fallbacks (explicit empty), got %d: %v", len(agent.Fallbacks), agent.Fallbacks)
 	}
 }
+
+func TestAgentRegistry_SwitchDefaultAgentModel(t *testing.T) {
+	cfg := testCfg(nil)
+	cfg.Agents.Defaults.ModelName = "test-openai-mini"
+	cfg.ModelList = []config.ModelConfig{
+		{
+			ModelName: "test-openai-mini",
+			Model:     "openai/fake-openai-mini",
+			APIKey:    "test-openai-key",
+		},
+		{
+			ModelName: "test-qwen-plus",
+			Model:     "qwen/fake-qwen-plus",
+			APIKey:    "test-qwen-key",
+		},
+	}
+
+	registry := NewAgentRegistry(cfg, &mockRegistryProvider{})
+
+	oldModel, newModel, err := registry.SwitchDefaultAgentModel("test-qwen-plus")
+	if err != nil {
+		t.Fatalf("SwitchDefaultAgentModel() error = %v", err)
+	}
+	if oldModel != "test-openai-mini" {
+		t.Errorf("oldModel = %q, want %q", oldModel, "test-openai-mini")
+	}
+	if newModel != "fake-qwen-plus" {
+		t.Errorf("newModel = %q, want %q", newModel, "fake-qwen-plus")
+	}
+
+	agent := registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+	if agent.Model != "fake-qwen-plus" {
+		t.Errorf("agent.Model = %q, want %q", agent.Model, "fake-qwen-plus")
+	}
+
+	if len(agent.Candidates) != 1 {
+		t.Fatalf("len(agent.Candidates) = %d, want 1", len(agent.Candidates))
+	}
+	if agent.Candidates[0].Provider != "qwen" || agent.Candidates[0].Model != "fake-qwen-plus" {
+		t.Errorf(
+			"candidate = %s/%s, want qwen/fake-qwen-plus",
+			agent.Candidates[0].Provider,
+			agent.Candidates[0].Model,
+		)
+	}
+}
+
+func TestAgentRegistry_SwitchDefaultAgentModel_NotFound(t *testing.T) {
+	cfg := testCfg(nil)
+	cfg.ModelList = []config.ModelConfig{
+		{
+			ModelName: "test-openai-mini",
+			Model:     "openai/fake-openai-mini",
+			APIKey:    "test-openai-key",
+		},
+	}
+
+	registry := NewAgentRegistry(cfg, &mockRegistryProvider{})
+	if _, _, err := registry.SwitchDefaultAgentModel("missing-model"); err == nil {
+		t.Fatal("expected error for missing model")
+	}
+}
