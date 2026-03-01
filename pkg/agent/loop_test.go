@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -641,6 +642,85 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+// TestForceCompression_ToolMessageBoundary verifies that forceCompression does not
+// split a tool call/result pair when the midpoint falls on a "tool" role message.
+// Regression test for: API errors when orphaned tool result messages appear
+// without their preceding assistant tool-call message.
+func TestForceCompression_ToolMessageBoundary(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	sessionKey := "test-session-tool-boundary"
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	// Construct a history where len(conversation)/2 falls exactly on a "tool" message.
+	// history = [system, user, assistant(tool_call), tool, user, assistant, user_trigger]
+	// conversation = history[1:6] = [user, assistant(tool_call), tool, user, assistant]
+	// len(conversation) = 5, mid = 5/2 = 2 => conversation[2].Role == "tool"
+	// Without the fix, this would split between assistant(tool_call) and tool result.
+	history := []providers.Message{
+		{Role: "system", Content: "You are a helpful assistant."},
+		{Role: "user", Content: "What files are in the current directory?"},
+		{Role: "assistant", Content: "", ToolCalls: []providers.ToolCall{
+			{ID: "call_1", Name: "exec", Arguments: map[string]any{"command": "ls"}},
+		}},
+		{Role: "tool", Content: "file1.txt\nfile2.txt", ToolCallID: "call_1"},
+		{Role: "user", Content: "Tell me about file1.txt"},
+		{Role: "assistant", Content: "file1.txt is a text file."},
+		{Role: "user", Content: "Thanks"}, // trigger message
+	}
+
+	// Create the session first (AddMessage creates the session entry),
+	// then overwrite with our full history via SetHistory.
+	defaultAgent.Sessions.AddMessage(sessionKey, "system", "init")
+	defaultAgent.Sessions.SetHistory(sessionKey, history)
+
+	// Call forceCompression
+	al.forceCompression(defaultAgent, sessionKey)
+
+	// Verify the result
+	compressed := defaultAgent.Sessions.GetHistory(sessionKey)
+
+	// Check that no message with role="tool" is the first conversation message
+	// (after the system prompt). If it is, it means the tool result was orphaned.
+	for i := 1; i < len(compressed); i++ {
+		if compressed[i].Role == "tool" {
+			// There must be an assistant message with tool calls before it
+			if i == 1 {
+				t.Errorf("Tool result message at position %d is orphaned (no preceding assistant with tool call)", i)
+			} else if compressed[i-1].Role != "assistant" || len(compressed[i-1].ToolCalls) == 0 {
+				t.Errorf("Tool result at position %d is not preceded by assistant with tool calls (preceded by role=%q)", i, compressed[i-1].Role)
+			}
+		}
+	}
+
+	// Verify the system prompt has the compression note
+	if !strings.Contains(compressed[0].Content, "Emergency compression") {
+		t.Errorf("Expected compression note in system prompt, got: %s", compressed[0].Content)
 	}
 }
 
