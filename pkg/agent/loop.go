@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -369,12 +370,52 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
+	route, agent, err := al.resolveMessageRoute(msg)
+	if err != nil {
+		return "", err
+	}
+
 	// Check for commands
-	if response, handled := al.handleCommand(ctx, msg); handled {
+	if response, handled := al.handleCommand(ctx, msg, route, agent); handled {
 		return response, nil
 	}
 
-	// Route to determine agent and session key
+	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if mt, ok := tool.(tools.ContextualTool); ok {
+			mt.SetContext(msg.Channel, msg.ChatID)
+		}
+	}
+
+	// Resolve active session from the routing scope.
+	scopeKey := resolveScopeKey(route, msg.SessionKey)
+	sessionKey, err := agent.Sessions.ResolveActive(scopeKey)
+	if err != nil {
+		return "", fmt.Errorf("resolve active session: %w", err)
+	}
+
+	logger.InfoCF("agent", "Routed message",
+		map[string]any{
+			"agent_id":     agent.ID,
+			"scope_key":    scopeKey,
+			"session_key":  sessionKey,
+			"matched_by":   route.MatchedBy,
+			"route_agent":  route.AgentID,
+			"route_channel": route.Channel,
+		})
+
+	return al.runAgentLoop(ctx, agent, processOptions{
+		SessionKey:      sessionKey,
+		Channel:         msg.Channel,
+		ChatID:          msg.ChatID,
+		UserMessage:     msg.Content,
+		DefaultResponse: defaultResponse,
+		EnableSummary:   true,
+		SendResponse:    false,
+	})
+}
+
+func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
 	route := al.registry.ResolveRoute(routing.RouteInput{
 		Channel:    msg.Channel,
 		AccountID:  msg.Metadata["account_id"],
@@ -389,38 +430,17 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		agent = al.registry.GetDefaultAgent()
 	}
 	if agent == nil {
-		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+		return routing.ResolvedRoute{}, nil, fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
 	}
 
-	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if mt, ok := tool.(tools.ContextualTool); ok {
-			mt.SetContext(msg.Channel, msg.ChatID)
-		}
+	return route, agent, nil
+}
+
+func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
+	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, "agent:") {
+		return msgSessionKey
 	}
-
-	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
-	sessionKey := route.SessionKey
-	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
-		sessionKey = msg.SessionKey
-	}
-
-	logger.InfoCF("agent", "Routed message",
-		map[string]any{
-			"agent_id":    agent.ID,
-			"session_key": sessionKey,
-			"matched_by":  route.MatchedBy,
-		})
-
-	return al.runAgentLoop(ctx, agent, processOptions{
-		SessionKey:      sessionKey,
-		Channel:         msg.Channel,
-		ChatID:          msg.ChatID,
-		UserMessage:     msg.Content,
-		DefaultResponse: defaultResponse,
-		EnableSummary:   true,
-		SendResponse:    false,
-	})
+	return route.SessionKey
 }
 
 func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
@@ -1235,7 +1255,12 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	return totalChars * 2 / 5
 }
 
-func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
+func (al *AgentLoop) handleCommand(
+	ctx context.Context,
+	msg bus.InboundMessage,
+	route routing.ResolvedRoute,
+	agent *AgentInstance,
+) (string, bool) {
 	content := strings.TrimSpace(msg.Content)
 	if !strings.HasPrefix(content, "/") {
 		return "", false
@@ -1247,9 +1272,94 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	}
 
 	cmd := parts[0]
+	if at := strings.Index(cmd, "@"); at > 0 {
+		cmd = cmd[:at]
+	}
 	args := parts[1:]
 
 	switch cmd {
+	case "/new", "/reset":
+		scopeKey := resolveScopeKey(route, msg.SessionKey)
+		newSessionKey, err := agent.Sessions.StartNew(scopeKey)
+		if err != nil {
+			return fmt.Sprintf("Failed to start new session: %v", err), true
+		}
+
+		backlogLimit := config.DefaultSessionBacklogLimit
+		if al.cfg != nil {
+			backlogLimit = al.cfg.Session.EffectiveBacklogLimit()
+		}
+
+		pruned, err := agent.Sessions.Prune(scopeKey, backlogLimit)
+		if err != nil {
+			return fmt.Sprintf(
+				"Started new session (%s), but pruning old sessions failed: %v",
+				newSessionKey,
+				err,
+			), true
+		}
+
+		if len(pruned) == 0 {
+			return fmt.Sprintf("Started new session: %s", newSessionKey), true
+		}
+		return fmt.Sprintf("Started new session: %s (pruned %d old session(s))", newSessionKey, len(pruned)), true
+
+	case "/session":
+		if len(args) < 1 {
+			return "Usage: /session [list|resume <index>]", true
+		}
+
+		scopeKey := resolveScopeKey(route, msg.SessionKey)
+		switch args[0] {
+		case "list":
+			list, err := agent.Sessions.List(scopeKey)
+			if err != nil {
+				return fmt.Sprintf("Failed to list sessions: %v", err), true
+			}
+			if len(list) == 0 {
+				return "No sessions found for current chat.", true
+			}
+
+			lines := make([]string, 0, len(list)+1)
+			lines = append(lines, "Sessions for current chat:")
+			for _, item := range list {
+				activeMarker := " "
+				if item.Active {
+					activeMarker = "*"
+				}
+				updated := "-"
+				if !item.UpdatedAt.IsZero() {
+					updated = item.UpdatedAt.Format("2006-01-02 15:04")
+				}
+				lines = append(lines, fmt.Sprintf(
+					"%d. [%s] %s (%d msgs, updated %s)",
+					item.Ordinal,
+					activeMarker,
+					item.SessionKey,
+					item.MessageCnt,
+					updated,
+				))
+			}
+			return strings.Join(lines, "\n"), true
+
+		case "resume":
+			if len(args) != 2 {
+				return "Usage: /session resume <index>", true
+			}
+			index, err := strconv.Atoi(args[1])
+			if err != nil || index < 1 {
+				return "Usage: /session resume <index>", true
+			}
+			sessionKey, err := agent.Sessions.Resume(scopeKey, index)
+			if err != nil {
+				return fmt.Sprintf("Failed to resume session %d: %v", index, err), true
+			}
+			return fmt.Sprintf("Resumed session %d: %s", index, sessionKey), true
+
+		default:
+			return "Usage: /session [list|resume <index>]", true
+		}
+
 	case "/show":
 		if len(args) < 1 {
 			return "Usage: /show [model|channel|agents]", true

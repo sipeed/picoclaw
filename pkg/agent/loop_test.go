@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -437,6 +439,174 @@ func (h testHelper) executeAndGetResponse(tb testing.TB, ctx context.Context, ms
 }
 
 const responseTimeout = 3 * time.Second
+
+func TestProcessMessage_UsesResolvedActiveSession(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "ok"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: msg.Channel,
+		Peer:    extractPeer(msg),
+	})
+	scopeKey := route.SessionKey
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	rotated, err := defaultAgent.Sessions.StartNew(scopeKey)
+	if err != nil {
+		t.Fatalf("StartNew(%q) failed: %v", scopeKey, err)
+	}
+
+	helper := testHelper{al: al}
+	_ = helper.executeAndGetResponse(t, context.Background(), msg)
+
+	if got := len(defaultAgent.Sessions.GetHistory(scopeKey)); got != 0 {
+		t.Fatalf("expected base scope history len=0, got %d", got)
+	}
+
+	rotatedHistory := defaultAgent.Sessions.GetHistory(rotated)
+	if len(rotatedHistory) != 2 {
+		t.Fatalf("expected rotated history len=2, got %d", len(rotatedHistory))
+	}
+	if rotatedHistory[0].Role != "user" || rotatedHistory[0].Content != "hello" {
+		t.Fatalf("unexpected first message in rotated session: %+v", rotatedHistory[0])
+	}
+}
+
+func TestHandleCommand_NewAndSessionCommands(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Session: config.SessionConfig{
+			DMScope:      "per-channel-peer",
+			BacklogLimit: 20,
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "ok"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	baseMsg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	route := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: baseMsg.Channel,
+		Peer:    extractPeer(baseMsg),
+	})
+	scopeKey := route.SessionKey
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	respNew1 := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/new",
+		Peer:     baseMsg.Peer,
+	})
+	if !strings.Contains(respNew1, scopeKey+"#2") {
+		t.Fatalf("/new response missing new session key, got: %q", respNew1)
+	}
+
+	respNew2 := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/new",
+		Peer:     baseMsg.Peer,
+	})
+	if !strings.Contains(respNew2, scopeKey+"#3") {
+		t.Fatalf("second /new response missing session #3, got: %q", respNew2)
+	}
+
+	listResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/session list",
+		Peer:     baseMsg.Peer,
+	})
+	if !strings.Contains(listResp, "1. [*] "+scopeKey+"#3") {
+		t.Fatalf("/session list response missing active session #3, got:\n%s", listResp)
+	}
+	if !strings.Contains(listResp, "3. [ ] "+scopeKey) {
+		t.Fatalf("/session list response missing base session ordinal, got:\n%s", listResp)
+	}
+
+	resumeResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  baseMsg.Channel,
+		SenderID: baseMsg.SenderID,
+		ChatID:   baseMsg.ChatID,
+		Content:  "/session resume 3",
+		Peer:     baseMsg.Peer,
+	})
+	if !strings.Contains(resumeResp, scopeKey) {
+		t.Fatalf("/session resume response missing target session key, got: %q", resumeResp)
+	}
+
+	active, err := defaultAgent.Sessions.ResolveActive(scopeKey)
+	if err != nil {
+		t.Fatalf("ResolveActive failed: %v", err)
+	}
+	if active != scopeKey {
+		t.Fatalf("active session = %q, want %q after resume", active, scopeKey)
+	}
+}
 
 // TestToolResult_SilentToolDoesNotSendUserMessage verifies silent tools don't trigger outbound
 func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {

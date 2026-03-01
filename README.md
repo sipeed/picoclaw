@@ -338,6 +338,12 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or We
 picoclaw gateway
 ```
 
+**4. Telegram command menu (auto-registered at startup)**
+
+PicoClaw now keeps command definitions in one shared registry. On startup, Telegram will automatically register supported bot commands (for example `/start`, `/help`, `/new`, `/session`, `/show`, `/list`) so command menu and runtime behavior stay in sync.
+
+If command registration fails (network/API transient errors), the channel still starts and PicoClaw retries registration in the background.
+
 </details>
 
 <details>
@@ -661,6 +667,21 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 ├── TOOLS.md          # Tool descriptions
 └── USER.md           # User preferences
 ```
+
+### Session Scope and Backlog
+
+Use `session.dm_scope` to control DM session isolation and `session.backlog_limit` to cap how many sessions are retained per scope:
+
+```json
+{
+  "session": {
+    "dm_scope": "per-channel-peer",
+    "backlog_limit": 20
+  }
+}
+```
+
+`/new` (or `/reset`) starts a fresh active session for the current scope. `/session list` and `/session resume <index>` operate within that same scope.
 
 ### 🔒 Security Sandbox
 
@@ -1102,6 +1123,10 @@ picoclaw agent -m "Hello"
     "defaults": {
       "model": "anthropic/claude-opus-4-5"
     }
+  },
+  "session": {
+    "dm_scope": "per-channel-peer",
+    "backlog_limit": 20
   },
   "providers": {
     "openrouter": {

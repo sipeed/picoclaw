@@ -18,6 +18,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -43,10 +44,14 @@ type TelegramChannel struct {
 	bot      *telego.Bot
 	bh       *telegohandler.BotHandler
 	commands TelegramCommander
+	dispatcher commands.Dispatching
 	config   *config.Config
 	chatIDs  map[string]int64
 	ctx      context.Context
 	cancel   context.CancelFunc
+
+	registerFunc     func(context.Context, []commands.Definition) error
+	commandRegCancel context.CancelFunc
 }
 
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
@@ -90,6 +95,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	return &TelegramChannel{
 		BaseChannel: base,
 		commands:    NewTelegramCommands(bot, cfg),
+		dispatcher:  commands.NewDispatcher(commands.NewRegistry(commands.BuiltinDefinitions(cfg))),
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
@@ -117,22 +123,9 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	c.bh = bh
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		c.commands.Help(ctx, message)
-		return nil
-	}, th.CommandEqual("help"))
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Start(ctx, message)
-	}, th.CommandEqual("start"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Show(ctx, message)
-	}, th.CommandEqual("show"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.List(ctx, message)
-	}, th.CommandEqual("list"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		if c.dispatchCommand(ctx, message) {
+			return nil
+		}
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
 
@@ -140,6 +133,8 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
 		"username": c.bot.Username(),
 	})
+
+	c.startCommandRegistration(c.ctx, commands.NewRegistry(commands.BuiltinDefinitions(c.config)).ForChannel("telegram"))
 
 	go bh.Start()
 
@@ -158,6 +153,9 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	// Cancel our context (stops long polling)
 	if c.cancel != nil {
 		c.cancel()
+	}
+	if c.commandRegCancel != nil {
+		c.commandRegCancel()
 	}
 
 	return nil

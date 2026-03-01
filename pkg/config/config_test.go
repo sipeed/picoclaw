@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -440,5 +441,52 @@ func TestDefaultConfig_DMScope(t *testing.T) {
 
 	if cfg.Session.DMScope != "per-channel-peer" {
 		t.Errorf("Session.DMScope = %q, want 'per-channel-peer'", cfg.Session.DMScope)
+	}
+}
+
+func TestDefaultConfig_SessionBacklogLimit(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Session.BacklogLimit != DefaultSessionBacklogLimit {
+		t.Errorf(
+			"Session.BacklogLimit = %d, want %d",
+			cfg.Session.BacklogLimit,
+			DefaultSessionBacklogLimit,
+		)
+	}
+}
+
+func TestLoadConfig_InvalidBacklogLimitFallsBackToDefault(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	var warnings bytes.Buffer
+	oldWarningWriter := warningWriter
+	warningWriter = &warnings
+	t.Cleanup(func() {
+		warningWriter = oldWarningWriter
+	})
+
+	configJSON := `{
+  "agents": {"defaults":{"workspace":"./workspace","model":"gpt4","max_tokens":8192,"max_tool_iterations":20}},
+  "session": {"backlog_limit": 0},
+  "model_list": [{"model_name":"gpt4","model":"openai/gpt-5.2","api_key":"x"}]
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Session.BacklogLimit != DefaultSessionBacklogLimit {
+		t.Fatalf(
+			"Session.BacklogLimit = %d, want %d",
+			cfg.Session.BacklogLimit,
+			DefaultSessionBacklogLimit,
+		)
+	}
+	if got := warnings.String(); !strings.Contains(got, "invalid session.backlog_limit=0") {
+		t.Fatalf("expected warning about invalid backlog_limit, got: %q", got)
 	}
 }
