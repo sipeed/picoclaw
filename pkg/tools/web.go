@@ -390,6 +390,105 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
 }
 
+type BochaSearchProvider struct {
+	apiKey  string
+	baseURL string
+	client  *http.Client
+}
+
+func (p *BochaSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := p.baseURL
+	if searchURL == "" {
+		searchURL = "https://api.bochaai.com/v1/web-search"
+	}
+
+	payload := map[string]any{
+		"query":   query,
+		"summary": true,
+		"count":   count,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("bocha API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp struct {
+		Code int `json:"code"`
+		Data struct {
+			WebPages struct {
+				Value []struct {
+					Name          string `json:"name"`
+					URL           string `json:"url"`
+					Snippet       string `json:"snippet"`
+					Summary       string `json:"summary"`
+					SiteName      string `json:"siteName"`
+					DatePublished string `json:"datePublished"`
+				} `json:"value"`
+			} `json:"webPages"`
+		} `json:"data"`
+		Msg string `json:"msg"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if searchResp.Code != 200 {
+		return "", fmt.Errorf("bocha API error (code %d): %s", searchResp.Code, searchResp.Msg)
+	}
+
+	results := searchResp.Data.WebPages.Value
+	if len(results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Results for: %s (via Bocha)", query))
+
+	maxItems := min(len(results), count)
+	for i := 0; i < maxItems; i++ {
+		item := results[i]
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Name, item.URL))
+		// Prefer summary over snippet (summary is more complete)
+		desc := item.Summary
+		if desc == "" {
+			desc = item.Snippet
+		}
+		if desc != "" {
+			if len(desc) > 500 {
+				desc = desc[:500] + "..."
+			}
+			lines = append(lines, fmt.Sprintf("   %s", desc))
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
 type WebSearchTool struct {
 	provider   SearchProvider
 	maxResults int
@@ -408,6 +507,10 @@ type WebSearchToolOptions struct {
 	PerplexityAPIKey     string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
+	BochaAPIKey          string
+	BochaBaseURL         string
+	BochaMaxResults      int
+	BochaEnabled         bool
 	Proxy                string
 }
 
@@ -415,7 +518,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
+	// Priority: Perplexity > Brave > Tavily > DuckDuckGo > Bocha
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
 		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
@@ -456,6 +559,19 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy, client: client}
 		if opts.DuckDuckGoMaxResults > 0 {
 			maxResults = opts.DuckDuckGoMaxResults
+		}
+	} else if opts.BochaEnabled && opts.BochaAPIKey != "" {
+		bochaClient, err := createHTTPClient(opts.Proxy, 15*time.Second)
+		if err != nil {
+			return nil
+		}
+		provider = &BochaSearchProvider{
+			apiKey:  opts.BochaAPIKey,
+			baseURL: opts.BochaBaseURL,
+			client:  bochaClient,
+		}
+		if opts.BochaMaxResults > 0 {
+			maxResults = opts.BochaMaxResults
 		}
 	} else {
 		return nil, nil

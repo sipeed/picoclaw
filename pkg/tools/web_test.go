@@ -599,3 +599,113 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
 	}
 }
+
+// TestWebTool_BochaSearch_Success verifies successful Bocha search
+func TestWebTool_BochaSearch_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("Expected POST request, got %s", r.Method)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("Expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
+		}
+		if r.Header.Get("Authorization") != "Bearer test-bocha-key" {
+			t.Errorf("Expected Authorization Bearer test-bocha-key, got %s", r.Header.Get("Authorization"))
+		}
+
+		// Verify payload
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if payload["query"] != "test query" {
+			t.Errorf("Expected query 'test query', got %v", payload["query"])
+		}
+
+		// Return mock Bocha response
+		response := map[string]any{
+			"code": 200,
+			"data": map[string]any{
+				"webPages": map[string]any{
+					"value": []map[string]any{
+						{
+							"name":    "Bocha Result 1",
+							"url":     "https://example.com/bocha/1",
+							"snippet": "Snippet for result 1",
+							"summary": "Summary for result 1",
+						},
+						{
+							"name":    "Bocha Result 2",
+							"url":     "https://example.com/bocha/2",
+							"snippet": "Snippet for result 2",
+							"summary": "",
+						},
+					},
+				},
+			},
+			"msg": "success",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		BochaEnabled:    true,
+		BochaAPIKey:     "test-bocha-key",
+		BochaBaseURL:    server.URL,
+		BochaMaxResults: 5,
+	})
+
+	ctx := context.Background()
+	result := tool.Execute(ctx, map[string]any{"query": "test query"})
+
+	if result.IsError {
+		t.Fatalf("Expected success, got IsError=true: %s", result.ForLLM)
+	}
+
+	// Should contain result titles and URLs
+	if !strings.Contains(result.ForUser, "Bocha Result 1") ||
+		!strings.Contains(result.ForUser, "https://example.com/bocha/1") {
+		t.Errorf("Expected results in output, got: %s", result.ForUser)
+	}
+
+	// Should prefer summary over snippet
+	if !strings.Contains(result.ForUser, "Summary for result 1") {
+		t.Errorf("Expected summary preferred over snippet, got: %s", result.ForUser)
+	}
+
+	// Should fall back to snippet when summary is empty
+	if !strings.Contains(result.ForUser, "Snippet for result 2") {
+		t.Errorf("Expected snippet fallback when summary empty, got: %s", result.ForUser)
+	}
+
+	// Should mention via Bocha
+	if !strings.Contains(result.ForUser, "via Bocha") {
+		t.Errorf("Expected 'via Bocha' in output, got: %s", result.ForUser)
+	}
+}
+
+// TestWebTool_BochaSearch_APIError verifies Bocha error handling
+func TestWebTool_BochaSearch_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+	}))
+	defer server.Close()
+
+	tool := NewWebSearchTool(WebSearchToolOptions{
+		BochaEnabled: true,
+		BochaAPIKey:  "bad-key",
+		BochaBaseURL: server.URL,
+	})
+
+	ctx := context.Background()
+	result := tool.Execute(ctx, map[string]any{"query": "test"})
+
+	if !result.IsError {
+		t.Errorf("Expected error for unauthorized response")
+	}
+	if !strings.Contains(result.ForLLM, "bocha API error") {
+		t.Errorf("Expected bocha API error message, got: %s", result.ForLLM)
+	}
+}
