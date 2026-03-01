@@ -31,3 +31,31 @@ func TestBuiltinDefinitions_WhatsAppOnlyHasBasicCommands(t *testing.T) {
 		t.Fatalf("whatsapp should not include show/list, got %+v", names)
 	}
 }
+
+func TestBuiltinDefinitions_SessionCommandsHaveHandlers(t *testing.T) {
+	defs := BuiltinDefinitions(nil)
+
+	defByName := map[string]Definition{}
+	for _, def := range defs {
+		defByName[def.Name] = def
+	}
+
+	newDef, ok := defByName["new"]
+	if !ok {
+		t.Fatalf("missing /new definition")
+	}
+	if newDef.Handler == nil {
+		t.Fatalf("/new should provide a runtime-backed handler")
+	}
+	if !contains(newDef.Aliases, "reset") {
+		t.Fatalf("/new aliases=%v, want alias \"reset\"", newDef.Aliases)
+	}
+
+	sessionDef, ok := defByName["session"]
+	if !ok {
+		t.Fatalf("missing /session definition")
+	}
+	if sessionDef.Handler == nil {
+		t.Fatalf("/session should provide a runtime-backed handler")
+	}
+}

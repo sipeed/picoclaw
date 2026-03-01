@@ -3,10 +3,29 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
+
+type runtimeContextKey struct{}
+
+// WithRuntime attaches command runtime capabilities to ctx for command handlers.
+func WithRuntime(ctx context.Context, runtime Runtime) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, runtimeContextKey{}, runtime)
+}
+
+func runtimeFromContext(ctx context.Context) Runtime {
+	if ctx == nil {
+		return nil
+	}
+	runtime, _ := ctx.Value(runtimeContextKey{}).(Runtime)
+	return runtime
+}
 
 func BuiltinDefinitions(cfg *config.Config) []Definition {
 	return []Definition{
@@ -36,12 +55,18 @@ func BuiltinDefinitions(cfg *config.Config) []Definition {
 			Description: "Start a new chat session",
 			Usage:       "/new",
 			Channels:    []string{"telegram", "whatsapp", "whatsapp_native"},
+			Handler: func(ctx context.Context, req Request) error {
+				return handleNewCommand(ctx, req, cfg)
+			},
 		},
 		{
 			Name:        "session",
 			Description: "Manage chat sessions",
 			Usage:       "/session [list|resume <index>]",
 			Channels:    []string{"telegram", "whatsapp", "whatsapp_native"},
+			Handler: func(ctx context.Context, req Request) error {
+				return handleSessionCommand(ctx, req)
+			},
 		},
 		{
 			Name:        "show",
@@ -143,11 +168,114 @@ func commandArgs(text string) string {
 
 func replyText(text string) Handler {
 	return func(_ context.Context, req Request) error {
-		if req.Reply == nil {
-			return nil
-		}
-		return req.Reply(text)
+		return reply(req, text)
 	}
+}
+
+func handleNewCommand(ctx context.Context, req Request, fallbackCfg *config.Config) error {
+	runtime := runtimeFromContext(ctx)
+	if runtime == nil || runtime.SessionOps() == nil || strings.TrimSpace(runtime.ScopeKey()) == "" {
+		return reply(req, "Command unavailable in current context.")
+	}
+
+	scopeKey := runtime.ScopeKey()
+	newSessionKey, err := runtime.SessionOps().StartNew(scopeKey)
+	if err != nil {
+		return reply(req, fmt.Sprintf("Failed to start new session: %v", err))
+	}
+
+	backlogLimit := config.DefaultSessionBacklogLimit
+	cfg := fallbackCfg
+	if runtime.Config() != nil {
+		cfg = runtime.Config()
+	}
+	if cfg != nil {
+		backlogLimit = cfg.Session.EffectiveBacklogLimit()
+	}
+
+	pruned, err := runtime.SessionOps().Prune(scopeKey, backlogLimit)
+	if err != nil {
+		return reply(req, fmt.Sprintf(
+			"Started new session (%s), but pruning old sessions failed: %v",
+			newSessionKey,
+			err,
+		))
+	}
+
+	if len(pruned) == 0 {
+		return reply(req, fmt.Sprintf("Started new session: %s", newSessionKey))
+	}
+	return reply(req, fmt.Sprintf("Started new session: %s (pruned %d old session(s))", newSessionKey, len(pruned)))
+}
+
+func handleSessionCommand(ctx context.Context, req Request) error {
+	runtime := runtimeFromContext(ctx)
+	if runtime == nil || runtime.SessionOps() == nil || strings.TrimSpace(runtime.ScopeKey()) == "" {
+		return reply(req, "Command unavailable in current context.")
+	}
+
+	args := strings.Fields(commandArgs(req.Text))
+	if len(args) < 1 {
+		return reply(req, "Usage: /session [list|resume <index>]")
+	}
+
+	scopeKey := runtime.ScopeKey()
+	switch args[0] {
+	case "list":
+		list, err := runtime.SessionOps().List(scopeKey)
+		if err != nil {
+			return reply(req, fmt.Sprintf("Failed to list sessions: %v", err))
+		}
+		if len(list) == 0 {
+			return reply(req, "No sessions found for current chat.")
+		}
+
+		lines := make([]string, 0, len(list)+1)
+		lines = append(lines, "Sessions for current chat:")
+		for _, item := range list {
+			activeMarker := " "
+			if item.Active {
+				activeMarker = "*"
+			}
+			updated := "-"
+			if !item.UpdatedAt.IsZero() {
+				updated = item.UpdatedAt.Format("2006-01-02 15:04")
+			}
+			lines = append(lines, fmt.Sprintf(
+				"%d. [%s] %s (%d msgs, updated %s)",
+				item.Ordinal,
+				activeMarker,
+				item.SessionKey,
+				item.MessageCnt,
+				updated,
+			))
+		}
+		return reply(req, strings.Join(lines, "\n"))
+
+	case "resume":
+		if len(args) != 2 {
+			return reply(req, "Usage: /session resume <index>")
+		}
+		index, err := strconv.Atoi(args[1])
+		if err != nil || index < 1 {
+			return reply(req, "Usage: /session resume <index>")
+		}
+		sessionKey, err := runtime.SessionOps().Resume(scopeKey, index)
+		if err != nil {
+			return reply(req, fmt.Sprintf("Failed to resume session %d: %v", index, err))
+		}
+		return reply(req, fmt.Sprintf("Resumed session %d: %s", index, sessionKey))
+
+	default:
+		return reply(req, "Usage: /session [list|resume <index>]")
+	}
+}
+
+func reply(req Request, text string) error {
+	if req.Reply == nil {
+		return nil
+	}
+	return req.Reply(text)
 }
 
 func enabledChannels(cfg *config.Config) []string {
