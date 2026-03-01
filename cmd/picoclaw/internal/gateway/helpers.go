@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
@@ -36,6 +37,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 func gatewayCmd(debug bool) error {
@@ -133,6 +135,22 @@ func gatewayCmd(debug bool) error {
 	// Inject channel manager and media store into agent loop
 	agentLoop.SetChannelManager(channelManager)
 	agentLoop.SetMediaStore(mediaStore)
+
+	// Wire up voice transcription if Groq API key is available
+	groqAPIKey := cfg.Providers.Groq.APIKey
+	if groqAPIKey == "" {
+		for _, mc := range cfg.ModelList {
+			if strings.HasPrefix(mc.Model, "groq/") && mc.APIKey != "" {
+				groqAPIKey = mc.APIKey
+				break
+			}
+		}
+	}
+	if groqAPIKey != "" {
+		transcriber := voice.NewGroqTranscriber(groqAPIKey)
+		agentLoop.SetTranscriber(transcriber)
+		logger.InfoC("voice", "Groq voice transcription enabled (agent-level)")
+	}
 
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {

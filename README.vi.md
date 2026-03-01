@@ -740,7 +740,7 @@ Subagent có quyền truy cập các công cụ (message, web_search, v.v.) và 
 ### Nhà cung cấp (Providers)
 
 > [!NOTE]
-> Groq cung cấp dịch vụ chuyển giọng nói thành văn bản miễn phí qua Whisper. Nếu đã cấu hình Groq, tin nhắn thoại trên Telegram sẽ được tự động chuyển thành văn bản.
+> Groq cung cấp dịch vụ chuyển giọng nói thành văn bản miễn phí qua Whisper. Nếu đã cấu hình Groq, tin nhắn âm thanh từ bất kỳ kênh nào sẽ được tự động chuyển thành văn bản ở cấp độ agent.
 
 | Nhà cung cấp | Mục đích | Lấy API Key |
 | --- | --- | --- |
