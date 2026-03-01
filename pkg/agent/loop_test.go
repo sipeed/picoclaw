@@ -321,6 +321,90 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	}
 }
 
+func TestGetStartupInfo_IncludesPluginSummary(t *testing.T) {
+	newLoop := func(t *testing.T) *AgentLoop {
+		t.Helper()
+		tmpDir := t.TempDir()
+		cfg := &config.Config{
+			Agents: config.AgentsConfig{
+				Defaults: config.AgentDefaults{
+					Workspace:         tmpDir,
+					Model:             "test-model",
+					MaxTokens:         4096,
+					MaxToolIterations: 10,
+				},
+			},
+		}
+		return NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	}
+
+	t.Run("no plugins enabled", func(t *testing.T) {
+		al := newLoop(t)
+		info := al.GetStartupInfo()
+
+		pluginsInfo, ok := info["plugins"].(map[string]any)
+		if !ok {
+			t.Fatal("Expected 'plugins' to be a map")
+		}
+
+		count, ok := pluginsInfo["count"].(int)
+		if !ok {
+			t.Fatal("Expected plugin count to be an int")
+		}
+		if count != 0 {
+			t.Fatalf("Expected plugin count 0, got %d", count)
+		}
+
+		enabled, ok := pluginsInfo["enabled"].([]string)
+		if !ok {
+			t.Fatal("Expected plugin enabled list to be []string")
+		}
+		if len(enabled) != 0 {
+			t.Fatalf("Expected no enabled plugins, got %v", enabled)
+		}
+	})
+
+	t.Run("plugins enabled", func(t *testing.T) {
+		al := newLoop(t)
+		if err := al.EnablePlugins(blockingPlugin{}); err != nil {
+			t.Fatalf("EnablePlugins failed: %v", err)
+		}
+
+		info := al.GetStartupInfo()
+		pluginsInfo, ok := info["plugins"].(map[string]any)
+		if !ok {
+			t.Fatal("Expected 'plugins' to be a map")
+		}
+
+		count, ok := pluginsInfo["count"].(int)
+		if !ok {
+			t.Fatal("Expected plugin count to be an int")
+		}
+		if count <= 0 {
+			t.Fatalf("Expected plugin count > 0, got %d", count)
+		}
+
+		enabled, ok := pluginsInfo["enabled"].([]string)
+		if !ok {
+			t.Fatal("Expected plugin enabled list to be []string")
+		}
+		if len(enabled) == 0 {
+			t.Fatal("Expected at least one enabled plugin")
+		}
+
+		found := false
+		for _, name := range enabled {
+			if name == "block-outbound" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("Expected enabled plugin list to include block-outbound, got %v", enabled)
+		}
+	})
+}
+
 // TestAgentLoop_Stop verifies Stop() sets running to false
 func TestAgentLoop_Stop(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
