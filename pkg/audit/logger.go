@@ -88,7 +88,12 @@ func New(cfg config.AuditConfig, workspace string) (*Logger, error) {
 // Log writes a single audit entry.
 // This method is non-blocking; the entry is queued for async writing.
 // If the logger is closed or the buffer is full, the entry is dropped.
+// Safe to call on nil logger (no-op).
 func (l *Logger) Log(entry *Entry) {
+	if l == nil {
+		return
+	}
+
 	l.mu.RLock()
 	if l.closed {
 		l.mu.RUnlock()
@@ -233,7 +238,12 @@ func (l *Logger) LogWithChannel(ctx context.Context, entry *Entry) {
 // Close gracefully shuts down the audit logger.
 // It flushes any pending entries and closes the log file.
 // This method blocks until all pending entries are written.
+// Safe to call on nil logger (returns nil).
 func (l *Logger) Close() error {
+	if l == nil {
+		return nil
+	}
+
 	l.mu.Lock()
 	if l.closed {
 		l.mu.Unlock()

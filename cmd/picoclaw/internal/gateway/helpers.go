@@ -11,6 +11,7 @@ import (
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/agent"
+	"github.com/sipeed/picoclaw/pkg/audit"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
@@ -47,6 +48,15 @@ func gatewayCmd(debug bool) error {
 	cfg, err := internal.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("error loading config: %w", err)
+	}
+
+	// Initialize audit logging
+	if err := audit.InitGlobal(cfg.Audit, cfg.WorkspacePath()); err != nil {
+		logger.ErrorF("failed to initialize audit logging", map[string]any{"error": err.Error()})
+		// Continue without audit logging - not fatal
+	} else if cfg.Audit.Enabled {
+		logger.InfoF("audit logging enabled", map[string]any{"location": cfg.Audit.Location})
+		defer audit.CloseGlobal()
 	}
 
 	provider, _, err := providers.CreateProvider(cfg)
