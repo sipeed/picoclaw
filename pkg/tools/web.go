@@ -15,6 +15,14 @@ import (
 
 const (
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+	// HTTP client timeouts for web tool providers.
+	searchTimeout     = 10 * time.Second // Brave, Tavily, DuckDuckGo
+	perplexityTimeout = 30 * time.Second // Perplexity (LLM-based, slower)
+	fetchTimeout      = 60 * time.Second // WebFetchTool
+
+	defaultMaxChars = 50000
+	maxRedirects    = 5
 )
 
 // Pre-compiled regexes for HTML text extraction
@@ -409,7 +417,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 
 	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, 30*time.Second)
+		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
 		}
@@ -418,7 +426,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.PerplexityMaxResults
 		}
 	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, 10*time.Second)
+		client, err := createHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Brave: %w", err)
 		}
@@ -427,7 +435,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.BraveMaxResults
 		}
 	} else if opts.TavilyEnabled && opts.TavilyAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, 10*time.Second)
+		client, err := createHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
 		}
@@ -441,7 +449,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 			maxResults = opts.TavilyMaxResults
 		}
 	} else if opts.DuckDuckGoEnabled {
-		client, err := createHTTPClient(opts.Proxy, 10*time.Second)
+		client, err := createHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for DuckDuckGo: %w", err)
 		}
@@ -517,34 +525,22 @@ type WebFetchTool struct {
 }
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {
-	if maxChars <= 0 {
-		maxChars = 50000
-	}
-	// No proxy — createHTTPClient cannot fail with an empty proxy string.
-	client, _ := createHTTPClient("", 60*time.Second)
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return fmt.Errorf("stopped after 5 redirects")
-		}
-		return nil
-	}
-	return &WebFetchTool{
-		maxChars: maxChars,
-		client:   client,
-	}
+	// createHTTPClient cannot fail with an empty proxy string.
+	tool, _ := NewWebFetchToolWithProxy(maxChars, "")
+	return tool
 }
 
 func NewWebFetchToolWithProxy(maxChars int, proxy string) (*WebFetchTool, error) {
 	if maxChars <= 0 {
-		maxChars = 50000
+		maxChars = defaultMaxChars
 	}
-	client, err := createHTTPClient(proxy, 60*time.Second)
+	client, err := createHTTPClient(proxy, fetchTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client for web fetch: %w", err)
 	}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return fmt.Errorf("stopped after 5 redirects")
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
 		}
 		return nil
 	}
