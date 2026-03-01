@@ -846,7 +846,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 #### 📋 All Supported Vendors
 
 | Vendor              | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
-| ------------------- | ----------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
+| ------------------- | ----------------- |-----------------------------------------------------| --------- | ---------------------------------------------------------------- |
 | **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
 | **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
@@ -858,6 +858,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
+| **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1                           | OpenAI    | Your LiteLLM proxy key                                            |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
@@ -958,6 +959,19 @@ This design also enables **multi-agent support** with flexible provider selectio
   "request_timeout": 300
 }
 ```
+
+**LiteLLM Proxy**
+
+```json
+{
+  "model_name": "lite-gpt4",
+  "model": "litellm/lite-gpt4",
+  "api_base": "http://localhost:4000/v1",
+  "api_key": "sk-..."
+}
+```
+
+PicoClaw strips only the outer `litellm/` prefix before sending the request, so proxy aliases like `litellm/lite-gpt4` send `lite-gpt4`, while `litellm/openai/gpt-4o` sends `openai/gpt-4o`.
 
 #### Load Balancing
 

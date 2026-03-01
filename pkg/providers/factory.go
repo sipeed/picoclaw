@@ -102,6 +102,12 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = "https://openrouter.ai/api/v1"
 				}
 			}
+		case "litellm":
+			if cfg.Providers.LiteLLM.APIKey != "" || cfg.Providers.LiteLLM.APIBase != "" {
+				sel.apiKey = cfg.Providers.LiteLLM.APIKey
+				sel.apiBase = cfg.Providers.LiteLLM.APIBase
+				sel.proxy = cfg.Providers.LiteLLM.Proxy
+			}
 		case "zhipu", "glm":
 			if cfg.Providers.Zhipu.APIKey != "" {
 				sel.apiKey = cfg.Providers.Zhipu.APIKey

@@ -207,6 +207,11 @@ func TestProviderChat_StripsGroqAndOllamaPrefixes(t *testing.T) {
 		wantModel string
 	}{
 		{
+			name:      "strips litellm prefix and preserves proxy model name",
+			input:     "litellm/my-proxy-alias",
+			wantModel: "my-proxy-alias",
+		},
+		{
 			name:      "strips groq prefix and keeps nested model",
 			input:     "groq/openai/gpt-oss-120b",
 			wantModel: "openai/gpt-oss-120b",
