@@ -111,9 +111,10 @@ func TestCreatePRTool_DefaultBaseBranch(t *testing.T) {
 	}
 }
 
-// TestCreatePRTool_Interface verifies the tool satisfies the Tool interface.
+// TestCreatePRTool_Interface verifies the tool satisfies both Tool and AsyncTool interfaces.
 func TestCreatePRTool_Interface(t *testing.T) {
 	var _ Tool = (*CreatePRTool)(nil)
+	var _ AsyncTool = (*CreatePRTool)(nil)
 
 	tool := NewCreatePRTool(t.TempDir())
 	if tool.Name() != "create_pr" {
@@ -140,6 +141,43 @@ func TestCreatePRTool_Interface(t *testing.T) {
 	}
 	if !foundTitle {
 		t.Error("title should be in required parameters")
+	}
+}
+
+// TestCreatePRTool_SetCallback verifies callback is stored.
+func TestCreatePRTool_SetCallback(t *testing.T) {
+	tool := NewCreatePRTool(t.TempDir())
+	if tool.callback != nil {
+		t.Fatal("callback should be nil initially")
+	}
+
+	called := false
+	tool.SetCallback(func(ctx context.Context, result *ToolResult) {
+		called = true
+	})
+	if tool.callback == nil {
+		t.Fatal("callback should be set after SetCallback")
+	}
+	// Verify it's callable (doesn't panic)
+	tool.callback(context.Background(), NewToolResult("test"))
+	if !called {
+		t.Fatal("callback was not invoked")
+	}
+}
+
+// TestCheckPRChecks_ParseResults tests CI status parsing logic.
+func TestCheckPRChecks_ParseResults(t *testing.T) {
+	// This tests the parsing logic conceptually — actual `gh` calls
+	// would need integration tests. We verify the status constants exist
+	// and the type is usable.
+	if ciStatusPending != 0 {
+		t.Error("ciStatusPending should be 0 (default)")
+	}
+	if ciStatusPass == ciStatusFail {
+		t.Error("ciStatusPass and ciStatusFail should differ")
+	}
+	if ciStatusNone == ciStatusPending {
+		t.Error("ciStatusNone and ciStatusPending should differ")
 	}
 }
 
