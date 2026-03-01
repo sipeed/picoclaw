@@ -15,7 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
+const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity, qwen"
 
 func authLoginCmd(provider string, useDeviceCode bool) error {
 	switch provider {
@@ -25,6 +25,8 @@ func authLoginCmd(provider string, useDeviceCode bool) error {
 		return authLoginPasteToken(provider)
 	case "google-antigravity", "antigravity":
 		return authLoginGoogleAntigravity()
+	case "qwen":
+		return authLoginQwen()
 	default:
 		return fmt.Errorf("unsupported provider: %s (%s)", provider, supportedProvidersMsg)
 	}
@@ -282,6 +284,10 @@ func authLogoutCmd(provider string) error {
 					if isAntigravityModel(appCfg.ModelList[i].Model) {
 						appCfg.ModelList[i].AuthMethod = ""
 					}
+				case "qwen":
+					if isQwenModel(appCfg.ModelList[i].Model) {
+						appCfg.ModelList[i].AuthMethod = ""
+					}
 				}
 			}
 			// Clear AuthMethod in Providers (legacy)
@@ -292,6 +298,8 @@ func authLogoutCmd(provider string) error {
 				appCfg.Providers.Anthropic.AuthMethod = ""
 			case "google-antigravity", "antigravity":
 				appCfg.Providers.Antigravity.AuthMethod = ""
+			case "qwen":
+				appCfg.Providers.Qwen.AuthMethod = ""
 			}
 			config.SaveConfig(internal.GetConfigPath(), appCfg)
 		}
@@ -315,6 +323,7 @@ func authLogoutCmd(provider string) error {
 		appCfg.Providers.OpenAI.AuthMethod = ""
 		appCfg.Providers.Anthropic.AuthMethod = ""
 		appCfg.Providers.Antigravity.AuthMethod = ""
+		appCfg.Providers.Qwen.AuthMethod = ""
 		config.SaveConfig(internal.GetConfigPath(), appCfg)
 	}
 
@@ -434,4 +443,64 @@ func isOpenAIModel(model string) bool {
 func isAnthropicModel(model string) bool {
 	return model == "anthropic" ||
 		strings.HasPrefix(model, "anthropic/")
+}
+
+// isQwenModel checks if a model string belongs to the qwen provider
+func isQwenModel(model string) bool {
+	return model == "qwen" ||
+		model == "qwen-oauth" ||
+		strings.HasPrefix(model, "qwen/") ||
+		strings.HasPrefix(model, "qwen-oauth/")
+}
+
+// authLoginQwen performs the Qwen Portal OAuth device-code (QR scan) login flow.
+func authLoginQwen() error {
+	cred, err := auth.LoginQwenQRCode()
+	if err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	if err = auth.SetCredential("qwen", cred); err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	appCfg, cfgErr := internal.LoadConfig()
+	if cfgErr == nil {
+		// Update or add qwen entry in ModelList.
+		found := false
+		for i := range appCfg.ModelList {
+			if isQwenModel(appCfg.ModelList[i].Model) {
+				appCfg.ModelList[i].Model = "qwen-portal/coder-model"
+				appCfg.ModelList[i].APIBase = "https://portal.qwen.ai/v1"
+				appCfg.ModelList[i].APIKey = "qwen-oauth"
+				appCfg.ModelList[i].AuthMethod = "oauth"
+				found = true
+				break
+			}
+		}
+		if !found {
+			appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
+				ModelName:  "qwen-coder",
+				Model:      "qwen-portal/coder-model",
+				APIBase:    "https://portal.qwen.ai/v1",
+				APIKey:     "qwen-oauth",
+				AuthMethod: "oauth",
+			})
+		}
+
+		// Update default model.
+		appCfg.Agents.Defaults.ModelName = "qwen-coder"
+
+		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+			fmt.Printf("Warning: could not update config: %v\n", err)
+		}
+	}
+
+	fmt.Println("\n✓ Qwen OAuth login successful!")
+	fmt.Println("Default model set to: qwen-coder (coder-model)")
+	fmt.Println("Available models: qwen-coder, qwen-vision")
+	//nolint:gosmopolitan // intentional Chinese character for user-facing message
+	fmt.Println("Try it: picoclaw agent -m \"你好\" --model qwen-coder")
+
+	return nil
 }

@@ -94,7 +94,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"volcengine", "vllm", "qwen", "mistral":
+		"volcengine", "vllm", "mistral":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -138,6 +138,32 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "antigravity":
 		return NewAntigravityProvider(), modelID, nil
+
+	case "qwen-oauth", "qwenoauth", "qwen-portal":
+		// Qwen OAuth (QR code login)
+		// Supports model strings like: "qwen-oauth/coder-model", "qwenoauth/vision-model", etc.
+		provider, err := createQwenOAuthProvider()
+		if err != nil {
+			return nil, "", err
+		}
+		return provider, modelID, nil
+
+	case "qwen":
+		// Qwen with API key (DashScope OpenAI-compatible API)
+		if cfg.APIKey == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey,
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			cfg.RequestTimeout,
+		), modelID, nil
 
 	case "claude-cli", "claudecli":
 		workspace := cfg.Workspace

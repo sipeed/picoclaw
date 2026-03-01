@@ -420,17 +420,18 @@ Agent 读取 HEARTBEAT.md
 > [!NOTE]
 > Groq 通过 Whisper 提供免费的语音转录。如果配置了 Groq，Telegram 语音消息将被自动转录为文字。
 
-| 提供商               | 用途                         | 获取 API Key                                                         |
-| -------------------- | ---------------------------- | -------------------------------------------------------------------- |
-| `gemini`             | LLM (Gemini 直连)            | [aistudio.google.com](https://aistudio.google.com)                   |
-| `zhipu`              | LLM (智谱直连)               | [bigmodel.cn](bigmodel.cn)                                           |
-| `openrouter(待测试)` | LLM (推荐，可访问所有模型)   | [openrouter.ai](https://openrouter.ai)                               |
-| `anthropic(待测试)`  | LLM (Claude 直连)            | [console.anthropic.com](https://console.anthropic.com)               |
-| `openai(待测试)`     | LLM (GPT 直连)               | [platform.openai.com](https://platform.openai.com)                   |
-| `deepseek(待测试)`   | LLM (DeepSeek 直连)          | [platform.deepseek.com](https://platform.deepseek.com)               |
-| `qwen`               | LLM (通义千问)               | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
-| `groq`               | LLM + **语音转录** (Whisper) | [console.groq.com](https://console.groq.com)                         |
-| `cerebras`           | LLM (Cerebras 直连)          | [cerebras.ai](https://cerebras.ai)                                   |
+| 提供商                | 用途                         | 获取 API Key                                                         |
+| --------------------- | ---------------------------- | -------------------------------------------------------------------- |
+| `gemini`              | LLM (Gemini 直连)            | [aistudio.google.com](https://aistudio.google.com)                   |
+| `zhipu`               | LLM (智谱直连)               | [bigmodel.cn](bigmodel.cn)                                           |
+| `openrouter(待测试)`  | LLM (推荐，可访问所有模型)   | [openrouter.ai](https://openrouter.ai)                               |
+| `anthropic(待测试)`   | LLM (Claude 直连)            | [console.anthropic.com](https://console.anthropic.com)               |
+| `openai(待测试)`      | LLM (GPT 直连)               | [platform.openai.com](https://platform.openai.com)                   |
+| `deepseek(待测试)`    | LLM (DeepSeek 直连)          | [platform.deepseek.com](https://platform.deepseek.com)               |
+| `qwen`                | LLM (通义千问 API Key)       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| `qwen-oauth`          | LLM (通义千问 OAuth 扫码)    | `picoclaw auth login --provider qwen`                                |
+| `groq`                | LLM + **语音转录** (Whisper) | [console.groq.com](https://console.groq.com)                         |
+| `cerebras`            | LLM (Cerebras 直连)          | [cerebras.ai](https://cerebras.ai)                                   |
 
 ### 模型配置 (model_list)
 
@@ -455,6 +456,7 @@ Agent 读取 HEARTBEAT.md
 | **Groq**            | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [获取密钥](https://console.groq.com)                              |
 | **Moonshot**        | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [获取密钥](https://platform.moonshot.cn)                          |
 | **通义千问 (Qwen)** | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取密钥](https://dashscope.console.aliyun.com)                  |
+| **通义千问 (OAuth)**| `qwen-oauth/`     | `https://portal.qwen.ai/v1`                         | OpenAI    | `picoclaw auth login --provider qwen`                             |
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [获取密钥](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | 本地（无需密钥）                                                  |
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取密钥](https://openrouter.ai/keys)                            |
@@ -537,6 +539,18 @@ Agent 读取 HEARTBEAT.md
 ```
 
 > 运行 `picoclaw auth login --provider anthropic` 来设置 OAuth 凭证。
+
+**通义千问 (Qwen OAuth - 扫码登录)**
+
+```json
+{
+  "model_name": "qwen-coder",
+  "model": "qwen-oauth/coder-model",
+  "auth_method": "oauth"
+}
+```
+
+> 运行 `picoclaw auth login --provider qwen` 进行扫码登录。也支持简写：`qwen-oauth`、`qwenoauth` 或 `qwen-portal`。
 
 **Ollama (本地)**
 

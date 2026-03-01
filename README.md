@@ -820,17 +820,18 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 > [!NOTE]
 > Groq provides free voice transcription via Whisper. If configured, Telegram voice messages will be automatically transcribed.
 
-| Provider                   | Purpose                                 | Get API Key                                                          |
-| -------------------------- | --------------------------------------- | -------------------------------------------------------------------- |
-| `gemini`                   | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)                   |
-| `zhipu`                    | LLM (Zhipu direct)                      | [bigmodel.cn](https://bigmodel.cn)                                   |
-| `openrouter(To be tested)` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                               |
-| `anthropic(To be tested)`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)               |
-| `openai(To be tested)`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)                   |
-| `deepseek(To be tested)`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)               |
-| `qwen`                     | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
-| `groq`                     | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                         |
-| `cerebras`                 | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                                   |
+| Provider                    | Purpose                                 | Get API Key                                                          |
+| --------------------------- | --------------------------------------- | -------------------------------------------------------------------- |
+| `gemini`                    | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)                   |
+| `zhipu`                     | LLM (Zhipu direct)                      | [bigmodel.cn](https://bigmodel.cn)                                   |
+| `openrouter(To be tested)`  | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                               |
+| `anthropic(To be tested)`   | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)               |
+| `openai(To be tested)`      | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)                   |
+| `deepseek(To be tested)`    | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)               |
+| `qwen`                      | LLM (Qwen API Key)                      | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| `qwen-oauth`                | LLM (Qwen OAuth QR login)               | `picoclaw auth login --provider qwen`                                |
+| `groq`                      | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                         |
+| `cerebras`                  | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                                   |
 
 ### Model Configuration (model_list)
 
@@ -854,7 +855,8 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **Google Gemini**   | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Get Key](https://aistudio.google.com/api-keys)                  |
 | **Groq**            | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
 | **Moonshot**        | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          |
-| **通义千问 (Qwen)** | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
+| **Qwen**            | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
+| **Qwen (OAuth)**    | `qwen-oauth/`     | `https://portal.qwen.ai/v1`                         | OpenAI    | `picoclaw auth login --provider qwen`                            |
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
@@ -937,6 +939,18 @@ This design also enables **multi-agent support** with flexible provider selectio
 ```
 
 > Run `picoclaw auth login --provider anthropic` to paste your API token.
+
+**Qwen (OAuth - QR login)**
+
+```json
+{
+  "model_name": "qwen-coder",
+  "model": "qwen-oauth/coder-model",
+  "auth_method": "oauth"
+}
+```
+
+> Run `picoclaw auth login --provider qwen` to scan QR code and login. Also supports aliases: `qwen-oauth`, `qwenoauth`, or `qwen-portal`.
 
 **Ollama (local)**
 

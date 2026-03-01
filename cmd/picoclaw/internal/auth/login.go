@@ -17,7 +17,7 @@ func newLoginCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&provider, "provider", "p", "", "Provider to login with (openai, anthropic)")
+	cmd.Flags().StringVarP(&provider, "provider", "p", "", "Provider to login with (openai, anthropic, qwen)")
 	cmd.Flags().BoolVar(&useDeviceCode, "device-code", false, "Use device code flow (for headless environments)")
 	_ = cmd.MarkFlagRequired("provider")
 
