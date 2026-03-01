@@ -241,6 +241,10 @@
       "enable_deny_patterns": false,
       "custom_deny_patterns": []
     },
+    "resend": {
+      "api_key": "",
+      "from_address": "Agent <agent@yourdomain.com>"
+    },
     "skills": {
       "registries": {
         "clawhub": {

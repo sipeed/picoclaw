@@ -155,6 +155,11 @@ func registerSharedTools(
 		agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
 		agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
 
+		// Calendar invite tool (requires Resend API key)
+		if cfg.Tools.Resend.APIKey != "" {
+			agent.Tools.Register(tools.NewSendCalendarInviteTool(&cfg.Tools.Resend))
+		}
+
 		// Spawn tool with allowlist checker
 		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
 		subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
