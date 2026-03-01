@@ -173,14 +173,18 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
+	if msg.Content == "" {
+		return nil
+	}
 
-	// Split HTML content into chunks that fit within Telegram's message limit.
-	// Use 4000 to leave headroom for HTML tag overhead beyond the 4096 limit.
-	chunks := channels.SplitMessage(htmlContent, 4000)
+	// Split the raw markdown before converting to HTML so that
+	// SplitMessage's code-fence-aware logic works correctly and
+	// we never break HTML tags/entities by splitting converted output.
+	mdChunks := channels.SplitMessage(msg.Content, 4000)
 
-	for _, chunk := range chunks {
-		tgMsg := tu.Message(tu.ID(chatID), chunk)
+	for _, chunk := range mdChunks {
+		htmlContent := markdownToTelegramHTML(chunk)
+		tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 		tgMsg.ParseMode = telego.ModeHTML
 
 		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
