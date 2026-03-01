@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mymmrac/telego"
@@ -48,6 +49,8 @@ type TelegramChannel struct {
 	usernameCache map[string]int64 // Cache username -> chat ID resolution
 	ctx           context.Context
 	cancel        context.CancelFunc
+	typingMu      sync.Mutex
+	typingStop    map[string]chan struct{} // chatID -> stop signal for typing goroutines
 }
 
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
@@ -95,6 +98,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		config:        cfg,
 		chatIDs:       make(map[string]int64),
 		usernameCache: make(map[string]int64),
+		typingStop:    make(map[string]chan struct{}),
 	}, nil
 }
 
@@ -152,6 +156,14 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
 	c.SetRunning(false)
 
+	// Stop all active typing goroutines
+	c.typingMu.Lock()
+	for chatID, stop := range c.typingStop {
+		close(stop)
+		delete(c.typingStop, chatID)
+	}
+	c.typingMu.Unlock()
+
 	// Stop the bot handler
 	if c.bh != nil {
 		c.bh.Stop()
@@ -198,30 +210,61 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 // It sends ChatAction(typing) immediately and then repeats every 4 seconds
 // (Telegram's typing indicator expires after ~5s) in a background goroutine.
 // The returned stop function is idempotent and cancels the goroutine.
+// If a typing indicator already exists for this chatID, it is stopped first.
 func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
 	cid, err := parseChatID(chatID)
 	if err != nil {
 		return func() {}, err
 	}
 
+	c.typingMu.Lock()
+	// Stop existing typing loop for this chatID if any
+	if stop, ok := c.typingStop[chatID]; ok {
+		close(stop)
+	}
+	stop := make(chan struct{})
+	c.typingStop[chatID] = stop
+	c.typingMu.Unlock()
+
 	// Send the first typing action immediately
 	_ = c.bot.SendChatAction(ctx, tu.ChatAction(cid, telego.ChatActionTyping))
 
-	typingCtx, cancel := context.WithCancel(ctx)
 	go func() {
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
+		// Hard timeout to prevent goroutine leaks (matching Discord's approach)
+		timeout := time.After(5 * time.Minute)
 		for {
 			select {
-			case <-typingCtx.Done():
+			case <-stop:
+				return
+			case <-timeout:
+				c.typingMu.Lock()
+				delete(c.typingStop, chatID)
+				c.typingMu.Unlock()
+				return
+			case <-c.ctx.Done():
+				c.typingMu.Lock()
+				delete(c.typingStop, chatID)
+				c.typingMu.Unlock()
 				return
 			case <-ticker.C:
-				_ = c.bot.SendChatAction(typingCtx, tu.ChatAction(cid, telego.ChatActionTyping))
+				_ = c.bot.SendChatAction(ctx, tu.ChatAction(cid, telego.ChatActionTyping))
 			}
 		}
 	}()
 
-	return cancel, nil
+	return func() { c.stopTyping(chatID) }, nil
+}
+
+// stopTyping stops the typing indicator loop for the given chatID.
+func (c *TelegramChannel) stopTyping(chatID string) {
+	c.typingMu.Lock()
+	defer c.typingMu.Unlock()
+	if stop, ok := c.typingStop[chatID]; ok {
+		close(stop)
+		delete(c.typingStop, chatID)
+	}
 }
 
 // EditMessage implements channels.MessageEditor.
