@@ -177,7 +177,7 @@ func (p *Provider) Chat(
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
 	// Kimi Code API requires a coding agent User-Agent
-	if strings.Contains(p.apiBase, "api.kimi.com") {
+	if parsedURL, parseErr := url.Parse(p.apiBase); parseErr == nil && parsedURL.Hostname() == "api.kimi.com" {
 		req.Header.Set("User-Agent", "KimiCLI/0.77")
 	}
 
