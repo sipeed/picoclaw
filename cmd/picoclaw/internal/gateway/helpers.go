@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/pluginruntime"
 	"github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -61,6 +62,23 @@ func gatewayCmd(debug bool) error {
 
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	pluginsToEnable, pluginSummary, err := pluginruntime.ResolveConfiguredPlugins(cfg)
+	if err != nil {
+		return fmt.Errorf("error resolving configured plugins: %w", err)
+	}
+	if len(pluginsToEnable) > 0 {
+		if err := agentLoop.EnablePlugins(pluginsToEnable...); err != nil {
+			return fmt.Errorf("error enabling plugins: %w", err)
+		}
+	}
+	logger.InfoCF("agent", "Plugin selection resolved",
+		map[string]any{
+			"plugins_enabled":          pluginSummary.Enabled,
+			"plugins_disabled":         pluginSummary.Disabled,
+			"plugins_unknown_enabled":  pluginSummary.UnknownEnabled,
+			"plugins_unknown_disabled": pluginSummary.UnknownDisabled,
+			"plugins_warnings":         pluginSummary.Warnings,
+		})
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
