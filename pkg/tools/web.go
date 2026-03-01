@@ -748,7 +748,11 @@ func (p *ExaSearchProvider) Search(ctx context.Context, query string, count int)
 	}
 
 	var sb strings.Builder
-	for i, r := range result.Results {
+	maxResults := count
+	if maxResults > len(result.Results) {
+		maxResults = len(result.Results)
+	}
+	for i, r := range result.Results[:maxResults] {
 		sb.WriteString(fmt.Sprintf("%d. %s\n   URL: %s\n", i+1, r.Title, r.URL))
 		if r.Text != "" {
 			snippet := r.Text

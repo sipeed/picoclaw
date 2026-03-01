@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -590,9 +589,28 @@ type ClawHubRegistryConfig struct {
 func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
+	// Load .env file from config directory (secrets, API keys, etc.)
+	// This runs before reading config.json so .env works even on fresh installs.
+	envFile := filepath.Join(filepath.Dir(path), ".env")
+	if err := godotenv.Load(envFile); err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("[INFO] No .env file found at %s; skipping .env loading", envFile)
+		} else {
+			log.Printf("[WARN] Failed to load .env file from %s: %v", envFile, err)
+		}
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// No config file — still apply env vars + overrides to default config
+			if err := env.Parse(cfg); err != nil {
+				return nil, err
+			}
+			loadProviderEnvOverrides(cfg)
+			if cfg.HasProvidersConfig() {
+				cfg.ModelList = ConvertProvidersToModelList(cfg)
+			}
 			return cfg, nil
 		}
 		return nil, err
@@ -614,12 +632,6 @@ func LoadConfig(path string) (*Config, error) {
 
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
-	}
-
-	// Load .env file from config directory (secrets, API keys, etc.)
-	envFile := filepath.Join(filepath.Dir(path), ".env")
-	if err := godotenv.Load(envFile); err != nil {
-		log.Printf("[INFO] No .env file loaded from %s: %v", envFile, err)
 	}
 
 	if err := env.Parse(cfg); err != nil {
@@ -816,6 +828,12 @@ func loadProviderEnvOverrides(cfg *Config) {
 		{"SHENGSUANYUN", &cfg.Providers.ShengSuanYun.APIKey, &cfg.Providers.ShengSuanYun.APIBase},
 		{"DEEPSEEK", &cfg.Providers.DeepSeek.APIKey, &cfg.Providers.DeepSeek.APIBase},
 		{"MISTRAL", &cfg.Providers.Mistral.APIKey, &cfg.Providers.Mistral.APIBase},
+		{"VLLM", &cfg.Providers.VLLM.APIKey, &cfg.Providers.VLLM.APIBase},
+		{"CEREBRAS", &cfg.Providers.Cerebras.APIKey, &cfg.Providers.Cerebras.APIBase},
+		{"VOLCENGINE", &cfg.Providers.VolcEngine.APIKey, &cfg.Providers.VolcEngine.APIBase},
+		{"QWEN", &cfg.Providers.Qwen.APIKey, &cfg.Providers.Qwen.APIBase},
+		// Note: GitHubCopilot and Antigravity use different auth patterns (ConnectMode/AuthMethod),
+		// not standard APIKey/APIBase, so they are not included here.
 	}
 	for _, p := range providers {
 		if v := os.Getenv("PICOCLAW_PROVIDERS_" + p.name + "_API_KEY"); v != "" {
@@ -825,21 +843,4 @@ func loadProviderEnvOverrides(cfg *Config) {
 			*p.base = v
 		}
 	}
-}
-
-// SanitizeForLog masks sensitive API key values for safe logging.
-func SanitizeForLog(s string) string {
-	prefixes := []string{"sk-", "xoxb-", "xoxp-", "gsk_", "AIza"}
-	for _, p := range prefixes {
-		if strings.HasPrefix(s, p) {
-			if len(s) > len(p)+4 {
-				return s[:len(p)+4] + "****"
-			}
-			return p + "****"
-		}
-	}
-	if len(s) > 8 {
-		return s[:8] + "****"
-	}
-	return "****"
 }
