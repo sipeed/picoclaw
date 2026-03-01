@@ -28,7 +28,7 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
 	regexp.MustCompile(`\bdel\s+/[fq]\b`),
 	regexp.MustCompile(`\brmdir\s+/s\b`),
-	regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`), // Match disk wiping commands (must be followed by space/args)
+	regexp.MustCompile(`(?:^|\s)(format|mkfs|diskpart)\s`), // Match disk wiping commands, avoid matching --format flags
 	regexp.MustCompile(`\bdd\s+if=`),
 	regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
 	regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
@@ -287,10 +287,11 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		pathPattern := regexp.MustCompile(`(?:^|\s)([A-Za-z]:\\[^\\"']+|/[a-zA-Z][^\s"']*)`)
+		matches := pathPattern.FindAllStringSubmatch(cmd, -1)
 
-		for _, raw := range matches {
+		for _, match := range matches {
+			raw := match[1]
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue
