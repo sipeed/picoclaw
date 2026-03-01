@@ -334,6 +334,10 @@ func DefaultConfig() *Config {
 					TTLSeconds: 300,
 				},
 			},
+			MCP: MCPConfig{
+				Enabled: false,
+				Servers: map[string]MCPServerConfig{},
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
