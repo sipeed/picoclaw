@@ -1329,6 +1329,10 @@ func (al *AgentLoop) handleCommand(
 			}
 			oldModel := defaultAgent.Model
 			defaultAgent.Model = value
+			if al.cfg != nil {
+				al.cfg.Agents.Defaults.ModelName = value
+				al.cfg.Agents.Defaults.Model = value
+			}
 			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
 		case "channel":
 			if al.channelManager == nil {

@@ -59,14 +59,14 @@ func builtinDefinitions(cfg *config.Config, runtime Runtime) []Definition {
 			Aliases:     []string{"reset"},
 			Description: "Start a new chat session",
 			Usage:       "/new",
-			Channels:    []string{"telegram", "whatsapp", "whatsapp_native"},
+			Channels:    nil,
 			Handler:     newHandler,
 		},
 		{
 			Name:        "session",
 			Description: "Manage chat sessions",
 			Usage:       "/session [list|resume <index>]",
-			Channels:    []string{"telegram", "whatsapp", "whatsapp_native"},
+			Channels:    nil,
 			Handler:     sessionHandler,
 		},
 		{
