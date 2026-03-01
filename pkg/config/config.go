@@ -3,10 +3,14 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/joho/godotenv"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
@@ -516,11 +520,18 @@ type PerplexityConfig struct {
 	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
+type ExaConfig struct {
+	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_EXA_ENABLED"`
+	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_EXA_API_KEY"`
+	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_EXA_MAX_RESULTS"`
+}
+
 type WebToolsConfig struct {
 	Brave      BraveConfig      `json:"brave"`
 	Tavily     TavilyConfig     `json:"tavily"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 	Perplexity PerplexityConfig `json:"perplexity"`
+	Exa        ExaConfig        `json:"exa"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
 	Proxy string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_WEB_PROXY"`
@@ -605,9 +616,18 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Load .env file from config directory (secrets, API keys, etc.)
+	envFile := filepath.Join(filepath.Dir(path), ".env")
+	if err := godotenv.Load(envFile); err != nil {
+		log.Printf("[INFO] No .env file loaded from %s: %v", envFile, err)
+	}
+
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+
+	// Load provider-specific env overrides (PICOCLAW_PROVIDERS_<NAME>_API_KEY, etc.)
+	loadProviderEnvOverrides(cfg)
 
 	// Migrate legacy channel config fields to new unified structures
 	cfg.migrateChannelConfigs()
@@ -773,4 +793,53 @@ func (c *Config) ValidateModelList() error {
 		}
 	}
 	return nil
+}
+
+// loadProviderEnvOverrides reads PICOCLAW_PROVIDERS_<NAME>_API_KEY and _API_BASE
+// environment variables and sets them on the corresponding provider config fields.
+// This enables storing provider secrets in .env files without using struct tags.
+func loadProviderEnvOverrides(cfg *Config) {
+	providers := []struct {
+		name   string
+		apiKey *string
+		base   *string
+	}{
+		{"ANTHROPIC", &cfg.Providers.Anthropic.APIKey, &cfg.Providers.Anthropic.APIBase},
+		{"OPENAI", &cfg.Providers.OpenAI.APIKey, &cfg.Providers.OpenAI.APIBase},
+		{"OPENROUTER", &cfg.Providers.OpenRouter.APIKey, &cfg.Providers.OpenRouter.APIBase},
+		{"GROQ", &cfg.Providers.Groq.APIKey, &cfg.Providers.Groq.APIBase},
+		{"ZHIPU", &cfg.Providers.Zhipu.APIKey, &cfg.Providers.Zhipu.APIBase},
+		{"GEMINI", &cfg.Providers.Gemini.APIKey, &cfg.Providers.Gemini.APIBase},
+		{"NVIDIA", &cfg.Providers.Nvidia.APIKey, &cfg.Providers.Nvidia.APIBase},
+		{"OLLAMA", &cfg.Providers.Ollama.APIKey, &cfg.Providers.Ollama.APIBase},
+		{"MOONSHOT", &cfg.Providers.Moonshot.APIKey, &cfg.Providers.Moonshot.APIBase},
+		{"SHENGSUANYUN", &cfg.Providers.ShengSuanYun.APIKey, &cfg.Providers.ShengSuanYun.APIBase},
+		{"DEEPSEEK", &cfg.Providers.DeepSeek.APIKey, &cfg.Providers.DeepSeek.APIBase},
+		{"MISTRAL", &cfg.Providers.Mistral.APIKey, &cfg.Providers.Mistral.APIBase},
+	}
+	for _, p := range providers {
+		if v := os.Getenv("PICOCLAW_PROVIDERS_" + p.name + "_API_KEY"); v != "" {
+			*p.apiKey = v
+		}
+		if v := os.Getenv("PICOCLAW_PROVIDERS_" + p.name + "_API_BASE"); v != "" {
+			*p.base = v
+		}
+	}
+}
+
+// SanitizeForLog masks sensitive API key values for safe logging.
+func SanitizeForLog(s string) string {
+	prefixes := []string{"sk-", "xoxb-", "xoxp-", "gsk_", "AIza"}
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			if len(s) > len(p)+4 {
+				return s[:len(p)+4] + "****"
+			}
+			return p + "****"
+		}
+	}
+	if len(s) > 8 {
+		return s[:8] + "****"
+	}
+	return "****"
 }

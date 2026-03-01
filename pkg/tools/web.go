@@ -412,6 +412,9 @@ type WebSearchToolOptions struct {
 	PerplexityAPIKey     string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
+	ExaAPIKey            string
+	ExaMaxResults        int
+	ExaEnabled           bool
 	Proxy                string
 }
 
@@ -419,11 +422,16 @@ func NewWebSearchTool(opts WebSearchToolOptions) *WebSearchTool {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
+	// Priority: Perplexity > Exa > Brave > Tavily > DuckDuckGo
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
 		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey, proxy: opts.Proxy}
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
+		}
+	} else if opts.ExaEnabled && opts.ExaAPIKey != "" {
+		provider = &ExaSearchProvider{apiKey: opts.ExaAPIKey, proxy: opts.Proxy}
+		if opts.ExaMaxResults > 0 {
+			maxResults = opts.ExaMaxResults
 		}
 	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
 		provider = &BraveSearchProvider{apiKey: opts.BraveAPIKey, proxy: opts.Proxy}
@@ -683,4 +691,74 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	}
 
 	return strings.Join(cleanLines, "\n")
+}
+
+// ExaSearchProvider uses the Exa AI search API (https://exa.ai).
+type ExaSearchProvider struct {
+	apiKey string
+	proxy  string
+}
+
+func (p *ExaSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	client, err := createHTTPClient(p.proxy, 30*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("exa: failed to create HTTP client: %w", err)
+	}
+
+	reqBody := map[string]any{
+		"query":      query,
+		"num_results": count,
+		"type":       "neural",
+	}
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("exa: marshal error: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.exa.ai/search", bytes.NewReader(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("exa: request error: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", p.apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("exa: search failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("exa: read error: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("exa: API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Results []struct {
+			Title string `json:"title"`
+			URL   string `json:"url"`
+			Text  string `json:"text"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("exa: parse error: %w", err)
+	}
+
+	var sb strings.Builder
+	for i, r := range result.Results {
+		sb.WriteString(fmt.Sprintf("%d. %s\n   URL: %s\n", i+1, r.Title, r.URL))
+		if r.Text != "" {
+			snippet := r.Text
+			if len(snippet) > 200 {
+				snippet = snippet[:200] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("   %s\n", snippet))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String(), nil
 }
