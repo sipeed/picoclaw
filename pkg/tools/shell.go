@@ -75,6 +75,7 @@ func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 
 func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
+	timeout := 60 * time.Second // default timeout
 
 	if config != nil {
 		execConfig := config.Tools.Exec
@@ -95,13 +96,18 @@ func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Conf
 			// If deny patterns are disabled, we won't add any patterns, allowing all commands.
 			fmt.Println("Warning: deny patterns are disabled. All commands will be allowed.")
 		}
+
+		// Apply configured timeout if set (0 means use default)
+		if execConfig.TimeoutSeconds > 0 {
+			timeout = time.Duration(execConfig.TimeoutSeconds) * time.Second
+		}
 	} else {
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}
 
 	return &ExecTool{
 		workingDir:          workingDir,
-		timeout:             60 * time.Second,
+		timeout:             timeout,
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
 		restrictToWorkspace: restrict,
