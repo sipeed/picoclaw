@@ -10,15 +10,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type Transcriber interface {
+	Name() string
 	Transcribe(ctx context.Context, audioFilePath string) (*TranscriptionResponse, error)
-	IsAvailable() bool
 }
 
 type GroqTranscriber struct {
@@ -157,8 +159,22 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 	return &result, nil
 }
 
-func (t *GroqTranscriber) IsAvailable() bool {
-	available := t.apiKey != ""
-	logger.DebugCF("voice", "Checking transcriber availability", map[string]any{"available": available})
-	return available
+func (t *GroqTranscriber) Name() string {
+	return "groq"
+}
+
+// DetectTranscriber inspects cfg and returns the appropriate Transcriber, or
+// nil if no supported transcription provider is configured.
+func DetectTranscriber(cfg *config.Config) Transcriber {
+	// Direct Groq provider config takes priority.
+	if key := cfg.Providers.Groq.APIKey; key != "" {
+		return NewGroqTranscriber(key)
+	}
+	// Fall back to any model-list entry that uses the groq/ protocol.
+	for _, mc := range cfg.ModelList {
+		if strings.HasPrefix(mc.Model, "groq/") && mc.APIKey != "" {
+			return NewGroqTranscriber(mc.APIKey)
+		}
+	}
+	return nil
 }

@@ -276,7 +276,7 @@ var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
 // transcribeAudioInMessage resolves audio media refs, transcribes them, and
 // replaces audio annotations in msg.Content with the transcribed text.
 func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) bus.InboundMessage {
-	if al.transcriber == nil || !al.transcriber.IsAvailable() || al.mediaStore == nil || len(msg.Media) == 0 {
+	if al.transcriber == nil || al.mediaStore == nil || len(msg.Media) == 0 {
 		return msg
 	}
 

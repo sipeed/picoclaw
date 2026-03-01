@@ -8,25 +8,88 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // Ensure GroqTranscriber satisfies the Transcriber interface at compile time.
 var _ Transcriber = (*GroqTranscriber)(nil)
 
-func TestIsAvailable(t *testing.T) {
-	tests := []struct {
-		name   string
-		apiKey string
-		want   bool
-	}{
-		{"with key", "sk-test-key", true},
-		{"empty key", "", false},
+func TestGroqTranscriberName(t *testing.T) {
+	tr := NewGroqTranscriber("sk-test")
+	if got := tr.Name(); got != "groq" {
+		t.Errorf("Name() = %q, want %q", got, "groq")
 	}
+}
+
+func TestDetectTranscriber(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfg       *config.Config
+		wantNil   bool
+		wantName  string
+	}{
+		{
+			name:    "no config",
+			cfg:     &config.Config{},
+			wantNil: true,
+		},
+		{
+			name: "groq provider key",
+			cfg: &config.Config{
+				Providers: config.ProvidersConfig{
+					Groq: config.ProviderConfig{APIKey: "sk-groq-direct"},
+				},
+			},
+			wantName: "groq",
+		},
+		{
+			name: "groq via model list",
+			cfg: &config.Config{
+				ModelList: []config.ModelConfig{
+					{Model: "openai/gpt-4o", APIKey: "sk-openai"},
+					{Model: "groq/llama-3.3-70b", APIKey: "sk-groq-model"},
+				},
+			},
+			wantName: "groq",
+		},
+		{
+			name: "groq model list entry without key is skipped",
+			cfg: &config.Config{
+				ModelList: []config.ModelConfig{
+					{Model: "groq/llama-3.3-70b", APIKey: ""},
+				},
+			},
+			wantNil: true,
+		},
+		{
+			name: "provider key takes priority over model list",
+			cfg: &config.Config{
+				Providers: config.ProvidersConfig{
+					Groq: config.ProviderConfig{APIKey: "sk-groq-direct"},
+				},
+				ModelList: []config.ModelConfig{
+					{Model: "groq/llama-3.3-70b", APIKey: "sk-groq-model"},
+				},
+			},
+			wantName: "groq",
+		},
+	}
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tr := NewGroqTranscriber(tc.apiKey)
-			if got := tr.IsAvailable(); got != tc.want {
-				t.Errorf("IsAvailable() = %v, want %v", got, tc.want)
+			tr := DetectTranscriber(tc.cfg)
+			if tc.wantNil {
+				if tr != nil {
+					t.Errorf("DetectTranscriber() = %v, want nil", tr)
+				}
+				return
+			}
+			if tr == nil {
+				t.Fatal("DetectTranscriber() = nil, want non-nil")
+			}
+			if got := tr.Name(); got != tc.wantName {
+				t.Errorf("Name() = %q, want %q", got, tc.wantName)
 			}
 		})
 	}
