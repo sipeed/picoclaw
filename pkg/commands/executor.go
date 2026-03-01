@@ -28,7 +28,7 @@ func NewExecutor(reg *Registry) *Executor {
 	return &Executor{reg: reg}
 }
 
-func (e *Executor) Execute(ctx context.Context, req Request, _ any) ExecuteResult {
+func (e *Executor) Execute(ctx context.Context, req Request) ExecuteResult {
 	cmdName, ok := parseCommandName(req.Text)
 	if !ok {
 		return ExecuteResult{Outcome: OutcomePassthrough}
@@ -38,15 +38,25 @@ func (e *Executor) Execute(ctx context.Context, req Request, _ any) ExecuteResul
 		return ExecuteResult{Outcome: OutcomePassthrough, Command: cmdName}
 	}
 
+	matchedSupported := false
+	passthroughCommand := ""
+
 	for _, def := range e.reg.ForChannel(req.Channel) {
 		if !matchesCommand(def, cmdName) {
 			continue
 		}
+		matchedSupported = true
+		if passthroughCommand == "" {
+			passthroughCommand = def.Name
+		}
 		if def.Handler == nil {
-			return ExecuteResult{Outcome: OutcomePassthrough, Command: def.Name}
+			continue
 		}
 		err := def.Handler(ctx, req)
 		return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name, Err: err}
+	}
+	if matchedSupported {
+		return ExecuteResult{Outcome: OutcomePassthrough, Command: passthroughCommand}
 	}
 
 	for _, def := range e.reg.defs {
