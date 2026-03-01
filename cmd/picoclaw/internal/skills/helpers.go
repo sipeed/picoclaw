@@ -15,6 +15,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+const skillsSearchMaxResults = 20
+
 func skillsListCmd(loader *skills.SkillsLoader) {
 	allSkills := loader.ListSkills()
 
@@ -220,7 +222,7 @@ func skillsSearchCmd(query string) {
 
 	cfg, err := internal.LoadConfig()
 	if err != nil {
-		fmt.Printf("✗ Failed to fetch skills list: %v\n", err)
+		fmt.Printf("✗ Failed to load config: %v\n", err)
 		return
 	}
 
@@ -232,7 +234,7 @@ func skillsSearchCmd(query string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	results, err := registryMgr.SearchAll(ctx, query, 20)
+	results, err := registryMgr.SearchAll(ctx, query, skillsSearchMaxResults)
 	if err != nil {
 		fmt.Printf("✗ Failed to fetch skills list: %v\n", err)
 		return
