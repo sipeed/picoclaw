@@ -974,6 +974,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 
 // forceCompression aggressively reduces context when the limit is hit.
 // It drops the oldest 50% of messages (keeping system prompt and last user message).
+// IMPORTANT: It preserves tool call/response pairing to avoid API 400 errors.
 func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
 	if len(history) <= 4 {
@@ -988,16 +989,26 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		return
 	}
 
-	// Helper to find the mid-point of the conversation
+	// Find a safe cut point that doesn't break tool call/response pairs.
+	// A "safe" cut point is right after a user message, because:
+	// 1. User messages don't have tool call dependencies
+	// 2. Any preceding tool call/response pairs will be kept together
 	mid := len(conversation) / 2
+	cutIndex := findSafeCutPoint(conversation, mid)
 
 	// New history structure:
 	// 1. System Prompt (with compression note appended)
-	// 2. Second half of conversation
+	// 2. Second half of conversation (from safe cut point)
 	// 3. Last message
 
-	droppedCount := mid
-	keptConversation := conversation[mid:]
+	droppedCount := cutIndex
+	keptConversation := conversation[cutIndex:]
+
+	// Additional safety: remove orphaned tool messages at the start of kept conversation
+	keptConversation = removeOrphanedToolMessages(keptConversation)
+
+	// Additional safety: remove orphaned assistant messages with tool_calls at the end
+	keptConversation = removeOrphanedAssistantWithToolCalls(keptConversation)
 
 	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
 
@@ -1023,6 +1034,154 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
 	})
+}
+
+// findSafeCutPoint finds a safe index to cut the conversation without breaking tool call/response pairs.
+// It starts from the mid-point and searches forward for a user message, which is always safe to cut after.
+// If no user message is found, it falls back to finding a safe cut after the last complete tool call/response sequence.
+func findSafeCutPoint(conversation []providers.Message, mid int) int {
+	// Search forward from mid to find a user message
+	for i := mid; i < len(conversation); i++ {
+		if conversation[i].Role == "user" {
+			return i + 1 // Cut after the user message
+		}
+	}
+
+	// Fallback: search backward from mid
+	for i := mid - 1; i >= 0; i-- {
+		if conversation[i].Role == "user" {
+			return i + 1 // Cut after the user message
+		}
+	}
+
+	// No user message found (edge case): find a safe cut after the last complete tool sequence
+	// A safe cut is after all tool results for a tool call, i.e., after a non-tool message
+	// that doesn't have tool_calls, or after the last tool result of a complete sequence.
+	for i := mid; i < len(conversation); i++ {
+		// Find a position after all consecutive tool messages
+		if conversation[i].Role != "tool" {
+			// Check if this is an assistant without tool_calls (safe cut point)
+			// or if we need to skip past any tool results
+			if conversation[i].Role == "assistant" && len(conversation[i].ToolCalls) == 0 {
+				return i + 1 // Cut after this assistant message
+			}
+			// If it's an assistant with tool_calls, we need to find the end of the tool results
+			if conversation[i].Role == "assistant" && len(conversation[i].ToolCalls) > 0 {
+				// Count how many tool results we expect
+				expectedResults := len(conversation[i].ToolCalls)
+				resultCount := 0
+				for j := i + 1; j < len(conversation) && resultCount < expectedResults; j++ {
+					if conversation[j].Role == "tool" {
+						resultCount++
+					}
+				}
+				// Cut after all tool results
+				if resultCount == expectedResults {
+					// Find the position after the last tool result
+					for j := i + expectedResults; j < len(conversation); j++ {
+						if conversation[j].Role != "tool" {
+							return j
+						}
+					}
+					return len(conversation)
+				}
+			}
+		}
+	}
+
+	// Ultimate fallback: use mid (may cause issues, but removeOrphanedToolMessages will help)
+	return mid
+}
+
+// removeOrphanedToolMessages removes tool messages at the start that don't have a preceding
+// assistant message with tool_calls. This is a safety net for edge cases.
+func removeOrphanedToolMessages(messages []providers.Message) []providers.Message {
+	// Find the first non-tool message
+	for i := 0; i < len(messages); i++ {
+		if messages[i].Role != "tool" {
+			return messages[i:]
+		}
+	}
+	return messages
+}
+
+// removeOrphanedAssistantWithToolCalls removes assistant messages with tool_calls at the end
+// that don't have corresponding tool result messages. This prevents API errors where the
+// provider expects tool results that were cut away.
+func removeOrphanedAssistantWithToolCalls(messages []providers.Message) []providers.Message {
+	// Two-pass approach:
+	// 1. First pass: determine which assistant messages with tool_calls are valid (have all results)
+	// 2. Second pass: filter messages, keeping only valid tool results and assistants
+
+	// Build set of tool_call IDs from assistants that have ALL their results present
+	validToolCallIDs := make(map[string]bool)
+	for _, m := range messages {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			// Check if ALL tool_calls have results
+			allHaveResults := true
+			for _, tc := range m.ToolCalls {
+				if tc.ID == "" {
+					continue
+				}
+				// Check if this tool_call has a result
+				hasResult := false
+				for _, m2 := range messages {
+					if m2.Role == "tool" && m2.ToolCallID == tc.ID {
+						hasResult = true
+						break
+					}
+				}
+				if !hasResult {
+					allHaveResults = false
+					break
+				}
+			}
+			if allHaveResults {
+				for _, tc := range m.ToolCalls {
+					if tc.ID != "" {
+						validToolCallIDs[tc.ID] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Second pass: filter messages
+	result := make([]providers.Message, 0, len(messages))
+	for _, m := range messages {
+		switch {
+		case m.Role == "tool" && m.ToolCallID != "":
+			// Keep tool result only if its tool_call is valid
+			if validToolCallIDs[m.ToolCallID] {
+				result = append(result, m)
+			}
+
+		case m.Role == "assistant" && len(m.ToolCalls) > 0:
+			// Check if this assistant's tool_calls are all valid
+			allValid := true
+			for _, tc := range m.ToolCalls {
+				if tc.ID != "" && !validToolCallIDs[tc.ID] {
+					allValid = false
+					break
+				}
+			}
+			if allValid {
+				result = append(result, m)
+			} else if m.Content != "" {
+				// Keep text content but strip tool_calls
+				result = append(result, providers.Message{
+					Role:    "assistant",
+					Content: m.Content,
+				})
+			}
+			// If no content and invalid tool_calls, drop entirely
+
+		default:
+			result = append(result, m)
+		}
+	}
+
+	return result
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
