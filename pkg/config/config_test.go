@@ -243,6 +243,51 @@ func TestDefaultConfig_Temperature(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_PluginsDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if !cfg.Plugins.DefaultEnabled {
+		t.Error("Plugins.DefaultEnabled should be true by default")
+	}
+	if cfg.Plugins.Enabled == nil {
+		t.Error("Plugins.Enabled should be initialized to an empty slice")
+	}
+	if len(cfg.Plugins.Enabled) != 0 {
+		t.Errorf("Plugins.Enabled len = %d, want 0", len(cfg.Plugins.Enabled))
+	}
+	if cfg.Plugins.Disabled == nil {
+		t.Error("Plugins.Disabled should be initialized to an empty slice")
+	}
+	if len(cfg.Plugins.Disabled) != 0 {
+		t.Errorf("Plugins.Disabled len = %d, want 0", len(cfg.Plugins.Disabled))
+	}
+}
+
+func TestConfig_PluginsJSONUnmarshal(t *testing.T) {
+	jsonData := `{
+		"plugins": {
+			"default_enabled": false,
+			"enabled": ["plugin-a", "plugin-b"],
+			"disabled": ["plugin-c"]
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if cfg.Plugins.DefaultEnabled {
+		t.Error("Plugins.DefaultEnabled = true, want false")
+	}
+	if len(cfg.Plugins.Enabled) != 2 || cfg.Plugins.Enabled[0] != "plugin-a" || cfg.Plugins.Enabled[1] != "plugin-b" {
+		t.Errorf("Plugins.Enabled = %v, want [plugin-a plugin-b]", cfg.Plugins.Enabled)
+	}
+	if len(cfg.Plugins.Disabled) != 1 || cfg.Plugins.Disabled[0] != "plugin-c" {
+		t.Errorf("Plugins.Disabled = %v, want [plugin-c]", cfg.Plugins.Disabled)
+	}
+}
+
 // TestDefaultConfig_Gateway verifies gateway defaults
 func TestDefaultConfig_Gateway(t *testing.T) {
 	cfg := DefaultConfig()
