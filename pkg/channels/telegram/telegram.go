@@ -41,14 +41,14 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot      *telego.Bot
-	bh       *telegohandler.BotHandler
-	commands TelegramCommander
+	bot        *telego.Bot
+	bh         *telegohandler.BotHandler
+	commands   TelegramCommander
 	dispatcher commands.Dispatching
-	config   *config.Config
-	chatIDs  map[string]int64
-	ctx      context.Context
-	cancel   context.CancelFunc
+	config     *config.Config
+	chatIDs    map[string]int64
+	ctx        context.Context
+	cancel     context.CancelFunc
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
@@ -659,39 +659,79 @@ func escapeHTML(text string) string {
 
 // isBotMentioned checks if the bot is mentioned in the message via entities.
 func (c *TelegramChannel) isBotMentioned(message *telego.Message) bool {
-	botUsername := c.bot.Username()
-	if botUsername == "" {
+	text, entities := telegramEntityTextAndList(message)
+	if text == "" || len(entities) == 0 {
 		return false
 	}
 
-	entities := message.Entities
-	if entities == nil {
-		entities = message.CaptionEntities
+	botUsername := ""
+	if c.bot != nil {
+		botUsername = c.bot.Username()
 	}
+	runes := []rune(text)
 
 	for _, entity := range entities {
-		if entity.Type == "mention" {
-			// Extract the mention text from the message
-			text := message.Text
-			if text == "" {
-				text = message.Caption
-			}
-			runes := []rune(text)
-			end := entity.Offset + entity.Length
-			if end <= len(runes) {
-				mention := string(runes[entity.Offset:end])
-				if strings.EqualFold(mention, "@"+botUsername) {
-					return true
-				}
-			}
+		entityText, ok := telegramEntityText(runes, entity)
+		if !ok {
+			continue
 		}
-		if entity.Type == "text_mention" && entity.User != nil {
-			if entity.User.Username == botUsername {
+
+		switch entity.Type {
+		case telego.EntityTypeMention:
+			if botUsername != "" && strings.EqualFold(entityText, "@"+botUsername) {
+				return true
+			}
+		case telego.EntityTypeTextMention:
+			if botUsername != "" && entity.User != nil && strings.EqualFold(entity.User.Username, botUsername) {
+				return true
+			}
+		case telego.EntityTypeBotCommand:
+			if isBotCommandEntityForThisBot(entityText, botUsername) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func telegramEntityTextAndList(message *telego.Message) (string, []telego.MessageEntity) {
+	if message.Text != "" {
+		return message.Text, message.Entities
+	}
+	return message.Caption, message.CaptionEntities
+}
+
+func telegramEntityText(runes []rune, entity telego.MessageEntity) (string, bool) {
+	if entity.Offset < 0 || entity.Length <= 0 {
+		return "", false
+	}
+	end := entity.Offset + entity.Length
+	if entity.Offset >= len(runes) || end > len(runes) {
+		return "", false
+	}
+	return string(runes[entity.Offset:end]), true
+}
+
+func isBotCommandEntityForThisBot(entityText, botUsername string) bool {
+	if !strings.HasPrefix(entityText, "/") {
+		return false
+	}
+	command := strings.TrimPrefix(entityText, "/")
+	if command == "" {
+		return false
+	}
+
+	at := strings.IndexRune(command, '@')
+	if at == -1 {
+		// A bare /command delivered to this bot is intended for this bot.
+		return true
+	}
+
+	mentionUsername := command[at+1:]
+	if mentionUsername == "" || botUsername == "" {
+		return false
+	}
+	return strings.EqualFold(mentionUsername, botUsername)
 }
 
 // stripBotMention removes the @bot mention from the content.
