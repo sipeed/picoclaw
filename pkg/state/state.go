@@ -41,7 +41,7 @@ func NewManager(workspace string) *Manager {
 
 	// Create state directory if it doesn't exist
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
-		log.Printf("[WARN] state: failed to create state directory: %v", err)
+		log.Fatalf("[FATAL] state: failed to create state directory: %v", err)
 	}
 
 	sm := &Manager{
