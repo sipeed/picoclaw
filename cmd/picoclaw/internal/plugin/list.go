@@ -59,7 +59,11 @@ func newListCommand() *cobra.Command {
 }
 
 func buildPluginStatuses(summary pluginruntime.Summary) []pluginStatus {
-	statuses := make([]pluginStatus, 0, len(summary.Enabled)+len(summary.Disabled)+len(summary.UnknownEnabled)+len(summary.UnknownDisabled))
+	total := len(summary.Enabled) +
+		len(summary.Disabled) +
+		len(summary.UnknownEnabled) +
+		len(summary.UnknownDisabled)
+	statuses := make([]pluginStatus, 0, total)
 
 	for _, name := range summary.Enabled {
 		statuses = append(statuses, pluginStatus{Name: name, Status: "enabled"})
