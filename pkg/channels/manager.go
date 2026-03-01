@@ -63,7 +63,6 @@ type statusMsgEntry struct {
 	createdAt time.Time
 }
 
-
 // channelRateConfig maps channel name to per-second rate limit.
 var channelRateConfig = map[string]float64{
 	"telegram": 20,
@@ -558,7 +557,6 @@ func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *chan
 	// 3. Fallback: regular Send (for channels without SendWithID)
 	_ = w.ch.Send(ctx, msg)
 }
-
 
 // sendWithRetry sends a message through the channel with rate limiting and
 // retry logic. It classifies errors to determine the retry strategy:
