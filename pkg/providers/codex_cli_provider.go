@@ -115,7 +115,7 @@ func (p *CodexCliProvider) buildPrompt(messages []Message, tools []ToolDefinitio
 	}
 
 	if len(tools) > 0 {
-		sb.WriteString(p.buildToolsPrompt(tools))
+		sb.WriteString(buildCLIToolsPrompt(tools))
 		sb.WriteString("\n\n")
 	}
 
@@ -126,11 +126,6 @@ func (p *CodexCliProvider) buildPrompt(messages []Message, tools []ToolDefinitio
 
 	sb.WriteString(strings.Join(conversationParts, "\n"))
 	return sb.String()
-}
-
-// buildToolsPrompt creates a tool definitions section for the prompt.
-func (p *CodexCliProvider) buildToolsPrompt(tools []ToolDefinition) string {
-	return buildCLIToolsPrompt(tools)
 }
 
 // codexEvent represents a single JSONL event from `codex exec --json`.

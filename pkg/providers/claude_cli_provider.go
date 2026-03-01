@@ -100,15 +100,10 @@ func (p *ClaudeCliProvider) buildSystemPrompt(messages []Message, tools []ToolDe
 	}
 
 	if len(tools) > 0 {
-		parts = append(parts, p.buildToolsPrompt(tools))
+		parts = append(parts, buildCLIToolsPrompt(tools))
 	}
 
 	return strings.Join(parts, "\n\n")
-}
-
-// buildToolsPrompt creates the tool definitions section for the system prompt.
-func (p *ClaudeCliProvider) buildToolsPrompt(tools []ToolDefinition) string {
-	return buildCLIToolsPrompt(tools)
 }
 
 // parseClaudeCliResponse parses the JSON output from the claude CLI.
