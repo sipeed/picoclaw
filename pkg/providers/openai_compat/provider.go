@@ -150,16 +150,10 @@ func (p *Provider) Chat(
 		}
 	}
 
-	// Prompt caching: pass a stable cache key so OpenAI can bucket requests
-	// with the same key and reuse prefix KV cache across calls.
-	// The key is typically the agent ID — stable per agent, shared across requests.
-	// See: https://platform.openai.com/docs/guides/prompt-caching
-	// Prompt caching is only supported by OpenAI-native endpoints.
-	// Gemini and other providers reject unknown fields, so skip for non-OpenAI APIs.
+	// Prompt caching: pass a stable cache key so compatible endpoints that
+	// support this field can reuse prefix KV cache across calls.
 	if cacheKey, ok := options["prompt_cache_key"].(string); ok && cacheKey != "" {
-		if !strings.Contains(p.apiBase, "generativelanguage.googleapis.com") {
-			requestBody["prompt_cache_key"] = cacheKey
-		}
+		requestBody["prompt_cache_key"] = cacheKey
 	}
 
 	jsonData, err := json.Marshal(requestBody)
@@ -289,10 +283,11 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 // It mirrors protocoltypes.Message but omits SystemParts, which is an
 // internal field that would be unknown to third-party endpoints.
 type openaiMessage struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
 
 // stripSystemParts converts []Message to []openaiMessage, dropping the
@@ -302,10 +297,11 @@ func stripSystemParts(messages []Message) []openaiMessage {
 	out := make([]openaiMessage, len(messages))
 	for i, m := range messages {
 		out[i] = openaiMessage{
-			Role:       m.Role,
-			Content:    m.Content,
-			ToolCalls:  m.ToolCalls,
-			ToolCallID: m.ToolCallID,
+			Role:             m.Role,
+			Content:          m.Content,
+			ReasoningContent: m.ReasoningContent,
+			ToolCalls:        m.ToolCalls,
+			ToolCallID:       m.ToolCallID,
 		}
 	}
 	return out
@@ -323,7 +319,7 @@ func normalizeModel(model, apiBase string) string {
 
 	prefix := strings.ToLower(model[:idx])
 	switch prefix {
-	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "mistral":
+	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "openrouter", "zhipu", "mistral":
 		return model[idx+1:]
 	default:
 		return model

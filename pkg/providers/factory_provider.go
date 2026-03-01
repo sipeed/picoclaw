@@ -8,8 +8,11 @@ package providers
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers/gemini_sdk"
+	"github.com/sipeed/picoclaw/pkg/providers/openai_sdk"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -76,7 +79,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			}
 			return provider, modelID, nil
 		}
-		// OpenAI with API key
+		// OpenAI with API key (official SDK path)
 		if cfg.APIKey == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
@@ -84,15 +87,14 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		return openai_sdk.NewProvider(
 			cfg.APIKey,
 			apiBase,
 			cfg.Proxy,
-			cfg.MaxTokensField,
-			cfg.RequestTimeout,
+			openai_sdk.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
 		), modelID, nil
 
-	case "openrouter", "groq", "zhipu", "gemini", "nvidia",
+	case "openrouter", "groq", "zhipu", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"volcengine", "vllm", "qwen", "mistral":
 		// All other OpenAI-compatible HTTP providers
@@ -109,6 +111,21 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+		), modelID, nil
+
+	case "gemini", "google":
+		if cfg.APIKey == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		return gemini_sdk.NewProvider(
+			cfg.APIKey,
+			apiBase,
+			cfg.Proxy,
+			gemini_sdk.WithRequestTimeout(time.Duration(cfg.RequestTimeout)*time.Second),
 		), modelID, nil
 
 	case "anthropic":
@@ -184,7 +201,7 @@ func getDefaultAPIBase(protocol string) string {
 		return "https://api.groq.com/openai/v1"
 	case "zhipu":
 		return "https://open.bigmodel.cn/api/paas/v4"
-	case "gemini":
+	case "gemini", "google":
 		return "https://generativelanguage.googleapis.com/v1beta"
 	case "nvidia":
 		return "https://integrate.api.nvidia.com/v1"
