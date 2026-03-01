@@ -170,6 +170,7 @@ func (c *PicoChannel) SendWithID(ctx context.Context, chatID string, content str
 	return msgID, nil
 }
 
+
 // EditMessage implements channels.MessageEditor.
 func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	outMsg := newMessage(TypeMessageUpdate, map[string]any{
@@ -312,8 +313,8 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 
 	// Check Authorization header
 	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		if strings.TrimPrefix(auth, "Bearer ") == token {
+	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+		if after == token {
 			return true
 		}
 	}

@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// Common patterns in Go HTTP error messages
+var httpStatusPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`status[:\s]+(\d{3})`),
+	regexp.MustCompile(`http[/\s]+\d*\.?\d*\s+(\d{3})`),
+	regexp.MustCompile(`\b([3-5]\d{2})\b`),
+}
+
 // errorPattern defines a single pattern (string or regex) for error classification.
 type errorPattern struct {
 	substring string
@@ -198,20 +205,13 @@ func classifyByMessage(msg string) FailoverReason {
 }
 
 // extractHTTPStatus extracts an HTTP status code from an error message.
-// Looks for patterns like "status: 429", "status 429", "HTTP 429", or standalone "429".
+// Looks for patterns like "status: 429", "status 429", "http/1.1 429", "http 429", or standalone "429".
 func extractHTTPStatus(msg string) int {
-	// Common patterns in Go HTTP error messages
-	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`status[:\s]+(\d{3})`),
-		regexp.MustCompile(`HTTP[/\s]+\d*\.?\d*\s+(\d{3})`),
-	}
-
-	for _, p := range patterns {
+	for _, p := range httpStatusPatterns {
 		if m := p.FindStringSubmatch(msg); len(m) > 1 {
 			return parseDigits(m[1])
 		}
 	}
-
 	return 0
 }
 

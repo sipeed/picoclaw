@@ -67,7 +67,7 @@ func TestPublishInbound_ContextCancel(t *testing.T) {
 
 	// Fill the buffer
 	ctx := context.Background()
-	for i := 0; i < defaultBusBufferSize; i++ {
+	for i := range defaultBusBufferSize {
 		if err := mb.PublishInbound(ctx, InboundMessage{Content: "fill"}); err != nil {
 			t.Fatalf("fill failed at %d: %v", i, err)
 		}
@@ -154,7 +154,7 @@ func TestConcurrentPublishClose(t *testing.T) {
 	wg.Add(numGoroutines + 1)
 
 	// Spawn many goroutines trying to publish
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			// Use a short timeout context so we don't block forever after close
@@ -194,7 +194,7 @@ func TestPublishInbound_FullBuffer(t *testing.T) {
 	ctx := context.Background()
 
 	// Fill the buffer
-	for i := 0; i < defaultBusBufferSize; i++ {
+	for i := range defaultBusBufferSize {
 		if err := mb.PublishInbound(ctx, InboundMessage{Content: "fill"}); err != nil {
 			t.Fatalf("fill failed at %d: %v", i, err)
 		}

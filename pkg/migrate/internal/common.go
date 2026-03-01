@@ -1,24 +1,50 @@
-package migrate
+package internal
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
 
-var migrateableFiles = []string{
-	"AGENTS.md",
-	"SOUL.md",
-	"USER.md",
-	"TOOLS.md",
-	"HEARTBEAT.md",
+func ResolveTargetHome(override string) (string, error) {
+	if override != "" {
+		return ExpandHome(override), nil
+	}
+	if envHome := os.Getenv("PICOCLAW_HOME"); envHome != "" {
+		return ExpandHome(envHome), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolving home directory: %w", err)
+	}
+	return filepath.Join(home, ".picoclaw"), nil
 }
 
-var migrateableDirs = []string{
-	"memory",
-	"skills",
+func ExpandHome(path string) string {
+	if path == "" {
+		return path
+	}
+	if path[0] == '~' {
+		home, _ := os.UserHomeDir()
+		if len(path) > 1 && path[1] == '/' {
+			return home + path[1:]
+		}
+		return home
+	}
+	return path
 }
 
-func PlanWorkspaceMigration(srcWorkspace, dstWorkspace string, force bool) ([]Action, error) {
+func ResolveWorkspace(homeDir string) string {
+	return filepath.Join(homeDir, "workspace")
+}
+
+func PlanWorkspaceMigration(
+	srcWorkspace, dstWorkspace string,
+	migrateableFiles []string,
+	migrateableDirs []string,
+	force bool,
+) ([]Action, error) {
 	var actions []Action
 
 	for _, filename := range migrateableFiles {
@@ -50,7 +76,7 @@ func planFileCopy(src, dst string, force bool) Action {
 		return Action{
 			Type:        ActionSkip,
 			Source:      src,
-			Destination: dst,
+			Target:      dst,
 			Description: "source file not found",
 		}
 	}
@@ -60,7 +86,7 @@ func planFileCopy(src, dst string, force bool) Action {
 		return Action{
 			Type:        ActionBackup,
 			Source:      src,
-			Destination: dst,
+			Target:      dst,
 			Description: "destination exists, will backup and overwrite",
 		}
 	}
@@ -68,7 +94,7 @@ func planFileCopy(src, dst string, force bool) Action {
 	return Action{
 		Type:        ActionCopy,
 		Source:      src,
-		Destination: dst,
+		Target:      dst,
 		Description: "copy file",
 	}
 }
@@ -91,7 +117,7 @@ func planDirCopy(srcDir, dstDir string, force bool) ([]Action, error) {
 		if info.IsDir() {
 			actions = append(actions, Action{
 				Type:        ActionCreateDir,
-				Destination: dst,
+				Target:      dst,
 				Description: "create directory",
 			})
 			return nil
@@ -103,4 +129,34 @@ func planDirCopy(srcDir, dstDir string, force bool) ([]Action, error) {
 	})
 
 	return actions, err
+}
+
+func RelPath(path, base string) string {
+	rel, err := filepath.Rel(base, path)
+	if err != nil {
+		return filepath.Base(path)
+	}
+	return rel
+}
+
+func CopyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	info, err := srcFile.Stat()
+	if err != nil {
+		return err
+	}
+
+	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	return err
 }
