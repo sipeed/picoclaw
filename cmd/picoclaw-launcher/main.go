@@ -27,7 +27,7 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw-launcher/internal/server"
 )
 
-//go:embed internal/ui/index.html
+//go:embed internal/ui/index.html internal/ui/index.js internal/ui/i18n.json internal/ui/vendor/*
 var staticFiles embed.FS
 
 func main() {
