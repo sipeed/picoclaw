@@ -182,7 +182,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 				}
 			}
 		case "opencode":
-			if cfg.Providers.Opencode.APIKey != "" {
+			if cfg.Providers.Opencode.APIKey != "" || cfg.Providers.Opencode.APIBase != "" {
 				sel.apiKey = cfg.Providers.Opencode.APIKey
 				sel.apiBase = cfg.Providers.Opencode.APIBase
 				sel.proxy = cfg.Providers.Opencode.Proxy
@@ -196,7 +196,11 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 				sel.apiBase = cfg.Providers.Moonshot.APIBase
 				sel.proxy = cfg.Providers.Moonshot.Proxy
 				if sel.apiBase == "" {
-					sel.apiBase = "https://api.kimi.com/coding/v1"
+					if providerName == "moonshot" {
+						sel.apiBase = "https://api.moonshot.cn/v1"
+					} else {
+						sel.apiBase = "https://api.kimi.com/coding/v1"
+					}
 				}
 			}
 		case "github_copilot", "copilot":
@@ -219,7 +223,11 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.apiBase = cfg.Providers.Moonshot.APIBase
 			sel.proxy = cfg.Providers.Moonshot.Proxy
 			if sel.apiBase == "" {
-				sel.apiBase = "https://api.kimi.com/coding/v1"
+				if strings.Contains(lowerModel, "moonshot") || strings.HasPrefix(model, "moonshot/") {
+					sel.apiBase = "https://api.moonshot.cn/v1"
+				} else {
+					sel.apiBase = "https://api.kimi.com/coding/v1"
+				}
 			}
 		case strings.HasPrefix(model, "openrouter/") ||
 			strings.HasPrefix(model, "anthropic/") ||
