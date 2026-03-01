@@ -60,12 +60,13 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName:  "openai",
-					Model:      "openai/gpt-5.2",
-					APIKey:     p.OpenAI.APIKey,
-					APIBase:    p.OpenAI.APIBase,
-					Proxy:      p.OpenAI.Proxy,
-					AuthMethod: p.OpenAI.AuthMethod,
+					ModelName:      "openai",
+					Model:          "openai/gpt-5.2",
+					APIKey:         p.OpenAI.APIKey,
+					APIBase:        p.OpenAI.APIBase,
+					Proxy:          p.OpenAI.Proxy,
+					RequestTimeout: p.OpenAI.RequestTimeout,
+					AuthMethod:     p.OpenAI.AuthMethod,
 				}, true
 			},
 		},
@@ -77,12 +78,13 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName:  "anthropic",
-					Model:      "anthropic/claude-sonnet-4.6",
-					APIKey:     p.Anthropic.APIKey,
-					APIBase:    p.Anthropic.APIBase,
-					Proxy:      p.Anthropic.Proxy,
-					AuthMethod: p.Anthropic.AuthMethod,
+					ModelName:      "anthropic",
+					Model:          "anthropic/claude-sonnet-4.6",
+					APIKey:         p.Anthropic.APIKey,
+					APIBase:        p.Anthropic.APIBase,
+					Proxy:          p.Anthropic.Proxy,
+					RequestTimeout: p.Anthropic.RequestTimeout,
+					AuthMethod:     p.Anthropic.AuthMethod,
 				}, true
 			},
 		},
@@ -94,11 +96,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "openrouter",
-					Model:     "openrouter/auto",
-					APIKey:    p.OpenRouter.APIKey,
-					APIBase:   p.OpenRouter.APIBase,
-					Proxy:     p.OpenRouter.Proxy,
+					ModelName:      "openrouter",
+					Model:          "openrouter/auto",
+					APIKey:         p.OpenRouter.APIKey,
+					APIBase:        p.OpenRouter.APIBase,
+					Proxy:          p.OpenRouter.Proxy,
+					RequestTimeout: p.OpenRouter.RequestTimeout,
 				}, true
 			},
 		},
@@ -110,11 +113,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "groq",
-					Model:     "groq/llama-3.1-70b-versatile",
-					APIKey:    p.Groq.APIKey,
-					APIBase:   p.Groq.APIBase,
-					Proxy:     p.Groq.Proxy,
+					ModelName:      "groq",
+					Model:          "groq/llama-3.1-70b-versatile",
+					APIKey:         p.Groq.APIKey,
+					APIBase:        p.Groq.APIBase,
+					Proxy:          p.Groq.Proxy,
+					RequestTimeout: p.Groq.RequestTimeout,
 				}, true
 			},
 		},
@@ -126,11 +130,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "zhipu",
-					Model:     "zhipu/glm-4",
-					APIKey:    p.Zhipu.APIKey,
-					APIBase:   p.Zhipu.APIBase,
-					Proxy:     p.Zhipu.Proxy,
+					ModelName:      "zhipu",
+					Model:          "zhipu/glm-4",
+					APIKey:         p.Zhipu.APIKey,
+					APIBase:        p.Zhipu.APIBase,
+					Proxy:          p.Zhipu.Proxy,
+					RequestTimeout: p.Zhipu.RequestTimeout,
 				}, true
 			},
 		},
@@ -142,11 +147,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "vllm",
-					Model:     "vllm/auto",
-					APIKey:    p.VLLM.APIKey,
-					APIBase:   p.VLLM.APIBase,
-					Proxy:     p.VLLM.Proxy,
+					ModelName:      "vllm",
+					Model:          "vllm/auto",
+					APIKey:         p.VLLM.APIKey,
+					APIBase:        p.VLLM.APIBase,
+					Proxy:          p.VLLM.Proxy,
+					RequestTimeout: p.VLLM.RequestTimeout,
 				}, true
 			},
 		},
@@ -158,11 +164,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "gemini",
-					Model:     "gemini/gemini-pro",
-					APIKey:    p.Gemini.APIKey,
-					APIBase:   p.Gemini.APIBase,
-					Proxy:     p.Gemini.Proxy,
+					ModelName:      "gemini",
+					Model:          "gemini/gemini-pro",
+					APIKey:         p.Gemini.APIKey,
+					APIBase:        p.Gemini.APIBase,
+					Proxy:          p.Gemini.Proxy,
+					RequestTimeout: p.Gemini.RequestTimeout,
 				}, true
 			},
 		},
@@ -174,11 +181,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "nvidia",
-					Model:     "nvidia/meta/llama-3.1-8b-instruct",
-					APIKey:    p.Nvidia.APIKey,
-					APIBase:   p.Nvidia.APIBase,
-					Proxy:     p.Nvidia.Proxy,
+					ModelName:      "nvidia",
+					Model:          "nvidia/meta/llama-3.1-8b-instruct",
+					APIKey:         p.Nvidia.APIKey,
+					APIBase:        p.Nvidia.APIBase,
+					Proxy:          p.Nvidia.Proxy,
+					RequestTimeout: p.Nvidia.RequestTimeout,
 				}, true
 			},
 		},
@@ -190,11 +198,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "ollama",
-					Model:     "ollama/llama3",
-					APIKey:    p.Ollama.APIKey,
-					APIBase:   p.Ollama.APIBase,
-					Proxy:     p.Ollama.Proxy,
+					ModelName:      "ollama",
+					Model:          "ollama/llama3",
+					APIKey:         p.Ollama.APIKey,
+					APIBase:        p.Ollama.APIBase,
+					Proxy:          p.Ollama.Proxy,
+					RequestTimeout: p.Ollama.RequestTimeout,
 				}, true
 			},
 		},
@@ -206,11 +215,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "moonshot",
-					Model:     "moonshot/kimi",
-					APIKey:    p.Moonshot.APIKey,
-					APIBase:   p.Moonshot.APIBase,
-					Proxy:     p.Moonshot.Proxy,
+					ModelName:      "moonshot",
+					Model:          "moonshot/kimi",
+					APIKey:         p.Moonshot.APIKey,
+					APIBase:        p.Moonshot.APIBase,
+					Proxy:          p.Moonshot.Proxy,
+					RequestTimeout: p.Moonshot.RequestTimeout,
 				}, true
 			},
 		},
@@ -222,11 +232,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "shengsuanyun",
-					Model:     "shengsuanyun/auto",
-					APIKey:    p.ShengSuanYun.APIKey,
-					APIBase:   p.ShengSuanYun.APIBase,
-					Proxy:     p.ShengSuanYun.Proxy,
+					ModelName:      "shengsuanyun",
+					Model:          "shengsuanyun/auto",
+					APIKey:         p.ShengSuanYun.APIKey,
+					APIBase:        p.ShengSuanYun.APIBase,
+					Proxy:          p.ShengSuanYun.Proxy,
+					RequestTimeout: p.ShengSuanYun.RequestTimeout,
 				}, true
 			},
 		},
@@ -238,11 +249,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "deepseek",
-					Model:     "deepseek/deepseek-chat",
-					APIKey:    p.DeepSeek.APIKey,
-					APIBase:   p.DeepSeek.APIBase,
-					Proxy:     p.DeepSeek.Proxy,
+					ModelName:      "deepseek",
+					Model:          "deepseek/deepseek-chat",
+					APIKey:         p.DeepSeek.APIKey,
+					APIBase:        p.DeepSeek.APIBase,
+					Proxy:          p.DeepSeek.Proxy,
+					RequestTimeout: p.DeepSeek.RequestTimeout,
 				}, true
 			},
 		},
@@ -254,11 +266,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "cerebras",
-					Model:     "cerebras/llama-3.3-70b",
-					APIKey:    p.Cerebras.APIKey,
-					APIBase:   p.Cerebras.APIBase,
-					Proxy:     p.Cerebras.Proxy,
+					ModelName:      "cerebras",
+					Model:          "cerebras/llama-3.3-70b",
+					APIKey:         p.Cerebras.APIKey,
+					APIBase:        p.Cerebras.APIBase,
+					Proxy:          p.Cerebras.Proxy,
+					RequestTimeout: p.Cerebras.RequestTimeout,
 				}, true
 			},
 		},
@@ -270,11 +283,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "volcengine",
-					Model:     "volcengine/doubao-pro",
-					APIKey:    p.VolcEngine.APIKey,
-					APIBase:   p.VolcEngine.APIBase,
-					Proxy:     p.VolcEngine.Proxy,
+					ModelName:      "volcengine",
+					Model:          "volcengine/doubao-pro",
+					APIKey:         p.VolcEngine.APIKey,
+					APIBase:        p.VolcEngine.APIBase,
+					Proxy:          p.VolcEngine.Proxy,
+					RequestTimeout: p.VolcEngine.RequestTimeout,
 				}, true
 			},
 		},
@@ -316,11 +330,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "qwen",
-					Model:     "qwen/qwen-max",
-					APIKey:    p.Qwen.APIKey,
-					APIBase:   p.Qwen.APIBase,
-					Proxy:     p.Qwen.Proxy,
+					ModelName:      "qwen",
+					Model:          "qwen/qwen-max",
+					APIKey:         p.Qwen.APIKey,
+					APIBase:        p.Qwen.APIBase,
+					Proxy:          p.Qwen.Proxy,
+					RequestTimeout: p.Qwen.RequestTimeout,
 				}, true
 			},
 		},
@@ -332,11 +347,12 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					return ModelConfig{}, false
 				}
 				return ModelConfig{
-					ModelName: "mistral",
-					Model:     "mistral/mistral-small-latest",
-					APIKey:    p.Mistral.APIKey,
-					APIBase:   p.Mistral.APIBase,
-					Proxy:     p.Mistral.Proxy,
+					ModelName:      "mistral",
+					Model:          "mistral/mistral-small-latest",
+					APIKey:         p.Mistral.APIKey,
+					APIBase:        p.Mistral.APIBase,
+					Proxy:          p.Mistral.Proxy,
+					RequestTimeout: p.Mistral.RequestTimeout,
 				}, true
 			},
 		},

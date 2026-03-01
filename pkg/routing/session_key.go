@@ -163,6 +163,15 @@ func resolveLinkedPeerID(identityLinks map[string][]string, channel, peerID stri
 		scopedCandidate := fmt.Sprintf("%s:%s", channel, strings.ToLower(peerID))
 		candidates[scopedCandidate] = true
 	}
+
+	// If peerID is already in canonical "platform:id" format, also add the
+	// bare ID part as a candidate for backward compatibility with identity_links
+	// that use raw IDs (e.g. "123" instead of "telegram:123").
+	if idx := strings.Index(rawCandidate, ":"); idx > 0 && idx < len(rawCandidate)-1 {
+		bareID := rawCandidate[idx+1:]
+		candidates[bareID] = true
+	}
+
 	if len(candidates) == 0 {
 		return ""
 	}

@@ -9,7 +9,9 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +23,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -38,6 +41,7 @@ type AgentLoop struct {
 	summarizing    sync.Map
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
+	mediaStore     media.MediaStore
 }
 
 // processOptions configures how a message is processed
@@ -51,6 +55,8 @@ type processOptions struct {
 	SendResponse    bool   // Whether to send response via bus
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 }
+
+const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
@@ -93,7 +99,7 @@ func registerSharedTools(
 		}
 
 		// Web tools
-		if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+		searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
 			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
 			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
@@ -107,10 +113,18 @@ func registerSharedTools(
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 			Proxy:                cfg.Tools.Web.Proxy,
-		}); searchTool != nil {
+		})
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{"error": err.Error()})
+		} else if searchTool != nil {
 			agent.Tools.Register(searchTool)
 		}
-		agent.Tools.Register(tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy))
+		fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+		} else {
+			agent.Tools.Register(fetchTool)
+		}
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		agent.Tools.Register(tools.NewI2CTool())
@@ -119,12 +133,13 @@ func registerSharedTools(
 		// Message tool
 		messageTool := tools.NewMessageTool()
 		messageTool.SetSendCallback(func(channel, chatID, content string) error {
-			msgBus.PublishOutbound(bus.OutboundMessage{
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer pubCancel()
+			return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 				Channel: channel,
 				ChatID:  chatID,
 				Content: content,
 			})
-			return nil
 		})
 		agent.Tools.Register(messageTool)
 
@@ -165,33 +180,61 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
-			response, err := al.processMessage(ctx, msg)
-			if err != nil {
-				response = fmt.Sprintf("Error processing message: %v", err)
-			}
+			// Process message
+			func() {
+				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
+				// Currently disabled because files are deleted before the LLM can access their content.
+				// defer func() {
+				// 	if al.mediaStore != nil && msg.MediaScope != "" {
+				// 		if releaseErr := al.mediaStore.ReleaseAll(msg.MediaScope); releaseErr != nil {
+				// 			logger.WarnCF("agent", "Failed to release media", map[string]any{
+				// 				"scope": msg.MediaScope,
+				// 				"error": releaseErr.Error(),
+				// 			})
+				// 		}
+				// 	}
+				// }()
 
-			if response != "" {
-				// Check if the message tool already sent a response during this round.
-				// If so, skip publishing to avoid duplicate messages to the user.
-				// Use default agent's tools to check (message tool is shared).
-				alreadySent := false
-				defaultAgent := al.registry.GetDefaultAgent()
-				if defaultAgent != nil {
-					if tool, ok := defaultAgent.Tools.Get("message"); ok {
-						if mt, ok := tool.(*tools.MessageTool); ok {
-							alreadySent = mt.HasSentInRound()
+				response, err := al.processMessage(ctx, msg)
+				if err != nil {
+					response = fmt.Sprintf("Error processing message: %v", err)
+				}
+
+				if response != "" {
+					// Check if the message tool already sent a response during this round.
+					// If so, skip publishing to avoid duplicate messages to the user.
+					// Use default agent's tools to check (message tool is shared).
+					alreadySent := false
+					defaultAgent := al.registry.GetDefaultAgent()
+					if defaultAgent != nil {
+						if tool, ok := defaultAgent.Tools.Get("message"); ok {
+							if mt, ok := tool.(*tools.MessageTool); ok {
+								alreadySent = mt.HasSentInRound()
+							}
 						}
 					}
-				}
 
-				if !alreadySent {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: msg.Channel,
-						ChatID:  msg.ChatID,
-						Content: response,
-					})
+					if !alreadySent {
+						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+							Channel: msg.Channel,
+							ChatID:  msg.ChatID,
+							Content: response,
+						})
+						logger.InfoCF("agent", "Published outbound response",
+							map[string]any{
+								"channel":     msg.Channel,
+								"chat_id":     msg.ChatID,
+								"content_len": len(response),
+							})
+					} else {
+						logger.DebugCF(
+							"agent",
+							"Skipped outbound (message tool already sent)",
+							map[string]any{"channel": msg.Channel},
+						)
+					}
 				}
-			}
+			}()
 		}
 	}
 
@@ -212,6 +255,41 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+}
+
+// SetMediaStore injects a MediaStore for media lifecycle management.
+func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
+	al.mediaStore = s
+}
+
+// inferMediaType determines the media type ("image", "audio", "video", "file")
+// from a filename and MIME content type.
+func inferMediaType(filename, contentType string) string {
+	ct := strings.ToLower(contentType)
+	fn := strings.ToLower(filename)
+
+	if strings.HasPrefix(ct, "image/") {
+		return "image"
+	}
+	if strings.HasPrefix(ct, "audio/") || ct == "application/ogg" {
+		return "audio"
+	}
+	if strings.HasPrefix(ct, "video/") {
+		return "video"
+	}
+
+	// Fallback: infer from extension
+	ext := filepath.Ext(fn)
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+		return "image"
+	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
+		return "audio"
+	case ".mp4", ".avi", ".mov", ".webm", ".mkv":
+		return "video"
+	}
+
+	return "file"
 }
 
 // RecordLastChannel records the last active channel for this workspace.
@@ -255,12 +333,15 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 // Each heartbeat is independent and doesn't accumulate context.
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
 	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", fmt.Errorf("no default agent for heartbeat")
+	}
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      "heartbeat",
 		Channel:         channel,
 		ChatID:          chatID,
 		UserMessage:     content,
-		DefaultResponse: "I've completed processing but have no response to give.",
+		DefaultResponse: defaultResponse,
 		EnableSummary:   false,
 		SendResponse:    false,
 		NoHistory:       true, // Don't load session history for heartbeat
@@ -307,6 +388,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if !ok {
 		agent = al.registry.GetDefaultAgent()
 	}
+	if agent == nil {
+		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+	}
+
+	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if mt, ok := tool.(tools.ContextualTool); ok {
+			mt.SetContext(msg.Channel, msg.ChatID)
+		}
+	}
 
 	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
 	sessionKey := route.SessionKey
@@ -326,7 +417,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
-		DefaultResponse: "I've completed processing but have no response to give.",
+		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
 	})
@@ -373,6 +464,9 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	// Use default agent for system messages
 	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", fmt.Errorf("no default agent for system message")
+	}
 
 	// Use the origin session for context
 	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
@@ -448,7 +542,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 8. Optional: send response via bus
 	if opts.SendResponse {
-		al.bus.PublishOutbound(bus.OutboundMessage{
+		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
 			Content: finalContent,
@@ -466,6 +560,59 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		})
 
 	return finalContent, nil
+}
+
+func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string) {
+	if al.channelManager == nil {
+		return ""
+	}
+	if ch, ok := al.channelManager.GetChannel(channelName); ok {
+		return ch.ReasoningChannelID()
+	}
+	return ""
+}
+
+func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, channelName, channelID string) {
+	if reasoningContent == "" || channelName == "" || channelID == "" {
+		return
+	}
+
+	// Check context cancellation before attempting to publish,
+	// since PublishOutbound's select may race between send and ctx.Done().
+	if ctx.Err() != nil {
+		return
+	}
+
+	// Use a short timeout so the goroutine does not block indefinitely when
+	// the outbound bus is full.  Reasoning output is best-effort; dropping it
+	// is acceptable to avoid goroutine accumulation.
+	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pubCancel()
+
+	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Channel: channelName,
+		ChatID:  channelID,
+		Content: reasoningContent,
+	}); err != nil {
+		// Treat context.DeadlineExceeded / context.Canceled as expected
+		// (bus full under load, or parent canceled).  Check the error
+		// itself rather than ctx.Err(), because pubCtx may time out
+		// (5 s) while the parent ctx is still active.
+		// Also treat ErrBusClosed as expected — it occurs during normal
+		// shutdown when the bus is closed before all goroutines finish.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+			errors.Is(err, bus.ErrBusClosed) {
+			logger.DebugCF("agent", "Reasoning publish skipped (timeout/cancel)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		} else {
+			logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		}
+	}
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
@@ -553,10 +700,35 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			errMsg := strings.ToLower(err.Error())
-			isContextError := strings.Contains(errMsg, "token") ||
-				strings.Contains(errMsg, "context") ||
+
+			// Check if this is a network/HTTP timeout — not a context window error.
+			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(errMsg, "deadline exceeded") ||
+				strings.Contains(errMsg, "client.timeout") ||
+				strings.Contains(errMsg, "timed out") ||
+				strings.Contains(errMsg, "timeout exceeded")
+
+			// Detect real context window / token limit errors, excluding network timeouts.
+			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
+				strings.Contains(errMsg, "context window") ||
+				strings.Contains(errMsg, "maximum context length") ||
+				strings.Contains(errMsg, "token limit") ||
+				strings.Contains(errMsg, "too many tokens") ||
+				strings.Contains(errMsg, "max_tokens") ||
 				strings.Contains(errMsg, "invalidparameter") ||
-				strings.Contains(errMsg, "length")
+				strings.Contains(errMsg, "prompt is too long") ||
+				strings.Contains(errMsg, "request too large"))
+
+			if isTimeoutError && retry < maxRetries {
+				backoff := time.Duration(retry+1) * 5 * time.Second
+				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
+					"error":   err.Error(),
+					"retry":   retry,
+					"backoff": backoff.String(),
+				})
+				time.Sleep(backoff)
+				continue
+			}
 
 			if isContextError && retry < maxRetries {
 				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]any{
@@ -565,7 +737,7 @@ func (al *AgentLoop) runLLMIteration(
 				})
 
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
-					al.bus.PublishOutbound(bus.OutboundMessage{
+					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 						Channel: opts.Channel,
 						ChatID:  opts.ChatID,
 						Content: "Context window exceeded. Compressing history and retrying...",
@@ -594,6 +766,18 @@ func (al *AgentLoop) runLLMIteration(
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
+		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
+
+		logger.DebugCF("agent", "LLM response",
+			map[string]any{
+				"agent_id":       agent.ID,
+				"iteration":      iteration,
+				"content_chars":  len(response.Content),
+				"tool_calls":     len(response.ToolCalls),
+				"reasoning":      response.Reasoning,
+				"target_channel": al.targetReasoningChannelID(opts.Channel),
+				"channel":        opts.Channel,
+			})
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
@@ -695,7 +879,7 @@ func (al *AgentLoop) runLLMIteration(
 
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
-				al.bus.PublishOutbound(bus.OutboundMessage{
+				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel: opts.Channel,
 					ChatID:  opts.ChatID,
 					Content: toolResult.ForUser,
@@ -705,6 +889,28 @@ func (al *AgentLoop) runLLMIteration(
 						"tool":        tc.Name,
 						"content_len": len(toolResult.ForUser),
 					})
+			}
+
+			// If tool returned media refs, publish them as outbound media
+			if len(toolResult.Media) > 0 && opts.SendResponse {
+				parts := make([]bus.MediaPart, 0, len(toolResult.Media))
+				for _, ref := range toolResult.Media {
+					part := bus.MediaPart{Ref: ref}
+					// Populate metadata from MediaStore when available
+					if al.mediaStore != nil {
+						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+							part.Filename = meta.Filename
+							part.ContentType = meta.ContentType
+							part.Type = inferMediaType(meta.Filename, meta.ContentType)
+						}
+					}
+					parts = append(parts, part)
+				}
+				al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
+					Channel: opts.Channel,
+					ChatID:  opts.ChatID,
+					Parts:   parts,
+				})
 			}
 
 			// Determine content for LLM based on tool result
@@ -759,13 +965,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
-				if !constants.IsInternalChannel(channel) {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: channel,
-						ChatID:  chatID,
-						Content: "Memory threshold reached. Optimizing conversation history...",
-					})
-				}
+				logger.Debug("Memory threshold reached. Optimizing conversation history...")
 				al.summarizeSession(agent, sessionKey)
 			}()
 		}
@@ -1125,21 +1325,20 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	return "", false
 }
 
-// extractPeer extracts the routing peer from inbound message metadata.
+// extractPeer extracts the routing peer from the inbound message's structured Peer field.
 func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
-	peerKind := msg.Metadata["peer_kind"]
-	if peerKind == "" {
+	if msg.Peer.Kind == "" {
 		return nil
 	}
-	peerID := msg.Metadata["peer_id"]
+	peerID := msg.Peer.ID
 	if peerID == "" {
-		if peerKind == "direct" {
+		if msg.Peer.Kind == "direct" {
 			peerID = msg.SenderID
 		} else {
 			peerID = msg.ChatID
 		}
 	}
-	return &routing.RoutePeer{Kind: peerKind, ID: peerID}
+	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
 }
 
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.

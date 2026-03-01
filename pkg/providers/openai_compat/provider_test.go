@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 )
 
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
@@ -323,5 +324,40 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
+	}
+}
+
+func TestProvider_RequestTimeoutDefault(t *testing.T) {
+	p := NewProviderWithMaxTokensFieldAndTimeout("key", "https://example.com/v1", "", "", 0)
+	if p.httpClient.Timeout != defaultRequestTimeout {
+		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
+	}
+}
+
+func TestProvider_RequestTimeoutOverride(t *testing.T) {
+	p := NewProviderWithMaxTokensFieldAndTimeout("key", "https://example.com/v1", "", "", 300)
+	if p.httpClient.Timeout != 300*time.Second {
+		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, 300*time.Second)
+	}
+}
+
+func TestProvider_FunctionalOptionMaxTokensField(t *testing.T) {
+	p := NewProvider("key", "https://example.com/v1", "", WithMaxTokensField("max_completion_tokens"))
+	if p.maxTokensField != "max_completion_tokens" {
+		t.Fatalf("maxTokensField = %q, want %q", p.maxTokensField, "max_completion_tokens")
+	}
+}
+
+func TestProvider_FunctionalOptionRequestTimeout(t *testing.T) {
+	p := NewProvider("key", "https://example.com/v1", "", WithRequestTimeout(45*time.Second))
+	if p.httpClient.Timeout != 45*time.Second {
+		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, 45*time.Second)
+	}
+}
+
+func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
+	p := NewProvider("key", "https://example.com/v1", "", WithRequestTimeout(-1*time.Second))
+	if p.httpClient.Timeout != defaultRequestTimeout {
+		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
 	}
 }
