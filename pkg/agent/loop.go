@@ -1357,7 +1357,8 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 5e. Replace orphaned streaming status bubble for background tasks.
 	// When SendResponse is false (e.g. heartbeat), no final non-status message
 	// triggers cleanup, so the last streaming chunk persists on Telegram.
-	if opts.Background && !opts.SendResponse && !constants.IsInternalChannel(opts.Channel) && task != nil && task.streamedChunks {
+	if opts.Background && !opts.SendResponse && !constants.IsInternalChannel(opts.Channel) && task != nil &&
+		task.streamedChunks {
 		_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel:  opts.Channel,
 			ChatID:   opts.ChatID,
