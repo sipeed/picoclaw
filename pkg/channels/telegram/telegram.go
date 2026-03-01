@@ -173,19 +173,28 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
+	if msg.Content == "" {
+		return nil
+	}
 
-	// Typing/placeholder handled by Manager.preSend — just send the message
-	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
-	tgMsg.ParseMode = telego.ModeHTML
+	// Split the raw markdown before converting to HTML so that
+	// SplitMessage's code-fence-aware logic works correctly and
+	// we never break HTML tags/entities by splitting converted output.
+	mdChunks := channels.SplitMessage(msg.Content, 4000)
 
-	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
-			"error": err.Error(),
-		})
-		tgMsg.ParseMode = ""
+	for _, chunk := range mdChunks {
+		htmlContent := markdownToTelegramHTML(chunk)
+		tgMsg := tu.Message(tu.ID(chatID), htmlContent)
+		tgMsg.ParseMode = telego.ModeHTML
+
 		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+			logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
+				"error": err.Error(),
+			})
+			tgMsg.ParseMode = ""
+			if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+				return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+			}
 		}
 	}
 
