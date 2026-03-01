@@ -81,27 +81,44 @@ func TestDoRequestWithRetry(t *testing.T) {
 }
 
 func TestDoRequestWithRetry_ContextCancel(t *testing.T) {
-	retryDelayUnit = 5 * time.Second // Long delay so cancel fires during sleep
+	// Use a long retry delay so cancellation always hits during sleepWithCtx.
+	retryDelayUnit = 10 * time.Second
 	t.Cleanup(func() { retryDelayUnit = time.Second })
 
 	bodyClosed := false
+	firstRoundTripDone := make(chan struct{}, 1)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("error"))
 	}))
 	defer server.Close()
 
-	// Wrap the server's transport to detect Body.Close calls
 	client := server.Client()
 	client.Timeout = 30 * time.Second
 	client.Transport = &bodyCloseTracker{
-		rt:       client.Transport,
-		onClose:  func() { bodyClosed = true },
+		rt:      client.Transport,
+		onClose: func() { bodyClosed = true },
+		// Signal after the first round-trip response is fully constructed on the client side.
+		onRoundTrip: func() {
+			select {
+			case firstRoundTripDone <- struct{}{}:
+			default:
+			}
+		},
 		trackURL: server.URL,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Cancel the context after the first round-trip completes on the client side.
+	// This ensures client.Do has returned a valid resp (with body) and the retry
+	// loop is about to enter sleepWithCtx, where the cancel will be detected.
+	go func() {
+		<-firstRoundTripDone
+		cancel()
+	}()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
 	require.NoError(t, err)
@@ -117,9 +134,10 @@ func TestDoRequestWithRetry_ContextCancel(t *testing.T) {
 
 // bodyCloseTracker wraps an http.RoundTripper and records when response bodies are closed.
 type bodyCloseTracker struct {
-	rt       http.RoundTripper
-	onClose  func()
-	trackURL string
+	rt          http.RoundTripper
+	onClose     func()
+	onRoundTrip func() // called after each successful round-trip
+	trackURL    string
 }
 
 func (t *bodyCloseTracker) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -129,6 +147,9 @@ func (t *bodyCloseTracker) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 	if strings.HasPrefix(req.URL.String(), t.trackURL) {
 		resp.Body = &closeNotifier{ReadCloser: resp.Body, onClose: t.onClose}
+		if t.onRoundTrip != nil {
+			t.onRoundTrip()
+		}
 	}
 	return resp, nil
 }
