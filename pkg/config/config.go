@@ -617,6 +617,12 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
 	}
 
+	// If model_list is still empty and no legacy providers, use default model list
+	// This ensures new users get a working config template on first run
+	if len(cfg.ModelList) == 0 && !cfg.HasProvidersConfig() {
+		cfg.ModelList = GetDefaultModelList()
+	}
+
 	// Validate model_list for uniqueness and required fields
 	if err := cfg.ValidateModelList(); err != nil {
 		return nil, err
