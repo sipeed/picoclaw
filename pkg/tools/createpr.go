@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+const (
+	ciPollInterval = 30 * time.Second
+	ciPollTimeout  = 15 * time.Minute
+)
+
 // CreatePRTool creates a GitHub pull request from the current worktree branch.
 //
 // Safety invariants:
@@ -16,8 +21,14 @@ import (
 //   - Requires the branch to be already pushed (use git_push first)
 //   - Checks for merge conflicts with base before creating
 //   - Uses `gh pr create` under the hood
+//
+// Async behavior:
+//   - PR creation itself is synchronous and returns immediately with the PR URL
+//   - If CI runs are triggered, a background goroutine polls `gh pr checks`
+//     and calls the AsyncCallback when CI completes (pass or fail)
 type CreatePRTool struct {
 	workspace string
+	callback  AsyncCallback
 }
 
 // NewCreatePRTool creates a CreatePRTool.
@@ -27,11 +38,17 @@ func NewCreatePRTool(workspace string) *CreatePRTool {
 
 func (t *CreatePRTool) Name() string { return "create_pr" }
 
+// SetCallback implements AsyncTool for CI completion notification.
+func (t *CreatePRTool) SetCallback(cb AsyncCallback) {
+	t.callback = cb
+}
+
 func (t *CreatePRTool) Description() string {
 	return "Create a GitHub pull request from the current worktree branch. " +
 		"The base branch is auto-detected from the worktree's parent branch. " +
 		"The branch must be pushed to origin first (use git_push). " +
 		"Checks for merge conflicts with the base branch before creating. " +
+		"After PR creation, polls CI status in the background and notifies when complete. " +
 		"Requires the `gh` CLI to be installed and authenticated."
 }
 
@@ -168,8 +185,117 @@ func (t *CreatePRTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 			err, output, branch))
 	}
 
-	return NewToolResult(fmt.Sprintf(
+	prURL := output // gh pr create outputs the PR URL
+
+	// Start background CI polling if callback is set
+	if t.callback != nil && prURL != "" {
+		cb := t.callback
+		repoRoot := wt.RepoRoot
+		go pollCIStatus(repoRoot, prURL, cb)
+	}
+
+	return AsyncResult(fmt.Sprintf(
 		"Pull request created: %s\n"+
-			"Branch: %s -> %s",
-		output, branch, baseBranch))
+			"Branch: %s -> %s\n"+
+			"CI status will be reported asynchronously when checks complete.",
+		prURL, branch, baseBranch))
+}
+
+// pollCIStatus polls `gh pr checks` in the background until all checks
+// pass, fail, or the timeout is reached. Reports back via AsyncCallback.
+func pollCIStatus(repoRoot, prURL string, callback AsyncCallback) {
+	// Detached context with hard timeout — this goroutine outlives the tool call.
+	ctx, cancel := context.WithTimeout(context.Background(), ciPollTimeout)
+	defer cancel()
+
+	// Initial wait: CI runs take a few seconds to register after PR creation
+	select {
+	case <-time.After(10 * time.Second):
+	case <-ctx.Done():
+		return
+	}
+
+	ticker := time.NewTicker(ciPollInterval)
+	defer ticker.Stop()
+
+	for {
+		status, detail := checkPRChecks(ctx, repoRoot, prURL)
+		switch status {
+		case ciStatusPass:
+			callback(ctx, NewToolResult(fmt.Sprintf(
+				"CI passed for %s\n%s",
+				prURL, detail)))
+			return
+		case ciStatusFail:
+			callback(ctx, &ToolResult{
+				ForLLM: fmt.Sprintf(
+					"CI failed for %s\n%s\n"+
+						"Run `gh run view` for detailed logs.",
+					prURL, detail),
+				IsError: true,
+			})
+			return
+		case ciStatusNone:
+			callback(ctx, NewToolResult(fmt.Sprintf(
+				"No CI checks configured for %s. PR is ready for review.",
+				prURL)))
+			return
+		case ciStatusPending:
+			// Still running, continue polling
+		}
+
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			callback(ctx, &ToolResult{
+				ForLLM: fmt.Sprintf(
+					"CI polling timed out after %s for %s.\n"+
+						"Checks may still be running. Run `gh pr checks %s` to check.",
+					ciPollTimeout, prURL, prURL),
+				IsError: true,
+			})
+			return
+		}
+	}
+}
+
+type ciStatus int
+
+const (
+	ciStatusPending ciStatus = iota
+	ciStatusPass
+	ciStatusFail
+	ciStatusNone
+)
+
+// checkPRChecks runs `gh pr checks` and parses the result.
+// Returns the aggregate status and raw output for the caller to include.
+func checkPRChecks(ctx context.Context, repoRoot, prURL string) (ciStatus, string) {
+	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(checkCtx, "gh", "pr", "checks", prURL)
+	cmd.Dir = repoRoot
+	out, err := cmd.CombinedOutput()
+	output := strings.TrimSpace(string(out))
+
+	if err != nil {
+		// gh pr checks exits 1 when any check has failed
+		if strings.Contains(output, "fail") || strings.Contains(output, "X ") {
+			return ciStatusFail, output
+		}
+		// "no checks" case
+		if strings.Contains(output, "no checks") || output == "" {
+			return ciStatusNone, ""
+		}
+		// Transient error or still pending — keep polling
+		return ciStatusPending, output
+	}
+
+	// Exit 0: all checks completed. Check for pending.
+	if strings.Contains(output, "pending") || strings.Contains(output, "- ") {
+		return ciStatusPending, output
+	}
+
+	return ciStatusPass, output
 }
