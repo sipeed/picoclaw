@@ -69,16 +69,23 @@ Goal: make plugin state inspectable and config validation straightforward.
 
 Implemented:
 
-- Add plugin metadata introspection in the plugin manager.
+- Add plugin metadata introspection in the plugin manager (internal API surface).
 - Add CLI inspection commands:
   - `picoclaw plugin list`
   - `picoclaw plugin list --format json`
 - Add CLI lint command:
   - `picoclaw plugin lint --config <path>`
+- Add startup plugin resolution summary diagnostics:
+  - `plugins_enabled`
+  - `plugins_disabled`
+  - `plugins_unknown_enabled`
+  - `plugins_unknown_disabled`
+  - `plugins_warnings`
 
 Exit criteria (met):
 
-- Operators can inspect plugin metadata in text/JSON outputs.
+- Operators can inspect plugin status in text/JSON outputs (`name`, `status`).
+- Plugin metadata introspection is available via plugin manager APIs.
 - Operators can validate plugin config before startup.
 
 ## Future DX Work (Post-Phase 3)

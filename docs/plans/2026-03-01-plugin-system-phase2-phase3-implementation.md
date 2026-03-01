@@ -1,6 +1,7 @@
 # Plugin System Phase 2/3 Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Parity note (current stack):** This is a historical execution plan. For the shipped contract in PRs #936-#939, treat `docs/plugin-system-roadmap.md` as authoritative for current CLI/logging behavior.
 
 **Goal:** Implement Phase 2 (config-driven plugin selection + runtime wiring) and Phase 3 (plugin introspection + CLI list/lint + diagnostics) with small, reviewable PRs.
 
@@ -573,4 +574,3 @@ Each PR should include:
 - AI disclosure
 - test environment and command evidence
 - unresolved comments = 0 before merge
-

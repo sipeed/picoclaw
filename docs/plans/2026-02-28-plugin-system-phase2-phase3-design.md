@@ -29,8 +29,8 @@ Implemented in current Phase 2/3 scope:
 - deterministic plugin resolver.
 - startup wiring in both `agent` and `gateway` paths.
 - Phase 3:
-- plugin metadata introspection for built-ins.
-- CLI support for listing and linting plugin config.
+- plugin metadata introspection in manager APIs for built-ins.
+- CLI support for listing and linting plugin config (`list` output is `name` + `status`).
 
 Command examples:
 
@@ -121,16 +121,16 @@ Keep Phase 2 and Phase 3 as separate PR series.
 
 1. No `plugins` block.
 - Expected: same enabled plugin set as baseline.
-- Expected log keys: `plugins.enabled=[]`, `plugins.disabled=[]`, `plugins.mode=baseline`.
+- Expected startup summary keys: `plugins_enabled`, `plugins_disabled`, `plugins_unknown_enabled`, `plugins_unknown_disabled`, `plugins_warnings`.
 2. `enabled=["policy-demo"]`, empty `disabled`.
 - Expected: only `policy-demo` loaded.
-- Expected log keys: `plugins.enabled=["policy-demo"]`, `plugins.disabled=[]`.
+- Expected startup summary key examples: `plugins_enabled=["policy-demo"]`, `plugins_disabled=[]`.
 3. `disabled=["policy-demo"]`, empty `enabled`.
 - Expected: `policy-demo` not loaded.
-- Expected log keys: `plugins.enabled=[]`, `plugins.disabled=["policy-demo"]`.
+- Expected startup summary key examples: `plugins_enabled=[]`, `plugins_disabled=["policy-demo"]`.
 4. Overlap: `enabled=["policy-demo"]`, `disabled=["policy-demo"]`.
 - Expected: plugin disabled (disabled wins).
-- Expected log keys: `plugins.conflict=["policy-demo"]`, `plugins.disabled=["policy-demo"]`.
+- Expected startup summary key examples: `plugins_enabled=[]`, `plugins_disabled=["policy-demo"]`.
 5. Unknown in `enabled`: `enabled=["not_exists"]`.
 - Expected: startup fails.
 - Expected error text includes: `unknown plugin in enabled`.
@@ -163,9 +163,15 @@ type PluginDescriptor interface {
 - CLI:
   - `picoclaw plugin list` (text/json).
   - `picoclaw plugin lint --config <path>`.
-- Diagnostics:
-  - structured startup fields: `plugin`, `status`, `disabled_reason`, `error_code`.
-  - hook invocation outcome fields: `plugin`, `hook`, `result`, `duration_ms`.
+- Diagnostics (implemented now):
+  - startup summary fields emitted by entrypoints:
+    - `plugins_enabled`
+    - `plugins_disabled`
+    - `plugins_unknown_enabled`
+    - `plugins_unknown_disabled`
+    - `plugins_warnings`
+- Diagnostics (deferred):
+  - per-hook invocation outcome fields (`plugin`, `hook`, `result`, `duration_ms`).
 
 ### Optional Phase 3 Extension
 
@@ -174,44 +180,41 @@ This is explicitly Phase 3, not Phase 2.
 
 ### Phase 3 Acceptance Gate
 
-- `plugin list` output is stable in text and JSON.
+- `plugin list` output is stable in text and JSON with fields: `name`, `status`.
 - `plugin lint` returns non-zero on invalid plugin names/config.
-- Logs/events include plugin resolution and hook invocation outcomes.
-- Tests cover one disabled path and one lint failure path.
+- Startup diagnostics include plugin resolution summary fields listed above.
+- Tests cover one disabled path and one lint failure path (per current command contracts).
 
 ### Phase 3 Test Matrix
 
 1. `picoclaw plugin list` text output.
-- Expected: deterministic ordering and fields: `name`, `status`, `api_version`.
+- Expected: deterministic ordering and fields: `name`, `status`.
 2. `picoclaw plugin list --format json`.
-- Expected: stable JSON schema and deterministic ordering.
+- Expected: stable JSON schema and deterministic ordering (`name`, `status` only).
 3. `picoclaw plugin lint --config <path>` valid config.
 - Expected: exit code `0`.
 4. `picoclaw plugin lint --config <path>` invalid plugin name.
 - Expected: non-zero exit.
 - Expected error text includes: `unknown plugin`.
-5. Hook invocation with disabled plugin.
-- Expected: no callback execution from disabled plugin.
-- Expected diagnostic includes: `disabled_reason`.
 
 ## Rollback Runbook
 
 1. Revert to baseline behavior.
 - Action: remove `plugins` block from config and restart process.
-- Success signal: startup logs contain `plugins.mode=baseline`.
+- Success signal: startup summaries return to expected enabled/disabled sets.
 2. Recover from bad selection config.
 - Action: clear `plugins.enabled` and `plugins.disabled`, restart.
-- Success signal: startup logs contain resolved set equal to baseline set.
+- Success signal: startup summaries show valid resolution and no startup error.
 3. Recover from Phase 3 command regressions.
 - Action: disable plugin command surface with feature flag and restart.
 - Success signal: `plugin` command group hidden/disabled in CLI help.
 4. Incident confirmation checks.
 - Verify startup logs include:
-- `plugins.enabled`
-- `plugins.disabled`
-- `plugins.unknown_enabled`
-- `plugins.unknown_disabled`
-- `plugins.resolution_status`
+- `plugins_enabled`
+- `plugins_disabled`
+- `plugins_unknown_enabled`
+- `plugins_unknown_disabled`
+- `plugins_warnings`
 
 ## Why This Is More Sound
 
@@ -220,12 +223,14 @@ This is explicitly Phase 3, not Phase 2.
 - Eliminates silent rollout risk by making entrypoint wiring a Phase 2 gate.
 - Keeps a clean migration path to Phase 4 runtime sources.
 
-## External Alignment
+## External Alignment (Informational)
 
-This phase split aligns with common Go OSS progression:
+This phase split follows a common Go OSS progression:
 - compile-time plugin selection first
 - discovery/validation CLI second
 - runtime loader and trust model last
+
+These references are context only (not proof of direct feature parity with PicoClaw implementation):
 
 Reference patterns:
 - Go `plugin` package caveats: `https://pkg.go.dev/plugin`
