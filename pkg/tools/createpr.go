@@ -27,13 +27,12 @@ const (
 //   - If CI runs are triggered, a background goroutine polls `gh pr checks`
 //     and calls the AsyncCallback when CI completes (pass or fail)
 type CreatePRTool struct {
-	workspace string
-	callback  AsyncCallback
+	callback AsyncCallback
 }
 
 // NewCreatePRTool creates a CreatePRTool.
-func NewCreatePRTool(workspace string) *CreatePRTool {
-	return &CreatePRTool{workspace: workspace}
+func NewCreatePRTool() *CreatePRTool {
+	return &CreatePRTool{}
 }
 
 func (t *CreatePRTool) Name() string { return "create_pr" }
@@ -151,7 +150,8 @@ func (t *CreatePRTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	// Build gh pr create command
-	ghArgs := []string{"pr", "create",
+	ghArgs := []string{
+		"pr", "create",
 		"--base", baseBranch,
 		"--head", branch,
 		"--title", title,

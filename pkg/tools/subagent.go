@@ -360,10 +360,10 @@ func (sm *SubagentManager) buildPresetRegistry(preset Preset, writeRoot string) 
 
 	// Register git tools (worktree-safe push and PR creation)
 	if config.AllowedTools["git_push"] {
-		registry.Register(NewGitPushTool(sm.workspace))
+		registry.Register(NewGitPushTool())
 	}
 	if config.AllowedTools["create_pr"] {
-		registry.Register(NewCreatePRTool(sm.workspace))
+		registry.Register(NewCreatePRTool())
 	}
 
 	// Register web tools
