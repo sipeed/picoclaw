@@ -717,6 +717,114 @@ func TestProcessMessage_CommandOutcomes(t *testing.T) {
 	}
 }
 
+func TestProcessMessage_CLI_SessionCommandsStillWork(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Session: config.SessionConfig{
+			BacklogLimit: 20,
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	newResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "cli",
+		SenderID: "user1",
+		ChatID:   "cli",
+		Content:  "/new",
+	})
+	if !strings.Contains(newResp, "Started new session:") {
+		t.Fatalf("unexpected /new reply on cli: %q", newResp)
+	}
+
+	listResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "cli",
+		SenderID: "user1",
+		ChatID:   "cli",
+		Content:  "/session list",
+	})
+	if !strings.Contains(listResp, "Sessions for current chat:") {
+		t.Fatalf("unexpected /session list reply on cli: %q", listResp)
+	}
+
+	if provider.calls != 0 {
+		t.Fatalf("LLM should not be called for handled cli session commands, calls=%d", provider.calls)
+	}
+}
+
+func TestProcessMessage_SwitchModelShowModelConsistency(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Provider:          "openai",
+				Model:             "before-switch",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &countingMockProvider{response: "LLM reply"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	switchResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/switch model to after-switch",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(switchResp, "Switched model from before-switch to after-switch") {
+		t.Fatalf("unexpected /switch reply: %q", switchResp)
+	}
+
+	showResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/show model",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(showResp, "Current Model: after-switch (Provider: openai)") {
+		t.Fatalf("unexpected /show model reply after switch: %q", showResp)
+	}
+
+	if provider.calls != 0 {
+		t.Fatalf("LLM should not be called for /switch and /show, calls=%d", provider.calls)
+	}
+}
+
 // TestToolResult_SilentToolDoesNotSendUserMessage verifies silent tools don't trigger outbound
 func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")

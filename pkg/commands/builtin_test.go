@@ -37,6 +37,20 @@ func TestBuiltinDefinitions_WhatsAppOnlyHasBasicCommands(t *testing.T) {
 	}
 }
 
+func TestBuiltinDefinitions_CLIHasSessionCommands(t *testing.T) {
+	defs := NewRegistry(BuiltinDefinitions(nil)).ForChannel("cli")
+	names := map[string]bool{}
+	for _, d := range defs {
+		names[d.Name] = true
+	}
+	if !names["new"] || !names["session"] {
+		t.Fatalf("cli should include new/session, got %+v", names)
+	}
+	if names["show"] || names["list"] {
+		t.Fatalf("cli should not include show/list, got %+v", names)
+	}
+}
+
 func TestBuiltinDefinitions_DefaultSessionCommandsArePassthrough(t *testing.T) {
 	defs := BuiltinDefinitions(nil)
 
