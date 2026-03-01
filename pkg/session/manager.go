@@ -133,6 +133,7 @@ func (sm *SessionManager) StartNew(scopeKey string) (string, error) {
 		scope.UpdatedAt = prevUpdated
 		if created {
 			delete(sm.sessions, newSessionKey)
+			_ = sm.deleteSessionFile(newSessionKey)
 		}
 		return "", err
 	}
