@@ -938,6 +938,9 @@ func (al *AgentLoop) runLLMIteration(
 func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID string) {
 	// Use ContextualTool interface instead of type assertions
 	if tool, ok := agent.Tools.Get("message"); ok {
+		if rt, ok := tool.(interface{ BeginRound() }); ok {
+			rt.BeginRound()
+		}
 		if mt, ok := tool.(tools.ContextualTool); ok {
 			mt.SetContext(channel, chatID)
 		}

@@ -40,13 +40,14 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot      *telego.Bot
-	bh       *telegohandler.BotHandler
-	commands TelegramCommander
-	config   *config.Config
-	chatIDs  map[string]int64
-	ctx      context.Context
-	cancel   context.CancelFunc
+	bot       *telego.Bot
+	bh        *telegohandler.BotHandler
+	commands  TelegramCommander
+	config    *config.Config
+	botUserID int64
+	chatIDs   map[string]int64
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
@@ -100,6 +101,12 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	logger.InfoC("telegram", "Starting Telegram bot (polling mode)...")
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
+	me, err := c.bot.GetMe(c.ctx)
+	if err != nil {
+		c.cancel()
+		return fmt.Errorf("failed to get bot identity: %w", err)
+	}
+	c.botUserID = me.ID
 
 	updates, err := c.bot.UpdatesViaLongPolling(c.ctx, &telego.GetUpdatesParams{
 		Timeout: 30,
@@ -138,7 +145,8 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 	c.SetRunning(true)
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
-		"username": c.bot.Username(),
+		"username": me.Username,
+		"user_id":  me.ID,
 	})
 
 	go bh.Start()
@@ -354,6 +362,27 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	user := message.From
 	if user == nil {
 		return fmt.Errorf("message sender (user) is nil")
+	}
+	if c.botUserID != 0 && user.ID == c.botUserID {
+		logger.DebugCF("telegram", "Ignoring self message by ID", map[string]any{
+			"user_id": user.ID,
+		})
+		return nil
+	}
+	if user.IsBot {
+		logger.DebugCF("telegram", "Ignoring bot-originated message", map[string]any{
+			"user_id": user.ID,
+		})
+		return nil
+	}
+	// Defensive fallback: ignore messages from this bot by username to avoid self-loop echoes.
+	if botUsername := c.bot.Username(); botUsername != "" && strings.EqualFold(user.Username, botUsername) {
+		logger.DebugCF("telegram", "Ignoring self message by username", map[string]any{
+			"user_id":  user.ID,
+			"username": user.Username,
+			"bot_name": botUsername,
+		})
+		return nil
 	}
 
 	platformID := fmt.Sprintf("%d", user.ID)

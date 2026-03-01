@@ -12,6 +12,9 @@ type MessageTool struct {
 	defaultChannel string
 	defaultChatID  string
 	sentInRound    bool // Tracks whether a message was sent in the current processing round
+	lastChannel    string
+	lastChatID     string
+	lastContent    string
 }
 
 func NewMessageTool() *MessageTool {
@@ -50,7 +53,15 @@ func (t *MessageTool) Parameters() map[string]any {
 func (t *MessageTool) SetContext(channel, chatID string) {
 	t.defaultChannel = channel
 	t.defaultChatID = chatID
-	t.sentInRound = false // Reset send tracking for new processing round
+}
+
+// BeginRound resets per-round send tracking.
+// AgentLoop calls this once per inbound message before tool iterations begin.
+func (t *MessageTool) BeginRound() {
+	t.sentInRound = false
+	t.lastChannel = ""
+	t.lastChatID = ""
+	t.lastContent = ""
 }
 
 // HasSentInRound returns true if the message tool sent a message during the current round.
@@ -86,6 +97,15 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		return &ToolResult{ForLLM: "Message sending not configured", IsError: true}
 	}
 
+	// Guard against accidental repeated tool-calls in one LLM round.
+	// If the same target and content were already sent, suppress duplicate delivery.
+	if t.sentInRound && t.lastChannel == channel && t.lastChatID == chatID && t.lastContent == content {
+		return &ToolResult{
+			ForLLM: "Duplicate message suppressed in current round",
+			Silent: true,
+		}
+	}
+
 	if err := t.sendCallback(channel, chatID, content); err != nil {
 		return &ToolResult{
 			ForLLM:  fmt.Sprintf("sending message: %v", err),
@@ -95,6 +115,9 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	}
 
 	t.sentInRound = true
+	t.lastChannel = channel
+	t.lastChatID = chatID
+	t.lastContent = content
 	// Silent: user already received the message directly
 	return &ToolResult{
 		ForLLM: fmt.Sprintf("Message sent to %s:%s", channel, chatID),
