@@ -101,6 +101,10 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 				} else {
 					sel.apiBase = "https://openrouter.ai/api/v1"
 				}
+				// Map "free" model alias to openrouter/auto for free tier access
+				if model == "free" {
+					sel.model = "openrouter/auto"
+				}
 			}
 		case "zhipu", "glm":
 			if cfg.Providers.Zhipu.APIKey != "" {
@@ -303,6 +307,10 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 					sel.apiBase = cfg.Providers.OpenRouter.APIBase
 				} else {
 					sel.apiBase = "https://openrouter.ai/api/v1"
+				}
+				// Map "free" model alias to openrouter/auto for free tier access
+				if model == "free" {
+					sel.model = "openrouter/auto"
 				}
 			} else {
 				return providerSelection{}, fmt.Errorf("no API key configured for model: %s", model)
