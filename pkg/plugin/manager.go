@@ -9,8 +9,8 @@ package plugin
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 
