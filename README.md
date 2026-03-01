@@ -642,6 +642,20 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 └── USER.md           # User preferences
 ```
 
+### Skill Sources
+
+By default, skills are loaded from:
+
+1. `~/.picoclaw/workspace/skills` (workspace)
+2. `~/.picoclaw/skills` (global)
+3. `<current-working-directory>/skills` (builtin)
+
+For advanced/test setups, you can override the builtin skills root with:
+
+```bash
+export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
+```
+
 ### 🔒 Security Sandbox
 
 PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.
