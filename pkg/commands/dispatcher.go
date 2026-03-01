@@ -16,53 +16,6 @@ type Request struct {
 	Reply     func(text string) error
 }
 
-type Result struct {
-	Matched bool
-	Handled bool
-	Command string
-	Err     error
-}
-
-type Dispatcher struct {
-	reg *Registry
-}
-
-type Dispatching interface {
-	Dispatch(ctx context.Context, req Request) Result
-}
-
-type DispatchFunc func(ctx context.Context, req Request) Result
-
-func (f DispatchFunc) Dispatch(ctx context.Context, req Request) Result {
-	return f(ctx, req)
-}
-
-func NewDispatcher(reg *Registry) *Dispatcher {
-	return &Dispatcher{reg: reg}
-}
-
-func (d *Dispatcher) Dispatch(ctx context.Context, req Request) Result {
-	cmdName, ok := parseCommandName(req.Text)
-	if !ok {
-		return Result{Matched: false}
-	}
-
-	for _, def := range d.reg.ForChannel(req.Channel) {
-		if def.Name != cmdName && !contains(def.Aliases, cmdName) {
-			continue
-		}
-		if def.Handler == nil {
-			// Definition-only command (for menu registration / discovery).
-			// Let the inbound message continue to the agent loop.
-			return Result{Matched: false, Handled: false, Command: def.Name}
-		}
-		err := def.Handler(ctx, req)
-		return Result{Matched: true, Handled: true, Command: def.Name, Err: err}
-	}
-
-	return Result{Matched: false}
-}
-
 func firstToken(input string) string {
 	parts := strings.Fields(strings.TrimSpace(input))
 	if len(parts) == 0 {
