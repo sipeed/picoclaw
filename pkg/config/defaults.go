@@ -30,7 +30,6 @@ func DefaultConfig() *Config {
 						Tmpfs:           []string{"/tmp", "/var/tmp", "/run"},
 						Network:         "none",
 						User:            "",
-						CapDrop:         []string{"ALL"},
 						Env: map[string]string{
 							"LANG": "C.UTF-8",
 						},

@@ -391,18 +391,21 @@ func TestScopedSandboxManager_ContainerCreationError(t *testing.T) {
 	m := &scopedSandboxManager{
 		mode:          config.SandboxModeAll,
 		workspaceRoot: home,
+		image:         "non-existent-image-12345",
 		dockerCfg:     config.AgentSandboxDockerConfig{Image: "non-existent-image-12345"},
 		scoped:        map[string]Sandbox{},
 	}
 
 	ctx := WithSessionKey(context.Background(), "error-session")
 
-	// Fast-path misses, falls through to buildScopedContainerSandbox and Start()
-	// Start() succeeds due to lazy evaluation, but Exec() should fail because
-	// Docker is either unavailable or the image is missing
+	// Resolve calls getOrCreateSandbox, which calls Start().
+	// Start should fail because the image doesn't exist.
 	sb, err := m.Resolve(ctx)
 	if err != nil {
-		t.Fatalf("expected Resolve() to succeed lazily, got error: %v", err)
+		// If Resolve fails here, it's also a valid failure for this test Case,
+		// but historically we expected it to happen during Exec.
+		// Since Start is now called in Resolve, it's expected to fail here.
+		return
 	}
 
 	res, err := sb.Exec(ctx, ExecRequest{Command: "echo"})

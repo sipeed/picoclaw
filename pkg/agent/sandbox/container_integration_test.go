@@ -55,6 +55,7 @@ func TestContainerSandbox_Integration_ExecReadWrite(t *testing.T) {
 		Image:         image,
 		ContainerName: containerName,
 		Workspace:     workspace,
+		User:          fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 	})
 	err := sb.Start(ctx)
 	if err != nil {
@@ -114,6 +115,67 @@ func TestContainerSandbox_Integration_ExecReadWrite(t *testing.T) {
 	}
 }
 
+func TestContainerSandbox_Integration_WriteFileOwnership(t *testing.T) {
+	_, cleanup := skipIfNoDocker(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	workspace := t.TempDir()
+	containerName := fmt.Sprintf("picoclaw-test-ownership-%d", time.Now().UnixNano())
+	image := getTestImage()
+
+	// Use the current host user's UID:GID to test real-world mapping compatibility
+	testUser := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+
+	sb := NewContainerSandbox(ContainerSandboxConfig{
+		Image:         image,
+		ContainerName: containerName,
+		Workspace:     workspace,
+		User:          testUser,
+	})
+	if err := sb.Start(ctx); err != nil {
+		t.Fatalf("sandbox start failed: %v", err)
+	}
+	defer sb.Prune(ctx)
+
+	// Write file via FsBridge with mkdir enabled
+	testPath := "auth/test.txt"
+	content := []byte("ownership verification")
+	if err := sb.Fs().WriteFile(ctx, testPath, content, true); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// Verify identity (UID:GID) and modification time via stat
+	res, err := sb.Exec(ctx, ExecRequest{
+		Command: fmt.Sprintf("stat -c '%%u:%%g %%Y' %s", testPath),
+	})
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("Stat failed: %v, stderr=%s", err, res.Stderr)
+	}
+
+	// Output format: "UID:GID UnixTimestamp"
+	parts := strings.Fields(res.Stdout)
+	if len(parts) < 2 {
+		t.Fatalf("unexpected stat output: %q", res.Stdout)
+	}
+
+	// Check UID:GID
+	if parts[0] != testUser {
+		t.Errorf("ownership mismatch: got %q, want %q", parts[0], testUser)
+	}
+
+	// Check Timestamp (should not be 1970 Epoch)
+	timestamp := parts[1]
+	if strings.HasPrefix(timestamp, "0") || strings.HasPrefix(timestamp, "1 ") {
+		// Specifically check for very small timestamps that indicate 1970
+		t.Errorf("file created with suspicious 1970-era timestamp: %q", timestamp)
+	}
+
+	t.Logf("Stat verified: %s", res.Stdout)
+}
+
 func TestContainerSandbox_Integration_WriteFileMkdirInContainerTmp(t *testing.T) {
 	_, cleanup := skipIfNoDocker(t)
 	defer cleanup()
@@ -123,10 +185,13 @@ func TestContainerSandbox_Integration_WriteFileMkdirInContainerTmp(t *testing.T)
 
 	containerName := fmt.Sprintf("picoclaw-test-mkdir-%d", time.Now().UnixNano())
 	image := getTestImage()
+	workspace := t.TempDir()
 
 	sb := NewContainerSandbox(ContainerSandboxConfig{
 		Image:         image,
 		ContainerName: containerName,
+		Workspace:     workspace,
+		User:          fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 	})
 	err := sb.Start(ctx)
 	if err != nil {

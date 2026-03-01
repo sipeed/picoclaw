@@ -189,12 +189,13 @@ func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentD
 	if agentCfg != nil && strings.TrimSpace(agentCfg.Workspace) != "" {
 		return expandHome(strings.TrimSpace(agentCfg.Workspace))
 	}
+	defaultWS := expandHome(defaults.Workspace)
 	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
-		return expandHome(defaults.Workspace)
+		return defaultWS
 	}
-	home, _ := os.UserHomeDir()
+	parent := filepath.Dir(defaultWS)
 	id := routing.NormalizeAgentID(agentCfg.ID)
-	return filepath.Join(home, ".picoclaw", "workspace-"+id)
+	return filepath.Join(parent, "workspace-"+id)
 }
 
 // resolveAgentModel resolves the primary model for an agent.

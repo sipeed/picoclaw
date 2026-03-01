@@ -97,7 +97,7 @@ func NewContainerSandbox(cfg ContainerSandboxConfig) *ContainerSandbox {
 	if strings.TrimSpace(cfg.Network) == "" {
 		cfg.Network = "none"
 	}
-	if len(cfg.CapDrop) == 0 {
+	if cfg.CapDrop == nil {
 		cfg.CapDrop = []string{"ALL"}
 	}
 	if cfg.Env == nil {
@@ -167,7 +167,10 @@ func (c *ContainerSandbox) Start(ctx context.Context) error {
 				return c.startErr
 			}
 			defer rc.Close()
-			_, _ = io.Copy(io.Discard, rc)
+			if _, err := io.Copy(io.Discard, rc); err != nil {
+				c.startErr = fmt.Errorf("failed to pull fallback image: %w", err)
+				return c.startErr
+			}
 
 			// Tag debian:bookworm-slim as picoclaw-sandbox:bookworm-slim
 			if err := c.cli.ImageTag(ctx, FallbackSandboxImage, DefaultSandboxImage); err != nil {
@@ -182,7 +185,10 @@ func (c *ContainerSandbox) Start(ctx context.Context) error {
 				return c.startErr
 			}
 			defer rc.Close()
-			_, _ = io.Copy(io.Discard, rc)
+			if _, err := io.Copy(io.Discard, rc); err != nil {
+				c.startErr = fmt.Errorf("failed to pull image: %w", err)
+				return c.startErr
+			}
 		}
 	}
 
@@ -621,48 +627,53 @@ func (f *containerFS) WriteFile(ctx context.Context, p string, data []byte, mkdi
 	if err != nil {
 		return err
 	}
-	dir := path.Dir(containerPath)
-	base := path.Base(containerPath)
 
+	// Build a script that optionally creates the parent directory and then writes the file via cat.
+	// This ensures proper ownership and permissions as the configured container user.
+	script := `set -eu; cat >"$1"`
 	if mkdir {
-		hostDir, ok := f.sb.hostDirForContainerPath(dir)
-		if ok {
-			if err := os.MkdirAll(hostDir, 0o755); err != nil {
-				return fmt.Errorf("host mkdir failed: %w", err)
-			}
-		} else {
-			_, err := f.sb.Exec(ctx, ExecRequest{
-				Command: "mkdir -p " + shellEscape(dir),
-			})
-			if err != nil {
-				return err
-			}
-		}
+		script = `set -eu; dir=$(dirname -- "$1"); if [ "$dir" != "." ]; then mkdir -p -- "$dir"; fi; cat >"$1"`
 	}
 
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	if err := tw.WriteHeader(&tar.Header{
-		Name: base,
-		Mode: 0o644,
-		Size: int64(len(data)),
-	}); err != nil {
-		_ = tw.Close()
-		return fmt.Errorf("tar header write failed: %w", err)
-	}
-	if _, err := tw.Write(data); err != nil {
-		_ = tw.Close()
-		return fmt.Errorf("tar content write failed: %w", err)
-	}
-	if err := tw.Close(); err != nil {
-		return fmt.Errorf("tar close failed: %w", err)
+	execResp, err := f.sb.cli.ContainerExecCreate(ctx, f.sb.cfg.ContainerName, container.ExecOptions{
+		Cmd:          []string{"sh", "-c", script, "picoclaw-fs-write", containerPath},
+		User:         f.sb.cfg.User, // Use configured user to preserve ownership
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return fmt.Errorf("docker exec create failed: %w", err)
 	}
 
-	if err := f.sb.cli.CopyToContainer(ctx, f.sb.cfg.ContainerName, dir, &buf, container.CopyToContainerOptions{
-		AllowOverwriteDirWithFile: true,
-	}); err != nil {
-		return fmt.Errorf("docker copy to container failed: %w", err)
+	attach, err := f.sb.cli.ContainerExecAttach(ctx, execResp.ID, container.ExecStartOptions{})
+	if err != nil {
+		return fmt.Errorf("docker exec attach failed: %w", err)
 	}
+	defer attach.Close()
+
+	// Write data to the hijacked connection's stdin
+	if _, err := attach.Conn.Write(data); err != nil {
+		return fmt.Errorf("failed to write data to container: %w", err)
+	}
+
+	// Close the write side of the connection so cat receives EOF and terminates
+	if conn, ok := attach.Conn.(interface{ CloseWrite() error }); ok {
+		_ = conn.CloseWrite()
+	}
+
+	// Wait for the exec process to complete and check the exit code
+	var stdout, stderr bytes.Buffer
+	_, _ = stdcopy.StdCopy(&stdout, &stderr, attach.Reader)
+
+	inspect, err := f.sb.cli.ContainerExecInspect(ctx, execResp.ID)
+	if err != nil {
+		return fmt.Errorf("failed to inspect write process: %w", err)
+	}
+	if inspect.ExitCode != 0 {
+		return fmt.Errorf("file write failed with code %d: %s", inspect.ExitCode, stderr.String())
+	}
+
 	return nil
 }
 
