@@ -287,10 +287,29 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		//pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+		//matches := pathPattern.FindAllString(cmd, -1)
 
-		for _, raw := range matches {
+		// Strip URLs before path checking so they don't get misidentified as file paths.
+		// Handle both scheme URLs (https://a/b) and domain URLs without scheme (example.com/a).
+		urlPattern := regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"']+`)
+		stripped := urlPattern.ReplaceAllString(cmd, "")
+		domainURLPattern := regexp.MustCompile(`\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d+)?/[^\s"']*`)
+		stripped = domainURLPattern.ReplaceAllString(stripped, "")
+
+		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+		matches := pathPattern.FindAllStringIndex(stripped, -1)
+
+		for _, match := range matches {
+			raw := stripped[match[0]:match[1]]
+
+			if match[0] > 0 {
+				prev := stripped[match[0]-1]
+				if prev != ' ' && prev != '\t' && prev != '\n' && prev != '"' && prev != '\'' && prev != '=' && prev != '(' {
+					continue
+				}
+			}
+
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue
