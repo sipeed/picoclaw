@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/sipeed/picoclaw/pkg/audit"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
@@ -537,6 +538,9 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
+	
+	// Audit log the send failure
+	audit.LogError(ctx, "send_failed", fmt.Sprintf("channel=%s chat_id=%s: %v", name, msg.ChatID, lastErr), false)
 }
 
 func (m *Manager) dispatchOutbound(ctx context.Context) {

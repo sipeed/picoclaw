@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/audit"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
@@ -240,10 +241,14 @@ func (c *BaseChannel) HandleMessage(
 	}
 	if sender.CanonicalID != "" || sender.PlatformID != "" {
 		if !c.IsAllowedSender(sender) {
+			// Audit log rejected message
+			audit.LogMessage(ctx, "inbound_rejected", "text", content, messageID)
 			return
 		}
 	} else {
 		if !c.IsAllowed(senderID) {
+			// Audit log rejected message
+			audit.LogMessage(ctx, "inbound_rejected", "text", content, messageID)
 			return
 		}
 	}
