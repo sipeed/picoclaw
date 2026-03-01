@@ -134,6 +134,11 @@ func DefaultConfig() *Config {
 		Providers: ProvidersConfig{
 			OpenAI: OpenAIProviderConfig{WebSearch: true},
 		},
+		Plugins: PluginsConfig{
+			DefaultEnabled: true,
+			Enabled:        []string{},
+			Disabled:       []string{},
+		},
 		ModelList: []ModelConfig{
 			// ============================================
 			// Add your API key to the model you want to use
