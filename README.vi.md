@@ -3,7 +3,7 @@
 
 <h1>PicoClaw: Trợ lý AI Siêu Nhẹ viết bằng Go</h1>
 
-<h3>Phần cứng $10 · RAM 10MB · Khởi động 1 giây · 皮皮虾，我们走！</h3>
+<h3>Phần cứng $10 · RAM 10MB · Khởi động 1 giây · Nào, xuất phát!</h3>
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
@@ -424,8 +424,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -439,7 +437,7 @@ LINE yêu cầu HTTPS cho webhook. Sử dụng reverse proxy hoặc tunnel:
 
 ```bash
 # Ví dụ với ngrok
-ngrok http 18791
+ngrok http 18790
 ```
 
 Sau đó cài đặt Webhook URL trong LINE Developers Console thành `https://your-domain/webhook/line` và bật **Use webhook**.
@@ -452,7 +450,7 @@ picoclaw gateway
 
 > Trong nhóm chat, bot chỉ phản hồi khi được @mention. Các câu trả lời sẽ trích dẫn tin nhắn gốc.
 
-> **Docker Compose**: Thêm `ports: ["18791:18791"]` vào service `picoclaw-gateway` để mở port webhook.
+> **Docker Compose**: Nếu bạn cần mở port webhook cục bộ, hãy thêm một rule chuyển tiếp từ port Gateway (mặc định 18790) tới host. Lưu ý: LINE webhook được phục vụ bởi Gateway HTTP chung (mặc định 127.0.0.1:18790).
 
 </details>
 
@@ -483,14 +481,14 @@ Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) đ�
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
   }
 }
 ```
+
+> **Lưu ý:** Các endpoint webhook của WeCom Bot được phục vụ bởi máy chủ Gateway HTTP dùng chung (mặc định 127.0.0.1:18790). Nếu bạn cần truy cập từ bên ngoài, hãy cấu hình reverse proxy hoặc mở cổng Gateway tương ứng.
 
 **Thiết lập Nhanh - WeCom App:**
 
@@ -503,7 +501,7 @@ Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) đ�
 **2. Cấu hình nhận tin nhắn**
 
 * Trong chi tiết ứng dụng, nhấp vào "Nhận Tin nhắn" → "Thiết lập API"
-* Đặt URL thành `http://your-server:18792/webhook/wecom-app`
+* Đặt URL thành `http://your-server:18790/webhook/wecom-app`
 * Tạo **Token** và **EncodingAESKey**
 
 **3. Cấu hình**
@@ -518,8 +516,6 @@ Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) đ�
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -533,7 +529,7 @@ Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) đ�
 picoclaw gateway
 ```
 
-> **Lưu ý**: WeCom App yêu cầu mở cổng 18792 cho callback webhook. Sử dụng proxy ngược cho HTTPS trong môi trường sản xuất.
+> **Lưu ý**: WeCom App callback webhook được phục vụ bởi Gateway HTTP chung (mặc định 127.0.0.1:18790). Sử dụng proxy ngược để cung cấp HTTPS trong môi trường production nếu cần.
 
 </details>
 
