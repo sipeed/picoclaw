@@ -518,7 +518,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
 	// 4. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
+	finalContent, iteration, sentUserContent, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
 		return "", err
 	}
@@ -528,12 +528,27 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 5. Handle empty response
 	if finalContent == "" {
-		finalContent = opts.DefaultResponse
+			if iteration >= agent.MaxIterations {
+				finalContent = "I've reached the maximum number of steps for this request. Please try breaking it down into smaller tasks."
+			} else if sentUserContent {
+				// We already sent content to the user (via tools), so we can suppress the default response
+				finalContent = ""
+			} else if iteration > 1 {
+				// Tools were executed but didn't send output, and LLM is silent.
+				// Use a generic success message instead of "no response to give" which sounds like an error.
+				finalContent = "Task completed."
+			} else {
+				finalContent = opts.DefaultResponse
+			}
+		}
 	}
 
 	// 6. Save final assistant message to session
-	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
-	agent.Sessions.Save(opts.SessionKey)
+	// Only save if meaningful (LLM might have returned empty string if it thought it was done)
+	if finalContent != "" {
+		agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+		agent.Sessions.Save(opts.SessionKey)
+	}
 
 	// 7. Optional: summarization
 	if opts.EnableSummary {
@@ -541,7 +556,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	}
 
 	// 8. Optional: send response via bus
-	if opts.SendResponse {
+	if opts.SendResponse && finalContent != "" {
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
@@ -621,9 +636,10 @@ func (al *AgentLoop) runLLMIteration(
 	agent *AgentInstance,
 	messages []providers.Message,
 	opts processOptions,
-) (string, int, error) {
+) (string, int, bool, error) {
 	iteration := 0
 	var finalContent string
+	sentUserContent := false
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -763,7 +779,7 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration": iteration,
 					"error":     err.Error(),
 				})
-			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
+			return "", iteration, sentUserContent, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
 		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
@@ -884,6 +900,7 @@ func (al *AgentLoop) runLLMIteration(
 					ChatID:  opts.ChatID,
 					Content: toolResult.ForUser,
 				})
+				sentUserContent = true
 				logger.DebugCF("agent", "Sent tool result to user",
 					map[string]any{
 						"tool":        tc.Name,
@@ -931,7 +948,7 @@ func (al *AgentLoop) runLLMIteration(
 		}
 	}
 
-	return finalContent, iteration, nil
+	return finalContent, iteration, sentUserContent, nil
 }
 
 // updateToolContexts updates the context for tools that need channel/chatID info.
