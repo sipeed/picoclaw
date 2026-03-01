@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/audit"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
@@ -61,6 +62,8 @@ func (r *ToolRegistry) ExecuteWithContext(
 			map[string]any{
 				"tool": name,
 			})
+		// Audit the error
+		audit.LogError(ctx, "tool_not_found", fmt.Sprintf("tool %q not found", name), true)
 		return ErrorResult(fmt.Sprintf("tool %q not found", name)).WithError(fmt.Errorf("tool not found"))
 	}
 
@@ -104,6 +107,17 @@ func (r *ToolRegistry) ExecuteWithContext(
 				"result_length": len(result.ForLLM),
 			})
 	}
+
+	// Audit logging
+	ctx = audit.WithChannelContext(ctx, channel, chatID, "")
+	audit.LogToolCall(ctx, &audit.ToolCallData{
+		ToolID:    name,
+		Name:      name,
+		Arguments: args,
+		Result:    result.ForLLM,
+		IsError:   result.IsError,
+		IsAsync:   result.Async,
+	}, duration.Milliseconds())
 
 	return result
 }
