@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/git"
@@ -9,7 +10,7 @@ import (
 
 // TestCreatePRTool_NoWorktree verifies that create_pr fails without worktree context.
 func TestCreatePRTool_NoWorktree(t *testing.T) {
-	tool := NewCreatePRTool(t.TempDir())
+	tool := NewCreatePRTool()
 
 	result := tool.Execute(context.Background(), map[string]any{
 		"title": "Test PR",
@@ -23,7 +24,7 @@ func TestCreatePRTool_NoWorktree(t *testing.T) {
 
 // TestCreatePRTool_EmptyBranch verifies that empty branch name is rejected.
 func TestCreatePRTool_EmptyBranch(t *testing.T) {
-	tool := NewCreatePRTool(t.TempDir())
+	tool := NewCreatePRTool()
 
 	ctx := WithWorktreeInfo(context.Background(), &git.WorktreeInfo{
 		Branch:     "",
@@ -42,7 +43,7 @@ func TestCreatePRTool_EmptyBranch(t *testing.T) {
 
 // TestCreatePRTool_MissingTitle verifies that missing title is rejected.
 func TestCreatePRTool_MissingTitle(t *testing.T) {
-	tool := NewCreatePRTool(t.TempDir())
+	tool := NewCreatePRTool()
 
 	ctx := WithWorktreeInfo(context.Background(), &git.WorktreeInfo{
 		Branch:     "plan/test",
@@ -73,7 +74,7 @@ func TestCreatePRTool_MissingTitle(t *testing.T) {
 
 // TestCreatePRTool_BranchNotPushed verifies the tool checks for remote branch existence.
 func TestCreatePRTool_BranchNotPushed(t *testing.T) {
-	tool := NewCreatePRTool(t.TempDir())
+	tool := NewCreatePRTool()
 
 	ctx := WithWorktreeInfo(context.Background(), &git.WorktreeInfo{
 		Branch:     "plan/not-pushed",
@@ -93,7 +94,7 @@ func TestCreatePRTool_BranchNotPushed(t *testing.T) {
 
 // TestCreatePRTool_DefaultBaseBranch verifies fallback to "main" when BaseBranch is empty.
 func TestCreatePRTool_DefaultBaseBranch(t *testing.T) {
-	tool := NewCreatePRTool(t.TempDir())
+	tool := NewCreatePRTool()
 
 	// With empty BaseBranch, tool should default to "main"
 	ctx := WithWorktreeInfo(context.Background(), &git.WorktreeInfo{
@@ -106,7 +107,7 @@ func TestCreatePRTool_DefaultBaseBranch(t *testing.T) {
 		"title": "Test PR",
 	})
 	// Will fail at ls-remote (no real repo), but should not fail at baseBranch validation
-	if result.IsError && contains(result.ForLLM, "base branch") {
+	if result.IsError && strings.Contains(result.ForLLM, "base branch") {
 		t.Fatal("should not fail on base branch when defaulting to main")
 	}
 }
@@ -116,7 +117,7 @@ func TestCreatePRTool_Interface(t *testing.T) {
 	var _ Tool = (*CreatePRTool)(nil)
 	var _ AsyncTool = (*CreatePRTool)(nil)
 
-	tool := NewCreatePRTool(t.TempDir())
+	tool := NewCreatePRTool()
 	if tool.Name() != "create_pr" {
 		t.Errorf("Name: got %q, want %q", tool.Name(), "create_pr")
 	}
@@ -146,7 +147,7 @@ func TestCreatePRTool_Interface(t *testing.T) {
 
 // TestCreatePRTool_SetCallback verifies callback is stored.
 func TestCreatePRTool_SetCallback(t *testing.T) {
-	tool := NewCreatePRTool(t.TempDir())
+	tool := NewCreatePRTool()
 	if tool.callback != nil {
 		t.Fatal("callback should be nil initially")
 	}
