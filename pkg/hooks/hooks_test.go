@@ -1,0 +1,657 @@
+// PicoClaw - Ultra-lightweight personal AI agent
+// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
+// License: MIT
+//
+// Copyright (c) 2026 PicoClaw contributors
+
+package hooks
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/tools"
+)
+
+func TestNewHookRegistry(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	// Triggering all hooks on an empty registry should not panic.
+	r.TriggerMessageReceived(ctx, &MessageReceivedEvent{Content: "hello"})
+	r.TriggerMessageSending(ctx, &MessageSendingEvent{Content: "hello"})
+	r.TriggerBeforeToolCall(ctx, &BeforeToolCallEvent{ToolName: "t"})
+	r.TriggerAfterToolCall(ctx, &AfterToolCallEvent{ToolName: "t"})
+	r.TriggerLLMInput(ctx, &LLMInputEvent{AgentID: "a"})
+	r.TriggerLLMOutput(ctx, &LLMOutputEvent{AgentID: "a"})
+	r.TriggerSessionStart(ctx, &SessionEvent{AgentID: "a"})
+	r.TriggerSessionEnd(ctx, &SessionEvent{AgentID: "a"})
+}
+
+func TestVoidHookExecution(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	var called atomic.Bool
+	r.OnMessageReceived("test", 0, func(_ context.Context, e *MessageReceivedEvent) error {
+		called.Store(true)
+		if e.Content != "ping" {
+			t.Errorf("Expected content 'ping', got '%s'", e.Content)
+		}
+		return nil
+	})
+
+	r.TriggerMessageReceived(ctx, &MessageReceivedEvent{Content: "ping"})
+
+	if !called.Load() {
+		t.Error("Expected handler to be called")
+	}
+}
+
+func TestVoidHooksConcurrent(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	var count atomic.Int32
+	started := make(chan struct{}, 5)
+	release := make(chan struct{})
+	done := make(chan struct{})
+
+	for i := range 5 {
+		r.OnMessageReceived("hook-"+string(rune('A'+i)), i, func(_ context.Context, _ *MessageReceivedEvent) error {
+			started <- struct{}{}
+			<-release
+			count.Add(1)
+			return nil
+		})
+	}
+
+	go func() {
+		r.TriggerMessageReceived(ctx, &MessageReceivedEvent{Content: "test"})
+		close(done)
+	}()
+
+	// All 5 handlers must reach the barrier concurrently.
+	for i := range 5 {
+		select {
+		case <-started:
+		case <-time.After(1 * time.Second):
+			t.Fatalf("timeout waiting for handler %d to start", i+1)
+		}
+	}
+
+	// Release all handlers.
+	close(release)
+
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for handlers to complete")
+	}
+
+	if count.Load() != 5 {
+		t.Errorf("Expected 5 handlers called, got %d", count.Load())
+	}
+}
+
+func TestVoidHooksReceiveIsolatedMessageReceivedEvents(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnMessageReceived("mutator-a", 0, func(_ context.Context, e *MessageReceivedEvent) error {
+		e.Content = "changed-a"
+		e.Media[0] = "changed-media-a"
+		e.Metadata["k"] = "changed-a"
+		e.Metadata["new-a"] = "x"
+		return nil
+	})
+	r.OnMessageReceived("mutator-b", 1, func(_ context.Context, e *MessageReceivedEvent) error {
+		e.Content = "changed-b"
+		e.Media = append(e.Media, "extra")
+		e.Metadata["k"] = "changed-b"
+		e.Metadata["new-b"] = "y"
+		return nil
+	})
+
+	event := &MessageReceivedEvent{
+		Content:  "original",
+		Media:    []string{"m1"},
+		Metadata: map[string]string{"k": "v"},
+	}
+	r.TriggerMessageReceived(ctx, event)
+
+	if event.Content != "original" {
+		t.Fatalf("expected original content to remain unchanged, got %q", event.Content)
+	}
+	if len(event.Media) != 1 || event.Media[0] != "m1" {
+		t.Fatalf("expected original media to remain unchanged, got %#v", event.Media)
+	}
+	if got := event.Metadata["k"]; got != "v" {
+		t.Fatalf("expected metadata[k] to remain v, got %q", got)
+	}
+	if _, ok := event.Metadata["new-a"]; ok {
+		t.Fatal("unexpected mutation leaked from hook mutator-a")
+	}
+	if _, ok := event.Metadata["new-b"]; ok {
+		t.Fatal("unexpected mutation leaked from hook mutator-b")
+	}
+}
+
+func TestVoidHooksReceiveIsolatedAfterToolCallEvents(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnAfterToolCall("mutator-a", 0, func(_ context.Context, e *AfterToolCallEvent) error {
+		e.Args["k"] = "changed-a"
+		e.Result.ForLLM = "mutated-a"
+		return nil
+	})
+	r.OnAfterToolCall("mutator-b", 1, func(_ context.Context, e *AfterToolCallEvent) error {
+		e.Args["k"] = "changed-b"
+		e.Args["new"] = "v"
+		e.Result.ForUser = "mutated-b"
+		return nil
+	})
+
+	event := &AfterToolCallEvent{
+		ToolName: "shell",
+		Args:     map[string]any{"k": "original"},
+		Result: &tools.ToolResult{
+			ForLLM:  "for-llm",
+			ForUser: "for-user",
+		},
+	}
+
+	// Use a local copy so we can compare immutable expectations.
+	r.TriggerAfterToolCall(ctx, event)
+
+	if got := event.Args["k"]; got != "original" {
+		t.Fatalf("expected args[k] to remain original, got %#v", got)
+	}
+	if _, ok := event.Args["new"]; ok {
+		t.Fatal("unexpected args mutation leaked from hook")
+	}
+	if event.Result.ForLLM != "for-llm" {
+		t.Fatalf("expected original result.ForLLM to remain unchanged, got %q", event.Result.ForLLM)
+	}
+	if event.Result.ForUser != "for-user" {
+		t.Fatalf("expected original result.ForUser to remain unchanged, got %q", event.Result.ForUser)
+	}
+}
+
+func TestVoidHooksReceiveIsolatedLLMInputToolSchema(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnLLMInput("mutator", 0, func(_ context.Context, e *LLMInputEvent) error {
+		required, ok := e.Tools[0].Function.Parameters["required"].([]string)
+		if !ok {
+			t.Fatal("required should be []string")
+		}
+		required[0] = "mutated"
+		e.Tools[0].Function.Parameters["required"] = append(required, "extra")
+		return nil
+	})
+
+	event := &LLMInputEvent{
+		AgentID: "a1",
+		Model:   "m1",
+		Tools: []providers.ToolDefinition{
+			{
+				Type: "function",
+				Function: providers.ToolFunctionDefinition{
+					Name: "message",
+					Parameters: map[string]any{
+						"type":     "object",
+						"required": []string{"content"},
+					},
+				},
+			},
+		},
+	}
+
+	r.TriggerLLMInput(ctx, event)
+
+	required, ok := event.Tools[0].Function.Parameters["required"].([]string)
+	if !ok {
+		t.Fatal("required should remain []string")
+	}
+	if len(required) != 1 || required[0] != "content" {
+		t.Fatalf("expected required to remain unchanged, got %#v", required)
+	}
+}
+
+func TestVoidHooksReceiveIsolatedStructValuesInMap(t *testing.T) {
+	type schemaSpec struct {
+		Required []string
+		Meta     map[string]string
+	}
+
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnLLMInput("struct-mutator", 0, func(_ context.Context, e *LLMInputEvent) error {
+		spec, ok := e.Tools[0].Function.Parameters["schema"].(schemaSpec)
+		if !ok {
+			t.Fatal("schema should be schemaSpec")
+		}
+		spec.Required[0] = "mutated"
+		spec.Meta["k"] = "changed"
+		e.Tools[0].Function.Parameters["schema"] = spec
+		return nil
+	})
+
+	event := &LLMInputEvent{
+		AgentID: "a1",
+		Model:   "m1",
+		Tools: []providers.ToolDefinition{
+			{
+				Type: "function",
+				Function: providers.ToolFunctionDefinition{
+					Name: "message",
+					Parameters: map[string]any{
+						"schema": schemaSpec{
+							Required: []string{"content"},
+							Meta:     map[string]string{"k": "v"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r.TriggerLLMInput(ctx, event)
+
+	spec, ok := event.Tools[0].Function.Parameters["schema"].(schemaSpec)
+	if !ok {
+		t.Fatal("schema should remain schemaSpec")
+	}
+	if len(spec.Required) != 1 || spec.Required[0] != "content" {
+		t.Fatalf("expected required to remain unchanged, got %#v", spec.Required)
+	}
+	if got := spec.Meta["k"]; got != "v" {
+		t.Fatalf("expected meta[k] to remain v, got %q", got)
+	}
+}
+
+func TestVoidHooksFailOpenOnSlowHandler(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+
+	r.OnLLMInput("slow", 0, func(_ context.Context, _ *LLMInputEvent) error {
+		close(started)
+		<-release
+		close(done)
+		return nil
+	})
+
+	begin := time.Now()
+	r.TriggerLLMInput(ctx, &LLMInputEvent{AgentID: "a1"})
+	elapsed := time.Since(begin)
+
+	if elapsed > voidHookWaitBudget*3 {
+		t.Fatalf("expected fail-open dispatch within budget, got %s", elapsed)
+	}
+
+	select {
+	case <-started:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for slow handler to start")
+	}
+
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for slow handler to finish after release")
+	}
+}
+
+func TestModifyingHookPriority(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	var mu sync.Mutex
+	var order []string
+
+	// Register in reverse priority order to verify sorting.
+	r.OnMessageSending("third", 30, func(_ context.Context, _ *MessageSendingEvent) error {
+		mu.Lock()
+		order = append(order, "third")
+		mu.Unlock()
+		return nil
+	})
+	r.OnMessageSending("first", 10, func(_ context.Context, _ *MessageSendingEvent) error {
+		mu.Lock()
+		order = append(order, "first")
+		mu.Unlock()
+		return nil
+	})
+	r.OnMessageSending("second", 20, func(_ context.Context, _ *MessageSendingEvent) error {
+		mu.Lock()
+		order = append(order, "second")
+		mu.Unlock()
+		return nil
+	})
+
+	r.TriggerMessageSending(ctx, &MessageSendingEvent{Content: "hi"})
+
+	if len(order) != 3 {
+		t.Fatalf("Expected 3 handlers, got %d", len(order))
+	}
+	if order[0] != "first" || order[1] != "second" || order[2] != "third" {
+		t.Errorf("Expected [first second third], got %v", order)
+	}
+}
+
+func TestModifyingHookCancel(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	var secondCalled bool
+
+	r.OnMessageSending("canceler", 10, func(_ context.Context, e *MessageSendingEvent) error {
+		e.Cancel = true
+		e.CancelReason = "blocked"
+		return nil
+	})
+	r.OnMessageSending("after-cancel", 20, func(_ context.Context, _ *MessageSendingEvent) error {
+		secondCalled = true
+		return nil
+	})
+
+	event := &MessageSendingEvent{Content: "hi"}
+	r.TriggerMessageSending(ctx, event)
+
+	if !event.Cancel {
+		t.Error("Expected Cancel to be true")
+	}
+	if secondCalled {
+		t.Error("Expected second handler NOT to be called after cancel")
+	}
+}
+
+func TestBeforeToolCallModification(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnBeforeToolCall("modifier", 10, func(_ context.Context, e *BeforeToolCallEvent) error {
+		e.Args["injected"] = "value"
+		return nil
+	})
+
+	event := &BeforeToolCallEvent{
+		ToolName: "search",
+		Args:     map[string]any{"query": "test"},
+	}
+	r.TriggerBeforeToolCall(ctx, event)
+
+	if event.Args["injected"] != "value" {
+		t.Error("Expected injected arg to persist")
+	}
+	if event.Args["query"] != "test" {
+		t.Error("Expected original arg to remain")
+	}
+}
+
+func TestMessageSendingFilter(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	r.OnMessageSending("rewriter", 10, func(_ context.Context, e *MessageSendingEvent) error {
+		e.Content = "[filtered] " + e.Content
+		return nil
+	})
+
+	event := &MessageSendingEvent{Content: "hello world"}
+	r.TriggerMessageSending(ctx, event)
+
+	if event.Content != "[filtered] hello world" {
+		t.Errorf("Expected '[filtered] hello world', got '%s'", event.Content)
+	}
+}
+
+func TestZeroCostWhenEmpty(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	// This is primarily a safety/smoke test — no panics, no allocations of note.
+	for range 100 {
+		r.TriggerMessageReceived(ctx, &MessageReceivedEvent{})
+		r.TriggerMessageSending(ctx, &MessageSendingEvent{})
+		r.TriggerBeforeToolCall(ctx, &BeforeToolCallEvent{})
+		r.TriggerAfterToolCall(ctx, &AfterToolCallEvent{})
+		r.TriggerLLMInput(ctx, &LLMInputEvent{})
+		r.TriggerLLMOutput(ctx, &LLMOutputEvent{})
+		r.TriggerSessionStart(ctx, &SessionEvent{})
+		r.TriggerSessionEnd(ctx, &SessionEvent{})
+	}
+}
+
+func TestLLMInputOutput(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	var inputCalled, outputCalled atomic.Bool
+
+	r.OnLLMInput("input-hook", 0, func(_ context.Context, e *LLMInputEvent) error {
+		if e.Model != "gpt-4" {
+			t.Errorf("Expected model 'gpt-4', got '%s'", e.Model)
+		}
+		inputCalled.Store(true)
+		return nil
+	})
+
+	r.OnLLMOutput("output-hook", 0, func(_ context.Context, e *LLMOutputEvent) error {
+		if e.Content != "response" {
+			t.Errorf("Expected content 'response', got '%s'", e.Content)
+		}
+		outputCalled.Store(true)
+		return nil
+	})
+
+	r.TriggerLLMInput(ctx, &LLMInputEvent{AgentID: "a1", Model: "gpt-4", Iteration: 1})
+	r.TriggerLLMOutput(ctx, &LLMOutputEvent{AgentID: "a1", Model: "gpt-4", Content: "response", Iteration: 1})
+
+	if !inputCalled.Load() {
+		t.Error("Expected LLM input hook to be called")
+	}
+	if !outputCalled.Load() {
+		t.Error("Expected LLM output hook to be called")
+	}
+}
+
+func TestSessionStartEnd(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	var startCalled, endCalled atomic.Bool
+
+	r.OnSessionStart("start-hook", 0, func(_ context.Context, e *SessionEvent) error {
+		if e.SessionKey != "sess-1" {
+			t.Errorf("Expected session key 'sess-1', got '%s'", e.SessionKey)
+		}
+		startCalled.Store(true)
+		return nil
+	})
+
+	r.OnSessionEnd("end-hook", 0, func(_ context.Context, e *SessionEvent) error {
+		if e.SessionKey != "sess-1" {
+			t.Errorf("Expected session key 'sess-1', got '%s'", e.SessionKey)
+		}
+		endCalled.Store(true)
+		return nil
+	})
+
+	event := &SessionEvent{AgentID: "a1", SessionKey: "sess-1", Channel: "test", ChatID: "c1"}
+	r.TriggerSessionStart(ctx, event)
+	r.TriggerSessionEnd(ctx, event)
+
+	if !startCalled.Load() {
+		t.Error("Expected session start hook to be called")
+	}
+	if !endCalled.Load() {
+		t.Error("Expected session end hook to be called")
+	}
+}
+
+func TestConcurrentRegistrationAndTrigger(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+
+	// Goroutines registering hooks.
+	for i := range 10 {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			r.OnMessageReceived(
+				fmt.Sprintf("reg-hook-%d", idx),
+				idx,
+				func(_ context.Context, _ *MessageReceivedEvent) error {
+					return nil
+				},
+			)
+		}(i)
+	}
+
+	// Goroutines triggering hooks concurrently.
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.TriggerMessageReceived(ctx, &MessageReceivedEvent{Content: "race"})
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestInsertSorted(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	var order []int
+
+	// Register with priorities: 50, 10, 30, 20, 40
+	priorities := []int{50, 10, 30, 20, 40}
+	for _, p := range priorities {
+		r.OnBeforeToolCall(fmt.Sprintf("p-%d", p), p, func(_ context.Context, _ *BeforeToolCallEvent) error {
+			order = append(order, p)
+			return nil
+		})
+	}
+
+	r.TriggerBeforeToolCall(ctx, &BeforeToolCallEvent{ToolName: "test", Args: map[string]any{}})
+
+	expected := []int{10, 20, 30, 40, 50}
+	if len(order) != len(expected) {
+		t.Fatalf("Expected %d handlers, got %d", len(expected), len(order))
+	}
+	for i, v := range expected {
+		if order[i] != v {
+			t.Errorf("Position %d: expected priority %d, got %d", i, v, order[i])
+		}
+	}
+}
+
+func TestAfterToolCallExecution(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	var called bool
+	var capturedName string
+	r.OnAfterToolCall("logger", 0, func(_ context.Context, event *AfterToolCallEvent) error {
+		called = true
+		capturedName = event.ToolName
+		return nil
+	})
+
+	r.TriggerAfterToolCall(ctx, &AfterToolCallEvent{
+		ToolName: "shell",
+		Args:     map[string]any{"cmd": "ls"},
+		Channel:  "telegram",
+		ChatID:   "123",
+	})
+
+	if !called {
+		t.Error("Expected after_tool_call handler to be called")
+	}
+	if capturedName != "shell" {
+		t.Errorf("Expected ToolName 'shell', got '%s'", capturedName)
+	}
+}
+
+func TestHandlerErrorsSwallowed(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	// Test void hooks: error in one handler doesn't prevent others from running
+	var secondCalled bool
+	r.OnMessageReceived("erroring", 10, func(_ context.Context, _ *MessageReceivedEvent) error {
+		return fmt.Errorf("handler error")
+	})
+	r.OnMessageReceived("observer", 20, func(_ context.Context, _ *MessageReceivedEvent) error {
+		secondCalled = true
+		return nil
+	})
+
+	r.TriggerMessageReceived(ctx, &MessageReceivedEvent{Content: "test"})
+	if !secondCalled {
+		t.Error("Expected second void handler to run despite first handler's error")
+	}
+
+	// Test modifying hooks: error doesn't stop chain (only Cancel does)
+	var modifySecondCalled bool
+	r.OnMessageSending("erroring", 10, func(_ context.Context, _ *MessageSendingEvent) error {
+		return fmt.Errorf("handler error")
+	})
+	r.OnMessageSending("modifier", 20, func(_ context.Context, _ *MessageSendingEvent) error {
+		modifySecondCalled = true
+		return nil
+	})
+
+	r.TriggerMessageSending(ctx, &MessageSendingEvent{Content: "test"})
+	if !modifySecondCalled {
+		t.Error("Expected second modifying handler to run despite first handler's error")
+	}
+}
+
+func TestPanicRecovery(t *testing.T) {
+	r := NewHookRegistry()
+	ctx := context.Background()
+
+	// Void hook: panic in one handler shouldn't crash, other handlers should still run
+	var safeHandlerCalled bool
+	r.OnLLMInput("panicker", 10, func(_ context.Context, _ *LLMInputEvent) error {
+		panic("boom")
+	})
+	r.OnLLMInput("safe", 10, func(_ context.Context, _ *LLMInputEvent) error {
+		safeHandlerCalled = true
+		return nil
+	})
+
+	// Should not panic
+	r.TriggerLLMInput(ctx, &LLMInputEvent{AgentID: "test"})
+	if !safeHandlerCalled {
+		t.Error("Expected safe handler to run despite panicking sibling")
+	}
+
+	// Modifying hook: panic in handler shouldn't crash
+	r.OnBeforeToolCall("panicker", 10, func(_ context.Context, _ *BeforeToolCallEvent) error {
+		panic("boom")
+	})
+
+	// Should not panic
+	r.TriggerBeforeToolCall(ctx, &BeforeToolCallEvent{ToolName: "test"})
+}
