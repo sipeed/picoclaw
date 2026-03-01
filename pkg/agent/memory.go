@@ -105,6 +105,21 @@ func (ms *MemoryStore) AppendToday(content string) error {
 	return fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0o600)
 }
 
+// EnsureTodayFile creates today's daily note file (and month directory) if missing,
+// so paths advertised in the system prompt (memory/YYYYMM/YYYYMMDD.md) exist when the LLM reads them.
+func (ms *MemoryStore) EnsureTodayFile() {
+	todayFile := ms.getTodayFile()
+	monthDir := filepath.Dir(todayFile)
+	if err := os.MkdirAll(monthDir, 0o755); err != nil {
+		return
+	}
+	if _, err := os.Stat(todayFile); err == nil {
+		return // already exists
+	}
+	header := fmt.Sprintf("# %s\n\n", time.Now().Format("2006-01-02"))
+	_ = os.WriteFile(todayFile, []byte(header), 0o644)
+}
+
 // GetRecentDailyNotes returns daily notes from the last N days.
 // Contents are joined with "---" separator.
 func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
@@ -132,6 +147,7 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 // GetMemoryContext returns formatted memory context for the agent prompt.
 // Includes long-term memory and recent daily notes.
 func (ms *MemoryStore) GetMemoryContext() string {
+	ms.EnsureTodayFile() // so memory/YYYYMM/YYYYMMDD.md exists when LLM uses read_file
 	longTerm := ms.ReadLongTerm()
 	recentNotes := ms.GetRecentDailyNotes(3)
 
