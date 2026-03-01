@@ -2614,20 +2614,35 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}
 
-			// Create async callback for tools that implement AsyncTool
-			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
-			// Instead, they notify the agent via PublishInbound, and the agent decides
-			// whether to forward the result to the user (in processSystemMessage).
+			// Create async callback for tools that implement AsyncTool.
+			// The callback publishes a system inbound message so processSystemMessage
+			// injects the result into the conductor's session history. The conductor
+			// sees it on its next turn and decides whether to notify the user.
+			toolName := tc.Name // capture for goroutine
 			asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
-				// Log the async completion but don't send directly to user
-				// The agent will handle user notification via processSystemMessage
-				if !result.Silent && result.ForUser != "" {
-					logger.InfoCF("agent", "Async tool completed, agent will handle notification",
-						map[string]any{
-							"tool":        tc.Name,
-							"content_len": len(result.ForUser),
-						})
+				content := result.ForLLM
+				if content == "" {
+					content = result.ForUser
 				}
+				if content == "" {
+					return
+				}
+
+				logger.InfoCF("agent", "Async tool completed, publishing to conductor",
+					map[string]any{
+						"tool":        toolName,
+						"content_len": len(content),
+						"is_error":    result.IsError,
+					})
+
+				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer pubCancel()
+				_ = al.bus.PublishInbound(pubCtx, bus.InboundMessage{
+					Channel:  "system",
+					SenderID: fmt.Sprintf("async:%s", toolName),
+					ChatID:   fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID),
+					Content:  fmt.Sprintf("Async tool '%s' completed.\n\nResult:\n%s", toolName, content),
+				})
 			}
 
 			// Report toolcall state to canvas.
