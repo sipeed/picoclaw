@@ -107,11 +107,6 @@ func NewModelRegistry(cfg *config.Config) (*ModelRegistry, error) {
 		return nil, fmt.Errorf("no valid models in model_list")
 	}
 
-	// Resolve default model name to model ID so the agent gets the right value
-	if entry, ok := reg.models[reg.defaultModelName]; ok {
-		_ = entry // default exists, good
-	}
-
 	return reg, nil
 }
 

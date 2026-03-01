@@ -25,7 +25,6 @@ func (m *mockRegistryProvider) GetDefaultModel() string {
 }
 
 // mockModelRegistry creates a ModelRegistry backed by a mockRegistryProvider.
-// Maps "gpt-4" (the default in testCfg) and "claude-opus" (used in model tests).
 func mockModelRegistry() *providers.ModelRegistry {
 	p := &mockRegistryProvider{}
 	reg := providers.NewModelRegistryFromProvider(p, "gpt-4")
