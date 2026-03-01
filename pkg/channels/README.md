@@ -775,17 +775,17 @@ When the Agent finishes processing a message, Manager's `preSend` automatically:
 ```go
 type ChannelsConfig struct {
     // ... existing channels
-    Matrix  MatrixChannelConfig  `yaml:"matrix" json:"matrix"`
+    Matrix  MatrixChannelConfig  `json:"matrix"`
 }
 
 type MatrixChannelConfig struct {
-    Enabled    bool     `yaml:"enabled" json:"enabled"`
-    HomeServer string   `yaml:"home_server" json:"home_server"`
-    Token      string   `yaml:"token" json:"token"`
-    AllowFrom  []string `yaml:"allow_from" json:"allow_from"`
-    GroupTrigger GroupTriggerConfig `yaml:"group_trigger" json:"group_trigger"`
-    Placeholder  PlaceholderConfig  `yaml:"placeholder" json:"placeholder"`
-    ReasoningChannelID string `yaml:"reasoning_channel_id" json:"reasoning_channel_id"`
+    Enabled    bool     `json:"enabled"`
+    HomeServer string   `json:"home_server"`
+    Token      string   `json:"token"`
+    AllowFrom  []string `json:"allow_from"`
+    GroupTrigger GroupTriggerConfig `json:"group_trigger"`
+    Placeholder  PlaceholderConfig  `json:"placeholder"`
+    ReasoningChannelID string `json:"reasoning_channel_id"`
 }
 ```
 
@@ -801,9 +801,9 @@ if m.config.Channels.Matrix.Enabled && m.config.Channels.Matrix.Token != "" {
 > **Note**: If your channel has multiple modes (like WhatsApp Bridge vs Native), branch in initChannels based on config:
 > ```go
 > if cfg.UseNative {
->     m.initChannel("matrix_native", "Matrix Native")
+>     m.initChannel("whatsapp_native", "WhatsApp Native")
 > } else {
->     m.initChannel("matrix", "Matrix")
+>     m.initChannel("whatsapp", "WhatsApp")
 > }
 > ```
 
@@ -1381,4 +1381,4 @@ agentLoop.Stop()               // Stop Agent
 
 7. **PlaceholderConfig vs implementation**: `PlaceholderConfig` appears in 6 channel configs (Telegram, Discord, Slack, LINE, OneBot, Pico), but only channels that implement both `PlaceholderCapable` + `MessageEditor` (Telegram, Discord, Pico) can actually use placeholder message editing. The rest are reserved fields.
 
-8. **ReasoningChannelID**: All 12 channel configs have a `ReasoningChannelID` field, used to route LLM reasoning/thinking output to a designated channel. `BaseChannel` exposes this via the `WithReasoningChannelID` option and `ReasoningChannelID()` method.
+8. **ReasoningChannelID**: Most channel configs include a `reasoning_channel_id` field to route LLM reasoning/thinking output to a designated channel (WhatsApp, Telegram, Feishu, Discord, MaixCam, QQ, DingTalk, Slack, LINE, OneBot, WeCom, WeComApp). Note: `PicoConfig` does not currently expose this field. `BaseChannel` exposes this via the `WithReasoningChannelID` option and `ReasoningChannelID()` method.

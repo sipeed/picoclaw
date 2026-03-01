@@ -774,17 +774,17 @@ if c.owner != nil && c.placeholderRecorder != nil {
 ```go
 type ChannelsConfig struct {
     // ... 现有 channels
-    Matrix  MatrixChannelConfig  `yaml:"matrix" json:"matrix"`
+    Matrix  MatrixChannelConfig  `json:"matrix"`
 }
 
 type MatrixChannelConfig struct {
-    Enabled    bool     `yaml:"enabled" json:"enabled"`
-    HomeServer string   `yaml:"home_server" json:"home_server"`
-    Token      string   `yaml:"token" json:"token"`
-    AllowFrom  []string `yaml:"allow_from" json:"allow_from"`
-    GroupTrigger GroupTriggerConfig `yaml:"group_trigger" json:"group_trigger"`
-    Placeholder  PlaceholderConfig  `yaml:"placeholder" json:"placeholder"`
-    ReasoningChannelID string `yaml:"reasoning_channel_id" json:"reasoning_channel_id"`
+    Enabled    bool     `json:"enabled"`
+    HomeServer string   `json:"home_server"`
+    Token      string   `json:"token"`
+    AllowFrom  []string `json:"allow_from"`
+    GroupTrigger GroupTriggerConfig `json:"group_trigger"`
+    Placeholder  PlaceholderConfig  `json:"placeholder"`
+    ReasoningChannelID string `json:"reasoning_channel_id"`
 }
 ```
 
@@ -800,9 +800,9 @@ if m.config.Channels.Matrix.Enabled && m.config.Channels.Matrix.Token != "" {
 > **注意**：如果你的 channel 有多种模式（如 WhatsApp Bridge vs Native），需要在 initChannels 中根据配置分支：
 > ```go
 > if cfg.UseNative {
->     m.initChannel("matrix_native", "Matrix Native")
+>     m.initChannel("whatsapp_native", "WhatsApp Native")
 > } else {
->     m.initChannel("matrix", "Matrix")
+>     m.initChannel("whatsapp", "WhatsApp")
 > }
 > ```
 
@@ -1380,4 +1380,4 @@ agentLoop.Stop()               // 停止 Agent
 
 7. **PlaceholderConfig 的配置与实现**：`PlaceholderConfig` 出现在 6 个 channel config 中（Telegram、Discord、Slack、LINE、OneBot、Pico），但只有实现了 `PlaceholderCapable` + `MessageEditor` 的 channel（Telegram、Discord、Pico）能真正使用占位消息编辑功能。其余 channel 的 `PlaceholderConfig` 为预留字段。
 
-8. **ReasoningChannelID**：所有 channel config（12 个）都有 `ReasoningChannelID` 字段，用于将 LLM 的思维链（reasoning/thinking）路由到指定 channel。`BaseChannel` 通过 `WithReasoningChannelID` 选项和 `ReasoningChannelID()` 方法暴露此配置。
+8. **ReasoningChannelID**：大多数 channel config 都包含 `reasoning_channel_id` 字段，用于将 LLM 的思维链（reasoning/thinking）路由到指定 channel（WhatsApp、Telegram、Feishu、Discord、MaixCam、QQ、DingTalk、Slack、LINE、OneBot、WeCom、WeComApp）。注意：`PicoConfig` 目前不包含该字段。`BaseChannel` 通过 `WithReasoningChannelID` 选项和 `ReasoningChannelID()` 方法暴露此配置。

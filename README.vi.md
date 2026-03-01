@@ -3,7 +3,7 @@
 
 <h1>PicoClaw: Trợ lý AI Siêu Nhẹ viết bằng Go</h1>
 
-<h3>Phần cứng $10 · RAM 10MB · Khởi động 1 giây · 皮皮虾，我们走！</h3>
+<h3>Phần cứng $10 · RAM 10MB · Khởi động 1 giây · Nào, xuất phát!</h3>
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
@@ -488,7 +488,7 @@ Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) đ�
 }
 ```
 
-> **Lưu ý:** WeCom Bot incoming webhook endpoints are served by the shared Gateway HTTP server (mặc định 127.0.0.1:18790). Nếu bạn cần truy cập từ bên ngoài, đặt reverse proxy hoặc mở port Gateway phù hợp.
+> **Lưu ý:** Các endpoint webhook của WeCom Bot được phục vụ bởi máy chủ Gateway HTTP dùng chung (mặc định 127.0.0.1:18790). Nếu bạn cần truy cập từ bên ngoài, hãy cấu hình reverse proxy hoặc mở cổng Gateway tương ứng.
 
 **Thiết lập Nhanh - WeCom App:**
 
