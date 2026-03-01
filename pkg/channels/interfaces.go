@@ -2,6 +2,8 @@ package channels
 
 import "context"
 
+import "github.com/sipeed/picoclaw/pkg/commands"
+
 // TypingCapable — channels that can show a typing/thinking indicator.
 // StartTyping begins the indicator and returns a stop function.
 // The stop function MUST be idempotent and safe to call multiple times.
@@ -38,4 +40,18 @@ type PlaceholderRecorder interface {
 	RecordPlaceholder(channel, chatID, placeholderID string)
 	RecordTypingStop(channel, chatID string, stop func())
 	RecordReactionUndo(channel, chatID string, undo func())
+}
+
+// CommandRegistrarCapable is implemented by channels that can register
+// command menus with their upstream platform (e.g. Telegram BotCommand).
+// Channels that do not support platform-level command menus can ignore it.
+type CommandRegistrarCapable interface {
+	RegisterCommands(ctx context.Context, defs []commands.Definition) error
+}
+
+// CommandParserCapable is implemented by channels that expose a command
+// dispatch entrypoint backed by shared command definitions/dispatcher.
+// It is optional and intended for cross-channel command handling features.
+type CommandParserCapable interface {
+	DispatchCommand(ctx context.Context, req commands.Request) commands.Result
 }

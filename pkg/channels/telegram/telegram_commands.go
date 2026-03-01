@@ -7,6 +7,7 @@ import (
 
 	"github.com/mymmrac/telego"
 
+	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -38,11 +39,8 @@ func commandArgs(text string) string {
 }
 
 func (c *cmd) Help(ctx context.Context, message telego.Message) error {
-	msg := `/start - Start the bot
-/help - Show this help message
-/show [model|channel] - Show current configuration
-/list [models|channels] - List available options
-	`
+	defs := commands.NewRegistry(commands.BuiltinDefinitions(c.config)).ForChannel("telegram")
+	msg := commands.FormatHelpMessage(defs)
 	_, err := c.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: message.Chat.ID},
 		Text:   msg,

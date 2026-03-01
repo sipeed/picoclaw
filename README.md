@@ -338,6 +338,12 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or We
 picoclaw gateway
 ```
 
+**4. Telegram command menu (auto-registered at startup)**
+
+PicoClaw now keeps command definitions in one shared registry. On startup, Telegram will automatically register supported bot commands (for example `/start`, `/help`, `/show`, `/list`) so command menu and runtime behavior stay in sync.
+
+If command registration fails (network/API transient errors), the channel still starts and PicoClaw retries registration in the background.
+
 </details>
 
 <details>
