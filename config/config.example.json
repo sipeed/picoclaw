@@ -9,6 +9,10 @@
       "max_tool_iterations": 20
     }
   },
+  "session": {
+    "dm_scope": "per-channel-peer",
+    "backlog_limit": 20
+  },
   "model_list": [
     {
       "model_name": "gpt4",

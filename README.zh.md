@@ -307,6 +307,13 @@ PicoClaw 支持多种聊天平台，使您的 Agent 能够连接到任何地方�
 | **OneBot**           | ⭐⭐ 中等   | 兼容 NapCat/Go-CQHTTP，社区生态丰富       | [查看文档](docs/channels/onebot/README.zh.md)                                                                   |
 | **MaixCam**          | ⭐ 简单     | 专为 AI 摄像头设计的硬件集成通道          | [查看文档](docs/channels/maixcam/README.zh.md)                                                                  |
 
+### Telegram 命令注册（启动时自动同步）
+
+PicoClaw 现在使用统一的命令定义来源。启动时会自动将 Telegram 支持的命令（例如 `/start`、`/help`、`/new`、`/session`、`/show`、`/list`）注册到 Bot 命令菜单，确保菜单展示与实际行为一致。
+Telegram 侧保留的是命令菜单注册能力；通用命令的实际执行统一走 Agent Loop 中的 commands executor。
+
+如果注册因网络或 API 短暂异常失败，不会阻塞 channel 启动；系统会在后台自动重试。
+
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> 加入 Agent 社交网络
 
 只需通过 CLI 或任何集成的聊天应用发送一条消息，即可将 PicoClaw 连接到 Agent 社交网络。
@@ -336,6 +343,28 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 └── USER.md           # 用户偏好
 
 ```
+
+### 会话作用域与保留上限
+
+使用 `session.dm_scope` 控制私聊会话隔离粒度，使用 `session.backlog_limit` 控制每个作用域保留多少历史会话：
+
+```json
+{
+  "session": {
+    "dm_scope": "per-channel-peer",
+    "backlog_limit": 20
+  }
+}
+```
+
+`/new`（或 `/reset`）会在当前作用域创建新会话；`/session list` 和 `/session resume <index>` 只在当前作用域内生效。
+
+### 统一命令执行策略
+
+- 通用斜杠命令通过 `pkg/agent/loop.go` 中的 `commands.Executor` 统一执行。
+- Channel 适配器不再在本地消费通用命令；它们只负责把入站文本转发到 bus/agent 路径。Telegram 仍会在启动时自动注册其支持的命令菜单。
+- 未注册的斜杠命令（例如 `/foo`）会透传给 LLM 按普通输入处理。
+- 已注册但当前 channel 不支持的命令（例如 WhatsApp 上的 `/show`）会返回明确的用户可见错误，并停止后续处理。
 
 ### 心跳 / 周期性任务 (Heartbeat)
 
@@ -675,6 +704,10 @@ picoclaw agent -m "你好"
     "defaults": {
       "model": "anthropic/claude-opus-4-5"
     }
+  },
+  "session": {
+    "dm_scope": "per-channel-peer",
+    "backlog_limit": 20
   },
   "providers": {
     "openrouter": {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -40,13 +41,15 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot      *telego.Bot
-	bh       *telegohandler.BotHandler
-	commands TelegramCommander
-	config   *config.Config
-	chatIDs  map[string]int64
-	ctx      context.Context
-	cancel   context.CancelFunc
+	bot     *telego.Bot
+	bh      *telegohandler.BotHandler
+	config  *config.Config
+	chatIDs map[string]int64
+	ctx     context.Context
+	cancel  context.CancelFunc
+
+	registerFunc     func(context.Context, []commands.Definition) error
+	commandRegCancel context.CancelFunc
 }
 
 func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
@@ -89,7 +92,6 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 
 	return &TelegramChannel{
 		BaseChannel: base,
-		commands:    NewTelegramCommands(bot, cfg),
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
@@ -117,22 +119,6 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	c.bh = bh
 
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		c.commands.Help(ctx, message)
-		return nil
-	}, th.CommandEqual("help"))
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Start(ctx, message)
-	}, th.CommandEqual("start"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.Show(ctx, message)
-	}, th.CommandEqual("show"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
-		return c.commands.List(ctx, message)
-	}, th.CommandEqual("list"))
-
-	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
 
@@ -140,6 +126,8 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
 		"username": c.bot.Username(),
 	})
+
+	c.startCommandRegistration(c.ctx, commands.NewRegistry(commands.BuiltinDefinitions(c.config)).ForChannel("telegram"))
 
 	go bh.Start()
 
@@ -158,6 +146,9 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	// Cancel our context (stops long polling)
 	if c.cancel != nil {
 		c.cancel()
+	}
+	if c.commandRegCancel != nil {
+		c.commandRegCancel()
 	}
 
 	return nil
@@ -661,39 +652,79 @@ func escapeHTML(text string) string {
 
 // isBotMentioned checks if the bot is mentioned in the message via entities.
 func (c *TelegramChannel) isBotMentioned(message *telego.Message) bool {
-	botUsername := c.bot.Username()
-	if botUsername == "" {
+	text, entities := telegramEntityTextAndList(message)
+	if text == "" || len(entities) == 0 {
 		return false
 	}
 
-	entities := message.Entities
-	if entities == nil {
-		entities = message.CaptionEntities
+	botUsername := ""
+	if c.bot != nil {
+		botUsername = c.bot.Username()
 	}
+	runes := []rune(text)
 
 	for _, entity := range entities {
-		if entity.Type == "mention" {
-			// Extract the mention text from the message
-			text := message.Text
-			if text == "" {
-				text = message.Caption
-			}
-			runes := []rune(text)
-			end := entity.Offset + entity.Length
-			if end <= len(runes) {
-				mention := string(runes[entity.Offset:end])
-				if strings.EqualFold(mention, "@"+botUsername) {
-					return true
-				}
-			}
+		entityText, ok := telegramEntityText(runes, entity)
+		if !ok {
+			continue
 		}
-		if entity.Type == "text_mention" && entity.User != nil {
-			if entity.User.Username == botUsername {
+
+		switch entity.Type {
+		case telego.EntityTypeMention:
+			if botUsername != "" && strings.EqualFold(entityText, "@"+botUsername) {
+				return true
+			}
+		case telego.EntityTypeTextMention:
+			if botUsername != "" && entity.User != nil && strings.EqualFold(entity.User.Username, botUsername) {
+				return true
+			}
+		case telego.EntityTypeBotCommand:
+			if isBotCommandEntityForThisBot(entityText, botUsername) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func telegramEntityTextAndList(message *telego.Message) (string, []telego.MessageEntity) {
+	if message.Text != "" {
+		return message.Text, message.Entities
+	}
+	return message.Caption, message.CaptionEntities
+}
+
+func telegramEntityText(runes []rune, entity telego.MessageEntity) (string, bool) {
+	if entity.Offset < 0 || entity.Length <= 0 {
+		return "", false
+	}
+	end := entity.Offset + entity.Length
+	if entity.Offset >= len(runes) || end > len(runes) {
+		return "", false
+	}
+	return string(runes[entity.Offset:end]), true
+}
+
+func isBotCommandEntityForThisBot(entityText, botUsername string) bool {
+	if !strings.HasPrefix(entityText, "/") {
+		return false
+	}
+	command := strings.TrimPrefix(entityText, "/")
+	if command == "" {
+		return false
+	}
+
+	at := strings.IndexRune(command, '@')
+	if at == -1 {
+		// A bare /command delivered to this bot is intended for this bot.
+		return true
+	}
+
+	mentionUsername := command[at+1:]
+	if mentionUsername == "" || botUsername == "" {
+		return false
+	}
+	return strings.EqualFold(mentionUsername, botUsername)
 }
 
 // stripBotMention removes the @bot mention from the content.

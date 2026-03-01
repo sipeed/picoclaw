@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sync/atomic"
 
@@ -13,6 +14,15 @@ import (
 
 // rrCounter is a global counter for round-robin load balancing across models.
 var rrCounter atomic.Uint64
+
+var warningWriter io.Writer = os.Stderr
+
+func warnf(format string, args ...any) {
+	if warningWriter == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(warningWriter, "warning: "+format+"\n", args...)
+}
 
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
 // so allow_from can contain both "123" and 123.
@@ -78,7 +88,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	}
 
 	// Only include session if not empty
-	if c.Session.DMScope != "" || len(c.Session.IdentityLinks) > 0 {
+	if c.Session.DMScope != "" || len(c.Session.IdentityLinks) > 0 || c.Session.BacklogLimit > 0 {
 		aux.Session = &c.Session
 	}
 
@@ -165,6 +175,16 @@ type AgentBinding struct {
 type SessionConfig struct {
 	DMScope       string              `json:"dm_scope,omitempty"`
 	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
+	BacklogLimit  int                 `json:"backlog_limit,omitempty"`
+}
+
+const DefaultSessionBacklogLimit = 20
+
+func (s SessionConfig) EffectiveBacklogLimit() int {
+	if s.BacklogLimit < 1 {
+		return DefaultSessionBacklogLimit
+	}
+	return s.BacklogLimit
 }
 
 type AgentDefaults struct {
@@ -607,6 +627,15 @@ func LoadConfig(path string) (*Config, error) {
 
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
+	}
+
+	if cfg.Session.BacklogLimit < 1 {
+		warnf(
+			"invalid session.backlog_limit=%d, fallback to default=%d",
+			cfg.Session.BacklogLimit,
+			DefaultSessionBacklogLimit,
+		)
+		cfg.Session.BacklogLimit = DefaultSessionBacklogLimit
 	}
 
 	// Migrate legacy channel config fields to new unified structures

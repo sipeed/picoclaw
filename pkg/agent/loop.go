@@ -20,6 +20,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -369,12 +370,52 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
+	route, agent, err := al.resolveMessageRoute(msg)
+	if err != nil {
+		return "", err
+	}
+
 	// Check for commands
-	if response, handled := al.handleCommand(ctx, msg); handled {
+	if response, handled := al.handleCommand(ctx, msg, route, agent); handled {
 		return response, nil
 	}
 
-	// Route to determine agent and session key
+	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if mt, ok := tool.(tools.ContextualTool); ok {
+			mt.SetContext(msg.Channel, msg.ChatID)
+		}
+	}
+
+	// Resolve active session from the routing scope.
+	scopeKey := resolveScopeKey(route, msg.SessionKey)
+	sessionKey, err := agent.Sessions.ResolveActive(scopeKey)
+	if err != nil {
+		return "", fmt.Errorf("resolve active session: %w", err)
+	}
+
+	logger.InfoCF("agent", "Routed message",
+		map[string]any{
+			"agent_id":      agent.ID,
+			"scope_key":     scopeKey,
+			"session_key":   sessionKey,
+			"matched_by":    route.MatchedBy,
+			"route_agent":   route.AgentID,
+			"route_channel": route.Channel,
+		})
+
+	return al.runAgentLoop(ctx, agent, processOptions{
+		SessionKey:      sessionKey,
+		Channel:         msg.Channel,
+		ChatID:          msg.ChatID,
+		UserMessage:     msg.Content,
+		DefaultResponse: defaultResponse,
+		EnableSummary:   true,
+		SendResponse:    false,
+	})
+}
+
+func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
 	route := al.registry.ResolveRoute(routing.RouteInput{
 		Channel:    msg.Channel,
 		AccountID:  msg.Metadata["account_id"],
@@ -389,38 +430,17 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		agent = al.registry.GetDefaultAgent()
 	}
 	if agent == nil {
-		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+		return routing.ResolvedRoute{}, nil, fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
 	}
 
-	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if mt, ok := tool.(tools.ContextualTool); ok {
-			mt.SetContext(msg.Channel, msg.ChatID)
-		}
+	return route, agent, nil
+}
+
+func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
+	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, "agent:") {
+		return msgSessionKey
 	}
-
-	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
-	sessionKey := route.SessionKey
-	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
-		sessionKey = msg.SessionKey
-	}
-
-	logger.InfoCF("agent", "Routed message",
-		map[string]any{
-			"agent_id":    agent.ID,
-			"session_key": sessionKey,
-			"matched_by":  route.MatchedBy,
-		})
-
-	return al.runAgentLoop(ctx, agent, processOptions{
-		SessionKey:      sessionKey,
-		Channel:         msg.Channel,
-		ChatID:          msg.ChatID,
-		UserMessage:     msg.Content,
-		DefaultResponse: defaultResponse,
-		EnableSummary:   true,
-		SendResponse:    false,
-	})
+	return route.SessionKey
 }
 
 func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
@@ -1235,65 +1255,66 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	return totalChars * 2 / 5
 }
 
-func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
+func (al *AgentLoop) handleCommand(
+	ctx context.Context,
+	msg bus.InboundMessage,
+	route routing.ResolvedRoute,
+	agent *AgentInstance,
+) (string, bool) {
 	content := strings.TrimSpace(msg.Content)
 	if !strings.HasPrefix(content, "/") {
 		return "", false
 	}
 
-	parts := strings.Fields(content)
-	if len(parts) == 0 {
-		return "", false
-	}
+	runtime := newAgentCommandRuntime(msg, route, agent, al.cfg)
+	executor := commands.NewExecutor(commands.NewRegistry(commands.BuiltinDefinitionsWithRuntime(al.cfg, runtime)))
 
-	cmd := parts[0]
-	args := parts[1:]
+	var commandReply string
+	result := executor.Execute(ctx, commands.Request{
+		Channel:  msg.Channel,
+		ChatID:   msg.ChatID,
+		SenderID: msg.SenderID,
+		Text:     msg.Content,
+		Reply: func(text string) error {
+			commandReply = text
+			return nil
+		},
+	})
 
-	switch cmd {
-	case "/show":
-		if len(args) < 1 {
-			return "Usage: /show [model|channel|agents]", true
+	switch result.Outcome {
+	case commands.OutcomeHandled:
+		if result.Err != nil {
+			return mapCommandError(result), true
 		}
-		switch args[0] {
-		case "model":
-			defaultAgent := al.registry.GetDefaultAgent()
-			if defaultAgent == nil {
-				return "No default agent configured", true
-			}
-			return fmt.Sprintf("Current model: %s", defaultAgent.Model), true
-		case "channel":
-			return fmt.Sprintf("Current channel: %s", msg.Channel), true
-		case "agents":
-			agentIDs := al.registry.ListAgentIDs()
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-		default:
-			return fmt.Sprintf("Unknown show target: %s", args[0]), true
+		if commandReply != "" {
+			return commandReply, true
 		}
-
-	case "/list":
-		if len(args) < 1 {
-			return "Usage: /list [models|channels|agents]", true
+		if result.Reply != "" {
+			return result.Reply, true
 		}
-		switch args[0] {
-		case "models":
-			return "Available models: configured in config.json per agent", true
-		case "channels":
-			if al.channelManager == nil {
-				return "Channel manager not initialized", true
-			}
-			channels := al.channelManager.GetEnabledChannels()
-			if len(channels) == 0 {
-				return "No channels enabled", true
-			}
-			return fmt.Sprintf("Enabled channels: %s", strings.Join(channels, ", ")), true
-		case "agents":
-			agentIDs := al.registry.ListAgentIDs()
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-		default:
-			return fmt.Sprintf("Unknown list target: %s", args[0]), true
+		return "", true
+	case commands.OutcomeRejected:
+		if result.Reply != "" {
+			return result.Reply, true
+		}
+		if result.Command != "" {
+			return fmt.Sprintf("Command /%s is not supported on %s.", result.Command, msg.Channel), true
+		}
+		return "Command is not supported on this channel.", true
+	case commands.OutcomePassthrough:
+		parts := strings.Fields(content)
+		if len(parts) == 0 {
+			return "", false
+		}
+		cmd := parts[0]
+		if at := strings.Index(cmd, "@"); at > 0 {
+			cmd = cmd[:at]
+		}
+		if cmd != "/switch" {
+			return "", false
 		}
 
-	case "/switch":
+		args := parts[1:]
 		if len(args) < 3 || args[1] != "to" {
 			return "Usage: /switch [model|channel] to <name>", true
 		}
@@ -1308,6 +1329,10 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 			}
 			oldModel := defaultAgent.Model
 			defaultAgent.Model = value
+			if al.cfg != nil {
+				al.cfg.Agents.Defaults.ModelName = value
+				al.cfg.Agents.Defaults.Model = value
+			}
 			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
 		case "channel":
 			if al.channelManager == nil {
@@ -1323,6 +1348,50 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	}
 
 	return "", false
+}
+
+type agentCommandRuntime struct {
+	channel string
+	scope   string
+	sess    commands.SessionOps
+	cfg     *config.Config
+}
+
+func newAgentCommandRuntime(
+	msg bus.InboundMessage,
+	route routing.ResolvedRoute,
+	agent *AgentInstance,
+	cfg *config.Config,
+) commands.Runtime {
+	return agentCommandRuntime{
+		channel: msg.Channel,
+		scope:   resolveScopeKey(route, msg.SessionKey),
+		sess:    agent.Sessions,
+		cfg:     cfg,
+	}
+}
+
+func (r agentCommandRuntime) Channel() string {
+	return r.channel
+}
+
+func (r agentCommandRuntime) ScopeKey() string {
+	return r.scope
+}
+
+func (r agentCommandRuntime) SessionOps() commands.SessionOps {
+	return r.sess
+}
+
+func (r agentCommandRuntime) Config() *config.Config {
+	return r.cfg
+}
+
+func mapCommandError(result commands.ExecuteResult) string {
+	if result.Command == "" {
+		return fmt.Sprintf("Failed to execute command: %v", result.Err)
+	}
+	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
 }
 
 // extractPeer extracts the routing peer from the inbound message's structured Peer field.
