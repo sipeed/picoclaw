@@ -93,6 +93,107 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
+// ReactToMessage implements channels.ReactionCapable.
+// It adds an emoji reaction to the inbound message and returns an undo function.
+// Common emoji types: THUMBSUP, OK, EYES, DONE, HEART, ROCKET
+func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
+	if messageID == "" {
+		return func() {}, nil
+	}
+
+	emojiType := c.config.ReactEmoji
+	if emojiType == "" {
+		emojiType = "OK" // Default emoji
+	}
+
+	// Add reaction and get reaction_id
+	reactionID, err := c.addReaction(ctx, messageID, emojiType)
+	if err != nil {
+		logger.DebugCF("feishu", "Failed to add reaction", map[string]any{
+			"message_id": messageID,
+			"emoji":      emojiType,
+			"error":      err.Error(),
+		})
+		// Return no-op on error
+		return func() {}, nil
+	}
+
+	logger.DebugCF("feishu", "Added reaction to message", map[string]any{
+		"message_id":  messageID,
+		"emoji":       emojiType,
+		"reaction_id": reactionID,
+	})
+
+	// Return undo function
+	return func() {
+		if reactionID != "" {
+			c.removeReaction(context.Background(), messageID, reactionID)
+		}
+	}, nil
+}
+
+// addReaction adds an emoji reaction to a message and returns the reaction_id.
+func (c *FeishuChannel) addReaction(ctx context.Context, messageID, emojiType string) (string, error) {
+	req := larkim.NewCreateMessageReactionReqBuilder().
+		MessageId(messageID).
+		Body(larkim.NewCreateMessageReactionReqBodyBuilder().
+			ReactionType(larkim.NewEmojiBuilder().
+				EmojiType(emojiType).
+				Build()).
+			Build()).
+		Build()
+
+	resp, err := c.client.Im.V1.MessageReaction.Create(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("feishu add reaction: %w", err)
+	}
+
+	if !resp.Success() {
+		return "", fmt.Errorf("feishu add reaction failed: code=%d msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data != nil && resp.Data.ReactionId != nil {
+		return *resp.Data.ReactionId, nil
+	}
+
+	return "", nil
+}
+
+// removeReaction removes an emoji reaction from a message using reaction_id.
+func (c *FeishuChannel) removeReaction(ctx context.Context, messageID, reactionID string) error {
+	req := larkim.NewDeleteMessageReactionReqBuilder().
+		MessageId(messageID).
+		ReactionId(reactionID).
+		Build()
+
+	resp, err := c.client.Im.V1.MessageReaction.Delete(ctx, req)
+	if err != nil {
+		logger.DebugCF("feishu", "Failed to remove reaction", map[string]any{
+			"message_id":  messageID,
+			"reaction_id": reactionID,
+			"error":       err.Error(),
+		})
+		return err
+	}
+
+	if !resp.Success() {
+		logger.DebugCF("feishu", "Failed to remove reaction", map[string]any{
+			"message_id":  messageID,
+			"reaction_id": reactionID,
+			"code":        resp.Code,
+			"msg":         resp.Msg,
+		})
+		return fmt.Errorf("feishu remove reaction failed: code=%d msg=%s", resp.Code, resp.Msg)
+	}
+
+	logger.DebugCF("feishu", "Removed reaction from message", map[string]any{
+		"message_id":  messageID,
+		"reaction_id": reactionID,
+	})
+
+	return nil
+}
+
 func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning

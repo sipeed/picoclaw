@@ -252,6 +252,7 @@ type FeishuConfig struct {
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
+	ReactEmoji         string              `json:"react_emoji"             env:"PICOCLAW_CHANNELS_FEISHU_REACT_EMOJI"` // Emoji type for reaction, e.g. "THUMBSUP", "EYES", "OK"
 }
 
 type DiscordConfig struct {
