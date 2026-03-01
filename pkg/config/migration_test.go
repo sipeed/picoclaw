@@ -581,3 +581,72 @@ func TestConvertProvidersToModelList_LegacyModelWithProtocolPrefix(t *testing.T)
 		t.Errorf("Model = %q, want %q (should not duplicate prefix)", result[0].Model, "openrouter/auto")
 	}
 }
+
+// Test that ModelName is set to the user's configured model when provider matches.
+// This ensures GetModelConfig(userModel) can find the migrated entry.
+// Regression test for: gateway startup failure when user model differs from provider name.
+func TestConvertProvidersToModelList_ModelNameMatchesUserModel(t *testing.T) {
+	cfg := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "moonshot",
+				Model:    "k2p5",
+			},
+		},
+		Providers: ProvidersConfig{
+			Moonshot: ProviderConfig{APIKey: "sk-kimi-test"},
+		},
+	}
+
+	result := ConvertProvidersToModelList(cfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// ModelName must match the user's configured model, not the provider name.
+	// Without this, GetModelConfig("k2p5") would fail because it would look
+	// for ModelName == "k2p5" but find ModelName == "moonshot".
+	if result[0].ModelName != "k2p5" {
+		t.Errorf("ModelName = %q, want %q (must match user's model for GetModelConfig lookup)", result[0].ModelName, "k2p5")
+	}
+
+	if result[0].Model != "moonshot/k2p5" {
+		t.Errorf("Model = %q, want %q", result[0].Model, "moonshot/k2p5")
+	}
+
+	// Other providers (not matching the user's configured provider) should keep their provider name
+	cfg2 := &Config{
+		Agents: AgentsConfig{
+			Defaults: AgentDefaults{
+				Provider: "moonshot",
+				Model:    "k2p5",
+			},
+		},
+		Providers: ProvidersConfig{
+			OpenAI:   OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "sk-openai"}},
+			Moonshot: ProviderConfig{APIKey: "sk-kimi-test"},
+		},
+	}
+
+	result2 := ConvertProvidersToModelList(cfg2)
+
+	if len(result2) != 2 {
+		t.Fatalf("len(result2) = %d, want 2", len(result2))
+	}
+
+	for _, mc := range result2 {
+		switch {
+		case mc.APIKey == "sk-openai":
+			// OpenAI is not the user's provider, should keep default ModelName
+			if mc.ModelName != "openai" {
+				t.Errorf("OpenAI ModelName = %q, want %q (non-matching provider keeps default)", mc.ModelName, "openai")
+			}
+		case mc.APIKey == "sk-kimi-test":
+			// Moonshot is the user's provider, ModelName must be the user's model
+			if mc.ModelName != "k2p5" {
+				t.Errorf("Moonshot ModelName = %q, want %q (matching provider uses user model)", mc.ModelName, "k2p5")
+			}
+		}
+	}
+}

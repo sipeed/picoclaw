@@ -361,3 +361,62 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
 	}
 }
+
+// TestStripSystemParts_PreservesReasoningContent verifies that reasoning_content
+// is preserved in the wire message format when present, and omitted when empty.
+// Regression test for: Kimi K2 API returning 400 "reasoning_content is missing".
+func TestStripSystemParts_PreservesReasoningContent(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "What is 1+1?"},
+		{
+			Role:             "assistant",
+			Content:          "The answer is 2",
+			ReasoningContent: "Let me think step by step... 1+1=2",
+		},
+		{Role: "user", Content: "Thanks"},
+	}
+
+	result := stripSystemParts(messages)
+
+	if len(result) != 3 {
+		t.Fatalf("len(result) = %d, want 3", len(result))
+	}
+
+	// Assistant message should preserve reasoning_content
+	if result[1].ReasoningContent != "Let me think step by step... 1+1=2" {
+		t.Errorf("ReasoningContent = %q, want %q", result[1].ReasoningContent, "Let me think step by step... 1+1=2")
+	}
+
+	// Verify it serializes to JSON correctly
+	data, err := json.Marshal(result[1])
+	if err != nil {
+		t.Fatalf("json.Marshal error: %v", err)
+	}
+
+	jsonStr := string(data)
+	if !contains(jsonStr, `"reasoning_content"`) {
+		t.Errorf("JSON should contain reasoning_content field, got: %s", jsonStr)
+	}
+
+	// User message should have empty reasoning_content (omitted via omitempty)
+	data2, err := json.Marshal(result[0])
+	if err != nil {
+		t.Fatalf("json.Marshal error: %v", err)
+	}
+	if contains(string(data2), `"reasoning_content"`) {
+		t.Errorf("JSON should omit empty reasoning_content, got: %s", string(data2))
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
