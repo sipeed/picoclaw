@@ -26,9 +26,10 @@ type (
 const defaultBaseURL = "https://api.anthropic.com"
 
 type Provider struct {
-	client      *anthropic.Client
-	tokenSource func() (string, error)
-	baseURL     string
+	client       *anthropic.Client
+	tokenSource  func() (string, error)
+	baseURL      string
+	useStreaming bool
 }
 
 func NewProvider(token string) *Provider {
@@ -42,15 +43,17 @@ func NewProviderWithBaseURL(token, apiBase string) *Provider {
 		option.WithBaseURL(baseURL),
 	)
 	return &Provider{
-		client:  &client,
-		baseURL: baseURL,
+		client:       &client,
+		baseURL:      baseURL,
+		useStreaming: true, // Enable streaming by default for kimi-coding compatibility
 	}
 }
 
 func NewProviderWithClient(client *anthropic.Client) *Provider {
 	return &Provider{
-		client:  client,
-		baseURL: defaultBaseURL,
+		client:       client,
+		baseURL:      defaultBaseURL,
+		useStreaming: true,
 	}
 }
 
@@ -85,12 +88,114 @@ func (p *Provider) Chat(
 		return nil, err
 	}
 
+	if p.useStreaming {
+		return p.chatStreaming(ctx, params, opts)
+	}
+	return p.chatNonStreaming(ctx, params, opts)
+}
+
+func (p *Provider) chatNonStreaming(
+	ctx context.Context,
+	params anthropic.MessageNewParams,
+	opts []option.RequestOption,
+) (*LLMResponse, error) {
 	resp, err := p.client.Messages.New(ctx, params, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("claude API call: %w", err)
 	}
 
 	return parseResponse(resp), nil
+}
+
+func (p *Provider) chatStreaming(
+	ctx context.Context,
+	params anthropic.MessageNewParams,
+	opts []option.RequestOption,
+) (*LLMResponse, error) {
+	stream := p.client.Messages.NewStreaming(ctx, params, opts...)
+
+	var content strings.Builder
+	var toolCalls []ToolCall
+	var usage UsageInfo
+	var finishReason string
+
+	for stream.Next() {
+		event := stream.Current()
+
+		switch event.Type {
+		case "message_start":
+			msg := event.AsMessageStart()
+			if msg.Message.Usage.InputTokens > 0 {
+				usage.PromptTokens = int(msg.Message.Usage.InputTokens)
+			}
+			if msg.Message.Usage.OutputTokens > 0 {
+				usage.CompletionTokens = int(msg.Message.Usage.OutputTokens)
+			}
+
+		case "content_block_start":
+			block := event.AsContentBlockStart()
+			if block.ContentBlock.Type == "tool_use" {
+				toolUse := block.ContentBlock.AsToolUse()
+				// Initialize tool call
+				toolCalls = append(toolCalls, ToolCall{
+					ID:        toolUse.ID,
+					Name:      toolUse.Name,
+					Arguments: map[string]any{},
+				})
+			}
+
+		case "content_block_delta":
+			delta := event.AsContentBlockDelta()
+			if delta.Delta.Type == "text_delta" {
+				content.WriteString(delta.Delta.Text)
+			} else if delta.Delta.Type == "input_json_delta" {
+				// Accumulate JSON for tool calls
+				if len(toolCalls) > 0 {
+					lastIdx := len(toolCalls) - 1
+					// Parse partial JSON
+					var args map[string]any
+					if err := json.Unmarshal([]byte(delta.Delta.PartialJSON), &args); err == nil {
+						for k, v := range args {
+							toolCalls[lastIdx].Arguments[k] = v
+						}
+					}
+				}
+			}
+
+		case "message_stop":
+			finishReason = "stop"
+
+		case "message_delta":
+			msgDelta := event.AsMessageDelta()
+			if msgDelta.Delta.StopReason != "" {
+				switch msgDelta.Delta.StopReason {
+				case "tool_use":
+					finishReason = "tool_calls"
+				case "max_tokens":
+					finishReason = "length"
+				default:
+					finishReason = "stop"
+				}
+			}
+			// Update usage from delta
+			if msgDelta.Usage.OutputTokens > 0 {
+				usage.CompletionTokens = int(msgDelta.Usage.OutputTokens)
+			}
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		return nil, fmt.Errorf("streaming error: %w", err)
+	}
+
+	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+
+	return &LLMResponse{
+		Content:      content.String(),
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
+		Usage:        &usage,
+	}, nil
 }
 
 func (p *Provider) GetDefaultModel() string {
