@@ -24,50 +24,58 @@ type ExecTool struct {
 	restrictToWorkspace bool
 }
 
-var defaultDenyPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
-	regexp.MustCompile(`\bdel\s+/[fq]\b`),
-	regexp.MustCompile(`\brmdir\s+/s\b`),
-	regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`), // Match disk wiping commands (must be followed by space/args)
-	regexp.MustCompile(`\bdd\s+if=`),
-	regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
-	regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
-	regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
-	regexp.MustCompile(`\$\([^)]+\)`),
-	regexp.MustCompile(`\$\{[^}]+\}`),
-	regexp.MustCompile("`[^`]+`"),
-	regexp.MustCompile(`\|\s*sh\b`),
-	regexp.MustCompile(`\|\s*bash\b`),
-	regexp.MustCompile(`;\s*rm\s+-[rf]`),
-	regexp.MustCompile(`&&\s*rm\s+-[rf]`),
-	regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
-	regexp.MustCompile(`>\s*/dev/null\s*>&?\s*\d?`),
-	regexp.MustCompile(`<<\s*EOF`),
-	regexp.MustCompile(`\$\(\s*cat\s+`),
-	regexp.MustCompile(`\$\(\s*curl\s+`),
-	regexp.MustCompile(`\$\(\s*wget\s+`),
-	regexp.MustCompile(`\$\(\s*which\s+`),
-	regexp.MustCompile(`\bsudo\b`),
-	regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
-	regexp.MustCompile(`\bchown\b`),
-	regexp.MustCompile(`\bpkill\b`),
-	regexp.MustCompile(`\bkillall\b`),
-	regexp.MustCompile(`\bkill\s+-[9]\b`),
-	regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
-	regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
-	regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
-	regexp.MustCompile(`\bpip\s+install\s+--user\b`),
-	regexp.MustCompile(`\bapt\s+(install|remove|purge)\b`),
-	regexp.MustCompile(`\byum\s+(install|remove)\b`),
-	regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
-	regexp.MustCompile(`\bdocker\s+run\b`),
-	regexp.MustCompile(`\bdocker\s+exec\b`),
-	regexp.MustCompile(`\bgit\s+push\b`),
-	regexp.MustCompile(`\bgit\s+force\b`),
-	regexp.MustCompile(`\bssh\b.*@`),
-	regexp.MustCompile(`\beval\b`),
-	regexp.MustCompile(`\bsource\s+.*\.sh\b`),
-}
+var (
+	defaultDenyPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
+		regexp.MustCompile(`\bdel\s+/[fq]\b`),
+		regexp.MustCompile(`\brmdir\s+/s\b`),
+		// Match disk wiping commands (must be followed by space/args)
+		regexp.MustCompile(
+			`\b(format|mkfs|diskpart)\b\s`,
+		),
+		regexp.MustCompile(`\bdd\s+if=`),
+		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
+		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
+		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
+		regexp.MustCompile(`\$\([^)]+\)`),
+		regexp.MustCompile(`\$\{[^}]+\}`),
+		regexp.MustCompile("`[^`]+`"),
+		regexp.MustCompile(`\|\s*sh\b`),
+		regexp.MustCompile(`\|\s*bash\b`),
+		regexp.MustCompile(`;\s*rm\s+-[rf]`),
+		regexp.MustCompile(`&&\s*rm\s+-[rf]`),
+		regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
+		regexp.MustCompile(`>\s*/dev/null\s*>&?\s*\d?`),
+		regexp.MustCompile(`<<\s*EOF`),
+		regexp.MustCompile(`\$\(\s*cat\s+`),
+		regexp.MustCompile(`\$\(\s*curl\s+`),
+		regexp.MustCompile(`\$\(\s*wget\s+`),
+		regexp.MustCompile(`\$\(\s*which\s+`),
+		regexp.MustCompile(`\bsudo\b`),
+		regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
+		regexp.MustCompile(`\bchown\b`),
+		regexp.MustCompile(`\bpkill\b`),
+		regexp.MustCompile(`\bkillall\b`),
+		regexp.MustCompile(`\bkill\s+-[9]\b`),
+		regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
+		regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
+		regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
+		regexp.MustCompile(`\bpip\s+install\s+--user\b`),
+		regexp.MustCompile(`\bapt\s+(install|remove|purge)\b`),
+		regexp.MustCompile(`\byum\s+(install|remove)\b`),
+		regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
+		regexp.MustCompile(`\bdocker\s+run\b`),
+		regexp.MustCompile(`\bdocker\s+exec\b`),
+		regexp.MustCompile(`\bgit\s+push\b`),
+		regexp.MustCompile(`\bgit\s+force\b`),
+		regexp.MustCompile(`\bssh\b.*@`),
+		regexp.MustCompile(`\beval\b`),
+		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
+	}
+
+	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
+	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+)
 
 func NewExecTool(workingDir string, restrict bool) (*ExecTool, error) {
 	return NewExecToolWithConfig(workingDir, restrict, nil)
@@ -287,8 +295,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		matches := absolutePathPattern.FindAllString(cmd, -1)
 
 		for _, raw := range matches {
 			p, err := filepath.Abs(raw)
