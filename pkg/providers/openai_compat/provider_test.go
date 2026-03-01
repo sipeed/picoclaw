@@ -146,6 +146,56 @@ func TestProviderChat_ParsesReasoningContent(t *testing.T) {
 	}
 }
 
+func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+
+	// Simulate a multi-turn conversation where the assistant's previous
+	// reply included reasoning_content (e.g. from kimi-k2.5).
+	messages := []Message{
+		{Role: "user", Content: "What is 1+1?"},
+		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
+		{Role: "user", Content: "What about 2+2?"},
+	}
+
+	_, err := p.Chat(t.Context(), messages, nil, "kimi-k2.5", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	// Verify reasoning_content is preserved in the serialized request.
+	reqMessages, ok := requestBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any: %T", requestBody["messages"])
+	}
+	assistantMsg, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if assistantMsg["reasoning_content"] != "Let me think... 1+1=2" {
+		t.Errorf("reasoning_content not preserved in request, got %v", assistantMsg["reasoning_content"])
+	}
+}
+
 func TestProviderChat_HTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
