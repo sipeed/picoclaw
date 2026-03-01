@@ -67,8 +67,8 @@ func gatewayCmd(debug bool) error {
 		return fmt.Errorf("error resolving configured plugins: %w", err)
 	}
 	if len(pluginsToEnable) > 0 {
-		if err := agentLoop.EnablePlugins(pluginsToEnable...); err != nil {
-			return fmt.Errorf("error enabling plugins: %w", err)
+		if enableErr := agentLoop.EnablePlugins(pluginsToEnable...); enableErr != nil {
+			return fmt.Errorf("error enabling plugins: %w", enableErr)
 		}
 	}
 	logger.InfoCF("agent", "Plugin selection resolved",
