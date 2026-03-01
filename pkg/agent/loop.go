@@ -9,7 +9,9 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +24,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/hooks"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/plugin"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -40,6 +43,7 @@ type AgentLoop struct {
 	summarizing    sync.Map
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
+	mediaStore     media.MediaStore
 	hooks          *hooks.HookRegistry
 	pluginManager  *plugin.Manager
 }
@@ -122,13 +126,14 @@ func registerSharedTools(
 
 		// Message tool
 		messageTool := tools.NewMessageTool()
-		messageTool.SetSendCallback(func(_ context.Context, channel, chatID, content string) error {
-			msgBus.PublishOutbound(bus.OutboundMessage{
+		messageTool.SetSendCallback(func(channel, chatID, content string) error {
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer pubCancel()
+			return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 				Channel: channel,
 				ChatID:  chatID,
 				Content: content,
 			})
-			return nil
 		})
 		agent.Tools.Register(messageTool)
 
@@ -218,6 +223,41 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
+// SetMediaStore injects a MediaStore for media lifecycle management.
+func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
+	al.mediaStore = s
+}
+
+// inferMediaType determines the media type ("image", "audio", "video", "file")
+// from a filename and MIME content type.
+func inferMediaType(filename, contentType string) string {
+	ct := strings.ToLower(contentType)
+	fn := strings.ToLower(filename)
+
+	if strings.HasPrefix(ct, "image/") {
+		return "image"
+	}
+	if strings.HasPrefix(ct, "audio/") || ct == "application/ogg" {
+		return "audio"
+	}
+	if strings.HasPrefix(ct, "video/") {
+		return "video"
+	}
+
+	// Fallback: infer from extension
+	ext := filepath.Ext(fn)
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+		return "image"
+	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
+		return "audio"
+	case ".mp4", ".avi", ".mov", ".webm", ".mkv":
+		return "video"
+	}
+
+	return "file"
+}
+
 // SetHooks installs a hook registry. Must be called before Run starts.
 func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) error {
 	if al.running.Load() {
@@ -231,18 +271,19 @@ func (al *AgentLoop) SetHooks(h *hooks.HookRegistry) error {
 			if tool, ok := agent.Tools.Get("message"); ok {
 				if mt, ok := tool.(*tools.MessageTool); ok {
 					if h == nil {
-						mt.SetSendCallback(func(_ context.Context, channel, chatID, content string) error {
-							al.bus.PublishOutbound(bus.OutboundMessage{
+						mt.SetSendCallback(func(channel, chatID, content string) error {
+							pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+							defer pubCancel()
+							return al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
 								Channel: channel,
 								ChatID:  chatID,
 								Content: content,
 							})
-							return nil
 						})
 						continue
 					}
-					mt.SetSendCallback(func(ctx context.Context, channel, chatID, content string) error {
-						if sent, reason := al.sendOutbound(ctx, bus.OutboundMessage{
+					mt.SetSendCallback(func(channel, chatID, content string) error {
+						if sent, reason := al.sendOutbound(context.Background(), bus.OutboundMessage{
 							Channel: channel,
 							ChatID:  chatID,
 							Content: content,
@@ -290,6 +331,9 @@ func (al *AgentLoop) EnablePlugins(plugins ...plugin.Plugin) error {
 // sendOutbound wraps bus.PublishOutbound with the message_sending hook.
 // Returns whether the message was sent and, if canceled, the cancel reason.
 func (al *AgentLoop) sendOutbound(ctx context.Context, msg bus.OutboundMessage) (bool, string) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if al.hooks != nil {
 		event := &hooks.MessageSendingEvent{Channel: msg.Channel, ChatID: msg.ChatID, Content: msg.Content}
 		al.hooks.TriggerMessageSending(ctx, event)
@@ -308,7 +352,14 @@ func (al *AgentLoop) sendOutbound(ctx context.Context, msg bus.OutboundMessage) 
 		}
 		msg.Content = event.Content
 	}
-	al.bus.PublishOutbound(msg)
+	if err := al.bus.PublishOutbound(ctx, msg); err != nil {
+		logger.WarnCF("agent", "Failed to publish outbound message", map[string]any{
+			"channel": msg.Channel,
+			"chat_id": msg.ChatID,
+			"error":   err.Error(),
+		})
+		return false, err.Error()
+	}
 	return true, ""
 }
 
@@ -590,6 +641,59 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	return finalContent, nil
 }
 
+func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string) {
+	if al.channelManager == nil {
+		return ""
+	}
+	if ch, ok := al.channelManager.GetChannel(channelName); ok {
+		return ch.ReasoningChannelID()
+	}
+	return ""
+}
+
+func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, channelName, channelID string) {
+	if reasoningContent == "" || channelName == "" || channelID == "" {
+		return
+	}
+
+	// Check context cancellation before attempting to publish,
+	// since PublishOutbound's select may race between send and ctx.Done().
+	if ctx.Err() != nil {
+		return
+	}
+
+	// Use a short timeout so the goroutine does not block indefinitely when
+	// the outbound bus is full. Reasoning output is best-effort; dropping it
+	// is acceptable to avoid goroutine accumulation.
+	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pubCancel()
+
+	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Channel: channelName,
+		ChatID:  channelID,
+		Content: reasoningContent,
+	}); err != nil {
+		// Treat context.DeadlineExceeded / context.Canceled as expected
+		// (bus full under load, or parent canceled). Check the error
+		// itself rather than ctx.Err(), because pubCtx may time out
+		// (5 s) while the parent ctx is still active.
+		// Also treat ErrBusClosed as expected — it occurs during normal
+		// shutdown when the bus is closed before all goroutines finish.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+			errors.Is(err, bus.ErrBusClosed) {
+			logger.DebugCF("agent", "Reasoning publish skipped (timeout/cancel)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		} else {
+			logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		}
+	}
+}
+
 // runLLMIteration executes the LLM call loop with tool handling.
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
@@ -728,6 +832,8 @@ func (al *AgentLoop) runLLMIteration(
 				})
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
+
+		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
 
 		// Fire llm_output hook
 		if al.hooks != nil {
@@ -913,6 +1019,28 @@ func (al *AgentLoop) runLLMIteration(
 						"tool":        tc.Name,
 						"content_len": len(toolResult.ForUser),
 					})
+			}
+
+			// If tool returned media refs, publish them as outbound media
+			if len(toolResult.Media) > 0 && opts.SendResponse {
+				parts := make([]bus.MediaPart, 0, len(toolResult.Media))
+				for _, ref := range toolResult.Media {
+					part := bus.MediaPart{Ref: ref}
+					// Populate metadata from MediaStore when available
+					if al.mediaStore != nil {
+						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+							part.Filename = meta.Filename
+							part.ContentType = meta.ContentType
+							part.Type = inferMediaType(meta.Filename, meta.ContentType)
+						}
+					}
+					parts = append(parts, part)
+				}
+				_ = al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
+					Channel: opts.Channel,
+					ChatID:  opts.ChatID,
+					Parts:   parts,
+				})
 			}
 
 			// Determine content for LLM based on tool result
