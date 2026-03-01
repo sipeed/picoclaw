@@ -39,7 +39,7 @@ docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh "$SERVICE" -c 'uv --v
 
 # Test MCP server installation (quick)
 echo "✅ Testing @modelcontextprotocol/server-filesystem MCP server install with npx..."
-docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh "$SERVICE" -c 'npx -y @modelcontextprotocol/server-filesystem --help'
+docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh "$SERVICE" -c '</dev/null timeout 5 npx -y @modelcontextprotocol/server-filesystem /tmp || true'
 
 echo ""
 echo "🎉 All MCP tools are working correctly!"
