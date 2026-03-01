@@ -2,16 +2,18 @@
 
 ## Background
 
-Current command behavior is split across two execution paths:
+This centralization is now implemented for generic slash commands.
 
-- `pkg/commands` owns command definitions and dispatcher matching.
-- `pkg/agent/loop.go` still executes command business logic through a hardcoded `handleCommand` switch.
+- `pkg/commands` owns command definitions, channel support metadata, parser behavior, and handlers.
+- `pkg/agent/loop.go` invokes `commands.Executor` for generic slash command execution before LLM flow.
+- Channel adapters forward inbound text to the bus/agent path and do not consume generic commands locally.
+- Telegram command menu registration still exists and is sourced from command definitions.
 
-This creates drift between "registered commands" and "actually executable commands", especially when channel filtering is defined in `pkg/commands` but bypassed by `AgentLoop` fallback handling.
+This document captures the resulting runtime policy and architecture.
 
 ## Goals
 
-- Make generic commands (`/start`, `/help`, `/new`, `/session`, `/show`, `/list`) consistently available across channels.
+- Make generic command execution policy consistent across channels while keeping per-command channel support explicit in command definitions.
 - Centralize command definition and execution in one domain (`pkg/commands`).
 - Keep architecture extensible and easy to reason about: channel adapters do transport, agent does orchestration, commands do command policy + execution.
 
@@ -26,7 +28,7 @@ This creates drift between "registered commands" and "actually executable comman
 - Unknown slash command (e.g. `/foo`) must pass through to LLM as normal user input.
 - Registered command that is unsupported on current channel must return explicit user-facing error and stop further processing.
 
-## Root Cause Summary
+## Historical Root Cause Summary (Before Centralization)
 
 The mismatch comes from mixed responsibilities:
 
@@ -38,7 +40,7 @@ Result: command registry is not authoritative for behavior.
 
 ## Design Decision
 
-Adopt **Agent-central execution with Commands-domain authority**:
+Adopted **Agent-central execution with Commands-domain authority**:
 
 - `pkg/commands` is the only source of command metadata, support scope, parser behavior, and handler execution.
 - `AgentLoop` becomes an orchestrator that invokes `commands.Executor` before LLM execution.
@@ -117,7 +119,7 @@ type Runtime interface {
 }
 ```
 
-## Migration Strategy
+## Implemented Migration Strategy
 
 1. Add executor tri-state contract in `pkg/commands` with tests.
 2. Move `/new` and `/session` logic from `AgentLoop` into command handlers using runtime session ops.
@@ -147,10 +149,10 @@ type Runtime interface {
 - Telegram startup command registration unaffected.
 - WhatsApp/WhatsApp native no longer diverge due to local command execution.
 
-## Acceptance Criteria
+## Acceptance Criteria (Implemented)
 
 - Command behavior is determined only by `pkg/commands` definitions + executor.
-- No generic command business logic remains in `AgentLoop.handleCommand`.
+- Generic command behavior (`/start`, `/help`, `/new`, `/session`, `/show`, `/list`) is executed via `commands.Executor` rather than channel-local business paths.
 - Unknown slash commands continue to LLM.
 - Unsupported registered commands return explicit errors.
 - README command behavior statements align with runtime behavior.
