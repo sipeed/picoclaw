@@ -58,6 +58,7 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Audit     AuditConfig     `json:"audit,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -380,6 +381,33 @@ type HeartbeatConfig struct {
 type DevicesConfig struct {
 	Enabled    bool `json:"enabled"     env:"PICOCLAW_DEVICES_ENABLED"`
 	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
+}
+
+// AuditConfig controls audit logging for tool calls, messages, and system events.
+// Audit logs provide a complete trail of bot activity for debugging, compliance,
+// and security analysis.
+type AuditConfig struct {
+	Enabled  bool        `json:"enabled"  env:"PICOCLAW_AUDIT_ENABLED"`
+	Location string      `json:"location" env:"PICOCLAW_AUDIT_LOCATION"`
+	Rotation RotationConfig `json:"rotation"`
+	Events   AuditEvents `json:"events"`
+	Format   string      `json:"format"   env:"PICOCLAW_AUDIT_FORMAT"` // "json" or "text"
+}
+
+// RotationConfig controls log file rotation to prevent disk space exhaustion.
+type RotationConfig struct {
+	MaxSizeMB  int  `json:"max_size_mb"  env:"PICOCLAW_AUDIT_ROTATION_MAX_SIZE_MB"`
+	MaxAgeDays int  `json:"max_age_days" env:"PICOCLAW_AUDIT_ROTATION_MAX_AGE_DAYS"`
+	MaxBackups int  `json:"max_backups"  env:"PICOCLAW_AUDIT_ROTATION_MAX_BACKUPS"`
+	Compress   bool `json:"compress"     env:"PICOCLAW_AUDIT_ROTATION_COMPRESS"`
+}
+
+// AuditEvents controls which event types are logged.
+type AuditEvents struct {
+	ToolCalls bool `json:"tool_calls" env:"PICOCLAW_AUDIT_EVENTS_TOOL_CALLS"`
+	Messages  bool `json:"messages"   env:"PICOCLAW_AUDIT_EVENTS_MESSAGES"`
+	Errors    bool `json:"errors"     env:"PICOCLAW_AUDIT_EVENTS_ERRORS"`
+	System    bool `json:"system"     env:"PICOCLAW_AUDIT_EVENTS_SYSTEM"`
 }
 
 type ProvidersConfig struct {

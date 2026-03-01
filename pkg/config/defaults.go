@@ -343,5 +343,22 @@ func DefaultConfig() *Config {
 			Enabled:    false,
 			MonitorUSB: true,
 		},
+		Audit: AuditConfig{
+			Enabled:  false,
+			Location: "workspace/logs",
+			Rotation: RotationConfig{
+				MaxSizeMB:  100,
+				MaxAgeDays: 30,
+				MaxBackups: 10,
+				Compress:   true,
+			},
+			Events: AuditEvents{
+				ToolCalls: true,
+				Messages:  true,
+				Errors:    true,
+				System:    false,
+			},
+			Format: "json",
+		},
 	}
 }
