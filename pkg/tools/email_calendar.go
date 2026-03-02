@@ -13,6 +13,70 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
+// SendEmailTool sends a plain email via Resend.
+type SendEmailTool struct {
+	cfg *config.ResendConfig
+}
+
+func NewSendEmailTool(cfg *config.ResendConfig) *SendEmailTool {
+	return &SendEmailTool{cfg: cfg}
+}
+
+func (t *SendEmailTool) Name() string {
+	return "send_email"
+}
+
+func (t *SendEmailTool) Description() string {
+	return "Send a plain email to a recipient via Resend. Use this for notifications, follow-ups, or any message that does not require a calendar attachment."
+}
+
+func (t *SendEmailTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"to": map[string]any{
+				"type":        "string",
+				"description": "Recipient email address",
+			},
+			"subject": map[string]any{
+				"type":        "string",
+				"description": "Email subject line",
+			},
+			"body": map[string]any{
+				"type":        "string",
+				"description": "Email body as plain text",
+			},
+		},
+		"required": []string{"to", "subject", "body"},
+	}
+}
+
+func (t *SendEmailTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	to, _ := args["to"].(string)
+	subject, _ := args["subject"].(string)
+	body, _ := args["body"].(string)
+
+	if to == "" || subject == "" || body == "" {
+		return ErrorResult("to, subject, and body are required")
+	}
+
+	payload := resendEmailRequest{
+		From:    t.cfg.FromAddress,
+		To:      []string{to},
+		Subject: subject,
+		HTML:    "<p>" + strings.ReplaceAll(body, "\n", "<br>") + "</p>",
+	}
+
+	if err := sendResendRequest(ctx, t.cfg.APIKey, payload); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to send email: %v", err))
+	}
+
+	return &ToolResult{
+		ForLLM:  fmt.Sprintf("Email '%s' sent successfully to %s", subject, to),
+		ForUser: fmt.Sprintf("Email sent to %s", to),
+	}
+}
+
 // SendCalendarInviteTool sends an iCalendar (.ics) meeting invite via Resend.
 type SendCalendarInviteTool struct {
 	cfg *config.ResendConfig
@@ -75,7 +139,15 @@ func (t *SendCalendarInviteTool) Execute(ctx context.Context, args map[string]an
 		return ErrorResult(fmt.Sprintf("failed to generate calendar invite: %v", err))
 	}
 
-	if err := sendViaResend(ctx, t.cfg, to, summary, ics); err != nil {
+	if err := sendResendRequest(ctx, t.cfg.APIKey, resendEmailRequest{
+		From:    t.cfg.FromAddress,
+		To:      []string{to},
+		Subject: summary,
+		HTML:    fmt.Sprintf("<p>You have been invited to: <strong>%s</strong></p>", summary),
+		Attachments: []resendAttachment{
+			{Filename: "invite.ics", Content: ics},
+		},
+	}); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to send calendar invite: %v", err))
 	}
 
@@ -150,17 +222,8 @@ type resendAttachment struct {
 	Content  []byte `json:"content"` // marshalled as base64 by encoding/json
 }
 
-func sendViaResend(ctx context.Context, cfg *config.ResendConfig, to, subject string, ics []byte) error {
-	payload := resendEmailRequest{
-		From:    cfg.FromAddress,
-		To:      []string{to},
-		Subject: subject,
-		HTML:    fmt.Sprintf("<p>You have been invited to: <strong>%s</strong></p>", subject),
-		Attachments: []resendAttachment{
-			{Filename: "invite.ics", Content: ics},
-		},
-	}
 
+func sendResendRequest(ctx context.Context, apiKey string, payload resendEmailRequest) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -170,7 +233,7 @@ func sendViaResend(ctx context.Context, cfg *config.ResendConfig, to, subject st
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 15 * time.Second}

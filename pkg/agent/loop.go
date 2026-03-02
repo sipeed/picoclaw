@@ -155,8 +155,9 @@ func registerSharedTools(
 		agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
 		agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
 
-		// Calendar invite tool (requires Resend API key)
+		// Email tools (require Resend API key)
 		if cfg.Tools.Resend.APIKey != "" {
+			agent.Tools.Register(tools.NewSendEmailTool(&cfg.Tools.Resend))
 			agent.Tools.Register(tools.NewSendCalendarInviteTool(&cfg.Tools.Resend))
 		}
 
