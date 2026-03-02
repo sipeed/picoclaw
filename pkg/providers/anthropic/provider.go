@@ -132,6 +132,24 @@ func buildParams(
 				anthropicMessages = append(anthropicMessages,
 					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
 				)
+			} else if len(msg.ContentParts) > 0 {
+				// Multimodal message with text + images
+				var blocks []anthropic.ContentBlockParamUnion
+				for _, part := range msg.ContentParts {
+					switch part.Type {
+					case "text":
+						blocks = append(blocks, anthropic.NewTextBlock(part.Text))
+					case "image_url":
+						if part.ImageURL != nil {
+							if mediaType, b64Data, ok := parseDataURL(part.ImageURL.URL); ok {
+								blocks = append(blocks, anthropic.NewImageBlockBase64(mediaType, b64Data))
+							}
+						}
+					}
+				}
+				if len(blocks) > 0 {
+					anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(blocks...))
+				}
 			} else {
 				anthropicMessages = append(anthropicMessages,
 					anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)),
@@ -272,4 +290,25 @@ func normalizeBaseURL(apiBase string) string {
 	}
 
 	return base
+}
+
+// parseDataURL extracts the media type and base64 data from a data URL.
+// Expected format: "data:<mediaType>;base64,<data>"
+// Returns (mediaType, base64Data, ok).
+func parseDataURL(url string) (string, string, bool) {
+	if !strings.HasPrefix(url, "data:") {
+		return "", "", false
+	}
+	// Strip "data:" prefix
+	rest := url[5:]
+	semicolon := strings.Index(rest, ";base64,")
+	if semicolon < 0 {
+		return "", "", false
+	}
+	mediaType := rest[:semicolon]
+	b64Data := rest[semicolon+8:] // len(";base64,") == 8
+	if mediaType == "" || b64Data == "" {
+		return "", "", false
+	}
+	return mediaType, b64Data, true
 }

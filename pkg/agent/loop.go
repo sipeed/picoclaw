@@ -47,14 +47,15 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string // Session identifier for history/context
-	Channel         string // Target channel for tool execution
-	ChatID          string // Target chat ID for tool execution
-	UserMessage     string // User message content (may include prefix)
-	DefaultResponse string // Response when LLM returns empty
-	EnableSummary   bool   // Whether to trigger summarization
-	SendResponse    bool   // Whether to send response via bus
-	NoHistory       bool   // If true, don't load session history (for heartbeat)
+	SessionKey      string   // Session identifier for history/context
+	Channel         string   // Target channel for tool execution
+	ChatID          string   // Target chat ID for tool execution
+	UserMessage     string   // User message content (may include prefix)
+	Media           []string // Local file paths for attached images
+	DefaultResponse string   // Response when LLM returns empty
+	EnableSummary   bool     // Whether to trigger summarization
+	SendResponse    bool     // Whether to send response via bus
+	NoHistory       bool     // If true, don't load session history (for heartbeat)
 }
 
 const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
@@ -492,11 +493,27 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"matched_by":  route.MatchedBy,
 		})
 
+	// Resolve media refs to local file paths for multimodal support
+	var mediaPaths []string
+	if len(msg.Media) > 0 && al.mediaStore != nil {
+		for _, ref := range msg.Media {
+			if localPath, err := al.mediaStore.Resolve(ref); err == nil {
+				mediaPaths = append(mediaPaths, localPath)
+			} else {
+				logger.WarnCF("agent", "Failed to resolve media ref", map[string]any{
+					"ref":   ref,
+					"error": err.Error(),
+				})
+			}
+		}
+	}
+
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
+		Media:           mediaPaths,
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
@@ -603,7 +620,7 @@ func (al *AgentLoop) runAgentLoop(
 		history,
 		summary,
 		opts.UserMessage,
-		nil,
+		opts.Media,
 		opts.Channel,
 		opts.ChatID,
 	)

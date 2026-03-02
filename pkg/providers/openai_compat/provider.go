@@ -285,12 +285,21 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	}, nil
 }
 
+// openaiContentPart represents a content part in the OpenAI Vision API format.
+type openaiContentPart struct {
+	Type     string                  `json:"type"`               // "text" or "image_url"
+	Text     string                  `json:"text,omitempty"`
+	ImageURL *protocoltypes.ImageURL `json:"image_url,omitempty"`
+}
+
 // openaiMessage is the wire-format message for OpenAI-compatible APIs.
-// It mirrors protocoltypes.Message but omits SystemParts, which is an
-// internal field that would be unknown to third-party endpoints.
+// It mirrors protocoltypes.Message but omits SystemParts/ContentParts,
+// which are internal fields that would be unknown to third-party endpoints.
+// Content is `any` to support both string (text-only) and []openaiContentPart
+// (multimodal) as required by the OpenAI Vision API.
 type openaiMessage struct {
 	Role             string     `json:"role"`
-	Content          string     `json:"content"`
+	Content          any        `json:"content"`
 	ReasoningContent string     `json:"reasoning_content,omitempty"`
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
@@ -299,12 +308,30 @@ type openaiMessage struct {
 // stripSystemParts converts []Message to []openaiMessage, dropping the
 // SystemParts field so it doesn't leak into the JSON payload sent to
 // OpenAI-compatible APIs (some strict endpoints reject unknown fields).
+// When ContentParts is present, Content is serialized as an array of
+// content parts (OpenAI Vision API format).
 func stripSystemParts(messages []Message) []openaiMessage {
 	out := make([]openaiMessage, len(messages))
 	for i, m := range messages {
+		var content any = m.Content
+
+		// Convert multimodal ContentParts to OpenAI Vision format
+		if len(m.ContentParts) > 0 {
+			parts := make([]openaiContentPart, 0, len(m.ContentParts))
+			for _, p := range m.ContentParts {
+				switch p.Type {
+				case "text":
+					parts = append(parts, openaiContentPart{Type: "text", Text: p.Text})
+				case "image_url":
+					parts = append(parts, openaiContentPart{Type: "image_url", ImageURL: p.ImageURL})
+				}
+			}
+			content = parts
+		}
+
 		out[i] = openaiMessage{
 			Role:             m.Role,
-			Content:          m.Content,
+			Content:          content,
 			ReasoningContent: m.ReasoningContent,
 			ToolCalls:        m.ToolCalls,
 			ToolCallID:       m.ToolCallID,

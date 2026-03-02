@@ -53,18 +53,26 @@ type CacheControl struct {
 	Type string `json:"type"` // "ephemeral"
 }
 
-// ContentBlock represents a structured segment of a system message.
+// ImageURL holds a URL for an image content block.
+// The URL can be an http(s) link or a base64 data URL (e.g. "data:image/jpeg;base64,...").
+type ImageURL struct {
+	URL string `json:"url"`
+}
+
+// ContentBlock represents a structured segment of a message.
 // Adapters that understand SystemParts can use these blocks to set
 // per-block cache control (e.g. Anthropic's cache_control: ephemeral).
 type ContentBlock struct {
-	Type         string        `json:"type"` // "text"
-	Text         string        `json:"text"`
+	Type         string        `json:"type"` // "text" or "image_url"
+	Text         string        `json:"text,omitempty"`
+	ImageURL     *ImageURL     `json:"image_url,omitempty"`
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
 }
 
 type Message struct {
 	Role             string         `json:"role"`
 	Content          string         `json:"content"`
+	ContentParts     []ContentBlock `json:"content_parts,omitempty"` // multimodal content (text + images)
 	ReasoningContent string         `json:"reasoning_content,omitempty"`
 	SystemParts      []ContentBlock `json:"system_parts,omitempty"` // structured system blocks for cache-aware adapters
 	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`

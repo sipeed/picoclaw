@@ -466,10 +466,24 @@ func (cb *ContextBuilder) BuildMessages(
 
 	// Add current user message
 	if strings.TrimSpace(currentMessage) != "" {
-		messages = append(messages, providers.Message{
+		userMsg := providers.Message{
 			Role:    "user",
 			Content: currentMessage,
-		})
+		}
+
+		// Attach image content parts for multimodal messages
+		if len(media) > 0 {
+			imageParts := providers.LoadMediaAsContentParts(media)
+			if len(imageParts) > 0 {
+				// Build ContentParts: text block first, then image blocks
+				userMsg.ContentParts = append(
+					[]providers.ContentBlock{{Type: "text", Text: currentMessage}},
+					imageParts...,
+				)
+			}
+		}
+
+		messages = append(messages, userMsg)
 	}
 
 	return messages
