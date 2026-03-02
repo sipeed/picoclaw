@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
@@ -119,6 +120,26 @@ func (t *ReadFileTool) Parameters() map[string]any {
 
 const maxReadFileChars = 10000
 
+func isBinaryContent(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	sample := data
+	if len(sample) > 512 {
+		sample = sample[:512]
+	}
+	if !utf8.Valid(sample) {
+		return true
+	}
+	nullCount := 0
+	for _, b := range sample {
+		if b == 0 {
+			nullCount++
+		}
+	}
+	return nullCount > 0
+}
+
 func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
@@ -128,6 +149,10 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	content, err := t.fs.ReadFile(path)
 	if err != nil {
 		return ErrorResult(err.Error())
+	}
+
+	if isBinaryContent(content) {
+		return ErrorResult(fmt.Sprintf("binary file detected (%d bytes). Use exec to inspect binary files (e.g. file, xxd, strings)", len(content)))
 	}
 
 	text := string(content)
@@ -238,14 +263,24 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	return formatDirEntries(entries)
 }
 
+const maxDirEntries = 200
+
 func formatDirEntries(entries []os.DirEntry) *ToolResult {
 	var result strings.Builder
-	for _, entry := range entries {
-		if entry.IsDir() {
-			result.WriteString("DIR:  " + entry.Name() + "\n")
+	total := len(entries)
+	limit := total
+	if limit > maxDirEntries {
+		limit = maxDirEntries
+	}
+	for i := 0; i < limit; i++ {
+		if entries[i].IsDir() {
+			result.WriteString("DIR:  " + entries[i].Name() + "\n")
 		} else {
-			result.WriteString("FILE: " + entry.Name() + "\n")
+			result.WriteString("FILE: " + entries[i].Name() + "\n")
 		}
+	}
+	if total > maxDirEntries {
+		fmt.Fprintf(&result, "\n... (%d more entries not shown, total: %d)\n", total-maxDirEntries, total)
 	}
 	return NewToolResult(result.String())
 }

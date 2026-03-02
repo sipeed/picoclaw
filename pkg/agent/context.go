@@ -333,6 +333,8 @@ func skillFilesModifiedSince(skillsDir string, t time.Time) bool {
 	return changed
 }
 
+const maxBootstrapFileChars = 4096
+
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	bootstrapFiles := []string{
 		"AGENTS.md",
@@ -345,7 +347,11 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	for _, filename := range bootstrapFiles {
 		filePath := filepath.Join(cb.workspace, filename)
 		if data, err := os.ReadFile(filePath); err == nil {
-			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
+			content := string(data)
+			if len(content) > maxBootstrapFileChars {
+				content = content[:maxBootstrapFileChars] + "\n... (truncated)"
+			}
+			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, content)
 		}
 	}
 

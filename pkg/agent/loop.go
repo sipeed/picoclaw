@@ -969,8 +969,19 @@ func (al *AgentLoop) runLLMIteration(
 			}
 			messages = append(messages, toolResultMsg)
 
-			// Save tool result message to session
-			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
+			// Save a truncated version of tool results to session history.
+			// Full results are already in `messages` for the current iteration;
+			// persisting truncated versions prevents context bloat on reload.
+			truncatedContent := contentForLLM
+			const maxToolResultHistory = 500
+			if len(truncatedContent) > maxToolResultHistory {
+				truncatedContent = truncatedContent[:maxToolResultHistory] + fmt.Sprintf("... (truncated, %d chars total)", len(contentForLLM))
+			}
+			agent.Sessions.AddFullMessage(opts.SessionKey, providers.Message{
+				Role:       "tool",
+				Content:    truncatedContent,
+				ToolCallID: tc.ID,
+			})
 		}
 	}
 
@@ -1014,7 +1025,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := agent.ContextWindow * 75 / 100
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	if len(newHistory) > 12 || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
