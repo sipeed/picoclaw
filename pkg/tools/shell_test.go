@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // TestShellTool_Success verifies successful command execution
@@ -385,5 +387,39 @@ func TestShellTool_SafePathsInWorkspaceRestriction(t *testing.T) {
 		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
 			t.Errorf("safe path should not be blocked by workspace check: %s\n  error: %s", cmd, result.ForLLM)
 		}
+	}
+}
+
+// TestShellTool_CustomAllowPatterns verifies that custom allow patterns exempt
+// commands from deny pattern checks.
+func TestShellTool_CustomAllowPatterns(t *testing.T) {
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			Exec: config.ExecConfig{
+				EnableDenyPatterns:  true,
+				CustomAllowPatterns: []string{`\bgit\s+push\s+origin\b`},
+			},
+		},
+	}
+
+	tool, err := NewExecToolWithConfig("", false, cfg)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// "git push origin main" should be allowed by custom allow pattern.
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "git push origin main",
+	})
+	if result.IsError && strings.Contains(result.ForLLM, "blocked") {
+		t.Errorf("custom allow pattern should exempt 'git push origin main', got: %s", result.ForLLM)
+	}
+
+	// "git push upstream main" should still be blocked (does not match allow pattern).
+	result = tool.Execute(context.Background(), map[string]any{
+		"command": "git push upstream main",
+	})
+	if !result.IsError {
+		t.Errorf("'git push upstream main' should still be blocked by deny pattern")
 	}
 }
