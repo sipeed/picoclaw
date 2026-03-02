@@ -37,3 +37,23 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	return errors.New("feishu channel is not supported on 32-bit architectures")
 }
+
+// EditMessage is a stub method to satisfy MessageEditor
+func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, content string) error {
+	return nil
+}
+
+// SendPlaceholder is a stub method to satisfy PlaceholderCapable
+func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	return "", nil
+}
+
+// ReactToMessage is a stub method to satisfy ReactionCapable
+func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
+	return func() {}, nil
+}
+
+// SendMedia is a stub method to satisfy MediaSender
+func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	return nil
+}
