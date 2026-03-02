@@ -25,12 +25,12 @@ import (
 )
 
 func NewPicoclawCommand() *cobra.Command {
-	short := fmt.Sprintf("%s aldo - Personal AI Assistant v%s\n\n", internal.Logo, internal.GetVersion())
+	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant v%s\n\n", internal.Logo, internal.GetVersion())
 
 	cmd := &cobra.Command{
-		Use:     "aldo",
+		Use:     "picoclaw",
 		Short:   short,
-		Example: "aldo list",
+		Example: "picoclaw list",
 	}
 
 	cmd.AddCommand(

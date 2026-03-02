@@ -181,7 +181,7 @@ func refreshMainMenu(menu *Menu, s *appState) {
 		},
 		{
 			Label:       "Start Talk",
-			Description: "Open aldo agent in terminal",
+			Description: "Open picoclaw agent in terminal",
 			Action: func() {
 				s.requestStartTalk()
 			},
