@@ -661,7 +661,7 @@ func (al *AgentLoop) runLLMIteration(
 ) (string, int, error) {
 	iteration := 0
 	var finalContent string
-	var totalInputTokens, totalOutputTokens int
+	var totalInputTokens, totalOutputTokens, totalCacheCreated, totalCacheRead int
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -809,6 +809,8 @@ func (al *AgentLoop) runLLMIteration(
 		if response.Usage != nil {
 			totalInputTokens += response.Usage.PromptTokens
 			totalOutputTokens += response.Usage.CompletionTokens
+			totalCacheCreated += response.Usage.CacheCreatedTokens
+			totalCacheRead += response.Usage.CacheReadTokens
 		}
 
 		logger.DebugCF("agent", "LLM response",
@@ -988,11 +990,13 @@ func (al *AgentLoop) runLLMIteration(
 	if totalInputTokens > 0 || totalOutputTokens > 0 {
 		logger.InfoCF("agent", "Session token usage",
 			map[string]any{
-				"agent_id":      agent.ID,
-				"iterations":    iteration,
-				"input_tokens":  totalInputTokens,
-				"output_tokens": totalOutputTokens,
-				"total_tokens":  totalInputTokens + totalOutputTokens,
+				"agent_id":       agent.ID,
+				"iterations":     iteration,
+				"input_tokens":   totalInputTokens,
+				"output_tokens":  totalOutputTokens,
+				"total_tokens":   totalInputTokens + totalOutputTokens,
+				"cache_created":  totalCacheCreated,
+				"cache_read":     totalCacheRead,
 			})
 	}
 

@@ -303,9 +303,11 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 		Usage: &UsageInfo{
-			PromptTokens:     int(resp.Usage.InputTokens),
-			CompletionTokens: int(resp.Usage.OutputTokens),
-			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+			PromptTokens:       int(resp.Usage.InputTokens),
+			CompletionTokens:   int(resp.Usage.OutputTokens),
+			TotalTokens:        int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+			CacheCreatedTokens: int(resp.Usage.CacheCreationInputTokens),
+			CacheReadTokens:    int(resp.Usage.CacheReadInputTokens),
 		},
 	}
 }
