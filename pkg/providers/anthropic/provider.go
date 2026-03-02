@@ -29,6 +29,7 @@ type Provider struct {
 	client      *anthropic.Client
 	tokenSource func() (string, error)
 	baseURL     string
+	betaHeaders string
 }
 
 func NewProvider(token string) *Provider {
@@ -64,6 +65,12 @@ func NewProviderWithTokenSourceAndBaseURL(token string, tokenSource func() (stri
 	return p
 }
 
+func NewProviderWithTokenSourceAndBeta(token string, tokenSource func() (string, error), apiBase, betaHeaders string) *Provider {
+	p := NewProviderWithTokenSourceAndBaseURL(token, tokenSource, apiBase)
+	p.betaHeaders = betaHeaders
+	return p
+}
+
 func (p *Provider) Chat(
 	ctx context.Context,
 	messages []Message,
@@ -79,10 +86,17 @@ func (p *Provider) Chat(
 		}
 		opts = append(opts, option.WithAuthToken(tok))
 	}
+	if p.betaHeaders != "" {
+		opts = append(opts, option.WithHeader("anthropic-beta", p.betaHeaders))
+	}
 
 	params, err := buildParams(messages, tools, model, options)
 	if err != nil {
 		return nil, err
+	}
+
+	if p.betaHeaders != "" {
+		return p.chatStreaming(ctx, params, opts)
 	}
 
 	resp, err := p.client.Messages.New(ctx, params, opts...)
@@ -91,6 +105,28 @@ func (p *Provider) Chat(
 	}
 
 	return parseResponse(resp), nil
+}
+
+func (p *Provider) chatStreaming(
+	ctx context.Context,
+	params anthropic.MessageNewParams,
+	opts []option.RequestOption,
+) (*LLMResponse, error) {
+	stream := p.client.Messages.NewStreaming(ctx, params, opts...)
+
+	var msg anthropic.Message
+	for stream.Next() {
+		event := stream.Current()
+		if err := msg.Accumulate(event); err != nil {
+			stream.Close()
+			return nil, fmt.Errorf("claude API stream accumulate: %w", err)
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return nil, fmt.Errorf("claude API call: %w", err)
+	}
+
+	return parseResponse(&msg), nil
 }
 
 func (p *Provider) GetDefaultModel() string {
@@ -144,7 +180,21 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
+					args := tc.Arguments
+				if args == nil && tc.Function != nil && tc.Function.Arguments != "" {
+					var parsed map[string]any
+					if err := json.Unmarshal([]byte(tc.Function.Arguments), &parsed); err == nil {
+						args = parsed
+					}
+				}
+				if args == nil {
+					args = map[string]any{}
+				}
+				name := tc.Name
+				if name == "" && tc.Function != nil {
+					name = tc.Function.Name
+				}
+				blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, args, name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {

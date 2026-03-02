@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -61,9 +62,6 @@ const defaultResponse = "I've completed processing but have no response to give.
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
-	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
-
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
 	fallbackChain := providers.NewFallbackChain(cooldown)
@@ -75,7 +73,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
-	return &AgentLoop{
+	al := &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
 		registry:    registry,
@@ -83,14 +81,20 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
 	}
+
+	// Register shared tools to all agents (after al is created so closures can capture it)
+	registerSharedTools(cfg, msgBus, registry, provider, al)
+
+	return al
 }
 
-// registerSharedTools registers tools that are shared across all agents (web, message, spawn).
+// registerSharedTools registers tools that are shared across all agents (web, message, spawn, send_file).
 func registerSharedTools(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
+	al *AgentLoop,
 ) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -142,6 +146,39 @@ func registerSharedTools(
 			})
 		})
 		agent.Tools.Register(messageTool)
+
+		// Send file tool
+		sendFileTool := tools.NewSendFileTool()
+		sendFileTool.SetMediaCallback(func(channel, chatID, localPath, caption string) error {
+			if al.mediaStore == nil {
+				return fmt.Errorf("media store not available (file sending requires gateway mode)")
+			}
+			filename := filepath.Base(localPath)
+			contentType := mime.TypeByExtension(filepath.Ext(localPath))
+			ref, err := al.mediaStore.Store(localPath, media.MediaMeta{
+				Filename:    filename,
+				ContentType: contentType,
+				Source:      "tool:send_file",
+			}, "send_file")
+			if err != nil {
+				return fmt.Errorf("storing file: %w", err)
+			}
+			part := bus.MediaPart{
+				Ref:         ref,
+				Caption:     caption,
+				Filename:    filename,
+				ContentType: contentType,
+				Type:        inferMediaType(filename, contentType),
+			}
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer pubCancel()
+			return msgBus.PublishOutboundMedia(pubCtx, bus.OutboundMediaMessage{
+				Channel: channel,
+				ChatID:  chatID,
+				Parts:   []bus.MediaPart{part},
+			})
+		})
+		agent.Tools.Register(sendFileTool)
 
 		// Skill discovery and installation tools
 		registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{

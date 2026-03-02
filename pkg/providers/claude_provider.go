@@ -37,6 +37,14 @@ func NewClaudeProviderWithTokenSourceAndBaseURL(
 	}
 }
 
+const anthropicSetupTokenBeta = "claude-code-20250219,oauth-2025-04-20"
+
+func NewClaudeProviderWithSetupToken(token string, tokenSource func() (string, error)) *ClaudeProvider {
+	return &ClaudeProvider{
+		delegate: anthropicprovider.NewProviderWithTokenSourceAndBeta(token, tokenSource, "", anthropicSetupTokenBeta),
+	}
+}
+
 func newClaudeProviderWithDelegate(delegate *anthropicprovider.Provider) *ClaudeProvider {
 	return &ClaudeProvider{delegate: delegate}
 }
