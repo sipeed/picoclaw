@@ -64,7 +64,7 @@ func TestGetModelConfig_RoundRobin(t *testing.T) {
 
 	// Test round-robin distribution
 	results := make(map[string]int)
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		result, err := cfg.GetModelConfig("lb-model")
 		if err != nil {
 			t.Fatalf("GetModelConfig() error = %v", err)
@@ -94,17 +94,15 @@ func TestGetModelConfig_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, goroutines*iterations)
 
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+	for range goroutines {
+		wg.Go(func() {
+			for range iterations {
 				_, err := cfg.GetModelConfig("concurrent-model")
 				if err != nil {
 					errors <- err
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

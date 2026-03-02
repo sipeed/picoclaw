@@ -59,7 +59,9 @@
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",
       "allow_from": [],
-      "mention_only": false,
+      "group_trigger": {
+        "mention_only": false
+      },
       "reasoning_channel_id": ""
     },
     "qq": {
@@ -111,8 +113,6 @@
       "enabled": false,
       "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
       "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": [],
       "reasoning_channel_id": ""
@@ -132,8 +132,6 @@
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": [],
       "reply_timeout": 5,
@@ -147,8 +145,6 @@
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
       "reply_timeout": 5,

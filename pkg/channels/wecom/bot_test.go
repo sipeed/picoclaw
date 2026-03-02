@@ -42,7 +42,7 @@ func encryptTestMessage(message, aesKey string) (string, error) {
 
 	// Prepare message: random(16) + msg_len(4) + msg + receiveid
 	random := make([]byte, 0, 16)
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		random = append(random, byte(i))
 	}
 
