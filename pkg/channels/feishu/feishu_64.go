@@ -105,7 +105,6 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 }
 
 // Send sends a message using Interactive Card format for markdown rendering.
-// Falls back to plain text if card building fails.
 func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
@@ -245,6 +244,10 @@ func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 		return channels.ErrNotRunning
 	}
 
+	if msg.ChatID == "" {
+		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
+	}
+
 	store := c.GetMediaStore()
 	if store == nil {
 		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
@@ -330,6 +333,17 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	messageID := stringValue(message.MessageId)
 	rawContent := stringValue(message.Content)
 
+	// Check allowlist early to avoid downloading media for rejected senders.
+	// BaseChannel.HandleMessage will check again, but this avoids wasted network I/O.
+	senderInfo := bus.SenderInfo{
+		Platform:    "feishu",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("feishu", senderID),
+	}
+	if !c.IsAllowedSender(senderInfo) {
+		return nil
+	}
+
 	// Extract content based on message type
 	content := extractContent(messageType, rawContent)
 
@@ -389,12 +403,6 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		"message_id": messageID,
 		"preview":    utils.Truncate(content, 80),
 	})
-
-	senderInfo := bus.SenderInfo{
-		Platform:    "feishu",
-		PlatformID:  senderID,
-		CanonicalID: identity.BuildCanonicalID("feishu", senderID),
-	}
 
 	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, senderInfo)
 	return nil
@@ -569,7 +577,7 @@ func (c *FeishuChannel) downloadResource(
 		filename += fallbackExt
 	}
 
-	// Write to the shared picoclaw_media directory using the original filename.
+	// Write to the shared picoclaw_media directory using a unique name to avoid collisions.
 	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
 	if mkdirErr := os.MkdirAll(mediaDir, 0o700); mkdirErr != nil {
 		logger.ErrorCF("feishu", "Failed to create media directory", map[string]any{
@@ -577,7 +585,8 @@ func (c *FeishuChannel) downloadResource(
 		})
 		return ""
 	}
-	localPath := filepath.Join(mediaDir, utils.SanitizeFilename(filename))
+	ext := filepath.Ext(filename)
+	localPath := filepath.Join(mediaDir, utils.SanitizeFilename(messageID+"-"+fileKey+ext))
 
 	out, err := os.Create(localPath)
 	if err != nil {
