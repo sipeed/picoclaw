@@ -52,31 +52,40 @@
       "proxy": "",
       "allow_from": [
         "YOUR_USER_ID"
-      ]
+      ],
+      "reasoning_channel_id": ""
     },
     "discord": {
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",
       "proxy": "",
       "allow_from": [],
-      "mention_only": false
+      "group_trigger": {
+        "mention_only": false
+      },
+      "reasoning_channel_id": ""
     },
     "qq": {
       "enabled": false,
       "app_id": "YOUR_QQ_APP_ID",
       "app_secret": "YOUR_QQ_APP_SECRET",
-      "allow_from": []
+      "allow_from": [],
+      "reasoning_channel_id": ""
     },
     "maixcam": {
       "enabled": false,
       "host": "0.0.0.0",
       "port": 18790,
-      "allow_from": []
+      "allow_from": [],
+      "reasoning_channel_id": ""
     },
     "whatsapp": {
       "enabled": false,
       "bridge_url": "ws://localhost:3001",
-      "allow_from": []
+      "use_native": false,
+      "session_store_path": "",
+      "allow_from": [],
+      "reasoning_channel_id": ""
     },
     "feishu": {
       "enabled": false,
@@ -84,28 +93,30 @@
       "app_secret": "",
       "encrypt_key": "",
       "verification_token": "",
-      "allow_from": []
+      "allow_from": [],
+      "reasoning_channel_id": ""
     },
     "dingtalk": {
       "enabled": false,
       "client_id": "YOUR_CLIENT_ID",
       "client_secret": "YOUR_CLIENT_SECRET",
-      "allow_from": []
+      "allow_from": [],
+      "reasoning_channel_id": ""
     },
     "slack": {
       "enabled": false,
       "bot_token": "xoxb-YOUR-BOT-TOKEN",
       "app_token": "xapp-YOUR-APP-TOKEN",
-      "allow_from": []
+      "allow_from": [],
+      "reasoning_channel_id": ""
     },
     "line": {
       "enabled": false,
       "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
       "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
-      "allow_from": []
+      "allow_from": [],
+      "reasoning_channel_id": ""
     },
     "onebot": {
       "enabled": false,
@@ -113,7 +124,8 @@
       "access_token": "",
       "reconnect_interval": 5,
       "group_trigger_prefix": [],
-      "allow_from": []
+      "allow_from": [],
+      "reasoning_channel_id": ""
     },
     "wecom": {
       "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
@@ -121,11 +133,10 @@
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": [],
-      "reply_timeout": 5
+      "reply_timeout": 5,
+      "reasoning_channel_id": ""
     },
     "wecom_app": {
       "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only. See docs/wecom-app-configuration.md",
@@ -135,11 +146,10 @@
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
-      "reply_timeout": 5
+      "reply_timeout": 5,
+      "reasoning_channel_id": ""
     }
   },
   "providers": {

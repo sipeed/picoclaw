@@ -456,8 +456,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "VOTRE_CHANNEL_SECRET",
       "channel_access_token": "VOTRE_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -470,11 +468,13 @@ picoclaw gateway
 LINE exige HTTPS pour les webhooks. Utilisez un reverse proxy ou un tunnel :
 
 ```bash
-# Exemple avec ngrok
-ngrok http 18791
+# Exemple avec ngrok (tunnel vers le serveur Gateway partagé)
+ngrok http 18790
 ```
 
 Puis configurez l'URL du Webhook dans la LINE Developers Console sur `https://votre-domaine/webhook/line` et activez **Use webhook**.
+
+> **Note** : Le webhook LINE est servi par le serveur Gateway partagé (par défaut `127.0.0.1:18790`). Si vous utilisez ngrok ou un proxy inverse, faites pointer le tunnel vers le port `18790`.
 
 **4. Lancer**
 
@@ -484,7 +484,7 @@ picoclaw gateway
 
 > Dans les discussions de groupe, le bot répond uniquement lorsqu'il est mentionné avec @. Les réponses citent le message original.
 
-> **Docker Compose** : Ajoutez `ports: ["18791:18791"]` au service `picoclaw-gateway` pour exposer le port du webhook.
+> **Docker Compose** : Si vous avez besoin d'exposer le webhook LINE via Docker, mappez le port du Gateway partagé (par défaut `18790`) vers l'hôte, par exemple `ports: ["18790:18790"]`. Notez que le serveur Gateway sert les webhooks de tous les canaux à partir de ce port.
 
 </details>
 
@@ -515,8 +515,6 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
@@ -535,7 +533,7 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
 **2. Configurer la réception des messages**
 
 * Dans les détails de l'application, cliquez sur "Recevoir les Messages" → "Configurer l'API"
-* Définissez l'URL sur `http://your-server:18792/webhook/wecom-app`
+* Définissez l'URL sur `http://your-server:18790/webhook/wecom-app`
 * Générez le **Token** et l'**EncodingAESKey**
 
 **3. Configurer**
@@ -550,8 +548,6 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -565,7 +561,7 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
 picoclaw gateway
 ```
 
-> **Note** : WeCom App nécessite l'ouverture du port 18792 pour les callbacks webhook. Utilisez un proxy inverse pour HTTPS en production.
+> **Note** : Les callbacks webhook WeCom App sont servis par le serveur Gateway partagé (par défaut `127.0.0.1:18790`). Assurez-vous que le port `18790` est accessible ou utilisez un proxy inverse HTTPS en production.
 
 </details>
 
@@ -578,6 +574,31 @@ Connectez PicoClaw au Réseau Social d'Agents simplement en envoyant un seul mes
 ## ⚙️ Configuration
 
 Fichier de configuration : `~/.picoclaw/config.json`
+
+### Variables d'Environnement
+
+Vous pouvez remplacer les chemins par défaut à l'aide de variables d'environnement. Ceci est utile pour les installations portables, les déploiements conteneurisés ou l'exécution de picoclaw en tant que service système. Ces variables sont indépendantes et contrôlent différents chemins.
+
+| Variable          | Description                                                                                                                             | Chemin par Défaut         |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Remplace le chemin du fichier de configuration. Cela indique directement à picoclaw quel `config.json` charger, en ignorant tous les autres emplacements. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Remplace le répertoire racine des données picoclaw. Cela modifie l'emplacement par défaut du `workspace` et des autres répertoires de données.          | `~/.picoclaw`             |
+
+**Exemples :**
+
+```bash
+# Exécuter picoclaw en utilisant un fichier de configuration spécifique
+# Le chemin du workspace sera lu à partir de ce fichier de configuration
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Exécuter picoclaw avec toutes ses données stockées dans /opt/picoclaw
+# La configuration sera chargée à partir du fichier par défaut ~/.picoclaw/config.json
+# Le workspace sera créé dans /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Utiliser les deux pour une configuration entièrement personnalisée
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### Structure du Workspace
 
