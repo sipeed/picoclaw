@@ -539,86 +539,88 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 	})
 }
 
-func (m *Manager) dispatchOutbound(ctx context.Context) {
-	logger.InfoC("channels", "Outbound dispatcher started")
+func dispatchLoop[M any](
+	ctx context.Context,
+	m *Manager,
+	subscribe func(context.Context) (M, bool),
+	getChannel func(M) string,
+	enqueue func(context.Context, *channelWorker, M) bool,
+	startMsg, stopMsg, unknownMsg, noWorkerMsg string,
+) {
+	logger.InfoC("channels", startMsg)
 
 	for {
-		msg, ok := m.bus.SubscribeOutbound(ctx)
+		msg, ok := subscribe(ctx)
 		if !ok {
-			logger.InfoC("channels", "Outbound dispatcher stopped")
+			logger.InfoC("channels", stopMsg)
 			return
 		}
 
+		channel := getChannel(msg)
+
 		// Silently skip internal channels
-		if constants.IsInternalChannel(msg.Channel) {
+		if constants.IsInternalChannel(channel) {
 			continue
 		}
 
 		m.mu.RLock()
-		_, exists := m.channels[msg.Channel]
-		w, wExists := m.workers[msg.Channel]
+		_, exists := m.channels[channel]
+		w, wExists := m.workers[channel]
 		m.mu.RUnlock()
 
 		if !exists {
-			logger.WarnCF("channels", "Unknown channel for outbound message", map[string]any{
-				"channel": msg.Channel,
-			})
+			logger.WarnCF("channels", unknownMsg, map[string]any{"channel": channel})
 			continue
 		}
 
 		if wExists && w != nil {
-			select {
-			case w.queue <- msg:
-			case <-ctx.Done():
+			if !enqueue(ctx, w, msg) {
 				return
 			}
 		} else if exists {
-			logger.WarnCF("channels", "Channel has no active worker, skipping message", map[string]any{
-				"channel": msg.Channel,
-			})
+			logger.WarnCF("channels", noWorkerMsg, map[string]any{"channel": channel})
 		}
 	}
 }
 
+func (m *Manager) dispatchOutbound(ctx context.Context) {
+	dispatchLoop(
+		ctx, m,
+		m.bus.SubscribeOutbound,
+		func(msg bus.OutboundMessage) string { return msg.Channel },
+		func(ctx context.Context, w *channelWorker, msg bus.OutboundMessage) bool {
+			select {
+			case w.queue <- msg:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		},
+		"Outbound dispatcher started",
+		"Outbound dispatcher stopped",
+		"Unknown channel for outbound message",
+		"Channel has no active worker, skipping message",
+	)
+}
+
 func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
-	logger.InfoC("channels", "Outbound media dispatcher started")
-
-	for {
-		msg, ok := m.bus.SubscribeOutboundMedia(ctx)
-		if !ok {
-			logger.InfoC("channels", "Outbound media dispatcher stopped")
-			return
-		}
-
-		// Silently skip internal channels
-		if constants.IsInternalChannel(msg.Channel) {
-			continue
-		}
-
-		m.mu.RLock()
-		_, exists := m.channels[msg.Channel]
-		w, wExists := m.workers[msg.Channel]
-		m.mu.RUnlock()
-
-		if !exists {
-			logger.WarnCF("channels", "Unknown channel for outbound media message", map[string]any{
-				"channel": msg.Channel,
-			})
-			continue
-		}
-
-		if wExists && w != nil {
+	dispatchLoop(
+		ctx, m,
+		m.bus.SubscribeOutboundMedia,
+		func(msg bus.OutboundMediaMessage) string { return msg.Channel },
+		func(ctx context.Context, w *channelWorker, msg bus.OutboundMediaMessage) bool {
 			select {
 			case w.mediaQueue <- msg:
+				return true
 			case <-ctx.Done():
-				return
+				return false
 			}
-		} else if exists {
-			logger.WarnCF("channels", "Channel has no active worker, skipping media message", map[string]any{
-				"channel": msg.Channel,
-			})
-		}
-	}
+		},
+		"Outbound media dispatcher started",
+		"Outbound media dispatcher stopped",
+		"Unknown channel for outbound media message",
+		"Channel has no active worker, skipping media message",
+	)
 }
 
 // runMediaWorker processes outbound media messages for a single channel.
