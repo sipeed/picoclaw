@@ -167,6 +167,14 @@ func registerSharedTools(
 			agent.Tools.Register(messageTool)
 		}
 
+		// Send file tool (outbound media via MediaStore — store injected later by SetMediaStore)
+		sendFileTool := tools.NewSendFileTool(
+			agent.Workspace,
+			cfg.Agents.Defaults.RestrictToWorkspace,
+			nil,
+		)
+		agent.Tools.Register(sendFileTool)
+
 		// Skill discovery and installation tools
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
 		install_skills_enable := cfg.Tools.IsToolEnabled("install_skill")
@@ -367,6 +375,19 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 // SetMediaStore injects a MediaStore for media lifecycle management.
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
+
+	// Propagate store to send_file tools in all agents.
+	for _, id := range al.registry.ListAgentIDs() {
+		agent, ok := al.registry.GetAgent(id)
+		if !ok {
+			continue
+		}
+		if tool, ok := agent.Tools.Get("send_file"); ok {
+			if sf, ok := tool.(*tools.SendFileTool); ok {
+				sf.SetMediaStore(s)
+			}
+		}
+	}
 }
 
 // SetTranscriber injects a voice transcriber for agent-level audio transcription.
@@ -1163,6 +1184,31 @@ func (al *AgentLoop) runLLMIteration(
 	}
 
 	return finalContent, iteration, nil
+}
+
+// updateToolContexts updates the context for tools that need channel/chatID info.
+func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID string) {
+	// Use ContextualTool interface instead of type assertions
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if mt, ok := tool.(tools.ContextualTool); ok {
+			mt.SetContext(channel, chatID)
+		}
+	}
+	if tool, ok := agent.Tools.Get("spawn"); ok {
+		if st, ok := tool.(tools.ContextualTool); ok {
+			st.SetContext(channel, chatID)
+		}
+	}
+	if tool, ok := agent.Tools.Get("subagent"); ok {
+		if st, ok := tool.(tools.ContextualTool); ok {
+			st.SetContext(channel, chatID)
+		}
+	}
+	if tool, ok := agent.Tools.Get("send_file"); ok {
+		if sf, ok := tool.(tools.ContextualTool); ok {
+			sf.SetContext(channel, chatID)
+		}
+	}
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
