@@ -58,8 +58,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("feishu app_id or app_secret is empty")
 	}
 
-	// Fetch bot info to get the bot's open_id for mention detection
-	c.fetchBotOpenID(ctx)
+	// Bot open_id for @mention detection is populated lazily from the first mention event.
 
 	dispatcher := larkdispatcher.NewEventDispatcher(c.feishuCfg.VerificationToken, c.feishuCfg.EncryptKey).
 		OnP2MessageReceiveV1(c.handleMessageReceive)
@@ -409,13 +408,6 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 }
 
 // --- Internal helpers ---
-
-// fetchBotOpenID attempts to detect the bot's open_id.
-// The Lark v3 SDK doesn't expose a direct GetBotInfo method,
-// so the open_id is populated lazily from the first @_user_1 mention event.
-func (c *FeishuChannel) fetchBotOpenID(_ context.Context) {
-	logger.DebugC("feishu", "Bot open_id will be detected from first @_user_1 mention event")
-}
 
 // isBotMentioned checks if the bot was @mentioned in the message.
 func (c *FeishuChannel) isBotMentioned(message *larkim.EventMessage) bool {
