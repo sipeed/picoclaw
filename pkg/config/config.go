@@ -168,17 +168,18 @@ type SessionConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace           string   `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool     `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string   `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	ModelName           string   `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
-	Model               string   `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
-	ModelFallbacks      []string `json:"model_fallbacks,omitempty"`
-	ImageModel          string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
-	ImageModelFallbacks []string `json:"image_model_fallbacks,omitempty"`
-	MaxTokens           int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace                 string   `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace       bool     `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	AllowReadOutsideWorkspace bool     `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
+	Provider                  string   `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	ModelName                 string   `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Model                     string   `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
+	ModelFallbacks            []string `json:"model_fallbacks,omitempty"`
+	ImageModel                string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModelFallbacks       []string `json:"image_model_fallbacks,omitempty"`
+	MaxTokens                 int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature               *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations         int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
 // GetModelName returns the effective model name for the agent defaults.
@@ -191,19 +192,20 @@ func (d *AgentDefaults) GetModelName() string {
 }
 
 type ChannelsConfig struct {
-	WhatsApp WhatsAppConfig `json:"whatsapp"`
-	Telegram TelegramConfig `json:"telegram"`
-	Feishu   FeishuConfig   `json:"feishu"`
-	Discord  DiscordConfig  `json:"discord"`
-	MaixCam  MaixCamConfig  `json:"maixcam"`
-	QQ       QQConfig       `json:"qq"`
-	DingTalk DingTalkConfig `json:"dingtalk"`
-	Slack    SlackConfig    `json:"slack"`
-	LINE     LINEConfig     `json:"line"`
-	OneBot   OneBotConfig   `json:"onebot"`
-	WeCom    WeComConfig    `json:"wecom"`
-	WeComApp WeComAppConfig `json:"wecom_app"`
-	Pico     PicoConfig     `json:"pico"`
+	WhatsApp   WhatsAppConfig   `json:"whatsapp"`
+	Telegram   TelegramConfig   `json:"telegram"`
+	Feishu     FeishuConfig     `json:"feishu"`
+	Discord    DiscordConfig    `json:"discord"`
+	MaixCam    MaixCamConfig    `json:"maixcam"`
+	QQ         QQConfig         `json:"qq"`
+	DingTalk   DingTalkConfig   `json:"dingtalk"`
+	Slack      SlackConfig      `json:"slack"`
+	LINE       LINEConfig       `json:"line"`
+	OneBot     OneBotConfig     `json:"onebot"`
+	WeCom      WeComConfig      `json:"wecom"`
+	WeComApp   WeComAppConfig   `json:"wecom_app"`
+	WeComAIBot WeComAIBotConfig `json:"wecom_aibot"`
+	Pico       PicoConfig       `json:"pico"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -357,6 +359,18 @@ type WeComAppConfig struct {
 	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_APP_REASONING_CHANNEL_ID"`
+}
+
+type WeComAIBotConfig struct {
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENABLED"`
+	Token              string              `json:"token"                env:"PICOCLAW_CHANNELS_WECOM_AIBOT_TOKEN"`
+	EncodingAESKey     string              `json:"encoding_aes_key"     env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ENCODING_AES_KEY"`
+	WebhookPath        string              `json:"webhook_path"         env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_WECOM_AIBOT_ALLOW_FROM"`
+	ReplyTimeout       int                 `json:"reply_timeout"        env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REPLY_TIMEOUT"`
+	MaxSteps           int                 `json:"max_steps"            env:"PICOCLAW_CHANNELS_WECOM_AIBOT_MAX_STEPS"`       // Maximum streaming steps
+	WelcomeMessage     string              `json:"welcome_message"      env:"PICOCLAW_CHANNELS_WECOM_AIBOT_WELCOME_MESSAGE"` // Sent on enter_chat event; empty = no welcome
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WECOM_AIBOT_REASONING_CHANNEL_ID"`
 }
 
 type PicoConfig struct {
@@ -525,7 +539,8 @@ type WebToolsConfig struct {
 	Perplexity PerplexityConfig `json:"perplexity"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
-	Proxy string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_WEB_PROXY"`
+	Proxy           string `json:"proxy,omitempty"             env:"PICOCLAW_TOOLS_WEB_PROXY"`
+	FetchLimitBytes int64  `json:"fetch_limit_bytes,omitempty" env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
 }
 
 type CronToolsConfig struct {
@@ -533,8 +548,9 @@ type CronToolsConfig struct {
 }
 
 type ExecConfig struct {
-	EnableDenyPatterns bool     `json:"enable_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
-	CustomDenyPatterns []string `json:"custom_deny_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
+	EnableDenyPatterns  bool     `json:"enable_deny_patterns"  env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
+	CustomDenyPatterns  []string `json:"custom_deny_patterns"  env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
+	CustomAllowPatterns []string `json:"custom_allow_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS"`
 }
 
 type MediaCleanupConfig struct {
@@ -544,11 +560,13 @@ type MediaCleanupConfig struct {
 }
 
 type ToolsConfig struct {
-	Web          WebToolsConfig     `json:"web"`
-	Cron         CronToolsConfig    `json:"cron"`
-	Exec         ExecConfig         `json:"exec"`
-	Skills       SkillsToolsConfig  `json:"skills"`
-	MediaCleanup MediaCleanupConfig `json:"media_cleanup"`
+	AllowReadPaths  []string           `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
+	AllowWritePaths []string           `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	Web             WebToolsConfig     `json:"web"`
+	Cron            CronToolsConfig    `json:"cron"`
+	Exec            ExecConfig         `json:"exec"`
+	Skills          SkillsToolsConfig  `json:"skills"`
+	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 }
 
 type SkillsToolsConfig struct {
@@ -634,7 +652,8 @@ func (c *Config) migrateChannelConfigs() {
 	}
 
 	// OneBot: group_trigger_prefix -> group_trigger.prefixes
-	if len(c.Channels.OneBot.GroupTriggerPrefix) > 0 && len(c.Channels.OneBot.GroupTrigger.Prefixes) == 0 {
+	if len(c.Channels.OneBot.GroupTriggerPrefix) > 0 &&
+		len(c.Channels.OneBot.GroupTrigger.Prefixes) == 0 {
 		c.Channels.OneBot.GroupTrigger.Prefixes = c.Channels.OneBot.GroupTriggerPrefix
 	}
 }
@@ -744,26 +763,7 @@ func (c *Config) findMatches(modelName string) []ModelConfig {
 
 // HasProvidersConfig checks if any provider in the old providers config has configuration.
 func (c *Config) HasProvidersConfig() bool {
-	v := c.Providers
-	return v.Anthropic.APIKey != "" || v.Anthropic.APIBase != "" ||
-		v.OpenAI.APIKey != "" || v.OpenAI.APIBase != "" ||
-		v.OpenRouter.APIKey != "" || v.OpenRouter.APIBase != "" ||
-		v.Groq.APIKey != "" || v.Groq.APIBase != "" ||
-		v.Zhipu.APIKey != "" || v.Zhipu.APIBase != "" ||
-		v.VLLM.APIKey != "" || v.VLLM.APIBase != "" ||
-		v.Gemini.APIKey != "" || v.Gemini.APIBase != "" ||
-		v.Nvidia.APIKey != "" || v.Nvidia.APIBase != "" ||
-		v.Ollama.APIKey != "" || v.Ollama.APIBase != "" ||
-		v.Moonshot.APIKey != "" || v.Moonshot.APIBase != "" ||
-		v.ShengSuanYun.APIKey != "" || v.ShengSuanYun.APIBase != "" ||
-		v.DeepSeek.APIKey != "" || v.DeepSeek.APIBase != "" ||
-		v.Cerebras.APIKey != "" || v.Cerebras.APIBase != "" ||
-		v.VolcEngine.APIKey != "" || v.VolcEngine.APIBase != "" ||
-		v.GitHubCopilot.APIKey != "" || v.GitHubCopilot.APIBase != "" ||
-		v.Antigravity.APIKey != "" || v.Antigravity.APIBase != "" ||
-		v.Qwen.APIKey != "" || v.Qwen.APIBase != "" ||
-		v.Mistral.APIKey != "" || v.Mistral.APIBase != "" ||
-		v.Opencode.APIKey != "" || v.Opencode.APIBase != ""
+	return !c.Providers.IsEmpty()
 }
 
 // ValidateModelList validates all ModelConfig entries in the model_list.
