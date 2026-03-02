@@ -6,9 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -19,6 +22,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -151,11 +155,6 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		senderID = "unknown"
 	}
 
-	content := extractFeishuMessageContent(message)
-	if content == "" {
-		content = "[empty message]"
-	}
-
 	metadata := map[string]string{}
 	messageID := ""
 	if mid := stringValue(message.MessageId); mid != "" {
@@ -169,6 +168,40 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	}
 	if sender != nil && sender.TenantKey != nil {
 		metadata["tenant_key"] = *sender.TenantKey
+	}
+
+	// 处理媒体消息
+	scope := messageID
+
+	storeMedia := func(localPath, filename string) string {
+		if store := c.GetMediaStore(); store != nil {
+			ref, err := store.Store(localPath, media.MediaMeta{
+				Filename: filename,
+				Source:   "feishu",
+			}, scope)
+			if err == nil {
+				return ref
+			}
+		}
+		return localPath
+	}
+
+	content, mediaPaths, err := extractFeishuMessageContent(ctx, c, message, scope, storeMedia)
+	if err != nil {
+		logger.ErrorCF("feishu", "Failed to extract message content", map[string]any{
+			"sender_id": senderID,
+			"chat_id":   chatID,
+			"error":     err.Error(),
+		})
+		c.Send(ctx, bus.OutboundMessage{
+			ChatID:  chatID,
+			Content: fmt.Sprintf("消息处理失败: %s", err.Error()),
+		})
+		return nil
+	}
+
+	if content == "" {
+		content = "[empty message]"
 	}
 
 	chatType := stringValue(message.ChatType)
@@ -201,7 +234,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		return nil
 	}
 
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata, senderInfo)
+	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, senderInfo)
 	return nil
 }
 
@@ -223,19 +256,319 @@ func extractFeishuSenderID(sender *larkim.EventSender) string {
 	return ""
 }
 
-func extractFeishuMessageContent(message *larkim.EventMessage) string {
+func extractFeishuMessageContent(ctx context.Context, c *FeishuChannel, message *larkim.EventMessage, scope string, storeMedia func(string, string) string) (string, []string, error) {
 	if message == nil || message.Content == nil || *message.Content == "" {
-		return ""
+		return "", nil, fmt.Errorf("empty message")
 	}
 
-	if message.MessageType != nil && *message.MessageType == larkim.MsgTypeText {
+	var content string
+	var mediaPaths []string
+
+	if message.MessageType == nil {
+		return *message.Content, nil, nil
+	}
+
+	msgType := *message.MessageType
+
+	switch msgType {
+	case larkim.MsgTypeText:
 		var textPayload struct {
 			Text string `json:"text"`
 		}
 		if err := json.Unmarshal([]byte(*message.Content), &textPayload); err == nil {
-			return textPayload.Text
+			content = textPayload.Text
+		} else {
+			content = *message.Content
+		}
+
+	case larkim.MsgTypePost:
+		if message.MessageId == nil {
+			return "", nil, fmt.Errorf("message ID is empty")
+		}
+		var err error
+		content, err = extractPostContent(ctx, c, *message.MessageId, *message.Content, &mediaPaths, storeMedia)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to parse rich text: %w", err)
+		}
+		if content == "" {
+			content = "[post]"
+		}
+
+	case larkim.MsgTypeImage:
+		var imagePayload struct {
+			ImageKey string `json:"image_key"`
+		}
+		if err := json.Unmarshal([]byte(*message.Content), &imagePayload); err != nil {
+			return "", nil, fmt.Errorf("failed to parse image message: %w", err)
+		}
+		if imagePayload.ImageKey == "" {
+			return "", nil, fmt.Errorf("image key is empty")
+		}
+		if message.MessageId == nil {
+			return "", nil, fmt.Errorf("message ID is empty")
+		}
+		imagePath, err := c.downloadImage(ctx, *message.MessageId, imagePayload.ImageKey)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to download image: %w", err)
+		}
+		if imagePath == "" {
+			return "", nil, fmt.Errorf("image download failed: download result is empty")
+		}
+		mediaPaths = append(mediaPaths, storeMedia(imagePath, "image.jpg"))
+		content = "[image]"
+
+	case larkim.MsgTypeAudio:
+		var audioPayload struct {
+			FileKey string `json:"file_key"`
+		}
+		if err := json.Unmarshal([]byte(*message.Content), &audioPayload); err != nil {
+			return "", nil, fmt.Errorf("failed to parse audio message: %w", err)
+		}
+		if audioPayload.FileKey == "" {
+			return "", nil, fmt.Errorf("audio file key is empty")
+		}
+		if message.MessageId == nil {
+			return "", nil, fmt.Errorf("message ID is empty")
+		}
+		audioPath, err := c.downloadFile(ctx, *message.MessageId, audioPayload.FileKey)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to download audio: %w", err)
+		}
+		if audioPath == "" {
+			return "", nil, fmt.Errorf("audio download failed: download result is empty")
+		}
+		mediaPaths = append(mediaPaths, storeMedia(audioPath, "audio.amr"))
+		content = "[audio]"
+
+	case larkim.MsgTypeFile:
+		var filePayload struct {
+			FileKey string `json:"file_key"`
+		}
+		if err := json.Unmarshal([]byte(*message.Content), &filePayload); err != nil {
+			return "", nil, fmt.Errorf("failed to parse file message: %w", err)
+		}
+		if filePayload.FileKey == "" {
+			return "", nil, fmt.Errorf("file key is empty")
+		}
+		if message.MessageId == nil {
+			return "", nil, fmt.Errorf("message ID is empty")
+		}
+		filePath, err := c.downloadFile(ctx, *message.MessageId, filePayload.FileKey)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to download file: %w", err)
+		}
+		if filePath == "" {
+			return "", nil, fmt.Errorf("file download failed: download result is empty")
+		}
+		mediaPaths = append(mediaPaths, storeMedia(filePath, "file"))
+		content = "[file]"
+
+	case larkim.MsgTypeMedia:
+		var mediaPayload struct {
+			FileKey  string `json:"file_key"`
+			ImageKey string `json:"image_key"`
+		}
+		if err := json.Unmarshal([]byte(*message.Content), &mediaPayload); err != nil {
+			return "", nil, fmt.Errorf("failed to parse video message: %w", err)
+		}
+		if mediaPayload.FileKey == "" && mediaPayload.ImageKey == "" {
+			return "", nil, fmt.Errorf("both video file key and image key are empty")
+		}
+		if message.MessageId == nil {
+			return "", nil, fmt.Errorf("message ID is empty")
+		}
+		messageId := *message.MessageId
+		if mediaPayload.FileKey != "" {
+			videoPath, err := c.downloadFile(ctx, messageId, mediaPayload.FileKey)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to download video: %w", err)
+			}
+			if videoPath == "" {
+				return "", nil, fmt.Errorf("video download failed: download result is empty")
+			}
+			mediaPaths = append(mediaPaths, storeMedia(videoPath, "video.mp4"))
+		}
+		if mediaPayload.ImageKey != "" {
+			imagePath, err := c.downloadImage(ctx, messageId, mediaPayload.ImageKey)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to download video cover: %w", err)
+			}
+			if imagePath == "" {
+				return "", nil, fmt.Errorf("video cover download failed: download result is empty")
+			}
+			mediaPaths = append(mediaPaths, storeMedia(imagePath, "video_cover.jpg"))
+		}
+		content = "[video]"
+
+	default:
+		content = *message.Content
+	}
+
+	return content, mediaPaths, nil
+}
+
+func extractPostContent(ctx context.Context, c *FeishuChannel, messageId string, contentStr string, mediaPaths *[]string, storeMedia func(string, string) string) (string, error) {
+	var postPayload struct {
+		Title   string             `json:"title"`
+		Content [][]map[string]any `json:"content"`
+	}
+
+	if err := json.Unmarshal([]byte(contentStr), &postPayload); err != nil {
+		return "", fmt.Errorf("failed to parse rich text content: %w", err)
+	}
+
+	var textContent string
+
+	if postPayload.Title != "" {
+		textContent += postPayload.Title + "\n"
+	}
+
+	for _, paragraph := range postPayload.Content {
+		paragraphText := ""
+		for _, element := range paragraph {
+			tag, ok := element["tag"].(string)
+			if !ok {
+				continue
+			}
+			switch tag {
+			case "text":
+				if text, ok := element["text"].(string); ok {
+					paragraphText += text
+				}
+			case "a":
+				if text, ok := element["text"].(string); ok {
+					if href, ok := element["href"].(string); ok {
+						paragraphText += "[" + text + "](" + href + ")"
+					}
+				}
+			case "at":
+				if name, ok := element["name"].(string); ok {
+					paragraphText += "@" + name
+				}
+			case "img":
+				if imageKey, ok := element["image_key"].(string); ok {
+					imagePath, err := c.downloadImage(ctx, messageId, imageKey)
+					if err != nil {
+						return "", fmt.Errorf("failed to download rich text image: %w", err)
+					}
+					if imagePath != "" {
+						*mediaPaths = append(*mediaPaths, storeMedia(imagePath, "post_image.jpg"))
+					}
+					paragraphText += "[image]"
+				}
+			case "media":
+				if fileKey, ok := element["file_key"].(string); ok {
+					if fileKey != "" {
+						videoPath, err := c.downloadFile(ctx, messageId, fileKey)
+						if err != nil {
+							return "", fmt.Errorf("failed to download rich text video: %w", err)
+						}
+						if videoPath != "" {
+							*mediaPaths = append(*mediaPaths, storeMedia(videoPath, "post_video.mp4"))
+						}
+					}
+				}
+				if imageKey, ok := element["image_key"].(string); ok {
+					if imageKey != "" {
+						imagePath, err := c.downloadImage(ctx, messageId, imageKey)
+						if err != nil {
+							return "", fmt.Errorf("failed to download rich text video cover: %w", err)
+						}
+						if imagePath != "" {
+							*mediaPaths = append(*mediaPaths, storeMedia(imagePath, "post_video_cover.jpg"))
+						}
+					}
+				}
+				paragraphText += "[video]"
+			case "emotion":
+				if emoji, ok := element["emoji"].(string); ok {
+					paragraphText += emoji
+				}
+			case "code_block":
+				if lang, ok := element["lang"].(string); ok {
+					if code, ok := element["code"].(string); ok {
+						paragraphText += "```" + lang + "\n" + code + "\n```"
+					}
+				}
+			case "hr":
+				paragraphText += "---"
+			}
+		}
+		if paragraphText != "" {
+			textContent += paragraphText + "\n"
 		}
 	}
 
-	return *message.Content
+	return textContent, nil
+}
+
+func (c *FeishuChannel) downloadMessageResource(ctx context.Context, messageId, fileKey, resourceType string) (string, error) {
+	if fileKey == "" {
+		return "", fmt.Errorf("file key is empty")
+	}
+	if messageId == "" {
+		return "", fmt.Errorf("message ID is empty")
+	}
+
+	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
+		return "", fmt.Errorf("failed to create media directory: %w", err)
+	}
+
+	filename := filepath.Join(mediaDir, uuid.New().String()[:8]+"_feishu_"+fileKey)
+
+	logger.InfoCF("feishu", "Starting to download resource", map[string]any{
+		"message_id":    messageId,
+		"file_key":      fileKey,
+		"resource_type": resourceType,
+	})
+
+	req := larkim.NewGetMessageResourceReqBuilder().
+		MessageId(messageId).
+		FileKey(fileKey).
+		Type(resourceType).
+		Build()
+
+	resp, err := c.client.Im.MessageResource.Get(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("failed to request download: %w", err)
+	}
+
+	if !resp.Success() {
+		errorMsg := fmt.Sprintf("download failed (code=%d msg=%s)", resp.Code, resp.Msg)
+
+		switch resp.Code {
+		case 234001:
+			errorMsg = fmt.Sprintf("download failed: invalid request parameters, check if message_id and file_key match (code=%d msg=%s)", resp.Code, resp.Msg)
+		case 234003:
+			errorMsg = fmt.Sprintf("download failed: resource does not belong to this message (code=%d msg=%s)", resp.Code, resp.Msg)
+		case 234004:
+			errorMsg = fmt.Sprintf("download failed: app is not in the group where the message is located (code=%d msg=%s)", resp.Code, resp.Msg)
+		case 234005:
+			errorMsg = fmt.Sprintf("download failed: resource has been deleted (code=%d msg=%s)", resp.Code, resp.Msg)
+		}
+
+		return "", fmt.Errorf("%s", errorMsg)
+	}
+
+	if err := resp.WriteFile(filename); err != nil {
+		return "", fmt.Errorf("failed to write file: %w", err)
+	}
+
+	logger.InfoCF("feishu", "Resource downloaded successfully", map[string]any{
+		"message_id":    messageId,
+		"file_key":      fileKey,
+		"resource_type": resourceType,
+		"path":          filename,
+	})
+
+	return filename, nil
+}
+
+func (c *FeishuChannel) downloadImage(ctx context.Context, messageId, imageKey string) (string, error) {
+	return c.downloadMessageResource(ctx, messageId, imageKey, "image")
+}
+
+func (c *FeishuChannel) downloadFile(ctx context.Context, messageId, fileKey string) (string, error) {
+	return c.downloadMessageResource(ctx, messageId, fileKey, "file")
 }
