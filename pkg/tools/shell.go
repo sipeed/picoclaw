@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,6 +49,9 @@ var defaultDenyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\$\(\s*wget\s+`),
 	regexp.MustCompile(`\$\(\s*which\s+`),
 	regexp.MustCompile(`\bsudo\b`),
+	regexp.MustCompile(`\bsu\b`),
+	regexp.MustCompile(`\bdoas\b`),
+	regexp.MustCompile(`\bpkexec\b`),
 	regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
 	regexp.MustCompile(`\bchown\b`),
 	regexp.MustCompile(`\bpkill\b`),
@@ -255,8 +259,18 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 }
 
+// sanitizeCommand strips null bytes and decodes URL-encoded sequences
+// so that encoded traversal patterns (e.g. %2e%2e%2f) are detected by guards.
+func sanitizeCommand(cmd string) string {
+	cmd = strings.ReplaceAll(cmd, "\x00", "")
+	if decoded, err := url.PathUnescape(cmd); err == nil {
+		cmd = decoded
+	}
+	return cmd
+}
+
 func (t *ExecTool) guardCommand(command, cwd string) string {
-	cmd := strings.TrimSpace(command)
+	cmd := sanitizeCommand(strings.TrimSpace(command))
 	lower := strings.ToLower(cmd)
 
 	for _, pattern := range t.denyPatterns {

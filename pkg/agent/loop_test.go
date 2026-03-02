@@ -669,6 +669,71 @@ func TestHandleCdCommand_TraversalBlocked(t *testing.T) {
 	_ = result
 }
 
+// TestHandleCdCommand_NullByte verifies that null bytes in cd target
+// are stripped and cannot bypass workspace restriction.
+func TestHandleCdCommand_NullByte(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				Model:     "test-model",
+				MaxTokens: 4096,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+
+	al.setSessionWorkDir("test", workspace)
+
+	// Null byte in path should be stripped — traversal caught after stripping
+	al.handleCdCommand("cd sub\x00dir/../../..", "test", agent)
+	workDir := al.getSessionWorkDir("test")
+
+	if workDir != workspace {
+		t.Errorf("Expected workDir=%s after null-byte cd, got %s", workspace, workDir)
+	}
+}
+
+// TestHandleCdCommand_SymlinkEscape verifies that a symlink inside workspace
+// pointing outside is blocked by ValidatePath's symlink resolution.
+func TestHandleCdCommand_SymlinkEscape(t *testing.T) {
+	workspace := t.TempDir()
+	outsideDir := t.TempDir()
+
+	// Create a symlink inside workspace pointing outside
+	symlink := filepath.Join(workspace, "escape")
+	if err := os.Symlink(outsideDir, symlink); err != nil {
+		t.Skipf("Cannot create symlink: %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				Model:     "test-model",
+				MaxTokens: 4096,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+
+	al.setSessionWorkDir("test", workspace)
+
+	al.handleCdCommand("cd escape", "test", agent)
+	workDir := al.getSessionWorkDir("test")
+
+	if workDir != workspace {
+		t.Errorf("Expected symlink escape to be blocked, workDir=%s, workspace=%s", workDir, workspace)
+	}
+}
+
 // TestHandleExtensionCommand_EmojiPassthrough verifies that emoji-like
 // messages starting with : are not intercepted as commands.
 func TestHandleExtensionCommand_EmojiPassthrough(t *testing.T) {

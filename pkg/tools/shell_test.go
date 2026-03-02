@@ -296,3 +296,59 @@ func TestGuardCommand_DotSlashExecutable(t *testing.T) {
 		t.Errorf("Expected output 'ok', got: %s", result.ForLLM)
 	}
 }
+
+// TestGuardCommand_URLEncodedTraversal verifies that URL-encoded path traversal
+// sequences (%2e%2e%2f → ../) are detected and blocked.
+func TestGuardCommand_URLEncodedTraversal(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+	tool.SetRestrictToWorkspace(true)
+
+	msg := tool.guardCommand("cat %2e%2e%2f%2e%2e%2fetc/passwd", tmpDir)
+	if msg == "" {
+		t.Error("Expected URL-encoded path traversal to be blocked")
+	}
+}
+
+// TestGuardCommand_NullByte verifies that null bytes in commands are stripped
+// before guard checks so they cannot bypass traversal detection.
+func TestGuardCommand_NullByte(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+	tool.SetRestrictToWorkspace(true)
+
+	msg := tool.guardCommand("cat foo\x00../../etc/passwd", tmpDir)
+	if msg == "" {
+		t.Error("Expected null-byte traversal to be blocked")
+	}
+}
+
+// TestGuardCommand_SuBlocked verifies that su and related privilege
+// escalation commands are blocked by deny patterns.
+func TestGuardCommand_SuBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, true)
+
+	cases := []string{"su", "su -", "su root", "doas ls", "pkexec /bin/bash"}
+	for _, cmd := range cases {
+		msg := tool.guardCommand(cmd, tmpDir)
+		if msg == "" {
+			t.Errorf("Expected %q to be blocked", cmd)
+		}
+	}
+}
+
+// TestGuardCommand_SuNoFalsePositive verifies that words containing "su"
+// as a substring are NOT blocked (e.g. summary, result, surplus).
+func TestGuardCommand_SuNoFalsePositive(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool := NewExecTool(tmpDir, false) // no workspace restriction for this test
+
+	cases := []string{"echo surplus", "cat summary.txt", "ls result/"}
+	for _, cmd := range cases {
+		msg := tool.guardCommand(cmd, tmpDir)
+		if msg != "" {
+			t.Errorf("Expected %q to NOT be blocked, got: %s", cmd, msg)
+		}
+	}
+}

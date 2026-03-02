@@ -1397,7 +1397,8 @@ func (al *AgentLoop) executeCmdMode(
 }
 
 // handleCdCommand handles the cd command in command mode, updating per-session working directory.
-// Special paths (cd, cd ~, cd /, cd /xxx) are redirected to the workspace directory for safety.
+// Special paths (cd, cd ~, cd /) are redirected to the workspace directory for safety.
+// Uses tools.ValidatePath for robust containment: filepath.Rel + filepath.IsLocal + symlink resolution.
 func (al *AgentLoop) handleCdCommand(content, sessionKey string, agent *AgentInstance) string {
 	parts := strings.Fields(content)
 	workspace := agent.Workspace
@@ -1408,15 +1409,13 @@ func (al *AgentLoop) handleCdCommand(content, sessionKey string, agent *AgentIns
 		target = workspace
 	} else {
 		target = parts[1]
+		// Strip null bytes (defense-in-depth against bypass attempts)
+		target = strings.ReplaceAll(target, "\x00", "")
 		// Expand ~ prefix: treat ~ as workspace root (not $HOME)
 		if strings.HasPrefix(target, "~/") {
 			target = workspace + target[1:]
 		}
-		// Absolute paths (e.g. cd /etc) → redirect to workspace
-		if filepath.IsAbs(target) {
-			target = workspace
-		}
-		// Resolve relative paths
+		// Resolve relative paths against session working dir
 		if !filepath.IsAbs(target) {
 			currentDir := al.getSessionWorkDir(sessionKey)
 			if currentDir == "" {
@@ -1426,11 +1425,13 @@ func (al *AgentLoop) handleCdCommand(content, sessionKey string, agent *AgentIns
 		}
 	}
 
-	target = filepath.Clean(target)
-
-	// Prevent traversal outside workspace via ../
-	if !strings.HasPrefix(target, workspace) {
+	// Validate path is within workspace (handles traversal, symlinks, prefix matching correctly)
+	validated, err := tools.ValidatePath(target, workspace, true)
+	if err != nil {
+		// Path escapes workspace — fall back to workspace root
 		target = workspace
+	} else {
+		target = validated
 	}
 
 	info, err := os.Stat(target)
