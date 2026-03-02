@@ -1,0 +1,27 @@
+{
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 18790,
+    "tls": false,
+    "token": "",
+    "password": ""
+  },
+  "node": {
+    "displayName": "my_device",
+    "nodeId": "my_device"
+  },
+  "reconnect": {
+    "maxRetries": 0,
+    "retryIntervalMs": 5000
+  },
+  "exec": {
+    "workDir": "",
+    "allowedCommands": null,
+    "allowAllCommands": true
+  },
+  "identity": {
+    "deviceId": "",
+    "publicKeyB64": "",
+    "privateKeyB64": ""
+  }
+}

@@ -51,3 +51,7 @@ dist/
 # cursor
 .cursorindexingignore
 .specstory/
+
+
+# picoclaw-node
+cmd/picoclaw-node/config.json
