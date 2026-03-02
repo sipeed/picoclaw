@@ -30,6 +30,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 type AgentLoop struct {
@@ -42,6 +43,7 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
+	transcriber    *voice.GroqTranscriber
 }
 
 // processOptions configures how a message is processed
@@ -75,6 +77,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
+	// Set up transcriber if configured
+	var t *voice.GroqTranscriber
+	if cfg.Tools.Transcribe.Enabled && cfg.Tools.Transcribe.APIKey != "" {
+		t = voice.NewGroqTranscriber(cfg.Tools.Transcribe.APIKey)
+		logger.InfoC("agent", "Audio transcription enabled (Groq Whisper)")
+	}
+
 	return &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
@@ -82,6 +91,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		state:       stateManager,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
+		transcriber: t,
 	}
 }
 
@@ -412,11 +422,59 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"matched_by":  route.MatchedBy,
 		})
 
+	// Transcribe any audio media refs before passing to the agent.
+	userMessage := msg.Content
+	if al.transcriber != nil && len(msg.Media) > 0 && al.mediaStore != nil {
+		logger.DebugCF("agent", "Checking media for transcription", map[string]any{
+			"media_count": len(msg.Media),
+		})
+		for _, ref := range msg.Media {
+			localPath, meta, err := al.mediaStore.ResolveWithMeta(ref)
+			if err != nil {
+				logger.WarnCF("agent", "Failed to resolve media ref for transcription", map[string]any{
+					"ref": ref, "error": err.Error(),
+				})
+				continue
+			}
+			if inferMediaType(meta.Filename, meta.ContentType) != "audio" {
+				logger.DebugCF("agent", "Skipping non-audio media", map[string]any{
+					"ref": ref, "filename": meta.Filename,
+				})
+				continue
+			}
+			logger.InfoCF("agent", "Transcribing audio", map[string]any{
+				"ref": ref, "path": localPath, "filename": meta.Filename,
+			})
+			result, err := al.transcriber.Transcribe(ctx, localPath)
+			if err != nil {
+				logger.WarnCF("agent", "Audio transcription failed", map[string]any{
+					"ref": ref, "error": err.Error(),
+				})
+				continue
+			}
+			logger.InfoCF("agent", "Transcribed audio", map[string]any{
+				"ref": ref, "length": len(result.Text),
+			})
+			// Replace the [voice]/[audio] placeholder with the actual transcript
+			userMessage = strings.NewReplacer("[voice]", "", "[audio]", "").Replace(userMessage)
+			userMessage = strings.TrimSpace(userMessage)
+			if userMessage != "" {
+				userMessage = userMessage + "\n\n[Voice transcript]: " + result.Text
+			} else {
+				userMessage = result.Text
+			}
+		}
+	} else if al.transcriber == nil && len(msg.Media) > 0 {
+		logger.WarnCF("agent", "Transcriber not configured, skipping media", map[string]any{
+			"media_count": len(msg.Media),
+		})
+	}
+
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
-		UserMessage:     msg.Content,
+		UserMessage:     userMessage,
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
