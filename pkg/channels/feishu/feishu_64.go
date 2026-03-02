@@ -172,7 +172,6 @@ func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 			ReceiveId(chatID).
 			MsgType(larkim.MsgTypeInteractive).
 			Content(cardContent).
-
 			Build()).
 		Build()
 
@@ -572,9 +571,9 @@ func (c *FeishuChannel) downloadResource(
 
 	// Write to the shared picoclaw_media directory using the original filename.
 	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
-	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
+	if mkdirErr := os.MkdirAll(mediaDir, 0o700); mkdirErr != nil {
 		logger.ErrorCF("feishu", "Failed to create media directory", map[string]any{
-			"error": err.Error(),
+			"error": mkdirErr.Error(),
 		})
 		return ""
 	}
@@ -589,11 +588,11 @@ func (c *FeishuChannel) downloadResource(
 	}
 	defer out.Close()
 
-	if _, err := io.Copy(out, resp.File); err != nil {
+	if _, copyErr := io.Copy(out, resp.File); copyErr != nil {
 		out.Close()
 		os.Remove(localPath)
 		logger.ErrorCF("feishu", "Failed to write resource to file", map[string]any{
-			"error": err.Error(),
+			"error": copyErr.Error(),
 		})
 		return ""
 	}
@@ -698,7 +697,6 @@ func (c *FeishuChannel) sendImage(ctx context.Context, chatID string, file *os.F
 			ReceiveId(chatID).
 			MsgType(larkim.MsgTypeImage).
 			Content(string(content)).
-
 			Build()).
 		Build()
 
@@ -753,7 +751,6 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 			ReceiveId(chatID).
 			MsgType(larkim.MsgTypeFile).
 			Content(string(content)).
-
 			Build()).
 		Build()
 
