@@ -71,7 +71,7 @@ func (c *RuleClassifier) Score(f Features) float64 {
 		score += 0.10
 	}
 
-	// Cap at 1.0 to honour the [0, 1] contract even when multiple signals fire
+	// Cap at 1.0 to honor the [0, 1] contract even when multiple signals fire
 	// simultaneously (e.g., long message + code block + tool chain = 1.10 raw).
 	if score > 1.0 {
 		score = 1.0

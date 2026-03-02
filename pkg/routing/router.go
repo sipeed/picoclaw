@@ -57,7 +57,11 @@ func newWithClassifier(cfg RouterConfig, c Classifier) *Router {
 //
 // The caller is responsible for resolving the returned model name into
 // provider candidates (see AgentInstance.LightCandidates).
-func (r *Router) SelectModel(msg string, history []providers.Message, primaryModel string) (model string, usedLight bool) {
+func (r *Router) SelectModel(
+	msg string,
+	history []providers.Message,
+	primaryModel string,
+) (model string, usedLight bool) {
 	features := ExtractFeatures(msg, history)
 	score := r.classifier.Score(features)
 	if score < r.cfg.Threshold {

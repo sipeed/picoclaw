@@ -38,8 +38,13 @@ func TestExtractFeatures_TokenEstimate(t *testing.T) {
 }
 
 func TestExtractFeatures_TokenEstimate_CJK(t *testing.T) {
-	// 9 CJK runes / 3 = 3 tokens
-	msg := "你好世界你好世界你" // 9 runes
+	// 9 CJK runes (U+4F60 U+597D U+4E16 U+754C × 2 + U+4F60) / 3 = 3 tokens.
+	// Using a rune slice literal avoids CJK string literals in source.
+	msg := string([]rune{
+		0x4F60, 0x597D, 0x4E16, 0x754C,
+		0x4F60, 0x597D, 0x4E16, 0x754C,
+		0x4F60,
+	})
 	f := ExtractFeatures(msg, nil)
 	if f.TokenEstimate != 3 {
 		t.Errorf("CJK TokenEstimate: got %d, want 3", f.TokenEstimate)
@@ -69,7 +74,10 @@ func TestExtractFeatures_RecentToolCalls(t *testing.T) {
 	history := make([]providers.Message, 10)
 	// Put 2 tool calls at positions 8 and 9 (within the last 6)
 	history[8] = providers.Message{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "exec"}}}
-	history[9] = providers.Message{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "read_file"}, {Name: "write_file"}}}
+	history[9] = providers.Message{
+		Role:      "assistant",
+		ToolCalls: []providers.ToolCall{{Name: "read_file"}, {Name: "write_file"}},
+	}
 	// Position 3 is outside the lookback window and must NOT be counted
 	history[3] = providers.Message{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "old_tool"}}}
 
