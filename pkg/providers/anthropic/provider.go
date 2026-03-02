@@ -237,7 +237,7 @@ func buildParams(
 
 func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 	result := make([]anthropic.ToolUnionParam, 0, len(tools))
-	for _, t := range tools {
+	for i, t := range tools {
 		tool := anthropic.ToolParam{
 			Name: t.Function.Name,
 			InputSchema: anthropic.ToolInputSchemaParam{
@@ -255,6 +255,9 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 				}
 			}
 			tool.InputSchema.Required = required
+		}
+		if i == len(tools)-1 {
+			tool.CacheControl = anthropic.NewCacheControlEphemeralParam()
 		}
 		result = append(result, anthropic.ToolUnionParam{OfTool: &tool})
 	}

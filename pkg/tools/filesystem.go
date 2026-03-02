@@ -117,6 +117,8 @@ func (t *ReadFileTool) Parameters() map[string]any {
 	}
 }
 
+const maxReadFileChars = 10000
+
 func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
@@ -127,7 +129,12 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
-	return NewToolResult(string(content))
+
+	text := string(content)
+	if len(text) > maxReadFileChars {
+		text = text[:maxReadFileChars] + fmt.Sprintf("\n\n... (truncated, showing %d of %d chars. Use exec with head/tail/sed for specific sections)", maxReadFileChars, len(content))
+	}
+	return NewToolResult(text)
 }
 
 type WriteFileTool struct {

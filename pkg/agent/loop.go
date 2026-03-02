@@ -123,7 +123,7 @@ func registerSharedTools(
 		} else if searchTool != nil {
 			agent.Tools.Register(searchTool)
 		}
-		fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
+		fetchTool, err := tools.NewWebFetchToolWithProxy(20000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
 		if err != nil {
 			logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 		} else {
@@ -661,6 +661,7 @@ func (al *AgentLoop) runLLMIteration(
 ) (string, int, error) {
 	iteration := 0
 	var finalContent string
+	var totalInputTokens, totalOutputTokens int
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -804,6 +805,11 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
+
+		if response.Usage != nil {
+			totalInputTokens += response.Usage.PromptTokens
+			totalOutputTokens += response.Usage.CompletionTokens
+		}
 
 		logger.DebugCF("agent", "LLM response",
 			map[string]any{
@@ -966,6 +972,17 @@ func (al *AgentLoop) runLLMIteration(
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
+	}
+
+	if totalInputTokens > 0 || totalOutputTokens > 0 {
+		logger.InfoCF("agent", "Session token usage",
+			map[string]any{
+				"agent_id":      agent.ID,
+				"iterations":    iteration,
+				"input_tokens":  totalInputTokens,
+				"output_tokens": totalOutputTokens,
+				"total_tokens":  totalInputTokens + totalOutputTokens,
+			})
 	}
 
 	return finalContent, iteration, nil

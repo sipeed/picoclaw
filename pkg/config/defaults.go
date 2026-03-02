@@ -30,9 +30,9 @@ func DefaultConfig() *Config {
 				RestrictToWorkspace: true,
 				Provider:            "",
 				Model:               "",
-				MaxTokens:           32768,
-				Temperature:         nil, // nil means use provider default
-				MaxToolIterations:   50,
+			MaxTokens:           8192,
+			Temperature:         nil, // nil means use provider default
+			MaxToolIterations:   15,
 			},
 		},
 		Bindings: []AgentBinding{},

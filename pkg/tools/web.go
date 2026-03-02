@@ -22,7 +22,7 @@ const (
 	perplexityTimeout = 30 * time.Second // Perplexity (LLM-based, slower)
 	fetchTimeout      = 60 * time.Second // WebFetchTool
 
-	defaultMaxChars = 50000
+	defaultMaxChars = 20000
 	maxRedirects    = 5
 )
 

@@ -148,6 +148,8 @@ func NewAgentInstance(
 
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
+	contextWindow := resolveContextWindow(model, maxTokens)
+
 	return &AgentInstance{
 		ID:             agentID,
 		Name:           agentName,
@@ -157,7 +159,7 @@ func NewAgentInstance(
 		MaxIterations:  maxIter,
 		MaxTokens:      maxTokens,
 		Temperature:    temperature,
-		ContextWindow:  maxTokens,
+		ContextWindow:  contextWindow,
 		Provider:       provider,
 		Sessions:       sessionsManager,
 		ContextBuilder: contextBuilder,
@@ -222,4 +224,30 @@ func expandHome(path string) string {
 		return home
 	}
 	return path
+}
+
+// resolveContextWindow returns the actual context window size for a model.
+// This is used for summarization thresholds and should reflect the model's
+// real capacity rather than the output max_tokens setting.
+func resolveContextWindow(model string, maxTokens int) int {
+	m := strings.ToLower(model)
+	switch {
+	case strings.Contains(m, "claude"):
+		return 200000
+	case strings.Contains(m, "gpt-5"), strings.Contains(m, "gpt-4"):
+		return 128000
+	case strings.Contains(m, "gemini"):
+		return 1000000
+	case strings.Contains(m, "deepseek"):
+		return 64000
+	case strings.Contains(m, "llama"):
+		return 128000
+	case strings.Contains(m, "qwen"):
+		return 32000
+	default:
+		if maxTokens > 32000 {
+			return maxTokens
+		}
+		return 32000
+	}
 }
