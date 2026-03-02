@@ -270,7 +270,7 @@ Once your PR is submitted, you can reach out to the assigned reviewers listed in
 |---     |---      |
 |Provider|@yinwm   |
 |Channel |@yinwm/@alexhoshina   |
-|Agent   |@lxowalle|
+|Agent   |@lxowalle/@Zhaoyikaiii|
 |Tools   |@lxowalle|
 |SKill   ||
 |MCP     ||

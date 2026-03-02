@@ -269,7 +269,7 @@ Release 分支的保护级别高于 `main`，在任何情况下均不允许直�
 |---     |---      |
 |Provider|@yinwm   |
 |Channel |@yinwm/@alexhoshina   |
-|Agent   |@lxowalle|
+|Agent   |@lxowalle/@Zhaoyikaiii|
 |Tools   |@lxowalle|
 |SKill   ||
 |MCP     ||
