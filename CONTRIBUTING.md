@@ -269,7 +269,7 @@ Once your PR is submitted, you can reach out to the assigned reviewers listed in
 |Function| Reviewer|
 |---     |---      |
 |Provider|@yinwm   |
-|Channel |@yinwm   |
+|Channel |@yinwm/@alexhoshina   |
 |Agent   |@lxowalle|
 |Tools   |@lxowalle|
 |SKill   ||

@@ -268,7 +268,7 @@ Release 分支的保护级别高于 `main`，在任何情况下均不允许直�
 |Function| Reviewer|
 |---     |---      |
 |Provider|@yinwm   |
-|Channel |@yinwm   |
+|Channel |@yinwm/@alexhoshina   |
 |Agent   |@lxowalle|
 |Tools   |@lxowalle|
 |SKill   ||
