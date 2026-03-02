@@ -25,7 +25,7 @@ func TestMessageDeduplicator_ConcurrentSameMessage(t *testing.T) {
 	wg.Add(goroutines)
 
 	results := make(chan bool, goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			results <- d.MarkMessageProcessed("msg-concurrent")

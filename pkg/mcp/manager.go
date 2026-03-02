@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -332,9 +333,7 @@ func (m *Manager) ConnectServer(
 			if err != nil {
 				return fmt.Errorf("failed to load env file %s: %w", cfg.EnvFile, err)
 			}
-			for k, v := range envVars {
-				envMap[k] = v
-			}
+			maps.Copy(envMap, envVars)
 			logger.DebugCF("mcp", "Loaded environment variables from file",
 				map[string]any{
 					"server":    name,
@@ -344,9 +343,7 @@ func (m *Manager) ConnectServer(
 		}
 
 		// Environment variables from config override those from file
-		for k, v := range cfg.Env {
-			envMap[k] = v
-		}
+		maps.Copy(envMap, cfg.Env)
 
 		// Convert map to slice
 		env := make([]string, 0, len(envMap))
@@ -420,9 +417,7 @@ func (m *Manager) GetServers() map[string]*ServerConnection {
 	defer m.mu.RUnlock()
 
 	result := make(map[string]*ServerConnection, len(m.servers))
-	for k, v := range m.servers {
-		result[k] = v
-	}
+	maps.Copy(result, m.servers)
 	return result
 }
 

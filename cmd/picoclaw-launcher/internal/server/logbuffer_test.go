@@ -101,13 +101,11 @@ func TestLogBuffer_Concurrent(t *testing.T) {
 
 	// 5 readers
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 100 {
 				buf.LinesSince(0)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

@@ -198,7 +198,7 @@ func (t *I2CTool) readDevice(args map[string]any) *ToolResult {
 	// Format as hex bytes
 	hexBytes := make([]string, n)
 	intBytes := make([]int, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		hexBytes[i] = fmt.Sprintf("0x%02x", buf[i])
 		intBytes[i] = int(buf[i])
 	}

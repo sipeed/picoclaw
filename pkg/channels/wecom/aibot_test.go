@@ -142,7 +142,7 @@ func TestGenerateStreamID(t *testing.T) {
 
 	// Generate multiple IDs and check they are unique
 	ids := make(map[string]bool)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		id := ch.generateStreamID()
 
 		if len(id) != 10 {

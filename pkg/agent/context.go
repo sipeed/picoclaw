@@ -288,10 +288,8 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 	// For each root:
 	// 1. Creation/deletion and root directory mtime changes are tracked by fileChangedSince.
 	// 2. Nested file create/delete/mtime changes are tracked by the skill file snapshot.
-	for _, root := range cb.skillRoots() {
-		if cb.fileChangedSince(root) {
-			return true
-		}
+	if slices.ContainsFunc(cb.skillRoots(), cb.fileChangedSince) {
+		return true
 	}
 	if skillFilesChangedSince(cb.skillRoots(), cb.skillFilesAtCache) {
 		return true

@@ -47,7 +47,6 @@ linters:
     - lll
     - maintidx
     - mnd
-    - modernize
     - nestif
     - nilnil
     - paralleltest

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -170,9 +171,7 @@ func handleStatusGateway(w http.ResponseWriter, r *http.Request, absPath string)
 				data["error"] = "invalid response from gateway"
 			} else {
 				// Gateway is running and responded properly — merge health data
-				for k, v := range healthData {
-					data[k] = v
-				}
+				maps.Copy(data, healthData)
 				data["process_status"] = "running"
 			}
 		}

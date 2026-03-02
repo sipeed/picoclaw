@@ -50,9 +50,9 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
-	Session   SessionConfig   `json:"session,omitempty"`
+	Session   SessionConfig   `json:"session"`
 	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
+	Providers ProvidersConfig `json:"providers"`
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
@@ -247,39 +247,39 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	BaseURL            string              `json:"base_url"                env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
-	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token              string              `json:"token"                env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	BaseURL            string              `json:"base_url"             env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
+	Proxy              string              `json:"proxy"                env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	Typing             TypingConfig        `json:"typing"`
+	Placeholder        PlaceholderConfig   `json:"placeholder"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
 }
 
 type FeishuConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
-	AppID              string              `json:"app_id"                  env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
-	AppSecret          string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey         string              `json:"encrypt_key"             env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken  string              `json:"verification_token"      env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
+	AppID              string              `json:"app_id"               env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
+	AppSecret          string              `json:"app_secret"           env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
+	EncryptKey         string              `json:"encrypt_key"          env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
+	VerificationToken  string              `json:"verification_token"   env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	Placeholder        PlaceholderConfig   `json:"placeholder"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_FEISHU_REASONING_CHANNEL_ID"`
 }
 
 type DiscordConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_DISCORD_PROXY"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
-	MentionOnly        bool                `json:"mention_only"            env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
+	Token              string              `json:"token"                env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	Proxy              string              `json:"proxy"                env:"PICOCLAW_CHANNELS_DISCORD_PROXY"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	MentionOnly        bool                `json:"mention_only"         env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	Typing             TypingConfig        `json:"typing"`
+	Placeholder        PlaceholderConfig   `json:"placeholder"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
 }
 
 type MaixCamConfig struct {
@@ -291,89 +291,89 @@ type MaixCamConfig struct {
 }
 
 type QQConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID              string              `json:"app_id"                  env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret          string              `json:"app_secret"              env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
+	AppID              string              `json:"app_id"               env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
+	AppSecret          string              `json:"app_secret"           env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
 }
 
 type DingTalkConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
-	ClientID           string              `json:"client_id"               env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret       string              `json:"client_secret"           env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_DINGTALK_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
+	ClientID           string              `json:"client_id"            env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
+	ClientSecret       string              `json:"client_secret"        env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_DINGTALK_REASONING_CHANNEL_ID"`
 }
 
 type SlackConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
-	BotToken           string              `json:"bot_token"               env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken           string              `json:"app_token"               env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
+	BotToken           string              `json:"bot_token"            env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
+	AppToken           string              `json:"app_token"            env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	Typing             TypingConfig        `json:"typing"`
+	Placeholder        PlaceholderConfig   `json:"placeholder"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
 }
 
 type LINEConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_LINE_ENABLED"`
-	ChannelSecret      string              `json:"channel_secret"          env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
-	ChannelAccessToken string              `json:"channel_access_token"    env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
-	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_LINE_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_LINE_ENABLED"`
+	ChannelSecret      string              `json:"channel_secret"       env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
+	ChannelAccessToken string              `json:"channel_access_token" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
+	WebhookHost        string              `json:"webhook_host"         env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
+	WebhookPort        int                 `json:"webhook_port"         env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
+	WebhookPath        string              `json:"webhook_path"         env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	Typing             TypingConfig        `json:"typing"`
+	Placeholder        PlaceholderConfig   `json:"placeholder"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_LINE_REASONING_CHANNEL_ID"`
 }
 
 type OneBotConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_ONEBOT_ENABLED"`
-	WSUrl              string              `json:"ws_url"                  env:"PICOCLAW_CHANNELS_ONEBOT_WS_URL"`
-	AccessToken        string              `json:"access_token"            env:"PICOCLAW_CHANNELS_ONEBOT_ACCESS_TOKEN"`
-	ReconnectInterval  int                 `json:"reconnect_interval"      env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
-	GroupTriggerPrefix []string            `json:"group_trigger_prefix"    env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_ONEBOT_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_ONEBOT_ENABLED"`
+	WSUrl              string              `json:"ws_url"               env:"PICOCLAW_CHANNELS_ONEBOT_WS_URL"`
+	AccessToken        string              `json:"access_token"         env:"PICOCLAW_CHANNELS_ONEBOT_ACCESS_TOKEN"`
+	ReconnectInterval  int                 `json:"reconnect_interval"   env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
+	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	Typing             TypingConfig        `json:"typing"`
+	Placeholder        PlaceholderConfig   `json:"placeholder"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_ONEBOT_REASONING_CHANNEL_ID"`
 }
 
 type WeComConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_WECOM_TOKEN"`
-	EncodingAESKey     string              `json:"encoding_aes_key"        env:"PICOCLAW_CHANNELS_WECOM_ENCODING_AES_KEY"`
-	WebhookURL         string              `json:"webhook_url"             env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_URL"`
-	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_REPLY_TIMEOUT"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_WECOM_ENABLED"`
+	Token              string              `json:"token"                env:"PICOCLAW_CHANNELS_WECOM_TOKEN"`
+	EncodingAESKey     string              `json:"encoding_aes_key"     env:"PICOCLAW_CHANNELS_WECOM_ENCODING_AES_KEY"`
+	WebhookURL         string              `json:"webhook_url"          env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_URL"`
+	WebhookHost        string              `json:"webhook_host"         env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_HOST"`
+	WebhookPort        int                 `json:"webhook_port"         env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PORT"`
+	WebhookPath        string              `json:"webhook_path"         env:"PICOCLAW_CHANNELS_WECOM_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_WECOM_ALLOW_FROM"`
+	ReplyTimeout       int                 `json:"reply_timeout"        env:"PICOCLAW_CHANNELS_WECOM_REPLY_TIMEOUT"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WECOM_REASONING_CHANNEL_ID"`
 }
 
 type WeComAppConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_WECOM_APP_ENABLED"`
-	CorpID             string              `json:"corp_id"                 env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_ID"`
-	CorpSecret         string              `json:"corp_secret"             env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_SECRET"`
-	AgentID            int64               `json:"agent_id"                env:"PICOCLAW_CHANNELS_WECOM_APP_AGENT_ID"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_WECOM_APP_TOKEN"`
-	EncodingAESKey     string              `json:"encoding_aes_key"        env:"PICOCLAW_CHANNELS_WECOM_APP_ENCODING_AES_KEY"`
-	WebhookHost        string              `json:"webhook_host"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path"            env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
-	ReplyTimeout       int                 `json:"reply_timeout"           env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_WECOM_APP_REASONING_CHANNEL_ID"`
+	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_WECOM_APP_ENABLED"`
+	CorpID             string              `json:"corp_id"              env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_ID"`
+	CorpSecret         string              `json:"corp_secret"          env:"PICOCLAW_CHANNELS_WECOM_APP_CORP_SECRET"`
+	AgentID            int64               `json:"agent_id"             env:"PICOCLAW_CHANNELS_WECOM_APP_AGENT_ID"`
+	Token              string              `json:"token"                env:"PICOCLAW_CHANNELS_WECOM_APP_TOKEN"`
+	EncodingAESKey     string              `json:"encoding_aes_key"     env:"PICOCLAW_CHANNELS_WECOM_APP_ENCODING_AES_KEY"`
+	WebhookHost        string              `json:"webhook_host"         env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_HOST"`
+	WebhookPort        int                 `json:"webhook_port"         env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PORT"`
+	WebhookPath        string              `json:"webhook_path"         env:"PICOCLAW_CHANNELS_WECOM_APP_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"PICOCLAW_CHANNELS_WECOM_APP_ALLOW_FROM"`
+	ReplyTimeout       int                 `json:"reply_timeout"        env:"PICOCLAW_CHANNELS_WECOM_APP_REPLY_TIMEOUT"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger"`
+	ReasoningChannelID string              `json:"reasoning_channel_id" env:"PICOCLAW_CHANNELS_WECOM_APP_REASONING_CHANNEL_ID"`
 }
 
 type WeComAIBotConfig struct {
@@ -398,7 +398,7 @@ type PicoConfig struct {
 	WriteTimeout    int                 `json:"write_timeout,omitempty"`
 	MaxConnections  int                 `json:"max_connections,omitempty"`
 	AllowFrom       FlexibleStringSlice `json:"allow_from"                  env:"PICOCLAW_CHANNELS_PICO_ALLOW_FROM"`
-	Placeholder     PlaceholderConfig   `json:"placeholder,omitempty"`
+	Placeholder     PlaceholderConfig   `json:"placeholder"`
 }
 
 type HeartbeatConfig struct {
