@@ -399,6 +399,7 @@ type DevicesConfig struct {
 type ProvidersConfig struct {
 	Anthropic     ProviderConfig       `json:"anthropic"`
 	OpenAI        OpenAIProviderConfig `json:"openai"`
+	LiteLLM       ProviderConfig       `json:"litellm"`
 	OpenRouter    ProviderConfig       `json:"openrouter"`
 	Groq          ProviderConfig       `json:"groq"`
 	Zhipu         ProviderConfig       `json:"zhipu"`
@@ -422,6 +423,7 @@ type ProvidersConfig struct {
 func (p ProvidersConfig) IsEmpty() bool {
 	return p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" &&
 		p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" &&
+		p.LiteLLM.APIKey == "" && p.LiteLLM.APIBase == "" &&
 		p.OpenRouter.APIKey == "" && p.OpenRouter.APIBase == "" &&
 		p.Groq.APIKey == "" && p.Groq.APIBase == "" &&
 		p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" &&
