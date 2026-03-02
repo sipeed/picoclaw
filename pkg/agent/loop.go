@@ -1145,7 +1145,7 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			// If tool returned media refs, publish them as outbound media
-			if len(r.result.Media) > 0 && opts.SendResponse {
+			if len(r.result.Media) > 0 {
 				parts := make([]bus.MediaPart, 0, len(r.result.Media))
 				for _, ref := range r.result.Media {
 					part := bus.MediaPart{Ref: ref}
