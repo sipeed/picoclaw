@@ -768,22 +768,26 @@ func (p *ExaSearchProvider) Search(ctx context.Context, query string, count int)
 		return "", fmt.Errorf("exa: parse error: %w", err)
 	}
 
-	var sb strings.Builder
+	if len(result.Results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Results for: %s (via Exa)", query))
 	maxResults := count
 	if maxResults > len(result.Results) {
 		maxResults = len(result.Results)
 	}
 	for i, r := range result.Results[:maxResults] {
-		sb.WriteString(fmt.Sprintf("%d. %s\n   URL: %s\n", i+1, r.Title, r.URL))
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, r.Title, r.URL))
 		if r.Text != "" {
 			snippet := r.Text
 			if len(snippet) > 200 {
 				snippet = snippet[:200] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("   %s\n", snippet))
+			lines = append(lines, fmt.Sprintf("   %s", snippet))
 		}
-		sb.WriteString("\n")
 	}
 
-	return sb.String(), nil
+	return strings.Join(lines, "\n"), nil
 }
