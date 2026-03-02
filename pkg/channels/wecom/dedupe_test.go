@@ -1,4 +1,4 @@
-package channels
+package wecom
 
 import (
 	"sync"
@@ -48,11 +48,11 @@ func TestMessageDeduplicator_ConcurrentSameMessage(t *testing.T) {
 }
 
 func TestMessageDeduplicator_CircularQueueEviction(t *testing.T) {
-	// Create a deduplicator with a very small capacity to test eviction easily
+	// Create a deduplicator with a very small capacity to test eviction easily.
 	capacity := 3
 	d := NewMessageDeduplicator(capacity)
 
-	// Fill the queue
+	// Fill the queue.
 	d.MarkMessageProcessed("msg-1")
 	d.MarkMessageProcessed("msg-2")
 	d.MarkMessageProcessed("msg-3")
@@ -62,7 +62,7 @@ func TestMessageDeduplicator_CircularQueueEviction(t *testing.T) {
 		t.Fatalf("expected map size to be 3, got %d", len(d.msgs))
 	}
 
-	// This should evict msg-1 and add msg-4
+	// This should evict msg-1 and add msg-4.
 	if ok := d.MarkMessageProcessed("msg-4"); !ok {
 		t.Fatalf("msg-4 should be accepted")
 	}
@@ -71,12 +71,12 @@ func TestMessageDeduplicator_CircularQueueEviction(t *testing.T) {
 		t.Fatalf("expected map size to remain at max capacity (3), got %d", len(d.msgs))
 	}
 
-	// msg-1 should now be forgotten (evicted)
+	// msg-1 should now be forgotten (evicted).
 	if ok := d.MarkMessageProcessed("msg-1"); !ok {
 		t.Fatalf("msg-1 should be accepted again because it was evicted")
 	}
 
-	// msg-2 should have been evicted when we added msg-1 back
+	// msg-2 should have been evicted when we added msg-1 back.
 	if ok := d.MarkMessageProcessed("msg-2"); !ok {
 		t.Fatalf("msg-2 should be accepted again because it was evicted")
 	}
