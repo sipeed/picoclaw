@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -13,14 +14,12 @@ type EditFileTool struct {
 }
 
 // NewEditFileTool creates a new EditFileTool with optional directory restriction.
-func NewEditFileTool(workspace string, restrict bool) *EditFileTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
+func NewEditFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *EditFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
 	}
-	return &EditFileTool{fs: fs}
+	return &EditFileTool{fs: buildFs(workspace, restrict, patterns)}
 }
 
 func (t *EditFileTool) Name() string {
@@ -84,14 +83,12 @@ type AppendFileTool struct {
 	fs fileSystem
 }
 
-func NewAppendFileTool(workspace string, restrict bool) *AppendFileTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
+func NewAppendFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *AppendFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
 	}
-	return &AppendFileTool{fs: fs}
+	return &AppendFileTool{fs: buildFs(workspace, restrict, patterns)}
 }
 
 func (t *AppendFileTool) Name() string {
