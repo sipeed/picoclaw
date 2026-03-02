@@ -7,11 +7,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // TestShellTool_Success verifies successful command execution
 func TestShellTool_Success(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -38,7 +43,10 @@ func TestShellTool_Success(t *testing.T) {
 
 // TestShellTool_Failure verifies failed command execution
 func TestShellTool_Failure(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -65,7 +73,11 @@ func TestShellTool_Failure(t *testing.T) {
 
 // TestShellTool_Timeout verifies command timeout handling
 func TestShellTool_Timeout(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
+
 	tool.SetTimeout(100 * time.Millisecond)
 
 	ctx := context.Background()
@@ -93,7 +105,10 @@ func TestShellTool_WorkingDir(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -114,7 +129,10 @@ func TestShellTool_WorkingDir(t *testing.T) {
 
 // TestShellTool_DangerousCommand verifies safety guard blocks dangerous commands
 func TestShellTool_DangerousCommand(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -135,7 +153,10 @@ func TestShellTool_DangerousCommand(t *testing.T) {
 
 // TestShellTool_MissingCommand verifies error handling for missing command
 func TestShellTool_MissingCommand(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{}
@@ -150,7 +171,10 @@ func TestShellTool_MissingCommand(t *testing.T) {
 
 // TestShellTool_StderrCapture verifies stderr is captured and included
 func TestShellTool_StderrCapture(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -170,7 +194,10 @@ func TestShellTool_StderrCapture(t *testing.T) {
 
 // TestShellTool_OutputTruncation verifies long output is truncated
 func TestShellTool_OutputTruncation(t *testing.T) {
-	tool := NewExecTool("", false)
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
 
 	ctx := context.Background()
 	// Generate long output (>10000 chars)
@@ -198,7 +225,11 @@ func TestShellTool_WorkingDir_OutsideWorkspace(t *testing.T) {
 		t.Fatalf("failed to create outside dir: %v", err)
 	}
 
-	tool := NewExecTool(workspace, true)
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
+
 	result := tool.Execute(context.Background(), map[string]any{
 		"command":     "pwd",
 		"working_dir": outsideDir,
@@ -232,7 +263,11 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 		t.Skipf("symlinks not supported in this environment: %v", err)
 	}
 
-	tool := NewExecTool(workspace, true)
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
+
 	result := tool.Execute(context.Background(), map[string]any{
 		"command":     "cat secret.txt",
 		"working_dir": link,
@@ -249,7 +284,11 @@ func TestShellTool_WorkingDir_SymlinkEscape(t *testing.T) {
 // TestShellTool_RestrictToWorkspace verifies workspace restriction
 func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool := NewExecTool(tmpDir, false)
+	tool, err := NewExecTool(tmpDir, false)
+	if err != nil {
+		t.Errorf("unable to configure exec tool: %s", err)
+	}
+
 	tool.SetRestrictToWorkspace(true)
 
 	ctx := context.Background()
@@ -277,7 +316,10 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 // commands are NOT blocked by the path extraction regex in guardCommand.
 func TestGuardCommand_DotSlashExecutable(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool := NewExecTool(tmpDir, true)
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
 
 	// Create a test script in the workspace
 	scriptPath := filepath.Join(tmpDir, "test.sh")
@@ -301,7 +343,10 @@ func TestGuardCommand_DotSlashExecutable(t *testing.T) {
 // sequences (%2e%2e%2f → ../) are detected and blocked.
 func TestGuardCommand_URLEncodedTraversal(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool := NewExecTool(tmpDir, true)
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
 	tool.SetRestrictToWorkspace(true)
 
 	msg := tool.guardCommand("cat %2e%2e%2f%2e%2e%2fetc/passwd", tmpDir)
@@ -314,7 +359,10 @@ func TestGuardCommand_URLEncodedTraversal(t *testing.T) {
 // before guard checks so they cannot bypass traversal detection.
 func TestGuardCommand_NullByte(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool := NewExecTool(tmpDir, true)
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
 	tool.SetRestrictToWorkspace(true)
 
 	msg := tool.guardCommand("cat foo\x00../../etc/passwd", tmpDir)
@@ -327,7 +375,10 @@ func TestGuardCommand_NullByte(t *testing.T) {
 // escalation commands are blocked by deny patterns.
 func TestGuardCommand_SuBlocked(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool := NewExecTool(tmpDir, true)
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
 
 	cases := []string{"su", "su -", "su root", "doas ls", "pkexec /bin/bash"}
 	for _, cmd := range cases {
@@ -342,7 +393,10 @@ func TestGuardCommand_SuBlocked(t *testing.T) {
 // as a substring are NOT blocked (e.g. summary, result, surplus).
 func TestGuardCommand_SuNoFalsePositive(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool := NewExecTool(tmpDir, false) // no workspace restriction for this test
+	tool, err := NewExecTool(tmpDir, false) // no workspace restriction for this test
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
 
 	cases := []string{"echo surplus", "cat summary.txt", "ls result/"}
 	for _, cmd := range cases {
@@ -350,5 +404,117 @@ func TestGuardCommand_SuNoFalsePositive(t *testing.T) {
 		if msg != "" {
 			t.Errorf("Expected %q to NOT be blocked, got: %s", cmd, msg)
 		}
+	}
+}
+
+// TestShellTool_DevNullAllowed verifies that /dev/null redirections are not blocked (issue #964).
+func TestShellTool_DevNullAllowed(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		"echo hello 2>/dev/null",
+		"echo hello >/dev/null",
+		"echo hello > /dev/null",
+		"echo hello 2> /dev/null",
+		"echo hello >/dev/null 2>&1",
+		"find " + tmpDir + " -name '*.go' 2>/dev/null",
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "blocked") {
+			t.Errorf("command should not be blocked: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_BlockDevices verifies that writes to block devices are blocked (issue #965).
+func TestShellTool_BlockDevices(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	blocked := []string{
+		"echo x > /dev/sda",
+		"echo x > /dev/hda",
+		"echo x > /dev/vda",
+		"echo x > /dev/xvda",
+		"echo x > /dev/nvme0n1",
+		"echo x > /dev/mmcblk0",
+		"echo x > /dev/loop0",
+		"echo x > /dev/dm-0",
+		"echo x > /dev/md0",
+		"echo x > /dev/sr0",
+		"echo x > /dev/nbd0",
+	}
+
+	for _, cmd := range blocked {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError {
+			t.Errorf("expected block device write to be blocked: %s", cmd)
+		}
+	}
+}
+
+// TestShellTool_SafePathsInWorkspaceRestriction verifies that safe kernel pseudo-devices
+// are allowed even when workspace restriction is active.
+func TestShellTool_SafePathsInWorkspaceRestriction(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// These reference paths outside workspace but should be allowed via safePaths.
+	commands := []string{
+		"cat /dev/urandom | head -c 16 | od",
+		"echo test > /dev/null",
+		"dd if=/dev/zero bs=1 count=1",
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("safe path should not be blocked by workspace check: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_CustomAllowPatterns verifies that custom allow patterns exempt
+// commands from deny pattern checks.
+func TestShellTool_CustomAllowPatterns(t *testing.T) {
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			Exec: config.ExecConfig{
+				EnableDenyPatterns:  true,
+				CustomAllowPatterns: []string{`\bgit\s+push\s+origin\b`},
+			},
+		},
+	}
+
+	tool, err := NewExecToolWithConfig("", false, cfg)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// "git push origin main" should be allowed by custom allow pattern.
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "git push origin main",
+	})
+	if result.IsError && strings.Contains(result.ForLLM, "blocked") {
+		t.Errorf("custom allow pattern should exempt 'git push origin main', got: %s", result.ForLLM)
+	}
+
+	// "git push upstream main" should still be blocked (does not match allow pattern).
+	result = tool.Execute(context.Background(), map[string]any{
+		"command": "git push upstream main",
+	})
+	if !result.IsError {
+		t.Errorf("'git push upstream main' should still be blocked by deny pattern")
 	}
 }

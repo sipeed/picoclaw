@@ -1,0 +1,22 @@
+{
+  "RT_GROUP_ICON": {
+    "APP": {
+      "0000": "../icon.ico"
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "identity": {
+          "name": "PicoClaw Launcher",
+          "version": "0.0.0.0"
+        },
+        "description": "PicoClaw Launcher - Web-based configuration editor",
+        "minimum-os": "win7",
+        "execution-level": "asInvoker",
+        "dpi-awareness": "system",
+        "use-common-controls-v6": true
+      }
+    }
+  }
+}

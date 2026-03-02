@@ -41,3 +41,13 @@ TASKS.md
 ralph/
 .ralph/
 tasks/
+
+# Editors
+.vscode/
+.idea/
+
+# Added by goreleaser init:
+dist/
+
+# Windows Application Icon/Resource
+*.syso
