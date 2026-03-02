@@ -341,6 +341,11 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+				Exa: ExaConfig{
+					Enabled:    false,
+					APIKey:     "",
+					MaxResults: 5,
+				},
 			},
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5,
