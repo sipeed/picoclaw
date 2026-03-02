@@ -102,16 +102,29 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("chat ID is empty")
 	}
 
-	payload, err := json.Marshal(map[string]string{"text": msg.Content})
-	if err != nil {
-		return fmt.Errorf("failed to marshal feishu content: %w", err)
+	// Construct a Feishu Interactive Card (JSON 2.0) for full Markdown support
+	card := map[string]interface{}{
+		"schema": "2.0",
+		"config": map[string]interface{}{
+			"wide_screen_mode": true,
+		},
+		"body": map[string]interface{}{
+			"elements": []map[string]interface{}{
+				{
+					"tag":     "markdown",
+					"content": msg.Content,
+				},
+			},
+		},
 	}
+	payload, _ := json.Marshal(card)
+	msgType := larkim.MsgTypeInteractive
 
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(msg.ChatID).
-			MsgType(larkim.MsgTypeText).
+			MsgType(msgType).
 			Content(string(payload)).
 			Uuid(fmt.Sprintf("picoclaw-%d", time.Now().UnixNano())).
 			Build()).
@@ -127,7 +140,9 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	}
 
 	logger.DebugCF("feishu", "Feishu message sent", map[string]any{
-		"chat_id": msg.ChatID,
+		"chat_id":  msg.ChatID,
+		"msg_type": msgType,
+		"payload":  string(payload),
 	})
 
 	return nil
@@ -201,6 +216,16 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		return nil
 	}
 
+	// Add emoji reaction for quick feedback (using "THINKING" to indicate processing)
+	if messageID != "" {
+		if _, err := c.addReaction(ctx, messageID, "THINKING"); err != nil {
+			logger.DebugCF("feishu", "Failed to add reaction", map[string]any{
+				"message_id": messageID,
+				"error":      err.Error(),
+			})
+		}
+	}
+
 	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata, senderInfo)
 	return nil
 }
@@ -238,4 +263,38 @@ func extractFeishuMessageContent(message *larkim.EventMessage) string {
 	}
 
 	return *message.Content
+}
+
+// addReaction adds an emoji reaction to a message for quick user feedback.
+// Returns an undo function that removes the reaction, or nil on error.
+func (c *FeishuChannel) addReaction(ctx context.Context, messageID, emojiType string) (func(), error) {
+	req := larkim.NewCreateMessageReactionReqBuilder().
+		MessageId(messageID).
+		Body(larkim.NewCreateMessageReactionReqBodyBuilder().
+			ReactionType(&larkim.Emoji{EmojiType: &emojiType}).
+			Build()).
+		Build()
+
+	resp, err := c.client.Im.V1.MessageReaction.Create(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("feishu add reaction: %w", err)
+	}
+	if !resp.Success() {
+		return nil, fmt.Errorf("feishu add reaction failed (code=%d msg=%s)", resp.Code, resp.Msg)
+	}
+
+	reactionID := stringValue(resp.Data.ReactionId)
+
+	undo := func() {
+		if reactionID == "" {
+			return
+		}
+		delReq := larkim.NewDeleteMessageReactionReqBuilder().
+			MessageId(messageID).
+			ReactionId(reactionID).
+			Build()
+		_, _ = c.client.Im.V1.MessageReaction.Delete(ctx, delReq)
+	}
+
+	return undo, nil
 }
