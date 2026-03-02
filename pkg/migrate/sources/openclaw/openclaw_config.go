@@ -1043,12 +1043,12 @@ func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
 		Web: config.WebToolsConfig{
 			Brave: config.BraveConfig{
 				Enabled:    c.Web.Brave.Enabled,
-				APIKey:     c.Web.Brave.APIKey,
+				APIKeys:    c.Web.Brave.APIKey,
 				MaxResults: c.Web.Brave.MaxResults,
 			},
 			Tavily: config.TavilyConfig{
 				Enabled:    c.Web.Tavily.Enabled,
-				APIKey:     c.Web.Tavily.APIKey,
+				APIKeys:    c.Web.Tavily.APIKey,
 				BaseURL:    c.Web.Tavily.BaseURL,
 				MaxResults: c.Web.Tavily.MaxResults,
 			},
@@ -1058,7 +1058,7 @@ func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
 			},
 			Perplexity: config.PerplexityConfig{
 				Enabled:    c.Web.Perplexity.Enabled,
-				APIKey:     c.Web.Perplexity.APIKey,
+				APIKeys:    c.Web.Perplexity.APIKey,
 				MaxResults: c.Web.Perplexity.MaxResults,
 			},
 			Proxy: c.Web.Proxy,

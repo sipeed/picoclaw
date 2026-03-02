@@ -249,7 +249,7 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 
 // TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
-	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: ""})
+	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: ""})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
+	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: "test-key", BraveMaxResults: 5})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -553,7 +553,7 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	t.Run("perplexity", func(t *testing.T) {
 		tool, err := NewWebSearchTool(WebSearchToolOptions{
 			PerplexityEnabled:    true,
-			PerplexityAPIKey:     "k",
+			PerplexityAPIKeys:    "k",
 			PerplexityMaxResults: 3,
 			Proxy:                "http://127.0.0.1:7890",
 		})
@@ -572,7 +572,7 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	t.Run("brave", func(t *testing.T) {
 		tool, err := NewWebSearchTool(WebSearchToolOptions{
 			BraveEnabled:    true,
-			BraveAPIKey:     "k",
+			BraveAPIKeys:    "k",
 			BraveMaxResults: 3,
 			Proxy:           "http://127.0.0.1:7890",
 		})
@@ -650,7 +650,7 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 
 	tool, err := NewWebSearchTool(WebSearchToolOptions{
 		TavilyEnabled:    true,
-		TavilyAPIKey:     "test-key",
+		TavilyAPIKeys:    "test-key",
 		TavilyBaseURL:    server.URL,
 		TavilyMaxResults: 5,
 	})
@@ -679,5 +679,103 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	// Should mention via Tavily
 	if !strings.Contains(result.ForUser, "via Tavily") {
 		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
+	}
+}
+
+func TestAPIKeyPool(t *testing.T) {
+	pool := NewAPIKeyPool("key1, key2 ,key3")
+	if len(pool.keys) != 3 {
+		t.Fatalf("expected 3 keys, got %d", len(pool.keys))
+	}
+	if pool.keys[0] != "key1" || pool.keys[1] != "key2" || pool.keys[2] != "key3" {
+		t.Fatalf("unexpected keys: %v", pool.keys)
+	}
+
+	// Test Get()
+	if k := pool.Get(); k != "key1" {
+		t.Errorf("expected key1, got %s", k)
+	}
+	if k := pool.Get(); k != "key2" {
+		t.Errorf("expected key2, got %s", k)
+	}
+	if k := pool.Get(); k != "key3" {
+		t.Errorf("expected key3, got %s", k)
+	}
+	if k := pool.Get(); k != "key1" {
+		t.Errorf("expected key1, got %s", k)
+	}
+
+	emptyPool := NewAPIKeyPool("   ")
+	if k := emptyPool.Get(); k != "" {
+		t.Errorf("expected empty string, got %s", k)
+	}
+
+	singlePool := NewAPIKeyPool("single")
+	if k := singlePool.Get(); k != "single" {
+		t.Errorf("expected single, got %s", k)
+	}
+	if k := singlePool.Get(); k != "single" {
+		t.Errorf("expected single, got %s", k)
+	}
+}
+
+func TestWebTool_TavilySearch_Failover(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("failed to decode payload: %v", err)
+		}
+
+		apiKey := payload["api_key"].(string)
+
+		if apiKey == "key1" {
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte("Rate limited"))
+			return
+		}
+
+		if apiKey == "key2" {
+			// Success
+			response := map[string]any{
+				"results": []map[string]any{
+					{
+						"title":   "Success Result",
+						"url":     "https://example.com/success",
+						"content": "Success content",
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		TavilyEnabled:    true,
+		TavilyAPIKeys:    "key1, key2",
+		TavilyBaseURL:    server.URL,
+		TavilyMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	ctx := context.Background()
+	args := map[string]any{
+		"query": "test query",
+	}
+
+	result := tool.Execute(ctx, args)
+
+	if result.IsError {
+		t.Errorf("Expected success, got Error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForUser, "Success Result") {
+		t.Errorf("Expected failover to second key and success result, got: %s", result.ForUser)
 	}
 }
