@@ -544,6 +544,7 @@ func TestConcurrencyUpgradeable(t *testing.T) {
 	// Ensure the internal fs is now a *ConcurrentFS
 	_, isConcurrent := upgradedReadTool.fs.(*ConcurrentFS)
 	assert.True(t, isConcurrent, "Internal fileSystem should be upgraded to *ConcurrentFS")
+}
 // TestWhitelistFs_AllowsMatchingPaths verifies that whitelistFs allows access to
 // paths matching the whitelist patterns while blocking non-matching paths.
 func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
