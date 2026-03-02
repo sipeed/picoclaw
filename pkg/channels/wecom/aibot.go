@@ -903,64 +903,6 @@ func (c *WeComAIBotChannel) generateStreamID() string {
 	return string(b)
 }
 
-// downloadAndDecryptImage downloads and decrypts an encrypted image
-func (c *WeComAIBotChannel) downloadAndDecryptImage(
-	ctx context.Context,
-	imageURL string,
-) ([]byte, error) {
-	// Download image
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download image: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download failed with status: %d", resp.StatusCode)
-	}
-
-	// Limit image download to 20 MB to prevent memory exhaustion
-	const maxImageSize = 20 << 20 // 20 MB
-	encryptedData, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize+1))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read image data: %w", err)
-	}
-	if len(encryptedData) > maxImageSize {
-		return nil, fmt.Errorf("image too large (exceeds %d MB)", maxImageSize>>20)
-	}
-
-	logger.DebugCF("wecom_aibot", "Image downloaded", map[string]any{
-		"size": len(encryptedData),
-	})
-
-	// Decode AES key
-	aesKey, err := decodeWeComAESKey(c.config.EncodingAESKey)
-	if err != nil {
-		return nil, err
-	}
-
-	// Decrypt image (AES-CBC with IV = first 16 bytes of key, PKCS7 padding stripped)
-	decryptedData, err := decryptAESCBC(aesKey, encryptedData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt image: %w", err)
-	}
-
-	logger.DebugCF("wecom_aibot", "Image decrypted", map[string]any{
-		"size": len(decryptedData),
-	})
-
-	return decryptedData, nil
-}
-
 // cleanupLoop periodically cleans up old streaming tasks
 func (c *WeComAIBotChannel) cleanupLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
