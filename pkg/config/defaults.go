@@ -16,12 +16,12 @@ func DefaultConfig() *Config {
 				Model:               "glm-4.7",
 				MaxTokens:           8192,
 				Temperature:         nil, // nil means use provider default
-				MaxToolIterations:   20,
+				MaxToolIterations:   50,
 			},
 		},
 		Bindings: []AgentBinding{},
 		Session: SessionConfig{
-			DMScope: "main",
+			DMScope: "per-channel-peer",
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{

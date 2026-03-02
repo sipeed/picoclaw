@@ -5,7 +5,7 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - go generate ./cmd/picoclaw
+    - go generate ./cmd/picoclaw/...
 
 builds:
   - id: picoclaw
@@ -39,7 +39,9 @@ builds:
 
 dockers_v2:
   - id: picoclaw
-    dockerfile: Dockerfile.goreleaser
+    dockerfile: docker/Dockerfile.goreleaser
+    extra_files:
+      - docker/entrypoint.sh
     ids:
       - picoclaw
     images:
@@ -73,7 +75,6 @@ nfpms:
     package_name: picoclaw
     file_name_template: >-
       {{ .PackageName }}_
-      {{- .Version }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "arm64" }}aarch64
       {{- else if eq .Arch "arm" }}armv{{ .Arm }}
