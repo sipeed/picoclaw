@@ -47,3 +47,7 @@ dist/
 
 # Windows Application Icon/Resource
 *.syso
+
+# cursor
+.cursorindexingignore
+.specstory/
