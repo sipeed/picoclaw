@@ -5,12 +5,28 @@
 
 package config
 
+import (
+	"os"
+	"path/filepath"
+)
+
 // DefaultConfig returns the default configuration for PicoClaw.
 func DefaultConfig() *Config {
+	// Determine the base path for the workspace.
+	// Priority: $PICOCLAW_HOME > ~/.picoclaw
+	var homePath string
+	if picoclawHome := os.Getenv("PICOCLAW_HOME"); picoclawHome != "" {
+		homePath = picoclawHome
+	} else {
+		userHome, _ := os.UserHomeDir()
+		homePath = filepath.Join(userHome, ".picoclaw")
+	}
+	workspacePath := filepath.Join(homePath, "workspace")
+
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:           "~/.picoclaw/workspace",
+				Workspace:           workspacePath,
 				RestrictToWorkspace: true,
 				Provider:            "",
 				Model:               "",
@@ -299,7 +315,8 @@ func DefaultConfig() *Config {
 				Interval: 5,
 			},
 			Web: WebToolsConfig{
-				Proxy: "",
+				Proxy:           "",
+				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",
