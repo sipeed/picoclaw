@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -485,4 +486,37 @@ func TestRootRW_Write(t *testing.T) {
 	content, err = io.ReadAll(f2)
 	assert.NoError(t, err)
 	assert.Equal(t, newData, content)
+}
+
+// TestWhitelistFs_AllowsMatchingPaths verifies that whitelistFs allows access to
+// paths matching the whitelist patterns while blocking non-matching paths.
+func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
+	workspace := t.TempDir()
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "allowed.txt")
+	os.WriteFile(outsideFile, []byte("outside content"), 0o644)
+
+	// Pattern allows access to the outsideDir.
+	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(outsideDir))}
+
+	tool := NewReadFileTool(workspace, true, patterns)
+
+	// Read from whitelisted path should succeed.
+	result := tool.Execute(context.Background(), map[string]any{"path": outsideFile})
+	if result.IsError {
+		t.Errorf("expected whitelisted path to be readable, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "outside content") {
+		t.Errorf("expected file content, got: %s", result.ForLLM)
+	}
+
+	// Read from non-whitelisted path outside workspace should fail.
+	otherDir := t.TempDir()
+	otherFile := filepath.Join(otherDir, "blocked.txt")
+	os.WriteFile(otherFile, []byte("blocked"), 0o644)
+
+	result = tool.Execute(context.Background(), map[string]any{"path": otherFile})
+	if !result.IsError {
+		t.Errorf("expected non-whitelisted path to be blocked, got: %s", result.ForLLM)
+	}
 }
