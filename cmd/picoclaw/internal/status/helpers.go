@@ -17,7 +17,7 @@ func statusCmd() {
 
 	configPath := internal.GetConfigPath()
 
-	fmt.Printf("%s picoclaw Status\n", internal.Logo)
+	fmt.Printf("%s aldo Status\n", internal.Logo)
 	fmt.Printf("Version: %s\n", internal.FormatVersion())
 	build, _ := internal.FormatBuildInfo()
 	if build != "" {

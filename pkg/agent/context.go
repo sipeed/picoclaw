@@ -61,9 +61,9 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 func (cb *ContextBuilder) getIdentity() string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
 
-	return fmt.Sprintf(`# picoclaw 🦞
+	return fmt.Sprintf(`# aldo 🤖
 
-You are picoclaw, a helpful AI assistant.
+You are aldo, a helpful AI assistant.
 
 ## Workspace
 Your workspace is at: %s

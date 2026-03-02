@@ -9,7 +9,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-const Logo = "🦞"
+const Logo = "🤖"
 
 var (
 	version   = "dev"
