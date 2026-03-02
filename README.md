@@ -1107,7 +1107,7 @@ picoclaw agent -m "Hello"
 | Command                        | Description                         |
 | ------------------------------ | ----------------------------------- |
 | `picoclaw onboard`             | Initialize config & workspace       |
-| `picoclaw agent -m "..."`    | Chat with the agent                 |
+| `picoclaw agent -m "..."` | Chat with the agent                 |
 | `picoclaw agent`               | Interactive chat mode               |
 | `picoclaw gateway`             | Start the gateway                   |
 | `picoclaw status`              | Show status                         |
