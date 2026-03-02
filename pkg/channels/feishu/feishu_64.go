@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -282,12 +283,12 @@ func extractFeishuMessageContent(ctx context.Context, c *FeishuChannel, message 
 
 	case larkim.MsgTypePost:
 		if message.MessageId == nil {
-			return "", nil, fmt.Errorf("消息ID为空")
+			return "", nil, fmt.Errorf("message ID is empty")
 		}
 		var err error
 		content, err = extractPostContent(ctx, c, *message.MessageId, *message.Content, &mediaPaths, storeMedia)
 		if err != nil {
-			return "", nil, fmt.Errorf("解析富文本失败: %w", err)
+			return "", nil, fmt.Errorf("failed to parse rich text: %w", err)
 		}
 		if content == "" {
 			content = "[post]"
@@ -298,20 +299,20 @@ func extractFeishuMessageContent(ctx context.Context, c *FeishuChannel, message 
 			ImageKey string `json:"image_key"`
 		}
 		if err := json.Unmarshal([]byte(*message.Content), &imagePayload); err != nil {
-			return "", nil, fmt.Errorf("解析图片消息失败: %w", err)
+			return "", nil, fmt.Errorf("failed to parse image message: %w", err)
 		}
 		if imagePayload.ImageKey == "" {
-			return "", nil, fmt.Errorf("图片key为空")
+			return "", nil, fmt.Errorf("image key is empty")
 		}
 		if message.MessageId == nil {
-			return "", nil, fmt.Errorf("消息ID为空")
+			return "", nil, fmt.Errorf("message ID is empty")
 		}
 		imagePath, err := c.downloadImage(ctx, *message.MessageId, imagePayload.ImageKey)
 		if err != nil {
-			return "", nil, fmt.Errorf("下载图片失败: %w", err)
+			return "", nil, fmt.Errorf("failed to download image: %w", err)
 		}
 		if imagePath == "" {
-			return "", nil, fmt.Errorf("图片下载失败: 下载结果为空")
+			return "", nil, fmt.Errorf("image download failed: download result is empty")
 		}
 		mediaPaths = append(mediaPaths, storeMedia(imagePath, "image.jpg"))
 		content = "[image]"
@@ -321,20 +322,20 @@ func extractFeishuMessageContent(ctx context.Context, c *FeishuChannel, message 
 			FileKey string `json:"file_key"`
 		}
 		if err := json.Unmarshal([]byte(*message.Content), &audioPayload); err != nil {
-			return "", nil, fmt.Errorf("解析语音消息失败: %w", err)
+			return "", nil, fmt.Errorf("failed to parse audio message: %w", err)
 		}
 		if audioPayload.FileKey == "" {
-			return "", nil, fmt.Errorf("语音文件key为空")
+			return "", nil, fmt.Errorf("audio file key is empty")
 		}
 		if message.MessageId == nil {
-			return "", nil, fmt.Errorf("消息ID为空")
+			return "", nil, fmt.Errorf("message ID is empty")
 		}
 		audioPath, err := c.downloadFile(ctx, *message.MessageId, audioPayload.FileKey)
 		if err != nil {
-			return "", nil, fmt.Errorf("下载语音失败: %w", err)
+			return "", nil, fmt.Errorf("failed to download audio: %w", err)
 		}
 		if audioPath == "" {
-			return "", nil, fmt.Errorf("语音下载失败: 下载结果为空")
+			return "", nil, fmt.Errorf("audio download failed: download result is empty")
 		}
 		mediaPaths = append(mediaPaths, storeMedia(audioPath, "audio.amr"))
 		content = "[audio]"
@@ -344,20 +345,20 @@ func extractFeishuMessageContent(ctx context.Context, c *FeishuChannel, message 
 			FileKey string `json:"file_key"`
 		}
 		if err := json.Unmarshal([]byte(*message.Content), &filePayload); err != nil {
-			return "", nil, fmt.Errorf("解析文件消息失败: %w", err)
+			return "", nil, fmt.Errorf("failed to parse file message: %w", err)
 		}
 		if filePayload.FileKey == "" {
-			return "", nil, fmt.Errorf("文件key为空")
+			return "", nil, fmt.Errorf("file key is empty")
 		}
 		if message.MessageId == nil {
-			return "", nil, fmt.Errorf("消息ID为空")
+			return "", nil, fmt.Errorf("message ID is empty")
 		}
 		filePath, err := c.downloadFile(ctx, *message.MessageId, filePayload.FileKey)
 		if err != nil {
-			return "", nil, fmt.Errorf("下载文件失败: %w", err)
+			return "", nil, fmt.Errorf("failed to download file: %w", err)
 		}
 		if filePath == "" {
-			return "", nil, fmt.Errorf("文件下载失败: 下载结果为空")
+			return "", nil, fmt.Errorf("file download failed: download result is empty")
 		}
 		mediaPaths = append(mediaPaths, storeMedia(filePath, "file"))
 		content = "[file]"
@@ -368,32 +369,32 @@ func extractFeishuMessageContent(ctx context.Context, c *FeishuChannel, message 
 			ImageKey string `json:"image_key"`
 		}
 		if err := json.Unmarshal([]byte(*message.Content), &mediaPayload); err != nil {
-			return "", nil, fmt.Errorf("解析视频消息失败: %w", err)
+			return "", nil, fmt.Errorf("failed to parse video message: %w", err)
 		}
 		if mediaPayload.FileKey == "" && mediaPayload.ImageKey == "" {
-			return "", nil, fmt.Errorf("视频文件key和图片key都为空")
+			return "", nil, fmt.Errorf("both video file key and image key are empty")
 		}
 		if message.MessageId == nil {
-			return "", nil, fmt.Errorf("消息ID为空")
+			return "", nil, fmt.Errorf("message ID is empty")
 		}
 		messageId := *message.MessageId
 		if mediaPayload.FileKey != "" {
 			videoPath, err := c.downloadFile(ctx, messageId, mediaPayload.FileKey)
 			if err != nil {
-				return "", nil, fmt.Errorf("下载视频失败: %w", err)
+				return "", nil, fmt.Errorf("failed to download video: %w", err)
 			}
 			if videoPath == "" {
-				return "", nil, fmt.Errorf("视频下载失败: 下载结果为空")
+				return "", nil, fmt.Errorf("video download failed: download result is empty")
 			}
 			mediaPaths = append(mediaPaths, storeMedia(videoPath, "video.mp4"))
 		}
 		if mediaPayload.ImageKey != "" {
 			imagePath, err := c.downloadImage(ctx, messageId, mediaPayload.ImageKey)
 			if err != nil {
-				return "", nil, fmt.Errorf("下载视频封面失败: %w", err)
+				return "", nil, fmt.Errorf("failed to download video cover: %w", err)
 			}
 			if imagePath == "" {
-				return "", nil, fmt.Errorf("视频封面下载失败: 下载结果为空")
+				return "", nil, fmt.Errorf("video cover download failed: download result is empty")
 			}
 			mediaPaths = append(mediaPaths, storeMedia(imagePath, "video_cover.jpg"))
 		}
@@ -413,7 +414,7 @@ func extractPostContent(ctx context.Context, c *FeishuChannel, messageId string,
 	}
 
 	if err := json.Unmarshal([]byte(contentStr), &postPayload); err != nil {
-		return "", fmt.Errorf("解析富文本内容失败: %w", err)
+		return "", fmt.Errorf("failed to parse rich text content: %w", err)
 	}
 
 	var textContent string
@@ -448,7 +449,7 @@ func extractPostContent(ctx context.Context, c *FeishuChannel, messageId string,
 				if imageKey, ok := element["image_key"].(string); ok {
 					imagePath, err := c.downloadImage(ctx, messageId, imageKey)
 					if err != nil {
-						return "", fmt.Errorf("下载富文本图片失败: %w", err)
+						return "", fmt.Errorf("failed to download rich text image: %w", err)
 					}
 					if imagePath != "" {
 						*mediaPaths = append(*mediaPaths, storeMedia(imagePath, "post_image.jpg"))
@@ -460,7 +461,7 @@ func extractPostContent(ctx context.Context, c *FeishuChannel, messageId string,
 					if fileKey != "" {
 						videoPath, err := c.downloadFile(ctx, messageId, fileKey)
 						if err != nil {
-							return "", fmt.Errorf("下载富文本视频失败: %w", err)
+							return "", fmt.Errorf("failed to download rich text video: %w", err)
 						}
 						if videoPath != "" {
 							*mediaPaths = append(*mediaPaths, storeMedia(videoPath, "post_video.mp4"))
@@ -471,7 +472,7 @@ func extractPostContent(ctx context.Context, c *FeishuChannel, messageId string,
 					if imageKey != "" {
 						imagePath, err := c.downloadImage(ctx, messageId, imageKey)
 						if err != nil {
-							return "", fmt.Errorf("下载富文本视频封面失败: %w", err)
+							return "", fmt.Errorf("failed to download rich text video cover: %w", err)
 						}
 						if imagePath != "" {
 							*mediaPaths = append(*mediaPaths, storeMedia(imagePath, "post_video_cover.jpg"))
@@ -501,124 +502,73 @@ func extractPostContent(ctx context.Context, c *FeishuChannel, messageId string,
 	return textContent, nil
 }
 
-func (c *FeishuChannel) downloadImage(ctx context.Context, messageId, imageKey string) (string, error) {
-	if imageKey == "" {
-		return "", fmt.Errorf("图片key为空")
+func (c *FeishuChannel) downloadMessageResource(ctx context.Context, messageId, fileKey, resourceType string) (string, error) {
+	if fileKey == "" {
+		return "", fmt.Errorf("file key is empty")
 	}
 	if messageId == "" {
-		return "", fmt.Errorf("消息ID为空")
+		return "", fmt.Errorf("message ID is empty")
 	}
 
-	logger.InfoCF("feishu", "Starting to download image", map[string]any{
-		"message_id": messageId,
-		"image_key":  imageKey,
+	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
+		return "", fmt.Errorf("failed to create media directory: %w", err)
+	}
+
+	filename := filepath.Join(mediaDir, uuid.New().String()[:8]+"_feishu_"+fileKey)
+
+	logger.InfoCF("feishu", "Starting to download resource", map[string]any{
+		"message_id":    messageId,
+		"file_key":      fileKey,
+		"resource_type": resourceType,
 	})
-
-	ext := ".jpg"
-	filename := filepath.Join("/tmp/picoclaw_media", "feishu_image_"+imageKey+ext)
-
-	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
-		return "", fmt.Errorf("创建媒体目录失败: %w", err)
-	}
 
 	req := larkim.NewGetMessageResourceReqBuilder().
 		MessageId(messageId).
-		FileKey(imageKey).
-		Type("image").
+		FileKey(fileKey).
+		Type(resourceType).
 		Build()
 
 	resp, err := c.client.Im.MessageResource.Get(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("下载图片请求失败: %w", err)
+		return "", fmt.Errorf("failed to request download: %w", err)
 	}
 
 	if !resp.Success() {
-		errorMsg := fmt.Sprintf("下载图片失败 (code=%d msg=%s)", resp.Code, resp.Msg)
+		errorMsg := fmt.Sprintf("download failed (code=%d msg=%s)", resp.Code, resp.Msg)
 
 		switch resp.Code {
 		case 234001:
-			errorMsg = fmt.Sprintf("下载图片失败: 请求参数无效，请检查message_id和image_key是否匹配 (code=%d msg=%s)", resp.Code, resp.Msg)
+			errorMsg = fmt.Sprintf("download failed: invalid request parameters, check if message_id and file_key match (code=%d msg=%s)", resp.Code, resp.Msg)
 		case 234003:
-			errorMsg = fmt.Sprintf("下载图片失败: 该资源不属于当前消息 (code=%d msg=%s)", resp.Code, resp.Msg)
+			errorMsg = fmt.Sprintf("download failed: resource does not belong to this message (code=%d msg=%s)", resp.Code, resp.Msg)
 		case 234004:
-			errorMsg = fmt.Sprintf("下载图片失败: 应用不在消息所在的群组中 (code=%d msg=%s)", resp.Code, resp.Msg)
+			errorMsg = fmt.Sprintf("download failed: app is not in the group where the message is located (code=%d msg=%s)", resp.Code, resp.Msg)
 		case 234005:
-			errorMsg = fmt.Sprintf("下载图片失败: 图片已被删除 (code=%d msg=%s)", resp.Code, resp.Msg)
+			errorMsg = fmt.Sprintf("download failed: resource has been deleted (code=%d msg=%s)", resp.Code, resp.Msg)
 		}
 
 		return "", fmt.Errorf("%s", errorMsg)
 	}
 
 	if err := resp.WriteFile(filename); err != nil {
-		return "", fmt.Errorf("写入图片文件失败: %w", err)
+		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	logger.InfoCF("feishu", "Image downloaded successfully", map[string]any{
-		"message_id": messageId,
-		"image_key":  imageKey,
-		"path":       filename,
+	logger.InfoCF("feishu", "Resource downloaded successfully", map[string]any{
+		"message_id":    messageId,
+		"file_key":      fileKey,
+		"resource_type": resourceType,
+		"path":          filename,
 	})
 
 	return filename, nil
 }
 
+func (c *FeishuChannel) downloadImage(ctx context.Context, messageId, imageKey string) (string, error) {
+	return c.downloadMessageResource(ctx, messageId, imageKey, "image")
+}
+
 func (c *FeishuChannel) downloadFile(ctx context.Context, messageId, fileKey string) (string, error) {
-	if fileKey == "" {
-		return "", fmt.Errorf("文件key为空")
-	}
-	if messageId == "" {
-		return "", fmt.Errorf("消息ID为空")
-	}
-
-	logger.InfoCF("feishu", "Starting to download file", map[string]any{
-		"message_id": messageId,
-		"file_key":   fileKey,
-	})
-
-	ext := ".file"
-	filename := filepath.Join("/tmp/picoclaw_media", "feishu_file_"+fileKey+ext)
-
-	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
-		return "", fmt.Errorf("创建媒体目录失败: %w", err)
-	}
-
-	req := larkim.NewGetMessageResourceReqBuilder().
-		MessageId(messageId).
-		FileKey(fileKey).
-		Type("file").
-		Build()
-
-	resp, err := c.client.Im.MessageResource.Get(ctx, req)
-	if err != nil {
-		return "", fmt.Errorf("下载文件请求失败: %w", err)
-	}
-
-	if !resp.Success() {
-		errorMsg := fmt.Sprintf("下载文件失败 (code=%d msg=%s)", resp.Code, resp.Msg)
-
-		switch resp.Code {
-		case 234001:
-			errorMsg = fmt.Sprintf("下载文件失败: 请求参数无效，请检查message_id和file_key是否匹配 (code=%d msg=%s)", resp.Code, resp.Msg)
-		case 234003:
-			errorMsg = fmt.Sprintf("下载文件失败: 该资源不属于当前消息 (code=%d msg=%s)", resp.Code, resp.Msg)
-		case 234004:
-			errorMsg = fmt.Sprintf("下载文件失败: 应用不在消息所在的群组中 (code=%d msg=%s)", resp.Code, resp.Msg)
-		case 234005:
-			errorMsg = fmt.Sprintf("下载文件失败: 文件已被删除 (code=%d msg=%s)", resp.Code, resp.Msg)
-		}
-
-		return "", fmt.Errorf("%s", errorMsg)
-	}
-
-	if err := resp.WriteFile(filename); err != nil {
-		return "", fmt.Errorf("写入文件失败: %w", err)
-	}
-
-	logger.InfoCF("feishu", "File downloaded successfully", map[string]any{
-		"message_id": messageId,
-		"file_key":   fileKey,
-		"path":       filename,
-	})
-
-	return filename, nil
+	return c.downloadMessageResource(ctx, messageId, fileKey, "file")
 }
