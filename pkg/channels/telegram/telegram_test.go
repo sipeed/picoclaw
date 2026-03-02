@@ -196,6 +196,32 @@ func TestSend_LongMessage_HTMLFallback_StopsOnError(t *testing.T) {
 	assert.Equal(t, 2, len(caller.calls), "should stop after first chunk fails both HTML and plain text")
 }
 
+func TestSend_MarkdownShortButHTMLLong_MultipleCalls(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return successResponse(t), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	// Create markdown whose length is <= 4096 but whose HTML expansion is much longer.
+	// "**a**" (5 chars) becomes "<b>a</b>" (8 chars) in HTML, so repeating it many times
+	// yields HTML that exceeds Telegram's limit while markdown stays within it.
+	markdownContent := strings.Repeat("**a** ", 700) // ~4200 chars markdown, but HTML ~5600+ chars
+	assert.LessOrEqual(t, len([]rune(markdownContent)), 4200, "markdown content should be near Telegram limit")
+
+	htmlExpanded := markdownToTelegramHTML(markdownContent)
+	assert.Greater(t, len([]rune(htmlExpanded)), 4096, "HTML expansion must exceed Telegram limit for this test to be meaningful")
+
+	err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "12345",
+		Content: markdownContent,
+	})
+
+	assert.NoError(t, err)
+	assert.Greater(t, len(caller.calls), 1, "markdown-short but HTML-long message should be split into multiple SendMessage calls")
+}
+
 func TestSend_NotRunning(t *testing.T) {
 	caller := &stubCaller{
 		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
