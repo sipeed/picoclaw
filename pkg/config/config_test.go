@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -210,8 +211,8 @@ func TestDefaultConfig_WorkspacePath(t *testing.T) {
 func TestDefaultConfig_Model(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Agents.Defaults.Model == "" {
-		t.Error("Model should not be empty")
+	if cfg.Agents.Defaults.Model != "" {
+		t.Error("Model should be empty")
 	}
 }
 
@@ -324,6 +325,25 @@ func TestSaveConfig_FilePermissions(t *testing.T) {
 	}
 }
 
+func TestSaveConfig_IncludesEmptyLegacyModelField(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "config.json")
+
+	cfg := DefaultConfig()
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig failed: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+
+	if !strings.Contains(string(data), `"model": ""`) {
+		t.Fatalf("saved config should include empty legacy model field, got: %s", string(data))
+	}
+}
+
 // TestConfig_Complete verifies all config fields are set
 func TestConfig_Complete(t *testing.T) {
 	cfg := DefaultConfig()
@@ -331,8 +351,8 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.Workspace == "" {
 		t.Error("Workspace should not be empty")
 	}
-	if cfg.Agents.Defaults.Model == "" {
-		t.Error("Model should not be empty")
+	if cfg.Agents.Defaults.Model != "" {
+		t.Error("Model should be empty")
 	}
 	if cfg.Agents.Defaults.Temperature != nil {
 		t.Error("Temperature should be nil when not provided")
@@ -411,5 +431,39 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 	}
 	if cfg.Tools.Web.Proxy != "http://127.0.0.1:7890" {
 		t.Fatalf("Tools.Web.Proxy = %q, want %q", cfg.Tools.Web.Proxy, "http://127.0.0.1:7890")
+	}
+}
+
+// TestDefaultConfig_DMScope verifies the default dm_scope value
+func TestDefaultConfig_DMScope(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Session.DMScope != "per-channel-peer" {
+		t.Errorf("Session.DMScope = %q, want 'per-channel-peer'", cfg.Session.DMScope)
+	}
+}
+
+func TestDefaultConfig_WorkspacePath_Default(t *testing.T) {
+	// Unset to ensure we test the default
+	t.Setenv("PICOCLAW_HOME", "")
+	// Set a known home for consistent test results
+	t.Setenv("HOME", "/tmp/home")
+
+	cfg := DefaultConfig()
+	want := filepath.Join("/tmp/home", ".picoclaw", "workspace")
+
+	if cfg.Agents.Defaults.Workspace != want {
+		t.Errorf("Default workspace path = %q, want %q", cfg.Agents.Defaults.Workspace, want)
+	}
+}
+
+func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
+	t.Setenv("PICOCLAW_HOME", "/custom/picoclaw/home")
+
+	cfg := DefaultConfig()
+	want := "/custom/picoclaw/home/workspace"
+
+	if cfg.Agents.Defaults.Workspace != want {
+		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
 	}
 }

@@ -166,41 +166,43 @@ make install
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. 设置 API Key
-cp config/config.example.json config/config.json
-vim config/config.json      # 设置 DISCORD_BOT_TOKEN, API keys 等
+# 2. 首次运行 — 自动生成 docker/data/config.json 后退出
+docker compose -f docker/docker-compose.yml --profile gateway up
+# 容器打印 "First-run setup complete." 后自动停止
 
-# 3. 构建并启动
-docker compose --profile gateway up -d
+# 3. 填写 API Key 等配置
+vim docker/data/config.json   # 设置 provider API key、Bot Token 等
+
+# 4. 正式启动
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
-**Docker 用户**: 默认情况下, Gateway监听 `127.0.0.1`，这使得这个端口未暴露到容器外。如果你需要通过端口映射访问健康检查接口, 请在环境变量中设置 `PICOCLAW_GATEWAY_HOST=0.0.0.0` 或修改 `config.json`。
+> **Docker 用户**: 默认情况下, Gateway 监听 `127.0.0.1`，该端口不会暴露到容器外。如果需要通过端口映射访问健康检查接口，请在环境变量中设置 `PICOCLAW_GATEWAY_HOST=0.0.0.0` 或修改 `config.json`。
 
-# 4. 查看日志
-docker compose logs -f picoclaw-gateway
+```bash
+# 5. 查看日志
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 5. 停止
-docker compose --profile gateway down
-
+# 6. 停止
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Agent 模式 (一次性运行)
 
 ```bash
 # 提问
-docker compose run --rm picoclaw-agent -m "2+2 等于几？"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "2+2 等于几？"
 
 # 交互模式
-docker compose run --rm picoclaw-agent
-
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### 重新构建
+### 更新镜像
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
-
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 快速开始
@@ -234,7 +236,8 @@ picoclaw onboard
     {
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
-      "api_key": "your-api-key"
+      "api_key": "your-api-key",
+      "request_timeout": 300
     },
     {
       "model_name": "claude-sonnet-4.6",
@@ -263,6 +266,7 @@ picoclaw onboard
 ```
 
 > **新功能**: `model_list` 配置格式支持零代码添加 provider。详见[模型配置](#模型配置-model_list)章节。
+> `request_timeout` 为可选项，单位为秒。若省略或设置为 `<= 0`，PicoClaw 使用默认超时（120 秒）。
 
 **3. 获取 API Key**
 
@@ -285,6 +289,8 @@ picoclaw agent -m "2+2 等于几？"
 ## 💬 聊天应用集成 (Chat Apps)
 
 PicoClaw 支持多种聊天平台，使您的 Agent 能够连接到任何地方。
+
+> **注意**: 所有 Webhook 类渠道（LINE、WeCom 等）均挂载在同一个 Gateway HTTP 服务器上（`gateway.host`:`gateway.port`，默认 `127.0.0.1:18790`），无需为每个渠道单独配置端口。注意：飞书（Feishu）使用 WebSocket/SDK 模式，不通过该共享 HTTP webhook 服务器接收消息。
 
 ### 核心渠道
 
@@ -310,6 +316,31 @@ PicoClaw 支持多种聊天平台，使您的 Agent 能够连接到任何地方�
 ## ⚙️ 配置详解
 
 配置文件路径: `~/.picoclaw/config.json`
+
+### 环境变量
+
+你可以使用环境变量覆盖默认路径。这对于便携安装、容器化部署或将 picoclaw 作为系统服务运行非常有用。这些变量是独立的，控制不同的路径。
+
+| 变量              | 描述                                                                                                                             | 默认路径                  |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | 覆盖配置文件的路径。这直接告诉 picoclaw 加载哪个 `config.json`，忽略所有其他位置。 | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | 覆盖 picoclaw 数据根目录。这会更改 `workspace` 和其他数据目录的默认位置。          | `~/.picoclaw`             |
+
+**示例：**
+
+```bash
+# 使用特定的配置文件运行 picoclaw
+# 工作区路径将从该配置文件中读取
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# 在 /opt/picoclaw 中存储所有数据运行 picoclaw
+# 配置将从默认的 ~/.picoclaw/config.json 加载
+# 工作区将在 /opt/picoclaw/workspace 创建
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# 同时使用两者进行完全自定义设置
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### 工作区布局 (Workspace Layout)
 
@@ -550,7 +581,8 @@ Agent 读取 HEARTBEAT.md
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-..."
+  "api_key": "sk-...",
+  "request_timeout": 300
 }
 ```
 

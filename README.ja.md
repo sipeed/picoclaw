@@ -126,39 +126,43 @@ Docker Compose を使えば、ローカルにインストールせずに PicoCla
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. API キーを設定
-cp config/config.example.json config/config.json
-vim config/config.json      # DISCORD_BOT_TOKEN, プロバイダーの API キーを設定
+# 2. 初回起動 — docker/data/config.json を自動生成して終了
+docker compose -f docker/docker-compose.yml --profile gateway up
+# コンテナが "First-run setup complete." を表示して停止します。
 
-# 3. ビルドと起動
-docker compose --profile gateway up -d
+# 3. API キーを設定
+vim docker/data/config.json   # プロバイダー API キー、Bot トークンなどを設定
+
+# 4. 起動
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Docker ユーザー**: デフォルトでは、Gateway は `127.0.0.1` でリッスンしており、ホストからアクセスできません。ヘルスチェックエンドポイントにアクセスしたり、ポートを公開したりする必要がある場合は、環境変数で `PICOCLAW_GATEWAY_HOST=0.0.0.0` を設定するか、`config.json` を更新してください。
 
+```bash
+# 5. ログ確認
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. ログ確認
-docker compose logs -f picoclaw-gateway
-
-# 5. 停止
-docker compose --profile gateway down
+# 6. 停止
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Agent モード（ワンショット）
 
 ```bash
 # 質問を投げる
-docker compose run --rm picoclaw-agent -m "What is 2+2?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "What is 2+2?"
 
 # インタラクティブモード
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### リビルド
+### アップデート
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 クイックスタート（ネイティブ）
@@ -183,6 +187,7 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
@@ -220,6 +225,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **新機能**: `model_list` 形式により、プロバイダーをコード変更なしで追加できます。詳細は [モデル設定](#モデル設定-model_list) を参照してください。
+> `request_timeout` は任意の秒単位設定です。省略または `<= 0` の場合、PicoClaw はデフォルトのタイムアウト（120秒）を使用します。
 
 **3. API キーの取得**
 
@@ -413,8 +421,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -428,10 +434,12 @@ LINE の Webhook には HTTPS が必要です。リバースプロキシまた�
 
 ```bash
 # ngrok の例
-ngrok http 18791
+ngrok http 18790
 ```
 
 LINE Developers Console で Webhook URL を `https://あなたのドメイン/webhook/line` に設定し、**Webhook の利用** を有効にしてください。
+
+> **注意**: LINE の Webhook は共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は Gateway のポートを公開するか、リバースプロキシを設定してください。
 
 **4. 起動**
 
@@ -441,7 +449,7 @@ picoclaw gateway
 
 > グループチャットでは @メンション時のみ応答します。返信は元メッセージを引用する形式です。
 
-> **Docker Compose**: `picoclaw-gateway` サービスに `ports: ["18791:18791"]` を追加して Webhook ポートを公開してください。
+> **Docker Compose**: Gateway HTTP サーバーは共有の `127.0.0.1:18790` で Webhook を提供します。ホストからアクセスするには `picoclaw-gateway` サービスに `ports: ["18790:18790"]` を追加してください。
 
 </details>
 
@@ -472,13 +480,13 @@ PicoClaw は2種類の WeCom 統合をサポートしています：
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
   }
 }
+
+> **注意**: WeCom Bot の Webhook 受信は共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は Gateway のポートを公開するか、HTTPS 用のリバースプロキシを設定してください。
 ```
 
 **クイックセットアップ - WeCom App:**
@@ -492,7 +500,7 @@ PicoClaw は2種類の WeCom 統合をサポートしています：
 **2. メッセージ受信を設定**
 
 * アプリ詳細で "メッセージを受信" → "APIを設定" をクリック
-* URL を `http://your-server:18792/webhook/wecom-app` に設定
+* URL を `http://your-server:18790/webhook/wecom-app` に設定
 * **Token** と **EncodingAESKey** を生成
 
 **3. 設定**
@@ -507,8 +515,6 @@ PicoClaw は2種類の WeCom 統合をサポートしています：
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -522,13 +528,38 @@ PicoClaw は2種類の WeCom 統合をサポートしています：
 picoclaw gateway
 ```
 
-> **注意**: WeCom App は Webhook コールバック用にポート 18792 を開放する必要があります。本番環境では HTTPS 用のリバースプロキシを使用してください。
+> **注意**: WeCom App の Webhook コールバックは共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は HTTPS 用のリバースプロキシを設定してください。
 
 </details>
 
 ## ⚙️ 設定
 
 設定ファイル: `~/.picoclaw/config.json`
+
+### 環境変数
+
+環境変数を使用してデフォルトのパスを上書きできます。これは、ポータブルインストール、コンテナ化されたデプロイメント、または picoclaw をシステムサービスとして実行する場合に便利です。これらの変数は独立しており、異なるパスを制御します。
+
+| 変数              | 説明                                                                                                                             | デフォルトパス            |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | 設定ファイルへのパスを上書きします。これにより、picoclaw は他のすべての場所を無視して、指定された `config.json` をロードします。 | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | picoclaw データのルートディレクトリを上書きします。これにより、`workspace` やその他のデータディレクトリのデフォルトの場所が変更されます。          | `~/.picoclaw`             |
+
+**例：**
+
+```bash
+# 特定の設定ファイルを使用して picoclaw を実行する
+# ワークスペースのパスはその設定ファイル内から読み込まれます
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# すべてのデータを /opt/picoclaw に保存して picoclaw を実行する
+# 設定はデフォルトの ~/.picoclaw/config.json からロードされます
+# ワークスペースは /opt/picoclaw/workspace に作成されます
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# 両方を使用して完全にカスタマイズされたセットアップを行う
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### ワークスペース構成
 
@@ -917,6 +948,17 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
 }
 ```
 > OAuth認証を設定するには、`picoclaw auth login --provider anthropic` を実行してください。
+
+**カスタムプロキシ/API**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### ロードバランシング
 

@@ -3,7 +3,7 @@
 
 <h1>PicoClaw: Trợ lý AI Siêu Nhẹ viết bằng Go</h1>
 
-<h3>Phần cứng $10 · RAM 10MB · Khởi động 1 giây · 皮皮虾，我们走！</h3>
+<h3>Phần cứng $10 · RAM 10MB · Khởi động 1 giây · Nào, xuất phát!</h3>
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
@@ -145,39 +145,43 @@ Bạn cũng có thể chạy PicoClaw bằng Docker Compose mà không cần cà
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Thiết lập API Key
-cp config/config.example.json config/config.json
-vim config/config.json      # Thiết lập DISCORD_BOT_TOKEN, API keys, v.v.
+# 2. Lần chạy đầu tiên — tự tạo docker/data/config.json rồi dừng lại
+docker compose -f docker/docker-compose.yml --profile gateway up
+# Container hiển thị "First-run setup complete." rồi tự dừng.
 
-# 3. Build & Khởi động
-docker compose --profile gateway up -d
+# 3. Thiết lập API Key
+vim docker/data/config.json   # API key của provider, bot token, v.v.
+
+# 4. Khởi động
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Người dùng Docker**: Theo mặc định, Gateway lắng nghe trên `127.0.0.1`, không thể truy cập từ máy chủ. Nếu bạn cần truy cập các endpoint kiểm tra sức khỏe hoặc mở cổng, hãy đặt `PICOCLAW_GATEWAY_HOST=0.0.0.0` trong môi trường của bạn hoặc cập nhật `config.json`.
 
+```bash
+# 5. Xem logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. Xem logs
-docker compose logs -f picoclaw-gateway
-
-# 5. Dừng
-docker compose --profile gateway down
+# 6. Dừng
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Chế độ Agent (chạy một lần)
 
 ```bash
 # Đặt câu hỏi
-docker compose run --rm picoclaw-agent -m "2+2 bằng mấy?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "2+2 bằng mấy?"
 
 # Chế độ tương tác
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Build lại
+### Cập nhật
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Bắt đầu nhanh
@@ -202,6 +206,7 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
@@ -219,6 +224,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **Mới**: Định dạng cấu hình `model_list` cho phép thêm nhà cung cấp mà không cần thay đổi mã nguồn. Xem [Cấu hình Mô hình](#cấu-hình-mô-hình-model_list) để biết chi tiết.
+> `request_timeout` là tùy chọn và dùng đơn vị giây. Nếu bỏ qua hoặc đặt `<= 0`, PicoClaw sẽ dùng timeout mặc định (120s).
 
 **3. Lấy API Key**
 
@@ -416,8 +424,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -431,7 +437,7 @@ LINE yêu cầu HTTPS cho webhook. Sử dụng reverse proxy hoặc tunnel:
 
 ```bash
 # Ví dụ với ngrok
-ngrok http 18791
+ngrok http 18790
 ```
 
 Sau đó cài đặt Webhook URL trong LINE Developers Console thành `https://your-domain/webhook/line` và bật **Use webhook**.
@@ -444,7 +450,7 @@ picoclaw gateway
 
 > Trong nhóm chat, bot chỉ phản hồi khi được @mention. Các câu trả lời sẽ trích dẫn tin nhắn gốc.
 
-> **Docker Compose**: Thêm `ports: ["18791:18791"]` vào service `picoclaw-gateway` để mở port webhook.
+> **Docker Compose**: Nếu bạn cần mở port webhook cục bộ, hãy thêm một rule chuyển tiếp từ port Gateway (mặc định 18790) tới host. Lưu ý: LINE webhook được phục vụ bởi Gateway HTTP chung (mặc định 127.0.0.1:18790).
 
 </details>
 
@@ -475,14 +481,14 @@ Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) đ�
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
   }
 }
 ```
+
+> **Lưu ý:** Các endpoint webhook của WeCom Bot được phục vụ bởi máy chủ Gateway HTTP dùng chung (mặc định 127.0.0.1:18790). Nếu bạn cần truy cập từ bên ngoài, hãy cấu hình reverse proxy hoặc mở cổng Gateway tương ứng.
 
 **Thiết lập Nhanh - WeCom App:**
 
@@ -495,7 +501,7 @@ Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) đ�
 **2. Cấu hình nhận tin nhắn**
 
 * Trong chi tiết ứng dụng, nhấp vào "Nhận Tin nhắn" → "Thiết lập API"
-* Đặt URL thành `http://your-server:18792/webhook/wecom-app`
+* Đặt URL thành `http://your-server:18790/webhook/wecom-app`
 * Tạo **Token** và **EncodingAESKey**
 
 **3. Cấu hình**
@@ -510,8 +516,6 @@ Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) đ�
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -525,7 +529,7 @@ Xem [Hướng dẫn Cấu hình WeCom App](docs/wecom-app-configuration.md) đ�
 picoclaw gateway
 ```
 
-> **Lưu ý**: WeCom App yêu cầu mở cổng 18792 cho callback webhook. Sử dụng proxy ngược cho HTTPS trong môi trường sản xuất.
+> **Lưu ý**: WeCom App callback webhook được phục vụ bởi Gateway HTTP chung (mặc định 127.0.0.1:18790). Sử dụng proxy ngược để cung cấp HTTPS trong môi trường production nếu cần.
 
 </details>
 
@@ -538,6 +542,31 @@ Kết nối PicoClaw với Mạng xã hội Agent chỉ bằng cách gửi một
 ## ⚙️ Cấu hình chi tiết
 
 File cấu hình: `~/.picoclaw/config.json`
+
+### Biến môi trường
+
+Bạn có thể ghi đè các đường dẫn mặc định bằng cách sử dụng các biến môi trường. Điều này hữu ích cho việc cài đặt di động, triển khai container hóa hoặc chạy picoclaw như một dịch vụ hệ thống. Các biến này độc lập và kiểm soát các đường dẫn khác nhau.
+
+| Biến              | Mô tả                                                                                                                             | Đường dẫn mặc định        |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Ghi đè đường dẫn đến file cấu hình. Điều này trực tiếp yêu cầu picoclaw tải file `config.json` nào, bỏ qua tất cả các vị trí khác. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Ghi đè thư mục gốc cho dữ liệu picoclaw. Điều này thay đổi vị trí mặc định của `workspace` và các thư mục dữ liệu khác.          | `~/.picoclaw`             |
+
+**Ví dụ:**
+
+```bash
+# Chạy picoclaw bằng một file cấu hình cụ thể
+# Đường dẫn workspace sẽ được đọc từ trong file cấu hình đó
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Chạy picoclaw với tất cả dữ liệu được lưu trữ trong /opt/picoclaw
+# Cấu hình sẽ được tải từ ~/.picoclaw/config.json mặc định
+# Workspace sẽ được tạo tại /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Sử dụng cả hai để có thiết lập tùy chỉnh hoàn toàn
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### Cấu trúc Workspace
 
@@ -943,6 +972,17 @@ Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa ch�
 }
 ```
 > Chạy `picoclaw auth login --provider anthropic` để thiết lập thông tin xác thực OAuth.
+
+**Proxy/API tùy chỉnh**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### Cân bằng Tải tải
 

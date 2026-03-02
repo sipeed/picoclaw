@@ -164,39 +164,43 @@ Vous pouvez également exécuter PicoClaw avec Docker Compose sans rien installe
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Configurez vos clés API
-cp config/config.example.json config/config.json
-vim config/config.json      # Configurez DISCORD_BOT_TOKEN, clés API, etc.
+# 2. Premier lancement — génère docker/data/config.json puis s'arrête
+docker compose -f docker/docker-compose.yml --profile gateway up
+# Le conteneur affiche "First-run setup complete." puis s'arrête.
 
-# 3. Compiler & Démarrer
-docker compose --profile gateway up -d
+# 3. Configurez vos clés API
+vim docker/data/config.json   # Clés API du fournisseur, tokens de bot, etc.
+
+# 4. Démarrer
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Utilisateurs Docker** : Par défaut, le Gateway écoute sur `127.0.0.1`, ce qui n'est pas accessible depuis l'hôte. Si vous avez besoin d'accéder aux endpoints de santé ou d'exposer des ports, définissez `PICOCLAW_GATEWAY_HOST=0.0.0.0` dans votre environnement ou mettez à jour `config.json`.
 
+```bash
+# 5. Voir les logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. Voir les logs
-docker compose logs -f picoclaw-gateway
-
-# 5. Arrêter
-docker compose --profile gateway down
+# 6. Arrêter
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Mode Agent (exécution unique)
 
 ```bash
 # Poser une question
-docker compose run --rm picoclaw-agent -m "Combien font 2+2 ?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Combien font 2+2 ?"
 
 # Mode interactif
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Recompiler
+### Mettre à jour
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Démarrage Rapide
@@ -221,6 +225,7 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
@@ -251,6 +256,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **Nouveau** : Le format de configuration `model_list` permet d'ajouter des fournisseurs sans modifier le code. Voir [Configuration de Modèle](#configuration-de-modèle-model_list) pour plus de détails.
+> `request_timeout` est optionnel et s'exprime en secondes. S'il est omis ou défini à `<= 0`, PicoClaw utilise le délai d'expiration par défaut (120s).
 
 **3. Obtenir des Clés API**
 
@@ -448,8 +456,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "VOTRE_CHANNEL_SECRET",
       "channel_access_token": "VOTRE_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -462,11 +468,13 @@ picoclaw gateway
 LINE exige HTTPS pour les webhooks. Utilisez un reverse proxy ou un tunnel :
 
 ```bash
-# Exemple avec ngrok
-ngrok http 18791
+# Exemple avec ngrok (tunnel vers le serveur Gateway partagé)
+ngrok http 18790
 ```
 
 Puis configurez l'URL du Webhook dans la LINE Developers Console sur `https://votre-domaine/webhook/line` et activez **Use webhook**.
+
+> **Note** : Le webhook LINE est servi par le serveur Gateway partagé (par défaut `127.0.0.1:18790`). Si vous utilisez ngrok ou un proxy inverse, faites pointer le tunnel vers le port `18790`.
 
 **4. Lancer**
 
@@ -476,7 +484,7 @@ picoclaw gateway
 
 > Dans les discussions de groupe, le bot répond uniquement lorsqu'il est mentionné avec @. Les réponses citent le message original.
 
-> **Docker Compose** : Ajoutez `ports: ["18791:18791"]` au service `picoclaw-gateway` pour exposer le port du webhook.
+> **Docker Compose** : Si vous avez besoin d'exposer le webhook LINE via Docker, mappez le port du Gateway partagé (par défaut `18790`) vers l'hôte, par exemple `ports: ["18790:18790"]`. Notez que le serveur Gateway sert les webhooks de tous les canaux à partir de ce port.
 
 </details>
 
@@ -507,8 +515,6 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
@@ -527,7 +533,7 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
 **2. Configurer la réception des messages**
 
 * Dans les détails de l'application, cliquez sur "Recevoir les Messages" → "Configurer l'API"
-* Définissez l'URL sur `http://your-server:18792/webhook/wecom-app`
+* Définissez l'URL sur `http://your-server:18790/webhook/wecom-app`
 * Générez le **Token** et l'**EncodingAESKey**
 
 **3. Configurer**
@@ -542,8 +548,6 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -557,7 +561,7 @@ Voir le [Guide de Configuration WeCom App](docs/wecom-app-configuration.md) pour
 picoclaw gateway
 ```
 
-> **Note** : WeCom App nécessite l'ouverture du port 18792 pour les callbacks webhook. Utilisez un proxy inverse pour HTTPS en production.
+> **Note** : Les callbacks webhook WeCom App sont servis par le serveur Gateway partagé (par défaut `127.0.0.1:18790`). Assurez-vous que le port `18790` est accessible ou utilisez un proxy inverse HTTPS en production.
 
 </details>
 
@@ -570,6 +574,31 @@ Connectez PicoClaw au Réseau Social d'Agents simplement en envoyant un seul mes
 ## ⚙️ Configuration
 
 Fichier de configuration : `~/.picoclaw/config.json`
+
+### Variables d'Environnement
+
+Vous pouvez remplacer les chemins par défaut à l'aide de variables d'environnement. Ceci est utile pour les installations portables, les déploiements conteneurisés ou l'exécution de picoclaw en tant que service système. Ces variables sont indépendantes et contrôlent différents chemins.
+
+| Variable          | Description                                                                                                                             | Chemin par Défaut         |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Remplace le chemin du fichier de configuration. Cela indique directement à picoclaw quel `config.json` charger, en ignorant tous les autres emplacements. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Remplace le répertoire racine des données picoclaw. Cela modifie l'emplacement par défaut du `workspace` et des autres répertoires de données.          | `~/.picoclaw`             |
+
+**Exemples :**
+
+```bash
+# Exécuter picoclaw en utilisant un fichier de configuration spécifique
+# Le chemin du workspace sera lu à partir de ce fichier de configuration
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Exécuter picoclaw avec toutes ses données stockées dans /opt/picoclaw
+# La configuration sera chargée à partir du fichier par défaut ~/.picoclaw/config.json
+# Le workspace sera créé dans /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Utiliser les deux pour une configuration entièrement personnalisée
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### Structure du Workspace
 
@@ -978,6 +1007,17 @@ Cette conception permet également le **support multi-agent** avec une sélectio
 }
 ```
 > Exécutez `picoclaw auth login --provider anthropic` pour configurer les identifiants OAuth.
+
+**Proxy/API personnalisée**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### Équilibrage de Charge
 

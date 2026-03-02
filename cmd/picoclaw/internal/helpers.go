@@ -19,6 +19,9 @@ var (
 )
 
 func GetConfigPath() string {
+	if configPath := os.Getenv("PICOCLAW_CONFIG"); configPath != "" {
+		return configPath
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
@@ -37,15 +40,13 @@ func FormatVersion() string {
 }
 
 // FormatBuildInfo returns build time and go version info
-func FormatBuildInfo() (build string, goVer string) {
-	if buildTime != "" {
-		build = buildTime
-	}
-	goVer = goVersion
+func FormatBuildInfo() (string, string) {
+	build := buildTime
+	goVer := goVersion
 	if goVer == "" {
 		goVer = runtime.Version()
 	}
-	return
+	return build, goVer
 }
 
 // GetVersion returns the version string

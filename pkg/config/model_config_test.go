@@ -64,7 +64,7 @@ func TestGetModelConfig_RoundRobin(t *testing.T) {
 
 	// Test round-robin distribution
 	results := make(map[string]int)
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		result, err := cfg.GetModelConfig("lb-model")
 		if err != nil {
 			t.Fatalf("GetModelConfig() error = %v", err)
@@ -94,17 +94,15 @@ func TestGetModelConfig_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, goroutines*iterations)
 
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+	for range goroutines {
+		wg.Go(func() {
+			for range iterations {
 				_, err := cfg.GetModelConfig("concurrent-model")
 				if err != nil {
 					errors <- err
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -363,5 +361,40 @@ func TestConfig_ValidateModelList(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestModelConfig_RequestTimeoutParsing(t *testing.T) {
+	jsonData := `{
+		"model_name": "slow-local",
+		"model": "openai/local-model",
+		"api_base": "http://localhost:11434/v1",
+		"request_timeout": 300
+	}`
+
+	var cfg ModelConfig
+	if err := json.Unmarshal([]byte(jsonData), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if cfg.RequestTimeout != 300 {
+		t.Fatalf("RequestTimeout = %d, want 300", cfg.RequestTimeout)
+	}
+}
+
+func TestModelConfig_RequestTimeoutDefaultZeroValue(t *testing.T) {
+	jsonData := `{
+		"model_name": "default-timeout",
+		"model": "openai/gpt-4o",
+		"api_key": "test-key"
+	}`
+
+	var cfg ModelConfig
+	if err := json.Unmarshal([]byte(jsonData), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if cfg.RequestTimeout != 0 {
+		t.Fatalf("RequestTimeout = %d, want 0", cfg.RequestTimeout)
 	}
 }
