@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -88,14 +89,12 @@ type ReadFileTool struct {
 	fs fileSystem
 }
 
-func NewReadFileTool(workspace string, restrict bool) *ReadFileTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
+func NewReadFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ReadFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
 	}
-	return &ReadFileTool{fs: fs}
+	return &ReadFileTool{fs: buildFs(workspace, restrict, patterns)}
 }
 
 func (t *ReadFileTool) Name() string {
@@ -142,14 +141,12 @@ type WriteFileTool struct {
 	fs fileSystem
 }
 
-func NewWriteFileTool(workspace string, restrict bool) *WriteFileTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
+func NewWriteFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *WriteFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
 	}
-	return &WriteFileTool{fs: fs}
+	return &WriteFileTool{fs: buildFs(workspace, restrict, patterns)}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -205,14 +202,12 @@ type ListDirTool struct {
 	fs fileSystem
 }
 
-func NewListDirTool(workspace string, restrict bool) *ListDirTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
+func NewListDirTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ListDirTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
 	}
-	return &ListDirTool{fs: fs}
+	return &ListDirTool{fs: buildFs(workspace, restrict, patterns)}
 }
 
 func (t *ListDirTool) Name() string {
@@ -480,6 +475,69 @@ func (r *sandboxFs) ReadDir(path string) ([]os.DirEntry, error) {
 		return nil
 	})
 	return entries, err
+}
+
+// whitelistFs wraps a sandboxFs and allows access to specific paths outside
+// the workspace when they match any of the provided patterns.
+type whitelistFs struct {
+	sandbox  *sandboxFs
+	host     hostFs
+	patterns []*regexp.Regexp
+}
+
+func (w *whitelistFs) matches(path string) bool {
+	for _, p := range w.patterns {
+		if p.MatchString(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *whitelistFs) ReadFile(path string) ([]byte, error) {
+	if w.matches(path) {
+		return w.host.ReadFile(path)
+	}
+	return w.sandbox.ReadFile(path)
+}
+
+func (w *whitelistFs) WriteFile(path string, data []byte) error {
+	if w.matches(path) {
+		return w.host.WriteFile(path, data)
+	}
+	return w.sandbox.WriteFile(path, data)
+}
+
+func (w *whitelistFs) ReadDir(path string) ([]os.DirEntry, error) {
+	if w.matches(path) {
+		return w.host.ReadDir(path)
+	}
+	return w.sandbox.ReadDir(path)
+}
+
+func (w *whitelistFs) EditFile(path string, editFn func([]byte) ([]byte, error)) error {
+	content, err := w.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read file for editing: %w", err)
+	}
+	newContent, err := editFn(content)
+	if err != nil {
+		return err
+	}
+	return w.WriteFile(path, newContent)
+}
+
+// buildFs returns the appropriate fileSystem implementation based on restriction
+// settings and optional path whitelist patterns.
+func buildFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSystem {
+	if !restrict {
+		return &hostFs{}
+	}
+	sandbox := &sandboxFs{workspace: workspace}
+	if len(patterns) > 0 {
+		return &whitelistFs{sandbox: sandbox, patterns: patterns}
+	}
+	return sandbox
 }
 
 // Helper to get a safe relative path for os.Root usage
