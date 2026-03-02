@@ -168,11 +168,11 @@ clean:
 	@echo "Clean complete"
 
 ## vet: Run go vet for static analysis
-vet:
+vet: generate
 	@$(GO) vet ./...
 
 ## test: Test Go code
-test:
+test: generate
 	@$(GO) test ./...
 
 ## fmt: Format Go code

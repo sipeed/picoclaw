@@ -32,13 +32,13 @@ const (
 type WeComAppChannel struct {
 	*channels.BaseChannel
 	config        config.WeComAppConfig
+	client        *http.Client
 	accessToken   string
 	tokenExpiry   time.Time
 	tokenMu       sync.RWMutex
 	ctx           context.Context
 	cancel        context.CancelFunc
-	processedMsgs map[string]bool // Message deduplication: msg_id -> processed
-	msgMu         sync.RWMutex
+	processedMsgs *MessageDeduplicator
 }
 
 // WeComXMLMessage represents the XML message structure from WeCom
@@ -129,10 +129,21 @@ func NewWeComAppChannel(cfg config.WeComAppConfig, messageBus *bus.MessageBus) (
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
 
+	// Client timeout must be >= the configured ReplyTimeout so the
+	// per-request context deadline is always the effective limit.
+	clientTimeout := 30 * time.Second
+	if d := time.Duration(cfg.ReplyTimeout) * time.Second; d > clientTimeout {
+		clientTimeout = d
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
 	return &WeComAppChannel{
 		BaseChannel:   base,
 		config:        cfg,
-		processedMsgs: make(map[string]bool),
+		client:        &http.Client{Timeout: clientTimeout},
+		ctx:           ctx,
+		cancel:        cancel,
+		processedMsgs: NewMessageDeduplicator(wecomMaxProcessedMessages),
 	}, nil
 }
 
@@ -145,6 +156,10 @@ func (c *WeComAppChannel) Name() string {
 func (c *WeComAppChannel) Start(ctx context.Context) error {
 	logger.InfoC("wecom_app", "Starting WeCom App channel...")
 
+	// Cancel the context created in the constructor to avoid a resource leak.
+	if c.cancel != nil {
+		c.cancel()
+	}
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	// Get initial access token
@@ -299,8 +314,7 @@ func (c *WeComAppChannel) uploadMedia(ctx context.Context, accessToken, mediaTyp
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return "", channels.ClassifyNetError(err)
 	}
@@ -327,18 +341,11 @@ func (c *WeComAppChannel) uploadMedia(ctx context.Context, accessToken, mediaTyp
 	return result.MediaID, nil
 }
 
-// sendImageMessage sends an image message using a media_id.
-func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, userID, mediaID string) error {
+// sendWeComMessage marshals payload and POSTs it to the WeCom message API.
+func (c *WeComAppChannel) sendWeComMessage(ctx context.Context, accessToken string, payload any) error {
 	apiURL := fmt.Sprintf("%s/cgi-bin/message/send?access_token=%s", wecomAPIBase, accessToken)
 
-	msg := WeComImageMessage{
-		ToUser:  userID,
-		MsgType: "image",
-		AgentID: c.config.AgentID,
-	}
-	msg.Image.MediaID = mediaID
-
-	jsonData, err := json.Marshal(msg)
+	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
@@ -357,8 +364,7 @@ func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, use
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return channels.ClassifyNetError(err)
 	}
@@ -384,6 +390,17 @@ func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, use
 	}
 
 	return nil
+}
+
+// sendImageMessage sends an image message using a media_id.
+func (c *WeComAppChannel) sendImageMessage(ctx context.Context, accessToken, userID, mediaID string) error {
+	msg := WeComImageMessage{
+		ToUser:  userID,
+		MsgType: "image",
+		AgentID: c.config.AgentID,
+	}
+	msg.Image.MediaID = mediaID
+	return c.sendWeComMessage(ctx, accessToken, msg)
 }
 
 // WebhookPath returns the path for registering on the shared HTTP server.
@@ -567,8 +584,9 @@ func (c *WeComAppChannel) handleMessageCallback(ctx context.Context, w http.Resp
 		return
 	}
 
-	// Process the message with context
-	go c.processMessage(ctx, msg)
+	// Process the message with the channel's long-lived context (not the HTTP
+	// request context, which is canceled as soon as we return the response).
+	go c.processMessage(c.ctx, msg)
 
 	// Return success response immediately
 	// WeCom App requires response within configured timeout (default 5 seconds)
@@ -588,22 +606,11 @@ func (c *WeComAppChannel) processMessage(ctx context.Context, msg WeComXMLMessag
 	// Message deduplication: Use msg_id to prevent duplicate processing
 	// As per WeCom documentation, use msg_id for deduplication
 	msgID := fmt.Sprintf("%d", msg.MsgId)
-	c.msgMu.Lock()
-	if c.processedMsgs[msgID] {
-		c.msgMu.Unlock()
+	if !c.processedMsgs.MarkMessageProcessed(msgID) {
 		logger.DebugCF("wecom_app", "Skipping duplicate message", map[string]any{
 			"msg_id": msgID,
 		})
 		return
-	}
-	c.processedMsgs[msgID] = true
-	c.msgMu.Unlock()
-
-	// Clean up old messages periodically (keep last 1000)
-	if len(c.processedMsgs) > 1000 {
-		c.msgMu.Lock()
-		c.processedMsgs = make(map[string]bool)
-		c.msgMu.Unlock()
 	}
 
 	senderID := msg.FromUserName
@@ -707,64 +714,15 @@ func (c *WeComAppChannel) getAccessToken() string {
 	return c.accessToken
 }
 
-// sendTextMessage sends a text message to a user
+// sendTextMessage sends a text message to a user.
 func (c *WeComAppChannel) sendTextMessage(ctx context.Context, accessToken, userID, content string) error {
-	apiURL := fmt.Sprintf("%s/cgi-bin/message/send?access_token=%s", wecomAPIBase, accessToken)
-
 	msg := WeComTextMessage{
 		ToUser:  userID,
 		MsgType: "text",
 		AgentID: c.config.AgentID,
 	}
 	msg.Text.Content = content
-
-	jsonData, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
-	}
-
-	// Use configurable timeout (default 5 seconds)
-	timeout := c.config.ReplyTimeout
-	if timeout <= 0 {
-		timeout = 5
-	}
-
-	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return channels.ClassifyNetError(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("wecom_app API error: %s", string(body)))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	var sendResp WeComSendMessageResponse
-	if err := json.Unmarshal(body, &sendResp); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if sendResp.ErrCode != 0 {
-		return fmt.Errorf("API error: %s (code: %d)", sendResp.ErrMsg, sendResp.ErrCode)
-	}
-
-	return nil
+	return c.sendWeComMessage(ctx, accessToken, msg)
 }
 
 // handleHealth handles health check requests

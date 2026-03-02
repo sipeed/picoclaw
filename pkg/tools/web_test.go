@@ -1,14 +1,20 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+const testFetchLimit = int64(10 * 1024 * 1024)
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
@@ -19,7 +25,11 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -32,14 +42,14 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 		t.Errorf("Expected success, got IsError=true: %s", result.ForLLM)
 	}
 
-	// ForUser should contain the fetched content
-	if !strings.Contains(result.ForUser, "Test Page") {
-		t.Errorf("Expected ForUser to contain 'Test Page', got: %s", result.ForUser)
+	// ForLLM should contain the fetched content (full JSON result)
+	if !strings.Contains(result.ForLLM, "Test Page") {
+		t.Errorf("Expected ForLLM to contain 'Test Page', got: %s", result.ForLLM)
 	}
 
-	// ForLLM should contain summary
-	if !strings.Contains(result.ForLLM, "bytes") && !strings.Contains(result.ForLLM, "extractor") {
-		t.Errorf("Expected ForLLM to contain summary, got: %s", result.ForLLM)
+	// ForUser should contain summary
+	if !strings.Contains(result.ForUser, "bytes") && !strings.Contains(result.ForUser, "extractor") {
+		t.Errorf("Expected ForUser to contain summary, got: %s", result.ForUser)
 	}
 }
 
@@ -55,7 +65,11 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -68,15 +82,19 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 		t.Errorf("Expected success, got IsError=true: %s", result.ForLLM)
 	}
 
-	// ForUser should contain formatted JSON
-	if !strings.Contains(result.ForUser, "key") && !strings.Contains(result.ForUser, "value") {
-		t.Errorf("Expected ForUser to contain JSON data, got: %s", result.ForUser)
+	// ForLLM should contain formatted JSON
+	if !strings.Contains(result.ForLLM, "key") && !strings.Contains(result.ForLLM, "value") {
+		t.Errorf("Expected ForLLM to contain JSON data, got: %s", result.ForLLM)
 	}
 }
 
 // TestWebTool_WebFetch_InvalidURL verifies error handling for invalid URL
 func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "not-a-valid-url",
@@ -97,7 +115,11 @@ func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 
 // TestWebTool_WebFetch_UnsupportedScheme verifies error handling for non-http URLs
 func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "ftp://example.com/file.txt",
@@ -118,7 +140,11 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingURL verifies error handling for missing URL
 func TestWebTool_WebFetch_MissingURL(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{}
 
@@ -146,7 +172,11 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(1000) // Limit to 1000 chars
+	tool, err := NewWebFetchTool(1000, testFetchLimit) // Limit to 1000 chars
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -159,9 +189,9 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 		t.Errorf("Expected success, got IsError=true: %s", result.ForLLM)
 	}
 
-	// ForUser should contain truncated content (not the full 20000 chars)
+	// ForLLM should contain truncated content (not the full 20000 chars)
 	resultMap := make(map[string]any)
-	json.Unmarshal([]byte(result.ForUser), &resultMap)
+	json.Unmarshal([]byte(result.ForLLM), &resultMap)
 	if text, ok := resultMap["text"].(string); ok {
 		if len(text) > 1100 { // Allow some margin
 			t.Errorf("Expected content to be truncated to ~1000 chars, got: %d", len(text))
@@ -174,15 +204,64 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}
 }
 
+func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
+	// Create a mock HTTP server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+
+		// Generate a payload intentionally larger than our limit.
+		// Limit: 10 * 1024 * 1024 (10MB). We generate 10MB + 100 bytes of the letter 'A'.
+		largeData := bytes.Repeat([]byte("A"), int(testFetchLimit)+100)
+
+		w.Write(largeData)
+	}))
+	// Ensure the server is shut down at the end of the test
+	defer ts.Close()
+
+	// Initialize the tool
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
+	// Prepare the arguments pointing to the URL of our local mock server
+	args := map[string]any{
+		"url": ts.URL,
+	}
+
+	// Execute the tool
+	ctx := context.Background()
+	result := tool.Execute(ctx, args)
+
+	// Assuming ErrorResult sets the ForLLM field with the error text.
+	if result == nil {
+		t.Fatal("expected a ToolResult, got nil")
+	}
+
+	// Search for the exact error string we set earlier in the Execute method
+	expectedErrorMsg := fmt.Sprintf("size exceeded %d bytes limit", testFetchLimit)
+
+	if !strings.Contains(result.ForLLM, expectedErrorMsg) && !strings.Contains(result.ForUser, expectedErrorMsg) {
+		t.Errorf("test failed: expected error %q, but got: %+v", expectedErrorMsg, result)
+	}
+}
+
 // TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
-	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: ""})
+	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: ""})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	if tool != nil {
 		t.Errorf("Expected nil tool when Brave API key is empty")
 	}
 
 	// Also nil when nothing is enabled
-	tool = NewWebSearchTool(WebSearchToolOptions{})
+	tool, err = NewWebSearchTool(WebSearchToolOptions{})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	if tool != nil {
 		t.Errorf("Expected nil tool when no provider is enabled")
 	}
@@ -190,7 +269,10 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
+	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	ctx := context.Background()
 	args := map[string]any{}
 
@@ -215,7 +297,11 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": server.URL,
@@ -228,14 +314,14 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 		t.Errorf("Expected success, got IsError=true: %s", result.ForLLM)
 	}
 
-	// ForUser should contain extracted text (without script/style tags)
-	if !strings.Contains(result.ForUser, "Title") && !strings.Contains(result.ForUser, "Content") {
-		t.Errorf("Expected ForUser to contain extracted text, got: %s", result.ForUser)
+	// ForLLM should contain extracted text (without script/style tags)
+	if !strings.Contains(result.ForLLM, "Title") && !strings.Contains(result.ForLLM, "Content") {
+		t.Errorf("Expected ForLLM to contain extracted text, got: %s", result.ForLLM)
 	}
 
-	// Should NOT contain script or style tags
-	if strings.Contains(result.ForUser, "<script>") || strings.Contains(result.ForUser, "<style>") {
-		t.Errorf("Expected script/style tags to be removed, got: %s", result.ForUser)
+	// Should NOT contain script or style tags in ForLLM
+	if strings.Contains(result.ForLLM, "<script>") || strings.Contains(result.ForLLM, "<style>") {
+		t.Errorf("Expected script/style tags to be removed, got: %s", result.ForLLM)
 	}
 }
 
@@ -316,7 +402,11 @@ func TestWebFetchTool_extractText(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
-	tool := NewWebFetchTool(50000)
+	tool, err := NewWebFetchTool(50000, testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	ctx := context.Background()
 	args := map[string]any{
 		"url": "https://",
@@ -438,15 +528,22 @@ func TestCreateHTTPClient_ProxyFromEnvironmentWhenConfigEmpty(t *testing.T) {
 }
 
 func TestNewWebFetchToolWithProxy(t *testing.T) {
-	tool := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890")
-	if tool.maxChars != 1024 {
+	tool, err := NewWebFetchToolWithProxy(1024, "http://127.0.0.1:7890", testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	} else if tool.maxChars != 1024 {
 		t.Fatalf("maxChars = %d, want %d", tool.maxChars, 1024)
 	}
+
 	if tool.proxy != "http://127.0.0.1:7890" {
 		t.Fatalf("proxy = %q, want %q", tool.proxy, "http://127.0.0.1:7890")
 	}
 
-	tool = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890")
+	tool, err = NewWebFetchToolWithProxy(0, "http://127.0.0.1:7890", testFetchLimit)
+	if err != nil {
+		logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+	}
+
 	if tool.maxChars != 50000 {
 		t.Fatalf("default maxChars = %d, want %d", tool.maxChars, 50000)
 	}
@@ -454,12 +551,15 @@ func TestNewWebFetchToolWithProxy(t *testing.T) {
 
 func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	t.Run("perplexity", func(t *testing.T) {
-		tool := NewWebSearchTool(WebSearchToolOptions{
+		tool, err := NewWebSearchTool(WebSearchToolOptions{
 			PerplexityEnabled:    true,
 			PerplexityAPIKey:     "k",
 			PerplexityMaxResults: 3,
 			Proxy:                "http://127.0.0.1:7890",
 		})
+		if err != nil {
+			t.Fatalf("NewWebSearchTool() error: %v", err)
+		}
 		p, ok := tool.provider.(*PerplexitySearchProvider)
 		if !ok {
 			t.Fatalf("provider type = %T, want *PerplexitySearchProvider", tool.provider)
@@ -470,12 +570,15 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	})
 
 	t.Run("brave", func(t *testing.T) {
-		tool := NewWebSearchTool(WebSearchToolOptions{
+		tool, err := NewWebSearchTool(WebSearchToolOptions{
 			BraveEnabled:    true,
 			BraveAPIKey:     "k",
 			BraveMaxResults: 3,
 			Proxy:           "http://127.0.0.1:7890",
 		})
+		if err != nil {
+			t.Fatalf("NewWebSearchTool() error: %v", err)
+		}
 		p, ok := tool.provider.(*BraveSearchProvider)
 		if !ok {
 			t.Fatalf("provider type = %T, want *BraveSearchProvider", tool.provider)
@@ -486,11 +589,14 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	})
 
 	t.Run("duckduckgo", func(t *testing.T) {
-		tool := NewWebSearchTool(WebSearchToolOptions{
+		tool, err := NewWebSearchTool(WebSearchToolOptions{
 			DuckDuckGoEnabled:    true,
 			DuckDuckGoMaxResults: 3,
 			Proxy:                "http://127.0.0.1:7890",
 		})
+		if err != nil {
+			t.Fatalf("NewWebSearchTool() error: %v", err)
+		}
 		p, ok := tool.provider.(*DuckDuckGoSearchProvider)
 		if !ok {
 			t.Fatalf("provider type = %T, want *DuckDuckGoSearchProvider", tool.provider)
@@ -542,12 +648,15 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebSearchTool(WebSearchToolOptions{
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
 		TavilyEnabled:    true,
 		TavilyAPIKey:     "test-key",
 		TavilyBaseURL:    server.URL,
 		TavilyMaxResults: 5,
 	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
 
 	ctx := context.Background()
 	args := map[string]any{
