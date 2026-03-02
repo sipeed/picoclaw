@@ -209,6 +209,9 @@ func serializeMessages(messages []Message) []map[string]interface{} {
 			if len(m.ToolCalls) > 0 {
 				msg["tool_calls"] = m.ToolCalls
 			}
+			if m.ReasoningContent != "" {
+				msg["reasoning_content"] = m.ReasoningContent
+			}
 			result = append(result, msg)
 			continue
 		}
@@ -228,10 +231,14 @@ func serializeMessages(messages []Message) []map[string]interface{} {
 				},
 			})
 		}
-		result = append(result, map[string]interface{}{
+		msg := map[string]interface{}{
 			"role":    m.Role,
 			"content": parts,
-		})
+		}
+		if m.ReasoningContent != "" {
+			msg["reasoning_content"] = m.ReasoningContent
+		}
+		result = append(result, msg)
 	}
 	return result
 }
