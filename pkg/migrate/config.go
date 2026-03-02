@@ -71,37 +71,37 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 	cfg := config.DefaultConfig()
 	var warnings []string
 
-	if agents, ok := getMap(data, "agents"); ok {
-		if defaults, ok := getMap(agents, "defaults"); ok {
+	if agents, ok := config.GetMap(data, "agents"); ok {
+		if defaults, ok := config.GetMap(agents, "defaults"); ok {
 			// Prefer model_name, fallback to model for backward compatibility
-			if v, ok := getString(defaults, "model_name"); ok {
+			if v, ok := config.GetString(defaults, "model_name"); ok {
 				cfg.Agents.Defaults.ModelName = v
-			} else if v, ok := getString(defaults, "model"); ok {
+			} else if v, ok := config.GetString(defaults, "model"); ok {
 				cfg.Agents.Defaults.Model = v
 			}
-			if v, ok := getFloat(defaults, "max_tokens"); ok {
+			if v, ok := config.GetFloat(defaults, "max_tokens"); ok {
 				cfg.Agents.Defaults.MaxTokens = int(v)
 			}
-			if v, ok := getFloat(defaults, "temperature"); ok {
+			if v, ok := config.GetFloat(defaults, "temperature"); ok {
 				cfg.Agents.Defaults.Temperature = &v
 			}
-			if v, ok := getFloat(defaults, "max_tool_iterations"); ok {
+			if v, ok := config.GetFloat(defaults, "max_tool_iterations"); ok {
 				cfg.Agents.Defaults.MaxToolIterations = int(v)
 			}
-			if v, ok := getString(defaults, "workspace"); ok {
+			if v, ok := config.GetString(defaults, "workspace"); ok {
 				cfg.Agents.Defaults.Workspace = rewriteWorkspacePath(v)
 			}
 		}
 	}
 
-	if providers, ok := getMap(data, "providers"); ok {
+	if providers, ok := config.GetMap(data, "providers"); ok {
 		for name, val := range providers {
 			pMap, ok := val.(map[string]any)
 			if !ok {
 				continue
 			}
-			apiKey, _ := getString(pMap, "api_key")
-			apiBase, _ := getString(pMap, "api_base")
+			apiKey, _ := config.GetString(pMap, "api_key")
+			apiBase, _ := config.GetString(pMap, "api_base")
 
 			if !supportedProviders[name] {
 				if apiKey != "" || apiBase != "" {
@@ -117,7 +117,7 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 			case "openai":
 				cfg.Providers.OpenAI = config.OpenAIProviderConfig{
 					ProviderConfig: pc,
-					WebSearch:      getBoolOrDefault(pMap, "web_search", true),
+					WebSearch:      config.GetBoolOrDefault(pMap, "web_search", true),
 				}
 			case "openrouter":
 				cfg.Providers.OpenRouter = pc
@@ -133,7 +133,7 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 		}
 	}
 
-	if channels, ok := getMap(data, "channels"); ok {
+	if channels, ok := config.GetMap(data, "channels"); ok {
 		for name, val := range channels {
 			cMap, ok := val.(map[string]any)
 			if !ok {
@@ -143,94 +143,94 @@ func ConvertConfig(data map[string]any) (*config.Config, []string, error) {
 				warnings = append(warnings, fmt.Sprintf("Channel '%s' not supported in PicoClaw, skipping", name))
 				continue
 			}
-			enabled, _ := getBool(cMap, "enabled")
-			allowFrom := getStringSlice(cMap, "allow_from")
+			enabled, _ := config.GetBool(cMap, "enabled")
+			allowFrom := config.GetStringSlice(cMap, "allow_from")
 
 			switch name {
 			case "telegram":
 				cfg.Channels.Telegram.Enabled = enabled
 				cfg.Channels.Telegram.AllowFrom = allowFrom
-				if v, ok := getString(cMap, "token"); ok {
+				if v, ok := config.GetString(cMap, "token"); ok {
 					cfg.Channels.Telegram.Token = v
 				}
 			case "discord":
 				cfg.Channels.Discord.Enabled = enabled
 				cfg.Channels.Discord.AllowFrom = allowFrom
-				if v, ok := getString(cMap, "token"); ok {
+				if v, ok := config.GetString(cMap, "token"); ok {
 					cfg.Channels.Discord.Token = v
 				}
 			case "whatsapp":
 				cfg.Channels.WhatsApp.Enabled = enabled
 				cfg.Channels.WhatsApp.AllowFrom = allowFrom
-				if v, ok := getString(cMap, "bridge_url"); ok {
+				if v, ok := config.GetString(cMap, "bridge_url"); ok {
 					cfg.Channels.WhatsApp.BridgeURL = v
 				}
 			case "feishu":
 				cfg.Channels.Feishu.Enabled = enabled
 				cfg.Channels.Feishu.AllowFrom = allowFrom
-				if v, ok := getString(cMap, "app_id"); ok {
+				if v, ok := config.GetString(cMap, "app_id"); ok {
 					cfg.Channels.Feishu.AppID = v
 				}
-				if v, ok := getString(cMap, "app_secret"); ok {
+				if v, ok := config.GetString(cMap, "app_secret"); ok {
 					cfg.Channels.Feishu.AppSecret = v
 				}
-				if v, ok := getString(cMap, "encrypt_key"); ok {
+				if v, ok := config.GetString(cMap, "encrypt_key"); ok {
 					cfg.Channels.Feishu.EncryptKey = v
 				}
-				if v, ok := getString(cMap, "verification_token"); ok {
+				if v, ok := config.GetString(cMap, "verification_token"); ok {
 					cfg.Channels.Feishu.VerificationToken = v
 				}
 			case "qq":
 				cfg.Channels.QQ.Enabled = enabled
 				cfg.Channels.QQ.AllowFrom = allowFrom
-				if v, ok := getString(cMap, "app_id"); ok {
+				if v, ok := config.GetString(cMap, "app_id"); ok {
 					cfg.Channels.QQ.AppID = v
 				}
-				if v, ok := getString(cMap, "app_secret"); ok {
+				if v, ok := config.GetString(cMap, "app_secret"); ok {
 					cfg.Channels.QQ.AppSecret = v
 				}
 			case "dingtalk":
 				cfg.Channels.DingTalk.Enabled = enabled
 				cfg.Channels.DingTalk.AllowFrom = allowFrom
-				if v, ok := getString(cMap, "client_id"); ok {
+				if v, ok := config.GetString(cMap, "client_id"); ok {
 					cfg.Channels.DingTalk.ClientID = v
 				}
-				if v, ok := getString(cMap, "client_secret"); ok {
+				if v, ok := config.GetString(cMap, "client_secret"); ok {
 					cfg.Channels.DingTalk.ClientSecret = v
 				}
 			case "maixcam":
 				cfg.Channels.MaixCam.Enabled = enabled
 				cfg.Channels.MaixCam.AllowFrom = allowFrom
-				if v, ok := getString(cMap, "host"); ok {
+				if v, ok := config.GetString(cMap, "host"); ok {
 					cfg.Channels.MaixCam.Host = v
 				}
-				if v, ok := getFloat(cMap, "port"); ok {
+				if v, ok := config.GetFloat(cMap, "port"); ok {
 					cfg.Channels.MaixCam.Port = int(v)
 				}
 			}
 		}
 	}
 
-	if gateway, ok := getMap(data, "gateway"); ok {
-		if v, ok := getString(gateway, "host"); ok {
+	if gateway, ok := config.GetMap(data, "gateway"); ok {
+		if v, ok := config.GetString(gateway, "host"); ok {
 			cfg.Gateway.Host = v
 		}
-		if v, ok := getFloat(gateway, "port"); ok {
+		if v, ok := config.GetFloat(gateway, "port"); ok {
 			cfg.Gateway.Port = int(v)
 		}
 	}
 
-	if tools, ok := getMap(data, "tools"); ok {
-		if web, ok := getMap(tools, "web"); ok {
+	if tools, ok := config.GetMap(data, "tools"); ok {
+		if web, ok := config.GetMap(tools, "web"); ok {
 			// Migrate old "search" config to "brave" if api_key is present
-			if search, ok := getMap(web, "search"); ok {
-				if v, ok := getString(search, "api_key"); ok {
+			if search, ok := config.GetMap(web, "search"); ok {
+				if v, ok := config.GetString(search, "api_key"); ok {
 					cfg.Tools.Web.Brave.APIKey = v
 					if v != "" {
 						cfg.Tools.Web.Brave.Enabled = true
 					}
 				}
-				if v, ok := getFloat(search, "max_results"); ok {
+				if v, ok := config.GetFloat(search, "max_results"); ok {
 					cfg.Tools.Web.Brave.MaxResults = int(v)
 					cfg.Tools.Web.DuckDuckGo.MaxResults = int(v)
 				}
@@ -344,65 +344,4 @@ func convertKeysToSnake(data any) any {
 func rewriteWorkspacePath(path string) string {
 	path = strings.Replace(path, ".openclaw", ".picoclaw", 1)
 	return path
-}
-
-func getMap(data map[string]any, key string) (map[string]any, bool) {
-	v, ok := data[key]
-	if !ok {
-		return nil, false
-	}
-	m, ok := v.(map[string]any)
-	return m, ok
-}
-
-func getString(data map[string]any, key string) (string, bool) {
-	v, ok := data[key]
-	if !ok {
-		return "", false
-	}
-	s, ok := v.(string)
-	return s, ok
-}
-
-func getFloat(data map[string]any, key string) (float64, bool) {
-	v, ok := data[key]
-	if !ok {
-		return 0, false
-	}
-	f, ok := v.(float64)
-	return f, ok
-}
-
-func getBool(data map[string]any, key string) (bool, bool) {
-	v, ok := data[key]
-	if !ok {
-		return false, false
-	}
-	b, ok := v.(bool)
-	return b, ok
-}
-
-func getBoolOrDefault(data map[string]any, key string, defaultVal bool) bool {
-	if v, ok := getBool(data, key); ok {
-		return v
-	}
-	return defaultVal
-}
-
-func getStringSlice(data map[string]any, key string) []string {
-	v, ok := data[key]
-	if !ok {
-		return []string{}
-	}
-	arr, ok := v.([]any)
-	if !ok {
-		return []string{}
-	}
-	result := make([]string, 0, len(arr))
-	for _, item := range arr {
-		if s, ok := item.(string); ok {
-			result = append(result, s)
-		}
-	}
-	return result
 }

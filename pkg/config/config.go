@@ -55,7 +55,8 @@ type Config struct {
 	Providers ProvidersConfig `json:"providers,omitempty"`
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
+	Tools     ToolsConfig     `json:"tools,omitempty"`
+	ToolList  []ToolConfig    `json:"tool_list"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 }
@@ -468,7 +469,9 @@ type CronToolConfig struct {
 }
 
 type ToolConfig struct {
-	Enabled bool `json:"enabled" env:"PICOCLAW_TOOLS_ENABLED"` // Default env var, can be overridden per tool
+	Name    string         `json:"name" env:"PICOCLAW_TOOLS_{{.Name}}_ENABLED"` // Used for env var parsing, not required in JSON if using struct field names
+	Enabled bool           `json:"enabled" env:"PICOCLAW_TOOLS_ENABLED"`
+	Extra   map[string]any `json:"extra,omitempty"` // Catch-all for any additional tool-specific configs
 }
 
 type ExecConfig struct {
@@ -564,6 +567,15 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.ModelList = nil
 	}
 
+	// Pre-scan: if user provides legacy "tools" config, we need to clear the default
+	// ToolList so migration can properly convert tools to tool_list
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err == nil {
+		if _, hasTools := raw["tools"]; hasTools {
+			cfg.ToolList = nil
+		}
+	}
+
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
@@ -575,6 +587,12 @@ func LoadConfig(path string) (*Config, error) {
 	// Auto-migrate: if only legacy providers config exists, convert to model_list
 	if len(cfg.ModelList) == 0 && cfg.HasProvidersConfig() {
 		cfg.ModelList = ConvertProvidersToModelList(cfg)
+	}
+
+	// Auto-migrate: convert legacy tools config to tool_list for backward compatibility
+	if len(cfg.ToolList) == 0 && cfg.hasToolsConfig() {
+		cfg.ToolList = ConvertToolsToToolList(cfg.Tools)
+		cfg.Tools = ToolsConfig{}
 	}
 
 	// Validate model_list for uniqueness and required fields
@@ -593,6 +611,109 @@ func SaveConfig(path string, cfg *Config) error {
 
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	return fileutil.WriteFileAtomic(path, data, 0o600)
+}
+
+func (c *Config) hasToolsConfig() bool {
+	return c.Tools.Web.Enabled || c.Tools.Web.Proxy != "" ||
+		c.Tools.Cron.Enabled ||
+		c.Tools.ReadFile.Enabled || c.Tools.WriteFile.Enabled ||
+		c.Tools.EditFile.Enabled || c.Tools.AppendFile.Enabled ||
+		c.Tools.ListDir.Enabled || c.Tools.Exec.Enabled ||
+		c.Tools.FindSkills.Enabled || c.Tools.InstallSkill.Enabled ||
+		c.Tools.Spawn.Enabled || c.Tools.Message.Enabled ||
+		c.Tools.I2C.Enabled || c.Tools.SPI.Enabled ||
+		c.Tools.Skills.MaxConcurrentSearches > 0
+}
+
+func ConvertToolsToToolList(tools ToolsConfig) []ToolConfig {
+	var toolList []ToolConfig
+
+	if tools.Web.Enabled || tools.Web.Proxy != "" || tools.Web.Brave.APIKey != "" ||
+		tools.Web.Tavily.APIKey != "" || tools.Web.DuckDuckGo.Enabled ||
+		tools.Web.Perplexity.APIKey != "" {
+		toolList = append(toolList, ToolConfig{Name: "web", Enabled: true, Extra: map[string]any{
+			"brave":      tools.Web.Brave,
+			"tavily":     tools.Web.Tavily,
+			"duckduckgo": tools.Web.DuckDuckGo,
+			"perplexity": tools.Web.Perplexity,
+			"proxy":      tools.Web.Proxy,
+		}})
+	}
+
+	if tools.Cron.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "cron", Enabled: true, Extra: map[string]any{
+			"exec_timeout_minutes": tools.Cron.ExecTimeoutMinutes,
+		}})
+	}
+
+	if tools.ReadFile.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "read-file", Enabled: true})
+	}
+	if tools.WriteFile.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "write-file", Enabled: true})
+	}
+	if tools.EditFile.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "edit-file", Enabled: true})
+	}
+	if tools.AppendFile.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "append-file", Enabled: true})
+	}
+	if tools.ListDir.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "list-dir", Enabled: true})
+	}
+
+	if tools.Exec.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "exec", Enabled: true, Extra: map[string]any{
+			"enable_deny_patterns": tools.Exec.EnableDenyPatterns,
+			"custom_deny_patterns": tools.Exec.CustomDenyPatterns,
+		}})
+	}
+
+	if tools.FindSkills.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "find-skills", Enabled: true})
+	}
+	if tools.InstallSkill.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "install-skill", Enabled: true})
+	}
+
+	if tools.Spawn.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "spawn", Enabled: true})
+	}
+
+	if tools.Message.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "message", Enabled: true})
+	}
+
+	if tools.I2C.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "i2c", Enabled: true})
+	}
+	if tools.SPI.Enabled {
+		toolList = append(toolList, ToolConfig{Name: "spi", Enabled: true})
+	}
+
+	if tools.Skills.MaxConcurrentSearches > 0 || tools.Skills.SearchCache.MaxSize > 0 {
+		toolList = append(toolList, ToolConfig{Name: "skills", Enabled: true, Extra: map[string]any{
+			"registries":              tools.Skills.Registries,
+			"max_concurrent_searches": tools.Skills.MaxConcurrentSearches,
+			"search_cache":            tools.Skills.SearchCache,
+		}})
+	}
+
+	return toolList
+}
+
+func (c *Config) GetTool(name string) *ToolConfig {
+	for i := range c.ToolList {
+		if c.ToolList[i].Name == name {
+			return &c.ToolList[i]
+		}
+	}
+	return nil
+}
+
+func (c *Config) ToolEnabled(name string) bool {
+	tc := c.GetTool(name)
+	return tc != nil && tc.Enabled
 }
 
 func (c *Config) WorkspacePath() string {

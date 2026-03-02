@@ -94,7 +94,7 @@ func registerSharedTools(
 		}
 
 		// Message tool
-		if cfg.Tools.Message.Enabled {
+		if cfg.ToolEnabled("message") {
 			messageTool := message.NewMessageTool()
 			messageTool.SetSendCallback(func(channel, chatID, content string) error {
 				msgBus.PublishOutbound(bus.OutboundMessage{
@@ -108,7 +108,7 @@ func registerSharedTools(
 		}
 
 		// Spawn tool with allowlist checker
-		if cfg.Tools.Spawn.Enabled {
+		if cfg.ToolEnabled("spawn") {
 			subagentManager := subagent.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
 			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 			spawnTool := subagent.NewSpawnTool(subagentManager)

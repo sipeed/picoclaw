@@ -275,85 +275,117 @@ func DefaultConfig() *Config {
 			Host: "127.0.0.1",
 			Port: 18790,
 		},
-		Tools: ToolsConfig{
-			Web: WebToolsConfig{
-				Proxy: "",
-				Brave: BraveConfig{
-					Enabled:    false,
-					APIKey:     "",
-					MaxResults: 5,
+		ToolList: []ToolConfig{
+			{
+				Name:    "read-file",
+				Enabled: true,
+			},
+			{
+				Name:    "write-file",
+				Enabled: true,
+			},
+			{
+				Name:    "edit-file",
+				Enabled: false,
+			},
+			{
+				Name:    "append-file",
+				Enabled: false,
+			},
+			{
+				Name:    "list-dir",
+				Enabled: false,
+			},
+			{
+				Name:    "exec",
+				Enabled: true,
+				Extra: map[string]any{
+					"enable_deny_patterns": true,
+					"custom_deny_patterns": []string{},
 				},
-				DuckDuckGo: DuckDuckGoConfig{
-					Enabled:    true,
-					MaxResults: 5,
-				},
-				Perplexity: PerplexityConfig{
-					Enabled:    false,
-					APIKey:     "",
-					MaxResults: 5,
-				},
 			},
-			Cron: CronToolConfig{
-				Enabled:            true,
-				ExecTimeoutMinutes: 5,
-			},
-			// File tools - each individually configurable
-			ReadFile: ToolConfig{
+			{
+				Name:    "find-skills",
 				Enabled: true,
 			},
-			WriteFile: ToolConfig{
+			{
+				Name:    "install-skill",
 				Enabled: true,
 			},
-			EditFile: ToolConfig{
-				Enabled: false,
-			},
-			AppendFile: ToolConfig{
-				Enabled: false,
-			},
-			ListDir: ToolConfig{
-				Enabled: false,
-			},
-			// Exec tool
-			Exec: ExecConfig{
-				Enabled:            true,
-				EnableDenyPatterns: true,
-			},
-			// Skills tools
-			FindSkills: ToolConfig{
+			{
+				Name:    "spawn",
 				Enabled: true,
 			},
-			InstallSkill: ToolConfig{
+			{
+				Name:    "message",
 				Enabled: true,
 			},
-			// Subagent tools
-			Spawn: ToolConfig{
+			{
+				Name:    "web",
 				Enabled: true,
-			},
-			// Message tool
-			Message: ToolConfig{
-				Enabled: true,
-			},
-			// Hardware tools
-			I2C: ToolConfig{
-				Enabled: false,
-			},
-			SPI: ToolConfig{
-				Enabled: false,
-			},
-			Skills: SkillsToolsConfig{
-				Registries: SkillsRegistriesConfig{
-					ClawHub: ClawHubRegistryConfig{
-						Enabled: true,
-						BaseURL: "https://clawhub.ai",
+				Extra: map[string]any{
+					"brave": map[string]any{
+						"enabled":     false,
+						"api_key":     "",
+						"max_results": 5,
 					},
+					"tavily": map[string]any{
+						"enabled":     false,
+						"api_key":     "",
+						"max_results": 5,
+					},
+					"duckduckgo": map[string]any{
+						"enabled":     true,
+						"max_results": 5,
+					},
+					"perplexity": map[string]any{
+						"enabled":     false,
+						"api_key":     "",
+						"max_results": 5,
+					},
+					"proxy": "",
 				},
-				MaxConcurrentSearches: 2,
-				SearchCache: SearchCacheConfig{
-					MaxSize:    50,
-					TTLSeconds: 300,
+			},
+			{
+				Name:    "cron",
+				Enabled: true,
+				Extra: map[string]any{
+					"exec_timeout_minutes": 5,
+				},
+			},
+			{
+				Name:    "i2c",
+				Enabled: false,
+			},
+			{
+				Name:    "spi",
+				Enabled: false,
+			},
+			{
+				Name:    "skills",
+				Enabled: true,
+				Extra: map[string]any{
+					"registries": map[string]any{
+						"clawhub": map[string]any{
+							"enabled":           true,
+							"base_url":          "https://clawhub.ai",
+							"search_path":       "/api/v1/search",
+							"skills_path":       "/api/v1/skills",
+							"download_path":     "/api/v1/download",
+							"timeout":           30,
+							"max_zip_size":      10485760,
+							"max_response_size": 5242880,
+						},
+					},
+					"max_concurrent_searches": 2,
+					"search_cache": map[string]any{
+						"max_size":    50,
+						"ttl_seconds": 300,
+					},
 				},
 			},
 		},
+		Tools: ToolsConfig{},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
 			Interval: 30,

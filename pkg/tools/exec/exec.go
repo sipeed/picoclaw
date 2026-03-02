@@ -74,11 +74,11 @@ func NewExecTool(workingDir string, restrict bool) *ExecTool {
 	return NewExecToolWithConfig(workingDir, restrict, nil)
 }
 
-func NewExecToolWithConfig(workingDir string, restrict bool, config *config.Config) *ExecTool {
+func NewExecToolWithConfig(workingDir string, restrict bool, toolConfig *config.ToolConfig) *ExecTool {
 	denyPatterns := make([]*regexp.Regexp, 0)
 
-	if config != nil {
-		execConfig := config.Tools.Exec
+	if toolConfig != nil {
+		execConfig := ParseExecConfig(toolConfig)
 		enableDenyPatterns := execConfig.EnableDenyPatterns
 		if enableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)

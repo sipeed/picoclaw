@@ -71,7 +71,8 @@ func gatewayCmd(debug bool) error {
 		})
 
 	// Setup cron tool and service
-	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
+	cronCfg := cron_tool.GetCronConfig(cfg)
+	execTimeout := time.Duration(cronCfg.ExecTimeoutMinutes) * time.Minute
 	cronService := setupCronTool(
 		agentLoop,
 		msgBus,
@@ -233,8 +234,9 @@ func setupCronTool(
 	cronService := cron.NewCronService(cronStorePath, nil)
 
 	// Create and register CronTool
-	if cfg.Tools.Cron.Enabled {
-		cronTool := cron_tool.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
+	cronToolCfg := cron_tool.GetCronConfig(cfg)
+	if cronToolCfg.Enabled {
+		cronTool := cron_tool.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg.GetTool("cron"))
 		agentLoop.RegisterTool(cronTool)
 
 		// Set the onJob handler

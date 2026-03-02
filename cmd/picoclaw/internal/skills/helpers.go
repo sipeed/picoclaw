@@ -12,6 +12,7 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/sipeed/picoclaw/pkg/tools/find_skills"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -62,10 +63,8 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 
 	fmt.Printf("Installing skill '%s' from %s registry...\n", slug, registryName)
 
-	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
-		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
-	})
+	skillsCfg := find_skills.GetSkillsConfig(cfg)
+	registryMgr := skills.NewRegistryManagerFromConfig(skillsCfg)
 
 	registry := registryMgr.GetRegistry(registryName)
 	if registry == nil {

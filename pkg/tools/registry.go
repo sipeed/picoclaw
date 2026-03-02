@@ -42,78 +42,74 @@ func NewToolRegistry(cfg *config.Config, workspace string, restrict bool) *ToolR
 	}
 
 	// File tools - each with individual configuration
-	if cfg.Tools.ReadFile.Enabled {
+	if cfg.ToolEnabled("read-file") {
 		toolsRegistry.Register(read_file.NewReadFileTool(workspace, restrict))
 	}
-	if cfg.Tools.WriteFile.Enabled {
+	if cfg.ToolEnabled("write-file") {
 		toolsRegistry.Register(write_file.NewWriteFileTool(workspace, restrict))
 	}
-	if cfg.Tools.EditFile.Enabled {
+	if cfg.ToolEnabled("edit-file") {
 		toolsRegistry.Register(edit_file.NewEditFileTool(workspace, restrict))
 	}
-	if cfg.Tools.AppendFile.Enabled {
+	if cfg.ToolEnabled("append-file") {
 		toolsRegistry.Register(append_file.NewAppendFileTool(workspace, restrict))
 	}
-	if cfg.Tools.ListDir.Enabled {
+	if cfg.ToolEnabled("list-dir") {
 		toolsRegistry.Register(list_dir.NewListDirTool(workspace, restrict))
 	}
 
 	// Exec tool
-	if cfg.Tools.Exec.Enabled {
-		toolsRegistry.Register(exec.NewExecToolWithConfig(workspace, restrict, cfg))
+	if cfg.ToolEnabled("exec") {
+		toolsRegistry.Register(exec.NewExecToolWithConfig(workspace, restrict, cfg.GetTool("exec")))
 	}
 
 	// Web tools
+	webCfg := web_search.GetWebToolsConfig(cfg)
 	if searchTool := web_search.NewWebSearchTool(web_search.WebSearchToolOptions{
-		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
-		BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
-		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-		TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
-		TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
-		TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
-		TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
-		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
-		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-		PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
-		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
-		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
-		Proxy:                cfg.Tools.Web.Proxy,
+		BraveAPIKey:          webCfg.Brave.APIKey,
+		BraveMaxResults:      webCfg.Brave.MaxResults,
+		BraveEnabled:         webCfg.Brave.Enabled,
+		TavilyAPIKey:         webCfg.Tavily.APIKey,
+		TavilyBaseURL:        webCfg.Tavily.BaseURL,
+		TavilyMaxResults:     webCfg.Tavily.MaxResults,
+		TavilyEnabled:        webCfg.Tavily.Enabled,
+		DuckDuckGoMaxResults: webCfg.DuckDuckGo.MaxResults,
+		DuckDuckGoEnabled:    webCfg.DuckDuckGo.Enabled,
+		PerplexityAPIKey:     webCfg.Perplexity.APIKey,
+		PerplexityMaxResults: webCfg.Perplexity.MaxResults,
+		PerplexityEnabled:    webCfg.Perplexity.Enabled,
+		Proxy:                webCfg.Proxy,
 	}); searchTool != nil {
 		toolsRegistry.Register(searchTool)
 	}
-	toolsRegistry.Register(web_fetch.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy))
+	toolsRegistry.Register(web_fetch.NewWebFetchToolWithProxy(50000, webCfg.Proxy))
 
 	// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
-	if cfg.Tools.I2C.Enabled {
+	if cfg.ToolEnabled("i2c") {
 		toolsRegistry.Register(i2c.NewI2CTool())
 	}
-	if cfg.Tools.SPI.Enabled {
+	if cfg.ToolEnabled("spi") {
 		toolsRegistry.Register(spi.NewSPITool())
 	}
 
 	// Skill discovery and installation tools
-	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
-		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
-	})
-	searchCache := skills.NewSearchCache(
-		cfg.Tools.Skills.SearchCache.MaxSize,
-		time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
-	)
-	if cfg.Tools.FindSkills.Enabled {
+	skillsCfg := find_skills.GetSkillsConfig(cfg)
+	registryMgr := skills.NewRegistryManagerFromConfig(skillsCfg)
+	searchCache := find_skills.GetSearchCache(cfg)
+	if cfg.ToolEnabled("find-skills") {
 		toolsRegistry.Register(find_skills.NewFindSkillsTool(registryMgr, searchCache))
 	}
-	if cfg.Tools.InstallSkill.Enabled {
+	if cfg.ToolEnabled("install-skill") {
 		toolsRegistry.Register(install_skill.NewInstallSkillTool(registryMgr, workspace))
 	}
 
 	// Message tool
-	if cfg.Tools.Message.Enabled {
+	if cfg.ToolEnabled("message") {
 		toolsRegistry.Register(message.NewMessageTool())
 	}
 
 	// // Spawn tool
-	// if cfg.Tools.Spawn.Enabled {
+	// if cfg.ToolEnabled("spawn") {
 	// 	// Note: Spawn tool is registered separately in agent loop
 	// }
 
