@@ -127,7 +127,7 @@
       "reasoning_channel_id": ""
     },
     "wecom": {
-      "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
+      "_comment": "WeCom Bot - Easier setup, supports group chats",
       "enabled": false,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
@@ -138,7 +138,7 @@
       "reasoning_channel_id": ""
     },
     "wecom_app": {
-      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only. See docs/wecom-app-configuration.md",
+      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only.",
       "enabled": false,
       "corp_id": "YOUR_CORP_ID",
       "corp_secret": "YOUR_CORP_SECRET",
@@ -148,6 +148,16 @@
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
       "reply_timeout": 5,
+      "reasoning_channel_id": ""
+    },
+    "wecom_aibot": {
+      "_comment": "WeCom AI Bot (智能机器人) - Official WeCom AI Bot integration, supports proactive messaging and private chats.",
+      "enabled": false,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "max_steps": 10,
+      "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
       "reasoning_channel_id": ""
     }
   },
