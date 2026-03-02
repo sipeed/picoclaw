@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
@@ -13,6 +14,11 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
+
+// dotenvOnce ensures .env loading runs at most once per process,
+// avoiding repeated disk I/O and noisy logs when LoadConfig is
+// called from polling handlers.
+var dotenvOnce sync.Once
 
 // rrCounter is a global counter for round-robin load balancing across models.
 var rrCounter atomic.Uint64
@@ -601,15 +607,18 @@ func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
 	// Load .env file from config directory (secrets, API keys, etc.)
-	// This runs before reading config.json so .env works even on fresh installs.
-	envFile := filepath.Join(filepath.Dir(path), ".env")
-	if err := godotenv.Load(envFile); err != nil {
-		if os.IsNotExist(err) {
-			log.Printf("[INFO] No .env file found at %s; skipping .env loading", envFile)
-		} else {
-			log.Printf("[WARN] Failed to load .env file from %s: %v", envFile, err)
+	// Guarded by sync.Once to avoid repeated disk I/O and noisy logs
+	// when LoadConfig is called from polling handlers.
+	dotenvOnce.Do(func() {
+		envFile := filepath.Join(filepath.Dir(path), ".env")
+		if err := godotenv.Load(envFile); err != nil {
+			if os.IsNotExist(err) {
+				log.Printf("[INFO] No .env file found at %s; skipping .env loading", envFile)
+			} else {
+				log.Printf("[WARN] Failed to load .env file from %s: %v", envFile, err)
+			}
 		}
-	}
+	})
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -619,8 +628,12 @@ func LoadConfig(path string) (*Config, error) {
 				return nil, err
 			}
 			loadProviderEnvOverrides(cfg)
+			cfg.migrateChannelConfigs()
 			if cfg.HasProvidersConfig() {
 				cfg.ModelList = ConvertProvidersToModelList(cfg)
+			}
+			if err := cfg.ValidateModelList(); err != nil {
+				return nil, err
 			}
 			return cfg, nil
 		}
@@ -830,10 +843,10 @@ func loadProviderEnvOverrides(cfg *Config) {
 		// not standard APIKey/APIBase, so they are not included here.
 	}
 	for _, p := range providers {
-		if v := os.Getenv("PICOCLAW_PROVIDERS_" + p.name + "_API_KEY"); v != "" {
+		if v, ok := os.LookupEnv("PICOCLAW_PROVIDERS_" + p.name + "_API_KEY"); ok {
 			*p.apiKey = v
 		}
-		if v := os.Getenv("PICOCLAW_PROVIDERS_" + p.name + "_API_BASE"); v != "" {
+		if v, ok := os.LookupEnv("PICOCLAW_PROVIDERS_" + p.name + "_API_BASE"); ok {
 			*p.base = v
 		}
 	}
