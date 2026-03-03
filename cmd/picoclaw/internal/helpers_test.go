@@ -95,3 +95,13 @@ func TestGetConfigPath_Windows(t *testing.T) {
 func TestGetVersion(t *testing.T) {
 	assert.Equal(t, "dev", GetVersion())
 }
+
+func TestGetConfigPath_WithEnv(t *testing.T) {
+	t.Setenv("PICOCLAW_CONFIG", "/tmp/custom/config.json")
+	t.Setenv("HOME", "/tmp/home") // Also set home to ensure env is preferred
+
+	got := GetConfigPath()
+	want := "/tmp/custom/config.json"
+
+	assert.Equal(t, want, got)
+}

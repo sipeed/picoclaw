@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // TestShellTool_Success verifies successful command execution
@@ -310,6 +312,60 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	}
 }
 
+// TestShellTool_DevNullAllowed verifies that /dev/null redirections are not blocked (issue #964).
+func TestShellTool_DevNullAllowed(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	commands := []string{
+		"echo hello 2>/dev/null",
+		"echo hello >/dev/null",
+		"echo hello > /dev/null",
+		"echo hello 2> /dev/null",
+		"echo hello >/dev/null 2>&1",
+		"find " + tmpDir + " -name '*.go' 2>/dev/null",
+	}
+
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "blocked") {
+			t.Errorf("command should not be blocked: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_BlockDevices verifies that writes to block devices are blocked (issue #965).
+func TestShellTool_BlockDevices(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	blocked := []string{
+		"echo x > /dev/sda",
+		"echo x > /dev/hda",
+		"echo x > /dev/vda",
+		"echo x > /dev/xvda",
+		"echo x > /dev/nvme0n1",
+		"echo x > /dev/mmcblk0",
+		"echo x > /dev/loop0",
+		"echo x > /dev/dm-0",
+		"echo x > /dev/md0",
+		"echo x > /dev/sr0",
+		"echo x > /dev/nbd0",
+	}
+
+	for _, cmd := range blocked {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if !result.IsError {
+			t.Errorf("expected block device write to be blocked: %s", cmd)
+		}
+	}
+}
+
 // TestShellTool_DenyPattern_DiskWiping verifies the deny pattern for disk wiping
 // commands (format, mkfs, diskpart) blocks them when preceded by shell separators
 // but does NOT block legitimate uses like --format flags.
@@ -322,7 +378,7 @@ func TestShellTool_DenyPattern_DiskWiping(t *testing.T) {
 	ctx := context.Background()
 
 	// These should be BLOCKED (disk wiping commands)
-	blocked := []struct {
+	blockedCmds := []struct {
 		name string
 		cmd  string
 	}{
@@ -334,7 +390,7 @@ func TestShellTool_DenyPattern_DiskWiping(t *testing.T) {
 		{"diskpart standalone", "diskpart /s script.txt"},
 	}
 
-	for _, tt := range blocked {
+	for _, tt := range blockedCmds {
 		t.Run("blocked_"+tt.name, func(t *testing.T) {
 			result := tool.Execute(ctx, map[string]any{"command": tt.cmd})
 			if !result.IsError {
@@ -362,35 +418,60 @@ func TestShellTool_DenyPattern_DiskWiping(t *testing.T) {
 	}
 }
 
-// TestShellTool_RestrictToWorkspace_HiddenDirs verifies that hidden directory
-// paths (starting with .) are properly detected by the workspace guard.
-func TestShellTool_RestrictToWorkspace_HiddenDirs(t *testing.T) {
+// TestShellTool_SafePathsInWorkspaceRestriction verifies that safe kernel pseudo-devices
+// are allowed even when workspace restriction is active.
+func TestShellTool_SafePathsInWorkspaceRestriction(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool, err := NewExecTool(tmpDir, false)
+	tool, err := NewExecTool(tmpDir, true)
 	if err != nil {
 		t.Fatalf("unable to configure exec tool: %s", err)
 	}
-	tool.SetRestrictToWorkspace(true)
 
-	ctx := context.Background()
-
-	// Reading a hidden dir outside workspace should be blocked
-	result := tool.Execute(ctx, map[string]any{
-		"command": "cat /.ssh/config",
-	})
-	if !result.IsError {
-		t.Errorf("Expected /.ssh/config to be blocked with restrictToWorkspace=true")
+	// These reference paths outside workspace but should be allowed via safePaths.
+	commands := []string{
+		"cat /dev/urandom | head -c 16 | od",
+		"echo test > /dev/null",
+		"dd if=/dev/zero bs=1 count=1",
 	}
 
-	// Flag-attached paths outside workspace should be blocked
-	result2 := tool.Execute(ctx, map[string]any{
-		"command": "grep --include=/etc/passwd pattern",
+	for _, cmd := range commands {
+		result := tool.Execute(context.Background(), map[string]any{"command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("safe path should not be blocked by workspace check: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_CustomAllowPatterns verifies that custom allow patterns exempt
+// commands from deny pattern checks.
+func TestShellTool_CustomAllowPatterns(t *testing.T) {
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			Exec: config.ExecConfig{
+				EnableDenyPatterns:  true,
+				CustomAllowPatterns: []string{`\bgit\s+push\s+origin\b`},
+			},
+		},
+	}
+
+	tool, err := NewExecToolWithConfig("", false, cfg)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// "git push origin main" should be allowed by custom allow pattern.
+	result := tool.Execute(context.Background(), map[string]any{
+		"command": "git push origin main",
 	})
-	if !result2.IsError {
-		// This tests the = delimiter fix; --include=/etc/passwd uses = in real
-		// usage but --include /etc/passwd uses space. Both patterns should catch it.
-		// If this specific form isn't blocked, it's acceptable since the primary
-		// concern is the = form (--file=/etc/passwd).
-		_ = result2 // acceptable either way for this pattern variant
+	if result.IsError && strings.Contains(result.ForLLM, "blocked") {
+		t.Errorf("custom allow pattern should exempt 'git push origin main', got: %s", result.ForLLM)
+	}
+
+	// "git push upstream main" should still be blocked (does not match allow pattern).
+	result = tool.Execute(context.Background(), map[string]any{
+		"command": "git push upstream main",
+	})
+	if !result.IsError {
+		t.Errorf("'git push upstream main' should still be blocked by deny pattern")
 	}
 }

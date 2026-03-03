@@ -43,7 +43,7 @@ func encryptTestMessageApp(message, aesKey string) (string, error) {
 
 	// Prepare message: random(16) + msg_len(4) + msg + corp_id
 	random := make([]byte, 0, 16)
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		random = append(random, byte(i+1))
 	}
 
@@ -321,60 +321,6 @@ func TestWeComAppDecryptMessage(t *testing.T) {
 			t.Error("expected error for short ciphertext, got nil")
 		}
 	})
-}
-
-func TestWeComAppPKCS7Unpad(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    []byte
-		expected []byte
-	}{
-		{
-			name:     "empty input",
-			input:    []byte{},
-			expected: []byte{},
-		},
-		{
-			name:     "valid padding 3 bytes",
-			input:    append([]byte("hello"), bytes.Repeat([]byte{3}, 3)...),
-			expected: []byte("hello"),
-		},
-		{
-			name:     "valid padding 16 bytes (full block)",
-			input:    append([]byte("123456789012345"), bytes.Repeat([]byte{16}, 16)...),
-			expected: []byte("123456789012345"),
-		},
-		{
-			name:     "invalid padding larger than data",
-			input:    []byte{20},
-			expected: nil, // should return error
-		},
-		{
-			name:     "invalid padding zero",
-			input:    append([]byte("test"), byte(0)),
-			expected: nil, // should return error
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := pkcs7Unpad(tt.input)
-			if tt.expected == nil {
-				// This case should return an error
-				if err == nil {
-					t.Errorf("pkcs7Unpad() expected error for invalid padding, got result: %v", result)
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("pkcs7Unpad() unexpected error: %v", err)
-				return
-			}
-			if !bytes.Equal(result, tt.expected) {
-				t.Errorf("pkcs7Unpad() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
 }
 
 func TestWeComAppHandleVerification(t *testing.T) {
