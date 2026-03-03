@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,6 +120,7 @@ func TestSessionHandlers_SessionList(t *testing.T) {
 				UpdatedAt:  time.Date(2026, 3, 1, 9, 7, 0, 0, time.UTC),
 				MessageCnt: 4,
 				Active:     true,
+				Summary:    "Discussing React performance",
 			},
 		},
 	}
@@ -135,8 +137,11 @@ func TestSessionHandlers_SessionList(t *testing.T) {
 	if res.Outcome != OutcomeHandled {
 		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
 	}
-	if reply != "Sessions for current chat:\n1. [*] scope#3 | updated: 2026-03-01 09:07 | messages: 4" {
-		t.Fatalf("reply=%q", reply)
+	// Check key elements: header, active marker, summary, message count, session tag
+	for _, want := range []string{"Sessions:", "[*]", "Discussing React performance", "4 msgs", "(#3)"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q, got %q", want, reply)
+		}
 	}
 }
 

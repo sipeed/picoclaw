@@ -51,6 +51,7 @@ type SessionMeta struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 	MessageCnt int       `json:"message_cnt"`
 	Active     bool      `json:"active"`
+	Summary    string    `json:"summary,omitempty"`
 }
 
 type SessionManager struct {
@@ -740,6 +741,7 @@ func (sm *SessionManager) buildSessionMetaListLocked(scope *scopeIndex) []Sessio
 		if session, ok := sm.sessions[key]; ok {
 			meta.UpdatedAt = session.Updated
 			meta.MessageCnt = len(session.Messages)
+			meta.Summary = session.Summary
 		}
 		list = append(list, meta)
 	}
