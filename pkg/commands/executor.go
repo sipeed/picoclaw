@@ -2,14 +2,13 @@ package commands
 
 import (
 	"context"
+	"fmt"
 )
 
 type Outcome int
 
 const (
-	// OutcomePassthrough means this input should continue through normal agent flow.
 	OutcomePassthrough Outcome = iota
-	// OutcomeHandled means a command handler executed (with or without handler error).
 	OutcomeHandled
 )
 
@@ -41,36 +40,47 @@ func (e *Executor) Execute(ctx context.Context, req Request) ExecuteResult {
 		return ExecuteResult{Outcome: OutcomePassthrough, Command: cmdName}
 	}
 
-	passthroughCommand := ""
+	def, found := e.reg.Lookup(cmdName)
+	if !found {
+		return ExecuteResult{Outcome: OutcomePassthrough, Command: cmdName}
+	}
 
-	for _, def := range e.reg.Definitions() {
-		if !matchesCommand(def, cmdName) {
-			continue
-		}
-		if passthroughCommand == "" {
-			passthroughCommand = def.Name
-		}
+	return e.executeDefinition(ctx, req, def)
+}
+
+func (e *Executor) executeDefinition(ctx context.Context, req Request, def Definition) ExecuteResult {
+	// Simple command — no sub-commands
+	if len(def.SubCommands) == 0 {
 		if def.Handler == nil {
-			continue
+			return ExecuteResult{Outcome: OutcomePassthrough, Command: def.Name}
 		}
 		err := def.Handler(ctx, req)
 		return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name, Err: err}
 	}
-	if passthroughCommand != "" {
-		return ExecuteResult{Outcome: OutcomePassthrough, Command: passthroughCommand}
+
+	// Sub-command routing
+	subName := secondToken(req.Text)
+	if subName == "" {
+		if req.Reply != nil {
+			_ = req.Reply("Usage: " + def.EffectiveUsage())
+		}
+		return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name}
 	}
 
-	return ExecuteResult{Outcome: OutcomePassthrough, Command: cmdName}
-}
-
-func matchesCommand(def Definition, cmdName string) bool {
-	if normalizeCommandName(def.Name) == cmdName {
-		return true
-	}
-	for _, alias := range def.Aliases {
-		if normalizeCommandName(alias) == cmdName {
-			return true
+	normalized := normalizeCommandName(subName)
+	for _, sc := range def.SubCommands {
+		if normalizeCommandName(sc.Name) == normalized {
+			if sc.Handler == nil {
+				return ExecuteResult{Outcome: OutcomePassthrough, Command: def.Name}
+			}
+			err := sc.Handler(ctx, req)
+			return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name, Err: err}
 		}
 	}
-	return false
+
+	// Unknown sub-command
+	if req.Reply != nil {
+		_ = req.Reply(fmt.Sprintf("Unknown parameter: %s. Usage: %s", subName, def.EffectiveUsage()))
+	}
+	return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name}
 }
