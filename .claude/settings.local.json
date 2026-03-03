@@ -30,9 +30,10 @@
       "Bash(gh pr:*)",
       "Bash(gofmt:*)",
       "Bash(go vet:*)",
-      "Bash(gofumpt:*)",
-      "Bash(git merge:*)",
-      "Bash(git checkout:*)"
+      "Bash(golangci-lint run:*)",
+      "WebFetch(domain:core.telegram.org)",
+      "Bash(go doc:*)",
+      "Bash(go install:*)"
     ]
   },
   "remote": {

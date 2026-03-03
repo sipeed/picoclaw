@@ -240,15 +240,17 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	WebAppURL          string              `json:"web_app_url"             env:"PICOCLAW_CHANNELS_TELEGRAM_WEB_APP_URL"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled"                       env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
+	Token              string              `json:"token"                         env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
+	Proxy              string              `json:"proxy"                         env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	WebAppURL          string              `json:"web_app_url"                   env:"PICOCLAW_CHANNELS_TELEGRAM_WEB_APP_URL"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"                    env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
+	SubagentThreadID   int                 `json:"subagent_thread_id,omitempty"  env:"PICOCLAW_CHANNELS_TELEGRAM_SUBAGENT_THREAD_ID"`
+	HeartbeatThreadID  int                 `json:"heartbeat_thread_id,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_HEARTBEAT_THREAD_ID"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"          env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
 }
 
 type FeishuConfig struct {
