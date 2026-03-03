@@ -639,10 +639,15 @@ func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, cha
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
 	}
+	heartbeatThreadID := 0
+	if al.cfg != nil {
+		heartbeatThreadID = al.cfg.Channels.Telegram.HeartbeatThreadID
+	}
+	heartbeatChatID := al.withTelegramThread(channel, chatID, heartbeatThreadID)
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      "heartbeat",
 		Channel:         channel,
-		ChatID:          chatID,
+		ChatID:          heartbeatChatID,
 		UserMessage:     content,
 		DefaultResponse: defaultResponse,
 		EnableSummary:   false,
@@ -848,9 +853,14 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		label = label[idx+1:]
 	}
 	notification := formatSubagentCompletion(label, msg.Metadata)
+	subagentThreadID := 0
+	if al.cfg != nil {
+		subagentThreadID = al.cfg.Channels.Telegram.SubagentThreadID
+	}
+	notifyChatID := al.withTelegramThread(originChannel, originChatID, subagentThreadID)
 	_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 		Channel:         originChannel,
-		ChatID:          originChatID,
+		ChatID:          notifyChatID,
 		Content:         notification,
 		SkipPlaceholder: true,
 	})
@@ -913,6 +923,22 @@ func formatDurationMs(ms int64) string {
 		return fmt.Sprintf("%dm", mins)
 	}
 	return fmt.Sprintf("%dm%ds", mins, sec)
+}
+
+func (al *AgentLoop) withTelegramThread(channel, chatID string, threadID int) string {
+	if channel != "telegram" || threadID <= 0 || chatID == "" {
+		return chatID
+	}
+
+	baseChatID := chatID
+	if slash := strings.Index(baseChatID, "/"); slash >= 0 {
+		baseChatID = baseChatID[:slash]
+	}
+	if baseChatID == "" {
+		return chatID
+	}
+
+	return fmt.Sprintf("%s/%d", baseChatID, threadID)
 }
 
 // acquireSessionLock gets or creates a per-session semaphore and acquires it.
