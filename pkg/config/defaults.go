@@ -137,6 +137,16 @@ func DefaultConfig() *Config {
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
 			},
+			WeComAIBot: WeComAIBotConfig{
+				Enabled:        false,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookPath:    "/webhook/wecom-aibot",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
+				MaxSteps:       10,
+				WelcomeMessage: "Hello! I'm your AI assistant. How can I help you today?",
+			},
 			Pico: PicoConfig{
 				Enabled:        false,
 				Token:          "",
@@ -350,6 +360,10 @@ func DefaultConfig() *Config {
 					MaxSize:    50,
 					TTLSeconds: 300,
 				},
+			},
+			MCP: MCPConfig{
+				Enabled: false,
+				Servers: map[string]MCPServerConfig{},
 			},
 		},
 		Heartbeat: HeartbeatConfig{
