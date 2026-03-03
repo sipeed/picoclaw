@@ -82,6 +82,87 @@
 
 <img src="assets/compare.jpg" alt="PicoClaw" width="512">
 
+## 🧠 Our Thinking
+
+PicoClaw isn't just small — it **thinks differently**. While most AI agent frameworks treat the LLM as a black box that swallows everything (all tools, all history, all context), PicoClaw introduces a structured **Runtime Loop** that makes every token count.
+
+### Three-Phase Runtime Loop
+
+Every user interaction flows through three distinct phases:
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   Phase 1    │ →  │   Phase 2    │ →  │   Phase 3    │
+│   Analyse    │    │  ExecuteLLM  │    │   Reflect    │
+│  (Orchestrate)    │  (Execute)   │    │  (Learn)     │
+└──────────────┘    └──────────────┘    └──────────────┘
+```
+
+- **Phase 1 — Analyse**: A lightweight LLM call (can use a cheaper/faster model) that understands intent, assigns semantic tags, and prepares the optimal context. No tools, no history bloat — just pure comprehension.
+- **Phase 2 — ExecuteLLM**: The main LLM iterates with only the tools and context that Phase 1 deemed relevant. Fewer tools = less confusion = better decisions.
+- **Phase 3 — Reflect**: Synchronous scoring + context update (< 2ms) before the user sees the reply, followed by async persistence. The agent learns from every interaction without adding latency.
+
+### Turn Scoring & Instant Memory
+
+Every Turn gets a **score** based on tool activity, intent weight, content density, and explicit user markers. This score drives a novel context selection algorithm:
+
+```
+Instant Memory = { high-score Turns }              // always kept, unconditionally
+               ∪ { tag-matched Turns, score > 0 }  // relevant old Turns "resurrected"
+               ∪ { recent M Turns }                 // continuity baseline
+               → sorted by time, truncated to capacity
+```
+
+**No Turn is ever deleted.** Low-score Turns are simply excluded from context — but when a future Phase 1 produces matching tags, they can be recalled. It's like human memory: you don't forget things, you just can't always access them until something triggers the recall.
+
+### Tag-Gated Tool Loading
+
+Instead of feeding 20+ tool definitions to the LLM every request (wasting ~3,000 tokens per iteration), PicoClaw categorizes tools:
+
+| Layer | Tools | Loading |
+|-------|-------|---------|
+| **always-on** | `read_file`, `write_file`, `shell`, etc. | Always present |
+| **tag-gated** | MCP servers, Skills, `web_search`, `cron` | Only when Phase 1 tags match |
+
+As MCP servers and Skills grow, the savings compound exponentially — and the LLM makes better decisions with a focused toolset.
+
+### KV Cache-Friendly Message Ordering
+
+We obsess over **prefix stability** to maximize KV cache hits across providers (Gemini implicit cache, Anthropic `cache_control`, OpenAI prompt caching):
+
+```
+[system_prompt]              ← always cached ✅
+[long_term_memory by tags]   ← stable when same tags ✅
+[high-score Turns, ASC by ID] ← fixed positions, append-only ✅
+[tag-matched Turns]          ← may vary
+[recent Turns]               ← rolling window
+[current user message]       ← always new
+```
+
+High-score Turns are **pinned** right after long-term memory in ascending order. New Turns only append — they never shift existing content. This maximizes the cache-hit prefix length, and the cost difference is dramatic at scale.
+
+### Three-Layer Memory Hierarchy
+
+| Layer | Lifecycle | Source | Consumer |
+|-------|-----------|--------|----------|
+| **Instant Memory** | Assembled per-Turn | Turn Store (score + tag filter) | Phase 2 (ExecuteLLM) |
+| **Active Context** | Rolling update per `channel:chatID` | Phase 3 sync update | Phase 1 (Analyse) |
+| **Long-Term Memory** | Persistent | MemoryDigest batch worker | Phase 1 (via tag retrieval) |
+
+Each layer serves a different phase. No overlap, no waste. Active Context (current files, recent errors) helps Phase 1 understand terse messages like "fix it". Instant Memory gives Phase 2 the right historical context. Long-term memory accumulates wisdom across sessions.
+
+### Why This Matters
+
+Traditional agent loops dump everything into one LLM call and hope for the best. PicoClaw's approach means:
+
+- 📉 **~60% fewer wasted tokens** from irrelevant tools and stale context
+- 🎯 **Higher decision quality** — focused toolsets reduce LLM confusion
+- ⚡ **Sub-2ms overhead** for scoring and context updates (zero perceived latency)
+- 🧲 **Associative recall** — old conversations resurface when relevant, like human memory
+- 💰 **Multi-model cost optimization** — use cheap models for analysis, strong models for execution
+
+> *"The best token is the one you never send."*
+
 ## 🦾 Demonstration
 
 ### 🛠️ Standard Assistant Workflows
