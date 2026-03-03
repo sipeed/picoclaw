@@ -1,0 +1,20 @@
+services:
+  picoclaw-init:
+    image: docker.io/sipeed/picoclaw:latest
+    container_name: picoclaw-agent
+    volumes:
+      - /apps/picoclaw/:/root/.picoclaw
+    entrypoint: ["sh", "-c", "ls /root/.picoclaw/config.json || picoclaw onboard"]
+    restart: "no"
+
+  picoclaw-gateway:
+    image: docker.io/sipeed/picoclaw:latest
+    container_name: picoclaw-gateway
+    restart: unless-stopped
+    volumes:
+      - /apps/picoclaw/:/root/.picoclaw
+    ports:
+      - "${HOST_PORT:-18790}:18790"
+    depends_on:
+      picoclaw-init:
+        condition: service_completed_successfully
