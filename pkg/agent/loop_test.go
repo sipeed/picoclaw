@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -807,4 +809,125 @@ func TestHandleReasoning(t *testing.T) {
 			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
 		}
 	})
+}
+
+func TestMimeFromExtension(t *testing.T) {
+	tests := []struct {
+		ext  string
+		want string
+	}{
+		{".jpg", "image/jpeg"},
+		{".JPEG", "image/jpeg"},
+		{".png", "image/png"},
+		{".gif", "image/gif"},
+		{".webp", "image/webp"},
+		{".bmp", "image/bmp"},
+		{".txt", ""},
+		{".pdf", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := mimeFromExtension(tt.ext); got != tt.want {
+			t.Errorf("mimeFromExtension(%q) = %q, want %q", tt.ext, got, tt.want)
+		}
+	}
+}
+
+func TestResolveMediaRefs_NilStore(t *testing.T) {
+	msgs := []providers.Message{{Role: "user", Content: "hi", Media: []string{"media://abc"}}}
+	result := resolveMediaRefs(msgs, nil)
+	if result[0].Media[0] != "media://abc" {
+		t.Error("nil store should return messages unchanged")
+	}
+}
+
+func TestResolveMediaRefs_NonMediaRef(t *testing.T) {
+	msgs := []providers.Message{{Role: "user", Content: "hi", Media: []string{"https://example.com/img.png"}}}
+	result := resolveMediaRefs(msgs, media.NewFileMediaStore())
+	if result[0].Media[0] != "https://example.com/img.png" {
+		t.Error("non-media:// refs should be passed through unchanged")
+	}
+}
+
+func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
+	store := media.NewFileMediaStore()
+
+	imgPath := filepath.Join(t.TempDir(), "test.png")
+	if err := os.WriteFile(imgPath, []byte("fake-png-data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ref, err := store.Store(imgPath, media.MediaMeta{ContentType: "image/png"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs := []providers.Message{{Role: "user", Content: "describe", Media: []string{ref}}}
+	result := resolveMediaRefs(msgs, store)
+
+	if len(result[0].Media) != 1 {
+		t.Fatalf("expected 1 resolved media, got %d", len(result[0].Media))
+	}
+	if !strings.HasPrefix(result[0].Media[0], "data:image/png;base64,") {
+		t.Errorf("expected data URL, got %s", result[0].Media[0][:40])
+	}
+}
+
+func TestResolveMediaRefs_SkipsOversizedFile(t *testing.T) {
+	store := media.NewFileMediaStore()
+
+	bigPath := filepath.Join(t.TempDir(), "big.jpg")
+	if err := os.WriteFile(bigPath, make([]byte, maxMediaFileSize+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ref, err := store.Store(bigPath, media.MediaMeta{ContentType: "image/jpeg"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs := []providers.Message{{Role: "user", Content: "hi", Media: []string{ref}}}
+	result := resolveMediaRefs(msgs, store)
+
+	if len(result[0].Media) != 0 {
+		t.Error("oversized file should be skipped")
+	}
+}
+
+func TestResolveMediaRefs_SkipsUnknownExtension(t *testing.T) {
+	store := media.NewFileMediaStore()
+
+	txtPath := filepath.Join(t.TempDir(), "readme.txt")
+	if err := os.WriteFile(txtPath, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ref, err := store.Store(txtPath, media.MediaMeta{}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs := []providers.Message{{Role: "user", Content: "hi", Media: []string{ref}}}
+	result := resolveMediaRefs(msgs, store)
+
+	if len(result[0].Media) != 0 {
+		t.Error("unknown extension with no ContentType should be skipped")
+	}
+}
+
+func TestResolveMediaRefs_DoesNotMutateOriginal(t *testing.T) {
+	store := media.NewFileMediaStore()
+
+	imgPath := filepath.Join(t.TempDir(), "test.jpg")
+	if err := os.WriteFile(imgPath, []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ref, _ := store.Store(imgPath, media.MediaMeta{ContentType: "image/jpeg"}, "test")
+	original := []providers.Message{{Role: "user", Content: "hi", Media: []string{ref}}}
+	resolveMediaRefs(original, store)
+
+	if !strings.HasPrefix(original[0].Media[0], "media://") {
+		t.Error("original message should not be mutated")
+	}
 }
