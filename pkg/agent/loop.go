@@ -1063,7 +1063,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		if opts.TaskID != "" {
 			elapsed := time.Since(task.StartedAt)
 			completionMsg := fmt.Sprintf("\u2705 Task completed (%.1fs)", elapsed.Seconds())
-			if finalContent != "" && finalContent != defaultResponse {
+			if finalContent != "" && finalContent != defaultResponse && finalContent != "HEARTBEAT_OK" {
 				// Keep completion + response in one bubble if short enough (4096 = Telegram limit).
 				// If too long, edit the status bubble with the header, then send the
 				// full response as a regular message — the channel worker's SplitMessage
@@ -2245,12 +2245,21 @@ func (al *AgentLoop) runLLMIteration(
 				defer close(streamDone)
 				for up := range streamCh {
 					display := buildStreamingDisplay(up.accumulated, up.reasoning)
-					_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-						Channel:  opts.Channel,
-						ChatID:   opts.ChatID,
-						Content:  display,
-						IsStatus: true,
-					})
+					outMsg := bus.OutboundMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Content: display,
+					}
+					// For background tasks, publish streaming preview as
+					// IsTaskStatus so it shares the same bubble as task
+					// progress/completion (avoids a second bubble).
+					if opts.Background && opts.TaskID != "" {
+						outMsg.IsTaskStatus = true
+						outMsg.TaskID = opts.TaskID
+					} else {
+						outMsg.IsStatus = true
+					}
+					_ = al.bus.PublishOutbound(ctx, outMsg)
 				}
 			}()
 			onChunk = func(accumulated, reasoning string) {
