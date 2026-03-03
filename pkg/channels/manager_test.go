@@ -1397,6 +1397,7 @@ func TestHandleStatusSend_DraftFailure_DoesNotClobberTrackedMessageID(t *testing
 		t.Fatalf("expected EditMessage target msg-1, got %s", editedMessageID)
 	}
 }
+
 func TestHandleTaskStatusSend_UsesDraftSender(t *testing.T) {
 	m := newTestManager()
 	var draftCalled bool
@@ -1483,6 +1484,7 @@ func TestHandleTaskStatusSend_DraftFailure_DoesNotClobberTrackedMessageID(t *tes
 		t.Fatalf("expected EditMessage target task-msg-1, got %s", editedMessageID)
 	}
 }
+
 func TestPreSend_ClearsDraftState(t *testing.T) {
 	m := newTestManager()
 
