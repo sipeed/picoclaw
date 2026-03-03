@@ -54,6 +54,7 @@ type activeTask struct {
 	projectDir     string        // detected from exec cd target (authoritative)
 	fileCommonDir  string        // LCP of file paths relative to workspace (fallback)
 	streamedChunks bool          // true after onChunk fires at least once
+	messageContent string        // last content sent by the message tool (for inclusion in completion)
 	mu             sync.Mutex
 }
 
@@ -1063,15 +1064,36 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		if opts.TaskID != "" {
 			elapsed := time.Since(task.StartedAt)
 			completionMsg := fmt.Sprintf("\u2705 Task completed (%.1fs)", elapsed.Seconds())
-			if finalContent != "" && finalContent != defaultResponse && finalContent != "HEARTBEAT_OK" {
-				// Keep completion + response in one bubble if short enough (4096 = Telegram limit).
-				// If too long, edit the status bubble with the header, then send the
-				// full response as a regular message — the channel worker's SplitMessage
-				// will automatically chunk it for channels with MaxMessageLength.
-				combined := completionMsg + "\n\n" + finalContent
+
+			// Determine the best content to show in the completion bubble.
+			// Priority: message tool content > finalContent > task.Result
+			task.mu.Lock()
+			msgContent := task.messageContent
+			task.mu.Unlock()
+
+			var resultContent string
+			switch {
+			case msgContent != "":
+				// The message tool already sent this to the user via the
+				// task bubble; re-include it so the completion doesn't erase it.
+				resultContent = msgContent
+			case finalContent != "" && finalContent != defaultResponse && finalContent != "HEARTBEAT_OK":
+				resultContent = finalContent
+			default:
+				summary := task.Result
+				if summary == "" {
+					summary = task.Description
+				}
+				resultContent = summary
+			}
+
+			if resultContent != "" {
+				combined := completionMsg + "\n\n" + resultContent
 				if len([]rune(combined)) <= 4096 {
 					completionMsg = combined
 				} else {
+					// Too long for one bubble: send header as task status,
+					// body as regular message (auto-split by SplitMessage).
 					doneCtx, doneCancel := context.WithTimeout(context.Background(), 5*time.Second)
 					_ = al.bus.PublishOutbound(doneCtx, bus.OutboundMessage{
 						Channel:      opts.Channel,
@@ -1079,23 +1101,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 						Content:      completionMsg,
 						IsTaskStatus: true,
 						TaskID:       opts.TaskID,
+						Final:        true,
 					})
 					_ = al.bus.PublishOutbound(doneCtx, bus.OutboundMessage{
 						Channel: opts.Channel,
 						ChatID:  opts.ChatID,
-						Content: finalContent,
+						Content: resultContent,
 					})
 					doneCancel()
 					return
-				}
-			} else {
-				// No finalContent — fall back to task.Result or task.Description
-				summary := task.Result
-				if summary == "" {
-					summary = task.Description
-				}
-				if summary != "" {
-					completionMsg += "\n" + summary
 				}
 			}
 			doneCtx, doneCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1105,6 +1119,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 				Content:      completionMsg,
 				IsTaskStatus: true,
 				TaskID:       opts.TaskID,
+				Final:        true,
 			})
 			doneCancel()
 		}
@@ -1135,6 +1150,13 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			if mt, ok := tool.(*tools.MessageTool); ok {
 				taskID := opts.TaskID
 				mt.SetSendCallback(func(channel, chatID, content string) error {
+					// Capture the message tool's content so the completion
+					// defer can include it instead of losing it to an overwrite.
+					if task != nil {
+						task.mu.Lock()
+						task.messageContent = content
+						task.mu.Unlock()
+					}
 					pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer pubCancel()
 					return al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
