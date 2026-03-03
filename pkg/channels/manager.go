@@ -577,6 +577,22 @@ func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *chan
 
 	taskKey := msg.TaskID
 
+	// Final message: send as permanent (non-draft) message so it persists.
+	// Drafts are ephemeral and disappear after a short time; the completion
+	// message must survive. Clear the draft tracking and send via SendWithID
+	// or regular Send, which creates a permanent Telegram message.
+	if msg.Final {
+		m.taskMsgIDs.Delete(taskKey)
+		m.statusEditTimes.Delete(taskKey)
+		if sender, ok := w.ch.(MessageSenderWithID); ok {
+			if msgID, err := sender.SendWithID(ctx, msg.ChatID, msg.Content); err == nil && msgID != "" {
+				return
+			}
+		}
+		_ = w.ch.Send(ctx, msg)
+		return
+	}
+
 	// 0. Draft-based streaming (preferred for supported channels)
 	if drafter, ok := w.ch.(DraftSender); ok && taskKey != "" {
 		var did int
