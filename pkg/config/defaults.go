@@ -319,7 +319,14 @@ func DefaultConfig() *Config {
 				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
 				Brave: BraveConfig{
 					Enabled:    false,
-					APIKeys:    "",
+					APIKey:     "",
+					APIKeys:    []string{"YOUR_BRAVE_API_KEY"},
+					MaxResults: 5,
+				},
+				Tavily: TavilyConfig{
+					Enabled:    false,
+					APIKey:     "",
+					APIKeys:    []string{"YOUR_TAVILY_API_KEY"},
 					MaxResults: 5,
 				},
 				DuckDuckGo: DuckDuckGoConfig{
@@ -328,7 +335,8 @@ func DefaultConfig() *Config {
 				},
 				Perplexity: PerplexityConfig{
 					Enabled:    false,
-					APIKeys:    "",
+					APIKey:     "",
+					APIKeys:    []string{"YOUR_PERPLEXITY_API_KEY"},
 					MaxResults: 5,
 				},
 			},

@@ -249,7 +249,7 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 
 // TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
-	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: ""})
+	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: nil})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: "test-key", BraveMaxResults: 5})
+	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: []string{"test-key"}, BraveMaxResults: 5})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -553,7 +553,7 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	t.Run("perplexity", func(t *testing.T) {
 		tool, err := NewWebSearchTool(WebSearchToolOptions{
 			PerplexityEnabled:    true,
-			PerplexityAPIKeys:    "k",
+			PerplexityAPIKeys:    []string{"k"},
 			PerplexityMaxResults: 3,
 			Proxy:                "http://127.0.0.1:7890",
 		})
@@ -572,7 +572,7 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 	t.Run("brave", func(t *testing.T) {
 		tool, err := NewWebSearchTool(WebSearchToolOptions{
 			BraveEnabled:    true,
-			BraveAPIKeys:    "k",
+			BraveAPIKeys:    []string{"k"},
 			BraveMaxResults: 3,
 			Proxy:           "http://127.0.0.1:7890",
 		})
@@ -650,7 +650,7 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 
 	tool, err := NewWebSearchTool(WebSearchToolOptions{
 		TavilyEnabled:    true,
-		TavilyAPIKeys:    "test-key",
+		TavilyAPIKeys:    []string{"test-key"},
 		TavilyBaseURL:    server.URL,
 		TavilyMaxResults: 5,
 	})
@@ -683,7 +683,7 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 }
 
 func TestAPIKeyPool(t *testing.T) {
-	pool := NewAPIKeyPool("key1, key2 ,key3")
+	pool := NewAPIKeyPool([]string{"key1", " key2 ", "key3"})
 	if len(pool.keys) != 3 {
 		t.Fatalf("expected 3 keys, got %d", len(pool.keys))
 	}
@@ -705,12 +705,12 @@ func TestAPIKeyPool(t *testing.T) {
 		t.Errorf("expected key1, got %s", k)
 	}
 
-	emptyPool := NewAPIKeyPool("   ")
+	emptyPool := NewAPIKeyPool([]string{"   "})
 	if k := emptyPool.Get(); k != "" {
 		t.Errorf("expected empty string, got %s", k)
 	}
 
-	singlePool := NewAPIKeyPool("single")
+	singlePool := NewAPIKeyPool([]string{"single"})
 	if k := singlePool.Get(); k != "single" {
 		t.Errorf("expected single, got %s", k)
 	}
@@ -757,7 +757,7 @@ func TestWebTool_TavilySearch_Failover(t *testing.T) {
 
 	tool, err := NewWebSearchTool(WebSearchToolOptions{
 		TavilyEnabled:    true,
-		TavilyAPIKeys:    "key1, key2",
+		TavilyAPIKeys:    []string{"key1", "key2"},
 		TavilyBaseURL:    server.URL,
 		TavilyMaxResults: 5,
 	})

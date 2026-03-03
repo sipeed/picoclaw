@@ -719,12 +719,14 @@ type WebToolsConfig struct {
 type BraveConfig struct {
 	Enabled    bool   `json:"enabled"`
 	APIKey     string `json:"api_key"`
+	APIKeys    []string `json:"api_keys"`
 	MaxResults int    `json:"max_results"`
 }
 
 type TavilyConfig struct {
 	Enabled    bool   `json:"enabled"`
 	APIKey     string `json:"api_key"`
+	APIKeys    []string `json:"api_keys"`
 	BaseURL    string `json:"base_url"`
 	MaxResults int    `json:"max_results"`
 }
@@ -737,6 +739,7 @@ type DuckDuckGoConfig struct {
 type PerplexityConfig struct {
 	Enabled    bool   `json:"enabled"`
 	APIKey     string `json:"api_key"`
+	APIKeys    []string `json:"api_keys"`
 	MaxResults int    `json:"max_results"`
 }
 
@@ -1043,12 +1046,13 @@ func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
 		Web: config.WebToolsConfig{
 			Brave: config.BraveConfig{
 				Enabled:    c.Web.Brave.Enabled,
-				APIKeys:    c.Web.Brave.APIKey,
+				APIKey:     c.Web.Brave.APIKey,
+				APIKeys:    c.Web.Brave.APIKeys,
 				MaxResults: c.Web.Brave.MaxResults,
 			},
 			Tavily: config.TavilyConfig{
 				Enabled:    c.Web.Tavily.Enabled,
-				APIKeys:    c.Web.Tavily.APIKey,
+				APIKey:     c.Web.Tavily.APIKey,
 				BaseURL:    c.Web.Tavily.BaseURL,
 				MaxResults: c.Web.Tavily.MaxResults,
 			},
@@ -1058,7 +1062,7 @@ func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
 			},
 			Perplexity: config.PerplexityConfig{
 				Enabled:    c.Web.Perplexity.Enabled,
-				APIKeys:    c.Web.Perplexity.APIKey,
+				APIKey:     c.Web.Perplexity.APIKey,
 				MaxResults: c.Web.Perplexity.MaxResults,
 			},
 			Proxy: c.Web.Proxy,

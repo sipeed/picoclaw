@@ -82,13 +82,7 @@ type APIKeyPool struct {
 	current uint32
 }
 
-func NewAPIKeyPool(keysStr string) *APIKeyPool {
-	var keys []string
-	for _, k := range strings.Split(keysStr, ",") {
-		if trimmed := strings.TrimSpace(k); trimmed != "" {
-			keys = append(keys, trimmed)
-		}
-	}
+func NewAPIKeyPool(keys []string) *APIKeyPool {
 	return &APIKeyPool{
 		keys: keys,
 	}
@@ -301,7 +295,6 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 			}
 		}
 
-
 		return strings.Join(lines, "\n"), nil
 	}
 
@@ -499,16 +492,16 @@ type WebSearchTool struct {
 }
 
 type WebSearchToolOptions struct {
-	BraveAPIKeys         string
+	BraveAPIKeys         []string
 	BraveMaxResults      int
 	BraveEnabled         bool
-	TavilyAPIKeys        string
+	TavilyAPIKeys        []string
 	TavilyBaseURL        string
 	TavilyMaxResults     int
 	TavilyEnabled        bool
 	DuckDuckGoMaxResults int
 	DuckDuckGoEnabled    bool
-	PerplexityAPIKeys    string
+	PerplexityAPIKeys    []string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
 	Proxy                string
@@ -519,7 +512,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	maxResults := 5
 
 	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
-	if opts.PerplexityEnabled && opts.PerplexityAPIKeys != "" {
+	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
 		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
@@ -528,7 +521,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
 		}
-	} else if opts.BraveEnabled && opts.BraveAPIKeys != "" {
+	} else if opts.BraveEnabled && len(opts.BraveAPIKeys) > 0 {
 		client, err := createHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Brave: %w", err)
@@ -537,7 +530,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if opts.BraveMaxResults > 0 {
 			maxResults = opts.BraveMaxResults
 		}
-	} else if opts.TavilyEnabled && opts.TavilyAPIKeys != "" {
+	} else if opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0 {
 		client, err := createHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
