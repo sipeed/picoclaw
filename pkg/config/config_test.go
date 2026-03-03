@@ -532,13 +532,14 @@ func TestLoadConfig_MalformedDotenv_NonFatal(t *testing.T) {
 		t.Fatalf("WriteFile config: %v", err)
 	}
 
-	// Write a malformed .env file (missing value after '=')
+	// Write a .env file with genuinely malformed content (bare key without '=',
+	// mixed with a valid line) to verify godotenv.Load errors are non-fatal.
 	envFile := filepath.Join(dir, ".env")
-	if err := os.WriteFile(envFile, []byte("VALID_KEY=valid_value\n"), 0o600); err != nil {
+	if err := os.WriteFile(envFile, []byte("THIS_LINE_HAS_NO_EQUALS\nVALID_KEY=valid_value\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile .env: %v", err)
 	}
 
-	// LoadConfig should not fail even with unusual .env content
+	// LoadConfig should not fail even with malformed .env content
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		t.Fatalf("LoadConfig() should not fail with .env issues, got error: %v", err)
