@@ -125,13 +125,10 @@ func gatewayCmd(debug bool, orchestration bool, enableStats bool) error {
 		if err != nil {
 			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
 		}
+		// Always return SilentResult — the task completion message in runAgentLoop
+		// already includes the LLM response in the same status bubble.
 		if response == "HEARTBEAT_OK" {
 			return tools.SilentResult("Heartbeat OK")
-		}
-		// Deliver response to user when a plan interview/review needs resuming.
-		// For async tasks (spawn), results are delivered separately via processSystemMessage.
-		if status := agentLoop.GetPlanStatus(); status == "interviewing" || status == "review" {
-			return tools.UserResult(response)
 		}
 		return tools.SilentResult(response)
 	})
