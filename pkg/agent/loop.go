@@ -1127,6 +1127,28 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 1. Update tool contexts
 	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
 
+	// 1-bis. For background tasks that don't send a final response (e.g. heartbeat),
+	// redirect the message tool to publish as IsTaskStatus so its output lands in
+	// the same bubble as the task status instead of creating a separate message.
+	if opts.Background && !opts.SendResponse && opts.TaskID != "" {
+		if tool, ok := agent.Tools.Get("message"); ok {
+			if mt, ok := tool.(*tools.MessageTool); ok {
+				taskID := opts.TaskID
+				mt.SetSendCallback(func(channel, chatID, content string) error {
+					pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer pubCancel()
+					return al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+						Channel:      channel,
+						ChatID:       chatID,
+						Content:      content,
+						IsTaskStatus: true,
+						TaskID:       taskID,
+					})
+				})
+			}
+		}
+	}
+
 	// 1a. Set session-specific working directory for bootstrap file lookup.
 	// Prefer the tool-detected project directory (touch_dir) from the session tracker,
 	// resolved as an absolute path under workspace. Fall back to worktree or workspace.
@@ -1389,18 +1411,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 5d. Store result summary for task completion notification
 	if task != nil {
 		task.Result = utils.Truncate(finalContent, 280)
-	}
-
-	// 5e. Promote streaming status bubble to task message for background tasks.
-	// When SendResponse is false (e.g. heartbeat), no final non-status message
-	// triggers preSend's statusMsgIDs.LoadAndDelete cleanup, so the last
-	// streaming chunk persists on Telegram. Move the tracked status message ID
-	// into taskMsgIDs so the defer's IsTaskStatus completion notification edits
-	// the existing bubble instead of creating a duplicate message.
-	if opts.Background && !opts.SendResponse && !constants.IsInternalChannel(opts.Channel) && task != nil &&
-		task.streamedChunks && opts.TaskID != "" {
-		statusKey := opts.Channel + ":" + opts.ChatID
-		al.channelManager.PromoteStatusToTask(statusKey, opts.TaskID)
 	}
 
 	// 6. Save final assistant message to session (deferred write-behind)
