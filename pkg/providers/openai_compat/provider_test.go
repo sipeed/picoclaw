@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
@@ -414,5 +417,99 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 	p := NewProvider("key", "https://example.com/v1", "", WithRequestTimeout(-1*time.Second))
 	if p.httpClient.Timeout != defaultRequestTimeout {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
+	}
+}
+
+func TestSerializeMessages_PlainText(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi", ReasoningContent: "thinking..."},
+	}
+	result := serializeMessages(messages)
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if msgs[0]["content"] != "hello" {
+		t.Fatalf("expected plain string content, got %v", msgs[0]["content"])
+	}
+	if msgs[1]["reasoning_content"] != "thinking..." {
+		t.Fatalf("reasoning_content not preserved, got %v", msgs[1]["reasoning_content"])
+	}
+}
+
+func TestSerializeMessages_WithMedia(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{Role: "user", Content: "describe this", Media: []string{"data:image/png;base64,abc123"}},
+	}
+	result := serializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	content, ok := msgs[0]["content"].([]any)
+	if !ok {
+		t.Fatalf("expected array content for media message, got %T", msgs[0]["content"])
+	}
+	if len(content) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(content))
+	}
+
+	textPart := content[0].(map[string]any)
+	if textPart["type"] != "text" || textPart["text"] != "describe this" {
+		t.Fatalf("text part mismatch: %v", textPart)
+	}
+
+	imgPart := content[1].(map[string]any)
+	if imgPart["type"] != "image_url" {
+		t.Fatalf("expected image_url type, got %v", imgPart["type"])
+	}
+	imgURL := imgPart["image_url"].(map[string]any)
+	if imgURL["url"] != "data:image/png;base64,abc123" {
+		t.Fatalf("image url mismatch: %v", imgURL["url"])
+	}
+}
+
+func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{Role: "tool", Content: "image result", Media: []string{"data:image/png;base64,xyz"}, ToolCallID: "call_1"},
+	}
+	result := serializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if msgs[0]["tool_call_id"] != "call_1" {
+		t.Fatalf("tool_call_id not preserved with media, got %v", msgs[0]["tool_call_id"])
+	}
+	// Content should be multipart array
+	if _, ok := msgs[0]["content"].([]any); !ok {
+		t.Fatalf("expected array content, got %T", msgs[0]["content"])
+	}
+}
+
+func TestSerializeMessages_StripsSystemParts(t *testing.T) {
+	messages := []protocoltypes.Message{
+		{
+			Role:    "system",
+			Content: "you are helpful",
+			SystemParts: []protocoltypes.ContentBlock{
+				{Type: "text", Text: "you are helpful"},
+			},
+		},
+	}
+	result := serializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	raw := string(data)
+	if strings.Contains(raw, "system_parts") {
+		t.Fatal("system_parts should not appear in serialized output")
 	}
 }
