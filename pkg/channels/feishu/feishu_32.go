@@ -16,6 +16,8 @@ type FeishuChannel struct {
 	*channels.BaseChannel
 }
 
+var errUnsupported = errors.New("feishu channel is not supported on 32-bit architectures")
+
 // NewFeishuChannel returns an error on 32-bit architectures where the Feishu SDK is not supported
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
 	return nil, errors.New(
@@ -25,15 +27,35 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 
 // Start is a stub method to satisfy the Channel interface
 func (c *FeishuChannel) Start(ctx context.Context) error {
-	return nil
+	return errUnsupported
 }
 
 // Stop is a stub method to satisfy the Channel interface
 func (c *FeishuChannel) Stop(ctx context.Context) error {
-	return nil
+	return errUnsupported
 }
 
 // Send is a stub method to satisfy the Channel interface
 func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
-	return errors.New("feishu channel is not supported on 32-bit architectures")
+	return errUnsupported
+}
+
+// EditMessage is a stub method to satisfy MessageEditor
+func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, content string) error {
+	return errUnsupported
+}
+
+// SendPlaceholder is a stub method to satisfy PlaceholderCapable
+func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	return "", errUnsupported
+}
+
+// ReactToMessage is a stub method to satisfy ReactionCapable
+func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
+	return func() {}, errUnsupported
+}
+
+// SendMedia is a stub method to satisfy MediaSender
+func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	return errUnsupported
 }

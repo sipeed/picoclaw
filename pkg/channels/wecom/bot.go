@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -28,8 +27,7 @@ type WeComBotChannel struct {
 	client        *http.Client
 	ctx           context.Context
 	cancel        context.CancelFunc
-	processedMsgs map[string]bool // Message deduplication: msg_id -> processed
-	msgMu         sync.RWMutex
+	processedMsgs *MessageDeduplicator
 }
 
 // WeComBotMessage represents the JSON message structure from WeCom Bot (AIBOT)
@@ -108,7 +106,7 @@ func NewWeComBotChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*We
 		client:        &http.Client{Timeout: clientTimeout},
 		ctx:           ctx,
 		cancel:        cancel,
-		processedMsgs: make(map[string]bool),
+		processedMsgs: NewMessageDeduplicator(wecomMaxProcessedMessages),
 	}, nil
 }
 
@@ -330,23 +328,12 @@ func (c *WeComBotChannel) processMessage(ctx context.Context, msg WeComBotMessag
 
 	// Message deduplication: Use msg_id to prevent duplicate processing
 	msgID := msg.MsgID
-	c.msgMu.Lock()
-	if c.processedMsgs[msgID] {
-		c.msgMu.Unlock()
+	if !c.processedMsgs.MarkMessageProcessed(msgID) {
 		logger.DebugCF("wecom", "Skipping duplicate message", map[string]any{
 			"msg_id": msgID,
 		})
 		return
 	}
-	c.processedMsgs[msgID] = true
-	// Clean up old messages while still holding the lock to avoid a data race
-	// on len(). Reset the map but re-insert the current msgID so it remains
-	// deduplicated.
-	if len(c.processedMsgs) > 1000 {
-		c.processedMsgs = make(map[string]bool)
-		c.processedMsgs[msgID] = true
-	}
-	c.msgMu.Unlock()
 
 	senderID := msg.From.UserID
 
