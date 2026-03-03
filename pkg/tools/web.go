@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -582,6 +583,24 @@ func (t *WebFetchTool) Parameters() map[string]any {
 	}
 }
 
+func blockPrivateTarget(ctx context.Context, parsedURL *url.URL) error {
+	hostname := parsedURL.Hostname() // strips port and IPv6 brackets
+	addrs, err := net.DefaultResolver.LookupHost(ctx, hostname)
+	if err != nil {
+		return fmt.Errorf("could not resolve host %q", hostname)
+	}
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			continue
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return fmt.Errorf("requests to private/internal addresses are not allowed")
+		}
+	}
+	return nil
+}
+
 func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	urlStr, ok := args["url"].(string)
 	if !ok {
@@ -599,6 +618,10 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	if parsedURL.Host == "" {
 		return ErrorResult("missing domain in URL")
+	}
+
+	if err := blockPrivateTarget(ctx, parsedURL); err != nil {
+		return ErrorResult(err.Error())
 	}
 
 	maxChars := t.maxChars
