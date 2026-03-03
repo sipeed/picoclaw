@@ -120,7 +120,7 @@ func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
 //
 // If a previous typing indicator exists for the same chat, it is stopped
 // immediately before the new one is recorded.  This prevents the next
-// preSend (which finalises the *previous* processing cycle) from
+// preSend (which finalizes the *previous* processing cycle) from
 // consuming the *new* message's typing entry.
 func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	key := channel + ":" + chatID
