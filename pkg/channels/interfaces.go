@@ -48,10 +48,3 @@ type PlaceholderRecorder interface {
 type CommandRegistrarCapable interface {
 	RegisterCommands(ctx context.Context, defs []commands.Definition) error
 }
-
-// CommandParserCapable is implemented by channels that expose a command
-// dispatch entrypoint backed by shared command definitions/dispatcher.
-// It is optional and intended for cross-channel command handling features.
-type CommandParserCapable interface {
-	DispatchCommand(ctx context.Context, req commands.Request) commands.Result
-}

@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -58,23 +58,7 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 }
 
-const (
-	defaultResponse           = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
-	commandPrefixSlash        = "/"
-	commandMentionSeparator   = "@"
-	commandNameNew            = "/new"
-	commandNameReset          = "/reset"
-	commandNameSession        = "/session"
-	commandNameShow           = "/show"
-	commandNameList           = "/list"
-	commandNameSwitch         = "/switch"
-	sessionKeyAgentPrefix     = "agent:"
-	metadataKeyAccountID      = "account_id"
-	metadataKeyGuildID        = "guild_id"
-	metadataKeyTeamID         = "team_id"
-	metadataKeyParentPeerKind = "parent_peer_kind"
-	metadataKeyParentPeerID   = "parent_peer_id"
-)
+const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
 
 func NewAgentLoop(
 	cfg *config.Config,
@@ -514,11 +498,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
 	route := al.registry.ResolveRoute(routing.RouteInput{
 		Channel:    msg.Channel,
-		AccountID:  inboundMetadata(msg, metadataKeyAccountID),
+		AccountID:  msg.Metadata["account_id"],
 		Peer:       extractPeer(msg),
 		ParentPeer: extractParentPeer(msg),
-		GuildID:    inboundMetadata(msg, metadataKeyGuildID),
-		TeamID:     inboundMetadata(msg, metadataKeyTeamID),
+		GuildID:    msg.Metadata["guild_id"],
+		TeamID:     msg.Metadata["team_id"],
 	})
 
 	agent, ok := al.registry.GetAgent(route.AgentID)
@@ -533,7 +517,7 @@ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.Resolv
 }
 
 func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
-	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, sessionKeyAgentPrefix) {
+	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, "agent:") {
 		return msgSessionKey
 	}
 	return route.SessionKey
@@ -1404,153 +1388,56 @@ func (al *AgentLoop) handleCommand(
 	route routing.ResolvedRoute,
 	agent *AgentInstance,
 ) (string, bool) {
-	// Scope-aware command routing: session-affecting commands are resolved
-	// against route-derived scope keys so each chat/group keeps isolated history.
+	// Scope-aware command routing is delegated to the runtime-backed executor.
+	// Session commands (/new, /session) operate on route-derived scope keys via
+	// agentCommandRuntime.ScopeKey(), while channel-agnostic commands share one
+	// execution path.
 	content := strings.TrimSpace(msg.Content)
-	if !strings.HasPrefix(content, commandPrefixSlash) {
+	if !strings.HasPrefix(content, "/") {
 		return "", false
 	}
 
-	parts := strings.Fields(content)
-	if len(parts) == 0 {
-		return "", false
-	}
+	runtime := newAgentCommandRuntime(msg, route, agent, al.cfg)
+	executor := commands.NewExecutor(commands.NewRegistry(commands.BuiltinDefinitionsWithRuntime(al.cfg, runtime)))
 
-	cmd := parts[0]
-	if at := strings.Index(cmd, commandMentionSeparator); at > 0 {
-		cmd = cmd[:at]
-	}
-	args := parts[1:]
+	var commandReply string
+	result := executor.Execute(ctx, commands.Request{
+		Channel:  msg.Channel,
+		ChatID:   msg.ChatID,
+		SenderID: msg.SenderID,
+		Text:     msg.Content,
+		Reply: func(text string) error {
+			commandReply = text
+			return nil
+		},
+	})
 
-	switch cmd {
-	case commandNameNew, commandNameReset:
-		// Create and rotate session state only inside this scope.
-		scopeKey := resolveScopeKey(route, msg.SessionKey)
-		newSessionKey, err := agent.Sessions.StartNew(scopeKey)
-		if err != nil {
-			return fmt.Sprintf("Failed to start new session: %v", err), true
+	switch result.Outcome {
+	case commands.OutcomeHandled:
+		if result.Err != nil {
+			return mapCommandError(result), true
+		}
+		if commandReply != "" {
+			return commandReply, true
+		}
+		if result.Reply != "" {
+			return result.Reply, true
+		}
+		return "", true
+	case commands.OutcomePassthrough:
+		parts := strings.Fields(content)
+		if len(parts) == 0 {
+			return "", false
+		}
+		cmd := parts[0]
+		if at := strings.Index(cmd, "@"); at > 0 {
+			cmd = cmd[:at]
+		}
+		if cmd != "/switch" {
+			return "", false
 		}
 
-		backlogLimit := config.DefaultSessionBacklogLimit
-		if al.cfg != nil {
-			backlogLimit = al.cfg.Session.EffectiveBacklogLimit()
-		}
-
-		pruned, err := agent.Sessions.Prune(scopeKey, backlogLimit)
-		if err != nil {
-			return fmt.Sprintf(
-				"Started new session (%s), but pruning old sessions failed: %v",
-				newSessionKey,
-				err,
-			), true
-		}
-
-		if len(pruned) == 0 {
-			return fmt.Sprintf("Started new session: %s", newSessionKey), true
-		}
-		return fmt.Sprintf("Started new session: %s (pruned %d old session(s))", newSessionKey, len(pruned)), true
-
-	case commandNameSession:
-		if len(args) < 1 {
-			return "Usage: /session [list|resume <index>]", true
-		}
-
-		// List/resume operate on the same scope-local ordering used by /new.
-		scopeKey := resolveScopeKey(route, msg.SessionKey)
-		switch args[0] {
-		case "list":
-			list, err := agent.Sessions.List(scopeKey)
-			if err != nil {
-				return fmt.Sprintf("Failed to list sessions: %v", err), true
-			}
-			if len(list) == 0 {
-				return "No sessions found for current chat.", true
-			}
-
-			lines := make([]string, 0, len(list)+1)
-			lines = append(lines, "Sessions for current chat:")
-			for _, item := range list {
-				activeMarker := " "
-				if item.Active {
-					activeMarker = "*"
-				}
-				updated := "-"
-				if !item.UpdatedAt.IsZero() {
-					updated = item.UpdatedAt.Format("2006-01-02 15:04")
-				}
-				lines = append(lines, fmt.Sprintf(
-					"%d. [%s] %s (%d msgs, updated %s)",
-					item.Ordinal,
-					activeMarker,
-					item.SessionKey,
-					item.MessageCnt,
-					updated,
-				))
-			}
-			return strings.Join(lines, "\n"), true
-
-		case "resume":
-			if len(args) != 2 {
-				return "Usage: /session resume <index>", true
-			}
-			index, err := strconv.Atoi(args[1])
-			if err != nil || index < 1 {
-				return "Usage: /session resume <index>", true
-			}
-			sessionKey, err := agent.Sessions.Resume(scopeKey, index)
-			if err != nil {
-				return fmt.Sprintf("Failed to resume session %d: %v", index, err), true
-			}
-			return fmt.Sprintf("Resumed session %d: %s", index, sessionKey), true
-
-		default:
-			return "Usage: /session [list|resume <index>]", true
-		}
-
-	case commandNameShow:
-		if len(args) < 1 {
-			return "Usage: /show [model|channel|agents]", true
-		}
-		switch args[0] {
-		case "model":
-			defaultAgent := al.registry.GetDefaultAgent()
-			if defaultAgent == nil {
-				return "No default agent configured", true
-			}
-			return fmt.Sprintf("Current model: %s", defaultAgent.Model), true
-		case "channel":
-			return fmt.Sprintf("Current channel: %s", msg.Channel), true
-		case "agents":
-			agentIDs := al.registry.ListAgentIDs()
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-		default:
-			return fmt.Sprintf("Unknown show target: %s", args[0]), true
-		}
-
-	case commandNameList:
-		if len(args) < 1 {
-			return "Usage: /list [models|channels|agents]", true
-		}
-		switch args[0] {
-		case "models":
-			return "Available models: configured in config.json per agent", true
-		case "channels":
-			if al.channelManager == nil {
-				return "Channel manager not initialized", true
-			}
-			channels := al.channelManager.GetEnabledChannels()
-			if len(channels) == 0 {
-				return "No channels enabled", true
-			}
-			return fmt.Sprintf("Enabled channels: %s", strings.Join(channels, ", ")), true
-		case "agents":
-			agentIDs := al.registry.ListAgentIDs()
-			return fmt.Sprintf("Registered agents: %s", strings.Join(agentIDs, ", ")), true
-		default:
-			return fmt.Sprintf("Unknown list target: %s", args[0]), true
-		}
-
-	case commandNameSwitch:
+		args := parts[1:]
 		if len(args) < 3 || args[1] != "to" {
 			return "Usage: /switch [model|channel] to <name>", true
 		}
@@ -1565,6 +1452,10 @@ func (al *AgentLoop) handleCommand(
 			}
 			oldModel := defaultAgent.Model
 			defaultAgent.Model = value
+			if al.cfg != nil {
+				al.cfg.Agents.Defaults.ModelName = value
+				al.cfg.Agents.Defaults.Model = value
+			}
 			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
 		case "channel":
 			if al.channelManager == nil {
@@ -1580,6 +1471,46 @@ func (al *AgentLoop) handleCommand(
 	}
 
 	return "", false
+}
+
+type agentCommandRuntime struct {
+	scope string
+	sess  commands.SessionOps
+	cfg   *config.Config
+}
+
+func newAgentCommandRuntime(
+	msg bus.InboundMessage,
+	route routing.ResolvedRoute,
+	agent *AgentInstance,
+	cfg *config.Config,
+) commands.Runtime {
+	// Build a narrow runtime adapter so command handlers can read only what they
+	// need (scope, session ops, config) without importing AgentLoop internals.
+	return agentCommandRuntime{
+		scope: resolveScopeKey(route, msg.SessionKey),
+		sess:  agent.Sessions,
+		cfg:   cfg,
+	}
+}
+
+func (r agentCommandRuntime) ScopeKey() string {
+	return r.scope
+}
+
+func (r agentCommandRuntime) SessionOps() commands.SessionOps {
+	return r.sess
+}
+
+func (r agentCommandRuntime) Config() *config.Config {
+	return r.cfg
+}
+
+func mapCommandError(result commands.ExecuteResult) string {
+	if result.Command == "" {
+		return fmt.Sprintf("Failed to execute command: %v", result.Err)
+	}
+	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
 }
 
 // extractPeer extracts the routing peer from the inbound message's structured Peer field.
@@ -1598,17 +1529,10 @@ func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
 }
 
-func inboundMetadata(msg bus.InboundMessage, key string) string {
-	if msg.Metadata == nil {
-		return ""
-	}
-	return msg.Metadata[key]
-}
-
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.
 func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
-	parentKind := inboundMetadata(msg, metadataKeyParentPeerKind)
-	parentID := inboundMetadata(msg, metadataKeyParentPeerID)
+	parentKind := msg.Metadata["parent_peer_kind"]
+	parentID := msg.Metadata["parent_peer_id"]
 	if parentKind == "" || parentID == "" {
 		return nil
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/session"
 )
 
 func findDefinitionByName(t *testing.T, defs []Definition, name string) Definition {
@@ -114,5 +115,42 @@ func TestBuiltinListChannels_UsesConfigEnabledChannels(t *testing.T) {
 	}
 	if !strings.Contains(reply, "telegram") || !strings.Contains(reply, "slack") {
 		t.Fatalf("/list channels reply=%q, want telegram and slack", reply)
+	}
+}
+
+type builtinTestSessionOps struct{}
+
+func (f *builtinTestSessionOps) ResolveActive(scopeKey string) (string, error) { return "", nil }
+func (f *builtinTestSessionOps) StartNew(scopeKey string) (string, error)      { return "", nil }
+func (f *builtinTestSessionOps) List(scopeKey string) ([]session.SessionMeta, error) {
+	return nil, nil
+}
+func (f *builtinTestSessionOps) Resume(scopeKey string, index int) (string, error) {
+	return "", nil
+}
+func (f *builtinTestSessionOps) Prune(scopeKey string, limit int) ([]string, error) {
+	return nil, nil
+}
+
+type builtinTestRuntime struct {
+	scope string
+	ops   SessionOps
+}
+
+func (f *builtinTestRuntime) ScopeKey() string       { return f.scope }
+func (f *builtinTestRuntime) SessionOps() SessionOps { return f.ops }
+func (f *builtinTestRuntime) Config() *config.Config { return nil }
+
+func TestBuiltinDefinitionsWithRuntime_EnablesSessionHandlers(t *testing.T) {
+	runtime := &builtinTestRuntime{scope: "scope", ops: &builtinTestSessionOps{}}
+	defs := BuiltinDefinitionsWithRuntime(nil, runtime)
+
+	newDef := findDefinitionByName(t, defs, "new")
+	sessionDef := findDefinitionByName(t, defs, "session")
+	if newDef.Handler == nil {
+		t.Fatalf("/new should provide runtime-backed handler when runtime is available")
+	}
+	if sessionDef.Handler == nil {
+		t.Fatalf("/session should provide runtime-backed handler when runtime is available")
 	}
 }
