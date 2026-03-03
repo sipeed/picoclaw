@@ -233,13 +233,49 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
+	if msg.Content == "" {
+		return nil
+	}
 
-	// Typing/placeholder handled by Manager.preSend — just send the message
+	// Split the raw markdown before converting to HTML so that
+	// SplitMessage's code-fence-aware logic works correctly and
+	// we never break HTML tags/entities by splitting converted output.
+	mdChunks := channels.SplitMessage(msg.Content, 4000)
+
+	for _, chunk := range mdChunks {
+		htmlContent := markdownToTelegramHTML(chunk)
+
+		// If HTML expansion pushes the chunk over Telegram's 4096-char limit,
+		// re-split the markdown chunk with a proportionally smaller maxLen.
+		if len([]rune(htmlContent)) > 4096 {
+			ratio := float64(len([]rune(chunk))) / float64(len([]rune(htmlContent)))
+			smallerLen := int(float64(4096) * ratio * 0.95) // 5% safety margin
+			if smallerLen < 100 {
+				smallerLen = 100
+			}
+			subChunks := channels.SplitMessage(chunk, smallerLen)
+			for _, sub := range subChunks {
+				if err := c.sendHTMLChunk(ctx, chatID, markdownToTelegramHTML(sub)); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
+		if err := c.sendHTMLChunk(ctx, chatID, htmlContent); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// sendHTMLChunk sends a single HTML message, falling back to plain text on parse failure.
+func (c *TelegramChannel) sendHTMLChunk(ctx context.Context, chatID int64, htmlContent string) error {
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 
-	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+	if _, err := c.bot.SendMessage(ctx, tgMsg); err != nil {
 		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
 			"error": err.Error(),
 		})
@@ -248,7 +284,6 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
 		}
 	}
-
 	return nil
 }
 
