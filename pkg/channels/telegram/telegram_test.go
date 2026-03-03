@@ -207,11 +207,11 @@ func TestSend_MarkdownShortButHTMLLong_MultipleCalls(t *testing.T) {
 	}
 	ch := newTestChannel(t, caller)
 
-	// Create markdown whose length is <= 4096 but whose HTML expansion is much longer.
-	// "**a**" (5 chars) becomes "<b>a</b>" (8 chars) in HTML, so repeating it many times
+	// Create markdown whose length is <= 4000 but whose HTML expansion is much longer.
+	// "**a** " (6 chars) becomes "<b>a</b> " (9 chars) in HTML, so repeating it many times
 	// yields HTML that exceeds Telegram's limit while markdown stays within it.
-	markdownContent := strings.Repeat("**a** ", 700) // ~4200 chars markdown, but HTML ~5600+ chars
-	assert.LessOrEqual(t, len([]rune(markdownContent)), 4200, "markdown content should be near Telegram limit")
+	markdownContent := strings.Repeat("**a** ", 600) // 3600 chars markdown, HTML ~5400+ chars
+	assert.LessOrEqual(t, len([]rune(markdownContent)), 4000, "markdown content must not exceed chunk size")
 
 	htmlExpanded := markdownToTelegramHTML(markdownContent)
 	assert.Greater(
