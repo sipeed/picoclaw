@@ -92,6 +92,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Generate embedded assets
+        run: go generate ./...
+
       - name: Build picoclaw
         env:
           GOOS: ${{ matrix.goos }}
@@ -120,11 +123,13 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────
   # 3a. Build Launcher — Windows (Wails requires WebView2)
+  # Note: continue-on-error=true so packaging still runs if wails build fails
   # ──────────────────────────────────────────────────────────────────────────
   build-launcher-windows:
     name: Build launcher (windows/amd64)
     needs: create-tag
     runs-on: windows-latest
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -139,19 +144,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Embed Windows resources
-        working-directory: cmd/picoclaw-launcher
-        run: |
-          go tool go-winres make `
-            --in winres/winres.json `
-            --out rsrc `
-            --product-version=${{ inputs.tag }} `
-            --file-version=${{ inputs.tag }}
-
       - name: Build launcher
-        working-directory: cmd/picoclaw-launcher
         run: |
-          go tool wails build -tags stdjson -ldflags "-s -w" -o picoclaw-launcher.exe
+          go tool wails build -tags stdjson -ldflags "-s -w" -o picoclaw-launcher.exe -appdir cmd/picoclaw-launcher
 
       - name: Upload launcher artifact
         uses: actions/upload-artifact@v4
@@ -167,6 +162,7 @@ jobs:
     name: Build launcher (linux/amd64)
     needs: create-tag
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -191,9 +187,8 @@ jobs:
           go-version-file: go.mod
 
       - name: Build launcher
-        working-directory: cmd/picoclaw-launcher
         run: |
-          go tool wails build -tags stdjson -ldflags "-s -w" -o picoclaw-launcher
+          go tool wails build -tags stdjson -ldflags "-s -w" -o picoclaw-launcher -appdir cmd/picoclaw-launcher
 
       - name: Upload launcher artifact
         uses: actions/upload-artifact@v4
@@ -209,6 +204,7 @@ jobs:
     name: Build launcher (darwin/universal)
     needs: create-tag
     runs-on: macos-latest
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -224,9 +220,8 @@ jobs:
           go-version-file: go.mod
 
       - name: Build launcher (universal)
-        working-directory: cmd/picoclaw-launcher
         run: |
-          go tool wails build -tags stdjson -ldflags "-s -w" -platform darwin/universal -o picoclaw-launcher
+          go tool wails build -tags stdjson -ldflags "-s -w" -platform darwin/universal -o picoclaw-launcher -appdir cmd/picoclaw-launcher
 
       - name: Upload launcher artifact
         uses: actions/upload-artifact@v4
@@ -237,6 +232,8 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────
   # 4. Package: assemble zip bundles per platform and create GitHub Release
+  #    Runs even if launcher builds fail (if: ${{ !cancelled() }})
+  #    Launcher is included only if its artifact was successfully uploaded
   # ──────────────────────────────────────────────────────────────────────────
   package-and-release:
     name: Package & Create Release
@@ -245,124 +242,152 @@ jobs:
       - build-launcher-windows
       - build-launcher-linux
       - build-launcher-macos
+    # Run even if launcher jobs fail; only skip if workflow is cancelled
+    if: ${{ !cancelled() && needs.build-picoclaw.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout tag (for release notes)
+      - name: Checkout tag
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag }}
 
-      # ── Download all build artifacts ──
-      - name: Download all artifacts
+      # ── Download picoclaw artifacts (always present) ──
+      - name: Download picoclaw artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: picoclaw-*
           path: artifacts
+          merge-multiple: false
+
+      # ── Download launcher artifacts (may be missing if build failed) ──
+      - name: Download launcher-windows artifact
+        uses: actions/download-artifact@v4
+        if: ${{ needs.build-launcher-windows.result == 'success' }}
+        with:
+          name: launcher-windows-amd64
+          path: artifacts/launcher-windows-amd64
+        continue-on-error: true
+
+      - name: Download launcher-linux artifact
+        uses: actions/download-artifact@v4
+        if: ${{ needs.build-launcher-linux.result == 'success' }}
+        with:
+          name: launcher-linux-amd64
+          path: artifacts/launcher-linux-amd64
+        continue-on-error: true
+
+      - name: Download launcher-macos artifact
+        uses: actions/download-artifact@v4
+        if: ${{ needs.build-launcher-macos.result == 'success' }}
+        with:
+          name: launcher-darwin-universal
+          path: artifacts/launcher-darwin-universal
+        continue-on-error: true
 
       - name: List downloaded artifacts
         run: find artifacts -type f | sort
 
-      # ── Helper: make platform bundles ──
+      # ── Assemble zip bundles ──
       - name: Assemble zip bundles
         env:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          mkdir -p release
+          mkdir -p release staging
 
-          make_bundle() {
-            local NAME="$1"          # e.g. picoclaw_v0.2.0_windows_amd64
-            local PICOCLAW_SRC="$2"  # path to picoclaw binary
-            local LAUNCHER_SRC="$3"  # path to launcher binary
-            local EXT="$4"           # "" or ".exe"
+          # ── helper: bundle picoclaw + optional launcher into a zip ──
+          make_zip() {
+            local NAME="$1"         # bundle name, e.g. picoclaw_v0.1.0_windows_amd64
+            local PICOCLAW="$2"     # source path of picoclaw binary
+            local LAUNCHER="${3:-}" # source path of launcher binary (empty = omit)
+            local EXT="${4:-}"      # ".exe" or ""
 
             local DIR="staging/${NAME}"
             mkdir -p "${DIR}"
 
-            cp "${PICOCLAW_SRC}"   "${DIR}/picoclaw${EXT}"
-            cp "${LAUNCHER_SRC}"  "${DIR}/picoclaw-launcher${EXT}"
+            chmod +x "${PICOCLAW}" 2>/dev/null || true
+            cp "${PICOCLAW}" "${DIR}/picoclaw${EXT}"
 
-            # Add README
-            cat > "${DIR}/README.txt" <<'EOF'
-          PicoClaw Bundle
-          ===============
-          picoclaw          - CLI agent / gateway (headless)
-          picoclaw-launcher - Desktop GUI launcher
-
-          Quick start:
-            1. Run picoclaw-launcher to configure and start the agent.
-            2. Or run picoclaw directly:  picoclaw --help
-          EOF
-
-            if [ "${EXT}" = ".exe" ]; then
-              (cd staging && zip -r "../release/${NAME}.zip" "${NAME}/")
+            if [ -n "${LAUNCHER}" ] && [ -f "${LAUNCHER}" ]; then
+              chmod +x "${LAUNCHER}" 2>/dev/null || true
+              cp "${LAUNCHER}" "${DIR}/picoclaw-launcher${EXT}"
+              echo "PicoClaw Bundle (picoclaw + picoclaw-launcher)" > "${DIR}/README.txt"
             else
-              tar -czf "release/${NAME}.tar.gz" -C staging "${NAME}/"
+              echo "PicoClaw CLI only (picoclaw-launcher not available for this platform)" > "${DIR}/README.txt"
             fi
-            echo "  → release/${NAME}.zip / .tar.gz"
+
+            (cd staging && zip -r "../release/${NAME}.zip" "${NAME}/")
+            echo "  created: release/${NAME}.zip"
           }
 
-          # Windows
-          make_bundle \
+          WINLAUNCHER=""
+          LINLAUNCHER=""
+          MACLAUNCHER=""
+
+          [ -f "artifacts/launcher-windows-amd64/picoclaw-launcher.exe" ] \
+            && WINLAUNCHER="artifacts/launcher-windows-amd64/picoclaw-launcher.exe"
+          [ -f "artifacts/launcher-linux-amd64/picoclaw-launcher" ] \
+            && LINLAUNCHER="artifacts/launcher-linux-amd64/picoclaw-launcher"
+          [ -f "artifacts/launcher-darwin-universal/picoclaw-launcher" ] \
+            && MACLAUNCHER="artifacts/launcher-darwin-universal/picoclaw-launcher"
+
+          # Windows amd64
+          make_zip \
             "picoclaw_${TAG}_windows_amd64" \
             "artifacts/picoclaw-windows-amd64/picoclaw.exe" \
-            "artifacts/launcher-windows-amd64/picoclaw-launcher.exe" \
+            "${WINLAUNCHER}" \
             ".exe"
 
           # Linux amd64
-          chmod +x artifacts/picoclaw-linux-amd64/picoclaw \
-                   artifacts/launcher-linux-amd64/picoclaw-launcher
-          make_bundle \
+          make_zip \
             "picoclaw_${TAG}_linux_amd64" \
             "artifacts/picoclaw-linux-amd64/picoclaw" \
-            "artifacts/launcher-linux-amd64/picoclaw-launcher" \
+            "${LINLAUNCHER}" \
             ""
 
-          # macOS universal
-          chmod +x artifacts/picoclaw-darwin-amd64/picoclaw \
-                   artifacts/launcher-darwin-universal/picoclaw-launcher
-          make_bundle \
-            "picoclaw_${TAG}_darwin_universal" \
+          # macOS amd64 (with universal launcher if available)
+          make_zip \
+            "picoclaw_${TAG}_darwin_amd64" \
             "artifacts/picoclaw-darwin-amd64/picoclaw" \
-            "artifacts/launcher-darwin-universal/picoclaw-launcher" \
+            "${MACLAUNCHER}" \
             ""
 
-          # macOS arm64 (same launcher as universal)
-          chmod +x artifacts/picoclaw-darwin-arm64/picoclaw
-          make_bundle \
+          # macOS arm64 (with universal launcher if available)
+          make_zip \
             "picoclaw_${TAG}_darwin_arm64" \
             "artifacts/picoclaw-darwin-arm64/picoclaw" \
-            "artifacts/launcher-darwin-universal/picoclaw-launcher" \
+            "${MACLAUNCHER}" \
             ""
 
-          # Linux arm64 (launcher not built; picoclaw only bundle)
-          chmod +x artifacts/picoclaw-linux-arm64/picoclaw
-          mkdir -p staging/picoclaw_${TAG}_linux_arm64
-          cp artifacts/picoclaw-linux-arm64/picoclaw staging/picoclaw_${TAG}_linux_arm64/picoclaw
-          tar -czf release/picoclaw_${TAG}_linux_arm64.tar.gz -C staging picoclaw_${TAG}_linux_arm64/
+          # Linux arm64 (picoclaw only)
+          make_zip \
+            "picoclaw_${TAG}_linux_arm64" \
+            "artifacts/picoclaw-linux-arm64/picoclaw" \
+            "" ""
 
-          # Linux armv7
-          chmod +x artifacts/picoclaw-linux-arm-armv7/picoclaw
-          mkdir -p staging/picoclaw_${TAG}_linux_armv7
-          cp artifacts/picoclaw-linux-arm-armv7/picoclaw staging/picoclaw_${TAG}_linux_armv7/picoclaw
-          tar -czf release/picoclaw_${TAG}_linux_armv7.tar.gz -C staging picoclaw_${TAG}_linux_armv7/
+          # Linux armv7 (picoclaw only)
+          make_zip \
+            "picoclaw_${TAG}_linux_armv7" \
+            "artifacts/picoclaw-linux-arm-armv7/picoclaw" \
+            "" ""
 
-          # Linux riscv64
-          chmod +x artifacts/picoclaw-linux-riscv64/picoclaw
-          mkdir -p staging/picoclaw_${TAG}_linux_riscv64
-          cp artifacts/picoclaw-linux-riscv64/picoclaw staging/picoclaw_${TAG}_linux_riscv64/picoclaw
-          tar -czf release/picoclaw_${TAG}_linux_riscv64.tar.gz -C staging picoclaw_${TAG}_linux_riscv64/
+          # Linux riscv64 (picoclaw only)
+          make_zip \
+            "picoclaw_${TAG}_linux_riscv64" \
+            "artifacts/picoclaw-linux-riscv64/picoclaw" \
+            "" ""
 
-          # Linux loong64
-          chmod +x artifacts/picoclaw-linux-loong64/picoclaw
-          mkdir -p staging/picoclaw_${TAG}_linux_loong64
-          cp artifacts/picoclaw-linux-loong64/picoclaw staging/picoclaw_${TAG}_linux_loong64/picoclaw
-          tar -czf release/picoclaw_${TAG}_linux_loong64.tar.gz -C staging picoclaw_${TAG}_linux_loong64/
+          # Linux loong64 (picoclaw only)
+          make_zip \
+            "picoclaw_${TAG}_linux_loong64" \
+            "artifacts/picoclaw-linux-loong64/picoclaw" \
+            "" ""
 
           echo ""
-          echo "Final release assets:"
+          echo "=== Final release assets ==="
           ls -lh release/
 
       # ── Create GitHub Release ──
@@ -374,6 +399,6 @@ jobs:
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: true
-          files: release/*
+          files: release/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
