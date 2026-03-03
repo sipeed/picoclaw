@@ -92,14 +92,14 @@ func NewModelRegistry(cfg *config.Config) (*ModelRegistry, error) {
 			cache[key] = provider
 		}
 
-		providerKey := protocol
-		if providerKey == "" {
-			providerKey = "openai"
+		providerKeyStr := protocol
+		if providerKeyStr == "" {
+			providerKeyStr = "openai"
 		}
 		reg.models[mc.ModelName] = &ModelEntry{
 			Provider:    provider,
 			ModelID:     modelID,
-			ProviderKey: providerKey,
+			ProviderKey: providerKeyStr,
 		}
 	}
 
