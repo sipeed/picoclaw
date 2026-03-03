@@ -33,6 +33,7 @@ type Provider struct {
 	apiBase        string
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient     *http.Client
+	isKimiAPI      bool // true when apiBase points to api.kimi.com
 }
 
 type Option func(*Provider)
@@ -69,10 +70,17 @@ func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 		}
 	}
 
+	trimmedBase := strings.TrimRight(apiBase, "/")
+	var isKimi bool
+	if parsed, err := url.Parse(trimmedBase); err == nil {
+		isKimi = parsed.Hostname() == "api.kimi.com"
+	}
+
 	p := &Provider{
 		apiKey:     apiKey,
-		apiBase:    strings.TrimRight(apiBase, "/"),
+		apiBase:    trimmedBase,
 		httpClient: client,
+		isKimiAPI:  isKimi,
 	}
 
 	for _, opt := range opts {
@@ -175,6 +183,12 @@ func (p *Provider) Chat(
 	req.Header.Set("Content-Type", "application/json")
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+	// Kimi Code API rejects requests without a recognized coding-agent
+	// User-Agent. "KimiCLI/0.77" is the minimum version string accepted
+	// by the api.kimi.com/coding/v1 endpoint (per Kimi's API docs).
+	if p.isKimiAPI {
+		req.Header.Set("User-Agent", "KimiCLI/0.77")
 	}
 
 	resp, err := p.httpClient.Do(req)

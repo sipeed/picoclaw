@@ -225,7 +225,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 			},
 		},
 		{
-			providerNames: []string{"moonshot", "kimi"},
+			providerNames: []string{"moonshot", "kimi", "kimi-code"},
 			protocol:      "moonshot",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" {
@@ -370,6 +370,23 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 					APIBase:        p.Mistral.APIBase,
 					Proxy:          p.Mistral.Proxy,
 					RequestTimeout: p.Mistral.RequestTimeout,
+				}, true
+			},
+		},
+		{
+			providerNames: []string{"opencode"},
+			protocol:      "opencode",
+			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
+				if p.Opencode.APIKey == "" && p.Opencode.APIBase == "" {
+					return ModelConfig{}, false
+				}
+				return ModelConfig{
+					ModelName:      "opencode",
+					Model:          "opencode/auto",
+					APIKey:         p.Opencode.APIKey,
+					APIBase:        p.Opencode.APIBase,
+					Proxy:          p.Opencode.Proxy,
+					RequestTimeout: p.Opencode.RequestTimeout,
 				}, true
 			},
 		},
