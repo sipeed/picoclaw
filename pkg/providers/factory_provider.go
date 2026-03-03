@@ -154,15 +154,17 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return NewCodexCliProvider(workspace), modelID, nil
 
 	case "github-copilot", "copilot":
-		apiBase := cfg.APIBase
-		if apiBase == "" {
-			apiBase = "localhost:4321"
-		}
 		connectMode := cfg.ConnectMode
 		if connectMode == "" {
 			connectMode = "grpc"
 		}
-		provider, err := NewGitHubCopilotProvider(apiBase, connectMode, modelID)
+		uri := cfg.APIBase
+		// For grpc mode, default to localhost:4321 if no address is specified.
+		// For stdio mode, uri is the optional CLI binary path (empty = "copilot" from PATH).
+		if uri == "" && connectMode == "grpc" {
+			uri = "localhost:4321"
+		}
+		provider, err := NewGitHubCopilotProvider(uri, connectMode, modelID)
 		if err != nil {
 			return nil, "", err
 		}
