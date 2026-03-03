@@ -180,6 +180,7 @@ type AgentDefaults struct {
 	MaxTokens                 int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature               *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations         int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	TLDRIncludeMessage        bool     `json:"tldr_include_message"            env:"PICOCLAW_AGENTS_DEFAULTS_TLDR_INCLUDE_MESSAGE"`
 }
 
 // GetModelName returns the effective model name for the agent defaults.

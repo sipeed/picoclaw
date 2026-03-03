@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -529,7 +528,16 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 
 	// 5. Handle empty response
 	if finalContent == "" {
-		finalContent = generateTLDR(opts.UserMessage, executedTools, iteration)
+		// Deduplicate tools for TLDR
+		seen := make(map[string]bool)
+		uniqueTools := make([]string, 0, len(executedTools))
+		for _, t := range executedTools {
+			if !seen[t] {
+				seen[t] = true
+				uniqueTools = append(uniqueTools, t)
+			}
+		}
+		finalContent = generateTLDR(opts.UserMessage, uniqueTools, iteration, al.cfg.Agents.Defaults.TLDRIncludeMessage)
 	}
 
 	// 6. Save final assistant message to session
@@ -1358,36 +1366,18 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 
 // generateTLDR generates a summary when the LLM returns an empty response.
 // It provides context about what was processed instead of a generic message.
-func generateTLDR(userMessage string, executedTools []string, iteration int) string {
-	var sb strings.Builder
+func generateTLDR(userMessage string, executedTools []string, iteration int, includeMessage bool) string {
+	var result string
 
 	if len(executedTools) > 0 {
-		sb.WriteString("Processed ")
-		sb.WriteString(strconv.Itoa(len(executedTools)))
-		sb.WriteString(" tool(s): ")
-		sb.WriteString(strings.Join(executedTools, ", "))
-		sb.WriteString(".")
+		result = tldrWithToolsMessage(len(executedTools), strings.Join(executedTools, ", "), iteration)
 	} else {
-		sb.WriteString("Processed your request")
+		result = tldrNoToolsMessage(iteration)
 	}
 
-	sb.WriteString(" (")
-	sb.WriteString(strconv.Itoa(iteration))
-	sb.WriteString(" iteration")
-	if iteration > 1 {
-		sb.WriteString("s")
-	}
-	sb.WriteString(")")
-
-	if len(userMessage) > 50 {
-		sb.WriteString(". Message: \"")
-		sb.WriteString(utils.Truncate(userMessage, 50))
-		sb.WriteString("...\"")
-	} else if userMessage != "" {
-		sb.WriteString(". Message: \"")
-		sb.WriteString(userMessage)
-		sb.WriteString("\"")
+	if includeMessage && len(userMessage) > 0 {
+		result += tldrWithMessage(userMessage)
 	}
 
-	return sb.String()
+	return result
 }
