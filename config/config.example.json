@@ -246,6 +246,14 @@
     "mcp": {
       "enabled": false,
       "servers": {
+        "context7": {
+          "enabled": false,
+          "type": "http",
+          "url": "https://mcp.context7.com/mcp",
+          "headers": {
+            "CONTEXT7_API_KEY": "ctx7sk-xx"
+          }
+        },
         "filesystem": {
           "enabled": false,
           "command": "npx",
