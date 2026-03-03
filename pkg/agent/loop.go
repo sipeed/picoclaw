@@ -1413,8 +1413,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		task.Result = utils.Truncate(finalContent, 280)
 	}
 
-
-
 	// 6. Save final assistant message to session (deferred write-behind)
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 	agent.Sessions.MarkDirty(opts.SessionKey)
