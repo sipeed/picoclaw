@@ -1467,7 +1467,7 @@ func (al *AgentLoop) handleCommand(
 		return "", false
 	}
 
-	executor := commands.NewExecutor(commands.NewRegistry(commands.BuiltinDefinitions(al.cfg)))
+	executor := commands.NewExecutor(commands.NewRegistry(commands.BuiltinDefinitions(&commands.Deps{Config: al.cfg})))
 
 	var commandReply string
 	result := executor.Execute(ctx, commands.Request{

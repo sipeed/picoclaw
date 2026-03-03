@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func findDefinitionByName(t *testing.T, defs []Definition, name string) Definition {
@@ -20,7 +18,8 @@ func findDefinitionByName(t *testing.T, defs []Definition, name string) Definiti
 }
 
 func TestBuiltinHelpHandler_ReturnsFormattedMessage(t *testing.T) {
-	defs := BuiltinDefinitions(nil)
+	deps := &Deps{}
+	defs := BuiltinDefinitions(deps)
 	helpDef := findDefinitionByName(t, defs, "help")
 	if helpDef.Handler == nil {
 		t.Fatalf("/help handler should not be nil")
@@ -37,25 +36,26 @@ func TestBuiltinHelpHandler_ReturnsFormattedMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("/help handler error: %v", err)
 	}
-	if !strings.Contains(reply, "/show [model|channel] - Show current configuration") {
+	// Now uses auto-generated EffectiveUsage which includes agents
+	if !strings.Contains(reply, "/show [model|channel|agents]") {
 		t.Fatalf("/help reply missing /show usage, got %q", reply)
 	}
-	if !strings.Contains(reply, "/list [models|channels] - List available options") {
+	if !strings.Contains(reply, "/list [models|channels|agents]") {
 		t.Fatalf("/help reply missing /list usage, got %q", reply)
 	}
 }
 
 func TestBuiltinShowChannel_PreservesUserVisibleBehavior(t *testing.T) {
-	defs := BuiltinDefinitions(&config.Config{})
-	showDef := findDefinitionByName(t, defs, "show")
-	if showDef.Handler == nil {
-		t.Fatalf("/show handler should not be nil")
-	}
+	deps := &Deps{}
+	defs := BuiltinDefinitions(deps)
+
+	// show now uses sub-commands, so we need the executor to route
+	ex := NewExecutor(NewRegistry(defs))
 
 	cases := []string{"telegram", "whatsapp"}
 	for _, channel := range cases {
 		var reply string
-		err := showDef.Handler(context.Background(), Request{
+		res := ex.Execute(context.Background(), Request{
 			Channel: channel,
 			Text:    "/show channel",
 			Reply: func(text string) error {
@@ -63,8 +63,8 @@ func TestBuiltinShowChannel_PreservesUserVisibleBehavior(t *testing.T) {
 				return nil
 			},
 		})
-		if err != nil {
-			t.Fatalf("/show channel handler error on %s: %v", channel, err)
+		if res.Outcome != OutcomeHandled {
+			t.Fatalf("/show channel on %s: outcome=%v, want=%v", channel, res.Outcome, OutcomeHandled)
 		}
 		want := "Current Channel: " + channel
 		if reply != want {
@@ -73,29 +73,77 @@ func TestBuiltinShowChannel_PreservesUserVisibleBehavior(t *testing.T) {
 	}
 }
 
-func TestBuiltinListChannels_UsesConfigEnabledChannels(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.Channels.Telegram.Enabled = true
-	cfg.Channels.Slack.Enabled = true
-
-	defs := BuiltinDefinitions(cfg)
-	listDef := findDefinitionByName(t, defs, "list")
-	if listDef.Handler == nil {
-		t.Fatalf("/list handler should not be nil")
+func TestBuiltinListChannels_UsesGetEnabledChannels(t *testing.T) {
+	deps := &Deps{
+		GetEnabledChannels: func() []string {
+			return []string{"telegram", "slack"}
+		},
 	}
+	defs := BuiltinDefinitions(deps)
+	ex := NewExecutor(NewRegistry(defs))
 
 	var reply string
-	err := listDef.Handler(context.Background(), Request{
+	res := ex.Execute(context.Background(), Request{
 		Text: "/list channels",
 		Reply: func(text string) error {
 			reply = text
 			return nil
 		},
 	})
-	if err != nil {
-		t.Fatalf("/list channels handler error: %v", err)
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("/list channels: outcome=%v, want=%v", res.Outcome, OutcomeHandled)
 	}
 	if !strings.Contains(reply, "telegram") || !strings.Contains(reply, "slack") {
 		t.Fatalf("/list channels reply=%q, want telegram and slack", reply)
+	}
+}
+
+func TestBuiltinShowAgents_RestoresOldBehavior(t *testing.T) {
+	deps := &Deps{
+		ListAgentIDs: func() []string {
+			return []string{"default", "coder"}
+		},
+	}
+	defs := BuiltinDefinitions(deps)
+	ex := NewExecutor(NewRegistry(defs))
+
+	var reply string
+	res := ex.Execute(context.Background(), Request{
+		Text: "/show agents",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("/show agents: outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !strings.Contains(reply, "default") || !strings.Contains(reply, "coder") {
+		t.Fatalf("/show agents reply=%q, want agent IDs", reply)
+	}
+}
+
+func TestBuiltinListAgents_RestoresOldBehavior(t *testing.T) {
+	deps := &Deps{
+		ListAgentIDs: func() []string {
+			return []string{"default", "coder"}
+		},
+	}
+	defs := BuiltinDefinitions(deps)
+	ex := NewExecutor(NewRegistry(defs))
+
+	var reply string
+	res := ex.Execute(context.Background(), Request{
+		Text: "/list agents",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("/list agents: outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !strings.Contains(reply, "default") || !strings.Contains(reply, "coder") {
+		t.Fatalf("/list agents reply=%q, want agent IDs", reply)
 	}
 }

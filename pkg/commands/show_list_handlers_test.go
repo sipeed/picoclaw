@@ -4,13 +4,11 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestShowListHandlers_ChannelPolicy(t *testing.T) {
-	cfg := &config.Config{}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(cfg)))
+	deps := &Deps{}
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
 
 	var telegramReply string
 	handled := ex.Execute(context.Background(), Request{
@@ -63,9 +61,12 @@ func TestShowListHandlers_ChannelPolicy(t *testing.T) {
 }
 
 func TestShowListHandlers_ListHandledOnAllChannels(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.Channels.Telegram.Enabled = true
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(cfg)))
+	deps := &Deps{
+		GetEnabledChannels: func() []string {
+			return []string{"telegram"}
+		},
+	}
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
