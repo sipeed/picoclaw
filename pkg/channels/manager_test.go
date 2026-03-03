@@ -1355,6 +1355,48 @@ func TestHandleStatusSend_DraftFails_FallsToEdit(t *testing.T) {
 	}
 }
 
+func TestHandleStatusSend_DraftFailure_DoesNotClobberTrackedMessageID(t *testing.T) {
+	m := newTestManager()
+	var sendWithIDCount int
+	var editCount int
+	var editedMessageID string
+
+	ch := &mockDraftSender{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		draftFn: func(_ context.Context, _ string, _ int, _ string) error {
+			return fmt.Errorf("draft unsupported")
+		},
+		editFn: func(_ context.Context, _, messageID, _ string) error {
+			editCount++
+			editedMessageID = messageID
+			return nil
+		},
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			sendWithIDCount++
+			return "msg-1", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "group-main", Content: "preview-1", IsStatus: true}
+	m.handleStatusSend(context.Background(), "test", w, msg)
+
+	msg.Content = "preview-2"
+	m.handleStatusSend(context.Background(), "test", w, msg)
+
+	if sendWithIDCount != 1 {
+		t.Fatalf("expected SendWithID to be called once, got %d", sendWithIDCount)
+	}
+	if editCount != 1 {
+		t.Fatalf("expected EditMessage to be called once, got %d", editCount)
+	}
+	if editedMessageID != "msg-1" {
+		t.Fatalf("expected EditMessage target msg-1, got %s", editedMessageID)
+	}
+}
 func TestHandleTaskStatusSend_UsesDraftSender(t *testing.T) {
 	m := newTestManager()
 	var draftCalled bool
@@ -1393,6 +1435,54 @@ func TestHandleTaskStatusSend_UsesDraftSender(t *testing.T) {
 	}
 }
 
+func TestHandleTaskStatusSend_DraftFailure_DoesNotClobberTrackedMessageID(t *testing.T) {
+	m := newTestManager()
+	var sendWithIDCount int
+	var editCount int
+	var editedMessageID string
+
+	ch := &mockDraftSender{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		draftFn: func(_ context.Context, _ string, _ int, _ string) error {
+			return fmt.Errorf("draft unsupported")
+		},
+		editFn: func(_ context.Context, _, messageID, _ string) error {
+			editCount++
+			editedMessageID = messageID
+			return nil
+		},
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			sendWithIDCount++
+			return "task-msg-1", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	msg := bus.OutboundMessage{
+		Channel:      "test",
+		ChatID:       "group-main",
+		Content:      "task-10%",
+		IsTaskStatus: true,
+		TaskID:       "task-1",
+	}
+	m.handleTaskStatusSend(context.Background(), "test", w, msg)
+
+	msg.Content = "task-20%"
+	m.handleTaskStatusSend(context.Background(), "test", w, msg)
+
+	if sendWithIDCount != 1 {
+		t.Fatalf("expected SendWithID to be called once, got %d", sendWithIDCount)
+	}
+	if editCount != 1 {
+		t.Fatalf("expected EditMessage to be called once, got %d", editCount)
+	}
+	if editedMessageID != "task-msg-1" {
+		t.Fatalf("expected EditMessage target task-msg-1, got %s", editedMessageID)
+	}
+}
 func TestPreSend_ClearsDraftState(t *testing.T) {
 	m := newTestManager()
 
