@@ -534,12 +534,15 @@ func (m *Manager) handleStatusSend(ctx context.Context, name string, w *channelW
 		}
 		if did == 0 {
 			did = generateDraftID(key)
+		}
+		if err := drafter.SendDraft(ctx, msg.ChatID, did, msg.Content); err == nil {
+			// Track draft only after successful send. If draft fails (e.g. group
+			// main thread), keep existing messageID entry so fallback edits can
+			// reuse the same status bubble instead of creating duplicates.
 			m.statusMsgIDs.Store(key, statusMsgEntry{
 				draftID:   did,
 				createdAt: time.Now(),
 			})
-		}
-		if err := drafter.SendDraft(ctx, msg.ChatID, did, msg.Content); err == nil {
 			return
 		}
 		// Draft failed — fall through to edit-based approach
@@ -628,12 +631,14 @@ func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *chan
 		}
 		if did == 0 {
 			did = generateDraftID(taskKey)
+		}
+		if err := drafter.SendDraft(ctx, msg.ChatID, did, msg.Content); err == nil {
+			// Track draft only after successful send to avoid clobbering an
+			// existing messageID entry when drafts are unsupported.
 			m.taskMsgIDs.Store(taskKey, statusMsgEntry{
 				draftID:   did,
 				createdAt: time.Now(),
 			})
-		}
-		if err := drafter.SendDraft(ctx, msg.ChatID, did, msg.Content); err == nil {
 			return
 		}
 		// Draft failed — fall through to edit-based approach
