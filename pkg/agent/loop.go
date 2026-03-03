@@ -8,9 +8,11 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -47,11 +49,12 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string // Session identifier for history/context
-	Channel         string // Target channel for tool execution
-	ChatID          string // Target chat ID for tool execution
-	UserMessage     string // User message content (may include prefix)
-	DefaultResponse string // Response when LLM returns empty
+	SessionKey      string   // Session identifier for history/context
+	Channel         string   // Target channel for tool execution
+	ChatID          string   // Target chat ID for tool execution
+	UserMessage     string   // User message content (may include prefix)
+	Media           []string // Media URLs attached to the user message
+	DefaultResponse string   // Response when LLM returns empty
 	EnableSummary   bool   // Whether to trigger summarization
 	SendResponse    bool   // Whether to send response via bus
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
@@ -496,6 +499,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
+		Media:           msg.Media,
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
@@ -602,10 +606,11 @@ func (al *AgentLoop) runAgentLoop(
 		history,
 		summary,
 		opts.UserMessage,
-		nil,
+		opts.Media,
 		opts.Channel,
 		opts.ChatID,
 	)
+	messages = resolveMediaRefs(messages, al.mediaStore)
 
 	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
@@ -1475,4 +1480,106 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 		return nil
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
+}
+
+// maxMediaFileSize is the maximum file size (20 MB) for media resolution.
+// Files larger than this are skipped to prevent OOM under concurrent load.
+const maxMediaFileSize = 20 * 1024 * 1024
+
+// resolveMediaRefs replaces media:// refs in message Media fields with base64 data URLs.
+// Returns a new slice with resolved URLs; original messages are not mutated.
+func resolveMediaRefs(messages []providers.Message, store media.MediaStore) []providers.Message {
+	if store == nil {
+		return messages
+	}
+
+	result := make([]providers.Message, len(messages))
+	copy(result, messages)
+
+	for i, m := range result {
+		if len(m.Media) == 0 {
+			continue
+		}
+
+		resolved := make([]string, 0, len(m.Media))
+		for _, ref := range m.Media {
+			if !strings.HasPrefix(ref, "media://") {
+				resolved = append(resolved, ref)
+				continue
+			}
+
+			localPath, meta, err := store.ResolveWithMeta(ref)
+			if err != nil {
+				logger.WarnCF("agent", "Failed to resolve media ref", map[string]any{
+					"ref":   ref,
+					"error": err.Error(),
+				})
+				continue
+			}
+
+			info, err := os.Stat(localPath)
+			if err != nil {
+				logger.WarnCF("agent", "Failed to stat media file", map[string]any{
+					"path":  localPath,
+					"error": err.Error(),
+				})
+				continue
+			}
+			if info.Size() > maxMediaFileSize {
+				logger.WarnCF("agent", "Media file too large, skipping", map[string]any{
+					"path":     localPath,
+					"size":     info.Size(),
+					"max_size": maxMediaFileSize,
+				})
+				continue
+			}
+
+			data, err := os.ReadFile(localPath)
+			if err != nil {
+				logger.WarnCF("agent", "Failed to read media file", map[string]any{
+					"path":  localPath,
+					"error": err.Error(),
+				})
+				continue
+			}
+
+			mime := meta.ContentType
+			if mime == "" {
+				mime = mimeFromExtension(filepath.Ext(localPath))
+			}
+			if mime == "" {
+				logger.WarnCF("agent", "Unknown media type, skipping", map[string]any{
+					"path": localPath,
+					"ext":  filepath.Ext(localPath),
+				})
+				continue
+			}
+
+			dataURL := "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
+			resolved = append(resolved, dataURL)
+		}
+
+		result[i].Media = resolved
+	}
+
+	return result
+}
+
+// mimeFromExtension returns a MIME type for common image extensions.
+// Returns empty string for unrecognized extensions.
+func mimeFromExtension(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".bmp":
+		return "image/bmp"
+	default:
+		return ""
+	}
 }

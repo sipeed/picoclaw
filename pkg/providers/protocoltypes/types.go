@@ -65,6 +65,7 @@ type ContentBlock struct {
 type Message struct {
 	Role             string         `json:"role"`
 	Content          string         `json:"content"`
+	Media            []string       `json:"media,omitempty"` // URLs of images or other media attachments
 	ReasoningContent string         `json:"reasoning_content,omitempty"`
 	SystemParts      []ContentBlock `json:"system_parts,omitempty"` // structured system blocks for cache-aware adapters
 	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`
