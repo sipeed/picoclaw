@@ -1240,3 +1240,196 @@ func TestStatusMsgTTLJanitor(t *testing.T) {
 		t.Fatal("expected fresh status entry to survive")
 	}
 }
+
+// --- DraftSender tests ---
+
+// mockDraftSender implements DraftSender + MessageSenderWithID + MessageEditor.
+type mockDraftSender struct {
+	mockChannel
+	draftFn    func(ctx context.Context, chatID string, draftID int, content string) error
+	editFn     func(ctx context.Context, chatID, messageID, content string) error
+	sendWithID func(ctx context.Context, chatID, content string) (string, error)
+}
+
+func (m *mockDraftSender) SendDraft(ctx context.Context, chatID string, draftID int, content string) error {
+	return m.draftFn(ctx, chatID, draftID, content)
+}
+
+func (m *mockDraftSender) EditMessage(ctx context.Context, chatID, messageID, content string) error {
+	return m.editFn(ctx, chatID, messageID, content)
+}
+
+func (m *mockDraftSender) SendWithID(ctx context.Context, chatID, content string) (string, error) {
+	return m.sendWithID(ctx, chatID, content)
+}
+
+func TestHandleStatusSend_UsesDraftSender(t *testing.T) {
+	m := newTestManager()
+	var draftCalled bool
+	var draftContent string
+	var draftDID int
+
+	ch := &mockDraftSender{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		draftFn: func(_ context.Context, chatID string, draftID int, content string) error {
+			draftCalled = true
+			draftContent = content
+			draftDID = draftID
+			return nil
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			t.Fatal("EditMessage should not be called when draft succeeds")
+			return nil
+		},
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			t.Fatal("SendWithID should not be called when draft succeeds")
+			return "", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "streaming preview", IsStatus: true}
+	m.handleStatusSend(context.Background(), "test", w, msg)
+
+	if !draftCalled {
+		t.Fatal("expected SendDraft to be called")
+	}
+	if draftContent != "streaming preview" {
+		t.Fatalf("expected draft content 'streaming preview', got %s", draftContent)
+	}
+	if draftDID == 0 {
+		t.Fatal("expected non-zero draftID")
+	}
+
+	// Second call should reuse the same draftID
+	draftCalled = false
+	var secondDID int
+	ch.draftFn = func(_ context.Context, _ string, draftID int, _ string) error {
+		draftCalled = true
+		secondDID = draftID
+		return nil
+	}
+	msg.Content = "streaming preview updated"
+	m.handleStatusSend(context.Background(), "test", w, msg)
+
+	if !draftCalled {
+		t.Fatal("expected SendDraft to be called again")
+	}
+	if secondDID != draftDID {
+		t.Fatalf("expected same draftID %d, got %d", draftDID, secondDID)
+	}
+}
+
+func TestHandleStatusSend_DraftFails_FallsToEdit(t *testing.T) {
+	m := newTestManager()
+	var editCalled bool
+
+	ch := &mockDraftSender{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		draftFn: func(_ context.Context, _ string, _ int, _ string) error {
+			return fmt.Errorf("draft not supported in group")
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			editCalled = true
+			return nil
+		},
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			return "msg-1", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	// No existing placeholder/status — draft fails, then SendWithID
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "preview", IsStatus: true}
+	m.handleStatusSend(context.Background(), "test", w, msg)
+
+	// Draft failed, so it should fall through; no placeholder → no edit → SendWithID
+	if editCalled {
+		t.Fatal("expected EditMessage NOT to be called (no placeholder)")
+	}
+}
+
+func TestHandleTaskStatusSend_UsesDraftSender(t *testing.T) {
+	m := newTestManager()
+	var draftCalled bool
+
+	ch := &mockDraftSender{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		draftFn: func(_ context.Context, _ string, _ int, _ string) error {
+			draftCalled = true
+			return nil
+		},
+		editFn: func(_ context.Context, _, _, _ string) error {
+			t.Fatal("EditMessage should not be called when draft succeeds")
+			return nil
+		},
+		sendWithID: func(_ context.Context, _, _ string) (string, error) {
+			t.Fatal("SendWithID should not be called when draft succeeds")
+			return "", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	msg := bus.OutboundMessage{
+		Channel:      "test",
+		ChatID:       "123",
+		Content:      "task progress 50%",
+		IsTaskStatus: true,
+		TaskID:       "task-draft",
+	}
+	m.handleTaskStatusSend(context.Background(), "test", w, msg)
+
+	if !draftCalled {
+		t.Fatal("expected SendDraft to be called for task status")
+	}
+}
+
+func TestPreSend_ClearsDraftState(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+	}
+
+	// Store a draft-based status entry (draftID != 0, messageID empty)
+	m.statusMsgIDs.Store("test:123", statusMsgEntry{draftID: 42, createdAt: time.Now()})
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "final response"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	// Draft-based entries don't trigger edit; the final sendMessage replaces the draft
+	if edited {
+		t.Fatal("expected preSend to return false for draft-based status (sendMessage replaces draft)")
+	}
+
+	// Verify draft state was consumed
+	if _, loaded := m.statusMsgIDs.Load("test:123"); loaded {
+		t.Fatal("expected draft status entry to be deleted after preSend")
+	}
+}
+
+func TestGenerateDraftID_Stable(t *testing.T) {
+	id1 := generateDraftID("telegram:123")
+	id2 := generateDraftID("telegram:123")
+	if id1 != id2 {
+		t.Fatalf("expected stable draft ID, got %d vs %d", id1, id2)
+	}
+	if id1 == 0 {
+		t.Fatal("expected non-zero draft ID")
+	}
+
+	// Different key should produce different ID
+	id3 := generateDraftID("telegram:456")
+	if id1 == id3 {
+		t.Fatalf("expected different draft IDs for different keys, both got %d", id1)
+	}
+}
