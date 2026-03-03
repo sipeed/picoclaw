@@ -1,127 +1,97 @@
-// PicoClaw Launcher - Standalone HTTP service
+// PicoClaw Launcher - Desktop GUI for PicoClaw AI Agent
 //
-// Provides a web-based JSON editor for picoclaw config files,
-// with OAuth provider authentication support.
+// A Wails v2 desktop application that provides:
+//   - Service status monitoring and control
+//   - AI chat interface
+//   - Configuration editor
 //
 // Usage:
 //
-//	go build -o picoclaw-launcher ./cmd/picoclaw-launcher/
+//	wails build -o picoclaw-launcher.exe
 //	./picoclaw-launcher [config.json]
-//	./picoclaw-launcher -public config.json
 
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"fmt"
-	"io/fs"
-	"log"
-	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
-	"time"
 
-	"github.com/sipeed/picoclaw/cmd/picoclaw-launcher/internal/server"
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-//go:embed internal/ui/index.html
-var staticFiles embed.FS
+//go:embed all:frontend
+var assets embed.FS
+
+func defaultConfigPath() string {
+	if p := os.Getenv("PICOCLAW_CONFIG"); p != "" {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".picoclaw", "config.json")
+}
 
 func main() {
-	public := flag.Bool("public", false, "Listen on all interfaces (0.0.0.0) instead of localhost only")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "PicoClaw Launcher - A web-based configuration editor\n\n")
-		fmt.Fprintf(os.Stderr, "Usage: %s [options] [config.json]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Arguments:\n")
-		fmt.Fprintf(os.Stderr, "  config.json    Path to the configuration file (default: ~/.picoclaw/config.json)\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  %s                          Use default config path\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s ./config.json             Specify a config file\n", os.Args[0])
-		fmt.Fprintf(
-			os.Stderr,
-			"  %s -public ./config.json     Allow access from other devices on the network\n",
-			os.Args[0],
-		)
+		fmt.Fprintf(os.Stderr, "PicoClaw Launcher - Desktop GUI for PicoClaw AI Agent\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: %s [config.json]\n", os.Args[0])
 	}
 	flag.Parse()
 
-	configPath := server.DefaultConfigPath()
+	configPath := defaultConfigPath()
 	if flag.NArg() > 0 {
 		configPath = flag.Arg(0)
 	}
 
 	absPath, err := filepath.Abs(configPath)
 	if err != nil {
-		log.Fatalf("Failed to resolve config path: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to resolve config path: %v\n", err)
+		os.Exit(1)
 	}
 
-	var addr string
-	if *public {
-		addr = "0.0.0.0:" + server.DefaultPort
-	} else {
-		addr = "127.0.0.1:" + server.DefaultPort
-	}
+	app := NewApp(absPath)
 
-	mux := http.NewServeMux()
-	server.RegisterConfigAPI(mux, absPath)
-	server.RegisterAuthAPI(mux, absPath)
-	server.RegisterProcessAPI(mux, absPath)
+	err = wails.Run(&options.App{
+		Title:     "PicoClaw Launcher",
+		Width:     960,
+		Height:    640,
+		MinWidth:  720,
+		MinHeight: 480,
+		AssetServer: &assetserver.Options{
+			Assets: assets,
+		},
+		OnStartup:  app.startup,
+		OnShutdown: app.shutdown,
+		OnBeforeClose: func(ctx context.Context) (prevent bool) {
+			if app.forceQuit {
+				return false // allow quit
+			}
+			// Hide to tray instead of quitting
+			wailsRuntime.WindowHide(ctx)
+			return true
+		},
+		Bind: []interface{}{
+			app,
+		},
+		Windows: &windows.Options{
+			WebviewIsTransparent:              false,
+			WindowIsTranslucent:               false,
+			DisableWindowIcon:                 false,
+			DisableFramelessWindowDecorations: false,
+			WebviewUserDataPath:               "",
+			Theme:                             windows.SystemDefault,
+		},
+	})
 
-	staticFS, err := fs.Sub(staticFiles, "internal/ui")
 	if err != nil {
-		log.Fatalf("Failed to create sub filesystem: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
-	mux.Handle("/", http.FileServer(http.FS(staticFS)))
-
-	// Print startup banner
-	fmt.Println("=============================================")
-	fmt.Println("  PicoClaw Launcher")
-	fmt.Println("=============================================")
-	fmt.Printf("  Config file : %s\n", absPath)
-	fmt.Printf("  Listen addr : %s\n\n", addr)
-	fmt.Println("  Open the following URL in your browser")
-	fmt.Println("  to view and edit the configuration:")
-	fmt.Println()
-	fmt.Printf("    >> http://localhost:%s <<\n", server.DefaultPort)
-	if *public {
-		if ip := server.GetLocalIP(); ip != "" {
-			fmt.Printf("    >> http://%s:%s <<\n", ip, server.DefaultPort)
-		}
-	}
-	fmt.Println()
-	// fmt.Println("=============================================")
-
-	go func() {
-		// Wait briefly to ensure the server is ready before opening the browser
-		time.Sleep(500 * time.Millisecond)
-		url := "http://localhost:" + server.DefaultPort
-		if err := openBrowser(url); err != nil {
-			log.Printf("Warning: Failed to auto-open browser: %v\n", err)
-		}
-	}()
-
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("Server failed: %v", err)
-	}
-}
-
-// openBrowser automatically opens the given URL in the default browser.
-func openBrowser(url string) error {
-	var err error
-	switch runtime.GOOS {
-	case "linux":
-		err = exec.Command("xdg-open", url).Start()
-	case "windows":
-		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
-	case "darwin":
-		err = exec.Command("open", url).Start()
-	default:
-		err = fmt.Errorf("unsupported platform")
-	}
-	return err
 }
