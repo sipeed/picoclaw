@@ -18,8 +18,7 @@ func findDefinitionByName(t *testing.T, defs []Definition, name string) Definiti
 }
 
 func TestBuiltinHelpHandler_ReturnsFormattedMessage(t *testing.T) {
-	deps := &Deps{}
-	defs := BuiltinDefinitions(deps)
+	defs := BuiltinDefinitions()
 	helpDef := findDefinitionByName(t, defs, "help")
 	if helpDef.Handler == nil {
 		t.Fatalf("/help handler should not be nil")
@@ -32,7 +31,7 @@ func TestBuiltinHelpHandler_ReturnsFormattedMessage(t *testing.T) {
 			reply = text
 			return nil
 		},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("/help handler error: %v", err)
 	}
@@ -46,11 +45,8 @@ func TestBuiltinHelpHandler_ReturnsFormattedMessage(t *testing.T) {
 }
 
 func TestBuiltinShowChannel_PreservesUserVisibleBehavior(t *testing.T) {
-	deps := &Deps{}
-	defs := BuiltinDefinitions(deps)
-
-	// show now uses sub-commands, so we need the executor to route
-	ex := NewExecutor(NewRegistry(defs))
+	defs := BuiltinDefinitions()
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	cases := []string{"telegram", "whatsapp"}
 	for _, channel := range cases {
@@ -74,13 +70,13 @@ func TestBuiltinShowChannel_PreservesUserVisibleBehavior(t *testing.T) {
 }
 
 func TestBuiltinListChannels_UsesGetEnabledChannels(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		GetEnabledChannels: func() []string {
 			return []string{"telegram", "slack"}
 		},
 	}
-	defs := BuiltinDefinitions(deps)
-	ex := NewExecutor(NewRegistry(defs))
+	defs := BuiltinDefinitions()
+	ex := NewExecutor(NewRegistry(defs), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -99,13 +95,13 @@ func TestBuiltinListChannels_UsesGetEnabledChannels(t *testing.T) {
 }
 
 func TestBuiltinShowAgents_RestoresOldBehavior(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		ListAgentIDs: func() []string {
 			return []string{"default", "coder"}
 		},
 	}
-	defs := BuiltinDefinitions(deps)
-	ex := NewExecutor(NewRegistry(defs))
+	defs := BuiltinDefinitions()
+	ex := NewExecutor(NewRegistry(defs), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -124,13 +120,13 @@ func TestBuiltinShowAgents_RestoresOldBehavior(t *testing.T) {
 }
 
 func TestBuiltinListAgents_RestoresOldBehavior(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		ListAgentIDs: func() []string {
 			return []string{"default", "coder"}
 		},
 	}
-	defs := BuiltinDefinitions(deps)
-	ex := NewExecutor(NewRegistry(defs))
+	defs := BuiltinDefinitions()
+	ex := NewExecutor(NewRegistry(defs), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{

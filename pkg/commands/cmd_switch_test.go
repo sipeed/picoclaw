@@ -7,12 +7,12 @@ import (
 )
 
 func TestSwitchModel_Success(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		SwitchModel: func(value string) (string, error) {
 			return "old-model", nil
 		},
 	}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -32,12 +32,12 @@ func TestSwitchModel_Success(t *testing.T) {
 }
 
 func TestSwitchModel_MissingToKeyword(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		SwitchModel: func(value string) (string, error) {
 			return "old", nil
 		},
 	}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -56,12 +56,12 @@ func TestSwitchModel_MissingToKeyword(t *testing.T) {
 }
 
 func TestSwitchModel_MissingValue(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		SwitchModel: func(value string) (string, error) {
 			return "old", nil
 		},
 	}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -80,12 +80,12 @@ func TestSwitchModel_MissingValue(t *testing.T) {
 }
 
 func TestSwitchModel_Error(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		SwitchModel: func(value string) (string, error) {
 			return "", fmt.Errorf("model not found")
 		},
 	}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -104,8 +104,7 @@ func TestSwitchModel_Error(t *testing.T) {
 }
 
 func TestSwitchModel_NilDep(t *testing.T) {
-	deps := &Deps{}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), &Runtime{})
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -124,12 +123,12 @@ func TestSwitchModel_NilDep(t *testing.T) {
 }
 
 func TestSwitchChannel_Success(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		SwitchChannel: func(value string) error {
 			return nil
 		},
 	}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -149,12 +148,12 @@ func TestSwitchChannel_Success(t *testing.T) {
 }
 
 func TestSwitchChannel_Error(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		SwitchChannel: func(value string) error {
 			return fmt.Errorf("channel '%s' not found", value)
 		},
 	}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -173,8 +172,7 @@ func TestSwitchChannel_Error(t *testing.T) {
 }
 
 func TestSwitchChannel_NilDep(t *testing.T) {
-	deps := &Deps{}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), &Runtime{})
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -193,12 +191,12 @@ func TestSwitchChannel_NilDep(t *testing.T) {
 }
 
 func TestSwitch_BangPrefix(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		SwitchModel: func(value string) (string, error) {
 			return "old", nil
 		},
 	}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -217,8 +215,7 @@ func TestSwitch_BangPrefix(t *testing.T) {
 }
 
 func TestSwitch_NoSubCommand(t *testing.T) {
-	deps := &Deps{}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), &Runtime{})
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{

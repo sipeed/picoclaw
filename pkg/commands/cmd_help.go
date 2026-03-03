@@ -6,13 +6,13 @@ import (
 	"strings"
 )
 
-func helpCommand(deps *Deps) Definition {
+func helpCommand() Definition {
 	return Definition{
 		Name:        "help",
 		Description: "Show this help message",
 		Usage:       "/help",
-		Handler: func(_ context.Context, req Request) error {
-			defs := BuiltinDefinitions(deps)
+		Handler: func(_ context.Context, req Request, _ *Runtime) error {
+			defs := BuiltinDefinitions()
 			return req.Reply(formatHelpMessage(defs))
 		},
 	}

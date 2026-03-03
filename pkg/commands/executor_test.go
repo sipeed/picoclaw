@@ -9,7 +9,7 @@ import (
 
 func TestExecutor_RegisteredWithoutHandler_ReturnsPassthrough(t *testing.T) {
 	defs := []Definition{{Name: "show"}}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Channel: "whatsapp", Text: "/show"})
 	if res.Outcome != OutcomePassthrough {
@@ -19,7 +19,7 @@ func TestExecutor_RegisteredWithoutHandler_ReturnsPassthrough(t *testing.T) {
 
 func TestExecutor_UnknownSlashCommand_ReturnsPassthrough(t *testing.T) {
 	defs := []Definition{{Name: "show"}}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Channel: "telegram", Text: "/unknown"})
 	if res.Outcome != OutcomePassthrough {
@@ -32,13 +32,13 @@ func TestExecutor_SupportedCommandWithHandler_ReturnsHandled(t *testing.T) {
 	defs := []Definition{
 		{
 			Name: "help",
-			Handler: func(context.Context, Request) error {
+			Handler: func(context.Context, Request, *Runtime) error {
 				called = true
 				return nil
 			},
 		},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Channel: "telegram", Text: "/help@my_bot"})
 	if res.Outcome != OutcomeHandled {
@@ -56,7 +56,7 @@ func TestExecutor_AliasWithoutHandler_ReturnsPassthrough(t *testing.T) {
 			Aliases: []string{"display"},
 		},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Channel: "whatsapp", Text: "/display"})
 	if res.Outcome != OutcomePassthrough {
@@ -73,13 +73,13 @@ func TestExecutor_AliasWithHandler_ReturnsHandled(t *testing.T) {
 		{
 			Name:    "clear",
 			Aliases: []string{"reset"},
-			Handler: func(context.Context, Request) error {
+			Handler: func(context.Context, Request, *Runtime) error {
 				called = true
 				return nil
 			},
 		},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Channel: "telegram", Text: "/reset"})
 	if res.Outcome != OutcomeHandled {
@@ -97,7 +97,7 @@ func TestExecutor_SupportedCommandWithNilHandler_ReturnsPassthrough(t *testing.T
 	defs := []Definition{
 		{Name: "placeholder"},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Channel: "telegram", Text: "/placeholder list"})
 	if res.Outcome != OutcomePassthrough {
@@ -114,7 +114,7 @@ func TestExecutor_NilHandlerDoesNotMaskLaterHandler(t *testing.T) {
 	defs := []Definition{
 		{Name: "placeholder"},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Channel: "telegram", Text: "/placeholder"})
 	if res.Outcome != OutcomePassthrough {
@@ -130,12 +130,12 @@ func TestExecutor_HandlerErrorIsPropagated(t *testing.T) {
 	defs := []Definition{
 		{
 			Name: "help",
-			Handler: func(context.Context, Request) error {
+			Handler: func(context.Context, Request, *Runtime) error {
 				return wantErr
 			},
 		},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Channel: "telegram", Text: "/help"})
 	if res.Outcome != OutcomeHandled {
@@ -151,13 +151,13 @@ func TestExecutor_SupportsBangPrefixAndCaseInsensitiveCommand(t *testing.T) {
 	defs := []Definition{
 		{
 			Name: "help",
-			Handler: func(context.Context, Request) error {
+			Handler: func(context.Context, Request, *Runtime) error {
 				called = true
 				return nil
 			},
 		},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Channel: "telegram", Text: "!HELP"})
 	if res.Outcome != OutcomeHandled {
@@ -174,7 +174,7 @@ func TestExecutor_SubCommand_RoutesToCorrectHandler(t *testing.T) {
 		{
 			Name: "show",
 			SubCommands: []SubCommand{
-				{Name: "model", Handler: func(_ context.Context, _ Request) error {
+				{Name: "model", Handler: func(_ context.Context, _ Request, _ *Runtime) error {
 					modelCalled = true
 					return nil
 				}},
@@ -182,7 +182,7 @@ func TestExecutor_SubCommand_RoutesToCorrectHandler(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Text: "/show model"})
 	if res.Outcome != OutcomeHandled {
@@ -203,7 +203,7 @@ func TestExecutor_SubCommand_NoArg_RepliesUsage(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -227,7 +227,7 @@ func TestExecutor_SubCommand_UnknownArg_RepliesError(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{
@@ -251,7 +251,7 @@ func TestExecutor_SubCommand_NilHandler_ReturnsPassthrough(t *testing.T) {
 			},
 		},
 	}
-	ex := NewExecutor(NewRegistry(defs))
+	ex := NewExecutor(NewRegistry(defs), nil)
 
 	res := ex.Execute(context.Background(), Request{Text: "/show model"})
 	if res.Outcome != OutcomePassthrough {

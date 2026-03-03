@@ -7,8 +7,7 @@ import (
 )
 
 func TestShowListHandlers_ChannelPolicy(t *testing.T) {
-	deps := &Deps{}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), nil)
 
 	var telegramReply string
 	handled := ex.Execute(context.Background(), Request{
@@ -58,12 +57,12 @@ func TestShowListHandlers_ChannelPolicy(t *testing.T) {
 }
 
 func TestShowListHandlers_ListHandledOnAllChannels(t *testing.T) {
-	deps := &Deps{
+	rt := &Runtime{
 		GetEnabledChannels: func() []string {
 			return []string{"telegram"}
 		},
 	}
-	ex := NewExecutor(NewRegistry(BuiltinDefinitions(deps)))
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
 	var reply string
 	res := ex.Execute(context.Background(), Request{

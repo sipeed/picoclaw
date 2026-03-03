@@ -2,11 +2,10 @@ package commands
 
 import "github.com/sipeed/picoclaw/pkg/config"
 
-// Deps provides runtime data to command handlers without importing
-// agent or channel packages. Function fields are called at handler
-// invocation time, not at construction time, so late-bound values
-// (e.g. channelManager set after NewAgentLoop) are visible.
-type Deps struct {
+// Runtime provides runtime dependencies to command handlers. It is constructed
+// per-request by the agent loop so that per-request state (like session scope)
+// can coexist with long-lived callbacks (like GetModelInfo).
+type Runtime struct {
 	Config             *config.Config
 	GetModelInfo       func() (name, provider string)
 	ListAgentIDs       func() []string

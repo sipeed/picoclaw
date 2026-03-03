@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func listCommand(deps *Deps) Definition {
+func listCommand() Definition {
 	return Definition{
 		Name:        "list",
 		Description: "List available options",
@@ -14,11 +14,11 @@ func listCommand(deps *Deps) Definition {
 			{
 				Name:        "models",
 				Description: "Configured models",
-				Handler: func(_ context.Context, req Request) error {
-					if deps.GetModelInfo == nil {
+				Handler: func(_ context.Context, req Request, rt *Runtime) error {
+					if rt == nil || rt.GetModelInfo == nil {
 						return req.Reply(unavailableMsg)
 					}
-					name, provider := deps.GetModelInfo()
+					name, provider := rt.GetModelInfo()
 					if provider == "" {
 						provider = "configured default"
 					}
@@ -31,11 +31,11 @@ func listCommand(deps *Deps) Definition {
 			{
 				Name:        "channels",
 				Description: "Enabled channels",
-				Handler: func(_ context.Context, req Request) error {
-					if deps.GetEnabledChannels == nil {
+				Handler: func(_ context.Context, req Request, rt *Runtime) error {
+					if rt == nil || rt.GetEnabledChannels == nil {
 						return req.Reply(unavailableMsg)
 					}
-					enabled := deps.GetEnabledChannels()
+					enabled := rt.GetEnabledChannels()
 					if len(enabled) == 0 {
 						return req.Reply("No channels enabled")
 					}
@@ -45,7 +45,7 @@ func listCommand(deps *Deps) Definition {
 			{
 				Name:        "agents",
 				Description: "Registered agents",
-				Handler:     agentsHandler(deps),
+				Handler:     agentsHandler(),
 			},
 		},
 	}

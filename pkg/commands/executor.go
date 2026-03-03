@@ -22,10 +22,11 @@ type ExecuteResult struct {
 
 type Executor struct {
 	reg *Registry
+	rt  *Runtime
 }
 
-func NewExecutor(reg *Registry) *Executor {
-	return &Executor{reg: reg}
+func NewExecutor(reg *Registry, rt *Runtime) *Executor {
+	return &Executor{reg: reg, rt: rt}
 }
 
 // Execute implements a two-state command decision:
@@ -60,7 +61,7 @@ func (e *Executor) executeDefinition(ctx context.Context, req Request, def Defin
 		if def.Handler == nil {
 			return ExecuteResult{Outcome: OutcomePassthrough, Command: def.Name}
 		}
-		err := def.Handler(ctx, req)
+		err := def.Handler(ctx, req, e.rt)
 		return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name, Err: err}
 	}
 
@@ -77,7 +78,7 @@ func (e *Executor) executeDefinition(ctx context.Context, req Request, def Defin
 			if sc.Handler == nil {
 				return ExecuteResult{Outcome: OutcomePassthrough, Command: def.Name}
 			}
-			err := sc.Handler(ctx, req)
+			err := sc.Handler(ctx, req, e.rt)
 			return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name, Err: err}
 		}
 	}

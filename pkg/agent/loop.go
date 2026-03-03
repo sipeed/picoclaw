@@ -47,7 +47,7 @@ type AgentLoop struct {
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
-	cmdExecutor    *commands.Executor
+	cmdRegistry    *commands.Registry
 }
 
 // processOptions configures how a message is processed
@@ -103,48 +103,7 @@ func NewAgentLoop(
 		fallback:    fallbackChain,
 	}
 
-	deps := &commands.Deps{
-		Config: cfg,
-		GetModelInfo: func() (string, string) {
-			agent := al.registry.GetDefaultAgent()
-			if agent == nil {
-				return cfg.Agents.Defaults.GetModelName(), cfg.Agents.Defaults.Provider
-			}
-			return agent.Model, cfg.Agents.Defaults.Provider
-		},
-		ListAgentIDs: al.registry.ListAgentIDs,
-		GetEnabledChannels: func() []string {
-			if al.channelManager == nil {
-				return nil
-			}
-			return al.channelManager.GetEnabledChannels()
-		},
-		SwitchModel: func(value string) (string, error) {
-			defaultAgent := al.registry.GetDefaultAgent()
-			if defaultAgent == nil {
-				return "", fmt.Errorf("no default agent configured")
-			}
-			oldModel := defaultAgent.Model
-			defaultAgent.Model = value
-			if al.cfg != nil {
-				al.cfg.Agents.Defaults.ModelName = value
-				al.cfg.Agents.Defaults.Model = value
-			}
-			return oldModel, nil
-		},
-		SwitchChannel: func(value string) error {
-			if al.channelManager == nil {
-				return fmt.Errorf("channel manager not initialized")
-			}
-			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
-				return fmt.Errorf("channel '%s' not found or not enabled", value)
-			}
-			return nil
-		},
-	}
-	al.cmdExecutor = commands.NewExecutor(
-		commands.NewRegistry(commands.BuiltinDefinitions(deps)),
-	)
+	al.cmdRegistry = commands.NewRegistry(commands.BuiltinDefinitions())
 
 	return al
 }
@@ -1508,10 +1467,12 @@ func (al *AgentLoop) handleCommand(
 		return "", false
 	}
 
-	executor := al.cmdExecutor
-	if executor == nil {
+	if al.cmdRegistry == nil {
 		return "", false
 	}
+
+	rt := al.buildRuntime()
+	executor := commands.NewExecutor(al.cmdRegistry, rt)
 
 	var commandReply string
 	result := executor.Execute(ctx, commands.Request{
@@ -1536,6 +1497,48 @@ func (al *AgentLoop) handleCommand(
 		return "", true
 	default:
 		return "", false
+	}
+}
+
+func (al *AgentLoop) buildRuntime() *commands.Runtime {
+	return &commands.Runtime{
+		Config: al.cfg,
+		GetModelInfo: func() (string, string) {
+			agent := al.registry.GetDefaultAgent()
+			if agent == nil {
+				return al.cfg.Agents.Defaults.GetModelName(), al.cfg.Agents.Defaults.Provider
+			}
+			return agent.Model, al.cfg.Agents.Defaults.Provider
+		},
+		ListAgentIDs: al.registry.ListAgentIDs,
+		GetEnabledChannels: func() []string {
+			if al.channelManager == nil {
+				return nil
+			}
+			return al.channelManager.GetEnabledChannels()
+		},
+		SwitchModel: func(value string) (string, error) {
+			defaultAgent := al.registry.GetDefaultAgent()
+			if defaultAgent == nil {
+				return "", fmt.Errorf("no default agent configured")
+			}
+			oldModel := defaultAgent.Model
+			defaultAgent.Model = value
+			if al.cfg != nil {
+				al.cfg.Agents.Defaults.ModelName = value
+				al.cfg.Agents.Defaults.Model = value
+			}
+			return oldModel, nil
+		},
+		SwitchChannel: func(value string) error {
+			if al.channelManager == nil {
+				return fmt.Errorf("channel manager not initialized")
+			}
+			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
+				return fmt.Errorf("channel '%s' not found or not enabled", value)
+			}
+			return nil
+		},
 	}
 }
 

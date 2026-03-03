@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-func showCommand(deps *Deps) Definition {
+func showCommand() Definition {
 	return Definition{
 		Name:        "show",
 		Description: "Show current configuration",
@@ -13,25 +13,25 @@ func showCommand(deps *Deps) Definition {
 			{
 				Name:        "model",
 				Description: "Current model and provider",
-				Handler: func(_ context.Context, req Request) error {
-					if deps.GetModelInfo == nil {
+				Handler: func(_ context.Context, req Request, rt *Runtime) error {
+					if rt == nil || rt.GetModelInfo == nil {
 						return req.Reply(unavailableMsg)
 					}
-					name, provider := deps.GetModelInfo()
+					name, provider := rt.GetModelInfo()
 					return req.Reply(fmt.Sprintf("Current Model: %s (Provider: %s)", name, provider))
 				},
 			},
 			{
 				Name:        "channel",
 				Description: "Current channel",
-				Handler: func(_ context.Context, req Request) error {
+				Handler: func(_ context.Context, req Request, _ *Runtime) error {
 					return req.Reply(fmt.Sprintf("Current Channel: %s", req.Channel))
 				},
 			},
 			{
 				Name:        "agents",
 				Description: "Registered agents",
-				Handler:     agentsHandler(deps),
+				Handler:     agentsHandler(),
 			},
 		},
 	}

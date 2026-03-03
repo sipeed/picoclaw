@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-func switchCommand(deps *Deps) Definition {
+func switchCommand() Definition {
 	return Definition{
 		Name:        "switch",
 		Description: "Switch model or channel",
@@ -14,8 +14,8 @@ func switchCommand(deps *Deps) Definition {
 				Name:        "model",
 				Description: "Switch to a different model",
 				ArgsUsage:   "to <name>",
-				Handler: func(_ context.Context, req Request) error {
-					if deps.SwitchModel == nil {
+				Handler: func(_ context.Context, req Request, rt *Runtime) error {
+					if rt == nil || rt.SwitchModel == nil {
 						return req.Reply(unavailableMsg)
 					}
 					// Parse: /switch model to <value>
@@ -23,7 +23,7 @@ func switchCommand(deps *Deps) Definition {
 					if nthToken(req.Text, 2) != "to" || value == "" {
 						return req.Reply("Usage: /switch model to <name>")
 					}
-					oldModel, err := deps.SwitchModel(value)
+					oldModel, err := rt.SwitchModel(value)
 					if err != nil {
 						return req.Reply(err.Error())
 					}
@@ -34,15 +34,15 @@ func switchCommand(deps *Deps) Definition {
 				Name:        "channel",
 				Description: "Switch to a different channel",
 				ArgsUsage:   "to <name>",
-				Handler: func(_ context.Context, req Request) error {
-					if deps.SwitchChannel == nil {
+				Handler: func(_ context.Context, req Request, rt *Runtime) error {
+					if rt == nil || rt.SwitchChannel == nil {
 						return req.Reply(unavailableMsg)
 					}
 					value := nthToken(req.Text, 3)
 					if nthToken(req.Text, 2) != "to" || value == "" {
 						return req.Reply("Usage: /switch channel to <name>")
 					}
-					if err := deps.SwitchChannel(value); err != nil {
+					if err := rt.SwitchChannel(value); err != nil {
 						return req.Reply(err.Error())
 					}
 					return req.Reply(fmt.Sprintf("Switched target channel to %s", value))

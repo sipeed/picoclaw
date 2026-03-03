@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-type Handler func(ctx context.Context, req Request) error
+type Handler func(ctx context.Context, req Request, rt *Runtime) error
 
 type Request struct {
 	Channel  string
