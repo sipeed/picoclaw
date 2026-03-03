@@ -466,10 +466,14 @@ func (cb *ContextBuilder) BuildMessages(
 
 	// Add current user message
 	if strings.TrimSpace(currentMessage) != "" {
-		messages = append(messages, providers.Message{
+		msg := providers.Message{
 			Role:    "user",
 			Content: currentMessage,
-		})
+		}
+		if len(media) > 0 {
+			msg.Media = media
+		}
+		messages = append(messages, msg)
 	}
 
 	return messages
