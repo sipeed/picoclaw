@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -445,6 +446,77 @@ func (cs *CronService) EnableJob(jobID string, enabled bool) *CronJob {
 			}
 			return job
 		}
+	}
+
+	return nil
+}
+
+
+func targetMatches(job *CronJob, channel, to string) bool {
+	return strings.EqualFold(strings.TrimSpace(job.Payload.Channel), strings.TrimSpace(channel)) &&
+		strings.EqualFold(strings.TrimSpace(job.Payload.To), strings.TrimSpace(to))
+}
+
+// ListJobsForTarget returns jobs for a specific channel+recipient.
+func (cs *CronService) ListJobsForTarget(channel, to string, includeDisabled bool) []CronJob {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	filtered := make([]CronJob, 0)
+	for _, job := range cs.store.Jobs {
+		if !targetMatches(&job, channel, to) {
+			continue
+		}
+		if !includeDisabled && !job.Enabled {
+			continue
+		}
+		filtered = append(filtered, job)
+	}
+	return filtered
+}
+
+// RemoveJobForTarget removes a job only when it belongs to the given channel+recipient.
+func (cs *CronService) RemoveJobForTarget(jobID, channel, to string) bool {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	for _, job := range cs.store.Jobs {
+		if job.ID == jobID {
+			if !targetMatches(&job, channel, to) {
+				return false
+			}
+			return cs.removeJobUnsafe(jobID)
+		}
+	}
+	return false
+}
+
+// EnableJobForTarget toggles a job only when it belongs to the given channel+recipient.
+func (cs *CronService) EnableJobForTarget(jobID, channel, to string, enabled bool) *CronJob {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	for i := range cs.store.Jobs {
+		job := &cs.store.Jobs[i]
+		if job.ID != jobID {
+			continue
+		}
+		if !targetMatches(job, channel, to) {
+			return nil
+		}
+		job.Enabled = enabled
+		job.UpdatedAtMS = time.Now().UnixMilli()
+
+		if enabled {
+			job.State.NextRunAtMS = cs.computeNextRun(&job.Schedule, time.Now().UnixMilli())
+		} else {
+			job.State.NextRunAtMS = nil
+		}
+
+		if err := cs.saveStoreUnsafe(); err != nil {
+			log.Printf("[cron] failed to save store after enable: %v", err)
+		}
+		return job
 	}
 
 	return nil

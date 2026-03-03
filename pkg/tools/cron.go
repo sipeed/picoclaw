@@ -217,7 +217,16 @@ func (t *CronTool) addJob(args map[string]any) *ToolResult {
 }
 
 func (t *CronTool) listJobs() *ToolResult {
-	jobs := t.cronService.ListJobs(false)
+	t.mu.RLock()
+	channel := t.channel
+	chatID := t.chatID
+	t.mu.RUnlock()
+
+	if channel == "" || chatID == "" {
+		return ErrorResult("no session context (channel/chat_id not set). Use this tool in an active conversation.")
+	}
+
+	jobs := t.cronService.ListJobsForTarget(channel, chatID, false)
 
 	if len(jobs) == 0 {
 		return SilentResult("No scheduled jobs")
@@ -243,24 +252,42 @@ func (t *CronTool) listJobs() *ToolResult {
 }
 
 func (t *CronTool) removeJob(args map[string]any) *ToolResult {
+	t.mu.RLock()
+	channel := t.channel
+	chatID := t.chatID
+	t.mu.RUnlock()
+
+	if channel == "" || chatID == "" {
+		return ErrorResult("no session context (channel/chat_id not set). Use this tool in an active conversation.")
+	}
+
 	jobID, ok := args["job_id"].(string)
 	if !ok || jobID == "" {
 		return ErrorResult("job_id is required for remove")
 	}
 
-	if t.cronService.RemoveJob(jobID) {
+	if t.cronService.RemoveJobForTarget(jobID, channel, chatID) {
 		return SilentResult(fmt.Sprintf("Cron job removed: %s", jobID))
 	}
 	return ErrorResult(fmt.Sprintf("Job %s not found", jobID))
 }
 
 func (t *CronTool) enableJob(args map[string]any, enable bool) *ToolResult {
+	t.mu.RLock()
+	channel := t.channel
+	chatID := t.chatID
+	t.mu.RUnlock()
+
+	if channel == "" || chatID == "" {
+		return ErrorResult("no session context (channel/chat_id not set). Use this tool in an active conversation.")
+	}
+
 	jobID, ok := args["job_id"].(string)
 	if !ok || jobID == "" {
 		return ErrorResult("job_id is required for enable/disable")
 	}
 
-	job := t.cronService.EnableJob(jobID, enable)
+	job := t.cronService.EnableJobForTarget(jobID, channel, chatID, enable)
 	if job == nil {
 		return ErrorResult(fmt.Sprintf("Job %s not found", jobID))
 	}
