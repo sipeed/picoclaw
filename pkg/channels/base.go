@@ -284,10 +284,15 @@ func (c *BaseChannel) HandleMessage(
 				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)
 			}
 		}
-		// Placeholder — independent pipeline
-		if pc, ok := c.owner.(PlaceholderCapable); ok {
-			if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
-				c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
+		// Placeholder — independent pipeline.
+		// Skip for DraftSender channels: the streaming draft bubble serves
+		// as the placeholder, and sendMessage on final response replaces it.
+		// Sending both a placeholder AND drafts causes duplicate chat bubbles.
+		if _, isDrafter := c.owner.(DraftSender); !isDrafter {
+			if pc, ok := c.owner.(PlaceholderCapable); ok {
+				if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
+					c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
+				}
 			}
 		}
 	}
