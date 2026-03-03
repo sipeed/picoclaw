@@ -8,19 +8,30 @@ import (
 	"time"
 )
 
+const (
+	anthropicBetaHeader = "oauth-2025-04-20"
+	anthropicAPIVersion = "2023-06-01"
+)
+
+// anthropicUsageURL is the endpoint for fetching OAuth usage stats.
+// It is a var (not const) to allow overriding in tests.
+var anthropicUsageURL = "https://api.anthropic.com/api/oauth/usage"
+
+func setAnthropicUsageURL(url string) { anthropicUsageURL = url }
+
 type AnthropicUsage struct {
 	FiveHourUtilization float64
 	SevenDayUtilization float64
 }
 
 func FetchAnthropicUsage(token string) (*AnthropicUsage, error) {
-	req, err := http.NewRequest("GET", "https://api.anthropic.com/api/oauth/usage", nil)
+	req, err := http.NewRequest("GET", anthropicUsageURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
+	req.Header.Set("anthropic-version", anthropicAPIVersion)
+	req.Header.Set("anthropic-beta", anthropicBetaHeader)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -29,13 +40,15 @@ func FetchAnthropicUsage(token string) (*AnthropicUsage, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("insufficient scope: usage endpoint requires oauth scope")
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading usage response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden {
+			return nil, fmt.Errorf("insufficient scope: usage endpoint requires oauth scope")
+		}
 		return nil, fmt.Errorf("usage request failed (%d): %s", resp.StatusCode, string(body))
 	}
 

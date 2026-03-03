@@ -6,7 +6,7 @@ func newLoginCommand() *cobra.Command {
 	var (
 		provider      string
 		useDeviceCode bool
-		setupToken    bool
+		useOauth      bool
 	)
 
 	cmd := &cobra.Command{
@@ -14,13 +14,13 @@ func newLoginCommand() *cobra.Command {
 		Short: "Login via OAuth or paste token",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return authLoginCmd(provider, useDeviceCode, setupToken)
+			return authLoginCmd(provider, useDeviceCode, useOauth)
 		},
 	}
 
 	cmd.Flags().StringVarP(&provider, "provider", "p", "", "Provider to login with (openai, anthropic)")
 	cmd.Flags().BoolVar(&useDeviceCode, "device-code", false, "Use device code flow (for headless environments)")
-	cmd.Flags().BoolVar(&setupToken, "setup-token", false, "Use setup-token flow for Anthropic (from `claude setup-token`)")
+	cmd.Flags().BoolVar(&useOauth, "setup-token", false, "Use setup-token flow for Anthropic (from `claude setup-token`)")
 	_ = cmd.MarkFlagRequired("provider")
 
 	return cmd

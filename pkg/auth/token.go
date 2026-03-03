@@ -44,9 +44,6 @@ func LoginSetupToken(r io.Reader) (*AuthCredential, error) {
 	}
 
 	token := strings.TrimSpace(scanner.Text())
-	if token == "" {
-		return nil, fmt.Errorf("token cannot be empty")
-	}
 
 	if !strings.HasPrefix(token, "sk-ant-oat01-") {
 		return nil, fmt.Errorf("invalid setup token: expected prefix sk-ant-oat01-")

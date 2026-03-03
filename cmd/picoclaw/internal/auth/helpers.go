@@ -17,13 +17,14 @@ import (
 )
 
 const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
+const defaultAnthropicModel = "claude-sonnet-4.6"
 
-func authLoginCmd(provider string, useDeviceCode bool, setupToken bool) error {
+func authLoginCmd(provider string, useDeviceCode bool, useOauth bool) error {
 	switch provider {
 	case "openai":
 		return authLoginOpenAI(useDeviceCode)
 	case "anthropic":
-		return authLoginAnthropic(setupToken)
+		return authLoginAnthropic(useOauth)
 	case "google-antigravity", "antigravity":
 		return authLoginGoogleAntigravity()
 	default:
@@ -164,32 +165,34 @@ func authLoginGoogleAntigravity() error {
 	return nil
 }
 
-func authLoginAnthropic(setupToken bool) error {
-	if setupToken {
+func authLoginAnthropic(useOauth bool) error {
+	if useOauth {
 		return authLoginAnthropicSetupToken()
 	}
 
 	fmt.Println("Anthropic login method:")
 	fmt.Println("  1) Setup token (from `claude setup-token`) (Recommended)")
 	fmt.Println("  2) API key (from console.anthropic.com)")
-	fmt.Print("Choose [1]: ")
 
 	scanner := bufio.NewScanner(os.Stdin)
-	choice := "1"
-	if scanner.Scan() {
-		text := strings.TrimSpace(scanner.Text())
-		if text != "" {
-			choice = text
+	for {
+		fmt.Print("Choose [1]: ")
+		choice := "1"
+		if scanner.Scan() {
+			text := strings.TrimSpace(scanner.Text())
+			if text != "" {
+				choice = text
+			}
 		}
-	}
 
-	switch choice {
-	case "1":
-		return authLoginAnthropicSetupToken()
-	case "2":
-		return authLoginPasteToken("anthropic")
-	default:
-		return fmt.Errorf("invalid choice: %s", choice)
+		switch choice {
+		case "1":
+			return authLoginAnthropicSetupToken()
+		case "2":
+			return authLoginPasteToken("anthropic")
+		default:
+			fmt.Printf("Invalid choice: %s. Please enter 1 or 2.\n", choice)
+		}
 	}
 }
 
@@ -217,13 +220,15 @@ func authLoginAnthropicSetupToken() error {
 		}
 		if !found {
 			appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
-				ModelName:  "claude-sonnet-4.6",
-				Model:      "anthropic/claude-sonnet-4.6",
+				ModelName:  defaultAnthropicModel,
+				Model:      "anthropic/" + defaultAnthropicModel,
 				AuthMethod: "oauth",
 			})
+			// Only set default model if user has no default configured yet
+			if appCfg.Agents.Defaults.GetModelName() == "" {
+				appCfg.Agents.Defaults.ModelName = defaultAnthropicModel
+			}
 		}
-
-		appCfg.Agents.Defaults.ModelName = "claude-sonnet-4.6"
 
 		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
 			return fmt.Errorf("could not update config: %w", err)
@@ -231,7 +236,6 @@ func authLoginAnthropicSetupToken() error {
 	}
 
 	fmt.Println("Setup token saved for Anthropic!")
-	fmt.Println("Default model set to: claude-sonnet-4.6")
 
 	return nil
 }
@@ -290,13 +294,12 @@ func authLoginPasteToken(provider string) error {
 			}
 			if !found {
 				appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
-					ModelName:  "claude-sonnet-4.6",
-					Model:      "anthropic/claude-sonnet-4.6",
+					ModelName:  defaultAnthropicModel,
+					Model:      "anthropic/" + defaultAnthropicModel,
 					AuthMethod: "token",
 				})
+				appCfg.Agents.Defaults.ModelName = defaultAnthropicModel
 			}
-			// Update default model
-			appCfg.Agents.Defaults.ModelName = "claude-sonnet-4.6"
 		case "openai":
 			appCfg.Providers.OpenAI.AuthMethod = "token"
 			// Update ModelList

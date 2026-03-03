@@ -23,7 +23,10 @@ type (
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 )
 
-const defaultBaseURL = "https://api.anthropic.com"
+const (
+	defaultBaseURL      = "https://api.anthropic.com"
+	anthropicBetaHeader = "oauth-2025-04-20"
+)
 
 type Provider struct {
 	client      *anthropic.Client
@@ -79,7 +82,7 @@ func (p *Provider) Chat(
 		}
 		opts = append(opts,
 			option.WithAuthToken(tok),
-			option.WithHeader("anthropic-beta", "oauth-2025-04-20"),
+			option.WithHeader("anthropic-beta", anthropicBetaHeader),
 		)
 	}
 
