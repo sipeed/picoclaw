@@ -375,8 +375,6 @@ func TestShellTool_DenyPattern_DiskWiping(t *testing.T) {
 		t.Fatalf("unable to configure exec tool: %s", err)
 	}
 
-	ctx := context.Background()
-
 	// These should be BLOCKED (disk wiping commands)
 	blockedCmds := []struct {
 		name string
@@ -392,9 +390,9 @@ func TestShellTool_DenyPattern_DiskWiping(t *testing.T) {
 
 	for _, tt := range blockedCmds {
 		t.Run("blocked_"+tt.name, func(t *testing.T) {
-			result := tool.Execute(ctx, map[string]any{"command": tt.cmd})
-			if !result.IsError {
-				t.Errorf("Expected %q to be blocked, but it was allowed", tt.cmd)
+			msg := tool.guardCommand(tt.cmd, "")
+			if !strings.Contains(msg, "blocked") {
+				t.Errorf("Expected %q to be blocked by safety guard, got: %q", tt.cmd, msg)
 			}
 		})
 	}
@@ -405,14 +403,14 @@ func TestShellTool_DenyPattern_DiskWiping(t *testing.T) {
 		cmd  string
 	}{
 		{"--format flag", "echo test --format json"},
-		{"go fmt", "go fmt ./..."},
+		{"go fmt", "echo go fmt ./..."},
 	}
 
 	for _, tt := range allowed {
 		t.Run("allowed_"+tt.name, func(t *testing.T) {
-			result := tool.Execute(ctx, map[string]any{"command": tt.cmd})
-			if result.IsError && strings.Contains(result.ForLLM, "blocked") {
-				t.Errorf("Expected %q to be allowed, but it was blocked: %s", tt.cmd, result.ForLLM)
+			msg := tool.guardCommand(tt.cmd, "")
+			if msg != "" {
+				t.Errorf("Expected %q to be allowed, but it was blocked: %s", tt.cmd, msg)
 			}
 		})
 	}
