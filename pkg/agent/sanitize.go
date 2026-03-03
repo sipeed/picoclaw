@@ -10,22 +10,16 @@ import (
 // Orphaned messages are removed to prevent provider API errors (e.g.,
 // Anthropic's "tool_use ids were provided that do not have a tool_use block").
 //
+// Uses a two-pass approach:
+//  1. Forward pass: decide which assistant tool_call messages to retain,
+//     tracking which tool_call IDs survive. Also collect all tool_result IDs.
+//  2. Forward pass: emit retained messages, dropping tool results whose
+//     tool_call was not retained.
+//
 // This is applied after history compression to fix pairs that were split
 // when forceCompression() or summarizeSession() truncated the history.
 func sanitizeToolPairs(messages []providers.Message) []providers.Message {
-	// Build set of tool_call IDs present in assistant messages
-	toolCallIDs := make(map[string]bool)
-	for _, m := range messages {
-		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
-			for _, tc := range m.ToolCalls {
-				if tc.ID != "" {
-					toolCallIDs[tc.ID] = true
-				}
-			}
-		}
-	}
-
-	// Build set of tool_result IDs present
+	// Collect all tool_result IDs (needed to decide if assistant msgs survive)
 	toolResultIDs := make(map[string]bool)
 	for _, m := range messages {
 		if m.Role == "tool" && m.ToolCallID != "" {
@@ -33,25 +27,17 @@ func sanitizeToolPairs(messages []providers.Message) []providers.Message {
 		}
 	}
 
-	// Filter: keep tool results only if their tool_call exists,
-	// and keep assistant tool_call messages only if all results exist
-	result := make([]providers.Message, 0, len(messages))
-	removed := 0
+	// Forward pass: decide which assistant tool_call messages to keep,
+	// tracking the set of retained tool_call IDs.
+	retainedCallIDs := make(map[string]bool)
+	type decision struct {
+		keep     bool
+		modified bool // true if we strip tool_calls but keep text
+	}
+	assistantDecisions := make(map[int]decision) // index -> decision
 
-	for _, m := range messages {
-		switch {
-		case m.Role == "tool" && m.ToolCallID != "":
-			// Keep tool result only if its tool_call is present
-			if toolCallIDs[m.ToolCallID] {
-				result = append(result, m)
-			} else {
-				removed++
-				logger.DebugCF("agent", "sanitizeToolPairs: removing orphaned tool result",
-					map[string]interface{}{"tool_call_id": m.ToolCallID})
-			}
-
-		case m.Role == "assistant" && len(m.ToolCalls) > 0:
-			// Check if ALL tool_calls have matching results
+	for i, m := range messages {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
 			allHaveResults := true
 			for _, tc := range m.ToolCalls {
 				if tc.ID != "" && !toolResultIDs[tc.ID] {
@@ -60,21 +46,52 @@ func sanitizeToolPairs(messages []providers.Message) []providers.Message {
 				}
 			}
 			if allHaveResults {
-				result = append(result, m)
+				assistantDecisions[i] = decision{keep: true}
+				for _, tc := range m.ToolCalls {
+					if tc.ID != "" {
+						retainedCallIDs[tc.ID] = true
+					}
+				}
 			} else if m.Content != "" {
-				// Keep the text content but strip the tool calls
+				assistantDecisions[i] = decision{keep: true, modified: true}
+			} else {
+				assistantDecisions[i] = decision{keep: false}
+			}
+		}
+	}
+
+	// Emit pass: build result using retained IDs
+	result := make([]providers.Message, 0, len(messages))
+	removed := 0
+	modified := 0
+
+	for i, m := range messages {
+		switch {
+		case m.Role == "tool" && m.ToolCallID != "":
+			if retainedCallIDs[m.ToolCallID] {
+				result = append(result, m)
+			} else {
 				removed++
-				logger.DebugCF("agent", "sanitizeToolPairs: stripping orphaned tool_calls from assistant message, keeping text content",
+				logger.DebugCF("agent", "sanitizeToolPairs: removing orphaned tool result",
+					map[string]interface{}{"tool_call_id": m.ToolCallID})
+			}
+
+		case m.Role == "assistant" && len(m.ToolCalls) > 0:
+			d := assistantDecisions[i]
+			if !d.keep {
+				removed++
+				logger.DebugCF("agent", "sanitizeToolPairs: removing orphaned assistant tool_call message",
+					map[string]interface{}{"tool_call_count": len(m.ToolCalls)})
+			} else if d.modified {
+				modified++
+				logger.DebugCF("agent", "sanitizeToolPairs: stripping orphaned tool_calls, keeping text",
 					map[string]interface{}{"tool_call_count": len(m.ToolCalls)})
 				result = append(result, providers.Message{
 					Role:    "assistant",
 					Content: m.Content,
 				})
 			} else {
-				// No text content and missing results - drop entirely
-				removed++
-				logger.DebugCF("agent", "sanitizeToolPairs: removing orphaned assistant message with tool_calls",
-					map[string]interface{}{"tool_call_count": len(m.ToolCalls)})
+				result = append(result, m)
 			}
 
 		default:
@@ -82,9 +99,9 @@ func sanitizeToolPairs(messages []providers.Message) []providers.Message {
 		}
 	}
 
-	if removed > 0 {
-		logger.WarnCF("agent", "sanitizeToolPairs: removed orphaned tool pair messages",
-			map[string]interface{}{"removed_count": removed})
+	if removed > 0 || modified > 0 {
+		logger.WarnCF("agent", "sanitizeToolPairs: cleaned orphaned tool pair messages",
+			map[string]interface{}{"removed": removed, "modified": modified})
 	}
 
 	return result

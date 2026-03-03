@@ -1313,9 +1313,7 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 		// Sanitize remaining history to fix orphaned tool pairs from truncation
 		remaining := agent.Sessions.GetHistory(sessionKey)
 		sanitized := sanitizeToolPairs(remaining)
-		if len(sanitized) != len(remaining) {
-			agent.Sessions.SetHistory(sessionKey, sanitized)
-		}
+		agent.Sessions.SetHistory(sessionKey, sanitized)
 
 		agent.Sessions.Save(sessionKey)
 	}

@@ -41,7 +41,19 @@ func TestSanitizeToolPairs_CompletePairs(t *testing.T) {
 
 	result := sanitizeToolPairs(messages)
 	if len(result) != 4 {
-		t.Errorf("expected 4 messages, got %d", len(result))
+		t.Fatalf("expected 4 messages, got %d", len(result))
+	}
+	if result[0].Role != "user" || result[0].Content != "What is the weather?" {
+		t.Errorf("msg[0]: expected user 'What is the weather?', got %s %q", result[0].Role, result[0].Content)
+	}
+	if result[1].Role != "assistant" || len(result[1].ToolCalls) != 1 || result[1].ToolCalls[0].ID != "call_1" {
+		t.Errorf("msg[1]: expected assistant with tool_call call_1, got role=%s calls=%d", result[1].Role, len(result[1].ToolCalls))
+	}
+	if result[2].Role != "tool" || result[2].ToolCallID != "call_1" {
+		t.Errorf("msg[2]: expected tool result for call_1, got role=%s id=%s", result[2].Role, result[2].ToolCallID)
+	}
+	if result[3].Role != "assistant" || result[3].Content != "The temperature is 72 degrees." {
+		t.Errorf("msg[3]: expected assistant final, got role=%s content=%q", result[3].Role, result[3].Content)
 	}
 }
 
@@ -148,14 +160,16 @@ func TestSanitizeToolPairs_MultiToolCallPartialResults(t *testing.T) {
 
 	result := sanitizeToolPairs(messages)
 	// The assistant msg is dropped (not all tool_calls have results).
-	// call_1's tool result stays because toolCallIDs includes call_1
-	// from the original scan. This is a secondary orphan handled by
-	// the existing Diegox-17 fix in BuildMessages (strips leading tool msgs).
-	if len(result) != 3 {
-		t.Errorf("expected 3 messages, got %d", len(result))
+	// call_1's tool result is also dropped because the assistant message
+	// that issued call_1 was removed — no secondary orphans left behind.
+	if len(result) != 2 {
+		t.Errorf("expected 2 messages (assistant + call_1 result both dropped), got %d", len(result))
 	}
-	if result[0].Role != "user" {
-		t.Errorf("expected first message to be user, got %s", result[0].Role)
+	if result[0].Role != "user" || result[0].Content != "Do two things" {
+		t.Errorf("expected first message to be user 'Do two things', got %s %q", result[0].Role, result[0].Content)
+	}
+	if result[1].Role != "user" || result[1].Content != "OK" {
+		t.Errorf("expected second message to be user 'OK', got %s %q", result[1].Role, result[1].Content)
 	}
 }
 
