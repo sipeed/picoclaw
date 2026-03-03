@@ -33,10 +33,12 @@ func DefaultConfig() *Config {
 				AllowFrom:        FlexibleStringSlice{},
 			},
 			Telegram: TelegramConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: FlexibleStringSlice{},
-				Typing:    TypingConfig{Enabled: true},
+				Enabled:           false,
+				Token:             "",
+				AllowFrom:         FlexibleStringSlice{},
+				Typing:            TypingConfig{Enabled: true},
+				SubagentThreadID:  0,
+				HeartbeatThreadID: 0,
 				Placeholder: PlaceholderConfig{
 					Enabled: true,
 					Text:    "Thinking... 💭",
