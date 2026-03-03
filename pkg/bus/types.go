@@ -36,6 +36,7 @@ type OutboundMessage struct {
 	IsStatus        bool   `json:"is_status,omitempty"`
 	IsTaskStatus    bool   `json:"is_task_status,omitempty"`
 	TaskID          string `json:"task_id,omitempty"`
+	Final           bool   `json:"final,omitempty"` // Finalize: send as permanent message, not draft
 	SkipPlaceholder bool   `json:"skip_placeholder,omitempty"`
 }
 
