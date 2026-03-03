@@ -108,12 +108,18 @@ func AllowedToolsForPreset(p Preset) map[string]bool {
 		allowed["exec"] = true
 	}
 
-	// Add coder/worker/coordinator tools (write, bg_monitor)
+	// Add coder/worker/coordinator tools (write, bg_monitor, git_push)
 	if p == PresetCoder || p == PresetWorker || p == PresetCoordinator {
 		allowed["write_file"] = true
 		allowed["edit_file"] = true
 		allowed["append_file"] = true
 		allowed["bg_monitor"] = true
+		allowed["git_push"] = true
+	}
+
+	// Add worker/coordinator tools (create_pr)
+	if p == PresetWorker || p == PresetCoordinator {
+		allowed["create_pr"] = true
 	}
 
 	// Add coordinator-only tools (spawn)

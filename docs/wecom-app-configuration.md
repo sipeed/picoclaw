@@ -26,7 +26,7 @@
 
 1. 在应用详情页，点击"接收消息"的"设置API接收"
 2. 填写以下信息：
-   - **URL**: `http://your-server:18792/webhook/wecom-app`
+   - **URL**: `http://your-server:18790/webhook/wecom-app`
    - **Token**: 随机生成或自定义（用于签名验证）
    - **EncodingAESKey**: 点击"随机生成"生成43字符的密钥
 3. 点击"保存"时，企业微信会发送验证请求
@@ -45,8 +45,6 @@
       "agent_id": 1000002,                        // 应用AgentId
       "token": "your_token",                      // 接收消息配置的Token
       "encoding_aes_key": "your_encoding_aes_key", // 接收消息配置的EncodingAESKey
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
       "reply_timeout": 5
@@ -62,7 +60,7 @@
 **症状**: 企业微信保存API接收消息时提示验证失败
 
 **检查项**:
-- 确认服务器防火墙已开放 18792 端口
+- 确认服务器防火墙已开放 Gateway 端口（默认 18790）
 - 确认 `corp_id`、`token`、`encoding_aes_key` 配置正确
 - 查看 PicoClaw 日志是否有请求到达
 
@@ -78,7 +76,7 @@
 
 **症状**: 启动时提示端口已被占用
 
-**解决**: 修改 `webhook_port` 为其他端口，如 18794
+**解决**: 修改 `gateway.port` 为其他端口（所有 Webhook 渠道共享同一个 Gateway HTTP 服务器）
 
 ## 技术细节
 

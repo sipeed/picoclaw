@@ -945,6 +945,19 @@ func (m *Manager) runTTLJanitor(ctx context.Context) {
 	}
 }
 
+// PromoteStatusToTask moves the tracked streaming status message for the given
+// channel:chatID key into the task message map under taskID. This allows the
+// next IsTaskStatus publish to edit the streaming bubble instead of creating a
+// new message. Returns true if a status message was found and promoted.
+func (m *Manager) PromoteStatusToTask(statusKey, taskID string) bool {
+	v, loaded := m.statusMsgIDs.LoadAndDelete(statusKey)
+	if !loaded {
+		return false
+	}
+	m.taskMsgIDs.Store(taskID, v)
+	return true
+}
+
 func (m *Manager) GetChannel(name string) (Channel, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

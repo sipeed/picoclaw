@@ -367,7 +367,7 @@ func (p *agentLoopDataProvider) ListSkills() []skills.SkillInfo {
 func (p *agentLoopDataProvider) GetPlanInfo() miniapp.PlanInfo {
 	hasPlan, status, currentPhase, totalPhases, display, memory := p.loop.GetPlanInfo()
 
-	// Convert agent.PlanPhase → miniapp.PlanPhase
+	// Convert agent.PlanPhase -> miniapp.PlanPhase
 	agentPhases := p.loop.GetPlanPhases()
 	phases := make([]miniapp.PlanPhase, 0, len(agentPhases))
 	for _, ap := range agentPhases {
