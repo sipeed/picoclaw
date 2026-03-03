@@ -20,6 +20,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -61,7 +62,11 @@ type processOptions struct {
 
 const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
 
-func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
+func NewAgentLoop(
+	cfg *config.Config,
+	msgBus *bus.MessageBus,
+	provider providers.LLMProvider,
+) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
 	// Register shared tools to all agents
@@ -206,6 +211,71 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	// Start MemoryDigest background worker.
 	if al.memoryDigest != nil {
 		al.memoryDigest.Start(ctx)
+	}
+
+	// Initialize MCP servers for all agents
+	if al.cfg.Tools.MCP.Enabled {
+		mcpManager := mcp.NewManager()
+		defaultAgent := al.registry.GetDefaultAgent()
+		var workspacePath string
+		if defaultAgent != nil && defaultAgent.Workspace != "" {
+			workspacePath = defaultAgent.Workspace
+		} else {
+			workspacePath = al.cfg.WorkspacePath()
+		}
+
+		if err := mcpManager.LoadFromMCPConfig(ctx, al.cfg.Tools.MCP, workspacePath); err != nil {
+			logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
+				map[string]any{
+					"error": err.Error(),
+				})
+		} else {
+			// Ensure MCP connections are cleaned up on exit, only if initialization succeeded
+			defer func() {
+				if err := mcpManager.Close(); err != nil {
+					logger.ErrorCF("agent", "Failed to close MCP manager",
+						map[string]any{
+							"error": err.Error(),
+						})
+				}
+			}()
+
+			// Register MCP tools for all agents
+			servers := mcpManager.GetServers()
+			uniqueTools := 0
+			totalRegistrations := 0
+			agentIDs := al.registry.ListAgentIDs()
+			agentCount := len(agentIDs)
+
+			for serverName, conn := range servers {
+				uniqueTools += len(conn.Tools)
+				for _, tool := range conn.Tools {
+					for _, agentID := range agentIDs {
+						agent, ok := al.registry.GetAgent(agentID)
+						if !ok {
+							continue
+						}
+						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+						agent.Tools.Register(mcpTool)
+						totalRegistrations++
+						logger.DebugCF("agent", "Registered MCP tool",
+							map[string]any{
+								"agent_id": agentID,
+								"server":   serverName,
+								"tool":     tool.Name,
+								"name":     mcpTool.Name(),
+							})
+					}
+				}
+			}
+			logger.InfoCF("agent", "MCP tools registered successfully",
+				map[string]any{
+					"server_count":        len(servers),
+					"unique_tools":        uniqueTools,
+					"total_registrations": totalRegistrations,
+					"agent_count":         agentCount,
+				})
+		}
 	}
 
 	for al.running.Load() {
@@ -370,7 +440,10 @@ func (al *AgentLoop) RecordLastChatID(chatID string) error {
 	return al.state.SetLastChatID(chatID)
 }
 
-func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
+func (al *AgentLoop) ProcessDirect(
+	ctx context.Context,
+	content, sessionKey string,
+) (string, error) {
 	return al.ProcessDirectWithChannel(ctx, content, sessionKey, "cli", "direct")
 }
 
@@ -391,7 +464,10 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 
 // ProcessHeartbeat processes a heartbeat request without session history.
 // Each heartbeat is independent and doesn't accumulate context.
-func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
+func (al *AgentLoop) ProcessHeartbeat(
+	ctx context.Context,
+	content, channel, chatID string,
+) (string, error) {
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
@@ -416,13 +492,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	} else {
 		logContent = utils.Truncate(msg.Content, 80)
 	}
-	logger.InfoCF("agent", fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, logContent),
+	logger.InfoCF(
+		"agent",
+		fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, logContent),
 		map[string]any{
 			"channel":     msg.Channel,
 			"chat_id":     msg.ChatID,
 			"sender_id":   msg.SenderID,
 			"session_key": msg.SessionKey,
-		})
+		},
+	)
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
@@ -485,9 +564,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	})
 }
 
-func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+func (al *AgentLoop) processSystemMessage(
+	ctx context.Context,
+	msg bus.InboundMessage,
+) (string, error) {
 	if msg.Channel != "system" {
-		return "", fmt.Errorf("processSystemMessage called with non-system message channel: %s", msg.Channel)
+		return "", fmt.Errorf(
+			"processSystemMessage called with non-system message channel: %s",
+			msg.Channel,
+		)
 	}
 
 	logger.InfoCF("agent", "Processing system message",
@@ -545,7 +630,11 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 }
 
 // runAgentLoop is the core message processing logic.
-func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
+func (al *AgentLoop) runAgentLoop(
+	ctx context.Context,
+	agent *AgentInstance,
+	opts processOptions,
+) (string, error) {
 	seq := al.msgSeqId.Add(1)
 	opts.MsgSeqId = seq
 
@@ -555,7 +644,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		if !constants.IsInternalChannel(opts.Channel) {
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
 			if err := al.RecordLastChannel(channelKey); err != nil {
-				logger.WarnCF("agent", "Failed to record last channel", map[string]any{"error": err.Error()})
+				logger.WarnCF(
+					"agent",
+					"Failed to record last channel",
+					map[string]any{"error": err.Error()},
+				)
 			}
 		}
 	}
@@ -762,7 +855,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	return finalContent, nil
 }
 
-
 // summarizeSession summarizes the conversation history for a session.
 func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -853,7 +945,9 @@ func (al *AgentLoop) summarizeBatch(
 	existingSummary string,
 ) (string, error) {
 	var sb strings.Builder
-	sb.WriteString("Provide a concise summary of this conversation segment, preserving core context and key points.\n")
+	sb.WriteString(
+		"Provide a concise summary of this conversation segment, preserving core context and key points.\n",
+	)
 	if existingSummary != "" {
 		sb.WriteString("Existing context: ")
 		sb.WriteString(existingSummary)
