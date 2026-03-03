@@ -295,6 +295,33 @@ func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (s
 	return fmt.Sprintf("%d", pMsg.MessageID), nil
 }
 
+// SendDraft implements channels.DraftSender.
+// It uses Telegram Bot API's sendMessageDraft for progressive message streaming
+// without the "edited" indicator. Only works in private chats.
+func (c *TelegramChannel) SendDraft(ctx context.Context, chatID string, draftID int, content string) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+	cid, err := parseChatID(chatID)
+	if err != nil {
+		return fmt.Errorf("invalid chat ID %s: %w", chatID, channels.ErrSendFailed)
+	}
+	htmlContent := markdownToTelegramHTML(content)
+	params := &telego.SendMessageDraftParams{
+		ChatID:    cid,
+		DraftID:   draftID,
+		Text:      htmlContent,
+		ParseMode: telego.ModeHTML,
+	}
+	if err = c.bot.SendMessageDraft(ctx, params); err != nil {
+		// HTML parse failure — retry as plain text
+		params.ParseMode = ""
+		params.Text = content
+		return c.bot.SendMessageDraft(ctx, params)
+	}
+	return nil
+}
+
 // SendMedia implements the channels.MediaSender interface.
 func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
 	if !c.IsRunning() {

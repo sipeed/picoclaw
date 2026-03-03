@@ -7,7 +7,6 @@
 package heartbeat
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +20,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -228,12 +226,8 @@ func (hs *HeartbeatService) executeHeartbeat() {
 		return
 	}
 
-	// Send result to user
-	if result.ForUser != "" {
-		hs.sendResponse(result.ForUser)
-	} else if result.ForLLM != "" {
-		hs.sendResponse(result.ForLLM)
-	}
+	// Skip sendResponse — the task completion message in runAgentLoop already
+	// includes the LLM response, so sending here would create a duplicate bubble.
 
 	hs.mu.Lock()
 	hs.lastNotifiedAt = time.Now()
@@ -307,45 +301,6 @@ Add your heartbeat tasks below this line:
 	} else {
 		hs.logInfof("Created default HEARTBEAT.md template")
 	}
-}
-
-// sendResponse sends the heartbeat response to the last channel.
-// Think blocks are stripped as a safety net to prevent LLM reasoning
-// artifacts from leaking into user-facing messages.
-func (hs *HeartbeatService) sendResponse(response string) {
-	response = utils.StripThinkBlocks(response)
-	hs.mu.RLock()
-	msgBus := hs.bus
-	hs.mu.RUnlock()
-
-	if msgBus == nil {
-		hs.logInfof("No message bus configured, heartbeat result not sent")
-		return
-	}
-
-	// Get last channel from state
-	lastChannel := hs.state.GetLastChannel()
-	if lastChannel == "" {
-		hs.logInfof("No last channel recorded, heartbeat result not sent")
-		return
-	}
-
-	platform, userID := hs.parseLastChannel(lastChannel)
-
-	// Skip internal channels that can't receive messages
-	if platform == "" || userID == "" {
-		return
-	}
-
-	pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer pubCancel()
-	msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-		Channel: platform,
-		ChatID:  userID,
-		Content: response,
-	})
-
-	hs.logInfof("Heartbeat result sent to %s", platform)
 }
 
 // parseLastChannel parses the last channel string into platform and userID.

@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"sync"
 	"time"
@@ -37,6 +38,12 @@ const (
 	placeholderTTL  = 10 * time.Minute
 	statusMsgTTL    = 5 * time.Minute
 	taskMsgTTL      = 30 * time.Minute
+
+	// statusEditInterval is the minimum interval between EditMessage calls
+	// for the same status/task bubble. EditMessage APIs are more rate-sensitive
+	// than SendMessageDraft, so we throttle edits to avoid "(edited)" flicker
+	// and API rate limit errors. Draft-based channels bypass this throttle.
+	statusEditInterval = 500 * time.Millisecond
 )
 
 // typingEntry wraps a typing stop function with a creation timestamp for TTL eviction.
@@ -60,6 +67,7 @@ type placeholderEntry struct {
 // statusMsgEntry tracks a status or task message ID for later editing.
 type statusMsgEntry struct {
 	messageID string
+	draftID   int // non-zero when using draft-based streaming
 	createdAt time.Time
 }
 
@@ -81,18 +89,19 @@ type channelWorker struct {
 }
 
 type Manager struct {
-	channels      map[string]Channel
-	workers       map[string]*channelWorker
-	bus           *bus.MessageBus
-	config        *config.Config
-	mediaStore    media.MediaStore
-	dispatchTask  *asyncTask
-	mu            sync.RWMutex
-	placeholders  sync.Map // "channel:chatID" → placeholderEntry
-	typingStops   sync.Map // "channel:chatID" → typingEntry
-	reactionUndos sync.Map // "channel:chatID" → reactionEntry
-	statusMsgIDs  sync.Map // "channel:chatID" → statusMsgEntry (streaming preview)
-	taskMsgIDs    sync.Map // taskID → statusMsgEntry (background task status)
+	channels        map[string]Channel
+	workers         map[string]*channelWorker
+	bus             *bus.MessageBus
+	config          *config.Config
+	mediaStore      media.MediaStore
+	dispatchTask    *asyncTask
+	mu              sync.RWMutex
+	placeholders    sync.Map // "channel:chatID" → placeholderEntry
+	typingStops     sync.Map // "channel:chatID" → typingEntry
+	reactionUndos   sync.Map // "channel:chatID" → reactionEntry
+	statusMsgIDs    sync.Map // "channel:chatID" → statusMsgEntry (streaming preview)
+	taskMsgIDs      sync.Map // taskID → statusMsgEntry (background task status)
+	statusEditTimes sync.Map // key → time.Time — last EditMessage time for throttling
 }
 
 type asyncTask struct {
@@ -139,12 +148,18 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		}
 	}
 
-	// 3. Try editing a tracked status message (from streaming preview)
+	// 3. Try editing a tracked status message (from streaming preview).
+	// If the status was draft-based (draftID != 0), just clear the entry —
+	// the final sendMessage will automatically replace the draft bubble.
 	if v, loaded := m.statusMsgIDs.LoadAndDelete(key); loaded {
-		if entry, ok := v.(statusMsgEntry); ok && entry.messageID != "" {
-			if editor, ok := ch.(MessageEditor); ok {
-				if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
-					return true // edited successfully, skip Send
+		if entry, ok := v.(statusMsgEntry); ok {
+			if entry.draftID != 0 {
+				// Draft-based: sendMessage replaces the draft, no edit needed
+			} else if entry.messageID != "" {
+				if editor, ok := ch.(MessageEditor); ok {
+					if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
+						return true // edited successfully, skip Send
+					}
 				}
 			}
 		}
@@ -474,6 +489,8 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 // handleStatusSend processes IsStatus messages (streaming previews).
 // It reuses an existing placeholder or tracked status message, or sends a new
 // one via SendWithID so subsequent status updates edit the same bubble.
+// For channels implementing DraftSender (e.g. Telegram private chats),
+// sendMessageDraft is preferred as it avoids the "(edited)" indicator.
 // If the channel doesn't support editing, the message is silently dropped.
 func (m *Manager) handleStatusSend(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) {
 	if err := w.limiter.Wait(ctx); err != nil {
@@ -482,11 +499,41 @@ func (m *Manager) handleStatusSend(ctx context.Context, name string, w *channelW
 
 	key := name + ":" + msg.ChatID
 
+	// 0. Draft-based streaming (preferred for supported channels)
+	if drafter, ok := w.ch.(DraftSender); ok {
+		var did int
+		if v, loaded := m.statusMsgIDs.Load(key); loaded {
+			if entry, ok := v.(statusMsgEntry); ok && entry.draftID != 0 {
+				did = entry.draftID
+			}
+		}
+		if did == 0 {
+			did = generateDraftID(key)
+			m.statusMsgIDs.Store(key, statusMsgEntry{
+				draftID:   did,
+				createdAt: time.Now(),
+			})
+		}
+		if err := drafter.SendDraft(ctx, msg.ChatID, did, msg.Content); err == nil {
+			return
+		}
+		// Draft failed — fall through to edit-based approach
+	}
+
+	// Edit-based path: throttle to statusEditInterval per key to avoid
+	// API rate limit errors and "(edited)" flicker.
+	if v, loaded := m.statusEditTimes.Load(key); loaded {
+		if t, ok := v.(time.Time); ok && time.Since(t) < statusEditInterval {
+			return // too recent, skip this update
+		}
+	}
+
 	// 1. Try editing an existing placeholder
 	if v, loaded := m.placeholders.Load(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := w.ch.(MessageEditor); ok {
 				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
+					m.statusEditTimes.Store(key, time.Now())
 					return
 				}
 			}
@@ -498,6 +545,7 @@ func (m *Manager) handleStatusSend(ctx context.Context, name string, w *channelW
 		if entry, ok := v.(statusMsgEntry); ok && entry.messageID != "" {
 			if editor, ok := w.ch.(MessageEditor); ok {
 				if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
+					m.statusEditTimes.Store(key, time.Now())
 					return
 				}
 			}
@@ -520,6 +568,7 @@ func (m *Manager) handleStatusSend(ctx context.Context, name string, w *channelW
 
 // handleTaskStatusSend processes IsTaskStatus messages (background task status).
 // It reuses a previously tracked task message, or sends a new one via SendWithID.
+// For channels implementing DraftSender, sendMessageDraft is used to avoid "(edited)".
 // If the channel doesn't support editing, falls back to regular Send.
 func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) {
 	if err := w.limiter.Wait(ctx); err != nil {
@@ -528,12 +577,43 @@ func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *chan
 
 	taskKey := msg.TaskID
 
+	// 0. Draft-based streaming (preferred for supported channels)
+	if drafter, ok := w.ch.(DraftSender); ok && taskKey != "" {
+		var did int
+		if v, loaded := m.taskMsgIDs.Load(taskKey); loaded {
+			if entry, ok := v.(statusMsgEntry); ok && entry.draftID != 0 {
+				did = entry.draftID
+			}
+		}
+		if did == 0 {
+			did = generateDraftID(taskKey)
+			m.taskMsgIDs.Store(taskKey, statusMsgEntry{
+				draftID:   did,
+				createdAt: time.Now(),
+			})
+		}
+		if err := drafter.SendDraft(ctx, msg.ChatID, did, msg.Content); err == nil {
+			return
+		}
+		// Draft failed — fall through to edit-based approach
+	}
+
+	// Edit-based path: throttle to statusEditInterval per task key.
+	if taskKey != "" {
+		if v, loaded := m.statusEditTimes.Load(taskKey); loaded {
+			if t, ok := v.(time.Time); ok && time.Since(t) < statusEditInterval {
+				return
+			}
+		}
+	}
+
 	// 1. Try editing an existing task message
 	if taskKey != "" {
 		if v, loaded := m.taskMsgIDs.Load(taskKey); loaded {
 			if entry, ok := v.(statusMsgEntry); ok && entry.messageID != "" {
 				if editor, ok := w.ch.(MessageEditor); ok {
 					if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
+						m.statusEditTimes.Store(taskKey, time.Now())
 						return
 					}
 				}
@@ -556,6 +636,22 @@ func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *chan
 
 	// 3. Fallback: regular Send (for channels without SendWithID)
 	_ = w.ch.Send(ctx, msg)
+}
+
+// generateDraftID produces a stable non-zero int from a key string.
+// The same key always maps to the same draft ID so successive calls
+// animate the same Telegram draft bubble.
+func generateDraftID(key string) int {
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	v := int(h.Sum32())
+	if v == 0 {
+		v = 1 // draftID must be non-zero
+	}
+	if v < 0 {
+		v = -v
+	}
+	return v
 }
 
 // sendWithRetry sends a message through the channel with rate limiting and
@@ -831,6 +927,16 @@ func (m *Manager) runTTLJanitor(ctx context.Context) {
 				if entry, ok := value.(statusMsgEntry); ok {
 					if now.Sub(entry.createdAt) > taskMsgTTL {
 						m.taskMsgIDs.Delete(key)
+					}
+				}
+				return true
+			})
+			// Clean up stale edit-time entries (only needed for a few seconds,
+			// but janitor runs infrequently so use a generous TTL).
+			m.statusEditTimes.Range(func(key, value any) bool {
+				if t, ok := value.(time.Time); ok {
+					if now.Sub(t) > statusMsgTTL {
+						m.statusEditTimes.Delete(key)
 					}
 				}
 				return true

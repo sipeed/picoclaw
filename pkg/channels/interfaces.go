@@ -37,6 +37,13 @@ type PlaceholderCapable interface {
 	SendPlaceholder(ctx context.Context, chatID string) (messageID string, err error)
 }
 
+// DraftSender — channels that can send progressive draft messages.
+// Used for streaming LLM output without the "edited" indicator.
+// draftID must be non-zero and consistent across updates for the same draft.
+type DraftSender interface {
+	SendDraft(ctx context.Context, chatID string, draftID int, content string) error
+}
+
 // PlaceholderRecorder is injected into channels by Manager.
 // Channels call these methods on inbound to register typing/placeholder state.
 // Manager uses the registered state on outbound to stop typing and edit placeholders.
