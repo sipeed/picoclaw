@@ -36,6 +36,7 @@ var (
 	reListItem   = regexp.MustCompile(`^[-*]\s+`)
 	reCodeBlock  = regexp.MustCompile("```[\\w]*\\n?([\\s\\S]*?)```")
 	reInlineCode = regexp.MustCompile("`([^`]+)`")
+	reThinkBlock = regexp.MustCompile(`(?s)<think>(.*?)</think>`)
 )
 
 type TelegramChannel struct {
@@ -615,6 +616,10 @@ func markdownToTelegramHTML(text string) string {
 		return ""
 	}
 
+	// Convert <think>...</think> blocks to blockquote before other processing
+	thinkBlocks := extractThinkBlocks(text)
+	text = thinkBlocks.text
+
 	codeBlocks := extractCodeBlocks(text)
 	text = codeBlocks.text
 
@@ -623,7 +628,8 @@ func markdownToTelegramHTML(text string) string {
 
 	text = reHeading.ReplaceAllString(text, "$1")
 
-	text = reBlockquote.ReplaceAllString(text, "$1")
+	// Convert blockquote lines (> ...) to <blockquote> HTML
+	text = convertBlockquotes(text)
 
 	text = escapeHTML(text)
 
@@ -659,6 +665,75 @@ func markdownToTelegramHTML(text string) string {
 		)
 	}
 
+	// Restore think blocks as <blockquote>
+	for i, content := range thinkBlocks.contents {
+		escaped := escapeHTML(strings.TrimSpace(content))
+		text = strings.ReplaceAll(
+			text,
+			fmt.Sprintf("\x00TK%d\x00", i),
+			fmt.Sprintf("<blockquote>🧠 %s</blockquote>", escaped),
+		)
+	}
+
+	return text
+}
+
+// thinkBlockMatch holds extracted <think> blocks.
+type thinkBlockMatch struct {
+	text     string
+	contents []string
+}
+
+// extractThinkBlocks extracts <think>...</think> blocks and replaces them with placeholders.
+func extractThinkBlocks(text string) thinkBlockMatch {
+	matches := reThinkBlock.FindAllStringSubmatch(text, -1)
+
+	contents := make([]string, 0, len(matches))
+	for _, match := range matches {
+		contents = append(contents, match[1])
+	}
+
+	i := 0
+	text = reThinkBlock.ReplaceAllStringFunc(text, func(m string) string {
+		placeholder := fmt.Sprintf("\x00TK%d\x00", i)
+		i++
+		return placeholder
+	})
+
+	return thinkBlockMatch{text: text, contents: contents}
+}
+
+// convertBlockquotes groups consecutive `> ...` lines into <blockquote> blocks.
+func convertBlockquotes(text string) string {
+	lines := strings.Split(text, "\n")
+	var result []string
+	inBlockquote := false
+
+	for _, line := range lines {
+		if reBlockquote.MatchString(line) {
+			content := reBlockquote.ReplaceAllString(line, "$1")
+			if !inBlockquote {
+				result = append(result, "\x00BQ_START\x00"+content)
+				inBlockquote = true
+			} else {
+				result = append(result, content)
+			}
+		} else {
+			if inBlockquote {
+				result = append(result, "\x00BQ_END\x00")
+				inBlockquote = false
+			}
+			result = append(result, line)
+		}
+	}
+	if inBlockquote {
+		result = append(result, "\x00BQ_END\x00")
+	}
+
+	text = strings.Join(result, "\n")
+	text = strings.ReplaceAll(text, "\x00BQ_START\x00", "<blockquote>")
+	text = strings.ReplaceAll(text, "\n\x00BQ_END\x00", "</blockquote>")
+	text = strings.ReplaceAll(text, "\x00BQ_END\x00", "</blockquote>")
 	return text
 }
 
