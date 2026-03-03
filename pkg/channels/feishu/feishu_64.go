@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
@@ -28,9 +30,9 @@ import (
 
 type FeishuChannel struct {
 	*channels.BaseChannel
-	feishuCfg config.FeishuConfig
-	client    *lark.Client
-	wsClient  *larkws.Client
+	config   config.FeishuConfig
+	client   *lark.Client
+	wsClient *larkws.Client
 
 	botOpenID atomic.Value // stores string; populated lazily for @mention detection
 
@@ -46,7 +48,7 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 
 	ch := &FeishuChannel{
 		BaseChannel: base,
-		feishuCfg:   cfg,
+		config:      cfg,
 		client:      lark.NewClient(cfg.AppID, cfg.AppSecret),
 	}
 	ch.SetOwner(ch)
@@ -54,13 +56,18 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 }
 
 func (c *FeishuChannel) Start(ctx context.Context) error {
-	if c.feishuCfg.AppID == "" || c.feishuCfg.AppSecret == "" {
+	if c.config.AppID == "" || c.config.AppSecret == "" {
 		return fmt.Errorf("feishu app_id or app_secret is empty")
 	}
 
-	// Bot open_id for @mention detection is populated lazily from the first mention event.
+	// Fetch bot open_id via API for reliable @mention detection.
+	if err := c.fetchBotOpenID(ctx); err != nil {
+		logger.ErrorCF("feishu", "Failed to fetch bot open_id, @mention detection may not work", map[string]any{
+			"error": err.Error(),
+		})
+	}
 
-	dispatcher := larkdispatcher.NewEventDispatcher(c.feishuCfg.VerificationToken, c.feishuCfg.EncryptKey).
+	dispatcher := larkdispatcher.NewEventDispatcher(c.config.VerificationToken, c.config.EncryptKey).
 		OnP2MessageReceiveV1(c.handleMessageReceive)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -68,8 +75,8 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	c.mu.Lock()
 	c.cancel = cancel
 	c.wsClient = larkws.NewClient(
-		c.feishuCfg.AppID,
-		c.feishuCfg.AppSecret,
+		c.config.AppID,
+		c.config.AppSecret,
 		larkws.WithEventHandler(dispatcher),
 	)
 	wsClient := c.wsClient
@@ -147,14 +154,14 @@ func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, cont
 // SendPlaceholder implements channels.PlaceholderCapable.
 // Sends an interactive card with placeholder text and returns its message ID.
 func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	if !c.feishuCfg.Placeholder.Enabled {
+	if !c.config.Placeholder.Enabled {
 		logger.DebugCF("feishu", "Placeholder disabled, skipping", map[string]any{
 			"chat_id": chatID,
 		})
 		return "", nil
 	}
 
-	text := c.feishuCfg.Placeholder.Text
+	text := c.config.Placeholder.Text
 	if text == "" {
 		text = "Thinking..."
 	}
@@ -409,6 +416,40 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 
 // --- Internal helpers ---
 
+// fetchBotOpenID calls the Feishu bot info API to retrieve and store the bot's open_id.
+func (c *FeishuChannel) fetchBotOpenID(ctx context.Context) error {
+	resp, err := c.client.Do(ctx, &larkcore.ApiReq{
+		HttpMethod:                http.MethodGet,
+		ApiPath:                   "/open-apis/bot/v3/info",
+		SupportedAccessTokenTypes: []larkcore.AccessTokenType{larkcore.AccessTokenTypeTenant},
+	})
+	if err != nil {
+		return fmt.Errorf("bot info request: %w", err)
+	}
+
+	var result struct {
+		Code int `json:"code"`
+		Bot  struct {
+			OpenID string `json:"open_id"`
+		} `json:"bot"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &result); err != nil {
+		return fmt.Errorf("bot info parse: %w", err)
+	}
+	if result.Code != 0 {
+		return fmt.Errorf("bot info api error (code=%d)", result.Code)
+	}
+	if result.Bot.OpenID == "" {
+		return fmt.Errorf("bot info: empty open_id")
+	}
+
+	c.botOpenID.Store(result.Bot.OpenID)
+	logger.InfoCF("feishu", "Fetched bot open_id from API", map[string]any{
+		"open_id": result.Bot.OpenID,
+	})
+	return nil
+}
+
 // isBotMentioned checks if the bot was @mentioned in the message.
 func (c *FeishuChannel) isBotMentioned(message *larkim.EventMessage) bool {
 	if message.Mentions == nil {
@@ -416,23 +457,16 @@ func (c *FeishuChannel) isBotMentioned(message *larkim.EventMessage) bool {
 	}
 
 	knownID, _ := c.botOpenID.Load().(string)
+	if knownID == "" {
+		logger.DebugCF("feishu", "Bot open_id unknown, cannot detect @mention", nil)
+		return false
+	}
 
 	for _, m := range message.Mentions {
 		if m.Id == nil {
 			continue
 		}
-		// If we already know the bot's open_id, match against it.
-		if m.Id.OpenId != nil && knownID != "" && *m.Id.OpenId == knownID {
-			return true
-		}
-		// If we don't know our bot open_id yet, use a reliable heuristic:
-		// Feishu assigns @_user_1 as the key for the first mention (the bot itself)
-		// when a user @mentions the bot. Only trust this specific key.
-		if knownID == "" && m.Key != nil && *m.Key == "@_user_1" && m.Id.OpenId != nil {
-			c.botOpenID.Store(*m.Id.OpenId)
-			logger.DebugCF("feishu", "Detected bot open_id from @_user_1 mention", map[string]any{
-				"open_id": *m.Id.OpenId,
-			})
+		if m.Id.OpenId != nil && *m.Id.OpenId == knownID {
 			return true
 		}
 	}
@@ -587,7 +621,6 @@ func (c *FeishuChannel) downloadResource(
 		})
 		return ""
 	}
-	defer out.Close()
 
 	if _, copyErr := io.Copy(out, resp.File); copyErr != nil {
 		out.Close()
@@ -597,6 +630,7 @@ func (c *FeishuChannel) downloadResource(
 		})
 		return ""
 	}
+	out.Close()
 
 	ref, err := store.Store(localPath, media.MediaMeta{
 		Filename: filename,
