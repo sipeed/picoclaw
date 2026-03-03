@@ -3,6 +3,7 @@ package agent
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -205,37 +206,7 @@ func TestReasonToUserMessage_AllReasons(t *testing.T) {
 	}
 }
 
-// contains is a case-insensitive helper for test assertions.
+// contains is a case-insensitive substring check for test assertions.
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) &&
-		len(substr) > 0 &&
-		(s == substr || containsLower(s, substr))
-}
-
-func containsLower(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if eqFoldSlice(s[i:i+len(substr)], substr) {
-			return true
-		}
-	}
-	return false
-}
-
-func eqFoldSlice(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		ca, cb := a[i], b[i]
-		if ca >= 'A' && ca <= 'Z' {
-			ca += 'a' - 'A'
-		}
-		if cb >= 'A' && cb <= 'Z' {
-			cb += 'a' - 'A'
-		}
-		if ca != cb {
-			return false
-		}
-	}
-	return true
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
