@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -698,4 +700,85 @@ func TestWebTool_TavilySearch_Success(t *testing.T) {
 	if !strings.Contains(result.ForUser, "via Tavily") {
 		t.Errorf("Expected 'via Tavily' in output, got: %s", result.ForUser)
 	}
+}
+
+func TestBlockPrivateTarget(t *testing.T) {
+	ctx := context.Background()
+
+	blocked := []struct {
+		name string
+		raw  string
+	}{
+		{"loopback IPv4", "http://127.0.0.1/"},
+		{"RFC1918 10/8", "http://10.0.0.1/"},
+		{"RFC1918 172.16/12", "http://172.16.0.1/"},
+		{"RFC1918 192.168/16", "http://192.168.1.1/"},
+		{"link-local", "http://169.254.1.1/"},
+		{"unspecified", "http://0.0.0.0/"},
+		{"loopback IPv6", "http://[::1]/"},
+		{"link-local IPv6", "http://[fe80::1]/"},
+	}
+	for _, tc := range blocked {
+		t.Run(tc.name, func(t *testing.T) {
+			u, _ := url.Parse(tc.raw)
+			if err := blockPrivateTarget(ctx, u); err == nil {
+				t.Errorf("expected blockPrivateTarget to block %s, but it was allowed", tc.raw)
+			}
+		})
+	}
+
+	allowed := []struct {
+		name string
+		raw  string
+	}{
+		{"public DNS", "http://8.8.8.8/"},
+		{"RFC5737 doc range", "http://192.0.2.1/"},
+	}
+	for _, tc := range allowed {
+		t.Run(tc.name, func(t *testing.T) {
+			u, _ := url.Parse(tc.raw)
+			if err := blockPrivateTarget(ctx, u); err != nil {
+				t.Errorf("expected blockPrivateTarget to allow %s, got error: %v", tc.raw, err)
+			}
+		})
+	}
+}
+
+func TestSafeDialer(t *testing.T) {
+	base := &net.Dialer{Timeout: 2 * time.Second}
+	dial := newSafeDialer(base)
+	ctx := context.Background()
+
+	privateAddrs := []struct {
+		name string
+		addr string
+	}{
+		{"loopback", "127.0.0.1:80"},
+		{"RFC1918 10/8", "10.0.0.1:80"},
+		{"RFC1918 192.168/16", "192.168.1.1:80"},
+	}
+	for _, tc := range privateAddrs {
+		t.Run("blocks "+tc.name, func(t *testing.T) {
+			_, err := dial(ctx, "tcp", tc.addr)
+			if err == nil {
+				t.Fatalf("expected error for private addr %s, got nil", tc.addr)
+			}
+			if !strings.Contains(err.Error(), "private/internal") {
+				t.Errorf("expected SSRF error for %s, got: %v", tc.addr, err)
+			}
+		})
+	}
+
+	// 192.0.2.1 (RFC 5737) is public — SSRF check passes, connection fails at
+	// the network level (unreachable host), NOT with an SSRF error.
+	t.Run("allows public RFC5737 IP", func(t *testing.T) {
+		_, err := dial(ctx, "tcp", "192.0.2.1:80")
+		if err == nil {
+			// Unexpected success — the IP is supposed to be unreachable.
+			return
+		}
+		if strings.Contains(err.Error(), "private/internal") {
+			t.Errorf("192.0.2.1 should not be blocked as private, got: %v", err)
+		}
+	})
 }
