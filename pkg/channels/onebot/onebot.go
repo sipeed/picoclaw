@@ -337,10 +337,7 @@ func (c *OneBotChannel) sendAPIRequest(action string, params any, timeout time.D
 }
 
 func (c *OneBotChannel) reconnectLoop() {
-	interval := time.Duration(c.config.ReconnectInterval) * time.Second
-	if interval < 5*time.Second {
-		interval = 5 * time.Second
-	}
+	interval := max(time.Duration(c.config.ReconnectInterval)*time.Second, 5*time.Second)
 
 	for {
 		select {

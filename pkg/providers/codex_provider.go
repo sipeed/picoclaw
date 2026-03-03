@@ -163,8 +163,8 @@ func resolveCodexModel(model string) (string, string) {
 		return codexDefaultModel, "empty model"
 	}
 
-	if strings.HasPrefix(m, "openai/") {
-		m = strings.TrimPrefix(m, "openai/")
+	if after, ok := strings.CutPrefix(m, "openai/"); ok {
+		m = after
 	} else if strings.Contains(m, "/") {
 		return codexDefaultModel, "non-openai model namespace"
 	}

@@ -42,17 +42,19 @@ import (
 
 // activeTask tracks a running agent task for live status and intervention.
 type activeTask struct {
-	Description   string
-	Iteration     int
-	MaxIter       int
-	StartedAt     time.Time
-	cancel        context.CancelFunc
-	interrupt     chan string // buffered 1, for user message injection
-	toolLog       []toolLogEntry
-	lastError     *toolLogEntry // sticky: most recent error, persists across iterations
-	projectDir    string        // detected from exec cd target (authoritative)
-	fileCommonDir string        // LCP of file paths relative to workspace (fallback)
-	mu            sync.Mutex
+	Description    string
+	Result         string // LLM response summary for completion notification
+	Iteration      int
+	MaxIter        int
+	StartedAt      time.Time
+	cancel         context.CancelFunc
+	interrupt      chan string // buffered 1, for user message injection
+	toolLog        []toolLogEntry
+	lastError      *toolLogEntry // sticky: most recent error, persists across iterations
+	projectDir     string        // detected from exec cd target (authoritative)
+	fileCommonDir  string        // LCP of file paths relative to workspace (fallback)
+	streamedChunks bool          // true after onChunk fires at least once
+	mu             sync.Mutex
 }
 
 // toolLogEntry records a single tool call for the live terminal view.
@@ -225,7 +227,7 @@ func registerSharedTools(
 		}
 
 		// Web tools
-		if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+		searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
 			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
 			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
@@ -239,7 +241,13 @@ func registerSharedTools(
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 			Proxy:                cfg.Tools.Web.Proxy,
-		}); searchTool != nil {
+		})
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{
+				"agent_id": agentID,
+				"error":    err.Error(),
+			})
+		} else if searchTool != nil {
 			agent.Tools.Register(searchTool)
 			logger.InfoCF("agent", "Web search provider registered", map[string]any{
 				"agent_id": agentID,
@@ -250,7 +258,15 @@ func registerSharedTools(
 				"agent_id": agentID,
 			})
 		}
-		agent.Tools.Register(tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy))
+		fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{
+				"agent_id": agentID,
+				"error":    err.Error(),
+			})
+		} else {
+			agent.Tools.Register(fetchTool)
+		}
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		agent.Tools.Register(tools.NewI2CTool())
@@ -1072,6 +1088,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 					doneCancel()
 					return
 				}
+			} else {
+				// No finalContent — fall back to task.Result or task.Description
+				summary := task.Result
+				if summary == "" {
+					summary = task.Description
+				}
+				if summary != "" {
+					completionMsg += "\n" + summary
+				}
 			}
 			doneCtx, doneCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = al.bus.PublishOutbound(doneCtx, bus.OutboundMessage{
@@ -1359,6 +1384,23 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// 5c. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
+	}
+
+	// 5d. Store result summary for task completion notification
+	if task != nil {
+		task.Result = utils.Truncate(finalContent, 280)
+	}
+
+	// 5e. Promote streaming status bubble to task message for background tasks.
+	// When SendResponse is false (e.g. heartbeat), no final non-status message
+	// triggers preSend's statusMsgIDs.LoadAndDelete cleanup, so the last
+	// streaming chunk persists on Telegram. Move the tracked status message ID
+	// into taskMsgIDs so the defer's IsTaskStatus completion notification edits
+	// the existing bubble instead of creating a duplicate message.
+	if opts.Background && !opts.SendResponse && !constants.IsInternalChannel(opts.Channel) && task != nil &&
+		task.streamedChunks && opts.TaskID != "" {
+		statusKey := opts.Channel + ":" + opts.ChatID
+		al.channelManager.PromoteStatusToTask(statusKey, opts.TaskID)
 	}
 
 	// 6. Save final assistant message to session (deferred write-behind)
@@ -2212,6 +2254,9 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}()
 			onChunk = func(accumulated, reasoning string) {
+				if task != nil {
+					task.streamedChunks = true
+				}
 				up := streamUpdate{accumulated, reasoning}
 				// Non-blocking latest-value send: if the consumer hasn't
 				// drained the previous update, replace it with the latest.
@@ -2681,20 +2726,35 @@ func (al *AgentLoop) runLLMIteration(
 				}
 			}
 
-			// Create async callback for tools that implement AsyncTool
-			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
-			// Instead, they notify the agent via PublishInbound, and the agent decides
-			// whether to forward the result to the user (in processSystemMessage).
+			// Create async callback for tools that implement AsyncTool.
+			// The callback publishes a system inbound message so processSystemMessage
+			// injects the result into the conductor's session history. The conductor
+			// sees it on its next turn and decides whether to notify the user.
+			toolName := tc.Name // capture for goroutine
 			asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
-				// Log the async completion but don't send directly to user
-				// The agent will handle user notification via processSystemMessage
-				if !result.Silent && result.ForUser != "" {
-					logger.InfoCF("agent", "Async tool completed, agent will handle notification",
-						map[string]any{
-							"tool":        tc.Name,
-							"content_len": len(result.ForUser),
-						})
+				content := result.ForLLM
+				if content == "" {
+					content = result.ForUser
 				}
+				if content == "" {
+					return
+				}
+
+				logger.InfoCF("agent", "Async tool completed, publishing to conductor",
+					map[string]any{
+						"tool":        toolName,
+						"content_len": len(content),
+						"is_error":    result.IsError,
+					})
+
+				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer pubCancel()
+				_ = al.bus.PublishInbound(pubCtx, bus.InboundMessage{
+					Channel:  "system",
+					SenderID: fmt.Sprintf("async:%s", toolName),
+					ChatID:   fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID),
+					Content:  fmt.Sprintf("Async tool '%s' completed.\n\nResult:\n%s", toolName, content),
+				})
 			}
 
 			// Report toolcall state to canvas.
@@ -2704,6 +2764,7 @@ func (al *AgentLoop) runLLMIteration(
 			toolCtx := ctx
 			if wt := agent.GetWorktree(opts.SessionKey); wt != nil {
 				toolCtx = tools.WithWorkspaceOverride(toolCtx, wt.Path)
+				toolCtx = tools.WithWorktreeInfo(toolCtx, wt)
 			}
 			toolResult := agent.Tools.ExecuteWithContext(
 				toolCtx,

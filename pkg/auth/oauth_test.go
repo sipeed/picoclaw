@@ -219,9 +219,9 @@ func TestExchangeCodeForTokens(t *testing.T) {
 		Port:     1455,
 	}
 
-	cred, err := exchangeCodeForTokens(cfg, "test-code", "test-verifier", "http://localhost:1455/auth/callback")
+	cred, err := ExchangeCodeForTokens(cfg, "test-code", "test-verifier", "http://localhost:1455/auth/callback")
 	if err != nil {
-		t.Fatalf("exchangeCodeForTokens() error: %v", err)
+		t.Fatalf("ExchangeCodeForTokens() error: %v", err)
 	}
 
 	if cred.AccessToken != "mock-access-token" {

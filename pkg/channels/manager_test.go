@@ -274,13 +274,12 @@ func TestWorkerRateLimiter(t *testing.T) {
 		limiter: rate.NewLimiter(2, 1),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go m.runWorker(ctx, "test", w)
 
 	// Enqueue 4 messages
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "1", Content: fmt.Sprintf("msg%d", i)}
 	}
 
@@ -352,8 +351,7 @@ func TestRunWorker_MessageSplitting(t *testing.T) {
 		limiter: rate.NewLimiter(rate.Inf, 1),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go m.runWorker(ctx, "test", w)
 
@@ -576,7 +574,7 @@ func TestRecordPlaceholder_ConcurrentSafe(t *testing.T) {
 	m := newTestManager()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -591,7 +589,7 @@ func TestRecordTypingStop_ConcurrentSafe(t *testing.T) {
 	m := newTestManager()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -834,7 +832,7 @@ func TestLazyWorkerCreation(t *testing.T) {
 func TestBuildMediaScope_FastIDUniqueness(t *testing.T) {
 	seen := make(map[string]bool)
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		scope := BuildMediaScope("test", "chat1", "")
 		if seen[scope] {
 			t.Fatalf("duplicate scope generated: %s", scope)
@@ -975,7 +973,7 @@ func TestHandleStatusSend_SendsNewAndTracks(t *testing.T) {
 
 	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
 
-	// No placeholder, no tracked status → should use SendWithID
+	// No placeholder, no tracked status -> should use SendWithID
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "first status", IsStatus: true}
 	m.handleStatusSend(context.Background(), "test", w, msg)
 
@@ -1081,7 +1079,7 @@ func TestHandleTaskStatusSend_FallbackToSend(t *testing.T) {
 	m := newTestManager()
 	var sendCalled bool
 
-	// Channel without SendWithID — only has Send
+	// Channel without SendWithID -- only has Send
 	ch := &mockChannel{
 		sendFn: func(_ context.Context, msg bus.OutboundMessage) error {
 			sendCalled = true
@@ -1178,11 +1176,11 @@ func TestRunWorker_RoutesStatusMessages(t *testing.T) {
 
 	go m.runWorker(ctx, "test", w)
 
-	// Send a status message for chatID "1" (routed to handleStatusSend → SendWithID)
+	// Send a status message for chatID "1" (routed to handleStatusSend -> SendWithID)
 	w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "status", IsStatus: true}
-	// Send a task status message for chatID "2" (routed to handleTaskStatusSend → SendWithID)
+	// Send a task status message for chatID "2" (routed to handleTaskStatusSend -> SendWithID)
 	w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "2", Content: "task", IsTaskStatus: true, TaskID: "t1"}
-	// Send a regular message for chatID "3" (no tracked status → regular Send)
+	// Send a regular message for chatID "3" (no tracked status -> regular Send)
 	w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "3", Content: "hello"}
 
 	time.Sleep(200 * time.Millisecond)
