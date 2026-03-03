@@ -153,3 +153,25 @@ func TestExecutor_HandlerErrorIsPropagated(t *testing.T) {
 		t.Fatalf("err=%v, want=%v", res.Err, wantErr)
 	}
 }
+
+func TestExecutor_SupportsBangPrefixAndCaseInsensitiveCommand(t *testing.T) {
+	called := false
+	defs := []Definition{
+		{
+			Name: "help",
+			Handler: func(context.Context, Request) error {
+				called = true
+				return nil
+			},
+		},
+	}
+	ex := NewExecutor(NewRegistry(defs))
+
+	res := ex.Execute(context.Background(), Request{Channel: "telegram", Text: "!HELP"})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !called {
+		t.Fatalf("expected handler to be called")
+	}
+}

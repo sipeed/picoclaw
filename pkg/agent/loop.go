@@ -58,7 +58,17 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 }
 
-const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
+const (
+	defaultResponse           = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
+	sessionKeyAgentPrefix     = "agent:"
+	switchCommandToken        = "/switch"
+	commandMentionSeparator   = "@"
+	metadataKeyAccountID      = "account_id"
+	metadataKeyGuildID        = "guild_id"
+	metadataKeyTeamID         = "team_id"
+	metadataKeyParentPeerKind = "parent_peer_kind"
+	metadataKeyParentPeerID   = "parent_peer_id"
+)
 
 func NewAgentLoop(
 	cfg *config.Config,
@@ -498,11 +508,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
 	route := al.registry.ResolveRoute(routing.RouteInput{
 		Channel:    msg.Channel,
-		AccountID:  msg.Metadata["account_id"],
+		AccountID:  inboundMetadata(msg, metadataKeyAccountID),
 		Peer:       extractPeer(msg),
 		ParentPeer: extractParentPeer(msg),
-		GuildID:    msg.Metadata["guild_id"],
-		TeamID:     msg.Metadata["team_id"],
+		GuildID:    inboundMetadata(msg, metadataKeyGuildID),
+		TeamID:     inboundMetadata(msg, metadataKeyTeamID),
 	})
 
 	agent, ok := al.registry.GetAgent(route.AgentID)
@@ -517,7 +527,7 @@ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.Resolv
 }
 
 func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
-	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, "agent:") {
+	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, sessionKeyAgentPrefix) {
 		return msgSessionKey
 	}
 	return route.SessionKey
@@ -1430,10 +1440,10 @@ func (al *AgentLoop) handleCommand(
 			return "", false
 		}
 		cmd := parts[0]
-		if at := strings.Index(cmd, "@"); at > 0 {
+		if at := strings.Index(cmd, commandMentionSeparator); at > 0 {
 			cmd = cmd[:at]
 		}
-		if cmd != "/switch" {
+		if cmd != switchCommandToken {
 			return "", false
 		}
 
@@ -1529,10 +1539,17 @@ func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
 }
 
+func inboundMetadata(msg bus.InboundMessage, key string) string {
+	if msg.Metadata == nil {
+		return ""
+	}
+	return msg.Metadata[key]
+}
+
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.
 func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
-	parentKind := msg.Metadata["parent_peer_kind"]
-	parentID := msg.Metadata["parent_peer_id"]
+	parentKind := inboundMetadata(msg, metadataKeyParentPeerKind)
+	parentID := inboundMetadata(msg, metadataKeyParentPeerID)
 	if parentKind == "" || parentID == "" {
 		return nil
 	}

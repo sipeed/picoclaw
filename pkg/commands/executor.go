@@ -64,8 +64,13 @@ func (e *Executor) Execute(ctx context.Context, req Request) ExecuteResult {
 }
 
 func matchesCommand(def Definition, cmdName string) bool {
-	if def.Name == cmdName {
+	if normalizeCommandName(def.Name) == cmdName {
 		return true
 	}
-	return contains(def.Aliases, cmdName)
+	for _, alias := range def.Aliases {
+		if normalizeCommandName(alias) == cmdName {
+			return true
+		}
+	}
+	return false
 }
