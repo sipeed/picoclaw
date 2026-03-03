@@ -16,8 +16,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
-const defaultAnthropicModel = "claude-sonnet-4.6"
+const (
+	supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
+	defaultAnthropicModel = "claude-sonnet-4.6"
+)
+
 
 func authLoginCmd(provider string, useDeviceCode bool, useOauth bool) error {
 	switch provider {

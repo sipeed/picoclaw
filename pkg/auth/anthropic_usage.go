@@ -30,8 +30,8 @@ func FetchAnthropicUsage(token string) (*AnthropicUsage, error) {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("anthropic-version", anthropicAPIVersion)
-	req.Header.Set("anthropic-beta", anthropicBetaHeader)
+	req.Header.Set("Anthropic-Version", anthropicAPIVersion)
+	req.Header.Set("Anthropic-Beta", anthropicBetaHeader)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)

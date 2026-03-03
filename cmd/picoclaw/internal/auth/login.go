@@ -20,7 +20,10 @@ func newLoginCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&provider, "provider", "p", "", "Provider to login with (openai, anthropic)")
 	cmd.Flags().BoolVar(&useDeviceCode, "device-code", false, "Use device code flow (for headless environments)")
-	cmd.Flags().BoolVar(&useOauth, "setup-token", false, "Use setup-token flow for Anthropic (from `claude setup-token`)")
+	cmd.Flags().BoolVar(
+		&useOauth, "setup-token", false,
+		"Use setup-token flow for Anthropic (from `claude setup-token`)",
+	)
 	_ = cmd.MarkFlagRequired("provider")
 
 	return cmd
