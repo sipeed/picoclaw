@@ -25,18 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
-var (
-	reHeading    = regexp.MustCompile(`^#{1,6}\s+(.+)$`)
-	reBlockquote = regexp.MustCompile(`^>\s*(.*)$`)
-	reLink       = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
-	reBoldStar   = regexp.MustCompile(`\*\*(.+?)\*\*`)
-	reBoldUnder  = regexp.MustCompile(`__(.+?)__`)
-	reItalic     = regexp.MustCompile(`_([^_]+)_`)
-	reStrike     = regexp.MustCompile(`~~(.+?)~~`)
-	reListItem   = regexp.MustCompile(`^[-*]\s+`)
-	reCodeBlock  = regexp.MustCompile("```[\\w]*\\n?([\\s\\S]*?)```")
-	reInlineCode = regexp.MustCompile("`([^`]+)`")
-)
+var reHeading = regexp.MustCompile(`(?m)^#{1,6}\s+([^\n]+)`)
 
 type TelegramChannel struct {
 	*channels.BaseChannel
@@ -173,18 +162,16 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
+	markdownV2Content := markdownToTelegramMarkdownV2(msg.Content)
 
-	// Typing/placeholder handled by Manager.preSend — just send the message
-	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
-	tgMsg.ParseMode = telego.ModeHTML
+	tgMsg := tu.Message(tu.ID(chatID), markdownV2Content).
+		WithParseMode(telego.ModeMarkdownV2)
 
 	if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
+		logger.ErrorCF("telegram", "MarkdownV2 parse failed, falling back to plain text", map[string]any{
 			"error": err.Error(),
 		})
-		tgMsg.ParseMode = ""
-		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
+		if _, err = c.bot.SendMessage(ctx, tu.Message(tu.ID(chatID), msg.Content)); err != nil {
 			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
 		}
 	}
@@ -232,9 +219,9 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	if err != nil {
 		return err
 	}
-	htmlContent := markdownToTelegramHTML(content)
-	editMsg := tu.EditMessageText(tu.ID(cid), mid, htmlContent)
-	editMsg.ParseMode = telego.ModeHTML
+	md2Content := markdownToTelegramMarkdownV2(content)
+	editMsg := tu.EditMessageText(tu.ID(cid), mid, md2Content).
+		WithParseMode(telego.ModeMarkdownV2)
 	_, err = c.bot.EditMessageText(ctx, editMsg)
 	return err
 }
@@ -554,109 +541,154 @@ func parseChatID(chatIDStr string) (int64, error) {
 	return id, err
 }
 
-func markdownToTelegramHTML(text string) string {
-	if text == "" {
-		return ""
-	}
+// markdownToTelegramMarkdownV2 takes a standardized markdown string and
+// strictly escapes or transforms it to fit Telegram's MarkdownV2 requirements.
+// https://core.telegram.org/bots/api#formatting-options
+func markdownToTelegramMarkdownV2(text string) string {
+	// replace Heading to bolding
+	text = reHeading.ReplaceAllString(text, "*$1*")
 
-	codeBlocks := extractCodeBlocks(text)
-	text = codeBlocks.text
+	var result strings.Builder
+	runes := []rune(text)
+	length := len(runes)
 
-	inlineCodes := extractInlineCodes(text)
-	text = inlineCodes.text
-
-	text = reHeading.ReplaceAllString(text, "$1")
-
-	text = reBlockquote.ReplaceAllString(text, "$1")
-
-	text = escapeHTML(text)
-
-	text = reLink.ReplaceAllString(text, `<a href="$2">$1</a>`)
-
-	text = reBoldStar.ReplaceAllString(text, "<b>$1</b>")
-
-	text = reBoldUnder.ReplaceAllString(text, "<b>$1</b>")
-
-	text = reItalic.ReplaceAllStringFunc(text, func(s string) string {
-		match := reItalic.FindStringSubmatch(s)
-		if len(match) < 2 {
-			return s
+	// List of characters that must be escaped in standard text contexts
+	needsNormalEscape := func(r rune) bool {
+		switch r {
+		case '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!':
+			return true
 		}
-		return "<i>" + match[1] + "</i>"
-	})
-
-	text = reStrike.ReplaceAllString(text, "<s>$1</s>")
-
-	text = reListItem.ReplaceAllString(text, "• ")
-
-	for i, code := range inlineCodes.codes {
-		escaped := escapeHTML(code)
-		text = strings.ReplaceAll(text, fmt.Sprintf("\x00IC%d\x00", i), fmt.Sprintf("<code>%s</code>", escaped))
-	}
-
-	for i, code := range codeBlocks.codes {
-		escaped := escapeHTML(code)
-		text = strings.ReplaceAll(
-			text,
-			fmt.Sprintf("\x00CB%d\x00", i),
-			fmt.Sprintf("<pre><code>%s</code></pre>", escaped),
-		)
-	}
-
-	return text
-}
-
-type codeBlockMatch struct {
-	text  string
-	codes []string
-}
-
-func extractCodeBlocks(text string) codeBlockMatch {
-	matches := reCodeBlock.FindAllStringSubmatch(text, -1)
-
-	codes := make([]string, 0, len(matches))
-	for _, match := range matches {
-		codes = append(codes, match[1])
+		return false
 	}
 
 	i := 0
-	text = reCodeBlock.ReplaceAllStringFunc(text, func(m string) string {
-		placeholder := fmt.Sprintf("\x00CB%d\x00", i)
+	for i < length {
+		// 1. Check for Pre-formatted Code Block (```...```)
+		if i+2 < length && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
+			result.WriteString("```")
+			i += 3
+			// Find closing ```
+			for i < length {
+				if i+2 < length && runes[i] == '`' && runes[i+1] == '`' && runes[i+2] == '`' {
+					result.WriteString("```")
+					i += 3
+					break
+				}
+				// Inside code blocks, escape `\` and `\`
+				if runes[i] == '\\' || runes[i] == '`' {
+					result.WriteRune('\\')
+				}
+				result.WriteRune(runes[i])
+				i++
+			}
+			continue
+		}
+
+		// 2. Check for Inline Code (`...`)
+		if runes[i] == '`' {
+			result.WriteRune('`')
+			i++
+			for i < length {
+				if runes[i] == '`' {
+					result.WriteRune('`')
+					i++
+					break
+				}
+				if runes[i] == '\\' || runes[i] == '`' {
+					result.WriteRune('\\')
+				}
+				result.WriteRune(runes[i])
+				i++
+			}
+			continue
+		}
+
+		// 3. Link or Custom Emoji definition: URL part (...)
+		// We detect this by checking if the previous non-space character closed a bracket ']',
+		// and we are currently on '('. To keep logic linear, we handle it as we traverse.
+		// NOTE: A true deep-parser would link `[` to `](...)`. For safety, whenever we see `(`,
+		// if it looks like a URL part, we escape it via URL rules. Let's do a basic lookbehind.
+		if runes[i] == '(' && i > 0 && runes[i-1] == ']' {
+			result.WriteRune('(')
+			i++
+			for i < length {
+				if runes[i] == ')' {
+					// Unescaped closing bracket ends the URL
+					result.WriteRune(')')
+					i++
+					break
+				}
+				// In URL part, escape `\` and `)`
+				if runes[i] == '\\' || runes[i] == ')' {
+					result.WriteRune('\\')
+				}
+				result.WriteRune(runes[i])
+				i++
+			}
+			continue
+		}
+
+		// 4. Handle blockquotes starts
+		if runes[i] == '>' && (i == 0 || runes[i-1] == '\n') {
+			result.WriteRune('>')
+			i++
+			continue
+		}
+
+		// 5. Handle standard Markdown Entities Boundaries
+		// If they are part of valid markdown boundaries, we write them as-is.
+		// We trust the syntax rules: * _ ~ || [ ]
+		// (Assuming the text is a valid markdown, we don't escape these if formatting is intended)
+
+		// Note on Ambiguity (__ vs _):
+		// Telegram parses `__` from left to right greedily.
+		if i+1 < length && runes[i] == '_' && runes[i+1] == '_' {
+			result.WriteString("__")
+			i += 2
+			continue
+		}
+
+		if i+1 < length && runes[i] == '|' && runes[i+1] == '|' {
+			result.WriteString("||")
+			i += 2
+			continue
+		}
+
+		// Standard single-char boundaries
+		if runes[i] == '*' || runes[i] == '_' || runes[i] == '~' || runes[i] == '[' || runes[i] == ']' {
+			result.WriteRune(runes[i])
+			i++
+			continue
+		}
+
+		// Custom emoji boundary check `![`
+		if i+1 < length && runes[i] == '!' && runes[i+1] == '[' {
+			result.WriteString("![")
+			i += 2
+			continue
+		}
+
+		// 6. Handle plain text characters
+		// Escape remaining special characters if they aren't forming intended valid markup
+		if needsNormalEscape(runes[i]) {
+			// Check if it's already escaped; if an escape character exists, consume it legitimately
+			if runes[i] == '\\' && i+1 < length && needsNormalEscape(runes[i+1]) {
+				// Keep the backslash and the escaped char as is, avoiding double escaping
+				result.WriteRune('\\')
+				result.WriteRune(runes[i+1])
+				i += 2
+				continue
+			}
+
+			// Auto-escape the character
+			result.WriteRune('\\')
+		}
+
+		result.WriteRune(runes[i])
 		i++
-		return placeholder
-	})
-
-	return codeBlockMatch{text: text, codes: codes}
-}
-
-type inlineCodeMatch struct {
-	text  string
-	codes []string
-}
-
-func extractInlineCodes(text string) inlineCodeMatch {
-	matches := reInlineCode.FindAllStringSubmatch(text, -1)
-
-	codes := make([]string, 0, len(matches))
-	for _, match := range matches {
-		codes = append(codes, match[1])
 	}
 
-	i := 0
-	text = reInlineCode.ReplaceAllStringFunc(text, func(m string) string {
-		placeholder := fmt.Sprintf("\x00IC%d\x00", i)
-		i++
-		return placeholder
-	})
-
-	return inlineCodeMatch{text: text, codes: codes}
-}
-
-func escapeHTML(text string) string {
-	text = strings.ReplaceAll(text, "&", "&amp;")
-	text = strings.ReplaceAll(text, "<", "&lt;")
-	text = strings.ReplaceAll(text, ">", "&gt;")
-	return text
+	return result.String()
 }
 
 // isBotMentioned checks if the bot is mentioned in the message via entities.
