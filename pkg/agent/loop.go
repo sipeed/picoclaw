@@ -53,8 +53,8 @@ type activeTask struct {
 	lastError      *toolLogEntry // sticky: most recent error, persists across iterations
 	projectDir     string        // detected from exec cd target (authoritative)
 	fileCommonDir  string        // LCP of file paths relative to workspace (fallback)
-	streamedChunks bool   // true after onChunk fires at least once
-	messageContent string // last content sent by the message tool (for inclusion in completion)
+	streamedChunks bool          // true after onChunk fires at least once
+	messageContent string        // last content sent by the message tool (for inclusion in completion)
 	mu             sync.Mutex
 }
 
