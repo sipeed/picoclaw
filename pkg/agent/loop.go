@@ -1028,6 +1028,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		}
 	}
 
+	// Shared variable for capturing LLM's final response. The defer below reads it
+	// to include the response in the task completion message.
+	var finalContent string
+
 	// Use TaskID as key if available (for background tasks), else sessionKey
 	taskKey := opts.SessionKey
 	if opts.TaskID != "" {
@@ -1037,14 +1041,43 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	defer func() {
 		al.activeTasks.Delete(taskKey)
 
-		// Publish final task status on completion for background tasks
+		// Publish final task status on completion for background tasks.
+		// Include finalContent so the LLM response appears in the same bubble
+		// as the completion status, avoiding duplicate messages.
 		if opts.TaskID != "" {
 			elapsed := time.Since(task.StartedAt)
+			completionMsg := fmt.Sprintf("\u2705 Task completed (%.1fs)", elapsed.Seconds())
+			if finalContent != "" && finalContent != defaultResponse {
+				// Keep completion + response in one bubble if short enough (4096 = Telegram limit).
+				// If too long, edit the status bubble with the header, then send the
+				// full response as a regular message — the channel worker's SplitMessage
+				// will automatically chunk it for channels with MaxMessageLength.
+				combined := completionMsg + "\n\n" + finalContent
+				if len([]rune(combined)) <= 4096 {
+					completionMsg = combined
+				} else {
+					doneCtx, doneCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					_ = al.bus.PublishOutbound(doneCtx, bus.OutboundMessage{
+						Channel:      opts.Channel,
+						ChatID:       opts.ChatID,
+						Content:      completionMsg,
+						IsTaskStatus: true,
+						TaskID:       opts.TaskID,
+					})
+					_ = al.bus.PublishOutbound(doneCtx, bus.OutboundMessage{
+						Channel: opts.Channel,
+						ChatID:  opts.ChatID,
+						Content: finalContent,
+					})
+					doneCancel()
+					return
+				}
+			}
 			doneCtx, doneCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = al.bus.PublishOutbound(doneCtx, bus.OutboundMessage{
 				Channel:      opts.Channel,
 				ChatID:       opts.ChatID,
-				Content:      fmt.Sprintf("\u2705 Task completed (%.1fs)\n%s", elapsed.Seconds(), task.Description),
+				Content:      completionMsg,
 				IsTaskStatus: true,
 				TaskID:       opts.TaskID,
 			})
@@ -1182,7 +1215,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	}
 
 	// 5. Run LLM iteration loop (with automatic phase transitions)
-	var finalContent string
 	var iteration int
 	const maxPhaseTransitions = 10
 
@@ -2155,23 +2187,47 @@ func (al *AgentLoop) runLLMIteration(
 		var err error
 
 		// Build onChunk callback for streaming preview.
-		// When sending responses to a real (non-internal) channel, publish
-		// throttled status updates so the user sees LLM output in real time.
+		// Instead of a fixed-interval throttle, use a Go channel with
+		// latest-value semantics: a consumer goroutine publishes status
+		// updates as fast as the bus → manager → channel pipeline allows.
+		// Backpressure is provided naturally by the per-channel rate limiter
+		// (e.g. 20 msg/s for Telegram's SendDraft, 1 msg/s for Discord's EditMessage).
+		type streamUpdate struct{ accumulated, reasoning string }
 		var onChunk func(string, string)
+		var streamCh chan streamUpdate
+		var streamDone chan struct{}
 		if !constants.IsInternalChannel(opts.Channel) {
-			lastPublish := time.Time{}
-			onChunk = func(accumulated, reasoning string) {
-				if time.Since(lastPublish) < 500*time.Millisecond {
-					return
+			streamCh = make(chan streamUpdate, 1)
+			streamDone = make(chan struct{})
+			go func() {
+				defer close(streamDone)
+				for up := range streamCh {
+					display := buildStreamingDisplay(up.accumulated, up.reasoning)
+					_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+						Channel:  opts.Channel,
+						ChatID:   opts.ChatID,
+						Content:  display,
+						IsStatus: true,
+					})
 				}
-				lastPublish = time.Now()
-				display := buildStreamingDisplay(accumulated, reasoning)
-				_ = al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-					Channel:  opts.Channel,
-					ChatID:   opts.ChatID,
-					Content:  display,
-					IsStatus: true,
-				})
+			}()
+			onChunk = func(accumulated, reasoning string) {
+				up := streamUpdate{accumulated, reasoning}
+				// Non-blocking latest-value send: if the consumer hasn't
+				// drained the previous update, replace it with the latest.
+				select {
+				case streamCh <- up:
+				default:
+					// Channel full — drain stale value, then send latest.
+					select {
+					case <-streamCh:
+					default:
+					}
+					select {
+					case streamCh <- up:
+					default:
+					}
+				}
 			}
 		}
 
@@ -2304,6 +2360,17 @@ func (al *AgentLoop) runLLMIteration(
 				continue
 			}
 			break
+		}
+
+		// Streaming finished — close the stream goroutine so it flushes
+		// the last update and exits cleanly before we process the response.
+		if streamDone != nil {
+			// onChunk is captured by doCall closures; nil it to avoid
+			// writes after the channel is closed during retries.
+			onChunk = nil
+			close(streamCh)
+			<-streamDone
+			streamDone = nil
 		}
 
 		if err != nil {
