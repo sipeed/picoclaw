@@ -731,12 +731,15 @@ func TestWebTool_BochaSearch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebSearchTool(WebSearchToolOptions{
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
 		BochaEnabled:    true,
 		BochaAPIKey:     "test-bocha-key",
 		BochaBaseURL:    server.URL,
 		BochaMaxResults: 5,
 	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool failed: %v", err)
+	}
 
 	ctx := context.Background()
 	result := tool.Execute(ctx, map[string]any{"query": "test query"})
@@ -775,11 +778,14 @@ func TestWebTool_BochaSearch_APIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebSearchTool(WebSearchToolOptions{
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
 		BochaEnabled: true,
 		BochaAPIKey:  "bad-key",
 		BochaBaseURL: server.URL,
 	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool failed: %v", err)
+	}
 
 	ctx := context.Background()
 	result := tool.Execute(ctx, map[string]any{"query": "test"})

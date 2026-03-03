@@ -564,7 +564,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	} else if opts.BochaEnabled && opts.BochaAPIKey != "" {
 		bochaClient, err := createHTTPClient(opts.Proxy, 15*time.Second)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		provider = &BochaSearchProvider{
 			apiKey:  opts.BochaAPIKey,
