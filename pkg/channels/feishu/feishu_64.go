@@ -344,8 +344,8 @@ func (c *FeishuChannel) downloadImage(ctx context.Context, messageID, imageKey s
 	}
 
 	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
-	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
-		return "", fmt.Errorf("create media dir: %w", err)
+	if mkErr := os.MkdirAll(mediaDir, 0o700); mkErr != nil {
+		return "", fmt.Errorf("create media dir: %w", mkErr)
 	}
 
 	localPath := filepath.Join(mediaDir, uuid.New().String()[:8]+"_feishu_image")

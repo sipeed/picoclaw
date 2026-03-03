@@ -8,8 +8,6 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-func strPtr(s string) *string { return &s }
-
 func TestExtractFeishuImageKey(t *testing.T) {
 	tests := []struct {
 		name    string
