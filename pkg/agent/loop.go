@@ -1356,6 +1356,10 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
 }
 
+// maxMediaFileSize is the maximum file size (20 MB) for media resolution.
+// Files larger than this are skipped to prevent OOM under concurrent load.
+const maxMediaFileSize = 20 * 1024 * 1024
+
 // resolveMediaRefs replaces media:// refs in message Media fields with base64 data URLs.
 // Returns a new slice with resolved URLs; original messages are not mutated.
 func resolveMediaRefs(messages []providers.Message, store media.MediaStore) []providers.Message {
@@ -1387,6 +1391,23 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore) []pr
 				continue
 			}
 
+			info, err := os.Stat(localPath)
+			if err != nil {
+				logger.WarnCF("agent", "Failed to stat media file", map[string]any{
+					"path":  localPath,
+					"error": err.Error(),
+				})
+				continue
+			}
+			if info.Size() > maxMediaFileSize {
+				logger.WarnCF("agent", "Media file too large, skipping", map[string]any{
+					"path":     localPath,
+					"size":     info.Size(),
+					"max_size": maxMediaFileSize,
+				})
+				continue
+			}
+
 			data, err := os.ReadFile(localPath)
 			if err != nil {
 				logger.WarnCF("agent", "Failed to read media file", map[string]any{
@@ -1400,6 +1421,13 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore) []pr
 			if mime == "" {
 				mime = mimeFromExtension(filepath.Ext(localPath))
 			}
+			if mime == "" {
+				logger.WarnCF("agent", "Unknown media type, skipping", map[string]any{
+					"path": localPath,
+					"ext":  filepath.Ext(localPath),
+				})
+				continue
+			}
 
 			dataURL := "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
 			resolved = append(resolved, dataURL)
@@ -1412,6 +1440,7 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore) []pr
 }
 
 // mimeFromExtension returns a MIME type for common image extensions.
+// Returns empty string for unrecognized extensions.
 func mimeFromExtension(ext string) string {
 	switch strings.ToLower(ext) {
 	case ".jpg", ".jpeg":
@@ -1425,6 +1454,6 @@ func mimeFromExtension(ext string) string {
 	case ".bmp":
 		return "image/bmp"
 	default:
-		return "image/jpeg"
+		return ""
 	}
 }

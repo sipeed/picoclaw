@@ -235,6 +235,12 @@ func serializeMessages(messages []Message) []map[string]interface{} {
 			"role":    m.Role,
 			"content": parts,
 		}
+		if m.ToolCallID != "" {
+			msg["tool_call_id"] = m.ToolCallID
+		}
+		if len(m.ToolCalls) > 0 {
+			msg["tool_calls"] = m.ToolCalls
+		}
 		if m.ReasoningContent != "" {
 			msg["reasoning_content"] = m.ReasoningContent
 		}
