@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PicoClaw Launcher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <style>
+    *,
+    *::before,
+    *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    :root {
+      --radius: 10px;
+      --transition: 180ms cubic-bezier(.4, 0, .2, 1)
+    }
+
+    [data-theme="dark"] {
+      --bg: #0d1117;
+      --bg2: #161b22;
+      --bg3: #1c2128;
+      --border: #30363d;
+      --border2: #484f58;
+      --text: #e6edf3;
+      --text2: #8b949e;
+      --text3: #6e7681;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --accent-bg: rgba(99, 102, 241, .12);
+      --green: #3fb950;
+      --green-bg: rgba(63, 185, 80, .12);
+      --red: #f85149;
+      --red-bg: rgba(248, 81, 73, .12);
+      --yellow: #d29922
+    }
+
+    [data-theme="light"] {
+      --bg: #f6f8fa;
+      --bg2: #ffffff;
+      --bg3: #f0f2f5;
+      --border: #d0d7de;
+      --border2: #afb8c1;
+      --text: #1f2328;
+      --text2: #656d76;
+      --text3: #8c959f;
+      --accent: #6366f1;
+      --accent2: #4f46e5;
+      --accent-bg: rgba(99, 102, 241, .08);
+      --green: #1a7f37;
+      --green-bg: rgba(26, 127, 55, .08);
+      --red: #cf222e;
+      --red-bg: rgba(207, 34, 46, .08);
+      --yellow: #9a6700
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+      user-select: none
+    }
+
+    .sidebar {
+      width: 200px;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      padding: 16px 0;
+      --wails-draggable: drag
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px
+    }
+
+    .sidebar-logo .icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      color: #fff;
+      font-weight: 700
+    }
+
+    .sidebar-logo .name {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -.02em
+    }
+
+    .sidebar-logo .ver {
+      font-size: 11px;
+      color: var(--text3);
+      margin-top: 1px
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text2);
+      cursor: pointer;
+      transition: all var(--transition);
+      border-left: 3px solid transparent;
+      --wails-draggable: no-drag
+    }
+
+    .nav-item:hover {
+      color: var(--text);
+      background: var(--bg3)
+    }
+
+    .nav-item.active {
+      color: var(--accent2);
+      background: var(--accent-bg);
+      border-left-color: var(--accent)
+    }
+
+    .nav-item .nav-icon {
+      font-size: 16px;
+      width: 20px;
+      text-align: center
+    }
+
+    .nav-spacer {
+      flex: 1
+    }
+
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 32px;
+      background: var(--bg)
+    }
+
+    .tab {
+      display: none
+    }
+
+    .tab.active {
+      display: block
+    }
+
+    .tab-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 4px
+    }
+
+    .tab-desc {
+      font-size: 13px;
+      color: var(--text3);
+      margin-bottom: 24px
+    }
+
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    .card-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .card-row:last-child {
+      border-bottom: none
+    }
+
+    .card-row .label {
+      color: var(--text2)
+    }
+
+    .card-row .value {
+      font-weight: 500
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px
+    }
+
+    .status-dot.running {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green)
+    }
+
+    .status-dot.stopped {
+      background: var(--red)
+    }
+
+    .btn {
+      font-family: 'Inter';
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 18px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px
+    }
+
+    .btn:hover {
+      border-color: var(--border2);
+      transform: translateY(-1px)
+    }
+
+    .btn:active {
+      transform: translateY(0)
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff
+    }
+
+    .btn-primary:hover {
+      background: var(--accent2)
+    }
+
+    .btn-danger {
+      background: var(--red);
+      border-color: var(--red);
+      color: #fff
+    }
+
+    .btn-success {
+      background: var(--green);
+      border-color: var(--green);
+      color: #fff
+    }
+
+    .btn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+      transform: none !important
+    }
+
+    .btn-lg {
+      padding: 12px 32px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 10px
+    }
+
+    .form-group {
+      margin-bottom: 16px
+    }
+
+    .form-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text2);
+      margin-bottom: 6px;
+      display: block
+    }
+
+    .form-input {
+      width: 100%;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      padding: 9px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+      transition: border-color var(--transition)
+    }
+
+    .form-input:focus {
+      border-color: var(--accent)
+    }
+
+    .form-input::placeholder {
+      color: var(--text3)
+    }
+
+    .form-hint {
+      font-size: 11px;
+      color: var(--text3);
+      margin-top: 4px
+    }
+
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 100px)
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px
+    }
+
+    .chat-msg {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-size: 13px;
+      line-height: 1.6;
+      word-wrap: break-word;
+      animation: msgIn .25s ease-out
+    }
+
+    @keyframes msgIn {
+      from {
+        opacity: 0;
+        transform: translateY(6px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    .chat-msg.bot {
+      align-self: flex-start;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px
+    }
+
+    .chat-msg.user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #fff;
+      border-bottom-right-radius: 4px
+    }
+
+    .chat-msg .sender {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent2);
+      margin-bottom: 4px
+    }
+
+    .chat-msg.typing .dots {
+      display: inline-flex;
+      gap: 4px
+    }
+
+    .chat-msg.typing .dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text3);
+      animation: bounce 1.2s ease-in-out infinite
+    }
+
+    .chat-msg.typing .dots span:nth-child(2) {
+      animation-delay: .15s
+    }
+
+    .chat-msg.typing .dots span:nth-child(3) {
+      animation-delay: .3s
+    }
+
+    @keyframes bounce {
+
+      0%,
+      60%,
+      100% {
+        transform: translateY(0)
+      }
+
+      30% {
+        transform: translateY(-4px)
+      }
+    }
+
+    .chat-input-bar {
+      display: flex;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border)
+    }
+
+    .chat-input-bar input {
+      flex: 1;
+      font-family: 'Inter';
+      font-size: 13px;
+      padding: 11px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg2);
+      color: var(--text);
+      outline: none;
+      transition: border-color var(--transition)
+    }
+
+    .chat-input-bar input:focus {
+      border-color: var(--accent)
+    }
+
+    .chat-input-bar input::placeholder {
+      color: var(--text3)
+    }
+
+    .chat-send {
+      font-family: 'Inter';
+      font-size: 13px;
+      font-weight: 600;
+      padding: 11px 24px;
+      border-radius: 10px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      transition: background var(--transition)
+    }
+
+    .chat-send:hover {
+      background: var(--accent2)
+    }
+
+    .chat-send:disabled {
+      opacity: .4;
+      cursor: not-allowed
+    }
+
+    .log-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      min-height: 200px;
+      max-height: 400px;
+      overflow-y: auto;
+      padding: 14px 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-all
+    }
+
+    .log-placeholder {
+      color: var(--text3);
+      font-style: italic;
+      font-family: 'Inter'
+    }
+
+    .setup-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity .4s
+    }
+
+    .setup-overlay.hidden {
+      display: none
+    }
+
+    .setup-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      width: 480px;
+      max-width: 92vw;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, .25)
+    }
+
+    .setup-header {
+      text-align: center;
+      margin-bottom: 28px
+    }
+
+    .setup-header .logo {
+      width: 52px;
+      height: 52px;
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: #fff;
+      font-weight: 700;
+      margin: 0 auto 16px;
+      box-shadow: 0 4px 20px var(--accent-bg)
+    }
+
+    .setup-header h2 {
+      font-size: 20px;
+      font-weight: 700
+    }
+
+    .setup-header p {
+      font-size: 13px;
+      color: var(--text3);
+      margin-top: 4px
+    }
+
+    .setup-status {
+      margin-top: 16px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none
+    }
+
+    .setup-status.ok {
+      display: block;
+      background: var(--green-bg);
+      color: var(--green);
+      border: 1px solid rgba(63, 185, 80, .2)
+    }
+
+    .setup-status.err {
+      display: block;
+      background: var(--red-bg);
+      color: var(--red);
+      border: 1px solid rgba(248, 81, 73, .2)
+    }
+
+    .setup-status.info {
+      display: block;
+      background: var(--accent-bg);
+      color: var(--accent2);
+      border: 1px solid rgba(99, 102, 241, .2)
+    }
+
+    .setup-actions {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end
+    }
+
+    .editor-box {
+      width: 100%;
+      min-height: 200px;
+      resize: vertical;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 16px 20px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      outline: none
+    }
+
+    .editor-box:focus {
+      border-color: var(--accent)
+    }
+
+    .model-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px
+    }
+
+    .model-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      transition: border-color var(--transition)
+    }
+
+    .model-card:hover {
+      border-color: var(--border2)
+    }
+
+    .model-card .mc-name {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between
+    }
+
+    .model-card .mc-detail {
+      font-size: 12px;
+      color: var(--text2);
+      margin-bottom: 3px;
+      word-break: break-all
+    }
+
+    .model-card .mc-detail b {
+      color: var(--text);
+      font-weight: 500
+    }
+
+    .model-card .mc-actions {
+      margin-top: 10px;
+      display: flex;
+      gap: 6px
+    }
+
+    .mc-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: var(--accent-bg);
+      color: var(--accent2);
+      border: 1px solid rgba(99, 102, 241, .2)
+    }
+
+    .ch-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      margin-bottom: 8px
+    }
+
+    .ch-row .ch-name {
+      font-size: 13px;
+      font-weight: 600;
+      width: 120px;
+      flex-shrink: 0
+    }
+
+    .ch-row input {
+      flex: 1;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg2);
+      color: var(--text);
+      outline: none
+    }
+
+    .ch-row input:focus {
+      border-color: var(--accent)
+    }
+
+    .collapse-header {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text2);
+      padding: 8px 0;
+      user-select: none
+    }
+
+    .collapse-header:hover {
+      color: var(--text)
+    }
+
+    .collapse-body {
+      display: none
+    }
+
+    .collapse-body.open {
+      display: block
+    }
+
+    @media(max-width:700px) {
+      .sidebar {
+        width: 56px;
+        padding: 12px 0
+      }
+
+      .sidebar-logo .name,
+      .sidebar-logo .ver,
+      .nav-item span:not(.nav-icon) {
+        display: none
+      }
+
+      .nav-item {
+        justify-content: center;
+        padding: 10px 0
+      }
+
+      .content {
+        padding: 20px 16px
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <script>(function () { var t = localStorage.getItem('picoclaw-theme') || 'dark'; if (t === 'system') t = matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light'; document.documentElement.setAttribute('data-theme', t) })();</script>
+
+  <!-- Setup Overlay -->
+  <div class="setup-overlay hidden" id="setupOverlay">
+    <div class="setup-card">
+      <div class="setup-header">
+        <div class="logo">P</div>
+        <h2>Welcome to PicoClaw</h2>
+        <p>Enter your LLM API credentials to get started</p>
+      </div>
+      <div class="form-group"><label class="form-label">API Key *</label><input class="form-input" id="setupKey"
+          type="password" placeholder="sk-... or your API key"></div>
+      <div class="form-group"><label class="form-label">Model *</label><input class="form-input" id="setupModel"
+          value="gpt-4o" placeholder="e.g. gpt-4o, deepseek-chat"></div>
+      <div class="form-group"><label class="form-label">API Base URL</label><input class="form-input" id="setupBase"
+          placeholder="https://api.openai.com/v1 (default)">
+        <div class="form-hint">Leave empty for OpenAI. Change for DeepSeek, OpenRouter, etc.</div>
+      </div>
+      <div class="setup-status" id="setupStatus"></div>
+      <div class="setup-actions"><button class="btn btn-primary btn-lg" id="setupBtn" onclick="doSetup()">Test &amp;
+          Save</button></div>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div style="display:flex;flex:1;overflow:hidden">
+    <nav class="sidebar">
+      <div class="sidebar-logo">
+        <div class="icon">P</div>
+        <div>
+          <div class="name">PicoClaw</div>
+          <div class="ver">v0.1.0</div>
+        </div>
+      </div>
+      <div class="nav-item active" data-tab="status" onclick="switchTab('status')"><span
+          class="nav-icon">&#x1F4CA;</span><span>Status</span></div>
+      <div class="nav-item" data-tab="chat" onclick="switchTab('chat')"><span
+          class="nav-icon">&#x1F4AC;</span><span>Chat</span></div>
+      <div class="nav-item" data-tab="settings" onclick="switchTab('settings')"><span
+          class="nav-icon">&#x2699;&#xFE0F;</span><span>Settings</span></div>
+      <div class="nav-spacer"></div>
+      <div class="nav-item" onclick="cycleTheme()" style="border-top:1px solid var(--border);padding-top:12px"><span
+          class="nav-icon" id="themeIcon">&#x1F319;</span><span>Theme</span></div>
+    </nav>
+
+    <div class="content">
+      <!-- Status Tab -->
+      <div class="tab active" id="tab-status">
+        <div class="tab-title">Status</div>
+        <div class="tab-desc">Monitor and control PicoClaw gateway service</div>
+        <div class="card">
+          <div class="card-title">&#x1F680; Gateway</div>
+          <div class="card-row"><span class="label">Status</span><span class="value"><span class="status-dot stopped"
+                id="gwDot"></span><span id="gwStatus">Stopped</span></span></div>
+          <div class="card-row"><span class="label">Model</span><span class="value" id="gwModel">-</span></div>
+          <div class="card-row"><span class="label">Config</span><span class="value" id="gwConfig"
+              style="font-size:11px;font-family:'JetBrains Mono',monospace">-</span></div>
+          <div style="margin-top:16px;display:flex;gap:10px">
+            <button class="btn btn-success" id="btnStart" onclick="startGateway()">&#9654; Start</button>
+            <button class="btn btn-danger" id="btnStop" onclick="stopGateway()" disabled>&#9632; Stop</button>
+            <button class="btn" id="btnRestart" onclick="restartGateway()" disabled>&#x21BB; Restart</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#x1F4DD; Logs</div>
+          <div class="log-box" id="logBox"><span class="log-placeholder">No logs. Start the gateway to see
+              output.</span></div>
+        </div>
+      </div>
+
+      <!-- Chat Tab -->
+      <div class="tab" id="tab-chat">
+        <div class="tab-title">Chat</div>
+        <div class="tab-desc">Talk to your PicoClaw AI agent</div>
+        <div class="chat-container">
+          <div class="chat-messages" id="chatMsgs"></div>
+          <div class="chat-input-bar">
+            <input id="chatInput" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendChat()">
+            <button class="chat-send" id="chatSendBtn" onclick="sendChat()">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings Tab -->
+      <div class="tab" id="tab-settings">
+        <div class="tab-title">Settings</div>
+        <div class="tab-desc">Configure models, channels, and agent identity</div>
+        <div class="card">
+          <div class="card-title">&#x1F916; Models <button class="btn"
+              style="margin-left:auto;font-size:11px;padding:4px 12px" onclick="addModelCard()">+ Add</button></div>
+          <div class="model-grid" id="modelGrid"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#x1F4E1; Channels</div>
+          <div class="ch-row"><span class="ch-name">Telegram</span><input id="chTelegram"
+              placeholder="Bot token (123456:ABC-DEF...)"></div>
+          <div class="ch-row"><span class="ch-name">Discord</span><input id="chDiscord"
+              placeholder="Bot token from Developer Portal"></div>
+          <div class="ch-row"><span class="ch-name">Slack</span><input id="chSlack" placeholder="xoxb-..."></div>
+          <div class="ch-row"><span class="ch-name">WeCom</span><input id="chWecom" placeholder="Corp ID"></div>
+          <div style="margin-top:10px"><button class="btn btn-primary" onclick="saveChannels()">Save Channels</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#x1F9E0; Agent Defaults</div>
+          <div class="form-group"><label class="form-label">Default Model Name</label><input class="form-input"
+              id="agentModel" placeholder="e.g. gpt-4o, deepseek-chat"></div>
+          <div class="form-group"><label class="form-label">Default Provider</label><input class="form-input"
+              id="agentProvider" placeholder="e.g. openai, anthropic (optional)"></div>
+          <button class="btn btn-primary" onclick="saveIdentity()">Save Defaults</button>
+        </div>
+        <div class="card">
+          <div class="card-title">&#x1F4C1; Workspace</div>
+          <div class="form-group"><label class="form-label">Workspace Path</label><input class="form-input" id="wsPath"
+              placeholder="C:\Users\you\.picoclaw\workspace"></div>
+          <div class="card-row"><span class="label">Restrict to workspace</span><span class="value"><input
+                type="checkbox" id="wsRestrict"></span></div>
+          <div class="card-row"><span class="label">Allow read outside workspace</span><span class="value"><input
+                type="checkbox" id="wsReadOutside"></span></div>
+          <div style="margin-top:10px"><button class="btn btn-primary" onclick="saveWorkspace()">Save Workspace</button>
+          </div>
+        </div>
+        <div class="collapse-header" onclick="toggleRawJson()"><span id="rawArrow">&#x25B6;</span> Raw JSON Config
+        </div>
+        <div class="collapse-body" id="rawJsonBody">
+          <div style="display:flex;gap:8px;margin:8px 0 12px"><button class="btn" onclick="loadSettings()">&#x21BB;
+              Reload</button><button class="btn" onclick="formatJson()">{ } Format</button><button
+              class="btn btn-primary" onclick="saveSettings()">Save</button></div>
+          <textarea class="editor-box" id="configEditor" spellcheck="false"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <script>
+    /* === Theme === */
+    let currentTheme = localStorage.getItem('picoclaw-theme') || 'dark';
+    function applyTheme() { const t = currentTheme === 'system' ? (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light') : currentTheme; document.documentElement.setAttribute('data-theme', t); document.getElementById('themeIcon').textContent = t === 'dark' ? '\u{1F319}' : '\u{2600}\u{FE0F}'; }
+    function cycleTheme() { currentTheme = currentTheme === 'dark' ? 'light' : 'dark'; localStorage.setItem('picoclaw-theme', currentTheme); applyTheme(); }
+    applyTheme();
+
+    /* === Tabs === */
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.nav-item[data-tab]').forEach(n => n.classList.remove('active'));
+      const tab = document.getElementById('tab-' + name); if (tab) tab.classList.add('active');
+      const nav = document.querySelector(`.nav-item[data-tab="${name}"]`); if (nav) nav.classList.add('active');
+      if (name === 'chat') document.getElementById('chatInput').focus();
+      if (name === 'settings') loadSettings();
+    }
+
+    /* === Setup === */
+    let didSetup = false;
+    async function checkSetup() {
+      try {
+        const r = await window.go.main.App.GetSetupStatus();
+        document.getElementById('gwConfig').textContent = r.config_path;
+        if (r.needs_setup) document.getElementById('setupOverlay').classList.remove('hidden');
+        else { loadSettings(); autoStartGateway(); }
+      } catch (e) { }
+    }
+
+    async function doSetup() {
+      const btn = document.getElementById('setupBtn'), st = document.getElementById('setupStatus');
+      const key = document.getElementById('setupKey').value.trim();
+      const model = document.getElementById('setupModel').value.trim();
+      const base = document.getElementById('setupBase').value.trim() || 'https://api.openai.com/v1';
+      if (!key || !model) { st.className = 'setup-status err'; st.textContent = 'API Key and Model required.'; return }
+      btn.disabled = true; btn.textContent = 'Testing...'; st.className = 'setup-status info'; st.textContent = 'Connecting to LLM...';
+      try {
+        const sr = await window.go.main.App.SaveSetup({ api_key: key, model: model, api_base: base });
+        if (!sr.success) { st.className = 'setup-status err'; st.textContent = sr.error; btn.disabled = false; btn.textContent = 'Test & Save'; return }
+        const tr = await window.go.main.App.TestLLM({ api_key: key, model: model, api_base: base });
+        if (tr.success) {
+          st.className = 'setup-status ok';
+          st.textContent = '\u2705 Success! Response: ' + tr.response + ' (' + tr.protocol + '/' + tr.model + ')';
+          didSetup = true;
+          setTimeout(() => {
+            document.getElementById('setupOverlay').style.opacity = '0';
+            setTimeout(() => {
+              document.getElementById('setupOverlay').classList.add('hidden');
+              document.getElementById('setupOverlay').style.opacity = '';
+              loadSettings();
+              autoStartGateway();
+              initChatQuestionnaire();
+              switchTab('chat');
+            }, 400);
+          }, 1000);
+        } else { st.className = 'setup-status err'; st.textContent = '\u274C ' + tr.error; }
+      } catch (e) { st.className = 'setup-status err'; st.textContent = '\u274C ' + e.message }
+      btn.disabled = false; btn.textContent = 'Test & Save';
+    }
+
+    /* === Chat === */
+    function addBotMsg(text) {
+      const c = document.getElementById('chatMsgs'), d = document.createElement('div');
+      d.className = 'chat-msg bot';
+      d.innerHTML = '<div class="sender">PicoClaw</div>' + escHtml(text).replace(/\n/g, '<br>');
+      c.appendChild(d); c.scrollTop = c.scrollHeight;
+    }
+    function addUserMsg(text) {
+      const c = document.getElementById('chatMsgs'), d = document.createElement('div');
+      d.className = 'chat-msg user'; d.textContent = text;
+      c.appendChild(d); c.scrollTop = c.scrollHeight;
+    }
+    function addTyping() {
+      const c = document.getElementById('chatMsgs'), d = document.createElement('div');
+      d.className = 'chat-msg bot typing'; d.id = 'typing';
+      d.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
+      c.appendChild(d); c.scrollTop = c.scrollHeight;
+    }
+    function removeTyping() { const e = document.getElementById('typing'); if (e) e.remove() }
+    function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML }
+    function maskKey(k) { return k && k.length > 8 ? k.slice(0, 4) + '...' + k.slice(-4) : '****'; }
+
+    async function sendChat() {
+      const inp = document.getElementById('chatInput'), btn = document.getElementById('chatSendBtn');
+      const msg = inp.value.trim(); if (!msg) return;
+      addUserMsg(msg); inp.value = ''; btn.disabled = true; addTyping();
+      try {
+        const r = await window.go.main.App.SendChat(msg);
+        removeTyping();
+        if (r.success) addBotMsg(r.response);
+        else addBotMsg('Error: ' + (r.error || 'Unknown error'));
+      } catch (e) { removeTyping(); addBotMsg('Connection error: ' + e.message) }
+      btn.disabled = false; inp.focus();
+    }
+
+    async function initChatQuestionnaire() {
+      addBotMsg("Great! Your LLM is working. I can help you configure PicoClaw further.\n\nHere are some things we can set up:\n\u2022 Communication channels (Telegram, Discord, Slack, WeCom)\n\u2022 Agent personality and identity\n\u2022 Workspace and tool permissions\n\nWhat would you like to configure? Or type 'skip' to finish.");
+    }
+
+    /* === Settings === */
+    let currentConfig = null;
+
+    async function loadSettings() {
+      try {
+        const r = await window.go.main.App.GetConfig();
+        currentConfig = r.config;
+        document.getElementById('configEditor').value = JSON.stringify(r.config, null, 2);
+        document.getElementById('gwConfig').textContent = r.path;
+        renderModels(); renderChannels(); renderIdentity(); renderWorkspace();
+      } catch (e) { document.getElementById('configEditor').value = '// Error: ' + e.message }
+    }
+
+    function renderModels() {
+      const grid = document.getElementById('modelGrid');
+      if (!currentConfig || !currentConfig.model_list || currentConfig.model_list.length === 0) { grid.innerHTML = '<div style="color:var(--text3);font-size:13px">No models configured</div>'; return; }
+      grid.innerHTML = currentConfig.model_list.map((m, i) => `<div class="model-card"><div class="mc-name">${escHtml(m.model_name || m.model || 'unnamed')} <span class="mc-badge">${(m.model || '').split('/')[0] || '?'}</span></div><div class="mc-detail"><b>Model:</b> ${escHtml(m.model || '-')}</div><div class="mc-detail"><b>Base:</b> ${escHtml(m.api_base || 'default')}</div><div class="mc-detail"><b>Key:</b> ${m.api_key ? maskKey(m.api_key) : '<em>none</em>'}</div><div class="mc-actions"><button class="btn" style="font-size:11px;padding:4px 10px" onclick="editModel(${i})">Edit</button><button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteModel(${i})">Delete</button></div></div>`).join('');
+    }
+
+    function addModelCard() {
+      const name = prompt('Model name (e.g. gpt-4o):'); if (!name) return;
+      const key = prompt('API Key:');
+      const base = prompt('API Base URL (leave empty for OpenAI):', 'https://api.openai.com/v1');
+      if (!currentConfig) currentConfig = {}; if (!currentConfig.model_list) currentConfig.model_list = [];
+      const p = (base || '').includes('anthropic') ? 'anthropic' : (base || '').includes('googleapis') ? 'gemini' : 'openai';
+      currentConfig.model_list.push({ model_name: name, model: p + '/' + name, api_key: key || '', api_base: base || 'https://api.openai.com/v1' });
+      saveFullConfig();
+    }
+    function editModel(idx) {
+      const m = currentConfig.model_list[idx];
+      const key = prompt('API Key:', m.api_key || ''); if (key === null) return;
+      const base = prompt('API Base URL:', m.api_base || ''); if (base === null) return;
+      m.api_key = key; m.api_base = base; saveFullConfig();
+    }
+    function deleteModel(idx) { if (!confirm('Delete this model?')) return; currentConfig.model_list.splice(idx, 1); saveFullConfig(); }
+
+    function renderChannels() {
+      if (!currentConfig || !currentConfig.channels) return;
+      const ch = currentConfig.channels;
+      document.getElementById('chTelegram').value = ch.telegram?.token || '';
+      document.getElementById('chDiscord').value = ch.discord?.token || '';
+      document.getElementById('chSlack').value = ch.slack?.bot_token || '';
+      document.getElementById('chWecom').value = ch.wecom_app?.corp_id || '';
+    }
+    async function saveChannels() {
+      if (!currentConfig) currentConfig = {}; if (!currentConfig.channels) currentConfig.channels = {};
+      const tg = document.getElementById('chTelegram').value.trim();
+      const dc = document.getElementById('chDiscord').value.trim();
+      const sl = document.getElementById('chSlack').value.trim();
+      const wc = document.getElementById('chWecom').value.trim();
+      if (tg) { if (!currentConfig.channels.telegram) currentConfig.channels.telegram = {}; currentConfig.channels.telegram.token = tg; currentConfig.channels.telegram.enabled = true; }
+      if (dc) { if (!currentConfig.channels.discord) currentConfig.channels.discord = {}; currentConfig.channels.discord.token = dc; currentConfig.channels.discord.enabled = true; }
+      if (sl) { if (!currentConfig.channels.slack) currentConfig.channels.slack = {}; currentConfig.channels.slack.bot_token = sl; currentConfig.channels.slack.enabled = true; }
+      if (wc) { if (!currentConfig.channels.wecom_app) currentConfig.channels.wecom_app = {}; currentConfig.channels.wecom_app.corp_id = wc; currentConfig.channels.wecom_app.enabled = true; }
+      await saveFullConfig(); alert('Channels saved!');
+    }
+
+    function renderIdentity() {
+      if (!currentConfig) return;
+      document.getElementById('agentModel').value = currentConfig.agents?.defaults?.model_name || '';
+      document.getElementById('agentProvider').value = currentConfig.agents?.defaults?.provider || '';
+    }
+    async function saveIdentity() {
+      if (!currentConfig) currentConfig = {};
+      if (!currentConfig.agents) currentConfig.agents = { defaults: {} };
+      if (!currentConfig.agents.defaults) currentConfig.agents.defaults = {};
+      currentConfig.agents.defaults.model_name = document.getElementById('agentModel').value.trim();
+      const prov = document.getElementById('agentProvider').value.trim();
+      if (prov) currentConfig.agents.defaults.provider = prov;
+      await saveFullConfig(); alert('Agent defaults saved!');
+    }
+
+    function renderWorkspace() {
+      if (!currentConfig) return;
+      document.getElementById('wsPath').value = currentConfig.agents?.defaults?.workspace || '';
+      document.getElementById('wsRestrict').checked = currentConfig.agents?.defaults?.restrict_to_workspace || false;
+      document.getElementById('wsReadOutside').checked = currentConfig.agents?.defaults?.allow_read_outside_workspace || false;
+    }
+    async function saveWorkspace() {
+      if (!currentConfig) currentConfig = {};
+      if (!currentConfig.agents) currentConfig.agents = { defaults: {} };
+      if (!currentConfig.agents.defaults) currentConfig.agents.defaults = {};
+      currentConfig.agents.defaults.workspace = document.getElementById('wsPath').value.trim();
+      currentConfig.agents.defaults.restrict_to_workspace = document.getElementById('wsRestrict').checked;
+      currentConfig.agents.defaults.allow_read_outside_workspace = document.getElementById('wsReadOutside').checked;
+      await saveFullConfig(); alert('Workspace saved!');
+    }
+
+    async function saveFullConfig() {
+      try {
+        await window.go.main.App.SaveConfig(JSON.stringify(currentConfig));
+        document.getElementById('configEditor').value = JSON.stringify(currentConfig, null, 2);
+        renderModels();
+        // Auto-restart gateway if running
+        try {
+          const s = await window.go.main.App.GetGatewayStatus();
+          if (s.status === 'running') {
+            await window.go.main.App.RestartGateway();
+          }
+        } catch (re) { }
+      } catch (e) { alert('Save failed: ' + (e.message || e)) }
+    }
+    function toggleRawJson() { const b = document.getElementById('rawJsonBody'), a = document.getElementById('rawArrow'); b.classList.toggle('open'); a.innerHTML = b.classList.contains('open') ? '&#x25BC;' : '&#x25B6;'; }
+    function formatJson() { const ed = document.getElementById('configEditor'); try { ed.value = JSON.stringify(JSON.parse(ed.value), null, 2) } catch (e) { alert('Invalid JSON: ' + e.message) } }
+    async function saveSettings() { try { await window.go.main.App.SaveConfig(document.getElementById('configEditor').value); await loadSettings(); alert('Config saved!') } catch (e) { alert('Save failed: ' + e.message) } }
+
+    /* === Gateway === */
+    let logOffset = 0;
+    async function pollGateway() {
+      try {
+        const s = await window.go.main.App.GetGatewayStatus();
+        updateGatewayUI(s.status === 'running');
+        document.getElementById('gwModel').textContent = s.model || '-';
+        if (s.logs && s.logs.length > 0) {
+          const box = document.getElementById('logBox');
+          if (logOffset === 0) box.innerHTML = '';
+          s.logs.forEach(l => { box.textContent += l + '\n'; });
+          box.scrollTop = box.scrollHeight; logOffset = s.total;
+        }
+      } catch (e) { }
+    }
+    async function startGateway() {
+      document.getElementById('btnStart').disabled = true; logOffset = 0;
+      document.getElementById('logBox').innerHTML = '<span class="log-placeholder">Starting...</span>';
+      try { await window.go.main.App.StartGateway(); updateGatewayUI(true) }
+      catch (e) { alert('Start failed: ' + e.message); document.getElementById('btnStart').disabled = false }
+    }
+    async function stopGateway() {
+      document.getElementById('btnStop').disabled = true;
+      try { await window.go.main.App.StopGateway(); updateGatewayUI(false) }
+      catch (e) { alert('Stop failed: ' + e.message); document.getElementById('btnStop').disabled = false }
+    }
+    async function restartGateway() {
+      document.getElementById('btnRestart').disabled = true; logOffset = 0;
+      document.getElementById('logBox').innerHTML = '<span class="log-placeholder">Restarting...</span>';
+      try { await window.go.main.App.RestartGateway(); updateGatewayUI(true) }
+      catch (e) { alert('Restart failed: ' + (e.message || e)); }
+      document.getElementById('btnRestart').disabled = false;
+    }
+    function updateGatewayUI(running) {
+      document.getElementById('gwDot').className = 'status-dot ' + (running ? 'running' : 'stopped');
+      document.getElementById('gwStatus').textContent = running ? 'Running' : 'Stopped';
+      document.getElementById('btnStart').disabled = running;
+      document.getElementById('btnStop').disabled = !running;
+      document.getElementById('btnRestart').disabled = !running;
+    }
+
+    /* === Init === */
+    async function autoStartGateway() {
+      try {
+        const s = await window.go.main.App.GetGatewayStatus();
+        if (s.status !== 'running') {
+          await window.go.main.App.StartGateway();
+          updateGatewayUI(true);
+        }
+      } catch (e) { }
+    }
+    checkSetup(); pollGateway(); setInterval(pollGateway, 3000);
+  </script>
+</body>
+
+</html>

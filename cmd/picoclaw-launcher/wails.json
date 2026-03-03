@@ -1,0 +1,20 @@
+{
+    "$schema": "https://wails.io/schemas/config.v2.json",
+    "name": "picoclaw-launcher",
+    "outputfilename": "picoclaw-launcher",
+    "frontend:install": "",
+    "frontend:build": "",
+    "frontend:dev:watcher": "",
+    "frontend:dev:serverUrl": "",
+    "author": {
+        "name": "PicoClaw",
+        "email": "picoclaw@sipeed.com"
+    },
+    "info": {
+        "companyName": "Sipeed",
+        "productName": "PicoClaw Launcher",
+        "productVersion": "0.1.0",
+        "copyright": "Copyright 2026 PicoClaw contributors",
+        "comments": "PicoClaw Launcher - Desktop GUI for PicoClaw AI Agent"
+    }
+}
