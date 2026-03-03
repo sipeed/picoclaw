@@ -268,7 +268,7 @@ func TestGetAllTools_FiltersEmptyTools(t *testing.T) {
 func TestCallTool_ErrorsForClosedOrMissingServer(t *testing.T) {
 	t.Run("manager closed", func(t *testing.T) {
 		mgr := NewManager()
-		mgr.closed = true
+		mgr.closed.Store(true)
 
 		_, err := mgr.CallTool(context.Background(), "s1", "tool", nil)
 		if err == nil || !strings.Contains(err.Error(), "manager is closed") {
