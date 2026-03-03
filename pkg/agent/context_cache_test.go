@@ -146,11 +146,11 @@ func TestMtimeAutoInvalidation(t *testing.T) {
 			checkField: "Updated Identity",
 		},
 		{
-			name:       "memory file change",
-			file:       "memory/MEMORY.md",
-			contentV1:  "# Memory\nUser likes Go.",
-			contentV2:  "# Memory\nUser likes Rust.",
-			checkField: "User likes Rust",
+			name:       "another bootstrap file change",
+			file:       "SOUL.md",
+			contentV1:  "# Original Soul",
+			contentV2:  "# Updated Soul",
+			checkField: "Updated Soul",
 		},
 	}
 
@@ -286,10 +286,10 @@ func TestNewFileCreationInvalidatesCache(t *testing.T) {
 			checkField: "Be kind and helpful",
 		},
 		{
-			name:       "new memory file",
-			file:       "memory/MEMORY.md",
-			content:    "# Memory\nUser prefers dark mode.",
-			checkField: "User prefers dark mode",
+			name:       "new agents file",
+			file:       "AGENTS.md",
+			content:    "# Agents\nCustom agent definition.",
+			checkField: "Custom agent definition",
 		},
 	}
 

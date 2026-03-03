@@ -37,6 +37,14 @@ type StatefulProvider interface {
 	Close()
 }
 
+// EmbedProvider is an optional interface for providers that support text embeddings.
+// Not all providers implement this; use a type assertion to check.
+type EmbedProvider interface {
+	// Embed converts text into a float32 vector using the given embedding model.
+	// Returns an error if the provider does not support embeddings or the call fails.
+	Embed(ctx context.Context, text string, model string) ([]float32, error)
+}
+
 // FailoverReason classifies why an LLM request failed for fallback decisions.
 type FailoverReason string
 

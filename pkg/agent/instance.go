@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -84,6 +86,32 @@ func NewAgentInstance(
 		agentName = agentCfg.Name
 		subagents = agentCfg.Subagents
 		skillsFilter = agentCfg.Skills
+	}
+
+	// Initialize vector memory if enabled
+	if cfg != nil && cfg.Tools.VectorMemory.Enabled {
+		if cfg.Tools.VectorMemory.APIBase == "" || cfg.Tools.VectorMemory.APIKey == "" {
+			log.Printf("Warning: vector memory enabled but API base/key not configured")
+		} else {
+			// Create a dedicated provider for embeddings (we assume OpenAI-compatible for embeddings)
+			embedProvider := openai_compat.NewProvider(
+				cfg.Tools.VectorMemory.APIKey,
+				cfg.Tools.VectorMemory.APIBase,
+				"", // no proxy needed by default, could be added later
+			)
+
+			dbPath := filepath.Join(workspace, "memory", "memory.sqlite")
+			vs, err := NewVectorMemoryStore(dbPath, cfg.Tools.VectorMemory.EmbeddingModel, cfg.Tools.VectorMemory.TopK)
+			if err != nil {
+				log.Printf("Warning: failed to initialize vector memory store for agent %s: %v", agentName, err)
+			} else {
+				embedFn := func(text string) ([]float32, error) {
+					// Use context.Background() here because this runs asynchronously or during sync
+					return embedProvider.Embed(context.Background(), text, cfg.Tools.VectorMemory.EmbeddingModel)
+				}
+				contextBuilder.memory.SetVectorStore(vs, embedFn)
+			}
+		}
 	}
 
 	maxIter := defaults.MaxToolIterations

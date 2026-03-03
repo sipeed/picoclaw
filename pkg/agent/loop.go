@@ -104,7 +104,7 @@ func registerSharedTools(
 		}
 
 		// Web tools
-		searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+		if searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
 			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
 			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
@@ -118,17 +118,16 @@ func registerSharedTools(
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 			Proxy:                cfg.Tools.Web.Proxy,
-		})
-		if err != nil {
-			logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{"error": err.Error()})
-		} else if searchTool != nil {
+		}); err == nil && searchTool != nil {
 			agent.Tools.Register(searchTool)
+		} else if err != nil {
+			logger.WarnCF("agent", "Failed to initialize WebSearchTool", map[string]any{"error": err.Error()})
 		}
-		fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
-		if err != nil {
-			logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
-		} else {
+
+		if fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, 10*1024*1024); err == nil {
 			agent.Tools.Register(fetchTool)
+		} else {
+			logger.WarnCF("agent", "Failed to initialize WebFetchTool", map[string]any{"error": err.Error()})
 		}
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms

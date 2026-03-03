@@ -3,7 +3,6 @@ package agent
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -107,11 +106,8 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 %s`, skillsSummary))
 	}
 
-	// Memory context
-	memoryContext := cb.memory.GetMemoryContext()
-	if memoryContext != "" {
-		parts = append(parts, "# Memory\n\n"+memoryContext)
-	}
+	// Memory context is no longer injected here. It has moved to buildDynamicContextAndMemory
+	// so that vector memory search can use the specific user query per-request.
 
 	// Join with "---" separator
 	return strings.Join(parts, "\n\n---\n\n")
@@ -183,7 +179,7 @@ func (cb *ContextBuilder) sourcePaths() []string {
 		filepath.Join(cb.workspace, "SOUL.md"),
 		filepath.Join(cb.workspace, "USER.md"),
 		filepath.Join(cb.workspace, "IDENTITY.md"),
-		filepath.Join(cb.workspace, "memory", "MEMORY.md"),
+		// MEMORY.md is no longer cached in the static system prompt
 	}
 }
 
@@ -199,9 +195,10 @@ type cacheBaseline struct {
 // Called under write lock when the cache is built.
 func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 	skillsDir := filepath.Join(cb.workspace, "skills")
+	memoryDir := filepath.Join(cb.workspace, "memory")
 
-	// All paths whose existence we track: source files + skills dir.
-	allPaths := append(cb.sourcePaths(), skillsDir)
+	// All paths whose existence we track: source files + skills dir + memory dir.
+	allPaths := append(cb.sourcePaths(), skillsDir, memoryDir)
 
 	existed := make(map[string]bool, len(allPaths))
 	var maxMtime time.Time
@@ -217,14 +214,18 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 	// Walk skills files to capture their mtimes too.
 	// Use os.Stat (not d.Info) to match the stat method used in
 	// fileChangedSince / skillFilesModifiedSince for consistency.
-	_ = filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
+	walkFunc := func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr == nil && !d.IsDir() {
 			if info, err := os.Stat(path); err == nil && info.ModTime().After(maxMtime) {
 				maxMtime = info.ModTime()
 			}
 		}
 		return nil
-	})
+	}
+	_ = filepath.WalkDir(skillsDir, walkFunc)
+
+	// Also walk memory files
+	_ = filepath.WalkDir(memoryDir, walkFunc)
 
 	// If no tracked files exist yet (empty workspace), maxMtime is zero.
 	// Use a very old non-zero time so that:
@@ -270,7 +271,16 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 	// 3. Content-only edits to files inside skills/ do NOT update the parent
 	//    directory mtime on most filesystems, so we recursively walk to check
 	//    individual file mtimes at any nesting depth.
-	if skillFilesModifiedSince(skillsDir, cb.cachedAt) {
+	if filesModifiedSince(skillsDir, cb.cachedAt) {
+		return true
+	}
+
+	// --- Memory directory (handled identically to skills) ---
+	memoryDir := filepath.Join(cb.workspace, "memory")
+	if cb.fileChangedSince(memoryDir) {
+		return true
+	}
+	if filesModifiedSince(memoryDir, cb.cachedAt) {
 		return true
 	}
 
@@ -311,27 +321,29 @@ func (cb *ContextBuilder) fileChangedSince(path string) bool {
 // if the callback returned nil when its err parameter is non-nil.
 var errWalkStop = errors.New("walk stop")
 
-// skillFilesModifiedSince recursively walks the skills directory and checks
-// whether any file was modified after t. This catches content-only edits at
-// any nesting depth (e.g. skills/name/docs/extra.md) that don't update
-// parent directory mtimes.
-func skillFilesModifiedSince(skillsDir string, t time.Time) bool {
+// filesModifiedSince recursively checks if any file directly or indirectly
+// inside dirPath has been modified since the cached time.
+func filesModifiedSince(dirPath string, since time.Time) bool {
 	changed := false
-	err := filepath.WalkDir(skillsDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr == nil && !d.IsDir() {
-			if info, statErr := os.Stat(path); statErr == nil && info.ModTime().After(t) {
-				changed = true
-				return errWalkStop // stop walking
-			}
+	err := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, walkErr error) error {
+		if changed || walkErr != nil || d.IsDir() {
+			return nil
+		}
+		if info, err := os.Stat(path); err == nil && info.ModTime().After(since) {
+			changed = true
+			return errWalkStop // stop walking
 		}
 		return nil
 	})
-	// errWalkStop is expected (early exit on first changed file).
-	// os.IsNotExist means the skills dir doesn't exist yet — not an error.
-	// Any other error is unexpected and worth logging.
+
 	if err != nil && !errors.Is(err, errWalkStop) && !os.IsNotExist(err) {
-		logger.DebugCF("agent", "skills walk error", map[string]any{"error": err.Error()})
+		logger.DebugCF("agent", "Failed to walk directory for mtime check",
+			map[string]any{
+				"dir":   dirPath,
+				"error": err.Error(),
+			})
 	}
+
 	return changed
 }
 
@@ -354,15 +366,10 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	return sb.String()
 }
 
-// buildDynamicContext returns a short dynamic context string with per-request info.
-// This changes every request (time, session) so it is NOT part of the cached prompt.
-// LLM-side KV cache reuse is achieved by each provider adapter's native mechanism:
-//   - Anthropic: per-block cache_control (ephemeral) on the static SystemParts block
-//   - OpenAI / Codex: prompt_cache_key for prefix-based caching
-//
-// See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
-// See: https://platform.openai.com/docs/guides/prompt-caching
-func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
+// buildDynamicContextAndMemory returns a short dynamic context string with per-request info,
+// including semantic memory retrieved based on the current user message.
+// This changes every request so it is NOT part of the cached prompt.
+func (cb *ContextBuilder) buildDynamicContextAndMemory(channel, chatID, currentMessage string) string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	rt := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
@@ -371,6 +378,12 @@ func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
 
 	if channel != "" && chatID != "" {
 		fmt.Fprintf(&sb, "\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
+	}
+
+	// Dynamic memory context (retrieving relevant context based on user message)
+	memoryContext := cb.memory.GetMemoryContext(currentMessage)
+	if memoryContext != "" {
+		fmt.Fprintf(&sb, "\n\n# Memory\n\n%s", memoryContext)
 	}
 
 	return sb.String()
@@ -396,8 +409,8 @@ func (cb *ContextBuilder) BuildMessages(
 	// - OpenAI-compat passes messages through as-is.
 	staticPrompt := cb.BuildSystemPromptWithCache()
 
-	// Build short dynamic context (time, runtime, session) — changes per request
-	dynamicCtx := cb.buildDynamicContext(channel, chatID)
+	// Build short dynamic context (time, runtime, session, dynamic semantic memory)
+	dynamicCtx := cb.buildDynamicContextAndMemory(channel, chatID, currentMessage)
 
 	// Compose a single system message: static (cached) + dynamic + optional summary.
 	// Keeping all system content in one message ensures every provider adapter can

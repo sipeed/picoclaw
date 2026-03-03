@@ -569,6 +569,18 @@ type ToolsConfig struct {
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
+	VectorMemory    VectorMemoryConfig `json:"vector_memory"`
+}
+
+// VectorMemoryConfig configures the optional SQLite-backed semantic memory search.
+// When enabled, agent memory retrieval uses embedding-based similarity instead of
+// injecting the entire MEMORY.md into every prompt.
+type VectorMemoryConfig struct {
+	Enabled        bool   `json:"enabled"         env:"PICOCLAW_VECTOR_MEMORY_ENABLED"`
+	APIBase        string `json:"api_base"        env:"PICOCLAW_VECTOR_MEMORY_API_BASE"`
+	APIKey         string `json:"api_key"         env:"PICOCLAW_VECTOR_MEMORY_API_KEY"`
+	EmbeddingModel string `json:"embedding_model" env:"PICOCLAW_VECTOR_MEMORY_EMBEDDING_MODEL"` // e.g. "text-embedding-3-small"
+	TopK           int    `json:"top_k"           env:"PICOCLAW_VECTOR_MEMORY_TOP_K"`           // Number of memories to retrieve per query (default 5)
 }
 
 type SkillsToolsConfig struct {

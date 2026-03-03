@@ -7,7 +7,9 @@
 package agent
 
 import (
+	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,10 +21,14 @@ import (
 // MemoryStore manages persistent memory for the agent.
 // - Long-term memory: memory/MEMORY.md
 // - Daily notes: memory/YYYYMM/YYYYMMDD.md
+// - Optional: SQLite vector store for semantic search
 type MemoryStore struct {
-	workspace  string
-	memoryDir  string
-	memoryFile string
+	workspace    string
+	memoryDir    string
+	memoryFile   string
+	vectorStore  *VectorMemoryStore
+	embedFn      func(string) ([]float32, error) // nil when vector search disabled
+	lastSyncTime time.Time
 }
 
 // NewMemoryStore creates a new MemoryStore with the given workspace path.
@@ -39,6 +45,13 @@ func NewMemoryStore(workspace string) *MemoryStore {
 		memoryDir:  memoryDir,
 		memoryFile: memoryFile,
 	}
+}
+
+// SetVectorStore attaches a VectorMemoryStore and embedding function.
+// When set, GetMemoryContext will perform semantic retrieval instead of full-text load.
+func (ms *MemoryStore) SetVectorStore(vs *VectorMemoryStore, embedFn func(string) ([]float32, error)) {
+	ms.vectorStore = vs
+	ms.embedFn = embedFn
 }
 
 // getTodayFile returns the path to today's daily note file (memory/YYYYMM/YYYYMMDD.md).
@@ -130,9 +143,49 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 }
 
 // GetMemoryContext returns formatted memory context for the agent prompt.
-// Includes long-term memory and recent daily notes.
-func (ms *MemoryStore) GetMemoryContext() string {
-	longTerm := ms.ReadLongTerm()
+// When a vector store is configured, it performs semantic retrieval using the
+// query text. Otherwise it falls back to loading the full MEMORY.md.
+func (ms *MemoryStore) GetMemoryContext(query string) string {
+	var longTerm string
+
+	if ms.vectorStore != nil && ms.embedFn != nil {
+		// Auto-sync vector store if *any* file in the memory directory has changed since last sync
+		var latestModTime time.Time
+		_ = filepath.WalkDir(ms.memoryDir, func(path string, d fs.DirEntry, err error) error {
+			if err == nil {
+				if info, statErr := d.Info(); statErr == nil {
+					if info.ModTime().After(latestModTime) {
+						latestModTime = info.ModTime()
+					}
+				}
+			}
+			return nil
+		})
+
+		if latestModTime.After(ms.lastSyncTime) {
+			// Use context.Background() for the sync operation
+			ms.vectorStore.SyncFromDirectory(context.Background(), ms.memoryDir, ms.embedFn)
+			ms.lastSyncTime = latestModTime
+		}
+
+		if query != "" {
+			// Semantic path: retrieve top-K relevant memories
+			vec, err := ms.embedFn(query)
+			if err == nil {
+				results, err := ms.vectorStore.Search(vec)
+				if err == nil && len(results) > 0 {
+					longTerm = strings.Join(results, "\n\n")
+				}
+			}
+			// On any error, fall through to full-text load
+		}
+	}
+
+	if longTerm == "" {
+		// Full-text fallback (always used when vector store is disabled)
+		longTerm = ms.ReadLongTerm()
+	}
+
 	recentNotes := ms.GetRecentDailyNotes(3)
 
 	if longTerm == "" && recentNotes == "" {
