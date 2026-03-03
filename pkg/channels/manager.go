@@ -117,15 +117,35 @@ func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
 
 // RecordTypingStop registers a typing stop function for later invocation.
 // Implements PlaceholderRecorder.
+//
+// If a previous typing indicator exists for the same chat, it is stopped
+// immediately before the new one is recorded.  This prevents the next
+// preSend (which finalizes the *previous* processing cycle) from
+// consuming the *new* message's typing entry.
 func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	key := channel + ":" + chatID
+	if v, loaded := m.typingStops.Load(key); loaded {
+		if entry, ok := v.(typingEntry); ok {
+			entry.stop() // idempotent
+		}
+	}
 	m.typingStops.Store(key, typingEntry{stop: stop, createdAt: time.Now()})
 }
 
 // RecordReactionUndo registers a reaction undo function for later invocation.
 // Implements PlaceholderRecorder.
+//
+// If a previous reaction exists for the same chat, it is undone immediately
+// before the new one is recorded.  Same rationale as RecordTypingStop: the
+// old entry belongs to the previous processing cycle and must not leak into
+// the next preSend call.
 func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 	key := channel + ":" + chatID
+	if v, loaded := m.reactionUndos.Load(key); loaded {
+		if entry, ok := v.(reactionEntry); ok {
+			entry.undo() // idempotent
+		}
+	}
 	m.reactionUndos.Store(key, reactionEntry{undo: undo, createdAt: time.Now()})
 }
 
@@ -149,12 +169,17 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	}
 
 	// 3. Try editing a tracked status message (from streaming preview).
-	// If the status was draft-based (draftID != 0), just clear the entry —
-	// the final sendMessage will automatically replace the draft bubble.
+	// For draft-based entries, explicitly dismiss the draft bubble before
+	// sending the permanent message.  Without this, a user message sent
+	// between the last draft update and sendMessage may prevent the
+	// platform from auto-replacing the draft, leaving a ghost bubble.
 	if v, loaded := m.statusMsgIDs.LoadAndDelete(key); loaded {
 		if entry, ok := v.(statusMsgEntry); ok {
 			if entry.draftID != 0 {
-				// Draft-based: sendMessage replaces the draft, no edit needed
+				if drafter, ok := ch.(DraftSender); ok {
+					_ = drafter.SendDraft(ctx, msg.ChatID, entry.draftID, "")
+				}
+				m.statusEditTimes.Delete(key)
 			} else if entry.messageID != "" {
 				if editor, ok := ch.(MessageEditor); ok {
 					if err := editor.EditMessage(ctx, msg.ChatID, entry.messageID, msg.Content); err == nil {
