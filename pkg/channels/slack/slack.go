@@ -183,7 +183,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 			title = filename
 		}
 
-		_, err = c.api.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
+		_, err = c.api.UploadFileContext(ctx, slack.UploadFileParameters{
 			Channel:  channelID,
 			File:     localPath,
 			Filename: filename,
