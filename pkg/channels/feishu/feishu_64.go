@@ -6,9 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -19,6 +23,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -152,15 +157,66 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	}
 
 	content := extractFeishuMessageContent(message)
+
+	messageID := stringValue(message.MessageId)
+	scope := channels.BuildMediaScope("feishu", chatID, messageID)
+
+	storeMedia := func(localPath, filename string) string {
+		if store := c.GetMediaStore(); store != nil {
+			ref, err := store.Store(localPath, media.MediaMeta{
+				Filename: filename,
+				Source:   "feishu",
+			}, scope)
+			if err == nil {
+				return ref
+			}
+		}
+		return localPath
+	}
+
+	var mediaPaths []string
+
+	msgType := stringValue(message.MessageType)
+	switch msgType {
+	case larkim.MsgTypeImage:
+		// Pure image message: {"image_key":"..."}
+		if imageKey := extractFeishuImageKey(stringValue(message.Content)); imageKey != "" {
+			localPath, err := c.downloadImage(ctx, messageID, imageKey)
+			if err != nil {
+				logger.ErrorCF("feishu", "Failed to download image", map[string]any{
+					"image_key": imageKey,
+					"error":     err.Error(),
+				})
+			} else if localPath != "" {
+				mediaPaths = append(mediaPaths, storeMedia(localPath, imageKey))
+				if content != "" {
+					content += "\n"
+				}
+				content += "[image: photo]"
+			}
+		}
+	case larkim.MsgTypePost:
+		// Rich text (post) message: {"title":"...","content":[[{"tag":"img","image_key":"..."},{"tag":"text","text":"..."}]]}
+		for _, imageKey := range extractFeishuPostImageKeys(stringValue(message.Content)) {
+			localPath, err := c.downloadImage(ctx, messageID, imageKey)
+			if err != nil {
+				logger.ErrorCF("feishu", "Failed to download post image", map[string]any{
+					"image_key": imageKey,
+					"error":     err.Error(),
+				})
+				continue
+			}
+			if localPath != "" {
+				mediaPaths = append(mediaPaths, storeMedia(localPath, imageKey))
+			}
+		}
+	}
+
 	if content == "" {
 		content = "[empty message]"
 	}
 
 	metadata := map[string]string{}
-	messageID := ""
-	if mid := stringValue(message.MessageId); mid != "" {
-		messageID = mid
-	}
 	if messageType := stringValue(message.MessageType); messageType != "" {
 		metadata["message_type"] = messageType
 	}
@@ -201,7 +257,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		return nil
 	}
 
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, nil, metadata, senderInfo)
+	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, senderInfo)
 	return nil
 }
 
@@ -238,4 +294,76 @@ func extractFeishuMessageContent(message *larkim.EventMessage) string {
 	}
 
 	return *message.Content
+}
+
+func extractFeishuImageKey(content string) string {
+	var payload struct {
+		ImageKey string `json:"image_key"`
+	}
+	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+		return ""
+	}
+	return payload.ImageKey
+}
+
+// extractFeishuPostImageKeys extracts all image_key values from a post (rich text) message.
+// Post format: {"title":"...","content":[[{"tag":"img","image_key":"..."},{"tag":"text","text":"..."}]]}
+func extractFeishuPostImageKeys(content string) []string {
+	var payload struct {
+		Content [][]struct {
+			Tag      string `json:"tag"`
+			ImageKey string `json:"image_key"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+		return nil
+	}
+	var keys []string
+	for _, line := range payload.Content {
+		for _, elem := range line {
+			if elem.Tag == "img" && elem.ImageKey != "" {
+				keys = append(keys, elem.ImageKey)
+			}
+		}
+	}
+	return keys
+}
+
+func (c *FeishuChannel) downloadImage(ctx context.Context, messageID, imageKey string) (string, error) {
+	req := larkim.NewGetMessageResourceReqBuilder().
+		MessageId(messageID).
+		FileKey(imageKey).
+		Type("image").
+		Build()
+	resp, err := c.client.Im.V1.MessageResource.Get(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("feishu message resource get: %w", err)
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("feishu message resource get: code=%d msg=%s", resp.Code, resp.Msg)
+	}
+
+	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
+		return "", fmt.Errorf("create media dir: %w", err)
+	}
+
+	localPath := filepath.Join(mediaDir, uuid.New().String()[:8]+"_feishu_image")
+	out, err := os.Create(localPath)
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, resp.File); err != nil {
+		out.Close()
+		os.Remove(localPath)
+		return "", fmt.Errorf("write image: %w", err)
+	}
+
+	logger.DebugCF("feishu", "Image downloaded", map[string]any{
+		"image_key": imageKey,
+		"path":      localPath,
+	})
+	return localPath, nil
 }
