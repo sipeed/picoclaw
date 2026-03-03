@@ -25,7 +25,14 @@ func TestWithTelegramThread(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := al.withTelegramThread(tc.channel, tc.chatID, tc.threadID)
 			if got != tc.want {
-				t.Fatalf("withTelegramThread(%q, %q, %d) = %q, want %q", tc.channel, tc.chatID, tc.threadID, got, tc.want)
+				t.Fatalf(
+					"withTelegramThread(%q, %q, %d) = %q, want %q",
+					tc.channel,
+					tc.chatID,
+					tc.threadID,
+					got,
+					tc.want,
+				)
 			}
 		})
 	}
