@@ -66,7 +66,8 @@ type Message struct {
 	Role             string         `json:"role"`
 	Content          string         `json:"content"`
 	ReasoningContent string         `json:"reasoning_content,omitempty"`
-	SystemParts      []ContentBlock `json:"system_parts,omitempty"` // structured system blocks for cache-aware adapters
+	SystemParts      []ContentBlock `json:"system_parts,omitempty"`  // structured system blocks for cache-aware adapters
+	CacheControl     string         `json:"cache_control,omitempty"` // "ephemeral" | "", Anthropic adapter translates
 	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`
 	ToolCallID       string         `json:"tool_call_id,omitempty"`
 }

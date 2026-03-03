@@ -1,0 +1,120 @@
+version: '3'
+
+vars:
+  BINARY_NAME: picoclaw
+  CMD_DIR: cmd/picoclaw
+  BUILD_DIR: build
+  INTERNAL: github.com/sipeed/picoclaw/cmd/picoclaw/internal
+  VERSION:
+    sh: git describe --tags --always --dirty 2>{{if eq OS "windows"}}nul{{else}}/dev/null{{end}} || echo dev
+  GIT_COMMIT:
+    sh: git rev-parse --short=8 HEAD 2>{{if eq OS "windows"}}nul{{else}}/dev/null{{end}} || echo dev
+  LDFLAGS: -ldflags "-X {{.INTERNAL}}.version={{.VERSION}} -X {{.INTERNAL}}.gitCommit={{.GIT_COMMIT}} -s -w"
+
+tasks:
+  default:
+    desc: Build the project
+    cmds:
+      - task: build
+
+  build:
+    desc: Build picoclaw binary (dev, skip generate)
+    cmds:
+      - go build -v {{.LDFLAGS}} -o {{.BUILD_DIR}}/{{.BINARY_NAME}}{{exeExt}} ./{{.CMD_DIR}}
+    sources:
+      - "**/*.go"
+    generates:
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}}{{exeExt}}"
+
+  build-full:
+    desc: Build with go generate (release)
+    cmds:
+      - task: generate
+      - task: build
+
+  generate:
+    desc: Run go generate
+    cmds:
+      - cmd: powershell -Command "Remove-Item -Recurse -Force '{{.CMD_DIR}}/internal/onboard/workspace' -ErrorAction SilentlyContinue"
+        platforms: [windows]
+      - cmd: rm -rf {{.CMD_DIR}}/internal/onboard/workspace
+        platforms: [linux, darwin]
+      - go generate ./...
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -count=1 ./pkg/...
+
+  test-v:
+    desc: Run all tests (verbose)
+    cmds:
+      - go test -v -count=1 ./pkg/...
+
+  test-agent:
+    desc: Run agent tests
+    cmds:
+      - go test -v -count=1 ./pkg/agent/
+
+  test-config:
+    desc: Run config tests
+    cmds:
+      - go test -v -count=1 ./pkg/config/
+
+  test-init:
+    desc: Run init command tests
+    cmds:
+      - go test -v -count=1 ./cmd/picoclaw/internal/initcmd/
+
+  lint:
+    desc: Run linters
+    cmds:
+      - golangci-lint run
+
+  fmt:
+    desc: Format code
+    cmds:
+      - gofmt -w .
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - cmd: powershell -Command "Remove-Item -Recurse -Force '{{.BUILD_DIR}}' -ErrorAction SilentlyContinue"
+        platforms: [windows]
+      - cmd: rm -rf {{.BUILD_DIR}}
+        platforms: [linux, darwin]
+
+  deps:
+    desc: Download and verify dependencies
+    cmds:
+      - go mod download
+      - go mod verify
+
+  tidy:
+    desc: Tidy dependencies
+    cmds:
+      - go mod tidy
+
+  check:
+    desc: Full check (fmt + vet + test)
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: test
+
+  install:
+    desc: Install picoclaw to system
+    cmds:
+      - task: build
+      - go install ./{{.CMD_DIR}}
+
+  run:
+    desc: Build and run
+    cmds:
+      - task: build
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}}{{exeExt}} {{.CLI_ARGS}}"

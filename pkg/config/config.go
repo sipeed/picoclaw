@@ -51,13 +51,20 @@ type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	Session   SessionConfig   `json:"session,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
+	Channels  ChannelsConfig  `json:"channels,omitempty"`
 	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
+	ModelList []ModelConfig   `json:"model_list,omitempty"`
+	Gateway   GatewayConfig   `json:"gateway,omitempty"`
+	Tools     ToolsConfig     `json:"tools,omitempty"`
+	Heartbeat HeartbeatConfig `json:"heartbeat,omitempty"`
+	Devices   DevicesConfig   `json:"devices,omitempty"`
+	Logging   LoggingConfig   `json:"logging,omitempty"`
+}
+
+// LoggingConfig controls log output.
+type LoggingConfig struct {
+	Level   string `json:"level,omitempty"`    // debug, info, warn, error (default: warn)
+	FileDir string `json:"file_dir,omitempty"` // directory for log files; empty = no file logging
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -175,6 +182,16 @@ type AgentDefaults struct {
 	ModelName                 string   `json:"model_name,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
 	Model                     string   `json:"model"                           env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"` // Deprecated: use model_name instead
 	ModelFallbacks            []string `json:"model_fallbacks,omitempty"`
+
+	// Phase 1 — Analyser: lightweight model for intent/tag analysis + CoT strategy.
+	// Falls back to main model_name if empty. Use a cheap/fast model here.
+	AnalyserModel string `json:"analyser_model,omitempty"  env:"PICOCLAW_AGENTS_DEFAULTS_ANALYSER_MODEL"`
+	PreLLMModel   string `json:"pre_llm_model,omitempty"   env:"PICOCLAW_AGENTS_DEFAULTS_PRE_LLM_MODEL"` // Deprecated: use analyser_model
+
+	// Phase 3 — Digest: lightweight model for memory extraction from turn records.
+	// Falls back to main model_name if empty. Use a cheap/fast model here.
+	DigestModel string `json:"digest_model,omitempty"    env:"PICOCLAW_AGENTS_DEFAULTS_DIGEST_MODEL"`
+
 	ImageModel                string   `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks       []string `json:"image_model_fallbacks,omitempty"`
 	MaxTokens                 int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
@@ -189,6 +206,27 @@ func (d *AgentDefaults) GetModelName() string {
 		return d.ModelName
 	}
 	return d.Model
+}
+
+// GetAnalyserModel returns the model for Phase 1 (Analyser).
+// Priority: analyser_model → pre_llm_model (deprecated) → main model.
+func (d *AgentDefaults) GetAnalyserModel() string {
+	if d.AnalyserModel != "" {
+		return d.AnalyserModel
+	}
+	if d.PreLLMModel != "" {
+		return d.PreLLMModel
+	}
+	return d.GetModelName()
+}
+
+// GetDigestModel returns the model for Phase 3 (MemoryDigest).
+// Priority: digest_model → main model.
+func (d *AgentDefaults) GetDigestModel() string {
+	if d.DigestModel != "" {
+		return d.DigestModel
+	}
+	return d.GetModelName()
 }
 
 type ChannelsConfig struct {

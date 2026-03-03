@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -30,7 +31,7 @@ var (
 		FATAL: "FATAL",
 	}
 
-	currentLevel = INFO
+	currentLevel = WARN
 	logger       *Logger
 	once         sync.Once
 	mu           sync.RWMutex
@@ -59,6 +60,32 @@ func SetLevel(level LogLevel) {
 	mu.Lock()
 	defer mu.Unlock()
 	currentLevel = level
+}
+
+// SetLevelByName sets log level from a string: "debug", "info", "warn", "error".
+func SetLevelByName(name string) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "debug":
+		SetLevel(DEBUG)
+	case "info":
+		SetLevel(INFO)
+	case "warn", "warning":
+		SetLevel(WARN)
+	case "error":
+		SetLevel(ERROR)
+	}
+}
+
+// ApplyConfig sets level and file logging from config values.
+func ApplyConfig(level, fileDir string) {
+	if level != "" {
+		SetLevelByName(level)
+	}
+	if fileDir != "" {
+		logFile := filepath.Join(fileDir, "picoclaw.log")
+		os.MkdirAll(fileDir, 0755)
+		_ = EnableFileLogging(logFile)
+	}
 }
 
 func GetLevel() LogLevel {

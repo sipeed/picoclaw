@@ -19,7 +19,6 @@ func setupWorkspace(t *testing.T, files map[string]string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Join(tmpDir, "memory"), 0o755)
 	os.MkdirAll(filepath.Join(tmpDir, "skills"), 0o755)
 	for name, content := range files {
 		dir := filepath.Dir(filepath.Join(tmpDir, name))
@@ -145,13 +144,6 @@ func TestMtimeAutoInvalidation(t *testing.T) {
 			contentV2:  "# Updated Identity",
 			checkField: "Updated Identity",
 		},
-		{
-			name:       "memory file change",
-			file:       "memory/MEMORY.md",
-			contentV1:  "# Memory\nUser likes Go.",
-			contentV2:  "# Memory\nUser likes Rust.",
-			checkField: "User likes Rust",
-		},
 	}
 
 	for _, tt := range tests {
@@ -210,6 +202,43 @@ func TestMtimeAutoInvalidation(t *testing.T) {
 		cb.systemPromptMutex.RUnlock()
 		if !changed {
 			t.Error("sourceFilesChangedLocked() should detect skills dir mtime change")
+		}
+	})
+
+	// Memory DB mtime change (via MemoryStore write)
+	t.Run("memory DB change", func(t *testing.T) {
+		tmpDir := setupWorkspace(t, nil)
+		defer os.RemoveAll(tmpDir)
+
+		cb := NewContextBuilder(tmpDir)
+
+		// Write initial memory
+		cb.memory.WriteLongTerm("User likes Go.")
+
+		// Build cache
+		sp1 := cb.BuildSystemPromptWithCache()
+		if !strings.Contains(sp1, "User likes Go") {
+			t.Fatal("initial prompt should contain memory content")
+		}
+
+		// Update memory via MemoryStore
+		cb.memory.WriteLongTerm("User likes Rust.")
+
+		// Set future mtime on memory.db so cache detects change
+		dbPath := filepath.Join(tmpDir, "memory.db")
+		future := time.Now().Add(2 * time.Second)
+		os.Chtimes(dbPath, future, future)
+
+		cb.systemPromptMutex.RLock()
+		changed := cb.sourceFilesChangedLocked()
+		cb.systemPromptMutex.RUnlock()
+		if !changed {
+			t.Fatal("sourceFilesChangedLocked() should detect memory.db change")
+		}
+
+		sp2 := cb.BuildSystemPromptWithCache()
+		if !strings.Contains(sp2, "User likes Rust") {
+			t.Error("rebuilt prompt should contain updated memory")
 		}
 	})
 }
@@ -273,57 +302,35 @@ func TestCacheStability(t *testing.T) {
 // This catches the "from nothing to something" edge case that the old
 // modifiedSince (return false on stat error) would miss.
 func TestNewFileCreationInvalidatesCache(t *testing.T) {
-	tests := []struct {
-		name       string
-		file       string // relative path inside workspace
-		content    string
-		checkField string // substring to verify in rebuilt prompt
-	}{
-		{
-			name:       "new bootstrap file",
-			file:       "SOUL.md",
-			content:    "# Soul\nBe kind and helpful.",
-			checkField: "Be kind and helpful",
-		},
-		{
-			name:       "new memory file",
-			file:       "memory/MEMORY.md",
-			content:    "# Memory\nUser prefers dark mode.",
-			checkField: "User prefers dark mode",
-		},
-	}
+	// Test bootstrap file creation
+	t.Run("new bootstrap file", func(t *testing.T) {
+		// Start with an empty workspace (no bootstrap files)
+		tmpDir := setupWorkspace(t, nil)
+		defer os.RemoveAll(tmpDir)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Start with an empty workspace (no bootstrap/memory files)
-			tmpDir := setupWorkspace(t, nil)
-			defer os.RemoveAll(tmpDir)
+		cb := NewContextBuilder(tmpDir)
 
-			cb := NewContextBuilder(tmpDir)
+		// Populate cache — file does not exist yet
+		sp1 := cb.BuildSystemPromptWithCache()
+		if strings.Contains(sp1, "Be kind and helpful") {
+			t.Fatalf("prompt should not contain content before file is created")
+		}
 
-			// Populate cache — file does not exist yet
-			sp1 := cb.BuildSystemPromptWithCache()
-			if strings.Contains(sp1, tt.checkField) {
-				t.Fatalf("prompt should not contain %q before file is created", tt.checkField)
-			}
+		// Create the file after cache was built
+		fullPath := filepath.Join(tmpDir, "SOUL.md")
+		if err := os.WriteFile(fullPath, []byte("# Soul\nBe kind and helpful."), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// Set future mtime to guarantee detection
+		future := time.Now().Add(2 * time.Second)
+		os.Chtimes(fullPath, future, future)
 
-			// Create the file after cache was built
-			fullPath := filepath.Join(tmpDir, tt.file)
-			os.MkdirAll(filepath.Dir(fullPath), 0o755)
-			if err := os.WriteFile(fullPath, []byte(tt.content), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			// Set future mtime to guarantee detection
-			future := time.Now().Add(2 * time.Second)
-			os.Chtimes(fullPath, future, future)
-
-			// Cache should auto-invalidate because file went from absent -> present
-			sp2 := cb.BuildSystemPromptWithCache()
-			if !strings.Contains(sp2, tt.checkField) {
-				t.Errorf("cache not invalidated on new file creation: expected %q in prompt", tt.checkField)
-			}
-		})
-	}
+		// Cache should auto-invalidate because file went from absent -> present
+		sp2 := cb.BuildSystemPromptWithCache()
+		if !strings.Contains(sp2, "Be kind and helpful") {
+			t.Errorf("cache not invalidated on new file creation")
+		}
+	})
 }
 
 // TestSkillFileContentChange verifies that modifying a skill file's content
@@ -391,7 +398,6 @@ func TestConcurrentBuildSystemPromptWithCache(t *testing.T) {
 	tmpDir := setupWorkspace(t, map[string]string{
 		"IDENTITY.md":          "# Identity\nConcurrency test agent.",
 		"SOUL.md":              "# Soul\nBe helpful.",
-		"memory/MEMORY.md":     "# Memory\nUser prefers Go.",
 		"skills/demo/SKILL.md": "---\nname: demo\ndescription: \"demo skill\"\n---\n# Demo",
 	})
 	defer os.RemoveAll(tmpDir)
@@ -494,7 +500,6 @@ func BenchmarkBuildMessagesWithCache(b *testing.B) {
 	tmpDir, _ := os.MkdirTemp("", "picoclaw-bench-*")
 	defer os.RemoveAll(tmpDir)
 
-	os.MkdirAll(filepath.Join(tmpDir, "memory"), 0o755)
 	os.MkdirAll(filepath.Join(tmpDir, "skills"), 0o755)
 	for _, name := range []string{"IDENTITY.md", "SOUL.md", "USER.md"} {
 		os.WriteFile(filepath.Join(tmpDir, name), []byte(strings.Repeat("Content.\n", 10)), 0o644)

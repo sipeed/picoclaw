@@ -23,14 +23,18 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 		sessionKey = "cli:default"
 	}
 
-	if debug {
-		logger.SetLevel(logger.DEBUG)
-		fmt.Println("🔍 Debug mode enabled")
-	}
-
 	cfg, err := internal.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("error loading config: %w", err)
+	}
+
+	// Apply logging config (config file setting).
+	logger.ApplyConfig(cfg.Logging.Level, cfg.Logging.FileDir)
+
+	// Debug flag overrides config.
+	if debug {
+		logger.SetLevel(logger.INFO)
+		fmt.Println("Debug mode enabled")
 	}
 
 	if model != "" {
@@ -59,6 +63,9 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 			"skills_total":     startupInfo["skills"].(map[string]any)["total"],
 			"skills_available": startupInfo["skills"].(map[string]any)["available"],
 		})
+
+	// Warn if bootstrap files are not customized.
+	internal.WarnMissingBootstrap(cfg.Agents.Defaults.Workspace)
 
 	if message != "" {
 		ctx := context.Background()

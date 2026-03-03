@@ -53,3 +53,36 @@ func FormatBuildInfo() (string, string) {
 func GetVersion() string {
 	return version
 }
+
+// WarnMissingBootstrap checks workspace bootstrap files (SOUL.md, IDENTITY.md, USER.md)
+// and warns the user if any are missing or unmodified.
+func WarnMissingBootstrap(workspace string) {
+	files := []struct {
+		name string
+		desc string
+	}{
+		{"SOUL.md", "personality & behavior"},
+		{"IDENTITY.md", "agent name & description"},
+		{"USER.md", "your preferences & info"},
+	}
+
+	var missing []string
+	for _, f := range files {
+		path := filepath.Join(workspace, f.name)
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			missing = append(missing, fmt.Sprintf("    %s  — %s", f.name, f.desc))
+		} else if err == nil && info.Size() < 50 {
+			// File exists but appears to be empty/placeholder
+			missing = append(missing, fmt.Sprintf("    %s  — %s (empty)", f.name, f.desc))
+		}
+	}
+
+	if len(missing) > 0 {
+		fmt.Println("  Customize your agent:")
+		for _, m := range missing {
+			fmt.Println(m)
+		}
+		fmt.Printf("  Edit files in: %s\n\n", workspace)
+	}
+}

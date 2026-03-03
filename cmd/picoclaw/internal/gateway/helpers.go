@@ -80,6 +80,9 @@ func gatewayCmd(debug bool) error {
 			"skills_available": skillsInfo["available"],
 		})
 
+	// Warn if bootstrap files are not customized.
+	internal.WarnMissingBootstrap(cfg.Agents.Defaults.Workspace)
+
 	// Setup cron tool and service
 	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
 	cronService := setupCronTool(

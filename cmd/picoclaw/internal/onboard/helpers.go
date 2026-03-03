@@ -25,7 +25,11 @@ func onboard() {
 	}
 
 	cfg := config.DefaultConfig()
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+
+	// For onboard, produce a minimal config — omit empty sections.
+	minimalCfg := config.MinimalOnboardConfig(cfg)
+
+	if err := config.SaveConfig(configPath, minimalCfg); err != nil {
 		fmt.Printf("Error saving config: %v\n", err)
 		os.Exit(1)
 	}

@@ -34,6 +34,8 @@ type AgentInstance struct {
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
 	Candidates     []providers.FallbackCandidate
+	Analyser       *Analyser   // Phase 1: intent/tag analysis
+	Reflector      *Reflector  // Phase 3: post-LLM processing + slash commands
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -148,6 +150,22 @@ func NewAgentInstance(
 
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
+	// Initialise optional Phase 1 analyser for intent/tag-based memory retrieval and CoT selection.
+	// Uses GetAnalyserModel() which resolves: analyser_model → pre_llm_model → model_name.
+	var analyser *Analyser
+	var rt *Reflector
+	analyserModel := defaults.GetAnalyserModel()
+	if analyserModel != "" {
+		cotRegistry := NewCotRegistry(workspace)
+		analyser = NewAnalyser(provider, analyserModel, cotRegistry)
+		rt = NewReflector(provider, analyserModel)
+		log.Printf("Analyser + Reflector enabled for agent %s (model: %s)", agentID, analyserModel)
+	} else {
+		// Reflector without LLM processors (just commands + error tracker).
+		rt = NewReflector(nil, "")
+	}
+	rt.SetTools(toolsRegistry)
+
 	return &AgentInstance{
 		ID:             agentID,
 		Name:           agentName,
@@ -165,6 +183,8 @@ func NewAgentInstance(
 		Subagents:      subagents,
 		SkillsFilter:   skillsFilter,
 		Candidates:     candidates,
+		Analyser:       analyser,
+		Reflector:      rt,
 	}
 }
 
