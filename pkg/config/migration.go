@@ -208,7 +208,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 			},
 		},
 		{
-			providerNames: []string{"moonshot", "kimi"},
+			providerNames: []string{"moonshot", "kimi", "kimi-code"},
 			protocol:      "moonshot",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" {
