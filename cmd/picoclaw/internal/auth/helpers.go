@@ -21,7 +21,6 @@ const (
 	defaultAnthropicModel = "claude-sonnet-4.6"
 )
 
-
 func authLoginCmd(provider string, useDeviceCode bool, useOauth bool) error {
 	switch provider {
 	case "openai":

@@ -271,8 +271,8 @@ func TestProvider_ChatStreamingRoundTrip(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer refreshed-token" {
 			t.Errorf("Authorization = %q, want %q", got, "Bearer refreshed-token")
 		}
-		if got := r.Header.Get("anthropic-beta"); got != anthropicBetaHeader {
-			t.Errorf("anthropic-beta = %q, want %q", got, anthropicBetaHeader)
+		if got := r.Header.Get("Anthropic-Beta"); got != anthropicBetaHeader {
+			t.Errorf("Anthropic-Beta = %q, want %q", got, anthropicBetaHeader)
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
