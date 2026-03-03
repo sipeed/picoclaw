@@ -594,7 +594,8 @@ func blockPrivateTarget(ctx context.Context, parsedURL *url.URL) error {
 		if ip == nil {
 			continue
 		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		if ip.IsLoopback() || ip.IsPrivate() ||
+			ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
 			return fmt.Errorf("requests to private/internal addresses are not allowed")
 		}
 	}
@@ -620,7 +621,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("missing domain in URL")
 	}
 
-	if err := blockPrivateTarget(ctx, parsedURL); err != nil {
+	if err = blockPrivateTarget(ctx, parsedURL); err != nil {
 		return ErrorResult(err.Error())
 	}
 
