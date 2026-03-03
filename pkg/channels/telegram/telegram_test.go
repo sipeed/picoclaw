@@ -41,7 +41,10 @@ func (s *stubConstructor) JSONRequest(parameters any) (*ta.RequestData, error) {
 	return &ta.RequestData{}, nil
 }
 
-func (s *stubConstructor) MultipartRequest(parameters map[string]string, files map[string]ta.NamedReader) (*ta.RequestData, error) {
+func (s *stubConstructor) MultipartRequest(
+	parameters map[string]string,
+	files map[string]ta.NamedReader,
+) (*ta.RequestData, error) {
 	return &ta.RequestData{}, nil
 }
 
@@ -211,7 +214,10 @@ func TestSend_MarkdownShortButHTMLLong_MultipleCalls(t *testing.T) {
 	assert.LessOrEqual(t, len([]rune(markdownContent)), 4200, "markdown content should be near Telegram limit")
 
 	htmlExpanded := markdownToTelegramHTML(markdownContent)
-	assert.Greater(t, len([]rune(htmlExpanded)), 4096, "HTML expansion must exceed Telegram limit for this test to be meaningful")
+	assert.Greater(
+		t, len([]rune(htmlExpanded)), 4096,
+		"HTML expansion must exceed Telegram limit for this test to be meaningful",
+	)
 
 	err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
@@ -219,7 +225,10 @@ func TestSend_MarkdownShortButHTMLLong_MultipleCalls(t *testing.T) {
 	})
 
 	assert.NoError(t, err)
-	assert.Greater(t, len(caller.calls), 1, "markdown-short but HTML-long message should be split into multiple SendMessage calls")
+	assert.Greater(
+		t, len(caller.calls), 1,
+		"markdown-short but HTML-long message should be split into multiple SendMessage calls",
+	)
 }
 
 func TestSend_NotRunning(t *testing.T) {
