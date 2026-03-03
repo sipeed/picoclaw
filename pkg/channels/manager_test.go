@@ -1433,3 +1433,105 @@ func TestGenerateDraftID_Stable(t *testing.T) {
 		t.Fatalf("expected different draft IDs for different keys, both got %d", id1)
 	}
 }
+
+// TestPreSend_DismissesDraftBeforeSend verifies that preSend explicitly
+// dismisses a draft-based status bubble (via SendDraft with empty text)
+// before proceeding to send the permanent message.  This prevents ghost
+// draft bubbles when a user message arrives between the last draft update
+// and the final sendMessage.
+func TestPreSend_DismissesDraftBeforeSend(t *testing.T) {
+	m := newTestManager()
+
+	var dismissCalled bool
+	var dismissContent string
+
+	ch := &mockDraftSender{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		draftFn: func(_ context.Context, _ string, _ int, content string) error {
+			dismissCalled = true
+			dismissContent = content
+			return nil
+		},
+		editFn:     func(_ context.Context, _, _, _ string) error { return nil },
+		sendWithID: func(_ context.Context, _, _ string) (string, error) { return "", nil },
+	}
+
+	// Store a draft-based status entry (simulates active streaming)
+	m.statusMsgIDs.Store("test:123", statusMsgEntry{draftID: 42, createdAt: time.Now()})
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "final response"}
+	edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if edited {
+		t.Fatal("expected preSend to return false for draft-based status")
+	}
+	if !dismissCalled {
+		t.Fatal("expected preSend to call SendDraft to dismiss the draft")
+	}
+	if dismissContent != "" {
+		t.Fatalf("expected empty dismiss content, got %q", dismissContent)
+	}
+}
+
+// TestRecordTypingStop_CleansUpOldEntry verifies that recording a new
+// typing stop function calls the previous stop first.
+func TestRecordTypingStop_CleansUpOldEntry(t *testing.T) {
+	m := newTestManager()
+
+	var oldStopped atomic.Bool
+
+	m.RecordTypingStop("tg", "42", func() { oldStopped.Store(true) })
+
+	// Record a new one — old stop should fire
+	m.RecordTypingStop("tg", "42", func() {})
+
+	if !oldStopped.Load() {
+		t.Fatal("expected old typing stop to be called when new entry is recorded")
+	}
+}
+
+// TestRecordReactionUndo_CleansUpOldEntry verifies that recording a new
+// reaction undo function calls the previous undo first.
+func TestRecordReactionUndo_CleansUpOldEntry(t *testing.T) {
+	m := newTestManager()
+
+	var oldUndone atomic.Bool
+
+	m.RecordReactionUndo("tg", "42", func() { oldUndone.Store(true) })
+
+	// Record a new one — old undo should fire
+	m.RecordReactionUndo("tg", "42", func() {})
+
+	if !oldUndone.Load() {
+		t.Fatal("expected old reaction undo to be called when new entry is recorded")
+	}
+}
+
+// TestPreSend_DraftDismiss_ClearsEditTimes verifies that dismissing a draft
+// in preSend also clears the statusEditTimes entry for that key, preventing
+// stale throttle state from affecting the next processing cycle.
+func TestPreSend_DraftDismiss_ClearsEditTimes(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockDraftSender{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		draftFn:    func(_ context.Context, _ string, _ int, _ string) error { return nil },
+		editFn:     func(_ context.Context, _, _, _ string) error { return nil },
+		sendWithID: func(_ context.Context, _, _ string) (string, error) { return "", nil },
+	}
+
+	key := "test:123"
+	m.statusMsgIDs.Store(key, statusMsgEntry{draftID: 42, createdAt: time.Now()})
+	m.statusEditTimes.Store(key, time.Now())
+
+	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "final"}
+	m.preSend(context.Background(), "test", msg, ch)
+
+	if _, loaded := m.statusEditTimes.Load(key); loaded {
+		t.Fatal("expected statusEditTimes to be cleared after draft dismiss")
+	}
+}
