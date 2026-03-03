@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/h2non/filetype"
+
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -72,8 +73,8 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 			// Determine MIME type: prefer metadata, fallback to magic-bytes detection
 			mime := meta.ContentType
 			if mime == "" {
-				kind, err := filetype.MatchFile(localPath)
-				if err != nil || kind == filetype.Unknown {
+				kind, ftErr := filetype.MatchFile(localPath)
+				if ftErr != nil || kind == filetype.Unknown {
 					logger.WarnCF("agent", "Unknown media type, skipping", map[string]any{
 						"path": localPath,
 					})
