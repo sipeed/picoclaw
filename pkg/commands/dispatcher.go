@@ -8,28 +8,21 @@ import (
 type Handler func(ctx context.Context, req Request) error
 
 type Request struct {
-	Channel   string
-	ChatID    string
-	SenderID  string
-	Text      string
-	MessageID string
-	Reply     func(text string) error
+	Channel  string
+	ChatID   string
+	SenderID string
+	Text     string
+	Reply    func(text string) error
 }
+
+const unavailableMsg = "Command unavailable in current context."
 
 var commandPrefixes = []string{"/", "!"}
-
-func firstToken(input string) string {
-	parts := strings.Fields(strings.TrimSpace(input))
-	if len(parts) == 0 {
-		return ""
-	}
-	return parts[0]
-}
 
 // parseCommandName accepts "/name", "!name", and Telegram's "/name@bot", then
 // normalizes to lowercase command names.
 func parseCommandName(input string) (string, bool) {
-	token := firstToken(input)
+	token := nthToken(input, 0)
 	if token == "" {
 		return "", false
 	}
@@ -57,18 +50,10 @@ func trimCommandPrefix(token string) (string, bool) {
 	return "", false
 }
 
-func secondToken(input string) string {
-	parts := strings.Fields(strings.TrimSpace(input))
-	if len(parts) < 2 {
-		return ""
-	}
-	return parts[1]
-}
-
 // HasCommandPrefix returns true if the input starts with a recognized
 // command prefix (e.g. "/" or "!").
 func HasCommandPrefix(input string) bool {
-	token := firstToken(input)
+	token := nthToken(input, 0)
 	if token == "" {
 		return false
 	}

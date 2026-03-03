@@ -1533,9 +1533,6 @@ func (al *AgentLoop) handleCommand(
 		if commandReply != "" {
 			return commandReply, true
 		}
-		if result.Reply != "" {
-			return result.Reply, true
-		}
 		return "", true
 	default:
 		return "", false

@@ -7,7 +7,7 @@ import "github.com/sipeed/picoclaw/pkg/config"
 // invocation time, not at construction time, so late-bound values
 // (e.g. channelManager set after NewAgentLoop) are visible.
 type Deps struct {
-	Config             *config.Config // reserved for Phase 2 session commands
+	Config             *config.Config
 	GetModelInfo       func() (name, provider string)
 	ListAgentIDs       func() []string
 	GetEnabledChannels func() []string

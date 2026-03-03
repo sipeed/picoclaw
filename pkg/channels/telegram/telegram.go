@@ -130,7 +130,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		"username": c.bot.Username(),
 	})
 
-	c.startCommandRegistration(c.ctx, commands.NewRegistry(commands.BuiltinDefinitions(&commands.Deps{Config: c.config})).Definitions())
+	c.startCommandRegistration(c.ctx, commands.BuiltinDefinitions(&commands.Deps{Config: c.config}))
 
 	go func() {
 		if err = bh.Start(); err != nil {

@@ -15,11 +15,8 @@ func switchCommand(deps *Deps) Definition {
 				Description: "Switch to a different model",
 				ArgsUsage:   "to <name>",
 				Handler: func(_ context.Context, req Request) error {
-					if req.Reply == nil {
-						return nil
-					}
 					if deps.SwitchModel == nil {
-						return req.Reply("Command unavailable in current context.")
+						return req.Reply(unavailableMsg)
 					}
 					// Parse: /switch model to <value>
 					value := nthToken(req.Text, 3) // tokens: [/switch, model, to, <value>]
@@ -38,11 +35,8 @@ func switchCommand(deps *Deps) Definition {
 				Description: "Switch to a different channel",
 				ArgsUsage:   "to <name>",
 				Handler: func(_ context.Context, req Request) error {
-					if req.Reply == nil {
-						return nil
-					}
 					if deps.SwitchChannel == nil {
-						return req.Reply("Command unavailable in current context.")
+						return req.Reply(unavailableMsg)
 					}
 					value := nthToken(req.Text, 3)
 					if nthToken(req.Text, 2) != "to" || value == "" {

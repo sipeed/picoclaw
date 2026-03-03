@@ -17,7 +17,6 @@ const (
 type ExecuteResult struct {
 	Outcome Outcome
 	Command string
-	Reply   string
 	Err     error
 }
 
@@ -51,6 +50,11 @@ func (e *Executor) Execute(ctx context.Context, req Request) ExecuteResult {
 }
 
 func (e *Executor) executeDefinition(ctx context.Context, req Request, def Definition) ExecuteResult {
+	// Ensure Reply is always non-nil so handlers don't need to check.
+	if req.Reply == nil {
+		req.Reply = func(string) error { return nil }
+	}
+
 	// Simple command — no sub-commands
 	if len(def.SubCommands) == 0 {
 		if def.Handler == nil {
@@ -61,11 +65,9 @@ func (e *Executor) executeDefinition(ctx context.Context, req Request, def Defin
 	}
 
 	// Sub-command routing
-	subName := secondToken(req.Text)
+	subName := nthToken(req.Text, 1)
 	if subName == "" {
-		if req.Reply != nil {
-			_ = req.Reply("Usage: " + def.EffectiveUsage())
-		}
+		_ = req.Reply("Usage: " + def.EffectiveUsage())
 		return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name}
 	}
 
@@ -81,8 +83,6 @@ func (e *Executor) executeDefinition(ctx context.Context, req Request, def Defin
 	}
 
 	// Unknown sub-command
-	if req.Reply != nil {
-		_ = req.Reply(fmt.Sprintf("Unknown parameter: %s. Usage: %s", subName, def.EffectiveUsage()))
-	}
+	_ = req.Reply(fmt.Sprintf("Unknown parameter: %s. Usage: %s", subName, def.EffectiveUsage()))
 	return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name}
 }

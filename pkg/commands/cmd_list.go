@@ -15,11 +15,8 @@ func listCommand(deps *Deps) Definition {
 				Name:        "models",
 				Description: "Configured models",
 				Handler: func(_ context.Context, req Request) error {
-					if req.Reply == nil {
-						return nil
-					}
 					if deps.GetModelInfo == nil {
-						return req.Reply("Command unavailable in current context.")
+						return req.Reply(unavailableMsg)
 					}
 					name, provider := deps.GetModelInfo()
 					if provider == "" {
@@ -35,11 +32,8 @@ func listCommand(deps *Deps) Definition {
 				Name:        "channels",
 				Description: "Enabled channels",
 				Handler: func(_ context.Context, req Request) error {
-					if req.Reply == nil {
-						return nil
-					}
 					if deps.GetEnabledChannels == nil {
-						return req.Reply("Command unavailable in current context.")
+						return req.Reply(unavailableMsg)
 					}
 					enabled := deps.GetEnabledChannels()
 					if len(enabled) == 0 {
@@ -51,19 +45,7 @@ func listCommand(deps *Deps) Definition {
 			{
 				Name:        "agents",
 				Description: "Registered agents",
-				Handler: func(_ context.Context, req Request) error {
-					if req.Reply == nil {
-						return nil
-					}
-					if deps.ListAgentIDs == nil {
-						return req.Reply("Command unavailable in current context.")
-					}
-					ids := deps.ListAgentIDs()
-					if len(ids) == 0 {
-						return req.Reply("No agents registered")
-					}
-					return req.Reply(fmt.Sprintf("Registered agents: %s", strings.Join(ids, ", ")))
-				},
+				Handler:     agentsHandler(deps),
 			},
 		},
 	}

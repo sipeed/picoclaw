@@ -55,9 +55,6 @@ func TestShowListHandlers_ChannelPolicy(t *testing.T) {
 	if passthrough.Command != "foo" {
 		t.Fatalf("whatsapp /foo command=%q, want=%q", passthrough.Command, "foo")
 	}
-	if passthrough.Reply != "" {
-		t.Fatalf("whatsapp /foo reply=%q, want empty", passthrough.Reply)
-	}
 }
 
 func TestShowListHandlers_ListHandledOnAllChannels(t *testing.T) {

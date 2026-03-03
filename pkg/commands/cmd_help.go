@@ -12,9 +12,6 @@ func helpCommand(deps *Deps) Definition {
 		Description: "Show this help message",
 		Usage:       "/help",
 		Handler: func(_ context.Context, req Request) error {
-			if req.Reply == nil {
-				return nil
-			}
 			defs := BuiltinDefinitions(deps)
 			return req.Reply(formatHelpMessage(defs))
 		},
