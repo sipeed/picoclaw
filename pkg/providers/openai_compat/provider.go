@@ -287,7 +287,7 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 
 // openaiContentPart represents a content part in the OpenAI Vision API format.
 type openaiContentPart struct {
-	Type     string                  `json:"type"`               // "text" or "image_url"
+	Type     string                  `json:"type"` // "text" or "image_url"
 	Text     string                  `json:"text,omitempty"`
 	ImageURL *protocoltypes.ImageURL `json:"image_url,omitempty"`
 }
