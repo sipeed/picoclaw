@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -26,16 +27,15 @@ func (f *fakeChannel) IsAllowed(string) bool                                   {
 func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
 func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
 
-func TestRecordLastChannel(t *testing.T) {
-	// Create temp workspace
+func newTestAgentLoop(
+	t *testing.T,
+) (al *AgentLoop, cfg *config.Config, msgBus *bus.MessageBus, provider *mockProvider, cleanup func()) {
+	t.Helper()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create test config
-	cfg := &config.Config{
+	cfg = &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
@@ -45,74 +45,43 @@ func TestRecordLastChannel(t *testing.T) {
 			},
 		},
 	}
+	msgBus = bus.NewMessageBus()
+	provider = &mockProvider{}
+	al = NewAgentLoop(cfg, msgBus, provider)
+	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
+}
 
-	// Create agent loop
-	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+func TestRecordLastChannel(t *testing.T) {
+	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
+	defer cleanup()
 
-	// Test RecordLastChannel
 	testChannel := "test-channel"
-	err = al.RecordLastChannel(testChannel)
-	if err != nil {
+	if err := al.RecordLastChannel(testChannel); err != nil {
 		t.Fatalf("RecordLastChannel failed: %v", err)
 	}
-
-	// Verify channel was saved
-	lastChannel := al.state.GetLastChannel()
-	if lastChannel != testChannel {
-		t.Errorf("Expected channel '%s', got '%s'", testChannel, lastChannel)
+	if got := al.state.GetLastChannel(); got != testChannel {
+		t.Errorf("Expected channel '%s', got '%s'", testChannel, got)
 	}
-
-	// Verify persistence by creating a new agent loop
 	al2 := NewAgentLoop(cfg, msgBus, provider)
-	if al2.state.GetLastChannel() != testChannel {
-		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, al2.state.GetLastChannel())
+	if got := al2.state.GetLastChannel(); got != testChannel {
+		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, got)
 	}
 }
 
 func TestRecordLastChatID(t *testing.T) {
-	// Create temp workspace
-	tmpDir, err := os.MkdirTemp("", "agent-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
+	defer cleanup()
 
-	// Create test config
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-		},
-	}
-
-	// Create agent loop
-	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
-
-	// Test RecordLastChatID
 	testChatID := "test-chat-id-123"
-	err = al.RecordLastChatID(testChatID)
-	if err != nil {
+	if err := al.RecordLastChatID(testChatID); err != nil {
 		t.Fatalf("RecordLastChatID failed: %v", err)
 	}
-
-	// Verify chat ID was saved
-	lastChatID := al.state.GetLastChatID()
-	if lastChatID != testChatID {
-		t.Errorf("Expected chat ID '%s', got '%s'", testChatID, lastChatID)
+	if got := al.state.GetLastChatID(); got != testChatID {
+		t.Errorf("Expected chat ID '%s', got '%s'", testChatID, got)
 	}
-
-	// Verify persistence by creating a new agent loop
 	al2 := NewAgentLoop(cfg, msgBus, provider)
-	if al2.state.GetLastChatID() != testChatID {
-		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, al2.state.GetLastChatID())
+	if got := al2.state.GetLastChatID(); got != testChatID {
+		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, got)
 	}
 }
 
@@ -187,13 +156,7 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
-	found := false
-	for _, name := range toolsList {
-		if name == "mock_custom" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(toolsList, "mock_custom")
 	if !found {
 		t.Error("Expected custom tool to be registered")
 	}
@@ -262,13 +225,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
-	found := false
-	for _, name := range toolsList {
-		if name == "mock_custom" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(toolsList, "mock_custom")
 	if !found {
 		t.Error("Expected custom tool to be registered")
 	}
@@ -795,6 +752,59 @@ func TestHandleReasoning(t *testing.T) {
 		msg, ok := msgBus.SubscribeOutbound(ctx)
 		if ok {
 			t.Fatalf("expected no outbound message, got %+v", msg)
+		}
+	})
+
+	t.Run("returns promptly when bus is full", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+
+		// Fill the outbound bus buffer until a publish would block.
+		// Use a short timeout to detect when the buffer is full,
+		// rather than hardcoding the buffer size.
+		for i := 0; ; i++ {
+			fillCtx, fillCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			err := msgBus.PublishOutbound(fillCtx, bus.OutboundMessage{
+				Channel: "filler",
+				ChatID:  "filler",
+				Content: fmt.Sprintf("filler-%d", i),
+			})
+			fillCancel()
+			if err != nil {
+				// Buffer is full (timed out trying to send).
+				break
+			}
+		}
+
+		// Use a short-deadline parent context to bound the test.
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		start := time.Now()
+		al.handleReasoning(ctx, "should timeout", "slack", "channel-full")
+		elapsed := time.Since(start)
+
+		// handleReasoning uses a 5s internal timeout, but the parent ctx
+		// expires in 500ms. It should return within ~500ms, not 5s.
+		if elapsed > 2*time.Second {
+			t.Fatalf("handleReasoning blocked too long (%v); expected prompt return", elapsed)
+		}
+
+		// Drain the bus and verify the reasoning message was NOT published
+		// (it should have been dropped due to timeout).
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer drainCancel()
+		foundReasoning := false
+		for {
+			msg, ok := msgBus.SubscribeOutbound(drainCtx)
+			if !ok {
+				break
+			}
+			if msg.Content == "should timeout" {
+				foundReasoning = true
+			}
+		}
+		if foundReasoning {
+			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
 		}
 	})
 }

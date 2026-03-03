@@ -1,0 +1,1999 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <script>
+    // Apply theme before paint to avoid flash
+    (function(){
+        var s = localStorage.getItem('picoclaw-theme') || 'system';
+        var t = s === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : s;
+        document.documentElement.setAttribute('data-theme', t);
+    })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicoClaw Config</title>
+    <meta name="description" content="PicoClaw configuration editor">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+          rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --radius: 12px;
+            --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+            --sidebar-w: 220px;
+        }
+
+        /* Dark theme (default) */
+        [data-theme="dark"] {
+            --bg-primary: #0f1117;
+            --bg-secondary: #161822;
+            --bg-elevated: #1c1f2e;
+            --bg-editor: #12141e;
+            --border: #2a2d3e;
+            --border-focus: #6366f1;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #6366f1;
+            --accent-hover: #818cf8;
+            --accent-glow: rgba(99, 102, 241, 0.15);
+            --success: #22c55e;
+            --success-bg: rgba(34, 197, 94, 0.1);
+            --error: #ef4444;
+            --error-bg: rgba(239, 68, 68, 0.1);
+            --warning: #f59e0b;
+            --warning-bg: rgba(245, 158, 11, 0.1);
+            --link: #818cf8;
+        }
+
+        /* Light theme */
+        [data-theme="light"] {
+            --bg-primary: #f8f9fb;
+            --bg-secondary: #ffffff;
+            --bg-elevated: #f1f3f5;
+            --bg-editor: #ffffff;
+            --border: #d5d9e0;
+            --border-focus: #6366f1;
+            --text-primary: #1a1d2e;
+            --text-secondary: #4b5563;
+            --text-muted: #8892a4;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --accent-glow: rgba(99, 102, 241, 0.12);
+            --success: #16a34a;
+            --success-bg: rgba(22, 163, 74, 0.08);
+            --error: #dc2626;
+            --error-bg: rgba(220, 38, 38, 0.08);
+            --warning: #d97706;
+            --warning-bg: rgba(217, 119, 6, 0.08);
+            --link: #4f46e5;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Header ─────────────────────────────────── */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
+            gap: 16px;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .logo {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--accent), #a78bfa);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; font-weight: 700; color: #fff;
+            box-shadow: 0 2px 12px var(--accent-glow);
+        }
+        .header h1 {
+            font-size: 16px; font-weight: 600; letter-spacing: -0.02em; white-space: nowrap;
+        }
+        .header h1 span { color: var(--text-muted); font-weight: 400; margin-left: 6px; font-size: 13px; }
+
+        .header-center { flex: 1; display: flex; justify-content: center; align-items: center; }
+        .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+        /* Language switcher */
+        .lang-btn {
+            font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
+            padding: 5px 10px; border-radius: 6px;
+            border: 1px solid var(--border); background: var(--bg-elevated);
+            color: var(--text-secondary); cursor: pointer;
+            transition: all var(--transition);
+        }
+        .lang-btn:hover { border-color: var(--text-muted); color: var(--text-primary); }
+
+        /* Buttons */
+        .btn {
+            font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 500;
+            padding: 7px 16px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--bg-elevated);
+            color: var(--text-primary); cursor: pointer;
+            transition: all var(--transition);
+            display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+        }
+        .btn:hover { border-color: var(--text-muted); background: var(--bg-secondary); transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 2px 8px var(--accent-glow); }
+        .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+        .btn-danger { border-color: rgba(239, 68, 68, 0.3); color: var(--error); }
+        .btn-danger:hover { background: var(--error-bg); border-color: var(--error); }
+        .btn-success { border-color: rgba(34, 197, 94, 0.3); color: var(--success); }
+        .btn-success:hover { background: var(--success-bg); border-color: var(--success); }
+        .btn-run { background: var(--success); border-color: var(--success); color: #fff; }
+        .btn-run:hover { background: #16a34a; }
+        .btn-process { padding: 8px 28px; font-size: 14px; font-weight: 600; border-radius: 10px; letter-spacing: 0.01em; }
+        .btn-process .btn-spinner {
+            width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff; border-radius: 50%;
+            animation: spin 0.7s linear infinite; display: inline-block;
+        }
+        .process-hint { font-size: 12px; color: var(--text-muted); margin-left: 10px; white-space: nowrap; }
+        .btn-stop { background: var(--error); border-color: var(--error); color: #fff; }
+        .btn-stop:hover { background: #dc2626; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+        .btn .icon { font-size: 14px; }
+
+        /* ── Toast notifications ────────────────────── */
+        .toast-container {
+            position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+            z-index: 300; display: flex; flex-direction: column; align-items: center; gap: 8px;
+            pointer-events: none;
+        }
+        .toast {
+            font-size: 13px; font-weight: 500; padding: 10px 20px;
+            border-radius: 10px; display: inline-flex; align-items: center; gap: 6px;
+            pointer-events: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+            animation: toastIn 300ms ease-out;
+            transition: opacity 300ms ease;
+        }
+        .toast.success { background: var(--success-bg); color: var(--success); border: 1px solid rgba(34, 197, 94, 0.3); backdrop-filter: blur(8px); }
+        .toast.error { background: var(--error-bg); color: var(--error); border: 1px solid rgba(239, 68, 68, 0.3); backdrop-filter: blur(8px); }
+        .toast.fade-out { opacity: 0; }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* ── Layout ──────────────────────────────────── */
+        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* Settings layout */
+        .settings-layout { display: flex; flex: 1; overflow: hidden; }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-w); flex-shrink: 0;
+            background: var(--bg-secondary); border-right: 1px solid var(--border);
+            overflow-y: auto; padding: 12px 0;
+        }
+        .sidebar-group { margin-bottom: 4px; }
+        .sidebar-group-title {
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.06em; color: var(--text-muted);
+            padding: 8px 16px 4px; cursor: pointer;
+            display: flex; align-items: center; justify-content: space-between;
+            user-select: none;
+        }
+        .sidebar-group-title:hover { color: var(--text-secondary); }
+        .sidebar-group-title .arrow {
+            font-size: 10px; transition: transform var(--transition);
+        }
+        .sidebar-group.collapsed .arrow { transform: rotate(-90deg); }
+        .sidebar-group.collapsed .sidebar-items { display: none; }
+        .sidebar-item {
+            font-size: 13px; padding: 6px 16px 6px 28px;
+            color: var(--text-secondary); cursor: pointer;
+            transition: all var(--transition); border-left: 2px solid transparent;
+        }
+        .sidebar-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+        .sidebar-item.active {
+            background: var(--accent-glow); color: var(--accent-hover);
+            border-left-color: var(--accent);
+        }
+        .sidebar-divider { height: 1px; background: var(--border); margin: 8px 16px; }
+        .sidebar-item.standalone {
+            padding-left: 16px; font-weight: 500; color: var(--text-muted);
+        }
+
+        /* Content area */
+        .content { flex: 1; overflow-y: auto; padding: 24px; }
+        .content-panel { display: none; }
+        .content-panel.active { display: block; }
+
+        .panel-title { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+        .panel-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+        .panel-desc a.doc-link {
+            color: var(--link, var(--accent-hover)); font-weight: 500;
+            text-decoration: none; border-bottom: 1px dashed var(--link, var(--accent-hover));
+            padding-bottom: 1px; transition: opacity var(--transition);
+        }
+        .panel-desc a.doc-link:hover { opacity: 0.8; }
+
+        /* Theme toggle */
+        .theme-btn {
+            font-family: 'Inter', sans-serif; font-size: 14px;
+            width: 32px; height: 32px; border-radius: 6px;
+            border: 1px solid var(--border); background: var(--bg-elevated);
+            color: var(--text-secondary); cursor: pointer;
+            transition: all var(--transition);
+            display: flex; align-items: center; justify-content: center;
+            line-height: 1;
+        }
+        .theme-btn:hover { border-color: var(--text-muted); color: var(--text-primary); }
+
+        /* ── Model cards ─────────────────────────────── */
+        .model-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 12px; margin-bottom: 16px;
+        }
+        .model-card {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 16px;
+            transition: border-color var(--transition), opacity var(--transition);
+            position: relative;
+        }
+        .model-card:hover { border-color: var(--text-muted); }
+        .model-card.unavailable { opacity: 0.45; }
+        .model-card.unavailable:hover { opacity: 0.65; }
+        .model-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .model-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .model-protocol {
+            font-size: 11px; font-family: 'JetBrains Mono', monospace;
+            color: var(--text-muted); background: var(--bg-elevated);
+            padding: 2px 6px; border-radius: 4px;
+        }
+        .badge-primary {
+            font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
+            background: var(--accent-glow); color: var(--accent-hover);
+            border: 1px solid rgba(99, 102, 241, 0.3); text-transform: uppercase;
+        }
+        .badge-nokey {
+            font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
+            background: var(--bg-elevated); color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+        .model-detail { font-size: 12px; color: var(--text-muted); margin-bottom: 3px; word-break: break-all; }
+        .model-detail strong { color: var(--text-secondary); font-weight: 500; }
+        .model-actions { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+
+        /* ── Model edit modal ────────────────────────── */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+            z-index: 200; display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity var(--transition);
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 24px; width: 480px; max-width: 90vw;
+            max-height: 80vh; overflow-y: auto;
+        }
+        .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+        .modal-actions { margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; }
+
+        /* Collapsible optional fields */
+        .collapsible-header {
+            font-size: 12px; font-weight: 500; color: var(--text-muted);
+            cursor: pointer; user-select: none;
+            display: flex; align-items: center; gap: 6px;
+            padding: 8px 0; margin-top: 4px;
+            border-top: 1px solid var(--border);
+        }
+        .collapsible-header:hover { color: var(--text-secondary); }
+        .collapsible-header .arrow {
+            font-size: 10px; transition: transform var(--transition);
+        }
+        .collapsible-header.open .arrow { transform: rotate(90deg); }
+        .collapsible-body { display: none; }
+        .collapsible-body.open { display: block; }
+
+        /* ── Form fields ─────────────────────────────── */
+        .form-group { margin-bottom: 16px; }
+        .form-label {
+            font-size: 12px; font-weight: 500; color: var(--text-secondary);
+            margin-bottom: 6px; display: block;
+        }
+        .form-input {
+            width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+            padding: 8px 12px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--bg-editor);
+            color: var(--text-primary); outline: none;
+            transition: border-color var(--transition);
+        }
+        .form-input:focus { border-color: var(--border-focus); }
+        .form-input::placeholder { color: var(--text-muted); }
+        .form-input-number { width: 120px; }
+        .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+        /* Toggle switch */
+        .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+        .toggle {
+            width: 40px; height: 22px; border-radius: 11px;
+            background: var(--border); cursor: pointer;
+            position: relative; transition: background var(--transition);
+            flex-shrink: 0;
+        }
+        .toggle.on { background: var(--accent); }
+        .toggle::after {
+            content: ''; position: absolute; top: 3px; left: 3px;
+            width: 16px; height: 16px; border-radius: 50%;
+            background: #fff; transition: transform var(--transition);
+        }
+        .toggle.on::after { transform: translateX(18px); }
+        .toggle-label { font-size: 13px; font-weight: 500; }
+
+        /* Array editor */
+        .array-editor { display: flex; flex-direction: column; gap: 6px; }
+        .array-row { display: flex; gap: 6px; align-items: center; }
+        .array-row .form-input { flex: 1; }
+        .array-add { font-size: 12px; color: var(--accent); cursor: pointer; padding: 4px 0; }
+        .array-add:hover { color: var(--accent-hover); }
+
+        /* Channel form */
+        .channel-form { max-width: 560px; }
+        .form-section-title {
+            font-size: 13px; font-weight: 600; color: var(--text-secondary);
+            margin: 20px 0 12px; padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+        .form-section-title:first-child { margin-top: 0; }
+
+        /* ── Auth panel ──────────────────────────────── */
+        .provider-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 14px;
+        }
+        .provider-card {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 18px;
+            transition: border-color var(--transition);
+        }
+        .provider-card:hover { border-color: var(--text-muted); }
+        .provider-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .provider-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .provider-badge {
+            font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .badge-active { background: var(--success-bg); color: var(--success); border: 1px solid rgba(34, 197, 94, 0.2); }
+        .badge-expired { background: var(--error-bg); color: var(--error); border: 1px solid rgba(239, 68, 68, 0.2); }
+        .badge-pending { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.2); }
+        .badge-none { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); }
+        .provider-detail { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+        .provider-detail strong { color: var(--text-secondary); font-weight: 500; }
+        .provider-actions { margin-top: 12px; display: flex; gap: 8px; }
+        .device-code-box {
+            background: var(--bg-elevated); border: 1px solid var(--border);
+            border-radius: 8px; padding: 14px; margin-top: 10px; text-align: center;
+        }
+        .device-code-box .code {
+            font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700;
+            color: var(--accent-hover); letter-spacing: 0.1em; margin: 8px 0;
+        }
+        .device-code-box .url { font-size: 12px; color: var(--text-secondary); word-break: break-all; }
+        .device-code-box .url a { color: var(--accent-hover); text-decoration: none; }
+        .device-code-box .url a:hover { text-decoration: underline; }
+        .device-code-box .hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+        .token-input-group { display: flex; gap: 8px; margin-top: 10px; }
+        .token-input-group input {
+            flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+            padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--bg-editor); color: var(--text-primary); outline: none;
+            transition: border-color var(--transition);
+        }
+        .token-input-group input:focus { border-color: var(--border-focus); }
+
+        /* ── Raw JSON editor ─────────────────────────── */
+        .editor-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .editor-label { font-size: 12px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+        .file-path {
+            font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-muted);
+            background: var(--bg-elevated); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+        }
+        .editor-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+        .editor-wrapper {
+            flex: 1; position: relative; border: 1px solid var(--border);
+            border-radius: var(--radius); overflow: hidden;
+            transition: border-color var(--transition), box-shadow var(--transition);
+            min-height: 400px;
+        }
+        .editor-wrapper:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .editor-wrapper.error { border-color: var(--error); box-shadow: 0 0 0 3px var(--error-bg); }
+        #editor {
+            width: 100%; height: 100%; min-height: 400px; resize: vertical;
+            background: var(--bg-editor); color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.65;
+            padding: 16px 20px; border: none; outline: none;
+            tab-size: 2; white-space: pre; overflow: auto;
+        }
+        .loading-overlay {
+            position: absolute; inset: 0; background: rgba(15, 17, 23, 0.85);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 10; backdrop-filter: blur(4px);
+            opacity: 0; pointer-events: none; transition: opacity var(--transition);
+        }
+        .loading-overlay.active { opacity: 1; pointer-events: auto; }
+        .spinner {
+            width: 28px; height: 28px; border: 3px solid var(--border);
+            border-top-color: var(--accent); border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Log panel ──────────────────────────────── */
+        .log-toolbar {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 12px; gap: 8px;
+        }
+        .log-toolbar-right { display: flex; align-items: center; gap: 12px; }
+        .log-autoscroll { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; user-select: none; }
+        .log-autoscroll input { accent-color: var(--accent); cursor: pointer; }
+        .log-container {
+            background: var(--bg-editor); border: 1px solid var(--border);
+            border-radius: var(--radius); overflow: hidden; position: relative;
+            min-height: 300px; max-height: calc(100vh - 260px);
+            display: flex; flex-direction: column;
+        }
+        .log-output {
+            flex: 1; overflow-y: auto; padding: 16px 20px;
+            font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7;
+            color: var(--text-primary); white-space: pre-wrap; word-break: break-all;
+            margin: 0;
+        }
+        .log-placeholder {
+            color: var(--text-muted); font-style: italic;
+            font-family: 'Inter', sans-serif; font-size: 13px;
+        }
+
+        /* ── Footer ──────────────────────────────────── */
+        .footer {
+            padding: 10px 24px; border-top: 1px solid var(--border);
+            font-size: 12px; color: var(--text-muted);
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        /* ── Responsive ──────────────────────────────── */
+        @media (max-width: 768px) {
+            :root { --sidebar-w: 180px; }
+            .header { padding: 10px 16px; flex-wrap: wrap; gap: 8px; }
+            .header h1 span { display: none; }
+            .content { padding: 16px; }
+        }
+        @media (max-width: 640px) {
+            .settings-layout { flex-direction: column; }
+            .sidebar {
+                width: 100%; border-right: none; border-bottom: 1px solid var(--border);
+                max-height: 200px; padding: 8px 0;
+            }
+            .model-grid { grid-template-columns: 1fr; }
+            .provider-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+
+<body>
+
+<header class="header">
+    <div class="header-left">
+        <div class="logo">P</div>
+        <h1>PicoClaw <span>Config</span></h1>
+    </div>
+    <div class="header-center">
+        <button class="btn btn-run btn-process" id="btnRunStop" disabled>
+            <span class="icon" id="btnRunStopIcon">&#9654;</span> <span id="btnRunStopText" data-i18n="start">Start</span>
+        </button>
+        <span class="process-hint" id="processHint"></span>
+    </div>
+    <div class="header-right">
+        <button class="theme-btn" id="btnTheme" onclick="cycleTheme()" title="Toggle theme"></button>
+        <button class="lang-btn" id="btnLang" onclick="toggleLang()">EN</button>
+    </div>
+</header>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<main class="main">
+        <div class="settings-layout">
+            <!-- Sidebar -->
+            <nav class="sidebar" id="sidebar">
+                <div class="sidebar-group" data-group="providers">
+                    <div class="sidebar-group-title" onclick="toggleGroup(this)">
+                        <span data-i18n="sidebar.providers">Providers</span> <span class="arrow">&#9662;</span>
+                    </div>
+                    <div class="sidebar-items">
+                        <div class="sidebar-item active" data-panel="panelModels" data-i18n="sidebar.models">Models</div>
+                        <div class="sidebar-item" data-panel="panelAuth" data-i18n="sidebar.auth">Auth</div>
+                    </div>
+                </div>
+                <div class="sidebar-group" data-group="channels">
+                    <div class="sidebar-group-title" onclick="toggleGroup(this)">
+                        <span data-i18n="sidebar.channels">Channels</span> <span class="arrow">&#9662;</span>
+                    </div>
+                    <div class="sidebar-items">
+                        <div class="sidebar-item" data-panel="panelCh_telegram">Telegram</div>
+                        <div class="sidebar-item" data-panel="panelCh_discord">Discord</div>
+                        <div class="sidebar-item" data-panel="panelCh_slack">Slack</div>
+                        <div class="sidebar-item" data-panel="panelCh_wecom">WeCom</div>
+                        <div class="sidebar-item" data-panel="panelCh_wecom_app">WeCom App</div>
+                        <div class="sidebar-item" data-panel="panelCh_dingtalk">DingTalk</div>
+                        <div class="sidebar-item" data-panel="panelCh_feishu" data-i18n="sidebar.feishu">Feishu</div>
+                        <div class="sidebar-item" data-panel="panelCh_line">LINE</div>
+                        <div class="sidebar-item" data-panel="panelCh_whatsapp">WhatsApp</div>
+                        <div class="sidebar-item" data-panel="panelCh_qq">QQ</div>
+                        <div class="sidebar-item" data-panel="panelCh_onebot">OneBot</div>
+                        <div class="sidebar-item" data-panel="panelCh_maixcam">MaixCAM</div>
+                    </div>
+                </div>
+                <div class="sidebar-divider"></div>
+                <div class="sidebar-item standalone" data-panel="panelLogs" data-i18n="sidebar.logs">Logs</div>
+                <div class="sidebar-item standalone" data-panel="panelRawJson" data-i18n="sidebar.rawjson">Raw JSON</div>
+            </nav>
+
+            <!-- Content -->
+            <div class="content" id="contentArea">
+                <div class="content-panel active" id="panelModels">
+                    <div class="panel-title" data-i18n="models.title">Models</div>
+                    <div class="panel-desc" data-i18n="models.desc">Manage LLM model configurations. Models without an API key are grayed out. Only available models can be set as primary.</div>
+                    <div style="margin-bottom: 14px;">
+                        <button class="btn btn-sm btn-primary" onclick="showAddModelModal()" data-i18n="models.add">+ Add Model</button>
+                    </div>
+                    <div class="model-grid" id="modelGrid"></div>
+                </div>
+
+                <div class="content-panel" id="panelAuth">
+                    <div class="panel-title" data-i18n="auth.title">Provider Authentication</div>
+                    <div class="panel-desc" id="authDesc"></div>
+                    <div class="provider-grid" id="providerGrid">
+                        <div class="provider-card" id="card-openai">
+                            <div class="provider-card-header">
+                                <span class="provider-name">OpenAI</span>
+                                <span class="provider-badge badge-none" id="badge-openai" data-i18n="auth.notLoggedIn">Not logged in</span>
+                            </div>
+                            <div id="details-openai"></div>
+                            <div class="provider-actions" id="actions-openai">
+                                <button class="btn btn-sm btn-primary" onclick="loginProvider('openai')" data-i18n="auth.loginDevice">Login (Device Code)</button>
+                            </div>
+                        </div>
+                        <div class="provider-card" id="card-anthropic">
+                            <div class="provider-card-header">
+                                <span class="provider-name">Anthropic</span>
+                                <span class="provider-badge badge-none" id="badge-anthropic" data-i18n="auth.notLoggedIn">Not logged in</span>
+                            </div>
+                            <div id="details-anthropic"></div>
+                            <div class="provider-actions" id="actions-anthropic">
+                                <button class="btn btn-sm btn-primary" onclick="showTokenInput('anthropic')" data-i18n="auth.loginToken">Login (API Token)</button>
+                            </div>
+                        </div>
+                        <div class="provider-card" id="card-google-antigravity">
+                            <div class="provider-card-header">
+                                <span class="provider-name">Google Antigravity</span>
+                                <span class="provider-badge badge-none" id="badge-google-antigravity" data-i18n="auth.notLoggedIn">Not logged in</span>
+                            </div>
+                            <div id="details-google-antigravity"></div>
+                            <div class="provider-actions" id="actions-google-antigravity">
+                                <button class="btn btn-sm btn-primary" onclick="loginProvider('google-antigravity')" data-i18n="auth.loginOAuth">Login (Browser OAuth)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Channel Panels -->
+                <div class="content-panel" id="panelCh_telegram"></div>
+                <div class="content-panel" id="panelCh_discord"></div>
+                <div class="content-panel" id="panelCh_slack"></div>
+                <div class="content-panel" id="panelCh_wecom"></div>
+                <div class="content-panel" id="panelCh_wecom_app"></div>
+                <div class="content-panel" id="panelCh_dingtalk"></div>
+                <div class="content-panel" id="panelCh_feishu"></div>
+                <div class="content-panel" id="panelCh_line"></div>
+                <div class="content-panel" id="panelCh_whatsapp"></div>
+                <div class="content-panel" id="panelCh_qq"></div>
+                <div class="content-panel" id="panelCh_onebot"></div>
+                <div class="content-panel" id="panelCh_maixcam"></div>
+
+                <!-- Logs Panel -->
+                <div class="content-panel" id="panelLogs">
+                    <div class="panel-title" data-i18n="logs.title">Gateway Logs</div>
+                    <div class="panel-desc" data-i18n="logs.desc">Real-time output from the gateway process.</div>
+                    <div class="log-toolbar">
+                        <div>
+                            <button class="btn btn-sm" onclick="clearLogDisplay()" data-i18n="logs.clear">Clear Display</button>
+                        </div>
+                        <div class="log-toolbar-right">
+                            <label class="log-autoscroll">
+                                <input type="checkbox" id="logAutoScrollCb" checked onchange="logAutoScrollEnabled=this.checked">
+                                <span data-i18n="logs.autoScroll">Auto-scroll</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="log-container">
+                        <pre class="log-output" id="logOutput"><span class="log-placeholder" id="logPlaceholder" data-i18n="logs.noLogs">No logs available. Start the gateway to see output here.</span></pre>
+                    </div>
+                </div>
+
+                <!-- Raw JSON Panel -->
+                <div class="content-panel" id="panelRawJson">
+                    <div class="panel-title" data-i18n="raw.title">Raw JSON</div>
+                    <div class="panel-desc" data-i18n="raw.desc">Directly edit the configuration file.</div>
+                    <div class="editor-header">
+                        <span class="editor-label">config.json</span>
+                        <span class="file-path" id="filePath">-</span>
+                    </div>
+                    <div class="editor-toolbar">
+                        <button class="btn btn-sm" id="btnReload" onclick="loadConfig()">
+                            <span class="icon">&#8635;</span> <span data-i18n="raw.reload">Reload</span>
+                        </button>
+                        <button class="btn btn-sm" id="btnFormat" onclick="formatJson()">
+                            <span class="icon">{ }</span> <span data-i18n="raw.format">Format</span>
+                        </button>
+                        <button class="btn btn-sm btn-primary" id="btnSave" onclick="saveRawConfig()" data-i18n="save">Save</button>
+                    </div>
+                    <div class="editor-wrapper" id="editorWrapper">
+                        <textarea id="editor" spellcheck="false"></textarea>
+                        <div class="loading-overlay" id="loading">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+</main>
+
+<!-- Model Edit Modal -->
+<div class="modal-overlay" id="modelModal">
+    <div class="modal">
+        <div class="modal-title" id="modalTitle"></div>
+        <div id="modalBody"></div>
+        <div class="modal-actions">
+            <button class="btn btn-sm" onclick="closeModelModal()" data-i18n="cancel">Cancel</button>
+            <button class="btn btn-sm btn-primary" id="modalSaveBtn" onclick="saveModelFromModal()" data-i18n="save">Save</button>
+        </div>
+    </div>
+</div>
+
+<footer class="footer">
+    <span>PicoClaw Config</span>
+    <span id="jsonStatus">-</span>
+</footer>
+
+<script>
+// ── Theme ───────────────────────────────────────────
+const themeIcons = { light: '\u2600\uFE0F', dark: '\uD83C\uDF19', system: '\uD83D\uDCBB' };
+const themeOrder = ['system', 'light', 'dark'];
+let currentThemeSetting = localStorage.getItem('picoclaw-theme') || 'system';
+
+function getSystemTheme() {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+function applyTheme() {
+    const resolved = currentThemeSetting === 'system' ? getSystemTheme() : currentThemeSetting;
+    document.documentElement.setAttribute('data-theme', resolved);
+    const btn = document.getElementById('btnTheme');
+    if (btn) btn.textContent = themeIcons[currentThemeSetting];
+}
+function cycleTheme() {
+    const idx = themeOrder.indexOf(currentThemeSetting);
+    currentThemeSetting = themeOrder[(idx + 1) % themeOrder.length];
+    localStorage.setItem('picoclaw-theme', currentThemeSetting);
+    applyTheme();
+}
+// Listen for system theme changes
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (currentThemeSetting === 'system') applyTheme();
+});
+// Apply immediately to avoid flash
+applyTheme();
+
+// ── i18n ────────────────────────────────────────────
+const i18nData = {
+    en: {
+        // Header & global
+        'start': 'Start',
+        'stop': 'Stop',
+        'save': 'Save',
+        'cancel': 'Cancel',
+        'edit': 'Edit',
+        'delete': 'Delete',
+        'enabled': 'Enabled',
+        'comingSoon': 'Coming soon',
+        // Sidebar
+        'sidebar.providers': 'Providers',
+        'sidebar.models': 'Models',
+        'sidebar.auth': 'Auth',
+        'sidebar.channels': 'Channels',
+        'sidebar.feishu': 'Feishu',
+        'sidebar.logs': 'Logs',
+        'sidebar.rawjson': 'Raw JSON',
+        // Models
+        'models.title': 'Models',
+        'models.desc': 'Manage LLM model configurations. Models without an API key are grayed out. Only available models can be set as primary.',
+        'models.add': '+ Add Custom Model',
+        'models.noModels': 'No models configured.',
+        'models.primary': 'Primary',
+        'models.noKey': 'No Key',
+        'models.setPrimary': 'Set Primary',
+        'models.editModel': 'Edit Model',
+        'models.addModel': 'Add Model',
+        'models.advancedOptions': 'Advanced Options',
+        'models.deleteConfirm': 'Delete model "{name}"?',
+        'models.requiredFields': 'Model Name and Model ID are required',
+        // Model fields
+        'field.modelName': 'Model Name',
+        'field.modelId': 'Model ID',
+        'field.modelIdHint': 'Format: protocol/model-id',
+        'field.apiKey': 'API Key',
+        'field.apiBase': 'API Base',
+        'field.proxy': 'Proxy',
+        'field.authMethod': 'Auth Method',
+        'field.connectMode': 'Connect Mode',
+        'field.workspace': 'Workspace',
+        'field.rpm': 'RPM Limit',
+        'field.requestTimeout': 'Request Timeout (s)',
+        // Auth
+        'auth.title': 'Provider Authentication',
+        'auth.desc': 'Login to providers using OAuth or API tokens. Credentials are stored locally in <code style="font-family:\'JetBrains Mono\',monospace;font-size:12px;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">~/.picoclaw/auth.json</code>.',
+        'auth.notLoggedIn': 'Not logged in',
+        'auth.active': 'Active',
+        'auth.expired': 'Expired',
+        'auth.needsRefresh': 'Needs Refresh',
+        'auth.authenticating': 'Authenticating...',
+        'auth.loginDevice': 'Login (Device Code)',
+        'auth.loginToken': 'Login (API Token)',
+        'auth.loginOAuth': 'Login (Browser OAuth)',
+        'auth.logout': 'Logout',
+        'auth.retry': 'Retry',
+        'auth.waiting': 'Waiting...',
+        'auth.pasteKey': 'Paste your API key here...',
+        'auth.step1': 'Step 1: Click the link below',
+        'auth.step2': 'Step 2: Enter this code',
+        'auth.step3': 'Step 3: Complete auth in browser, this page updates automatically',
+        'auth.method': 'Method',
+        'auth.email': 'Email',
+        'auth.account': 'Account',
+        'auth.project': 'Project',
+        'auth.expires': 'Expires',
+        // Channel
+        'ch.configure': 'Configure {name} channel settings.',
+        'ch.docLink': 'Configuration Guide',
+        'ch.accessControl': 'Access Control',
+        'ch.allowFrom': 'Allow From (User IDs)',
+        'ch.addItem': '+ Add',
+        'ch.mentionOnly': 'Mention Only',
+        'ch.mentionOnlyHint': 'Only respond when mentioned',
+        'ch.groupTrigger': 'Group Trigger Prefixes',
+        // Logs
+        'logs.title': 'Gateway Logs',
+        'logs.desc': 'Real-time output from the gateway process.',
+        'logs.clear': 'Clear Display',
+        'logs.autoScroll': 'Auto-scroll',
+        'logs.noLogs': 'No logs available. Start the gateway to see output here.',
+        'logs.noCapture': 'Logs are not available. The gateway was not started from this launcher.',
+        // Raw JSON
+        'raw.title': 'Raw JSON',
+        'raw.desc': 'Directly edit the configuration file.',
+        'raw.reload': 'Reload',
+        'raw.format': 'Format',
+        // Status messages
+        'status.configLoaded': 'Config loaded',
+        'status.configSaved': 'Config saved',
+        'status.loadFailed': 'Load failed',
+        'status.saveFailed': 'Save failed',
+        'status.formatted': 'Formatted',
+        'status.invalidJson': 'Invalid JSON, please fix before saving',
+        'status.jsonValid': 'JSON valid',
+        'status.jsonInvalid': 'JSON invalid',
+        'status.saved': '{name} saved',
+        'status.tokenEmpty': 'Token cannot be empty',
+        'status.tokenSaved': 'Token saved for {name}',
+        'status.loggedOut': 'Logged out from {name}',
+        'status.loginFailed': 'Login failed',
+        'status.logoutFailed': 'Logout failed',
+        'status.openingBrowser': 'Opening browser for authentication...',
+        'status.loginStarted': 'Login started...',
+        'status.loginSuccess': 'Login successful!',
+        // Process
+        'process.running': 'Service running',
+        'process.notRunning': 'Service not running',
+        'process.starting': 'Starting gateway...',
+        'process.started': 'Gateway started',
+        'process.startFailed': 'Failed to start gateway',
+        'process.stopping': 'Stopping gateway...',
+        'process.stopped': 'Gateway stopped',
+        'process.stopFailed': 'Failed to stop gateway',
+        'process.needModel': 'At least one model with API key is required',
+        'process.needChannel': 'At least one channel must be enabled',
+        'process.checkLogs': 'Check Logs for details',
+        'process.needBoth': 'Need model with API key and enabled channel to start',
+    },
+    zh: {
+        'start': '\u542F\u52A8',
+        'stop': '\u505C\u6B62',
+        'save': '\u4FDD\u5B58',
+        'cancel': '\u53D6\u6D88',
+        'edit': '\u7F16\u8F91',
+        'delete': '\u5220\u9664',
+        'enabled': '\u542F\u7528',
+        'comingSoon': '\u5373\u5C06\u63A8\u51FA',
+        'sidebar.providers': '\u63D0\u4F9B\u5546',
+        'sidebar.models': '\u6A21\u578B',
+        'sidebar.auth': '\u8BA4\u8BC1',
+        'sidebar.channels': '\u901A\u9053',
+        'sidebar.feishu': '\u98DE\u4E66',
+        'sidebar.logs': '\u65E5\u5FD7',
+        'sidebar.rawjson': '\u539F\u59CB JSON',
+        'models.title': '\u6A21\u578B',
+        'models.desc': '\u7BA1\u7406 LLM \u6A21\u578B\u914D\u7F6E\u3002\u6CA1\u6709 API Key \u7684\u6A21\u578B\u663E\u793A\u4E3A\u7070\u8272\u3002\u53EA\u6709\u53EF\u7528\u6A21\u578B\u624D\u80FD\u8BBE\u4E3A\u4E3B\u6A21\u578B\u3002',
+        'models.add': '+ \u6DFB\u52A0\u81EA\u5B9A\u4E49\u6A21\u578B',
+        'models.noModels': '\u6682\u65E0\u6A21\u578B\u914D\u7F6E\u3002',
+        'models.primary': '\u4E3B\u6A21\u578B',
+        'models.noKey': '\u65E0 Key',
+        'models.setPrimary': '\u8BBE\u4E3A\u4E3B\u6A21\u578B',
+        'models.editModel': '\u7F16\u8F91\u6A21\u578B',
+        'models.addModel': '\u6DFB\u52A0\u6A21\u578B',
+        'models.advancedOptions': '\u9AD8\u7EA7\u9009\u9879',
+        'models.deleteConfirm': '\u786E\u5B9A\u5220\u9664\u6A21\u578B\u201C{name}\u201D\uFF1F',
+        'models.requiredFields': '\u6A21\u578B\u540D\u79F0\u548C\u6A21\u578B ID \u4E3A\u5FC5\u586B\u9879',
+        'field.modelName': '\u6A21\u578B\u540D\u79F0',
+        'field.modelId': '\u6A21\u578B ID',
+        'field.modelIdHint': '\u683C\u5F0F\uFF1A\u534F\u8BAE/\u6A21\u578B\u6807\u8BC6',
+        'field.apiKey': 'API Key',
+        'field.apiBase': 'API \u5730\u5740',
+        'field.proxy': '\u4EE3\u7406',
+        'field.authMethod': '\u8BA4\u8BC1\u65B9\u5F0F',
+        'field.connectMode': '\u8FDE\u63A5\u6A21\u5F0F',
+        'field.workspace': '\u5DE5\u4F5C\u533A',
+        'field.rpm': 'RPM \u9650\u5236',
+        'field.requestTimeout': '\u8BF7\u6C42\u8D85\u65F6 (\u79D2)',
+        'auth.title': '\u63D0\u4F9B\u5546\u8BA4\u8BC1',
+        'auth.desc': '\u901A\u8FC7 OAuth \u6216 API Token \u767B\u5F55\u63D0\u4F9B\u5546\u3002\u51ED\u8BC1\u5B58\u50A8\u5728\u672C\u5730 <code style="font-family:\'JetBrains Mono\',monospace;font-size:12px;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">~/.picoclaw/auth.json</code>\u3002',
+        'auth.notLoggedIn': '\u672A\u767B\u5F55',
+        'auth.active': '\u5DF2\u6FC0\u6D3B',
+        'auth.expired': '\u5DF2\u8FC7\u671F',
+        'auth.needsRefresh': '\u9700\u8981\u5237\u65B0',
+        'auth.authenticating': '\u8BA4\u8BC1\u4E2D...',
+        'auth.loginDevice': '\u767B\u5F55 (\u8BBE\u5907\u7801)',
+        'auth.loginToken': '\u767B\u5F55 (API Token)',
+        'auth.loginOAuth': '\u767B\u5F55 (\u6D4F\u89C8\u5668 OAuth)',
+        'auth.logout': '\u767B\u51FA',
+        'auth.retry': '\u91CD\u8BD5',
+        'auth.waiting': '\u7B49\u5F85\u4E2D...',
+        'auth.pasteKey': '\u8BF7\u7C98\u8D34 API Key...',
+        'auth.step1': '\u7B2C 1 \u6B65\uFF1A\u70B9\u51FB\u4E0B\u65B9\u94FE\u63A5',
+        'auth.step2': '\u7B2C 2 \u6B65\uFF1A\u8F93\u5165\u4EE5\u4E0B\u4EE3\u7801',
+        'auth.step3': '\u7B2C 3 \u6B65\uFF1A\u5728\u6D4F\u89C8\u5668\u4E2D\u5B8C\u6210\u8BA4\u8BC1\uFF0C\u672C\u9875\u9762\u4F1A\u81EA\u52A8\u66F4\u65B0',
+        'auth.method': '\u65B9\u5F0F',
+        'auth.email': '\u90AE\u7BB1',
+        'auth.account': '\u8D26\u53F7',
+        'auth.project': '\u9879\u76EE',
+        'auth.expires': '\u8FC7\u671F\u65F6\u95F4',
+        'ch.configure': '\u914D\u7F6E {name} \u901A\u9053\u8BBE\u7F6E\u3002',
+        'ch.docLink': '\u914D\u7F6E\u6307\u5357',
+        'ch.accessControl': '\u8BBF\u95EE\u63A7\u5236',
+        'ch.allowFrom': '\u5141\u8BB8\u7684\u7528\u6237 ID',
+        'ch.addItem': '+ \u6DFB\u52A0',
+        'ch.mentionOnly': '\u4EC5\u63D0\u53CA\u65F6\u54CD\u5E94',
+        'ch.mentionOnlyHint': '\u53EA\u5728\u88AB @\u63D0\u53CA\u65F6\u56DE\u590D',
+        'ch.groupTrigger': '\u7FA4\u804A\u89E6\u53D1\u524D\u7F00',
+        'logs.title': 'Gateway \u65E5\u5FD7',
+        'logs.desc': 'Gateway \u8FDB\u7A0B\u7684\u5B9E\u65F6\u8F93\u51FA\u3002',
+        'logs.clear': '\u6E05\u9664\u663E\u793A',
+        'logs.autoScroll': '\u81EA\u52A8\u6EDA\u52A8',
+        'logs.noLogs': '\u6682\u65E0\u65E5\u5FD7\u3002\u542F\u52A8 Gateway \u540E\u53EF\u5728\u6B64\u67E5\u770B\u8F93\u51FA\u3002',
+        'logs.noCapture': '\u65E5\u5FD7\u4E0D\u53EF\u7528\u3002Gateway \u4E0D\u662F\u901A\u8FC7\u6B64\u542F\u52A8\u5668\u542F\u52A8\u7684\u3002',
+        'raw.title': '\u539F\u59CB JSON',
+        'raw.desc': '\u76F4\u63A5\u7F16\u8F91\u914D\u7F6E\u6587\u4EF6\u3002',
+        'raw.reload': '\u91CD\u65B0\u52A0\u8F7D',
+        'raw.format': '\u683C\u5F0F\u5316',
+        'status.configLoaded': '\u914D\u7F6E\u5DF2\u52A0\u8F7D',
+        'status.configSaved': '\u914D\u7F6E\u5DF2\u4FDD\u5B58',
+        'status.loadFailed': '\u52A0\u8F7D\u5931\u8D25',
+        'status.saveFailed': '\u4FDD\u5B58\u5931\u8D25',
+        'status.formatted': '\u5DF2\u683C\u5F0F\u5316',
+        'status.invalidJson': 'JSON \u683C\u5F0F\u65E0\u6548\uFF0C\u8BF7\u4FEE\u6B63\u540E\u518D\u4FDD\u5B58',
+        'status.jsonValid': 'JSON \u6709\u6548',
+        'status.jsonInvalid': 'JSON \u65E0\u6548',
+        'status.saved': '{name} \u5DF2\u4FDD\u5B58',
+        'status.tokenEmpty': 'Token \u4E0D\u80FD\u4E3A\u7A7A',
+        'status.tokenSaved': '\u5DF2\u4FDD\u5B58 {name} \u7684 Token',
+        'status.loggedOut': '\u5DF2\u4ECE {name} \u767B\u51FA',
+        'status.loginFailed': '\u767B\u5F55\u5931\u8D25',
+        'status.logoutFailed': '\u767B\u51FA\u5931\u8D25',
+        'status.openingBrowser': '\u6B63\u5728\u6253\u5F00\u6D4F\u89C8\u5668\u8FDB\u884C\u8BA4\u8BC1...',
+        'status.loginStarted': '\u767B\u5F55\u5DF2\u542F\u52A8...',
+        'status.loginSuccess': '\u767B\u5F55\u6210\u529F\uFF01',
+        'process.running': '\u670D\u52A1\u5DF2\u542F\u52A8',
+        'process.notRunning': '\u670D\u52A1\u672A\u542F\u52A8',
+        'process.starting': '\u6B63\u5728\u542F\u52A8 Gateway...',
+        'process.started': 'Gateway \u5DF2\u542F\u52A8',
+        'process.startFailed': 'Gateway \u542F\u52A8\u5931\u8D25',
+        'process.stopping': '\u6B63\u5728\u505C\u6B62 Gateway...',
+        'process.stopped': 'Gateway \u5DF2\u505C\u6B62',
+        'process.stopFailed': 'Gateway \u505C\u6B62\u5931\u8D25',
+        'process.needModel': '\u81F3\u5C11\u9700\u8981\u4E00\u4E2A\u914D\u7F6E\u4E86 API Key \u7684\u6A21\u578B',
+        'process.needChannel': '\u81F3\u5C11\u9700\u8981\u542F\u7528\u4E00\u4E2A\u901A\u9053',
+        'process.checkLogs': '\u8BF7\u67E5\u770B\u65E5\u5FD7\u4E86\u89E3\u8BE6\u60C5',
+        'process.needBoth': '\u9700\u8981\u914D\u7F6E\u6A21\u578B\u548C\u542F\u7528\u901A\u9053\u624D\u80FD\u542F\u52A8',
+    }
+};
+
+let currentLang = localStorage.getItem('picoclaw-lang') || (navigator.language.startsWith('zh') ? 'zh' : 'en');
+
+function t(key, params) {
+    let s = (i18nData[currentLang] && i18nData[currentLang][key]) || i18nData.en[key] || key;
+    if (params) {
+        Object.keys(params).forEach(k => { s = s.replace('{' + k + '}', params[k]); });
+    }
+    return s;
+}
+
+function applyI18n() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.dataset.i18n;
+        const val = t(key);
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+            el.placeholder = val;
+        } else {
+            el.textContent = val;
+        }
+    });
+    document.getElementById('authDesc').innerHTML = t('auth.desc');
+    document.getElementById('btnLang').textContent = currentLang === 'en' ? 'EN' : '\u4E2D';
+    document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+}
+
+function toggleLang() {
+    currentLang = currentLang === 'en' ? 'zh' : 'en';
+    localStorage.setItem('picoclaw-lang', currentLang);
+    applyI18n();
+    // Re-render process button text
+    updateRunStopButton(gatewayRunning);
+    // Re-render dynamic panels
+    renderModels();
+    const activePanel = document.querySelector('.content-panel.active');
+    if (activePanel) {
+        const id = activePanel.id;
+        if (id === 'panelAuth') loadAuthStatus();
+        if (id.startsWith('panelCh_')) renderChannelForm(id.replace('panelCh_', ''));
+    }
+}
+
+// ── State ───────────────────────────────────────────
+let configData = null;
+let configPath = '';
+let authPollTimer = null;
+let editingModelIndex = -1;
+
+// ── Channel schemas ─────────────────────────────────
+const channelSchemas = {
+    telegram: {
+        title: 'Telegram', configKey: 'telegram', docSlug: 'telegram',
+        fields: [
+            { key: 'token', label: 'Bot Token', type: 'password', placeholder: 'Telegram bot token from @BotFather' },
+            { key: 'proxy', label: 'Proxy', type: 'text', placeholder: 'http://proxy:port' },
+        ]
+    },
+    discord: {
+        title: 'Discord', configKey: 'discord', docSlug: 'discord',
+        fields: [
+            { key: 'token', label: 'Bot Token', type: 'password', placeholder: 'Discord bot token' },
+            { key: 'mention_only', label: 'ch.mentionOnly', type: 'toggle', hint: 'ch.mentionOnlyHint', i18nLabel: true },
+        ]
+    },
+    slack: {
+        title: 'Slack', configKey: 'slack', docSlug: 'slack',
+        fields: [
+            { key: 'bot_token', label: 'Bot Token', type: 'password', placeholder: 'xoxb-...' },
+            { key: 'app_token', label: 'App Token', type: 'password', placeholder: 'xapp-...' },
+        ]
+    },
+    wecom: {
+        title: 'WeCom (Bot)', configKey: 'wecom', docSlug: 'wecom-bot',
+        fields: [
+            { key: 'token', label: 'Token', type: 'password', placeholder: 'Verification token' },
+            { key: 'encoding_aes_key', label: 'Encoding AES Key', type: 'password', placeholder: '43-char AES key' },
+            { key: 'webhook_url', label: 'Webhook URL', type: 'text', placeholder: 'https://qyapi.weixin.qq.com/...' },
+            { key: 'webhook_host', label: 'Webhook Host', type: 'text', placeholder: '0.0.0.0' },
+            { key: 'webhook_port', label: 'Webhook Port', type: 'number', placeholder: '18793' },
+            { key: 'webhook_path', label: 'Webhook Path', type: 'text', placeholder: '/webhook/wecom' },
+            { key: 'reply_timeout', label: 'Reply Timeout (s)', type: 'number', placeholder: '5' },
+        ]
+    },
+    wecom_app: {
+        title: 'WeCom (App)', configKey: 'wecom_app', docSlug: 'wecom-app',
+        fields: [
+            { key: 'corp_id', label: 'Corp ID', type: 'text', placeholder: 'Corporation ID' },
+            { key: 'corp_secret', label: 'Corp Secret', type: 'password', placeholder: 'Corporation secret' },
+            { key: 'agent_id', label: 'Agent ID', type: 'number', placeholder: 'Agent ID (number)' },
+            { key: 'token', label: 'Token', type: 'password', placeholder: 'Verification token' },
+            { key: 'encoding_aes_key', label: 'Encoding AES Key', type: 'password', placeholder: '43-char AES key' },
+            { key: 'webhook_host', label: 'Webhook Host', type: 'text', placeholder: '0.0.0.0' },
+            { key: 'webhook_port', label: 'Webhook Port', type: 'number', placeholder: '18792' },
+            { key: 'webhook_path', label: 'Webhook Path', type: 'text', placeholder: '/webhook/wecom-app' },
+            { key: 'reply_timeout', label: 'Reply Timeout (s)', type: 'number', placeholder: '5' },
+        ]
+    },
+    dingtalk: {
+        title: 'DingTalk', configKey: 'dingtalk', docSlug: 'dingtalk',
+        fields: [
+            { key: 'client_id', label: 'Client ID', type: 'text', placeholder: 'App key / Client ID' },
+            { key: 'client_secret', label: 'Client Secret', type: 'password', placeholder: 'App secret' },
+        ]
+    },
+    feishu: {
+        title: 'Feishu', configKey: 'feishu', docSlug: 'feishu',
+        fields: [
+            { key: 'app_id', label: 'App ID', type: 'text', placeholder: 'Feishu app ID' },
+            { key: 'app_secret', label: 'App Secret', type: 'password', placeholder: 'Feishu app secret' },
+            { key: 'encrypt_key', label: 'Encrypt Key', type: 'password', placeholder: 'Event encrypt key' },
+            { key: 'verification_token', label: 'Verification Token', type: 'password', placeholder: 'Event verification token' },
+        ]
+    },
+    line: {
+        title: 'LINE', configKey: 'line', docSlug: 'line',
+        fields: [
+            { key: 'channel_secret', label: 'Channel Secret', type: 'password', placeholder: 'LINE channel secret' },
+            { key: 'channel_access_token', label: 'Channel Access Token', type: 'password', placeholder: 'LINE channel access token' },
+            { key: 'webhook_host', label: 'Webhook Host', type: 'text', placeholder: '0.0.0.0' },
+            { key: 'webhook_port', label: 'Webhook Port', type: 'number', placeholder: '18791' },
+            { key: 'webhook_path', label: 'Webhook Path', type: 'text', placeholder: '/webhook/line' },
+        ]
+    },
+    whatsapp: {
+        title: 'WhatsApp', configKey: 'whatsapp', docSlug: null,
+        fields: [
+            { key: 'bridge_url', label: 'Bridge URL', type: 'text', placeholder: 'ws://localhost:3001' },
+        ]
+    },
+    qq: {
+        title: 'QQ', configKey: 'qq', docSlug: 'qq',
+        fields: [
+            { key: 'app_id', label: 'App ID', type: 'text', placeholder: 'QQ bot App ID' },
+            { key: 'app_secret', label: 'App Secret', type: 'password', placeholder: 'QQ bot App Secret' },
+        ]
+    },
+    onebot: {
+        title: 'OneBot', configKey: 'onebot', docSlug: 'onebot',
+        fields: [
+            { key: 'ws_url', label: 'WebSocket URL', type: 'text', placeholder: 'ws://127.0.0.1:3001' },
+            { key: 'access_token', label: 'Access Token', type: 'password', placeholder: 'Access token' },
+            { key: 'reconnect_interval', label: 'Reconnect Interval (s)', type: 'number', placeholder: '5' },
+            { key: 'group_trigger_prefix', label: 'ch.groupTrigger', type: 'array', placeholder: 'Trigger word', i18nLabel: true },
+        ]
+    },
+    maixcam: {
+        title: 'MaixCAM', configKey: 'maixcam', docSlug: 'maixcam',
+        fields: [
+            { key: 'host', label: 'Host', type: 'text', placeholder: '0.0.0.0' },
+            { key: 'port', label: 'Port', type: 'number', placeholder: '18790' },
+        ]
+    },
+};
+
+// ── Sidebar ─────────────────────────────────────────
+function toggleGroup(el) {
+    el.parentElement.classList.toggle('collapsed');
+}
+
+document.querySelectorAll('.sidebar-item').forEach(item => {
+    item.addEventListener('click', () => {
+        document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        const panelId = item.dataset.panel;
+        document.querySelectorAll('.content-panel').forEach(p => p.classList.remove('active'));
+        const panel = document.getElementById(panelId);
+        if (panel) panel.classList.add('active');
+
+        if (panelId === 'panelModels') renderModels();
+        if (panelId === 'panelAuth') loadAuthStatus();
+        if (panelId === 'panelRawJson') syncEditorFromConfig();
+        if (panelId.startsWith('panelCh_')) {
+            renderChannelForm(panelId.replace('panelCh_', ''));
+        }
+    });
+});
+
+// ── Status messages ─────────────────────────────────
+function showStatus(text, type) {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = 'toast ' + type;
+    toast.textContent = (type === 'success' ? '\u2713 ' : '\u2717 ') + text;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.classList.add('fade-out');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ── Config API ──────────────────────────────────────
+async function loadConfig() {
+    try {
+        const res = await fetch('/api/config');
+        if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (await res.text()));
+        const data = await res.json();
+        configData = data.config;
+        configPath = data.path || '';
+        document.getElementById('filePath').textContent = configPath || '-';
+        renderModels();
+        if (!pendingAction) updateRunStopButton(gatewayRunning);
+    } catch (e) {
+        showStatus(t('status.loadFailed') + ': ' + e.message, 'error');
+    }
+}
+
+async function saveConfig() {
+    if (!configData) return;
+    try {
+        const res = await fetch('/api/config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configData),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (await res.text()));
+        showStatus(t('status.configSaved'), 'success');
+    } catch (e) {
+        showStatus(t('status.saveFailed') + ': ' + e.message, 'error');
+    }
+    // Refresh start button state after config changes
+    if (!pendingAction) updateRunStopButton(gatewayRunning);
+}
+
+// ── Raw JSON editor ─────────────────────────────────
+function syncEditorFromConfig() {
+    const editor = document.getElementById('editor');
+    if (configData) editor.value = JSON.stringify(configData, null, 2);
+    document.getElementById('filePath').textContent = configPath || '-';
+    validateJson();
+}
+
+async function saveRawConfig() {
+    const obj = validateJson();
+    if (obj === null) { showStatus(t('status.invalidJson'), 'error'); return; }
+    configData = obj;
+    await saveConfig();
+    document.getElementById('editor').value = JSON.stringify(configData, null, 2);
+}
+
+function formatJson() {
+    const obj = validateJson();
+    if (obj !== null) {
+        document.getElementById('editor').value = JSON.stringify(obj, null, 2);
+        showStatus(t('status.formatted'), 'success');
+    }
+}
+
+function validateJson() {
+    const editor = document.getElementById('editor');
+    const jsonStatus = document.getElementById('jsonStatus');
+    const editorWrap = document.getElementById('editorWrapper');
+    const val = editor.value.trim();
+    if (!val) { jsonStatus.textContent = '-'; editorWrap.classList.remove('error'); return null; }
+    try {
+        const obj = JSON.parse(val);
+        jsonStatus.textContent = '\u2713 ' + t('status.jsonValid');
+        jsonStatus.style.color = 'var(--success)';
+        editorWrap.classList.remove('error');
+        return obj;
+    } catch (e) {
+        jsonStatus.textContent = '\u2717 ' + t('status.jsonInvalid') + ': ' + e.message;
+        jsonStatus.style.color = 'var(--error)';
+        editorWrap.classList.add('error');
+        return null;
+    }
+}
+
+document.getElementById('editor').addEventListener('input', validateJson);
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (document.getElementById('panelRawJson').classList.contains('active')) saveRawConfig();
+        else saveConfig();
+    }
+});
+
+// ── Models Panel ────────────────────────────────────
+function renderModels() {
+    const grid = document.getElementById('modelGrid');
+    if (!configData || !configData.model_list) {
+        grid.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">${t('models.noModels')}</div>`;
+        return;
+    }
+
+    const primaryModelName = (configData.agents && configData.agents.defaults)
+        ? (configData.agents.defaults.model_name || configData.agents.defaults.model || '')
+        : '';
+
+    // Build index array sorted: primary first, then the rest in original order
+    const indices = configData.model_list.map((_, i) => i);
+    indices.sort((a, b) => {
+        const ap = configData.model_list[a].model_name === primaryModelName ? 0 : 1;
+        const bp = configData.model_list[b].model_name === primaryModelName ? 0 : 1;
+        return ap !== bp ? ap - bp : a - b;
+    });
+
+    const isModelAvailable = isModelAvailableGlobal;
+
+    let html = '';
+    indices.forEach(idx => {
+        const m = configData.model_list[idx];
+        const available = isModelAvailable(m);
+        const isPrimary = m.model_name === primaryModelName;
+        const protocol = m.model ? m.model.split('/')[0] : '';
+
+        html += `<div class="model-card ${available ? '' : 'unavailable'}">`;
+        html += `<div class="model-card-head">`;
+        html += `<div class="model-name">${esc(m.model_name)}`;
+        if (protocol) html += ` <span class="model-protocol">${esc(protocol)}</span>`;
+        html += `</div>`;
+        if (isPrimary) html += `<span class="badge-primary">${t('models.primary')}</span>`;
+        else if (!available) html += `<span class="badge-nokey">${t('models.noKey')}</span>`;
+        html += `</div>`;
+
+        html += `<div class="model-detail"><strong>Model:</strong> ${esc(m.model || '-')}</div>`;
+        if (m.api_base) html += `<div class="model-detail"><strong>API Base:</strong> ${esc(m.api_base)}</div>`;
+        if (m.api_key) html += `<div class="model-detail"><strong>API Key:</strong> ${maskKey(m.api_key)}</div>`;
+        if (m.auth_method) html += `<div class="model-detail"><strong>Auth:</strong> ${esc(m.auth_method)}</div>`;
+        if (m.proxy) html += `<div class="model-detail"><strong>Proxy:</strong> ${esc(m.proxy)}</div>`;
+
+        html += `<div class="model-actions">`;
+        html += `<button class="btn btn-sm" onclick="showEditModelModal(${idx})">${t('edit')}</button>`;
+        if (available && !isPrimary) {
+            html += `<button class="btn btn-sm btn-success" onclick="setPrimaryModel(${idx})">${t('models.setPrimary')}</button>`;
+        }
+        html += `<button class="btn btn-sm btn-danger" onclick="deleteModel(${idx})">${t('delete')}</button>`;
+        html += `</div></div>`;
+    });
+    grid.innerHTML = html;
+}
+
+function setPrimaryModel(idx) {
+    if (!configData || !configData.model_list[idx]) return;
+    if (!configData.agents) configData.agents = {};
+    if (!configData.agents.defaults) configData.agents.defaults = {};
+    configData.agents.defaults.model_name = configData.model_list[idx].model_name;
+    saveConfig().then(renderModels);
+}
+
+function deleteModel(idx) {
+    if (!configData || !configData.model_list) return;
+    const name = configData.model_list[idx].model_name;
+    if (!confirm(t('models.deleteConfirm', { name }))) return;
+    configData.model_list.splice(idx, 1);
+    saveConfig().then(renderModels);
+}
+
+// ── Model Modal ─────────────────────────────────────
+const modelFieldsRequired = [
+    { key: 'model_name', labelKey: 'field.modelName', type: 'text', placeholder: 'e.g. gpt-4o', required: true },
+    { key: 'model', labelKey: 'field.modelId', type: 'text', placeholder: 'e.g. openai/gpt-4o', required: true, hintKey: 'field.modelIdHint' },
+    { key: 'api_key', labelKey: 'field.apiKey', type: 'password', placeholder: 'API key' },
+    { key: 'api_base', labelKey: 'field.apiBase', type: 'text', placeholder: 'https://api.openai.com/v1' },
+];
+const modelFieldsOptional = [
+    { key: 'proxy', labelKey: 'field.proxy', type: 'text', placeholder: 'http://proxy:port' },
+    { key: 'auth_method', labelKey: 'field.authMethod', type: 'text', placeholder: 'oauth / token' },
+    { key: 'connect_mode', labelKey: 'field.connectMode', type: 'text', placeholder: 'stdio / grpc' },
+    { key: 'workspace', labelKey: 'field.workspace', type: 'text', placeholder: 'Workspace path' },
+    { key: 'rpm', labelKey: 'field.rpm', type: 'number', placeholder: 'RPM' },
+    { key: 'request_timeout', labelKey: 'field.requestTimeout', type: 'number', placeholder: 'Seconds' },
+];
+const modelFields = [...modelFieldsRequired, ...modelFieldsOptional];
+
+function showEditModelModal(idx) {
+    editingModelIndex = idx;
+    const m = configData.model_list[idx];
+    document.getElementById('modalTitle').textContent = t('models.editModel') + ': ' + m.model_name;
+    renderModalBody(m);
+    document.getElementById('modelModal').classList.add('active');
+}
+
+function showAddModelModal() {
+    editingModelIndex = -1;
+    document.getElementById('modalTitle').textContent = t('models.addModel');
+    renderModalBody({});
+    document.getElementById('modelModal').classList.add('active');
+}
+
+function closeModelModal() {
+    document.getElementById('modelModal').classList.remove('active');
+}
+
+function renderModalBody(data) {
+    const hasOptionalValues = modelFieldsOptional.some(f => {
+        const v = data[f.key];
+        return v !== undefined && v !== null && v !== '' && v !== 0;
+    });
+
+    function renderField(f) {
+        const val = data[f.key] !== undefined && data[f.key] !== null ? data[f.key] : '';
+        const label = t(f.labelKey);
+        let h = `<div class="form-group">`;
+        h += `<label class="form-label">${label}${f.required ? ' *' : ''}</label>`;
+        h += `<input class="form-input ${f.type === 'number' ? 'form-input-number' : ''}" `;
+        h += `type="${f.type === 'password' ? 'password' : f.type === 'number' ? 'number' : 'text'}" `;
+        h += `data-field="${f.key}" value="${esc(String(val))}" placeholder="${f.placeholder || ''}">`;
+        if (f.hintKey) h += `<div class="form-hint">${t(f.hintKey)}</div>`;
+        h += `</div>`;
+        return h;
+    }
+
+    let html = '';
+    modelFieldsRequired.forEach(f => { html += renderField(f); });
+
+    html += `<div class="collapsible-header" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">`;
+    html += `<span class="arrow">&#9656;</span> ${t('models.advancedOptions')}`;
+    html += `</div>`;
+    html += `<div class="collapsible-body">`;
+    modelFieldsOptional.forEach(f => { html += renderField(f); });
+    html += `</div>`;
+
+    document.getElementById('modalBody').innerHTML = html;
+}
+
+function saveModelFromModal() {
+    const inputs = document.querySelectorAll('#modalBody input[data-field]');
+    const obj = {};
+    inputs.forEach(input => {
+        const key = input.dataset.field;
+        let val = input.value.trim();
+        if (input.type === 'number' && val) val = parseInt(val, 10) || 0;
+        if (val !== '' && val !== 0) obj[key] = val;
+        else if (key === 'model_name' || key === 'model') obj[key] = val;
+    });
+
+    if (!obj.model_name || !obj.model) {
+        showStatus(t('models.requiredFields'), 'error');
+        return;
+    }
+
+    if (!configData.model_list) configData.model_list = [];
+
+    if (editingModelIndex >= 0) {
+        configData.model_list[editingModelIndex] = { ...configData.model_list[editingModelIndex], ...obj };
+        modelFields.forEach(f => {
+            if (!f.required && (obj[f.key] === '' || obj[f.key] === 0)) {
+                delete configData.model_list[editingModelIndex][f.key];
+            }
+        });
+    } else {
+        configData.model_list.push(obj);
+        // Auto-set as primary model
+        if (!configData.agents) configData.agents = {};
+        if (!configData.agents.defaults) configData.agents.defaults = {};
+        configData.agents.defaults.model_name = obj.model_name;
+    }
+
+    closeModelModal();
+    saveConfig().then(renderModels);
+}
+
+document.getElementById('modelModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModelModal();
+});
+
+// ── Channel Forms ───────────────────────────────────
+function renderChannelForm(chKey) {
+    const schema = channelSchemas[chKey];
+    if (!schema) return;
+    const panel = document.getElementById('panelCh_' + chKey);
+    const chData = (configData && configData.channels && configData.channels[schema.configKey]) || {};
+
+    let html = `<div class="panel-title">${schema.title}</div>`;
+    html += `<div class="panel-desc">${t('ch.configure', { name: schema.title })}`;
+    if (schema.docSlug) {
+        const docBase = currentLang === 'zh' ? 'https://docs.picoclaw.io/zh-Hans/docs/channels/' : 'https://docs.picoclaw.io/docs/channels/';
+        html += ` <a class="doc-link" href="${docBase}${schema.docSlug}" target="_blank" rel="noopener noreferrer">\u{1F4D6} ${t('ch.docLink')}</a>`;
+    }
+    html += `</div>`;
+    html += `<div class="channel-form" id="chForm_${chKey}">`;
+
+    // Enabled toggle
+    html += `<div class="toggle-row">`;
+    html += `<div class="toggle ${chData.enabled ? 'on' : ''}" id="chToggle_${chKey}" onclick="toggleChannelEnabled('${chKey}', this)"></div>`;
+    html += `<span class="toggle-label">${t('enabled')}</span>`;
+    html += `</div>`;
+
+    schema.fields.forEach(f => {
+        const label = f.i18nLabel ? t(f.label) : f.label;
+        if (f.type === 'toggle') {
+            const hint = f.i18nLabel && f.hint ? t(f.hint) : (f.hint || '');
+            html += `<div class="toggle-row">`;
+            html += `<div class="toggle ${chData[f.key] ? 'on' : ''}" data-chfield="${f.key}" onclick="this.classList.toggle('on')"></div>`;
+            html += `<span class="toggle-label">${label}</span>`;
+            if (hint) html += `<span class="form-hint" style="margin-left:8px;">${hint}</span>`;
+            html += `</div>`;
+        } else if (f.type === 'array') {
+            const arr = chData[f.key] || [];
+            html += `<div class="form-group">`;
+            html += `<label class="form-label">${label}</label>`;
+            html += `<div class="array-editor" data-chfield="${f.key}" data-placeholder="${f.placeholder || ''}">`;
+            arr.forEach(v => {
+                html += `<div class="array-row">`;
+                html += `<input class="form-input" type="text" value="${esc(String(v))}" placeholder="${f.placeholder || ''}">`;
+                html += `<button class="btn btn-sm btn-danger" onclick="removeArrayRow(this)">&times;</button>`;
+                html += `</div>`;
+            });
+            html += `<div class="array-add" onclick="addArrayRow(this.parentElement)">${t('ch.addItem')}</div>`;
+            html += `</div></div>`;
+        } else {
+            const val = chData[f.key] !== undefined && chData[f.key] !== null ? chData[f.key] : '';
+            html += `<div class="form-group">`;
+            html += `<label class="form-label">${label}</label>`;
+            html += `<input class="form-input ${f.type === 'number' ? 'form-input-number' : ''}" `;
+            html += `type="${f.type === 'password' ? 'password' : f.type === 'number' ? 'number' : 'text'}" `;
+            html += `data-chfield="${f.key}" value="${esc(String(val))}" placeholder="${f.placeholder || ''}">`;
+            html += `</div>`;
+        }
+    });
+
+    // Allow from
+    const allowFrom = chData.allow_from || [];
+    html += `<div class="form-section-title">${t('ch.accessControl')}</div>`;
+    html += `<div class="form-group">`;
+    html += `<label class="form-label">${t('ch.allowFrom')}</label>`;
+    html += `<div class="array-editor" data-chfield="allow_from" data-placeholder="User / Chat ID">`;
+    allowFrom.forEach(v => {
+        html += `<div class="array-row">`;
+        html += `<input class="form-input" type="text" value="${esc(String(v))}" placeholder="User / Chat ID">`;
+        html += `<button class="btn btn-sm btn-danger" onclick="removeArrayRow(this)">&times;</button>`;
+        html += `</div>`;
+    });
+    html += `<div class="array-add" onclick="addArrayRow(this.parentElement)">${t('ch.addItem')}</div>`;
+    html += `</div></div>`;
+
+    html += `<div style="margin-top:20px;">`;
+    html += `<button class="btn btn-primary" onclick="saveChannelForm('${chKey}')">${t('save')}</button>`;
+    html += `</div></div>`;
+
+    panel.innerHTML = html;
+}
+
+function toggleChannelEnabled(chKey, el) { el.classList.toggle('on'); }
+
+function addArrayRow(container) {
+    const placeholder = container.dataset.placeholder || '';
+    const addBtn = container.querySelector('.array-add');
+    const row = document.createElement('div');
+    row.className = 'array-row';
+    row.innerHTML = `<input class="form-input" type="text" value="" placeholder="${placeholder}">` +
+        `<button class="btn btn-sm btn-danger" onclick="removeArrayRow(this)">&times;</button>`;
+    container.insertBefore(row, addBtn);
+    row.querySelector('input').focus();
+}
+
+function removeArrayRow(btn) { btn.parentElement.remove(); }
+
+function saveChannelForm(chKey) {
+    const schema = channelSchemas[chKey];
+    if (!schema || !configData) return;
+
+    if (!configData.channels) configData.channels = {};
+    const chObj = configData.channels[schema.configKey] || {};
+
+    const toggle = document.getElementById('chToggle_' + chKey);
+    chObj.enabled = toggle ? toggle.classList.contains('on') : false;
+
+    const form = document.getElementById('chForm_' + chKey);
+    schema.fields.forEach(f => {
+        if (f.type === 'toggle') {
+            const el = form.querySelector(`[data-chfield="${f.key}"].toggle`);
+            if (el) chObj[f.key] = el.classList.contains('on');
+        } else if (f.type === 'array') {
+            const container = form.querySelector(`.array-editor[data-chfield="${f.key}"]`);
+            if (container) {
+                const vals = [];
+                container.querySelectorAll('.array-row input').forEach(input => {
+                    const v = input.value.trim();
+                    if (v) vals.push(v);
+                });
+                chObj[f.key] = vals;
+            }
+        } else {
+            const input = form.querySelector(`input[data-chfield="${f.key}"]`);
+            if (input) {
+                let val = input.value.trim();
+                if (f.type === 'number' && val) {
+                    val = parseInt(val, 10);
+                    if (isNaN(val)) val = 0;
+                }
+                chObj[f.key] = val === '' ? (f.type === 'number' ? 0 : '') : val;
+            }
+        }
+    });
+
+    const afContainer = form.querySelector('.array-editor[data-chfield="allow_from"]');
+    if (afContainer) {
+        const vals = [];
+        afContainer.querySelectorAll('.array-row input').forEach(input => {
+            const v = input.value.trim();
+            if (v) vals.push(v);
+        });
+        chObj.allow_from = vals;
+    }
+
+    configData.channels[schema.configKey] = chObj;
+    saveConfig().then(() => showStatus(t('status.saved', { name: schema.title }), 'success'));
+}
+
+// ── Auth API ────────────────────────────────────────
+let authProviderMap = {}; // { 'openai': { status: 'active', ... }, ... }
+
+async function loadAuthStatus() {
+    try {
+        const res = await fetch('/api/auth/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        const providers = data.providers || [];
+        authProviderMap = {};
+        providers.forEach(p => { authProviderMap[p.provider] = p; });
+        renderAuthStatus(providers, data.pending_device);
+    } catch (e) {
+        console.error('Failed to load auth status:', e);
+    }
+}
+
+function renderAuthStatus(providersList, pendingDevice) {
+    const providerMap = {};
+    providersList.forEach(p => { providerMap[p.provider] = p; });
+
+    ['openai', 'anthropic', 'google-antigravity'].forEach(name => {
+        const badge = document.getElementById('badge-' + name);
+        const details = document.getElementById('details-' + name);
+        const actions = document.getElementById('actions-' + name);
+        const p = providerMap[name];
+
+        if (p) {
+            const badgeClass = p.status === 'active' ? 'badge-active' :
+                p.status === 'expired' ? 'badge-expired' : 'badge-pending';
+            const badgeText = p.status === 'active' ? t('auth.active') :
+                p.status === 'expired' ? t('auth.expired') : t('auth.needsRefresh');
+            badge.className = 'provider-badge ' + badgeClass;
+            badge.textContent = badgeText;
+
+            let dh = '';
+            if (p.auth_method) dh += `<div class="provider-detail"><strong>${t('auth.method')}:</strong> ${p.auth_method}</div>`;
+            if (p.email) dh += `<div class="provider-detail"><strong>${t('auth.email')}:</strong> ${p.email}</div>`;
+            if (p.account_id) dh += `<div class="provider-detail"><strong>${t('auth.account')}:</strong> ${p.account_id}</div>`;
+            if (p.project_id) dh += `<div class="provider-detail"><strong>${t('auth.project')}:</strong> ${p.project_id}</div>`;
+            if (p.expires_at) {
+                const d = new Date(p.expires_at);
+                dh += `<div class="provider-detail"><strong>${t('auth.expires')}:</strong> ${d.toLocaleString()}</div>`;
+            }
+            details.innerHTML = dh;
+            actions.innerHTML = `<button class="btn btn-sm btn-danger" onclick="logoutProvider('${name}')">${t('auth.logout')}</button>`;
+        } else {
+            badge.className = 'provider-badge badge-none';
+            badge.textContent = t('auth.notLoggedIn');
+            details.innerHTML = '';
+            if (name === 'openai') {
+                actions.innerHTML = `<button class="btn btn-sm btn-primary" onclick="loginProvider('openai')">${t('auth.loginDevice')}</button>`;
+            } else if (name === 'anthropic') {
+                actions.innerHTML = `<button class="btn btn-sm btn-primary" onclick="showTokenInput('anthropic')">${t('auth.loginToken')}</button>`;
+            } else {
+                actions.innerHTML = `<button class="btn btn-sm btn-primary" onclick="loginProvider('google-antigravity')">${t('auth.loginOAuth')}</button>`;
+            }
+        }
+    });
+
+    if (pendingDevice && pendingDevice.status === 'pending') {
+        const name = pendingDevice.provider;
+        const badge = document.getElementById('badge-' + name);
+        const details = document.getElementById('details-' + name);
+        const actions = document.getElementById('actions-' + name);
+        if (badge) { badge.className = 'provider-badge badge-pending'; badge.textContent = t('auth.authenticating'); }
+        if (pendingDevice.device_url && pendingDevice.user_code && details) {
+            details.innerHTML = `
+            <div class="device-code-box">
+              <div class="hint" style="margin-bottom:8px;font-size:12px;">${t('auth.step1')}</div>
+              <div class="url"><a href="${pendingDevice.device_url}" target="_blank">${pendingDevice.device_url} &#8599;</a></div>
+              <div class="hint" style="margin-top:10px;margin-bottom:4px;font-size:12px;">${t('auth.step2')}</div>
+              <div class="code">${pendingDevice.user_code}</div>
+              <div class="hint">${t('auth.step3')}</div>
+            </div>`;
+        }
+        if (pendingDevice.error && details) {
+            details.innerHTML = `<div class="provider-detail" style="color:var(--error)">${pendingDevice.error}</div>`;
+            if (actions) actions.innerHTML = `<button class="btn btn-sm btn-primary" onclick="loginProvider('${name}')">${t('auth.retry')}</button>`;
+        } else if (actions) {
+            actions.innerHTML = `<button class="btn btn-sm" disabled><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></span>${t('auth.waiting')}</button>`;
+        }
+        startAuthPolling();
+    } else {
+        stopAuthPolling();
+    }
+}
+
+function startAuthPolling() {
+    stopAuthPolling();
+    authPollTimer = setInterval(() => loadAuthStatus(), 3000);
+}
+
+function stopAuthPolling() {
+    if (authPollTimer) { clearInterval(authPollTimer); authPollTimer = null; }
+}
+
+async function loginProvider(provider) {
+    const actions = document.getElementById('actions-' + provider);
+    const original = actions ? actions.innerHTML : '';
+    if (actions) actions.querySelectorAll('.btn').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
+
+    try {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+
+        if (data.status === 'redirect' && data.auth_url) {
+            showStatus(t('status.openingBrowser'), 'success');
+            window.open(data.auth_url, '_blank');
+            if (actions) actions.innerHTML = original;
+            return;
+        }
+        if (data.status === 'pending') {
+            showStatus(data.message || t('status.loginStarted'), 'success');
+            if (data.device_url && data.user_code) {
+                const badge = document.getElementById('badge-' + provider);
+                const details = document.getElementById('details-' + provider);
+                if (badge) { badge.className = 'provider-badge badge-pending'; badge.textContent = t('auth.authenticating'); }
+                if (details) {
+                    details.innerHTML = `
+                    <div class="device-code-box">
+                      <div class="hint" style="margin-bottom:8px;font-size:12px;">${t('auth.step1')}</div>
+                      <div class="url"><a href="${data.device_url}" target="_blank">${data.device_url} &#8599;</a></div>
+                      <div class="hint" style="margin-top:10px;margin-bottom:4px;font-size:12px;">${t('auth.step2')}</div>
+                      <div class="code">${data.user_code}</div>
+                      <div class="hint">${t('auth.step3')}</div>
+                    </div>`;
+                }
+                if (actions) {
+                    actions.innerHTML = `<button class="btn btn-sm" disabled><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></span>${t('auth.waiting')}</button>`;
+                }
+            }
+            startAuthPolling();
+        } else if (data.status === 'success') {
+            showStatus(data.message || t('status.loginSuccess'), 'success');
+            loadAuthStatus();
+        }
+    } catch (e) {
+        showStatus(t('status.loginFailed') + ': ' + e.message, 'error');
+        if (actions) actions.innerHTML = original;
+    }
+}
+
+function showTokenInput(provider) {
+    const actions = document.getElementById('actions-' + provider);
+    actions.innerHTML = `
+    <div class="token-input-group">
+      <input type="password" id="tokenInput-${provider}" placeholder="${t('auth.pasteKey')}" />
+      <button class="btn btn-sm btn-primary" onclick="submitToken('${provider}')">${t('save')}</button>
+      <button class="btn btn-sm" onclick="loadAuthStatus()">${t('cancel')}</button>
+    </div>`;
+    document.getElementById('tokenInput-' + provider).focus();
+}
+
+async function submitToken(provider) {
+    const input = document.getElementById('tokenInput-' + provider);
+    const token = input.value.trim();
+    if (!token) { showStatus(t('status.tokenEmpty'), 'error'); return; }
+    try {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider, token }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        showStatus(t('status.tokenSaved', { name: provider }), 'success');
+        loadAuthStatus();
+    } catch (e) {
+        showStatus(t('status.loginFailed') + ': ' + e.message, 'error');
+    }
+}
+
+async function logoutProvider(provider) {
+    try {
+        const res = await fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        showStatus(t('status.loggedOut', { name: provider }), 'success');
+        loadAuthStatus();
+    } catch (e) {
+        showStatus(t('status.logoutFailed') + ': ' + e.message, 'error');
+    }
+}
+
+// ── Process API (Start/Stop/Status) ─────────────────
+let gatewayRunning = false;
+let processPolling = null;
+let pendingAction = null; // { type: 'start'|'stop', retries: 0 }
+const MAX_RETRIES = 10;
+
+function isModelAvailableGlobal(m) {
+    if (m.api_key) return true;
+    if (m.auth_method === 'oauth') {
+        const protocol = m.model ? m.model.split('/')[0] : '';
+        const providerName = protocol === 'google-antigravity' ? 'google-antigravity' : protocol;
+        const authInfo = authProviderMap[providerName];
+        return !!(authInfo && authInfo.status === 'active');
+    }
+    if (m.auth_method) return true;
+    return false;
+}
+
+function checkStartPrereqs() {
+    const primaryModelName = configData && configData.agents && configData.agents.defaults
+        ? (configData.agents.defaults.model_name || '') : '';
+    const hasModel = !!(primaryModelName && configData.model_list &&
+        configData.model_list.some(m => m.model_name === primaryModelName && isModelAvailableGlobal(m)));
+    const hasChannel = configData && configData.channels &&
+        Object.keys(channelSchemas).some(k => {
+            const cfg = configData.channels[channelSchemas[k].configKey];
+            return cfg && cfg.enabled;
+        });
+    return { hasModel, hasChannel, canStart: hasModel && hasChannel };
+}
+
+function updateRunStopButton(running) {
+    gatewayRunning = running;
+    const btn = document.getElementById('btnRunStop');
+    const icon = document.getElementById('btnRunStopIcon');
+    const text = document.getElementById('btnRunStopText');
+    const hint = document.getElementById('processHint');
+    if (running) {
+        btn.disabled = false;
+        btn.className = 'btn btn-stop btn-process';
+        icon.innerHTML = '&#9632;';
+        text.textContent = t('stop');
+        hint.textContent = '(' + t('process.running') + ')';
+        hint.style.color = '';
+    } else {
+        const prereqs = checkStartPrereqs();
+        btn.disabled = !prereqs.canStart;
+        btn.className = 'btn btn-run btn-process';
+        icon.innerHTML = '&#9654;';
+        text.textContent = t('start');
+        if (!prereqs.canStart) {
+            const reason = !prereqs.hasModel && !prereqs.hasChannel ? t('process.needBoth')
+                : !prereqs.hasModel ? t('process.needModel')
+                : t('process.needChannel');
+            hint.textContent = '(' + reason + ')';
+            hint.style.color = 'var(--danger, #e74c3c)';
+        } else {
+            hint.textContent = '(' + t('process.notRunning') + ')';
+            hint.style.color = '';
+        }
+    }
+}
+
+function setButtonLoading(actionType) {
+    const btn = document.getElementById('btnRunStop');
+    const icon = document.getElementById('btnRunStopIcon');
+    const text = document.getElementById('btnRunStopText');
+    const hint = document.getElementById('processHint');
+    btn.disabled = true;
+    btn.className = 'btn btn-process';
+    icon.innerHTML = '<span class="btn-spinner"></span>';
+    text.textContent = actionType === 'start' ? t('process.starting') : t('process.stopping');
+    hint.textContent = '';
+}
+
+async function checkProcessStatus() {
+    let running = false;
+    try {
+        const params = new URLSearchParams({ log_offset: logOffset, log_run_id: logRunID });
+        const res = await fetch('/api/process/status?' + params);
+        if (res.ok) {
+            const data = await res.json();
+            running = data.process_status === 'running';
+            handleLogData(data);
+        }
+    } catch (e) { /* treat as not running */ }
+
+    if (pendingAction) {
+        const expected = pendingAction.type === 'start';
+        if (running === expected) {
+            showStatus(expected ? t('process.started') : t('process.stopped'), 'success');
+            pendingAction = null;
+            restoreNormalPolling();
+            updateRunStopButton(running);
+        } else {
+            pendingAction.retries++;
+            if (pendingAction.retries >= MAX_RETRIES) {
+                let msg = pendingAction.type === 'start' ? t('process.startFailed') : t('process.stopFailed');
+                if (pendingAction.type === 'start') msg += ' — ' + t('process.checkLogs');
+                showStatus(msg, 'error');
+                pendingAction = null;
+                restoreNormalPolling();
+                updateRunStopButton(running);
+            }
+        }
+    } else {
+        updateRunStopButton(running);
+    }
+}
+
+function restoreNormalPolling() {
+    clearInterval(processPolling);
+    processPolling = setInterval(checkProcessStatus, 5000);
+}
+
+async function startGateway() {
+    const prereqs = checkStartPrereqs();
+    if (!prereqs.canStart) {
+        const reason = !prereqs.hasModel && !prereqs.hasChannel ? t('process.needBoth')
+            : !prereqs.hasModel ? t('process.needModel')
+            : t('process.needChannel');
+        showStatus(reason, 'error');
+        return;
+    }
+    setButtonLoading('start');
+    // Set pending BEFORE fetch so polls don't overwrite loading state
+    pendingAction = { type: 'start', retries: 0 };
+    clearInterval(processPolling);
+    processPolling = setInterval(checkProcessStatus, 1000);
+    try {
+        const res = await fetch('/api/process/start', { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+    } catch (e) {
+        showStatus(t('process.startFailed') + ': ' + e.message + ' — ' + t('process.checkLogs'), 'error');
+        pendingAction = null;
+        restoreNormalPolling();
+        updateRunStopButton(false);
+    }
+}
+
+async function stopGateway() {
+    setButtonLoading('stop');
+    pendingAction = { type: 'stop', retries: 0 };
+    clearInterval(processPolling);
+    processPolling = setInterval(checkProcessStatus, 1000);
+    try {
+        const res = await fetch('/api/process/stop', { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+    } catch (e) {
+        showStatus(t('process.stopFailed') + ': ' + e.message, 'error');
+        pendingAction = null;
+        restoreNormalPolling();
+        updateRunStopButton(true);
+    }
+}
+
+document.getElementById('btnRunStop').addEventListener('click', () => {
+    if (gatewayRunning) { stopGateway(); } else { startGateway(); }
+});
+
+// Poll status every 5 seconds
+checkProcessStatus();
+processPolling = setInterval(checkProcessStatus, 5000);
+
+// ── Log Panel ───────────────────────────────────────
+let logOffset = 0;
+let logRunID = -1;
+let logAutoScrollEnabled = true;
+let logHasContent = false;
+
+function handleLogData(data) {
+    const output = document.getElementById('logOutput');
+    const placeholder = document.getElementById('logPlaceholder');
+    if (!output) return;
+
+    const serverRunID = data.log_run_id;
+    const serverSource = data.log_source;
+    const lines = data.logs || [];
+    const total = data.log_total || 0;
+
+    // External gateway (not launched by us) — show appropriate placeholder
+    if (serverSource === 'none') {
+        if (!logHasContent) {
+            if (placeholder) {
+                placeholder.textContent = gatewayRunning ? t('logs.noCapture') : t('logs.noLogs');
+                placeholder.style.display = '';
+            }
+        }
+        return;
+    }
+
+    // Gateway restarted — clear display
+    if (serverRunID !== logRunID && logRunID !== -1) {
+        output.textContent = '';
+        logHasContent = false;
+    }
+    logRunID = serverRunID;
+
+    // Append new lines
+    if (lines.length > 0) {
+        // Hide placeholder
+        if (placeholder) placeholder.style.display = 'none';
+
+        // Remove placeholder node text if it's still the only content
+        if (!logHasContent) {
+            output.textContent = '';
+        }
+
+        output.textContent += lines.join('\n') + '\n';
+        logHasContent = true;
+
+        // Auto-scroll
+        if (logAutoScrollEnabled) {
+            output.scrollTop = output.scrollHeight;
+        }
+    }
+
+    logOffset = total;
+
+    // Show placeholder if we've never had content
+    if (!logHasContent && placeholder) {
+        placeholder.textContent = t('logs.noLogs');
+        placeholder.style.display = '';
+    }
+}
+
+function clearLogDisplay() {
+    const output = document.getElementById('logOutput');
+    const placeholder = document.getElementById('logPlaceholder');
+    if (output) output.textContent = '';
+    logHasContent = false;
+    // Re-add placeholder
+    if (output && placeholder) {
+        output.appendChild(placeholder);
+        placeholder.textContent = t('logs.noLogs');
+        placeholder.style.display = '';
+    }
+    // Keep logOffset/logRunID so we don't re-fetch old lines
+}
+
+// ── Utilities ───────────────────────────────────────
+function esc(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+function maskKey(key) {
+    if (!key || key.length < 8) return '****';
+    return key.substring(0, 4) + '...' + key.substring(key.length - 4);
+}
+
+// ── Init ────────────────────────────────────────────
+applyI18n();
+loadConfig();
+loadAuthStatus().then(() => renderModels());
+
+if (window.location.hash === '#auth') {
+    document.querySelector('[data-panel="panelAuth"]').click();
+    window.location.hash = '';
+}
+</script>
+</body>
+
+</html>

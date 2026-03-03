@@ -9,6 +9,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -57,7 +59,11 @@ type processOptions struct {
 
 const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
 
-func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
+func NewAgentLoop(
+	cfg *config.Config,
+	msgBus *bus.MessageBus,
+	provider providers.LLMProvider,
+) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
 	// Register shared tools to all agents
@@ -98,7 +104,7 @@ func registerSharedTools(
 		}
 
 		// Web tools
-		if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+		searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
 			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
 			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
 			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
@@ -112,10 +118,18 @@ func registerSharedTools(
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 			Proxy:                cfg.Tools.Web.Proxy,
-		}); searchTool != nil {
+		})
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{"error": err.Error()})
+		} else if searchTool != nil {
 			agent.Tools.Register(searchTool)
 		}
-		agent.Tools.Register(tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy))
+		fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+		} else {
+			agent.Tools.Register(fetchTool)
+		}
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		agent.Tools.Register(tools.NewI2CTool())
@@ -160,6 +174,71 @@ func registerSharedTools(
 
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
+
+	// Initialize MCP servers for all agents
+	if al.cfg.Tools.MCP.Enabled {
+		mcpManager := mcp.NewManager()
+		defaultAgent := al.registry.GetDefaultAgent()
+		var workspacePath string
+		if defaultAgent != nil && defaultAgent.Workspace != "" {
+			workspacePath = defaultAgent.Workspace
+		} else {
+			workspacePath = al.cfg.WorkspacePath()
+		}
+
+		if err := mcpManager.LoadFromMCPConfig(ctx, al.cfg.Tools.MCP, workspacePath); err != nil {
+			logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
+				map[string]any{
+					"error": err.Error(),
+				})
+		} else {
+			// Ensure MCP connections are cleaned up on exit, only if initialization succeeded
+			defer func() {
+				if err := mcpManager.Close(); err != nil {
+					logger.ErrorCF("agent", "Failed to close MCP manager",
+						map[string]any{
+							"error": err.Error(),
+						})
+				}
+			}()
+
+			// Register MCP tools for all agents
+			servers := mcpManager.GetServers()
+			uniqueTools := 0
+			totalRegistrations := 0
+			agentIDs := al.registry.ListAgentIDs()
+			agentCount := len(agentIDs)
+
+			for serverName, conn := range servers {
+				uniqueTools += len(conn.Tools)
+				for _, tool := range conn.Tools {
+					for _, agentID := range agentIDs {
+						agent, ok := al.registry.GetAgent(agentID)
+						if !ok {
+							continue
+						}
+						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+						agent.Tools.Register(mcpTool)
+						totalRegistrations++
+						logger.DebugCF("agent", "Registered MCP tool",
+							map[string]any{
+								"agent_id": agentID,
+								"server":   serverName,
+								"tool":     tool.Name,
+								"name":     mcpTool.Name(),
+							})
+					}
+				}
+			}
+			logger.InfoCF("agent", "MCP tools registered successfully",
+				map[string]any{
+					"server_count":        len(servers),
+					"unique_tools":        uniqueTools,
+					"total_registrations": totalRegistrations,
+					"agent_count":         agentCount,
+				})
+		}
+	}
 
 	for al.running.Load() {
 		select {
@@ -301,7 +380,10 @@ func (al *AgentLoop) RecordLastChatID(chatID string) error {
 	return al.state.SetLastChatID(chatID)
 }
 
-func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
+func (al *AgentLoop) ProcessDirect(
+	ctx context.Context,
+	content, sessionKey string,
+) (string, error) {
 	return al.ProcessDirectWithChannel(ctx, content, sessionKey, "cli", "direct")
 }
 
@@ -322,7 +404,10 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 
 // ProcessHeartbeat processes a heartbeat request without session history.
 // Each heartbeat is independent and doesn't accumulate context.
-func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
+func (al *AgentLoop) ProcessHeartbeat(
+	ctx context.Context,
+	content, channel, chatID string,
+) (string, error) {
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
@@ -347,13 +432,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	} else {
 		logContent = utils.Truncate(msg.Content, 80)
 	}
-	logger.InfoCF("agent", fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, logContent),
+	logger.InfoCF(
+		"agent",
+		fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, logContent),
 		map[string]any{
 			"channel":     msg.Channel,
 			"chat_id":     msg.ChatID,
 			"sender_id":   msg.SenderID,
 			"session_key": msg.SessionKey,
-		})
+		},
+	)
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
@@ -414,9 +502,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	})
 }
 
-func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+func (al *AgentLoop) processSystemMessage(
+	ctx context.Context,
+	msg bus.InboundMessage,
+) (string, error) {
 	if msg.Channel != "system" {
-		return "", fmt.Errorf("processSystemMessage called with non-system message channel: %s", msg.Channel)
+		return "", fmt.Errorf(
+			"processSystemMessage called with non-system message channel: %s",
+			msg.Channel,
+		)
 	}
 
 	logger.InfoCF("agent", "Processing system message",
@@ -474,14 +568,22 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 }
 
 // runAgentLoop is the core message processing logic.
-func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
+func (al *AgentLoop) runAgentLoop(
+	ctx context.Context,
+	agent *AgentInstance,
+	opts processOptions,
+) (string, error) {
 	// 0. Record last channel for heartbeat notifications (skip internal channels)
 	if opts.Channel != "" && opts.ChatID != "" {
 		// Don't record internal channels (cli, system, subagent)
 		if !constants.IsInternalChannel(opts.Channel) {
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
 			if err := al.RecordLastChannel(channelKey); err != nil {
-				logger.WarnCF("agent", "Failed to record last channel", map[string]any{"error": err.Error()})
+				logger.WarnCF(
+					"agent",
+					"Failed to record last channel",
+					map[string]any{"error": err.Error()},
+				)
 			}
 		}
 	}
@@ -563,7 +665,10 @@ func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string
 	return ""
 }
 
-func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, channelName, channelID string) {
+func (al *AgentLoop) handleReasoning(
+	ctx context.Context,
+	reasoningContent, channelName, channelID string,
+) {
 	if reasoningContent == "" || channelName == "" || channelID == "" {
 		return
 	}
@@ -574,11 +679,36 @@ func (al *AgentLoop) handleReasoning(ctx context.Context, reasoningContent, chan
 		return
 	}
 
-	al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+	// Use a short timeout so the goroutine does not block indefinitely when
+	// the outbound bus is full.  Reasoning output is best-effort; dropping it
+	// is acceptable to avoid goroutine accumulation.
+	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pubCancel()
+
+	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
 		Channel: channelName,
 		ChatID:  channelID,
 		Content: reasoningContent,
-	})
+	}); err != nil {
+		// Treat context.DeadlineExceeded / context.Canceled as expected
+		// (bus full under load, or parent canceled).  Check the error
+		// itself rather than ctx.Err(), because pubCtx may time out
+		// (5 s) while the parent ctx is still active.
+		// Also treat ErrBusClosed as expected — it occurs during normal
+		// shutdown when the bus is closed before all goroutines finish.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+			errors.Is(err, bus.ErrBusClosed) {
+			logger.DebugCF("agent", "Reasoning publish skipped (timeout/cancel)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		} else {
+			logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		}
+	}
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
@@ -631,22 +761,33 @@ func (al *AgentLoop) runLLMIteration(
 
 		callLLM := func() (*providers.LLMResponse, error) {
 			if len(agent.Candidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
+				fbResult, fbErr := al.fallback.Execute(
+					ctx,
+					agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
-							"max_tokens":       agent.MaxTokens,
-							"temperature":      agent.Temperature,
-							"prompt_cache_key": agent.ID,
-						})
+						return agent.Provider.Chat(
+							ctx,
+							messages,
+							providerToolDefs,
+							model,
+							map[string]any{
+								"max_tokens":       agent.MaxTokens,
+								"temperature":      agent.Temperature,
+								"prompt_cache_key": agent.ID,
+							},
+						)
 					},
 				)
 				if fbErr != nil {
 					return nil, fbErr
 				}
 				if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
-					logger.InfoCF("agent", fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
-						fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
-						map[string]any{"agent_id": agent.ID, "iteration": iteration})
+					logger.InfoCF(
+						"agent",
+						fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
+							fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
+						map[string]any{"agent_id": agent.ID, "iteration": iteration},
+					)
 				}
 				return fbResult.Response, nil
 			}
@@ -666,16 +807,45 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			errMsg := strings.ToLower(err.Error())
-			isContextError := strings.Contains(errMsg, "token") ||
-				strings.Contains(errMsg, "context") ||
+
+			// Check if this is a network/HTTP timeout — not a context window error.
+			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(errMsg, "deadline exceeded") ||
+				strings.Contains(errMsg, "client.timeout") ||
+				strings.Contains(errMsg, "timed out") ||
+				strings.Contains(errMsg, "timeout exceeded")
+
+			// Detect real context window / token limit errors, excluding network timeouts.
+			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
+				strings.Contains(errMsg, "context window") ||
+				strings.Contains(errMsg, "maximum context length") ||
+				strings.Contains(errMsg, "token limit") ||
+				strings.Contains(errMsg, "too many tokens") ||
+				strings.Contains(errMsg, "max_tokens") ||
 				strings.Contains(errMsg, "invalidparameter") ||
-				strings.Contains(errMsg, "length")
+				strings.Contains(errMsg, "prompt is too long") ||
+				strings.Contains(errMsg, "request too large"))
+
+			if isTimeoutError && retry < maxRetries {
+				backoff := time.Duration(retry+1) * 5 * time.Second
+				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
+					"error":   err.Error(),
+					"retry":   retry,
+					"backoff": backoff.String(),
+				})
+				time.Sleep(backoff)
+				continue
+			}
 
 			if isContextError && retry < maxRetries {
-				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]any{
-					"error": err.Error(),
-					"retry": retry,
-				})
+				logger.WarnCF(
+					"agent",
+					"Context window error detected, attempting compression",
+					map[string]any{
+						"error": err.Error(),
+						"retry": retry,
+					},
+				)
 
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
@@ -707,7 +877,12 @@ func (al *AgentLoop) runLLMIteration(
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
-		go al.handleReasoning(ctx, response.Reasoning, opts.Channel, al.targetReasoningChannelID(opts.Channel))
+		go al.handleReasoning(
+			ctx,
+			response.Reasoning,
+			opts.Channel,
+			al.targetReasoningChannelID(opts.Channel),
+		)
 
 		logger.DebugCF("agent", "LLM response",
 			map[string]any{
@@ -1009,7 +1184,11 @@ func formatMessagesForLog(messages []providers.Message) string {
 			for _, tc := range msg.ToolCalls {
 				fmt.Fprintf(&sb, "    - ID: %s, Type: %s, Name: %s\n", tc.ID, tc.Type, tc.Name)
 				if tc.Function != nil {
-					fmt.Fprintf(&sb, "      Arguments: %s\n", utils.Truncate(tc.Function.Arguments, 200))
+					fmt.Fprintf(
+						&sb,
+						"      Arguments: %s\n",
+						utils.Truncate(tc.Function.Arguments, 200),
+					)
 				}
 			}
 		}
@@ -1038,7 +1217,11 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 		fmt.Fprintf(&sb, "  [%d] Type: %s, Name: %s\n", i, tool.Type, tool.Function.Name)
 		fmt.Fprintf(&sb, "      Description: %s\n", tool.Function.Description)
 		if len(tool.Function.Parameters) > 0 {
-			fmt.Fprintf(&sb, "      Parameters: %s\n", utils.Truncate(fmt.Sprintf("%v", tool.Function.Parameters), 200))
+			fmt.Fprintf(
+				&sb,
+				"      Parameters: %s\n",
+				utils.Truncate(fmt.Sprintf("%v", tool.Function.Parameters), 200),
+			)
 		}
 	}
 	sb.WriteString("]")
@@ -1135,7 +1318,9 @@ func (al *AgentLoop) summarizeBatch(
 	existingSummary string,
 ) (string, error) {
 	var sb strings.Builder
-	sb.WriteString("Provide a concise summary of this conversation segment, preserving core context and key points.\n")
+	sb.WriteString(
+		"Provide a concise summary of this conversation segment, preserving core context and key points.\n",
+	)
 	if existingSummary != "" {
 		sb.WriteString("Existing context: ")
 		sb.WriteString(existingSummary)

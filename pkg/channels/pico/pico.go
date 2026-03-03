@@ -292,8 +292,8 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 
 	// Check Authorization header
 	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		if strings.TrimPrefix(auth, "Bearer ") == token {
+	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+		if after == token {
 			return true
 		}
 	}

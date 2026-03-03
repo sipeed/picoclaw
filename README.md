@@ -295,6 +295,8 @@ That's it! You have a working AI assistant in 2 minutes.
 
 Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or WeCom
 
+> **Note**: All webhook-based channels (LINE, WeCom, etc.) are served on a single shared Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). There are no per-channel ports to configure. Note: Feishu uses WebSocket/SDK mode and does not use the shared HTTP webhook server.
+
 | Channel      | Setup                              |
 | ------------ | ---------------------------------- |
 | **Telegram** | Easy (just a token)                |
@@ -303,7 +305,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, DingTalk, LINE, or We
 | **QQ**       | Easy (AppID + AppSecret)           |
 | **DingTalk** | Medium (app credentials)           |
 | **LINE**     | Medium (credentials + webhook URL) |
-| **WeCom**    | Medium (CorpID + webhook setup)    |
+| **WeCom AI Bot** | Medium (Token + AES key)       |
 
 <details>
 <summary><b>Telegram</b> (Recommended)</summary>
@@ -364,8 +366,7 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"],
-      "mention_only": false
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -378,9 +379,31 @@ picoclaw gateway
 * Bot Permissions: `Send Messages`, `Read Message History`
 * Open the generated invite URL and add the bot to your server
 
-**Optional: Mention-only mode**
+**Optional: Group trigger mode**
 
-Set `"mention_only": true` to make the bot respond only when @-mentioned. Useful for shared servers where you want the bot to respond only when explicitly called.
+By default the bot responds to all messages in a server channel. To restrict responses to @-mentions only, add:
+
+```json
+{
+  "channels": {
+    "discord": {
+      "group_trigger": { "mention_only": true }
+    }
+  }
+}
+```
+
+You can also trigger by keyword prefixes (e.g. `!bot`):
+
+```json
+{
+  "channels": {
+    "discord": {
+      "group_trigger": { "prefixes": ["!bot"] }
+    }
+  }
+}
+```
 
 **6. Run**
 
@@ -501,8 +524,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -510,13 +531,15 @@ picoclaw gateway
 }
 ```
 
+> LINE webhook is served on the shared Gateway server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`).
+
 **3. Set up Webhook URL**
 
 LINE requires HTTPS for webhooks. Use a reverse proxy or tunnel:
 
 ```bash
-# Example with ngrok
-ngrok http 18791
+# Example with ngrok (gateway default port is 18790)
+ngrok http 18790
 ```
 
 Then set the Webhook URL in LINE Developers Console to `https://your-domain/webhook/line` and enable **Use webhook**.
@@ -529,19 +552,18 @@ picoclaw gateway
 
 > In group chats, the bot responds only when @mentioned. Replies quote the original message.
 
-> **Docker Compose**: Add `ports: ["18791:18791"]` to the `picoclaw-gateway` service to expose the webhook port.
-
 </details>
 
 <details>
 <summary><b>WeCom (企业微信)</b></summary>
 
-PicoClaw supports two types of WeCom integration:
+PicoClaw supports three types of WeCom integration:
 
-**Option 1: WeCom Bot (智能机器人)** - Easier setup, supports group chats
-**Option 2: WeCom App (自建应用)** - More features, proactive messaging
+**Option 1: WeCom Bot (Bot)** - Easier setup, supports group chats
+**Option 2: WeCom App (Custom App)** - More features, proactive messaging, private chat only
+**Option 3: WeCom AI Bot (AI Bot)** - Official AI Bot, streaming replies, supports group & private chat
 
-See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detailed setup instructions.
+See [WeCom AI Bot Configuration Guide](docs/channels/wecom/wecom_aibot/README.zh.md) for detailed setup instructions.
 
 **Quick Setup - WeCom Bot:**
 
@@ -560,14 +582,14 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
   }
 }
 ```
+
+> WeCom webhook is served on the shared Gateway server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`).
 
 **Quick Setup - WeCom App:**
 
@@ -576,10 +598,11 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 * Go to WeCom Admin Console → App Management → Create App
 * Copy **AgentId** and **Secret**
 * Go to "My Company" page, copy **CorpID**
+
 **2. Configure receive message**
 
 * In App details, click "Receive Message" → "Set API"
-* Set URL to `http://your-server:18792/webhook/wecom-app`
+* Set URL to `http://your-server:18790/webhook/wecom-app`
 * Generate **Token** and **EncodingAESKey**
 
 **3. Configure**
@@ -594,8 +617,6 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -609,7 +630,40 @@ See [WeCom App Configuration Guide](docs/wecom-app-configuration.md) for detaile
 picoclaw gateway
 ```
 
-> **Note**: WeCom App requires opening port 18792 for webhook callbacks. Use a reverse proxy for HTTPS.
+> **Note**: WeCom webhook callbacks are served on the Gateway port (default 18790). Use a reverse proxy for HTTPS.
+
+**Quick Setup - WeCom AI Bot:**
+
+**1. Create an AI Bot**
+
+* Go to WeCom Admin Console → App Management → AI Bot
+* In the AI Bot settings, configure callback URL: `http://your-server:18791/webhook/wecom-aibot`
+* Copy **Token** and click "Random Generate" for **EncodingAESKey**
+
+**2. Configure**
+
+```json
+{
+  "channels": {
+    "wecom_aibot": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "allow_from": [],
+      "welcome_message": "Hello! How can I help you?"
+    }
+  }
+}
+```
+
+**3. Run**
+
+```bash
+picoclaw gateway
+```
+
+> **Note**: WeCom AI Bot uses streaming pull protocol — no reply timeout concerns. Long tasks (>30 seconds) automatically switch to `response_url` push delivery.
 
 </details>
 
@@ -622,6 +676,31 @@ Connect Picoclaw to the Agent Social Network simply by sending a single message 
 ## ⚙️ Configuration
 
 Config file: `~/.picoclaw/config.json`
+
+### Environment Variables
+
+You can override default paths using environment variables. This is useful for portable installations, containerized deployments, or running picoclaw as a system service. These variables are independent and control different paths.
+
+| Variable          | Description                                                                                                                             | Default Path              |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Overrides the path to the configuration file. This directly tells picoclaw which `config.json` to load, ignoring all other locations. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Overrides the root directory for picoclaw data. This changes the default location of the `workspace` and other data directories.          | `~/.picoclaw`             |
+
+**Examples:**
+
+```bash
+# Run picoclaw using a specific config file
+# The workspace path will be read from within that config file
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Run picoclaw with all its data stored in /opt/picoclaw
+# Config will be loaded from the default ~/.picoclaw/config.json
+# Workspace will be created at /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Use both for a fully customized setup
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### Workspace Layout
 
@@ -846,7 +925,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 #### 📋 All Supported Vendors
 
 | Vendor              | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
-| ------------------- | ----------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
+| ------------------- | ----------------- |-----------------------------------------------------| --------- | ---------------------------------------------------------------- |
 | **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
 | **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
@@ -858,6 +937,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
+| **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1                           | OpenAI    | Your LiteLLM proxy key                                            |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
 | **火山引擎**        | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://console.volcengine.com)                        |
@@ -958,6 +1038,19 @@ This design also enables **multi-agent support** with flexible provider selectio
   "request_timeout": 300
 }
 ```
+
+**LiteLLM Proxy**
+
+```json
+{
+  "model_name": "lite-gpt4",
+  "model": "litellm/lite-gpt4",
+  "api_base": "http://localhost:4000/v1",
+  "api_key": "sk-..."
+}
+```
+
+PicoClaw strips only the outer `litellm/` prefix before sending the request, so proxy aliases like `litellm/lite-gpt4` send `lite-gpt4`, while `litellm/openai/gpt-4o` sends `openai/gpt-4o`.
 
 #### Load Balancing
 
