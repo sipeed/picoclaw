@@ -448,9 +448,13 @@ func safePathSegment(v string) (string, bool) {
 }
 
 // loadUserMemoryContext loads optional per-user memory content.
-// Supported lookup order:
-// 1) <workspace>/users/<channel>/<chatID>/MEMORY.md
-// 2) <workspace>/users/<chatID>/MEMORY.md
+// Supported lookup roots (in order):
+// 1) <workspace>/users/<channel>/<chatID>
+// 2) <workspace>/users/<chatID>
+//
+// For each root, it reads:
+// - MEMORY.md or memory/MEMORY.md (long-term)
+// - memory/YYYYMM/YYYYMMDD.md for recent daily notes (last 3 days)
 func (cb *ContextBuilder) loadUserMemoryContext(channel, chatID string) string {
 	channelSeg, okChannel := safePathSegment(channel)
 	chatSeg, okChat := safePathSegment(chatID)
@@ -458,19 +462,58 @@ func (cb *ContextBuilder) loadUserMemoryContext(channel, chatID string) string {
 		return ""
 	}
 
-	candidates := []string{}
+	roots := []string{}
 	if okChannel {
-		candidates = append(candidates, filepath.Join(cb.workspace, "users", channelSeg, chatSeg, "MEMORY.md"))
+		roots = append(roots, filepath.Join(cb.workspace, "users", channelSeg, chatSeg))
 	}
-	candidates = append(candidates, filepath.Join(cb.workspace, "users", chatSeg, "MEMORY.md"))
+	roots = append(roots, filepath.Join(cb.workspace, "users", chatSeg))
 
-	for _, p := range candidates {
-		if data, err := os.ReadFile(p); err == nil {
-			text := strings.TrimSpace(string(data))
-			if text != "" {
-				return "## User-specific Memory\n\n" + text
+	for _, root := range roots {
+		longTerm := ""
+		for _, longTermPath := range []string{filepath.Join(root, "MEMORY.md"), filepath.Join(root, "memory", "MEMORY.md")} {
+			if data, err := os.ReadFile(longTermPath); err == nil {
+				text := strings.TrimSpace(string(data))
+				if text != "" {
+					longTerm = text
+					break
+				}
 			}
 		}
+
+		recentNotes := ""
+		memoryDir := filepath.Join(root, "memory")
+		for i := range 3 {
+			date := time.Now().AddDate(0, 0, -i).Format("20060102")
+			notePath := filepath.Join(memoryDir, date[:6], date+".md")
+			if data, err := os.ReadFile(notePath); err == nil {
+				text := strings.TrimSpace(string(data))
+				if text != "" {
+					if recentNotes != "" {
+						recentNotes += "\n\n---\n\n"
+					}
+					recentNotes += text
+				}
+			}
+		}
+
+		if longTerm == "" && recentNotes == "" {
+			continue
+		}
+
+		var sb strings.Builder
+		sb.WriteString("## User-specific Memory\n\n")
+		if longTerm != "" {
+			sb.WriteString("### Long-term Memory\n\n")
+			sb.WriteString(longTerm)
+		}
+		if recentNotes != "" {
+			if longTerm != "" {
+				sb.WriteString("\n\n")
+			}
+			sb.WriteString("### Recent Daily Notes\n\n")
+			sb.WriteString(recentNotes)
+		}
+		return sb.String()
 	}
 
 	return ""
