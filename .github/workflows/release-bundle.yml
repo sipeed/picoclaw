@@ -145,8 +145,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Build launcher
+        working-directory: cmd/picoclaw-launcher
         run: |
-          go tool wails build -tags stdjson -ldflags "-s -w" -o picoclaw-launcher.exe -appdir cmd/picoclaw-launcher
+          go tool wails build -tags stdjson -ldflags "-s -w" -o picoclaw-launcher.exe
 
       - name: Upload launcher artifact
         uses: actions/upload-artifact@v4
@@ -187,8 +188,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Build launcher
+        working-directory: cmd/picoclaw-launcher
         run: |
-          go tool wails build -tags stdjson -ldflags "-s -w" -o picoclaw-launcher -appdir cmd/picoclaw-launcher
+          go tool wails build -tags stdjson -ldflags "-s -w" -o picoclaw-launcher
 
       - name: Upload launcher artifact
         uses: actions/upload-artifact@v4
@@ -220,8 +222,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Build launcher (universal)
+        working-directory: cmd/picoclaw-launcher
         run: |
-          go tool wails build -tags stdjson -ldflags "-s -w" -platform darwin/universal -o picoclaw-launcher -appdir cmd/picoclaw-launcher
+          go tool wails build -tags stdjson -ldflags "-s -w" -platform darwin/universal -o picoclaw-launcher
 
       - name: Upload launcher artifact
         uses: actions/upload-artifact@v4
