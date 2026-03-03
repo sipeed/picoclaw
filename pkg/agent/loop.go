@@ -118,6 +118,9 @@ func registerSharedTools(
 			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+			ExaAPIKey:            cfg.Tools.Web.Exa.APIKey,
+			ExaMaxResults:        cfg.Tools.Web.Exa.MaxResults,
+			ExaEnabled:           cfg.Tools.Web.Exa.Enabled,
 			Proxy:                cfg.Tools.Web.Proxy,
 		})
 		if err != nil {
