@@ -192,7 +192,53 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("API request failed:\n  Status: %d\n  Body:   %s", resp.StatusCode, string(body))
 	}
 
-	return parseResponse(body)
+	out, err := parseResponse(body)
+	if err != nil {
+		return nil, wrapResponseParseError(err, body, resp.Header.Get("Content-Type"), p.apiBase)
+	}
+
+	return out, nil
+}
+
+func wrapResponseParseError(err error, body []byte, contentType, apiBase string) error {
+	trimmedContentType := strings.TrimSpace(contentType)
+	if looksLikeHTML(body, trimmedContentType) {
+		contentTypeHint := ""
+		if trimmedContentType != "" {
+			contentTypeHint = fmt.Sprintf(" (content-type: %s)", trimmedContentType)
+		}
+		return fmt.Errorf(
+			"expected JSON response from %s/chat/completions, but received HTML%s; check api_base or proxy configuration. Response preview: %s",
+			apiBase,
+			contentTypeHint,
+			responsePreview(body, 160),
+		)
+	}
+	return err
+}
+
+func looksLikeHTML(body []byte, contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "application/xhtml+xml") {
+		return true
+	}
+
+	trimmed := strings.ToLower(strings.TrimSpace(string(body)))
+	return strings.HasPrefix(trimmed, "<!doctype html") ||
+		strings.HasPrefix(trimmed, "<html") ||
+		strings.HasPrefix(trimmed, "<head") ||
+		strings.HasPrefix(trimmed, "<body")
+}
+
+func responsePreview(body []byte, max int) string {
+	preview := strings.TrimSpace(string(body))
+	if preview == "" {
+		return "<empty>"
+	}
+	if len(preview) <= max {
+		return preview
+	}
+	return preview[:max] + "..."
 }
 
 func parseResponse(body []byte) (*LLMResponse, error) {
