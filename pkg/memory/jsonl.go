@@ -236,11 +236,19 @@ func (s *JSONLStore) addMsg(sessionKey string, msg providers.Message) error {
 		return fmt.Errorf("memory: open jsonl for append: %w", err)
 	}
 	_, writeErr := f.Write(line)
-	closeErr := f.Close()
 	if writeErr != nil {
+		f.Close()
 		return fmt.Errorf("memory: append message: %w", writeErr)
 	}
-	if closeErr != nil {
+	// Flush to physical storage before closing. This matches the
+	// durability guarantee of writeMeta and rewriteJSONL (which use
+	// WriteFileAtomic with fsync). Without Sync, a power loss could
+	// leave the append in the kernel page cache only — lost on reboot.
+	if syncErr := f.Sync(); syncErr != nil {
+		f.Close()
+		return fmt.Errorf("memory: sync jsonl: %w", syncErr)
+	}
+	if closeErr := f.Close(); closeErr != nil {
 		return fmt.Errorf("memory: close jsonl: %w", closeErr)
 	}
 
