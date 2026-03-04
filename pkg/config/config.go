@@ -666,8 +666,7 @@ type MCPServerConfig struct {
 
 // MCPConfig defines configuration for all MCP servers
 type MCPConfig struct {
-	// Enabled globally enables/disables MCP integration
-	Enabled bool `json:"enabled" env:"PICOCLAW_TOOLS_MCP_ENABLED"`
+	ToolConfig `env:"PICOCLAW_TOOLS_MCP_"`
 	// Servers is a map of server name to server configuration
 	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
 }
@@ -892,6 +891,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.WebFetch.Enabled
 	case "write_file":
 		return t.WriteFile.Enabled
+	case "mcp":
+		return t.MCP.Enabled
 	default:
 		return true
 	}

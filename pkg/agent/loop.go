@@ -165,32 +165,40 @@ func registerSharedTools(
 		}
 
 		// Skill discovery and installation tools
-		registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
-			MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-			ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
-		})
-		searchCache := skills.NewSearchCache(
-			cfg.Tools.Skills.SearchCache.MaxSize,
-			time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
-		)
-		if cfg.Tools.IsToolEnabled("find_skills") {
-			agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
-		}
-		if cfg.Tools.IsToolEnabled("install_skill") {
-			agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
+		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
+		install_skills_enable := cfg.Tools.IsToolEnabled("install_skill")
+		if find_skills_enable || install_skills_enable {
+			registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
+				MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
+				ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+			})
+
+			if find_skills_enable {
+				searchCache := skills.NewSearchCache(
+					cfg.Tools.Skills.SearchCache.MaxSize,
+					time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
+				)
+				agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
+			}
+
+			if install_skills_enable {
+				agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
+			}
 		}
 
 		// Spawn tool with allowlist checker
-		if cfg.Tools.IsToolEnabled("subagent") {
-			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
-			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
-			if cfg.Tools.IsToolEnabled("spawn") {
+		if cfg.Tools.IsToolEnabled("spawn") {
+			if cfg.Tools.IsToolEnabled("subagent") {
+				subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
+				subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				currentAgentID := agentID
 				spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
 					return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
 				})
 				agent.Tools.Register(spawnTool)
+			} else {
+				logger.WarnCF("agent", "spawn tool requires subagent to be enabled", nil)
 			}
 		}
 	}
@@ -200,7 +208,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
 
 	// Initialize MCP servers for all agents
-	if al.cfg.Tools.MCP.Enabled {
+	if al.cfg.Tools.IsToolEnabled("mcp") {
 		mcpManager := mcp.NewManager()
 		// Ensure MCP connections are cleaned up on exit, regardless of initialization success
 		// This fixes resource leak when LoadFromMCPConfig partially succeeds then fails
@@ -242,18 +250,17 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						if !ok {
 							continue
 						}
-						if al.cfg.Tools.IsToolEnabled("mcp") {
-							mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
-							agent.Tools.Register(mcpTool)
-							totalRegistrations++
-							logger.DebugCF("agent", "Registered MCP tool",
-								map[string]any{
-									"agent_id": agentID,
-									"server":   serverName,
-									"tool":     tool.Name,
-									"name":     mcpTool.Name(),
-								})
-						}
+
+						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+						agent.Tools.Register(mcpTool)
+						totalRegistrations++
+						logger.DebugCF("agent", "Registered MCP tool",
+							map[string]any{
+								"agent_id": agentID,
+								"server":   serverName,
+								"tool":     tool.Name,
+								"name":     mcpTool.Name(),
+							})
 					}
 				}
 			}
