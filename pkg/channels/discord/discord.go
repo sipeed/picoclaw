@@ -353,12 +353,12 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 			if m.ReferencedMessage.Author != nil {
 				refAuthor = m.ReferencedMessage.Author.Username
 			}
-			refContent = c.resolveDiscordRefs(s, refContent)
+			refContent = c.resolveDiscordRefs(s, refContent, m.GuildID)
 			content = fmt.Sprintf("[quoted message from %s]: %s\n\n%s",
 				refAuthor, refContent, content)
 		}
 	}
-	content = c.resolveDiscordRefs(s, content)
+	content = c.resolveDiscordRefs(s, content, m.GuildID)
 
 	senderID := m.Author.ID
 
@@ -532,27 +532,35 @@ func applyDiscordProxy(session *discordgo.Session, proxyAddr string) error {
 
 // resolveDiscordRefs resolves channel references (<#id> → #channel-name) and
 // expands Discord message links to show the linked message content.
-func (c *DiscordChannel) resolveDiscordRefs(s *discordgo.Session, text string) string {
+// Only links pointing to the same guild are expanded to prevent cross-guild leakage.
+func (c *DiscordChannel) resolveDiscordRefs(s *discordgo.Session, text string, guildID string) string {
 	// 1. Resolve channel references: <#id> → #channel-name
 	text = channelRefRe.ReplaceAllStringFunc(text, func(match string) string {
 		parts := channelRefRe.FindStringSubmatch(match)
 		if len(parts) < 2 {
 			return match
 		}
-		ch, err := s.Channel(parts[1])
-		if err != nil {
-			return match
+		// Prefer session state cache to avoid API calls
+		if ch, err := s.State.Channel(parts[1]); err == nil {
+			return "#" + ch.Name
 		}
-		return "#" + ch.Name
+		if ch, err := s.Channel(parts[1]); err == nil {
+			return "#" + ch.Name
+		}
+		return match
 	})
 
-	// 2. Expand Discord message links (max 3)
+	// 2. Expand Discord message links (max 3, same guild only)
 	matches := msgLinkRe.FindAllStringSubmatch(text, 3)
 	for _, m := range matches {
 		if len(m) < 4 {
 			continue
 		}
-		channelID, messageID := m[2], m[3]
+		linkGuildID, channelID, messageID := m[1], m[2], m[3]
+		// Security: only expand links from the same guild
+		if linkGuildID != guildID {
+			continue
+		}
 		msg, err := s.ChannelMessage(channelID, messageID)
 		if err != nil || msg == nil || msg.Content == "" {
 			continue
