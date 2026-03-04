@@ -104,7 +104,11 @@ func NewAgentInstance(
 		temperature = *defaults.Temperature
 	}
 
-	thinkingLevel := parseThinkingLevel(defaults.ThinkingLevel)
+	var thinkingLevelStr string
+	if mc, err := cfg.GetModelConfig(model); err == nil {
+		thinkingLevelStr = mc.ThinkingLevel
+	}
+	thinkingLevel := parseThinkingLevel(thinkingLevelStr)
 
 	summarizeMessageThreshold := defaults.SummarizeMessageThreshold
 	if summarizeMessageThreshold == 0 {
