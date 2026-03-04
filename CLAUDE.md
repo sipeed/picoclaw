@@ -61,4 +61,4 @@ Lint: `golangci-lint run`
 | [`todo/TASKS-2.md`](todo/TASKS-2.md) | **Subagent Orchestration (Container Model)** — SubagentContainer、Orchestrator、Presets enforcement、Subagent Plan Mode |
 | [`todo/TASKS-3.md`](todo/TASKS-3.md) | **Session DAG (SQLite Store)** — セッション管理の SQLite 移行、Turn ベース線形+セッション間 DAG、Fork/Report フロー |
 | [`todo/TASKS-4.md`](todo/TASKS-4.md) | **Mini App & Static Serving** — 静的配信の汎用化、バンドラ導入、フロントエンドテスト追加 |
-| [`todo/TASKS-5.md`](todo/TASKS-5.md) | **Heartbeat Worktree Management** — worktree 一覧・点検・手動 merge/dispose の CLI/Mini App UI |
+| [`todo/TASKS-5.md`](todo/TASKS-5.md) | ~~**Heartbeat Worktree Management**~~ ✅ 実装済み（`/plan worktrees` の `list/inspect/merge/dispose`、安全化した `PruneOrphaned`、Mini App `/miniapp/api/worktrees` + Git タブ UI） |
