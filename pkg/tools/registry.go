@@ -71,10 +71,8 @@ func (r *ToolRegistry) ExecuteWithContext(
 	}
 
 	// Inject channel/chatID into ctx so tools read them via ToolChannel(ctx)/ToolChatID(ctx).
-	// Immutable per-call — no shared mutable state on tool instances.
-	if channel != "" && chatID != "" {
-		ctx = WithToolContext(ctx, channel, chatID)
-	}
+	// Always inject — tools validate what they require.
+	ctx = WithToolContext(ctx, channel, chatID)
 
 	// If tool implements AsyncExecutor and callback is provided, use ExecuteAsync.
 	// The callback is a call parameter, not mutable state on the tool instance.

@@ -332,13 +332,24 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		}
 	}
 
+	// Fall back to "cli"/"direct" for non-conversation callers (e.g., CLI, tests)
+	// to preserve the same defaults as the original NewSubagentTool constructor.
+	channel := ToolChannel(ctx)
+	if channel == "" {
+		channel = "cli"
+	}
+	chatID := ToolChatID(ctx)
+	if chatID == "" {
+		chatID = "direct"
+	}
+
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
 		Provider:      sm.provider,
 		Model:         sm.defaultModel,
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
-	}, messages, ToolChannel(ctx), ToolChatID(ctx))
+	}, messages, channel, chatID)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)
 	}

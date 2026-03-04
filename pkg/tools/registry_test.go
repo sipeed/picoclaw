@@ -156,7 +156,7 @@ func TestToolRegistry_ExecuteWithContext_InjectsToolContext(t *testing.T) {
 	}
 }
 
-func TestToolRegistry_ExecuteWithContext_SkipsEmptyContext(t *testing.T) {
+func TestToolRegistry_ExecuteWithContext_EmptyContext(t *testing.T) {
 	r := NewToolRegistry()
 	ct := &mockContextAwareTool{
 		mockRegistryTool: *newMockTool("ctx_tool", "needs context"),
@@ -168,6 +168,7 @@ func TestToolRegistry_ExecuteWithContext_SkipsEmptyContext(t *testing.T) {
 	if ct.lastCtx == nil {
 		t.Fatal("expected Execute to be called")
 	}
+	// Empty values are still injected; tools decide what to do with them.
 	if got := ToolChannel(ct.lastCtx); got != "" {
 		t.Errorf("expected empty channel, got %q", got)
 	}

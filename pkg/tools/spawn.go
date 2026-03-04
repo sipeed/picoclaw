@@ -83,9 +83,17 @@ func (t *SpawnTool) execute(ctx context.Context, args map[string]any, cb AsyncCa
 		return ErrorResult("Subagent manager not configured")
 	}
 
-	// Read channel/chatID from context (injected by registry)
+	// Read channel/chatID from context (injected by registry).
+	// Fall back to "cli"/"direct" for non-conversation callers (e.g., CLI, tests)
+	// to preserve the same defaults as the original NewSpawnTool constructor.
 	channel := ToolChannel(ctx)
+	if channel == "" {
+		channel = "cli"
+	}
 	chatID := ToolChatID(ctx)
+	if chatID == "" {
+		chatID = "direct"
+	}
 
 	// Pass callback to manager for async completion notification
 	result, err := t.manager.Spawn(ctx, task, label, agentID, channel, chatID, cb)

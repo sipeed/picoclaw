@@ -14,30 +14,33 @@ type Tool interface {
 //
 // Carried via context.Value so that concurrent tool calls each receive
 // their own immutable copy — no mutable state on singleton tool instances.
+//
+// Keys are unexported pointer-typed vars — guaranteed collision-free,
+// and only accessible through the helper functions below.
 
-type ToolContextKey string
+type toolCtxKey struct{ name string }
 
-const (
-	CtxKeyChannel ToolContextKey = "channel"
-	CtxKeyChatID  ToolContextKey = "chatID"
+var (
+	ctxKeyChannel = &toolCtxKey{"channel"}
+	ctxKeyChatID  = &toolCtxKey{"chatID"}
 )
 
 // WithToolContext returns a child context carrying channel and chatID.
 func WithToolContext(ctx context.Context, channel, chatID string) context.Context {
-	ctx = context.WithValue(ctx, CtxKeyChannel, channel)
-	ctx = context.WithValue(ctx, CtxKeyChatID, chatID)
+	ctx = context.WithValue(ctx, ctxKeyChannel, channel)
+	ctx = context.WithValue(ctx, ctxKeyChatID, chatID)
 	return ctx
 }
 
 // ToolChannel extracts the channel from ctx, or "" if unset.
 func ToolChannel(ctx context.Context) string {
-	v, _ := ctx.Value(CtxKeyChannel).(string)
+	v, _ := ctx.Value(ctxKeyChannel).(string)
 	return v
 }
 
 // ToolChatID extracts the chatID from ctx, or "" if unset.
 func ToolChatID(ctx context.Context) string {
-	v, _ := ctx.Value(CtxKeyChatID).(string)
+	v, _ := ctx.Value(ctxKeyChatID).(string)
 	return v
 }
 
