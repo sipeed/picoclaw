@@ -378,17 +378,11 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
 
 	// Propagate store to send_file tools in all agents.
-	for _, id := range al.registry.ListAgentIDs() {
-		agent, ok := al.registry.GetAgent(id)
-		if !ok {
-			continue
+	al.registry.ForEachTool("send_file", func(t tools.Tool) {
+		if sf, ok := t.(*tools.SendFileTool); ok {
+			sf.SetMediaStore(s)
 		}
-		if tool, ok := agent.Tools.Get("send_file"); ok {
-			if sf, ok := tool.(*tools.SendFileTool); ok {
-				sf.SetMediaStore(s)
-			}
-		}
-	}
+	})
 }
 
 // SetTranscriber injects a voice transcriber for agent-level audio transcription.
