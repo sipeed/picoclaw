@@ -395,6 +395,88 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
 }
 
+type GLMSearchProvider struct {
+	apiKey       string
+	baseURL      string
+	searchEngine string
+	proxy        string
+	client       *http.Client
+}
+
+func (p *GLMSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := p.baseURL
+	if searchURL == "" {
+		searchURL = "https://open.bigmodel.cn/api/paas/v4/web_search"
+	}
+
+	payload := map[string]any{
+		"search_query":  query,
+		"search_engine": p.searchEngine,
+		"search_intent": false,
+		"count":         count,
+		"content_size":  "medium",
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GLM Search API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp struct {
+		SearchResult []struct {
+			Title   string `json:"title"`
+			Content string `json:"content"`
+			Link    string `json:"link"`
+		} `json:"search_result"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	results := searchResp.SearchResult
+	if len(results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Results for: %s (via GLM Search)", query))
+	for i, item := range results {
+		if i >= count {
+			break
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.Link))
+		if item.Content != "" {
+			lines = append(lines, fmt.Sprintf("   %s", item.Content))
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
 type WebSearchTool struct {
 	provider   SearchProvider
 	maxResults int
@@ -413,6 +495,11 @@ type WebSearchToolOptions struct {
 	PerplexityAPIKey     string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
+	GLMSearchAPIKey      string
+	GLMSearchBaseURL     string
+	GLMSearchEngine      string
+	GLMSearchMaxResults  int
+	GLMSearchEnabled     bool
 	Proxy                string
 }
 
@@ -420,7 +507,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Perplexity > Brave > Tavily > DuckDuckGo
+	// Priority: Perplexity > Brave > Tavily > DuckDuckGo > GLM Search
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
 		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
@@ -461,6 +548,25 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy, client: client}
 		if opts.DuckDuckGoMaxResults > 0 {
 			maxResults = opts.DuckDuckGoMaxResults
+		}
+	} else if opts.GLMSearchEnabled && opts.GLMSearchAPIKey != "" {
+		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create HTTP client for GLM Search: %w", err)
+		}
+		searchEngine := opts.GLMSearchEngine
+		if searchEngine == "" {
+			searchEngine = "search_std"
+		}
+		provider = &GLMSearchProvider{
+			apiKey:       opts.GLMSearchAPIKey,
+			baseURL:      opts.GLMSearchBaseURL,
+			searchEngine: searchEngine,
+			proxy:        opts.Proxy,
+			client:       client,
+		}
+		if opts.GLMSearchMaxResults > 0 {
+			maxResults = opts.GLMSearchMaxResults
 		}
 	} else {
 		return nil, nil
