@@ -180,7 +180,11 @@ type AgentDefaults struct {
 	MaxTokens                 int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature               *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations         int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	MaxMediaSize              int      `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+
+	MaxConcurrentTasks      int  `json:"max_concurrent_tasks,omitempty"       env:"PICOCLAW_AGENTS_DEFAULTS_MAX_CONCURRENT_TASKS"`       // Maximum concurrent tasks (0=unlimited)
+	TaskCleanupIntervalMins int  `json:"task_cleanup_interval_mins,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_TASK_CLEANUP_INTERVAL_MINS"` // Task cleanup interval (minutes)
+	TaskRetentionHours      int  `json:"task_retention_hours,omitempty"       env:"PICOCLAW_AGENTS_DEFAULTS_TASK_RETENTION_HOURS"`       // Task retention time (hours)
+	MaxMediaSize            int  `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB

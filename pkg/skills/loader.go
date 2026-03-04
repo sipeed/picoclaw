@@ -109,10 +109,13 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 			return
 		}
 		for _, d := range dirs {
-			if !d.IsDir() {
+			// Check if entry is a directory or a symlink pointing to a directory
+			entryPath := filepath.Join(dir, d.Name())
+			fileInfo, err := os.Stat(entryPath) // Stat follows symlinks
+			if err != nil || !fileInfo.IsDir() {
 				continue
 			}
-			skillFile := filepath.Join(dir, d.Name(), "SKILL.md")
+			skillFile := filepath.Join(entryPath, "SKILL.md")
 			if _, err := os.Stat(skillFile); err != nil {
 				continue
 			}

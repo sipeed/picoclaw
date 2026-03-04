@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -215,17 +216,37 @@ After completing the task, provide a clear summary of what was done.`
 		}
 	}
 
-	// Send announce message back to main agent
+	// Send announce message back to main agent with structured metadata
+	// Note: We build metadata directly to avoid circular import with pkg/agent
 	if sm.bus != nil {
+		// Build structured metadata for AgentMessage reconstruction in loop.go
+		metadata := make(map[string]string)
+		metadata["agent_message_type"] = "subagent_result"
+		metadata["subagent_id"] = task.ID
+		metadata["subagent_label"] = task.Label
+		metadata["subagent_status"] = task.Status
+		// Only set iterations if loopResult is not nil
+		if loopResult != nil {
+			metadata["iterations"] = strconv.Itoa(loopResult.Iterations)
+		} else {
+			metadata["iterations"] = "0"
+		}
+		metadata["origin_channel"] = task.OriginChannel
+		metadata["origin_chat_id"] = task.OriginChatID
+		metadata["timestamp"] = strconv.FormatInt(time.Now().UnixMilli(), 10)
+
+		// Format content for backward compatibility
 		announceContent := fmt.Sprintf("Task '%s' completed.\n\nResult:\n%s", task.Label, task.Result)
+
 		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer pubCancel()
 		sm.bus.PublishInbound(pubCtx, bus.InboundMessage{
 			Channel:  "system",
 			SenderID: fmt.Sprintf("subagent:%s", task.ID),
 			// Format: "original_channel:original_chat_id" for routing back
-			ChatID:  fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
-			Content: announceContent,
+			ChatID:   fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
+			Content:  announceContent,
+			Metadata: metadata,
 		})
 	}
 }
