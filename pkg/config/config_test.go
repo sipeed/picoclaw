@@ -467,3 +467,63 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
 	}
 }
+
+
+func TestLoadConfig_ProviderEnvVars(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "providers": {
+    "anthropic": {},
+    "openai": {}
+  },
+  "model_list": [{"model_name":"test","model":"openai/gpt-5.2","api_key":"x"}]
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	t.Setenv("PICOCLAW_PROVIDERS_ANTHROPIC_API_KEY", "ant-env-key")
+	t.Setenv("PICOCLAW_PROVIDERS_OPENAI_API_KEY", "oai-env-key")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.Providers.Anthropic.APIKey != "ant-env-key" {
+		t.Errorf("Anthropic.APIKey = %q, want %q", cfg.Providers.Anthropic.APIKey, "ant-env-key")
+	}
+	if cfg.Providers.OpenAI.APIKey != "oai-env-key" {
+		t.Errorf("OpenAI.APIKey = %q, want %q", cfg.Providers.OpenAI.APIKey, "oai-env-key")
+	}
+}
+
+func TestLoadConfig_ModelListEnvVars(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+	configJSON := `{
+  "model_list": [
+    {"model_name": "gpt-5.2", "model": "openai/gpt-5.2", "api_key": ""},
+    {"model_name": "claude-sonnet-4.6", "model": "anthropic/claude-sonnet-4.6", "api_key": ""}
+  ]
+}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	t.Setenv("PICOCLAW_MODEL_GPT_5_2_API_KEY", "gpt-env-key")
+	t.Setenv("PICOCLAW_MODEL_CLAUDE_SONNET_4_6_API_KEY", "claude-env-key")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.ModelList[0].APIKey != "gpt-env-key" {
+		t.Errorf("ModelList[0].APIKey = %q, want %q", cfg.ModelList[0].APIKey, "gpt-env-key")
+	}
+	if cfg.ModelList[1].APIKey != "claude-env-key" {
+		t.Errorf("ModelList[1].APIKey = %q, want %q", cfg.ModelList[1].APIKey, "claude-env-key")
+	}
+}
