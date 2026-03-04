@@ -73,7 +73,7 @@ func handleStartGateway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read stdout and stderr into the log buffer
+	// Start reading stdout/stderr logs
 	go scanPipe(stdoutPipe, gatewayLogs)
 	go scanPipe(stderrPipe, gatewayLogs)
 
@@ -84,14 +84,62 @@ func handleStartGateway(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	log.Printf("Started picoclaw gateway (PID: %d) from %s\n", cmd.Process.Pid, execPath)
+	// Get expected host and port from user's config file to check if gateway is actually running
+	absPath := r.URL.Query().Get("config_path")
+	if absPath == "" {
+		// Use default path to check health
+		absPath = config.PathFromHome(config.Filename)
+	}
 
+	host := "127.0.0.1"
+	port := 18790
+	timeoutSeconds := 10 // Total timeout for waiting for health check
+
+	// Load config to get the actual host and port the gateway is expected to run on
+	if cfg, cfgErr := config.LoadConfig(absPath); cfgErr == nil && cfg != nil {
+		if cfg.Gateway.Host != "" && cfg.Gateway.Host != "0.0.0.0" {
+			host = cfg.Gateway.Host
+		}
+		if cfg.Gateway.Port != 0 {
+			port = cfg.Gateway.Port
+		}
+	}
+
+	// Poll the health endpoint to confirm gateway is actually responding
+	healthCheckURL := fmt.Sprintf("http://%s/health", net.JoinHostPort(host, strconv.Itoa(port)))
+	client := http.Client{Timeout: 2 * time.Second}
+
+	// Retry for up to timeoutSeconds seconds
+	startTime := time.Now()
+	for time.Since(startTime) < time.Duration(timeoutSeconds)*time.Second {
+		resp, err := client.Get(healthCheckURL)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+
+			// Gateway is responding, return success
+			log.Printf("Started picoclaw gateway (PID: %d) from %s and confirmed healthcheck on %s\n", cmd.Process.Pid, execPath, healthCheckURL)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"status": "ok",
+				"pid":    cmd.Process.Pid,
+			})
+			return
+		} else if err != nil && resp != nil {
+			resp.Body.Close() // Ensure response body is closed on status code error
+		}
+
+		// Wait briefly before retrying
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Did not see the health check respond within the timeout
+	log.Printf("Gateway (PID: %d) started but didn't respond to health check at %s within %d seconds\n", cmd.Process.Pid, healthCheckURL, timeoutSeconds)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"status": "ok",
+		"status": "timeout",
 		"pid":    cmd.Process.Pid,
+		"error":  fmt.Sprintf("Gateway started but didn't respond to health check at %s within %d seconds", healthCheckURL, timeoutSeconds),
 	})
-}
 
 // scanPipe reads lines from r and appends them to buf. It returns when r reaches EOF.
 func scanPipe(r io.Reader, buf *LogBuffer) {

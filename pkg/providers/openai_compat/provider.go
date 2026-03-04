@@ -304,13 +304,7 @@ func serializeMessages(messages []Message) []any {
 	out := make([]any, 0, len(messages))
 	for _, m := range messages {
 		if len(m.Media) == 0 {
-			out = append(out, openaiMessage{
-				Role:             m.Role,
-				Content:          m.Content,
-				ReasoningContent: m.ReasoningContent,
-				ToolCalls:        m.ToolCalls,
-				ToolCallID:       m.ToolCallID,
-			})
+		out = append(out, convertMessage(m))
 			continue
 		}
 
@@ -338,8 +332,9 @@ func serializeMessages(messages []Message) []any {
 		if m.ToolCallID != "" {
 			msg["tool_call_id"] = m.ToolCallID
 		}
-		if len(m.ToolCalls) > 0 {
-			msg["tool_calls"] = m.ToolCalls
+	if len(m.ToolCalls) > 0 {
+			msg["tool_calls"] = convertToolCallsForAPI(m.ToolCalls)
+	}
 		}
 		if m.ReasoningContent != "" {
 			msg["reasoning_content"] = m.ReasoningContent
@@ -395,5 +390,89 @@ func asFloat(v any) (float64, bool) {
 		return float64(val), true
 	default:
 		return 0, false
+	}
+}
+
+
+// convertToolCallsForAPI handles special conversion for toolCall structures for API compatibility.
+// Particularly for Google Gemini APIs, it ensures thought_signature is properly handled.
+func convertToolCallsForAPI(toolCalls []ToolCall) []any {
+	converted := make([]any, len(toolCalls))
+	for i, tc := range toolCalls {
+		// Check if there's Google-specific extra content that may contain thought_signature
+		var toolCallObj map[string]any
+		
+		// Start building the base structure
+		toolCallObj = map[string]any{
+			"id":   tc.ID,
+			"type": tc.Type,
+		}
+		
+		// Add function details
+		funcCall := map[string]any{
+			"name":      tc.Name,
+		}
+		
+		// Convert arguments to JSON string like normal OpenAI format
+		if tc.Function != nil && tc.Function.Arguments != "" {
+			funcCall["arguments"] = tc.Function.Arguments
+		} else {
+			argsJSON, err := json.Marshal(tc.Arguments)
+			if err == nil && string(argsJSON) != "{}" {
+				funcCall["arguments"] = string(argsJSON)
+			} else {
+				funcCall["arguments"] = "{}"
+			}
+		}
+		
+		// For Google Gemini APIs: add the extra content that includes thought_signature
+		if tc.ExtraContent != nil && tc.ExtraContent.Google != nil {
+			extraObj := map[string]any{}
+			if tc.ExtraContent.Google.ThoughtSignature != "" {
+				extraObj["google"] = map[string]any{
+					"thought_signature": tc.ExtraContent.Google.ThoughtSignature,
+				}
+				toolCallObj["extra_content"] = extraObj
+			}
+		} else if tc.ThoughtSignature != "" {
+			// If there's a direct thought signature but no ExtraContent, add it
+			extraObj := map[string]any{
+				"google": map[string]any{
+					"thought_signature": tc.ThoughtSignature,
+				},
+			}
+			toolCallObj["extra_content"] = extraObj
+		}
+		
+		toolCallObj["function"] = funcCall
+		converted[i] = toolCallObj
+	}
+	return converted
+}
+
+// convertMessage handles special conversion for messages that may include Google-specific thought_signature info
+func convertMessage(m Message) any {
+	// Handle the basic message structure without media first
+	basicMsg := openaiMessage{
+		Role:             m.Role,
+		Content:          m.Content,
+		ReasoningContent: m.ReasoningContent,
+		ToolCallID:       m.ToolCallID,
+	}
+	
+	// Special handling of tool calls for Google Gemini compatibility
+	if len(m.ToolCalls) > 0 {
+		// Rather than passing ToolCalls directly (which would serialize them as Go structs),
+		// we convert them to proper API format that supports thought_signature
+		return map[string]any{
+			"role": m.Role,
+			"content": m.Content,
+			"reasoning_content": m.ReasoningContent,
+			"tool_call_id": m.ToolCallID,
+			"tool_calls": convertToolCallsForAPI(m.ToolCalls),
+		}
+	} else {
+		// No tool calls - return basic message as before
+		return basicMsg
 	}
 }

@@ -23,6 +23,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/voice"
+
 )
 
 var (
@@ -144,6 +146,10 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
+	bh.HandleEditedMessage(func(ctx *th.Context, message telego.Message) error {
+		return c.handleEditedMessage(ctx, &message)
+	}, th.AnyMessage())
+
 
 	c.SetRunning(true)
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
@@ -245,7 +251,12 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		})
 		tgMsg.ParseMode = ""
 		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
-			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+			logger.ErrorCF("telegram", "Plain text send also failed", map[string]any{
+				"error": err.Error(),
+				"chat_id": chatID,
+			})
+			// Improved error classification with actual HTTP status code inspection from Telegram error
+			return channels.ClassifyNetError(fmt.Errorf("telegram send failed after fallback: %w", err))
 		}
 	}
 
@@ -295,8 +306,65 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	htmlContent := markdownToTelegramHTML(content)
 	editMsg := tu.EditMessageText(tu.ID(cid), mid, htmlContent)
 	editMsg.ParseMode = telego.ModeHTML
-	_, err = c.bot.EditMessageText(ctx, editMsg)
-	return err
+	if _, err = c.bot.EditMessageText(ctx, editMsg);
+	err != nil {
+		logger.ErrorCF("telegram", "Edit message failed", map[string]any{
+			"error": err.Error(),
+			"chat_id": cid,
+			"message_id": messageID,
+		})
+		return channels.ClassifyNetError(fmt.Errorf("telegram edit message failed: %w", err))
+	}
+	return nil
+
+// DeleteMessage attempts to delete a message from the chat
+func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	cid, err := parseChatID(chatID)
+	if err != nil {
+		logger.ErrorCF("telegram", "Invalid chat ID for delete", map[string]any{
+			"chat_id":     chatID,
+			"message_id":  messageID,
+			"error":       err.Error(),
+		})
+		return fmt.Errorf("invalid chat ID for delete: %w", channels.ErrSendFailed)
+	}
+
+	mid, err := strconv.Atoi(messageID)
+	if err != nil {
+		logger.ErrorCF("telegram", "Invalid message ID for delete", map[string]any{
+			"chat_id":     chatID,
+			"message_id":  messageID,
+			"error":       err.Error(),
+		})
+		return fmt.Errorf("invalid message ID for delete: %w", channels.ErrSendFailed)
+	}
+
+	params := &telego.DeleteMessageParams{
+		ChatID:    tu.ID(cid),
+		MessageID: mid,
+	}
+
+	if err = c.bot.DeleteMessage(ctx, params); err != nil {
+		logger.ErrorCF("telegram", "Failed to delete message", map[string]any{
+			"chat_id":     chatID,
+			"message_id":  messageID,
+			"error":       err.Error(),
+		})
+		return channels.ClassifyNetError(fmt.Errorf("telegram delete message failed: %w", err))
+	}
+
+	logger.DebugCF("telegram", "Message deleted successfully", map[string]any{
+		"chat_id":    chatID,
+		"message_id": messageID,
+	})
+	return nil
+}
+
+
 }
 
 // SendPlaceholder implements channels.PlaceholderCapable.
@@ -485,12 +553,36 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		if voicePath != "" {
 			mediaPaths = append(mediaPaths, storeMedia(voicePath, "voice.ogg"))
 
-			if content != "" {
-				content += "\n"
+			// Check for Groq transcriber and transcribe if available, otherwise add placeholder
+			if c.groqTranscriber != nil && c.groqTranscriber.IsAvailable() {
+				logger.DebugC("telegram", "Transcribing voice message using Groq...")
+				transcription, err := c.groqTranscriber.Transcribe(ctx, voicePath)
+				if err != nil {
+					logger.ErrorCF("telegram", "Voice transcription failed", map[string]any{
+						"error": err.Error(),
+					})
+					// Fallback to placeholder if transcription fails
+					if content != "" {
+						content += "\n"
+					}
+					content += "[voice]"
+				} else {
+					// Use the transcription as content
+					if content != "" {
+						content += "\n"
+					}
+					content += transcription.Text
+				}
+			} else {
+				// Groq not available, use placeholder
+				if content != "" {
+						content += "\n"
+					}
+					content += "[voice]"
 			}
-			content += "[voice]"
 		}
 	}
+
 
 	if message.Audio != nil {
 		audioPath := c.downloadFile(ctx, message.Audio.FileID, ".mp3")
@@ -568,6 +660,35 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	)
 	return nil
 }
+
+// handleEditedMessage processes edited messages in Telegram
+func (c *TelegramChannel) handleEditedMessage(ctx context.Context, message *telego.Message) error {
+	// Log the event, but note that we can't directly process an edited message
+	// because currently edited inbound messages are not re-sent to the agent
+	logger.DebugCF("telegram", "Received edited message", map[string]any{
+		"chat_id":    message.Chat.ID,
+		"message_id": message.MessageID,
+		"date":       message.Date,
+	})
+
+	// In a future implementation, we could implement some form of state management for edited messages
+	// For now, we simply acknowledge the edit
+	chatIDStr := fmt.Sprintf("%d", message.Chat.ID)
+	messageIDStr := fmt.Sprintf("%d", message.MessageID)
+	logger.DebugCF("telegram", "Processing edited message", map[string]any{
+		"chat_id":  chatIDStr,
+		"message_id": messageIDStr,
+	})
+
+	// Future improvement: Handle message edit by possibly removing the old message state
+	// and potentially sending an indicator that the message has been edited
+	key := "telegram:" + chatIDStr
+	// This is where we would add more advanced logic for managing edit state
+	c.placeholderRecorder.RecordPlaceholder("telegram", chatIDStr, "EDITED:"+messageIDStr)
+
+	return nil
+}
+
 
 func (c *TelegramChannel) downloadPhoto(ctx context.Context, fileID string) string {
 	file, err := c.bot.GetFile(ctx, &telego.GetFileParams{FileID: fileID})

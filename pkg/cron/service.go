@@ -14,6 +14,10 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
+type CronConfig struct {
+	ExecTimeoutMinutes int    `json:"exec_timeout_minutes,omitempty"`
+	DefaultTimezone  string `json:"default_timezone,omitempty"`
+}
 
 type CronSchedule struct {
 	Kind    string `json:"kind"`
@@ -59,20 +63,22 @@ type CronStore struct {
 type JobHandler func(job *CronJob) (string, error)
 
 type CronService struct {
-	storePath string
-	store     *CronStore
-	onJob     JobHandler
-	mu        sync.RWMutex
-	running   bool
-	stopChan  chan struct{}
+storePath string
+store     *CronStore
+onJob     JobHandler
+mu        sync.RWMutex
+running   bool
+stopChan  chan struct{}
 	gronx     *gronx.Gronx
+	config    CronConfig
 }
 
-func NewCronService(storePath string, onJob JobHandler) *CronService {
+func NewCronService(storePath string, onJob JobHandler, config CronConfig) *CronService {
 	cs := &CronService{
 		storePath: storePath,
 		onJob:     onJob,
 		gronx:     gronx.New(),
+		config:    config,
 	}
 	// Initialize and load store on creation
 	cs.loadStore()
@@ -263,16 +269,33 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 		if schedule.Expr == "" {
 			return nil
 		}
-
-		// Use gronx to calculate next run time
-		now := time.UnixMilli(nowMS)
+		
+		// 3-level fallback: schedule.TZ > config default_timezone > "Asia/Shanghai"
+		timezoneStr := schedule.TZ
+		if timezoneStr == "" {
+			timezoneStr = cs.config.DefaultTimezone
+		}
+		if timezoneStr == "" {
+			timezoneStr = "Asia/Shanghai"  // Default fallback
+		}
+		
+		// Load the target timezone
+		targetTZ, err := time.LoadLocation(timezoneStr)
+		if err != nil {
+			log.Printf("[cron] failed to load timezone '%s', falling back to UTC: %v", timezoneStr, err)
+			targetTZ = time.UTC  // fallback to UTC on error
+		}
+		
+		// Use gronx to calculate next run time based on target timezone
+		now := time.UnixMilli(nowMS).In(targetTZ)
 		nextTime, err := gronx.NextTickAfter(schedule.Expr, now, false)
 		if err != nil {
-			log.Printf("[cron] failed to compute next run for expr '%s': %v", schedule.Expr, err)
+			log.Printf("[cron] failed to compute next run for expr '%s' in timezone '%s': %v", schedule.Expr, timezoneStr, err)
 			return nil
 		}
-
-		nextMS := nextTime.UnixMilli()
+		
+		// Convert the calculated next time back to UTC Unix milli for storage
+		nextMS := nextTime.UTC().UnixMilli()
 		return &nextMS
 	}
 

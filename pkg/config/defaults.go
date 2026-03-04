@@ -375,6 +375,13 @@ func DefaultConfig() *Config {
 				Servers: map[string]MCPServerConfig{},
 			},
 		},
+		RateLimiting: RateLimitingConfig{
+			Enabled:  true,
+			Rate:     10.0, // 10 requests per second
+			Burst:    20,   // burst allowance of 20
+			Strategy: "ip",
+			TTL:      3600, // 1 hour
+		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
 			Interval: 30,
