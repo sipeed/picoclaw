@@ -353,15 +353,8 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 		}
 	}
 
-	m.httpServer = &http.Server{
-		Addr:         addr,
-		Handler:      m.mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-	}
-
-	// Wrap the entire server handler with metrics tracking too
-	m.httpServer.Handler = &metricMiddleware{handler: m.mux}
+	ReadTimeout:  30 * time.Second,
+	WriteTimeout: 30 * time.Second,
 }
 
 func (m *Manager) StartAll(ctx context.Context) error {
