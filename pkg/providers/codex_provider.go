@@ -224,6 +224,26 @@ func buildCodexParams(
 						},
 					},
 				})
+			} else if len(msg.Media) > 0 {
+				// Multipart content: text + images for vision-capable models
+				contentParts := make(responses.ResponseInputMessageContentListParam, 0, 1+len(msg.Media))
+				if msg.Content != "" {
+					contentParts = append(contentParts, responses.ResponseInputContentParamOfInputText(msg.Content))
+				}
+				for _, mediaURL := range msg.Media {
+					contentParts = append(contentParts, responses.ResponseInputContentUnionParam{
+						OfInputImage: &responses.ResponseInputImageParam{
+							ImageURL: openai.Opt(mediaURL),
+							Detail:   responses.ResponseInputImageDetailAuto,
+						},
+					})
+				}
+				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
+					OfMessage: &responses.EasyInputMessageParam{
+						Role:    responses.EasyInputMessageRoleUser,
+						Content: responses.EasyInputMessageContentUnionParam{OfInputItemContentList: contentParts},
+					},
+				})
 			} else {
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 					OfMessage: &responses.EasyInputMessageParam{
