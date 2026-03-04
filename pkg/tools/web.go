@@ -109,6 +109,10 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("brave api error (status %d): %s", resp.StatusCode, string(body))
+	}
+
 	var searchResp struct {
 		Web struct {
 			Results []struct {
