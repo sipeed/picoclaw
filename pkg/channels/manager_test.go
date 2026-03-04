@@ -1019,7 +1019,10 @@ func TestHandleTaskStatusSend_EditsExisting(t *testing.T) {
 	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
 
 	// Pre-store task message
-	m.taskMsgIDs.Store(taskStatusKey("test", "123", "task-abc"), statusMsgEntry{messageID: "task-msg-1", createdAt: time.Now()})
+	m.taskMsgIDs.Store(
+		taskStatusKey("test", "123", "task-abc"),
+		statusMsgEntry{messageID: "task-msg-1", createdAt: time.Now()},
+	)
 
 	msg := bus.OutboundMessage{
 		Channel:      "test",
@@ -1531,8 +1534,20 @@ func TestHandleTaskStatusSend_DraftStreaming_IsolatedByChatThread(t *testing.T) 
 
 	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
 
-	msgA := bus.OutboundMessage{Channel: "test", ChatID: "-100/10", Content: "A:10%", IsTaskStatus: true, TaskID: "shared-task"}
-	msgB := bus.OutboundMessage{Channel: "test", ChatID: "-100/20", Content: "B:10%", IsTaskStatus: true, TaskID: "shared-task"}
+	msgA := bus.OutboundMessage{
+		Channel:      "test",
+		ChatID:       "-100/10",
+		Content:      "A:10%",
+		IsTaskStatus: true,
+		TaskID:       "shared-task",
+	}
+	msgB := bus.OutboundMessage{
+		Channel:      "test",
+		ChatID:       "-100/20",
+		Content:      "B:10%",
+		IsTaskStatus: true,
+		TaskID:       "shared-task",
+	}
 
 	m.handleTaskStatusSend(context.Background(), "test", w, msgA)
 	m.handleTaskStatusSend(context.Background(), "test", w, msgB)
