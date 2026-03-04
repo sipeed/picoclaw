@@ -17,6 +17,8 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
@@ -71,6 +73,46 @@ type channelWorker struct {
 	done       chan struct{}
 	mediaDone  chan struct{}
 	limiter    *rate.Limiter
+}
+
+// metricMiddleware struct to intercept HTTP requests and record metrics
+type metricMiddleware struct {
+	handler http.Handler
+}
+
+func (mw *metricMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Only track our custom endpoints, not health/metric ones
+	if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+		mw.handler.ServeHTTP(w, r)
+		return
+	}
+
+	start := time.Now()
+	method := r.Method
+	endpoint := r.URL.Path
+
+	// Increment inflight requests
+	health.IncInFlightRequest(method, endpoint)
+	defer health.DecInFlightRequest(method, endpoint)
+
+	// Wrap the ResponseWriter to capture status code
+	wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+	mw.handler.ServeHTTP(wrapped, r)
+
+	// Record metrics
+	duration := time.Since(start)
+	health.RecordRequest(method, endpoint, duration.Seconds(), fmt.Sprintf("%d", wrapped.statusCode))
+}
+
+// responseWriter wraps http.ResponseWriter to capture status code
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
 }
 
 type Manager struct {
@@ -267,6 +309,10 @@ func (m *Manager) initChannels() error {
 		m.initChannel("pico", "Pico")
 	}
 
+	if m.config.Channels.WebSocket.Enabled {
+		m.initChannel("websocket", "WebSocket")
+	}
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})
@@ -288,27 +334,27 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 	// Discover and register webhook handlers and health checkers
 	for name, ch := range m.channels {
 		if wh, ok := ch.(WebhookHandler); ok {
-			m.mux.Handle(wh.WebhookPath(), wh)
-			logger.InfoCF("channels", "Webhook handler registered", map[string]any{
+			// Apply metrics middleware to webhook handlers
+			m.mux.Handle(wh.WebhookPath(), health.MetricMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				wh.ServeHTTP(w, r)
+			})))
+			logger.InfoCF("channels", "Webhook handler registered with metrics", map[string]any{
 				"channel": name,
 				"path":    wh.WebhookPath(),
 			})
 		}
 		if hc, ok := ch.(HealthChecker); ok {
-			m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
-			logger.InfoCF("channels", "Health endpoint registered", map[string]any{
+			// Apply metrics middleware to health checkers
+			m.mux.HandleFunc(hc.HealthPath(), health.MetricMiddleware(hc.HealthHandler))
+			logger.InfoCF("channels", "Health endpoint registered with metrics", map[string]any{
 				"channel": name,
 				"path":    hc.HealthPath(),
 			})
 		}
 	}
 
-	m.httpServer = &http.Server{
-		Addr:         addr,
-		Handler:      m.mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-	}
+	ReadTimeout:  30 * time.Second,
+	WriteTimeout: 30 * time.Second,
 }
 
 func (m *Manager) StartAll(ctx context.Context) error {
