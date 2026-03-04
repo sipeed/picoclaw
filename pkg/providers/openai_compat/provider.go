@@ -230,15 +230,15 @@ func looksLikeHTML(body []byte, contentType string) bool {
 		strings.HasPrefix(trimmed, "<body")
 }
 
-func responsePreview(body []byte, max int) string {
+func responsePreview(body []byte, maxLen int) string {
 	preview := strings.TrimSpace(string(body))
 	if preview == "" {
 		return "<empty>"
 	}
-	if len(preview) <= max {
+	if len(preview) <= maxLen {
 		return preview
 	}
-	return preview[:max] + "..."
+	return preview[:maxLen] + "..."
 }
 
 func parseResponse(body []byte) (*LLMResponse, error) {
