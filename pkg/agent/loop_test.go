@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -600,6 +601,51 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+func TestProcessDirectWithChannel_PreservesExplicitSessionKey(t *testing.T) {
+	al, _, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	explicitSessionKey := "custom-session"
+	routedSessionKey := al.registry.ResolveRoute(routing.RouteInput{
+		Channel: "cli",
+	}).SessionKey
+	if routedSessionKey == "" {
+		t.Fatal("Expected routed session key to be set")
+	}
+	if routedSessionKey == explicitSessionKey {
+		t.Fatalf("Test requires different routed and explicit session keys, both were %q", explicitSessionKey)
+	}
+
+	response, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello from cli",
+		explicitSessionKey,
+		"cli",
+		"direct",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("Expected mock response, got %q", response)
+	}
+
+	explicitHistory := defaultAgent.Sessions.GetHistory(explicitSessionKey)
+	if len(explicitHistory) == 0 {
+		t.Fatal("Expected explicit session history to be written")
+	}
+
+	routedHistory := defaultAgent.Sessions.GetHistory(routedSessionKey)
+	if len(routedHistory) != 0 {
+		t.Fatalf("Expected routed session history to stay empty, got %d entries", len(routedHistory))
 	}
 }
 

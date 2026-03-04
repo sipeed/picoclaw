@@ -485,9 +485,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
-	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
+	// Preserve explicit session keys for direct invocations and other internal callers.
 	sessionKey := route.SessionKey
-	if msg.SessionKey != "" && strings.HasPrefix(msg.SessionKey, "agent:") {
+	if msg.SessionKey != "" {
 		sessionKey = msg.SessionKey
 	}
 
