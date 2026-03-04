@@ -1,5 +1,17 @@
 # TASKS-2: Subagent Orchestration (Container Model)
 
+## TASKS-1 反映メモ (2026-03-05)
+
+TASKS-2 実装時は以下の型変更を前提にすること。
+
+- `FunctionCall.Arguments` は JSON 文字列ではなく `map[string]any` 扱い。
+  - 旧来の `json.Unmarshal([]byte(tc.Function.Arguments), ...)` 前提コードは不要。
+- `ToolFunctionDefinition.Parameters` は `json.RawMessage`。
+  - 生成時は `providers.MustMarshalParameters(...)` か `SetParametersMap(...)` を利用。
+  - `map[string]any` を直接代入しない。
+- `MemoryStore` はキャッシュ化済み。
+  - `GetPlanTaskName` / `GetPlanWorkDir` / `GetMemoryContext` を優先して利用し、`ReadLongTerm()` 直叩きは最小化する。
+
 SubagentManager を Container ベースの Orchestrator に進化させる。
 escalation chain（質問→回答）と Deliberate preset の plan mode を追加。
 
@@ -669,5 +681,6 @@ Phase 3: Context Injection + Guidance (Task 6-7)  ← 独立して先行も可
 - Deliberate preset (coder/worker): clarifying → review → executing の 3 段階動作
 - `ask_conductor` → conductor LLM 回答 → subagent 再開 のラウンドトリップ
 - conductor が回答不可 → message tool で human escalate → 回答転送
+- SandboxConfig による exec 制限が全 preset で正しく enforcement
 - MEMORY.md Orchestration セクションが conductor guidance に含まれる
 - 既存の spawn/subagent E2E フロー（Exploratory）に regression なし

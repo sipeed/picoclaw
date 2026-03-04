@@ -76,8 +76,8 @@ func TestParseJSONLEvents_ToolCallExtraction(t *testing.T) {
 	if resp.ToolCalls[0].ID != "call_1" {
 		t.Errorf("ToolCalls[0].ID = %q, want %q", resp.ToolCalls[0].ID, "call_1")
 	}
-	if resp.ToolCalls[0].Function.Arguments != `{"path":"/tmp/test.txt"}` {
-		t.Errorf("ToolCalls[0].Function.Arguments = %q", resp.ToolCalls[0].Function.Arguments)
+	if resp.ToolCalls[0].Function.Arguments["path"] != "/tmp/test.txt" {
+		t.Errorf("ToolCalls[0].Function.Arguments[path] = %v", resp.ToolCalls[0].Function.Arguments["path"])
 	}
 	// Content should have the tool call JSON stripped
 	if strings.Contains(resp.Content, "tool_calls") {
@@ -292,12 +292,12 @@ func TestBuildPrompt_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get current weather",
-				Parameters: map[string]any{
+				Parameters: MustMarshalParameters(map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"city": map[string]any{"type": "string"},
 					},
-				},
+				}),
 			},
 		},
 	}

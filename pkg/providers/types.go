@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
@@ -96,4 +97,8 @@ type StreamingProvider interface {
 type ModelConfig struct {
 	Primary   string
 	Fallbacks []string
+}
+
+func MustMarshalParameters(params map[string]any) json.RawMessage {
+	return protocoltypes.MustMarshalParameters(params)
 }
