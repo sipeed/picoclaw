@@ -949,3 +949,58 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
 	}
 }
+
+// TestProcessMessage_CommandAfterLLMRound_ResetsSentInRound is a regression
+// test for the stuck typing indicator bug. When a command arrives after an LLM
+// round that used the message tool, sentInRound must be reset to false before
+// handleCommand runs. Without the fix the Run loop sees alreadySent=true,
+// skips PublishOutbound, and the typing indicator is never cancelled.
+func TestProcessMessage_CommandAfterLLMRound_ResetsSentInRound(t *testing.T) {
+al, _, _, _, cleanup := newTestAgentLoop(t)
+defer cleanup()
+
+defaultAgent := al.registry.GetDefaultAgent()
+if defaultAgent == nil {
+t.Fatal("expected default agent")
+}
+toolIface, ok := defaultAgent.Tools.Get("message")
+if !ok {
+t.Fatal("expected message tool registered on default agent")
+}
+mt, ok := toolIface.(*tools.MessageTool)
+if !ok {
+t.Fatal("expected *tools.MessageTool")
+}
+
+// Simulate state left by a previous LLM round: message tool was invoked,
+// setting sentInRound=true.
+mt.SetContext("telegram", "chat-1")
+mt.SetSendCallback(func(channel, chatID, content string) error { return nil })
+mt.Execute(context.Background(), map[string]any{"content": "LLM response"})
+if !mt.HasSentInRound() {
+t.Fatal("precondition: expected sentInRound=true after Execute")
+}
+
+// Now process a command on the same channel/chat.
+msg := bus.InboundMessage{
+Channel:  "telegram",
+ChatID:   "chat-1",
+SenderID: "user1",
+Content:  "/show channel",
+}
+response, err := al.processMessage(context.Background(), msg)
+if err != nil {
+t.Fatalf("processMessage failed: %v", err)
+}
+if response == "" {
+t.Error("expected non-empty response from /show channel command")
+}
+
+// Critical: sentInRound must be false so the Run loop's alreadySent check
+// does not suppress PublishOutbound (which would leave the typing indicator
+// stuck on and silently drop the command response).
+if mt.HasSentInRound() {
+t.Error("sentInRound is still true after command: Run loop would skip " +
+"PublishOutbound, leaving the typing indicator stuck on")
+}
+}
