@@ -11,22 +11,31 @@ import (
 
 func setupTestLogs(t *testing.T) {
 	t.Helper()
+
 	prev := logger.GetLevel()
+
 	t.Cleanup(func() { logger.SetLevel(prev) })
+
 	logger.SetLevel(logger.DEBUG)
 
 	logger.DebugC("agent", "debug message")
+
 	logger.InfoC("telegram", "message received")
+
 	logger.WarnC("telegram", "webhook retry")
+
 	logger.ErrorC("discord", "connection timeout")
+
 	logger.WarnCF("wecom", "signature failed", map[string]any{
 		"token": "secret-value",
+
 		"nonce": "safe-value",
 	})
 }
 
 func TestLogsTool_DefaultLevel(t *testing.T) {
 	setupTestLogs(t)
+
 	tool := NewLogsTool()
 
 	result := tool.Execute(context.Background(), map[string]any{})
@@ -36,6 +45,7 @@ func TestLogsTool_DefaultLevel(t *testing.T) {
 	}
 
 	var entries []logger.LogEntry
+
 	if err := json.Unmarshal([]byte(result.ForLLM), &entries); err != nil {
 		t.Fatalf("failed to parse result: %v", err)
 	}
@@ -49,6 +59,7 @@ func TestLogsTool_DefaultLevel(t *testing.T) {
 
 func TestLogsTool_LevelFilter(t *testing.T) {
 	setupTestLogs(t)
+
 	tool := NewLogsTool()
 
 	result := tool.Execute(context.Background(), map[string]any{
@@ -60,6 +71,7 @@ func TestLogsTool_LevelFilter(t *testing.T) {
 	}
 
 	var entries []logger.LogEntry
+
 	if err := json.Unmarshal([]byte(result.ForLLM), &entries); err != nil {
 		t.Fatalf("failed to parse result: %v", err)
 	}
@@ -73,10 +85,12 @@ func TestLogsTool_LevelFilter(t *testing.T) {
 
 func TestLogsTool_ComponentFilter(t *testing.T) {
 	setupTestLogs(t)
+
 	tool := NewLogsTool()
 
 	result := tool.Execute(context.Background(), map[string]any{
-		"level":     "DEBUG",
+		"level": "DEBUG",
+
 		"component": "telegram",
 	})
 
@@ -85,6 +99,7 @@ func TestLogsTool_ComponentFilter(t *testing.T) {
 	}
 
 	var entries []logger.LogEntry
+
 	if err := json.Unmarshal([]byte(result.ForLLM), &entries); err != nil {
 		t.Fatalf("failed to parse result: %v", err)
 	}
@@ -98,10 +113,12 @@ func TestLogsTool_ComponentFilter(t *testing.T) {
 
 func TestLogsTool_QueryFilter(t *testing.T) {
 	setupTestLogs(t)
+
 	tool := NewLogsTool()
 
 	result := tool.Execute(context.Background(), map[string]any{
 		"level": "DEBUG",
+
 		"query": "timeout",
 	})
 
@@ -110,6 +127,7 @@ func TestLogsTool_QueryFilter(t *testing.T) {
 	}
 
 	var entries []logger.LogEntry
+
 	if err := json.Unmarshal([]byte(result.ForLLM), &entries); err != nil {
 		t.Fatalf("failed to parse result: %v", err)
 	}
@@ -117,6 +135,7 @@ func TestLogsTool_QueryFilter(t *testing.T) {
 	if len(entries) == 0 {
 		t.Fatal("expected at least one entry matching 'timeout'")
 	}
+
 	for _, e := range entries {
 		if !strings.Contains(strings.ToLower(e.Message), "timeout") {
 			t.Errorf("entry should contain 'timeout': %s", e.Message)
@@ -126,14 +145,17 @@ func TestLogsTool_QueryFilter(t *testing.T) {
 
 func TestLogsTool_QueryCaseInsensitive(t *testing.T) {
 	setupTestLogs(t)
+
 	tool := NewLogsTool()
 
 	result := tool.Execute(context.Background(), map[string]any{
 		"level": "DEBUG",
+
 		"query": "TIMEOUT",
 	})
 
 	var entries []logger.LogEntry
+
 	if err := json.Unmarshal([]byte(result.ForLLM), &entries); err != nil {
 		t.Fatalf("failed to parse result: %v", err)
 	}
@@ -145,10 +167,12 @@ func TestLogsTool_QueryCaseInsensitive(t *testing.T) {
 
 func TestLogsTool_Limit(t *testing.T) {
 	setupTestLogs(t)
+
 	tool := NewLogsTool()
 
 	result := tool.Execute(context.Background(), map[string]any{
 		"level": "DEBUG",
+
 		"limit": float64(2),
 	})
 
@@ -157,6 +181,7 @@ func TestLogsTool_Limit(t *testing.T) {
 	}
 
 	var entries []logger.LogEntry
+
 	if err := json.Unmarshal([]byte(result.ForLLM), &entries); err != nil {
 		t.Fatalf("failed to parse result: %v", err)
 	}
@@ -170,12 +195,15 @@ func TestLogsTool_LimitMax(t *testing.T) {
 	tool := NewLogsTool()
 
 	// limit > 300 should be capped
+
 	result := tool.Execute(context.Background(), map[string]any{
 		"level": "DEBUG",
+
 		"limit": float64(999),
 	})
 
 	// Should not error, just cap silently
+
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.ForLLM)
 	}
@@ -183,10 +211,12 @@ func TestLogsTool_LimitMax(t *testing.T) {
 
 func TestLogsTool_FieldsSanitized(t *testing.T) {
 	setupTestLogs(t)
+
 	tool := NewLogsTool()
 
 	result := tool.Execute(context.Background(), map[string]any{
-		"level":     "WARN",
+		"level": "WARN",
+
 		"component": "wecom",
 	})
 
@@ -195,22 +225,27 @@ func TestLogsTool_FieldsSanitized(t *testing.T) {
 	}
 
 	var entries []logger.LogEntry
+
 	if err := json.Unmarshal([]byte(result.ForLLM), &entries); err != nil {
 		t.Fatalf("failed to parse result: %v", err)
 	}
 
 	found := false
+
 	for _, e := range entries {
 		if e.Fields != nil && e.Fields["token"] != nil {
 			found = true
+
 			if e.Fields["token"] != "***" {
 				t.Errorf("token field should be sanitized, got %v", e.Fields["token"])
 			}
+
 			if e.Fields["nonce"] != "safe-value" {
 				t.Errorf("nonce field should be preserved, got %v", e.Fields["nonce"])
 			}
 		}
 	}
+
 	if !found {
 		t.Error("expected to find wecom entry with token field")
 	}
@@ -218,19 +253,23 @@ func TestLogsTool_FieldsSanitized(t *testing.T) {
 
 func TestLogsTool_NoResults(t *testing.T) {
 	prev := logger.GetLevel()
+
 	defer logger.SetLevel(prev)
+
 	logger.SetLevel(logger.DEBUG)
 
 	tool := NewLogsTool()
 
 	result := tool.Execute(context.Background(), map[string]any{
-		"level":     "ERROR",
+		"level": "ERROR",
+
 		"component": "nonexistent-component-xyz",
 	})
 
 	if result.IsError {
 		t.Fatalf("should not be an error result: %s", result.ForLLM)
 	}
+
 	if !strings.Contains(result.ForLLM, "No log entries found") {
 		t.Errorf("expected 'No log entries found' message, got: %s", result.ForLLM)
 	}
@@ -238,9 +277,11 @@ func TestLogsTool_NoResults(t *testing.T) {
 
 func TestLogsTool_Silent(t *testing.T) {
 	setupTestLogs(t)
+
 	tool := NewLogsTool()
 
 	result := tool.Execute(context.Background(), map[string]any{})
+
 	if !result.Silent {
 		t.Error("logs tool result should be Silent")
 	}
@@ -252,10 +293,13 @@ func TestLogsTool_ToolInterface(t *testing.T) {
 	if tool.Name() != "logs" {
 		t.Errorf("expected name 'logs', got %q", tool.Name())
 	}
+
 	if tool.Description() == "" {
 		t.Error("description should not be empty")
 	}
+
 	params := tool.Parameters()
+
 	if params == nil {
 		t.Error("parameters should not be nil")
 	}

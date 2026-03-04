@@ -19,6 +19,15 @@ const (
 
 )
 
+// Escalation turn kinds — explicit values to keep stable across versions.
+
+const (
+	TurnQuestion TurnKind = 10 // Subagent → conductor question (escalation)
+
+	TurnPlanSubmit TurnKind = 11 // Subagent plan submission for review
+
+)
+
 // Turn represents a single conversation turn persisted in the store.
 
 type Turn struct {

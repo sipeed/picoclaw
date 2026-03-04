@@ -19,12 +19,24 @@ Lint: `golangci-lint run`
 - **Interview tool filtering**: `interviewAllowedTools` in `pkg/agent/loop.go` is the single source of truth for tools available during interview/review phases. Both `filterInterviewTools` (strips definitions before LLM call) and `isToolAllowedDuringInterview` (argument-level gating) reference this map.
 - **History clear**: `/plan start clear` wipes session history and summary on transition to executing. The Mini App review UI offers two sliders: standard approve and approve-with-clear.
 
-## Subagent Orchestration (実装済み部分)
+## Subagent Orchestration (実装済み)
 
 - **Startup flag**: `--orchestration` で on/off。`SubagentsConfig.Enabled` で gate。
 - **Conductor identity**: orchestration 有効時に conductor identity + spawn/subagent guidance を system prompt へ注入。
 - **Sandbox/Spawn**: `pkg/tools/sandbox.go`, `pkg/tools/spawn.go` 実装済み。
 - **AgentReporter**: `orch.AgentReporter` / `orch.Noop` / `orch.Broadcaster` で統一。main/heartbeat/subagent 全セッションが同一 Broadcaster に発火。Mini App は `agentLoop.GetOrchBroadcaster()` → `handler.SetOrchBroadcaster()` で受信。
+- **Container Model (Q&A escalation)**:
+  - `ContainerMessage` + `inCh`/`outCh` channels on `SubagentTask` — deliberate preset (coder/worker/coordinator) のみ
+  - `ask_conductor` tool — subagent → conductor question (blocking)
+  - `answer_subagent` tool — conductor → subagent answer
+  - `submit_plan` tool — subagent → conductor plan review (blocking)
+  - `review_subagent_plan` tool — conductor → subagent approve/reject
+  - `PendingQuestions()` で conductor LLM loop に question/plan_review を注入
+- **Deliberate Plan Mode**: `SubagentPlanState` (Clarifying → Review → Executing → Completed)
+  - `runDeliberateTask()`: clarifying phase (ask_conductor + submit_plan のみ) → executing phase (全ツール)
+  - `runExploratoryTask()`: exploratory preset の single-phase loop
+- **Environment injection**: `extractPlanContext()` で MEMORY.md から Context/Commands/Orchestration セクションを抽出 → subagent system prompt に注入
+- **SessionRecorder 拡張**: `RecordQuestion()` / `RecordPlanSubmit()` + `TurnQuestion` / `TurnPlanSubmit` TurnKind
 
 ## Session DAG (Phase 0–3 実装済み)
 
@@ -61,7 +73,7 @@ Lint: `golangci-lint run`
 | ファイル | 概要 |
 |---|---|
 | [`todo/TASKS-1.md`](todo/TASKS-1.md) | ~~**Memory & Performance Optimization**~~ ✅ 実装済み（MemoryStore キャッシュ＋パース済み state、FunctionCall.Arguments map統一、ToolDefinition.Parameters RawMessage化、検索結果フォーマット共通化、stats 定期フラッシュ） |
-| [`todo/TASKS-2.md`](todo/TASKS-2.md) | **Subagent Orchestration (Container Model)** — SubagentContainer、Orchestrator、Presets enforcement、Subagent Plan Mode（TASKS-1 の型変更前提メモ追記済み） |
+| [`todo/TASKS-2.md`](todo/TASKS-2.md) | ~~**Subagent Orchestration (Container Model)**~~ ✅ 実装済み（Container Q&A escalation、Deliberate Plan Mode、Environment injection、SessionRecorder 拡張） |
 | [`todo/TASKS-3.md`](todo/TASKS-3.md) | ~~**Session DAG (SQLite Store)**~~ ✅ 実装済み（Phase 0–3: SQLite SessionStore、LegacyAdapter、Fork/Report、CompactOldTurns、`/session` CLI コマンド、Mini App グラフ UI） |
 | [`todo/TASKS-4.md`](todo/TASKS-4.md) | ~~**Mini App & Static Serving**~~ ✅ 実装済み（`http.FileServer` 統合、テンプレート注入、Bun ビルド導線、frontend unit test + CI `pnpm test`） |
 | [`todo/TASKS-5.md`](todo/TASKS-5.md) | ~~**Heartbeat Worktree Management**~~ ✅ 実装済み（`/plan worktrees` の `list/inspect/merge/dispose`、安全化した `PruneOrphaned`、Mini App `/miniapp/api/worktrees` + Git タブ UI） |

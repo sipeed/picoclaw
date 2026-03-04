@@ -126,7 +126,11 @@ func TestBackend_AddFullMessage(t *testing.T) {
 				Content: "sure",
 
 				ToolCalls: []providers.ToolCall{
-					{ID: "call_1", Type: "function", Function: &providers.FunctionCall{Name: "exec", Arguments: map[string]any{}}},
+					{
+						ID:       "call_1",
+						Type:     "function",
+						Function: &providers.FunctionCall{Name: "exec", Arguments: map[string]any{}},
+					},
 				},
 			})
 
@@ -485,49 +489,72 @@ func TestBackend_IncrementalSave(t *testing.T) {
 
 func TestCompactOldTurns(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
+
 	store, err := OpenSQLiteStore(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	la := NewLegacyAdapter(store)
+
 	defer la.Close()
 
 	la.GetOrCreate("k1")
+
 	// Turn 1: 2 messages
+
 	la.AddMessage("k1", "user", "a")
+
 	la.AddMessage("k1", "assistant", "b")
+
 	la.Save("k1")
+
 	// Turn 2: 3 messages
+
 	la.AddMessage("k1", "user", "c")
+
 	la.AddMessage("k1", "assistant", "d")
+
 	la.AddMessage("k1", "user", "e")
+
 	la.Save("k1")
+
 	// Turn 3: 2 messages
+
 	la.AddMessage("k1", "user", "f")
+
 	la.AddMessage("k1", "assistant", "g")
+
 	la.Save("k1")
 
 	// Total: 7 messages across 3 turns. keepLast=2 → drop 5 → compact turns 1+2 (5 msgs)
+
 	if err := la.CompactOldTurns("k1", 2, "test summary"); err != nil {
 		t.Fatalf("CompactOldTurns: %v", err)
 	}
 
 	h := la.GetHistory("k1")
+
 	if len(h) != 2 {
 		t.Fatalf("expected 2 messages in cache, got %d", len(h))
 	}
+
 	if h[0].Content != "f" || h[1].Content != "g" {
 		t.Errorf("unexpected messages: %+v", h)
 	}
+
 	if s := la.GetSummary("k1"); s != "test summary" {
 		t.Errorf("expected summary 'test summary', got %q", s)
 	}
 
 	// Verify in SQLite: only turn 3 remains
+
 	turns, _ := store.Turns("k1", 0)
+
 	if len(turns) != 1 {
 		t.Fatalf("expected 1 turn in SQLite, got %d", len(turns))
 	}
+
 	if len(turns[0].Messages) != 2 {
 		t.Errorf("expected 2 messages in remaining turn, got %d", len(turns[0].Messages))
 	}
@@ -535,27 +562,36 @@ func TestCompactOldTurns(t *testing.T) {
 
 func TestCompactOldTurns_NothingToCompact(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
+
 	store, err := OpenSQLiteStore(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	la := NewLegacyAdapter(store)
+
 	defer la.Close()
 
 	la.GetOrCreate("k1")
+
 	la.AddMessage("k1", "user", "a")
+
 	la.AddMessage("k1", "assistant", "b")
+
 	la.Save("k1")
 
 	// keepLast=10 >= total 2 → nothing compacted, summary still updated
+
 	if err := la.CompactOldTurns("k1", 10, "new summary"); err != nil {
 		t.Fatalf("CompactOldTurns: %v", err)
 	}
 
 	h := la.GetHistory("k1")
+
 	if len(h) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(h))
 	}
+
 	if s := la.GetSummary("k1"); s != "new summary" {
 		t.Errorf("expected 'new summary', got %q", s)
 	}
@@ -563,29 +599,40 @@ func TestCompactOldTurns_NothingToCompact(t *testing.T) {
 
 func TestCompactOldTurns_SingleTurn(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
+
 	store, err := OpenSQLiteStore(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	la := NewLegacyAdapter(store)
+
 	defer la.Close()
 
 	la.GetOrCreate("k1")
+
 	la.AddMessage("k1", "user", "a")
+
 	la.AddMessage("k1", "assistant", "b")
+
 	la.AddMessage("k1", "user", "c")
+
 	la.Save("k1")
 
 	// Single turn with 3 messages, keepLast=2 → dropCount=1, but first turn has 3 msgs
+
 	// accumulated(3) > dropCount(1) on first turn → cutSeq=0 → no compaction
+
 	if err := la.CompactOldTurns("k1", 2, "sum"); err != nil {
 		t.Fatalf("CompactOldTurns: %v", err)
 	}
 
 	h := la.GetHistory("k1")
+
 	if len(h) != 3 {
 		t.Fatalf("expected 3 messages (no compaction), got %d", len(h))
 	}
+
 	if s := la.GetSummary("k1"); s != "sum" {
 		t.Errorf("expected 'sum', got %q", s)
 	}
@@ -593,22 +640,29 @@ func TestCompactOldTurns_SingleTurn(t *testing.T) {
 
 func TestCompactOldTurns_Graph(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
+
 	store, err := OpenSQLiteStore(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	la := NewLegacyAdapter(store)
+
 	defer la.Close()
 
 	la.GetOrCreate("k1")
+
 	la.AddMessage("k1", "user", "hello")
+
 	la.Save("k1")
 
 	g := la.Graph()
+
 	msgs, err := g.Messages("k1")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(msgs) != 1 || msgs[0].Content != "hello" {
 		t.Errorf("unexpected graph messages: %+v", msgs)
 	}
