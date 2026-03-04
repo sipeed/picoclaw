@@ -27,6 +27,12 @@ const (
 	sendTimeout = 10 * time.Second
 )
 
+var (
+	// Pre-compiled regexes for resolveDiscordRefs (avoid re-compiling per call)
+	channelRefRe = regexp.MustCompile(`<#(\d+)>`)
+	msgLinkRe    = regexp.MustCompile(`https://(?:discord\.com|discordapp\.com)/channels/(\d+)/(\d+)/(\d+)`)
+)
+
 type DiscordChannel struct {
 	*channels.BaseChannel
 	session    *discordgo.Session
@@ -343,9 +349,13 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	if m.MessageReference != nil && m.ReferencedMessage != nil {
 		refContent := m.ReferencedMessage.Content
 		if refContent != "" {
+			refAuthor := "unknown"
+			if m.ReferencedMessage.Author != nil {
+				refAuthor = m.ReferencedMessage.Author.Username
+			}
 			refContent = c.resolveDiscordRefs(s, refContent)
 			content = fmt.Sprintf("[quoted message from %s]: %s\n\n%s",
-				m.ReferencedMessage.Author.Username, refContent, content)
+				refAuthor, refContent, content)
 		}
 	}
 	content = c.resolveDiscordRefs(s, content)
@@ -524,9 +534,8 @@ func applyDiscordProxy(session *discordgo.Session, proxyAddr string) error {
 // expands Discord message links to show the linked message content.
 func (c *DiscordChannel) resolveDiscordRefs(s *discordgo.Session, text string) string {
 	// 1. Resolve channel references: <#id> → #channel-name
-	channelRe := regexp.MustCompile(`<#(\d+)>`)
-	text = channelRe.ReplaceAllStringFunc(text, func(match string) string {
-		parts := channelRe.FindStringSubmatch(match)
+	text = channelRefRe.ReplaceAllStringFunc(text, func(match string) string {
+		parts := channelRefRe.FindStringSubmatch(match)
 		if len(parts) < 2 {
 			return match
 		}
@@ -538,7 +547,6 @@ func (c *DiscordChannel) resolveDiscordRefs(s *discordgo.Session, text string) s
 	})
 
 	// 2. Expand Discord message links (max 3)
-	msgLinkRe := regexp.MustCompile(`https://(?:discord\.com|discordapp\.com)/channels/(\d+)/(\d+)/(\d+)`)
 	matches := msgLinkRe.FindAllStringSubmatch(text, 3)
 	for _, m := range matches {
 		if len(m) < 4 {
