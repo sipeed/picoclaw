@@ -16,4 +16,10 @@ type SessionRecorder interface {
 
 	// RecordReport injects a TurnReport into the conductor session.
 	RecordReport(conductorSessionKey, subagentSessionKey, senderID, content string) error
+
+	// RecordQuestion injects a TurnQuestion into the conductor session (subagent escalation).
+	RecordQuestion(conductorKey, subagentKey, taskID, question string) error
+
+	// RecordPlanSubmit injects a TurnPlanSubmit into the conductor session (plan review request).
+	RecordPlanSubmit(conductorKey, subagentKey, taskID, planText string) error
 }
