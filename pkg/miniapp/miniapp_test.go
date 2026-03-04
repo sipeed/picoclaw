@@ -282,6 +282,7 @@ func TestMiniApp_StaticFileServerServesAssets(t *testing.T) {
 		})
 	}
 }
+
 func TestSSE_AuthRequired(t *testing.T) {
 	notifier := NewStateNotifier()
 	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
