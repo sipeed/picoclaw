@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -100,7 +101,7 @@ type Manager struct {
 	typingStops     sync.Map // "channel:chatID" → typingEntry
 	reactionUndos   sync.Map // "channel:chatID" → reactionEntry
 	statusMsgIDs    sync.Map // "channel:chatID" → statusMsgEntry (streaming preview)
-	taskMsgIDs      sync.Map // taskID → statusMsgEntry (background task status)
+	taskMsgIDs      sync.Map // "channel:chatID:taskID" → statusMsgEntry (background task status)
 	statusEditTimes sync.Map // key → time.Time — last EditMessage time for throttling
 }
 
@@ -594,6 +595,16 @@ func (m *Manager) handleStatusSend(ctx context.Context, name string, w *channelW
 	// 4. Channel doesn't support SendWithID or editing — drop silently
 }
 
+func taskStatusKey(channel, chatID, taskID string) string {
+	if taskID == "" {
+		return ""
+	}
+	if channel == "" || chatID == "" {
+		return taskID
+	}
+	return channel + ":" + chatID + ":" + taskID
+}
+
 // handleTaskStatusSend processes IsTaskStatus messages (background task status).
 // It reuses a previously tracked task message, or sends a new one via SendWithID.
 // For channels implementing DraftSender, sendMessageDraft is used to avoid "(edited)".
@@ -603,14 +614,27 @@ func (m *Manager) handleTaskStatusSend(ctx context.Context, name string, w *chan
 		return
 	}
 
-	taskKey := msg.TaskID
+	taskKey := taskStatusKey(name, msg.ChatID, msg.TaskID)
 
 	// Final message: send as permanent (non-draft) message so it persists.
 	// Drafts are ephemeral and disappear after a short time; the completion
 	// message must survive. Clear the draft tracking and send via SendWithID
 	// or regular Send, which creates a permanent Telegram message.
 	if msg.Final {
-		m.taskMsgIDs.Delete(taskKey)
+		if v, loaded := m.taskMsgIDs.LoadAndDelete(taskKey); loaded {
+			if entry, ok := v.(statusMsgEntry); ok && entry.draftID != 0 {
+				if drafter, ok := w.ch.(DraftSender); ok {
+					if err := drafter.SendDraft(ctx, msg.ChatID, entry.draftID, ""); err != nil {
+						logger.WarnCF("channels", "Failed to dismiss task draft before final message", map[string]any{
+							"task_id":  taskKey,
+							"chat_id":  msg.ChatID,
+							"draft_id": entry.draftID,
+							"error":    err.Error(),
+						})
+					}
+				}
+			}
+		}
 		m.statusEditTimes.Delete(taskKey)
 		if sender, ok := w.ch.(MessageSenderWithID); ok {
 			if msgID, err := sender.SendWithID(ctx, msg.ChatID, msg.Content); err == nil && msgID != "" {
@@ -992,7 +1016,7 @@ func (m *Manager) runTTLJanitor(ctx context.Context) {
 }
 
 // PromoteStatusToTask moves the tracked streaming status message for the given
-// channel:chatID key into the task message map under taskID. This allows the
+// channel:chatID key into the task message map under channel:chatID:taskID. This allows the
 // next IsTaskStatus publish to edit the streaming bubble instead of creating a
 // new message. Returns true if a status message was found and promoted.
 func (m *Manager) PromoteStatusToTask(statusKey, taskID string) bool {
@@ -1000,6 +1024,13 @@ func (m *Manager) PromoteStatusToTask(statusKey, taskID string) bool {
 	if !loaded {
 		return false
 	}
+
+	parts := strings.SplitN(statusKey, ":", 2)
+	if len(parts) == 2 {
+		m.taskMsgIDs.Store(taskStatusKey(parts[0], parts[1], taskID), v)
+		return true
+	}
+
 	m.taskMsgIDs.Store(taskID, v)
 	return true
 }
