@@ -1,7 +1,7 @@
 name: PR
 
 on:
-  pull_request: { }
+  pull_request: {}
 
 jobs:
   lint:
@@ -15,6 +15,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Run go generate
         run: go generate ./...
@@ -36,8 +39,26 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Run go generate
         run: go generate ./...
+
+      - name: Run frontend tests
+        run: |
+          pnpm --dir pkg/miniapp/frontend install --frozen-lockfile
+          pnpm --dir pkg/miniapp/frontend test
 
       - name: Run go test
         run: go test ./...

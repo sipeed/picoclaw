@@ -21,7 +21,6 @@ func terminateProcessTree(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
-
 	pid := cmd.Process.Pid
 	if pid <= 0 {
 		return nil
@@ -29,11 +28,14 @@ func terminateProcessTree(cmd *exec.Cmd) error {
 
 	// Kill the entire process group spawned by the shell command.
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
+
 	// Some shells/background jobs may still leave descendants around
 	// briefly; aggressively walk /proc and kill child processes too.
 	killDescendants(pid)
+
 	// Fallback kill on the shell process itself.
 	_ = cmd.Process.Kill()
+
 	return nil
 }
 
@@ -41,7 +43,6 @@ func killDescendants(ppid int) {
 	if ppid <= 0 {
 		return
 	}
-
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return

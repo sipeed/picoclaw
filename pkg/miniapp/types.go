@@ -88,12 +88,39 @@ type ContextInfo struct {
 	Bootstrap   []BootstrapFileInfo `json:"bootstrap"`
 }
 
+// SessionGraphData holds the full session DAG for the Mini App.
+type SessionGraphData struct {
+	Nodes []SessionGraphNode `json:"nodes"`
+	Edges []SessionGraphEdge `json:"edges"`
+}
+
+// SessionGraphNode represents a single session in the graph.
+type SessionGraphNode struct {
+	Key        string `json:"key"`
+	ShortKey   string `json:"short_key"`
+	Label      string `json:"label"`
+	Status     string `json:"status"`
+	TurnCount  int    `json:"turn_count"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+	Summary    string `json:"summary,omitempty"`
+	ForkTurnID string `json:"fork_turn_id,omitempty"`
+}
+
+// SessionGraphEdge represents a parent→child fork relationship.
+type SessionGraphEdge struct {
+	From       string `json:"from"`
+	To         string `json:"to"`
+	ForkTurnID string `json:"fork_turn_id,omitempty"`
+}
+
 // DataProvider is the read-only interface to agent state for the Mini App API.
 type DataProvider interface {
 	ListSkills() []skills.SkillInfo
 	GetPlanInfo() PlanInfo
 	GetSessionStats() *stats.Stats
 	GetActiveSessions() []SessionInfo
+	GetSessionGraph() *SessionGraphData
 	GetGitRepos() []GitRepoSummary
 	GetGitRepoDetail(name string) GitInfo
 	GetContextInfo() ContextInfo

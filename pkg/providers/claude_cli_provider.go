@@ -129,9 +129,8 @@ func (p *ClaudeCliProvider) buildToolsPrompt(tools []ToolDefinition) string {
 			sb.WriteString(fmt.Sprintf("Description: %s\n", tool.Function.Description))
 		}
 		if len(tool.Function.Parameters) > 0 {
-			paramsJSON, _ := json.Marshal(tool.Function.Parameters)
 			sb.WriteString("Parameters:\n```json\n")
-			sb.Write(paramsJSON)
+			sb.Write(tool.Function.Parameters)
 			sb.WriteString("\n```\n")
 		}
 		sb.WriteString("\n")

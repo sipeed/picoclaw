@@ -462,6 +462,10 @@ func AccumulateStream(ch <-chan protocoltypes.StreamEvent) (*LLMResponse, error)
 			ID:        tc.ID,
 			Name:      tc.Name,
 			Arguments: arguments,
+			Function: &FunctionCall{
+				Name:      tc.Name,
+				Arguments: cloneOpenAIToolArgs(arguments),
+			},
 		})
 	}
 
@@ -534,6 +538,11 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 			Name:             name,
 			Arguments:        arguments,
 			ThoughtSignature: thoughtSignature,
+			Function: &FunctionCall{
+				Name:             name,
+				Arguments:        cloneOpenAIToolArgs(arguments),
+				ThoughtSignature: thoughtSignature,
+			},
 		}
 
 		if thoughtSignature != "" {
@@ -562,10 +571,21 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 // It mirrors protocoltypes.Message but omits SystemParts, which is an
 // internal field that would be unknown to third-party endpoints.
 type openaiMessage struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role       string           `json:"role"`
+	Content    string           `json:"content"`
+	ToolCalls  []openaiToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+}
+
+type openaiToolCall struct {
+	ID       string              `json:"id"`
+	Type     string              `json:"type,omitempty"`
+	Function *openaiFunctionCall `json:"function,omitempty"`
+}
+
+type openaiFunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // stripSystemParts converts []Message to []openaiMessage, dropping the
@@ -577,11 +597,72 @@ func stripSystemParts(messages []Message) []openaiMessage {
 		out[i] = openaiMessage{
 			Role:       m.Role,
 			Content:    m.Content,
-			ToolCalls:  m.ToolCalls,
+			ToolCalls:  toOpenAIWireToolCalls(m.ToolCalls),
 			ToolCallID: m.ToolCallID,
 		}
 	}
 	return out
+}
+
+func toOpenAIWireToolCalls(toolCalls []ToolCall) []openaiToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+
+	out := make([]openaiToolCall, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		name, args := normalizeOpenAIWireToolCall(tc)
+		if name == "" {
+			continue
+		}
+
+		argsJSON, err := json.Marshal(args)
+		if err != nil {
+			argsJSON = []byte(`{}`)
+		}
+
+		wire := openaiToolCall{
+			ID:   tc.ID,
+			Type: tc.Type,
+			Function: &openaiFunctionCall{
+				Name:      name,
+				Arguments: string(argsJSON),
+			},
+		}
+		out = append(out, wire)
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeOpenAIWireToolCall(tc ToolCall) (name string, args map[string]any) {
+	name = tc.Name
+	if name == "" && tc.Function != nil {
+		name = tc.Function.Name
+	}
+
+	args = tc.Arguments
+	if len(args) == 0 && tc.Function != nil {
+		args = tc.Function.Arguments
+	}
+	if args == nil {
+		args = map[string]any{}
+	}
+	return name, args
+}
+
+func cloneOpenAIToolArgs(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return map[string]any{}
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func normalizeModel(model, apiBase string) string {
