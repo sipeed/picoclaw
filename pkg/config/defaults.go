@@ -343,6 +343,13 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+				GLMSearch: GLMSearchConfig{
+					Enabled:      false,
+					APIKey:       "",
+					BaseURL:      "https://open.bigmodel.cn/api/paas/v4/web_search",
+					SearchEngine: "search_std",
+					MaxResults:   5,
+				},
 			},
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5,
