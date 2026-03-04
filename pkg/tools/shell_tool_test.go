@@ -3,7 +3,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -161,14 +160,20 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	old := os.Stdout
 	os.Stdout = w
+	defer func() {
+		os.Stdout = old
+		_ = w.Close()
+		_ = r.Close()
+	}()
 
 	fn()
 
-	w.Close()
-	os.Stdout = old
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
 	return buf.String()
 }
 
@@ -265,6 +270,3 @@ func TestNewExecToolWithConfig_EnableDenyPatternsFalseWarning(t *testing.T) {
 		t.Errorf("expected warning in NewExecToolWithConfig output: %s", out)
 	}
 }
-
-// Suppress unused import lint for fmt (used by captureStdout indirectly).
-var _ = fmt.Sprintf
