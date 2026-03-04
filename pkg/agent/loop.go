@@ -623,7 +623,7 @@ func (al *AgentLoop) runAgentLoop(
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
 	// 4. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
+	finalContent, iteration, streamSent, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
 		return "", err
 	}
@@ -645,8 +645,8 @@ func (al *AgentLoop) runAgentLoop(
 		al.maybeSummarize(agent, opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
-	// 8. Optional: send response via bus
-	if opts.SendResponse {
+	// 8. Optional: send response via bus (skip if streaming already delivered it)
+	if opts.SendResponse && !streamSent {
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
@@ -664,6 +664,11 @@ func (al *AgentLoop) runAgentLoop(
 			"final_length": len(finalContent),
 		})
 
+	// When streaming already delivered the message, return empty so the caller
+	// (Run loop) doesn't publish a duplicate via PublishOutbound.
+	if streamSent {
+		return "", nil
+	}
 	return finalContent, nil
 }
 
@@ -724,14 +729,25 @@ func (al *AgentLoop) handleReasoning(
 }
 
 // runLLMIteration executes the LLM call loop with tool handling.
+// Returns (finalContent, iteration, streamed, error).
+// When streamed is true, the response was already delivered to the user via
+// streaming (sendMessageDraft + sendMessage) and PublishOutbound should be skipped.
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
 	agent *AgentInstance,
 	messages []providers.Message,
 	opts processOptions,
-) (string, int, error) {
+) (string, int, bool, error) {
 	iteration := 0
 	var finalContent string
+	var streamed bool
+
+	// Check if both the provider and channel support streaming
+	streamProvider, providerCanStream := agent.Provider.(providers.StreamingProvider)
+	var streamer bus.Streamer
+	if providerCanStream && !constants.IsInternalChannel(opts.Channel) {
+		streamer, _ = al.bus.GetStreamer(ctx, opts.Channel, opts.ChatID)
+	}
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -771,22 +787,30 @@ func (al *AgentLoop) runLLMIteration(
 		var response *providers.LLMResponse
 		var err error
 
+		llmOpts := map[string]any{
+			"max_tokens":       agent.MaxTokens,
+			"temperature":      agent.Temperature,
+			"prompt_cache_key": agent.ID,
+		}
+
 		callLLM := func() (*providers.LLMResponse, error) {
+			// Use streaming when available (streamer obtained, provider supports it)
+			if streamer != nil && streamProvider != nil {
+				return streamProvider.ChatStream(
+					ctx, messages, providerToolDefs, agent.Model, llmOpts,
+					func(accumulated string) {
+						streamer.Update(ctx, accumulated)
+					},
+				)
+			}
+
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(
 					ctx,
 					agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
 						return agent.Provider.Chat(
-							ctx,
-							messages,
-							providerToolDefs,
-							model,
-							map[string]any{
-								"max_tokens":       agent.MaxTokens,
-								"temperature":      agent.Temperature,
-								"prompt_cache_key": agent.ID,
-							},
+							ctx, messages, providerToolDefs, model, llmOpts,
 						)
 					},
 				)
@@ -803,11 +827,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
-				"max_tokens":       agent.MaxTokens,
-				"temperature":      agent.Temperature,
-				"prompt_cache_key": agent.ID,
-			})
+			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, llmOpts)
 		}
 
 		// Retry loop for context/token errors
@@ -886,7 +906,7 @@ func (al *AgentLoop) runLLMIteration(
 					"iteration": iteration,
 					"error":     err.Error(),
 				})
-			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
+			return "", iteration, false, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
 		go al.handleReasoning(
@@ -909,13 +929,31 @@ func (al *AgentLoop) runLLMIteration(
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
+
+			// If we were streaming, finalize the message (sends the permanent message)
+			if streamer != nil {
+				if err := streamer.Finalize(ctx, finalContent); err != nil {
+					logger.WarnCF("agent", "Stream finalize failed", map[string]any{
+						"error": err.Error(),
+					})
+				} else {
+					streamed = true
+				}
+			}
+
 			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
 				map[string]any{
 					"agent_id":      agent.ID,
 					"iteration":     iteration,
 					"content_chars": len(finalContent),
+					"streamed":      streamed,
 				})
 			break
+		}
+
+		// Tool calls detected — cancel any active stream (draft auto-expires)
+		if streamer != nil {
+			streamer.Cancel(ctx)
 		}
 
 		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
@@ -1073,7 +1111,7 @@ func (al *AgentLoop) runLLMIteration(
 		}
 	}
 
-	return finalContent, iteration, nil
+	return finalContent, iteration, streamed, nil
 }
 
 // updateToolContexts updates the context for tools that need channel/chatID info.

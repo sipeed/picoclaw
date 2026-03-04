@@ -9,6 +9,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -91,6 +92,136 @@ func (p *Provider) Chat(
 	}
 
 	return parseResponse(resp), nil
+}
+
+// ChatStream implements providers.StreamingProvider.
+// It streams text deltas to onChunk (with accumulated text) while building
+// the same LLMResponse returned by Chat for tool-call compatibility.
+func (p *Provider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	var opts []option.RequestOption
+	if p.tokenSource != nil {
+		tok, err := p.tokenSource()
+		if err != nil {
+			return nil, fmt.Errorf("refreshing token: %w", err)
+		}
+		opts = append(opts, option.WithAuthToken(tok))
+	}
+
+	params, err := buildParams(messages, tools, model, options)
+	if err != nil {
+		return nil, err
+	}
+
+	stream := p.client.Messages.NewStreaming(ctx, params, opts...)
+	return parseStream(stream, onChunk)
+}
+
+// parseStream consumes a streaming response and builds an LLMResponse.
+func parseStream(
+	stream *ssestream.Stream[anthropic.MessageStreamEventUnion],
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
+	defer stream.Close()
+
+	var textContent strings.Builder
+	var toolCalls []ToolCall
+	var stopReason anthropic.StopReason
+	var inputTokens, outputTokens int64
+
+	// Track tool_use blocks being assembled (by content block index)
+	type toolBlock struct {
+		id          string
+		name        string
+		inputJSON   strings.Builder
+	}
+	activeTools := map[int64]*toolBlock{}
+
+	for stream.Next() {
+		event := stream.Current()
+
+		switch event.Type {
+		case "message_start":
+			if event.Message.Usage.InputTokens > 0 {
+				inputTokens = event.Message.Usage.InputTokens
+			}
+
+		case "content_block_start":
+			cb := event.ContentBlock
+			if cb.Type == "tool_use" {
+				activeTools[event.Index] = &toolBlock{
+					id:   cb.ID,
+					name: cb.Name,
+				}
+			}
+
+		case "content_block_delta":
+			delta := event.Delta
+			switch delta.Type {
+			case "text_delta":
+				textContent.WriteString(delta.Text)
+				if onChunk != nil {
+					onChunk(textContent.String())
+				}
+			case "input_json_delta":
+				if tb, ok := activeTools[event.Index]; ok {
+					tb.inputJSON.WriteString(delta.PartialJSON)
+				}
+			}
+
+		case "content_block_stop":
+			if tb, ok := activeTools[event.Index]; ok {
+				var args map[string]any
+				if err := json.Unmarshal([]byte(tb.inputJSON.String()), &args); err != nil {
+					log.Printf("anthropic stream: failed to decode tool call input for %q: %v", tb.name, err)
+					args = map[string]any{"raw": tb.inputJSON.String()}
+				}
+				toolCalls = append(toolCalls, ToolCall{
+					ID:        tb.id,
+					Name:      tb.name,
+					Arguments: args,
+				})
+				delete(activeTools, event.Index)
+			}
+
+		case "message_delta":
+			stopReason = event.Delta.StopReason
+			if event.Usage.OutputTokens > 0 {
+				outputTokens = event.Usage.OutputTokens
+			}
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		return nil, fmt.Errorf("claude streaming API call: %w", err)
+	}
+
+	finishReason := "stop"
+	switch stopReason {
+	case anthropic.StopReasonToolUse:
+		finishReason = "tool_calls"
+	case anthropic.StopReasonMaxTokens:
+		finishReason = "length"
+	case anthropic.StopReasonEndTurn:
+		finishReason = "stop"
+	}
+
+	return &LLMResponse{
+		Content:      textContent.String(),
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
+		Usage: &UsageInfo{
+			PromptTokens:     int(inputTokens),
+			CompletionTokens: int(outputTokens),
+			TotalTokens:      int(inputTokens + outputTokens),
+		},
+	}, nil
 }
 
 func (p *Provider) GetDefaultModel() string {

@@ -31,6 +31,24 @@ type PlaceholderCapable interface {
 	SendPlaceholder(ctx context.Context, chatID string) (messageID string, err error)
 }
 
+// StreamingCapable — channels that can show partial LLM output in real-time.
+// The channel SHOULD gracefully degrade if the platform rejects streaming
+// (e.g. Telegram bot without forum mode). In that case, Update becomes a no-op
+// and Finalize still delivers the final message.
+type StreamingCapable interface {
+	BeginStream(ctx context.Context, chatID string) (Streamer, error)
+}
+
+// Streamer pushes incremental content to a streaming-capable channel.
+type Streamer interface {
+	// Update sends accumulated partial content to the user.
+	Update(ctx context.Context, content string) error
+	// Finalize commits the final message. After this, the Streamer is done.
+	Finalize(ctx context.Context, content string) error
+	// Cancel aborts the stream (e.g. when tool calls are detected mid-stream).
+	Cancel(ctx context.Context)
+}
+
 // PlaceholderRecorder is injected into channels by Manager.
 // Channels call these methods on inbound to register typing/placeholder state.
 // Manager uses the registered state on outbound to stop typing and edit placeholders.

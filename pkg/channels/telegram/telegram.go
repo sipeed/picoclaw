@@ -8,8 +8,10 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"math/rand"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mymmrac/telego"
@@ -766,4 +768,96 @@ func (c *TelegramChannel) stripBotMention(content string) string {
 	re := regexp.MustCompile(`(?i)@` + regexp.QuoteMeta(botUsername))
 	content = re.ReplaceAllString(content, "")
 	return strings.TrimSpace(content)
+}
+
+// BeginStream implements channels.StreamingCapable.
+func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (channels.Streamer, error) {
+	if !c.config.Channels.Telegram.Streaming.Enabled {
+		return nil, fmt.Errorf("streaming disabled in config")
+	}
+
+	cid, err := parseChatID(chatID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &telegramStreamer{
+		bot:     c.bot,
+		chatID:  cid,
+		draftID: rand.Intn(1<<31-1) + 1, // non-zero random draft ID
+	}, nil
+}
+
+// telegramStreamer streams partial LLM output via Telegram's sendMessageDraft API.
+// On first API error (e.g. bot lacks forum mode), it silently degrades: Update
+// becomes a no-op, while Finalize still delivers the final message.
+type telegramStreamer struct {
+	bot     *telego.Bot
+	chatID  int64
+	draftID int
+	lastLen int
+	lastAt  time.Time
+	failed  bool
+	mu      sync.Mutex
+}
+
+const (
+	streamThrottleInterval = 3 * time.Second
+	streamMinGrowth        = 200 // minimum character growth to send an update
+)
+
+func (s *telegramStreamer) Update(ctx context.Context, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failed {
+		return nil
+	}
+
+	// Throttle: skip if not enough time or content has passed
+	now := time.Now()
+	growth := len(content) - s.lastLen
+	if s.lastLen > 0 && now.Sub(s.lastAt) < streamThrottleInterval && growth < streamMinGrowth {
+		return nil
+	}
+
+	htmlContent := markdownToTelegramHTML(content)
+
+	err := s.bot.SendMessageDraft(ctx, &telego.SendMessageDraftParams{
+		ChatID:    s.chatID,
+		DraftID:   s.draftID,
+		Text:      htmlContent,
+		ParseMode: telego.ModeHTML,
+	})
+	if err != nil {
+		// First error → degrade silently (e.g. no forum mode)
+		logger.WarnCF("telegram", "sendMessageDraft failed, disabling streaming", map[string]any{
+			"error": err.Error(),
+		})
+		s.failed = true
+		return nil // don't propagate — Finalize will still deliver
+	}
+
+	s.lastLen = len(content)
+	s.lastAt = now
+	return nil
+}
+
+func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
+	htmlContent := markdownToTelegramHTML(content)
+	tgMsg := tu.Message(tu.ID(s.chatID), htmlContent)
+	tgMsg.ParseMode = telego.ModeHTML
+
+	if _, err := s.bot.SendMessage(ctx, tgMsg); err != nil {
+		// Fallback to plain text
+		tgMsg.ParseMode = ""
+		if _, err = s.bot.SendMessage(ctx, tgMsg); err != nil {
+			return fmt.Errorf("telegram finalize: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *telegramStreamer) Cancel(ctx context.Context) {
+	// Draft auto-expires on Telegram's side; nothing to clean up.
 }

@@ -86,6 +86,7 @@ type Manager struct {
 	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
 	typingStops   sync.Map // "channel:chatID" → func()
 	reactionUndos sync.Map // "channel:chatID" → reactionEntry
+	streamActive  sync.Map // "channel:chatID" → true (set when streamer.Finalize sent the message)
 }
 
 type asyncTask struct {
@@ -114,7 +115,7 @@ func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 }
 
 // preSend handles typing stop, reaction undo, and placeholder editing before sending a message.
-// Returns true if the message was edited into a placeholder (skip Send).
+// Returns true if the message was already delivered (skip Send).
 func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) bool {
 	key := name + ":" + msg.ChatID
 
@@ -132,7 +133,14 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		}
 	}
 
-	// 3. Try editing placeholder
+	// 3. If a stream already finalized this message, skip both placeholder and send
+	if _, loaded := m.streamActive.LoadAndDelete(key); loaded {
+		// Also clean up any stale placeholder
+		m.placeholders.Delete(key)
+		return true
+	}
+
+	// 4. Try editing placeholder
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
@@ -156,11 +164,67 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.Medi
 		mediaStore: store,
 	}
 
+	// Register as streaming delegate so the agent loop can obtain streamers
+	messageBus.SetStreamDelegate(m)
+
 	if err := m.initChannels(); err != nil {
 		return nil, err
 	}
 
 	return m, nil
+}
+
+// GetStreamer implements bus.StreamDelegate.
+// It checks if the named channel supports streaming and returns a Streamer.
+func (m *Manager) GetStreamer(ctx context.Context, channelName, chatID string) (bus.Streamer, bool) {
+	m.mu.RLock()
+	ch, exists := m.channels[channelName]
+	m.mu.RUnlock()
+
+	if !exists {
+		return nil, false
+	}
+
+	sc, ok := ch.(StreamingCapable)
+	if !ok {
+		return nil, false
+	}
+
+	streamer, err := sc.BeginStream(ctx, chatID)
+	if err != nil {
+		logger.DebugCF("channels", "Streaming unavailable, falling back to placeholder", map[string]any{
+			"channel": channelName,
+			"error":   err.Error(),
+		})
+		return nil, false
+	}
+
+	// Wrap the channels.Streamer to track finalization for preSend coordination
+	return &managerStreamer{
+		inner:   streamer,
+		manager: m,
+		key:     channelName + ":" + chatID,
+	}, true
+}
+
+// managerStreamer wraps a channels.Streamer to mark streamActive on Finalize.
+type managerStreamer struct {
+	inner   Streamer
+	manager *Manager
+	key     string
+}
+
+func (s *managerStreamer) Update(ctx context.Context, content string) error {
+	return s.inner.Update(ctx, content)
+}
+
+func (s *managerStreamer) Finalize(ctx context.Context, content string) error {
+	s.manager.streamActive.Store(s.key, true)
+	return s.inner.Finalize(ctx, content)
+}
+
+func (s *managerStreamer) Cancel(ctx context.Context) {
+	s.inner.Cancel(ctx)
 }
 
 // initChannel is a helper that looks up a factory by name and creates the channel.
