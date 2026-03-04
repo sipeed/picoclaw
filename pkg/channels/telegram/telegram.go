@@ -86,7 +86,7 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		telegramCfg,
 		bus,
 		telegramCfg.AllowFrom,
-		channels.WithMaxMessageLength(4096),
+		channels.WithMaxMessageLength(4000),
 		channels.WithGroupTrigger(telegramCfg.GroupTrigger),
 		channels.WithReasoningChannelID(telegramCfg.ReasoningChannelID),
 	)

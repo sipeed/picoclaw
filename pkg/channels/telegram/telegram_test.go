@@ -69,7 +69,7 @@ func newTestChannel(t *testing.T, caller *stubCaller) *TelegramChannel {
 	require.NoError(t, err)
 
 	base := channels.NewBaseChannel("telegram", nil, nil, nil,
-		channels.WithMaxMessageLength(4096),
+		channels.WithMaxMessageLength(4000),
 	)
 	base.SetRunning(true)
 
