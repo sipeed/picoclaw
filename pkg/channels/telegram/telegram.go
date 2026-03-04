@@ -635,7 +635,14 @@ func markdownToTelegramMarkdownV2(text string) string {
 			continue
 		}
 
-		// 5. Handle standard Markdown Entities Boundaries
+		// 5. Handle expandable block quotation starts
+		if runes[i] == '>' && runes[i-1] == '*' && runes[i-2] == '*' && (i == 0 || runes[i-3] == '\n') {
+			result.WriteRune(runes[i])
+			i++
+			continue
+		}
+
+		// 6. Handle standard Markdown Entities Boundaries
 		// If they are part of valid markdown boundaries, we write them as-is.
 		// We trust the syntax rules: * _ ~ || [ ]
 		// (Assuming the text is a valid markdown, we don't escape these if formatting is intended)
@@ -668,7 +675,7 @@ func markdownToTelegramMarkdownV2(text string) string {
 			continue
 		}
 
-		// 6. Handle plain text characters
+		// 7. Handle plain text characters
 		// Escape remaining special characters if they aren't forming intended valid markup
 		if needsNormalEscape(runes[i]) {
 			// Check if it's already escaped; if an escape character exists, consume it legitimately

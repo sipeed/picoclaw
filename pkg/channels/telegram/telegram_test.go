@@ -4,8 +4,13 @@ import (
 	"fmt"
 	"testing"
 
+	_ "embed"
+
 	"github.com/stretchr/testify/require"
 )
+
+//go:embed testdata/md2_all_formats.txt
+var md2AllFormats string
 
 func Test_markdownToTelegramMarkdownV2(t *testing.T) {
 	cases := []struct {
@@ -23,6 +28,10 @@ func Test_markdownToTelegramMarkdownV2(t *testing.T) {
 		{
 			input:    "[inline URL](http://www.example.com/)",
 			expected: "[inline URL](http://www.example.com/)",
+		},
+		{
+			input:    md2AllFormats,
+			expected: md2AllFormats,
 		},
 	}
 
