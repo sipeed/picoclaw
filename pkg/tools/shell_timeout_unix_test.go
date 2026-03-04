@@ -13,12 +13,33 @@ import (
 	"time"
 )
 
-func processExists(pid int) bool {
+func processRunning(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
+	// kill(0) can return success for zombie processes too, so inspect /proc
+	// state and treat zombies as not-running for timeout cleanup assertions.
 	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
+	if err != nil && err != syscall.EPERM {
+		return false
+	}
+
+	data, readErr := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if readErr != nil {
+		return false
+	}
+	raw := string(data)
+	end := strings.LastIndex(raw, ")")
+	if end == -1 || end+2 >= len(raw) {
+		return true // best effort fallback
+	}
+	fields := strings.Fields(raw[end+2:])
+	if len(fields) == 0 {
+		return true // best effort fallback
+	}
+
+	state := fields[0]
+	return state != "Z"
 }
 
 func TestShellTool_TimeoutKillsChildProcess(t *testing.T) {
@@ -55,7 +76,7 @@ func TestShellTool_TimeoutKillsChildProcess(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if !processExists(childPID) {
+		if !processRunning(childPID) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
