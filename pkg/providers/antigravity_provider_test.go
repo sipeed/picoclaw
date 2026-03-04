@@ -12,7 +12,7 @@ func TestBuildRequestUsesFunctionFieldsWhenToolCallNameMissing(t *testing.T) {
 				ID: "call_read_file_123",
 				Function: &FunctionCall{
 					Name:      "read_file",
-					Arguments: `{"path":"README.md"}`,
+					Arguments: map[string]any{"path": "README.md"},
 				},
 			}},
 		},

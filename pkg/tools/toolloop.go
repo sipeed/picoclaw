@@ -124,7 +124,6 @@ func RunToolLoop(
 			Content: response.Content,
 		}
 		for _, tc := range normalizedToolCalls {
-			argumentsJSON, _ := json.Marshal(tc.Arguments)
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
 				ID:        tc.ID,
 				Type:      "function",
@@ -132,7 +131,7 @@ func RunToolLoop(
 				Arguments: tc.Arguments,
 				Function: &providers.FunctionCall{
 					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
+					Arguments: tc.Arguments,
 				},
 			})
 		}

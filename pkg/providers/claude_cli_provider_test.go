@@ -619,12 +619,12 @@ func TestBuildSystemPrompt_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather for a location",
-				Parameters: map[string]any{
+				Parameters: MustMarshalParameters(map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"location": map[string]any{"type": "string"},
 					},
-				},
+				}),
 			},
 		},
 	}
@@ -920,9 +920,9 @@ func TestExtractToolCalls_ToolCallArgumentsParsing(t *testing.T) {
 	if got[0].Arguments["name"] != "test" {
 		t.Errorf("Arguments[name] = %v, want test", got[0].Arguments["name"])
 	}
-	// Verify raw arguments string is preserved in FunctionCall
-	if got[0].Function.Arguments == "" {
-		t.Error("Function.Arguments should contain raw JSON string")
+	// Verify parsed arguments are also set on FunctionCall
+	if len(got[0].Function.Arguments) == 0 {
+		t.Error("Function.Arguments should contain parsed JSON arguments")
 	}
 }
 

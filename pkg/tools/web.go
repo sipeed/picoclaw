@@ -79,6 +79,36 @@ type SearchProvider interface {
 	Search(ctx context.Context, query string, count int) (string, error)
 }
 
+type searchResultItem struct {
+	Title   string
+	URL     string
+	Snippet string
+}
+
+func formatWebSearchResults(query, provider string, results []searchResultItem, count int) string {
+	if len(results) == 0 {
+		return fmt.Sprintf("No results for: %s", query)
+	}
+
+	header := fmt.Sprintf("Results for: %s", query)
+	if provider != "" {
+		header += " (via " + provider + ")"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(header)
+	for i, item := range results {
+		if i >= count {
+			break
+		}
+		fmt.Fprintf(&sb, "\n%d. %s\n   %s", i+1, item.Title, item.URL)
+		if item.Snippet != "" {
+			fmt.Fprintf(&sb, "\n   %s", item.Snippet)
+		}
+	}
+	return sb.String()
+}
+
 type BraveSearchProvider struct {
 	apiKey string
 	proxy  string
@@ -125,23 +155,16 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 	}
 
 	results := searchResp.Web.Results
-	if len(results) == 0 {
-		return fmt.Sprintf("No results for: %s", query), nil
+	items := make([]searchResultItem, 0, len(results))
+	for _, item := range results {
+		items = append(items, searchResultItem{
+			Title:   item.Title,
+			URL:     item.URL,
+			Snippet: item.Description,
+		})
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Results for: %s", query)
-	for i, item := range results {
-		if i >= count {
-			break
-		}
-		fmt.Fprintf(&sb, "\n%d. %s\n   %s", i+1, item.Title, item.URL)
-		if item.Description != "" {
-			fmt.Fprintf(&sb, "\n   %s", item.Description)
-		}
-	}
-
-	return sb.String(), nil
+	return formatWebSearchResults(query, "", items, count), nil
 }
 
 type TavilySearchProvider struct {
@@ -208,23 +231,16 @@ func (p *TavilySearchProvider) Search(ctx context.Context, query string, count i
 	}
 
 	results := searchResp.Results
-	if len(results) == 0 {
-		return fmt.Sprintf("No results for: %s", query), nil
+	items := make([]searchResultItem, 0, len(results))
+	for _, item := range results {
+		items = append(items, searchResultItem{
+			Title:   item.Title,
+			URL:     item.URL,
+			Snippet: item.Content,
+		})
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Results for: %s (via Tavily)", query)
-	for i, item := range results {
-		if i >= count {
-			break
-		}
-		fmt.Fprintf(&sb, "\n%d. %s\n   %s", i+1, item.Title, item.URL)
-		if item.Content != "" {
-			fmt.Fprintf(&sb, "\n   %s", item.Content)
-		}
-	}
-
-	return sb.String(), nil
+	return formatWebSearchResults(query, "Tavily", items, count), nil
 }
 
 type DuckDuckGoSearchProvider struct {
@@ -269,12 +285,10 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 		return fmt.Sprintf("No results found or extraction failed. Query: %s", query), nil
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Results for: %s (via DuckDuckGo)", query)
-
 	snippetMatches := reDDGSnippet.FindAllStringSubmatch(html, count+5)
 
 	maxItems := min(len(matches), count)
+	items := make([]searchResultItem, 0, maxItems)
 
 	for i := range maxItems {
 		urlStr := matches[i][1]
@@ -291,19 +305,21 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 			}
 		}
 
-		fmt.Fprintf(&sb, "\n%d. %s\n   %s", i+1, title, urlStr)
-
+		snippet := ""
 		// Attempt to attach snippet if available and index aligns
 		if i < len(snippetMatches) {
-			snippet := stripTags(snippetMatches[i][1])
+			snippet = stripTags(snippetMatches[i][1])
 			snippet = strings.TrimSpace(snippet)
-			if snippet != "" {
-				fmt.Fprintf(&sb, "\n   %s", snippet)
-			}
 		}
+
+		items = append(items, searchResultItem{
+			Title:   title,
+			URL:     urlStr,
+			Snippet: snippet,
+		})
 	}
 
-	return sb.String(), nil
+	return formatWebSearchResults(query, "DuckDuckGo", items, count), nil
 }
 
 func stripTags(content string) string {
