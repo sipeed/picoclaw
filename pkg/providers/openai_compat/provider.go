@@ -223,8 +223,14 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	}
 
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		// Check if the response is HTML instead of JSON (e.g., wrong api_base URL)
+		bodyStr := string(body)
+		if strings.HasPrefix(strings.TrimSpace(bodyStr), "<") {
+			return nil, fmt.Errorf("API returned HTML instead of JSON. Please check your api_base URL configuration. The server may be returning an error page or the endpoint URL may be incorrect (e.g., missing '/v1' path)")
+		}
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
+
 
 	if len(apiResponse.Choices) == 0 {
 		return &LLMResponse{
