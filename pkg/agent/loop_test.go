@@ -1068,7 +1068,14 @@ func TestSplitChatAndThread(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			gotChatID, gotThread := splitChatAndThread(tt.chatID)
 			if gotChatID != tt.wantChatID || gotThread != tt.wantThread {
-				t.Fatalf("splitChatAndThread(%q) = (%q, %d), want (%q, %d)", tt.chatID, gotChatID, gotThread, tt.wantChatID, tt.wantThread)
+				t.Fatalf(
+					"splitChatAndThread(%q) = (%q, %d), want (%q, %d)",
+					tt.chatID,
+					gotChatID,
+					gotThread,
+					tt.wantChatID,
+					tt.wantThread,
+				)
 			}
 		})
 	}

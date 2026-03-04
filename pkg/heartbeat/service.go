@@ -273,7 +273,9 @@ func (hs *HeartbeatService) resolveTelegramThreadTarget(threadID int) (channel, 
 		if ch != "telegram" || cid == "" {
 			continue
 		}
-		return ch, withTelegramThread(cid, threadID), fmt.Sprintf("telegram heartbeat_thread_id from %s", candidate.reason)
+		return ch,
+			withTelegramThread(cid, threadID),
+			fmt.Sprintf("telegram heartbeat_thread_id from %s", candidate.reason)
 	}
 
 	return "", "", ""

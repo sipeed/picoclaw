@@ -3603,7 +3603,7 @@ func (al *AgentLoop) handleHeartbeatCommand(args []string, msg bus.InboundMessag
 	}
 
 	arg := strings.ToLower(strings.TrimSpace(args[1]))
-	threadID := 0
+	var threadID int
 	var err error
 
 	switch arg {
