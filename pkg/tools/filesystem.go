@@ -159,7 +159,9 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	// Recompose the complete content by merging the header and the rest
-	fullContent := append(header, rest...)
+	fullContent := make([]byte, 0, len(header)+len(rest))
+	fullContent = append(fullContent, header...)
+	fullContent = append(fullContent, rest...)
 
 	return NewToolResult(string(fullContent))
 }
