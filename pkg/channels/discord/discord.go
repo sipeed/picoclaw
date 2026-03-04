@@ -345,6 +345,10 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		content = c.stripBotMention(content)
 	}
 
+	// Resolve Discord refs in main content before concatenation to avoid
+	// double-expanding links that appear in the referenced message.
+	content = c.resolveDiscordRefs(s, content, m.GuildID)
+
 	// Prepend referenced (quoted) message content if this is a reply
 	if m.MessageReference != nil && m.ReferencedMessage != nil {
 		refContent := m.ReferencedMessage.Content
@@ -358,7 +362,6 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 				refAuthor, refContent, content)
 		}
 	}
-	content = c.resolveDiscordRefs(s, content, m.GuildID)
 
 	senderID := m.Author.ID
 
