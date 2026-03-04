@@ -31,6 +31,9 @@ type Provider struct {
 	baseURL     string
 }
 
+// SupportsThinking implements providers.ThinkingCapable.
+func (p *Provider) SupportsThinking() bool { return true }
+
 func NewProvider(token string) *Provider {
 	return NewProviderWithBaseURL(token, "")
 }
@@ -202,6 +205,9 @@ func buildParams(
 func applyThinkingConfig(params *anthropic.MessageNewParams, level string) {
 	// Anthropic API rejects requests with temperature set alongside thinking.
 	// Reset to zero value (omitted from JSON serialization).
+	if params.Temperature.Valid() {
+		log.Printf("anthropic: temperature cleared because thinking is enabled (level=%s)", level)
+	}
 	params.Temperature = anthropic.MessageNewParams{}.Temperature
 
 	if level == "adaptive" {
@@ -220,22 +226,34 @@ func applyThinkingConfig(params *anthropic.MessageNewParams, level string) {
 
 	// budget_tokens must be < max_tokens; clamp to respect user's max_tokens setting.
 	if budget >= params.MaxTokens {
+		log.Printf("anthropic: budget_tokens (%d) clamped to %d (max_tokens-1)", budget, params.MaxTokens-1)
 		budget = params.MaxTokens - 1
+	} else if budget > params.MaxTokens*80/100 {
+		log.Printf("anthropic: thinking budget (%d) exceeds 80%% of max_tokens (%d), output may be truncated",
+			budget, params.MaxTokens)
 	}
 	params.Thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
 }
 
-// levelToBudget maps a thinking level string to budget_tokens for legacy models.
+// levelToBudget maps a thinking level to budget_tokens.
+// Values are based on Anthropic's recommendations and community best practices:
+//
+//	low    =  4,096  — simple reasoning, quick debugging (Claude Code "think")
+//	medium = 16,384  — Anthropic recommended sweet spot for most tasks
+//	high   = 32,000  — complex architecture, deep analysis (diminishing returns above this)
+//	xhigh  = 64,000  — extreme reasoning, research problems, benchmarks
+//
+// Note: For Claude 4.6+, prefer adaptive thinking over manual budget_tokens.
 func levelToBudget(level string) int {
 	switch level {
 	case "low":
 		return 4096
 	case "medium":
-		return 10000
+		return 16384
 	case "high":
 		return 32000
 	case "xhigh":
-		return 128000
+		return 64000
 	default:
 		return 0
 	}

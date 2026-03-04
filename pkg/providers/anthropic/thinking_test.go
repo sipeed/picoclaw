@@ -1,6 +1,7 @@
 package anthropicprovider
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -33,9 +34,9 @@ func TestApplyThinkingConfig_BudgetLevels(t *testing.T) {
 		wantBudget int64
 	}{
 		{"low", 4096},
-		{"medium", 10000},
+		{"medium", 16384},
 		{"high", 32000},
-		{"xhigh", 128000},
+		{"xhigh", 64000},
 	}
 
 	for _, tt := range tests {
@@ -100,9 +101,9 @@ func TestLevelToBudget(t *testing.T) {
 		want  int
 	}{
 		{"low", "low", 4096},
-		{"medium", "medium", 10000},
+		{"medium", "medium", 16384},
 		{"high", "high", 32000},
-		{"xhigh", "xhigh", 128000},
+		{"xhigh", "xhigh", 64000},
 		{"off", "off", 0},
 		{"empty", "", 0},
 	}
@@ -135,8 +136,59 @@ func TestBuildParams_ThinkingClearsTemperature(t *testing.T) {
 	if params.Thinking.OfEnabled == nil {
 		t.Fatal("expected enabled thinking")
 	}
-	if params.Thinking.OfEnabled.BudgetTokens != 10000 {
-		t.Errorf("budget_tokens = %d, want 10000", params.Thinking.OfEnabled.BudgetTokens)
+	if params.Thinking.OfEnabled.BudgetTokens != 16384 {
+		t.Errorf("budget_tokens = %d, want 16384", params.Thinking.OfEnabled.BudgetTokens)
+	}
+}
+
+// unmarshalBlocks constructs []ContentBlockUnion via JSON round-trip so that
+// the internal JSON.raw field is populated (required by AsText/AsThinking).
+func unmarshalBlocks(t *testing.T, jsonStr string) []anthropic.ContentBlockUnion {
+	t.Helper()
+	var blocks []anthropic.ContentBlockUnion
+	if err := json.Unmarshal([]byte(jsonStr), &blocks); err != nil {
+		t.Fatalf("unmarshalBlocks: %v", err)
+	}
+	return blocks
+}
+
+func TestParseResponse_ThinkingBlock(t *testing.T) {
+	resp := &anthropic.Message{
+		Content: unmarshalBlocks(t, `[
+			{"type":"thinking","thinking":"Let me reason step by step...","signature":"sig"},
+			{"type":"text","text":"The answer is 42."}
+		]`),
+		StopReason: anthropic.StopReasonEndTurn,
+	}
+
+	result := parseResponse(resp)
+
+	if result.Reasoning != "Let me reason step by step..." {
+		t.Errorf("Reasoning = %q, want thinking content", result.Reasoning)
+	}
+	if result.Content != "The answer is 42." {
+		t.Errorf("Content = %q, want text content", result.Content)
+	}
+	if result.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want stop", result.FinishReason)
+	}
+}
+
+func TestParseResponse_NoThinkingBlock(t *testing.T) {
+	resp := &anthropic.Message{
+		Content: unmarshalBlocks(t, `[
+			{"type":"text","text":"Just a normal response."}
+		]`),
+		StopReason: anthropic.StopReasonEndTurn,
+	}
+
+	result := parseResponse(resp)
+
+	if result.Reasoning != "" {
+		t.Errorf("Reasoning = %q, want empty", result.Reasoning)
+	}
+	if result.Content != "Just a normal response." {
+		t.Errorf("Content = %q, want text content", result.Content)
 	}
 }
 
