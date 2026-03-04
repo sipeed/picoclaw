@@ -26,13 +26,15 @@ func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:           workspacePath,
-				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "",
-				MaxTokens:           32768,
-				Temperature:         nil, // nil means use provider default
-				MaxToolIterations:   50,
+				Workspace:                 workspacePath,
+				RestrictToWorkspace:       true,
+				Provider:                  "",
+				Model:                     "",
+				MaxTokens:                 32768,
+				Temperature:               nil, // nil means use provider default
+				MaxToolIterations:         50,
+				SummarizeMessageThreshold: 20,
+				SummarizeTokenPercent:     75,
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -136,6 +138,16 @@ func DefaultConfig() *Config {
 				WebhookPath:    "/webhook/wecom-app",
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
+			},
+			WeComAIBot: WeComAIBotConfig{
+				Enabled:        false,
+				Token:          "",
+				EncodingAESKey: "",
+				WebhookPath:    "/webhook/wecom-aibot",
+				AllowFrom:      FlexibleStringSlice{},
+				ReplyTimeout:   5,
+				MaxSteps:       10,
+				WelcomeMessage: "Hello! I'm your AI assistant. How can I help you today?",
 			},
 			Pico: PicoConfig{
 				Enabled:        false,
@@ -339,6 +351,13 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+				GLMSearch: GLMSearchConfig{
+					Enabled:      false,
+					APIKey:       "",
+					BaseURL:      "https://open.bigmodel.cn/api/paas/v4/web_search",
+					SearchEngine: "search_std",
+					MaxResults:   5,
+				},
 			},
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5,
@@ -358,6 +377,10 @@ func DefaultConfig() *Config {
 					MaxSize:    50,
 					TTLSeconds: 300,
 				},
+			},
+			MCP: MCPConfig{
+				Enabled: false,
+				Servers: map[string]MCPServerConfig{},
 			},
 		},
 		Heartbeat: HeartbeatConfig{

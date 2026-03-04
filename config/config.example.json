@@ -6,7 +6,9 @@
       "model_name": "gpt4",
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "summarize_message_threshold": 20,
+      "summarize_token_percent": 75
     }
   },
   "model_list": [
@@ -49,6 +51,7 @@
     "telegram": {
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "base_url": "",
       "proxy": "",
       "allow_from": [
         "YOUR_USER_ID"
@@ -58,6 +61,7 @@
     "discord": {
       "enabled": false,
       "token": "YOUR_DISCORD_BOT_TOKEN",
+      "proxy": "",
       "allow_from": [],
       "group_trigger": {
         "mention_only": false
@@ -127,7 +131,7 @@
       "reasoning_channel_id": ""
     },
     "wecom": {
-      "_comment": "WeCom Bot (智能机器人) - Easier setup, supports group chats",
+      "_comment": "WeCom Bot - Easier setup, supports group chats",
       "enabled": false,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
@@ -138,7 +142,7 @@
       "reasoning_channel_id": ""
     },
     "wecom_app": {
-      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only. See docs/wecom-app-configuration.md",
+      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only.",
       "enabled": false,
       "corp_id": "YOUR_CORP_ID",
       "corp_secret": "YOUR_CORP_SECRET",
@@ -148,6 +152,16 @@
       "webhook_path": "/webhook/wecom-app",
       "allow_from": [],
       "reply_timeout": 5,
+      "reasoning_channel_id": ""
+    },
+    "wecom_aibot": {
+      "_comment": "WeCom AI Bot (智能机器人) - Official WeCom AI Bot integration, supports proactive messaging and private chats.",
+      "enabled": false,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "max_steps": 10,
+      "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
       "reasoning_channel_id": ""
     }
   },
@@ -232,6 +246,71 @@
     },
     "cron": {
       "exec_timeout_minutes": 5
+    },
+    "mcp": {
+      "enabled": false,
+      "servers": {
+        "context7": {
+          "enabled": false,
+          "type": "http",
+          "url": "https://mcp.context7.com/mcp",
+          "headers": {
+            "CONTEXT7_API_KEY": "ctx7sk-xx"
+          }
+        },
+        "filesystem": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "/tmp"
+          ]
+        },
+        "github": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-github"
+          ],
+          "env": {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN"
+          }
+        },
+        "brave-search": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-brave-search"
+          ],
+          "env": {
+            "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY"
+          }
+        },
+        "postgres": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-postgres",
+            "postgresql://user:password@localhost/dbname"
+          ]
+        },
+        "slack": {
+          "enabled": false,
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-slack"
+          ],
+          "env": {
+            "SLACK_BOT_TOKEN": "YOUR_SLACK_BOT_TOKEN",
+            "SLACK_TEAM_ID": "YOUR_SLACK_TEAM_ID"
+          }
+        }
+      }
     },
     "exec": {
       "enable_deny_patterns": false,

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 type SendCallback func(channel, chatID, content string) error
@@ -11,7 +12,7 @@ type MessageTool struct {
 	sendCallback   SendCallback
 	defaultChannel string
 	defaultChatID  string
-	sentInRound    bool // Tracks whether a message was sent in the current processing round
+	sentInRound    atomic.Bool // Tracks whether a message was sent in the current processing round
 }
 
 func NewMessageTool() *MessageTool {
@@ -50,12 +51,12 @@ func (t *MessageTool) Parameters() map[string]any {
 func (t *MessageTool) SetContext(channel, chatID string) {
 	t.defaultChannel = channel
 	t.defaultChatID = chatID
-	t.sentInRound = false // Reset send tracking for new processing round
+	t.sentInRound.Store(false) // Reset send tracking for new processing round
 }
 
 // HasSentInRound returns true if the message tool sent a message during the current round.
 func (t *MessageTool) HasSentInRound() bool {
-	return t.sentInRound
+	return t.sentInRound.Load()
 }
 
 func (t *MessageTool) SetSendCallback(callback SendCallback) {
@@ -94,7 +95,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		}
 	}
 
-	t.sentInRound = true
+	t.sentInRound.Store(true)
 	// Silent: user already received the message directly
 	return &ToolResult{
 		ForLLM: fmt.Sprintf("Message sent to %s:%s", channel, chatID),
