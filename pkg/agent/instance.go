@@ -143,6 +143,12 @@ func NewAgentInstance(
 		log.Printf("session migration: %d sessions migrated to SQLite", n)
 	}
 
+	if n, perr := store.Prune(session.DefaultPruneTTL); perr != nil {
+		log.Printf("session prune error: %v", perr)
+	} else if n > 0 {
+		log.Printf("session prune: %d old sessions removed", n)
+	}
+
 	sessionsManager := session.NewLegacyAdapter(store)
 
 	contextBuilder := NewContextBuilder(workspace)

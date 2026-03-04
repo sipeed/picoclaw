@@ -459,9 +459,87 @@ func (la *LegacyAdapter) Save(key string) error {
 	return nil
 }
 
+// DefaultPruneTTL is the default time-to-live for session pruning.
+const DefaultPruneTTL = 7 * 24 * time.Hour
+
+// CompactOldTurns flushes pending writes, then compacts SQLite turns
+// keeping only the last keepLast messages. Sets session summary to the given value.
+func (la *LegacyAdapter) CompactOldTurns(key string, keepLast int, summary string) error {
+	// 1. Flush pending messages to SQLite
+	if err := la.Save(key); err != nil {
+		return err
+	}
+	// 2. Query all turns
+	turns, err := la.store.Turns(key, 0)
+	if err != nil {
+		return err
+	}
+	// 3. Count total messages, find cut point
+	totalMsgs := 0
+	for _, t := range turns {
+		totalMsgs += len(t.Messages)
+	}
+	if keepLast >= totalMsgs {
+		// Nothing to compact, just update summary
+		if err := la.store.SetSummary(key, summary); err != nil {
+			return err
+		}
+		la.mu.Lock()
+		if c, ok := la.cache[key]; ok {
+			c.summary = summary
+		}
+		la.mu.Unlock()
+		return nil
+	}
+	dropCount := totalMsgs - keepLast
+	accumulated := 0
+	cutSeq := 0
+	for _, t := range turns {
+		accumulated += len(t.Messages)
+		if accumulated <= dropCount {
+			cutSeq = t.Seq
+		} else {
+			break
+		}
+	}
+	if cutSeq == 0 {
+		if err := la.store.SetSummary(key, summary); err != nil {
+			return err
+		}
+		la.mu.Lock()
+		if c, ok := la.cache[key]; ok {
+			c.summary = summary
+		}
+		la.mu.Unlock()
+		return nil
+	}
+	// 4. Compact in SQLite
+	if err := la.store.Compact(key, cutSeq, summary); err != nil {
+		return err
+	}
+	// 5. Update in-memory cache
+	la.mu.Lock()
+	defer la.mu.Unlock()
+	if c, ok := la.cache[key]; ok {
+		if keepLast < len(c.messages) {
+			c.messages = c.messages[len(c.messages)-keepLast:]
+		}
+		c.stored = len(c.messages)
+		c.replaced = false
+		c.dirty = false
+		c.summary = summary
+	}
+	return nil
+}
+
 // Store returns the underlying SessionStore for direct DAG operations.
 func (la *LegacyAdapter) Store() SessionStore {
 	return la.store
+}
+
+// Graph returns a SessionGraph backed by the underlying store.
+func (la *LegacyAdapter) Graph() *SessionGraph {
+	return NewSessionGraph(la.store)
 }
 
 // AdvanceStored increments the stored counter for a session by delta,
@@ -494,18 +572,17 @@ func (la *LegacyAdapter) Close() {
 }
 
 func (la *LegacyAdapter) flushLoop() {
-	ticker := time.NewTicker(5 * time.Minute)
-
-	defer ticker.Stop()
-
+	flushTicker := time.NewTicker(5 * time.Minute)
+	pruneTicker := time.NewTicker(6 * time.Hour)
+	defer flushTicker.Stop()
+	defer pruneTicker.Stop()
 	for {
 		select {
-		case <-ticker.C:
-
+		case <-flushTicker.C:
 			la.FlushDirty()
-
+		case <-pruneTicker.C:
+			_, _ = la.store.Prune(DefaultPruneTTL)
 		case <-la.done:
-
 			return
 		}
 	}
