@@ -230,9 +230,17 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial state immediately
 	sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
-	sendSSEIfChanged(w, flusher, "session",
-		map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions(), "graph": h.provider.GetSessionGraph()},
-		&lastSession)
+	sendSSEIfChanged(
+		w,
+		flusher,
+		"session",
+		map[string]any{
+			"stats":    h.provider.GetSessionStats(),
+			"sessions": h.provider.GetActiveSessions(),
+			"graph":    h.provider.GetSessionGraph(),
+		},
+		&lastSession,
+	)
 	sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 	sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
 	sendSSEIfChanged(w, flusher, "context", h.provider.GetContextInfo(), &lastContext)
@@ -246,9 +254,17 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-ch:
 			sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
-			sendSSEIfChanged(w, flusher, "session",
-				map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions(), "graph": h.provider.GetSessionGraph()},
-				&lastSession)
+			sendSSEIfChanged(
+				w,
+				flusher,
+				"session",
+				map[string]any{
+					"stats":    h.provider.GetSessionStats(),
+					"sessions": h.provider.GetActiveSessions(),
+					"graph":    h.provider.GetSessionGraph(),
+				},
+				&lastSession,
+			)
 			sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 			sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
 			sendSSEIfChanged(w, flusher, "context", h.provider.GetContextInfo(), &lastContext)
