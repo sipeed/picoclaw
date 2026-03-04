@@ -140,6 +140,14 @@ func (p *Provider) Chat(
 		requestBody[fieldName] = maxTokens
 	}
 
+	if reasoning_split, ok := options["reasoning_split"].(bool); ok && reasoning_split {
+		requestBody["reasoning_split"] = true
+	}
+
+	if strings.Contains(strings.ToLower(model), "minimax") {
+		requestBody["reasoning_split"] = true
+	}
+
 	if temperature, ok := asFloat(options["temperature"]); ok {
 		lowerModel := strings.ToLower(model)
 		// Kimi k2 models only support temperature=1.
