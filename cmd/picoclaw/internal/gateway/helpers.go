@@ -36,6 +36,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 func gatewayCmd(debug bool) error {
@@ -133,6 +134,12 @@ func gatewayCmd(debug bool) error {
 	// Inject channel manager and media store into agent loop
 	agentLoop.SetChannelManager(channelManager)
 	agentLoop.SetMediaStore(mediaStore)
+
+	// Wire up voice transcription if a supported provider is configured.
+	if transcriber := voice.DetectTranscriber(cfg); transcriber != nil {
+		agentLoop.SetTranscriber(transcriber)
+		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
+	}
 
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
