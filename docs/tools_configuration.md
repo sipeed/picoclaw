@@ -45,34 +45,70 @@ Web tools are used for web search and fetching.
 
 ## Exec Tool
 
-The exec tool is used to execute shell commands.
+The exec tool executes shell commands using an in-process POSIX interpreter with
+AST-based risk classification, environment sanitization, and file-access sandboxing.
 
-| Config                 | Type  | Default | Description                                |
-| ---------------------- | ----- | ------- | ------------------------------------------ |
-| `enable_deny_patterns` | bool  | true    | Enable default dangerous command blocking  |
-| `custom_deny_patterns` | array | []      | Custom deny patterns (regular expressions) |
+### Configuration
 
-### Functionality
+| Config           | Type   | Default    | Description                                                             |
+| ---------------- | ------ | ---------- | ----------------------------------------------------------------------- |
+| `risk_threshold` | string | `"medium"` | Maximum allowed risk level: `"low"`, `"medium"`, `"high"`, `"critical"` |
+| `risk_overrides` | object | `{}`       | Per-command risk level overrides (command name → level)                 |
+| `arg_modifiers`  | object | `{}`       | Per-command argument patterns that adjust risk level                    |
+| `env_allowlist`  | array  | `[]`       | Extra environment variables to expose (extends built-in defaults)       |
+| `env_set`        | object | `{}`       | Explicit `VAR=value` pairs injected into every command                  |
 
-- **`enable_deny_patterns`**: Set to `false` to completely disable the default dangerous command blocking patterns
-- **`custom_deny_patterns`**: Add custom deny regex patterns; commands matching these will be blocked
+### Risk Classification
 
-### Default Blocked Command Patterns
+Every command is parsed into an AST before execution. Each resolved binary is
+looked up in a built-in risk table with four levels:
 
-By default, PicoClaw blocks the following dangerous commands:
+| Level      | Meaning                               | Examples                           |
+| ---------- | ------------------------------------- | ---------------------------------- |
+| `low`      | Read-only / informational             | `echo`, `cat`, `ls`, `date`        |
+| `medium`   | Writes files but limited blast radius | `cp`, `mv`, `mkdir`, `tee`         |
+| `high`     | System-wide side effects              | `apt`, `brew`, `docker`, `mount`   |
+| `critical` | Destructive / privilege escalation    | `sudo`, `rm -rf`, `shutdown`, `dd` |
 
-- Delete commands: `rm -rf`, `del /f/q`, `rmdir /s`
-- Disk operations: `format`, `mkfs`, `diskpart`, `dd if=`, writing to `/dev/sd*`
-- System operations: `shutdown`, `reboot`, `poweroff`
-- Command substitution: `$()`, `${}`, backticks
-- Pipe to shell: `| sh`, `| bash`
-- Privilege escalation: `sudo`, `chmod`, `chown`
-- Process control: `pkill`, `killall`, `kill -9`
-- Remote operations: `curl | sh`, `wget | sh`, `ssh`
-- Package management: `apt`, `yum`, `dnf`, `npm install -g`, `pip install --user`
-- Containers: `docker run`, `docker exec`
-- Git: `git push`, `git force`
-- Other: `eval`, `source *.sh`
+Commands with a risk level **above** `risk_threshold` are blocked before execution.
+
+#### Argument modifiers
+
+Some commands change risk depending on their arguments. For example, `rm` is
+`medium` by default but becomes `critical` when called with `-rf`.
+
+You can add custom argument modifiers via config. Each entry lists tokens that
+must all be present (order-independent) and the resulting level:
+
+```json
+{
+  "arg_modifiers": {
+    "curl": [{ "args": ["--upload-file"], "level": "high" }],
+    "git": [{ "args": ["push", "--force"], "level": "critical" }]
+  }
+}
+```
+
+The **highest matching** modifier wins (built-in and custom are merged).
+
+### Environment Sanitization
+
+The shell interpreter runs with a sanitized environment. Only a safe allowlist
+of variables is exposed (e.g., `PATH`, `HOME`, `LANG`, `TERM`).
+
+- **`env_allowlist`**: Extend the defaults with additional variable names.
+- **`env_set`**: Inject fixed `VAR=value` pairs (overrides real env).
+
+### File-Access Sandboxing
+
+When `restrict_to_workspace` is enabled (the default), the interpreter's
+`OpenHandler` blocks reads and writes outside the configured workspace directory.
+
+### Cron Integration
+
+The cron tool creates its own `ExecTool` via `NewExecToolWithConfig`, so
+scheduled commands go through the same risk classifier, env sanitization, and
+sandbox as agent-originated commands.
 
 ### Configuration Example
 
@@ -80,8 +116,18 @@ By default, PicoClaw blocks the following dangerous commands:
 {
   "tools": {
     "exec": {
-      "enable_deny_patterns": true,
-      "custom_deny_patterns": ["\\brm\\s+-r\\b", "\\bkillall\\s+python"]
+      "risk_threshold": "medium",
+      "risk_overrides": {
+        "ffmpeg": "low",
+        "terraform": "critical"
+      },
+      "arg_modifiers": {
+        "curl": [{ "args": ["--upload-file"], "level": "high" }]
+      },
+      "env_allowlist": ["GOPATH", "JAVA_HOME"],
+      "env_set": {
+        "NODE_ENV": "production"
+      }
     }
   }
 }

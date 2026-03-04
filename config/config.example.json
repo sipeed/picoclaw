@@ -340,10 +340,11 @@
       }
     },
     "exec": {
-      "enabled": true,
-      "enable_deny_patterns": true,
-      "custom_deny_patterns": null,
-      "custom_allow_patterns": null
+      "risk_threshold": "medium",
+      "risk_overrides": {},
+      "arg_modifiers": {},
+      "env_allowlist": [],
+      "env_set": {}
     },
     "skills": {
       "enabled": true,
