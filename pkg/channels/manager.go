@@ -1,3 +1,69 @@
+type metricMiddleware struct {
+	handler http.Handler
+}
+
+func (mw *metricMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Only track our actual endpoints, not internal ones
+	if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+		mw.handler.ServeHTTP(w, r)
+		return
+	}
+
+	start := time.Now()
+	method := r.Method
+	endpoint := r.URL.Path
+
+	// Increment inflight requests
+	inFlightGauge := promauto.With(prometheus.Labels{"method": method, "endpoint": endpoint}).NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "http_requests_inflight",
+			Help: "Number of HTTP requests currently being served",
+		},
+	).WithLabelValues()
+	inFlightGauge.Inc()
+	defer inFlightGauge.Dec()
+
+	// Wrap the ResponseWriter to capture status code
+	wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+	mw.handler.ServeHTTP(wrapped, r)
+
+	// Record metrics
+	duration := time.Since(start)
+	requestsTotal.WithLabelValues(method, endpoint, fmt.Sprintf("%d", wrapped.statusCode)).Inc()
+	requestDuration.WithLabelValues(method, endpoint).Observe(duration.Seconds())
+}
+
+// responseWriter wraps http.ResponseWriter to capture status code
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+var (
+	requestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "Total number of HTTP requests",
+		},
+		[]string{"method", "endpoint", "status"},
+	)
+
+	requestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_request_duration_seconds",
+			Help:    "Duration of HTTP requests in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "endpoint"},
+	)
+)
+
+
 // PicoClaw - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
@@ -309,6 +375,12 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
+	ReadTimeout:  30 * time.Second,
+	WriteTimeout: 30 * time.Second,
+}
+
+	// Wrap the entire mux with metrics middleware
+	m.httpServer.Handler = &metricMiddleware{handler: m.mux}
 }
 
 func (m *Manager) StartAll(ctx context.Context) error {
