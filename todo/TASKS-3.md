@@ -171,18 +171,18 @@ func (tw *TurnWriter) Discard()
 
 ---
 
-### Phase 1: Fork/Report ターン導入
+### Phase 1: Fork/Report ターン導入 ✅
 
-5. **Fork 操作**
+5. ✅ **Fork 操作**
    - `SessionStore.Fork()` 実装
    - 親セッションに `TurnForkPoint` を追記、子セッションを `parent_key` 付きで作成
 
-6. **Report ターン**
+6. ✅ **Report ターン**
    - `TurnReport` の Append/Turns/Messages 対応
    - `origin_key` でどのセッションの報告かを追跡
    - user role でメッセージ格納 (system role 禁止)
 
-7. **サブエージェントセッション永続化**
+7. ✅ **サブエージェントセッション永続化**
    - サブエージェント実行中のターンを SQLite に記録
    - 完了後にセッション status を "completed" に変更
 

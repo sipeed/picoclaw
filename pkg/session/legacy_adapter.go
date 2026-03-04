@@ -459,6 +459,22 @@ func (la *LegacyAdapter) Save(key string) error {
 	return nil
 }
 
+// Store returns the underlying SessionStore for direct DAG operations.
+func (la *LegacyAdapter) Store() SessionStore {
+	return la.store
+}
+
+// AdvanceStored increments the stored counter for a session by delta,
+// preventing the flush loop from re-persisting messages already written
+// directly to the store (e.g. TurnReport).
+func (la *LegacyAdapter) AdvanceStored(key string, delta int) {
+	la.mu.Lock()
+	defer la.mu.Unlock()
+	if c, ok := la.cache[key]; ok {
+		c.stored += delta
+	}
+}
+
 // Close stops the background flush loop and persists all dirty sessions.
 
 func (la *LegacyAdapter) Close() {
