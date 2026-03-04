@@ -9,14 +9,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/caarlos0/env/v11"
+	import (
+	"github.com/fsnotify/fsnotify"
+	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
 // rrCounter is a global counter for round-robin load balancing across models.
-var rrCounter atomic.Uint64
-
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
 // so allow_from can contain both "123" and 123.
 type FlexibleStringSlice []string
@@ -64,6 +64,7 @@ type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 	Retry     RetryConfig     `json:"retry"`
+	HotReload HotReloadConfig   `json:"hot_reload,omitempty"`
 
 // MarshalJSON implements custom JSON marshaling for Config
 // to omit providers section when empty and session when empty
@@ -735,8 +736,6 @@ func LoadConfig(path string) (*Config, error) {
     }
 
     return cfg, nil
-
-	return cfg, nil
 }
 
 func (c *Config) migrateChannelConfigs() {
