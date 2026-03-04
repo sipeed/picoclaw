@@ -335,6 +335,10 @@ func registerSharedTools(
 				webSearchOpts,
 			)
 			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+			// Wire session recorder for DAG persistence.
+			recorder := newSessionRecorder(agent.Sessions)
+			conductorKey := routing.BuildAgentMainSessionKey(agent.ID)
+			subagentManager.SetSessionRecorder(recorder, conductorKey)
 			agent.SubagentMgr = subagentManager
 			spawnTool := tools.NewSpawnTool(subagentManager)
 			currentAgentID := agentID
@@ -866,8 +870,25 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
 	historyMsg := fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content)
-	agent.Sessions.AddMessage(sessionKey, "user", historyMsg)
-	agent.Sessions.MarkDirty(sessionKey)
+	// Write as TurnReport to the store for DAG tracking, with legacy fallback.
+	subagentSessionKey := routing.BuildSubagentSessionKey(extractTaskID(msg.SenderID))
+	store := agent.Sessions.Store()
+	reportTurn := &session.Turn{
+		Kind:      session.TurnReport,
+		OriginKey: subagentSessionKey,
+		Author:    msg.SenderID,
+		Messages:  []providers.Message{{Role: "user", Content: historyMsg}},
+	}
+	if err := store.Append(sessionKey, reportTurn); err != nil {
+		logger.ErrorCF("agent", "Failed to record report turn, falling back to legacy",
+			map[string]any{"error": err.Error()})
+		agent.Sessions.AddMessage(sessionKey, "user", historyMsg)
+		agent.Sessions.MarkDirty(sessionKey)
+	} else {
+		// Update in-memory cache so conductor sees the message on next turn.
+		agent.Sessions.AddFullMessage(sessionKey, providers.Message{Role: "user", Content: historyMsg})
+		agent.Sessions.AdvanceStored(sessionKey, 1)
+	}
 
 	// Send a brief notification (SkipPlaceholder to avoid corrupting status messages)
 	label := msg.SenderID
@@ -895,6 +916,14 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		})
 
 	return "", nil
+}
+
+// extractTaskID extracts the task ID from a sender ID like "subagent:subagent-1".
+func extractTaskID(senderID string) string {
+	if idx := strings.LastIndex(senderID, ":"); idx >= 0 {
+		return senderID[idx+1:]
+	}
+	return senderID
 }
 
 // formatSubagentCompletion builds the user-facing notification for a completed subagent.

@@ -12,6 +12,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
 )
 
 // spawnTimeout is the hard upper bound for a single spawn goroutine.
@@ -50,8 +51,10 @@ type SubagentManager struct {
 	temperature    float64
 	hasMaxTokens   bool
 	hasTemperature bool
-	nextID         int
-	reporter       orch.AgentReporter
+	nextID              int
+	reporter            orch.AgentReporter
+	recorder            SessionRecorder
+	conductorSessionKey string
 }
 
 func NewSubagentManager(
@@ -96,6 +99,14 @@ func (sm *SubagentManager) SetTools(tools *ToolRegistry) {
 	sm.tools = tools
 }
 
+// SetSessionRecorder configures session recording for DAG persistence.
+func (sm *SubagentManager) SetSessionRecorder(r SessionRecorder, conductorSessionKey string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.recorder = r
+	sm.conductorSessionKey = conductorSessionKey
+}
+
 // RegisterTool registers a tool for subagent execution.
 func (sm *SubagentManager) RegisterTool(tool Tool) {
 	sm.mu.Lock()
@@ -127,6 +138,12 @@ func (sm *SubagentManager) Spawn(
 	sm.tasks[taskID] = subagentTask
 
 	sm.reporter.ReportSpawn(taskID, label, task)
+
+	// Record fork in session DAG (conductor → subagent).
+	if sm.recorder != nil && sm.conductorSessionKey != "" {
+		subSessionKey := routing.BuildSubagentSessionKey(taskID)
+		_ = sm.recorder.RecordFork(sm.conductorSessionKey, subSessionKey, taskID, label)
+	}
 
 	// Start task in background with a detached context that has a hard timeout.
 	// The spawned goroutine must outlive the parent (e.g. heartbeat session)
@@ -252,6 +269,11 @@ After completing, provide a clear summary of what was done and how it was verifi
 			gcReason = "canceled"
 		}
 		sm.reporter.ReportGC(task.ID, gcReason)
+		// Record failure/cancellation in session DAG.
+		if sm.recorder != nil {
+			subKey := routing.BuildSubagentSessionKey(task.ID)
+			_ = sm.recorder.RecordCompletion(subKey, task.Status, task.Result)
+		}
 		result = &ToolResult{
 			ForLLM:  task.Result,
 			ForUser: "",
@@ -270,6 +292,12 @@ After completing, provide a clear summary of what was done and how it was verifi
 		// Notify conductor of the result
 		sm.reporter.ReportConversation(task.ID, "conductor", loopResult.Content)
 		sm.reporter.ReportGC(task.ID, "completed")
+		// Record subagent turn and completion in session DAG.
+		if sm.recorder != nil {
+			subKey := routing.BuildSubagentSessionKey(task.ID)
+			_ = sm.recorder.RecordSubagentTurn(subKey, messages)
+			_ = sm.recorder.RecordCompletion(subKey, "completed", loopResult.Content)
+		}
 		result = &ToolResult{
 			ForLLM: fmt.Sprintf(
 				"Subagent '%s' completed (iterations: %d, tool calls: %d): %s",
