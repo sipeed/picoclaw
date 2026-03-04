@@ -127,7 +127,7 @@ func (s *appState) refreshMenu(name string, menu *Menu) {
 	case "model":
 		refreshModelMenuFromState(menu, s)
 	case "channel":
-		refreshChannelMenuFromState(menu, s)
+		// Removed menu-based refresh for channel list since it uses tview.List
 	}
 }
 
@@ -169,7 +169,7 @@ func refreshMainMenu(menu *Menu, s *appState) {
 			Label:       rootChannelLabel(channelReady),
 			Description: rootChannelDescription(channelReady),
 			Action: func() {
-				s.push("channel", s.channelMenu())
+				s.push("channel", makeChannelMenu(s))
 			},
 			MainColor: func() *tcell.Color {
 				if channelReady {
@@ -421,9 +421,7 @@ func (s *appState) isActiveModelValid() bool {
 
 func (s *appState) hasEnabledChannel() bool {
 	c := s.config.Channels
-	return c.Telegram.Enabled || c.Discord.Enabled || c.QQ.Enabled || c.MaixCam.Enabled ||
-		c.WhatsApp.Enabled || c.Feishu.Enabled || c.DingTalk.Enabled || c.Slack.Enabled ||
-		c.LINE.Enabled || c.OneBot.Enabled || c.WeCom.Enabled || c.WeComApp.Enabled
+	return c.WhatsApp.Enabled
 }
 
 func (s *appState) confirmApplyOrDiscard(onApply func(), onDiscard func()) {

@@ -983,51 +983,6 @@ func (c ChannelsConfig) ToStandardChannels() config.ChannelsConfig {
 			Enabled:   c.WhatsApp.Enabled,
 			BridgeURL: c.WhatsApp.BridgeURL,
 		},
-		Telegram: config.TelegramConfig{
-			Enabled: c.Telegram.Enabled,
-			Token:   c.Telegram.Token,
-			Proxy:   c.Telegram.Proxy,
-		},
-		Feishu: config.FeishuConfig{
-			Enabled:           c.Feishu.Enabled,
-			AppID:             c.Feishu.AppID,
-			AppSecret:         c.Feishu.AppSecret,
-			EncryptKey:        c.Feishu.EncryptKey,
-			VerificationToken: c.Feishu.VerificationToken,
-		},
-		Discord: config.DiscordConfig{
-			Enabled:     c.Discord.Enabled,
-			Token:       c.Discord.Token,
-			MentionOnly: c.Discord.MentionOnly,
-		},
-		MaixCam: config.MaixCamConfig{
-			Enabled: c.MaixCam.Enabled,
-			Host:    c.MaixCam.Host,
-			Port:    c.MaixCam.Port,
-		},
-		QQ: config.QQConfig{
-			Enabled:   c.QQ.Enabled,
-			AppID:     c.QQ.AppID,
-			AppSecret: c.QQ.AppSecret,
-		},
-		DingTalk: config.DingTalkConfig{
-			Enabled:      c.DingTalk.Enabled,
-			ClientID:     c.DingTalk.ClientID,
-			ClientSecret: c.DingTalk.ClientSecret,
-		},
-		Slack: config.SlackConfig{
-			Enabled:  c.Slack.Enabled,
-			BotToken: c.Slack.BotToken,
-			AppToken: c.Slack.AppToken,
-		},
-		LINE: config.LINEConfig{
-			Enabled:            c.LINE.Enabled,
-			ChannelSecret:      c.LINE.ChannelSecret,
-			ChannelAccessToken: c.LINE.ChannelAccessToken,
-			WebhookHost:        c.LINE.WebhookHost,
-			WebhookPort:        c.LINE.WebhookPort,
-			WebhookPath:        c.LINE.WebhookPath,
-		},
 	}
 }
 

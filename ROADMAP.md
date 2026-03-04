@@ -48,7 +48,7 @@
 
 
 * **Channel**
-  * **IM Matrix**: QQ, WeChat (Work), DingTalk, Feishu (Lark), Telegram, Discord, WhatsApp, LINE, Slack, Email, KOOK, Signal, ...
+  * **IM Matrix**: WhatsApp, Email
   * **Standards**: Support for the **OneBot** protocol.
   * [**attachment**](https://github.com/sipeed/picoclaw/issues/348): Native handling of images, audio, and video attachments.
 

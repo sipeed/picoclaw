@@ -197,9 +197,10 @@ picoclaw onboard
     }
   },
   "channels": {
-    "telegram": {
+    "whatsapp": {
       "enabled": true,
-      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "use_native": true,
+      "session_store_path": "",
       "allow_from": []
     }
   },
@@ -248,323 +249,18 @@ picoclaw agent -m "What is 2+2?"
 
 ## 💬 チャットアプリ
 
-Telegram、Discord、QQ、DingTalk、LINE、WeCom で PicoClaw と会話できます
+WhatsApp で PicoClaw と会話できます。
 
 | チャネル | セットアップ |
 |---------|------------|
-| **Telegram** | 簡単（トークンのみ） |
-| **Discord** | 簡単（Bot トークン + Intents） |
-| **QQ** | 簡単（AppID + AppSecret） |
-| **DingTalk** | 普通（アプリ認証情報） |
-| **LINE** | 普通（認証情報 + Webhook URL） |
-| **WeCom AI Bot** | 普通（Token + AES キー） |
+| **WhatsApp** | 簡単 (ネイティブ: QR スキャン; または bridge URL) |
 
-<details>
-<summary><b>Telegram</b>（推奨）</summary>
 
-**1. Bot を作成**
 
-- Telegram を開き、`@BotFather` を検索
-- `/newbot` を送信、プロンプトに従う
-- トークンをコピー
 
-**2. 設定**
 
-```json
-{
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
-    }
-  }
-}
-```
 
-> ユーザー ID は Telegram の `@userinfobot` から取得できます。
 
-**3. 起動**
-
-```bash
-picoclaw gateway
-```
-</details>
-
-
-<details>
-<summary><b>Discord</b></summary>
-
-**1. Bot を作成**
-- https://discord.com/developers/applications にアクセス
-- アプリケーションを作成 → Bot → Add Bot
-- Bot トークンをコピー
-
-**2. Intents を有効化**
-- Bot の設定画面で **MESSAGE CONTENT INTENT** を有効化
-- （任意）**SERVER MEMBERS INTENT** も有効化
-
-**3. ユーザー ID を取得**
-- Discord 設定 → 詳細設定 → **開発者モード** を有効化
-- 自分のアバターを右クリック → **ユーザーIDをコピー**
-
-**4. 設定**
-
-```json
-{
-  "channels": {
-    "discord": {
-      "enabled": true,
-      "token": "YOUR_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
-    }
-  }
-}
-```
-
-**5. Bot を招待**
-- OAuth2 → URL Generator
-- Scopes: `bot`
-- Bot Permissions: `Send Messages`, `Read Message History`
-- 生成された招待 URL を開き、サーバーに Bot を追加
-
-**6. 起動**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>QQ</b></summary>
-
-**1. Bot を作成**
-
-- [QQ オープンプラットフォーム](https://q.qq.com/#) にアクセス
-- アプリケーションを作成 → **AppID** と **AppSecret** を取得
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "qq": {
-      "enabled": true,
-      "app_id": "YOUR_APP_ID",
-      "app_secret": "YOUR_APP_SECRET",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> `allow_from` を空にすると全ユーザーを許可、QQ番号を指定してアクセス制限可能。
-
-**3. 起動**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>DingTalk</b></summary>
-
-**1. Bot を作成**
-
-- [オープンプラットフォーム](https://open.dingtalk.com/) にアクセス
-- 内部アプリを作成
-- Client ID と Client Secret をコピー
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "dingtalk": {
-      "enabled": true,
-      "client_id": "YOUR_CLIENT_ID",
-      "client_secret": "YOUR_CLIENT_SECRET",
-      "allow_from": []
-    }
-  }
-}
-```
-
-> `allow_from` を空にすると全ユーザーを許可、ユーザーIDを指定してアクセス制限可能。
-
-**3. 起動**
-
-```bash
-picoclaw gateway
-```
-
-</details>
-
-<details>
-<summary><b>LINE</b></summary>
-
-**1. LINE 公式アカウントを作成**
-
-- [LINE Developers Console](https://developers.line.biz/) にアクセス
-- プロバイダーを作成 → Messaging API チャネルを作成
-- **チャネルシークレット** と **チャネルアクセストークン** をコピー
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "line": {
-      "enabled": true,
-      "channel_secret": "YOUR_CHANNEL_SECRET",
-      "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_path": "/webhook/line",
-      "allow_from": []
-    }
-  }
-}
-```
-
-**3. Webhook URL を設定**
-
-LINE の Webhook には HTTPS が必要です。リバースプロキシまたはトンネルを使用してください:
-
-```bash
-# ngrok の例
-ngrok http 18790
-```
-
-LINE Developers Console で Webhook URL を `https://あなたのドメイン/webhook/line` に設定し、**Webhook の利用** を有効にしてください。
-
-> **注意**: LINE の Webhook は共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は Gateway のポートを公開するか、リバースプロキシを設定してください。
-
-**4. 起動**
-
-```bash
-picoclaw gateway
-```
-
-> グループチャットでは @メンション時のみ応答します。返信は元メッセージを引用する形式です。
-
-> **Docker Compose**: Gateway HTTP サーバーは共有の `127.0.0.1:18790` で Webhook を提供します。ホストからアクセスするには `picoclaw-gateway` サービスに `ports: ["18790:18790"]` を追加してください。
-
-</details>
-
-<details>
-<summary><b>WeCom (企業微信)</b></summary>
-
-PicoClaw は3種類の WeCom 統合をサポートしています：
-
-**オプション1: WeCom Bot (ロボット)** - 簡単な設定、グループチャット対応
-**オプション2: WeCom App (カスタムアプリ)** - より多機能、アクティブメッセージング対応、プライベートチャットのみ
-**オプション3: WeCom AI Bot (スマートボット)** - 公式 AI Bot、ストリーミング返信、グループ・プライベート両対応
-
-詳細な設定手順は [WeCom AI Bot Configuration Guide](docs/channels/wecom/wecom_aibot/README.zh.md) を参照してください。
-
-**クイックセットアップ - WeCom Bot:**
-
-**1. ボットを作成**
-
-* WeCom 管理コンソール → グループチャット → グループボットを追加
-* Webhook URL をコピー（形式: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`）
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "wecom": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_path": "/webhook/wecom",
-      "allow_from": []
-    }
-  }
-}
-
-> **注意**: WeCom Bot の Webhook 受信は共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は Gateway のポートを公開するか、HTTPS 用のリバースプロキシを設定してください。
-```
-
-**クイックセットアップ - WeCom App:**
-
-**1. アプリを作成**
-
-* WeCom 管理コンソール → アプリ管理 → アプリを作成
-* **AgentId** と **Secret** をコピー
-* "マイ会社" ページで **CorpID** をコピー
-
-**2. メッセージ受信を設定**
-
-* アプリ詳細で "メッセージを受信" → "APIを設定" をクリック
-* URL を `http://your-server:18790/webhook/wecom-app` に設定
-* **Token** と **EncodingAESKey** を生成
-
-**3. 設定**
-
-```json
-{
-  "channels": {
-    "wecom_app": {
-      "enabled": true,
-      "corp_id": "wwxxxxxxxxxxxxxxxx",
-      "corp_secret": "YOUR_CORP_SECRET",
-      "agent_id": 1000002,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-app",
-      "allow_from": []
-    }
-  }
-}
-```
-
-**4. 起動**
-
-```bash
-picoclaw gateway
-```
-
-> **注意**: WeCom App の Webhook コールバックは共有の Gateway HTTP サーバー（デフォルト: `127.0.0.1:18790`）で提供されます。ホストからアクセスする場合は HTTPS 用のリバースプロキシを設定してください。
-
-**クイックセットアップ - WeCom AI Bot:**
-
-**1. AI Bot を作成**
-
-* WeCom 管理コンソール → アプリ管理 → AI Bot
-* コールバック URL を設定: `http://your-server:18791/webhook/wecom-aibot`
-* **Token** をコピーし、**EncodingAESKey** を生成
-
-**2. 設定**
-
-```json
-{
-  "channels": {
-    "wecom_aibot": {
-      "enabled": true,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-aibot",
-      "allow_from": [],
-      "welcome_message": "こんにちは！何かお手伝いできますか？"
-    }
-  }
-}
-```
-
-**3. 起動**
-
-```bash
-picoclaw gateway
-```
-
-> **注意**: WeCom AI Bot はストリーミングプルプロトコルを使用 — 返信タイムアウトの心配なし。長時間タスク（>30秒）は自動的に `response_url` によるプッシュ配信に切り替わります。
-
-</details>
 
 ## ⚙️ 設定
 
@@ -831,65 +527,6 @@ HEARTBEAT_OK 応答         ユーザーが直接結果を受け取る
     ```
 </details>
 
-<details>
-<summary><b>完全な設定例</b></summary>
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "model": "anthropic/claude-opus-4-5"
-    }
-  },
-  "providers": {
-    "openrouter": {
-      "api_key": "sk-or-v1-xxx"
-    },
-    "groq": {
-      "api_key": "gsk_xxx"
-    }
-  },
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "123456:ABC...",
-      "allow_from": ["123456789"]
-    },
-    "discord": {
-      "enabled": true,
-      "token": "",
-      "allow_from": [""]
-    },
-    "whatsapp": {
-      "enabled": false
-    },
-    "feishu": {
-      "enabled": false,
-      "app_id": "cli_xxx",
-      "app_secret": "xxx",
-      "encrypt_key": "",
-      "verification_token": "",
-      "allow_from": []
-    }
-  },
-  "tools": {
-    "web": {
-      "search": {
-        "api_key": "BSA..."
-      }
-    },
-    "cron": {
-      "exec_timeout_minutes": 5
-    }
-  },
-  "heartbeat": {
-    "enabled": true,
-    "interval": 30
-  }
-}
-```
-
-</details>
 
 ### モデル設定 (model_list)
 
@@ -1108,10 +745,6 @@ Web 検索を有効にするには：
 ### コンテンツフィルタリングエラーが出る
 
 一部のプロバイダー（Zhipu など）にはコンテンツフィルタリングがあります。クエリを言い換えるか、別のモデルを使用してください。
-
-### Telegram Bot で「Conflict: terminated by other getUpdates」と表示される
-
-別のインスタンスが実行中の場合に発生します。`picoclaw gateway` が 1 つだけ実行されていることを確認してください。
 
 ---
 
