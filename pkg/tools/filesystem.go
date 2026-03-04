@@ -6,8 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
 // validatePath ensures the given path is within the workspace if restrict is true.
@@ -85,14 +88,12 @@ type ReadFileTool struct {
 	fs fileSystem
 }
 
-func NewReadFileTool(workspace string, restrict bool) *ReadFileTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
+func NewReadFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ReadFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
 	}
-	return &ReadFileTool{fs: fs}
+	return &ReadFileTool{fs: buildFs(workspace, restrict, patterns)}
 }
 
 func (t *ReadFileTool) Name() string {
@@ -133,14 +134,12 @@ type WriteFileTool struct {
 	fs fileSystem
 }
 
-func NewWriteFileTool(workspace string, restrict bool) *WriteFileTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
+func NewWriteFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *WriteFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
 	}
-	return &WriteFileTool{fs: fs}
+	return &WriteFileTool{fs: buildFs(workspace, restrict, patterns)}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -190,14 +189,12 @@ type ListDirTool struct {
 	fs fileSystem
 }
 
-func NewListDirTool(workspace string, restrict bool) *ListDirTool {
-	var fs fileSystem
-	if restrict {
-		fs = &sandboxFs{workspace: workspace}
-	} else {
-		fs = &hostFs{}
+func NewListDirTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ListDirTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
 	}
-	return &ListDirTool{fs: fs}
+	return &ListDirTool{fs: buildFs(workspace, restrict, patterns)}
 }
 
 func (t *ListDirTool) Name() string {
@@ -276,25 +273,9 @@ func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
 }
 
 func (h *hostFs) WriteFile(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create parent directories: %w", err)
-	}
-
-	// We use a "write-then-rename" pattern here to ensure an atomic write.
-	// This prevents the target file from being left in a truncated or partial state
-	// if the operation is interrupted, as the rename operation is atomic on Linux.
-	tmpPath := fmt.Sprintf("%s.%d.tmp", path, time.Now().UnixNano())
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-		os.Remove(tmpPath) // Ensure cleanup of partial/empty temp file
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to replace original file: %w", err)
-	}
-	return nil
+	// Use unified atomic write utility with explicit sync for flash storage reliability.
+	// Using 0o600 (owner read/write only) for secure default permissions.
+	return fileutil.WriteFileAtomic(path, data, 0o600)
 }
 
 // sandboxFs is a sandboxed fileSystem that operates within a strictly defined workspace using os.Root.
@@ -351,20 +332,46 @@ func (r *sandboxFs) WriteFile(path string, data []byte) error {
 			}
 		}
 
-		// We use a "write-then-rename" pattern here to ensure an atomic write.
-		// This prevents the target file from being left in a truncated or partial state
-		// if the operation is interrupted, as the rename operation is atomic on Linux.
-		tmpRelPath := fmt.Sprintf("%s.%d.tmp", relPath, time.Now().UnixNano())
+		// Use atomic write pattern with explicit sync for flash storage reliability.
+		// Using 0o600 (owner read/write only) for secure default permissions.
+		tmpRelPath := fmt.Sprintf(".tmp-%d-%d", os.Getpid(), time.Now().UnixNano())
 
-		if err := root.WriteFile(tmpRelPath, data, 0o644); err != nil {
-			root.Remove(tmpRelPath) // Ensure cleanup of partial/empty temp file
-			return fmt.Errorf("failed to write to temp file: %w", err)
+		tmpFile, err := root.OpenFile(tmpRelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to open temp file: %w", err)
+		}
+
+		if _, err := tmpFile.Write(data); err != nil {
+			tmpFile.Close()
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to write temp file: %w", err)
+		}
+
+		// CRITICAL: Force sync to storage medium before rename.
+		// This ensures data is physically written to disk, not just cached.
+		if err := tmpFile.Sync(); err != nil {
+			tmpFile.Close()
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to sync temp file: %w", err)
+		}
+
+		if err := tmpFile.Close(); err != nil {
+			root.Remove(tmpRelPath)
+			return fmt.Errorf("failed to close temp file: %w", err)
 		}
 
 		if err := root.Rename(tmpRelPath, relPath); err != nil {
 			root.Remove(tmpRelPath)
 			return fmt.Errorf("failed to rename temp file over target: %w", err)
 		}
+
+		// Sync directory to ensure rename is durable
+		if dirFile, err := root.Open("."); err == nil {
+			_ = dirFile.Sync()
+			dirFile.Close()
+		}
+
 		return nil
 	})
 }
@@ -380,6 +387,57 @@ func (r *sandboxFs) ReadDir(path string) ([]os.DirEntry, error) {
 		return nil
 	})
 	return entries, err
+}
+
+// whitelistFs wraps a sandboxFs and allows access to specific paths outside
+// the workspace when they match any of the provided patterns.
+type whitelistFs struct {
+	sandbox  *sandboxFs
+	host     hostFs
+	patterns []*regexp.Regexp
+}
+
+func (w *whitelistFs) matches(path string) bool {
+	for _, p := range w.patterns {
+		if p.MatchString(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *whitelistFs) ReadFile(path string) ([]byte, error) {
+	if w.matches(path) {
+		return w.host.ReadFile(path)
+	}
+	return w.sandbox.ReadFile(path)
+}
+
+func (w *whitelistFs) WriteFile(path string, data []byte) error {
+	if w.matches(path) {
+		return w.host.WriteFile(path, data)
+	}
+	return w.sandbox.WriteFile(path, data)
+}
+
+func (w *whitelistFs) ReadDir(path string) ([]os.DirEntry, error) {
+	if w.matches(path) {
+		return w.host.ReadDir(path)
+	}
+	return w.sandbox.ReadDir(path)
+}
+
+// buildFs returns the appropriate fileSystem implementation based on restriction
+// settings and optional path whitelist patterns.
+func buildFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSystem {
+	if !restrict {
+		return &hostFs{}
+	}
+	sandbox := &sandboxFs{workspace: workspace}
+	if len(patterns) > 0 {
+		return &whitelistFs{sandbox: sandbox, patterns: patterns}
+	}
+	return sandbox
 }
 
 // Helper to get a safe relative path for os.Root usage

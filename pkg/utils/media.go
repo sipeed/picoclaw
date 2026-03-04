@@ -3,6 +3,7 @@ package utils
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,11 +53,12 @@ type DownloadOptions struct {
 	Timeout      time.Duration
 	ExtraHeaders map[string]string
 	LoggerPrefix string
+	ProxyURL     string
 }
 
 // DownloadFile downloads a file from URL to a local temp directory.
 // Returns the local file path or empty string on error.
-func DownloadFile(url, filename string, opts DownloadOptions) string {
+func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 	// Set defaults
 	if opts.Timeout == 0 {
 		opts.Timeout = 60 * time.Second
@@ -78,7 +80,7 @@ func DownloadFile(url, filename string, opts DownloadOptions) string {
 	localPath := filepath.Join(mediaDir, uuid.New().String()[:8]+"_"+safeName)
 
 	// Create HTTP request
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to create download request", map[string]any{
 			"error": err.Error(),
@@ -92,11 +94,24 @@ func DownloadFile(url, filename string, opts DownloadOptions) string {
 	}
 
 	client := &http.Client{Timeout: opts.Timeout}
+	if opts.ProxyURL != "" {
+		proxyURL, parseErr := url.Parse(opts.ProxyURL)
+		if parseErr != nil {
+			logger.ErrorCF(opts.LoggerPrefix, "Invalid proxy URL for download", map[string]any{
+				"error": parseErr.Error(),
+				"proxy": opts.ProxyURL,
+			})
+			return ""
+		}
+		client.Transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to download file", map[string]any{
 			"error": err.Error(),
-			"url":   url,
+			"url":   urlStr,
 		})
 		return ""
 	}
@@ -105,7 +120,7 @@ func DownloadFile(url, filename string, opts DownloadOptions) string {
 	if resp.StatusCode != http.StatusOK {
 		logger.ErrorCF(opts.LoggerPrefix, "File download returned non-200 status", map[string]any{
 			"status": resp.StatusCode,
-			"url":    url,
+			"url":    urlStr,
 		})
 		return ""
 	}

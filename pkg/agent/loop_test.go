@@ -5,25 +5,39 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
-func TestRecordLastChannel(t *testing.T) {
-	// Create temp workspace
+type fakeChannel struct{ id string }
+
+func (f *fakeChannel) Name() string                                            { return "fake" }
+func (f *fakeChannel) Start(ctx context.Context) error                         { return nil }
+func (f *fakeChannel) Stop(ctx context.Context) error                          { return nil }
+func (f *fakeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error { return nil }
+func (f *fakeChannel) IsRunning() bool                                         { return true }
+func (f *fakeChannel) IsAllowed(string) bool                                   { return true }
+func (f *fakeChannel) IsAllowedSender(sender bus.SenderInfo) bool              { return true }
+func (f *fakeChannel) ReasoningChannelID() string                              { return f.id }
+
+func newTestAgentLoop(
+	t *testing.T,
+) (al *AgentLoop, cfg *config.Config, msgBus *bus.MessageBus, provider *mockProvider, cleanup func()) {
+	t.Helper()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create test config
-	cfg := &config.Config{
+	cfg = &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         tmpDir,
@@ -33,74 +47,43 @@ func TestRecordLastChannel(t *testing.T) {
 			},
 		},
 	}
+	msgBus = bus.NewMessageBus()
+	provider = &mockProvider{}
+	al = NewAgentLoop(cfg, msgBus, provider)
+	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
+}
 
-	// Create agent loop
-	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+func TestRecordLastChannel(t *testing.T) {
+	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
+	defer cleanup()
 
-	// Test RecordLastChannel
 	testChannel := "test-channel"
-	err = al.RecordLastChannel(testChannel)
-	if err != nil {
+	if err := al.RecordLastChannel(testChannel); err != nil {
 		t.Fatalf("RecordLastChannel failed: %v", err)
 	}
-
-	// Verify channel was saved
-	lastChannel := al.state.GetLastChannel()
-	if lastChannel != testChannel {
-		t.Errorf("Expected channel '%s', got '%s'", testChannel, lastChannel)
+	if got := al.state.GetLastChannel(); got != testChannel {
+		t.Errorf("Expected channel '%s', got '%s'", testChannel, got)
 	}
-
-	// Verify persistence by creating a new agent loop
 	al2 := NewAgentLoop(cfg, msgBus, provider)
-	if al2.state.GetLastChannel() != testChannel {
-		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, al2.state.GetLastChannel())
+	if got := al2.state.GetLastChannel(); got != testChannel {
+		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, got)
 	}
 }
 
 func TestRecordLastChatID(t *testing.T) {
-	// Create temp workspace
-	tmpDir, err := os.MkdirTemp("", "agent-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	al, cfg, msgBus, provider, cleanup := newTestAgentLoop(t)
+	defer cleanup()
 
-	// Create test config
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-		},
-	}
-
-	// Create agent loop
-	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
-
-	// Test RecordLastChatID
 	testChatID := "test-chat-id-123"
-	err = al.RecordLastChatID(testChatID)
-	if err != nil {
+	if err := al.RecordLastChatID(testChatID); err != nil {
 		t.Fatalf("RecordLastChatID failed: %v", err)
 	}
-
-	// Verify chat ID was saved
-	lastChatID := al.state.GetLastChatID()
-	if lastChatID != testChatID {
-		t.Errorf("Expected chat ID '%s', got '%s'", testChatID, lastChatID)
+	if got := al.state.GetLastChatID(); got != testChatID {
+		t.Errorf("Expected chat ID '%s', got '%s'", testChatID, got)
 	}
-
-	// Verify persistence by creating a new agent loop
 	al2 := NewAgentLoop(cfg, msgBus, provider)
-	if al2.state.GetLastChatID() != testChatID {
-		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, al2.state.GetLastChatID())
+	if got := al2.state.GetLastChatID(); got != testChatID {
+		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, got)
 	}
 }
 
@@ -175,13 +158,7 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
-	found := false
-	for _, name := range toolsList {
-		if name == "mock_custom" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(toolsList, "mock_custom")
 	if !found {
 		t.Error("Expected custom tool to be registered")
 	}
@@ -250,13 +227,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	toolsList := toolsInfo["names"].([]string)
 
 	// Check that our custom tool name is in the list
-	found := false
-	for _, name := range toolsList {
-		if name == "mock_custom" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(toolsList, "mock_custom")
 	if !found {
 		t.Error("Expected custom tool to be registered")
 	}
@@ -629,5 +600,352 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+func TestTargetReasoningChannelID_AllChannels(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	chManager, err := channels.NewManager(&config.Config{}, bus.NewMessageBus(), nil)
+	if err != nil {
+		t.Fatalf("Failed to create channel manager: %v", err)
+	}
+	for name, id := range map[string]string{
+		"whatsapp":  "rid-whatsapp",
+		"telegram":  "rid-telegram",
+		"feishu":    "rid-feishu",
+		"discord":   "rid-discord",
+		"maixcam":   "rid-maixcam",
+		"qq":        "rid-qq",
+		"dingtalk":  "rid-dingtalk",
+		"slack":     "rid-slack",
+		"line":      "rid-line",
+		"onebot":    "rid-onebot",
+		"wecom":     "rid-wecom",
+		"wecom_app": "rid-wecom-app",
+	} {
+		chManager.RegisterChannel(name, &fakeChannel{id: id})
+	}
+	al.SetChannelManager(chManager)
+	tests := []struct {
+		channel string
+		wantID  string
+	}{
+		{channel: "whatsapp", wantID: "rid-whatsapp"},
+		{channel: "telegram", wantID: "rid-telegram"},
+		{channel: "feishu", wantID: "rid-feishu"},
+		{channel: "discord", wantID: "rid-discord"},
+		{channel: "maixcam", wantID: "rid-maixcam"},
+		{channel: "qq", wantID: "rid-qq"},
+		{channel: "dingtalk", wantID: "rid-dingtalk"},
+		{channel: "slack", wantID: "rid-slack"},
+		{channel: "line", wantID: "rid-line"},
+		{channel: "onebot", wantID: "rid-onebot"},
+		{channel: "wecom", wantID: "rid-wecom"},
+		{channel: "wecom_app", wantID: "rid-wecom-app"},
+		{channel: "unknown", wantID: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.channel, func(t *testing.T) {
+			got := al.targetReasoningChannelID(tt.channel)
+			if got != tt.wantID {
+				t.Fatalf("targetReasoningChannelID(%q) = %q, want %q", tt.channel, got, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestHandleReasoning(t *testing.T) {
+	newLoop := func(t *testing.T) (*AgentLoop, *bus.MessageBus) {
+		t.Helper()
+		tmpDir, err := os.MkdirTemp("", "agent-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+		cfg := &config.Config{
+			Agents: config.AgentsConfig{
+				Defaults: config.AgentDefaults{
+					Workspace:         tmpDir,
+					Model:             "test-model",
+					MaxTokens:         4096,
+					MaxToolIterations: 10,
+				},
+			},
+		}
+		msgBus := bus.NewMessageBus()
+		return NewAgentLoop(cfg, msgBus, &mockProvider{}), msgBus
+	}
+
+	t.Run("skips when any required field is empty", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		al.handleReasoning(context.Background(), "reasoning", "telegram", "")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		if msg, ok := msgBus.SubscribeOutbound(ctx); ok {
+			t.Fatalf("expected no outbound message, got %+v", msg)
+		}
+	})
+
+	t.Run("publishes one message for non telegram", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		al.handleReasoning(context.Background(), "hello reasoning", "slack", "channel-1")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		msg, ok := msgBus.SubscribeOutbound(ctx)
+		if !ok {
+			t.Fatal("expected an outbound message")
+		}
+		if msg.Channel != "slack" || msg.ChatID != "channel-1" || msg.Content != "hello reasoning" {
+			t.Fatalf("unexpected outbound message: %+v", msg)
+		}
+	})
+
+	t.Run("publishes one message for telegram", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		reasoning := "hello telegram reasoning"
+		al.handleReasoning(context.Background(), reasoning, "telegram", "tg-chat")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		msg, ok := msgBus.SubscribeOutbound(ctx)
+		if !ok {
+			t.Fatal("expected outbound message")
+		}
+
+		if msg.Channel != "telegram" {
+			t.Fatalf("expected telegram channel message, got %+v", msg)
+		}
+		if msg.ChatID != "tg-chat" {
+			t.Fatalf("expected chatID tg-chat, got %+v", msg)
+		}
+		if msg.Content != reasoning {
+			t.Fatalf("content mismatch: got %q want %q", msg.Content, reasoning)
+		}
+	})
+	t.Run("expired ctx", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+		reasoning := "hello telegram reasoning"
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		al.handleReasoning(ctx, reasoning, "telegram", "tg-chat")
+
+		ctx, cancel = context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		msg, ok := msgBus.SubscribeOutbound(ctx)
+		if ok {
+			t.Fatalf("expected no outbound message, got %+v", msg)
+		}
+	})
+
+	t.Run("returns promptly when bus is full", func(t *testing.T) {
+		al, msgBus := newLoop(t)
+
+		// Fill the outbound bus buffer until a publish would block.
+		// Use a short timeout to detect when the buffer is full,
+		// rather than hardcoding the buffer size.
+		for i := 0; ; i++ {
+			fillCtx, fillCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			err := msgBus.PublishOutbound(fillCtx, bus.OutboundMessage{
+				Channel: "filler",
+				ChatID:  "filler",
+				Content: fmt.Sprintf("filler-%d", i),
+			})
+			fillCancel()
+			if err != nil {
+				// Buffer is full (timed out trying to send).
+				break
+			}
+		}
+
+		// Use a short-deadline parent context to bound the test.
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		start := time.Now()
+		al.handleReasoning(ctx, "should timeout", "slack", "channel-full")
+		elapsed := time.Since(start)
+
+		// handleReasoning uses a 5s internal timeout, but the parent ctx
+		// expires in 500ms. It should return within ~500ms, not 5s.
+		if elapsed > 2*time.Second {
+			t.Fatalf("handleReasoning blocked too long (%v); expected prompt return", elapsed)
+		}
+
+		// Drain the bus and verify the reasoning message was NOT published
+		// (it should have been dropped due to timeout).
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer drainCancel()
+		foundReasoning := false
+		for {
+			msg, ok := msgBus.SubscribeOutbound(drainCtx)
+			if !ok {
+				break
+			}
+			if msg.Content == "should timeout" {
+				foundReasoning = true
+			}
+		}
+		if foundReasoning {
+			t.Fatal("expected reasoning message to be dropped when bus is full, but it was published")
+		}
+	})
+}
+
+func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	// Create a minimal valid PNG (8-byte header is enough for filetype detection)
+	pngPath := filepath.Join(dir, "test.png")
+	// PNG magic: 0x89 P N G \r \n 0x1A \n + minimal IHDR
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+		0x00, 0x00, 0x00, 0x0D, // IHDR length
+		0x49, 0x48, 0x44, 0x52, // "IHDR"
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, // 1x1 RGB
+		0x00, 0x00, 0x00, // no interlace
+		0x90, 0x77, 0x53, 0xDE, // CRC
+	}
+	if err := os.WriteFile(pngPath, pngHeader, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := store.Store(pngPath, media.MediaMeta{}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	messages := []providers.Message{
+		{Role: "user", Content: "describe this", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 1 {
+		t.Fatalf("expected 1 resolved media, got %d", len(result[0].Media))
+	}
+	if !strings.HasPrefix(result[0].Media[0], "data:image/png;base64,") {
+		t.Fatalf("expected data:image/png;base64, prefix, got %q", result[0].Media[0][:40])
+	}
+}
+
+func TestResolveMediaRefs_SkipsOversizedFile(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	bigPath := filepath.Join(dir, "big.png")
+	// Write PNG header + padding to exceed limit
+	data := make([]byte, 1024+1) // 1KB + 1 byte
+	copy(data, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})
+	if err := os.WriteFile(bigPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := store.Store(bigPath, media.MediaMeta{}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{ref}},
+	}
+	// Use a tiny limit (1KB) so the file is oversized
+	result := resolveMediaRefs(messages, store, 1024)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (oversized), got %d", len(result[0].Media))
+	}
+}
+
+func TestResolveMediaRefs_SkipsUnknownType(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	txtPath := filepath.Join(dir, "readme.txt")
+	if err := os.WriteFile(txtPath, []byte("hello world"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := store.Store(txtPath, media.MediaMeta{}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (unknown type), got %d", len(result[0].Media))
+	}
+}
+
+func TestResolveMediaRefs_PassesThroughNonMediaRefs(t *testing.T) {
+	messages := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{"https://example.com/img.png"}},
+	}
+	result := resolveMediaRefs(messages, nil, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 1 || result[0].Media[0] != "https://example.com/img.png" {
+		t.Fatalf("expected passthrough of non-media:// URL, got %v", result[0].Media)
+	}
+}
+
+func TestResolveMediaRefs_DoesNotMutateOriginal(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+	pngPath := filepath.Join(dir, "test.png")
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
+		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
+	}
+	os.WriteFile(pngPath, pngHeader, 0o644)
+	ref, _ := store.Store(pngPath, media.MediaMeta{}, "test")
+
+	original := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{ref}},
+	}
+	originalRef := original[0].Media[0]
+
+	resolveMediaRefs(original, store, config.DefaultMaxMediaSize)
+
+	if original[0].Media[0] != originalRef {
+		t.Fatal("resolveMediaRefs mutated original message slice")
+	}
+}
+
+func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	// File with JPEG content but stored with explicit content type
+	jpegPath := filepath.Join(dir, "photo")
+	jpegHeader := []byte{0xFF, 0xD8, 0xFF, 0xE0} // JPEG magic bytes
+	os.WriteFile(jpegPath, jpegHeader, 0o644)
+	ref, _ := store.Store(jpegPath, media.MediaMeta{ContentType: "image/jpeg"}, "test")
+
+	messages := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 1 {
+		t.Fatalf("expected 1 media, got %d", len(result[0].Media))
+	}
+	if !strings.HasPrefix(result[0].Media[0], "data:image/jpeg;base64,") {
+		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
 	}
 }

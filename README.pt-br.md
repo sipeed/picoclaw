@@ -165,39 +165,43 @@ Você tambêm pode rodar o PicoClaw usando Docker Compose sem instalar nada loca
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Configure suas API keys
-cp config/config.example.json config/config.json
-vim config/config.json      # Configure DISCORD_BOT_TOKEN, API keys, etc.
+# 2. Primeiro uso — gera docker/data/config.json automaticamente e para
+docker compose -f docker/docker-compose.yml --profile gateway up
+# O contêiner exibe "First-run setup complete." e para.
 
-# 3. Build & Iniciar
-docker compose --profile gateway up -d
+# 3. Configure suas API keys
+vim docker/data/config.json   # Chaves de API do provedor, tokens de bot, etc.
+
+# 4. Iniciar
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
 > [!TIP]
 > **Usuários Docker**: Por padrão, o Gateway ouve em `127.0.0.1`, o que não é acessível a partir do host. Se você precisar acessar os endpoints de integridade ou expor portas, defina `PICOCLAW_GATEWAY_HOST=0.0.0.0` em seu ambiente ou atualize o `config.json`.
 
+```bash
+# 5. Ver logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
 
-# 4. Ver logs
-docker compose logs -f picoclaw-gateway
-
-# 5. Parar
-docker compose --profile gateway down
+# 6. Parar
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Modo Agente (Execução única)
 
 ```bash
 # Fazer uma pergunta
-docker compose run --rm picoclaw-agent -m "Quanto e 2+2?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Quanto e 2+2?"
 
 # Modo interativo
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Rebuild
+### Atualizar
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Início Rápido
@@ -222,6 +226,7 @@ picoclaw onboard
       "model_name": "gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
       "api_base": "https://api.openai.com/v1"
     }
   ],
@@ -245,6 +250,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **Novo**: O formato de configuração `model_list` permite adicionar provedores sem alterar código. Veja [Configuração de Modelo](#configuração-de-modelo-model_list) para detalhes.
+> `request_timeout` é opcional e usa segundos. Se omitido ou definido como `<= 0`, o PicoClaw usa o timeout padrão (120s).
 
 **3. Obter API Keys**
 
@@ -274,7 +282,7 @@ Converse com seu PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom.
 | **QQ** | Fácil (AppID + AppSecret) |
 | **DingTalk** | Médio (credenciais do app) |
 | **LINE** | Médio (credenciais + webhook URL) |
-| **WeCom** | Médio (CorpID + configuração webhook) |
+| **WeCom AI Bot** | Médio (Token + chave AES) |
 
 <details>
 <summary><b>Telegram</b> (Recomendado)</summary>
@@ -442,8 +450,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -457,10 +463,12 @@ O LINE requer HTTPS para webhooks. Use um reverse proxy ou tunnel:
 
 ```bash
 # Exemplo com ngrok
-ngrok http 18791
+ngrok http 18790
 ```
 
 Em seguida, configure a Webhook URL no LINE Developers Console para `https://seu-dominio/webhook/line` e habilite **Use webhook**.
+
+> **Nota**: O webhook do LINE é servido pelo Gateway compartilhado (padrão 127.0.0.1:18790). Use um proxy reverso/HTTPS ou túnel (como ngrok) para expor o Gateway de forma segura quando necessário.
 
 **4. Executar**
 
@@ -470,19 +478,20 @@ picoclaw gateway
 
 > Em chats de grupo, o bot responde apenas quando mencionado com @. As respostas citam a mensagem original.
 
-> **Docker Compose**: Adicione `ports: ["18791:18791"]` ao serviço `picoclaw-gateway` para expor a porta do webhook.
+> **Docker Compose**: Se você usa Docker Compose, exponha o Gateway (padrão 127.0.0.1:18790) se precisar acessar o webhook LINE externamente, por exemplo `ports: ["18790:18790"]`.
 
 </details>
 
 <details>
 <summary><b>WeCom (WeChat Work)</b></summary>
 
-O PicoClaw suporta dois tipos de integração WeCom:
+O PicoClaw suporta três tipos de integração WeCom:
 
-**Opção 1: WeCom Bot (Robô Inteligente)** - Configuração mais fácil, suporta chats em grupo
-**Opção 2: WeCom App (Aplicativo Personalizado)** - Mais recursos, mensagens proativas
+**Opção 1: WeCom Bot (Robô)** - Configuração mais fácil, suporta chats em grupo
+**Opção 2: WeCom App (Aplicativo Personalizado)** - Mais recursos, mensagens proativas, somente chat privado
+**Opção 3: WeCom AI Bot (Robô Inteligente)** - Bot IA oficial, respostas em streaming, suporta grupo e privado
 
-Veja o [Guia de Configuração WeCom App](docs/wecom-app-configuration.md) para instruções detalhadas.
+Veja o [Guia de Configuração WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) para instruções detalhadas.
 
 **Configuração Rápida - WeCom Bot:**
 
@@ -501,14 +510,14 @@ Veja o [Guia de Configuração WeCom App](docs/wecom-app-configuration.md) para 
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18793,
       "webhook_path": "/webhook/wecom",
       "allow_from": []
     }
   }
 }
 ```
+
+> **Nota**: O webhook do WeCom Bot é atendido pelo Gateway compartilhado (padrão 127.0.0.1:18790). Use um proxy reverso/HTTPS ou túnel para expor o Gateway em produção.
 
 **Configuração Rápida - WeCom App:**
 
@@ -521,7 +530,7 @@ Veja o [Guia de Configuração WeCom App](docs/wecom-app-configuration.md) para 
 **2. Configurar recebimento de mensagens**
 
 * Nos detalhes do aplicativo, clique em "Receber Mensagens" → "Configurar API"
-* Defina a URL como `http://your-server:18792/webhook/wecom-app`
+* Defina a URL como `http://your-server:18790/webhook/wecom-app`
 * Gere o **Token** e o **EncodingAESKey**
 
 **3. Configurar**
@@ -536,8 +545,6 @@ Veja o [Guia de Configuração WeCom App](docs/wecom-app-configuration.md) para 
       "agent_id": 1000002,
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18792,
       "webhook_path": "/webhook/wecom-app",
       "allow_from": []
     }
@@ -551,7 +558,40 @@ Veja o [Guia de Configuração WeCom App](docs/wecom-app-configuration.md) para 
 picoclaw gateway
 ```
 
-> **Nota**: O WeCom App requer a abertura da porta 18792 para callbacks de webhook. Use um proxy reverso para HTTPS em produção.
+> **Nota**: O WeCom App (callbacks de webhook) é servido pelo Gateway compartilhado (padrão 127.0.0.1:18790). Em produção use um proxy reverso HTTPS para expor a porta do Gateway, ou atualize `PICOCLAW_GATEWAY_HOST` para `0.0.0.0` se necessário.
+
+**Configuração Rápida - WeCom AI Bot:**
+
+**1. Criar um AI Bot**
+
+* Acesse o Console de Administração WeCom → Gerenciamento de Aplicativos → AI Bot
+* Configure a URL de callback: `http://your-server:18791/webhook/wecom-aibot`
+* Copie o **Token** e gere o **EncodingAESKey**
+
+**2. Configurar**
+
+```json
+{
+  "channels": {
+    "wecom_aibot": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "allow_from": [],
+      "welcome_message": "Olá! Como posso ajudá-lo?"
+    }
+  }
+}
+```
+
+**3. Executar**
+
+```bash
+picoclaw gateway
+```
+
+> **Nota**: O WeCom AI Bot usa protocolo de pull em streaming — sem preocupações com timeout de resposta. Tarefas longas (>5,5 min) alternam automaticamente para entrega via `response_url`.
 
 </details>
 
@@ -564,6 +604,31 @@ Conecte o PicoClaw a Rede Social de Agentes simplesmente enviando uma única men
 ## ⚙️ Configuração Detalhada
 
 Arquivo de configuração: `~/.picoclaw/config.json`
+
+### Variáveis de Ambiente
+
+Você pode substituir os caminhos padrão usando variáveis de ambiente. Isso é útil para instalações portáteis, implantações em contêineres ou para executar o picoclaw como um serviço do sistema. Essas variáveis são independentes e controlam caminhos diferentes.
+
+| Variável          | Descrição                                                                                                                             | Caminho Padrão            |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Substitui o caminho para o arquivo de configuração. Isso informa diretamente ao picoclaw qual `config.json` carregar, ignorando todos os outros locais. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Substitui o diretório raiz dos dados do picoclaw. Isso altera o local padrão do `workspace` e de outros diretórios de dados.          | `~/.picoclaw`             |
+
+**Exemplos:**
+
+```bash
+# Executar o picoclaw usando um arquivo de configuração específico
+# O caminho do workspace será lido de dentro desse arquivo de configuração
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Executar o picoclaw com todos os seus dados armazenados em /opt/picoclaw
+# A configuração será carregada do ~/.picoclaw/config.json padrão
+# O workspace será criado em /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Use ambos para uma configuração totalmente personalizada
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### Estrutura do Workspace
 
@@ -758,7 +823,7 @@ O subagente tem acesso às ferramentas (message, web_search, etc.) e pode se com
 ### Provedores
 
 > [!NOTE]
-> O Groq fornece transcrição de voz gratuita via Whisper. Se configurado, mensagens de voz do Telegram serão automaticamente transcritas.
+> O Groq fornece transcrição de voz gratuita via Whisper. Se configurado, mensagens de áudio de qualquer canal serão automaticamente transcritas no nível do agente.
 
 | Provedor | Finalidade | Obter API Key |
 | --- | --- | --- |
@@ -972,6 +1037,17 @@ Este design também possibilita o **suporte multi-agent** com seleção flexíve
 }
 ```
 > Execute `picoclaw auth login --provider anthropic` para configurar credenciais OAuth.
+
+**Proxy/API personalizada**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
 
 #### Balanceamento de Carga
 

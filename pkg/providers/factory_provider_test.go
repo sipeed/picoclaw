@@ -6,7 +6,11 @@
 package providers
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -131,6 +135,32 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 	}
 }
 
+func TestGetDefaultAPIBase_LiteLLM(t *testing.T) {
+	if got := getDefaultAPIBase("litellm"); got != "http://localhost:4000/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "litellm", got, "http://localhost:4000/v1")
+	}
+}
+
+func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-litellm",
+		Model:     "litellm/my-proxy-alias",
+		APIKey:    "test-key",
+		APIBase:   "http://localhost:4000/v1",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "my-proxy-alias" {
+		t.Errorf("modelID = %q, want %q", modelID, "my-proxy-alias")
+	}
+}
+
 func TestCreateProviderFromConfig_Anthropic(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-anthropic",
@@ -245,5 +275,44 @@ func TestCreateProviderFromConfig_EmptyModel(t *testing.T) {
 	_, _, err := CreateProviderFromConfig(cfg)
 	if err == nil {
 		t.Fatal("CreateProviderFromConfig() expected error for empty model")
+	}
+}
+
+func TestCreateProviderFromConfig_RequestTimeoutPropagation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(1500 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.ModelConfig{
+		ModelName:      "test-timeout",
+		Model:          "openai/gpt-4o",
+		APIBase:        server.URL,
+		RequestTimeout: 1,
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if modelID != "gpt-4o" {
+		t.Fatalf("modelID = %q, want %q", modelID, "gpt-4o")
+	}
+
+	_, err = provider.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		modelID,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("Chat() expected timeout error, got nil")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "context deadline exceeded") && !strings.Contains(errMsg, "Client.Timeout exceeded") {
+		t.Fatalf("Chat() error = %q, want timeout-related error", errMsg)
 	}
 }

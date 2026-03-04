@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -122,9 +123,7 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	ready := s.ready
 	checks := make(map[string]Check)
-	for k, v := range s.checks {
-		checks[k] = v
-	}
+	maps.Copy(checks, s.checks)
 	s.mu.RUnlock()
 
 	if !ready {
@@ -154,6 +153,13 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 		Uptime: uptime.String(),
 		Checks: checks,
 	})
+}
+
+// RegisterOnMux registers /health and /ready handlers onto the given mux.
+// This allows the health endpoints to be served by a shared HTTP server.
+func (s *Server) RegisterOnMux(mux *http.ServeMux) {
+	mux.HandleFunc("/health", s.healthHandler)
+	mux.HandleFunc("/ready", s.readyHandler)
 }
 
 func statusString(ok bool) string {
