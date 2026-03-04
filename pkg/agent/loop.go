@@ -171,6 +171,7 @@ func registerSharedTools(
 		sendFileTool := tools.NewSendFileTool(
 			agent.Workspace,
 			cfg.Agents.Defaults.RestrictToWorkspace,
+			cfg.Agents.Defaults.GetMaxMediaSize(),
 			nil,
 		)
 		agent.Tools.Register(sendFileTool)

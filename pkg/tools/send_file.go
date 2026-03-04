@@ -3,29 +3,38 @@ package tools
 import (
 	"context"
 	"fmt"
+	"mime"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/h2non/filetype"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 // SendFileTool allows the LLM to send a local file (image, document, etc.)
 // to the user on the current chat channel via the MediaStore pipeline.
 type SendFileTool struct {
-	workspace  string
-	restrict   bool
-	mediaStore media.MediaStore
+	workspace   string
+	restrict    bool
+	maxFileSize int
+	mediaStore  media.MediaStore
 
 	defaultChannel string
 	defaultChatID  string
 }
 
-func NewSendFileTool(workspace string, restrict bool, store media.MediaStore) *SendFileTool {
+func NewSendFileTool(workspace string, restrict bool, maxFileSize int, store media.MediaStore) *SendFileTool {
+	if maxFileSize <= 0 {
+		maxFileSize = config.DefaultMaxMediaSize
+	}
 	return &SendFileTool{
-		workspace:  workspace,
-		restrict:   restrict,
-		mediaStore: store,
+		workspace:   workspace,
+		restrict:    restrict,
+		maxFileSize: maxFileSize,
+		mediaStore:  store,
 	}
 }
 
@@ -86,6 +95,12 @@ func (t *SendFileTool) Execute(_ context.Context, args map[string]any) *ToolResu
 	if info.IsDir() {
 		return ErrorResult("path is a directory, expected a file")
 	}
+	if info.Size() > int64(t.maxFileSize) {
+		return ErrorResult(fmt.Sprintf(
+			"file too large: %d bytes (max %d bytes)",
+			info.Size(), t.maxFileSize,
+		))
+	}
 
 	filename, _ := args["filename"].(string)
 	if filename == "" {
@@ -107,19 +122,20 @@ func (t *SendFileTool) Execute(_ context.Context, args map[string]any) *ToolResu
 	return MediaResult(fmt.Sprintf("File %q sent to user", filename), []string{ref})
 }
 
+// detectMediaType determines the MIME type of a file.
+// Uses magic-bytes detection (h2non/filetype) first, then falls back to
+// extension-based lookup via mime.TypeByExtension.
 func detectMediaType(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
-		return "image/webp"
-	case ".pdf":
-		return "application/pdf"
-	default:
-		return "application/octet-stream"
+	kind, err := filetype.MatchFile(path)
+	if err == nil && kind != filetype.Unknown {
+		return kind.MIME.Value
 	}
+
+	if ext := filepath.Ext(path); ext != "" {
+		if t := mime.TypeByExtension(ext); t != "" {
+			return t
+		}
+	}
+
+	return "application/octet-stream"
 }
