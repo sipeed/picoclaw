@@ -68,8 +68,8 @@ func (e *Executor) executeDefinition(ctx context.Context, req Request, def Defin
 	// Sub-command routing
 	subName := nthToken(req.Text, 1)
 	if subName == "" {
-		_ = req.Reply("Usage: " + def.EffectiveUsage())
-		return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name}
+		err := req.Reply("Usage: " + def.EffectiveUsage())
+		return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name, Err: err}
 	}
 
 	normalized := normalizeCommandName(subName)
@@ -84,6 +84,6 @@ func (e *Executor) executeDefinition(ctx context.Context, req Request, def Defin
 	}
 
 	// Unknown sub-command
-	_ = req.Reply(fmt.Sprintf("Unknown parameter: %s. Usage: %s", subName, def.EffectiveUsage()))
-	return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name}
+	err := req.Reply(fmt.Sprintf("Unknown parameter: %s. Usage: %s", subName, def.EffectiveUsage()))
+	return ExecuteResult{Outcome: OutcomeHandled, Command: def.Name, Err: err}
 }

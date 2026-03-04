@@ -11,8 +11,13 @@ func helpCommand() Definition {
 		Name:        "help",
 		Description: "Show this help message",
 		Usage:       "/help",
-		Handler: func(_ context.Context, req Request, _ *Runtime) error {
-			defs := BuiltinDefinitions()
+		Handler: func(_ context.Context, req Request, rt *Runtime) error {
+			var defs []Definition
+			if rt != nil && rt.ListDefinitions != nil {
+				defs = rt.ListDefinitions()
+			} else {
+				defs = BuiltinDefinitions()
+			}
 			return req.Reply(formatHelpMessage(defs))
 		},
 	}

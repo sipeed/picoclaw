@@ -45,7 +45,7 @@ func switchCommand() Definition {
 					if err := rt.SwitchChannel(value); err != nil {
 						return req.Reply(err.Error())
 					}
-					return req.Reply(fmt.Sprintf("Switched target channel to %s", value))
+					return req.Reply(fmt.Sprintf("Channel '%s' is available and enabled", value))
 				},
 			},
 		},

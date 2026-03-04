@@ -48,6 +48,7 @@ type AgentLoop struct {
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
 	cmdRegistry    *commands.Registry
+	modelMu        sync.Mutex // protects AgentInstance.Model writes in SwitchModel
 }
 
 // processOptions configures how a message is processed
@@ -1509,7 +1510,8 @@ func (al *AgentLoop) buildCommandsRuntime() *commands.Runtime {
 			}
 			return agent.Model, al.cfg.Agents.Defaults.Provider
 		},
-		ListAgentIDs: al.registry.ListAgentIDs,
+		ListAgentIDs:    al.registry.ListAgentIDs,
+		ListDefinitions: al.cmdRegistry.Definitions,
 		GetEnabledChannels: func() []string {
 			if al.channelManager == nil {
 				return nil
@@ -1517,6 +1519,8 @@ func (al *AgentLoop) buildCommandsRuntime() *commands.Runtime {
 			return al.channelManager.GetEnabledChannels()
 		},
 		SwitchModel: func(value string) (string, error) {
+			al.modelMu.Lock()
+			defer al.modelMu.Unlock()
 			defaultAgent := al.registry.GetDefaultAgent()
 			if defaultAgent == nil {
 				return "", fmt.Errorf("no default agent configured")

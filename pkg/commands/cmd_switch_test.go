@@ -141,7 +141,7 @@ func TestSwitchChannel_Success(t *testing.T) {
 	if res.Outcome != OutcomeHandled {
 		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
 	}
-	want := "Switched target channel to telegram"
+	want := "Channel 'telegram' is available and enabled"
 	if reply != want {
 		t.Fatalf("reply=%q, want=%q", reply, want)
 	}

@@ -9,6 +9,7 @@ type Runtime struct {
 	Config             *config.Config
 	GetModelInfo       func() (name, provider string)
 	ListAgentIDs       func() []string
+	ListDefinitions    func() []Definition
 	GetEnabledChannels func() []string
 	SwitchModel        func(value string) (oldModel string, err error)
 	SwitchChannel      func(value string) error
