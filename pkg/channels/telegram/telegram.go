@@ -23,6 +23,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/voice"
+
 )
 
 var (
@@ -551,12 +553,36 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		if voicePath != "" {
 			mediaPaths = append(mediaPaths, storeMedia(voicePath, "voice.ogg"))
 
-			if content != "" {
-				content += "\n"
+			// Check for Groq transcriber and transcribe if available, otherwise add placeholder
+			if c.groqTranscriber != nil && c.groqTranscriber.IsAvailable() {
+				logger.DebugC("telegram", "Transcribing voice message using Groq...")
+				transcription, err := c.groqTranscriber.Transcribe(ctx, voicePath)
+				if err != nil {
+					logger.ErrorCF("telegram", "Voice transcription failed", map[string]any{
+						"error": err.Error(),
+					})
+					// Fallback to placeholder if transcription fails
+					if content != "" {
+						content += "\n"
+					}
+					content += "[voice]"
+				} else {
+					// Use the transcription as content
+					if content != "" {
+						content += "\n"
+					}
+					content += transcription.Text
+				}
+			} else {
+				// Groq not available, use placeholder
+				if content != "" {
+						content += "\n"
+					}
+					content += "[voice]"
 			}
-			content += "[voice]"
 		}
 	}
+
 
 	if message.Audio != nil {
 		audioPath := c.downloadFile(ctx, message.Audio.FileID, ".mp3")
