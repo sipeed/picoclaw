@@ -199,6 +199,15 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			}
 			sel.connectMode = cfg.Providers.GitHubCopilot.ConnectMode
 			return sel, nil
+		case "opencode", "opencode-zen":
+			if cfg.Providers.Opencode.APIKey != "" {
+				sel.apiKey = cfg.Providers.Opencode.APIKey
+				sel.apiBase = cfg.Providers.Opencode.APIBase
+				sel.proxy = cfg.Providers.Opencode.Proxy
+				if sel.apiBase == "" {
+					sel.apiBase = "https://opencode.ai/zen/v1"
+				}
+			}
 		}
 	}
 
@@ -299,6 +308,13 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			sel.proxy = cfg.Providers.Mistral.Proxy
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.mistral.ai/v1"
+			}
+		case cfg.Providers.Opencode.APIKey != "":
+			sel.apiKey = cfg.Providers.Opencode.APIKey
+			sel.apiBase = cfg.Providers.Opencode.APIBase
+			sel.proxy = cfg.Providers.Opencode.Proxy
+			if sel.apiBase == "" {
+				sel.apiBase = "https://opencode.ai/zen/v1"
 			}
 		case cfg.Providers.VLLM.APIBase != "":
 			sel.apiKey = cfg.Providers.VLLM.APIKey
