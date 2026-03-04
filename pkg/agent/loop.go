@@ -3629,7 +3629,7 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 		}
 
 	case "/session":
-		return al.handleSessionCommand(args), true
+		return al.handleSessionCommand(args, msg.SessionKey), true
 
 	case "/skills":
 		return al.handleSkillsCommand(), true
@@ -3728,33 +3728,233 @@ func splitChatAndThread(chatID string) (baseChatID string, threadID int) {
 	return baseChatID, threadID
 }
 
-// handleSessionCommand returns usage statistics or resets them.
-func (al *AgentLoop) handleSessionCommand(args []string) string {
-	if al.stats == nil {
-		return "Stats tracking is disabled. Start with --stats flag to enable.\nUsage: picoclaw gateway --stats"
+// handleSessionCommand dispatches /session subcommands.
+func (al *AgentLoop) handleSessionCommand(args []string, sessionKey string) string {
+	sub := ""
+	if len(args) > 0 {
+		sub = strings.ToLower(strings.TrimSpace(args[0]))
 	}
-
-	if len(args) > 0 && args[0] == "reset" {
+	switch sub {
+	case "list":
+		return al.handleSessionList()
+	case "graph":
+		return al.handleSessionGraph()
+	case "fork":
+		return al.handleSessionFork(args[1:], sessionKey)
+	case "reset":
+		if al.stats == nil {
+			return "Stats tracking is disabled."
+		}
 		al.stats.Reset()
 		return "Session statistics have been reset."
+	default:
+		return al.handleSessionStats()
+	}
+}
+
+func (al *AgentLoop) handleSessionStats() string {
+	agent := al.registry.GetDefaultAgent()
+	store := agent.Sessions.Store()
+
+	// Session DAG summary
+	sessions, _ := store.List(nil)
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Sessions: %d in store\n", len(sessions))
+	if len(sessions) > 0 {
+		active, completed := 0, 0
+		for _, s := range sessions {
+			switch s.Status {
+			case "active":
+				active++
+			case "completed":
+				completed++
+			}
+		}
+		fmt.Fprintf(&sb, "  active=%d completed=%d\n", active, completed)
+	}
+	sb.WriteString("\nUse: /session list | graph | fork [label]\n")
+
+	// Token stats if available
+	if al.stats != nil {
+		s := al.stats.GetStats()
+		fmt.Fprintf(&sb,
+			"\nToken Stats — Today (%s):\n  Prompts: %d  LLM calls: %d  Tokens: %s (in: %s, out: %s)\n"+
+				"All time (since %s):\n  Prompts: %d  LLM calls: %d  Tokens: %s (in: %s, out: %s)",
+			s.Today.Date,
+			s.Today.Prompts,
+			s.Today.Requests,
+			stats.FormatTokenCount(s.Today.TotalTokens),
+			stats.FormatTokenCount(s.Today.PromptTokens),
+			stats.FormatTokenCount(s.Today.CompletionTokens),
+			s.Since.Format("2006-01-02"),
+			s.TotalPrompts,
+			s.TotalRequests,
+			stats.FormatTokenCount(s.TotalTokens),
+			stats.FormatTokenCount(s.TotalPromptTokens),
+			stats.FormatTokenCount(s.TotalCompletionTokens),
+		)
+	}
+	return sb.String()
+}
+
+// shortSessionKey truncates long session keys for display.
+func shortSessionKey(key string) string {
+	parts := strings.Split(key, ":")
+	if len(parts) > 2 {
+		return strings.Join(parts[2:], ":")
+	}
+	return key
+}
+
+func (al *AgentLoop) handleSessionList() string {
+	agent := al.registry.GetDefaultAgent()
+	store := agent.Sessions.Store()
+	sessions, err := store.List(nil)
+	if err != nil {
+		return fmt.Sprintf("Error listing sessions: %v", err)
+	}
+	if len(sessions) == 0 {
+		return "No sessions in store."
 	}
 
-	s := al.stats.GetStats()
-	return fmt.Sprintf(
-		"Session Statistics\n\nToday (%s):\n  Prompts: %d\n  LLM calls: %d\n  Tokens: %s (in: %s, out: %s)\n\nAll time (since %s):\n  Prompts: %d\n  LLM calls: %d\n  Tokens: %s (in: %s, out: %s)",
-		s.Today.Date,
-		s.Today.Prompts,
-		s.Today.Requests,
-		stats.FormatTokenCount(s.Today.TotalTokens),
-		stats.FormatTokenCount(s.Today.PromptTokens),
-		stats.FormatTokenCount(s.Today.CompletionTokens),
-		s.Since.Format("2006-01-02"),
-		s.TotalPrompts,
-		s.TotalRequests,
-		stats.FormatTokenCount(s.TotalTokens),
-		stats.FormatTokenCount(s.TotalPromptTokens),
-		stats.FormatTokenCount(s.TotalCompletionTokens),
-	)
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Sessions (%d)\n", len(sessions))
+	for _, s := range sessions {
+		age := time.Since(s.UpdatedAt).Truncate(time.Second)
+		label := s.Label
+		if label == "" {
+			label = shortSessionKey(s.Key)
+		}
+		parent := ""
+		if s.ParentKey != "" {
+			parent = " parent=" + shortSessionKey(s.ParentKey)
+		}
+		fmt.Fprintf(&sb, "- %s [%s] (%s) turns=%d%s\n",
+			label, s.Status, age, s.TurnCount, parent)
+	}
+	return sb.String()
+}
+
+func (al *AgentLoop) handleSessionGraph() string {
+	agent := al.registry.GetDefaultAgent()
+	store := agent.Sessions.Store()
+	sessions, err := store.List(nil)
+	if err != nil {
+		return fmt.Sprintf("Error listing sessions: %v", err)
+	}
+	if len(sessions) == 0 {
+		return "No sessions in store."
+	}
+
+	// Build parent→children map and find roots
+	byKey := make(map[string]*session.SessionInfo, len(sessions))
+	children := make(map[string][]string)
+	var roots []string
+	for _, s := range sessions {
+		byKey[s.Key] = s
+		if s.ParentKey == "" {
+			roots = append(roots, s.Key)
+		} else {
+			children[s.ParentKey] = append(children[s.ParentKey], s.Key)
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Session Graph\n")
+	for i, root := range roots {
+		last := i == len(roots)-1
+		printSessionTree(&sb, root, byKey, children, "", last)
+	}
+	return sb.String()
+}
+
+func printSessionTree(sb *strings.Builder, key string, byKey map[string]*session.SessionInfo, children map[string][]string, prefix string, last bool) {
+	s := byKey[key]
+	if s == nil {
+		return
+	}
+
+	connector := "├── "
+	if last {
+		connector = "└── "
+	}
+	icon := "●"
+	if s.Status == "completed" {
+		icon = "✓"
+	}
+	label := s.Label
+	if label == "" {
+		label = shortSessionKey(s.Key)
+	}
+	fmt.Fprintf(sb, "%s%s%s %s (turns=%d)\n", prefix, connector, icon, label, s.TurnCount)
+
+	childPrefix := prefix + "│   "
+	if last {
+		childPrefix = prefix + "    "
+	}
+	kids := children[key]
+	for i, childKey := range kids {
+		printSessionTree(sb, childKey, byKey, children, childPrefix, i == len(kids)-1)
+	}
+}
+
+func (al *AgentLoop) handleSessionFork(args []string, sessionKey string) string {
+	if sessionKey == "" {
+		return "Cannot fork: no active session key."
+	}
+
+	agent := al.registry.GetDefaultAgent()
+	store := agent.Sessions.Store()
+
+	label := "fork"
+	if len(args) > 0 {
+		label = strings.Join(args, " ")
+	}
+
+	childKey := sessionKey + ":fork:" + time.Now().Format("20060102T150405")
+	err := store.Fork(sessionKey, childKey, &session.CreateOpts{Label: label})
+	if err != nil {
+		return fmt.Sprintf("Fork failed: %v", err)
+	}
+	return fmt.Sprintf("Forked session\n  parent: %s\n  child:  %s", shortSessionKey(sessionKey), shortSessionKey(childKey))
+}
+
+// SessionGraphNode represents a session node for the Mini App graph API.
+type SessionGraphNode struct {
+	Key        string    `json:"key"`
+	Label      string    `json:"label"`
+	Status     string    `json:"status"`
+	Summary    string    `json:"summary"`
+	ParentKey  string    `json:"parent_key"`
+	ForkTurnID string    `json:"fork_turn_id"`
+	TurnCount  int       `json:"turn_count"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// GetSessionGraph returns all sessions as a flat list of graph nodes.
+func (al *AgentLoop) GetSessionGraph() []SessionGraphNode {
+	agent := al.registry.GetDefaultAgent()
+	store := agent.Sessions.Store()
+	sessions, err := store.List(nil)
+	if err != nil {
+		return nil
+	}
+	nodes := make([]SessionGraphNode, 0, len(sessions))
+	for _, s := range sessions {
+		nodes = append(nodes, SessionGraphNode{
+			Key:        s.Key,
+			Label:      s.Label,
+			Status:     s.Status,
+			Summary:    s.Summary,
+			ParentKey:  s.ParentKey,
+			ForkTurnID: s.ForkTurnID,
+			TurnCount:  s.TurnCount,
+			CreatedAt:  s.CreatedAt,
+			UpdatedAt:  s.UpdatedAt,
+		})
+	}
+	return nodes
 }
 
 // expandSkillCommand detects "/skill <name> [message]" and returns:

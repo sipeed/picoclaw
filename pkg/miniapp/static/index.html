@@ -873,6 +873,25 @@
   .orch-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--hint); margin-right:4px; vertical-align:middle; }
   .orch-dot.on { background:#4ade80; }
 
+  /* Session graph tree */
+  .session-tree { padding:0; margin:0; list-style:none; }
+  .session-tree-node { position:relative; padding:4px 0 4px 20px; font-size:13px; }
+  .session-tree-node::before {
+    content:''; position:absolute; left:0; top:0; bottom:0;
+    border-left:1px solid var(--secondary-bg);
+  }
+  .session-tree-node::after {
+    content:''; position:absolute; left:0; top:14px; width:16px;
+    border-top:1px solid var(--secondary-bg);
+  }
+  .session-tree-node:last-child::before { height:14px; }
+  .session-tree-children { padding-left:20px; margin:0; list-style:none; }
+  .session-tree-label { font-weight:600; }
+  .session-tree-meta { color:var(--hint); font-size:11px; margin-left:6px; }
+  .session-tree-icon { font-size:10px; margin-right:4px; }
+  .session-tree-icon.active { color:var(--done); }
+  .session-tree-icon.completed { color:var(--hint); }
+
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
 <script src="/miniapp/map.js"></script>
@@ -905,6 +924,7 @@
 <div id="session" class="panel">
   <div class="loading" id="session-loading">Loading session...</div>
   <div id="session-content" class="hidden"></div>
+  <div id="session-graph" class="hidden"></div>
   <div id="context-content"></div>
 </div>
 
@@ -1553,12 +1573,64 @@ function loadSession() {
         apiFetch('/miniapp/api/session'),
         apiFetch('/miniapp/api/sessions').catch(function() { return []; }),
         apiFetch('/miniapp/api/context').catch(function() { return null; }),
+        apiFetch('/miniapp/api/sessions/graph').catch(function() { return null; }),
       ]);
     },
     function(results) {
       renderSessionFromData(results[1], results[0]);
       renderContextFromData(results[2]);
+      renderSessionGraph(results[3]);
     });
+}
+
+function renderSessionGraph(graph) {
+  var el = document.getElementById('session-graph');
+  if (!el) return;
+  if (!graph || !graph.nodes || graph.nodes.length === 0) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+
+  // Build parent→children map
+  var childrenMap = {};
+  var roots = [];
+  graph.nodes.forEach(function(n) {
+    childrenMap[n.key] = [];
+  });
+  graph.edges.forEach(function(e) {
+    if (childrenMap[e.from]) childrenMap[e.from].push(e.to);
+  });
+  var nodeMap = {};
+  graph.nodes.forEach(function(n) {
+    nodeMap[n.key] = n;
+    // Check if this node is a root (no incoming edges)
+    var isChild = graph.edges.some(function(e) { return e.to === n.key; });
+    if (!isChild) roots.push(n.key);
+  });
+
+  function renderTreeNode(key) {
+    var n = nodeMap[key];
+    if (!n) return '';
+    var icon = n.status === 'completed' ? '\u2713' : '\u25CF';
+    var iconClass = n.status === 'completed' ? 'completed' : 'active';
+    var label = n.label || n.short_key || n.key;
+    var kids = childrenMap[key] || [];
+    var childHtml = '';
+    if (kids.length > 0) {
+      childHtml = '<ul class="session-tree-children">' +
+        kids.map(renderTreeNode).join('') + '</ul>';
+    }
+    return '<li class="session-tree-node">' +
+      '<span class="session-tree-icon ' + iconClass + '">' + icon + '</span>' +
+      '<span class="session-tree-label">' + escapeHtml(label) + '</span>' +
+      '<span class="session-tree-meta">turns=' + n.turn_count + '</span>' +
+      childHtml + '</li>';
+  }
+
+  var html = '<div class="card glass"><div class="card-title">Session Graph</div>' +
+    '<ul class="session-tree">' + roots.map(renderTreeNode).join('') + '</ul></div>';
+  el.innerHTML = html;
 }
 
 function formatTokens(n) {
@@ -1866,6 +1938,7 @@ function connectSSE() {
       lastSSE.session = Date.now();
       var d = JSON.parse(e.data);
       renderSessionFromData(d.sessions, d.stats);
+      if (d.graph) renderSessionGraph(d.graph);
     } catch(err) {}
   });
   eventSource.addEventListener('skills', function(e) {

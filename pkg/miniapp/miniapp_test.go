@@ -192,6 +192,8 @@ func (m *mockDataProvider) GetActiveSessions() []SessionInfo {
 	return []SessionInfo{}
 }
 
+func (m *mockDataProvider) GetSessionGraph() *SessionGraphData { return nil }
+
 func (m *mockDataProvider) GetGitRepos() []GitRepoSummary {
 	return nil
 }
@@ -486,6 +488,8 @@ func (m *mutatingDataProvider) GetSessionStats() *stats.Stats { return nil }
 func (m *mutatingDataProvider) GetActiveSessions() []SessionInfo {
 	return []SessionInfo{}
 }
+
+func (m *mutatingDataProvider) GetSessionGraph() *SessionGraphData { return nil }
 
 func (m *mutatingDataProvider) GetGitRepos() []GitRepoSummary {
 	return nil
