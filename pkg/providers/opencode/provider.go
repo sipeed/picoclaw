@@ -434,6 +434,18 @@ func (p *Provider) chatAnthropicMessages(
 				"role":    "assistant",
 				"content": content,
 			})
+		case "tool":
+			// Tool result - same format as user message with tool_use_id
+			anthropicMessages = append(anthropicMessages, map[string]any{
+				"role": "user",
+				"content": []map[string]any{
+					{
+						"type":        "tool_result",
+						"tool_use_id": msg.ToolCallID,
+						"content":     msg.Content,
+					},
+				},
+			})
 		}
 	}
 
@@ -527,6 +539,8 @@ func (p *Provider) chatGeminiModels(
 	// Build contents from messages (Gemini format)
 	var contents []map[string]any
 	var systemParts []string
+	// Track tool call ID to function name mapping for proper functionResponse
+	toolCallIDToName := make(map[string]string)
 
 	for _, msg := range messages {
 		switch msg.Role {
@@ -539,35 +553,20 @@ func (p *Provider) chatGeminiModels(
 				systemParts = append(systemParts, msg.Content)
 			}
 		case "user":
-			if msg.ToolCallID != "" {
-				// Tool result
-				contents = append(contents, map[string]any{
-					"role": "user",
-					"parts": []map[string]any{
-						{
-							"functionResponse": map[string]any{
-								"name": msg.ToolCallID,
-								"response": map[string]any{
-									"result": msg.Content,
-								},
-							},
-						},
-					},
-				})
-			} else {
-				contents = append(contents, map[string]any{
-					"role": "user",
-					"parts": []map[string]any{
-						{"text": msg.Content},
-					},
-				})
-			}
+			contents = append(contents, map[string]any{
+				"role": "user",
+				"parts": []map[string]any{
+					{"text": msg.Content},
+				},
+			})
 		case "assistant":
 			parts := []map[string]any{}
 			if msg.Content != "" {
 				parts = append(parts, map[string]any{"text": msg.Content})
 			}
 			for _, tc := range msg.ToolCalls {
+				// Track the mapping from tool call ID to function name
+				toolCallIDToName[tc.ID] = tc.Name
 				parts = append(parts, map[string]any{
 					"functionCall": map[string]any{
 						"name": tc.Name,
@@ -578,6 +577,27 @@ func (p *Provider) chatGeminiModels(
 			contents = append(contents, map[string]any{
 				"role":  "model",
 				"parts": parts,
+			})
+		case "tool":
+			// Tool result - use mapped function name, not ToolCallID
+			funcName := toolCallIDToName[msg.ToolCallID]
+			if funcName == "" {
+				// Fallback: if no mapping found, this shouldn't happen in normal flow
+				// but we need to handle it gracefully
+				funcName = "unknown_function"
+			}
+			contents = append(contents, map[string]any{
+				"role": "user",
+				"parts": []map[string]any{
+					{
+						"functionResponse": map[string]any{
+							"name": funcName,
+							"response": map[string]any{
+								"result": msg.Content,
+							},
+						},
+					},
+				},
 			})
 		}
 	}
@@ -708,13 +728,13 @@ func parseGeminiResponse(body []byte) (*LLMResponse, error) {
 	var content strings.Builder
 	var toolCalls []ToolCall
 
-	for _, part := range candidate.Content.Parts {
+	for i, part := range candidate.Content.Parts {
 		if part.Text != "" {
 			content.WriteString(part.Text)
 		}
 		if part.FunctionCall != nil {
 			toolCalls = append(toolCalls, ToolCall{
-				ID:        fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixNano()),
+				ID:        fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, i),
 				Name:      part.FunctionCall.Name,
 				Arguments: part.FunctionCall.Args,
 			})

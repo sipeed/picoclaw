@@ -309,7 +309,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			if sel.apiBase == "" {
 				sel.apiBase = "https://api.mistral.ai/v1"
 			}
-		case cfg.Providers.Opencode.APIKey != "" && cfg.Providers.Opencode.APIBase != "":
+		case cfg.Providers.Opencode.APIKey != "":
 			sel.apiKey = cfg.Providers.Opencode.APIKey
 			sel.apiBase = cfg.Providers.Opencode.APIBase
 			sel.proxy = cfg.Providers.Opencode.Proxy

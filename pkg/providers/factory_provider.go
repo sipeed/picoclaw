@@ -170,6 +170,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return provider, modelID, nil
 
 	case "opencode", "opencode-zen":
+		if cfg.APIKey == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for opencode protocol")
+		}
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = "https://opencode.ai/zen/v1"
