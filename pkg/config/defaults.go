@@ -58,6 +58,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 					Text:    "Thinking... 💭",
 				},
+				Streaming: StreamingConfig{Enabled: true},
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,

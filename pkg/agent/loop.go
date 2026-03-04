@@ -803,7 +803,7 @@ func (al *AgentLoop) runLLMIteration(
 	// Check if both the provider and channel support streaming
 	streamProvider, providerCanStream := agent.Provider.(providers.StreamingProvider)
 	var streamer bus.Streamer
-	if providerCanStream && opts.SendResponse && !constants.IsInternalChannel(opts.Channel) {
+	if providerCanStream && !opts.NoHistory && !constants.IsInternalChannel(opts.Channel) {
 		streamer, _ = al.bus.GetStreamer(ctx, opts.Channel, opts.ChatID)
 	}
 

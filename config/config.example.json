@@ -56,7 +56,10 @@
       "allow_from": [
         "YOUR_USER_ID"
       ],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "streaming": {
+        "enabled": true
+      }
     },
     "discord": {
       "enabled": false,
