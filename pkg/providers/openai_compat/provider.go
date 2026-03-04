@@ -116,7 +116,7 @@ func (p *Provider) Chat(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": stripSystemParts(messages),
+		"messages": serializeMessages(messages),
 	}
 
 	if len(tools) > 0 {
@@ -289,24 +289,62 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 // It mirrors protocoltypes.Message but omits SystemParts, which is an
 // internal field that would be unknown to third-party endpoints.
 type openaiMessage struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
 
-// stripSystemParts converts []Message to []openaiMessage, dropping the
-// SystemParts field so it doesn't leak into the JSON payload sent to
-// OpenAI-compatible APIs (some strict endpoints reject unknown fields).
-func stripSystemParts(messages []Message) []openaiMessage {
-	out := make([]openaiMessage, len(messages))
-	for i, m := range messages {
-		out[i] = openaiMessage{
-			Role:       m.Role,
-			Content:    m.Content,
-			ToolCalls:  m.ToolCalls,
-			ToolCallID: m.ToolCallID,
+// serializeMessages converts internal Message structs to the OpenAI wire format.
+// - Strips SystemParts (unknown to third-party endpoints)
+// - Converts messages with Media to multipart content format (text + image_url parts)
+// - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
+func serializeMessages(messages []Message) []any {
+	out := make([]any, 0, len(messages))
+	for _, m := range messages {
+		if len(m.Media) == 0 {
+			out = append(out, openaiMessage{
+				Role:             m.Role,
+				Content:          m.Content,
+				ReasoningContent: m.ReasoningContent,
+				ToolCalls:        m.ToolCalls,
+				ToolCallID:       m.ToolCallID,
+			})
+			continue
 		}
+
+		// Multipart content format for messages with media
+		parts := make([]map[string]any, 0, 1+len(m.Media))
+		if m.Content != "" {
+			parts = append(parts, map[string]any{
+				"type": "text",
+				"text": m.Content,
+			})
+		}
+		for _, mediaURL := range m.Media {
+			parts = append(parts, map[string]any{
+				"type": "image_url",
+				"image_url": map[string]any{
+					"url": mediaURL,
+				},
+			})
+		}
+
+		msg := map[string]any{
+			"role":    m.Role,
+			"content": parts,
+		}
+		if m.ToolCallID != "" {
+			msg["tool_call_id"] = m.ToolCallID
+		}
+		if len(m.ToolCalls) > 0 {
+			msg["tool_calls"] = m.ToolCalls
+		}
+		if m.ReasoningContent != "" {
+			msg["reasoning_content"] = m.ReasoningContent
+		}
+		out = append(out, msg)
 	}
 	return out
 }
@@ -323,7 +361,7 @@ func normalizeModel(model, apiBase string) string {
 
 	prefix := strings.ToLower(before)
 	switch prefix {
-	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "mistral":
+	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "mistral":
 		return after
 	default:
 		return model
