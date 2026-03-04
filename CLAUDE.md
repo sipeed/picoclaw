@@ -65,3 +65,4 @@ Lint: `golangci-lint run`
 | [`todo/TASKS-3.md`](todo/TASKS-3.md) | ~~**Session DAG (SQLite Store)**~~ ✅ 実装済み（Phase 0–3: SQLite SessionStore、LegacyAdapter、Fork/Report、CompactOldTurns、`/session` CLI コマンド、Mini App グラフ UI） |
 | [`todo/TASKS-4.md`](todo/TASKS-4.md) | **Mini App & Static Serving** — 静的配信の汎用化、バンドラ導入、フロントエンドテスト追加 |
 | [`todo/TASKS-5.md`](todo/TASKS-5.md) | ~~**Heartbeat Worktree Management**~~ ✅ 実装済み（`/plan worktrees` の `list/inspect/merge/dispose`、安全化した `PruneOrphaned`、Mini App `/miniapp/api/worktrees` + Git タブ UI） |
+| [`todo/TASKS-6.md`](todo/TASKS-6.md) | **SOUL.md — AI Persona Evolution** — 睡眠フェーズで体験を統合・忘却し人格を再構成。TASKS-2 完了後に着手 |
