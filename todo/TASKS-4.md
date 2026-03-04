@@ -72,3 +72,34 @@ Fields 表示バグが検出されずに ship された前科あり。
 - `ORCH_ENABLED` の注入がテンプレートまたはビルド時変数で動作
 - `renderLogs()` のユニットテストが CI で実行される
 - `go build ./...` が変わらず動作 (embed パスの整合性)
+
+## 作業報告 (2026-03-05)
+
+- 実装完了: タスク 1 / 2 / 3
+- 主要変更:
+  - `pkg/miniapp/miniapp.go`
+    - `//go:embed static` に変更
+    - `/miniapp/` を `http.FileServer(http.FS(...))` で一括配信
+    - `/miniapp` / `/miniapp/index.html` は `html/template` で描画し `OrchEnabled` を注入
+    - 旧 `serveMapJS` 個別ルートを削除
+  - フロントエンド分離
+    - `pkg/miniapp/frontend/src/` に `app.js` / `styles.css` / `map.js` / `logs_view.js` を配置
+    - `pkg/miniapp/static/index.html` はテンプレート + 外部アセット参照へ縮小
+    - `pkg/miniapp/static/dist/` に `app.js` / `app.css` / `map.js` を生成
+  - バンドル導線
+    - `pkg/miniapp/frontend/build.mjs` + `package.json` を追加
+    - `go generate ./...` で `bun run --cwd frontend build` が実行されるよう接続
+  - Log viewer 強化
+    - `logs_view.js` へレンダリングロジックを抽出
+    - フィルタ/ページネーションを追加
+    - `vitest + happy-dom` による unit test を追加 (`logs_view.test.js`)
+  - CI 更新 (`.github/workflows/pr.yml`)
+    - Bun セットアップを追加
+    - frontend の `pnpm test` を追加
+
+- 検証結果:
+  - `bun run --cwd pkg/miniapp/frontend build`: 成功
+  - `pnpm --dir pkg/miniapp/frontend test`: 成功
+  - `go generate ./...`: 成功
+  - `go test ./pkg/miniapp/...`: 成功
+  - `go test ./...`: 一部既存の環境依存テストが Windows 環境で失敗（TASK-4差分外）

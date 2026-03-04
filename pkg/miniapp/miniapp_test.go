@@ -23,6 +23,7 @@ import (
 	"time"
 
 	gitpkg "github.com/sipeed/picoclaw/pkg/git"
+	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/stats"
 )
@@ -227,6 +228,60 @@ func testInitData() string {
 	}, testBotToken)
 }
 
+func TestMiniApp_IndexTemplateInjectsOrchFlag(t *testing.T) {
+	notifier := NewStateNotifier()
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/miniapp", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "window.ORCH_ENABLED = false;") {
+		t.Fatalf("expected ORCH_ENABLED=false in rendered template")
+	}
+
+	h.SetOrchBroadcaster(orch.NewBroadcaster())
+	w2 := httptest.NewRecorder()
+	mux.ServeHTTP(w2, httptest.NewRequest("GET", "/miniapp", nil))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 with broadcaster, got %d", w2.Code)
+	}
+	if !strings.Contains(w2.Body.String(), "window.ORCH_ENABLED = true;") {
+		t.Fatalf("expected ORCH_ENABLED=true in rendered template")
+	}
+}
+
+func TestMiniApp_StaticFileServerServesAssets(t *testing.T) {
+	notifier := NewStateNotifier()
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	tests := []struct {
+		path string
+		want string
+	}{
+		{path: "/miniapp/map-preview.html", want: "Orchestration Room"},
+		{path: "/miniapp/dist/map.js", want: "MAP_POSITIONS"},
+		{path: "/miniapp/dist/app.js", want: "renderLogs"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, httptest.NewRequest("GET", tc.path, nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200 for %s, got %d", tc.path, w.Code)
+			}
+			if !strings.Contains(w.Body.String(), tc.want) {
+				t.Fatalf("expected %q in %s", tc.want, tc.path)
+			}
+		})
+	}
+}
 func TestSSE_AuthRequired(t *testing.T) {
 	notifier := NewStateNotifier()
 	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")

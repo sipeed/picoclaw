@@ -203,3 +203,10 @@ function _drawMapFallback(ctx) {
   _r(ctx, '#4a2408',    162, 284,  12, 16);
   _r(ctx, _C.doorGold,  170, 291,   5,  5);        // handle
 }
+
+// Expose map helpers for app.js runtime.
+globalThis.MAP_POSITIONS = MAP_POSITIONS;
+globalThis.loadMapAsset = loadMapAsset;
+globalThis.drawMap = drawMap;
+
+
