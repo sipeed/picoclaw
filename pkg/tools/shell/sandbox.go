@@ -6,13 +6,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"mvdan.cc/sh/v3/interp"
 )
 
-// SafePaths are kernel pseudo-devices that are always safe to open,
+// safePaths are kernel pseudo-devices that are always safe to open,
 // regardless of workspace restriction.
-var SafePaths = map[string]bool{
+var safePaths = map[string]bool{
 	"/dev/null":    true,
 	"/dev/zero":    true,
 	"/dev/random":  true,
@@ -20,6 +22,19 @@ var SafePaths = map[string]bool{
 	"/dev/stdin":   true,
 	"/dev/stdout":  true,
 	"/dev/stderr":  true,
+}
+
+// isSafePath reports whether path is a platform-appropriate pseudo-device
+// that should always be accessible regardless of sandbox restrictions.
+func isSafePath(path string) bool {
+	if safePaths[path] {
+		return true
+	}
+	// On Windows, NUL (case-insensitive) is the equivalent of /dev/null.
+	if runtime.GOOS == "windows" && strings.EqualFold(path, "NUL") {
+		return true
+	}
+	return false
 }
 
 // SandboxedOpenHandler returns an interp.OpenHandlerFunc that restricts
@@ -41,7 +56,7 @@ func SandboxedOpenHandler(workspaceDir string) interp.OpenHandlerFunc {
 	}
 
 	return func(ctx context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
-		if SafePaths[path] {
+		if isSafePath(path) {
 			return os.OpenFile(path, flag, perm)
 		}
 

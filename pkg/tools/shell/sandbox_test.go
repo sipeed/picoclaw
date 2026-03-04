@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -40,9 +41,16 @@ func TestSandboxedOpenHandler_AllowsSafePaths(t *testing.T) {
 	workspace := t.TempDir()
 	handler := SandboxedOpenHandler(workspace)
 
-	f, err := handler(context.Background(), "/dev/null", os.O_WRONLY, 0)
+	// Pick a platform-appropriate safe path that exists in the
+	// sandbox's safe-path list and is openable on the current OS.
+	safePath := "/dev/null"
+	if runtime.GOOS == "windows" {
+		safePath = "NUL"
+	}
+
+	f, err := handler(context.Background(), safePath, os.O_WRONLY, 0)
 	if err != nil {
-		t.Fatalf("expected /dev/null to be allowed: %v", err)
+		t.Fatalf("expected %s to be allowed: %v", safePath, err)
 	}
 	f.Close()
 }

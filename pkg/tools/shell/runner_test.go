@@ -2,10 +2,12 @@ package shell
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -91,6 +93,10 @@ func TestRun_BlocksCommandSubstitution(t *testing.T) {
 }
 
 func TestRun_Timeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix sleep command")
+	}
+
 	result := Run(context.Background(), RunConfig{
 		Command:       "sleep 60",
 		Dir:           t.TempDir(),
@@ -106,7 +112,78 @@ func TestRun_Timeout(t *testing.T) {
 	}
 }
 
+func TestRun_TimeoutKillsBackgroundChild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix-only: relies on kill -0 for process liveness check")
+	}
+
+	tmpDir := t.TempDir()
+	pidFile := filepath.Join(tmpDir, "child.pid")
+
+	// Spawn a background sh that writes its real OS PID, then execs sleep.
+	// The foreground also blocks on sleep so the interpreter stays alive
+	// until the timeout fires. sh is normally risk=critical so we
+	// downgrade it via an override for this test.
+	cmd := fmt.Sprintf(
+		`/bin/sh -c 'echo $$ > %s; exec sleep 300' & sleep 300`,
+		pidFile,
+	)
+
+	result := Run(context.Background(), RunConfig{
+		Command:       cmd,
+		Dir:           tmpDir,
+		Timeout:       2 * time.Second,
+		RiskThreshold: RiskMedium,
+		RiskOverrides: map[string]string{"sh": "low", "/bin/sh": "low"},
+	})
+
+	if !result.IsError {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(result.Output, "timed out") {
+		t.Errorf("expected 'timed out' in output: %s", result.Output)
+	}
+
+	// Read the PID that was written by the background sh process.
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		// PID file might not have been flushed before timeout — that's fine,
+		// it just means the child never started and there's nothing to check.
+		t.Skipf("PID file not written (child may not have started): %v", err)
+	}
+	pidStr := strings.TrimSpace(string(raw))
+	if pidStr == "" {
+		t.Skip("PID file empty — child may not have started")
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(pidStr, "%d", &pid); err != nil {
+		t.Fatalf("failed to parse PID %q: %v", pidStr, err)
+	}
+
+	// Give the OS a moment to reap the child.
+	time.Sleep(200 * time.Millisecond)
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		// Process already gone — exactly what we want.
+		return
+	}
+
+	// Signal 0 checks liveness without actually killing.
+	if err := proc.Signal(syscall.Signal(0)); err == nil {
+		t.Errorf("background child (PID %d) still alive after timeout — process leak", pid)
+		// Best-effort cleanup so we don't leave a zombie.
+		_ = proc.Kill()
+	}
+	// err != nil means the process is gone — success.
+}
+
 func TestRun_WorkingDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix cat command")
+	}
+
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
@@ -143,6 +220,10 @@ func TestRun_ParseError(t *testing.T) {
 }
 
 func TestRun_StderrCapture(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell redirections")
+	}
+
 	result := Run(context.Background(), RunConfig{
 		Command:       "echo stdout_msg; echo stderr_msg >&2",
 		Dir:           t.TempDir(),
@@ -159,6 +240,10 @@ func TestRun_StderrCapture(t *testing.T) {
 }
 
 func TestRun_HighThresholdAllowsRm(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix rm command")
+	}
+
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "delete_me.txt")
 	os.WriteFile(testFile, []byte("bye"), 0o644)
@@ -179,6 +264,10 @@ func TestRun_HighThresholdAllowsRm(t *testing.T) {
 }
 
 func TestRun_EnvSanitization(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix env command")
+	}
+
 	t.Setenv("OPENAI_API_KEY", "sk-secret-test")
 	t.Setenv("PATH", os.Getenv("PATH"))
 
@@ -201,6 +290,10 @@ func TestRun_EnvSanitization(t *testing.T) {
 }
 
 func TestRun_PipelineCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix wc command")
+	}
+
 	result := Run(context.Background(), RunConfig{
 		Command:       "echo 'line1\nline2\nline3' | wc -l",
 		Dir:           t.TempDir(),
@@ -214,6 +307,10 @@ func TestRun_PipelineCommand(t *testing.T) {
 }
 
 func TestRun_DevNullRedirection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires /dev/null")
+	}
+
 	result := Run(context.Background(), RunConfig{
 		Command:       "echo hello 2>/dev/null",
 		Dir:           t.TempDir(),
@@ -229,6 +326,10 @@ func TestRun_DevNullRedirection(t *testing.T) {
 }
 
 func TestRun_RiskOverrides(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix rm command and /dev/null")
+	}
+
 	// Override rm to low so it passes with threshold=medium.
 	result := Run(context.Background(), RunConfig{
 		Command:       "rm nonexistent_file_xyz 2>/dev/null; echo done",

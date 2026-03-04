@@ -3,6 +3,7 @@ package shell
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -97,14 +98,17 @@ func Run(ctx context.Context, cfg RunConfig) RunResult {
 	}
 
 	if err != nil {
-		if runCtx.Err() == context.DeadlineExceeded {
-			msg := fmt.Sprintf("Command timed out after %v", cfg.Timeout)
-			return RunResult{Output: msg, IsError: true}
+		if runCtx.Err() != nil {
+			if runCtx.Err() == context.DeadlineExceeded {
+				msg := fmt.Sprintf("Command timed out after %v", cfg.Timeout)
+				return RunResult{Output: msg, IsError: true}
+			}
+			return RunResult{Output: "Command canceled", IsError: true}
 		}
 
-		errStr := err.Error()
-		if strings.Contains(errStr, "Command blocked by risk classifier") {
-			return RunResult{Output: errStr, IsError: true}
+		var blocked *BlockedError
+		if errors.As(err, &blocked) {
+			return RunResult{Output: blocked.Error(), IsError: true}
 		}
 
 		output += fmt.Sprintf("\nExit code: %v", err)
@@ -140,8 +144,7 @@ func riskExecHandler(
 
 			level := ClassifyCommand(args, overrides, extraMods)
 			if !IsAllowed(level, threshold) {
-				reason := "command risk exceeds configured threshold"
-				return fmt.Errorf("%s", BlockedCommandError(args, level, threshold, reason))
+				return NewBlockedError(args, level, threshold, "command risk exceeds configured threshold")
 			}
 
 			return next(ctx, args)

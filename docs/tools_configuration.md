@@ -120,7 +120,11 @@ of variables is exposed (e.g., `PATH`, `HOME`, `LANG`, `TERM`).
 ### File-Access Sandboxing
 
 When `restrict_to_workspace` is enabled (the default), the interpreter's
-`OpenHandler` blocks reads and writes outside the configured workspace directory.
+`OpenHandler` blocks reads and writes outside the configured workspace directory for shell-managed redirections (`>`, `<`, `>>`).
+
+> NOTE: This is not a general filesystem sandbox. External programs invoked by the
+> shell can still perform arbitrary file I/O via their own syscalls; only
+> shell-level redirections are constrained by `OpenHandler`.
 
 ### Cron Integration
 

@@ -616,8 +616,10 @@ type ExecConfig struct {
 	EnvSet        map[string]string              `json:"env_set"        env:"PICOCLAW_TOOLS_EXEC_ENV_SET"`        // explicit var=value pairs
 
 	// Deprecated: these fields are ignored. See risk_threshold and risk_overrides.
-	EnableDenyPatterns  bool     `json:"enable_deny_patterns,omitempty"  env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
-	CustomDenyPatterns  []string `json:"custom_deny_patterns,omitempty"  env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
+	EnableDenyPatterns *bool `json:"enable_deny_patterns,omitempty" env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
+	// Deprecated: these fields are ignored. See risk_threshold and risk_overrides.
+	CustomDenyPatterns []string `json:"custom_deny_patterns,omitempty" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
+	// Deprecated: these fields are ignored. See risk_threshold and risk_overrides.
 	CustomAllowPatterns []string `json:"custom_allow_patterns,omitempty" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS"`
 }
 

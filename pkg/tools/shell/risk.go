@@ -446,29 +446,60 @@ func IsAllowed(level, threshold RiskLevel) bool {
 	return level <= threshold
 }
 
-// BlockedCommandError formats a structured error message for the LLM.
-func BlockedCommandError(args []string, level, threshold RiskLevel, reason string) string {
-	cmd := ""
-	if len(args) > 0 {
-		cmd = args[0]
-		if len(args) > 1 {
-			end := len(args)
-			if end > 5 {
-				end = 5
-			}
-			for _, a := range args[1:end] {
-				cmd += " " + a
-			}
-			if len(args) > 5 {
-				cmd += " ..."
-			}
-		}
-	}
+// BlockedError is returned when a command is blocked by the risk classifier.
+type BlockedError struct {
+	Command   string
+	Level     RiskLevel
+	Threshold RiskLevel
+	Reason    string
+}
 
+func (e *BlockedError) Error() string {
 	return fmt.Sprintf(
 		"Command blocked by risk classifier: command=%q risk_level=%s threshold=%s reason=%s",
-		cmd, level, threshold, reason,
+		e.Command, e.Level, e.Threshold, e.Reason,
 	)
+}
+
+// BlockedCommandError formats a structured error message for the LLM.
+// Deprecated: use BlockedError directly.
+func BlockedCommandError(args []string, level, threshold RiskLevel, reason string) string {
+	return (&BlockedError{
+		Command:   formatCommand(args),
+		Level:     level,
+		Threshold: threshold,
+		Reason:    reason,
+	}).Error()
+}
+
+// NewBlockedError constructs a BlockedError from a command's args.
+func NewBlockedError(args []string, level, threshold RiskLevel, reason string) *BlockedError {
+	return &BlockedError{
+		Command:   formatCommand(args),
+		Level:     level,
+		Threshold: threshold,
+		Reason:    reason,
+	}
+}
+
+func formatCommand(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	cmd := args[0]
+	if len(args) > 1 {
+		end := len(args)
+		if end > 5 {
+			end = 5
+		}
+		for _, a := range args[1:end] {
+			cmd += " " + a
+		}
+		if len(args) > 5 {
+			cmd += " ..."
+		}
+	}
+	return cmd
 }
 
 // baseCommand extracts the basename from a command path.

@@ -71,6 +71,18 @@ func NewExecToolWithConfig(workingDir string, restrict bool, cfg *config.Config)
 }
 
 func warnDeprecatedExecConfig(cfg config.ExecConfig) {
+	if cfg.EnableDenyPatterns != nil {
+		if !*cfg.EnableDenyPatterns {
+			fmt.Println("Warning: 'enable_deny_patterns: false' is deprecated and ignored. " +
+				"Previously this disabled all command filtering. The new risk-based system " +
+				"is now always active (default threshold=medium). " +
+				"To allow all commands, set 'risk_threshold: critical'.")
+		} else {
+			fmt.Println("Warning: 'enable_deny_patterns' is deprecated and ignored. " +
+				"Command filtering is now always active via the risk-based classifier. " +
+				"Remove this field from your config.")
+		}
+	}
 	if len(cfg.CustomDenyPatterns) > 0 {
 		fmt.Println("Warning: 'custom_deny_patterns' is deprecated and ignored. " +
 			"Use 'risk_overrides' to adjust per-command risk levels.")

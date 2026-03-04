@@ -56,15 +56,15 @@ var windowsEnvAllowlist = map[string]bool{
 func BuildSanitizedEnv(extraAllowlist []string, envSet map[string]string) expand.Environ {
 	allowed := make(map[string]bool, len(DefaultEnvAllowlist)+len(extraAllowlist)+len(windowsEnvAllowlist))
 	for k := range DefaultEnvAllowlist {
-		allowed[k] = true
+		allowed[envKey(k)] = true
 	}
 	if runtime.GOOS == "windows" {
 		for k := range windowsEnvAllowlist {
-			allowed[k] = true
+			allowed[envKey(k)] = true
 		}
 	}
 	for _, k := range extraAllowlist {
-		allowed[k] = true
+		allowed[envKey(k)] = true
 	}
 
 	vars := make(map[string]string, len(allowed)+len(envSet))
@@ -74,16 +74,27 @@ func BuildSanitizedEnv(extraAllowlist []string, envSet map[string]string) expand
 		if !ok {
 			continue
 		}
-		if allowed[k] || isAllowedPrefix(k) {
-			vars[k] = v
+		norm := envKey(k)
+		if allowed[norm] || isAllowedPrefix(norm) {
+			vars[norm] = v
 		}
 	}
 
 	for k, v := range envSet {
-		vars[k] = v
+		vars[envKey(k)] = v
 	}
 
 	return &sanitizedEnv{vars: vars}
+}
+
+// envKey normalizes an environment variable name. On Windows, where env
+// vars are case-insensitive, it uppercases the key so that "Path" and
+// "PATH" map to the same entry. On other platforms it's a no-op.
+func envKey(k string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(k)
+	}
+	return k
 }
 
 func isAllowedPrefix(name string) bool {
@@ -101,7 +112,7 @@ type sanitizedEnv struct {
 }
 
 func (e *sanitizedEnv) Get(name string) expand.Variable {
-	val, ok := e.vars[name]
+	val, ok := e.vars[envKey(name)]
 	if !ok {
 		return expand.Variable{}
 	}
