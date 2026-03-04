@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
@@ -17,6 +18,14 @@ import (
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
+)
+
+// Health check constants
+const (
+	healthCheckInterval = 5 * time.Minute  // Check every 5 minutes
+	maxSilenceDuration  = 30 * time.Minute // Max time without messages before recovery
+	recoveryDelay       = 2 * time.Second  // Delay before reconnecting
+	recoveryRetryDelay  = 30 * time.Second // Delay before retrying failed recovery
 )
 
 // DingTalkChannel implements the Channel interface for DingTalk (钉钉)
@@ -31,6 +40,9 @@ type DingTalkChannel struct {
 	cancel       context.CancelFunc
 	// Map to store session webhooks for each chat
 	sessionWebhooks sync.Map // chatID -> sessionWebhook
+	// Health monitoring
+	lastMessageTime time.Time
+	mu              sync.RWMutex
 }
 
 // NewDingTalkChannel creates a new DingTalk channel instance
@@ -58,7 +70,23 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 	logger.InfoC("dingtalk", "Starting DingTalk channel (Stream Mode)...")
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
+	c.lastMessageTime = time.Now() // Initialize on start
 
+	// Start the stream client
+	if err := c.startStreamClient(); err != nil {
+		return err
+	}
+
+	// Start health monitoring goroutine
+	go c.healthMonitor()
+
+	c.SetRunning(true)
+	logger.InfoC("dingtalk", "DingTalk channel started (Stream Mode)")
+	return nil
+}
+
+// startStreamClient creates and starts the stream client
+func (c *DingTalkChannel) startStreamClient() error {
 	// Create credential config
 	cred := client.NewAppCredentialConfig(c.clientID, c.clientSecret)
 
@@ -68,7 +96,7 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 		client.WithAutoReconnect(true),
 	)
 
-	// Register chatbot callback handler (IChatBotMessageHandler is a function type)
+	// Register chatbot callback handler
 	c.streamClient.RegisterChatBotCallbackRouter(c.onChatBotMessageReceived)
 
 	// Start the stream client
@@ -76,9 +104,74 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start stream client: %w", err)
 	}
 
-	c.SetRunning(true)
-	logger.InfoC("dingtalk", "DingTalk channel started (Stream Mode)")
 	return nil
+}
+
+// healthMonitor periodically checks connection health and triggers recovery if needed
+func (c *DingTalkChannel) healthMonitor() {
+	ticker := time.NewTicker(healthCheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+			c.checkAndRecover()
+		}
+	}
+}
+
+// checkAndRecover checks if connection is stale and triggers recovery
+func (c *DingTalkChannel) checkAndRecover() {
+	c.mu.RLock()
+	silenceDuration := time.Since(c.lastMessageTime)
+	c.mu.RUnlock()
+
+	logger.DebugCF("dingtalk", "Health check: silence duration %v", silenceDuration)
+
+	if silenceDuration >= maxSilenceDuration {
+		logger.InfoCF("dingtalk", "Connection appears stale (no messages for %v), triggering recovery", silenceDuration)
+		c.recoverConnection()
+	}
+}
+
+// recoverConnection attempts to recover the stream connection
+func (c *DingTalkChannel) recoverConnection() {
+	// Close old client
+	if c.streamClient != nil {
+		c.streamClient.Close()
+		time.Sleep(recoveryDelay)
+	}
+
+	// Attempt to reconnect
+	for {
+		select {
+		case <-c.ctx.Done():
+			logger.InfoC("dingtalk", "Recovery aborted: context cancelled")
+			return
+		default:
+		}
+
+		err := c.startStreamClient()
+		if err == nil {
+			logger.InfoCF("dingtalk", "Connection recovered successfully")
+			c.mu.Lock()
+			c.lastMessageTime = time.Now()
+			c.mu.Unlock()
+			return
+		}
+
+		logger.WarnCF("dingtalk", "Recovery failed: %v, retrying in %v", err, recoveryRetryDelay)
+		time.Sleep(recoveryRetryDelay)
+	}
+}
+
+// updateLastMessageTime updates the last message timestamp
+func (c *DingTalkChannel) updateLastMessageTime() {
+	c.mu.Lock()
+	c.lastMessageTime = time.Now()
+	c.mu.Unlock()
 }
 
 // Stop gracefully stops the DingTalk channel
@@ -131,6 +224,9 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 	ctx context.Context,
 	data *chatbot.BotCallbackDataModel,
 ) ([]byte, error) {
+	// Update last message time for health monitoring
+	c.updateLastMessageTime()
+
 	// Extract message content from Text field
 	content := data.Text.Content
 	if content == "" {
