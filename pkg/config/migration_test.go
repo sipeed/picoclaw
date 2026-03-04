@@ -127,19 +127,20 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 			ShengSuanYun:  ProviderConfig{APIKey: "key11"},
 			DeepSeek:      ProviderConfig{APIKey: "key12"},
 			Cerebras:      ProviderConfig{APIKey: "key13"},
-			VolcEngine:    ProviderConfig{APIKey: "key14"},
+			Vivgrid:       ProviderConfig{APIKey: "key14"},
+			VolcEngine:    ProviderConfig{APIKey: "key15"},
 			GitHubCopilot: ProviderConfig{ConnectMode: "grpc"},
 			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
-			Qwen:          ProviderConfig{APIKey: "key17"},
-			Mistral:       ProviderConfig{APIKey: "key18"},
+			Qwen:          ProviderConfig{APIKey: "key18"},
+			Mistral:       ProviderConfig{APIKey: "key19"},
 		},
 	}
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 18 providers should be converted
-	if len(result) != 18 {
-		t.Errorf("len(result) = %d, want 18", len(result))
+	// All 19 providers should be converted
+	if len(result) != 19 {
+		t.Errorf("len(result) = %d, want 19", len(result))
 	}
 }
 

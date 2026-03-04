@@ -249,6 +249,14 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// Vivgrid - https://vivgrid.com
+			{
+				ModelName: "vivgrid-auto",
+				Model:     "vivgrid/auto",
+				APIBase:   "https://api.vivgrid.com/v1",
+				APIKey:    "",
+			},
+
 			// Volcengine (火山引擎) - https://console.volcengine.com/ark
 			{
 				ModelName: "doubao-pro",

@@ -397,6 +397,7 @@ type ProvidersConfig struct {
 	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig       `json:"deepseek"`
 	Cerebras      ProviderConfig       `json:"cerebras"`
+	Vivgrid       ProviderConfig       `json:"vivgrid"`
 	VolcEngine    ProviderConfig       `json:"volcengine"`
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
 	Antigravity   ProviderConfig       `json:"antigravity"`
@@ -420,6 +421,7 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" &&
 		p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" &&
 		p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" &&
+		p.Vivgrid.APIKey == "" && p.Vivgrid.APIBase == "" &&
 		p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" &&
 		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
 		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
@@ -761,6 +763,7 @@ func (c *Config) HasProvidersConfig() bool {
 		v.ShengSuanYun.APIKey != "" || v.ShengSuanYun.APIBase != "" ||
 		v.DeepSeek.APIKey != "" || v.DeepSeek.APIBase != "" ||
 		v.Cerebras.APIKey != "" || v.Cerebras.APIBase != "" ||
+		v.Vivgrid.APIKey != "" || v.Vivgrid.APIBase != "" ||
 		v.VolcEngine.APIKey != "" || v.VolcEngine.APIBase != "" ||
 		v.GitHubCopilot.APIKey != "" || v.GitHubCopilot.APIBase != "" ||
 		v.Antigravity.APIKey != "" || v.Antigravity.APIBase != "" ||
