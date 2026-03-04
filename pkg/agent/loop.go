@@ -450,6 +450,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
+	// Reset message-tool sentInRound before any early-return paths (including
+	// handleCommand) so that a stale true from the previous LLM round never
+	// causes the command response to be silently dropped in the Run loop's
+	// alreadySent check (which would leave the typing indicator stuck on).
+	if defaultAgent := al.registry.GetDefaultAgent(); defaultAgent != nil {
+		if tool, ok := defaultAgent.Tools.Get("message"); ok {
+			if mt, ok := tool.(tools.ContextualTool); ok {
+				mt.SetContext(msg.Channel, msg.ChatID)
+			}
+		}
+	}
+
 	// Check for commands
 	if response, handled := al.handleCommand(ctx, msg); handled {
 		return response, nil
