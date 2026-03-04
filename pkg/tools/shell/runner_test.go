@@ -157,7 +157,7 @@ func TestRun_TimeoutKillsBackgroundChild(t *testing.T) {
 	}
 
 	var pid int
-	if _, err := fmt.Sscanf(pidStr, "%d", &pid); err != nil {
+	if _, err = fmt.Sscanf(pidStr, "%d", &pid); err != nil {
 		t.Fatalf("failed to parse PID %q: %v", pidStr, err)
 	}
 

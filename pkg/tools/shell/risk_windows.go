@@ -68,9 +68,9 @@ func init() {
 		"powershell": RiskCritical, // Windows PowerShell 5.1 (Windows-only; pwsh is cross-platform)
 		"cmd":        RiskCritical,
 		"cmd.exe":    RiskCritical,
-		"cscript": RiskCritical,
-		"wscript": RiskCritical,
-		"mshta":   RiskCritical,
+		"cscript":    RiskCritical,
+		"wscript":    RiskCritical,
+		"mshta":      RiskCritical,
 	}
 
 	for k, v := range windowsCommands {
