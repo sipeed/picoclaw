@@ -24,10 +24,10 @@ func TestGroqTranscriberName(t *testing.T) {
 
 func TestDetectTranscriber(t *testing.T) {
 	tests := []struct {
-		name      string
-		cfg       *config.Config
-		wantNil   bool
-		wantName  string
+		name     string
+		cfg      *config.Config
+		wantNil  bool
+		wantName string
 	}{
 		{
 			name:    "no config",
