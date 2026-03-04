@@ -3860,6 +3860,9 @@ func (al *AgentLoop) handlePlanCommand(args []string, sessionKey string) (string
 		phase := agent.ContextBuilder.GetCurrentPhase()
 		return fmt.Sprintf("Advanced to phase %d.", phase), true
 
+	case "worktrees":
+		return al.handlePlanWorktreesCommand(agent, args[1:]), true
+
 	default:
 		// /plan <task description> — start new plan
 		// Block if a plan is already active (fast-path error).
@@ -3874,6 +3877,163 @@ func (al *AgentLoop) handlePlanCommand(args []string, sessionKey string) (string
 
 // isPlanPreExecution returns true if the plan is in a pre-execution state
 // (interviewing or review) where tool restrictions and iteration caps apply.
+func (al *AgentLoop) handlePlanWorktreesCommand(agent *AgentInstance, args []string) string {
+	repoRoot := git.FindRepoRoot(agent.Workspace)
+	if repoRoot == "" {
+		return "Workspace is not a git repository."
+	}
+	worktreesDir := filepath.Join(agent.Workspace, ".worktrees")
+
+	sub := "list"
+	if len(args) > 0 {
+		sub = strings.ToLower(strings.TrimSpace(args[0]))
+	}
+
+	switch sub {
+	case "", "list":
+		items, err := git.ListManagedWorktrees(repoRoot, worktreesDir)
+		if err != nil {
+			return fmt.Sprintf("Error listing worktrees: %v", err)
+		}
+		if len(items) == 0 {
+			return "No active worktrees in workspace/.worktrees."
+		}
+
+		var sb strings.Builder
+		sb.WriteString("Active worktrees\n\n")
+		for _, wt := range items {
+			status := "clean"
+			if wt.HasUncommitted {
+				status = "dirty"
+			}
+			last := "(no commits)"
+			if wt.LastCommitHash != "" {
+				if wt.LastCommitAge != "" {
+					last = fmt.Sprintf("%s %s (%s)", wt.LastCommitHash, wt.LastCommitSubject, wt.LastCommitAge)
+				} else {
+					last = fmt.Sprintf("%s %s", wt.LastCommitHash, wt.LastCommitSubject)
+				}
+			}
+			fmt.Fprintf(&sb, "- %s\n  branch: %s\n  status: %s\n  last: %s\n", wt.Name, wt.Branch, status, last)
+		}
+		sb.WriteString("\nCommands:\n")
+		sb.WriteString("/plan worktrees inspect <name>\n")
+		sb.WriteString("/plan worktrees merge <name>\n")
+		sb.WriteString("/plan worktrees dispose <name> [force]")
+		return sb.String()
+
+	case "inspect":
+		if len(args) < 2 {
+			return "Usage: /plan worktrees inspect <name>"
+		}
+		name := args[1]
+		wt, err := git.GetManagedWorktree(repoRoot, worktreesDir, name)
+		if err != nil {
+			if errors.Is(err, git.ErrInvalidWorktreeName) {
+				return "Invalid worktree name."
+			}
+			if errors.Is(err, git.ErrWorktreeNotFound) {
+				return fmt.Sprintf("Worktree %q not found.", name)
+			}
+			return fmt.Sprintf("Error inspecting worktree %q: %v", name, err)
+		}
+		statusOut, _ := git.WorktreeStatusShort(wt.Path)
+		diffOut, _ := git.WorktreeDiffStat(wt.Path)
+		logOut, _ := git.WorktreeRecentLog(wt.Path, 10)
+		if statusOut == "" {
+			statusOut = "(clean)"
+		}
+
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Worktree: %s\nBranch: %s\nDirty: %t\n", wt.Name, wt.Branch, wt.HasUncommitted)
+		if wt.LastCommitHash != "" {
+			fmt.Fprintf(&sb, "Last commit: %s %s", wt.LastCommitHash, wt.LastCommitSubject)
+			if wt.LastCommitAge != "" {
+				fmt.Fprintf(&sb, " (%s)", wt.LastCommitAge)
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\nStatus:\n```\n")
+		sb.WriteString(statusOut)
+		sb.WriteString("\n```\n")
+		if diffOut != "" {
+			sb.WriteString("\nDiff (stat):\n```\n")
+			sb.WriteString(diffOut)
+			sb.WriteString("\n```\n")
+		}
+		if logOut != "" {
+			sb.WriteString("\nRecent commits:\n```\n")
+			sb.WriteString(logOut)
+			sb.WriteString("\n```")
+		}
+		return sb.String()
+
+	case "merge":
+		if len(args) < 2 {
+			return "Usage: /plan worktrees merge <name>"
+		}
+		name := args[1]
+		res, base, err := git.MergeManagedWorktree(repoRoot, worktreesDir, name, "")
+		if err != nil {
+			if errors.Is(err, git.ErrInvalidWorktreeName) {
+				return "Invalid worktree name."
+			}
+			if errors.Is(err, git.ErrWorktreeNotFound) {
+				return fmt.Sprintf("Worktree %q not found.", name)
+			}
+			return fmt.Sprintf("Error merging worktree %q: %v", name, err)
+		}
+		if res.Conflict {
+			return fmt.Sprintf("Merge conflict while merging `%s` into `%s`. Merge was aborted.", res.Branch, base)
+		}
+		if res.Merged {
+			return fmt.Sprintf("Merged `%s` into `%s`.", res.Branch, base)
+		}
+		return fmt.Sprintf("No merge was performed for `%s`.", name)
+
+	case "dispose":
+		if len(args) < 2 {
+			return "Usage: /plan worktrees dispose <name> [force]"
+		}
+		name := args[1]
+		force := len(args) > 2 && strings.EqualFold(args[2], "force")
+		wt, err := git.GetManagedWorktree(repoRoot, worktreesDir, name)
+		if err != nil {
+			if errors.Is(err, git.ErrInvalidWorktreeName) {
+				return "Invalid worktree name."
+			}
+			if errors.Is(err, git.ErrWorktreeNotFound) {
+				return fmt.Sprintf("Worktree %q not found.", name)
+			}
+			return fmt.Sprintf("Error disposing worktree %q: %v", name, err)
+		}
+		if wt.HasUncommitted && !force {
+			return fmt.Sprintf(
+				"Worktree `%s` has uncommitted changes. Re-run with `/plan worktrees dispose %s force` to confirm.",
+				name,
+				name,
+			)
+		}
+		res, err := git.DisposeManagedWorktree(repoRoot, worktreesDir, name, "")
+		if err != nil {
+			return fmt.Sprintf("Error disposing worktree %q: %v", name, err)
+		}
+		parts := []string{fmt.Sprintf("Disposed worktree `%s` (branch `%s`).", name, res.Branch)}
+		if res.AutoCommitted {
+			parts = append(parts, "Uncommitted changes were auto-committed.")
+		}
+		if res.CommitsAhead > 0 {
+			parts = append(parts, fmt.Sprintf("Branch has %d unique commit(s); branch was kept.", res.CommitsAhead))
+		}
+		if res.BranchDeleted {
+			parts = append(parts, "Branch was deleted (no unique commits).")
+		}
+		return strings.Join(parts, " ")
+	}
+
+	return "Usage: /plan worktrees [list|inspect <name>|merge <name>|dispose <name> [force]]"
+}
+
 func isPlanPreExecution(status string) bool {
 	return status == "interviewing" || status == "review"
 }
@@ -4009,7 +4169,7 @@ func (al *AgentLoop) expandPlanCommand(msg bus.InboundMessage) (expanded string,
 	// Known subcommands are handled by handlePlanCommand (fast path).
 	firstWord := strings.Fields(task)[0]
 	switch firstWord {
-	case "clear", "done", "add", "start", "next":
+	case "clear", "done", "add", "start", "next", "worktrees":
 		return "", "", false
 	}
 
