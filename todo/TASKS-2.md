@@ -1,5 +1,17 @@
 # TASKS-2: Subagent Orchestration (Container Model)
 
+## TASKS-1 反映メモ (2026-03-05)
+
+TASKS-2 実装時は以下の型変更を前提にすること。
+
+- `FunctionCall.Arguments` は JSON 文字列ではなく `map[string]any` 扱い。
+  - 旧来の `json.Unmarshal([]byte(tc.Function.Arguments), ...)` 前提コードは不要。
+- `ToolFunctionDefinition.Parameters` は `json.RawMessage`。
+  - 生成時は `providers.MustMarshalParameters(...)` か `SetParametersMap(...)` を利用。
+  - `map[string]any` を直接代入しない。
+- `MemoryStore` はキャッシュ化済み。
+  - `GetPlanTaskName` / `GetPlanWorkDir` / `GetMemoryContext` を優先して利用し、`ReadLongTerm()` 直叩きは最小化する。
+
 SubagentManager を Container ベースの Orchestrator に進化させる。
 セッション管理の内部実装 (TASKS-3) には依存しない — 現行の SessionManager 上で動作させ、後から SessionStore に差し替える。
 
@@ -225,3 +237,6 @@ conductor は spawn 後に Delegated に記録、結果受信後に Findings に
 - Deliberate preset の clarifying → review → executing フロー動作
 - SandboxConfig による exec 制限が全 preset で正しく enforcement
 - escalation chain (subagent → conductor → human) が動作
+
+
+
