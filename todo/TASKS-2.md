@@ -12,6 +12,51 @@ TASKS-2 実装時は以下の型変更を前提にすること。
 - `MemoryStore` はキャッシュ化済み。
   - `GetPlanTaskName` / `GetPlanWorkDir` / `GetMemoryContext` を優先して利用し、`ReadLongTerm()` 直叩きは最小化する。
 
+## SQLite DAG 連携方針 (TASKS-3 完了を受けて)
+
+Session DAG (SQLite) が実装済みのため、TASKS-2 の全 Q&A・状態遷移を DAG に記録する。
+
+### 設計原則: ハイブリッド (Channel + DAG)
+
+- **Go channel** = リアルタイムブロッキング。subagent goroutine が `inCh` で conductor の回答を待つ
+- **SQLite DAG** = 永続化・監査証跡。全 question/answer/plan_submit を turn として記録
+- **session status** = PlanState の永続化。`store.SetStatus(subKey, "clarifying"/"review"/"executing")` で Mini App にフェーズを公開
+
+### 新 TurnKind (session/types.go に追加)
+
+```go
+TurnQuestion   TurnKind = 10 // subagent → conductor question (explicit iota gap)
+TurnPlanSubmit TurnKind = 11 // subagent plan submission for review
+```
+
+既存の `TurnReport` (conductor ← subagent report) と対称。`TurnAnswer` は不要 — conductor の回答は conductor セッション側の `TurnNormal` に自然に含まれる。
+
+### SessionRecorder 拡張 (tools/session_recorder.go)
+
+```go
+// RecordQuestion persists a subagent question as a turn in the subagent session,
+// and a corresponding TurnQuestion turn in the conductor session.
+RecordQuestion(conductorKey, subagentKey, taskID, question string) error
+
+// RecordPlanSubmit persists a plan submission as a TurnPlanSubmit turn.
+RecordPlanSubmit(conductorKey, subagentKey, taskID, planText string) error
+```
+
+実装 (agent/session_recorder.go): `RecordReport` と同パターン — `store.Append(conductorKey, &Turn{Kind: TurnQuestion, ...})` + `adapter.AdvanceStored()`
+
+### PlanState ↔ Session Status マッピング
+
+| PlanState | session status | タイミング |
+|---|---|---|
+| `PlanStateClarifying` | `"clarifying"` | runTask() で Deliberate フェーズ開始時 |
+| `PlanStateReview` | `"review"` | submit_plan 呼び出し時 |
+| `PlanStateExecuting` | `"executing"` | conductor が approved 返却後 |
+| `PlanStateCompleted` | `"completed"` | 既存の RecordCompletion |
+
+→ Mini App Session Graph で subagent のフェーズが可視化される。
+
+---
+
 SubagentManager を Container ベースの Orchestrator に進化させる。
 escalation chain（質問→回答）と Deliberate preset の plan mode を追加。
 
@@ -109,16 +154,63 @@ subagent (clarifying) → outCh: question → conductor 受信
 
 ## Phase 1: Container + Escalation
 
-### Task 1: ContainerMessage channel 追加
+### Task 1: ContainerMessage channel + DAG 記録
 
 **目的:** subagent goroutine と conductor 間の双方向通信を既存の SubagentManager に追加。
+Go channel でリアルタイムブロッキング、SQLite DAG で永続化の二重記録。
 新規ファイルは作らず SubagentTask を拡張する。
 
-**対象ファイル:** `pkg/tools/subagent.go`
+**対象ファイル:** `pkg/tools/subagent.go`, `pkg/session/types.go`, `pkg/tools/session_recorder.go`, `pkg/agent/session_recorder.go`
 
 **変更内容:**
 
-1. SubagentTask にチャネルフィールド追加:
+1. TurnKind 追加 (`pkg/session/types.go`):
+
+```go
+const (
+    TurnNormal    TurnKind = iota // existing
+    TurnReport                    // existing
+    TurnForkPoint                 // existing
+
+    TurnQuestion   TurnKind = 10 // subagent → conductor question
+    TurnPlanSubmit TurnKind = 11 // subagent plan submission for review
+)
+```
+
+2. SessionRecorder 拡張 (`pkg/tools/session_recorder.go`):
+
+```go
+type SessionRecorder interface {
+    // ... existing methods ...
+
+    // RecordQuestion persists a question as TurnQuestion in the conductor session.
+    RecordQuestion(conductorKey, subagentKey, taskID, question string) error
+
+    // RecordPlanSubmit persists a plan submission as TurnPlanSubmit in the conductor session.
+    RecordPlanSubmit(conductorKey, subagentKey, taskID, planText string) error
+}
+```
+
+3. 実装 (`pkg/agent/session_recorder.go`):
+
+```go
+func (r *sessionRecorderImpl) RecordQuestion(conductorKey, subagentKey, taskID, question string) error {
+    store := r.adapter.Store()
+    turn := &session.Turn{
+        Kind:      session.TurnQuestion,
+        OriginKey: subagentKey,
+        Author:    taskID,
+        Messages:  []providers.Message{{Role: "user", Content: question}},
+    }
+    if err := store.Append(conductorKey, turn); err != nil {
+        return err
+    }
+    r.adapter.AdvanceStored(conductorKey, 1)
+    return nil
+}
+```
+
+4. SubagentTask にチャネルフィールド追加 (`pkg/tools/subagent.go`):
 
 ```go
 // 既存の SubagentTask に追加
@@ -131,13 +223,13 @@ type SubagentTask struct {
 }
 
 type ContainerMessage struct {
-    Type    string // "question" | "status"
+    Type    string // "question" | "plan_review" | "status"
     Content string
     TaskID  string // 送信元タスクID
 }
 ```
 
-2. `Spawn()` で Deliberate preset の場合のみチャネル生成:
+5. `Spawn()` で Deliberate preset の場合のみチャネル生成:
 
 ```go
 func (sm *SubagentManager) Spawn(...) (string, error) {
@@ -150,7 +242,7 @@ func (sm *SubagentManager) Spawn(...) (string, error) {
 }
 ```
 
-3. `PendingQuestions()` メソッド追加 — conductor が polling で question を回収:
+6. `PendingQuestions()` メソッド追加 — conductor が polling で question を回収:
 
 ```go
 // PendingQuestions returns all pending questions from active subagents.
@@ -171,7 +263,7 @@ func (sm *SubagentManager) PendingQuestions() []ContainerMessage {
 }
 ```
 
-4. `AnswerQuestion()` メソッド追加:
+7. `AnswerQuestion()` メソッド追加:
 
 ```go
 func (sm *SubagentManager) AnswerQuestion(taskID, answer string) error {
@@ -195,6 +287,11 @@ func (sm *SubagentManager) AnswerQuestion(taskID, answer string) error {
 - PendingQuestions の non-blocking 動作
 - AnswerQuestion の正常系/異常系
 
+**テスト:** `pkg/agent/session_recorder_test.go` (既存に追加)
+- RecordQuestion → TurnQuestion が conductor セッションに記録される
+- RecordPlanSubmit → TurnPlanSubmit が conductor セッションに記録される
+- AdvanceStored が正しくインクリメントされる
+
 ---
 
 ### Task 2: AskConductorTool
@@ -207,19 +304,29 @@ func (sm *SubagentManager) AnswerQuestion(taskID, answer string) error {
 
 ```go
 type AskConductorTool struct {
-    taskID string
-    outCh  chan<- ContainerMessage
-    inCh   <-chan string
+    taskID       string
+    conductorKey string // conductor session key (for DAG recording)
+    subagentKey  string // subagent session key (for DAG recording)
+    outCh        chan<- ContainerMessage
+    inCh         <-chan string
+    recorder     SessionRecorder // nil-safe — DAG recording is best-effort
 }
 
-func NewAskConductorTool(taskID string, outCh chan<- ContainerMessage, inCh <-chan string) *AskConductorTool
+func NewAskConductorTool(taskID, conductorKey, subagentKey string,
+    outCh chan<- ContainerMessage, inCh <-chan string,
+    recorder SessionRecorder) *AskConductorTool
 
 func (t *AskConductorTool) Name() string { return "ask_conductor" }
 
 func (t *AskConductorTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
     question := args["question"].(string)
 
-    // 1. Send question to conductor
+    // 0. Persist question in DAG (fire-and-forget — channel is the real-time path)
+    if t.recorder != nil {
+        _ = t.recorder.RecordQuestion(t.conductorKey, t.subagentKey, t.taskID, question)
+    }
+
+    // 1. Send question to conductor via channel (real-time)
     select {
     case t.outCh <- ContainerMessage{Type: "question", Content: question, TaskID: t.taskID}:
     case <-ctx.Done():
@@ -348,9 +455,10 @@ conductor LLM が answer_subagent で答えられないと判断した場合:
 
 ## Phase 2: Deliberate Plan Mode
 
-### Task 4: SubagentPlanState
+### Task 4: SubagentPlanState + Session Status 永続化
 
 **目的:** Deliberate preset (coder/worker/coordinator) の subagent に clarifying→review→executing の状態遷移を追加。
+状態遷移を `store.SetStatus()` で SQLite に永続化し、Mini App Session Graph でフェーズを可視化する。
 
 **対象ファイル:** `pkg/tools/subagent.go` (SubagentTask に追加)
 
@@ -378,7 +486,31 @@ type SubagentTask struct {
 }
 ```
 
-2. `runTask()` の Deliberate preset フロー変更:
+2. `setPlanState()` ヘルパー — in-memory + SQLite 同時更新:
+
+```go
+func (sm *SubagentManager) setPlanState(task *SubagentTask, state SubagentPlanState) {
+    task.PlanState = state
+    // Persist to DAG session status
+    if sm.recorder != nil {
+        subKey := routing.BuildSubagentSessionKey(task.ID)
+        statusStr := planStateToStatus(state) // "clarifying" / "review" / "executing"
+        _ = sm.recorder.RecordCompletion(subKey, statusStr, "")
+    }
+}
+
+func planStateToStatus(s SubagentPlanState) string {
+    switch s {
+    case PlanStateClarifying: return "clarifying"
+    case PlanStateReview:     return "review"
+    case PlanStateExecuting:  return "executing"
+    case PlanStateCompleted:  return "completed"
+    default:                  return "active"
+    }
+}
+```
+
+3. `runTask()` の Deliberate preset フロー変更:
 
 ```go
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, preset string, callback AsyncCallback) {
@@ -386,17 +518,17 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, pres
 
     if isDeliberatePreset(p) {
         // Phase A: Clarifying — ask_conductor で不明点を解消
-        task.PlanState = PlanStateClarifying
+        sm.setPlanState(task, PlanStateClarifying)
         clarifyResult := sm.runClarifyingPhase(ctx, task, p)
         if ctx.Err() != nil { return }
 
         // Phase B: Review — conductor に計画を提出、承認待ち
-        task.PlanState = PlanStateReview
+        sm.setPlanState(task, PlanStateReview)
         approved := sm.submitPlanForReview(ctx, task, clarifyResult)
         if !approved || ctx.Err() != nil { return }
 
         // Phase C: Executing — 承認済み計画を実行
-        task.PlanState = PlanStateExecuting
+        sm.setPlanState(task, PlanStateExecuting)
         sm.runExecutingPhase(ctx, task, p, callback)
     } else {
         // Exploratory — 既存フロー（即実行）
@@ -449,9 +581,12 @@ Do not deviate from the plan without asking via ask_conductor.`, preset, task, p
 
 ```go
 type SubmitPlanTool struct {
-    taskID string
-    outCh  chan<- ContainerMessage
-    inCh   <-chan string
+    taskID       string
+    conductorKey string
+    subagentKey  string
+    outCh        chan<- ContainerMessage
+    inCh         <-chan string
+    recorder     SessionRecorder // nil-safe
 }
 
 func (t *SubmitPlanTool) Name() string { return "submit_plan" }
@@ -460,12 +595,19 @@ func (t *SubmitPlanTool) Execute(ctx context.Context, args map[string]any) *Tool
     goal := args["goal"].(string)
     steps := args["steps"]  // []any → []string
 
-    planText := fmt.Sprintf("Goal: %s\nSteps:\n", goal)
+    var sb strings.Builder
+    fmt.Fprintf(&sb, "Goal: %s\nSteps:\n", goal)
     for i, s := range steps.([]any) {
-        planText += fmt.Sprintf("  %d. %s\n", i+1, s)
+        fmt.Fprintf(&sb, "  %d. %s\n", i+1, s)
+    }
+    planText := sb.String()
+
+    // Persist plan submission in DAG
+    if t.recorder != nil {
+        _ = t.recorder.RecordPlanSubmit(t.conductorKey, t.subagentKey, t.taskID, planText)
     }
 
-    // Send plan to conductor for review
+    // Send plan to conductor for review via channel (real-time)
     select {
     case t.outCh <- ContainerMessage{Type: "plan_review", Content: planText, TaskID: t.taskID}:
     case <-ctx.Done():
@@ -652,14 +794,18 @@ Update this section after each spawn and after receiving each subagent report.`
 
 | ファイル | Action | Phase |
 |---|---|---|
-| `pkg/tools/subagent.go` | 拡張: ContainerMessage, inCh/outCh, PendingQuestions, AnswerQuestion, PlanState | 1, 2 |
-| `pkg/tools/ask_conductor.go` | 新規: AskConductorTool | 1 |
+| `pkg/session/types.go` | 拡張: TurnQuestion, TurnPlanSubmit 追加 | 1 |
+| `pkg/tools/session_recorder.go` | 拡張: RecordQuestion, RecordPlanSubmit 追加 | 1 |
+| `pkg/agent/session_recorder.go` | 拡張: RecordQuestion, RecordPlanSubmit 実装 | 1 |
+| `pkg/tools/subagent.go` | 拡張: ContainerMessage, inCh/outCh, PendingQuestions, AnswerQuestion, PlanState, setPlanState | 1, 2 |
+| `pkg/tools/ask_conductor.go` | 新規: AskConductorTool (channel + DAG dual write) | 1 |
 | `pkg/tools/answer_subagent.go` | 新規: AnswerSubagentTool, ReviewSubagentPlanTool | 1, 2 |
-| `pkg/tools/submit_plan.go` | 新規: SubmitPlanTool | 2 |
+| `pkg/tools/submit_plan.go` | 新規: SubmitPlanTool (channel + DAG dual write) | 2 |
 | `pkg/agent/loop.go` | 拡張: question polling + 注入, answer/review tool 登録 | 1, 2 |
 | `pkg/agent/context.go` | 拡張: Orchestration guidance | 3 |
 | `pkg/tools/subagent_container_test.go` | 新規 | 1 |
 | `pkg/tools/ask_conductor_test.go` | 新規 | 1 |
+| `pkg/agent/session_recorder_test.go` | 拡張: RecordQuestion, RecordPlanSubmit テスト | 1 |
 | `pkg/tools/subagent_plan_test.go` | 新規 | 2 |
 | `pkg/tools/submit_plan_test.go` | 新規 | 2 |
 | `pkg/tools/subagent_env_test.go` | 新規 | 3 |
@@ -684,3 +830,6 @@ Phase 3: Context Injection + Guidance (Task 6-7)  ← 独立して先行も可
 - SandboxConfig による exec 制限が全 preset で正しく enforcement
 - MEMORY.md Orchestration セクションが conductor guidance に含まれる
 - 既存の spawn/subagent E2E フロー（Exploratory）に regression なし
+- **DAG 記録**: question / plan_submit が TurnQuestion / TurnPlanSubmit として SQLite に永続化される
+- **Session status**: Deliberate subagent のフェーズ遷移 (clarifying→review→executing→completed) が `sessions` テーブルの `status` に反映される
+- **Mini App 可視化**: Session Graph で subagent ノードの status がフェーズ名で表示される
