@@ -266,6 +266,14 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 
 		// Use gronx to calculate next run time
 		now := time.UnixMilli(nowMS)
+		// Apply timezone if specified, default to Asia/Shanghai
+		tz := schedule.TZ
+		if tz == "" {
+			tz = "Asia/Shanghai"
+		}
+		if loc, err := time.LoadLocation(tz); err == nil {
+			now = now.In(loc)
+		}
 		nextTime, err := gronx.NextTickAfter(schedule.Expr, now, false)
 		if err != nil {
 			log.Printf("[cron] failed to compute next run for expr '%s': %v", schedule.Expr, err)
