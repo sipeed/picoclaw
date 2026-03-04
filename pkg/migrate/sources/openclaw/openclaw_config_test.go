@@ -258,19 +258,8 @@ func TestConvertToPicoClaw(t *testing.T) {
 		t.Errorf("expected 2 skills for assistant agent")
 	}
 
-	if !picoCfg.Channels.Telegram.Enabled {
-		t.Error("telegram should be enabled")
-	}
-	if picoCfg.Channels.Telegram.Token != "test-token" {
-		t.Errorf("expected telegram token 'test-token', got '%s'", picoCfg.Channels.Telegram.Token)
-	}
-
 	if picoCfg.Channels.WhatsApp.BridgeURL != "http://localhost:3000" {
 		t.Errorf("expected whatsapp bridge URL 'http://localhost:3000', got '%s'", picoCfg.Channels.WhatsApp.BridgeURL)
-	}
-
-	if picoCfg.Channels.Feishu.AppID != "app-id" {
-		t.Errorf("expected feishu app ID 'app-id', got '%s'", picoCfg.Channels.Feishu.AppID)
 	}
 
 	if len(picoCfg.ModelList) != 1 {
@@ -598,13 +587,6 @@ func TestToStandardConfig(t *testing.T) {
 	}
 	if foundAPIKey != "sk-ant-test" {
 		t.Errorf("expected api key 'sk-ant-test', got '%s'", foundAPIKey)
-	}
-
-	if !stdCfg.Channels.Telegram.Enabled {
-		t.Error("telegram should be enabled")
-	}
-	if stdCfg.Channels.Telegram.Token != "test-token" {
-		t.Errorf("expected token 'test-token', got '%s'", stdCfg.Channels.Telegram.Token)
 	}
 
 	if stdCfg.Gateway.Port != 8080 {

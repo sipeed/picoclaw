@@ -273,15 +273,8 @@ func TestDefaultConfig_Providers(t *testing.T) {
 // TestDefaultConfig_Channels verifies channels are disabled by default
 func TestDefaultConfig_Channels(t *testing.T) {
 	cfg := DefaultConfig()
-
-	if cfg.Channels.Telegram.Enabled {
-		t.Error("Telegram should be disabled by default")
-	}
-	if cfg.Channels.Discord.Enabled {
-		t.Error("Discord should be disabled by default")
-	}
-	if cfg.Channels.Slack.Enabled {
-		t.Error("Slack should be disabled by default")
+	if cfg.Channels.WhatsApp.Enabled {
+		t.Error("WhatsApp should be disabled by default")
 	}
 }
 

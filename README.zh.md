@@ -288,24 +288,11 @@ picoclaw agent -m "2+2 等于几？"
 
 ## 💬 聊天应用集成 (Chat Apps)
 
-PicoClaw 支持多种聊天平台，使您的 Agent 能够连接到任何地方。
+PicoClaw 支持连接到 WhatsApp。
 
-> **注意**: 所有 Webhook 类渠道（LINE、WeCom 等）均挂载在同一个 Gateway HTTP 服务器上（`gateway.host`:`gateway.port`，默认 `127.0.0.1:18790`），无需为每个渠道单独配置端口。注意：飞书（Feishu）使用 WebSocket/SDK 模式，不通过该共享 HTTP webhook 服务器接收消息。
-
-### 核心渠道
-
-| 渠道                 | 设置难度    | 特性说明                                  | 文档链接                                                                                                        |
-| -------------------- | ----------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Telegram**         | ⭐ 简单     | 推荐，支持语音转文字，长轮询无需公网      | [查看文档](docs/channels/telegram/README.zh.md)                                                                 |
-| **Discord**          | ⭐ 简单     | Socket Mode，支持群组/私信，Bot 生态成熟  | [查看文档](docs/channels/discord/README.zh.md)                                                                  |
-| **Slack**            | ⭐ 简单     | **Socket Mode** (无需公网 IP)，企业级支持 | [查看文档](docs/channels/slack/README.zh.md)                                                                    |
-| **QQ**               | ⭐⭐ 中等   | 官方机器人 API，适合国内社群              | [查看文档](docs/channels/qq/README.zh.md)                                                                       |
-| **钉钉 (DingTalk)**  | ⭐⭐ 中等   | Stream 模式无需公网，企业办公首选         | [查看文档](docs/channels/dingtalk/README.zh.md)                                                                 |
-| **企业微信 (WeCom)** | ⭐⭐⭐ 较难 | 支持群机器人(Webhook)、自建应用(API)和智能机器人(AI Bot) | [Bot 文档](docs/channels/wecom/wecom_bot/README.zh.md) / [App 文档](docs/channels/wecom/wecom_app/README.zh.md) / [AI Bot 文档](docs/channels/wecom/wecom_aibot/README.zh.md) |
-| **飞书 (Feishu)**    | ⭐⭐⭐ 较难 | 企业级协作，功能丰富                      | [查看文档](docs/channels/feishu/README.zh.md)                                                                   |
-| **Line**             | ⭐⭐⭐ 较难 | 需要 HTTPS Webhook                        | [查看文档](docs/channels/line/README.zh.md)                                                                     |
-| **OneBot**           | ⭐⭐ 中等   | 兼容 NapCat/Go-CQHTTP，社区生态丰富       | [查看文档](docs/channels/onebot/README.zh.md)                                                                   |
-| **MaixCam**          | ⭐ 简单     | 专为 AI 摄像头设计的硬件集成通道          | [查看文档](docs/channels/maixcam/README.zh.md)                                                                  |
+| 渠道                 | 设置难度    |
+| -------------------- | ----------- |
+| **WhatsApp**         | ⭐ 简单     |
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> 加入 Agent 社交网络
 
@@ -845,10 +832,6 @@ Discord: [https://discord.gg/V4sAZ9XWpN](https://discord.gg/V4sAZ9XWpN)
 ### 遇到内容过滤错误 (Content Filtering Errors)
 
 某些提供商（如智谱）有严格的内容过滤。尝试改写您的问题或使用其他模型。
-
-### Telegram bot 提示 "Conflict: terminated by other getUpdates"
-
-这表示有另一个机器人实例正在运行。请确保同一时间只有一个 `picoclaw gateway` 进程在运行。
 
 ---
 
