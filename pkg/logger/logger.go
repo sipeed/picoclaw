@@ -131,7 +131,7 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		jsonData, err := json.Marshal(entry)
 		if err == nil {
 			logger.writeMu.Lock()
-			_, err = fileptr.WriteString(string(jsonData) + "\n")
+			_, err = fileptr.Write(append(jsonData, '\n'))
 			logger.writeMu.Unlock()
 			if err != nil {
 				log.Println("Failed to write to file:", err.Error())
