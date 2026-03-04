@@ -2,13 +2,36 @@ package onboard
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
+
+var workspaceTemplates = map[string]string{
+	"AGENTS.md": `# Agent Instructions
+
+You are a helpful AI assistant. Be concise, accurate, and friendly.
+`,
+	"IDENTITY.md": `# Identity
+
+## Name
+PicoClaw 🦞
+`,
+	"SOUL.md": `# Soul
+
+I am picoclaw, a lightweight AI assistant powered by AI.
+`,
+	"USER.md": `# User
+
+Information about user goes here.
+`,
+	"memory/MEMORY.md": `# Long-term Memory
+
+This file stores important information that should persist across sessions.
+`,
+}
 
 func onboard() {
 	configPath := internal.GetConfigPath()
@@ -54,48 +77,19 @@ func createWorkspaceTemplates(workspace string) {
 }
 
 func copyEmbeddedToTarget(targetDir string) error {
-	// Ensure target directory exists
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return fmt.Errorf("Failed to create target directory: %w", err)
+		return fmt.Errorf("failed to create target directory: %w", err)
 	}
 
-	// Walk through all files in embed.FS
-	err := fs.WalkDir(embeddedFiles, "workspace", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip directories
-		if d.IsDir() {
-			return nil
-		}
-
-		// Read embedded file
-		data, err := embeddedFiles.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("Failed to read embedded file %s: %w", path, err)
-		}
-
-		new_path, err := filepath.Rel("workspace", path)
-		if err != nil {
-			return fmt.Errorf("Failed to get relative path for %s: %v\n", path, err)
-		}
-
-		// Build target file path
-		targetPath := filepath.Join(targetDir, new_path)
-
-		// Ensure target file's directory exists
+	for relPath, content := range workspaceTemplates {
+		targetPath := filepath.Join(targetDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-			return fmt.Errorf("Failed to create directory %s: %w", filepath.Dir(targetPath), err)
+			return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(targetPath), err)
 		}
-
-		// Write file
-		if err := os.WriteFile(targetPath, data, 0o644); err != nil {
-			return fmt.Errorf("Failed to write file %s: %w", targetPath, err)
+		if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 		}
+	}
 
-		return nil
-	})
-
-	return err
+	return nil
 }
