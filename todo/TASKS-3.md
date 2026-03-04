@@ -188,21 +188,23 @@ func (tw *TurnWriter) Discard()
 
 ---
 
-### Phase 2: AgentLoop 直接移行
+### Phase 2: Compaction + Session Lifecycle + SessionGraph Prep ✅
 
-8. **SessionGraph 直接呼び出し**
-   - `runAgentLoop()` を `SessionGraph.BeginTurn()` / `TurnWriter` 経由に変更
-   - `processSystemMessage()` を Report ターン生成に変更
-   - LegacyAdapter 廃止
+8. ✅ **SessionGraph 薄ラッパー** (段階化: 既存 call site 変更なし)
+   - `pkg/session/graph.go`: `SessionGraph` + `BeginTurn()` / `TurnWriter`
+   - `LegacyAdapter.Graph()` アクセサ追加
+   - 将来の段階移行の準備のみ — LegacyAdapter は廃止しない
 
-9. **Compaction**
-   - 古いターンの messages を空にして summary で置換
-   - context window 管理と連動
+9. ✅ **CompactOldTurns**
+   - `LegacyAdapter.CompactOldTurns(key, keepLast, summary)` — SQLite 直接 compact
+   - `summarizeSession()` から呼び出し (fallback 付き)
+   - full-rewrite (`replaced=true → Compact+Append`) を回避
 
-10. **セッションライフサイクル**
-    - `Delete(key)` + TTL エビクション (Prune)
-    - `sessionLocks sync.Map` の GC
-    - 起動時の遅延ロード (SQLite なので自然に実現)
+10. ✅ **セッションライフサイクル**
+    - 起動時 `store.Prune(DefaultPruneTTL)` — 7日超過セッション削除
+    - `flushLoop` に定期 prune ticker (6h 間隔)
+    - `AgentLoop.gcLoop()` — 30分ごとに `sessionLocks` の idle エントリ GC
+    - `AgentLoop.done` チャネル + `Close()` で GC ループ停止
 
 ---
 
