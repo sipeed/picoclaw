@@ -66,6 +66,7 @@ type CronService struct {
 	running   bool
 	stopChan  chan struct{}
 	gronx     *gronx.Gronx
+	defaultTZ string // default timezone for cron expressions
 }
 
 func NewCronService(storePath string, onJob JobHandler) *CronService {
@@ -266,8 +267,11 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 
 		// Use gronx to calculate next run time
 		now := time.UnixMilli(nowMS)
-		// Apply timezone if specified, default to Asia/Shanghai
+		// Apply timezone: schedule.TZ > service default > "Asia/Shanghai"
 		tz := schedule.TZ
+		if tz == "" {
+			tz = cs.defaultTZ
+		}
 		if tz == "" {
 			tz = "Asia/Shanghai"
 		}
@@ -319,6 +323,14 @@ func (cs *CronService) SetOnJob(handler JobHandler) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.onJob = handler
+}
+
+// SetDefaultTimezone sets the default timezone for cron expressions.
+// If empty, falls back to "Asia/Shanghai".
+func (cs *CronService) SetDefaultTimezone(tz string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.defaultTZ = tz
 }
 
 func (cs *CronService) loadStore() error {
