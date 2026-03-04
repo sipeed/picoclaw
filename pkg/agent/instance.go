@@ -113,7 +113,38 @@ func NewAgentInstance(
 		summarizeTokenPercent = 75
 	}
 
-	// Resolve fallback candidates
+	candidates := ResolveCandidatesForModel(cfg, defaults.Provider, model, fallbacks)
+
+	return &AgentInstance{
+		ID:                        agentID,
+		Name:                      agentName,
+		Model:                     model,
+		Fallbacks:                 fallbacks,
+		Workspace:                 workspace,
+		MaxIterations:             maxIter,
+		MaxTokens:                 maxTokens,
+		Temperature:               temperature,
+		ContextWindow:             maxTokens,
+		SummarizeMessageThreshold: summarizeMessageThreshold,
+		SummarizeTokenPercent:     summarizeTokenPercent,
+		Provider:                  provider,
+		Sessions:                  sessionsManager,
+		ContextBuilder:            contextBuilder,
+		Tools:                     toolsRegistry,
+		Subagents:                 subagents,
+		SkillsFilter:              skillsFilter,
+		Candidates:                candidates,
+	}
+}
+
+// ResolveCandidatesForModel resolves fallback candidates using the same lookup
+// behavior as AgentInstance construction. It is reused by model hot-switch paths.
+func ResolveCandidatesForModel(
+	cfg *config.Config,
+	defaultProvider string,
+	model string,
+	fallbacks []string,
+) []providers.FallbackCandidate {
 	modelCfg := providers.ModelConfig{
 		Primary:   model,
 		Fallbacks: fallbacks,
@@ -158,28 +189,7 @@ func NewAgentInstance(
 		return "", false
 	}
 
-	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
-
-	return &AgentInstance{
-		ID:                        agentID,
-		Name:                      agentName,
-		Model:                     model,
-		Fallbacks:                 fallbacks,
-		Workspace:                 workspace,
-		MaxIterations:             maxIter,
-		MaxTokens:                 maxTokens,
-		Temperature:               temperature,
-		ContextWindow:             maxTokens,
-		SummarizeMessageThreshold: summarizeMessageThreshold,
-		SummarizeTokenPercent:     summarizeTokenPercent,
-		Provider:                  provider,
-		Sessions:                  sessionsManager,
-		ContextBuilder:            contextBuilder,
-		Tools:                     toolsRegistry,
-		Subagents:                 subagents,
-		SkillsFilter:              skillsFilter,
-		Candidates:                candidates,
-	}
+	return providers.ResolveCandidatesWithLookup(modelCfg, defaultProvider, resolveFromModelList)
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.

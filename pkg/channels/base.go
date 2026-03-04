@@ -111,6 +111,12 @@ func NewBaseChannel(
 	return bc
 }
 
+// Config returns the underlying config object passed when constructing
+// the BaseChannel. Callers must perform an appropriate type assertion.
+func (c *BaseChannel) Config() any {
+	return c.config
+}
+
 // MaxMessageLength returns the maximum message length (in runes) for this channel.
 // A value of 0 means no limit.
 func (c *BaseChannel) MaxMessageLength() int {

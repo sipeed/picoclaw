@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -11,9 +13,10 @@ import (
 
 // AgentRegistry manages multiple agent instances and routes messages to them.
 type AgentRegistry struct {
-	agents   map[string]*AgentInstance
-	resolver *routing.RouteResolver
-	mu       sync.RWMutex
+	agents         map[string]*AgentInstance
+	resolver       *routing.RouteResolver
+	defaultAgentID string
+	mu             sync.RWMutex
 }
 
 // NewAgentRegistry creates a registry from config, instantiating all agents.
@@ -34,6 +37,7 @@ func NewAgentRegistry(
 		}
 		instance := NewAgentInstance(implicitAgent, &cfg.Agents.Defaults, cfg, provider)
 		registry.agents["main"] = instance
+		registry.defaultAgentID = "main"
 		logger.InfoCF("agent", "Created implicit main agent (no agents.list configured)", nil)
 	} else {
 		for i := range agentConfigs {
@@ -41,6 +45,9 @@ func NewAgentRegistry(
 			id := routing.NormalizeAgentID(ac.ID)
 			instance := NewAgentInstance(ac, &cfg.Agents.Defaults, cfg, provider)
 			registry.agents[id] = instance
+			if ac.Default && registry.defaultAgentID == "" {
+				registry.defaultAgentID = id
+			}
 			logger.InfoCF("agent", "Registered agent",
 				map[string]any{
 					"agent_id":  id,
@@ -48,6 +55,17 @@ func NewAgentRegistry(
 					"workspace": instance.Workspace,
 					"model":     instance.Model,
 				})
+		}
+	}
+
+	if registry.defaultAgentID == "" {
+		ids := make([]string, 0, len(registry.agents))
+		for id := range registry.agents {
+			ids = append(ids, id)
+		}
+		slices.Sort(ids)
+		if len(ids) > 0 {
+			registry.defaultAgentID = ids[0]
 		}
 	}
 
@@ -104,11 +122,61 @@ func (r *AgentRegistry) CanSpawnSubagent(parentAgentID, targetAgentID string) bo
 func (r *AgentRegistry) GetDefaultAgent() *AgentInstance {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if r.defaultAgentID != "" {
+		if agent, ok := r.agents[r.defaultAgentID]; ok {
+			return agent
+		}
+	}
 	if agent, ok := r.agents["main"]; ok {
 		return agent
 	}
-	for _, agent := range r.agents {
-		return agent
+	ids := make([]string, 0, len(r.agents))
+	for id := range r.agents {
+		ids = append(ids, id)
 	}
+	slices.Sort(ids)
+	if len(ids) > 0 {
+		return r.agents[ids[0]]
+	}
+	return nil
+}
+
+// SwitchModel hot-swaps provider and effective model at runtime.
+// It updates all agents that currently use oldModel to newModel, and refreshes
+// provider + fallback candidates atomically by replacing agent pointers.
+func (r *AgentRegistry) SwitchModel(
+	cfg *config.Config,
+	oldModel string,
+	newModel string,
+	newProvider providers.LLMProvider,
+) error {
+	r.mu.Lock()
+	if len(r.agents) == 0 {
+		r.mu.Unlock()
+		return fmt.Errorf("no agents registered")
+	}
+
+	var oldProvider providers.LLMProvider
+	for id, agent := range r.agents {
+		if oldProvider == nil {
+			oldProvider = agent.Provider
+		}
+
+		updated := *agent
+		if updated.Model == oldModel {
+			updated.Model = newModel
+		}
+		updated.Provider = newProvider
+		updated.Candidates = ResolveCandidatesForModel(cfg, cfg.Agents.Defaults.Provider, updated.Model, updated.Fallbacks)
+		r.agents[id] = &updated
+	}
+	r.mu.Unlock()
+
+	if oldProvider != nil && oldProvider != newProvider {
+		if cp, ok := oldProvider.(providers.StatefulProvider); ok {
+			cp.Close()
+		}
+	}
+
 	return nil
 }

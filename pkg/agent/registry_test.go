@@ -104,10 +104,28 @@ func TestAgentRegistry_GetDefaultAgent(t *testing.T) {
 	})
 	registry := NewAgentRegistry(cfg, &mockRegistryProvider{})
 
-	// GetDefaultAgent first checks for "main", then returns any
 	agent := registry.GetDefaultAgent()
 	if agent == nil {
 		t.Fatal("expected a default agent")
+	}
+	if agent.ID != "beta" {
+		t.Fatalf("default agent ID = %q, want %q", agent.ID, "beta")
+	}
+}
+
+func TestAgentRegistry_GetDefaultAgent_FallbackDeterministic(t *testing.T) {
+	cfg := testCfg([]config.AgentConfig{
+		{ID: "zeta"},
+		{ID: "alpha"},
+	})
+	registry := NewAgentRegistry(cfg, &mockRegistryProvider{})
+
+	agent := registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected a default agent")
+	}
+	if agent.ID != "alpha" {
+		t.Fatalf("default agent fallback should be deterministic sorted first, got %q", agent.ID)
 	}
 }
 

@@ -29,35 +29,37 @@ const (
 type DiscordChannel struct {
 	*channels.BaseChannel
 	session    *discordgo.Session
-	config     config.DiscordConfig
 	ctx        context.Context
 	cancel     context.CancelFunc
 	typingMu   sync.Mutex
 	typingStop map[string]chan struct{} // chatID → stop signal
 	botUserID  string                   // stored for mention checking
+	commands   DiscordCommander         // Discord command handler
 }
 
-func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
-	session, err := discordgo.New("Bot " + cfg.Token)
+func NewDiscordChannel(cfg *config.Config, bus *bus.MessageBus) (*DiscordChannel, error) {
+	session, err := discordgo.New("Bot " + cfg.Channels.Discord.Token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}
 
-	if err := applyDiscordProxy(session, cfg.Proxy); err != nil {
+	if err := applyDiscordProxy(session, cfg.Channels.Discord.Proxy); err != nil {
 		return nil, err
 	}
-	base := channels.NewBaseChannel("discord", cfg, bus, cfg.AllowFrom,
+	base := channels.NewBaseChannel("discord", cfg, bus, cfg.Channels.Discord.AllowFrom,
 		channels.WithMaxMessageLength(2000),
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithGroupTrigger(cfg.Channels.Discord.GroupTrigger),
+		channels.WithReasoningChannelID(cfg.Channels.Discord.ReasoningChannelID),
 	)
+
+	commands := NewDiscordCommands(session, cfg, bus)
 
 	return &DiscordChannel{
 		BaseChannel: base,
 		session:     session,
-		config:      cfg,
 		ctx:         context.Background(),
 		typingStop:  make(map[string]chan struct{}),
+		commands:    commands,
 	}, nil
 }
 
@@ -235,11 +237,20 @@ func (c *DiscordChannel) EditMessage(ctx context.Context, chatID string, message
 // It sends a placeholder message that will later be edited to the actual
 // response via EditMessage (channels.MessageEditor).
 func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	if !c.config.Placeholder.Enabled {
+	// Placeholder configuration is stored in the Discord channel config
+	// under the global config passed to BaseChannel.
+	cfgAny := c.BaseChannel.Config()
+	cfg, ok := cfgAny.(*config.Config)
+	if !ok {
 		return "", nil
 	}
 
-	text := c.config.Placeholder.Text
+	phCfg := cfg.Channels.Discord.Placeholder
+	if !phCfg.Enabled {
+		return "", nil
+	}
+
+	text := phCfg.Text
 	if text == "" {
 		text = "Thinking... 💭"
 	}
@@ -313,6 +324,16 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	content := m.Content
+
+	// Check for slash commands first
+	if strings.HasPrefix(strings.TrimSpace(content), "/") {
+		if err := c.handleSlashCommand(c.ctx, s, m); err != nil {
+			logger.DebugCF("discord", "Command error", map[string]any{
+				"error": err.Error(),
+			})
+		}
+		return
+	}
 
 	// In guild (group) channels, apply unified group trigger filtering
 	// DMs (GuildID is empty) always get a response
@@ -518,4 +539,35 @@ func (c *DiscordChannel) stripBotMention(text string) string {
 	text = strings.ReplaceAll(text, fmt.Sprintf("<@%s>", c.botUserID), "")
 	text = strings.ReplaceAll(text, fmt.Sprintf("<@!%s>", c.botUserID), "")
 	return strings.TrimSpace(text)
+}
+
+// handleSlashCommand processes slash commands and forwards to appropriate handler.
+func (c *DiscordChannel) handleSlashCommand(ctx context.Context, s *discordgo.Session, m *discordgo.MessageCreate) error {
+	content := strings.TrimSpace(m.Content)
+	if !strings.HasPrefix(content, "/") {
+		return nil
+	}
+
+	parts := strings.Fields(content)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	cmd := strings.TrimPrefix(parts[0], "/")
+
+	switch cmd {
+	case "help":
+		return c.commands.Help(ctx, s, m)
+	case "start":
+		return c.commands.Help(ctx, s, m) // Start uses same help message
+	case "show":
+		return c.commands.Show(ctx, s, m)
+	case "list":
+		return c.commands.List(ctx, s, m)
+	case "switch":
+		return c.commands.Switch(ctx, s, m)
+	default:
+		// Unknown command - let it fall through to normal message handling
+		return nil
+	}
 }

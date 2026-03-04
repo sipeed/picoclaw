@@ -37,6 +37,7 @@ type AgentLoop struct {
 	bus            *bus.MessageBus
 	cfg            *config.Config
 	registry       *AgentRegistry
+	modelSwitch    *ModelSwitchManager
 	state          *state.Manager
 	running        atomic.Bool
 	summarizing    sync.Map
@@ -66,6 +67,7 @@ func NewAgentLoop(
 	provider providers.LLMProvider,
 ) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
+	modelSwitch := NewModelSwitchManager(cfg, registry)
 
 	// Register shared tools to all agents
 	registerSharedTools(cfg, msgBus, registry, provider)
@@ -85,6 +87,7 @@ func NewAgentLoop(
 		bus:         msgBus,
 		cfg:         cfg,
 		registry:    registry,
+		modelSwitch: modelSwitch,
 		state:       stateManager,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
@@ -1459,7 +1462,9 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 				return "No default agent configured", true
 			}
 			oldModel := defaultAgent.Model
-			defaultAgent.Model = value
+			if err := al.modelSwitch.SwitchModel("", value); err != nil {
+				return fmt.Sprintf("Failed to switch model: %v", err), true
+			}
 			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
 		case "channel":
 			if al.channelManager == nil {
