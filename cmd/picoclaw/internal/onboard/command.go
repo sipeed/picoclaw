@@ -1,14 +1,6 @@
 package onboard
 
-import (
-	"embed"
-
-	"github.com/spf13/cobra"
-)
-
-//go:generate cp -r ../../../../workspace .
-//go:embed workspace
-var embeddedFiles embed.FS
+import "github.com/spf13/cobra"
 
 func NewOnboardCommand() *cobra.Command {
 	cmd := &cobra.Command{
