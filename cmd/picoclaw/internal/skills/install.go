@@ -14,9 +14,11 @@ func newInstallCommand(installerFn func() (*skills.SkillInstaller, error)) *cobr
 
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Install skill from GitHub",
+		Short: "Install skill from GitHub or Git repository",
 		Example: `
 picoclaw skills install sipeed/picoclaw-skills/weather
+picoclaw skills install git@gitlab.com:user/my-skill.git
+picoclaw skills install https://gitlab.com/user/my-skill.git
 picoclaw skills install --registry clawhub github
 `,
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -28,7 +30,7 @@ picoclaw skills install --registry clawhub github
 			}
 
 			if len(args) != 1 {
-				return fmt.Errorf("exactly 1 argument is required: <github>")
+				return fmt.Errorf("exactly 1 argument is required: <github-repo> or <git-url>")
 			}
 
 			return nil
@@ -46,6 +48,11 @@ picoclaw skills install --registry clawhub github
 				}
 
 				return skillsInstallFromRegistry(cfg, registry, args[0])
+			}
+
+			// Check if input is a Git URL.
+			if skills.IsGitURL(args[0]) {
+				return skillsInstallFromGitCmd(installer, args[0])
 			}
 
 			return skillsInstallCmd(installer, args[0])

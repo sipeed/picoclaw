@@ -6,7 +6,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
@@ -65,6 +68,271 @@ func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, repo string) er
 	}
 
 	return nil
+}
+
+// InstallFromGit clones a Git repository to install a skill.
+// Supports SSH URLs (git@host:user/repo.git) and HTTPS URLs (https://host/user/repo.git).
+func (si *SkillInstaller) InstallFromGit(ctx context.Context, gitURL string) error {
+	skillName := extractSkillNameFromGitURL(gitURL)
+	if skillName == "" {
+		return fmt.Errorf("failed to extract skill name from git URL: %s", gitURL)
+	}
+
+	skillDir := filepath.Join(si.workspace, "skills", skillName)
+
+	if _, err := os.Stat(skillDir); err == nil {
+		return fmt.Errorf("skill '%s' already exists", skillName)
+	}
+
+	// Ensure parent directory exists.
+	skillsDir := filepath.Join(si.workspace, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create skills directory: %w", err)
+	}
+
+	// Execute git clone.
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", gitURL, skillDir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, string(output))
+	}
+
+	// Verify SKILL.md exists.
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
+		// Clean up if SKILL.md doesn't exist.
+		_ = os.RemoveAll(skillDir)
+		return fmt.Errorf("repository does not contain SKILL.md file")
+	}
+
+	// Remove .git directory to save space.
+	gitDir := filepath.Join(skillDir, ".git")
+	_ = os.RemoveAll(gitDir)
+
+	return nil
+}
+
+// DiscoveredSkill represents a skill found in a Git repository.
+type DiscoveredSkill struct {
+	Name        string // Directory name (skill identifier)
+	Path        string // Full path in the cloned repository
+	Description string // First line of SKILL.md (if available)
+}
+
+// CloneAndDiscoverSkills clones a Git repository and discovers all skills in it.
+// Skills are expected to be in subdirectories of the repository root, each containing a SKILL.md file.
+// Returns the temporary directory path and the list of discovered skills.
+func (si *SkillInstaller) CloneAndDiscoverSkills(ctx context.Context, gitURL string) (string, []DiscoveredSkill, error) {
+	// Create temporary directory for cloning.
+	tempDir, err := os.MkdirTemp("", "picoclaw-skills-*")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temp directory: %w", err)
+	}
+
+	// Clone the repository.
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", gitURL, tempDir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		_ = os.RemoveAll(tempDir)
+		return "", nil, fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, string(output))
+	}
+
+	// Discover skills in the repository.
+	skills, err := si.discoverSkillsInDir(tempDir)
+	if err != nil {
+		_ = os.RemoveAll(tempDir)
+		return "", nil, err
+	}
+
+	if len(skills) == 0 {
+		_ = os.RemoveAll(tempDir)
+		return "", nil, fmt.Errorf("no skills found in repository (no subdirectories with SKILL.md)")
+	}
+
+	return tempDir, skills, nil
+}
+
+// discoverSkillsInDir scans a directory for skills (subdirectories containing SKILL.md).
+func (si *SkillInstaller) discoverSkillsInDir(dir string) ([]DiscoveredSkill, error) {
+	var skills []DiscoveredSkill
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Skip hidden directories.
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		skillDir := filepath.Join(dir, entry.Name())
+		skillFile := filepath.Join(skillDir, "SKILL.md")
+
+		if _, err := os.Stat(skillFile); err == nil {
+			skill := DiscoveredSkill{
+				Name: entry.Name(),
+				Path: skillDir,
+			}
+
+			// Try to extract description from SKILL.md.
+			if content, err := os.ReadFile(skillFile); err == nil {
+				skill.Description = extractFirstLine(string(content))
+			}
+
+			skills = append(skills, skill)
+		}
+	}
+
+	return skills, nil
+}
+
+// extractFirstLine extracts the description from SKILL.md content.
+func extractFirstLine(content string) string {
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Look for "description:" field.
+		if strings.HasPrefix(strings.ToLower(line), "description:") {
+			desc := strings.TrimSpace(line[len("description:"):])
+			// Remove surrounding quotes if present.
+			desc = strings.Trim(desc, `"'`)
+			if len(desc) > 100 {
+				return desc[:100] + "..."
+			}
+			return desc
+		}
+	}
+	return ""
+}
+
+// InstallSelectedSkills installs the selected skills from a cloned repository.
+// It copies the skill directories to the workspace and cleans up the temp directory.
+func (si *SkillInstaller) InstallSelectedSkills(tempDir string, skills []DiscoveredSkill) ([]string, error) {
+	skillsDir := filepath.Join(si.workspace, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create skills directory: %w", err)
+	}
+
+	var installed []string
+	var errors []string
+
+	for _, skill := range skills {
+		targetDir := filepath.Join(skillsDir, skill.Name)
+
+		// Check if skill already exists.
+		if _, err := os.Stat(targetDir); err == nil {
+			errors = append(errors, fmt.Sprintf("'%s' already exists, skipped", skill.Name))
+			continue
+		}
+
+		// Copy skill directory.
+		if err := copyDir(skill.Path, targetDir); err != nil {
+			errors = append(errors, fmt.Sprintf("'%s' failed: %v", skill.Name, err))
+			continue
+		}
+
+		installed = append(installed, skill.Name)
+	}
+
+	// Clean up temp directory.
+	_ = os.RemoveAll(tempDir)
+
+	if len(errors) > 0 && len(installed) == 0 {
+		return nil, fmt.Errorf("failed to install any skills:\n%s", strings.Join(errors, "\n"))
+	}
+
+	return installed, nil
+}
+
+// copyDir recursively copies a directory.
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip .git directory.
+		if info.IsDir() && info.Name() == ".git" {
+			return filepath.SkipDir
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		dstPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+
+		srcFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer srcFile.Close()
+
+		dstFile, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode())
+		if err != nil {
+			return err
+		}
+		defer dstFile.Close()
+
+		_, err = io.Copy(dstFile, srcFile)
+		return err
+	})
+}
+
+// IsGitURL checks if the given string is a Git URL.
+// Supports SSH format (git@host:user/repo.git) and HTTPS/HTTP format.
+func IsGitURL(url string) bool {
+	// SSH format: git@host:user/repo.git
+	sshPattern := regexp.MustCompile(`^git@[^:]+:.+\.git$`)
+	if sshPattern.MatchString(url) {
+		return true
+	}
+
+	// SSH URL format: ssh://git@host/user/repo.git
+	if strings.HasPrefix(url, "ssh://") && strings.HasSuffix(url, ".git") {
+		return true
+	}
+
+	// HTTPS/HTTP format: https://host/user/repo.git
+	if (strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://")) && strings.HasSuffix(url, ".git") {
+		return true
+	}
+
+	return false
+}
+
+// extractSkillNameFromGitURL extracts the repository name from a Git URL.
+func extractSkillNameFromGitURL(gitURL string) string {
+	// Remove .git suffix.
+	url := strings.TrimSuffix(gitURL, ".git")
+
+	// SSH format: git@host:user/repo -> repo
+	if strings.HasPrefix(url, "git@") {
+		parts := strings.Split(url, ":")
+		if len(parts) == 2 {
+			pathParts := strings.Split(parts[1], "/")
+			return pathParts[len(pathParts)-1]
+		}
+	}
+
+	// HTTPS/HTTP/SSH URL format: extract last path segment.
+	parts := strings.Split(url, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+
+	return ""
 }
 
 func (si *SkillInstaller) Uninstall(skillName string) error {

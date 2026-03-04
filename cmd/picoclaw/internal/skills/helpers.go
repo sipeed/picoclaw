@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -45,9 +47,260 @@ func skillsInstallCmd(installer *skills.SkillInstaller, repo string) error {
 		return fmt.Errorf("failed to install skill: %w", err)
 	}
 
-	fmt.Printf("\u2713 Skill '%s' installed successfully!\n", filepath.Base(repo))
+	fmt.Printf("✓ Skill '%s' installed successfully!\n", filepath.Base(repo))
 
 	return nil
+}
+
+// skillsInstallFromGitCmd installs a skill from a Git repository URL.
+func skillsInstallFromGitCmd(installer *skills.SkillInstaller, gitURL string) error {
+	fmt.Printf("Cloning repository: %s...\n", gitURL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	tempDir, discoveredSkills, err := installer.CloneAndDiscoverSkills(ctx, gitURL)
+	if err != nil {
+		return fmt.Errorf("failed to clone and discover skills: %w", err)
+	}
+
+	if len(discoveredSkills) == 0 {
+		_ = os.RemoveAll(tempDir)
+		return fmt.Errorf("no skills found in repository")
+	}
+
+	fmt.Printf("Found %d skill(s)\n\n", len(discoveredSkills))
+
+	// Interactive selection.
+	selectedSkills, err := interactiveSkillSelect(discoveredSkills)
+	if err != nil {
+		_ = os.RemoveAll(tempDir)
+		return err
+	}
+
+	if len(selectedSkills) == 0 {
+		_ = os.RemoveAll(tempDir)
+		fmt.Println("No skills selected. Installation cancelled.")
+		return nil
+	}
+
+	// Install selected skills.
+	fmt.Printf("\nInstalling %d skill(s)...\n", len(selectedSkills))
+	installed, err := installer.InstallSelectedSkills(tempDir, selectedSkills)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println()
+	for _, name := range installed {
+		fmt.Printf("✓ Skill '%s' installed successfully!\n", name)
+	}
+
+	return nil
+}
+
+// interactiveSkillSelect provides an interactive terminal UI for selecting skills.
+// Press Space to toggle selection, 'a' to toggle all, Enter to confirm.
+func interactiveSkillSelect(discovered []skills.DiscoveredSkill) ([]skills.DiscoveredSkill, error) {
+	if len(discovered) == 0 {
+		return nil, nil
+	}
+
+	// If only one skill, ask for simple confirmation.
+	if len(discovered) == 1 {
+		fmt.Print("Install this skill? [Y/n]: ")
+		var input string
+		fmt.Scanln(&input)
+		input = strings.TrimSpace(strings.ToLower(input))
+		if input == "" || input == "y" || input == "yes" {
+			return discovered, nil
+		}
+		return nil, nil
+	}
+
+	selected := make([]bool, len(discovered))
+	cursor := 0
+
+	// Save terminal state and enable raw mode.
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		// Fallback to simple input mode.
+		return fallbackSkillSelect(discovered)
+	}
+	defer term.Restore(int(os.Stdin.Fd()), oldState)
+
+	// Hide cursor.
+	fmt.Print("\033[?25l")
+	defer fmt.Print("\033[?25h")
+
+	// ANSI color codes.
+	const (
+		colorReset  = "\033[0m"
+		colorOrange = "\033[38;5;208m" // Mantis shrimp orange for selected items.
+		colorCyan   = "\033[36m"       // Cyan for cursor highlight.
+		colorDim    = "\033[2m"        // Dim for description.
+	)
+
+	// Total lines: header(1) + list(len).
+	totalLines := len(discovered) + 2
+
+	// Render function.
+	render := func(initial bool) {
+		if !initial {
+			// Move cursor up to beginning.
+			fmt.Printf("\033[%dA\r", totalLines)
+		}
+
+		// Header with instructions.
+		fmt.Print("\033[2K") // Clear line.
+		fmt.Print("Select skills to install:\r\n")
+		fmt.Print("\033[2K") // Clear line.
+		fmt.Printf("%s↑/↓ move  space toggle  a toggle all  enter confirm  q/esc quit%s\r\n", colorDim, colorReset)
+
+		// List items.
+		for i, skill := range discovered {
+			fmt.Print("\033[2K") // Clear line.
+
+			checkbox := "◻"
+			if selected[i] {
+				checkbox = "◼"
+			}
+
+			// Build the line content.
+			var line string
+			if i == cursor {
+				// Current cursor - show description after name.
+				desc := skill.Description
+				if desc == "" {
+					desc = "no description"
+				}
+				line = fmt.Sprintf("│  %s%s %s%s %s(%s)%s", colorCyan, checkbox, skill.Name, colorReset, colorDim, desc, colorReset)
+			} else if selected[i] {
+				// Selected item - orange color.
+				line = fmt.Sprintf("│  %s%s %s%s", colorOrange, checkbox, skill.Name, colorReset)
+			} else {
+				// Normal item.
+				line = fmt.Sprintf("│  %s %s", checkbox, skill.Name)
+			}
+			fmt.Print(line + "\r\n")
+		}
+	}
+
+	// Initial render.
+	render(true)
+
+	buf := make([]byte, 3)
+	for {
+		// Read first byte.
+		n, err := os.Stdin.Read(buf[:1])
+		if err != nil || n == 0 {
+			break
+		}
+
+		switch buf[0] {
+		case ' ': // Space - toggle current.
+			selected[cursor] = !selected[cursor]
+			render(false)
+
+		case 'a', 'A': // Toggle all.
+			// Check if all are selected.
+			allSelected := true
+			for _, s := range selected {
+				if !s {
+					allSelected = false
+					break
+				}
+			}
+			// Toggle.
+			for i := range selected {
+				selected[i] = !allSelected
+			}
+			render(false)
+
+		case 13, 10: // Enter - confirm.
+			fmt.Print("\r\n")
+			var result []skills.DiscoveredSkill
+			for i, sel := range selected {
+				if sel {
+					result = append(result, discovered[i])
+				}
+			}
+			return result, nil
+
+		case 'q', 'Q': // q - cancel.
+			fmt.Print("\r\n")
+			return nil, nil
+
+		case 27: // Escape - could be standalone or start of arrow key sequence.
+			// Read remaining bytes of escape sequence.
+			os.Stdin.Read(buf[1:3])
+			if buf[1] == '[' {
+				// Arrow keys.
+				switch buf[2] {
+				case 'A': // Up.
+					if cursor > 0 {
+						cursor--
+						render(false)
+					}
+				case 'B': // Down.
+					if cursor < len(discovered)-1 {
+						cursor++
+						render(false)
+					}
+				}
+			} else {
+				// Standalone Escape - quit.
+				fmt.Print("\r\n")
+				return nil, nil
+			}
+
+		case 'j': // vim-style down.
+			if cursor < len(discovered)-1 {
+				cursor++
+				render(false)
+			}
+
+		case 'k': // vim-style up.
+			if cursor > 0 {
+				cursor--
+				render(false)
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+// fallbackSkillSelect provides a simple text-based fallback for skill selection.
+func fallbackSkillSelect(discovered []skills.DiscoveredSkill) ([]skills.DiscoveredSkill, error) {
+	fmt.Println("\nEnter skill numbers to install (comma-separated), 'a' for all, or 'q' to cancel:")
+	fmt.Print("> ")
+
+	var input string
+	fmt.Scanln(&input)
+	input = strings.TrimSpace(strings.ToLower(input))
+
+	if input == "" || input == "q" {
+		return nil, nil
+	}
+
+	if input == "a" || input == "all" {
+		return discovered, nil
+	}
+
+	var result []skills.DiscoveredSkill
+	parts := strings.Split(input, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		var idx int
+		if _, err := fmt.Sscanf(part, "%d", &idx); err == nil {
+			if idx >= 1 && idx <= len(discovered) {
+				result = append(result, discovered[idx-1])
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // skillsInstallFromRegistry installs a skill from a named registry (e.g. clawhub).
