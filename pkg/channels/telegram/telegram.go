@@ -255,14 +255,14 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			}
 			subChunks := channels.SplitMessage(chunk, smallerLen)
 			for _, sub := range subChunks {
-				if err := c.sendHTMLChunk(ctx, chatID, markdownToTelegramHTML(sub)); err != nil {
+				if err := c.sendHTMLChunk(ctx, chatID, markdownToTelegramHTML(sub), sub); err != nil {
 					return err
 				}
 			}
 			continue
 		}
 
-		if err := c.sendHTMLChunk(ctx, chatID, htmlContent); err != nil {
+		if err := c.sendHTMLChunk(ctx, chatID, htmlContent, chunk); err != nil {
 			return err
 		}
 	}
@@ -270,8 +270,9 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	return nil
 }
 
-// sendHTMLChunk sends a single HTML message, falling back to plain text on parse failure.
-func (c *TelegramChannel) sendHTMLChunk(ctx context.Context, chatID int64, htmlContent string) error {
+// sendHTMLChunk sends a single HTML message, falling back to the original
+// markdown as plain text on parse failure so users never see raw HTML tags.
+func (c *TelegramChannel) sendHTMLChunk(ctx context.Context, chatID int64, htmlContent, mdFallback string) error {
 	tgMsg := tu.Message(tu.ID(chatID), htmlContent)
 	tgMsg.ParseMode = telego.ModeHTML
 
@@ -279,6 +280,7 @@ func (c *TelegramChannel) sendHTMLChunk(ctx context.Context, chatID int64, htmlC
 		logger.ErrorCF("telegram", "HTML parse failed, falling back to plain text", map[string]any{
 			"error": err.Error(),
 		})
+		tgMsg.Text = mdFallback
 		tgMsg.ParseMode = ""
 		if _, err = c.bot.SendMessage(ctx, tgMsg); err != nil {
 			return fmt.Errorf("telegram send: %w", channels.ErrTemporary)
