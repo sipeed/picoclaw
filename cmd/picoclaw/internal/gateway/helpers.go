@@ -226,7 +226,8 @@ func setupCronTool(
 	// Create and register CronTool if enabled
 	var cronTool *tools.CronTool
 	if cfg.Tools.IsToolEnabled("cron") {
-		cronTool, err := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
+		var err error
+		cronTool, err = tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
 		if err != nil {
 			log.Fatalf("Critical error during CronTool initialization: %v", err)
 		}
