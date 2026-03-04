@@ -273,38 +273,17 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 
 				if response != "" {
-					// Check if the message tool already sent a response during this round.
-					// If so, skip publishing to avoid duplicate messages to the user.
-					// Use default agent's tools to check (message tool is shared).
-					alreadySent := false
-					defaultAgent := al.registry.GetDefaultAgent()
-					if defaultAgent != nil {
-						if tool, ok := defaultAgent.Tools.Get("message"); ok {
-							if mt, ok := tool.(*tools.MessageTool); ok {
-								alreadySent = mt.HasSentInRound()
-							}
-						}
-					}
-
-					if !alreadySent {
-						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-							Channel: msg.Channel,
-							ChatID:  msg.ChatID,
-							Content: response,
+					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+						Channel: msg.Channel,
+						ChatID:  msg.ChatID,
+						Content: response,
+					})
+					logger.InfoCF("agent", "Published outbound response",
+						map[string]any{
+							"channel":     msg.Channel,
+							"chat_id":     msg.ChatID,
+							"content_len": len(response),
 						})
-						logger.InfoCF("agent", "Published outbound response",
-							map[string]any{
-								"channel":     msg.Channel,
-								"chat_id":     msg.ChatID,
-								"content_len": len(response),
-							})
-					} else {
-						logger.DebugCF(
-							"agent",
-							"Skipped outbound (message tool already sent)",
-							map[string]any{"channel": msg.Channel},
-						)
-					}
 				}
 			}()
 		}
@@ -450,10 +429,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
-	// Reset message-tool sentInRound before any early-return paths (including
-	// handleCommand) so that a stale true from the previous LLM round never
-	// causes the command response to be silently dropped in the Run loop's
-	// alreadySent check (which would leave the typing indicator stuck on).
+	// Reset the default agent's message-tool sentInRound before any early-return
+	// paths (including handleCommand). If a previous LLM round left sentInRound=true
+	// on the default agent's tool, the Run loop would see a non-empty command response
+	// and publish it — but without this reset the alreadySent guard used to suppress
+	// that publish, leaving the typing indicator stuck on.
+	// Note: for the normal LLM path the routed agent's tool is reset again after
+	// routing (below), and the alreadySent check in processMessage uses that agent.
 	if defaultAgent := al.registry.GetDefaultAgent(); defaultAgent != nil {
 		if tool, ok := defaultAgent.Tools.Get("message"); ok {
 			if mt, ok := tool.(tools.ContextualTool); ok {
@@ -505,7 +487,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"matched_by":  route.MatchedBy,
 		})
 
-	return al.runAgentLoop(ctx, agent, processOptions{
+	result, err := al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
@@ -515,6 +497,21 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:   true,
 		SendResponse:    false,
 	})
+	if err != nil {
+		return "", err
+	}
+
+	// If the routed agent's message tool already published a response during
+	// this round, return "" so the Run loop does not publish a duplicate.
+	// This uses the same agent instance that handled the message, which is
+	// correct regardless of whether routing selected the default agent or not.
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if mt, ok := tool.(*tools.MessageTool); ok && mt.HasSentInRound() {
+			return "", nil
+		}
+	}
+
+	return result, nil
 }
 
 func (al *AgentLoop) processSystemMessage(
