@@ -1019,7 +1019,7 @@ func TestHandleTaskStatusSend_EditsExisting(t *testing.T) {
 	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
 
 	// Pre-store task message
-	m.taskMsgIDs.Store("task-abc", statusMsgEntry{messageID: "task-msg-1", createdAt: time.Now()})
+	m.taskMsgIDs.Store(taskStatusKey("test", "123", "task-abc"), statusMsgEntry{messageID: "task-msg-1", createdAt: time.Now()})
 
 	msg := bus.OutboundMessage{
 		Channel:      "test",
@@ -1065,7 +1065,7 @@ func TestHandleTaskStatusSend_SendsNewAndTracks(t *testing.T) {
 		t.Fatal("expected SendWithID to be called")
 	}
 
-	v, ok := m.taskMsgIDs.Load("task-xyz")
+	v, ok := m.taskMsgIDs.Load(taskStatusKey("test", "123", "task-xyz"))
 	if !ok {
 		t.Fatal("expected taskMsgIDs to contain tracked entry")
 	}
@@ -1433,6 +1433,125 @@ func TestHandleTaskStatusSend_UsesDraftSender(t *testing.T) {
 
 	if !draftCalled {
 		t.Fatal("expected SendDraft to be called for task status")
+	}
+}
+
+func TestHandleTaskStatusSend_Final_DismissesDraftBeforePermanentMessage(t *testing.T) {
+	m := newTestManager()
+	var dismissCalled bool
+	var dismissDraftID int
+	var dismissContent string
+	var finalSendWithIDCalled bool
+
+	ch := &mockDraftSender{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+				t.Fatal("Send should not be called when SendWithID succeeds")
+				return nil
+			},
+		},
+		draftFn: func(_ context.Context, chatID string, draftID int, content string) error {
+			dismissCalled = true
+			dismissDraftID = draftID
+			dismissContent = content
+			if chatID != "123" {
+				t.Fatalf("expected dismiss chatID 123, got %s", chatID)
+			}
+			return nil
+		},
+		editFn: func(_ context.Context, _, _, _ string) error { return nil },
+		sendWithID: func(_ context.Context, chatID, content string) (string, error) {
+			finalSendWithIDCalled = true
+			if chatID != "123" {
+				t.Fatalf("expected final chatID 123, got %s", chatID)
+			}
+			if content != "task completed" {
+				t.Fatalf("expected final content 'task completed', got %s", content)
+			}
+			return "task-final-1", nil
+		},
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	m.taskMsgIDs.Store(taskStatusKey("test", "123", "task-final"), statusMsgEntry{draftID: 42, createdAt: time.Now()})
+	m.statusEditTimes.Store(taskStatusKey("test", "123", "task-final"), time.Now())
+
+	msg := bus.OutboundMessage{
+		Channel:      "test",
+		ChatID:       "123",
+		Content:      "task completed",
+		IsTaskStatus: true,
+		TaskID:       "task-final",
+		Final:        true,
+	}
+	m.handleTaskStatusSend(context.Background(), "test", w, msg)
+
+	if !dismissCalled {
+		t.Fatal("expected SendDraft dismiss call for final task status")
+	}
+	if dismissDraftID != 42 {
+		t.Fatalf("expected dismiss draftID 42, got %d", dismissDraftID)
+	}
+	if dismissContent != "" {
+		t.Fatalf("expected empty dismiss content, got %q", dismissContent)
+	}
+	if !finalSendWithIDCalled {
+		t.Fatal("expected final SendWithID to be called")
+	}
+	if _, loaded := m.taskMsgIDs.Load(taskStatusKey("test", "123", "task-final")); loaded {
+		t.Fatal("expected taskMsgIDs entry to be deleted for final task status")
+	}
+	if _, loaded := m.statusEditTimes.Load(taskStatusKey("test", "123", "task-final")); loaded {
+		t.Fatal("expected statusEditTimes entry to be deleted for final task status")
+	}
+}
+
+func TestHandleTaskStatusSend_DraftStreaming_IsolatedByChatThread(t *testing.T) {
+	m := newTestManager()
+
+	type draftCall struct {
+		chatID  string
+		draftID int
+		content string
+	}
+	calls := make([]draftCall, 0, 2)
+
+	ch := &mockDraftSender{
+		mockChannel: mockChannel{
+			sendFn: func(_ context.Context, _ bus.OutboundMessage) error { return nil },
+		},
+		draftFn: func(_ context.Context, chatID string, draftID int, content string) error {
+			calls = append(calls, draftCall{chatID: chatID, draftID: draftID, content: content})
+			return nil
+		},
+		editFn:     func(_ context.Context, _, _, _ string) error { return nil },
+		sendWithID: func(_ context.Context, _, _ string) (string, error) { return "", nil },
+	}
+
+	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
+
+	msgA := bus.OutboundMessage{Channel: "test", ChatID: "-100/10", Content: "A:10%", IsTaskStatus: true, TaskID: "shared-task"}
+	msgB := bus.OutboundMessage{Channel: "test", ChatID: "-100/20", Content: "B:10%", IsTaskStatus: true, TaskID: "shared-task"}
+
+	m.handleTaskStatusSend(context.Background(), "test", w, msgA)
+	m.handleTaskStatusSend(context.Background(), "test", w, msgB)
+
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 SendDraft calls, got %d", len(calls))
+	}
+	if calls[0].chatID == calls[1].chatID {
+		t.Fatalf("expected different chat threads, got %q and %q", calls[0].chatID, calls[1].chatID)
+	}
+	if calls[0].draftID == calls[1].draftID {
+		t.Fatalf("expected distinct draft IDs per thread key, both got %d", calls[0].draftID)
+	}
+
+	if _, loaded := m.taskMsgIDs.Load(taskStatusKey("test", "-100/10", "shared-task")); !loaded {
+		t.Fatal("expected taskMsgIDs entry for thread A")
+	}
+	if _, loaded := m.taskMsgIDs.Load(taskStatusKey("test", "-100/20", "shared-task")); !loaded {
+		t.Fatal("expected taskMsgIDs entry for thread B")
 	}
 }
 
