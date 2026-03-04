@@ -49,6 +49,11 @@ func gatewayCmd(debug bool) error {
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
+	// Apply logging configuration from config file
+	if err := cfg.ApplyLoggingConfig(); err != nil {
+		fmt.Printf("Warning: Failed to apply logging config: %v\n", err)
+	}
+
 	provider, modelID, err := providers.CreateProvider(cfg)
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
@@ -198,8 +203,6 @@ func gatewayCmd(debug bool) error {
 	// since the original ctx is already canceled.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
-
-	channelManager.StopAll(shutdownCtx)
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()

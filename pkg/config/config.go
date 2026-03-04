@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+	"log"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // rrCounter is a global counter for round-robin load balancing across models.
@@ -594,6 +597,8 @@ type ToolsConfig struct {
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
+	Logging         LoggingConfig      `json:"logging"`
+
 }
 
 type SkillsToolsConfig struct {
@@ -649,6 +654,16 @@ type MCPConfig struct {
 	Enabled bool `json:"enabled" env:"PICOCLAW_TOOLS_MCP_ENABLED"`
 	// Servers is a map of server name to server configuration
 	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
+}
+
+
+
+// LoggingConfig holds the logging configuration.
+type LoggingConfig struct {
+	Level     string `json:"level" env:"PICOCLAW_LOGGING_LEVEL"`
+	Format    string `json:"format" env:"PICOCLAW_LOGGING_FORMAT"`
+	Output    string `json:"output" env:"PICOCLAW_LOGGING_OUTPUT"`
+	FilePath  string `json:"file_path" env:"PICOCLAW_LOGGING_FILE_PATH"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -832,3 +847,49 @@ func (c *Config) ValidateModelList() error {
 	}
 	return nil
 }
+
+
+// ApplyLoggingConfig applies the logging configuration from the tools section
+func (c *Config) ApplyLoggingConfig() error {
+	// Set log level from config
+	if c.Tools.Logging.Level != "" {
+		switch strings.ToLower(c.Tools.Logging.Level) {
+		case "debug":
+			logger.SetLevel(logger.DEBUG)
+		case "info":
+			logger.SetLevel(logger.INFO)
+		case "warn":
+			logger.SetLevel(logger.WARN)
+		case "error":
+			logger.SetLevel(logger.ERROR)
+		case "fatal":
+			logger.SetLevel(logger.FATAL)
+		default:
+			logger.SetLevel(logger.INFO) // default
+		}
+	}
+	
+	// Set log format from config
+	if c.Tools.Logging.Format != "" {
+		switch strings.ToLower(c.Tools.Logging.Format) {
+		case "json":
+			logger.SetFormat(logger.JSONFormat)
+		case "text", "human":
+			logger.SetFormat(logger.TextFormat)
+		default:
+			logger.SetFormat(logger.JSONFormat) // default
+		}
+	}
+
+	// Set file logging from config
+	if c.Tools.Logging.Output == "file" || c.Tools.Logging.Output == "both" {
+		if c.Tools.Logging.FilePath != "" {
+			if err := logger.EnableFileLogging(c.Tools.Logging.FilePath); err != nil {
+				log.Printf("Failed to enable file logging to %s: %v", c.Tools.Logging.FilePath, err)
+				return err
+			}
+		}
+	}
+	return nil
+}
+

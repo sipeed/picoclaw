@@ -21,6 +21,17 @@ const (
 	FATAL
 )
 
+type LogFormat string
+
+const (
+	TextFormat LogFormat = "text"
+	JSONFormat LogFormat = "json"
+)
+
+var (
+	logFormat   = JSONFormat  // Default format
+)
+
 var (
 	logLevelNames = map[LogLevel]string{
 		DEBUG: "DEBUG",
@@ -66,6 +77,18 @@ func GetLevel() LogLevel {
 	defer mu.RUnlock()
 	return currentLevel
 }
+func SetFormat(format LogFormat) {
+	mu.Lock()
+	defer mu.Unlock()
+	logFormat = format
+}
+
+func GetFormat() LogFormat {
+	mu.RLock()
+	defer mu.RUnlock()
+	return logFormat
+}
+
 
 func EnableFileLogging(filePath string) error {
 	mu.Lock()
@@ -116,34 +139,23 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		}
 	}
 
+	outputData := formatLogEntry(entry)
 	if logger.file != nil {
-		jsonData, err := json.Marshal(entry)
-		if err == nil {
-			logger.file.Write(append(jsonData, '\n'))
-		}
+		logger.file.Write(outputData)
 	}
 
-	var fieldStr string
-	if len(fields) > 0 {
-		fieldStr = " " + formatFields(fields)
-	} else {
-		fieldStr = ""
+	// For console/terminal output, use the same format as configured
+	consoleOutput := formatLogForConsole(entry)
+	if len(consoleOutput) > 0 {
+		logLine := string(consoleOutput[:len(consoleOutput)-1]) // Remove trailing newline
+		log.Println(logLine)
 	}
-
-	logLine := fmt.Sprintf("[%s] [%s]%s %s%s",
-		entry.Timestamp,
-		logLevelNames[level],
-		formatComponent(component),
-		message,
-		fieldStr,
-	)
-
-	log.Println(logLine)
 
 	if level == FATAL {
 		os.Exit(1)
 	}
 }
+
 
 func formatComponent(component string) string {
 	if component == "" {
@@ -160,9 +172,74 @@ func formatFields(fields map[string]any) string {
 	return fmt.Sprintf("{%s}", strings.Join(parts, ", "))
 }
 
+func formatLogEntryText(entry LogEntry) []byte {
+	var fieldStr string
+	if len(entry.Fields) > 0 {
+		fieldStr = " " + formatFields(entry.Fields)
+	} else {
+		fieldStr = ""
+	}
+
+	logLine := fmt.Sprintf("[%s] [%s]%s %s%s",
+		entry.Timestamp,
+		entry.Level,
+		formatComponent(entry.Component),
+		entry.Message,
+		fieldStr,
+	)
+	return []byte(fmt.Sprintf("%s\n", logLine))
+}
+
+
+func formatLogEntry(entry LogEntry) []byte {
+	switch logFormat {
+	case JSONFormat:
+		jsonData, err := json.Marshal(entry)
+		if err != nil {
+			// Fallback to text format if JSON marshal fails
+			return []byte(fmt.Sprintf("%s\n", entry.Message))
+		}
+		return append(jsonData, '\n')
+	default:
+		// Text format
+		var fieldStr string
+		if len(entry.Fields) > 0 {
+			fieldStr = " " + formatFields(entry.Fields)
+		} else {
+			fieldStr = ""
+		}
+		
+		logLine := fmt.Sprintf("[%s] [%s]%s %s%s",
+			entry.Timestamp,
+			entry.Level,
+			formatComponent(entry.Component),
+			entry.Message,
+			fieldStr,
+		)
+		return []byte(fmt.Sprintf("%s\n", logLine))
+	}
+}
+
+func formatLogForConsole(entry LogEntry) []byte {
+	switch logFormat {
+	case JSONFormat:
+		jsonData, err := json.Marshal(entry)
+		if err != nil {
+			return []byte(fmt.Sprintf("%s\n", entry.Message))
+		}
+		return append(jsonData, '\n')
+	default:
+		// Use text format for console output
+		return formatLogEntryText(entry)
+	}
+}
+
+
+
 func Debug(message string) {
 	logMessage(DEBUG, "", message, nil)
 }
+
 
 func DebugC(component string, message string) {
 	logMessage(DEBUG, component, message, nil)

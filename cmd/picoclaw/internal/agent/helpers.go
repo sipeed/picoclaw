@@ -33,6 +33,11 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
+	// Apply logging configuration from config file
+	if err := cfg.ApplyLoggingConfig(); err != nil {
+		fmt.Printf("Warning: Failed to apply logging config: %v\n", err)
+	}
+
 	if model != "" {
 		cfg.Agents.Defaults.ModelName = model
 	}

@@ -15,6 +15,11 @@ func statusCmd() {
 		return
 	}
 
+	// Apply logging configuration from config file
+	if err := cfg.ApplyLoggingConfig(); err != nil {
+		fmt.Printf("Warning: Failed to apply logging config: %v\n", err)
+	}
+
 	configPath := internal.GetConfigPath()
 
 	fmt.Printf("%s picoclaw Status\n", internal.Logo)
