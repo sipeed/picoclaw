@@ -358,16 +358,15 @@ func (al *AgentLoop) Stop() {
 
 // runTaskCleanup periodically cleans up old completed tasks (Phase 2)
 func (al *AgentLoop) runTaskCleanup(ctx context.Context) {
-	// Get cleanup interval from config, default to 5 minutes
 	intervalMins := al.cfg.Agents.Defaults.TaskCleanupIntervalMins
 	if intervalMins <= 0 {
-		intervalMins = 5
+		intervalMins = 30
 	}
 
-	// Get retention time from config, default to 1 hour
+	// Get retention time from config, default to 24 hour
 	retentionHours := al.cfg.Agents.Defaults.TaskRetentionHours
 	if retentionHours <= 0 {
-		retentionHours = 1
+		retentionHours = 24
 	}
 
 	ticker := time.NewTicker(time.Duration(intervalMins) * time.Minute)
