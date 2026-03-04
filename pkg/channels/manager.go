@@ -1,69 +1,3 @@
-type metricMiddleware struct {
-	handler http.Handler
-}
-
-func (mw *metricMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Only track our actual endpoints, not internal ones
-	if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
-		mw.handler.ServeHTTP(w, r)
-		return
-	}
-
-	start := time.Now()
-	method := r.Method
-	endpoint := r.URL.Path
-
-	// Increment inflight requests
-	inFlightGauge := promauto.With(prometheus.Labels{"method": method, "endpoint": endpoint}).NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "http_requests_inflight",
-			Help: "Number of HTTP requests currently being served",
-		},
-	).WithLabelValues()
-	inFlightGauge.Inc()
-	defer inFlightGauge.Dec()
-
-	// Wrap the ResponseWriter to capture status code
-	wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-	mw.handler.ServeHTTP(wrapped, r)
-
-	// Record metrics
-	duration := time.Since(start)
-	requestsTotal.WithLabelValues(method, endpoint, fmt.Sprintf("%d", wrapped.statusCode)).Inc()
-	requestDuration.WithLabelValues(method, endpoint).Observe(duration.Seconds())
-}
-
-// responseWriter wraps http.ResponseWriter to capture status code
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-var (
-	requestsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "http_requests_total",
-			Help: "Total number of HTTP requests",
-		},
-		[]string{"method", "endpoint", "status"},
-	)
-
-	requestDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "http_request_duration_seconds",
-			Help:    "Duration of HTTP requests in seconds",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "endpoint"},
-	)
-)
-
-
 // PicoClaw - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
@@ -83,6 +17,8 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
@@ -137,6 +73,46 @@ type channelWorker struct {
 	done       chan struct{}
 	mediaDone  chan struct{}
 	limiter    *rate.Limiter
+}
+
+// metricMiddleware struct to intercept HTTP requests and record metrics
+type metricMiddleware struct {
+	handler http.Handler
+}
+
+func (mw *metricMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Only track our custom endpoints, not health/metric ones
+	if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/metrics" {
+		mw.handler.ServeHTTP(w, r)
+		return
+	}
+
+	start := time.Now()
+	method := r.Method
+	endpoint := r.URL.Path
+
+	// Increment inflight requests
+	health.IncInFlightRequest(method, endpoint)
+	defer health.DecInFlightRequest(method, endpoint)
+
+	// Wrap the ResponseWriter to capture status code
+	wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+	mw.handler.ServeHTTP(wrapped, r)
+
+	// Record metrics
+	duration := time.Since(start)
+	health.RecordRequest(method, endpoint, duration.Seconds(), fmt.Sprintf("%d", wrapped.statusCode))
+}
+
+// responseWriter wraps http.ResponseWriter to capture status code
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
 }
 
 type Manager struct {
@@ -354,15 +330,19 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 	// Discover and register webhook handlers and health checkers
 	for name, ch := range m.channels {
 		if wh, ok := ch.(WebhookHandler); ok {
-			m.mux.Handle(wh.WebhookPath(), wh)
-			logger.InfoCF("channels", "Webhook handler registered", map[string]any{
+			// Apply metrics middleware to webhook handlers
+			m.mux.Handle(wh.WebhookPath(), health.MetricMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				wh.ServeHTTP(w, r)
+			})))
+			logger.InfoCF("channels", "Webhook handler registered with metrics", map[string]any{
 				"channel": name,
 				"path":    wh.WebhookPath(),
 			})
 		}
 		if hc, ok := ch.(HealthChecker); ok {
-			m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)
-			logger.InfoCF("channels", "Health endpoint registered", map[string]any{
+			// Apply metrics middleware to health checkers
+			m.mux.HandleFunc(hc.HealthPath(), health.MetricMiddleware(hc.HealthHandler))
+			logger.InfoCF("channels", "Health endpoint registered with metrics", map[string]any{
 				"channel": name,
 				"path":    hc.HealthPath(),
 			})
@@ -375,11 +355,8 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
-	ReadTimeout:  30 * time.Second,
-	WriteTimeout: 30 * time.Second,
-}
 
-	// Wrap the entire mux with metrics middleware
+	// Wrap the entire server handler with metrics tracking too
 	m.httpServer.Handler = &metricMiddleware{handler: m.mux}
 }
 
