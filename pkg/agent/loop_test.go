@@ -120,6 +120,38 @@ func TestRecordLastChatID(t *testing.T) {
 	}
 }
 
+func TestRecordLastHeartbeatTarget(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	target := "telegram:-100123/42"
+	if err := al.RecordLastHeartbeatTarget(target); err != nil {
+		t.Fatalf("RecordLastHeartbeatTarget failed: %v", err)
+	}
+
+	if got := al.state.GetLastHeartbeatTarget(); got != target {
+		t.Fatalf("GetLastHeartbeatTarget = %q, want %q", got, target)
+	}
+}
+
 func TestNewAgentLoop_StateInitialized(t *testing.T) {
 	// Create temp workspace
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
@@ -1016,6 +1048,91 @@ func TestPlanCommand_ShowNoPlan(t *testing.T) {
 	}
 	if !strings.Contains(response, "No active plan") {
 		t.Errorf("expected 'No active plan', got %q", response)
+	}
+}
+
+func TestSplitChatAndThread(t *testing.T) {
+	tests := []struct {
+		name       string
+		chatID     string
+		wantChatID string
+		wantThread int
+	}{
+		{name: "plain chat", chatID: "-100123", wantChatID: "-100123", wantThread: 0},
+		{name: "chat with thread", chatID: "-100123/77", wantChatID: "-100123", wantThread: 77},
+		{name: "invalid thread", chatID: "-100123/abc", wantChatID: "-100123", wantThread: 0},
+		{name: "empty", chatID: "", wantChatID: "", wantThread: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotChatID, gotThread := splitChatAndThread(tt.chatID)
+			if gotChatID != tt.wantChatID || gotThread != tt.wantThread {
+				t.Fatalf("splitChatAndThread(%q) = (%q, %d), want (%q, %d)", tt.chatID, gotChatID, gotThread, tt.wantChatID, tt.wantThread)
+			}
+		})
+	}
+}
+
+func TestHeartbeatCommandThreadHerePersistsConfig(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	var saved bool
+	var updatedThread int
+	al.SetConfigSaver(func(cfg *config.Config) error {
+		saved = true
+		if cfg.Channels.Telegram.HeartbeatThreadID != 42 {
+			t.Fatalf("HeartbeatThreadID in saver = %d, want 42", cfg.Channels.Telegram.HeartbeatThreadID)
+		}
+		return nil
+	})
+	al.SetHeartbeatThreadUpdater(func(threadID int) { updatedThread = threadID })
+
+	msg := bus.InboundMessage{
+		Content: "/heartbeat thread here",
+		Channel: "telegram",
+		ChatID:  "-100500/42",
+	}
+	resp, handled := al.handleCommand(context.Background(), msg)
+	if !handled {
+		t.Fatal("expected /heartbeat command to be handled")
+	}
+	if !strings.Contains(resp, "Heartbeat thread set to 42") {
+		t.Fatalf("unexpected response: %q", resp)
+	}
+	if !saved {
+		t.Fatal("expected config saver to be called")
+	}
+	if updatedThread != 42 {
+		t.Fatalf("updatedThread = %d, want 42", updatedThread)
+	}
+	if got := al.cfg.Channels.Telegram.HeartbeatThreadID; got != 42 {
+		t.Fatalf("cfg heartbeat thread = %d, want 42", got)
+	}
+	if got := al.state.GetHeartbeatTarget(); got != "telegram:-100500" {
+		t.Fatalf("state heartbeat target = %q, want %q", got, "telegram:-100500")
+	}
+}
+
+func TestHeartbeatCommandThreadOff(t *testing.T) {
+	al, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	al.cfg.Channels.Telegram.HeartbeatThreadID = 99
+	resp, handled := al.handleCommand(context.Background(), bus.InboundMessage{
+		Content: "/heartbeat thread off",
+		Channel: "telegram",
+		ChatID:  "-100500/42",
+	})
+	if !handled {
+		t.Fatal("expected /heartbeat command to be handled")
+	}
+	if !strings.Contains(resp, "disabled") {
+		t.Fatalf("unexpected response: %q", resp)
+	}
+	if got := al.cfg.Channels.Telegram.HeartbeatThreadID; got != 0 {
+		t.Fatalf("cfg heartbeat thread = %d, want 0", got)
 	}
 }
 
