@@ -17,11 +17,14 @@ import (
 
 const supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
 
-func authLoginCmd(provider string, useDeviceCode bool) error {
+func authLoginCmd(provider string, useDeviceCode, useSetupToken bool) error {
 	switch provider {
 	case "openai":
 		return authLoginOpenAI(useDeviceCode)
 	case "anthropic":
+		if useSetupToken {
+			return authLoginSetupToken()
+		}
 		return authLoginPasteToken(provider)
 	case "google-antigravity", "antigravity":
 		return authLoginGoogleAntigravity()
@@ -255,6 +258,51 @@ func authLoginPasteToken(provider string) error {
 	if appCfg != nil {
 		fmt.Printf("Default model set to: %s\n", appCfg.Agents.Defaults.GetModelName())
 	}
+
+	return nil
+}
+
+func authLoginSetupToken() error {
+	cred, err := auth.LoginSetupToken("anthropic", os.Stdin)
+	if err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	if err = auth.SetCredential("anthropic", cred); err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	appCfg, err := internal.LoadConfig()
+	if err == nil {
+		appCfg.Providers.Anthropic.AuthMethod = "setup-token"
+
+		// Update or add anthropic in ModelList
+		found := false
+		for i := range appCfg.ModelList {
+			if isAnthropicModel(appCfg.ModelList[i].Model) {
+				appCfg.ModelList[i].AuthMethod = "setup-token"
+				found = true
+				break
+			}
+		}
+		if !found {
+			appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
+				ModelName:  "claude-sonnet-4.6",
+				Model:      "anthropic/claude-sonnet-4.6",
+				AuthMethod: "setup-token",
+			})
+		}
+
+		// Update default model
+		appCfg.Agents.Defaults.ModelName = "claude-sonnet-4.6"
+
+		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+			return fmt.Errorf("could not update config: %w", err)
+		}
+	}
+
+	fmt.Println("Setup token saved for anthropic!")
+	fmt.Println("Default model set to: claude-sonnet-4.6")
 
 	return nil
 }

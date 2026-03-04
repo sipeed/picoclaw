@@ -394,6 +394,8 @@ func skillFilesChangedSince(skillRoots []string, filesAtCache map[string]time.Ti
 	return false
 }
 
+const maxBootstrapFileChars = 4096
+
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	bootstrapFiles := []string{
 		"AGENTS.md",
@@ -406,7 +408,11 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	for _, filename := range bootstrapFiles {
 		filePath := filepath.Join(cb.workspace, filename)
 		if data, err := os.ReadFile(filePath); err == nil {
-			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
+			content := string(data)
+			if len(content) > maxBootstrapFileChars {
+				content = content[:maxBootstrapFileChars] + "\n... (truncated)"
+			}
+			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, content)
 		}
 	}
 
@@ -422,7 +428,7 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 // See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
 // See: https://platform.openai.com/docs/guides/prompt-caching
 func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
-	now := time.Now().Format("2006-01-02 15:04 (Monday)")
+	now := time.Now().Format("2006-01-02 (Monday)")
 	rt := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
 	var sb strings.Builder

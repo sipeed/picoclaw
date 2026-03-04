@@ -21,6 +21,9 @@ func createClaudeAuthProvider() (LLMProvider, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("no credentials for anthropic. Run: picoclaw auth login --provider anthropic")
 	}
+	if cred.AuthMethod == "setup-token" {
+		return NewClaudeProviderWithSetupToken(cred.AccessToken, createClaudeTokenSource()), nil
+	}
 	return NewClaudeProviderWithTokenSource(cred.AccessToken, createClaudeTokenSource()), nil
 }
 
@@ -112,7 +115,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		), modelID, nil
 
 	case "anthropic":
-		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
+		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" || cfg.AuthMethod == "setup-token" {
 			// Use OAuth credentials from auth store
 			provider, err := createClaudeAuthProvider()
 			if err != nil {

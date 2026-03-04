@@ -77,7 +77,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			}
 		case "anthropic", "claude":
 			if cfg.Providers.Anthropic.APIKey != "" || cfg.Providers.Anthropic.AuthMethod != "" {
-				if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" {
+				if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" || cfg.Providers.Anthropic.AuthMethod == "setup-token" {
 					sel.apiBase = cfg.Providers.Anthropic.APIBase
 					if sel.apiBase == "" {
 						sel.apiBase = defaultAnthropicAPIBase
@@ -227,7 +227,7 @@ func resolveProviderSelection(cfg *config.Config) (providerSelection, error) {
 			}
 		case (strings.Contains(lowerModel, "claude") || strings.HasPrefix(model, "anthropic/")) &&
 			(cfg.Providers.Anthropic.APIKey != "" || cfg.Providers.Anthropic.AuthMethod != ""):
-			if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" {
+			if cfg.Providers.Anthropic.AuthMethod == "oauth" || cfg.Providers.Anthropic.AuthMethod == "token" || cfg.Providers.Anthropic.AuthMethod == "setup-token" {
 				sel.apiBase = cfg.Providers.Anthropic.APIBase
 				if sel.apiBase == "" {
 					sel.apiBase = defaultAnthropicAPIBase

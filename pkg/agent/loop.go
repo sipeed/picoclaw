@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -67,9 +68,6 @@ func NewAgentLoop(
 ) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
-	// Register shared tools to all agents
-	registerSharedTools(cfg, msgBus, registry, provider)
-
 	// Set up shared fallback chain
 	cooldown := providers.NewCooldownTracker()
 	fallbackChain := providers.NewFallbackChain(cooldown)
@@ -81,7 +79,7 @@ func NewAgentLoop(
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
-	return &AgentLoop{
+	al := &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
 		registry:    registry,
@@ -89,14 +87,20 @@ func NewAgentLoop(
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
 	}
+
+	// Register shared tools to all agents (after al is created so closures can capture it)
+	registerSharedTools(cfg, msgBus, registry, provider, al)
+
+	return al
 }
 
-// registerSharedTools registers tools that are shared across all agents (web, message, spawn).
+// registerSharedTools registers tools that are shared across all agents (web, message, spawn, send_file).
 func registerSharedTools(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
+	al *AgentLoop,
 ) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
@@ -125,7 +129,7 @@ func registerSharedTools(
 		} else if searchTool != nil {
 			agent.Tools.Register(searchTool)
 		}
-		fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
+		fetchTool, err := tools.NewWebFetchToolWithProxy(20000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
 		if err != nil {
 			logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
 		} else {
@@ -148,6 +152,39 @@ func registerSharedTools(
 			})
 		})
 		agent.Tools.Register(messageTool)
+
+		// Send file tool
+		sendFileTool := tools.NewSendFileTool()
+		sendFileTool.SetMediaCallback(func(channel, chatID, localPath, caption string) error {
+			if al.mediaStore == nil {
+				return fmt.Errorf("media store not available (file sending requires gateway mode)")
+			}
+			filename := filepath.Base(localPath)
+			contentType := mime.TypeByExtension(filepath.Ext(localPath))
+			ref, err := al.mediaStore.Store(localPath, media.MediaMeta{
+				Filename:    filename,
+				ContentType: contentType,
+				Source:      "tool:send_file",
+			}, "send_file")
+			if err != nil {
+				return fmt.Errorf("storing file: %w", err)
+			}
+			part := bus.MediaPart{
+				Ref:         ref,
+				Caption:     caption,
+				Filename:    filename,
+				ContentType: contentType,
+				Type:        inferMediaType(filename, contentType),
+			}
+			pubCtx, pubCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer pubCancel()
+			return msgBus.PublishOutboundMedia(pubCtx, bus.OutboundMediaMessage{
+				Channel: channel,
+				ChatID:  chatID,
+				Parts:   []bus.MediaPart{part},
+			})
+		})
+		agent.Tools.Register(sendFileTool)
 
 		// Skill discovery and installation tools
 		registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
@@ -727,6 +764,7 @@ func (al *AgentLoop) runLLMIteration(
 ) (string, int, error) {
 	iteration := 0
 	var finalContent string
+	var totalInputTokens, totalOutputTokens, totalCacheCreated, totalCacheRead int
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -891,6 +929,13 @@ func (al *AgentLoop) runLLMIteration(
 			al.targetReasoningChannelID(opts.Channel),
 		)
 
+		if response.Usage != nil {
+			totalInputTokens += response.Usage.PromptTokens
+			totalOutputTokens += response.Usage.CompletionTokens
+			totalCacheCreated += response.Usage.CacheCreatedTokens
+			totalCacheRead += response.Usage.CacheReadTokens
+		}
+
 		logger.DebugCF("agent", "LLM response",
 			map[string]any{
 				"agent_id":       agent.ID,
@@ -1049,9 +1094,33 @@ func (al *AgentLoop) runLLMIteration(
 			}
 			messages = append(messages, toolResultMsg)
 
-			// Save tool result message to session
-			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
+			// Save a truncated version of tool results to session history.
+			// Full results are already in `messages` for the current iteration;
+			// persisting truncated versions prevents context bloat on reload.
+			truncatedContent := contentForLLM
+			const maxToolResultHistory = 500
+			if len(truncatedContent) > maxToolResultHistory {
+				truncatedContent = truncatedContent[:maxToolResultHistory] + fmt.Sprintf("... (truncated, %d chars total)", len(contentForLLM))
+			}
+			agent.Sessions.AddFullMessage(opts.SessionKey, providers.Message{
+				Role:       "tool",
+				Content:    truncatedContent,
+				ToolCallID: tc.ID,
+			})
 		}
+	}
+
+	if totalInputTokens > 0 || totalOutputTokens > 0 {
+		logger.InfoCF("agent", "Session token usage",
+			map[string]any{
+				"agent_id":       agent.ID,
+				"iterations":     iteration,
+				"input_tokens":   totalInputTokens,
+				"output_tokens":  totalOutputTokens,
+				"total_tokens":   totalInputTokens + totalOutputTokens,
+				"cache_created":  totalCacheCreated,
+				"cache_read":     totalCacheRead,
+			})
 	}
 
 	return finalContent, iteration, nil
@@ -1083,7 +1152,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := agent.ContextWindow * 75 / 100
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	if len(newHistory) > 12 || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {

@@ -359,13 +359,18 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		userContent = userContent[:maxUserLen] + "..."
 	}
 
-	// ForLLM: Full execution details
+	// ForLLM: Execution details (truncated to control token usage)
 	labelStr := label
 	if labelStr == "" {
 		labelStr = "(unnamed)"
 	}
+	resultContent := loopResult.Content
+	const maxSubagentLLM = 3000
+	if len(resultContent) > maxSubagentLLM {
+		resultContent = resultContent[:maxSubagentLLM] + fmt.Sprintf("... (truncated, %d chars total)", len(loopResult.Content))
+	}
 	llmContent := fmt.Sprintf("Subagent task completed:\nLabel: %s\nIterations: %d\nResult: %s",
-		labelStr, loopResult.Iterations, loopResult.Content)
+		labelStr, loopResult.Iterations, resultContent)
 
 	return &ToolResult{
 		ForLLM:  llmContent,

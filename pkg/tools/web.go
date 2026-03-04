@@ -22,7 +22,7 @@ const (
 	perplexityTimeout = 30 * time.Second // Perplexity (LLM-based, slower)
 	fetchTimeout      = 60 * time.Second // WebFetchTool
 
-	defaultMaxChars = 50000
+	defaultMaxChars = 20000
 	maxRedirects    = 5
 )
 
@@ -665,21 +665,17 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		text = text[:maxChars]
 	}
 
-	result := map[string]any{
-		"url":       urlStr,
-		"status":    resp.StatusCode,
-		"extractor": extractor,
-		"truncated": truncated,
-		"length":    len(text),
-		"text":      text,
+	var llmContent string
+	if truncated {
+		llmContent = fmt.Sprintf("[%s %d truncated=%v]\n%s", urlStr, resp.StatusCode, truncated, text)
+	} else {
+		llmContent = fmt.Sprintf("[%s %d]\n%s", urlStr, resp.StatusCode, text)
 	}
 
-	resultJSON, _ := json.MarshalIndent(result, "", "  ")
-
 	return &ToolResult{
-		ForLLM: string(resultJSON),
+		ForLLM: llmContent,
 		ForUser: fmt.Sprintf(
-			"Fetched %d bytes from %s (extractor: %s, truncated: %v)",
+			"Fetched %d chars from %s (extractor: %s, truncated: %v)",
 			len(text),
 			urlStr,
 			extractor,
