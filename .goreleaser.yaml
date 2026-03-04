@@ -149,6 +149,11 @@ nfpms:
       - rpm
       - deb
     bindir: /usr/bin
+    contents:
+      - src: web/picoclaw-launcher.desktop
+        dst: /usr/share/applications/picoclaw-launcher.desktop
+      - src: web/picoclaw-launcher.png
+        dst: /usr/share/icons/hicolor/512x512/apps/picoclaw-launcher.png
 
 changelog:
   sort: asc
