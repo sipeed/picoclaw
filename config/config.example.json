@@ -243,7 +243,8 @@
       "proxy": ""
     },
     "cron": {
-      "exec_timeout_minutes": 5
+      "exec_timeout_minutes": 5,
+      "default_timezone": "Asia/Shanghai"
     },
     "mcp": {
       "enabled": false,
@@ -337,5 +338,17 @@
   "gateway": {
     "host": "127.0.0.1",
     "port": 18790
+  },
+  "sensitive_data_masking": {
+    "sensitive_data_masking_enabled": true,
+    "sensitive_rules": [
+      {
+        "name": "custom_sensitive_rule",
+        "pattern": "my_custom_secret.*?\\b[A-Z0-9]{20,}\\b",
+        "replacement": "***MASKED_CUSTOM_SECRET***",
+        "description": "Example custom sensitive rule",
+        "enabled": false
+      }
+    ]
   }
 }
