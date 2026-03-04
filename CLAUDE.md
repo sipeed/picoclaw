@@ -55,12 +55,13 @@ Lint: `golangci-lint run`
 
 ## 未実装タスク
 
-以下の `todo/` ファイルに分割。各ファイルは互いに依存関係がなく、別ブランチで並列実装可能。
+以下の `todo/` ファイルに分割。基本は別ブランチで並列実装可能（※ TASKS-2 は TASKS-1 の型変更前提あり）。
 
 | ファイル | 概要 |
 |---|---|
 | [`todo/TASKS-1.md`](todo/TASKS-1.md) | ~~**Memory & Performance Optimization**~~ ✅ 実装済み（MemoryStore キャッシュ＋パース済み state、FunctionCall.Arguments map統一、ToolDefinition.Parameters RawMessage化、検索結果フォーマット共通化、stats 定期フラッシュ） |
-| [`todo/TASKS-2.md`](todo/TASKS-2.md) | **Subagent Orchestration (Container Model)** — SubagentContainer、Orchestrator、Presets enforcement、Subagent Plan Mode |
+| [`todo/TASKS-2.md`](todo/TASKS-2.md) | **Subagent Orchestration (Container Model)** — SubagentContainer、Orchestrator、Presets enforcement、Subagent Plan Mode（TASKS-1 の型変更前提メモ追記済み） |
 | [`todo/TASKS-3.md`](todo/TASKS-3.md) | **Session DAG (SQLite Store)** — セッション管理の SQLite 移行、Turn ベース線形+セッション間 DAG、Fork/Report フロー |
 | [`todo/TASKS-4.md`](todo/TASKS-4.md) | **Mini App & Static Serving** — 静的配信の汎用化、バンドラ導入、フロントエンドテスト追加 |
 | [`todo/TASKS-5.md`](todo/TASKS-5.md) | ~~**Heartbeat Worktree Management**~~ ✅ 実装済み（`/plan worktrees` の `list/inspect/merge/dispose`、安全化した `PruneOrphaned`、Mini App `/miniapp/api/worktrees` + Git タブ UI） |
+
