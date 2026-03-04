@@ -218,11 +218,12 @@ type cacheBaseline struct {
 // the latest mtime across all tracked files + skills directory contents.
 // Called under write lock when the cache is built.
 func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
-	skillsDir := filepath.Join(cb.workspace, "skills")
 	memoryDir := filepath.Join(cb.workspace, "memory")
 
-	// All paths whose existence we track: source files + skills dir + memory dir.
-	allPaths := append(cb.sourcePaths(), skillsDir, memoryDir)
+	// All paths whose existence we track: source files + skill roots + memory dir.
+	allPaths := cb.sourcePaths()
+	allPaths = append(allPaths, cb.skillRoots()...)
+	allPaths = append(allPaths, memoryDir)
 
 	existed := make(map[string]bool, len(allPaths))
 	skillFiles := make(map[string]time.Time)
@@ -238,19 +239,30 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 
 	// Walk skills files to capture their mtimes too.
 	// Use os.Stat (not d.Info) to match the stat method used in
-	// fileChangedSince / skillFilesModifiedSince for consistency.
-	walkFunc := func(path string, d os.DirEntry, walkErr error) error {
+	// fileChangedSince / skillFilesChangedSince for consistency.
+	for _, root := range cb.skillRoots() {
+		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr == nil && !d.IsDir() {
+				if info, err := os.Stat(path); err == nil {
+					skillFiles[path] = info.ModTime()
+					if info.ModTime().After(maxMtime) {
+						maxMtime = info.ModTime()
+					}
+				}
+			}
+			return nil
+		})
+	}
+
+	// Also walk memory files
+	_ = filepath.WalkDir(memoryDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr == nil && !d.IsDir() {
 			if info, err := os.Stat(path); err == nil && info.ModTime().After(maxMtime) {
 				maxMtime = info.ModTime()
 			}
 		}
 		return nil
-	}
-	_ = filepath.WalkDir(skillsDir, walkFunc)
-
-	// Also walk memory files
-	_ = filepath.WalkDir(memoryDir, walkFunc)
+	})
 
 	// If no tracked files exist yet (empty workspace), maxMtime is zero.
 	// Use a very old non-zero time so that:
@@ -299,7 +311,7 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 	// 3. Content-only edits to files inside skills/ do NOT update the parent
 	//    directory mtime on most filesystems, so we recursively walk to check
 	//    individual file mtimes at any nesting depth.
-	if filesModifiedSince(skillsDir, cb.cachedAt) {
+	if skillFilesChangedSince(cb.skillRoots(), cb.skillFilesAtCache) {
 		return true
 	}
 
@@ -374,6 +386,7 @@ func filesModifiedSince(dirPath string, since time.Time) bool {
 
 	return changed
 }
+
 // skillFilesChangedSince compares the current recursive skill file tree
 // against the cache-time snapshot. Any create/delete/mtime drift invalidates
 // the cache.
@@ -403,7 +416,7 @@ func skillFilesChangedSince(skillRoots []string, filesAtCache map[string]time.Ti
 			continue
 		}
 
-		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				// Treat unexpected walk errors as changed to avoid stale cache.
 				if !os.IsNotExist(walkErr) {
