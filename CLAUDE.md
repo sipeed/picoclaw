@@ -26,7 +26,7 @@ Lint: `golangci-lint run`
 - **Sandbox/Spawn**: `pkg/tools/sandbox.go`, `pkg/tools/spawn.go` 実装済み。
 - **AgentReporter**: `orch.AgentReporter` / `orch.Noop` / `orch.Broadcaster` で統一。main/heartbeat/subagent 全セッションが同一 Broadcaster に発火。Mini App は `agentLoop.GetOrchBroadcaster()` → `handler.SetOrchBroadcaster()` で受信。
 
-## Session DAG (Phase 0–2 実装済み)
+## Session DAG (Phase 0–3 実装済み)
 
 - **SQLite SessionStore**: `pkg/session/sqlite.go` — `modernc.org/sqlite` (CGO不要)、WAL モード、`sessions` + `turns` テーブル
 - **SessionStore interface**: `pkg/session/store.go` — Create/Get/List/Append/Turns/Compact/Fork/Prune 等15メソッド
@@ -37,7 +37,8 @@ Lint: `golangci-lint run`
 - **配線**: `pkg/agent/instance.go` の `Sessions` 型が `*LegacyAdapter` に変更。`sessions.db` を workspace 直下に生成
 - **SessionRecorder**: `pkg/tools/session_recorder.go` (interface) + `pkg/agent/session_recorder.go` (impl) — SubagentManager から Fork/Turn/Completion/Report を記録
 - **Prune**: 起動時 `store.Prune(7d)` + `flushLoop` 内 6h 定期 prune。`AgentLoop.gcLoop` で 30分毎に idle `sessionLocks` を GC
-- **Phase 3以降**: UI/CLI — Mini App セッショングラフ可視化、`/session` コマンド → `todo/TASKS-3.md` 参照
+- **CLI `/session` コマンド**: `list` / `graph` / `fork [label]` / `reset` サブコマンド。default は DAG summary + token stats
+- **Mini App Session Graph**: `/miniapp/api/sessions/graph` endpoint。SSE `session` event に `graph` 含む。フロントエンドで tree rendering
 
 ## コードの匂い — チェックリスト
 
@@ -61,6 +62,6 @@ Lint: `golangci-lint run`
 |---|---|
 | [`todo/TASKS-1.md`](todo/TASKS-1.md) | **Memory & Performance Optimization** — MemoryStore キャッシュ、FunctionCall/ToolDefinition 型整理、stats フラッシュ最適化 |
 | [`todo/TASKS-2.md`](todo/TASKS-2.md) | **Subagent Orchestration (Container Model)** — SubagentContainer、Orchestrator、Presets enforcement、Subagent Plan Mode |
-| [`todo/TASKS-3.md`](todo/TASKS-3.md) | **Session DAG (SQLite Store)** — セッション管理の SQLite 移行、Turn ベース線形+セッション間 DAG、Fork/Report フロー |
+| [`todo/TASKS-3.md`](todo/TASKS-3.md) | ~~**Session DAG (SQLite Store)**~~ ✅ 実装済み（Phase 0–3: SQLite SessionStore、LegacyAdapter、Fork/Report、CompactOldTurns、`/session` CLI コマンド、Mini App グラフ UI） |
 | [`todo/TASKS-4.md`](todo/TASKS-4.md) | **Mini App & Static Serving** — 静的配信の汎用化、バンドラ導入、フロントエンドテスト追加 |
 | [`todo/TASKS-5.md`](todo/TASKS-5.md) | ~~**Heartbeat Worktree Management**~~ ✅ 実装済み（`/plan worktrees` の `list/inspect/merge/dispose`、安全化した `PruneOrphaned`、Mini App `/miniapp/api/worktrees` + Git タブ UI） |

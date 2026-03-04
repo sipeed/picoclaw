@@ -161,6 +161,17 @@ func (h *Handler) apiWorktrees(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) apiSessionGraph(w http.ResponseWriter, r *http.Request) {
+	graph := h.provider.GetSessionGraph()
+	if graph == nil {
+		graph = &SessionGraphData{
+			Nodes: []SessionGraphNode{},
+			Edges: []SessionGraphEdge{},
+		}
+	}
+	writeJSON(w, graph)
+}
+
 func (h *Handler) apiCommand(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -220,7 +231,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 	// Send initial state immediately
 	sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
 	sendSSEIfChanged(w, flusher, "session",
-		map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions()},
+		map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions(), "graph": h.provider.GetSessionGraph()},
 		&lastSession)
 	sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 	sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)
@@ -236,7 +247,7 @@ func (h *Handler) apiEvents(w http.ResponseWriter, r *http.Request) {
 		case <-ch:
 			sendSSEIfChanged(w, flusher, "plan", h.provider.GetPlanInfo(), &lastPlan)
 			sendSSEIfChanged(w, flusher, "session",
-				map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions()},
+				map[string]any{"stats": h.provider.GetSessionStats(), "sessions": h.provider.GetActiveSessions(), "graph": h.provider.GetSessionGraph()},
 				&lastSession)
 			sendSSEIfChanged(w, flusher, "skills", h.provider.ListSkills(), &lastSkills)
 			sendSSEIfChanged(w, flusher, "dev", h.devStatus(), &lastDev)

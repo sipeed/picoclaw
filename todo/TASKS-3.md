@@ -208,16 +208,18 @@ func (tw *TurnWriter) Discard()
 
 ---
 
-### Phase 3: UI & Commands
+### Phase 3: UI & Commands ✅
 
-11. **Mini App セッショングラフ可視化**
-    - WebSocket で session DAG 構造を配信
-    - fork/report 関係をグラフとして描画
+11. ✅ **Mini App セッショングラフ可視化**
+    - `/miniapp/api/sessions/graph` REST endpoint + SSE `session` event に graph 含む
+    - フロントエンドで tree rendering (CSS + JS)
 
-12. **CLI コマンド**
-    - `/session list` — アクティブセッション一覧
-    - `/session fork` — 現在のセッションを fork
-    - `/session graph` — DAG 構造をテキスト表示
+12. ✅ **CLI コマンド**
+    - `/session list` — 全セッション一覧 (ステータス、ターン数、経過時間)
+    - `/session fork [label]` — 現在のセッションを fork
+    - `/session graph` — DAG 構造を ASCII tree 表示
+    - `/session` (default) — DAG summary + token stats + usage hint
+    - `/session reset` — stats リセット
 
 ---
 

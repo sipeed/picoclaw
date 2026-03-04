@@ -72,6 +72,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/miniapp/api/plan", h.requireAuth(h.apiPlan))
 	mux.HandleFunc("/miniapp/api/session", h.requireAuth(h.apiSession))
 	mux.HandleFunc("/miniapp/api/sessions", h.requireAuth(h.apiSessions))
+	mux.HandleFunc("/miniapp/api/sessions/graph", h.requireAuth(h.apiSessionGraph))
 	mux.HandleFunc("/miniapp/api/command", h.requireAuth(h.apiCommand))
 	mux.HandleFunc("/miniapp/api/context", h.requireAuth(h.apiContext))
 	mux.HandleFunc("/miniapp/api/prompt", h.requireAuth(h.apiPrompt))
