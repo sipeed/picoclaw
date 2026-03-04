@@ -332,13 +332,13 @@ func DefaultConfig() *Config {
 				Brave: BraveConfig{
 					Enabled:    false,
 					APIKey:     "",
-					APIKeys:    []string{"YOUR_BRAVE_API_KEY"},
+					APIKeys:    nil,
 					MaxResults: 5,
 				},
 				Tavily: TavilyConfig{
 					Enabled:    false,
 					APIKey:     "",
-					APIKeys:    []string{"YOUR_TAVILY_API_KEY"},
+					APIKeys:    nil,
 					MaxResults: 5,
 				},
 				DuckDuckGo: DuckDuckGoConfig{
@@ -348,7 +348,7 @@ func DefaultConfig() *Config {
 				Perplexity: PerplexityConfig{
 					Enabled:    false,
 					APIKey:     "",
-					APIKeys:    []string{"YOUR_PERPLEXITY_API_KEY"},
+					APIKeys:    nil,
 					MaxResults: 5,
 				},
 				GLMSearch: GLMSearchConfig{

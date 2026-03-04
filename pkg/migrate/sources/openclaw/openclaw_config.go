@@ -717,18 +717,18 @@ type WebToolsConfig struct {
 }
 
 type BraveConfig struct {
-	Enabled    bool   `json:"enabled"`
-	APIKey     string `json:"api_key"`
+	Enabled    bool     `json:"enabled"`
+	APIKey     string   `json:"api_key"`
 	APIKeys    []string `json:"api_keys"`
-	MaxResults int    `json:"max_results"`
+	MaxResults int      `json:"max_results"`
 }
 
 type TavilyConfig struct {
-	Enabled    bool   `json:"enabled"`
-	APIKey     string `json:"api_key"`
+	Enabled    bool     `json:"enabled"`
+	APIKey     string   `json:"api_key"`
 	APIKeys    []string `json:"api_keys"`
-	BaseURL    string `json:"base_url"`
-	MaxResults int    `json:"max_results"`
+	BaseURL    string   `json:"base_url"`
+	MaxResults int      `json:"max_results"`
 }
 
 type DuckDuckGoConfig struct {
@@ -737,10 +737,10 @@ type DuckDuckGoConfig struct {
 }
 
 type PerplexityConfig struct {
-	Enabled    bool   `json:"enabled"`
-	APIKey     string `json:"api_key"`
+	Enabled    bool     `json:"enabled"`
+	APIKey     string   `json:"api_key"`
 	APIKeys    []string `json:"api_keys"`
-	MaxResults int    `json:"max_results"`
+	MaxResults int      `json:"max_results"`
 }
 
 type CronConfig struct {

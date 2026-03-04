@@ -604,7 +604,11 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
 		}
-		provider = &PerplexitySearchProvider{keyPool: NewAPIKeyPool(opts.PerplexityAPIKeys), proxy: opts.Proxy, client: client}
+		provider = &PerplexitySearchProvider{
+			keyPool: NewAPIKeyPool(opts.PerplexityAPIKeys),
+			proxy:   opts.Proxy,
+			client:  client,
+		}
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
 		}

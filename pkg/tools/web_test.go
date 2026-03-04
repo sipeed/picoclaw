@@ -269,7 +269,11 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
-	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: []string{"test-key"}, BraveMaxResults: 5})
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		BraveEnabled:    true,
+		BraveAPIKeys:    []string{"test-key"},
+		BraveMaxResults: 5,
+	})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

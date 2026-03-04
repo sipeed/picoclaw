@@ -115,7 +115,10 @@ func registerSharedTools(
 			TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
 			DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 			DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-			PerplexityAPIKeys:    config.MergeAPIKeys(cfg.Tools.Web.Perplexity.APIKey, cfg.Tools.Web.Perplexity.APIKeys),
+			PerplexityAPIKeys: config.MergeAPIKeys(
+				cfg.Tools.Web.Perplexity.APIKey,
+				cfg.Tools.Web.Perplexity.APIKeys,
+			),
 			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
 			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 			GLMSearchAPIKey:      cfg.Tools.Web.GLMSearch.APIKey,
