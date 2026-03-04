@@ -126,7 +126,7 @@ func TestBackend_AddFullMessage(t *testing.T) {
 				Content: "sure",
 
 				ToolCalls: []providers.ToolCall{
-					{ID: "call_1", Type: "function", Function: &providers.FunctionCall{Name: "exec", Arguments: `{}`}},
+					{ID: "call_1", Type: "function", Function: &providers.FunctionCall{Name: "exec", Arguments: map[string]any{}}},
 				},
 			})
 

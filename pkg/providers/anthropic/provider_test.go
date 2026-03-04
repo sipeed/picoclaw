@@ -9,6 +9,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
 func TestBuildParams_BasicMessage(t *testing.T) {
@@ -84,13 +85,13 @@ func TestBuildParams_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather for a city",
-				Parameters: map[string]any{
+				Parameters: protocoltypes.MustMarshalParameters(map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"city": map[string]any{"type": "string"},
 					},
 					"required": []any{"city"},
-				},
+				}),
 			},
 		},
 	}

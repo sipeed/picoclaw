@@ -285,7 +285,7 @@ func TestToolRegistry_ToProviderDefs(t *testing.T) {
 		Function: providers.ToolFunctionDefinition{
 			Name:        "beta",
 			Description: "tool B",
-			Parameters:  params,
+			Parameters:  providers.MustMarshalParameters(params),
 		},
 	}
 	got := defs[0]

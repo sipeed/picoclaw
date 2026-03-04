@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
@@ -25,6 +26,35 @@ type MemoryStore struct {
 	workspace  string
 	memoryDir  string
 	memoryFile string
+
+	cacheMu         sync.RWMutex
+	longTermCache   longTermFileCache
+	parsedPlanCache parsedPlanStateCache
+}
+
+type longTermFileCache struct {
+	loaded  bool
+	exists  bool
+	modTime time.Time
+	size    int64
+	content string
+}
+
+type parsedPlanStateCache struct {
+	loaded        bool
+	sourceContent string
+	state         parsedPlanState
+}
+
+type parsedPlanState struct {
+	content       string
+	hasActivePlan bool
+	status        string
+	currentPhase  int
+	totalPhases   int
+	workDir       string
+	taskName      string
+	phases        []PlanPhase
 }
 
 // NewMemoryStore creates a new MemoryStore with the given workspace path.
@@ -51,20 +81,165 @@ func (ms *MemoryStore) getTodayFile() string {
 	return filePath
 }
 
+// InvalidateCache clears all in-memory caches for MEMORY.md content and parsed plan state.
+func (ms *MemoryStore) InvalidateCache() {
+	ms.cacheMu.Lock()
+	defer ms.cacheMu.Unlock()
+
+	ms.longTermCache = longTermFileCache{}
+	ms.parsedPlanCache = parsedPlanStateCache{}
+}
+
+func (ms *MemoryStore) readLongTermCached() string {
+	info, err := os.Stat(ms.memoryFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return ""
+		}
+
+		ms.cacheMu.RLock()
+		cachedMissing := ms.longTermCache.loaded && !ms.longTermCache.exists
+		ms.cacheMu.RUnlock()
+		if cachedMissing {
+			return ""
+		}
+
+		ms.cacheMu.Lock()
+		ms.longTermCache = longTermFileCache{loaded: true, exists: false}
+		ms.parsedPlanCache = parsedPlanStateCache{}
+		ms.cacheMu.Unlock()
+		return ""
+	}
+
+	modTime := info.ModTime()
+	size := info.Size()
+
+	ms.cacheMu.RLock()
+	if ms.longTermCache.loaded &&
+		ms.longTermCache.exists &&
+		ms.longTermCache.modTime.Equal(modTime) &&
+		ms.longTermCache.size == size {
+		content := ms.longTermCache.content
+		ms.cacheMu.RUnlock()
+		return content
+	}
+	ms.cacheMu.RUnlock()
+
+	data, err := os.ReadFile(ms.memoryFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			ms.cacheMu.Lock()
+			ms.longTermCache = longTermFileCache{loaded: true, exists: false}
+			ms.parsedPlanCache = parsedPlanStateCache{}
+			ms.cacheMu.Unlock()
+		}
+		return ""
+	}
+	content := string(data)
+
+	ms.cacheMu.Lock()
+	ms.longTermCache = longTermFileCache{
+		loaded:  true,
+		exists:  true,
+		modTime: modTime,
+		size:    size,
+		content: content,
+	}
+	if ms.parsedPlanCache.loaded && ms.parsedPlanCache.sourceContent != content {
+		ms.parsedPlanCache = parsedPlanStateCache{}
+	}
+	ms.cacheMu.Unlock()
+
+	return content
+}
+
+func (ms *MemoryStore) getParsedPlanState() parsedPlanState {
+	content := ms.ReadLongTerm()
+
+	ms.cacheMu.RLock()
+	if ms.parsedPlanCache.loaded && ms.parsedPlanCache.sourceContent == content {
+		state := ms.parsedPlanCache.state
+		ms.cacheMu.RUnlock()
+		return state
+	}
+	ms.cacheMu.RUnlock()
+
+	state := ms.parsePlanState(content)
+
+	ms.cacheMu.Lock()
+	if !ms.parsedPlanCache.loaded || ms.parsedPlanCache.sourceContent != content {
+		ms.parsedPlanCache = parsedPlanStateCache{
+			loaded:        true,
+			sourceContent: content,
+			state:         state,
+		}
+	} else {
+		state = ms.parsedPlanCache.state
+	}
+	ms.cacheMu.Unlock()
+
+	return state
+}
+
+func (ms *MemoryStore) parsePlanState(content string) parsedPlanState {
+	state := parsedPlanState{content: content}
+	if content == "" || !reActivePlan.MatchString(content) {
+		return state
+	}
+
+	state.hasActivePlan = true
+	if m := reStatus.FindStringSubmatch(content); len(m) >= 2 {
+		state.status = strings.TrimSpace(m[1])
+	}
+	if m := rePhase.FindStringSubmatch(content); len(m) >= 2 {
+		state.currentPhase, _ = strconv.Atoi(m[1])
+	}
+	state.totalPhases = maxPhaseNumber(content)
+	if m := reWorkDir.FindStringSubmatch(content); len(m) >= 2 {
+		state.workDir = strings.TrimSpace(m[1])
+	}
+	if m := reTaskLine.FindStringSubmatch(content); len(m) >= 2 {
+		state.taskName = strings.TrimSpace(m[1])
+	}
+	state.phases = ms.getPlanPhasesFrom(content)
+
+	return state
+}
+
+func clonePlanPhases(phases []PlanPhase) []PlanPhase {
+	if len(phases) == 0 {
+		return nil
+	}
+
+	result := make([]PlanPhase, 0, len(phases))
+	for _, p := range phases {
+		phase := PlanPhase{
+			Number: p.Number,
+			Title:  p.Title,
+		}
+		if len(p.Steps) > 0 {
+			phase.Steps = append([]PlanStep(nil), p.Steps...)
+		}
+		result = append(result, phase)
+	}
+	return result
+}
+
 // ReadLongTerm reads the long-term memory (MEMORY.md).
 // Returns empty string if the file doesn't exist.
 func (ms *MemoryStore) ReadLongTerm() string {
-	if data, err := os.ReadFile(ms.memoryFile); err == nil {
-		return string(data)
-	}
-	return ""
+	return ms.readLongTermCached()
 }
 
 // WriteLongTerm writes content to the long-term memory file (MEMORY.md).
 func (ms *MemoryStore) WriteLongTerm(content string) error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	// Using 0o600 (owner read/write only) for secure default permissions.
-	return fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0o600)
+	if err := fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0o600); err != nil {
+		return err
+	}
+	ms.InvalidateCache()
+	return nil
 }
 
 // ClearLongTerm removes the long-term memory file.
@@ -72,6 +247,7 @@ func (ms *MemoryStore) ClearLongTerm() error {
 	if err := os.Remove(ms.memoryFile); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	ms.InvalidateCache()
 	return nil
 }
 
@@ -151,50 +327,27 @@ var (
 
 // HasActivePlan returns true if MEMORY.md contains an active plan.
 func (ms *MemoryStore) HasActivePlan() bool {
-	content := ms.ReadLongTerm()
-	return reActivePlan.MatchString(content)
+	return ms.getParsedPlanState().hasActivePlan
 }
 
 // GetPlanStatus returns the plan status: "interviewing", "executing", or "".
 func (ms *MemoryStore) GetPlanStatus() string {
-	content := ms.ReadLongTerm()
-	m := reStatus.FindStringSubmatch(content)
-	if len(m) < 2 {
-		return ""
-	}
-	return strings.TrimSpace(m[1])
+	return ms.getParsedPlanState().status
 }
 
 // GetCurrentPhase returns the current phase number from "> Phase: N".
 func (ms *MemoryStore) GetCurrentPhase() int {
-	content := ms.ReadLongTerm()
-	m := rePhase.FindStringSubmatch(content)
-	if len(m) < 2 {
-		return 0
-	}
-	n, _ := strconv.Atoi(m[1])
-	return n
+	return ms.getParsedPlanState().currentPhase
 }
 
 // GetTotalPhases returns the total number of phases (max ## Phase N).
 func (ms *MemoryStore) GetTotalPhases() int {
-	content := ms.ReadLongTerm()
-	matches := rePhaseHeader.FindAllStringSubmatch(content, -1)
-	maxN := 0
-	for _, m := range matches {
-		if len(m) >= 2 {
-			n, _ := strconv.Atoi(m[1])
-			if n > maxN {
-				maxN = n
-			}
-		}
-	}
-	return maxN
+	return ms.getParsedPlanState().totalPhases
 }
 
 // IsPlanComplete returns true if all steps in all phases are [x].
 func (ms *MemoryStore) IsPlanComplete() bool {
-	phases := ms.GetPlanPhases()
+	phases := ms.getParsedPlanState().phases
 	if len(phases) == 0 {
 		return false
 	}
@@ -212,13 +365,12 @@ func (ms *MemoryStore) IsPlanComplete() bool {
 
 // IsCurrentPhaseComplete returns true if all steps in the current phase are [x].
 func (ms *MemoryStore) IsCurrentPhaseComplete() bool {
-	current := ms.GetCurrentPhase()
-	if current == 0 {
+	state := ms.getParsedPlanState()
+	if state.currentPhase == 0 {
 		return false
 	}
-	phases := ms.GetPlanPhases()
-	for _, p := range phases {
-		if p.Number == current {
+	for _, p := range state.phases {
+		if p.Number == state.currentPhase {
 			if len(p.Steps) == 0 {
 				return false
 			}
@@ -273,7 +425,7 @@ type PlanStep struct {
 
 // GetPlanPhases parses MEMORY.md and returns all phases with their steps.
 func (ms *MemoryStore) GetPlanPhases() []PlanPhase {
-	return ms.getPlanPhasesFrom(ms.ReadLongTerm())
+	return clonePlanPhases(ms.getParsedPlanState().phases)
 }
 
 func (ms *MemoryStore) getPlanPhasesFrom(content string) []PlanPhase {
@@ -446,7 +598,7 @@ func (ms *MemoryStore) ValidatePlanStructure() error {
 	}
 
 	// 3. At least one phase header (## Phase N: title)
-	phases := ms.GetPlanPhases()
+	phases := ms.getPlanPhasesFrom(content)
 	if len(phases) == 0 {
 		return fmt.Errorf("no '## Phase N:' sections found")
 	}
@@ -465,12 +617,7 @@ func (ms *MemoryStore) ValidatePlanStructure() error {
 
 // GetPlanWorkDir returns the WorkDir from the plan metadata, or "".
 func (ms *MemoryStore) GetPlanWorkDir() string {
-	content := ms.ReadLongTerm()
-	m := reWorkDir.FindStringSubmatch(content)
-	if len(m) < 2 {
-		return ""
-	}
-	return strings.TrimSpace(m[1])
+	return ms.getParsedPlanState().workDir
 }
 
 // reTaskLine extracts the task name from "> Task: <description>".
@@ -478,12 +625,7 @@ var reTaskLine = regexp.MustCompile(`(?m)^> Task:\s*(.+)`)
 
 // GetPlanTaskName returns the task description from the plan metadata, or "".
 func (ms *MemoryStore) GetPlanTaskName() string {
-	content := ms.ReadLongTerm()
-	m := reTaskLine.FindStringSubmatch(content)
-	if len(m) < 2 {
-		return ""
-	}
-	return strings.TrimSpace(m[1])
+	return ms.getParsedPlanState().taskName
 }
 
 // interviewSeed is the initial content written to MEMORY.md when /plan starts.
@@ -704,35 +846,21 @@ func (ms *MemoryStore) extractCommandsSection(content string) string {
 
 // FormatPlanDisplay returns a user-facing display of the full plan with emoji indicators.
 func (ms *MemoryStore) FormatPlanDisplay() string {
-	content := ms.ReadLongTerm()
-	if !reActivePlan.MatchString(content) {
+	state := ms.getParsedPlanState()
+	if !state.hasActivePlan {
 		return "No active plan."
 	}
 
-	taskLine := ""
-	if m := reTaskLine.FindStringSubmatch(content); len(m) >= 2 {
-		taskLine = strings.TrimSpace(m[1])
-	}
-	var status string
-	if m := reStatus.FindStringSubmatch(content); len(m) >= 2 {
-		status = strings.TrimSpace(m[1])
-	}
-	var currentPhase int
-	if m := rePhase.FindStringSubmatch(content); len(m) >= 2 {
-		currentPhase, _ = strconv.Atoi(m[1])
-	}
-	phases := ms.getPlanPhasesFrom(content)
-
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Plan: %s\n", taskLine))
-	sb.WriteString(fmt.Sprintf("Status: %s | Phase %d/%d\n\n", status, currentPhase, len(phases)))
+	sb.WriteString(fmt.Sprintf("Plan: %s\n", state.taskName))
+	sb.WriteString(fmt.Sprintf("Status: %s | Phase %d/%d\n\n", state.status, state.currentPhase, len(state.phases)))
 
-	for _, p := range phases {
+	for _, p := range state.phases {
 		// Determine phase emoji
 		var emoji string
-		if p.Number < currentPhase {
+		if p.Number < state.currentPhase {
 			emoji = "\u2705" // checkmark
-		} else if p.Number == currentPhase {
+		} else if p.Number == state.currentPhase {
 			emoji = "\u25B6\uFE0F" // play button
 		} else {
 			emoji = "\u23F3" // hourglass
@@ -741,7 +869,7 @@ func (ms *MemoryStore) FormatPlanDisplay() string {
 		sb.WriteString(fmt.Sprintf("%s Phase %d: %s\n", emoji, p.Number, p.Title))
 
 		// Show steps for current and completed phases
-		if p.Number <= currentPhase {
+		if p.Number <= state.currentPhase {
 			for _, s := range p.Steps {
 				if s.Done {
 					sb.WriteString("  \u2611 " + s.Description + "\n")
@@ -752,7 +880,7 @@ func (ms *MemoryStore) FormatPlanDisplay() string {
 		}
 	}
 
-	commandsContent := ms.extractCommandsSection(content)
+	commandsContent := ms.extractCommandsSection(state.content)
 	if commandsContent != "" {
 		sb.WriteString("\nCommands:\n")
 		for _, line := range strings.Split(commandsContent, "\n") {
@@ -763,7 +891,7 @@ func (ms *MemoryStore) FormatPlanDisplay() string {
 		}
 	}
 
-	contextContent := ms.extractContextSection(content)
+	contextContent := ms.extractContextSection(state.content)
 	if contextContent != "" {
 		sb.WriteString("\nContext: " + contextContent + "\n")
 	}
@@ -781,16 +909,12 @@ func (ms *MemoryStore) FormatPlanDisplay() string {
 func (ms *MemoryStore) GetMemoryContext() string {
 	var parts []string
 
-	longTerm := ms.ReadLongTerm()
-	hasActivePlan := longTerm != "" && reActivePlan.MatchString(longTerm)
+	state := ms.getParsedPlanState()
+	longTerm := state.content
 
 	if longTerm != "" {
-		if hasActivePlan {
-			var status string
-			if m := reStatus.FindStringSubmatch(longTerm); len(m) >= 2 {
-				status = strings.TrimSpace(m[1])
-			}
-			switch status {
+		if state.hasActivePlan {
+			switch state.status {
 			case "interviewing":
 				parts = append(parts, ms.getInterviewContextFrom(longTerm))
 			case "review":
@@ -804,7 +928,7 @@ func (ms *MemoryStore) GetMemoryContext() string {
 	}
 
 	// Suppress daily notes when a plan is active to save context
-	if !hasActivePlan {
+	if !state.hasActivePlan {
 		recentNotes := ms.GetRecentDailyNotes(3)
 		if recentNotes != "" {
 			parts = append(parts, "## Recent Daily Notes\n\n"+recentNotes)

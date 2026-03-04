@@ -41,7 +41,9 @@ func extractToolCallsFromText(text string) []ToolCall {
 	var result []ToolCall
 	for _, tc := range wrapper.ToolCalls {
 		var args map[string]any
-		json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil || args == nil {
+			args = map[string]any{}
+		}
 
 		result = append(result, ToolCall{
 			ID:        tc.ID,
@@ -50,7 +52,7 @@ func extractToolCallsFromText(text string) []ToolCall {
 			Arguments: args,
 			Function: &FunctionCall{
 				Name:      tc.Function.Name,
-				Arguments: tc.Function.Arguments,
+				Arguments: cloneToolArgs(args),
 			},
 		})
 	}
@@ -278,7 +280,6 @@ func parseInvokeElements(text string, callIdx *int) []ToolCall {
 			paramRemaining = paramRemaining[valueStart+valueEnd+len("</parameter>"):]
 		}
 
-		argsJSON, _ := json.Marshal(args)
 		*callIdx++
 		result = append(result, ToolCall{
 			ID:        fmt.Sprintf("xmltc_%d", *callIdx),
@@ -287,7 +288,7 @@ func parseInvokeElements(text string, callIdx *int) []ToolCall {
 			Arguments: args,
 			Function: &FunctionCall{
 				Name:      toolName,
-				Arguments: string(argsJSON),
+				Arguments: cloneToolArgs(args),
 			},
 		})
 	}

@@ -106,7 +106,7 @@ type AgentLoop struct {
 	onHeartbeatThreadUpdate func(int)
 	orchBroadcaster         *orch.Broadcaster  // nil when --orchestration not set
 	orchReporter            orch.AgentReporter // always non-nil (Noop when disabled)
-	done                    chan struct{}       // closed by Close() to stop background goroutines
+	done                    chan struct{}      // closed by Close() to stop background goroutines
 }
 
 // processOptions configures how a message is processed
@@ -2839,7 +2839,6 @@ func (al *AgentLoop) runLLMIteration(
 			ReasoningContent: response.ReasoningContent,
 		}
 		for _, tc := range normalizedToolCalls {
-			argumentsJSON, _ := json.Marshal(tc.Arguments)
 			// Copy ExtraContent to ensure thought_signature is persisted for Gemini 3
 			extraContent := tc.ExtraContent
 			thoughtSignature := ""
@@ -2848,12 +2847,13 @@ func (al *AgentLoop) runLLMIteration(
 			}
 
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
-				Name: tc.Name,
+				ID:        tc.ID,
+				Type:      "function",
+				Name:      tc.Name,
+				Arguments: tc.Arguments,
 				Function: &providers.FunctionCall{
 					Name:             tc.Name,
-					Arguments:        string(argumentsJSON),
+					Arguments:        tc.Arguments,
 					ThoughtSignature: thoughtSignature,
 				},
 				ExtraContent:     extraContent,
@@ -3367,8 +3367,13 @@ func formatMessagesForLog(messages []providers.Message) string {
 			sb.WriteString("  ToolCalls:\n")
 			for _, tc := range msg.ToolCalls {
 				fmt.Fprintf(&sb, "    - ID: %s, Type: %s, Name: %s\n", tc.ID, tc.Type, tc.Name)
-				if tc.Function != nil {
-					fmt.Fprintf(&sb, "      Arguments: %s\n", utils.Truncate(tc.Function.Arguments, 200))
+				args := tc.Arguments
+				if len(args) == 0 && tc.Function != nil {
+					args = tc.Function.Arguments
+				}
+				if len(args) > 0 {
+					argsJSON, _ := json.Marshal(args)
+					fmt.Fprintf(&sb, "      Arguments: %s\n", utils.Truncate(string(argsJSON), 200))
 				}
 			}
 		}
@@ -3397,7 +3402,7 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 		fmt.Fprintf(&sb, "  [%d] Type: %s, Name: %s\n", i, tool.Type, tool.Function.Name)
 		fmt.Fprintf(&sb, "      Description: %s\n", tool.Function.Description)
 		if len(tool.Function.Parameters) > 0 {
-			fmt.Fprintf(&sb, "      Parameters: %s\n", utils.Truncate(fmt.Sprintf("%v", tool.Function.Parameters), 200))
+			fmt.Fprintf(&sb, "      Parameters: %s\n", utils.Truncate(string(tool.Function.Parameters), 200))
 		}
 	}
 	sb.WriteString("]")
