@@ -242,23 +242,25 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	// we never break HTML tags/entities by splitting converted output.
 	mdChunks := channels.SplitMessage(msg.Content, 4000)
 
-	for _, chunk := range mdChunks {
+	// Use a queue so that chunks whose HTML expansion still exceeds
+	// Telegram's 4096-char limit can be re-split until every chunk fits.
+	queue := append([]string{}, mdChunks...)
+	for len(queue) > 0 {
+		chunk := queue[0]
+		queue = queue[1:]
+
 		htmlContent := markdownToTelegramHTML(chunk)
 
-		// If HTML expansion pushes the chunk over Telegram's 4096-char limit,
-		// re-split the markdown chunk with a proportionally smaller maxLen.
 		if len([]rune(htmlContent)) > 4096 {
 			ratio := float64(len([]rune(chunk))) / float64(len([]rune(htmlContent)))
 			smallerLen := int(float64(4096) * ratio * 0.95) // 5% safety margin
 			if smallerLen < 100 {
 				smallerLen = 100
 			}
+			// Push sub-chunks back to the front of the queue for
+			// re-validation instead of sending them blindly.
 			subChunks := channels.SplitMessage(chunk, smallerLen)
-			for _, sub := range subChunks {
-				if err := c.sendHTMLChunk(ctx, chatID, markdownToTelegramHTML(sub), sub); err != nil {
-					return err
-				}
-			}
+			queue = append(subChunks, queue...)
 			continue
 		}
 
