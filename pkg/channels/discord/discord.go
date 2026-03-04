@@ -29,6 +29,7 @@ const (
 type DiscordChannel struct {
 	*channels.BaseChannel
 	session    *discordgo.Session
+	config     *config.Config
 	ctx        context.Context
 	cancel     context.CancelFunc
 	typingMu   sync.Mutex
@@ -57,6 +58,7 @@ func NewDiscordChannel(cfg *config.Config, bus *bus.MessageBus) (*DiscordChannel
 	return &DiscordChannel{
 		BaseChannel: base,
 		session:     session,
+		config:      cfg,
 		ctx:         context.Background(),
 		typingStop:  make(map[string]chan struct{}),
 		commands:    commands,
@@ -492,7 +494,7 @@ func (c *DiscordChannel) StartTyping(ctx context.Context, chatID string) (func()
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "discord",
-		ProxyURL:     c.config.Proxy,
+		ProxyURL:     c.config.Channels.Discord.Proxy,
 	})
 }
 
