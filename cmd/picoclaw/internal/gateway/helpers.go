@@ -203,6 +203,7 @@ func gatewayCmd(debug bool) error {
 	// since the original ctx is already canceled.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
+	channelManager.StopAll(shutdownCtx)
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
