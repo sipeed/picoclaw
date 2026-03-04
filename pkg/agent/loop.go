@@ -106,6 +106,7 @@ type AgentLoop struct {
 	onHeartbeatThreadUpdate func(int)
 	orchBroadcaster         *orch.Broadcaster  // nil when --orchestration not set
 	orchReporter            orch.AgentReporter // always non-nil (Noop when disabled)
+	done                    chan struct{}       // closed by Close() to stop background goroutines
 }
 
 // processOptions configures how a message is processed
@@ -178,10 +179,13 @@ func NewAgentLoop(
 		sessions:        NewSessionTracker(),
 		orchBroadcaster: orchBroadcaster,
 		orchReporter:    orchReporter,
+		done:            make(chan struct{}),
 	}
 
 	// Register shared tools to all agents (needs al for reporter injection).
 	registerSharedTools(cfg, msgBus, registry, provider, al)
+
+	go al.gcLoop()
 
 	return al
 }
@@ -513,6 +517,12 @@ func (al *AgentLoop) Stop() {
 // Close releases resources held by the loop (e.g. flushes write-behind stats
 // and dirty session data). Should be called during graceful shutdown.
 func (al *AgentLoop) Close() {
+	select {
+	case <-al.done:
+		// already closed
+	default:
+		close(al.done)
+	}
 	if al.stats != nil {
 		al.stats.Close()
 	}
@@ -521,6 +531,35 @@ func (al *AgentLoop) Close() {
 			agent.Sessions.Close()
 		}
 	}
+}
+
+// gcLoop periodically cleans up stale sessionLock entries.
+func (al *AgentLoop) gcLoop() {
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			al.gcSessionLocks()
+		case <-al.done:
+			return
+		}
+	}
+}
+
+// gcSessionLocks removes unlocked (idle) sessionSemaphore entries from the map.
+func (al *AgentLoop) gcSessionLocks() {
+	al.sessionLocks.Range(func(key, val any) bool {
+		sem := val.(*sessionSemaphore)
+		select {
+		case <-sem.ch:
+			// Was unlocked — safe to remove
+			al.sessionLocks.Delete(key)
+		default:
+			// Currently locked — in use, keep
+		}
+		return true
+	})
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
@@ -3441,9 +3480,13 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	}
 
 	if finalSummary != "" {
-		agent.Sessions.SetSummary(sessionKey, finalSummary)
-		agent.Sessions.TruncateHistory(sessionKey, 4)
-		agent.Sessions.Save(sessionKey)
+		if err := agent.Sessions.CompactOldTurns(sessionKey, 4, finalSummary); err != nil {
+			logger.ErrorCF("agent", "CompactOldTurns failed, falling back",
+				map[string]any{"error": err.Error()})
+			agent.Sessions.SetSummary(sessionKey, finalSummary)
+			agent.Sessions.TruncateHistory(sessionKey, 4)
+			agent.Sessions.Save(sessionKey)
+		}
 	}
 }
 

@@ -26,16 +26,18 @@ Lint: `golangci-lint run`
 - **Sandbox/Spawn**: `pkg/tools/sandbox.go`, `pkg/tools/spawn.go` 実装済み。
 - **AgentReporter**: `orch.AgentReporter` / `orch.Noop` / `orch.Broadcaster` で統一。main/heartbeat/subagent 全セッションが同一 Broadcaster に発火。Mini App は `agentLoop.GetOrchBroadcaster()` → `handler.SetOrchBroadcaster()` で受信。
 
-## Session DAG (Phase 0–1 実装済み)
+## Session DAG (Phase 0–2 実装済み)
 
 - **SQLite SessionStore**: `pkg/session/sqlite.go` — `modernc.org/sqlite` (CGO不要)、WAL モード、`sessions` + `turns` テーブル
 - **SessionStore interface**: `pkg/session/store.go` — Create/Get/List/Append/Turns/Compact/Fork/Prune 等15メソッド
 - **LegacyAdapter**: `pkg/session/legacy_adapter.go` — SessionStore をラップし SessionManager と同一 API を提供。`Store()` / `AdvanceStored()` で直接 DAG 操作も可能
+- **CompactOldTurns**: `LegacyAdapter.CompactOldTurns(key, keepLast, summary)` — flush → turn 単位で cut point 算出 → SQLite Compact → キャッシュ更新。`summarizeSession()` から呼び出し (fallback 付き)
+- **SessionGraph**: `pkg/session/graph.go` — `SessionGraph` + `BeginTurn()` / `TurnWriter`。`LegacyAdapter.Graph()` で取得。将来の段階移行準備
 - **JSON → SQLite migration**: `pkg/session/migrate.go` — 起動時に `sessions/*.json` を検出 → SQLite import → `.json.migrated` にリネーム
 - **配線**: `pkg/agent/instance.go` の `Sessions` 型が `*LegacyAdapter` に変更。`sessions.db` を workspace 直下に生成
-- **SessionRecorder**: `pkg/tools/session_recorder.go` (interface) + `pkg/agent/session_recorder.go` (impl) — SubagentManager から Fork/Turn/Completion/Report を記録。循環依存回避のためインターフェースは pkg/tools 側
-- **Fork/Report フロー**: `SubagentManager.Spawn()` で Fork 記録、`runTask()` で Turn + Completion 記録、`processSystemMessage()` で TurnReport を直接 store に書き込み + `AdvanceStored` で二重書き込み防止
-- **Phase 2以降**: SessionGraph 直接呼び出し、Compaction、Mini App 可視化 → `todo/TASKS-3.md` 参照
+- **SessionRecorder**: `pkg/tools/session_recorder.go` (interface) + `pkg/agent/session_recorder.go` (impl) — SubagentManager から Fork/Turn/Completion/Report を記録
+- **Prune**: 起動時 `store.Prune(7d)` + `flushLoop` 内 6h 定期 prune。`AgentLoop.gcLoop` で 30分毎に idle `sessionLocks` を GC
+- **Phase 3以降**: UI/CLI — Mini App セッショングラフ可視化、`/session` コマンド → `todo/TASKS-3.md` 参照
 
 ## コードの匂い — チェックリスト
 
