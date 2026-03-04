@@ -159,20 +159,33 @@ func (fc *FallbackChain) Execute(
 			return nil, context.Canceled
 		}
 
-		// Classify the error.
-		failErr := ClassifyError(err, candidate.Provider, candidate.Model)
+        // Classify the error after context check
+        failErr := ClassifyError(err, candidate.Provider, candidate.Model)
+        if failErr == nil {
+                // Generate request ID for tracking
+                reqID, genErr := generateRequestID()
+                errWithReqID := &FailoverError{
+                        Reason:    FailoverUnknown, // Will treat as unclassifiable as before
+                        Provider:  candidate.Provider,
+                        Model:     candidate.Model,
+                        Wrapped:   err,
+                        Timestamp: time.Now(),
+                }
+                if genErr == nil && reqID != "" {
+                        errWithReqID = errWithReqID.WithRequestID(reqID)
+                }
+                
+		// Unclassifiable error: do not fallback, return immediately.
+                result.Attempts = append(result.Attempts, FallbackAttempt{
+                        Provider: candidate.Provider,
+                        Model:    candidate.Model,
+                        Error:    errWithReqID,
+                        Duration: elapsed,
+                })
+                return nil, fmt.Errorf("fallback: unclassified error from %s/%s: %w",
+                        candidate.Provider, candidate.Model, errWithReqID)
+        }
 
-		if failErr == nil {
-			// Unclassifiable error: do not fallback, return immediately.
-			result.Attempts = append(result.Attempts, FallbackAttempt{
-				Provider: candidate.Provider,
-				Model:    candidate.Model,
-				Error:    err,
-				Duration: elapsed,
-			})
-			return nil, fmt.Errorf("fallback: unclassified error from %s/%s: %w",
-				candidate.Provider, candidate.Model, err)
-		}
 
 		// Non-retriable error: abort immediately.
 		if !failErr.IsRetriable() {
@@ -250,22 +263,31 @@ func (fc *FallbackChain) ExecuteImage(
 
 		// Image dimension/size errors are non-retriable.
 		errMsg := strings.ToLower(err.Error())
-		if IsImageDimensionError(errMsg) || IsImageSizeError(errMsg) {
-			result.Attempts = append(result.Attempts, FallbackAttempt{
-				Provider: candidate.Provider,
-				Model:    candidate.Model,
-				Error:    err,
-				Reason:   FailoverFormat,
-				Duration: elapsed,
-			})
-			return nil, &FailoverError{
-				Reason:   FailoverFormat,
-				Provider: candidate.Provider,
-				Model:    candidate.Model,
-				Wrapped:  err,
-			}
-		}
+	if IsImageDimensionError(errMsg) || IsImageSizeError(errMsg) {
+		reqID, _ := generateRequestID()
 
+	result.Attempts = append(result.Attempts, FallbackAttempt{
+		Provider: candidate.Provider,
+		Model:    candidate.Model,
+		Error:    err,
+		Reason:   FailoverFormat,
+		Duration: elapsed,
+	})
+			imageDimFailErr := &FailoverError{
+				Reason:      FailoverFormat,
+				Provider:    candidate.Provider,
+				Model:       candidate.Model,
+				Wrapped:     err,
+				Timestamp:   time.Now(),
+			}
+			if reqID != "" {
+				imageDimFailErr = imageDimFailErr.WithRequestID(reqID)
+			}
+
+			return nil, imageDimFailErr
+
+
+		}
 		// Any other error: record and try next.
 		result.Attempts = append(result.Attempts, FallbackAttempt{
 			Provider: candidate.Provider,

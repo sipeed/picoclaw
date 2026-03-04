@@ -3,7 +3,14 @@ package providers
 import (
 	"context"
 	"regexp"
+
+	"crypto/rand"
+	"math/big"
+
 	"strings"
+
+	"time"
+
 )
 
 // Common patterns in Go HTTP error messages
@@ -113,14 +120,14 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 		return nil
 	}
 
-	// Context deadline exceeded: treat as timeout, always fallback.
 	if err == context.DeadlineExceeded {
-		return &FailoverError{
-			Reason:   FailoverTimeout,
-			Provider: provider,
-			Model:    model,
-			Wrapped:  err,
-		}
+		reqID, _ := generateRequestID()
+		return (&FailoverError{
+			Reason:    FailoverTimeout,
+			Provider:  provider,
+			Model:     model,
+			Wrapped:   err,
+		}).SetTimestamp(time.Now()).WithRequestID(reqID)
 	}
 
 	msg := strings.ToLower(err.Error())
@@ -250,4 +257,19 @@ func parseDigits(s string) int {
 		}
 	}
 	return n
+}
+
+// generateRequestID creates a unique request ID for tracking API calls
+func generateRequestID() (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const length = 16
+	b := make([]byte, length)
+	for i := range b {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return "", err
+		}
+		b[i] = charset[n.Int64()]
+	}
+	return "req_" + string(b), nil
 }

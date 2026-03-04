@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -52,14 +53,21 @@ const (
 
 // FailoverError wraps an LLM provider error with classification metadata.
 type FailoverError struct {
-	Reason   FailoverReason
-	Provider string
-	Model    string
-	Status   int
-	Wrapped  error
+	Reason      FailoverReason
+	Provider    string
+	Model       string
+	Status      int
+	Wrapped     error
+	Timestamp   time.Time // Timestamp of when the error occurred
+	RequestID   string    // Request ID for tracking
+	Correlation string    // Correlation ID
 }
 
 func (e *FailoverError) Error() string {
+	if e.RequestID != "" {
+		return fmt.Sprintf("failover(%s): provider=%s model=%s status=%d req_id=%s correlation=%s timestamp=%s: %v",
+			e.Reason, e.Provider, e.Model, e.Status, e.RequestID, e.Correlation, e.Timestamp.Format(time.RFC3339), e.Wrapped)
+	}
 	return fmt.Sprintf("failover(%s): provider=%s model=%s status=%d: %v",
 		e.Reason, e.Provider, e.Model, e.Status, e.Wrapped)
 }
@@ -72,6 +80,24 @@ func (e *FailoverError) Unwrap() error {
 // Non-retriable: Format errors (bad request structure, image dimension/size).
 func (e *FailoverError) IsRetriable() bool {
 	return e.Reason != FailoverFormat
+}
+
+// SetTimestamp stores when the error occurred
+func (e *FailoverError) SetTimestamp(t time.Time) *FailoverError {
+	e.Timestamp = t
+	return e
+}
+
+// WithRequestID sets the request ID for this error
+func (e *FailoverError) WithRequestID(id string) *FailoverError {
+	e.RequestID = id
+	return e
+}
+
+// WithCorrelation sets the correlation identifier for this error
+func (e *FailoverError) WithCorrelation(correlation string) *FailoverError {
+	e.Correlation = correlation
+	return e
 }
 
 // ModelConfig holds primary model and fallback list.
