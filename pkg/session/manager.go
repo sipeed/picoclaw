@@ -12,56 +12,76 @@ import (
 )
 
 type Session struct {
-	Key      string              `json:"key"`
+	Key string `json:"key"`
+
 	Messages []providers.Message `json:"messages"`
-	Summary  string              `json:"summary,omitempty"`
-	Created  time.Time           `json:"created"`
-	Updated  time.Time           `json:"updated"`
+
+	Summary string `json:"summary,omitempty"`
+
+	Created time.Time `json:"created"`
+
+	Updated time.Time `json:"updated"`
 }
 
 type SessionManager struct {
 	sessions map[string]*Session
-	mu       sync.RWMutex
-	storage  string
+
+	mu sync.RWMutex
+
+	storage string
 
 	// Write-behind: dirty keys are flushed periodically to reduce disk writes.
-	dirtyMu   sync.Mutex
+
+	dirtyMu sync.Mutex
+
 	dirtyKeys map[string]bool
-	done      chan struct{}
+
+	done chan struct{}
 }
 
 func NewSessionManager(storage string) *SessionManager {
 	sm := &SessionManager{
-		sessions:  make(map[string]*Session),
-		storage:   storage,
+		sessions: make(map[string]*Session),
+
+		storage: storage,
+
 		dirtyKeys: make(map[string]bool),
-		done:      make(chan struct{}),
+
+		done: make(chan struct{}),
 	}
 
 	if storage != "" {
 		os.MkdirAll(storage, 0o755)
+
 		sm.loadSessions()
 	}
 
 	go sm.flushLoop()
+
 	return sm
 }
 
 func (sm *SessionManager) GetOrCreate(key string) *Session {
 	sm.mu.Lock()
+
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[key]
+
 	if ok {
 		return session
 	}
 
 	session = &Session{
-		Key:      key,
+		Key: key,
+
 		Messages: []providers.Message{},
-		Created:  time.Now(),
-		Updated:  time.Now(),
+
+		Created: time.Now(),
+
+		Updated: time.Now(),
 	}
+
 	sm.sessions[key] = session
 
 	return session
@@ -69,79 +89,102 @@ func (sm *SessionManager) GetOrCreate(key string) *Session {
 
 func (sm *SessionManager) AddMessage(sessionKey, role, content string) {
 	sm.AddFullMessage(sessionKey, providers.Message{
-		Role:    role,
+		Role: role,
+
 		Content: content,
 	})
 }
 
 // AddFullMessage adds a complete message with tool calls and tool call ID to the session.
+
 // This is used to save the full conversation flow including tool calls and tool results.
+
 func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Message) {
 	sm.mu.Lock()
+
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[sessionKey]
+
 	if !ok {
 		session = &Session{
-			Key:      sessionKey,
+			Key: sessionKey,
+
 			Messages: []providers.Message{},
-			Created:  time.Now(),
+
+			Created: time.Now(),
 		}
+
 		sm.sessions[sessionKey] = session
 	}
 
 	session.Messages = append(session.Messages, msg)
+
 	session.Updated = time.Now()
 }
 
 func (sm *SessionManager) GetHistory(key string) []providers.Message {
 	sm.mu.RLock()
+
 	defer sm.mu.RUnlock()
 
 	session, ok := sm.sessions[key]
+
 	if !ok {
 		return []providers.Message{}
 	}
 
 	history := make([]providers.Message, len(session.Messages))
+
 	copy(history, session.Messages)
+
 	return history
 }
 
 func (sm *SessionManager) GetSummary(key string) string {
 	sm.mu.RLock()
+
 	defer sm.mu.RUnlock()
 
 	session, ok := sm.sessions[key]
+
 	if !ok {
 		return ""
 	}
+
 	return session.Summary
 }
 
 func (sm *SessionManager) SetSummary(key string, summary string) {
 	sm.mu.Lock()
+
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[key]
+
 	if ok {
 		session.Summary = summary
+
 		session.Updated = time.Now()
 	}
 }
 
 func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	sm.mu.Lock()
+
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[key]
+
 	if !ok {
 		return
 	}
 
 	if keepLast <= 0 {
 		session.Messages = []providers.Message{}
+
 		session.Updated = time.Now()
+
 		return
 	}
 
@@ -150,14 +193,20 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	}
 
 	session.Messages = session.Messages[len(session.Messages)-keepLast:]
+
 	session.Updated = time.Now()
 }
 
 // sanitizeFilename converts a session key into a cross-platform safe filename.
+
 // Session keys use "channel:chatID" (e.g. "telegram:123456") but ':' is the
+
 // volume separator on Windows, so filepath.Base would misinterpret the key.
+
 // We replace it with '_'. The original key is preserved inside the JSON file,
+
 // so loadSessions still maps back to the right in-memory key.
+
 func sanitizeFilename(key string) string {
 	return strings.ReplaceAll(key, ":", "_")
 }
@@ -170,33 +219,47 @@ func (sm *SessionManager) Save(key string) error {
 	filename := sanitizeFilename(key)
 
 	// filepath.IsLocal rejects empty names, "..", absolute paths, and
+
 	// OS-reserved device names (NUL, COM1 … on Windows).
+
 	// The extra checks reject "." and any directory separators so that
+
 	// the session file is always written directly inside sm.storage.
+
 	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
 		return os.ErrInvalid
 	}
 
 	// Snapshot under read lock, then perform slow file I/O after unlock.
+
 	sm.mu.RLock()
+
 	stored, ok := sm.sessions[key]
+
 	if !ok {
 		sm.mu.RUnlock()
+
 		return nil
 	}
 
 	snapshot := Session{
-		Key:     stored.Key,
+		Key: stored.Key,
+
 		Summary: stored.Summary,
+
 		Created: stored.Created,
+
 		Updated: stored.Updated,
 	}
+
 	if len(stored.Messages) > 0 {
 		snapshot.Messages = make([]providers.Message, len(stored.Messages))
+
 		copy(snapshot.Messages, stored.Messages)
 	} else {
 		snapshot.Messages = []providers.Message{}
 	}
+
 	sm.mu.RUnlock()
 
 	data, err := json.MarshalIndent(snapshot, "", "  ")
@@ -205,13 +268,16 @@ func (sm *SessionManager) Save(key string) error {
 	}
 
 	sessionPath := filepath.Join(sm.storage, filename+".json")
+
 	tmpFile, err := os.CreateTemp(sm.storage, "session-*.tmp")
 	if err != nil {
 		return err
 	}
 
 	tmpPath := tmpFile.Name()
+
 	cleanup := true
+
 	defer func() {
 		if cleanup {
 			_ = os.Remove(tmpPath)
@@ -220,16 +286,22 @@ func (sm *SessionManager) Save(key string) error {
 
 	if _, err := tmpFile.Write(data); err != nil {
 		_ = tmpFile.Close()
+
 		return err
 	}
+
 	if err := tmpFile.Chmod(0o644); err != nil {
 		_ = tmpFile.Close()
+
 		return err
 	}
+
 	if err := tmpFile.Sync(); err != nil {
 		_ = tmpFile.Close()
+
 		return err
 	}
+
 	if err := tmpFile.Close(); err != nil {
 		return err
 	}
@@ -237,7 +309,9 @@ func (sm *SessionManager) Save(key string) error {
 	if err := os.Rename(tmpPath, sessionPath); err != nil {
 		return err
 	}
+
 	cleanup = false
+
 	return nil
 }
 
@@ -257,12 +331,14 @@ func (sm *SessionManager) loadSessions() error {
 		}
 
 		sessionPath := filepath.Join(sm.storage, file.Name())
+
 		data, err := os.ReadFile(sessionPath)
 		if err != nil {
 			continue
 		}
 
 		var session Session
+
 		if err := json.Unmarshal(data, &session); err != nil {
 			continue
 		}
@@ -274,57 +350,84 @@ func (sm *SessionManager) loadSessions() error {
 }
 
 // SanitizeHistory rebuilds session history to ensure valid tool-call ordering.
+
 // LLM APIs require that every assistant message with ToolCalls is immediately
+
 // followed by exactly the matching tool-result messages (role="tool"), with no
+
 // other messages in between. Violations can happen from session collisions or
+
 // mid-execution crashes.
+
 //
+
 // The function walks the full history and copies only well-formed groups:
+
 //   - user/system messages are always kept
+
 //   - assistant messages without tool calls are always kept
+
 //   - assistant messages WITH tool calls are kept only if the immediately
+
 //     following messages are the complete set of matching tool results
+
 //
+
 // Returns the sanitized history and the number of messages removed.
+
 func SanitizeHistory(history []providers.Message) ([]providers.Message, int) {
 	if len(history) == 0 {
 		return history, 0
 	}
 
 	result := make([]providers.Message, 0, len(history))
+
 	i := 0
 
 	for i < len(history) {
 		msg := history[i]
 
 		// Non-assistant messages or assistant without tool calls: keep
+
 		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
 			// Skip stray tool results not preceded by their assistant
+
 			if msg.Role == "tool" {
 				i++
+
 				continue
 			}
+
 			result = append(result, msg)
+
 			i++
+
 			continue
 		}
 
 		// Assistant with tool calls: validate the immediately following messages
+
 		expectedIDs := make(map[string]bool, len(msg.ToolCalls))
+
 		for _, tc := range msg.ToolCalls {
 			expectedIDs[tc.ID] = true
 		}
+
 		needed := len(expectedIDs)
 
 		// Peek ahead: the next `needed` messages must all be tool results with matching IDs
+
 		groupOK := true
+
 		if i+needed >= len(history) {
 			groupOK = false
 		} else {
 			for j := 0; j < needed; j++ {
 				next := history[i+1+j]
+
 				if next.Role != "tool" || !expectedIDs[next.ToolCallID] {
 					groupOK = false
+
 					break
 				}
 			}
@@ -332,14 +435,19 @@ func SanitizeHistory(history []providers.Message) ([]providers.Message, int) {
 
 		if groupOK {
 			// Copy assistant + all tool results
+
 			result = append(result, msg)
+
 			for j := 0; j < needed; j++ {
 				result = append(result, history[i+1+j])
 			}
+
 			i += 1 + needed
 		} else {
 			// Skip the broken assistant message; tool results will be skipped
+
 			// individually when encountered (the "stray tool result" check above)
+
 			i++
 		}
 	}
@@ -348,37 +456,54 @@ func SanitizeHistory(history []providers.Message) ([]providers.Message, int) {
 }
 
 // SetHistory updates the messages of a session.
+
 func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 	sm.mu.Lock()
+
 	defer sm.mu.Unlock()
 
 	session, ok := sm.sessions[key]
+
 	if ok {
 		// Create a deep copy to strictly isolate internal state
+
 		// from the caller's slice.
+
 		msgs := make([]providers.Message, len(history))
+
 		copy(msgs, history)
+
 		session.Messages = msgs
+
 		session.Updated = time.Now()
 	}
 }
 
 // MarkDirty marks a session key for deferred persistence.
+
 // The session will be written to disk on the next periodic flush or on Close().
+
 func (sm *SessionManager) MarkDirty(key string) {
 	sm.dirtyMu.Lock()
+
 	sm.dirtyKeys[key] = true
+
 	sm.dirtyMu.Unlock()
 }
 
 // FlushDirty writes all dirty sessions to disk.
+
 func (sm *SessionManager) FlushDirty() {
 	sm.dirtyMu.Lock()
+
 	keys := make([]string, 0, len(sm.dirtyKeys))
+
 	for k := range sm.dirtyKeys {
 		keys = append(keys, k)
 	}
+
 	sm.dirtyKeys = make(map[string]bool)
+
 	sm.dirtyMu.Unlock()
 
 	for _, k := range keys {
@@ -387,24 +512,34 @@ func (sm *SessionManager) FlushDirty() {
 }
 
 // Close stops the background flush goroutine and writes all dirty sessions.
+
 func (sm *SessionManager) Close() {
 	select {
 	case <-sm.done:
+
 		return // already closed
+
 	default:
 	}
+
 	close(sm.done)
+
 	sm.FlushDirty()
 }
 
 func (sm *SessionManager) flushLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
+
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:
+
 			sm.FlushDirty()
+
 		case <-sm.done:
+
 			return
 		}
 	}
