@@ -252,16 +252,12 @@ func (sm *SubagentManager) ListTasks() []*SubagentTask {
 // Unlike SpawnTool which runs tasks asynchronously, SubagentTool waits for completion
 // and returns the result directly in the ToolResult.
 type SubagentTool struct {
-	manager       *SubagentManager
-	originChannel string
-	originChatID  string
+	manager *SubagentManager
 }
 
 func NewSubagentTool(manager *SubagentManager) *SubagentTool {
 	return &SubagentTool{
-		manager:       manager,
-		originChannel: "cli",
-		originChatID:  "direct",
+		manager: manager,
 	}
 }
 
@@ -288,11 +284,6 @@ func (t *SubagentTool) Parameters() map[string]any {
 		},
 		"required": []string{"task"},
 	}
-}
-
-func (t *SubagentTool) SetContext(channel, chatID string) {
-	t.originChannel = channel
-	t.originChatID = chatID
 }
 
 func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
@@ -347,7 +338,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		Tools:         tools,
 		MaxIterations: maxIter,
 		LLMOptions:    llmOptions,
-	}, messages, t.originChannel, t.originChatID)
+	}, messages, ToolChannel(ctx), ToolChatID(ctx))
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)
 	}
