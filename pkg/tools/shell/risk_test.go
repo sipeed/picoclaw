@@ -97,23 +97,50 @@ func TestClassifyCommand_ArgumentModifiers(t *testing.T) {
 
 func TestClassifyCommand_Overrides(t *testing.T) {
 	overrides := map[string]string{
-		"rm":   "low",
+		"rm":   "medium",
 		"curl": "critical",
 	}
 
+	// Override sets the BASE level, but modifiers still elevate.
+	// rm is overridden to medium, but rm -rf triggers the built-in
+	// modifier that elevates to critical.
 	got := ClassifyCommand([]string{"rm", "-rf", "/"}, overrides)
-	if got != RiskLow {
-		t.Errorf("override rm to low: got %s", got)
+	if got != RiskCritical {
+		t.Errorf("override rm to medium + rm -rf modifier should be critical: got %s", got)
 	}
 
+	// Plain rm (no -rf) stays at the overridden level.
+	got = ClassifyCommand([]string{"rm", "file.txt"}, overrides)
+	if got != RiskMedium {
+		t.Errorf("override rm to medium (no modifier match): got %s", got)
+	}
+
+	// Override elevates curl to critical unconditionally.
 	got = ClassifyCommand([]string{"curl", "https://example.com"}, overrides)
 	if got != RiskCritical {
 		t.Errorf("override curl to critical: got %s", got)
 	}
 
+	// No override for ls — uses table as before.
 	got = ClassifyCommand([]string{"ls"}, overrides)
 	if got != RiskLow {
 		t.Errorf("ls (no override) should be low: got %s", got)
+	}
+}
+
+func TestClassifyCommand_OverrideLowers_ModifierStillElevates(t *testing.T) {
+	// Scenario: user sets rm to low ("I want rm allowed"), but rm -rf
+	// still hits the built-in modifier → critical.
+	overrides := map[string]string{"rm": "low"}
+
+	got := ClassifyCommand([]string{"rm", "file.txt"}, overrides)
+	if got != RiskLow {
+		t.Errorf("plain rm with override=low should be low: got %s", got)
+	}
+
+	got = ClassifyCommand([]string{"rm", "-rf", "/"}, overrides)
+	if got != RiskCritical {
+		t.Errorf("rm -rf should still be critical despite override=low: got %s", got)
 	}
 }
 
@@ -133,6 +160,25 @@ func TestClassifyCommand_FullPath(t *testing.T) {
 	got = ClassifyCommand([]string{"/bin/ls", "-la"}, nil)
 	if got != RiskLow {
 		t.Errorf("/bin/ls should be low, got %s", got)
+	}
+}
+
+func TestClassifyCommand_BackslashPath(t *testing.T) {
+	// Forward-slash paths at various depths.
+	got := ClassifyCommand([]string{"/usr/sbin/shutdown", "-h"}, nil)
+	if got != RiskCritical {
+		t.Errorf("/usr/sbin/shutdown should be critical, got %s", got)
+	}
+
+	got = ClassifyCommand([]string{"/usr/local/bin/sudo", "ls"}, nil)
+	if got != RiskCritical {
+		t.Errorf("/usr/local/bin/sudo should be critical, got %s", got)
+	}
+
+	// Bare command still works after the filepath.Base change.
+	got = ClassifyCommand([]string{"dd", "if=/dev/zero"}, nil)
+	if got != RiskCritical {
+		t.Errorf("bare dd should be critical, got %s", got)
 	}
 }
 
@@ -283,7 +329,8 @@ func TestClassifyCommand_ExtraArgModifiers(t *testing.T) {
 
 func TestClassifyCommand_ExtraArgModifiers_NoOverrideBuiltIn(t *testing.T) {
 	// Extra modifier tries to set "rm -rf" to medium, but built-in already
-	// elevates to critical and built-in is checked first.
+	// elevates to critical. Since we take the max across all matching
+	// modifiers, the built-in critical wins.
 	extra := map[string][]ArgModifier{
 		"rm": {
 			{Args: []string{"-r", "-f"}, Level: RiskMedium},
@@ -293,5 +340,55 @@ func TestClassifyCommand_ExtraArgModifiers_NoOverrideBuiltIn(t *testing.T) {
 	got := ClassifyCommand([]string{"rm", "-rf", "/"}, nil, extra)
 	if got != RiskCritical {
 		t.Errorf("built-in should win over extra for rm -rf: got %s", got)
+	}
+}
+
+func TestClassifyCommand_ShellWrappers(t *testing.T) {
+	// Shell wrappers must be critical to prevent classifier bypass.
+	shells := []string{"sh", "bash", "zsh", "dash", "fish", "ksh", "csh", "tcsh", "powershell", "pwsh", "cmd", "cmd.exe"}
+	for _, sh := range shells {
+		t.Run(sh, func(t *testing.T) {
+			got := ClassifyCommand([]string{sh, "-c", "echo hi"}, nil)
+			if got != RiskCritical {
+				t.Errorf("%s should be critical, got %s", sh, got)
+			}
+		})
+	}
+}
+
+func TestClassifyCommand_ShellWrapperFullPath(t *testing.T) {
+	// /bin/sh, /usr/bin/bash etc. should also be caught via baseCommand.
+	got := ClassifyCommand([]string{"/bin/sh", "-c", "rm -rf /"}, nil)
+	if got != RiskCritical {
+		t.Errorf("/bin/sh should be critical, got %s", got)
+	}
+
+	got = ClassifyCommand([]string{"/usr/bin/bash", "-c", "sudo rm -rf /"}, nil)
+	if got != RiskCritical {
+		t.Errorf("/usr/bin/bash should be critical, got %s", got)
+	}
+}
+
+func TestApplyModifiers_HighestMatchWins(t *testing.T) {
+	// When multiple modifiers match, the highest level should win.
+	// Scenario: git push matches both ["push"] → High and ["push", "-f"] → Critical
+	args := normalizeFlags([]string{"push", "-f", "origin"})
+	result := applyModifiers(args, "git", RiskMedium, argumentModifiers)
+	if result != RiskCritical {
+		t.Errorf("git push -f should resolve to critical (highest match), got %s", result)
+	}
+
+	// Only ["push"] matches → High
+	args2 := normalizeFlags([]string{"push", "origin"})
+	result2 := applyModifiers(args2, "git", RiskMedium, argumentModifiers)
+	if result2 != RiskHigh {
+		t.Errorf("git push (no -f) should resolve to high, got %s", result2)
+	}
+
+	// No modifier matches → base level unchanged
+	args3 := normalizeFlags([]string{"status"})
+	result3 := applyModifiers(args3, "git", RiskMedium, argumentModifiers)
+	if result3 != RiskMedium {
+		t.Errorf("git status should stay medium, got %s", result3)
 	}
 }

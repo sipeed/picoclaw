@@ -45,10 +45,17 @@ func SandboxedOpenHandler(workspaceDir string) interp.OpenHandlerFunc {
 			return os.OpenFile(path, flag, perm)
 		}
 
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			return nil, fmt.Errorf("sandbox: cannot resolve path %q: %w", path, err)
+		// Resolve relative paths against the interpreter's working directory,
+		// not the process CWD. The interpreter tracks its own CWD via
+		// interp.Dir() and internal cd commands without calling os.Chdir().
+		var absPath string
+		if filepath.IsAbs(path) {
+			absPath = path
+		} else {
+			hctx := interp.HandlerCtx(ctx)
+			absPath = filepath.Join(hctx.Dir, path)
 		}
+		// filepath.Join already returns a clean path; no extra Abs needed.
 
 		// Resolve symlinks to prevent escape.
 		// If the file doesn't exist yet, resolve the parent.

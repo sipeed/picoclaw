@@ -71,11 +71,6 @@ func NewExecToolWithConfig(workingDir string, restrict bool, cfg *config.Config)
 }
 
 func warnDeprecatedExecConfig(cfg config.ExecConfig) {
-	if !cfg.EnableDenyPatterns {
-		fmt.Println("Warning: 'enable_deny_patterns' is deprecated and ignored. " +
-			"The new shell tool uses AST-based risk classification. " +
-			"Use 'risk_threshold' to control command blocking.")
-	}
 	if len(cfg.CustomDenyPatterns) > 0 {
 		fmt.Println("Warning: 'custom_deny_patterns' is deprecated and ignored. " +
 			"Use 'risk_overrides' to adjust per-command risk levels.")

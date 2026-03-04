@@ -90,7 +90,11 @@
    | `high`     | Block          | Destructive, system-modifying (rm, chmod, git push)     |
    | `critical` | Block          | Privilege escalation, always dangerous (sudo, dd, eval) |
 
-5. The risk classifier MUST apply argument-aware modifiers (e.g., `curl` is `medium`, but `curl -X POST` is `high`; `git` is `medium`, but `git push` is `high`).
+   Shell interpreters (`sh`, `bash`, `zsh`, `dash`, `fish`, `ksh`, `csh`, `tcsh`, `powershell`, `pwsh`, `cmd`) MUST be classified as `critical` because they can execute arbitrary nested commands that bypass the risk classifier entirely (e.g., `sh -c 'rm -rf /'`).
+
+5. The risk classifier MUST apply argument-aware modifiers (e.g., `curl` is `medium`, but `curl -X POST` is `high`; `git` is `medium`, but `git push` is `high`). All matching modifiers MUST be scanned and the highest level that exceeds the base level is applied (highest-match-wins, not first-match-wins).
+
+5a. `risk_overrides` sets the **base level** for a command (replacing the built-in table entry). Argument modifiers MUST still be applied on top of the overridden base level and can elevate it further. This means `risk_overrides: {"rm": "medium"}` allows plain `rm` but `rm -rf` is still elevated to `critical` by the built-in modifier.
 
 6. When a command is blocked, the `ToolResult` MUST include:
    - Risk level of the command.

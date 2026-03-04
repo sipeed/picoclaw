@@ -50,13 +50,13 @@ AST-based risk classification, environment sanitization, and file-access sandbox
 
 ### Configuration
 
-| Config           | Type   | Default    | Description                                                             |
-| ---------------- | ------ | ---------- | ----------------------------------------------------------------------- |
-| `risk_threshold` | string | `"medium"` | Maximum allowed risk level: `"low"`, `"medium"`, `"high"`, `"critical"` |
-| `risk_overrides` | object | `{}`       | Per-command risk level overrides (command name → level)                 |
-| `arg_modifiers`  | object | `{}`       | Per-command argument patterns that adjust risk level                    |
-| `env_allowlist`  | array  | `[]`       | Extra environment variables to expose (extends built-in defaults)       |
-| `env_set`        | object | `{}`       | Explicit `VAR=value` pairs injected into every command                  |
+| Config           | Type   | Default    | Description                                                                     |
+| ---------------- | ------ | ---------- | ------------------------------------------------------------------------------- |
+| `risk_threshold` | string | `"medium"` | Maximum allowed risk level: `"low"`, `"medium"`, `"high"`, `"critical"`         |
+| `risk_overrides` | object | `{}`       | Per-command base risk level (command name → level); modifiers can still elevate |
+| `arg_modifiers`  | object | `{}`       | Per-command argument patterns that adjust risk level                            |
+| `env_allowlist`  | array  | `[]`       | Extra environment variables to expose (extends built-in defaults)               |
+| `env_set`        | object | `{}`       | Explicit `VAR=value` pairs injected into every command                          |
 
 ### Risk Classification
 
@@ -90,6 +90,24 @@ must all be present (order-independent) and the resulting level:
 ```
 
 The **highest matching** modifier wins (built-in and custom are merged).
+
+#### Precedence
+
+The final risk level is computed as:
+
+1. **Base level**: `risk_overrides` entry if present, else built-in table, else `medium`.
+2. **Modifiers**: All matching argument modifiers (built-in + custom) are scanned.
+   The highest level that exceeds the base is applied. Modifiers can only elevate,
+   never lower.
+
+This means `"risk_overrides": {"rm": "medium"}` allows plain `rm` at the `medium`
+threshold, but `rm -rf` is still elevated to `critical` by the built-in modifier.
+
+#### Shell wrappers
+
+Shell interpreters (`sh`, `bash`, `zsh`, `dash`, `fish`, `ksh`, `csh`, `tcsh`,
+`powershell`, `pwsh`, `cmd`) are classified as `critical` because they can execute
+arbitrary nested commands that bypass the risk classifier (e.g., `sh -c 'rm -rf /'`).
 
 ### Environment Sanitization
 

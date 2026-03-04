@@ -1,6 +1,9 @@
 package shell
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 // RiskLevel represents the potential danger of a shell command.
 type RiskLevel int
@@ -203,6 +206,21 @@ var commandRiskTable = map[string]RiskLevel{
 	".":        RiskCritical,
 	"format":   RiskCritical,
 	"diskpart": RiskCritical,
+
+	// Critical — shell wrappers can execute arbitrary nested commands,
+	// bypassing the risk classifier entirely (e.g. sh -c 'rm -rf /').
+	"sh":         RiskCritical,
+	"bash":       RiskCritical,
+	"zsh":        RiskCritical,
+	"dash":       RiskCritical,
+	"fish":       RiskCritical,
+	"csh":        RiskCritical,
+	"tcsh":       RiskCritical,
+	"ksh":        RiskCritical,
+	"powershell": RiskCritical,
+	"pwsh":       RiskCritical,
+	"cmd":        RiskCritical,
+	"cmd.exe":    RiskCritical,
 }
 
 // ArgModifier describes a condition that elevates a command's risk level.
@@ -214,7 +232,7 @@ type ArgModifier struct {
 }
 
 // argumentModifiers maps command names to their argument-aware risk adjustments.
-// Checked in order; first match wins.
+// All matching modifiers are scanned; the highest level wins.
 //
 // Patterns use individual flags (e.g., "-r", "-f") rather than combined forms
 // ("-rf") because normalizeFlags splits combined flags before matching. This
@@ -291,9 +309,17 @@ var argumentModifiers = map[string][]ArgModifier{
 
 // ClassifyCommand determines the risk level of a resolved command.
 // args[0] is the command name (basename), args[1:] are the arguments.
-// overrides allows per-command level overrides from config.
-// extraModifiers are checked after built-in argumentModifiers.
-// The highest matching level across all sources wins.
+//
+// Precedence (highest wins):
+//  1. Argument modifiers (built-in, then user-supplied extraModifiers) —
+//     all matching modifiers are scanned; the maximum level is kept.
+//  2. risk_overrides from config — sets the base level for the command,
+//     replacing the built-in table entry. Modifiers can still elevate above it.
+//  3. Built-in commandRiskTable — default base level per command.
+//  4. Commands not in any table default to RiskMedium.
+//
+// This means risk_overrides: {"rm": "medium"} allows plain `rm` but
+// `rm -rf` is still elevated to critical by the built-in modifier.
 func ClassifyCommand(args []string, overrides map[string]string, extraModifiers ...map[string][]ArgModifier) RiskLevel {
 	if len(args) == 0 {
 		return RiskMedium
@@ -301,60 +327,59 @@ func ClassifyCommand(args []string, overrides map[string]string, extraModifiers 
 
 	cmdName := baseCommand(args[0])
 
-	if overrides != nil {
-		if levelStr, ok := overrides[cmdName]; ok {
-			level, err := ParseRiskLevel(levelStr)
-			if err == nil {
-				return level
-			}
-			// Invalid risk level in override: fall through to default classification.
-			// The parse error is descriptive, but we can't log from here without
-			// injecting a logger. Config-time validation catches user errors.
-		}
-	}
-
+	// Determine base level: override > table > medium default.
 	level, known := commandRiskTable[cmdName]
 	if !known {
 		level = RiskMedium
+	}
+	if overrides != nil {
+		if levelStr, ok := overrides[cmdName]; ok {
+			parsed, err := ParseRiskLevel(levelStr)
+			if err == nil {
+				level = parsed
+			}
+			// Invalid risk level in override: keep table/default level.
+			// Config-time validation catches user errors.
+		}
 	}
 
 	// Normalize args: expand combined short flags like -rf → -r, -f
 	// so that modifiers match regardless of how flags were grouped or ordered.
 	normalizedArgs := normalizeFlags(args[1:])
 
-	// Check built-in modifiers, then user-supplied. Keep the highest match.
-	if elevated, ok := applyModifiers(normalizedArgs, cmdName, level, argumentModifiers); ok {
-		level = elevated
-	}
+	// Apply built-in modifiers, then user-supplied. Keep the highest match
+	// across all sources. Modifiers can only elevate, never lower.
+	level = applyModifiers(normalizedArgs, cmdName, level, argumentModifiers)
 	for _, extra := range extraModifiers {
 		if extra == nil {
 			continue
 		}
-		if elevated, ok := applyModifiers(normalizedArgs, cmdName, level, extra); ok {
-			level = elevated
-		}
+		level = applyModifiers(normalizedArgs, cmdName, level, extra)
 	}
 
 	return level
 }
 
-// applyModifiers checks whether any modifier for cmdName matches the
-// normalised args and would elevate the risk. Returns (newLevel, true)
-// on first match, or (0, false) if nothing matched.
+// applyModifiers scans all modifiers for cmdName, matches them against
+// normalizedArgs, and returns the highest level that exceeds baseLevel.
+// If no modifier elevates, returns baseLevel unchanged.
 func applyModifiers(
 	normalizedArgs []string,
 	cmdName string,
 	baseLevel RiskLevel,
 	mods map[string][]ArgModifier,
-) (RiskLevel, bool) {
-	if entries, ok := mods[cmdName]; ok {
-		for _, mod := range entries {
-			if matchArgs(normalizedArgs, mod.Args) && mod.Level > baseLevel {
-				return mod.Level, true
-			}
+) RiskLevel {
+	entries, ok := mods[cmdName]
+	if !ok {
+		return baseLevel
+	}
+	result := baseLevel
+	for _, mod := range entries {
+		if matchArgs(normalizedArgs, mod.Args) && mod.Level > result {
+			result = mod.Level
 		}
 	}
-	return 0, false
+	return result
 }
 
 // IsAllowed returns true if the given risk level is at or below the threshold.
@@ -388,13 +413,10 @@ func BlockedCommandError(args []string, level, threshold RiskLevel, reason strin
 }
 
 // baseCommand extracts the basename from a command path.
+// Uses filepath.Base so both forward slashes and Windows backslashes
+// are handled correctly.
 func baseCommand(cmd string) string {
-	for i := len(cmd) - 1; i >= 0; i-- {
-		if cmd[i] == '/' {
-			return cmd[i+1:]
-		}
-	}
-	return cmd
+	return filepath.Base(cmd)
 }
 
 // normalizeFlags expands combined short flags (e.g., "-rf" → "-r", "-f")

@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestSandboxedOpenHandler_AllowsInsideWorkspace(t *testing.T) {
@@ -78,6 +80,71 @@ func TestSandboxedOpenHandler_AllowsNewFileInWorkspace(t *testing.T) {
 	}
 	f.Close()
 	os.Remove(newFile)
+}
+
+// TestSandboxedOpenHandler_RelativePathUsesInterpreterCwd verifies that
+// relative paths in shell redirections resolve against the interpreter's
+// working directory (from interp.HandlerCtx), not the process CWD.
+func TestSandboxedOpenHandler_RelativePathUsesInterpreterCwd(t *testing.T) {
+	workspace := t.TempDir()
+
+	// Write to a relative path inside the workspace via the interpreter.
+	// The interpreter's Dir is set to workspace, so "output.txt" should
+	// resolve to workspace/output.txt regardless of the process CWD.
+	result := Run(context.Background(), RunConfig{
+		Command:       "echo sandbox_relative > output.txt",
+		Dir:           workspace,
+		Timeout:       5 * time.Second,
+		Restrict:      true,
+		WorkspaceDir:  workspace,
+		RiskThreshold: RiskMedium,
+	})
+
+	if result.IsError {
+		t.Fatalf("relative redirect inside workspace should succeed: %s", result.Output)
+	}
+
+	content, err := os.ReadFile(filepath.Join(workspace, "output.txt"))
+	if err != nil {
+		t.Fatalf("output.txt should exist in workspace: %v", err)
+	}
+	if !strings.Contains(string(content), "sandbox_relative") {
+		t.Errorf("expected 'sandbox_relative' in file, got: %s", content)
+	}
+}
+
+// TestSandboxedOpenHandler_RelativePathBlocksEscapeViaCd verifies that
+// if a script uses cd to move outside the workspace, a subsequent relative
+// redirect is blocked by the sandbox.
+func TestSandboxedOpenHandler_RelativePathBlocksEscapeViaCd(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outside := filepath.Join(root, "outside")
+	os.MkdirAll(workspace, 0o755)
+	os.MkdirAll(outside, 0o755)
+
+	// cd to outside dir, then try to write a relative path.
+	// The sandbox should block because the resolved path is outside workspace.
+	result := Run(context.Background(), RunConfig{
+		Command:       "cd " + outside + " && echo escaped > leak.txt",
+		Dir:           workspace,
+		Timeout:       5 * time.Second,
+		Restrict:      true,
+		WorkspaceDir:  workspace,
+		RiskThreshold: RiskHigh, // allow cd
+	})
+
+	if !result.IsError {
+		// If it didn't error, check that the file was NOT written outside
+		if _, err := os.Stat(filepath.Join(outside, "leak.txt")); err == nil {
+			t.Fatal("sandbox should have blocked write outside workspace")
+		}
+	}
+
+	// Verify nothing leaked
+	if _, err := os.Stat(filepath.Join(outside, "leak.txt")); err == nil {
+		t.Error("leak.txt should not exist outside workspace")
+	}
 }
 
 // TestSandboxedOpenHandler_AllowsDottedFiles verifies that files with
