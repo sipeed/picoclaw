@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -342,10 +343,12 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	if m.MessageReference != nil && m.ReferencedMessage != nil {
 		refContent := m.ReferencedMessage.Content
 		if refContent != "" {
+			refContent = c.resolveDiscordRefs(s, refContent)
 			content = fmt.Sprintf("[quoted message from %s]: %s\n\n%s",
 				m.ReferencedMessage.Author.Username, refContent, content)
 		}
 	}
+	content = c.resolveDiscordRefs(s, content)
 
 	senderID := m.Author.ID
 
@@ -515,6 +518,45 @@ func applyDiscordProxy(session *discordgo.Session, proxyAddr string) error {
 	}
 
 	return nil
+}
+
+// resolveDiscordRefs resolves channel references (<#id> → #channel-name) and
+// expands Discord message links to show the linked message content.
+func (c *DiscordChannel) resolveDiscordRefs(s *discordgo.Session, text string) string {
+	// 1. Resolve channel references: <#id> → #channel-name
+	channelRe := regexp.MustCompile(`<#(\d+)>`)
+	text = channelRe.ReplaceAllStringFunc(text, func(match string) string {
+		parts := channelRe.FindStringSubmatch(match)
+		if len(parts) < 2 {
+			return match
+		}
+		ch, err := s.Channel(parts[1])
+		if err != nil {
+			return match
+		}
+		return "#" + ch.Name
+	})
+
+	// 2. Expand Discord message links (max 3)
+	msgLinkRe := regexp.MustCompile(`https://(?:discord\.com|discordapp\.com)/channels/(\d+)/(\d+)/(\d+)`)
+	matches := msgLinkRe.FindAllStringSubmatch(text, 3)
+	for _, m := range matches {
+		if len(m) < 4 {
+			continue
+		}
+		channelID, messageID := m[2], m[3]
+		msg, err := s.ChannelMessage(channelID, messageID)
+		if err != nil || msg == nil || msg.Content == "" {
+			continue
+		}
+		author := "unknown"
+		if msg.Author != nil {
+			author = msg.Author.Username
+		}
+		text += fmt.Sprintf("\n[linked message from %s]: %s", author, msg.Content)
+	}
+
+	return text
 }
 
 // stripBotMention removes the bot mention from the message content.
