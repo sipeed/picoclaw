@@ -18,6 +18,14 @@ type State struct {
 	// LastChannel is the last channel used for communication
 	LastChannel string `json:"last_channel,omitempty"`
 
+	// LastHeartbeatTarget is the last destination considered safe for heartbeat delivery.
+	// Format: "channel:chatID[/thread]".
+	LastHeartbeatTarget string `json:"last_heartbeat_target,omitempty"`
+
+	// HeartbeatTarget is an explicit heartbeat destination override.
+	// Format: "channel:chatID[/thread]".
+	HeartbeatTarget string `json:"heartbeat_target,omitempty"`
+
 	// LastChatID is the last chat ID used for communication
 	LastChatID string `json:"last_chat_id,omitempty"`
 
@@ -85,6 +93,36 @@ func (sm *Manager) SetLastChannel(channel string) error {
 	return nil
 }
 
+// SetLastHeartbeatTarget atomically updates the last heartbeat target and saves the state.
+func (sm *Manager) SetLastHeartbeatTarget(target string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.state.LastHeartbeatTarget = target
+	sm.state.Timestamp = time.Now()
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
+// SetHeartbeatTarget atomically updates the explicit heartbeat target and saves the state.
+func (sm *Manager) SetHeartbeatTarget(target string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.state.HeartbeatTarget = target
+	sm.state.Timestamp = time.Now()
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
 // SetLastChatID atomically updates the last chat ID and saves the state.
 func (sm *Manager) SetLastChatID(chatID string) error {
 	sm.mu.Lock()
@@ -107,6 +145,20 @@ func (sm *Manager) GetLastChannel() string {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return sm.state.LastChannel
+}
+
+// GetLastHeartbeatTarget returns the last heartbeat target from the state.
+func (sm *Manager) GetLastHeartbeatTarget() string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.state.LastHeartbeatTarget
+}
+
+// GetHeartbeatTarget returns the explicit heartbeat target from the state.
+func (sm *Manager) GetHeartbeatTarget() string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.state.HeartbeatTarget
 }
 
 // GetLastChatID returns the last chat ID from the state.

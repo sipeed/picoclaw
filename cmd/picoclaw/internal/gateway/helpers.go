@@ -113,7 +113,12 @@ func gatewayCmd(debug bool, orchestration bool, enableStats bool) error {
 		cfg.Heartbeat.Interval,
 		cfg.Heartbeat.Enabled,
 	)
+	heartbeatService.SetHeartbeatThreadID(cfg.Channels.Telegram.HeartbeatThreadID)
 	heartbeatService.SetBus(msgBus)
+	agentLoop.SetHeartbeatThreadUpdater(heartbeatService.SetHeartbeatThreadID)
+	agentLoop.SetConfigSaver(func(c *config.Config) error {
+		return config.SaveConfig(internal.GetConfigPath(), c)
+	})
 	heartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
 		// Use cli:direct as fallback if no valid channel
 		if channel == "" || chatID == "" {
