@@ -7,22 +7,29 @@ import (
 )
 
 type SpawnTool struct {
-	manager        *SubagentManager
-	originChannel  string
-	originChatID   string
+	manager *SubagentManager
+
+	originChannel string
+
+	originChatID string
+
 	allowlistCheck func(targetAgentID string) bool
-	callback       AsyncCallback // For async completion notification
+
+	callback AsyncCallback // For async completion notification
 }
 
 func NewSpawnTool(manager *SubagentManager) *SpawnTool {
 	return &SpawnTool{
-		manager:       manager,
+		manager: manager,
+
 		originChannel: "cli",
-		originChatID:  "direct",
+
+		originChatID: "direct",
 	}
 }
 
 // SetCallback implements AsyncTool interface for async completion notification
+
 func (t *SpawnTool) SetCallback(cb AsyncCallback) {
 	t.callback = cb
 }
@@ -38,31 +45,42 @@ func (t *SpawnTool) Description() string {
 func (t *SpawnTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
+
 		"properties": map[string]any{
 			"task": map[string]any{
-				"type":        "string",
+				"type": "string",
+
 				"description": "The task for subagent to complete",
 			},
+
 			"label": map[string]any{
-				"type":        "string",
+				"type": "string",
+
 				"description": "Optional short label for the task (for display)",
 			},
+
 			"agent_id": map[string]any{
-				"type":        "string",
+				"type": "string",
+
 				"description": "Optional target agent ID to delegate the task to",
 			},
+
 			"preset": map[string]any{
-				"type":        "string",
-				"enum":        []string{"scout", "analyst", "coder", "worker", "coordinator"},
+				"type": "string",
+
+				"enum": []string{"scout", "analyst", "coder", "worker", "coordinator"},
+
 				"description": "Optional capability tier: scout (explore), analyst (analyze), coder (code), worker (build), coordinator (orchestrate)",
 			},
 		},
+
 		"required": []string{"task"},
 	}
 }
 
 func (t *SpawnTool) SetContext(channel, chatID string) {
 	t.originChannel = channel
+
 	t.originChatID = chatID
 }
 
@@ -72,20 +90,28 @@ func (t *SpawnTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 
 func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	task, ok := args["task"].(string)
+
 	if !ok || strings.TrimSpace(task) == "" {
 		return ErrorResult(
+
 			`Required parameter "task" (string) is missing. ` +
+
 				`Example: {"task": "describe what you need done", "preset": "scout"}`,
 		)
 	}
 
 	label, _ := args["label"].(string)
+
 	agentID, _ := args["agent_id"].(string)
+
 	preset, _ := args["preset"].(string)
 
 	// Check allowlist if targeting a specific agent ID.
+
 	// Presets (scout, analyst, etc.) are NOT agent IDs — they are validated
+
 	// separately by IsValidPreset() in the subagent manager.
+
 	if agentID != "" && t.allowlistCheck != nil {
 		if !t.allowlistCheck(agentID) {
 			return ErrorResult(fmt.Sprintf("agent %q is not in the allowed agents list", agentID))
@@ -93,9 +119,12 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 	}
 
 	// Validate preset name if provided
+
 	if preset != "" && !IsValidPreset(Preset(preset)) {
 		return ErrorResult(fmt.Sprintf(
+
 			"preset %q is not valid. Available presets: scout, analyst, coder, worker, coordinator",
+
 			preset,
 		))
 	}
@@ -105,11 +134,13 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResul
 	}
 
 	// Pass callback to manager for async completion notification
+
 	result, err := t.manager.Spawn(ctx, task, label, agentID, t.originChannel, t.originChatID, preset, t.callback)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to spawn subagent: %v", err))
 	}
 
 	// Return AsyncResult since the task runs in background
+
 	return AsyncResult(result)
 }

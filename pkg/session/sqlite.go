@@ -14,53 +14,103 @@ const sqliteDriver = "sqlite"
 
 const schema = `
 
+
+
 CREATE TABLE IF NOT EXISTS sessions (
+
+
 
 	key         TEXT PRIMARY KEY,
 
+
+
 	parent_key  TEXT NOT NULL DEFAULT '',
+
+
 
 	fork_turn_id TEXT NOT NULL DEFAULT '',
 
+
+
 	status      TEXT NOT NULL DEFAULT 'active',
+
+
 
 	label       TEXT NOT NULL DEFAULT '',
 
+
+
 	summary     TEXT NOT NULL DEFAULT '',
 
+
+
 	created_at  TEXT NOT NULL,
+
+
 
 	updated_at  TEXT NOT NULL
 
+
+
 );
+
+
 
 CREATE TABLE IF NOT EXISTS turns (
 
+
+
 	id          TEXT PRIMARY KEY,
+
+
 
 	session_key TEXT NOT NULL REFERENCES sessions(key) ON DELETE CASCADE,
 
+
+
 	seq         INTEGER NOT NULL,
+
+
 
 	kind        INTEGER NOT NULL DEFAULT 0,
 
+
+
 	messages    TEXT NOT NULL DEFAULT '[]',
+
+
 
 	origin_key  TEXT NOT NULL DEFAULT '',
 
+
+
 	summary     TEXT NOT NULL DEFAULT '',
+
+
 
 	author      TEXT NOT NULL DEFAULT '',
 
+
+
 	created_at  TEXT NOT NULL,
+
+
 
 	meta        TEXT NOT NULL DEFAULT '{}'
 
+
+
 );
+
+
 
 CREATE INDEX IF NOT EXISTS idx_turns_session_seq ON turns(session_key, seq);
 
+
+
 CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_key);
+
+
 
 `
 
@@ -130,6 +180,8 @@ func (s *SQLiteStore) Create(key string, opts *CreateOpts) error {
 
 		`INSERT INTO sessions (key, parent_key, fork_turn_id, label, created_at, updated_at)
 
+
+
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 
 		key, parentKey, forkTurnID, label, now, now,
@@ -142,6 +194,8 @@ func (s *SQLiteStore) Get(key string) (*SessionInfo, error) {
 	row := s.db.QueryRow(
 
 		`SELECT key, parent_key, fork_turn_id, status, label, summary, created_at, updated_at
+
+
 
 		 FROM sessions WHERE key = ?`, key,
 	)
@@ -291,6 +345,8 @@ func (s *SQLiteStore) Append(sessionKey string, turn *Turn) error {
 
 		`INSERT INTO turns (id, session_key, seq, kind, messages, origin_key, summary, author, created_at, meta)
 
+
+
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 
 		turn.ID, sessionKey, turn.Seq, int(turn.Kind),
@@ -314,6 +370,8 @@ func (s *SQLiteStore) Turns(sessionKey string, sinceSeq int) ([]*Turn, error) {
 	rows, err := s.db.Query(
 
 		`SELECT id, session_key, seq, kind, messages, origin_key, summary, author, created_at, meta
+
+
 
 		 FROM turns WHERE session_key = ? AND seq > ? ORDER BY seq`,
 
@@ -378,6 +436,8 @@ func (s *SQLiteStore) LastTurn(sessionKey string) (*Turn, error) {
 	row := s.db.QueryRow(
 
 		`SELECT id, session_key, seq, kind, messages, origin_key, summary, author, created_at, meta
+
+
 
 		 FROM turns WHERE session_key = ? ORDER BY seq DESC LIMIT 1`,
 

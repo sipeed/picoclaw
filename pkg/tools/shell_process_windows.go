@@ -17,11 +17,14 @@ func terminateProcessTree(cmd *exec.Cmd) error {
 	}
 
 	pid := cmd.Process.Pid
+
 	if pid <= 0 {
 		return nil
 	}
 
 	_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(pid)).Run()
+
 	_ = cmd.Process.Kill()
+
 	return nil
 }
