@@ -3,22 +3,13 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
-	"path/filepath"
-	"sync"
 	"sync/atomic"
 
 	"github.com/caarlos0/env/v11"
-	"github.com/joho/godotenv"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
-
-// dotenvOnce ensures .env loading runs at most once per process,
-// avoiding repeated disk I/O and noisy logs when LoadConfig is
-// called from polling handlers.
-var dotenvOnce sync.Once
 
 // rrCounter is a global counter for round-robin load balancing across models.
 var rrCounter atomic.Uint64
@@ -189,6 +180,8 @@ type AgentDefaults struct {
 	MaxTokens                 int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature               *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations         int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	SummarizeMessageThreshold int      `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
+	SummarizeTokenPercent     int      `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
 	MaxMediaSize              int      `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
 }
 
@@ -280,6 +273,7 @@ type FeishuConfig struct {
 type DiscordConfig struct {
 	Enabled            bool                `json:"enabled"                 env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
 	Token              string              `json:"token"                   env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	Proxy              string              `json:"proxy"                   env:"PICOCLAW_CHANNELS_DISCORD_PROXY"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
 	MentionOnly        bool                `json:"mention_only"            env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
@@ -437,7 +431,6 @@ type ProvidersConfig struct {
 	Antigravity   ProviderConfig       `json:"antigravity"`
 	Qwen          ProviderConfig       `json:"qwen"`
 	Mistral       ProviderConfig       `json:"mistral"`
-	Opencode      ProviderConfig       `json:"opencode"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -461,8 +454,7 @@ func (p ProvidersConfig) IsEmpty() bool {
 		p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" &&
 		p.Antigravity.APIKey == "" && p.Antigravity.APIBase == "" &&
 		p.Qwen.APIKey == "" && p.Qwen.APIBase == "" &&
-		p.Mistral.APIKey == "" && p.Mistral.APIBase == "" &&
-		p.Opencode.APIKey == "" && p.Opencode.APIBase == ""
+		p.Mistral.APIKey == "" && p.Mistral.APIBase == ""
 }
 
 // MarshalJSON implements custom JSON marshaling for ProvidersConfig
@@ -555,10 +547,14 @@ type PerplexityConfig struct {
 	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
-type ExaConfig struct {
-	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_EXA_ENABLED"`
-	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_EXA_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_EXA_MAX_RESULTS"`
+type GLMSearchConfig struct {
+	Enabled bool   `json:"enabled"  env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
+	APIKey  string `json:"api_key"  env:"PICOCLAW_TOOLS_WEB_GLM_API_KEY"`
+	BaseURL string `json:"base_url" env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
+	// SearchEngine specifies the search backend: "search_std" (default),
+	// "search_pro", "search_pro_sogou", or "search_pro_quark".
+	SearchEngine string `json:"search_engine" env:"PICOCLAW_TOOLS_WEB_GLM_SEARCH_ENGINE"`
+	MaxResults   int    `json:"max_results"   env:"PICOCLAW_TOOLS_WEB_GLM_MAX_RESULTS"`
 }
 
 type WebToolsConfig struct {
@@ -566,7 +562,7 @@ type WebToolsConfig struct {
 	Tavily     TavilyConfig     `json:"tavily"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 	Perplexity PerplexityConfig `json:"perplexity"`
-	Exa        ExaConfig        `json:"exa"`
+	GLMSearch  GLMSearchConfig  `json:"glm_search"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
 	Proxy           string `json:"proxy,omitempty"             env:"PICOCLAW_TOOLS_WEB_PROXY"`
@@ -658,35 +654,9 @@ type MCPConfig struct {
 func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
-	// Load .env file from config directory (secrets, API keys, etc.)
-	// Guarded by sync.Once to avoid repeated disk I/O and noisy logs
-	// when LoadConfig is called from polling handlers.
-	dotenvOnce.Do(func() {
-		envFile := filepath.Join(filepath.Dir(path), ".env")
-		if err := godotenv.Load(envFile); err != nil {
-			if os.IsNotExist(err) {
-				log.Printf("[INFO] No .env file found at %s; skipping .env loading", envFile)
-			} else {
-				log.Printf("[WARN] Failed to load .env file from %s: %v", envFile, err)
-			}
-		}
-	})
-
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// No config file — still apply env vars + overrides to default config
-			if err := env.Parse(cfg); err != nil {
-				return nil, err
-			}
-			loadProviderEnvOverrides(cfg)
-			cfg.migrateChannelConfigs()
-			if cfg.HasProvidersConfig() {
-				cfg.ModelList = ConvertProvidersToModelList(cfg)
-			}
-			if err := cfg.ValidateModelList(); err != nil {
-				return nil, err
-			}
 			return cfg, nil
 		}
 		return nil, err
@@ -713,9 +683,6 @@ func LoadConfig(path string) (*Config, error) {
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
-
-	// Load provider-specific env overrides (PICOCLAW_PROVIDERS_<NAME>_API_KEY, etc.)
-	loadProviderEnvOverrides(cfg)
 
 	// Migrate legacy channel config fields to new unified structures
 	cfg.migrateChannelConfigs()
@@ -864,43 +831,4 @@ func (c *Config) ValidateModelList() error {
 		}
 	}
 	return nil
-}
-
-// loadProviderEnvOverrides reads PICOCLAW_PROVIDERS_<NAME>_API_KEY and _API_BASE
-// environment variables and sets them on the corresponding provider config fields.
-// This enables storing provider secrets in .env files without using struct tags.
-func loadProviderEnvOverrides(cfg *Config) {
-	providers := []struct {
-		name   string
-		apiKey *string
-		base   *string
-	}{
-		{"ANTHROPIC", &cfg.Providers.Anthropic.APIKey, &cfg.Providers.Anthropic.APIBase},
-		{"OPENAI", &cfg.Providers.OpenAI.APIKey, &cfg.Providers.OpenAI.APIBase},
-		{"LITELLM", &cfg.Providers.LiteLLM.APIKey, &cfg.Providers.LiteLLM.APIBase},
-		{"OPENROUTER", &cfg.Providers.OpenRouter.APIKey, &cfg.Providers.OpenRouter.APIBase},
-		{"GROQ", &cfg.Providers.Groq.APIKey, &cfg.Providers.Groq.APIBase},
-		{"ZHIPU", &cfg.Providers.Zhipu.APIKey, &cfg.Providers.Zhipu.APIBase},
-		{"GEMINI", &cfg.Providers.Gemini.APIKey, &cfg.Providers.Gemini.APIBase},
-		{"NVIDIA", &cfg.Providers.Nvidia.APIKey, &cfg.Providers.Nvidia.APIBase},
-		{"OLLAMA", &cfg.Providers.Ollama.APIKey, &cfg.Providers.Ollama.APIBase},
-		{"MOONSHOT", &cfg.Providers.Moonshot.APIKey, &cfg.Providers.Moonshot.APIBase},
-		{"SHENGSUANYUN", &cfg.Providers.ShengSuanYun.APIKey, &cfg.Providers.ShengSuanYun.APIBase},
-		{"DEEPSEEK", &cfg.Providers.DeepSeek.APIKey, &cfg.Providers.DeepSeek.APIBase},
-		{"MISTRAL", &cfg.Providers.Mistral.APIKey, &cfg.Providers.Mistral.APIBase},
-		{"VLLM", &cfg.Providers.VLLM.APIKey, &cfg.Providers.VLLM.APIBase},
-		{"CEREBRAS", &cfg.Providers.Cerebras.APIKey, &cfg.Providers.Cerebras.APIBase},
-		{"VOLCENGINE", &cfg.Providers.VolcEngine.APIKey, &cfg.Providers.VolcEngine.APIBase},
-		{"QWEN", &cfg.Providers.Qwen.APIKey, &cfg.Providers.Qwen.APIBase},
-		// Note: GitHubCopilot and Antigravity use different auth patterns (ConnectMode/AuthMethod),
-		// not standard APIKey/APIBase, so they are not included here.
-	}
-	for _, p := range providers {
-		if v, ok := os.LookupEnv("PICOCLAW_PROVIDERS_" + p.name + "_API_KEY"); ok {
-			*p.apiKey = v
-		}
-		if v, ok := os.LookupEnv("PICOCLAW_PROVIDERS_" + p.name + "_API_BASE"); ok {
-			*p.base = v
-		}
-	}
 }

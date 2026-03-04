@@ -225,7 +225,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 			},
 		},
 		{
-			providerNames: []string{"moonshot", "kimi", "kimi-code"},
+			providerNames: []string{"moonshot", "kimi"},
 			protocol:      "moonshot",
 			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
 				if p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" {
@@ -373,23 +373,6 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 				}, true
 			},
 		},
-		{
-			providerNames: []string{"opencode"},
-			protocol:      "opencode",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Opencode.APIKey == "" && p.Opencode.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "opencode",
-					Model:          "opencode/auto",
-					APIKey:         p.Opencode.APIKey,
-					APIBase:        p.Opencode.APIBase,
-					Proxy:          p.Opencode.Proxy,
-					RequestTimeout: p.Opencode.RequestTimeout,
-				}, true
-			},
-		},
 	}
 
 	// Process each provider migration
@@ -401,9 +384,7 @@ func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
 
 		// Check if this is the user's configured provider
 		if slices.Contains(m.providerNames, userProvider) && userModel != "" {
-			// Use the user's configured model instead of default.
-			// Also set ModelName so GetModelConfig(userModel) can find this entry.
-			mc.ModelName = userModel
+			// Use the user's configured model instead of default
 			mc.Model = buildModelWithProtocol(m.protocol, userModel)
 		} else if userProvider == "" && userModel != "" && !legacyModelNameApplied {
 			// Legacy config: no explicit provider field but model is specified

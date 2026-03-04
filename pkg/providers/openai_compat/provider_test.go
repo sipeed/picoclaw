@@ -2,7 +2,6 @@ package openai_compat
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -418,82 +417,6 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 	p := NewProvider("key", "https://example.com/v1", "", WithRequestTimeout(-1*time.Second))
 	if p.httpClient.Timeout != defaultRequestTimeout {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, defaultRequestTimeout)
-	}
-}
-
-// roundTripFunc adapts a function to http.RoundTripper for test injection.
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
-	return f(r)
-}
-
-func TestProviderChat_KimiCodeUserAgent(t *testing.T) {
-	okBody := `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`
-
-	tests := []struct {
-		name      string
-		apiBase   string
-		wantAgent string
-	}{
-		{
-			name:      "sets KimiCLI User-Agent for api.kimi.com",
-			apiBase:   "https://api.kimi.com/coding/v1",
-			wantAgent: "KimiCLI/0.77",
-		},
-		{
-			name:      "does not set KimiCLI User-Agent for other hosts",
-			apiBase:   "https://api.example.com/v1",
-			wantAgent: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var gotUserAgent string
-
-			p := NewProvider("key", tt.apiBase, "")
-			p.httpClient.Transport = roundTripFunc(
-				func(r *http.Request) (*http.Response, error) {
-					gotUserAgent = r.Header.Get("User-Agent")
-					return &http.Response{
-						StatusCode: http.StatusOK,
-						Body: io.NopCloser(
-							strings.NewReader(okBody),
-						),
-						Header: http.Header{
-							"Content-Type": {"application/json"},
-						},
-					}, nil
-				},
-			)
-
-			_, err := p.Chat(
-				t.Context(),
-				[]Message{{Role: "user", Content: "hi"}},
-				nil,
-				"kimi-k2.5",
-				nil,
-			)
-			if err != nil {
-				t.Fatalf("Chat() error = %v", err)
-			}
-
-			if tt.wantAgent != "" {
-				if gotUserAgent != tt.wantAgent {
-					t.Fatalf(
-						"User-Agent = %q, want %q",
-						gotUserAgent, tt.wantAgent,
-					)
-				}
-			} else {
-				if gotUserAgent == "KimiCLI/0.77" {
-					t.Fatalf(
-						"User-Agent should not be KimiCLI/0.77 for non-kimi host",
-					)
-				}
-			}
-		})
 	}
 }
 

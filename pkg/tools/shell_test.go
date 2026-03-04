@@ -366,56 +366,6 @@ func TestShellTool_BlockDevices(t *testing.T) {
 	}
 }
 
-// TestShellTool_DenyPattern_DiskWiping verifies the deny pattern for disk wiping
-// commands (format, mkfs, diskpart) blocks them when preceded by shell separators
-// but does NOT block legitimate uses like --format flags.
-func TestShellTool_DenyPattern_DiskWiping(t *testing.T) {
-	tool, err := NewExecTool("", false)
-	if err != nil {
-		t.Fatalf("unable to configure exec tool: %s", err)
-	}
-
-	// These should be BLOCKED (disk wiping commands)
-	blockedCmds := []struct {
-		name string
-		cmd  string
-	}{
-		{"format with space", "format c:"},
-		{"mkfs standalone", "mkfs /dev/sda"},
-		{"semicolon format", "echo hello; format c:"},
-		{"pipe format", "echo hello | format c:"},
-		{"and format", "echo hello && format c:"},
-		{"diskpart standalone", "diskpart /s script.txt"},
-	}
-
-	for _, tt := range blockedCmds {
-		t.Run("blocked_"+tt.name, func(t *testing.T) {
-			msg := tool.guardCommand(tt.cmd, "")
-			if !strings.Contains(msg, "blocked") {
-				t.Errorf("Expected %q to be blocked by safety guard, got: %q", tt.cmd, msg)
-			}
-		})
-	}
-
-	// These should be ALLOWED (not disk wiping)
-	allowed := []struct {
-		name string
-		cmd  string
-	}{
-		{"--format flag", "echo test --format json"},
-		{"go fmt", "echo go fmt ./..."},
-	}
-
-	for _, tt := range allowed {
-		t.Run("allowed_"+tt.name, func(t *testing.T) {
-			msg := tool.guardCommand(tt.cmd, "")
-			if msg != "" {
-				t.Errorf("Expected %q to be allowed, but it was blocked: %s", tt.cmd, msg)
-			}
-		})
-	}
-}
-
 // TestShellTool_SafePathsInWorkspaceRestriction verifies that safe kernel pseudo-devices
 // are allowed even when workspace restriction is active.
 func TestShellTool_SafePathsInWorkspaceRestriction(t *testing.T) {

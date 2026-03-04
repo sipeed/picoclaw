@@ -395,6 +395,88 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 	return fmt.Sprintf("Results for: %s (via Perplexity)\n%s", query, searchResp.Choices[0].Message.Content), nil
 }
 
+type GLMSearchProvider struct {
+	apiKey       string
+	baseURL      string
+	searchEngine string
+	proxy        string
+	client       *http.Client
+}
+
+func (p *GLMSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
+	searchURL := p.baseURL
+	if searchURL == "" {
+		searchURL = "https://open.bigmodel.cn/api/paas/v4/web_search"
+	}
+
+	payload := map[string]any{
+		"search_query":  query,
+		"search_engine": p.searchEngine,
+		"search_intent": false,
+		"count":         count,
+		"content_size":  "medium",
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GLM Search API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp struct {
+		SearchResult []struct {
+			Title   string `json:"title"`
+			Content string `json:"content"`
+			Link    string `json:"link"`
+		} `json:"search_result"`
+	}
+
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	results := searchResp.SearchResult
+	if len(results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Results for: %s (via GLM Search)", query))
+	for i, item := range results {
+		if i >= count {
+			break
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.Link))
+		if item.Content != "" {
+			lines = append(lines, fmt.Sprintf("   %s", item.Content))
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
 type WebSearchTool struct {
 	provider   SearchProvider
 	maxResults int
@@ -413,9 +495,11 @@ type WebSearchToolOptions struct {
 	PerplexityAPIKey     string
 	PerplexityMaxResults int
 	PerplexityEnabled    bool
-	ExaAPIKey            string
-	ExaMaxResults        int
-	ExaEnabled           bool
+	GLMSearchAPIKey      string
+	GLMSearchBaseURL     string
+	GLMSearchEngine      string
+	GLMSearchMaxResults  int
+	GLMSearchEnabled     bool
 	Proxy                string
 }
 
@@ -423,7 +507,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
 	maxResults := 5
 
-	// Priority: Perplexity > Exa > Brave > Tavily > DuckDuckGo
+	// Priority: Perplexity > Brave > Tavily > DuckDuckGo > GLM Search
 	if opts.PerplexityEnabled && opts.PerplexityAPIKey != "" {
 		client, err := createHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
@@ -432,15 +516,6 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		provider = &PerplexitySearchProvider{apiKey: opts.PerplexityAPIKey, proxy: opts.Proxy, client: client}
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = opts.PerplexityMaxResults
-		}
-	} else if opts.ExaEnabled && opts.ExaAPIKey != "" {
-		client, err := createHTTPClient(opts.Proxy, searchTimeout)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP client for Exa: %w", err)
-		}
-		provider = &ExaSearchProvider{apiKey: opts.ExaAPIKey, proxy: opts.Proxy, client: client}
-		if opts.ExaMaxResults > 0 {
-			maxResults = opts.ExaMaxResults
 		}
 	} else if opts.BraveEnabled && opts.BraveAPIKey != "" {
 		client, err := createHTTPClient(opts.Proxy, searchTimeout)
@@ -473,6 +548,25 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy, client: client}
 		if opts.DuckDuckGoMaxResults > 0 {
 			maxResults = opts.DuckDuckGoMaxResults
+		}
+	} else if opts.GLMSearchEnabled && opts.GLMSearchAPIKey != "" {
+		client, err := createHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create HTTP client for GLM Search: %w", err)
+		}
+		searchEngine := opts.GLMSearchEngine
+		if searchEngine == "" {
+			searchEngine = "search_std"
+		}
+		provider = &GLMSearchProvider{
+			apiKey:       opts.GLMSearchAPIKey,
+			baseURL:      opts.GLMSearchBaseURL,
+			searchEngine: searchEngine,
+			proxy:        opts.Proxy,
+			client:       client,
+		}
+		if opts.GLMSearchMaxResults > 0 {
+			maxResults = opts.GLMSearchMaxResults
 		}
 	} else {
 		return nil, nil
@@ -720,78 +814,4 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	}
 
 	return strings.Join(cleanLines, "\n")
-}
-
-// ExaSearchProvider uses the Exa AI search API (https://exa.ai).
-type ExaSearchProvider struct {
-	apiKey string
-	proxy  string
-	client *http.Client
-}
-
-func (p *ExaSearchProvider) Search(ctx context.Context, query string, count int) (string, error) {
-	reqBody := map[string]any{
-		"query":       query,
-		"num_results": count,
-		"type":        "neural",
-	}
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("exa: marshal error: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.exa.ai/search", bytes.NewReader(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("exa: request error: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", p.apiKey)
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("exa: search failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("exa: read error: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("exa: API error %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result struct {
-		Results []struct {
-			Title string `json:"title"`
-			URL   string `json:"url"`
-			Text  string `json:"text"`
-		} `json:"results"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return "", fmt.Errorf("exa: parse error: %w", err)
-	}
-
-	if len(result.Results) == 0 {
-		return fmt.Sprintf("No results for: %s", query), nil
-	}
-
-	var lines []string
-	lines = append(lines, fmt.Sprintf("Results for: %s (via Exa)", query))
-	maxResults := count
-	if maxResults > len(result.Results) {
-		maxResults = len(result.Results)
-	}
-	for i, r := range result.Results[:maxResults] {
-		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, r.Title, r.URL))
-		if r.Text != "" {
-			snippet := r.Text
-			if len(snippet) > 200 {
-				snippet = snippet[:200] + "..."
-			}
-			lines = append(lines, fmt.Sprintf("   %s", snippet))
-		}
-	}
-
-	return strings.Join(lines, "\n"), nil
 }

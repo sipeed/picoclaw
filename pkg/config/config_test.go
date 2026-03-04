@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -436,6 +435,18 @@ func TestLoadConfig_WebToolsProxy(t *testing.T) {
 }
 
 // TestDefaultConfig_DMScope verifies the default dm_scope value
+// TestDefaultConfig_SummarizationThresholds verifies summarization defaults
+func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Agents.Defaults.SummarizeMessageThreshold != 20 {
+		t.Errorf("SummarizeMessageThreshold = %d, want 20", cfg.Agents.Defaults.SummarizeMessageThreshold)
+	}
+	if cfg.Agents.Defaults.SummarizeTokenPercent != 75 {
+		t.Errorf("SummarizeTokenPercent = %d, want 75", cfg.Agents.Defaults.SummarizeTokenPercent)
+	}
+}
+
 func TestDefaultConfig_DMScope(t *testing.T) {
 	cfg := DefaultConfig()
 
@@ -466,100 +477,5 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 
 	if cfg.Agents.Defaults.Workspace != want {
 		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
-	}
-}
-
-func TestLoadConfig_DotenvFileLoaded(t *testing.T) {
-	// Reset sync.Once so .env loading runs for this test
-	dotenvOnce = sync.Once{}
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json")
-
-	// Write a minimal config.json
-	if err := os.WriteFile(configPath, []byte(`{}`), 0o600); err != nil {
-		t.Fatalf("WriteFile config: %v", err)
-	}
-
-	// Write a .env file with a provider API key
-	envFile := filepath.Join(dir, ".env")
-	if err := os.WriteFile(envFile, []byte("PICOCLAW_PROVIDERS_OPENAI_API_KEY=sk-from-dotenv\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile .env: %v", err)
-	}
-
-	// Clear the env var first to ensure it comes from .env
-	t.Setenv("PICOCLAW_PROVIDERS_OPENAI_API_KEY", "")
-	os.Unsetenv("PICOCLAW_PROVIDERS_OPENAI_API_KEY")
-
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error: %v", err)
-	}
-
-	if cfg.Providers.OpenAI.APIKey != "sk-from-dotenv" {
-		t.Errorf("OpenAI.APIKey = %q, want %q", cfg.Providers.OpenAI.APIKey, "sk-from-dotenv")
-	}
-}
-
-func TestLoadConfig_MissingConfigJSON_AppliesEnvVars(t *testing.T) {
-	// Reset sync.Once so .env loading runs for this test
-	dotenvOnce = sync.Once{}
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json") // does NOT exist
-
-	t.Setenv("PICOCLAW_PROVIDERS_ANTHROPIC_API_KEY", "sk-anthropic-test")
-
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error: %v", err)
-	}
-
-	if cfg.Providers.Anthropic.APIKey != "sk-anthropic-test" {
-		t.Errorf("Anthropic.APIKey = %q, want %q", cfg.Providers.Anthropic.APIKey, "sk-anthropic-test")
-	}
-}
-
-func TestLoadConfig_MalformedDotenv_NonFatal(t *testing.T) {
-	// Reset sync.Once so .env loading runs for this test
-	dotenvOnce = sync.Once{}
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json")
-
-	// Write a minimal config.json
-	if err := os.WriteFile(configPath, []byte(`{}`), 0o600); err != nil {
-		t.Fatalf("WriteFile config: %v", err)
-	}
-
-	// Write a .env file with genuinely malformed content (bare key without '=',
-	// mixed with a valid line) to verify godotenv.Load errors are non-fatal.
-	envFile := filepath.Join(dir, ".env")
-	if err := os.WriteFile(envFile, []byte("THIS_LINE_HAS_NO_EQUALS\nVALID_KEY=valid_value\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile .env: %v", err)
-	}
-
-	// LoadConfig should not fail even with malformed .env content
-	cfg, err := LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() should not fail with .env issues, got error: %v", err)
-	}
-	if cfg == nil {
-		t.Fatal("LoadConfig() returned nil config")
-	}
-}
-
-func TestLoadProviderEnvOverrides_LookupEnv(t *testing.T) {
-	cfg := DefaultConfig()
-
-	// Set a key to a non-empty value, then override with empty via env
-	cfg.Providers.OpenRouter.APIBase = "https://original.com"
-	t.Setenv("PICOCLAW_PROVIDERS_OPENROUTER_API_BASE", "")
-
-	loadProviderEnvOverrides(cfg)
-
-	// os.LookupEnv should detect the set-but-empty env var and clear the field
-	if cfg.Providers.OpenRouter.APIBase != "" {
-		t.Errorf("OpenRouter.APIBase = %q, want empty (overridden by empty env var)", cfg.Providers.OpenRouter.APIBase)
 	}
 }

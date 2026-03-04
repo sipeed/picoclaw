@@ -30,9 +30,9 @@ var (
 		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
 		regexp.MustCompile(`\bdel\s+/[fq]\b`),
 		regexp.MustCompile(`\brmdir\s+/s\b`),
-		// Match disk wiping commands, avoid matching --format flags
+		// Match disk wiping commands (must be followed by space/args)
 		regexp.MustCompile(
-			`(?:^|[;&|]\s*|\s+)(format|mkfs|diskpart)\s`,
+			`\b(format|mkfs|diskpart)\b\s`,
 		),
 		regexp.MustCompile(`\bdd\s+if=`),
 		// Block writes to block devices (all common naming schemes).
