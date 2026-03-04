@@ -143,7 +143,12 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	// Lock the binaries now before using more RAM
 	if isBinaryFile(header) {
-		return ErrorResult(fmt.Sprintf("cannot read file %q: appears to be a binary file (e.g., PDF, image, executable)", filepath.Base(path)))
+		return ErrorResult(
+			fmt.Sprintf(
+				"cannot read file %q: appears to be a binary file (e.g., PDF, image, executable)",
+				filepath.Base(path),
+			),
+		)
 	}
 
 	// If it is text, let's read the rest of the file
