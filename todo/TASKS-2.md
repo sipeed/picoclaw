@@ -1,4 +1,4 @@
-# TASKS-2: Subagent Orchestration (Container Model)
+# TASKS-2: Subagent Orchestration (Container Model) ✅ 実装済み
 
 ## TASKS-1 反映メモ (2026-03-05)
 
@@ -78,15 +78,15 @@ TASKS-2 の下地はかなり実装済み。以下を前提として差分のみ
 | **Async Callback** | `pkg/agent/loop.go` `processRequest` | spawn 完了 → MessageBus → conductor に結果注入 |
 | **Orchestration Nudge** | `pkg/agent/loop.go` `buildOrchReminder()` | plan 実行中に spawn/subagent 使用を促すリマインダ |
 
-### 未実装 ❌ → TASKS-2 スコープ
+### 実装完了 ✅ (2026-03-05)
 
 | # | 要素 | 概要 |
 |---|---|---|
-| 1 | **ContainerMessage channel** | subagent→conductor の question/status/result 双方向通信 |
-| 2 | **Escalation chain** | subagent question → conductor 回答 or → human escalate |
-| 3 | **Deliberate Plan Mode** | coder/worker/coordinator の clarifying→review→executing 状態遷移 |
-| 4 | **SubagentEnvironment injection** | MEMORY.md からの自動コンテキスト注入 |
-| 5 | **MEMORY.md Orchestration section** | conductor guidance に delegated/findings/decisions 追記 |
+| 1 | **ContainerMessage channel** | ✅ `ContainerMessage` + `inCh`/`outCh` on `SubagentTask` |
+| 2 | **Escalation chain** | ✅ `ask_conductor` / `answer_subagent` tools + conductor question injection |
+| 3 | **Deliberate Plan Mode** | ✅ `SubagentPlanState` + `runDeliberateTask()` (clarifying→review→executing) |
+| 4 | **SubagentEnvironment injection** | ✅ `extractPlanContext()` + `buildSubagentSystemPrompt()` |
+| 5 | **MEMORY.md Orchestration section** | ✅ `orchestrationGuidance` 拡張 (Delegated/Findings/Decisions) |
 
 ---
 
