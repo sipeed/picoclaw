@@ -532,14 +532,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
-	route, agent, err := al.resolveMessageRoute(msg)
-	if err != nil {
-		return "", err
-	}
+	route, agent, routeErr := al.resolveMessageRoute(msg)
 
-	// Check for commands
+	// Commands are checked before requiring a successful route.
+	// Global commands (/help, /show, /switch) work even when routing fails;
+	// context-dependent commands check their own Runtime fields and report
+	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg); handled {
 		return response, nil
+	}
+
+	if routeErr != nil {
+		return "", routeErr
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
