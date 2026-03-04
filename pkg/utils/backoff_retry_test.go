@@ -137,19 +137,27 @@ func TestDoWithRetry_Cancelled(t *testing.T) {
 	assert.Equal(t, context.Canceled, err)
 }
 
+// error that is recognized as non-retryable by our policy function
+type testNonRetryableError struct{}
+
+func (e *testNonRetryableError) Error() string {
+return "non-retryable error"
+}
 func TestDoWithRetry_NonRetryableError(t *testing.T) {
 	policy := &RetryPolicy{
 		MaxRetries: 3,
 		BaseDelay:  10 * time.Millisecond,
-		MaxDelay:   100 * time.Millisecond,
+		MaxDelay: 100 * time.Millisecond,
 		Multiplier: 1.0,
+		JitterFactor: 0.0, // Adding the required parameter
 		RetryableFunc: func(err error) bool {
-			return !errors.Is(err, context.DeadlineExceeded)
+			_, isTestError := err.(*testNonRetryableError) // Non-retryable
+			return !isTestError
 		},
 	}
 
 	callCount := 0
-	nonRetryableErr := errors.New("non-retryable error")
+	nonRetryableErr := &testNonRetryableError{}
 
 	fn := func() error {
 		callCount++

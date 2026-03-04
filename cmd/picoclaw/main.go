@@ -3,6 +3,7 @@
 // License: MIT
 //
 // Copyright (c) 2026 PicoClaw contributors
+//
 
 package main
 
@@ -43,8 +44,42 @@ func NewPicoclawCommand() *cobra.Command {
 		migrate.NewMigrateCommand(),
 		skills.NewSkillsCommand(),
 		version.NewVersionCommand(),
+		NewCompletionCommand(),
 	)
 
+	return cmd
+}
+
+// NewCompletionCommand creates a new completion command for generating shell completion scripts
+func NewCompletionCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "completion",
+		Short: "Generate shell completion scripts",
+		Long: `Generate shell completion scripts for various shells.
+
+Supported shells:
+- bash
+- zsh
+- fish
+- powershell`,
+		ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
+		Args:      cobra.ExactValidArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			shell := args[0]
+			rootCmd := NewPicoclawCommand()
+			switch shell {
+			case "bash":
+				return rootCmd.GenBashCompletion(cmd.OutOrStdout())
+			case "zsh":
+				return rootCmd.GenZshCompletion(cmd.OutOrStdout())
+			case "fish":
+				return rootCmd.GenFishCompletion(cmd.OutOrStdout(), true)
+			case "powershell":
+				return rootCmd.GenPowerShellCompletion(cmd.OutOrStdout())
+			}
+			return nil
+		},
+	}
 	return cmd
 }
 
