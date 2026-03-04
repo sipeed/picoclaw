@@ -1,0 +1,14 @@
+{
+  "name": "miniapp-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run ./build.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "happy-dom": "^16.8.1",
+    "vitest": "^2.1.9"
+  }
+}
+

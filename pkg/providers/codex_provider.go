@@ -317,19 +317,19 @@ func resolveCodexToolCall(tc ToolCall) (name string, arguments string, ok bool) 
 		return "", "", false
 	}
 
-	if len(tc.Arguments) > 0 {
-		argsJSON, err := json.Marshal(tc.Arguments)
-		if err != nil {
-			return "", "", false
-		}
-		return name, string(argsJSON), true
+	args := tc.Arguments
+	if len(args) == 0 && tc.Function != nil {
+		args = tc.Function.Arguments
+	}
+	if len(args) == 0 {
+		return name, "{}", true
 	}
 
-	if tc.Function != nil && tc.Function.Arguments != "" {
-		return name, tc.Function.Arguments, true
+	argsJSON, err := json.Marshal(args)
+	if err != nil {
+		return "", "", false
 	}
-
-	return name, "{}", true
+	return name, string(argsJSON), true
 }
 
 func translateToolsForCodex(tools []ToolDefinition, enableWebSearch bool) []responses.ToolUnionParam {
@@ -345,9 +345,13 @@ func translateToolsForCodex(tools []ToolDefinition, enableWebSearch bool) []resp
 		if enableWebSearch && strings.EqualFold(t.Function.Name, "web_search") {
 			continue
 		}
+		params := t.Function.ParametersMap()
+		if params == nil {
+			params = map[string]any{}
+		}
 		ft := responses.FunctionToolParam{
 			Name:       t.Function.Name,
-			Parameters: t.Function.Parameters,
+			Parameters: params,
 			Strict:     openai.Opt(false),
 		}
 		if t.Function.Description != "" {
@@ -382,6 +386,10 @@ func parseCodexResponse(resp *responses.Response) *LLMResponse {
 				ID:        item.CallID,
 				Name:      item.Name,
 				Arguments: args,
+				Function: &FunctionCall{
+					Name:      item.Name,
+					Arguments: cloneToolArgs(args),
+				},
 			})
 		}
 	}

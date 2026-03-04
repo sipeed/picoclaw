@@ -188,16 +188,19 @@ func buildParams(
 func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 	result := make([]anthropic.ToolUnionParam, 0, len(tools))
 	for _, t := range tools {
+		params := t.Function.ParametersMap()
 		tool := anthropic.ToolParam{
 			Name: t.Function.Name,
 			InputSchema: anthropic.ToolInputSchemaParam{
-				Properties: t.Function.Parameters["properties"],
+				Properties: params["properties"],
 			},
 		}
 		if desc := t.Function.Description; desc != "" {
 			tool.Description = anthropic.String(desc)
 		}
-		if req, ok := t.Function.Parameters["required"].([]any); ok {
+
+		switch req := params["required"].(type) {
+		case []any:
 			required := make([]string, 0, len(req))
 			for _, r := range req {
 				if s, ok := r.(string); ok {
@@ -205,7 +208,10 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 				}
 			}
 			tool.InputSchema.Required = required
+		case []string:
+			tool.InputSchema.Required = append([]string(nil), req...)
 		}
+
 		result = append(result, anthropic.ToolUnionParam{OfTool: &tool})
 	}
 	return result

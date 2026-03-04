@@ -79,7 +79,7 @@ func TestBuildCodexParams_ToolCallFunctionFallback(t *testing.T) {
 					Type: "function",
 					Function: &FunctionCall{
 						Name:      "read_file",
-						Arguments: `{"path":"README.md"}`,
+						Arguments: map[string]any{"path": "README.md"},
 					},
 				},
 			},
@@ -114,12 +114,12 @@ func TestBuildCodexParams_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather",
-				Parameters: map[string]any{
+				Parameters: MustMarshalParameters(map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"city": map[string]any{"type": "string"},
 					},
-				},
+				}),
 			},
 		},
 	}
@@ -166,9 +166,9 @@ func TestBuildCodexParams_WebSearchFunctionReplacedWithBuiltin(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "web_search",
 				Description: "local web search",
-				Parameters: map[string]any{
+				Parameters: MustMarshalParameters(map[string]any{
 					"type": "object",
-				},
+				}),
 			},
 		},
 		{
@@ -176,9 +176,9 @@ func TestBuildCodexParams_WebSearchFunctionReplacedWithBuiltin(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "read_file",
 				Description: "read file",
-				Parameters: map[string]any{
+				Parameters: MustMarshalParameters(map[string]any{
 					"type": "object",
-				},
+				}),
 			},
 		},
 	}

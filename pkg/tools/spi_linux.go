@@ -34,8 +34,10 @@ type spiTransfer struct {
 	pad         uint8
 }
 
-// configureSPI opens an SPI device and sets mode, bits per word, and speed
-func configureSPI(devPath string, mode uint8, bits uint8, speed uint32) (int, *ToolResult) {
+// configureSPI opens an SPI device and sets mode, bits per word, and speed.
+func configureSPI(
+	devPath string, mode uint8, bits uint8, speed uint32,
+) (int, *ToolResult) {
 	fd, err := syscall.Open(devPath, syscall.O_RDWR, 0)
 	if err != nil {
 		return -1, ErrorResult(fmt.Sprintf("failed to open %s: %v (check permissions and spidev module)", devPath, err))
@@ -65,12 +67,13 @@ func configureSPI(devPath string, mode uint8, bits uint8, speed uint32) (int, *T
 	return fd, nil
 }
 
-// transfer performs a full-duplex SPI transfer
+// transfer performs a full-duplex SPI transfer.
 func (t *SPITool) transfer(args map[string]any) *ToolResult {
 	confirm, _ := args["confirm"].(bool)
 	if !confirm {
 		return ErrorResult(
-			"transfer operations require confirm: true. Please confirm with the user before sending data to SPI devices.",
+			"transfer operations require confirm: true." +
+				" Please confirm with the user before sending data to SPI devices.",
 		)
 	}
 
@@ -108,7 +111,6 @@ func (t *SPITool) transfer(args map[string]any) *ToolResult {
 	defer syscall.Close(fd)
 
 	rxBuf := make([]byte, len(txBuf))
-
 	xfer := spiTransfer{
 		txBuf:       uint64(uintptr(unsafe.Pointer(&txBuf[0]))),
 		rxBuf:       uint64(uintptr(unsafe.Pointer(&rxBuf[0]))),
@@ -138,10 +140,11 @@ func (t *SPITool) transfer(args map[string]any) *ToolResult {
 		"received": intBytes,
 		"hex":      hexBytes,
 	}, "", "  ")
+
 	return SilentResult(string(result))
 }
 
-// readDevice reads bytes from SPI by sending zeros (read-only, no confirm needed)
+// readDevice reads bytes from SPI by sending zeros (read-only, no confirm needed).
 func (t *SPITool) readDevice(args map[string]any) *ToolResult {
 	dev, speed, mode, bits, errMsg := parseSPIArgs(args)
 	if errMsg != "" {
@@ -165,7 +168,6 @@ func (t *SPITool) readDevice(args map[string]any) *ToolResult {
 
 	txBuf := make([]byte, length) // zeros
 	rxBuf := make([]byte, length)
-
 	xfer := spiTransfer{
 		txBuf:       uint64(uintptr(unsafe.Pointer(&txBuf[0]))),
 		rxBuf:       uint64(uintptr(unsafe.Pointer(&rxBuf[0]))),
@@ -194,5 +196,6 @@ func (t *SPITool) readDevice(args map[string]any) *ToolResult {
 		"hex":    hexBytes,
 		"length": len(rxBuf),
 	}, "", "  ")
+
 	return SilentResult(string(result))
 }

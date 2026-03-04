@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -19,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	gitpkg "github.com/sipeed/picoclaw/pkg/git"
+	"github.com/sipeed/picoclaw/pkg/orch"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/stats"
 )
@@ -188,6 +193,8 @@ func (m *mockDataProvider) GetActiveSessions() []SessionInfo {
 	return []SessionInfo{}
 }
 
+func (m *mockDataProvider) GetSessionGraph() *SessionGraphData { return nil }
+
 func (m *mockDataProvider) GetGitRepos() []GitRepoSummary {
 	return nil
 }
@@ -219,6 +226,61 @@ func testInitData() string {
 		"user":      `{"id":279058397,"first_name":"Test"}`,
 		"auth_date": freshAuthDate(),
 	}, testBotToken)
+}
+
+func TestMiniApp_IndexTemplateInjectsOrchFlag(t *testing.T) {
+	notifier := NewStateNotifier()
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/miniapp", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "window.ORCH_ENABLED = false;") {
+		t.Fatalf("expected ORCH_ENABLED=false in rendered template")
+	}
+
+	h.SetOrchBroadcaster(orch.NewBroadcaster())
+	w2 := httptest.NewRecorder()
+	mux.ServeHTTP(w2, httptest.NewRequest("GET", "/miniapp", nil))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 with broadcaster, got %d", w2.Code)
+	}
+	if !strings.Contains(w2.Body.String(), "window.ORCH_ENABLED = true;") {
+		t.Fatalf("expected ORCH_ENABLED=true in rendered template")
+	}
+}
+
+func TestMiniApp_StaticFileServerServesAssets(t *testing.T) {
+	notifier := NewStateNotifier()
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, notifier, nil, "")
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	tests := []struct {
+		path string
+		want string
+	}{
+		{path: "/miniapp/map-preview.html", want: "Orchestration Room"},
+		{path: "/miniapp/dist/map.js", want: "MAP_POSITIONS"},
+		{path: "/miniapp/dist/app.js", want: "renderLogs"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, httptest.NewRequest("GET", tc.path, nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200 for %s, got %d", tc.path, w.Code)
+			}
+			if !strings.Contains(w.Body.String(), tc.want) {
+				t.Fatalf("expected %q in %s", tc.want, tc.path)
+			}
+		})
+	}
 }
 
 func TestSSE_AuthRequired(t *testing.T) {
@@ -482,6 +544,8 @@ func (m *mutatingDataProvider) GetSessionStats() *stats.Stats { return nil }
 func (m *mutatingDataProvider) GetActiveSessions() []SessionInfo {
 	return []SessionInfo{}
 }
+
+func (m *mutatingDataProvider) GetSessionGraph() *SessionGraphData { return nil }
 
 func (m *mutatingDataProvider) GetGitRepos() []GitRepoSummary {
 	return nil
@@ -2071,4 +2135,136 @@ func drainEvents(t *testing.T, scanner *bufio.Scanner, want int, timeout time.Du
 		}
 	}
 	return events
+}
+
+func initMiniAppGitRepo(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+
+	runGit := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %s: %v", strings.Join(args, " "), strings.TrimSpace(string(out)), err)
+		}
+	}
+
+	runGit(repo, "init")
+	runGit(repo, "config", "user.email", "test@test.com")
+	runGit(repo, "config", "user.name", "Test")
+
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("# Test\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runGit(repo, "add", "-A")
+	runGit(repo, "commit", "-m", "initial")
+
+	return repo
+}
+
+func TestAPIWorktrees_List(t *testing.T) {
+	repo := initMiniAppGitRepo(t)
+	wtPath := filepath.Join(repo, ".worktrees", "api-list")
+	if _, err := gitpkg.CreateWorktree(repo, wtPath, "plan/api-list"); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, repo)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("GET", "/miniapp/api/worktrees?initData="+url.QueryEscape(testInitData()), nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var items []struct {
+		Name   string `json:"name"`
+		Branch string `json:"branch"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &items); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 worktree, got %d", len(items))
+	}
+	if items[0].Name != "api-list" {
+		t.Errorf("Name = %q, want %q", items[0].Name, "api-list")
+	}
+	if items[0].Branch != "plan/api-list" {
+		t.Errorf("Branch = %q, want %q", items[0].Branch, "plan/api-list")
+	}
+}
+
+func TestAPIWorktrees_MergeAndDispose(t *testing.T) {
+	repo := initMiniAppGitRepo(t)
+
+	mergePath := filepath.Join(repo, ".worktrees", "api-merge")
+	if _, err := gitpkg.CreateWorktree(repo, mergePath, "plan/api-merge"); err != nil {
+		t.Fatalf("CreateWorktree merge: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(mergePath, "merged.txt"), []byte("from worktree"), 0o644); err != nil {
+		t.Fatalf("WriteFile merge: %v", err)
+	}
+	if err := gitpkg.AutoCommit(mergePath, "add merged.txt"); err != nil {
+		t.Fatalf("AutoCommit merge: %v", err)
+	}
+
+	disposePath := filepath.Join(repo, ".worktrees", "api-dispose")
+	if _, err := gitpkg.CreateWorktree(repo, disposePath, "plan/api-dispose"); err != nil {
+		t.Fatalf("CreateWorktree dispose: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(disposePath, "dirty.txt"), []byte("dirty"), 0o644); err != nil {
+		t.Fatalf("WriteFile dispose: %v", err)
+	}
+
+	h := NewHandler(&mockDataProvider{}, &mockSender{}, testBotToken, NewStateNotifier(), nil, repo)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	mergeReq := httptest.NewRequest(
+		http.MethodPost,
+		"/miniapp/api/worktrees?initData="+url.QueryEscape(testInitData()),
+		strings.NewReader(`{"action":"merge","name":"api-merge"}`),
+	)
+	mergeReq.Header.Set("Content-Type", "application/json")
+	mergeW := httptest.NewRecorder()
+	mux.ServeHTTP(mergeW, mergeReq)
+	if mergeW.Code != http.StatusOK {
+		t.Fatalf("merge expected 200, got %d: %s", mergeW.Code, mergeW.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(repo, "merged.txt")); os.IsNotExist(err) {
+		t.Fatal("merged.txt should exist after merge")
+	}
+
+	disposeReq := httptest.NewRequest(
+		http.MethodPost,
+		"/miniapp/api/worktrees?initData="+url.QueryEscape(testInitData()),
+		strings.NewReader(`{"action":"dispose","name":"api-dispose"}`),
+	)
+	disposeReq.Header.Set("Content-Type", "application/json")
+	disposeW := httptest.NewRecorder()
+	mux.ServeHTTP(disposeW, disposeReq)
+	if disposeW.Code != http.StatusConflict {
+		t.Fatalf("dispose without force expected 409, got %d: %s", disposeW.Code, disposeW.Body.String())
+	}
+
+	disposeForceReq := httptest.NewRequest(
+		http.MethodPost,
+		"/miniapp/api/worktrees?initData="+url.QueryEscape(testInitData()),
+		strings.NewReader(`{"action":"dispose","name":"api-dispose","force":true}`),
+	)
+	disposeForceReq.Header.Set("Content-Type", "application/json")
+	disposeForceW := httptest.NewRecorder()
+	mux.ServeHTTP(disposeForceW, disposeForceReq)
+	if disposeForceW.Code != http.StatusOK {
+		t.Fatalf("dispose with force expected 200, got %d: %s", disposeForceW.Code, disposeForceW.Body.String())
+	}
+	if _, err := os.Stat(disposePath); !os.IsNotExist(err) {
+		t.Fatalf("worktree dir should be removed, stat err: %v", err)
+	}
 }

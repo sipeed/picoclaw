@@ -17,6 +17,7 @@ func processRunning(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
+
 	// kill(0) can return success for zombie processes too, so inspect /proc
 	// state and treat zombies as not-running for timeout cleanup assertions.
 	err := syscall.Kill(pid, 0)
@@ -37,7 +38,6 @@ func processRunning(pid int) bool {
 	if len(fields) == 0 {
 		return true // best effort fallback
 	}
-
 	state := fields[0]
 	return state != "Z"
 }
@@ -47,14 +47,12 @@ func TestShellTool_TimeoutKillsChildProcess(t *testing.T) {
 	if err != nil {
 		t.Errorf("unable to configure exec tool: %s", err)
 	}
-
 	tool.SetTimeout(500 * time.Millisecond)
 
 	args := map[string]any{
 		// Spawn a child process that would outlive the shell unless process-group kill is used.
 		"command": "sleep 60 & echo $! > child.pid; wait",
 	}
-
 	result := tool.Execute(context.Background(), args)
 	if !result.IsError {
 		t.Fatalf("expected timeout error, got success: %s", result.ForLLM)
@@ -68,7 +66,6 @@ func TestShellTool_TimeoutKillsChildProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read child pid file: %v", err)
 	}
-
 	childPID, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil {
 		t.Fatalf("failed to parse child pid: %v", err)
@@ -81,6 +78,5 @@ func TestShellTool_TimeoutKillsChildProcess(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-
 	t.Fatalf("child process %d is still running after timeout", childPID)
 }

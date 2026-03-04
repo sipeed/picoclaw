@@ -425,6 +425,58 @@ func (p *agentLoopDataProvider) GetActiveSessions() []miniapp.SessionInfo {
 	return result
 }
 
+func (p *agentLoopDataProvider) GetSessionGraph() *miniapp.SessionGraphData {
+	nodes := p.loop.GetSessionGraph()
+	if len(nodes) == 0 {
+		return &miniapp.SessionGraphData{
+			Nodes: []miniapp.SessionGraphNode{},
+			Edges: []miniapp.SessionGraphEdge{},
+		}
+	}
+
+	gNodes := make([]miniapp.SessionGraphNode, 0, len(nodes))
+	var edges []miniapp.SessionGraphEdge
+
+	for _, n := range nodes {
+		sk := gatewayShortKey(n.Key)
+		label := n.Label
+		if label == "" {
+			label = sk
+		}
+		gNodes = append(gNodes, miniapp.SessionGraphNode{
+			Key:        n.Key,
+			ShortKey:   sk,
+			Label:      label,
+			Status:     n.Status,
+			TurnCount:  n.TurnCount,
+			CreatedAt:  n.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:  n.UpdatedAt.Format(time.RFC3339),
+			Summary:    n.Summary,
+			ForkTurnID: n.ForkTurnID,
+		})
+		if n.ParentKey != "" {
+			edges = append(edges, miniapp.SessionGraphEdge{
+				From:       n.ParentKey,
+				To:         n.Key,
+				ForkTurnID: n.ForkTurnID,
+			})
+		}
+	}
+	if edges == nil {
+		edges = []miniapp.SessionGraphEdge{}
+	}
+	return &miniapp.SessionGraphData{Nodes: gNodes, Edges: edges}
+}
+
+// gatewayShortKey abbreviates long session keys for display.
+func gatewayShortKey(key string) string {
+	parts := strings.Split(key, ":")
+	if len(parts) > 2 {
+		return strings.Join(parts[2:], ":")
+	}
+	return key
+}
+
 func (p *agentLoopDataProvider) GetContextInfo() miniapp.ContextInfo {
 	workDir, planWorkDir, workspace, bootstrap := p.loop.GetContextInfo()
 	files := make([]miniapp.BootstrapFileInfo, len(bootstrap))
