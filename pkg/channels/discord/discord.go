@@ -338,6 +338,15 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		content = c.stripBotMention(content)
 	}
 
+	// Prepend referenced (quoted) message content if this is a reply
+	if m.MessageReference != nil && m.ReferencedMessage != nil {
+		refContent := m.ReferencedMessage.Content
+		if refContent != "" {
+			content = fmt.Sprintf("[quoted message from %s]: %s\n\n%s",
+				m.ReferencedMessage.Author.Username, refContent, content)
+		}
+	}
+
 	senderID := m.Author.ID
 
 	mediaPaths := make([]string, 0, len(m.Attachments))
