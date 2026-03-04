@@ -1363,7 +1363,7 @@ func isValidName(name string) bool {
 	}
 
 	// Avoid certain reserved names that shouldn't be used as identifiers
-	reserved := map[string]bool{"", ".", "..", "nil"}
+	reserved := map[string]bool{"": true, ".": true, "..": true, "nil": true}
 	if reserved[name] || strings.TrimSpace(name) != name {
 		return false
 	}
