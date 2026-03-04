@@ -547,11 +547,22 @@ type PerplexityConfig struct {
 	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
+type GLMSearchConfig struct {
+	Enabled bool   `json:"enabled"  env:"PICOCLAW_TOOLS_WEB_GLM_ENABLED"`
+	APIKey  string `json:"api_key"  env:"PICOCLAW_TOOLS_WEB_GLM_API_KEY"`
+	BaseURL string `json:"base_url" env:"PICOCLAW_TOOLS_WEB_GLM_BASE_URL"`
+	// SearchEngine specifies the search backend: "search_std" (default),
+	// "search_pro", "search_pro_sogou", or "search_pro_quark".
+	SearchEngine string `json:"search_engine" env:"PICOCLAW_TOOLS_WEB_GLM_SEARCH_ENGINE"`
+	MaxResults   int    `json:"max_results"   env:"PICOCLAW_TOOLS_WEB_GLM_MAX_RESULTS"`
+}
+
 type WebToolsConfig struct {
 	Brave      BraveConfig      `json:"brave"`
 	Tavily     TavilyConfig     `json:"tavily"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
 	Perplexity PerplexityConfig `json:"perplexity"`
+	GLMSearch  GLMSearchConfig  `json:"glm_search"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
 	Proxy           string `json:"proxy,omitempty"             env:"PICOCLAW_TOOLS_WEB_PROXY"`
