@@ -75,7 +75,7 @@ Commands with a risk level **above** `risk_threshold` are blocked before executi
 #### Argument modifiers
 
 Some commands change risk depending on their arguments. For example, `rm` is
-`medium` by default but becomes `critical` when called with `-rf`.
+classified as `high` by default, and `rm -rf` is treated as `critical`.
 
 You can add custom argument modifiers via config. Each entry lists tokens that
 must all be present (order-independent) and the resulting level:
