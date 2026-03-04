@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 
@@ -179,13 +182,22 @@ type AgentDefaults struct {
 	ImageModelFallbacks       []string `json:"image_model_fallbacks,omitempty"`
 	MaxTokens                 int      `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature               *float64 `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations         int      `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	SummarizeMessageThreshold int      `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
-	SummarizeTokenPercent     int      `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
+	MaxToolIterations         int                     `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	SummarizeMessageThreshold int                     `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
+	SummarizeTokenPercent     int                     `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
 	MaxMediaSize              int      `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+
+	// Cache settings
+	CacheEnabled  bool              `json:"cache_enabled"  env:"PICOCLAW_AGENTS_DEFAULTS_CACHE_ENABLED"`
+	CacheType     string            `json:"cache_type"     env:"PICOCLAW_AGENTS_DEFAULTS_CACHE_TYPE"`
+	CacheTTL      time.Duration     `json:"cache_ttl"      env:"PICOCLAW_AGENTS_DEFAULTS_CACHE_TTL"`
+	CacheConfig   map[string]string `json:"cache_config"   env:"PICOCLAW_AGENTS_DEFAULTS_CACHE_CONFIG"`
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
+
+
+
 
 func (d *AgentDefaults) GetMaxMediaSize() int {
 	if d.MaxMediaSize > 0 {
@@ -697,6 +709,20 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Run comprehensive validation on the entire config
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+    }
+
+    // Run comprehensive validation on the entire config
+    if err := cfg.Validate(); err != nil {
+        return nil, fmt.Errorf("configuration validation failed: %w", err)
+    }
+
+    return cfg, nil
+
 	return cfg, nil
 }
 
@@ -831,4 +857,516 @@ func (c *Config) ValidateModelList() error {
 		}
 	}
 	return nil
+}
+
+// Validate performs comprehensive validation of the Config structure.
+// It checks all required fields, formats, and interdependencies.
+func (c *Config) Validate() error {
+	if err := c.validateAgents(); err != nil {
+		return fmt.Errorf("agents config validation failed: %w", err)
+	}
+
+	if err := c.validateChannels(); err != nil {
+		return fmt.Errorf("channels config validation failed: %w", err)
+	}
+
+	if err := c.validateGateway(); err != nil {
+		return fmt.Errorf("gateway config validation failed: %w", err)
+	}
+
+	if err := c.validateTools(); err != nil {
+		return fmt.Errorf("tools config validation failed: %w", err)
+	}
+
+	if err := c.ValidateModelList(); err != nil {
+		return fmt.Errorf("model_list validation failed: %w", err)
+	}
+
+	if err := c.validateHeartbeat(); err != nil {
+		return fmt.Errorf("heartbeat config validation failed: %w", err)
+	}
+
+	if err := c.validateDevices(); err != nil {
+		return fmt.Errorf("devices config validation failed: %w", err)
+	}
+
+	return nil
+}
+
+// validateAgents validates the agents configuration.
+func (c *Config) validateAgents() error {
+	if err := c.validateAgentDefaults(&c.Agents.Defaults); err != nil {
+		return fmt.Errorf("defaults: %w", err)
+	}
+
+	for i, agent := range c.Agents.List {
+		if err := c.validateAgentConfig(agent); err != nil {
+			return fmt.Errorf("list[%d]: %w", i, err)
+		}
+	}
+
+	// Check for duplicate agent IDs
+	seenIDs := make(map[string]bool)
+	for _, agent := range c.Agents.List {
+		if seenIDs[agent.ID] {
+			return fmt.Errorf("duplicate agent id '%s' found", agent.ID)
+		}
+		seenIDs[agent.ID] = true
+	}
+
+	return nil
+}
+
+// validateAgentDefaults validates the default agent configuration.
+func (c *Config) validateAgentDefaults(d *AgentDefaults) error {
+	if d.Workspace == "" {
+		return fmt.Errorf("workspace is required")
+	}
+
+	modelName := d.GetModelName()
+	if modelName != "" {
+		// Model name validation - should be alphanumeric with some special chars
+		if !isValidName(modelName) {
+			return fmt.Errorf("model name '%s' contains invalid characters", modelName)
+		}
+	}
+
+	if d.MaxTokens < 0 {
+		return fmt.Errorf("max_tokens must be non-negative, got %d", d.MaxTokens)
+	}
+
+	if d.Temperature != nil && (*d.Temperature < 0 || *d.Temperature > 2.0) {
+		return fmt.Errorf("temperature must be between 0 and 2.0, got %f", *d.Temperature)
+	}
+
+	if d.MaxToolIterations < 0 {
+		return fmt.Errorf("max_tool_iterations must be non-negative, got %d", d.MaxToolIterations)
+	}
+
+	if d.SummarizeMessageThreshold < 0 {
+		return fmt.Errorf("summarize_message_threshold must be non-negative, got %d", d.SummarizeMessageThreshold)
+	}
+
+	if d.SummarizeTokenPercent < 0 || d.SummarizeTokenPercent > 100 {
+		return fmt.Errorf("summarize_token_percent must be between 0 and 100, got %d", d.SummarizeTokenPercent)
+	}
+
+	if d.MaxMediaSize < 0 {
+		return fmt.Errorf("max_media_size must be non-negative, got %d", d.MaxMediaSize)
+	}
+
+	return nil
+}
+
+// validateAgentConfig validates a single agent configuration.
+func (c *Config) validateAgentConfig(agent AgentConfig) error {
+	if agent.ID == "" {
+		return fmt.Errorf("agent id is required")
+	}
+
+	if !isValidName(agent.ID) {
+		return fmt.Errorf("agent id '%s' contains invalid characters", agent.ID)
+	}
+
+	if agent.Name != "" && !isValidName(agent.Name) {
+		return fmt.Errorf("agent name '%s' contains invalid characters", agent.Name)
+	}
+
+	// Agent-specific model overrides
+	if agent.Model != nil {
+		if agent.Model.Primary != "" && !isValidName(agent.Model.Primary) {
+			return fmt.Errorf("primary model name '%s' contains invalid characters", agent.Model.Primary)
+		}
+		for i, fallback := range agent.Model.Fallbacks {
+			if !isValidName(fallback) {
+				return fmt.Errorf("fallback model [%d] name '%s' contains invalid characters", i, fallback)
+			}
+		}
+	}
+
+	// Subagents config
+	if agent.Subagents != nil {
+		model := agent.Subagents.Model
+		if model != nil {
+			if model.Primary != "" && !isValidName(model.Primary) {
+				return fmt.Errorf("subagent primary model name '%s' contains invalid characters", model.Primary)
+			}
+			for i, fallback := range model.Fallbacks {
+				if !isValidName(fallback) {
+					return fmt.Errorf("subagent fallback model [%d] name '%s' contains invalid characters", i, fallback)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateChannels validates the channels configuration.
+func (c *Config) validateChannels() error {
+	// Each individual channel config validation occurs in its own function
+	if err := c.validateWhatsApp(); err != nil {
+		return fmt.Errorf("whatsapp validation failed: %w", err)
+	}
+	if err := c.validateTelegram(); err != nil {
+		return fmt.Errorf("telegram validation failed: %w", err)
+	}
+	if err := c.validateDiscord(); err != nil {
+		return fmt.Errorf("discord validation failed: %w", err)
+	}
+	if err := c.validateFeishu(); err != nil {
+		return fmt.Errorf("feishu validation failed: %w", err)
+	}
+	if err := c.validateMaixCam(); err != nil {
+		return fmt.Errorf("maixcam validation failed: %w", err)
+	}
+	if err := c.validateQQ(); err != nil {
+		return fmt.Errorf("qq validation failed: %w", err)
+	}
+	if err := c.validateDingTalk(); err != nil {
+		return fmt.Errorf("dingtalk validation failed: %w", err)
+	}
+	if err := c.validateSlack(); err != nil {
+		return fmt.Errorf("slack validation failed: %w", err)
+	}
+	if err := c.validateLINE(); err != nil {
+		return fmt.Errorf("line validation failed: %w", err)
+	}
+	if err := c.validateOneBot(); err != nil {
+		return fmt.Errorf("onebot validation failed: %w", err)
+	}
+	if err := c.validateWeCom(); err != nil {
+		return fmt.Errorf("wecom validation failed: %w", err)
+	}
+	if err := c.validateWeComApp(); err != nil {
+		return fmt.Errorf("wecom_app validation failed: %w", err)
+	}
+	if err := c.validateWeComAIBot(); err != nil {
+		return fmt.Errorf("wecom_aibot validation failed: %w", err)
+	}
+	if err := c.validatePico(); err != nil {
+		return fmt.Errorf("pico validation failed: %w", err)
+	}
+
+	return nil
+}
+
+// validateWhatsApp validates the WhatsApp channel configuration.
+func (c *Config) validateWhatsApp() error {
+	cfg := &c.Channels.WhatsApp
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.UseNative && cfg.BridgeURL != "" {
+		return fmt.Errorf("use_native and bridge_url cannot both be set")
+	}
+
+	return nil
+}
+
+// validateTelegram validates the Telegram channel configuration.
+func (c *Config) validateTelegram() error {
+	cfg := &c.Channels.Telegram
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.Token == "" {
+		return fmt.Errorf("token is required when telegram channel is enabled")
+	}
+
+	return nil
+}
+
+// validateDiscord validates the Discord channel configuration.
+func (c *Config) validateDiscord() error {
+	cfg := &c.Channels.Discord
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.Token == "" {
+		return fmt.Errorf("token is required when discord channel is enabled")
+	}
+
+	return nil
+}
+
+// validateFeishu validates the Feishu channel configuration.
+func (c *Config) validateFeishu() error {
+	cfg := &c.Channels.Feishu
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.AppID == "" || cfg.AppSecret == "" {
+		return fmt.Errorf("app_id and app_secret are required when feishu channel is enabled")
+	}
+
+	return nil
+}
+
+// validateQQ validates the QQ channel configuration.
+func (c *Config) validateQQ() error {
+	cfg := &c.Channels.QQ
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.AppID == "" || cfg.AppSecret == "" {
+		return fmt.Errorf("app_id and app_secret are required when qq channel is enabled")
+	}
+
+	return nil
+}
+
+// validateDingTalk validates the DingTalk channel configuration.
+func (c *Config) validateDingTalk() error {
+	cfg := &c.Channels.DingTalk
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.ClientID == "" || cfg.ClientSecret == "" {
+		return fmt.Errorf("client_id and client_secret are required when dingtalk channel is enabled")
+	}
+
+	return nil
+}
+
+// validateMaixCam validates the MaixCam channel configuration.
+func (c *Config) validateMaixCam() error {
+	cfg := &c.Channels.MaixCam
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.Host == "" {
+		return fmt.Errorf("host is required when maixcam channel is enabled")
+	}
+
+	if cfg.Port <= 0 || cfg.Port > 65535 {
+		return fmt.Errorf("port must be a valid TCP port (1-65535), got %d", cfg.Port)
+	}
+
+	return nil
+}
+
+// validateSlack validates the Slack channel configuration.
+func (c *Config) validateSlack() error {
+	cfg := &c.Channels.Slack
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.BotToken == "" && cfg.AppToken == "" {
+		return fmt.Errorf("either bot_token or app_token is required when slack channel is enabled")
+	}
+
+	return nil
+}
+
+// validateLINE validates the LINE channel configuration.
+func (c *Config) validateLINE() error {
+	cfg := &c.Channels.LINE
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.ChannelSecret == "" {
+		return fmt.Errorf("channel_secret is required when line channel is enabled")
+	}
+
+	return nil
+}
+
+// validateOneBot validates the OneBot channel configuration.
+func (c *Config) validateOneBot() error {
+	cfg := &c.Channels.OneBot
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.WSUrl == "" {
+		return fmt.Errorf("ws_url is required when onebot channel is enabled")
+	}
+
+	return nil
+}
+
+// validateWeCom validates the WeCom (enterprise WeChat) channel configuration.
+func (c *Config) validateWeCom() error {
+	cfg := &c.Channels.WeCom
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.Token == "" || cfg.EncodingAESKey == "" {
+		return fmt.Errorf("token and encoding_aes_key are required when wecom channel is enabled")
+	}
+
+	if cfg.WebhookPort <= 0 || cfg.WebhookPort > 65535 {
+		return fmt.Errorf("webhook_port must be a valid TCP port (1-65535), got %d", cfg.WebhookPort)
+	}
+
+	return nil
+}
+
+// validateWeComApp validates the WeComApp channel configuration.
+func (c *Config) validateWeComApp() error {
+	cfg := &c.Channels.WeComApp
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.CorpID == "" || cfg.CorpSecret == "" || cfg.AgentID == 0 {
+		return fmt.Errorf("corp_id, corp_secret, and agent_id are required when wecom_app channel is enabled")
+	}
+
+	if cfg.Token == "" || cfg.EncodingAESKey == "" {
+		return fmt.Errorf("token and encoding_aes_key are required when wecom_app channel is enabled")
+	}
+
+	if cfg.WebhookPort <= 0 || cfg.WebhookPort > 65535 {
+		return fmt.Errorf("webhook_port must be a valid TCP port (1-65535), got %d", cfg.WebhookPort)
+	}
+
+	return nil
+}
+
+// validateWeComAIBot validates the WeComAIBot channel configuration.
+func (c *Config) validateWeComAIBot() error {
+	cfg := &c.Channels.WeComAIBot
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.Token == "" || cfg.EncodingAESKey == "" {
+		return fmt.Errorf("token and encoding_aes_key are required when wecom_aibot channel is enabled")
+	}
+
+	if cfg.MaxSteps < 0 {
+		return fmt.Errorf("max_steps must be non-negative, got %d", cfg.MaxSteps)
+	}
+
+	return nil
+}
+
+// validatePico validates the Pico channel configuration.
+func (c *Config) validatePico() error {
+	cfg := &c.Channels.Pico
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if cfg.Token == "" {
+		return fmt.Errorf("token is required when pico channel is enabled")
+	}
+
+	return nil
+}
+
+// validateGateway validates the gateway configuration.
+func (c *Config) validateGateway() error {
+	if c.Gateway.Host == "" {
+		return fmt.Errorf("gateway host is required")
+	}
+
+	if c.Gateway.Port <= 0 || c.Gateway.Port > 65535 {
+		return fmt.Errorf("gateway port must be a valid TCP port (1-65535), got %d", c.Gateway.Port)
+	}
+
+	return nil
+}
+
+// validateTools validates the tools configuration.
+func (c *Config) validateTools() error {
+	// Validation for web tools if they are enabled
+	webConfig := &c.Tools.Web
+	if webConfig.Brave.Enabled && webConfig.Brave.APIKey == "" {
+		return fmt.Errorf("web.brave: api_key is required when enabled is true")
+	}
+	if webConfig.Tavily.Enabled && webConfig.Tavily.APIKey == "" {
+		return fmt.Errorf("web.tavily: api_key is required when enabled is true")
+	}
+
+	// No error if multiple tools are enabled
+	if webConfig.Tavily.Enabled && webConfig.Brave.Enabled && webConfig.DuckDuckGo.Enabled {
+		// This is fine
+	}
+
+	// Validating MCP config
+	if c.Tools.MCP.Enabled {
+		for name, server := range c.Tools.MCP.Servers {
+			if name == "" {
+				return fmt.Errorf("mcp.servers: name cannot be empty")
+			}
+			if server.Enabled && (server.Command == "" && server.URL == "") {
+				return fmt.Errorf("mcp.server '%s': command or URL is required when enabled is true", name)
+			}
+
+			if server.Type != "" && server.Type != "stdio" && server.Type != "sse" && server.Type != "http" {
+				return fmt.Errorf("mcp.server '%s': type must be 'stdio', 'sse', or 'http', got '%s'", name, server.Type)
+			}
+
+			if server.Type != "stdio" && server.Type != "" && (server.Command != "") {
+				return fmt.Errorf("mcp.server '%s': command cannot be used with non-stdio type ('%s')", name, server.Type)
+			}
+
+			if (server.Type == "sse" || server.Type == "http") && server.URL == "" {
+				return fmt.Errorf("mcp.server '%s': URL is required for sse/http types", name)
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateHeartbeat validates the heartbeat configuration.
+func (c *Config) validateHeartbeat() error {
+	if c.Heartbeat.Enabled && c.Heartbeat.Interval > 0 && c.Heartbeat.Interval < 5 {
+		return fmt.Errorf("heartbeat interval minimum is 5 minutes, got %d minutes", c.Heartbeat.Interval)
+	}
+
+	return nil
+}
+
+// validateDevices validates the devices configuration.
+func (c *Config) validateDevices() error {
+	// Current devices config is valid as-is
+	return nil
+}
+
+// isValidName checks if a name string is valid. It should contain alphanumeric characters
+// with hyphens, underscores, and periods but not be empty or have special characters that
+// could cause issues in identifiers or file paths.
+func isValidName(name string) bool {
+	if name == "" {
+		return false
+	}
+
+	// Import regex package for this function
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9_.-]+$`, name)
+	if err != nil {
+		return false
+	}
+
+	if !matched {
+		return false
+	}
+
+	// Additional check: ensure it doesn't start or end with special separators
+	if name[0] == '.' || name[0] == '-' || name[0] == '_' ||
+		name[len(name)-1] == '.' || name[len(name)-1] == '-' || name[len(name)-1] == '_' {
+		return false
+	}
+
+	// Avoid certain reserved names that shouldn't be used as identifiers
+	reserved := map[string]bool{"", ".", "..", "nil"}
+	if reserved[name] || strings.TrimSpace(name) != name {
+		return false
+	}
+
+	return true
 }
