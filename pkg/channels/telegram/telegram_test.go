@@ -1,10 +1,9 @@
 package telegram
 
 import (
+	_ "embed"
 	"fmt"
 	"testing"
-
-	_ "embed"
 
 	"github.com/stretchr/testify/require"
 )
