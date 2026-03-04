@@ -166,9 +166,9 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 
 	result := ConvertProvidersToModelList(cfg)
 
-	// All 19 providers should be converted
-	if len(result) != 19 {
-		t.Errorf("len(result) = %d, want 19", len(result))
+	// All 20 providers should be converted
+	if len(result) != 20 {
+		t.Errorf("len(result) = %d, want 20", len(result))
 	}
 }
 
