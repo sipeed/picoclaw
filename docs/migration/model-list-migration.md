@@ -102,6 +102,7 @@ The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
 | `shengsuanyun/` | ShengSuanYun | `shengsuanyun/deepseek-v3` |
 | `volcengine/` | Volcengine | `volcengine/doubao-pro-32k` |
 
+
 **Note**: If no prefix is specified, `openai/` is used as the default.
 
 ## ModelConfig Fields
