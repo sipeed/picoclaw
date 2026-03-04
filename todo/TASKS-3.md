@@ -147,28 +147,27 @@ func (tw *TurnWriter) Discard()
 
 ## タスク一覧
 
-### Phase 0: SQLite SessionStore + LegacyAdapter
+### Phase 0: SQLite SessionStore + LegacyAdapter ✅
 
 既存動作を維持したまま裏側を差し替える。
 
-1. **SQLite SessionStore 実装**
-   - `pkg/session/sqlite.go` (新規): SessionStore interface の SQLite 実装
+1. ✅ **SQLite SessionStore 実装**
+   - `pkg/session/sqlite.go`: SessionStore interface の SQLite 実装
    - WAL モード、`modernc.org/sqlite` (CGO なし、ARM クロスコンパイル容易)
    - schema migration (CREATE TABLE IF NOT EXISTS)
-   - `go:build` タグなしで常に利用可能
 
-2. **LegacyAdapter 実装**
-   - `pkg/session/legacy_adapter.go` (新規)
-   - 既存の `GetHistory` / `SetHistory` / `AddMessage` / `MarkDirty` を SessionGraph 経由で実装
-   - 既存テストが全パスすること
+2. ✅ **LegacyAdapter 実装**
+   - `pkg/session/legacy_adapter.go`
+   - 既存の `GetHistory` / `SetHistory` / `AddMessage` / `MarkDirty` を SessionStore 経由で実装
+   - 既存テスト全パス + テーブル駆動で JSON/SQLite 両方を同一アサーションで検証
 
-3. **JSON → SQLite lazy migration**
-   - 起動時に `sessions/*.json` を検出 → SQLite に import → JSON ファイルをリネーム (.migrated)
-   - エラー時は JSON にフォールバック
+3. ✅ **JSON → SQLite lazy migration**
+   - `pkg/session/migrate.go`: 起動時に `sessions/*.json` を検出 → SQLite に import → `.json.migrated` にリネーム
+   - 個別ファイル失敗はログ警告して続行 (次回起動で再試行)
 
-4. **AgentLoop 配線**
-   - `AgentInstance` が `SessionStore` を保持、`LegacyAdapter` 経由で既存コードに注入
-   - 既存の `SessionManager` は Phase 2 で廃止
+4. ✅ **AgentLoop 配線**
+   - `pkg/agent/instance.go`: `Sessions` 型を `*LegacyAdapter` に変更
+   - `loop.go` / `loop_test.go` は変更なし — メソッドシグネチャ同一
 
 ---
 
