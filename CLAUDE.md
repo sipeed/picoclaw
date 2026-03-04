@@ -529,3 +529,143 @@ canvas には全エージェントが統一して表示される。
 - クロスセッション検索 (MEMORY.md の補完として)
 
 設計の哲学: `Session.Messages` (履歴中心) と `MEMORY.md` (知識中心) が現状共存している。どちらを主軸にするかで発展方向が変わる。
+
+---
+
+## Session DAG Migration Plan (Branch/Merge for Subagent Orchestration)
+
+> Drafted 2026-03-04. Goal: make branch/fork/merge first-class in session history,
+> instead of injecting subagent completion as ad-hoc system text.
+
+### 背景
+
+thread の有無に依存せず、subagent 運用の本質は「会話コンテキストの分岐と合流」。
+現行の `sessionKey -> linear []Message` は分離には強いが、
+「どの branch から何を merge したか」を構造化して保持できない。
+
+### 目標
+
+1. `sessionKey` の value を head 参照 (`SessionRef`) に変更し、履歴実体を DAG ノード化する
+2. merge を「1回分の記憶」として会話ログに追加（git merge commit 相当）
+3. チャネル/プロバイダ差分は capability interface で吸収する
+4. 既存線形セッションとの後方互換を維持しながら段階移行する
+
+### 提案データモデル（v1）
+
+```go
+type SessionRef struct {
+    HeadNodeID string
+    GraphID    string // optional shard namespace
+    Version    uint64 // optimistic concurrency (CAS)
+}
+
+type ConversationNode struct {
+    NodeID      string
+    SessionKey  string
+    Kind        NodeKind      // Message | Merge
+    Parents     []string      // 1 parent = append, 2 parents = merge
+    Events      []LogEvent    // one-turn memory bundle
+    SummaryDelta string
+    CreatedAt   time.Time
+    Author      string
+    Meta        map[string]string
+}
+
+type LogEvent struct {
+    Role       string // user|assistant|tool|system
+    Content    string
+    ToolCallID string
+    ToolCalls  []providers.ToolCall
+    Usage      *providers.UsageInfo
+    Meta       map[string]string
+}
+```
+
+### 提案インターフェース（v1）
+
+```go
+type SessionGraphStore interface {
+    Resolve(sessionKey string) (SessionRef, bool, error)
+    CompareAndSwapHead(sessionKey string, expectVersion uint64, next SessionRef) error
+
+    AppendNode(node ConversationNode) error
+    GetNode(nodeID string) (ConversationNode, bool, error)
+
+    ForkSession(parentKey, childKey string, atHead bool) error
+    MergeSession(baseKey, branchKey string, policy MergePolicy) (mergeNodeID string, err error)
+}
+
+type MergePolicy interface {
+    BuildMergeEvents(basePath []ConversationNode, branchPath []ConversationNode) ([]LogEvent, error)
+}
+```
+
+### Merge 方針
+
+- subagent 結果は `processSystemMessage` で plain text 注入するのではなく、
+  `NodeKind=Merge` のノードを base セッションに append する。
+- `Events` は「1回分の記憶」として扱う（例: merge summary, adopted decisions, artifacts）。
+- merge conflict は `MergePolicy` で deterministic ルール優先、必要に応じて LLM 補助。
+
+### Capability 型の整理方針
+
+既存の interface ベース設計を継続し、分岐/合流にも適用する:
+
+- Channel capability (thread, draft, edit, status update)
+- Provider capability (streaming, structured output, tool-call fidelity)
+
+capability は type assertion で解決し、非対応時は deterministic fallback。
+
+### 互換移行ステップ
+
+1. 新規 `session/graph` 実装を追加（in-memory + file persistence）
+2. adapter で既存 `GetHistory/SetHistory/AddMessage` を DAG replay に接続
+3. 新規 fork/merge API を miniapp/command 層へ段階公開
+4. 既存 linear JSON は lazy migration（read old -> write new on mutation）
+5. 安定後に old-only path を read-compat へ縮退
+
+### 並列作業可能タスク
+
+#### Track A: Core Data Model / Storage
+- `SessionRef`, `ConversationNode`, `LogEvent` 型追加
+- `SessionGraphStore` と CAS 更新実装
+- node persistence + compaction + GC (unreachable branch TTL)
+
+#### Track B: Replay / Prompt Integration
+- DAG -> linear message replay 実装
+- merge node の replay 表現（1-turn memory bundle）
+- context overflow 時の compression 戦略を DAG 前提に再設計
+
+#### Track C: Orchestration Integration
+- subagent completion を merge node 化
+- task metadata (`task_id`, `source_session`, `duration`, `tool_calls`) を node meta へ格納
+- reporter/broadcaster のイベントと node lifecycle の対応付け
+
+#### Track D: Channel & Provider Capabilities
+- channel capability matrix を型化（thread/draft/edit/task-status）
+- provider capability matrix を型化（streaming/structured/tool fidelity）
+- merge policy の capability-aware fallback 追加
+
+#### Track E: API / UI / Commands
+- fork/merge/list-branches API 追加
+- Mini App: branch graph 可視化、merge preview、conflict explanation
+- CLI/command: `/session fork`, `/session merge`, `/session graph`
+
+#### Track F: Migration / Safety / Ops
+- old sessions から DAG への lazy migration
+- observability: merge success rate, conflict rate, replay latency
+- rollback switch（feature flag）とデータ整合性チェック
+
+#### Track G: Tests / Benchmarks
+- replay determinism tests
+- merge policy golden tests
+- concurrency tests (CAS conflict / retry)
+- memory & latency benchmark（long-history / many-branch scenarios）
+
+### 依存関係（高レベル）
+
+- A は全 Track の前提
+- B/C は A 完了後に並列可能
+- D は B/C と並列可能（インターフェース先行）
+- E は B/C/D の API 固定後に進める
+- F/G は全フェーズ横断で継続実施
