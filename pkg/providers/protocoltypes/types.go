@@ -1,5 +1,10 @@
 package protocoltypes
 
+import (
+	"encoding/json"
+	"strings"
+)
+
 type ToolCall struct {
 	ID               string         `json:"id"`
 	Type             string         `json:"type,omitempty"`
@@ -19,9 +24,75 @@ type GoogleExtra struct {
 }
 
 type FunctionCall struct {
-	Name             string `json:"name"`
-	Arguments        string `json:"arguments"`
-	ThoughtSignature string `json:"thought_signature,omitempty"`
+	Name             string         `json:"name"`
+	Arguments        map[string]any `json:"-"`
+	ThoughtSignature string         `json:"thought_signature,omitempty"`
+}
+
+func (f *FunctionCall) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Name             string `json:"name"`
+		Arguments        any    `json:"arguments"`
+		ThoughtSignature string `json:"thought_signature,omitempty"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+
+	f.Name = wire.Name
+	f.ThoughtSignature = wire.ThoughtSignature
+	f.Arguments = decodeFunctionArguments(wire.Arguments)
+	return nil
+}
+
+func (f FunctionCall) MarshalJSON() ([]byte, error) {
+	args := "{}"
+	if len(f.Arguments) > 0 {
+		payload, err := json.Marshal(f.Arguments)
+		if err != nil {
+			return nil, err
+		}
+		args = string(payload)
+	}
+
+	wire := struct {
+		Name             string `json:"name"`
+		Arguments        string `json:"arguments"`
+		ThoughtSignature string `json:"thought_signature,omitempty"`
+	}{
+		Name:             f.Name,
+		Arguments:        args,
+		ThoughtSignature: f.ThoughtSignature,
+	}
+	return json.Marshal(wire)
+}
+
+func decodeFunctionArguments(raw any) map[string]any {
+	switch v := raw.(type) {
+	case nil:
+		return map[string]any{}
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return map[string]any{}
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil || parsed == nil {
+			return map[string]any{"raw": v}
+		}
+		return parsed
+	case map[string]any:
+		if v == nil {
+			return map[string]any{}
+		}
+		return v
+	default:
+		payload, err := json.Marshal(v)
+		if err != nil {
+			return map[string]any{}
+		}
+		return map[string]any{"raw": string(payload)}
+	}
 }
 
 type LLMResponse struct {
@@ -77,9 +148,44 @@ type ToolDefinition struct {
 }
 
 type ToolFunctionDefinition struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+func (t ToolFunctionDefinition) ParametersMap() map[string]any {
+	if len(t.Parameters) == 0 {
+		return nil
+	}
+	var params map[string]any
+	if err := json.Unmarshal(t.Parameters, &params); err != nil {
+		return nil
+	}
+	return params
+}
+
+func (t *ToolFunctionDefinition) SetParametersMap(params map[string]any) error {
+	if len(params) == 0 {
+		t.Parameters = json.RawMessage(`{}`)
+		return nil
+	}
+	payload, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	t.Parameters = json.RawMessage(payload)
+	return nil
+}
+
+func MustMarshalParameters(params map[string]any) json.RawMessage {
+	if len(params) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	payload, err := json.Marshal(params)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return json.RawMessage(payload)
 }
 
 // StreamEvent represents a single chunk from an SSE streaming response.

@@ -59,7 +59,7 @@ Lint: `golangci-lint run`
 
 | ファイル | 概要 |
 |---|---|
-| [`todo/TASKS-1.md`](todo/TASKS-1.md) | **Memory & Performance Optimization** — MemoryStore キャッシュ、FunctionCall/ToolDefinition 型整理、stats フラッシュ最適化 |
+| [`todo/TASKS-1.md`](todo/TASKS-1.md) | ~~**Memory & Performance Optimization**~~ ✅ 実装済み（MemoryStore キャッシュ＋パース済み state、FunctionCall.Arguments map統一、ToolDefinition.Parameters RawMessage化、検索結果フォーマット共通化、stats 定期フラッシュ） |
 | [`todo/TASKS-2.md`](todo/TASKS-2.md) | **Subagent Orchestration (Container Model)** — SubagentContainer、Orchestrator、Presets enforcement、Subagent Plan Mode |
 | [`todo/TASKS-3.md`](todo/TASKS-3.md) | **Session DAG (SQLite Store)** — セッション管理の SQLite 移行、Turn ベース線形+セッション間 DAG、Fork/Report フロー |
 | [`todo/TASKS-4.md`](todo/TASKS-4.md) | **Mini App & Static Serving** — 静的配信の汎用化、バンドラ導入、フロントエンドテスト追加 |

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -183,12 +184,19 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 		desc, _ := fn["description"].(string)
 		params, _ := fn["parameters"].(map[string]any)
 
+		paramsRaw := json.RawMessage(`{}`)
+		if len(params) > 0 {
+			if payload, err := json.Marshal(params); err == nil {
+				paramsRaw = json.RawMessage(payload)
+			}
+		}
+
 		definitions = append(definitions, providers.ToolDefinition{
 			Type: "function",
 			Function: providers.ToolFunctionDefinition{
 				Name:        name,
 				Description: desc,
-				Parameters:  params,
+				Parameters:  paramsRaw,
 			},
 		})
 	}

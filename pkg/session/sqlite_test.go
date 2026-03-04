@@ -412,7 +412,7 @@ func TestSQLite_MessagesRoundTrip(t *testing.T) {
 					Function: &providers.FunctionCall{
 						Name: "exec",
 
-						Arguments: `{"cmd":"ls"}`,
+						Arguments: map[string]any{"cmd": "ls"},
 					},
 				},
 			},
@@ -447,8 +447,8 @@ func TestSQLite_MessagesRoundTrip(t *testing.T) {
 		t.Errorf("tool call function name mismatch: %s", got[1].ToolCalls[0].Function.Name)
 	}
 
-	if got[1].ToolCalls[0].Function.Arguments != `{"cmd":"ls"}` {
-		t.Errorf("tool call arguments mismatch: %s", got[1].ToolCalls[0].Function.Arguments)
+	if got[1].ToolCalls[0].Function.Arguments["cmd"] != "ls" {
+		t.Errorf("tool call arguments mismatch: %v", got[1].ToolCalls[0].Function.Arguments)
 	}
 
 	if got[2].ToolCallID != "call_1" {
