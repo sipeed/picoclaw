@@ -669,3 +669,214 @@ capability は type assertion で解決し、非対応時は deterministic fallb
 - D は B/C と並列可能（インターフェース先行）
 - E は B/C/D の API 固定後に進める
 - F/G は全フェーズ横断で継続実施
+
+---
+
+## Session DAG Design (Revised 2026-03-04)
+
+> 上記 Session DAG Migration Plan を SBC制約と設計レビューを踏まえて改訂したもの。
+
+### 設計原則
+
+1. **セッション内は線形、セッション間がDAG** — per-message DAGは過剰。ターン間の因果は順序で十分。
+2. **SQLite single-file backend** — microSD書き込み最小化、WALモードでクラッシュ耐性。
+3. **サブエージェント報告は user role** — system roleの権威性バイアスを回避。conductorが評価・反論できる。
+4. **"merge" は特別な操作ではない** — 報告を受けて会話を続ける通常のターン。
+
+### 初期提案からの変更点
+
+| 初期提案 | 改訂 | 理由 |
+|---|---|---|
+| `ConversationNode` per-message | `Turn` per-turn (複数メッセージをバンドル) | ノード爆発回避、microSD保護 |
+| CAS + `Version uint64` | `sync.RWMutex` (single process) | SBCはシングルプロセス、CASは過剰 |
+| `NodeKind=Merge` + system role注入 | `TurnReport` + user role会話 | LLMの権威性バイアス回避 |
+| per-node JSON files | SQLite single file | 書き込み回数削減、インデックス付きクエリ |
+| LLM-assisted merge | deterministic (不要に) | mergeという概念自体が消えた |
+| 毎回DAG→linear replay | cached linear view + dirty flag | ARM CPU負荷軽減 |
+
+### DAG構造
+
+```
+Conductor session:  turn1 → turn2 → turn3 → report(scout-1) → turn4 → report(coder-1) → turn5
+                               ↓ fork                          ↑ report
+Scout-1 session:              turn1 → turn2 → turn3 ──────────┘
+                                        ↓ fork
+Coder-1 session:                       turn1 → turn2 → turn3 ──────────┘
+```
+
+セッション内は `seq INTEGER` で順序管理。DAGの辺はセッション間の `parent_key` / `origin_key`。
+
+### SQLite Schema
+
+```sql
+CREATE TABLE sessions (
+    key          TEXT PRIMARY KEY,
+    parent_key   TEXT REFERENCES sessions(key),
+    fork_turn_id TEXT,                          -- 親のどのturnで分岐したか
+    status       TEXT NOT NULL DEFAULT 'active', -- active|completed|archived
+    label        TEXT NOT NULL DEFAULT '',       -- "scout-1", "heartbeat" etc.
+    summary      TEXT NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
+CREATE TABLE turns (
+    id          TEXT PRIMARY KEY,
+    session_key TEXT NOT NULL REFERENCES sessions(key) ON DELETE CASCADE,
+    seq         INTEGER NOT NULL,
+    kind        INTEGER NOT NULL DEFAULT 0,     -- 0=normal 1=report 2=fork_point
+    messages    TEXT NOT NULL,                   -- JSON []providers.Message
+    origin_key  TEXT,                            -- report: どのセッションの報告か
+    summary     TEXT,                            -- compaction後。非NULLならmessagesは空
+    author      TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL,
+    meta        TEXT,                            -- JSON object, nullable
+    UNIQUE(session_key, seq)
+);
+
+CREATE INDEX idx_turns_session_seq ON turns(session_key, seq);
+CREATE INDEX idx_sessions_parent ON sessions(parent_key);
+```
+
+### Go Interface
+
+```go
+package session
+
+type TurnKind int
+
+const (
+    TurnNormal    TurnKind = iota // user↔assistant 通常ターン
+    TurnReport                    // サブエージェント報告 + conductor評価
+    TurnForkPoint                 // マーカー: ここで子セッションが分岐した
+)
+
+type Turn struct {
+    ID        string
+    Seq       int
+    Kind      TurnKind
+    Messages  []providers.Message
+    OriginKey string              // TurnReport時: 報告元セッションkey
+    Summary   string              // compaction済みなら非空、Messagesは空
+    Author    string
+    CreatedAt time.Time
+    Meta      map[string]string
+}
+
+type SessionInfo struct {
+    Key        string
+    ParentKey  string // "" = root
+    ForkTurnID string
+    Status     string // active, completed, archived
+    Label      string
+    Summary    string
+    TurnCount  int
+    CreatedAt  time.Time
+    UpdatedAt  time.Time
+}
+
+type CreateOpts struct {
+    ParentKey  string
+    ForkTurnID string
+    Label      string
+}
+
+type ListFilter struct {
+    ParentKey string
+    Status    string
+}
+
+// SessionStore — SQLite実装が唯一の実装
+type SessionStore interface {
+    // セッション
+    Create(key string, opts *CreateOpts) error
+    Get(key string) (*SessionInfo, error)
+    List(filter *ListFilter) ([]*SessionInfo, error)
+    SetStatus(key, status string) error
+    SetSummary(key, summary string) error
+    Delete(key string) error
+    Children(key string) ([]*SessionInfo, error)
+
+    // ターン (セッション内は線形)
+    Append(sessionKey string, turn *Turn) error
+    Turns(sessionKey string, sinceSeq int) ([]*Turn, error)
+    LastTurn(sessionKey string) (*Turn, error)
+    TurnCount(sessionKey string) (int, error)
+
+    // compaction: seq以前のturnsをsummaryで置換
+    Compact(sessionKey string, upToSeq int, summary string) error
+
+    // fork: 親セッションの現在headから子セッションを作る
+    Fork(parentKey, childKey string, opts *CreateOpts) error
+
+    // 管理
+    Prune(olderThan time.Duration) (int, error)
+    Close() error
+}
+```
+
+### 高レベルラッパー
+
+```go
+// SessionGraph — AgentLoopが直接使う層
+// SessionStoreをラップし、ターンバッファとlinear viewキャッシュを持つ
+type SessionGraph struct {
+    store   SessionStore
+    buffers sync.Map // sessionKey → *turnBuffer (書き込み中ターン)
+    views   sync.Map // sessionKey → *cachedView  (LLM用メッセージ列)
+}
+
+// LLM用: 全turnsをフラットな[]Messageに展開
+// compaction済みturnsはsummaryをsystem messageとして先頭に置く
+func (g *SessionGraph) Messages(sessionKey string) ([]providers.Message, error)
+
+// ターン開始 (user message受信時)
+func (g *SessionGraph) BeginTurn(sessionKey string, kind TurnKind) *TurnWriter
+
+// TurnWriter — 1ターン内でメッセージを逐次追加
+type TurnWriter struct { ... }
+func (tw *TurnWriter) Add(msg providers.Message)
+func (tw *TurnWriter) SetOrigin(sessionKey string)  // report元を設定
+func (tw *TurnWriter) Commit() error                 // store.Appendして確定
+func (tw *TurnWriter) Discard()                      // 破棄 (エラー時)
+```
+
+### サブエージェント報告フロー
+
+```
+1. conductor が spawn → store.Fork(conductorSession, subagentSession)
+2. subagent 実行中 → store.Append(subagentSession, Turn{Kind: TurnNormal, ...})
+3. subagent 完了 → store.SetStatus(subagentSession, "completed")
+4. conductor 側に report ターン:
+     tw := graph.BeginTurn(conductorSession, TurnReport)
+     tw.SetOrigin(subagentSession)
+     tw.Add(Message{Role: "user", Content: "[scout-1] 調査結果..."})
+     // conductorのLLMループが応答を追加してから tw.Commit()
+5. conductor が応答:
+     tw.Add(Message{Role: "assistant", Content: "なるほど、JWTで十分..."})
+     tw.Commit()
+```
+
+conductorは各報告を個別に評価・反論できる。system roleではないので鵜呑みにしにくい。
+
+### 既存コードとの互換アダプター
+
+```go
+// 移行期間中、既存の SessionManager interface を満たす
+type LegacyAdapter struct {
+    graph *SessionGraph
+}
+
+func (a *LegacyAdapter) GetHistory(key string) ([]providers.Message, error) {
+    return a.graph.Messages(key)
+}
+func (a *LegacyAdapter) AddMessage(key, role, content string) error { ... }
+func (a *LegacyAdapter) SetHistory(key string, msgs []providers.Message) error { ... }
+```
+
+### 移行フェーズ
+
+1. **Phase 0**: SQLite SessionStore 実装 + LegacyAdapter。既存動作を維持したまま裏側を差し替え
+2. **Phase 1**: サブエージェントセッション永続化 + Fork/Report ターン導入
+3. **Phase 2**: AgentLoop を SessionGraph 直接呼び出しに移行。LegacyAdapter 廃止
+4. **Phase 3**: Mini App graph 可視化 + `/session` コマンド群
