@@ -102,8 +102,8 @@ type AgentLoop struct {
 	promptDirty             atomic.Bool  // true = rebuild needed on next GetSystemPrompt read
 	OnStateChange           func()       // called on plan/session/skills mutations
 	OnUserMessage           func()       // called when a real user message is processed
-	SaveConfig              func(*config.Config) error
-	OnHeartbeatThreadUpdate func(int)
+	saveConfig              func(*config.Config) error
+	onHeartbeatThreadUpdate func(int)
 	orchBroadcaster         *orch.Broadcaster  // nil when --orchestration not set
 	orchReporter            orch.AgentReporter // always non-nil (Noop when disabled)
 }
@@ -217,12 +217,12 @@ func (al *AgentLoop) notifyStateChange() {
 
 // SetConfigSaver registers a callback used by slash commands that persist runtime config changes.
 func (al *AgentLoop) SetConfigSaver(fn func(*config.Config) error) {
-	al.SaveConfig = fn
+	al.saveConfig = fn
 }
 
 // SetHeartbeatThreadUpdater registers a callback to apply runtime heartbeat thread updates.
 func (al *AgentLoop) SetHeartbeatThreadUpdater(fn func(int)) {
-	al.OnHeartbeatThreadUpdate = fn
+	al.onHeartbeatThreadUpdate = fn
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
@@ -3625,12 +3625,12 @@ func (al *AgentLoop) handleHeartbeatCommand(args []string, msg bus.InboundMessag
 	if al.state != nil {
 		_ = al.state.SetHeartbeatTarget(fmt.Sprintf("telegram:%s", baseChatID))
 	}
-	if al.OnHeartbeatThreadUpdate != nil {
-		al.OnHeartbeatThreadUpdate(threadID)
+	if al.onHeartbeatThreadUpdate != nil {
+		al.onHeartbeatThreadUpdate(threadID)
 	}
 
-	if al.SaveConfig != nil {
-		if err := al.SaveConfig(al.cfg); err != nil {
+	if al.saveConfig != nil {
+		if err := al.saveConfig(al.cfg); err != nil {
 			return fmt.Sprintf("Failed to persist config.json: %v", err), true
 		}
 	}
