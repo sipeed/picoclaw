@@ -59,7 +59,7 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 	}
 
 	// Should contain error message
-	if !strings.Contains(result.ForLLM, "failed to read") && !strings.Contains(result.ForUser, "failed to read") {
+	if !strings.Contains(result.ForLLM, "failed to open file") && !strings.Contains(result.ForUser, "failed to read") {
 		t.Errorf("Expected error message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
 	}
 }
@@ -518,5 +518,95 @@ func TestWhitelistFs_AllowsMatchingPaths(t *testing.T) {
 	result = tool.Execute(context.Background(), map[string]any{"path": otherFile})
 	if !result.IsError {
 		t.Errorf("expected non-whitelisted path to be blocked, got: %s", result.ForLLM)
+	}
+}
+
+func TestIsBinaryFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  []byte
+		expected bool
+	}{
+		{
+			name:     "empty content",
+			content:  []byte(""),
+			expected: false,
+		},
+		{
+			name:     "plain text",
+			content:  []byte("This is a normal text file with punctuation and 12345 numbers."),
+			expected: false,
+		},
+		{
+			name:     "contains null byte",
+			content:  []byte("plain text\x00followed by a null byte"),
+			expected: true,
+		},
+		{
+			name:     "pdf header",
+			content:  []byte("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n1 0 obj\n<</Type/Catalog/Pages 2 0 R>>"),
+			expected: true,
+		},
+		{
+			name:     "png magic bytes",
+			content:  []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x01\x00"),
+			expected: true,
+		},
+		{
+			name:     "jpeg magic bytes",
+			content:  []byte("\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H"),
+			expected: true,
+		},
+		{
+			name:     "html text (not binary)",
+			content:  []byte("<!DOCTYPE html><html><body><h1>Ciao</h1></body></html>"),
+			expected: false,
+		},
+		{
+			name:     "json text (not binary)",
+			content:  []byte(`{"key": "value", "number": 42}`),
+			expected: false,
+		},
+		{
+			name:     "markdown text (not binary)",
+			content:  []byte("# Markdown Title\n\nThis is a **bold text** and a [link](https://example.com)."),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isBinaryFile(tt.content)
+			if result != tt.expected {
+				t.Errorf("isBinaryFile() for %q returned %v, expected %v", tt.name, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFilesystemTool_ReadFile_BlocksBinary(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a dummy binary file (e.g., a PDF).
+	testFile := filepath.Join(tmpDir, "fake_document.pdf")
+	fakePDFContent := []byte("%PDF-1.4\n% Some null test bytes\x00\x00\x00")
+	os.WriteFile(testFile, fakePDFContent, 0o644)
+
+	tool := NewReadFileTool(tmpDir, true)
+	ctx := context.Background()
+	args := map[string]any{
+		"path": testFile,
+	}
+
+	result := tool.Execute(ctx, args)
+
+	if !result.IsError {
+		t.Errorf("An error was expected when trying to read a binary file, but instead it was successful")
+	}
+
+	// The error should mention that it is a binary file
+	expectedMsg := "appears to be a binary file"
+	if !strings.Contains(result.ForLLM, expectedMsg) {
+		t.Errorf("The error message '%s' was expected, obtained: %s", expectedMsg, result.ForLLM)
 	}
 }
