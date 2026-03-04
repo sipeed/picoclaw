@@ -153,8 +153,8 @@ type ToolFunctionDefinition struct {
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
-func (t ToolFunctionDefinition) ParametersMap() map[string]any {
-	if len(t.Parameters) == 0 {
+func (t *ToolFunctionDefinition) ParametersMap() map[string]any {
+	if t == nil || len(t.Parameters) == 0 {
 		return nil
 	}
 	var params map[string]any
