@@ -35,6 +35,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
 	_ "github.com/sipeed/picoclaw/pkg/channels/slack"
+	"github.com/sipeed/picoclaw/pkg/config/hotreload"
 	_ "github.com/sipeed/picoclaw/pkg/channels/telegram"
 	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
 	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp"
@@ -60,6 +61,48 @@ func gatewayCmd(debug bool) error {
 	cfg, err := internal.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("error loading config: %w", err)
+	}
+	var reloader *hotreload.ConfigReloader
+	configFilePath, err := internal.GetConfigPath()
+	if err != nil {
+		return fmt.Errorf("error getting config path: %w", err)
+	}
+
+	// Set up hot reload if enabled
+	if cfg.HotReload.Enabled {
+		fmt.Printf("🔄 Config hot reload enabled, watching: %s\n", configFilePath)
+		reloader, err = hotreload.NewConfigReloader(configFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to initialize config reloader: %w", err)
+		}
+		reloader.SetInitialConfig(cfg)
+
+		// Set callback to handle config changes
+		reloader.SetCallback(func(updatedCfg *config.Config) error {
+			fmt.Println("🔄 Reloading configuration...")
+			// We need to reinitialize services that rely on configuration
+			provider, modelID, err := providers.CreateProvider(updatedCfg)
+			if err != nil {
+				return fmt.Errorf("error creating provider after config reload: %w", err)
+			}
+			// Use the resolved model ID from provider creation
+			if modelID != "" {
+				updatedCfg.Agents.Defaults.ModelName = modelID
+			}
+			// Update the agent loop with the new provider
+			agentLoop.SetProvider(provider)
+			agentLoop.SetConfig(updatedCfg)
+			fmt.Println("✅ Configuration reloaded successfully!")
+			return nil
+		})
+
+		// Start the hot reload watcher as a background process
+		go func() {
+			err := reloader.Watch(context.Background())
+			if err != nil {
+				log.Printf("Config reloader error: %v", err)
+			}
+		}()
 	}
 
 	provider, modelID, err := providers.CreateProvider(cfg)
@@ -217,6 +260,12 @@ func gatewayCmd(debug bool) error {
 	heartbeatService.Stop()
 	cronService.Stop()
 	mediaStore.Stop()
+	if reloader != nil {
+		if err := reloader.Stop(); err != nil {
+			fmt.Printf("Error stopping config reloader: %v\n", err)
+		}
+		fmt.Println("✓ Config reloader stopped")
+	}
 	agentLoop.Stop()
 	fmt.Println("✓ Gateway stopped")
 
@@ -234,8 +283,14 @@ func setupCronTool(
 	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
 
 	// Create cron service
-	cronService := cron.NewCronService(cronStorePath, nil)
-
+	cronService := cron.NewCronService(
+		cronStorePath,
+		nil,
+		cron.CronConfig{
+			ExecTimeoutMinutes: cfg.Tools.Cron.ExecTimeoutMinutes,
+			DefaultTimezone:    cfg.Tools.Cron.DefaultTimezone,
+		},
+	)
 	// Create and register CronTool
 	cronTool, err := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout, cfg)
 	if err != nil {

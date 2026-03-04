@@ -8,11 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-
-	import (
 	"github.com/fsnotify/fsnotify"
-	"sync"
-
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
@@ -533,6 +529,11 @@ func (c *ModelConfig) Validate() error {
 	return nil
 }
 
+// HotReloadConfig handles configuration for hot reload functionality
+type HotReloadConfig struct {
+    Enabled bool `json:"enabled" env:"PICOCLAW_HOT_RELOAD_ENABLED"`
+}
+
 type GatewayConfig struct {
 	Host string `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
 	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
@@ -585,7 +586,8 @@ type WebToolsConfig struct {
 }
 
 type CronToolsConfig struct {
-	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
+	ExecTimeoutMinutes int    `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"`
+	DefaultTimezone  string `json:"default_timezone" env:"PICOCLAW_TOOLS_CRON_DEFAULT_TIMEZONE"`
 }
 
 type ExecConfig struct {
@@ -1381,4 +1383,26 @@ func isValidName(name string) bool {
 	}
 
 	return true
+}
+
+
+// SensitiveDataConfig holds configuration for sensitive data masking
+	SensitiveData *SensitiveDataConfig `json:"sensitive_data_masking"`
+
+
+// SensitiveRule defines a rule for sensitive data detection
+
+type SensitiveRule struct {
+	Name        string `json:"name"`
+	Pattern     string `json:"pattern"`
+	Replacement string `json:"replacement"`
+	Description string `json:"description,omitempty"`
+	Enabled     bool   `json:"enabled"`
+}
+
+// SensitiveDataConfig holds configuration for sensitive data masking
+
+type SensitiveDataConfig struct {
+	Enabled bool            `json:"sensitive_data_masking_enabled" env:"PICOCLAW_SENSITIVE_DATA_MASKING_ENABLED"`
+	Rules   []SensitiveRule `json:"sensitive_rules"`
 }
