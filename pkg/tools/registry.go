@@ -84,7 +84,40 @@ func (r *ToolRegistry) ExecuteWithContext(
 	}
 
 	start := time.Now()
-	result := tool.Execute(ctx, args)
+
+	// Use recover to catch any panics during tool execution
+	// This prevents tool crashes from killing the entire agent
+	var result *ToolResult
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				errMsg := fmt.Sprintf("Tool '%s' crashed with panic: %v", name, r)
+				logger.ErrorCF("tool", "Tool execution panic recovered",
+					map[string]any{
+						"tool":  name,
+						"panic": fmt.Sprintf("%v", r),
+					})
+				result = &ToolResult{
+					ForLLM:  errMsg,
+					ForUser: errMsg,
+					IsError: true,
+					Err:     fmt.Errorf("panic: %v", r),
+				}
+			}
+		}()
+		result = tool.Execute(ctx, args)
+	}()
+
+	// Handle nil result (should not happen, but defensive)
+	if result == nil {
+		result = &ToolResult{
+			ForLLM:  fmt.Sprintf("Tool '%s' returned nil result unexpectedly", name),
+			ForUser: fmt.Sprintf("Tool '%s' returned nil result unexpectedly", name),
+			IsError: true,
+			Err:     fmt.Errorf("nil result from tool"),
+		}
+	}
+
 	duration := time.Since(start)
 
 	// Log based on result type

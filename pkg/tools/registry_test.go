@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -346,5 +347,177 @@ func TestToolRegistry_ConcurrentAccess(t *testing.T) {
 
 	if r.Count() == 0 {
 		t.Error("expected tools to be registered after concurrent access")
+	}
+}
+
+// --- Panic and abnormal exit tests ---
+
+// mockPanicTool is a tool that panics during execution
+type mockPanicTool struct {
+	name       string
+	panicValue any
+}
+
+func (m *mockPanicTool) Name() string               { return m.name }
+func (m *mockPanicTool) Description() string        { return "a tool that panics" }
+func (m *mockPanicTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
+func (m *mockPanicTool) Execute(_ context.Context, _ map[string]any) *ToolResult {
+	panic(m.panicValue)
+}
+
+// mockNilResultTool is a tool that returns nil
+type mockNilResultTool struct {
+	name string
+}
+
+func (m *mockNilResultTool) Name() string               { return m.name }
+func (m *mockNilResultTool) Description() string        { return "a tool that returns nil" }
+func (m *mockNilResultTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
+func (m *mockNilResultTool) Execute(_ context.Context, _ map[string]any) *ToolResult {
+	return nil
+}
+
+func TestToolRegistry_Execute_PanicRecovery(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockPanicTool{
+		name:       "panic_tool",
+		panicValue: "something went terribly wrong",
+	})
+
+	// Should not panic, should return error result
+	result := r.Execute(context.Background(), "panic_tool", nil)
+
+	if result == nil {
+		t.Fatal("expected non-nil result after panic recovery")
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true after panic")
+	}
+	if !strings.Contains(result.ForLLM, "panic") {
+		t.Errorf("expected 'panic' in error message, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "panic_tool") {
+		t.Errorf("expected tool name in error message, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "something went terribly wrong") {
+		t.Errorf("expected panic value in error message, got %q", result.ForLLM)
+	}
+	if result.Err == nil {
+		t.Error("expected Err to be set")
+	}
+}
+
+func TestToolRegistry_Execute_PanicRecovery_ErrorType(t *testing.T) {
+	r := NewToolRegistry()
+
+	// Test with error type panic
+	r.Register(&mockPanicTool{
+		name:       "error_panic_tool",
+		panicValue: errors.New("custom error panic"),
+	})
+
+	result := r.Execute(context.Background(), "error_panic_tool", nil)
+
+	if !result.IsError {
+		t.Error("expected IsError=true")
+	}
+	if !strings.Contains(result.ForLLM, "custom error panic") {
+		t.Errorf("expected error message in ForLLM, got %q", result.ForLLM)
+	}
+}
+
+func TestToolRegistry_Execute_PanicRecovery_IntType(t *testing.T) {
+	r := NewToolRegistry()
+
+	// Test with int type panic
+	r.Register(&mockPanicTool{
+		name:       "int_panic_tool",
+		panicValue: 42,
+	})
+
+	result := r.Execute(context.Background(), "int_panic_tool", nil)
+
+	if !result.IsError {
+		t.Error("expected IsError=true")
+	}
+	if !strings.Contains(result.ForLLM, "42") {
+		t.Errorf("expected panic value '42' in ForLLM, got %q", result.ForLLM)
+	}
+}
+
+func TestToolRegistry_Execute_NilResultHandling(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockNilResultTool{name: "nil_tool"})
+
+	result := r.Execute(context.Background(), "nil_tool", nil)
+
+	if result == nil {
+		t.Fatal("expected non-nil result when tool returns nil")
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true for nil result")
+	}
+	if !strings.Contains(result.ForLLM, "nil_tool") {
+		t.Errorf("expected tool name in error message, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "nil result") {
+		t.Errorf("expected 'nil result' in error message, got %q", result.ForLLM)
+	}
+	if result.Err == nil {
+		t.Error("expected Err to be set")
+	}
+}
+
+func TestToolRegistry_ExecuteWithContext_PanicRecovery(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockPanicTool{
+		name:       "ctx_panic_tool",
+		panicValue: "context panic test",
+	})
+
+	// Should not panic even with context
+	result := r.ExecuteWithContext(
+		context.Background(),
+		"ctx_panic_tool",
+		map[string]any{"key": "value"},
+		"telegram",
+		"chat-123",
+		nil,
+	)
+
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if !result.IsError {
+		t.Error("expected IsError=true")
+	}
+	if !strings.Contains(result.ForLLM, "context panic test") {
+		t.Errorf("expected panic message, got %q", result.ForLLM)
+	}
+}
+
+func TestToolRegistry_Execute_PanicDoesNotAffectOtherTools(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockPanicTool{name: "bad_tool", panicValue: "boom"})
+	r.Register(&mockRegistryTool{
+		name:   "good_tool",
+		desc:   "works fine",
+		params: map[string]any{},
+		result: SilentResult("success"),
+	})
+
+	// First, trigger the panic
+	result1 := r.Execute(context.Background(), "bad_tool", nil)
+	if !result1.IsError {
+		t.Error("expected error from panic tool")
+	}
+
+	// Then, verify the good tool still works
+	result2 := r.Execute(context.Background(), "good_tool", nil)
+	if result2.IsError {
+		t.Errorf("expected success from good tool, got error: %s", result2.ForLLM)
+	}
+	if result2.ForLLM != "success" {
+		t.Errorf("expected 'success', got %q", result2.ForLLM)
 	}
 }
