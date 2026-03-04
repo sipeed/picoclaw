@@ -523,6 +523,10 @@ type GatewayConfig struct {
 	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
 }
 
+type ToolConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
 type BraveConfig struct {
 	Enabled    bool   `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
 	APIKey     string `json:"api_key"     env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
@@ -558,6 +562,7 @@ type GLMSearchConfig struct {
 }
 
 type WebToolsConfig struct {
+	ToolConfig
 	Brave      BraveConfig      `json:"brave"`
 	Tavily     TavilyConfig     `json:"tavily"`
 	DuckDuckGo DuckDuckGoConfig `json:"duckduckgo"`
@@ -570,19 +575,28 @@ type WebToolsConfig struct {
 }
 
 type CronToolsConfig struct {
+	ToolConfig
 	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
 }
 
 type ExecConfig struct {
+	ToolConfig
 	EnableDenyPatterns  bool     `json:"enable_deny_patterns"  env:"PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"`
 	CustomDenyPatterns  []string `json:"custom_deny_patterns"  env:"PICOCLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"`
 	CustomAllowPatterns []string `json:"custom_allow_patterns" env:"PICOCLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS"`
 }
 
+type SkillsToolsConfig struct {
+	ToolConfig
+	Registries            SkillsRegistriesConfig `json:"registries"`
+	MaxConcurrentSearches int                    `json:"max_concurrent_searches" env:"PICOCLAW_SKILLS_MAX_CONCURRENT_SEARCHES"`
+	SearchCache           SearchCacheConfig      `json:"search_cache"`
+}
+
 type MediaCleanupConfig struct {
-	Enabled  bool `json:"enabled"          env:"PICOCLAW_MEDIA_CLEANUP_ENABLED"`
-	MaxAge   int  `json:"max_age_minutes"  env:"PICOCLAW_MEDIA_CLEANUP_MAX_AGE"`
-	Interval int  `json:"interval_minutes" env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL"`
+	ToolConfig
+	MaxAge   int `json:"max_age_minutes"  env:"PICOCLAW_MEDIA_CLEANUP_MAX_AGE"`
+	Interval int `json:"interval_minutes" env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL"`
 }
 
 type ToolsConfig struct {
@@ -594,12 +608,116 @@ type ToolsConfig struct {
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
+	AppendFile      ToolConfig         `json:"append_file"`
+	CronTool        ToolConfig         `json:"cron_tool"`
+	EditFile        ToolConfig         `json:"edit_file"`
+	ExecTool        ToolConfig         `json:"exec_tool"`
+	FindSkills      ToolConfig         `json:"find_skills"`
+	I2C             ToolConfig         `json:"i2c"`
+	InstallSkill    ToolConfig         `json:"install_skill"`
+	ListDir         ToolConfig         `json:"list_dir"`
+	Message         ToolConfig         `json:"message"`
+	ReadFile        ToolConfig         `json:"read_file"`
+	Spawn           ToolConfig         `json:"spawn"`
+	SPI             ToolConfig         `json:"spi"`
+	Subagent        ToolConfig         `json:"subagent"`
+	WebFetch        ToolConfig         `json:"web_fetch"`
+	WebSearch       ToolConfig         `json:"web_search"`
+	WriteFile       ToolConfig         `json:"write_file"`
 }
 
-type SkillsToolsConfig struct {
-	Registries            SkillsRegistriesConfig `json:"registries"`
-	MaxConcurrentSearches int                    `json:"max_concurrent_searches" env:"PICOCLAW_SKILLS_MAX_CONCURRENT_SEARCHES"`
-	SearchCache           SearchCacheConfig      `json:"search_cache"`
+type ToolsConfigRaw struct {
+	AllowReadPaths  []string           `json:"allow_read_paths"`
+	AllowWritePaths []string           `json:"allow_write_paths"`
+	Web             WebToolsConfig     `json:"web"`
+	Cron            CronToolsConfig    `json:"cron"`
+	Exec            ExecConfig         `json:"exec"`
+	Skills          SkillsToolsConfig  `json:"skills"`
+	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
+	MCP             MCPConfig          `json:"mcp"`
+	AppendFile      *ToolConfig        `json:"append_file,omitempty"`
+	CronTool        *ToolConfig        `json:"cron_tool,omitempty"`
+	EditFile        *ToolConfig        `json:"edit_file,omitempty"`
+	ExecTool        *ToolConfig        `json:"exec_tool,omitempty"`
+	FindSkills      *ToolConfig        `json:"find_skills,omitempty"`
+	I2C             *ToolConfig        `json:"i2c,omitempty"`
+	InstallSkill    *ToolConfig        `json:"install_skill,omitempty"`
+	ListDir         *ToolConfig        `json:"list_dir,omitempty"`
+	Message         *ToolConfig        `json:"message,omitempty"`
+	ReadFile        *ToolConfig        `json:"read_file,omitempty"`
+	Spawn           *ToolConfig        `json:"spawn,omitempty"`
+	SPI             *ToolConfig        `json:"spi,omitempty"`
+	Subagent        *ToolConfig        `json:"subagent,omitempty"`
+	WebFetch        *ToolConfig        `json:"web_fetch,omitempty"`
+	WebSearch       *ToolConfig        `json:"web_search,omitempty"`
+	WriteFile       *ToolConfig        `json:"write_file,omitempty"`
+}
+
+func (t *ToolsConfig) UnmarshalJSON(data []byte) error {
+	var raw ToolsConfigRaw
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	t.AllowReadPaths = raw.AllowReadPaths
+	t.AllowWritePaths = raw.AllowWritePaths
+	t.Web = raw.Web
+	t.Cron = raw.Cron
+	t.Exec = raw.Exec
+	t.Skills = raw.Skills
+	t.MediaCleanup = raw.MediaCleanup
+	t.MCP = raw.MCP
+
+	if raw.AppendFile != nil {
+		t.AppendFile = *raw.AppendFile
+	}
+	if raw.CronTool != nil {
+		t.CronTool = *raw.CronTool
+	}
+	if raw.EditFile != nil {
+		t.EditFile = *raw.EditFile
+	}
+	if raw.ExecTool != nil {
+		t.ExecTool = *raw.ExecTool
+	}
+	if raw.FindSkills != nil {
+		t.FindSkills = *raw.FindSkills
+	}
+	if raw.I2C != nil {
+		t.I2C = *raw.I2C
+	}
+	if raw.InstallSkill != nil {
+		t.InstallSkill = *raw.InstallSkill
+	}
+	if raw.ListDir != nil {
+		t.ListDir = *raw.ListDir
+	}
+	if raw.Message != nil {
+		t.Message = *raw.Message
+	}
+	if raw.ReadFile != nil {
+		t.ReadFile = *raw.ReadFile
+	}
+	if raw.Spawn != nil {
+		t.Spawn = *raw.Spawn
+	}
+	if raw.SPI != nil {
+		t.SPI = *raw.SPI
+	}
+	if raw.Subagent != nil {
+		t.Subagent = *raw.Subagent
+	}
+	if raw.WebFetch != nil {
+		t.WebFetch = *raw.WebFetch
+	}
+	if raw.WebSearch != nil {
+		t.WebSearch = *raw.WebSearch
+	}
+	if raw.WriteFile != nil {
+		t.WriteFile = *raw.WriteFile
+	}
+
+	return nil
 }
 
 type SearchCacheConfig struct {
@@ -831,4 +949,49 @@ func (c *Config) ValidateModelList() error {
 		}
 	}
 	return nil
+}
+
+func (t *ToolsConfig) IsToolEnabled(name string) bool {
+	switch name {
+	case "web":
+		return t.Web.Enabled
+	case "cron":
+		return t.Cron.Enabled
+	case "exec":
+		return t.Exec.Enabled
+	case "skills":
+		return t.Skills.Enabled
+	case "media_cleanup":
+		return t.MediaCleanup.Enabled
+	case "append_file":
+		return t.AppendFile.Enabled
+	case "edit_file":
+		return t.EditFile.Enabled
+	case "find_skills":
+		return t.FindSkills.Enabled
+	case "i2c":
+		return t.I2C.Enabled
+	case "install_skill":
+		return t.InstallSkill.Enabled
+	case "list_dir":
+		return t.ListDir.Enabled
+	case "message":
+		return t.Message.Enabled
+	case "read_file":
+		return t.ReadFile.Enabled
+	case "spawn":
+		return t.Spawn.Enabled
+	case "spi":
+		return t.SPI.Enabled
+	case "subagent":
+		return t.Subagent.Enabled
+	case "web_fetch":
+		return t.WebFetch.Enabled
+	case "web_search":
+		return t.WebSearch.Enabled
+	case "write_file":
+		return t.WriteFile.Enabled
+	default:
+		return true
+	}
 }
