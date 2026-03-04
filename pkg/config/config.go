@@ -59,9 +59,11 @@ type Config struct {
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
+	Tracing   TracingConfig   `json:"tracing,omitempty" env:"PICOCLAW_TRACING"`
+
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
-}
+	Retry     RetryConfig     `json:"retry"`
 
 // MarshalJSON implements custom JSON marshaling for Config
 // to omit providers section when empty and session when empty
@@ -606,6 +608,7 @@ type ToolsConfig struct {
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
 	MCP             MCPConfig          `json:"mcp"`
+	RateLimiting RateLimitingConfig `json:"rate_limiting"`
 }
 
 type SkillsToolsConfig struct {
@@ -633,6 +636,16 @@ type ClawHubRegistryConfig struct {
 	Timeout         int    `json:"timeout"           env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_TIMEOUT"`
 	MaxZipSize      int    `json:"max_zip_size"      env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_ZIP_SIZE"`
 	MaxResponseSize int    `json:"max_response_size" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_RESPONSE_SIZE"`
+}
+
+
+// RateLimitingConfig defines API rate limiting configuration
+type RateLimitingConfig struct {
+	Enabled  bool    `json:"enabled" env:"PICOCLAW_TOOLS_RATELIMIT_ENABLED"`
+	Rate     float64 `json:"rate" env:"PICOCLAW_TOOLS_RATELIMIT_RATE"`      // requests per second
+	Burst    int     `json:"burst" env:"PICOCLAW_TOOLS_RATELIMIT_BURST"`     // burst allowance
+	Strategy string  `json:"strategy" env:"PICOCLAW_TOOLS_RATELIMIT_STRATEGY"`  // "ip", "user", or "combined"
+	TTL      int     `json:"ttl" env:"PICOCLAW_TOOLS_RATELIMIT_TTL"`        // seconds
 }
 
 // MCPServerConfig defines configuration for a single MCP server
