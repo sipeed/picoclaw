@@ -82,28 +82,30 @@ func newSessionSemaphore() *sessionSemaphore {
 }
 
 type AgentLoop struct {
-	bus              *bus.MessageBus
-	cfg              *config.Config
-	registry         *AgentRegistry
-	state            *state.Manager
-	stats            *stats.Tracker // nil when --stats not passed
-	running          atomic.Bool
-	summarizing      sync.Map
-	fallback         *providers.FallbackChain
-	channelManager   *channels.Manager
-	mediaStore       media.MediaStore
-	providerCache    map[string]providers.LLMProvider
-	planStartPending bool     // set by /plan start to trigger LLM execution
-	planClearHistory bool     // set by /plan start clear to wipe history on transition
-	sessionLocks     sync.Map // sessionKey → *sessionSemaphore
-	activeTasks      sync.Map // sessionKey → *activeTask
-	sessions         *SessionTracker
-	lastSystemPrompt atomic.Value       // string — last system prompt sent to LLM
-	promptDirty      atomic.Bool        // true = rebuild needed on next GetSystemPrompt read
-	OnStateChange    func()             // called on plan/session/skills mutations
-	OnUserMessage    func()             // called when a real user message is processed
-	orchBroadcaster  *orch.Broadcaster  // nil when --orchestration not set
-	orchReporter     orch.AgentReporter // always non-nil (Noop when disabled)
+	bus                     *bus.MessageBus
+	cfg                     *config.Config
+	registry                *AgentRegistry
+	state                   *state.Manager
+	stats                   *stats.Tracker // nil when --stats not passed
+	running                 atomic.Bool
+	summarizing             sync.Map
+	fallback                *providers.FallbackChain
+	channelManager          *channels.Manager
+	mediaStore              media.MediaStore
+	providerCache           map[string]providers.LLMProvider
+	planStartPending        bool     // set by /plan start to trigger LLM execution
+	planClearHistory        bool     // set by /plan start clear to wipe history on transition
+	sessionLocks            sync.Map // sessionKey → *sessionSemaphore
+	activeTasks             sync.Map // sessionKey → *activeTask
+	sessions                *SessionTracker
+	lastSystemPrompt        atomic.Value // string — last system prompt sent to LLM
+	promptDirty             atomic.Bool  // true = rebuild needed on next GetSystemPrompt read
+	OnStateChange           func()       // called on plan/session/skills mutations
+	OnUserMessage           func()       // called when a real user message is processed
+	SaveConfig              func(*config.Config) error
+	OnHeartbeatThreadUpdate func(int)
+	orchBroadcaster         *orch.Broadcaster  // nil when --orchestration not set
+	orchReporter            orch.AgentReporter // always non-nil (Noop when disabled)
 }
 
 // processOptions configures how a message is processed
@@ -211,6 +213,16 @@ func (al *AgentLoop) notifyStateChange() {
 	if al.OnStateChange != nil {
 		al.OnStateChange()
 	}
+}
+
+// SetConfigSaver registers a callback used by slash commands that persist runtime config changes.
+func (al *AgentLoop) SetConfigSaver(fn func(*config.Config) error) {
+	al.SaveConfig = fn
+}
+
+// SetHeartbeatThreadUpdater registers a callback to apply runtime heartbeat thread updates.
+func (al *AgentLoop) SetHeartbeatThreadUpdater(fn func(int)) {
+	al.OnHeartbeatThreadUpdate = fn
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
@@ -608,6 +620,16 @@ func (al *AgentLoop) RecordLastChatID(chatID string) error {
 		return nil
 	}
 	return al.state.SetLastChatID(chatID)
+}
+
+// RecordLastHeartbeatTarget records the latest heartbeat-safe destination.
+// This is intentionally separate from LastChannel so heartbeat routing can be
+// reasoned about and evolved without breaking generic last-activity tracking.
+func (al *AgentLoop) RecordLastHeartbeatTarget(target string) error {
+	if al.state == nil {
+		return nil
+	}
+	return al.state.SetLastHeartbeatTarget(target)
 }
 
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
@@ -1161,6 +1183,9 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
 			if err := al.RecordLastChannel(channelKey); err != nil {
 				logger.WarnCF("agent", "Failed to record last channel", map[string]any{"error": err.Error()})
+			}
+			if err := al.RecordLastHeartbeatTarget(channelKey); err != nil {
+				logger.WarnCF("agent", "Failed to record last heartbeat target", map[string]any{"error": err.Error()})
 			}
 		}
 	}
@@ -3543,9 +3568,92 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 			al.notifyStateChange()
 		}
 		return resp, handled
+
+	case "/heartbeat":
+		resp, handled := al.handleHeartbeatCommand(args, msg)
+		if handled {
+			al.notifyStateChange()
+		}
+		return resp, handled
 	}
 
 	return "", false
+}
+
+func (al *AgentLoop) handleHeartbeatCommand(args []string, msg bus.InboundMessage) (string, bool) {
+	if len(args) == 0 {
+		return "Usage: /heartbeat thread [here|off|<thread_id>]", true
+	}
+
+	if args[0] != "thread" {
+		return "Usage: /heartbeat thread [here|off|<thread_id>]", true
+	}
+
+	if len(args) < 2 {
+		return "Usage: /heartbeat thread [here|off|<thread_id>]", true
+	}
+
+	if msg.Channel != "telegram" {
+		return "/heartbeat thread is only supported from Telegram chats.", true
+	}
+
+	baseChatID, currentThreadID := splitChatAndThread(msg.ChatID)
+	if baseChatID == "" {
+		return "Unable to detect Telegram chat ID for heartbeat routing.", true
+	}
+
+	arg := strings.ToLower(strings.TrimSpace(args[1]))
+	threadID := 0
+	var err error
+
+	switch arg {
+	case "off", "disable", "clear":
+		threadID = 0
+	case "here", "this":
+		if currentThreadID <= 0 {
+			return "Current Telegram message is not in a thread. Usage: /heartbeat thread <thread_id>", true
+		}
+		threadID = currentThreadID
+	default:
+		threadID, err = strconv.Atoi(arg)
+		if err != nil || threadID < 0 {
+			return "Usage: /heartbeat thread [here|off|<thread_id>]", true
+		}
+	}
+
+	al.cfg.Channels.Telegram.HeartbeatThreadID = threadID
+	if al.state != nil {
+		_ = al.state.SetHeartbeatTarget(fmt.Sprintf("telegram:%s", baseChatID))
+	}
+	if al.OnHeartbeatThreadUpdate != nil {
+		al.OnHeartbeatThreadUpdate(threadID)
+	}
+
+	if al.SaveConfig != nil {
+		if err := al.SaveConfig(al.cfg); err != nil {
+			return fmt.Sprintf("Failed to persist config.json: %v", err), true
+		}
+	}
+
+	if threadID == 0 {
+		return fmt.Sprintf("Heartbeat thread routing disabled for chat %s and saved to config.json.", baseChatID), true
+	}
+	return fmt.Sprintf("Heartbeat thread set to %d for chat %s and saved to config.json.", threadID, baseChatID), true
+}
+
+func splitChatAndThread(chatID string) (baseChatID string, threadID int) {
+	baseChatID = strings.TrimSpace(chatID)
+	if baseChatID == "" {
+		return "", 0
+	}
+	if slash := strings.Index(baseChatID, "/"); slash >= 0 {
+		threadPart := strings.TrimSpace(baseChatID[slash+1:])
+		baseChatID = strings.TrimSpace(baseChatID[:slash])
+		if tid, err := strconv.Atoi(threadPart); err == nil && tid > 0 {
+			threadID = tid
+		}
+	}
+	return baseChatID, threadID
 }
 
 // handleSessionCommand returns usage statistics or resets them.

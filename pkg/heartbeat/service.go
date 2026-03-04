@@ -35,15 +35,16 @@ type HeartbeatHandler func(prompt, channel, chatID string) *tools.ToolResult
 
 // HeartbeatService manages periodic heartbeat checks
 type HeartbeatService struct {
-	workspace      string
-	bus            *bus.MessageBus
-	state          *state.Manager
-	handler        HeartbeatHandler
-	interval       time.Duration
-	enabled        bool
-	mu             sync.RWMutex
-	stopChan       chan struct{}
-	lastNotifiedAt time.Time // when a non-silent result was last sent to user
+	workspace         string
+	bus               *bus.MessageBus
+	state             *state.Manager
+	handler           HeartbeatHandler
+	interval          time.Duration
+	enabled           bool
+	mu                sync.RWMutex
+	stopChan          chan struct{}
+	lastNotifiedAt    time.Time // when a non-silent result was last sent to user
+	heartbeatThreadID int
 }
 
 // NewHeartbeatService creates a new heartbeat service
@@ -77,6 +78,13 @@ func (hs *HeartbeatService) SetHandler(handler HeartbeatHandler) {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 	hs.handler = handler
+}
+
+// SetHeartbeatThreadID configures Telegram thread routing for heartbeat messages.
+func (hs *HeartbeatService) SetHeartbeatThreadID(threadID int) {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	hs.heartbeatThreadID = threadID
 }
 
 // ResetSuppression clears the notification suppression so the next
@@ -182,12 +190,8 @@ func (hs *HeartbeatService) executeHeartbeat() {
 		return
 	}
 
-	// Get last channel info for context
-	lastChannel := hs.state.GetLastChannel()
-	channel, chatID := hs.parseLastChannel(lastChannel)
-
-	// Debug log for channel resolution
-	hs.logInfof("Resolved channel: %s, chatID: %s (from lastChannel: %s)", channel, chatID, lastChannel)
+	channel, chatID, reason := hs.resolveHeartbeatTarget()
+	hs.logInfof("Resolved channel: %s, chatID: %s (%s)", channel, chatID, reason)
 
 	result := handler(prompt, channel, chatID)
 
@@ -234,6 +238,65 @@ func (hs *HeartbeatService) executeHeartbeat() {
 	hs.mu.Unlock()
 
 	hs.logInfof("Heartbeat completed: %s", result.ForLLM)
+}
+
+func (hs *HeartbeatService) resolveHeartbeatTarget() (channel, chatID, reason string) {
+	if explicit := hs.state.GetHeartbeatTarget(); explicit != "" {
+		if ch, cid := hs.parseTarget(explicit); ch != "" && cid != "" {
+			return ch, cid, fmt.Sprintf("explicit heartbeat target: %s", explicit)
+		}
+		hs.logErrorf("Invalid explicit heartbeat target: %s", explicit)
+	}
+
+	if threadID := hs.telegramHeartbeatThreadID(); threadID > 0 {
+		if ch, cid, src := hs.resolveTelegramThreadTarget(threadID); ch != "" && cid != "" {
+			return ch, cid, src
+		}
+	}
+
+	lastChannel := hs.state.GetLastChannel()
+	channel, chatID = hs.parseLastChannel(lastChannel)
+	return channel, chatID, fmt.Sprintf("fallback last channel: %s", lastChannel)
+}
+
+func (hs *HeartbeatService) resolveTelegramThreadTarget(threadID int) (channel, chatID, reason string) {
+	candidates := []struct {
+		value  string
+		reason string
+	}{
+		{value: hs.state.GetLastHeartbeatTarget(), reason: "last heartbeat target"},
+		{value: hs.state.GetLastChannel(), reason: "last channel"},
+	}
+
+	for _, candidate := range candidates {
+		ch, cid := hs.parseTarget(candidate.value)
+		if ch != "telegram" || cid == "" {
+			continue
+		}
+		return ch, withTelegramThread(cid, threadID), fmt.Sprintf("telegram heartbeat_thread_id from %s", candidate.reason)
+	}
+
+	return "", "", ""
+}
+
+func (hs *HeartbeatService) telegramHeartbeatThreadID() int {
+	hs.mu.RLock()
+	defer hs.mu.RUnlock()
+	return hs.heartbeatThreadID
+}
+
+func withTelegramThread(chatID string, threadID int) string {
+	if threadID <= 0 || chatID == "" {
+		return chatID
+	}
+	baseChatID := chatID
+	if slash := strings.Index(baseChatID, "/"); slash >= 0 {
+		baseChatID = baseChatID[:slash]
+	}
+	if baseChatID == "" {
+		return chatID
+	}
+	return fmt.Sprintf("%s/%d", baseChatID, threadID)
 }
 
 // buildPrompt builds the heartbeat prompt from HEARTBEAT.md
@@ -306,20 +369,21 @@ Add your heartbeat tasks below this line:
 // parseLastChannel parses the last channel string into platform and userID.
 // Returns empty strings for invalid or internal channels.
 func (hs *HeartbeatService) parseLastChannel(lastChannel string) (platform, userID string) {
-	if lastChannel == "" {
+	return hs.parseTarget(lastChannel)
+}
+
+func (hs *HeartbeatService) parseTarget(target string) (platform, userID string) {
+	if target == "" {
 		return "", ""
 	}
 
-	// Parse channel format: "platform:user_id" (e.g., "telegram:123456")
-	parts := strings.SplitN(lastChannel, ":", 2)
+	parts := strings.SplitN(target, ":", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		hs.logErrorf("Invalid last channel format: %s", lastChannel)
+		hs.logErrorf("Invalid heartbeat target format: %s", target)
 		return "", ""
 	}
 
 	platform, userID = parts[0], parts[1]
-
-	// Skip internal channels
 	if constants.IsInternalChannel(platform) {
 		hs.logInfof("Skipping internal channel: %s", platform)
 		return "", ""
