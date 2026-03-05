@@ -168,9 +168,10 @@ func registerSharedTools(
 		}
 
 		// Skill discovery and installation tools
+		skills_enabled := cfg.Tools.IsToolEnabled("skills")
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
 		install_skills_enable := cfg.Tools.IsToolEnabled("install_skill")
-		if find_skills_enable || install_skills_enable {
+		if skills_enabled && (find_skills_enable || install_skills_enable) {
 			registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 				MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
 				ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
