@@ -68,7 +68,8 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	}
 
 	dispatcher := larkdispatcher.NewEventDispatcher(c.config.VerificationToken, c.config.EncryptKey).
-		OnP2MessageReceiveV1(c.handleMessageReceive)
+		OnP2MessageReceiveV1(c.handleMessageReceive).
+		OnP2ChatAccessEventBotP2pChatEnteredV1(c.handleBotP2PChatEntered)
 
 	runCtx, cancel := context.WithCancel(ctx)
 
@@ -317,8 +318,55 @@ func (c *FeishuChannel) sendMediaPart(
 
 // --- Inbound message handling ---
 
+// handleBotP2PChatEntered handles user entering a P2P chat with the bot; sends optional welcome and respects allowlist.
+func (c *FeishuChannel) handleBotP2PChatEntered(ctx context.Context, event *larkim.P2ChatAccessEventBotP2pChatEnteredV1) error {
+	if event == nil || event.Event == nil {
+		return nil
+	}
+	data := event.Event
+	chatID := stringValue(data.ChatId)
+	if chatID == "" {
+		return nil
+	}
+
+	operatorID := ""
+	if data.OperatorId != nil {
+		if data.OperatorId.OpenId != nil && *data.OperatorId.OpenId != "" {
+			operatorID = *data.OperatorId.OpenId
+		} else if data.OperatorId.UserId != nil && *data.OperatorId.UserId != "" {
+			operatorID = *data.OperatorId.UserId
+		} else if data.OperatorId.UnionId != nil && *data.OperatorId.UnionId != "" {
+			operatorID = *data.OperatorId.UnionId
+		}
+	}
+	if operatorID != "" {
+		senderInfo := bus.SenderInfo{
+			Platform:    "feishu",
+			PlatformID:  operatorID,
+			CanonicalID: identity.BuildCanonicalID("feishu", operatorID),
+		}
+		if !c.IsAllowedSender(senderInfo) {
+			return nil
+		}
+	}
+
+	welcome := "你好，有什么可以帮你的？"
+	if err := c.Send(ctx, bus.OutboundMessage{
+		Channel: c.Name(),
+		ChatID:  chatID,
+		Content: welcome,
+	}); err != nil {
+		logger.WarnCF("feishu", "Failed to send P2P welcome", map[string]any{
+			"chat_id": chatID,
+			"error":   err.Error(),
+		})
+	}
+	return nil
+}
+
 func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
+		logger.DebugCF("feishu", "P2MessageReceiveV1 skipped: nil event or message", nil)
 		return nil
 	}
 
@@ -327,6 +375,9 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 
 	chatID := stringValue(message.ChatId)
 	if chatID == "" {
+		logger.WarnCF("feishu", "Dropping message: empty chat_id", map[string]any{
+			"message_id": stringValue(message.MessageId),
+		})
 		return nil
 	}
 
@@ -347,6 +398,9 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		CanonicalID: identity.BuildCanonicalID("feishu", senderID),
 	}
 	if !c.IsAllowedSender(senderInfo) {
+		logger.InfoCF("feishu", "Dropping message: sender not in allow list", map[string]any{
+			"sender_id": senderID, "chat_id": chatID,
+		})
 		return nil
 	}
 
@@ -382,9 +436,8 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	}
 
 	var peer bus.Peer
-	if chatType == "p2p" {
-		peer = bus.Peer{Kind: "direct", ID: senderID}
-	} else {
+	isGroup := chatType == "group" || chatType == "topic_group"
+	if isGroup {
 		peer = bus.Peer{Kind: "group", ID: chatID}
 
 		// Check if bot was mentioned
@@ -398,14 +451,21 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		// In group chats, apply unified group trigger filtering
 		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
+			logger.InfoCF("feishu", "Dropping group message: no trigger (mention or prefix)", map[string]any{
+				"chat_id": chatID, "is_mentioned": isMentioned,
+			})
 			return nil
 		}
 		content = cleaned
+	} else {
+		// P2P (chat_type "p2p") or unknown: treat as direct, always respond
+		peer = bus.Peer{Kind: "direct", ID: senderID}
 	}
 
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{
 		"sender_id":  senderID,
 		"chat_id":    chatID,
+		"chat_type":  chatType,
 		"message_id": messageID,
 		"preview":    utils.Truncate(content, 80),
 	})
