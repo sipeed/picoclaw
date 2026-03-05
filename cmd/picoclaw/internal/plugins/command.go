@@ -75,8 +75,7 @@ Examples:
   picoclaw plugins service status         # Run 'service' plugin with 'status'`
 
 func getPluginsDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", pluginsDirName)
+	return filepath.Join(internal.GetPicoclawHome(), pluginsDirName)
 }
 
 func listPlugins() ([]string, error) {
