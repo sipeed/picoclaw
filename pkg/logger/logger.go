@@ -168,6 +168,10 @@ func DebugC(component string, message string) {
 	logMessage(DEBUG, component, message, nil)
 }
 
+func DebugSF(message string, ss ...any) {
+	logMessage(DEBUG, "", fmt.Sprintf(message, ss...), nil)
+}
+
 func DebugF(message string, fields map[string]any) {
 	logMessage(DEBUG, "", message, fields)
 }
@@ -186,6 +190,10 @@ func InfoC(component string, message string) {
 
 func InfoF(message string, fields map[string]any) {
 	logMessage(INFO, "", message, fields)
+}
+
+func Infof(message string, ss ...any) {
+	logMessage(INFO, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func InfoCF(component string, message string, fields map[string]any) {
@@ -216,6 +224,10 @@ func ErrorC(component string, message string) {
 	logMessage(ERROR, component, message, nil)
 }
 
+func Errorf(message string, ss ...any) {
+	logMessage(ERROR, "", fmt.Sprintf(message, ss...), nil)
+}
+
 func ErrorF(message string, fields map[string]any) {
 	logMessage(ERROR, "", message, fields)
 }
@@ -230,6 +242,10 @@ func Fatal(message string) {
 
 func FatalC(component string, message string) {
 	logMessage(FATAL, component, message, nil)
+}
+
+func Fatalf(message string, ss ...any) {
+	logMessage(FATAL, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func FatalF(message string, fields map[string]any) {
