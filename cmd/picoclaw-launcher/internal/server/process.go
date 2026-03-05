@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"  // Added for Windows process stop functionality
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -106,10 +107,20 @@ func scanPipe(r io.Reader, buf *LogBuffer) {
 func handleStopGateway(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if runtime.GOOS == "windows" {
-		// Kill via taskkill finding picoclaw.exe (though it might kill this config tool if it's named picoclaw-launcher.exe...? No, /IM does exact match usually, but just to be safe let's stop exactly picoclaw.exe)
-		// Alternatively, we use powershell to kill processes with commandline containing 'gateway'
-		psCmd := `Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -match 'picoclaw.*gateway' } | ForEach-Object { Stop-Process $_.ProcessId -Force }`
-		err = exec.Command("powershell", "-Command", psCmd).Run()
+		// Use taskkill first (the most reliable Windows process termination method)
+		// Try exact image name matching first (-F forces termination, /IM specifies exact image name)
+		err = exec.Command("taskkill", "/F", "/IM", "picoclaw.exe").Run()
+		if err != nil {
+			// If exact name doesn't work, try using wildcard to catch different naming patterns
+			wildcardErr := exec.Command("taskkill", "/F", "/FI", "ImageName EQ picoclaw.exe*").Run()
+			if wildcardErr != nil && wildcardErr.Error() != "exit status 128" {  // exit code 128 means no processes found
+				// If both taskkill methods fail for reason other than process not found, return the error
+				err = wildcardErr
+			} else if wildcardErr != nil && strings.Contains(wildcardErr.Error(), "exit status 128") {
+				// Process is not running, which is okay - no error condition
+				err = nil
+			}
+		}
 	} else {
 		// Linux/macOS
 		err = exec.Command("pkill", "-f", "picoclaw gateway").Run()

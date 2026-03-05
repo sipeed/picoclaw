@@ -112,16 +112,20 @@ func main() {
 
 // openBrowser automatically opens the given URL in the default browser.
 func openBrowser(url string) error {
-	var err error
 	switch runtime.GOOS {
 	case "linux":
-		err = exec.Command("xdg-open", url).Start()
+		return exec.Command("xdg-open", url).Start()
 	case "windows":
-		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		// Try the standard Windows method first
+		err := exec.Command("cmd", "/c", "start", "", url).Run()
+		if err != nil {
+			// If that fails, fall back to rundll32
+			return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		}
+		return nil
 	case "darwin":
-		err = exec.Command("open", url).Start()
+		return exec.Command("open", url).Start()
 	default:
-		err = fmt.Errorf("unsupported platform")
+		return fmt.Errorf("unsupported platform")
 	}
-	return err
 }
