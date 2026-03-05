@@ -1311,7 +1311,14 @@ picoclaw service --help
 picoclaw launcher
 ```
 
-Plugins are executables in `~/.picoclaw/plugins/`. If a plugin is named `picoclaw-service`, you can run it as `picoclaw service` (prefix match).
+Create a plugin:
+
+```bash
+# ~/.picoclaw/plugins/picoclaw-hello
+#!/bin/bash
+echo "Hello from plugin!"
+echo "Args: $@"
+```
 
 For programmatic use, hide the banner:
 
