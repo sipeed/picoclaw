@@ -248,7 +248,11 @@ func (p *Provider) ChatStream(
 }
 
 // parseStreamResponse parses an OpenAI-compatible SSE stream.
-func parseStreamResponse(ctx context.Context, reader io.Reader, onChunk func(accumulated string)) (*LLMResponse, error) {
+func parseStreamResponse(
+	ctx context.Context,
+	reader io.Reader,
+	onChunk func(accumulated string),
+) (*LLMResponse, error) {
 	var textContent strings.Builder
 	var finishReason string
 	var usage *UsageInfo

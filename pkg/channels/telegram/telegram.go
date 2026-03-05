@@ -2,9 +2,9 @@ package telegram
 
 import (
 	"context"
-	"fmt"
 	"crypto/rand"
 	"encoding/binary"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -798,10 +798,13 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 		return nil, err
 	}
 
+	streamCfg := c.config.Channels.Telegram.Streaming
 	return &telegramStreamer{
-		bot:     c.bot,
-		chatID:  cid,
-		draftID: cryptoRandInt(), // non-zero random draft ID
+		bot:              c.bot,
+		chatID:           cid,
+		draftID:          cryptoRandInt(),
+		throttleInterval: time.Duration(streamCfg.ThrottleSeconds) * time.Second,
+		minGrowth:        streamCfg.MinGrowthChars,
 	}, nil
 }
 
@@ -809,19 +812,16 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 // On first API error (e.g. bot lacks forum mode), it silently degrades: Update
 // becomes a no-op, while Finalize still delivers the final message.
 type telegramStreamer struct {
-	bot     *telego.Bot
-	chatID  int64
-	draftID int
-	lastLen int
-	lastAt  time.Time
-	failed  bool
-	mu      sync.Mutex
+	bot              *telego.Bot
+	chatID           int64
+	draftID          int
+	throttleInterval time.Duration
+	minGrowth        int
+	lastLen          int
+	lastAt           time.Time
+	failed           bool
+	mu               sync.Mutex
 }
-
-const (
-	streamThrottleInterval = 3 * time.Second
-	streamMinGrowth        = 200 // minimum character growth to send an update
-)
 
 func (s *telegramStreamer) Update(ctx context.Context, content string) error {
 	s.mu.Lock()
@@ -834,7 +834,7 @@ func (s *telegramStreamer) Update(ctx context.Context, content string) error {
 	// Throttle: skip if not enough time or content has passed
 	now := time.Now()
 	growth := len(content) - s.lastLen
-	if s.lastLen > 0 && now.Sub(s.lastAt) < streamThrottleInterval && growth < streamMinGrowth {
+	if s.lastLen > 0 && now.Sub(s.lastAt) < s.throttleInterval && growth < s.minGrowth {
 		return nil
 	}
 
