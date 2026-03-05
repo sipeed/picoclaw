@@ -38,33 +38,35 @@ GOTOOLCHAIN=local: 不允許自動下載
 
 ## ✅ 解決方案
 
-### 方案 1: 更新 go.mod（已嘗試）❌
-
-```diff
-- go 1.23
-+ go 1.23.5
-```
-
-**結果**: 失敗，因為 1.23.5 < 1.25.5
-
----
-
-### 方案 2: 設置 GOTOOLCHAIN=auto（已採用）✅
-
-在 `.github/workflows/build.yml` 中添加環境變數：
+### 方案 1: 在 workflow 設置環境變數（已嘗試）❌
 
 ```yaml
 jobs:
   build:
-    runs-on: ubuntu-latest
     env:
-      GOTOOLCHAIN: auto  # 允許自動下載所需的 Go 版本
+      GOTOOLCHAIN: auto
+```
+
+**結果**: 失敗，因為環境變數沒有傳遞到 Makefile 中的 `go generate`
+
+---
+
+### 方案 2: 在 Makefile 中設置（已採用）✅
+
+在 `Makefile` 的 generate 目標中直接設置：
+
+```makefile
+generate:
+	@echo "Run generate..."
+	@rm -r ./$(CMD_DIR)/workspace 2>/dev/null || true
+	@GOTOOLCHAIN=auto $(GO) generate ./...  # 直接在命令前設置
+	@echo "Run generate complete"
 ```
 
 **為什麼有效**:
-- `GOTOOLCHAIN=auto` 允許 Go 自動下載所需的工具鏈
-- 當遇到版本要求時，會自動下載並使用適當的版本
-- 繞過 telego 的錯誤版本要求
+- 直接在 `go generate` 命令前設置環境變數
+- 確保 GOTOOLCHAIN=auto 在執行時生效
+- 不依賴外部環境變數傳遞
 
 ---
 
@@ -100,14 +102,23 @@ go 1.23 → go 1.23.5
 # 原因：1.23.5 仍然 < 1.25.5
 ```
 
-### 步驟 2: 設置 GOTOOLCHAIN=auto ✅
+### 步驟 2: 在 workflow 設置環境變數 ❌
 ```yaml
 # .github/workflows/build.yml
 env:
   GOTOOLCHAIN: auto
 ```
 
-**結果**: 成功！Go 會自動處理版本要求
+**結果**: 失敗
+**原因**: 環境變數沒有傳遞到 Makefile 中
+
+### 步驟 3: 在 Makefile 中設置 ✅
+```makefile
+# Makefile
+@GOTOOLCHAIN=auto $(GO) generate ./...
+```
+
+**結果**: 成功！直接在命令前設置環境變數
 
 ---
 
@@ -265,9 +276,15 @@ make build
 
 ### 解決
 
-- ✅ 設置 GOTOOLCHAIN=auto
-- ✅ 允許自動處理版本要求
+- ✅ 在 Makefile 中設置 GOTOOLCHAIN=auto
+- ✅ 直接在 go generate 命令前設置
 - ✅ 建置恢復正常
+
+### 關鍵點
+
+- ❌ 在 workflow 設置環境變數無效（不會傳遞到 make）
+- ✅ 必須在 Makefile 中直接設置
+- ✅ 使用 `GOTOOLCHAIN=auto $(GO) generate ./...` 格式
 
 ### 影響
 
@@ -280,5 +297,5 @@ make build
 
 **修復日期**: 2026-03-05  
 **狀態**: ✅ 已修復  
-**方案**: GOTOOLCHAIN=auto  
+**方案**: 在 Makefile 中設置 GOTOOLCHAIN=auto  
 **驗證**: 等待 GitHub Actions 確認
