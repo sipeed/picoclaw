@@ -323,12 +323,14 @@ func serializeMessages(messages []Message) []any {
 			})
 		}
 		for _, mediaURL := range m.Media {
-			parts = append(parts, map[string]any{
-				"type": "image_url",
-				"image_url": map[string]any{
-					"url": mediaURL,
-				},
-			})
+			if strings.HasPrefix(mediaURL, "data:image/") {
+				parts = append(parts, map[string]any{
+					"type": "image_url",
+					"image_url": map[string]any{
+						"url": mediaURL,
+					},
+				})
+			}
 		}
 
 		msg := map[string]any{
