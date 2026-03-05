@@ -227,16 +227,11 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				Model:             "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-		},
-	}
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = tmpDir
+	cfg.Agents.Defaults.Model = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 10
 
 	msgBus := bus.NewMessageBus()
 	provider := &mockProvider{}

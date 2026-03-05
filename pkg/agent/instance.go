@@ -60,17 +60,30 @@ func NewAgentInstance(
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
-	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
-	execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
-	if err != nil {
-		log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
-	}
-	toolsRegistry.Register(execTool)
 
-	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
-	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	if cfg.Tools.IsToolEnabled("read_file") {
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("write_file") {
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("list_dir") {
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("exec") {
+		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+		if err != nil {
+			log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+		}
+		toolsRegistry.Register(execTool)
+	}
+
+	if cfg.Tools.IsToolEnabled("edit_file") {
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("append_file") {
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
