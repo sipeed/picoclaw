@@ -1309,6 +1309,9 @@ picoclaw picoclaw-service status
 
 # Get help for a plugin
 picoclaw service --help
+
+# Launch the web UI
+picoclaw launcher
 ```
 
 Plugins are executables in `~/.picoclaw/plugins/`. If a plugin is named `picoclaw-service`, you can run it as `picoclaw service` (prefix match).
