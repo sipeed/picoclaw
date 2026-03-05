@@ -73,11 +73,31 @@ git fetch upstream
 # 切換到 main 分支
 git checkout main
 
-# 合併上游變更
+# 合併上游變更（可能會有衝突需要解決）
 git merge upstream/main
+
+# 如果有衝突，解決後：
+git add .
+git commit -m "Merge upstream/main and resolve conflicts"
 
 # 推送到你的 fork
 git push origin main
+```
+
+**注意**: 如果遇到衝突，特別是在 `pkg/config/config.go` 中的 `ToolsConfig` 結構，確保保留 Affine 設定：
+
+```go
+type ToolsConfig struct {
+	AllowReadPaths  []string           `json:"allow_read_paths"  env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
+	AllowWritePaths []string           `json:"allow_write_paths" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	Web             WebToolsConfig     `json:"web"`
+	Cron            CronToolsConfig    `json:"cron"`
+	Exec            ExecConfig         `json:"exec"`
+	Skills          SkillsToolsConfig  `json:"skills"`
+	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
+	MCP             MCPConfig          `json:"mcp"`
+	Affine          AffineConfig       `json:"affine"`  // 保留這一行
+}
 ```
 
 ### 步驟 4: 創建 Pull Request
