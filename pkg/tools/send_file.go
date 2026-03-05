@@ -69,13 +69,22 @@ func (t *SendFileTool) SetMediaStore(store media.MediaStore) {
 	t.mediaStore = store
 }
 
-func (t *SendFileTool) Execute(_ context.Context, args map[string]any) *ToolResult {
+func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, _ := args["path"].(string)
 	if strings.TrimSpace(path) == "" {
 		return ErrorResult("path is required")
 	}
 
-	if t.defaultChannel == "" || t.defaultChatID == "" {
+	// Prefer context-injected channel/chatID (set by ExecuteWithContext), fall back to SetContext values.
+	channel := ToolChannel(ctx)
+	if channel == "" {
+		channel = t.defaultChannel
+	}
+	chatID := ToolChatID(ctx)
+	if chatID == "" {
+		chatID = t.defaultChatID
+	}
+	if channel == "" || chatID == "" {
 		return ErrorResult("no target channel/chat available")
 	}
 
@@ -108,7 +117,7 @@ func (t *SendFileTool) Execute(_ context.Context, args map[string]any) *ToolResu
 	}
 
 	mediaType := detectMediaType(resolved)
-	scope := fmt.Sprintf("tool:send_file:%s:%s", t.defaultChannel, t.defaultChatID)
+	scope := fmt.Sprintf("tool:send_file:%s:%s", channel, chatID)
 
 	ref, err := t.mediaStore.Store(resolved, media.MediaMeta{
 		Filename:    filename,
