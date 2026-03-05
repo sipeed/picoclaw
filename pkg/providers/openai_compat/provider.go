@@ -361,11 +361,7 @@ func normalizeModel(model, apiBase string) string {
 
 	prefix := strings.ToLower(before)
 	switch prefix {
-<<<<<<< HEAD
-	case "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "mistral", "vivgrid":
-=======
-	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "mistral":
->>>>>>> origin_picoclaw/main
+	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google", "openrouter", "zhipu", "mistral", "vivgrid":
 		return after
 	default:
 		return model
