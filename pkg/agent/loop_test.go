@@ -507,9 +507,6 @@ func TestRunLLMIteration_MessageOnlyToolCallsStopAfterOneRound(t *testing.T) {
 		t.Fatal("No default agent found")
 	}
 
-	al.beginRoundForMessageTool(agent)
-	al.updateToolContexts(agent, "telegram", "chat-1")
-
 	_, iteration, err := al.runLLMIteration(
 		context.Background(),
 		agent,
