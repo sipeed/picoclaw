@@ -172,9 +172,11 @@ The MCP tool enables integration with external Model Context Protocol servers.
 
 ## Skills Tool
 
-The skills tool configures skill discovery and installation via registries like ClawHub.
+The skills tool configures skill discovery and installation via registries like ClawHub and GitHub.
 
 ### Registries
+
+#### ClawHub
 
 | Config                             | Type   | Default              | Description             |
 | ---------------------------------- | ------ | -------------------- | ----------------------- |
@@ -184,6 +186,17 @@ The skills tool configures skill discovery and installation via registries like 
 | `registries.clawhub.search_path`   | string | `/api/v1/search`     | Search API path         |
 | `registries.clawhub.skills_path`   | string | `/api/v1/skills`     | Skills API path         |
 | `registries.clawhub.download_path` | string | `/api/v1/download`   | Download API path       |
+
+#### Index (Remote)
+
+Index registries fetch `skills-index.json` from any HTTP URL.
+
+| Config                          | Type   | Default       | Description                                              |
+| ------------------------------- | ------ | ------------- | -------------------------------------------------------- |
+| `registries.index:<name>.enabled` | bool   | false         | Enable index registry                                  |
+| `registries.index:<name>.index_url` | string | -             | Full URL to skills-index.json                        |
+
+The index URL can point to any publicly accessible `skills-index.json` file (e.g., GitHub wiki raw URL).
 
 ### Configuration Example
 
@@ -199,6 +212,11 @@ The skills tool configures skill discovery and installation via registries like 
           "search_path": "/api/v1/search",
           "skills_path": "/api/v1/skills",
           "download_path": "/api/v1/download"
+        },
+        "index:angelhub": {
+          "enabled": true,
+          "index_url": "https://raw.githubusercontent.com/wiki/keithy/angelhub/picoclaw-skills-index.json"
+        }
         }
       }
     }

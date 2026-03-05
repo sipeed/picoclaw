@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
@@ -60,8 +61,21 @@ type SkillRegistry interface {
 // RegistryConfig holds configuration for all skill registries.
 // This is the input to NewRegistryManagerFromConfig.
 type RegistryConfig struct {
+	Index                 map[string]IndexRegistryConfig
 	ClawHub               ClawHubConfig
 	MaxConcurrentSearches int
+}
+
+// IndexRegistryConfig configures an index-based registry.
+type IndexRegistryConfig struct {
+	Enabled             bool
+	IndexURL            string
+	ExtraHeader         string
+	AuthorizationHeader string
+	AgentHeader         string
+	AllowedPrefixes     []string
+	URLMappings         map[string]string // URL prefix -> local file path mapping
+	SymlinkLocal        bool              // Symlink instead of copy for local file:// URLs
 }
 
 // ClawHubConfig configures the ClawHub registry.
@@ -100,6 +114,12 @@ func NewRegistryManagerFromConfig(cfg RegistryConfig) *RegistryManager {
 	if cfg.MaxConcurrentSearches > 0 {
 		rm.maxConcurrent = cfg.MaxConcurrentSearches
 	}
+	// Add index registries from map
+	for name, indexCfg := range cfg.Index {
+		if indexCfg.Enabled {
+			rm.AddRegistry(NewIndexRegistry(name, indexCfg))
+		}
+	}
 	if cfg.ClawHub.Enabled {
 		rm.AddRegistry(NewClawHubRegistry(cfg.ClawHub))
 	}
@@ -114,11 +134,12 @@ func (rm *RegistryManager) AddRegistry(r SkillRegistry) {
 }
 
 // GetRegistry returns a registry by name, or nil if not found.
+// Supports exact match and prefix match (e.g., "github" matches "github:angelhub").
 func (rm *RegistryManager) GetRegistry(name string) SkillRegistry {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	for _, r := range rm.registries {
-		if r.Name() == name {
+		if r.Name() == name || strings.HasPrefix(r.Name(), name+":") || strings.HasPrefix(name, r.Name()+":") {
 			return r
 		}
 	}
@@ -220,4 +241,19 @@ func sortByScoreDesc(results []SearchResult) {
 		}
 		results[j+1] = key
 	}
+}
+
+// SkillIndex represents the index published by a GitHub workflow.
+type SkillIndex struct {
+	Skills []SkillDefinition `json:"skills"`
+}
+
+// SkillDefinition defines a skill in the index.
+type SkillDefinition struct {
+	Slug        string   `json:"slug"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Path        string   `json:"path"`
+	DownloadURL string   `json:"download_url"`
+	Files       []string `json:"files"`
 }
