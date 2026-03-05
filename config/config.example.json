@@ -164,6 +164,25 @@
       "max_steps": 10,
       "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
       "reasoning_channel_id": ""
+    },
+    "irc": {
+      "enabled": false,
+      "server": "irc.libera.chat:6697",
+      "tls": true,
+      "nick": "mybot",
+      "password": "",
+      "nickserv_password": "",
+      "sasl_user": "",
+      "sasl_password": "",
+      "channels": ["#mychannel"],
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "typing": {
+        "enabled": false
+      },
+      "reasoning_channel_id": ""
     }
   },
   "providers": {
