@@ -8,7 +8,6 @@ import (
 
 func TestMessageTool_Execute_Success(t *testing.T) {
 	tool := NewMessageTool()
-	tool.SetContext("test-channel", "test-chat-id")
 
 	var sentChannel, sentChatID, sentContent string
 	tool.SetSendCallback(func(channel, chatID, content string) error {
@@ -18,8 +17,8 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 		return nil
 	})
 
-	ctx := context.Background()
-	args := map[string]interface{}{
+	ctx := WithToolContext(context.Background(), "test-channel", "test-chat-id")
+	args := map[string]any{
 		"content": "Hello, world!",
 	}
 
@@ -60,7 +59,6 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 
 func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 	tool := NewMessageTool()
-	tool.SetContext("default-channel", "default-chat-id")
 
 	var sentChannel, sentChatID string
 	tool.SetSendCallback(func(channel, chatID, content string) error {
@@ -69,8 +67,8 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 		return nil
 	})
 
-	ctx := context.Background()
-	args := map[string]interface{}{
+	ctx := WithToolContext(context.Background(), "default-channel", "default-chat-id")
+	args := map[string]any{
 		"content": "Test message",
 		"channel": "custom-channel",
 		"chat_id": "custom-chat-id",
@@ -96,15 +94,14 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 
 func TestMessageTool_Execute_SendFailure(t *testing.T) {
 	tool := NewMessageTool()
-	tool.SetContext("test-channel", "test-chat-id")
 
 	sendErr := errors.New("network error")
 	tool.SetSendCallback(func(channel, chatID, content string) error {
 		return sendErr
 	})
 
-	ctx := context.Background()
-	args := map[string]interface{}{
+	ctx := WithToolContext(context.Background(), "test-channel", "test-chat-id")
+	args := map[string]any{
 		"content": "Test message",
 	}
 
@@ -133,10 +130,9 @@ func TestMessageTool_Execute_SendFailure(t *testing.T) {
 
 func TestMessageTool_Execute_MissingContent(t *testing.T) {
 	tool := NewMessageTool()
-	tool.SetContext("test-channel", "test-chat-id")
 
-	ctx := context.Background()
-	args := map[string]interface{}{} // content missing
+	ctx := WithToolContext(context.Background(), "test-channel", "test-chat-id")
+	args := map[string]any{} // content missing
 
 	result := tool.Execute(ctx, args)
 
@@ -151,14 +147,14 @@ func TestMessageTool_Execute_MissingContent(t *testing.T) {
 
 func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 	tool := NewMessageTool()
-	// No SetContext called, so defaultChannel and defaultChatID are empty
+	// No WithToolContext — channel/chatID are empty
 
 	tool.SetSendCallback(func(channel, chatID, content string) error {
 		return nil
 	})
 
 	ctx := context.Background()
-	args := map[string]interface{}{
+	args := map[string]any{
 		"content": "Test message",
 	}
 
@@ -175,11 +171,10 @@ func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 
 func TestMessageTool_Execute_NotConfigured(t *testing.T) {
 	tool := NewMessageTool()
-	tool.SetContext("test-channel", "test-chat-id")
 	// No SetSendCallback called
 
-	ctx := context.Background()
-	args := map[string]interface{}{
+	ctx := WithToolContext(context.Background(), "test-channel", "test-chat-id")
+	args := map[string]any{
 		"content": "Test message",
 	}
 
@@ -219,7 +214,7 @@ func TestMessageTool_Parameters(t *testing.T) {
 		t.Error("Expected type 'object'")
 	}
 
-	props, ok := params["properties"].(map[string]interface{})
+	props, ok := params["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("Expected properties to be a map")
 	}
@@ -231,7 +226,7 @@ func TestMessageTool_Parameters(t *testing.T) {
 	}
 
 	// Check content property
-	contentProp, ok := props["content"].(map[string]interface{})
+	contentProp, ok := props["content"].(map[string]any)
 	if !ok {
 		t.Error("Expected 'content' property")
 	}
@@ -240,7 +235,7 @@ func TestMessageTool_Parameters(t *testing.T) {
 	}
 
 	// Check channel property (optional)
-	channelProp, ok := props["channel"].(map[string]interface{})
+	channelProp, ok := props["channel"].(map[string]any)
 	if !ok {
 		t.Error("Expected 'channel' property")
 	}
@@ -249,7 +244,7 @@ func TestMessageTool_Parameters(t *testing.T) {
 	}
 
 	// Check chat_id property (optional)
-	chatIDProp, ok := props["chat_id"].(map[string]interface{})
+	chatIDProp, ok := props["chat_id"].(map[string]any)
 	if !ok {
 		t.Error("Expected 'chat_id' property")
 	}

@@ -15,14 +15,14 @@ func TestBuildParams_BasicMessage(t *testing.T) {
 	messages := []Message{
 		{Role: "user", Content: "Hello"},
 	}
-	params, err := buildParams(messages, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{
+	params, err := buildParams(messages, nil, "claude-sonnet-4.6", map[string]any{
 		"max_tokens": 1024,
 	})
 	if err != nil {
 		t.Fatalf("buildParams() error: %v", err)
 	}
-	if string(params.Model) != "claude-sonnet-4-5-20250929" {
-		t.Errorf("Model = %q, want %q", params.Model, "claude-sonnet-4-5-20250929")
+	if string(params.Model) != "claude-sonnet-4.6" {
+		t.Errorf("Model = %q, want %q", params.Model, "claude-sonnet-4.6")
 	}
 	if params.MaxTokens != 1024 {
 		t.Errorf("MaxTokens = %d, want 1024", params.MaxTokens)
@@ -37,7 +37,7 @@ func TestBuildParams_SystemMessage(t *testing.T) {
 		{Role: "system", Content: "You are helpful"},
 		{Role: "user", Content: "Hi"},
 	}
-	params, err := buildParams(messages, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{})
+	params, err := buildParams(messages, nil, "claude-sonnet-4.6", map[string]any{})
 	if err != nil {
 		t.Fatalf("buildParams() error: %v", err)
 	}
@@ -62,13 +62,13 @@ func TestBuildParams_ToolCallMessage(t *testing.T) {
 				{
 					ID:        "call_1",
 					Name:      "get_weather",
-					Arguments: map[string]interface{}{"city": "SF"},
+					Arguments: map[string]any{"city": "SF"},
 				},
 			},
 		},
 		{Role: "tool", Content: `{"temp": 72}`, ToolCallID: "call_1"},
 	}
-	params, err := buildParams(messages, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{})
+	params, err := buildParams(messages, nil, "claude-sonnet-4.6", map[string]any{})
 	if err != nil {
 		t.Fatalf("buildParams() error: %v", err)
 	}
@@ -84,17 +84,17 @@ func TestBuildParams_WithTools(t *testing.T) {
 			Function: ToolFunctionDefinition{
 				Name:        "get_weather",
 				Description: "Get weather for a city",
-				Parameters: map[string]interface{}{
+				Parameters: map[string]any{
 					"type": "object",
-					"properties": map[string]interface{}{
-						"city": map[string]interface{}{"type": "string"},
+					"properties": map[string]any{
+						"city": map[string]any{"type": "string"},
 					},
-					"required": []interface{}{"city"},
+					"required": []any{"city"},
 				},
 			},
 		},
 	}
-	params, err := buildParams([]Message{{Role: "user", Content: "Hi"}}, tools, "claude-sonnet-4-5-20250929", map[string]interface{}{})
+	params, err := buildParams([]Message{{Role: "user", Content: "Hi"}}, tools, "claude-sonnet-4.6", map[string]any{})
 	if err != nil {
 		t.Fatalf("buildParams() error: %v", err)
 	}
@@ -154,19 +154,19 @@ func TestProvider_ChatRoundTrip(t *testing.T) {
 			return
 		}
 
-		var reqBody map[string]interface{}
+		var reqBody map[string]any
 		json.NewDecoder(r.Body).Decode(&reqBody)
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"id":          "msg_test",
 			"type":        "message",
 			"role":        "assistant",
 			"model":       reqBody["model"],
 			"stop_reason": "end_turn",
-			"content": []map[string]interface{}{
+			"content": []map[string]any{
 				{"type": "text", "text": "Hello! How can I help you?"},
 			},
-			"usage": map[string]interface{}{
+			"usage": map[string]any{
 				"input_tokens":  15,
 				"output_tokens": 8,
 			},
@@ -178,7 +178,7 @@ func TestProvider_ChatRoundTrip(t *testing.T) {
 
 	provider := NewProviderWithClient(createAnthropicTestClient(server.URL, "test-token"))
 	messages := []Message{{Role: "user", Content: "Hello"}}
-	resp, err := provider.Chat(t.Context(), messages, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{"max_tokens": 1024})
+	resp, err := provider.Chat(t.Context(), messages, nil, "claude-sonnet-4.6", map[string]any{"max_tokens": 1024})
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -195,8 +195,8 @@ func TestProvider_ChatRoundTrip(t *testing.T) {
 
 func TestProvider_GetDefaultModel(t *testing.T) {
 	p := NewProvider("test-token")
-	if got := p.GetDefaultModel(); got != "claude-sonnet-4-5-20250929" {
-		t.Errorf("GetDefaultModel() = %q, want %q", got, "claude-sonnet-4-5-20250929")
+	if got := p.GetDefaultModel(); got != "claude-sonnet-4.6" {
+		t.Errorf("GetDefaultModel() = %q, want %q", got, "claude-sonnet-4.6")
 	}
 }
 
@@ -221,19 +221,19 @@ func TestProvider_ChatUsesTokenSource(t *testing.T) {
 			return
 		}
 
-		var reqBody map[string]interface{}
+		var reqBody map[string]any
 		json.NewDecoder(r.Body).Decode(&reqBody)
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"id":          "msg_test",
 			"type":        "message",
 			"role":        "assistant",
 			"model":       reqBody["model"],
 			"stop_reason": "end_turn",
-			"content": []map[string]interface{}{
+			"content": []map[string]any{
 				{"type": "text", "text": "ok"},
 			},
-			"usage": map[string]interface{}{
+			"usage": map[string]any{
 				"input_tokens":  1,
 				"output_tokens": 1,
 			},
@@ -247,7 +247,13 @@ func TestProvider_ChatUsesTokenSource(t *testing.T) {
 		return "refreshed-token", nil
 	}, server.URL)
 
-	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hello"}}, nil, "claude-sonnet-4-5-20250929", map[string]interface{}{})
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hello"}},
+		nil,
+		"claude-sonnet-4.6",
+		map[string]any{},
+	)
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}

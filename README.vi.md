@@ -3,7 +3,7 @@
 
 <h1>PicoClaw: Trợ lý AI Siêu Nhẹ viết bằng Go</h1>
 
-<h3>Phần cứng $10 · RAM 10MB · Khởi động 1 giây · 皮皮虾，我们走！</h3>
+<h3>Phần cứng $10 · RAM 10MB · Khởi động 1 giây · Nào, xuất phát!</h3>
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
@@ -50,7 +50,7 @@
 
 ## 📢 Tin tức
 
-2026-02-16 🎉 PicoClaw đạt 12K stars chỉ trong một tuần! Cảm ơn tất cả mọi người! PicoClaw đang phát triển nhanh hơn chúng tôi tưởng tượng. Do số lượng PR tăng cao, chúng tôi cấp thiết cần maintainer từ cộng đồng. Các vai trò tình nguyện viên và roadmap đã được công bố [tại đây](docs/picoclaw_community_roadmap_260216.md) — rất mong đón nhận sự tham gia của bạn!
+2026-02-16 🎉 PicoClaw đạt 12K stars chỉ trong một tuần! Cảm ơn tất cả mọi người! PicoClaw đang phát triển nhanh hơn chúng tôi tưởng tượng. Do số lượng PR tăng cao, chúng tôi cấp thiết cần maintainer từ cộng đồng. Các vai trò tình nguyện viên và roadmap đã được công bố [tại đây](docs/ROADMAP.md) — rất mong đón nhận sự tham gia của bạn!
 
 2026-02-13 🎉 PicoClaw đạt 5000 stars trong 4 ngày! Cảm ơn cộng đồng! Chúng tôi đang hoàn thiện **Lộ trình dự án (Roadmap)** và thiết lập **Nhóm phát triển** để đẩy nhanh tốc độ phát triển PicoClaw.  
 🚀 **Kêu gọi hành động:** Vui lòng gửi yêu cầu tính năng tại GitHub Discussions. Chúng tôi sẽ xem xét và ưu tiên trong cuộc họp hàng tuần.
@@ -145,35 +145,43 @@ Bạn cũng có thể chạy PicoClaw bằng Docker Compose mà không cần cà
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Thiết lập API Key
-cp config/config.example.json config/config.json
-vim config/config.json      # Thiết lập DISCORD_BOT_TOKEN, API keys, v.v.
+# 2. Lần chạy đầu tiên — tự tạo docker/data/config.json rồi dừng lại
+docker compose -f docker/docker-compose.yml --profile gateway up
+# Container hiển thị "First-run setup complete." rồi tự dừng.
 
-# 3. Build & Khởi động
-docker compose --profile gateway up -d
+# 3. Thiết lập API Key
+vim docker/data/config.json   # API key của provider, bot token, v.v.
 
-# 4. Xem logs
-docker compose logs -f picoclaw-gateway
+# 4. Khởi động
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
-# 5. Dừng
-docker compose --profile gateway down
+> [!TIP]
+> **Người dùng Docker**: Theo mặc định, Gateway lắng nghe trên `127.0.0.1`, không thể truy cập từ máy chủ. Nếu bạn cần truy cập các endpoint kiểm tra sức khỏe hoặc mở cổng, hãy đặt `PICOCLAW_GATEWAY_HOST=0.0.0.0` trong môi trường của bạn hoặc cập nhật `config.json`.
+
+```bash
+# 5. Xem logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
+
+# 6. Dừng
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Chế độ Agent (chạy một lần)
 
 ```bash
 # Đặt câu hỏi
-docker compose run --rm picoclaw-agent -m "2+2 bằng mấy?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "2+2 bằng mấy?"
 
 # Chế độ tương tác
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Build lại
+### Cập nhật
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Bắt đầu nhanh
@@ -193,36 +201,32 @@ picoclaw onboard
 
 ```json
 {
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
+      "api_base": "https://api.openai.com/v1"
+    }
+  ],
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
-      "max_tokens": 8192,
-      "temperature": 0.7,
-      "max_tool_iterations": 20
+      "model_name": "gpt4"
     }
   },
-  "providers": {
-    "openrouter": {
-      "api_key": "xxx",
-      "api_base": "https://openrouter.ai/api/v1"
-    }
-  },
-  "tools": {
-    "web": {
-      "brave": {
-        "enabled": false,
-        "api_key": "YOUR_BRAVE_API_KEY",
-        "max_results": 5
-      },
-      "duckduckgo": {
-        "enabled": true,
-        "max_results": 5
-      }
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "allow_from": []
     }
   }
 }
 ```
+
+> **Mới**: Định dạng cấu hình `model_list` cho phép thêm nhà cung cấp mà không cần thay đổi mã nguồn. Xem [Cấu hình Mô hình](#cấu-hình-mô-hình-model_list) để biết chi tiết.
+> `request_timeout` là tùy chọn và dùng đơn vị giây. Nếu bỏ qua hoặc đặt `<= 0`, PicoClaw sẽ dùng timeout mặc định (120s).
 
 **3. Lấy API Key**
 
@@ -243,7 +247,7 @@ Vậy là xong! Bạn đã có một trợ lý AI hoạt động chỉ trong 2 p
 
 ## 💬 Tích hợp ứng dụng Chat
 
-Trò chuyện với PicoClaw qua Telegram, Discord, DingTalk hoặc LINE.
+Trò chuyện với PicoClaw qua Telegram, Discord, DingTalk, LINE hoặc WeCom.
 
 | Kênh | Mức độ thiết lập |
 | --- | --- |
@@ -252,6 +256,7 @@ Trò chuyện với PicoClaw qua Telegram, Discord, DingTalk hoặc LINE.
 | **QQ** | Dễ (AppID + AppSecret) |
 | **DingTalk** | Trung bình (app credentials) |
 | **LINE** | Trung bình (credentials + webhook URL) |
+| **WeCom AI Bot** | Trung bình (Token + khóa AES) |
 
 <details>
 <summary><b>Telegram</b> (Khuyên dùng)</summary>
@@ -419,8 +424,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -434,7 +437,7 @@ LINE yêu cầu HTTPS cho webhook. Sử dụng reverse proxy hoặc tunnel:
 
 ```bash
 # Ví dụ với ngrok
-ngrok http 18791
+ngrok http 18790
 ```
 
 Sau đó cài đặt Webhook URL trong LINE Developers Console thành `https://your-domain/webhook/line` và bật **Use webhook**.
@@ -447,7 +450,120 @@ picoclaw gateway
 
 > Trong nhóm chat, bot chỉ phản hồi khi được @mention. Các câu trả lời sẽ trích dẫn tin nhắn gốc.
 
-> **Docker Compose**: Thêm `ports: ["18791:18791"]` vào service `picoclaw-gateway` để mở port webhook.
+> **Docker Compose**: Nếu bạn cần mở port webhook cục bộ, hãy thêm một rule chuyển tiếp từ port Gateway (mặc định 18790) tới host. Lưu ý: LINE webhook được phục vụ bởi Gateway HTTP chung (mặc định 127.0.0.1:18790).
+
+</details>
+
+<details>
+<summary><b>WeCom (WeChat Work)</b></summary>
+
+PicoClaw hỗ trợ ba loại tích hợp WeCom:
+
+**Tùy chọn 1: WeCom Bot (Robot)** - Thiết lập dễ dàng hơn, hỗ trợ chat nhóm
+**Tùy chọn 2: WeCom App (Ứng dụng Tùy chỉnh)** - Nhiều tính năng hơn, nhắn tin chủ động, chỉ chat riêng tư
+**Tùy chọn 3: WeCom AI Bot (Bot Thông Minh)** - Bot AI chính thức, phản hồi streaming, hỗ trợ nhóm và riêng tư
+
+Xem [Hướng dẫn Cấu hình WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) để biết hướng dẫn chi tiết.
+
+**Thiết lập Nhanh - WeCom Bot:**
+
+**1. Tạo bot**
+
+* Truy cập Bảng điều khiển Quản trị WeCom → Chat Nhóm → Thêm Bot Nhóm
+* Sao chép URL webhook (định dạng: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+
+**2. Cấu hình**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+> **Lưu ý:** Các endpoint webhook của WeCom Bot được phục vụ bởi máy chủ Gateway HTTP dùng chung (mặc định 127.0.0.1:18790). Nếu bạn cần truy cập từ bên ngoài, hãy cấu hình reverse proxy hoặc mở cổng Gateway tương ứng.
+
+**Thiết lập Nhanh - WeCom App:**
+
+**1. Tạo ứng dụng**
+
+* Truy cập Bảng điều khiển Quản trị WeCom → Quản lý Ứng dụng → Tạo Ứng dụng
+* Sao chép **AgentId** và **Secret**
+* Truy cập trang "Công ty của tôi", sao chép **CorpID**
+
+**2. Cấu hình nhận tin nhắn**
+
+* Trong chi tiết ứng dụng, nhấp vào "Nhận Tin nhắn" → "Thiết lập API"
+* Đặt URL thành `http://your-server:18790/webhook/wecom-app`
+* Tạo **Token** và **EncodingAESKey**
+
+**3. Cấu hình**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. Chạy**
+
+```bash
+picoclaw gateway
+```
+
+> **Lưu ý**: WeCom App callback webhook được phục vụ bởi Gateway HTTP chung (mặc định 127.0.0.1:18790). Sử dụng proxy ngược để cung cấp HTTPS trong môi trường production nếu cần.
+
+**Thiết lập Nhanh - WeCom AI Bot:**
+
+**1. Tạo AI Bot**
+
+* Truy cập Bảng điều khiển Quản trị WeCom → Quản lý Ứng dụng → AI Bot
+* Cấu hình URL callback: `http://your-server:18791/webhook/wecom-aibot`
+* Sao chép **Token** và tạo **EncodingAESKey**
+
+**2. Cấu hình**
+
+```json
+{
+  "channels": {
+    "wecom_aibot": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "allow_from": [],
+      "welcome_message": "Xin chào! Tôi có thể giúp gì cho bạn?"
+    }
+  }
+}
+```
+
+**3. Chạy**
+
+```bash
+picoclaw gateway
+```
+
+> **Lưu ý**: WeCom AI Bot sử dụng giao thức pull streaming — không lo timeout phản hồi. Tác vụ dài (>5,5 phút) tự động chuyển sang gửi qua `response_url`.
 
 </details>
 
@@ -460,6 +576,31 @@ Kết nối PicoClaw với Mạng xã hội Agent chỉ bằng cách gửi một
 ## ⚙️ Cấu hình chi tiết
 
 File cấu hình: `~/.picoclaw/config.json`
+
+### Biến môi trường
+
+Bạn có thể ghi đè các đường dẫn mặc định bằng cách sử dụng các biến môi trường. Điều này hữu ích cho việc cài đặt di động, triển khai container hóa hoặc chạy picoclaw như một dịch vụ hệ thống. Các biến này độc lập và kiểm soát các đường dẫn khác nhau.
+
+| Biến              | Mô tả                                                                                                                             | Đường dẫn mặc định        |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Ghi đè đường dẫn đến file cấu hình. Điều này trực tiếp yêu cầu picoclaw tải file `config.json` nào, bỏ qua tất cả các vị trí khác. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Ghi đè thư mục gốc cho dữ liệu picoclaw. Điều này thay đổi vị trí mặc định của `workspace` và các thư mục dữ liệu khác.          | `~/.picoclaw`             |
+
+**Ví dụ:**
+
+```bash
+# Chạy picoclaw bằng một file cấu hình cụ thể
+# Đường dẫn workspace sẽ được đọc từ trong file cấu hình đó
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Chạy picoclaw với tất cả dữ liệu được lưu trữ trong /opt/picoclaw
+# Cấu hình sẽ được tải từ ~/.picoclaw/config.json mặc định
+# Workspace sẽ được tạo tại /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Sử dụng cả hai để có thiết lập tùy chỉnh hoàn toàn
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### Cấu trúc Workspace
 
@@ -654,7 +795,7 @@ Subagent có quyền truy cập các công cụ (message, web_search, v.v.) và 
 ### Nhà cung cấp (Providers)
 
 > [!NOTE]
-> Groq cung cấp dịch vụ chuyển giọng nói thành văn bản miễn phí qua Whisper. Nếu đã cấu hình Groq, tin nhắn thoại trên Telegram sẽ được tự động chuyển thành văn bản.
+> Groq cung cấp dịch vụ chuyển giọng nói thành văn bản miễn phí qua Whisper. Nếu đã cấu hình Groq, tin nhắn âm thanh từ bất kỳ kênh nào sẽ được tự động chuyển thành văn bản ở cấp độ agent.
 
 | Nhà cung cấp | Mục đích | Lấy API Key |
 | --- | --- | --- |
@@ -665,6 +806,8 @@ Subagent có quyền truy cập các công cụ (message, web_search, v.v.) và 
 | `openai` (Đang thử nghiệm) | LLM (GPT trực tiếp) | [platform.openai.com](https://platform.openai.com) |
 | `deepseek` (Đang thử nghiệm) | LLM (DeepSeek trực tiếp) | [platform.deepseek.com](https://platform.deepseek.com) |
 | `groq` | LLM + **Chuyển giọng nói** (Whisper) | [console.groq.com](https://console.groq.com) |
+| `qwen` | LLM (Qwen trực tiếp) | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| `cerebras` | LLM (Cerebras trực tiếp) | [cerebras.ai](https://cerebras.ai) |
 
 <details>
 <summary><b>Cấu hình Zhipu</b></summary>
@@ -772,6 +915,174 @@ picoclaw agent -m "Xin chào"
 
 </details>
 
+### Cấu hình Mô hình (model_list)
+
+> **Tính năng mới!** PicoClaw hiện sử dụng phương pháp cấu hình **đặt mô hình vào trung tâm**. Chỉ cần chỉ định dạng `nhà cung cấp/mô hình` (ví dụ: `zhipu/glm-4.7`) để thêm nhà cung cấp mới—**không cần thay đổi mã!**
+
+Thiết kế này cũng cho phép **hỗ trợ đa tác nhân** với lựa chọn nhà cung cấp linh hoạt:
+
+- **Tác nhân khác nhau, nhà cung cấp khác nhau** : Mỗi tác nhân có thể sử dụng nhà cung cấp LLM riêng
+- **Mô hình dự phòng** : Cấu hình mô hình chính và dự phòng để tăng độ tin cậy
+- **Cân bằng tải** : Phân phối yêu cầu trên nhiều endpoint khác nhau
+- **Cấu hình tập trung** : Quản lý tất cả nhà cung cấp ở một nơi
+
+#### 📋 Tất cả Nhà cung cấp được Hỗ trợ
+
+| Nhà cung cấp | Prefix `model` | API Base Mặc định | Giao thức | Khóa API |
+|-------------|----------------|-------------------|-----------|----------|
+| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [Lấy Khóa](https://platform.openai.com) |
+| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [Lấy Khóa](https://console.anthropic.com) |
+| **Zhipu AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [Lấy Khóa](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [Lấy Khóa](https://platform.deepseek.com) |
+| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [Lấy Khóa](https://aistudio.google.com/api-keys) |
+| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [Lấy Khóa](https://console.groq.com) |
+| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [Lấy Khóa](https://platform.moonshot.cn) |
+| **Qwen (Alibaba)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [Lấy Khóa](https://dashscope.console.aliyun.com) |
+| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [Lấy Khóa](https://build.nvidia.com) |
+| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | Local (không cần khóa) |
+| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [Lấy Khóa](https://openrouter.ai/keys) |
+| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | Local |
+| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Lấy Khóa](https://cerebras.ai) |
+| **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Lấy Khóa](https://console.volcengine.com) |
+| **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **Antigravity** | `antigravity/` | Google Cloud | Tùy chỉnh | Chỉ OAuth |
+| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
+
+#### Cấu hình Cơ bản
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key"
+    },
+    {
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
+      "api_key": "sk-ant-your-key"
+    },
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt-5.2"
+    }
+  }
+}
+```
+
+#### Ví dụ theo Nhà cung cấp
+
+**OpenAI**
+```json
+{
+  "model_name": "gpt-5.2",
+  "model": "openai/gpt-5.2",
+  "api_key": "sk-..."
+}
+```
+
+**Zhipu AI (GLM)**
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**Anthropic (với OAuth)**
+```json
+{
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
+  "auth_method": "oauth"
+}
+```
+> Chạy `picoclaw auth login --provider anthropic` để thiết lập thông tin xác thực OAuth.
+
+**Proxy/API tùy chỉnh**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
+
+#### Cân bằng Tải tải
+
+Định cấu hình nhiều endpoint cho cùng một tên mô hình—PicoClaw sẽ tự động phân phối round-robin giữa chúng:
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
+  ]
+}
+```
+
+#### Chuyển đổi từ Cấu hình `providers` Cũ
+
+Cấu hình `providers` cũ đã **ngừng sử dụng** nhưng vẫn được hỗ trợ để tương thích ngược.
+
+**Cấu hình Cũ (đã ngừng sử dụng):**
+```json
+{
+  "providers": {
+    "zhipu": {
+      "api_key": "your-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "zhipu",
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+**Cấu hình Mới (khuyến nghị):**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+Xem hướng dẫn chuyển đổi chi tiết tại [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md).
+
 ## Tham chiếu CLI
 
 | Lệnh | Mô tả |
@@ -826,7 +1137,7 @@ Thêm key vào `~/.picoclaw/config.json` nếu dùng Brave:
   "tools": {
     "web": {
       "brave": {
-        "enabled": true,
+        "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       },

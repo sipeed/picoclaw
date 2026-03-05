@@ -9,7 +9,10 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,11 +24,15 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/mcp"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 type AgentLoop struct {
@@ -37,21 +44,30 @@ type AgentLoop struct {
 	summarizing    sync.Map
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
+	mediaStore     media.MediaStore
+	transcriber    voice.Transcriber
 }
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string // Session identifier for history/context
-	Channel         string // Target channel for tool execution
-	ChatID          string // Target chat ID for tool execution
-	UserMessage     string // User message content (may include prefix)
-	DefaultResponse string // Response when LLM returns empty
-	EnableSummary   bool   // Whether to trigger summarization
-	SendResponse    bool   // Whether to send response via bus
-	NoHistory       bool   // If true, don't load session history (for heartbeat)
+	SessionKey      string   // Session identifier for history/context
+	Channel         string   // Target channel for tool execution
+	ChatID          string   // Target chat ID for tool execution
+	UserMessage     string   // User message content (may include prefix)
+	Media           []string // media:// refs from inbound message
+	DefaultResponse string   // Response when LLM returns empty
+	EnableSummary   bool     // Whether to trigger summarization
+	SendResponse    bool     // Whether to send response via bus
+	NoHistory       bool     // If true, don't load session history (for heartbeat)
 }
 
-func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
+const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
+
+func NewAgentLoop(
+	cfg *config.Config,
+	msgBus *bus.MessageBus,
+	provider providers.LLMProvider,
+) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
 	// Register shared tools to all agents
@@ -79,7 +95,12 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
-func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *AgentRegistry, provider providers.LLMProvider) {
+func registerSharedTools(
+	cfg *config.Config,
+	msgBus *bus.MessageBus,
+	registry *AgentRegistry,
+	provider providers.LLMProvider,
+) {
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {
@@ -87,54 +108,175 @@ func registerSharedTools(cfg *config.Config, msgBus *bus.MessageBus, registry *A
 		}
 
 		// Web tools
-		if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
-			BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
-			BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
-			BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
-			DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
-			DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
-			PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
-			PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
-			PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
-		}); searchTool != nil {
-			agent.Tools.Register(searchTool)
+		if cfg.Tools.IsToolEnabled("web") {
+			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+				BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,
+				BraveMaxResults:      cfg.Tools.Web.Brave.MaxResults,
+				BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
+				TavilyAPIKey:         cfg.Tools.Web.Tavily.APIKey,
+				TavilyBaseURL:        cfg.Tools.Web.Tavily.BaseURL,
+				TavilyMaxResults:     cfg.Tools.Web.Tavily.MaxResults,
+				TavilyEnabled:        cfg.Tools.Web.Tavily.Enabled,
+				DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
+				DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+				PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+				PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+				PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
+				GLMSearchAPIKey:      cfg.Tools.Web.GLMSearch.APIKey,
+				GLMSearchBaseURL:     cfg.Tools.Web.GLMSearch.BaseURL,
+				GLMSearchEngine:      cfg.Tools.Web.GLMSearch.SearchEngine,
+				GLMSearchMaxResults:  cfg.Tools.Web.GLMSearch.MaxResults,
+				GLMSearchEnabled:     cfg.Tools.Web.GLMSearch.Enabled,
+				Proxy:                cfg.Tools.Web.Proxy,
+			})
+			if err != nil {
+				logger.ErrorCF("agent", "Failed to create web search tool", map[string]any{"error": err.Error()})
+			} else if searchTool != nil {
+				agent.Tools.Register(searchTool)
+			}
 		}
-		agent.Tools.Register(tools.NewWebFetchTool(50000))
+		if cfg.Tools.IsToolEnabled("web_fetch") {
+			fetchTool, err := tools.NewWebFetchToolWithProxy(50000, cfg.Tools.Web.Proxy, cfg.Tools.Web.FetchLimitBytes)
+			if err != nil {
+				logger.ErrorCF("agent", "Failed to create web fetch tool", map[string]any{"error": err.Error()})
+			} else {
+				agent.Tools.Register(fetchTool)
+			}
+		}
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
-		agent.Tools.Register(tools.NewI2CTool())
-		agent.Tools.Register(tools.NewSPITool())
+		if cfg.Tools.IsToolEnabled("i2c") {
+			agent.Tools.Register(tools.NewI2CTool())
+		}
+		if cfg.Tools.IsToolEnabled("spi") {
+			agent.Tools.Register(tools.NewSPITool())
+		}
 
 		// Message tool
-		messageTool := tools.NewMessageTool()
-		messageTool.SetSendCallback(func(channel, chatID, content string) error {
-			msgBus.PublishOutbound(bus.OutboundMessage{
-				Channel: channel,
-				ChatID:  chatID,
-				Content: content,
+		if cfg.Tools.IsToolEnabled("message") {
+			messageTool := tools.NewMessageTool()
+			messageTool.SetSendCallback(func(channel, chatID, content string) error {
+				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer pubCancel()
+				return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
+					Channel: channel,
+					ChatID:  chatID,
+					Content: content,
+				})
 			})
-			return nil
-		})
-		agent.Tools.Register(messageTool)
+			agent.Tools.Register(messageTool)
+		}
+
+		// Skill discovery and installation tools
+		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
+		install_skills_enable := cfg.Tools.IsToolEnabled("install_skill")
+		if find_skills_enable || install_skills_enable {
+			registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
+				MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
+				ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+			})
+
+			if find_skills_enable {
+				searchCache := skills.NewSearchCache(
+					cfg.Tools.Skills.SearchCache.MaxSize,
+					time.Duration(cfg.Tools.Skills.SearchCache.TTLSeconds)*time.Second,
+				)
+				agent.Tools.Register(tools.NewFindSkillsTool(registryMgr, searchCache))
+			}
+
+			if install_skills_enable {
+				agent.Tools.Register(tools.NewInstallSkillTool(registryMgr, agent.Workspace))
+			}
+		}
 
 		// Spawn tool with allowlist checker
-		subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
-		// Share the agent's tools with subagent so it can execute file operations, etc.
-		subagentManager.SetTools(agent.Tools)
-		spawnTool := tools.NewSpawnTool(subagentManager)
-		currentAgentID := agentID
-		spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
-			return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
-		})
-		agent.Tools.Register(spawnTool)
-
-		// Update context builder with the complete tools registry
-		agent.ContextBuilder.SetToolsRegistry(agent.Tools)
+		if cfg.Tools.IsToolEnabled("spawn") {
+			if cfg.Tools.IsToolEnabled("subagent") {
+				subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace, msgBus)
+				subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
+        subagentManager.SetTools(agent.Tools)
+				spawnTool := tools.NewSpawnTool(subagentManager)
+				currentAgentID := agentID
+				spawnTool.SetAllowlistChecker(func(targetAgentID string) bool {
+					return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+				})
+				agent.Tools.Register(spawnTool)
+			} else {
+				logger.WarnCF("agent", "spawn tool requires subagent to be enabled", nil)
+			}
+		}
 	}
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
+
+	// Initialize MCP servers for all agents
+	if al.cfg.Tools.IsToolEnabled("mcp") {
+		mcpManager := mcp.NewManager()
+		// Ensure MCP connections are cleaned up on exit, regardless of initialization success
+		// This fixes resource leak when LoadFromMCPConfig partially succeeds then fails
+		defer func() {
+			if err := mcpManager.Close(); err != nil {
+				logger.ErrorCF("agent", "Failed to close MCP manager",
+					map[string]any{
+						"error": err.Error(),
+					})
+			}
+		}()
+
+		defaultAgent := al.registry.GetDefaultAgent()
+		var workspacePath string
+		if defaultAgent != nil && defaultAgent.Workspace != "" {
+			workspacePath = defaultAgent.Workspace
+		} else {
+			workspacePath = al.cfg.WorkspacePath()
+		}
+
+		if err := mcpManager.LoadFromMCPConfig(ctx, al.cfg.Tools.MCP, workspacePath); err != nil {
+			logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
+				map[string]any{
+					"error": err.Error(),
+				})
+		} else {
+			// Register MCP tools for all agents
+			servers := mcpManager.GetServers()
+			uniqueTools := 0
+			totalRegistrations := 0
+			agentIDs := al.registry.ListAgentIDs()
+			agentCount := len(agentIDs)
+
+			for serverName, conn := range servers {
+				uniqueTools += len(conn.Tools)
+				for _, tool := range conn.Tools {
+					for _, agentID := range agentIDs {
+						agent, ok := al.registry.GetAgent(agentID)
+						if !ok {
+							continue
+						}
+
+						mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+						agent.Tools.Register(mcpTool)
+						totalRegistrations++
+						logger.DebugCF("agent", "Registered MCP tool",
+							map[string]any{
+								"agent_id": agentID,
+								"server":   serverName,
+								"tool":     tool.Name,
+								"name":     mcpTool.Name(),
+							})
+					}
+				}
+			}
+			logger.InfoCF("agent", "MCP tools registered successfully",
+				map[string]any{
+					"server_count":        len(servers),
+					"unique_tools":        uniqueTools,
+					"total_registrations": totalRegistrations,
+					"agent_count":         agentCount,
+				})
+		}
+	}
 
 	for al.running.Load() {
 		select {
@@ -146,33 +288,61 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
-			response, err := al.processMessage(ctx, msg)
-			if err != nil {
-				response = fmt.Sprintf("Error processing message: %v", err)
-			}
+			// Process message
+			func() {
+				// TODO: Re-enable media cleanup after inbound media is properly consumed by the agent.
+				// Currently disabled because files are deleted before the LLM can access their content.
+				// defer func() {
+				// 	if al.mediaStore != nil && msg.MediaScope != "" {
+				// 		if releaseErr := al.mediaStore.ReleaseAll(msg.MediaScope); releaseErr != nil {
+				// 			logger.WarnCF("agent", "Failed to release media", map[string]any{
+				// 				"scope": msg.MediaScope,
+				// 				"error": releaseErr.Error(),
+				// 			})
+				// 		}
+				// 	}
+				// }()
 
-			if response != "" {
-				// Check if the message tool already sent a response during this round.
-				// If so, skip publishing to avoid duplicate messages to the user.
-				// Use default agent's tools to check (message tool is shared).
-				alreadySent := false
-				defaultAgent := al.registry.GetDefaultAgent()
-				if defaultAgent != nil {
-					if tool, ok := defaultAgent.Tools.Get("message"); ok {
-						if mt, ok := tool.(*tools.MessageTool); ok {
-							alreadySent = mt.HasSentInRound()
+				response, err := al.processMessage(ctx, msg)
+				if err != nil {
+					response = fmt.Sprintf("Error processing message: %v", err)
+				}
+
+				if response != "" {
+					// Check if the message tool already sent a response during this round.
+					// If so, skip publishing to avoid duplicate messages to the user.
+					// Use default agent's tools to check (message tool is shared).
+					alreadySent := false
+					defaultAgent := al.registry.GetDefaultAgent()
+					if defaultAgent != nil {
+						if tool, ok := defaultAgent.Tools.Get("message"); ok {
+							if mt, ok := tool.(*tools.MessageTool); ok {
+								alreadySent = mt.HasSentInRound()
+							}
 						}
 					}
-				}
 
-				if !alreadySent {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: msg.Channel,
-						ChatID:  msg.ChatID,
-						Content: response,
-					})
+					if !alreadySent {
+						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+							Channel: msg.Channel,
+							ChatID:  msg.ChatID,
+							Content: response,
+						})
+						logger.InfoCF("agent", "Published outbound response",
+							map[string]any{
+								"channel":     msg.Channel,
+								"chat_id":     msg.ChatID,
+								"content_len": len(response),
+							})
+					} else {
+						logger.DebugCF(
+							"agent",
+							"Skipped outbound (message tool already sent)",
+							map[string]any{"channel": msg.Channel},
+						)
+					}
 				}
-			}
+			}()
 		}
 	}
 
@@ -195,6 +365,99 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
+// SetMediaStore injects a MediaStore for media lifecycle management.
+func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
+	al.mediaStore = s
+}
+
+// SetTranscriber injects a voice transcriber for agent-level audio transcription.
+func (al *AgentLoop) SetTranscriber(t voice.Transcriber) {
+	al.transcriber = t
+}
+
+var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
+
+// transcribeAudioInMessage resolves audio media refs, transcribes them, and
+// replaces audio annotations in msg.Content with the transcribed text.
+func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) bus.InboundMessage {
+	if al.transcriber == nil || al.mediaStore == nil || len(msg.Media) == 0 {
+		return msg
+	}
+
+	// Transcribe each audio media ref in order.
+	var transcriptions []string
+	for _, ref := range msg.Media {
+		path, meta, err := al.mediaStore.ResolveWithMeta(ref)
+		if err != nil {
+			logger.WarnCF("voice", "Failed to resolve media ref", map[string]any{"ref": ref, "error": err})
+			continue
+		}
+		if !utils.IsAudioFile(meta.Filename, meta.ContentType) {
+			continue
+		}
+		result, err := al.transcriber.Transcribe(ctx, path)
+		if err != nil {
+			logger.WarnCF("voice", "Transcription failed", map[string]any{"ref": ref, "error": err})
+			transcriptions = append(transcriptions, "")
+			continue
+		}
+		transcriptions = append(transcriptions, result.Text)
+	}
+
+	if len(transcriptions) == 0 {
+		return msg
+	}
+
+	// Replace audio annotations sequentially with transcriptions.
+	idx := 0
+	newContent := audioAnnotationRe.ReplaceAllStringFunc(msg.Content, func(match string) string {
+		if idx >= len(transcriptions) {
+			return match
+		}
+		text := transcriptions[idx]
+		idx++
+		return "[voice: " + text + "]"
+	})
+
+	// Append any remaining transcriptions not matched by an annotation.
+	for ; idx < len(transcriptions); idx++ {
+		newContent += "\n[voice: " + transcriptions[idx] + "]"
+	}
+
+	msg.Content = newContent
+	return msg
+}
+
+// inferMediaType determines the media type ("image", "audio", "video", "file")
+// from a filename and MIME content type.
+func inferMediaType(filename, contentType string) string {
+	ct := strings.ToLower(contentType)
+	fn := strings.ToLower(filename)
+
+	if strings.HasPrefix(ct, "image/") {
+		return "image"
+	}
+	if strings.HasPrefix(ct, "audio/") || ct == "application/ogg" {
+		return "audio"
+	}
+	if strings.HasPrefix(ct, "video/") {
+		return "video"
+	}
+
+	// Fallback: infer from extension
+	ext := filepath.Ext(fn)
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+		return "image"
+	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
+		return "audio"
+	case ".mp4", ".avi", ".mov", ".webm", ".mkv":
+		return "video"
+	}
+
+	return "file"
+}
+
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
 func (al *AgentLoop) RecordLastChannel(channel string) error {
@@ -213,11 +476,17 @@ func (al *AgentLoop) RecordLastChatID(chatID string) error {
 	return al.state.SetLastChatID(chatID)
 }
 
-func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
+func (al *AgentLoop) ProcessDirect(
+	ctx context.Context,
+	content, sessionKey string,
+) (string, error) {
 	return al.ProcessDirectWithChannel(ctx, content, sessionKey, "cli", "direct")
 }
 
-func (al *AgentLoop) ProcessDirectWithChannel(ctx context.Context, content, sessionKey, channel, chatID string) (string, error) {
+func (al *AgentLoop) ProcessDirectWithChannel(
+	ctx context.Context,
+	content, sessionKey, channel, chatID string,
+) (string, error) {
 	msg := bus.InboundMessage{
 		Channel:    channel,
 		SenderID:   "cron",
@@ -231,14 +500,20 @@ func (al *AgentLoop) ProcessDirectWithChannel(ctx context.Context, content, sess
 
 // ProcessHeartbeat processes a heartbeat request without session history.
 // Each heartbeat is independent and doesn't accumulate context.
-func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
+func (al *AgentLoop) ProcessHeartbeat(
+	ctx context.Context,
+	content, channel, chatID string,
+) (string, error) {
 	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", fmt.Errorf("no default agent for heartbeat")
+	}
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      "heartbeat",
 		Channel:         channel,
 		ChatID:          chatID,
 		UserMessage:     content,
-		DefaultResponse: "I've completed processing but have no response to give.",
+		DefaultResponse: defaultResponse,
 		EnableSummary:   false,
 		SendResponse:    false,
 		NoHistory:       true, // Don't load session history for heartbeat
@@ -253,13 +528,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	} else {
 		logContent = utils.Truncate(msg.Content, 80)
 	}
-	logger.InfoCF("agent", fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, logContent),
-		map[string]interface{}{
+	logger.InfoCF(
+		"agent",
+		fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, logContent),
+		map[string]any{
 			"channel":     msg.Channel,
 			"chat_id":     msg.ChatID,
 			"sender_id":   msg.SenderID,
 			"session_key": msg.SessionKey,
-		})
+		},
+	)
+
+	msg = al.transcribeAudioInMessage(ctx, msg)
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
@@ -285,6 +565,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if !ok {
 		agent = al.registry.GetDefaultAgent()
 	}
+	if agent == nil {
+		return "", fmt.Errorf("no agent available for route (agent_id=%s)", route.AgentID)
+	}
+
+	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if resetter, ok := tool.(interface{ ResetSentInRound() }); ok {
+			resetter.ResetSentInRound()
+		}
+	}
 
 	// Use routed session key, but honor pre-set agent-scoped keys (for ProcessDirect/cron)
 	sessionKey := route.SessionKey
@@ -293,7 +583,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	logger.InfoCF("agent", "Routed message",
-		map[string]interface{}{
+		map[string]any{
 			"agent_id":    agent.ID,
 			"session_key": sessionKey,
 			"matched_by":  route.MatchedBy,
@@ -304,19 +594,26 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
 		UserMessage:     msg.Content,
-		DefaultResponse: "I've completed processing but have no response to give.",
+		Media:           msg.Media,
+		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
 		SendResponse:    false,
 	})
 }
 
-func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+func (al *AgentLoop) processSystemMessage(
+	ctx context.Context,
+	msg bus.InboundMessage,
+) (string, error) {
 	if msg.Channel != "system" {
-		return "", fmt.Errorf("processSystemMessage called with non-system message channel: %s", msg.Channel)
+		return "", fmt.Errorf(
+			"processSystemMessage called with non-system message channel: %s",
+			msg.Channel,
+		)
 	}
 
 	logger.InfoCF("agent", "Processing system message",
-		map[string]interface{}{
+		map[string]any{
 			"sender_id": msg.SenderID,
 			"chat_id":   msg.ChatID,
 		})
@@ -341,7 +638,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	// Skip internal channels - only log, don't send to user
 	if constants.IsInternalChannel(originChannel) {
 		logger.InfoCF("agent", "Subagent completed (internal channel)",
-			map[string]interface{}{
+			map[string]any{
 				"sender_id":   msg.SenderID,
 				"content_len": len(content),
 				"channel":     originChannel,
@@ -351,6 +648,9 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	// Use default agent for system messages
 	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		return "", fmt.Errorf("no default agent for system message")
+	}
 
 	// Use the origin session for context
 	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
@@ -367,22 +667,27 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 }
 
 // runAgentLoop is the core message processing logic.
-func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
+func (al *AgentLoop) runAgentLoop(
+	ctx context.Context,
+	agent *AgentInstance,
+	opts processOptions,
+) (string, error) {
 	// 0. Record last channel for heartbeat notifications (skip internal channels)
 	if opts.Channel != "" && opts.ChatID != "" {
 		// Don't record internal channels (cli, system, subagent)
 		if !constants.IsInternalChannel(opts.Channel) {
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
 			if err := al.RecordLastChannel(channelKey); err != nil {
-				logger.WarnCF("agent", "Failed to record last channel", map[string]interface{}{"error": err.Error()})
+				logger.WarnCF(
+					"agent",
+					"Failed to record last channel",
+					map[string]any{"error": err.Error()},
+				)
 			}
 		}
 	}
 
-	// 1. Update tool contexts
-	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
-
-	// 2. Build messages (skip history for heartbeat)
+	// 1. Build messages (skip history for heartbeat)
 	var history []providers.Message
 	var summary string
 	if !opts.NoHistory {
@@ -393,15 +698,19 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 		history,
 		summary,
 		opts.UserMessage,
-		nil,
+		opts.Media,
 		opts.Channel,
 		opts.ChatID,
 	)
 
-	// 3. Save user message to session
+	// Resolve media:// refs to base64 data URLs (streaming)
+	maxMediaSize := al.cfg.Agents.Defaults.GetMaxMediaSize()
+	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
+
+	// 2. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 4. Run LLM iteration loop
+	// 3. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
 		return "", err
@@ -410,33 +719,33 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	// If last tool had ForUser content and we already sent it, we might not need to send final response
 	// This is controlled by the tool's Silent flag and ForUser content
 
-	// 5. Handle empty response
+	// 4. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
 	}
 
-	// 6. Save final assistant message to session
+	// 5. Save final assistant message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 	agent.Sessions.Save(opts.SessionKey)
 
-	// 7. Optional: summarization
+	// 6. Optional: summarization
 	if opts.EnableSummary {
 		al.maybeSummarize(agent, opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
-	// 8. Optional: send response via bus
+	// 7. Optional: send response via bus
 	if opts.SendResponse {
-		al.bus.PublishOutbound(bus.OutboundMessage{
+		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
 			Content: finalContent,
 		})
 	}
 
-	// 9. Log response
+	// 8. Log response
 	responsePreview := utils.Truncate(finalContent, 120)
 	logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
-		map[string]interface{}{
+		map[string]any{
 			"agent_id":     agent.ID,
 			"session_key":  opts.SessionKey,
 			"iterations":   iteration,
@@ -446,8 +755,69 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, agent *AgentInstance, opt
 	return finalContent, nil
 }
 
+func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string) {
+	if al.channelManager == nil {
+		return ""
+	}
+	if ch, ok := al.channelManager.GetChannel(channelName); ok {
+		return ch.ReasoningChannelID()
+	}
+	return ""
+}
+
+func (al *AgentLoop) handleReasoning(
+	ctx context.Context,
+	reasoningContent, channelName, channelID string,
+) {
+	if reasoningContent == "" || channelName == "" || channelID == "" {
+		return
+	}
+
+	// Check context cancellation before attempting to publish,
+	// since PublishOutbound's select may race between send and ctx.Done().
+	if ctx.Err() != nil {
+		return
+	}
+
+	// Use a short timeout so the goroutine does not block indefinitely when
+	// the outbound bus is full.  Reasoning output is best-effort; dropping it
+	// is acceptable to avoid goroutine accumulation.
+	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pubCancel()
+
+	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Channel: channelName,
+		ChatID:  channelID,
+		Content: reasoningContent,
+	}); err != nil {
+		// Treat context.DeadlineExceeded / context.Canceled as expected
+		// (bus full under load, or parent canceled).  Check the error
+		// itself rather than ctx.Err(), because pubCtx may time out
+		// (5 s) while the parent ctx is still active.
+		// Also treat ErrBusClosed as expected — it occurs during normal
+		// shutdown when the bus is closed before all goroutines finish.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+			errors.Is(err, bus.ErrBusClosed) {
+			logger.DebugCF("agent", "Reasoning publish skipped (timeout/cancel)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		} else {
+			logger.WarnCF("agent", "Failed to publish reasoning (best-effort)", map[string]any{
+				"channel": channelName,
+				"error":   err.Error(),
+			})
+		}
+	}
+}
+
 // runLLMIteration executes the LLM call loop with tool handling.
-func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, messages []providers.Message, opts processOptions) (string, int, error) {
+func (al *AgentLoop) runLLMIteration(
+	ctx context.Context,
+	agent *AgentInstance,
+	messages []providers.Message,
+	opts processOptions,
+) (string, int, error) {
 	iteration := 0
 	var finalContent string
 
@@ -455,7 +825,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		iteration++
 
 		logger.DebugCF("agent", "LLM iteration",
-			map[string]interface{}{
+			map[string]any{
 				"agent_id":  agent.ID,
 				"iteration": iteration,
 				"max":       agent.MaxIterations,
@@ -466,20 +836,20 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
-			map[string]interface{}{
+			map[string]any{
 				"agent_id":          agent.ID,
 				"iteration":         iteration,
 				"model":             agent.Model,
 				"messages_count":    len(messages),
 				"tools_count":       len(providerToolDefs),
-				"max_tokens":        8192,
-				"temperature":       0.7,
+				"max_tokens":        agent.MaxTokens,
+				"temperature":       agent.Temperature,
 				"system_prompt_len": len(messages[0].Content),
 			})
 
 		// Log full messages (detailed)
 		logger.DebugCF("agent", "Full LLM request",
-			map[string]interface{}{
+			map[string]any{
 				"iteration":     iteration,
 				"messages_json": formatMessagesForLog(messages),
 				"tools_json":    formatToolsForLog(providerToolDefs),
@@ -489,30 +859,45 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		var response *providers.LLMResponse
 		var err error
 
+		llmOpts := map[string]any{
+			"max_tokens":       agent.MaxTokens,
+			"temperature":      agent.Temperature,
+			"prompt_cache_key": agent.ID,
+		}
+		// parseThinkingLevel guarantees ThinkingOff for empty/unknown values,
+		// so checking != ThinkingOff is sufficient.
+		if agent.ThinkingLevel != ThinkingOff {
+			if tc, ok := agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
+				llmOpts["thinking_level"] = string(agent.ThinkingLevel)
+			} else {
+				logger.WarnCF("agent", "thinking_level is set but current provider does not support it, ignoring",
+					map[string]any{"agent_id": agent.ID, "thinking_level": string(agent.ThinkingLevel)})
+			}
+		}
+
 		callLLM := func() (*providers.LLMResponse, error) {
 			if len(agent.Candidates) > 1 && al.fallback != nil {
-				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
+				fbResult, fbErr := al.fallback.Execute(
+					ctx,
+					agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]interface{}{
-							"max_tokens":  8192,
-							"temperature": 0.7,
-						})
+						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
 					},
 				)
 				if fbErr != nil {
 					return nil, fbErr
 				}
 				if fbResult.Provider != "" && len(fbResult.Attempts) > 0 {
-					logger.InfoCF("agent", fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
-						fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
-						map[string]interface{}{"agent_id": agent.ID, "iteration": iteration})
+					logger.InfoCF(
+						"agent",
+						fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
+							fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
+						map[string]any{"agent_id": agent.ID, "iteration": iteration},
+					)
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]interface{}{
-				"max_tokens":  8192,
-				"temperature": 0.7,
-			})
+			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, llmOpts)
 		}
 
 		// Retry loop for context/token errors
@@ -524,19 +909,48 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			}
 
 			errMsg := strings.ToLower(err.Error())
-			isContextError := strings.Contains(errMsg, "token") ||
-				strings.Contains(errMsg, "context") ||
+
+			// Check if this is a network/HTTP timeout — not a context window error.
+			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(errMsg, "deadline exceeded") ||
+				strings.Contains(errMsg, "client.timeout") ||
+				strings.Contains(errMsg, "timed out") ||
+				strings.Contains(errMsg, "timeout exceeded")
+
+			// Detect real context window / token limit errors, excluding network timeouts.
+			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
+				strings.Contains(errMsg, "context window") ||
+				strings.Contains(errMsg, "maximum context length") ||
+				strings.Contains(errMsg, "token limit") ||
+				strings.Contains(errMsg, "too many tokens") ||
+				strings.Contains(errMsg, "max_tokens") ||
 				strings.Contains(errMsg, "invalidparameter") ||
-				strings.Contains(errMsg, "length")
+				strings.Contains(errMsg, "prompt is too long") ||
+				strings.Contains(errMsg, "request too large"))
+
+			if isTimeoutError && retry < maxRetries {
+				backoff := time.Duration(retry+1) * 5 * time.Second
+				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
+					"error":   err.Error(),
+					"retry":   retry,
+					"backoff": backoff.String(),
+				})
+				time.Sleep(backoff)
+				continue
+			}
 
 			if isContextError && retry < maxRetries {
-				logger.WarnCF("agent", "Context window error detected, attempting compression", map[string]interface{}{
-					"error": err.Error(),
-					"retry": retry,
-				})
+				logger.WarnCF(
+					"agent",
+					"Context window error detected, attempting compression",
+					map[string]any{
+						"error": err.Error(),
+						"retry": retry,
+					},
+				)
 
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
-					al.bus.PublishOutbound(bus.OutboundMessage{
+					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 						Channel: opts.Channel,
 						ChatID:  opts.ChatID,
 						Content: "Context window exceeded. Compressing history and retrying...",
@@ -557,7 +971,7 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed",
-				map[string]interface{}{
+				map[string]any{
 					"agent_id":  agent.ID,
 					"iteration": iteration,
 					"error":     err.Error(),
@@ -565,11 +979,28 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			return "", iteration, fmt.Errorf("LLM call failed after retries: %w", err)
 		}
 
+		go al.handleReasoning(
+			ctx,
+			response.Reasoning,
+			opts.Channel,
+			al.targetReasoningChannelID(opts.Channel),
+		)
+
+		logger.DebugCF("agent", "LLM response",
+			map[string]any{
+				"agent_id":       agent.ID,
+				"iteration":      iteration,
+				"content_chars":  len(response.Content),
+				"tool_calls":     len(response.ToolCalls),
+				"reasoning":      response.Reasoning,
+				"target_channel": al.targetReasoningChannelID(opts.Channel),
+				"channel":        opts.Channel,
+			})
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
 			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
-				map[string]interface{}{
+				map[string]any{
 					"agent_id":      agent.ID,
 					"iteration":     iteration,
 					"content_chars": len(finalContent),
@@ -577,34 +1008,50 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 			break
 		}
 
-		// Log tool calls
-		toolNames := make([]string, 0, len(response.ToolCalls))
+		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
 		for _, tc := range response.ToolCalls {
+			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
+		}
+
+		// Log tool calls
+		toolNames := make([]string, 0, len(normalizedToolCalls))
+		for _, tc := range normalizedToolCalls {
 			toolNames = append(toolNames, tc.Name)
 		}
 		logger.InfoCF("agent", "LLM requested tool calls",
-			map[string]interface{}{
+			map[string]any{
 				"agent_id":  agent.ID,
 				"tools":     toolNames,
-				"count":     len(response.ToolCalls),
+				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
 
 		// Build assistant message with tool calls
 		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
+			Role:             "assistant",
+			Content:          response.Content,
+			ReasoningContent: response.ReasoningContent,
 		}
-		for _, tc := range response.ToolCalls {
+		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
+			// Copy ExtraContent to ensure thought_signature is persisted for Gemini 3
+			extraContent := tc.ExtraContent
+			thoughtSignature := ""
+			if tc.Function != nil {
+				thoughtSignature = tc.Function.ThoughtSignature
+			}
+
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
 				ID:   tc.ID,
 				Type: "function",
-				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
-				},
 				Name: tc.Name,
+				Function: &providers.FunctionCall{
+					Name:             tc.Name,
+					Arguments:        string(argumentsJSON),
+					ThoughtSignature: thoughtSignature,
+				},
+				ExtraContent:     extraContent,
+				ThoughtSignature: thoughtSignature,
 			})
 		}
 		messages = append(messages, assistantMsg)
@@ -612,59 +1059,102 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 		// Save assistant message with tool calls to session
 		agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
 
-		// Execute tool calls
-		for _, tc := range response.ToolCalls {
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := utils.Truncate(string(argsJSON), 200)
-			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-				map[string]interface{}{
-					"agent_id":  agent.ID,
-					"tool":      tc.Name,
-					"iteration": iteration,
-				})
+		// Execute tool calls in parallel
+		type indexedAgentResult struct {
+			result *tools.ToolResult
+			tc     providers.ToolCall
+		}
 
-			// Create async callback for tools that implement AsyncTool
-			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
-			// Instead, they notify the agent via PublishInbound, and the agent decides
-			// whether to forward the result to the user (in processSystemMessage).
-			asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
-				// Log the async completion but don't send directly to user
-				// The agent will handle user notification via processSystemMessage
-				if !result.Silent && result.ForUser != "" {
-					logger.InfoCF("agent", "Async tool completed, agent will handle notification",
-						map[string]interface{}{
-							"tool":        tc.Name,
-							"content_len": len(result.ForUser),
-						})
+		agentResults := make([]indexedAgentResult, len(normalizedToolCalls))
+		var wg sync.WaitGroup
+
+		for i, tc := range normalizedToolCalls {
+			agentResults[i].tc = tc
+
+			wg.Add(1)
+			go func(idx int, tc providers.ToolCall) {
+				defer wg.Done()
+
+				argsJSON, _ := json.Marshal(tc.Arguments)
+				argsPreview := utils.Truncate(string(argsJSON), 200)
+				logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
+					map[string]any{
+						"agent_id":  agent.ID,
+						"tool":      tc.Name,
+						"iteration": iteration,
+					})
+
+				// Create async callback for tools that implement AsyncExecutor
+				asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
+					if !result.Silent && result.ForUser != "" {
+						logger.InfoCF("agent", "Async tool completed, agent will handle notification",
+							map[string]any{
+								"tool":        tc.Name,
+								"content_len": len(result.ForUser),
+							})
+					}
 				}
-			}
 
-			toolResult := agent.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
+				toolResult := agent.Tools.ExecuteWithContext(
+					ctx,
+					tc.Name,
+					tc.Arguments,
+					opts.Channel,
+					opts.ChatID,
+					asyncCallback,
+				)
+				agentResults[idx].result = toolResult
+			}(i, tc)
+		}
+		wg.Wait()
 
+		// Process results in original order (send to user, save to session)
+		for _, r := range agentResults {
 			// Send ForUser content to user immediately if not Silent
-			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
-				al.bus.PublishOutbound(bus.OutboundMessage{
+			if !r.result.Silent && r.result.ForUser != "" && opts.SendResponse {
+				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel: opts.Channel,
 					ChatID:  opts.ChatID,
-					Content: toolResult.ForUser,
+					Content: r.result.ForUser,
 				})
 				logger.DebugCF("agent", "Sent tool result to user",
-					map[string]interface{}{
-						"tool":        tc.Name,
-						"content_len": len(toolResult.ForUser),
+					map[string]any{
+						"tool":        r.tc.Name,
+						"content_len": len(r.result.ForUser),
 					})
 			}
 
+			// If tool returned media refs, publish them as outbound media
+			if len(r.result.Media) > 0 && opts.SendResponse {
+				parts := make([]bus.MediaPart, 0, len(r.result.Media))
+				for _, ref := range r.result.Media {
+					part := bus.MediaPart{Ref: ref}
+					if al.mediaStore != nil {
+						if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+							part.Filename = meta.Filename
+							part.ContentType = meta.ContentType
+							part.Type = inferMediaType(meta.Filename, meta.ContentType)
+						}
+					}
+					parts = append(parts, part)
+				}
+				al.bus.PublishOutboundMedia(ctx, bus.OutboundMediaMessage{
+					Channel: opts.Channel,
+					ChatID:  opts.ChatID,
+					Parts:   parts,
+				})
+			}
+
 			// Determine content for LLM based on tool result
-			contentForLLM := toolResult.ForLLM
-			if contentForLLM == "" && toolResult.Err != nil {
-				contentForLLM = toolResult.Err.Error()
+			contentForLLM := r.result.ForLLM
+			if contentForLLM == "" && r.result.Err != nil {
+				contentForLLM = r.result.Err.Error()
 			}
 
 			toolResultMsg := providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
-				ToolCallID: tc.ID,
+				ToolCallID: r.tc.ID,
 			}
 			messages = append(messages, toolResultMsg)
 
@@ -676,44 +1166,18 @@ func (al *AgentLoop) runLLMIteration(ctx context.Context, agent *AgentInstance, 
 	return finalContent, iteration, nil
 }
 
-// updateToolContexts updates the context for tools that need channel/chatID info.
-func (al *AgentLoop) updateToolContexts(agent *AgentInstance, channel, chatID string) {
-	// Use ContextualTool interface instead of type assertions
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if mt, ok := tool.(tools.ContextualTool); ok {
-			mt.SetContext(channel, chatID)
-		}
-	}
-	if tool, ok := agent.Tools.Get("spawn"); ok {
-		if st, ok := tool.(tools.ContextualTool); ok {
-			st.SetContext(channel, chatID)
-		}
-	}
-	if tool, ok := agent.Tools.Get("subagent"); ok {
-		if st, ok := tool.(tools.ContextualTool); ok {
-			st.SetContext(channel, chatID)
-		}
-	}
-}
-
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
 func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, chatID string) {
 	newHistory := agent.Sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
-	threshold := agent.ContextWindow * 75 / 100
+	threshold := agent.ContextWindow * agent.SummarizeTokenPercent / 100
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	if len(newHistory) > agent.SummarizeMessageThreshold || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(summarizeKey)
-				if !constants.IsInternalChannel(channel) {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: channel,
-						ChatID:  chatID,
-						Content: "Memory threshold reached. Optimizing conversation history...",
-					})
-				}
+				logger.Debug("Memory threshold reached. Optimizing conversation history...")
 				al.summarizeSession(agent, sessionKey)
 			}()
 		}
@@ -740,31 +1204,24 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	mid := len(conversation) / 2
 
 	// New history structure:
-	// 1. System Prompt
-	// 2. [Summary of dropped part] - synthesized
-	// 3. Second half of conversation
-	// 4. Last message
-
-	// Simplified approach for emergency: Drop first half of conversation
-	// and rely on existing summary if present, or create a placeholder.
+	// 1. System Prompt (with compression note appended)
+	// 2. Second half of conversation
+	// 3. Last message
 
 	droppedCount := mid
 	keptConversation := conversation[mid:]
 
-	newHistory := make([]providers.Message, 0)
-	newHistory = append(newHistory, history[0]) // System prompt
+	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
 
-	// Add a note about compression
-	compressionNote := fmt.Sprintf("[System: Emergency compression dropped %d oldest messages due to context limit]", droppedCount)
-	// If there was an existing summary, we might lose it if it was in the dropped part (which is just messages).
-	// The summary is stored separately in session.Summary, so it persists!
-	// We just need to ensure the user knows there's a gap.
-
-	// We only modify the messages list here
-	newHistory = append(newHistory, providers.Message{
-		Role:    "system",
-		Content: compressionNote,
-	})
+	// Append compression note to the original system prompt instead of adding a new system message
+	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
+	compressionNote := fmt.Sprintf(
+		"\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]",
+		droppedCount,
+	)
+	enhancedSystemPrompt := history[0]
+	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
+	newHistory = append(newHistory, enhancedSystemPrompt)
 
 	newHistory = append(newHistory, keptConversation...)
 	newHistory = append(newHistory, history[len(history)-1]) // Last message
@@ -773,7 +1230,7 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	agent.Sessions.SetHistory(sessionKey, newHistory)
 	agent.Sessions.Save(sessionKey)
 
-	logger.WarnCF("agent", "Forced compression executed", map[string]interface{}{
+	logger.WarnCF("agent", "Forced compression executed", map[string]any{
 		"session_key":  sessionKey,
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
@@ -781,8 +1238,8 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
-func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
-	info := make(map[string]interface{})
+func (al *AgentLoop) GetStartupInfo() map[string]any {
+	info := make(map[string]any)
 
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
@@ -791,7 +1248,7 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 
 	// Tools info
 	toolsList := agent.Tools.List()
-	info["tools"] = map[string]interface{}{
+	info["tools"] = map[string]any{
 		"count": len(toolsList),
 		"names": toolsList,
 	}
@@ -800,7 +1257,7 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	info["skills"] = agent.ContextBuilder.GetSkillsInfo()
 
 	// Agents info
-	info["agents"] = map[string]interface{}{
+	info["agents"] = map[string]any{
 		"count": len(al.registry.ListAgentIDs()),
 		"ids":   al.registry.ListAgentIDs(),
 	}
@@ -814,49 +1271,57 @@ func formatMessagesForLog(messages []providers.Message) string {
 		return "[]"
 	}
 
-	var result string
-	result += "[\n"
+	var sb strings.Builder
+	sb.WriteString("[\n")
 	for i, msg := range messages {
-		result += fmt.Sprintf("  [%d] Role: %s\n", i, msg.Role)
+		fmt.Fprintf(&sb, "  [%d] Role: %s\n", i, msg.Role)
 		if len(msg.ToolCalls) > 0 {
-			result += "  ToolCalls:\n"
+			sb.WriteString("  ToolCalls:\n")
 			for _, tc := range msg.ToolCalls {
-				result += fmt.Sprintf("    - ID: %s, Type: %s, Name: %s\n", tc.ID, tc.Type, tc.Name)
+				fmt.Fprintf(&sb, "    - ID: %s, Type: %s, Name: %s\n", tc.ID, tc.Type, tc.Name)
 				if tc.Function != nil {
-					result += fmt.Sprintf("      Arguments: %s\n", utils.Truncate(tc.Function.Arguments, 200))
+					fmt.Fprintf(
+						&sb,
+						"      Arguments: %s\n",
+						utils.Truncate(tc.Function.Arguments, 200),
+					)
 				}
 			}
 		}
 		if msg.Content != "" {
 			content := utils.Truncate(msg.Content, 200)
-			result += fmt.Sprintf("  Content: %s\n", content)
+			fmt.Fprintf(&sb, "  Content: %s\n", content)
 		}
 		if msg.ToolCallID != "" {
-			result += fmt.Sprintf("  ToolCallID: %s\n", msg.ToolCallID)
+			fmt.Fprintf(&sb, "  ToolCallID: %s\n", msg.ToolCallID)
 		}
-		result += "\n"
+		sb.WriteString("\n")
 	}
-	result += "]"
-	return result
+	sb.WriteString("]")
+	return sb.String()
 }
 
 // formatToolsForLog formats tool definitions for logging
-func formatToolsForLog(tools []providers.ToolDefinition) string {
-	if len(tools) == 0 {
+func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
+	if len(toolDefs) == 0 {
 		return "[]"
 	}
 
-	var result string
-	result += "[\n"
-	for i, tool := range tools {
-		result += fmt.Sprintf("  [%d] Type: %s, Name: %s\n", i, tool.Type, tool.Function.Name)
-		result += fmt.Sprintf("      Description: %s\n", tool.Function.Description)
+	var sb strings.Builder
+	sb.WriteString("[\n")
+	for i, tool := range toolDefs {
+		fmt.Fprintf(&sb, "  [%d] Type: %s, Name: %s\n", i, tool.Type, tool.Function.Name)
+		fmt.Fprintf(&sb, "      Description: %s\n", tool.Function.Description)
 		if len(tool.Function.Parameters) > 0 {
-			result += fmt.Sprintf("      Parameters: %s\n", utils.Truncate(fmt.Sprintf("%v", tool.Function.Parameters), 200))
+			fmt.Fprintf(
+				&sb,
+				"      Parameters: %s\n",
+				utils.Truncate(fmt.Sprintf("%v", tool.Function.Parameters), 200),
+			)
 		}
 	}
-	result += "]"
-	return result
+	sb.WriteString("]")
+	return sb.String()
 }
 
 // summarizeSession summarizes the conversation history for a session.
@@ -905,11 +1370,22 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 		s1, _ := al.summarizeBatch(ctx, agent, part1, "")
 		s2, _ := al.summarizeBatch(ctx, agent, part2, "")
 
-		mergePrompt := fmt.Sprintf("Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s", s1, s2)
-		resp, err := agent.Provider.Chat(ctx, []providers.Message{{Role: "user", Content: mergePrompt}}, nil, agent.Model, map[string]interface{}{
-			"max_tokens":  1024,
-			"temperature": 0.3,
-		})
+		mergePrompt := fmt.Sprintf(
+			"Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s",
+			s1,
+			s2,
+		)
+		resp, err := agent.Provider.Chat(
+			ctx,
+			[]providers.Message{{Role: "user", Content: mergePrompt}},
+			nil,
+			agent.Model,
+			map[string]any{
+				"max_tokens":       1024,
+				"temperature":      0.3,
+				"prompt_cache_key": agent.ID,
+			},
+		)
 		if err == nil {
 			finalSummary = resp.Content
 		} else {
@@ -931,20 +1407,38 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 }
 
 // summarizeBatch summarizes a batch of messages.
-func (al *AgentLoop) summarizeBatch(ctx context.Context, agent *AgentInstance, batch []providers.Message, existingSummary string) (string, error) {
-	prompt := "Provide a concise summary of this conversation segment, preserving core context and key points.\n"
+func (al *AgentLoop) summarizeBatch(
+	ctx context.Context,
+	agent *AgentInstance,
+	batch []providers.Message,
+	existingSummary string,
+) (string, error) {
+	var sb strings.Builder
+	sb.WriteString(
+		"Provide a concise summary of this conversation segment, preserving core context and key points.\n",
+	)
 	if existingSummary != "" {
-		prompt += "Existing context: " + existingSummary + "\n"
+		sb.WriteString("Existing context: ")
+		sb.WriteString(existingSummary)
+		sb.WriteString("\n")
 	}
-	prompt += "\nCONVERSATION:\n"
+	sb.WriteString("\nCONVERSATION:\n")
 	for _, m := range batch {
-		prompt += fmt.Sprintf("%s: %s\n", m.Role, m.Content)
+		fmt.Fprintf(&sb, "%s: %s\n", m.Role, m.Content)
 	}
+	prompt := sb.String()
 
-	response, err := agent.Provider.Chat(ctx, []providers.Message{{Role: "user", Content: prompt}}, nil, agent.Model, map[string]interface{}{
-		"max_tokens":  1024,
-		"temperature": 0.3,
-	})
+	response, err := agent.Provider.Chat(
+		ctx,
+		[]providers.Message{{Role: "user", Content: prompt}},
+		nil,
+		agent.Model,
+		map[string]any{
+			"max_tokens":       1024,
+			"temperature":      0.3,
+			"prompt_cache_key": agent.ID,
+		},
+	)
 	if err != nil {
 		return "", err
 	}
@@ -1053,21 +1547,20 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	return "", false
 }
 
-// extractPeer extracts the routing peer from inbound message metadata.
+// extractPeer extracts the routing peer from the inbound message's structured Peer field.
 func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
-	peerKind := msg.Metadata["peer_kind"]
-	if peerKind == "" {
+	if msg.Peer.Kind == "" {
 		return nil
 	}
-	peerID := msg.Metadata["peer_id"]
+	peerID := msg.Peer.ID
 	if peerID == "" {
-		if peerKind == "direct" {
+		if msg.Peer.Kind == "direct" {
 			peerID = msg.SenderID
 		} else {
 			peerID = msg.ChatID
 		}
 	}
-	return &routing.RoutePeer{Kind: peerKind, ID: peerID}
+	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
 }
 
 // extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.

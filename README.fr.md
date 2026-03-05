@@ -50,7 +50,7 @@
 
 ## 📢 Actualités
 
-2026-02-16 🎉 PicoClaw a atteint 12K étoiles en une semaine ! Merci à tous pour votre soutien ! PicoClaw grandit plus vite que nous ne l'avions jamais imaginé. Vu le volume élevé de PR, nous avons un besoin urgent de mainteneurs communautaires. Nos rôles de bénévoles et notre feuille de route sont officiellement publiés [ici](docs/picoclaw_community_roadmap_260216.md) — nous avons hâte de vous accueillir !
+2026-02-16 🎉 PicoClaw a atteint 12K étoiles en une semaine ! Merci à tous pour votre soutien ! PicoClaw grandit plus vite que nous ne l'avions jamais imaginé. Vu le volume élevé de PR, nous avons un besoin urgent de mainteneurs communautaires. Nos rôles de bénévoles et notre feuille de route sont officiellement publiés [ici](docs/ROADMAP.md) — nous avons hâte de vous accueillir !
 
 2026-02-13 🎉 PicoClaw a atteint 5000 étoiles en 4 jours ! Merci à la communauté ! Nous finalisons la **Feuille de Route du Projet** et mettons en place le **Groupe de Développeurs** pour accélérer le développement de PicoClaw.
 🚀 **Appel à l'action :** Soumettez vos demandes de fonctionnalités dans les GitHub Discussions. Nous les examinerons et les prioriserons lors de notre prochaine réunion hebdomadaire.
@@ -164,35 +164,43 @@ Vous pouvez également exécuter PicoClaw avec Docker Compose sans rien installe
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 
-# 2. Configurez vos clés API
-cp config/config.example.json config/config.json
-vim config/config.json      # Configurez DISCORD_BOT_TOKEN, clés API, etc.
+# 2. Premier lancement — génère docker/data/config.json puis s'arrête
+docker compose -f docker/docker-compose.yml --profile gateway up
+# Le conteneur affiche "First-run setup complete." puis s'arrête.
 
-# 3. Compiler & Démarrer
-docker compose --profile gateway up -d
+# 3. Configurez vos clés API
+vim docker/data/config.json   # Clés API du fournisseur, tokens de bot, etc.
 
-# 4. Voir les logs
-docker compose logs -f picoclaw-gateway
+# 4. Démarrer
+docker compose -f docker/docker-compose.yml --profile gateway up -d
+```
 
-# 5. Arrêter
-docker compose --profile gateway down
+> [!TIP]
+> **Utilisateurs Docker** : Par défaut, le Gateway écoute sur `127.0.0.1`, ce qui n'est pas accessible depuis l'hôte. Si vous avez besoin d'accéder aux endpoints de santé ou d'exposer des ports, définissez `PICOCLAW_GATEWAY_HOST=0.0.0.0` dans votre environnement ou mettez à jour `config.json`.
+
+```bash
+# 5. Voir les logs
+docker compose -f docker/docker-compose.yml logs -f picoclaw-gateway
+
+# 6. Arrêter
+docker compose -f docker/docker-compose.yml --profile gateway down
 ```
 
 ### Mode Agent (exécution unique)
 
 ```bash
 # Poser une question
-docker compose run --rm picoclaw-agent -m "Combien font 2+2 ?"
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Combien font 2+2 ?"
 
 # Mode interactif
-docker compose run --rm picoclaw-agent
+docker compose -f docker/docker-compose.yml run --rm picoclaw-agent
 ```
 
-### Recompiler
+### Mettre à jour
 
 ```bash
-docker compose --profile gateway build --no-cache
-docker compose --profile gateway up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml --profile gateway up -d
 ```
 
 ### 🚀 Démarrage Rapide
@@ -212,19 +220,25 @@ picoclaw onboard
 
 ```json
 {
+  "model_list": [
+    {
+      "model_name": "gpt4",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key",
+      "request_timeout": 300,
+      "api_base": "https://api.openai.com/v1"
+    }
+  ],
   "agents": {
     "defaults": {
-      "workspace": "~/.picoclaw/workspace",
-      "model": "glm-4.7",
-      "max_tokens": 8192,
-      "temperature": 0.7,
-      "max_tool_iterations": 20
+      "model_name": "gpt4"
     }
   },
-  "providers": {
-    "openrouter": {
-      "api_key": "xxx",
-      "api_base": "https://openrouter.ai/api/v1"
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "VOTRE_TOKEN_BOT",
+      "allow_from": ["VOTRE_USER_ID"]
     }
   },
   "tools": {
@@ -242,6 +256,9 @@ picoclaw onboard
   }
 }
 ```
+
+> **Nouveau** : Le format de configuration `model_list` permet d'ajouter des fournisseurs sans modifier le code. Voir [Configuration de Modèle](#configuration-de-modèle-model_list) pour plus de détails.
+> `request_timeout` est optionnel et s'exprime en secondes. S'il est omis ou défini à `<= 0`, PicoClaw utilise le délai d'expiration par défaut (120s).
 
 **3. Obtenir des Clés API**
 
@@ -262,7 +279,7 @@ Et voilà ! Vous avez un assistant IA fonctionnel en 2 minutes.
 
 ## 💬 Applications de Chat
 
-Discutez avec votre PicoClaw via Telegram, Discord, DingTalk ou LINE
+Discutez avec votre PicoClaw via Telegram, Discord, DingTalk, LINE ou WeCom
 
 | Canal        | Configuration                          |
 | ------------ | -------------------------------------- |
@@ -271,6 +288,7 @@ Discutez avec votre PicoClaw via Telegram, Discord, DingTalk ou LINE
 | **QQ**       | Facile (AppID + AppSecret)             |
 | **DingTalk** | Moyen (identifiants de l'application)  |
 | **LINE**     | Moyen (identifiants + URL de webhook)  |
+| **WeCom AI Bot** | Moyen (Token + clé AES)            |
 
 <details>
 <summary><b>Telegram</b> (Recommandé)</summary>
@@ -289,7 +307,7 @@ Discutez avec votre PicoClaw via Telegram, Discord, DingTalk ou LINE
     "telegram": {
       "enabled": true,
       "token": "VOTRE_TOKEN_BOT",
-      "allowFrom": ["VOTRE_USER_ID"]
+      "allow_from": ["VOTRE_USER_ID"]
     }
   }
 }
@@ -332,7 +350,7 @@ picoclaw gateway
     "discord": {
       "enabled": true,
       "token": "VOTRE_TOKEN_BOT",
-      "allowFrom": ["VOTRE_USER_ID"]
+      "allow_from": ["VOTRE_USER_ID"]
     }
   }
 }
@@ -438,8 +456,6 @@ picoclaw gateway
       "enabled": true,
       "channel_secret": "VOTRE_CHANNEL_SECRET",
       "channel_access_token": "VOTRE_CHANNEL_ACCESS_TOKEN",
-      "webhook_host": "0.0.0.0",
-      "webhook_port": 18791,
       "webhook_path": "/webhook/line",
       "allow_from": []
     }
@@ -452,11 +468,13 @@ picoclaw gateway
 LINE exige HTTPS pour les webhooks. Utilisez un reverse proxy ou un tunnel :
 
 ```bash
-# Exemple avec ngrok
-ngrok http 18791
+# Exemple avec ngrok (tunnel vers le serveur Gateway partagé)
+ngrok http 18790
 ```
 
 Puis configurez l'URL du Webhook dans la LINE Developers Console sur `https://votre-domaine/webhook/line` et activez **Use webhook**.
+
+> **Note** : Le webhook LINE est servi par le serveur Gateway partagé (par défaut `127.0.0.1:18790`). Si vous utilisez ngrok ou un proxy inverse, faites pointer le tunnel vers le port `18790`.
 
 **4. Lancer**
 
@@ -466,7 +484,118 @@ picoclaw gateway
 
 > Dans les discussions de groupe, le bot répond uniquement lorsqu'il est mentionné avec @. Les réponses citent le message original.
 
-> **Docker Compose** : Ajoutez `ports: ["18791:18791"]` au service `picoclaw-gateway` pour exposer le port du webhook.
+> **Docker Compose** : Si vous avez besoin d'exposer le webhook LINE via Docker, mappez le port du Gateway partagé (par défaut `18790`) vers l'hôte, par exemple `ports: ["18790:18790"]`. Notez que le serveur Gateway sert les webhooks de tous les canaux à partir de ce port.
+
+</details>
+
+<details>
+<summary><b>WeCom (WeChat Work)</b></summary>
+
+PicoClaw prend en charge trois types d'intégration WeCom :
+
+**Option 1 : WeCom Bot (Robot)** - Configuration plus facile, prend en charge les discussions de groupe
+**Option 2 : WeCom App (Application Personnalisée)** - Plus de fonctionnalités, messagerie proactive, chat privé uniquement
+**Option 3 : WeCom AI Bot (Bot Intelligent)** - Bot IA officiel, réponses en streaming, prend en charge groupe et privé
+
+Voir le [Guide de Configuration WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.zh.md) pour des instructions détaillées.
+
+**Configuration Rapide - WeCom Bot :**
+
+**1. Créer un bot**
+
+* Accédez à la Console d'Administration WeCom → Discussion de Groupe → Ajouter un Bot de Groupe
+* Copiez l'URL du webhook (format : `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`)
+
+**2. Configurer**
+
+```json
+{
+  "channels": {
+    "wecom": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+      "webhook_path": "/webhook/wecom",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**Configuration Rapide - WeCom App :**
+
+**1. Créer une application**
+
+* Accédez à la Console d'Administration WeCom → Gestion des Applications → Créer une Application
+* Copiez l'**AgentId** et le **Secret**
+* Accédez à la page "Mon Entreprise", copiez le **CorpID**
+
+**2. Configurer la réception des messages**
+
+* Dans les détails de l'application, cliquez sur "Recevoir les Messages" → "Configurer l'API"
+* Définissez l'URL sur `http://your-server:18790/webhook/wecom-app`
+* Générez le **Token** et l'**EncodingAESKey**
+
+**3. Configurer**
+
+```json
+{
+  "channels": {
+    "wecom_app": {
+      "enabled": true,
+      "corp_id": "wwxxxxxxxxxxxxxxxx",
+      "corp_secret": "YOUR_CORP_SECRET",
+      "agent_id": 1000002,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-app",
+      "allow_from": []
+    }
+  }
+}
+```
+
+**4. Lancer**
+
+```bash
+picoclaw gateway
+```
+
+> **Note** : Les callbacks webhook WeCom App sont servis par le serveur Gateway partagé (par défaut `127.0.0.1:18790`). Assurez-vous que le port `18790` est accessible ou utilisez un proxy inverse HTTPS en production.
+
+**Configuration Rapide - WeCom AI Bot :**
+
+**1. Créer un AI Bot**
+
+* Accédez à la Console d'Administration WeCom → Gestion des Applications → AI Bot
+* Configurez l'URL de callback : `http://your-server:18791/webhook/wecom-aibot`
+* Copiez le **Token** et générez l'**EncodingAESKey**
+
+**2. Configurer**
+
+```json
+{
+  "channels": {
+    "wecom_aibot": {
+      "enabled": true,
+      "token": "YOUR_TOKEN",
+      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
+      "webhook_path": "/webhook/wecom-aibot",
+      "allow_from": [],
+      "welcome_message": "Bonjour ! Comment puis-je vous aider ?"
+    }
+  }
+}
+```
+
+**3. Lancer**
+
+```bash
+picoclaw gateway
+```
+
+> **Note** : WeCom AI Bot utilise le protocole pull en streaming — pas de problème de timeout. Les tâches longues (>5,5 min) basculent automatiquement vers la livraison via `response_url`.
 
 </details>
 
@@ -479,6 +608,31 @@ Connectez PicoClaw au Réseau Social d'Agents simplement en envoyant un seul mes
 ## ⚙️ Configuration
 
 Fichier de configuration : `~/.picoclaw/config.json`
+
+### Variables d'Environnement
+
+Vous pouvez remplacer les chemins par défaut à l'aide de variables d'environnement. Ceci est utile pour les installations portables, les déploiements conteneurisés ou l'exécution de picoclaw en tant que service système. Ces variables sont indépendantes et contrôlent différents chemins.
+
+| Variable          | Description                                                                                                                             | Chemin par Défaut         |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `PICOCLAW_CONFIG` | Remplace le chemin du fichier de configuration. Cela indique directement à picoclaw quel `config.json` charger, en ignorant tous les autres emplacements. | `~/.picoclaw/config.json` |
+| `PICOCLAW_HOME`   | Remplace le répertoire racine des données picoclaw. Cela modifie l'emplacement par défaut du `workspace` et des autres répertoires de données.          | `~/.picoclaw`             |
+
+**Exemples :**
+
+```bash
+# Exécuter picoclaw en utilisant un fichier de configuration spécifique
+# Le chemin du workspace sera lu à partir de ce fichier de configuration
+PICOCLAW_CONFIG=/etc/picoclaw/production.json picoclaw gateway
+
+# Exécuter picoclaw avec toutes ses données stockées dans /opt/picoclaw
+# La configuration sera chargée à partir du fichier par défaut ~/.picoclaw/config.json
+# Le workspace sera créé dans /opt/picoclaw/workspace
+PICOCLAW_HOME=/opt/picoclaw picoclaw agent
+
+# Utiliser les deux pour une configuration entièrement personnalisée
+PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
+```
 
 ### Structure du Workspace
 
@@ -673,7 +827,7 @@ Le sous-agent a accès aux outils (message, web_search, etc.) et peut communique
 ### Fournisseurs
 
 > [!NOTE]
-> Groq fournit la transcription vocale gratuite via Whisper. Si configuré, les messages vocaux Telegram seront automatiquement transcrits.
+> Groq fournit la transcription vocale gratuite via Whisper. Si configuré, les messages audio de n'importe quel canal seront automatiquement transcrits au niveau de l'agent.
 
 | Fournisseur              | Utilisation                              | Obtenir une Clé API                                    |
 | ------------------------ | ---------------------------------------- | ------------------------------------------------------ |
@@ -683,6 +837,8 @@ Le sous-agent a accès aux outils (message, web_search, etc.) et peut communique
 | `anthropic` (À tester)   | LLM (Claude direct)                      | [console.anthropic.com](https://console.anthropic.com) |
 | `openai` (À tester)      | LLM (GPT direct)                         | [platform.openai.com](https://platform.openai.com)     |
 | `deepseek` (À tester)    | LLM (DeepSeek direct)                    | [platform.deepseek.com](https://platform.deepseek.com) |
+| `qwen`                   | LLM (Alibaba Qwen)                      | [dashscope.aliyuncs.com](https://dashscope.aliyuncs.com/compatible-mode/v1) |
+| `cerebras`               | LLM (Cerebras)                           | [cerebras.ai](https://api.cerebras.ai/v1)              |
 | `groq`                   | LLM + **Transcription vocale** (Whisper) | [console.groq.com](https://console.groq.com)           |
 
 <details>
@@ -794,6 +950,174 @@ picoclaw agent -m "Bonjour, comment ça va ?"
 
 </details>
 
+### Configuration de Modèle (model_list)
+
+> **Nouveau !** PicoClaw utilise désormais une approche de configuration **centrée sur le modèle**. Spécifiez simplement le format `fournisseur/modèle` (par exemple, `zhipu/glm-4.7`) pour ajouter de nouveaux fournisseurs—**aucune modification de code requise !**
+
+Cette conception permet également le **support multi-agent** avec une sélection flexible de fournisseurs :
+
+- **Différents agents, différents fournisseurs** : Chaque agent peut utiliser son propre fournisseur LLM
+- **Modèles de secours (Fallbacks)** : Configurez des modèles primaires et de secours pour la résilience
+- **Équilibrage de charge** : Répartissez les requêtes sur plusieurs points de terminaison
+- **Configuration centralisée** : Gérez tous les fournisseurs en un seul endroit
+
+#### 📋 Tous les Fournisseurs Supportés
+
+| Fournisseur | Préfixe `model` | API Base par Défaut | Protocole | Clé API |
+|-------------|-----------------|---------------------|----------|---------|
+| **OpenAI** | `openai/` | `https://api.openai.com/v1` | OpenAI | [Obtenir Clé](https://platform.openai.com) |
+| **Anthropic** | `anthropic/` | `https://api.anthropic.com/v1` | Anthropic | [Obtenir Clé](https://console.anthropic.com) |
+| **Zhipu AI (GLM)** | `zhipu/` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI | [Obtenir Clé](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek** | `deepseek/` | `https://api.deepseek.com/v1` | OpenAI | [Obtenir Clé](https://platform.deepseek.com) |
+| **Google Gemini** | `gemini/` | `https://generativelanguage.googleapis.com/v1beta` | OpenAI | [Obtenir Clé](https://aistudio.google.com/api-keys) |
+| **Groq** | `groq/` | `https://api.groq.com/openai/v1` | OpenAI | [Obtenir Clé](https://console.groq.com) |
+| **Moonshot** | `moonshot/` | `https://api.moonshot.cn/v1` | OpenAI | [Obtenir Clé](https://platform.moonshot.cn) |
+| **Qwen (Alibaba)** | `qwen/` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI | [Obtenir Clé](https://dashscope.console.aliyun.com) |
+| **NVIDIA** | `nvidia/` | `https://integrate.api.nvidia.com/v1` | OpenAI | [Obtenir Clé](https://build.nvidia.com) |
+| **Ollama** | `ollama/` | `http://localhost:11434/v1` | OpenAI | Local (pas de clé nécessaire) |
+| **OpenRouter** | `openrouter/` | `https://openrouter.ai/api/v1` | OpenAI | [Obtenir Clé](https://openrouter.ai/keys) |
+| **VLLM** | `vllm/` | `http://localhost:8000/v1` | OpenAI | Local |
+| **Cerebras** | `cerebras/` | `https://api.cerebras.ai/v1` | OpenAI | [Obtenir Clé](https://cerebras.ai) |
+| **Volcengine** | `volcengine/` | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI | [Obtenir Clé](https://console.volcengine.com) |
+| **ShengsuanYun** | `shengsuanyun/` | `https://router.shengsuanyun.com/api/v1` | OpenAI | - |
+| **Antigravity** | `antigravity/` | Google Cloud | Custom | OAuth uniquement |
+| **GitHub Copilot** | `github-copilot/` | `localhost:4321` | gRPC | - |
+
+#### Configuration de Base
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_key": "sk-your-openai-key"
+    },
+    {
+      "model_name": "claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-4.6",
+      "api_key": "sk-ant-your-key"
+    },
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-zhipu-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "gpt-5.2"
+    }
+  }
+}
+```
+
+#### Exemples par Fournisseur
+
+**OpenAI**
+```json
+{
+  "model_name": "gpt-5.2",
+  "model": "openai/gpt-5.2",
+  "api_key": "sk-..."
+}
+```
+
+**Zhipu AI (GLM)**
+```json
+{
+  "model_name": "glm-4.7",
+  "model": "zhipu/glm-4.7",
+  "api_key": "your-key"
+}
+```
+
+**Anthropic (avec OAuth)**
+```json
+{
+  "model_name": "claude-sonnet-4.6",
+  "model": "anthropic/claude-sonnet-4.6",
+  "auth_method": "oauth"
+}
+```
+> Exécutez `picoclaw auth login --provider anthropic` pour configurer les identifiants OAuth.
+
+**Proxy/API personnalisée**
+```json
+{
+  "model_name": "my-custom-model",
+  "model": "openai/custom-model",
+  "api_base": "https://my-proxy.com/v1",
+  "api_key": "sk-...",
+  "request_timeout": 300
+}
+```
+
+#### Équilibrage de Charge
+
+Configurez plusieurs points de terminaison pour le même nom de modèle—PicoClaw utilisera automatiquement le round-robin entre eux :
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_base": "https://api1.example.com/v1",
+      "api_key": "sk-key1"
+    },
+    {
+      "model_name": "gpt-5.2",
+      "model": "openai/gpt-5.2",
+      "api_base": "https://api2.example.com/v1",
+      "api_key": "sk-key2"
+    }
+  ]
+}
+```
+
+#### Migration depuis l'Ancienne Configuration `providers`
+
+L'ancienne configuration `providers` est **dépréciée** mais toujours supportée pour la rétrocompatibilité.
+
+**Ancienne Configuration (dépréciée) :**
+```json
+{
+  "providers": {
+    "zhipu": {
+      "api_key": "your-key",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "provider": "zhipu",
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+**Nouvelle Configuration (recommandée) :**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "glm-4.7",
+      "model": "zhipu/glm-4.7",
+      "api_key": "your-key"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "glm-4.7"
+    }
+  }
+}
+```
+
+Pour le guide de migration détaillé, voir [docs/migration/model-list-migration.md](docs/migration/model-list-migration.md).
+
 ## Référence CLI
 
 | Commande                  | Description                           |
@@ -848,7 +1172,7 @@ Ajoutez la clé dans `~/.picoclaw/config.json` si vous utilisez Brave :
   "tools": {
     "web": {
       "brave": {
-        "enabled": true,
+        "enabled": false,
         "api_key": "VOTRE_CLE_API_BRAVE",
         "max_results": 5
       },

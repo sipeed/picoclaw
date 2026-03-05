@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/adhocore/gronx"
+
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
 type CronSchedule struct {
@@ -330,20 +331,22 @@ func (cs *CronService) loadStore() error {
 }
 
 func (cs *CronService) saveStoreUnsafe() error {
-	dir := filepath.Dir(cs.storePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
 	data, err := json.MarshalIndent(cs.store, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(cs.storePath, data, 0600)
+	// Use unified atomic write utility with explicit sync for flash storage reliability.
+	return fileutil.WriteFileAtomic(cs.storePath, data, 0o600)
 }
 
-func (cs *CronService) AddJob(name string, schedule CronSchedule, message string, deliver bool, channel, to string) (*CronJob, error) {
+func (cs *CronService) AddJob(
+	name string,
+	schedule CronSchedule,
+	message string,
+	deliver bool,
+	channel, to string,
+) (*CronJob, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
@@ -465,7 +468,7 @@ func (cs *CronService) ListJobs(includeDisabled bool) []CronJob {
 	return enabled
 }
 
-func (cs *CronService) Status() map[string]interface{} {
+func (cs *CronService) Status() map[string]any {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 
@@ -476,7 +479,7 @@ func (cs *CronService) Status() map[string]interface{} {
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"enabled":      cs.running,
 		"jobs":         len(cs.store.Jobs),
 		"nextWakeAtMS": cs.getNextWakeMS(),

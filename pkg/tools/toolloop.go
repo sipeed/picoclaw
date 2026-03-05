@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -33,7 +34,12 @@ type ToolLoopResult struct {
 
 // RunToolLoop executes the LLM + tool call iteration loop.
 // This is the core agent logic that can be reused by both main agent and subagents.
-func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []providers.Message, channel, chatID string) (*ToolLoopResult, error) {
+func RunToolLoop(
+	ctx context.Context,
+	config ToolLoopConfig,
+	messages []providers.Message,
+	channel, chatID string,
+) (*ToolLoopResult, error) {
 	iteration := 0
 	var finalContent string
 
@@ -55,12 +61,8 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 		// 2. Set default LLM options
 		llmOpts := config.LLMOptions
 		if llmOpts == nil {
-			llmOpts = map[string]any{
-				"max_tokens":  4096,
-				"temperature": 0.7,
-			}
+			llmOpts = map[string]any{}
 		}
-
 		// 3. Call LLM
 		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
 		if err != nil {
@@ -83,15 +85,20 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 			break
 		}
 
-		// 5. Log tool calls
-		toolNames := make([]string, 0, len(response.ToolCalls))
+		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
 		for _, tc := range response.ToolCalls {
+			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
+		}
+
+		// 5. Log tool calls
+		toolNames := make([]string, 0, len(normalizedToolCalls))
+		for _, tc := range normalizedToolCalls {
 			toolNames = append(toolNames, tc.Name)
 		}
 		logger.InfoCF("toolloop", "LLM requested tool calls",
 			map[string]any{
 				"tools":     toolNames,
-				"count":     len(response.ToolCalls),
+				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
 
@@ -100,51 +107,68 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []provider
 			Role:    "assistant",
 			Content: response.Content,
 		}
-		for _, tc := range response.ToolCalls {
+		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
 			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
+				ID:        tc.ID,
+				Type:      "function",
+				Name:      tc.Name,
+				Arguments: tc.Arguments,
 				Function: &providers.FunctionCall{
 					Name:      tc.Name,
 					Arguments: string(argumentsJSON),
 				},
-				Name: tc.Name,
 			})
 		}
 		messages = append(messages, assistantMsg)
 
-		// 7. Execute tool calls
-		for _, tc := range response.ToolCalls {
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := utils.Truncate(string(argsJSON), 200)
-			logger.InfoCF("toolloop", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-				map[string]any{
-					"tool":      tc.Name,
-					"iteration": iteration,
-				})
+		// 7. Execute tool calls in parallel
+		type indexedResult struct {
+			result *ToolResult
+			tc     providers.ToolCall
+		}
 
-			// Execute tool (no async callback for subagents - they run independently)
-			var toolResult *ToolResult
-			if config.Tools != nil {
-				toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
-			} else {
-				toolResult = ErrorResult("No tools available")
+		results := make([]indexedResult, len(normalizedToolCalls))
+		var wg sync.WaitGroup
+
+		for i, tc := range normalizedToolCalls {
+			results[i].tc = tc
+
+			wg.Add(1)
+			go func(idx int, tc providers.ToolCall) {
+				defer wg.Done()
+
+				argsJSON, _ := json.Marshal(tc.Arguments)
+				argsPreview := utils.Truncate(string(argsJSON), 200)
+				logger.InfoCF("toolloop", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
+					map[string]any{
+						"tool":      tc.Name,
+						"iteration": iteration,
+					})
+
+				var toolResult *ToolResult
+				if config.Tools != nil {
+					toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
+				} else {
+					toolResult = ErrorResult("No tools available")
+				}
+				results[idx].result = toolResult
+			}(i, tc)
+		}
+		wg.Wait()
+
+		// Append results in original order
+		for _, r := range results {
+			contentForLLM := r.result.ForLLM
+			if contentForLLM == "" && r.result.Err != nil {
+				contentForLLM = r.result.Err.Error()
 			}
 
-			// Determine content for LLM
-			contentForLLM := toolResult.ForLLM
-			if contentForLLM == "" && toolResult.Err != nil {
-				contentForLLM = toolResult.Err.Error()
-			}
-
-			// Add tool result message
-			toolResultMsg := providers.Message{
+			messages = append(messages, providers.Message{
 				Role:       "tool",
 				Content:    contentForLLM,
-				ToolCallID: tc.ID,
-			}
-			messages = append(messages, toolResultMsg)
+				ToolCallID: r.tc.ID,
+			})
 		}
 	}
 

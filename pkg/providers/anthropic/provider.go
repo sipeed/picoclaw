@@ -9,16 +9,19 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
-type ToolCall = protocoltypes.ToolCall
-type FunctionCall = protocoltypes.FunctionCall
-type LLMResponse = protocoltypes.LLMResponse
-type UsageInfo = protocoltypes.UsageInfo
-type Message = protocoltypes.Message
-type ToolDefinition = protocoltypes.ToolDefinition
-type ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
+type (
+	ToolCall               = protocoltypes.ToolCall
+	FunctionCall           = protocoltypes.FunctionCall
+	LLMResponse            = protocoltypes.LLMResponse
+	UsageInfo              = protocoltypes.UsageInfo
+	Message                = protocoltypes.Message
+	ToolDefinition         = protocoltypes.ToolDefinition
+	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
+)
 
 const defaultBaseURL = "https://api.anthropic.com"
 
@@ -27,6 +30,9 @@ type Provider struct {
 	tokenSource func() (string, error)
 	baseURL     string
 }
+
+// SupportsThinking implements providers.ThinkingCapable.
+func (p *Provider) SupportsThinking() bool { return true }
 
 func NewProvider(token string) *Provider {
 	return NewProviderWithBaseURL(token, "")
@@ -61,7 +67,13 @@ func NewProviderWithTokenSourceAndBaseURL(token string, tokenSource func() (stri
 	return p
 }
 
-func (p *Provider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error) {
+func (p *Provider) Chat(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (*LLMResponse, error) {
 	var opts []option.RequestOption
 	if p.tokenSource != nil {
 		tok, err := p.tokenSource()
@@ -85,21 +97,39 @@ func (p *Provider) Chat(ctx context.Context, messages []Message, tools []ToolDef
 }
 
 func (p *Provider) GetDefaultModel() string {
-	return "claude-sonnet-4-5-20250929"
+	return "claude-sonnet-4.6"
 }
 
 func (p *Provider) BaseURL() string {
 	return p.baseURL
 }
 
-func buildParams(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (anthropic.MessageNewParams, error) {
+func buildParams(
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (anthropic.MessageNewParams, error) {
 	var system []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
 
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
-			system = append(system, anthropic.TextBlockParam{Text: msg.Content})
+			// Prefer structured SystemParts for per-block cache_control.
+			// This enables LLM-side KV cache reuse: the static block's prefix
+			// hash stays stable across requests while dynamic parts change freely.
+			if len(msg.SystemParts) > 0 {
+				for _, part := range msg.SystemParts {
+					block := anthropic.TextBlockParam{Text: part.Text}
+					if part.CacheControl != nil && part.CacheControl.Type == "ephemeral" {
+						block.CacheControl = anthropic.NewCacheControlEphemeralParam()
+					}
+					system = append(system, block)
+				}
+			} else {
+				system = append(system, anthropic.TextBlockParam{Text: msg.Content})
+			}
 		case "user":
 			if msg.ToolCallID != "" {
 				anthropicMessages = append(anthropicMessages,
@@ -155,7 +185,78 @@ func buildParams(messages []Message, tools []ToolDefinition, model string, optio
 		params.Tools = translateTools(tools)
 	}
 
+	// Extended Thinking / Adaptive Thinking
+	// The thinking_level value directly determines the API parameter format:
+	//   "adaptive" → {thinking: {type: "adaptive"}} + output_config.effort
+	//   "low/medium/high/xhigh" → {thinking: {type: "enabled", budget_tokens: N}}
+	if level, ok := options["thinking_level"].(string); ok && level != "" && level != "off" {
+		applyThinkingConfig(&params, level)
+	}
+
 	return params, nil
+}
+
+// applyThinkingConfig sets thinking parameters based on the level value.
+// "adaptive" uses the adaptive thinking API (Claude 4.6+).
+// All other levels use budget_tokens which is universally supported.
+//
+// Anthropic API constraint: temperature must not be set when thinking is enabled.
+// budget_tokens must be strictly less than max_tokens.
+func applyThinkingConfig(params *anthropic.MessageNewParams, level string) {
+	// Anthropic API rejects requests with temperature set alongside thinking.
+	// Reset to zero value (omitted from JSON serialization).
+	if params.Temperature.Valid() {
+		log.Printf("anthropic: temperature cleared because thinking is enabled (level=%s)", level)
+	}
+	params.Temperature = anthropic.MessageNewParams{}.Temperature
+
+	if level == "adaptive" {
+		adaptive := anthropic.NewThinkingConfigAdaptiveParam()
+		params.Thinking = anthropic.ThinkingConfigParamUnion{OfAdaptive: &adaptive}
+		params.OutputConfig = anthropic.OutputConfigParam{
+			Effort: anthropic.OutputConfigEffortHigh,
+		}
+		return
+	}
+
+	budget := int64(levelToBudget(level))
+	if budget <= 0 {
+		return
+	}
+
+	// budget_tokens must be < max_tokens; clamp to respect user's max_tokens setting.
+	if budget >= params.MaxTokens {
+		log.Printf("anthropic: budget_tokens (%d) clamped to %d (max_tokens-1)", budget, params.MaxTokens-1)
+		budget = params.MaxTokens - 1
+	} else if budget > params.MaxTokens*80/100 {
+		log.Printf("anthropic: thinking budget (%d) exceeds 80%% of max_tokens (%d), output may be truncated",
+			budget, params.MaxTokens)
+	}
+	params.Thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
+}
+
+// levelToBudget maps a thinking level to budget_tokens.
+// Values are based on Anthropic's recommendations and community best practices:
+//
+//	low    =  4,096  — simple reasoning, quick debugging (Claude Code "think")
+//	medium = 16,384  — Anthropic recommended sweet spot for most tasks
+//	high   = 32,000  — complex architecture, deep analysis (diminishing returns above this)
+//	xhigh  = 64,000  — extreme reasoning, research problems, benchmarks
+//
+// Note: For Claude 4.6+, prefer adaptive thinking over manual budget_tokens.
+func levelToBudget(level string) int {
+	switch level {
+	case "low":
+		return 4096
+	case "medium":
+		return 16384
+	case "high":
+		return 32000
+	case "xhigh":
+		return 64000
+	default:
+		return 0
+	}
 }
 
 func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
@@ -170,7 +271,7 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 		if desc := t.Function.Description; desc != "" {
 			tool.Description = anthropic.String(desc)
 		}
-		if req, ok := t.Function.Parameters["required"].([]interface{}); ok {
+		if req, ok := t.Function.Parameters["required"].([]any); ok {
 			required := make([]string, 0, len(req))
 			for _, r := range req {
 				if s, ok := r.(string); ok {
@@ -185,20 +286,24 @@ func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {
 }
 
 func parseResponse(resp *anthropic.Message) *LLMResponse {
-	var content string
+	var content strings.Builder
+	var reasoning strings.Builder
 	var toolCalls []ToolCall
 
 	for _, block := range resp.Content {
 		switch block.Type {
+		case "thinking":
+			tb := block.AsThinking()
+			reasoning.WriteString(tb.Thinking)
 		case "text":
 			tb := block.AsText()
-			content += tb.Text
+			content.WriteString(tb.Text)
 		case "tool_use":
 			tu := block.AsToolUse()
-			var args map[string]interface{}
+			var args map[string]any
 			if err := json.Unmarshal(tu.Input, &args); err != nil {
 				log.Printf("anthropic: failed to decode tool call input for %q: %v", tu.Name, err)
-				args = map[string]interface{}{"raw": string(tu.Input)}
+				args = map[string]any{"raw": string(tu.Input)}
 			}
 			toolCalls = append(toolCalls, ToolCall{
 				ID:        tu.ID,
@@ -219,7 +324,8 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 	}
 
 	return &LLMResponse{
-		Content:      content,
+		Content:      content.String(),
+		Reasoning:    reasoning.String(),
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 		Usage: &UsageInfo{
@@ -237,8 +343,8 @@ func normalizeBaseURL(apiBase string) string {
 	}
 
 	base = strings.TrimRight(base, "/")
-	if strings.HasSuffix(base, "/v1") {
-		base = strings.TrimSuffix(base, "/v1")
+	if before, ok := strings.CutSuffix(base, "/v1"); ok {
+		base = before
 	}
 	if base == "" {
 		return defaultBaseURL

@@ -18,7 +18,7 @@ func TestReadCodexCliCredentials_Valid(t *testing.T) {
 			"account_id": "org-test123"
 		}
 	}`
-	if err := os.WriteFile(authPath, []byte(authJSON), 0600); err != nil {
+	if err := os.WriteFile(authPath, []byte(authJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -43,12 +43,18 @@ func TestReadCodexCliCredentials_Valid(t *testing.T) {
 	}
 }
 
+// readCodexCliCredentialsErr calls ReadCodexCliCredentials and returns only the
+// error, for tests that only need to assert on failure.
+func readCodexCliCredentialsErr() error {
+	_, _, _, err := ReadCodexCliCredentials() //nolint:dogsled
+	return err
+}
+
 func TestReadCodexCliCredentials_MissingFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("CODEX_HOME", tmpDir)
 
-	_, _, _, err := ReadCodexCliCredentials()
-	if err == nil {
+	if err := readCodexCliCredentialsErr(); err == nil {
 		t.Fatal("expected error for missing auth.json")
 	}
 }
@@ -58,14 +64,13 @@ func TestReadCodexCliCredentials_EmptyToken(t *testing.T) {
 	authPath := filepath.Join(tmpDir, "auth.json")
 
 	authJSON := `{"tokens": {"access_token": "", "refresh_token": "r", "account_id": "a"}}`
-	if err := os.WriteFile(authPath, []byte(authJSON), 0600); err != nil {
+	if err := os.WriteFile(authPath, []byte(authJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Setenv("CODEX_HOME", tmpDir)
 
-	_, _, _, err := ReadCodexCliCredentials()
-	if err == nil {
+	if err := readCodexCliCredentialsErr(); err == nil {
 		t.Fatal("expected error for empty access_token")
 	}
 }
@@ -74,14 +79,13 @@ func TestReadCodexCliCredentials_InvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	authPath := filepath.Join(tmpDir, "auth.json")
 
-	if err := os.WriteFile(authPath, []byte("not json"), 0600); err != nil {
+	if err := os.WriteFile(authPath, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Setenv("CODEX_HOME", tmpDir)
 
-	_, _, _, err := ReadCodexCliCredentials()
-	if err == nil {
+	if err := readCodexCliCredentialsErr(); err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
 }
@@ -91,7 +95,7 @@ func TestReadCodexCliCredentials_NoAccountID(t *testing.T) {
 	authPath := filepath.Join(tmpDir, "auth.json")
 
 	authJSON := `{"tokens": {"access_token": "tok123", "refresh_token": "ref456"}}`
-	if err := os.WriteFile(authPath, []byte(authJSON), 0600); err != nil {
+	if err := os.WriteFile(authPath, []byte(authJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -112,12 +116,12 @@ func TestReadCodexCliCredentials_NoAccountID(t *testing.T) {
 func TestReadCodexCliCredentials_CodexHomeEnv(t *testing.T) {
 	tmpDir := t.TempDir()
 	customDir := filepath.Join(tmpDir, "custom-codex")
-	if err := os.MkdirAll(customDir, 0755); err != nil {
+	if err := os.MkdirAll(customDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	authJSON := `{"tokens": {"access_token": "custom-token", "refresh_token": "r"}}`
-	if err := os.WriteFile(filepath.Join(customDir, "auth.json"), []byte(authJSON), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(customDir, "auth.json"), []byte(authJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -137,7 +141,7 @@ func TestCreateCodexCliTokenSource_Valid(t *testing.T) {
 	authPath := filepath.Join(tmpDir, "auth.json")
 
 	authJSON := `{"tokens": {"access_token": "fresh-token", "refresh_token": "r", "account_id": "acc"}}`
-	if err := os.WriteFile(authPath, []byte(authJSON), 0600); err != nil {
+	if err := os.WriteFile(authPath, []byte(authJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -161,7 +165,7 @@ func TestCreateCodexCliTokenSource_Expired(t *testing.T) {
 	authPath := filepath.Join(tmpDir, "auth.json")
 
 	authJSON := `{"tokens": {"access_token": "old-token", "refresh_token": "r"}}`
-	if err := os.WriteFile(authPath, []byte(authJSON), 0600); err != nil {
+	if err := os.WriteFile(authPath, []byte(authJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

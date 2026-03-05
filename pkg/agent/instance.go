@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -15,20 +18,25 @@ import (
 // AgentInstance represents a fully configured agent with its own workspace,
 // session manager, context builder, and tool registry.
 type AgentInstance struct {
-	ID             string
-	Name           string
-	Model          string
-	Fallbacks      []string
-	Workspace      string
-	MaxIterations  int
-	ContextWindow  int
-	Provider       providers.LLMProvider
-	Sessions       *session.SessionManager
-	ContextBuilder *ContextBuilder
-	Tools          *tools.ToolRegistry
-	Subagents      *config.SubagentsConfig
-	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
+	ID                        string
+	Name                      string
+	Model                     string
+	Fallbacks                 []string
+	Workspace                 string
+	MaxIterations             int
+	MaxTokens                 int
+	Temperature               float64
+	ThinkingLevel             ThinkingLevel
+	ContextWindow             int
+	SummarizeMessageThreshold int
+	SummarizeTokenPercent     int
+	Provider                  providers.LLMProvider
+	Sessions                  *session.SessionManager
+	ContextBuilder            *ContextBuilder
+	Tools                     *tools.ToolRegistry
+	Subagents                 *config.SubagentsConfig
+	SkillsFilter              []string
+	Candidates                []providers.FallbackCandidate
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -39,25 +47,48 @@ func NewAgentInstance(
 	provider providers.LLMProvider,
 ) *AgentInstance {
 	workspace := resolveAgentWorkspace(agentCfg, defaults)
-	os.MkdirAll(workspace, 0755)
+	os.MkdirAll(workspace, 0o755)
 
 	model := resolveAgentModel(agentCfg, defaults)
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
+	readRestrict := restrict && !defaults.AllowReadOutsideWorkspace
+
+	// Compile path whitelist patterns from config.
+	allowReadPaths := compilePatterns(cfg.Tools.AllowReadPaths)
+	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
+
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewListDirTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewExecToolWithConfig(workspace, restrict, cfg))
-	toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict))
-	toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict))
+
+	if cfg.Tools.IsToolEnabled("read_file") {
+		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("write_file") {
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("list_dir") {
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+	}
+	if cfg.Tools.IsToolEnabled("exec") {
+		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg)
+		if err != nil {
+			log.Fatalf("Critical error: unable to initialize exec tool: %v", err)
+		}
+		toolsRegistry.Register(execTool)
+	}
+
+	if cfg.Tools.IsToolEnabled("edit_file") {
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+	}
+	if cfg.Tools.IsToolEnabled("append_file") {
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
 
 	contextBuilder := NewContextBuilder(workspace)
-	contextBuilder.SetToolsRegistry(toolsRegistry)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
@@ -76,28 +107,99 @@ func NewAgentInstance(
 		maxIter = 20
 	}
 
+	maxTokens := defaults.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = 8192
+	}
+
+	temperature := 0.7
+	if defaults.Temperature != nil {
+		temperature = *defaults.Temperature
+	}
+
+	var thinkingLevelStr string
+	if mc, err := cfg.GetModelConfig(model); err == nil {
+		thinkingLevelStr = mc.ThinkingLevel
+	}
+	thinkingLevel := parseThinkingLevel(thinkingLevelStr)
+
+	summarizeMessageThreshold := defaults.SummarizeMessageThreshold
+	if summarizeMessageThreshold == 0 {
+		summarizeMessageThreshold = 20
+	}
+
+	summarizeTokenPercent := defaults.SummarizeTokenPercent
+	if summarizeTokenPercent == 0 {
+		summarizeTokenPercent = 75
+	}
+
 	// Resolve fallback candidates
 	modelCfg := providers.ModelConfig{
 		Primary:   model,
 		Fallbacks: fallbacks,
 	}
-	candidates := providers.ResolveCandidates(modelCfg, defaults.Provider)
+	resolveFromModelList := func(raw string) (string, bool) {
+		ensureProtocol := func(model string) string {
+			model = strings.TrimSpace(model)
+			if model == "" {
+				return ""
+			}
+			if strings.Contains(model, "/") {
+				return model
+			}
+			return "openai/" + model
+		}
+
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return "", false
+		}
+
+		if cfg != nil {
+			if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
+				return ensureProtocol(mc.Model), true
+			}
+
+			for i := range cfg.ModelList {
+				fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
+				if fullModel == "" {
+					continue
+				}
+				if fullModel == raw {
+					return ensureProtocol(fullModel), true
+				}
+				_, modelID := providers.ExtractProtocol(fullModel)
+				if modelID == raw {
+					return ensureProtocol(fullModel), true
+				}
+			}
+		}
+
+		return "", false
+	}
+
+	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		ContextWindow:  defaults.MaxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
+		ID:                        agentID,
+		Name:                      agentName,
+		Model:                     model,
+		Fallbacks:                 fallbacks,
+		Workspace:                 workspace,
+		MaxIterations:             maxIter,
+		MaxTokens:                 maxTokens,
+		Temperature:               temperature,
+		ThinkingLevel:             thinkingLevel,
+		ContextWindow:             maxTokens,
+		SummarizeMessageThreshold: summarizeMessageThreshold,
+		SummarizeTokenPercent:     summarizeTokenPercent,
+		Provider:                  provider,
+		Sessions:                  sessionsManager,
+		ContextBuilder:            contextBuilder,
+		Tools:                     toolsRegistry,
+		Subagents:                 subagents,
+		SkillsFilter:              skillsFilter,
+		Candidates:                candidates,
 	}
 }
 
@@ -119,7 +221,7 @@ func resolveAgentModel(agentCfg *config.AgentConfig, defaults *config.AgentDefau
 	if agentCfg != nil && agentCfg.Model != nil && strings.TrimSpace(agentCfg.Model.Primary) != "" {
 		return strings.TrimSpace(agentCfg.Model.Primary)
 	}
-	return defaults.Model
+	return defaults.GetModelName()
 }
 
 // resolveAgentFallbacks resolves the fallback models for an agent.
@@ -128,6 +230,19 @@ func resolveAgentFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentD
 		return agentCfg.Model.Fallbacks
 	}
 	return defaults.ModelFallbacks
+}
+
+func compilePatterns(patterns []string) []*regexp.Regexp {
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			fmt.Printf("Warning: invalid path pattern %q: %v\n", p, err)
+			continue
+		}
+		compiled = append(compiled, re)
+	}
+	return compiled
 }
 
 func expandHome(path string) string {
